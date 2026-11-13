@@ -302,10 +302,8 @@ fn snapshot_refuses_empty_project_with_project_is_empty() {
         serde_json::json!({"time":0,"path":out}),
         "empty",
     );
-    assert!(matches!(
-        value,
-        ResponseValue::Error(ErrorCode::EmptyProject)
-    ));
+    // Admission refuses an empty timeline before dispatch reaches the snapshot owner.
+    assert!(matches!(value, ResponseValue::Error(ErrorCode::Refused)));
 }
 
 #[test]

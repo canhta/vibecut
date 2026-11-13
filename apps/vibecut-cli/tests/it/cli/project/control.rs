@@ -271,7 +271,8 @@ fn control_snapshot_writes_the_requested_frame_and_refuses_project_alias() {
         Some(&rev),
         Some("empty-snapshot"),
     ));
-    assert_eq!(response_error(&refused), "empty_project");
+    // Admission refuses an empty timeline before dispatch.
+    assert_eq!(response_error(&refused), "refused");
     let (code, stderr) = empty.finish();
     assert_eq!(code, 5, "{stderr}");
 }
