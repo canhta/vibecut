@@ -11,6 +11,7 @@ pub mod services;
 pub mod shorts;
 pub use editor::dialogs::export;
 pub use editor::dialogs::models::model_manager;
+pub use editor::dialogs::voiceover::VoiceoverView;
 pub use editor::properties::ColorTarget;
 pub use editor::properties::font_picker;
 pub use editor::properties::{ElementKind, PropertiesTab, shared_fields};

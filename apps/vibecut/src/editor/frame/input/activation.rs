@@ -466,6 +466,7 @@ impl Editor {
                 }
                 UiAction::OpenPreferences => self.dialogs.preferences.open = true,
                 UiAction::OpenModels => self.open_models()?,
+                UiAction::OpenVoiceover => self.dialogs.voiceover.open(),
                 UiAction::OpenShortcuts => self.open_shortcuts(),
                 UiAction::RetryPreview => {
                     self.playback.clear()?;

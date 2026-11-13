@@ -1091,6 +1091,7 @@ fn toolbar_buttons_return_their_registered_action_and_respect_availability() {
         "timeline.ripple",
         "timeline.zoom_in",
         "timeline.zoom_out",
+        "voiceover.open",
         "scene.open",
     ] {
         let at = harness.state().rect(id).center();

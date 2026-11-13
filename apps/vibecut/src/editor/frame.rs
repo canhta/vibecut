@@ -37,7 +37,8 @@ pub(super) struct State {
     pub(super) keymap: Keymap,
     pub(super) keymap_source: actions::KeybindingPreferences,
     pub(super) keybinding_issues: Vec<KeybindingIssue>,
-    /// Voiceover recording owner (p1-parity/86) sets this; global keys wait.
+    /// A host-set capture flag; global keys wait. A running voice-over take counts
+    /// too, read from its dialog by `dispatch_context`.
     pub(super) recording_active: bool,
     pub(super) shortcuts_open: bool,
     pub(super) shortcut_tab: ShortcutTab,

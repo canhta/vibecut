@@ -826,6 +826,14 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         &[],
     ),
     ActionSpec::ui(
+        "voiceover.open",
+        Text::ActionVoiceoverOpen,
+        ActionCategory::View,
+        "voice-over dialog",
+        UiAction::OpenVoiceover,
+        &[],
+    ),
+    ActionSpec::ui(
         "export.run",
         Text::ActionExportRun,
         ActionCategory::View,

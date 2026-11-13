@@ -29,6 +29,14 @@ impl DerefMut for EditorSession {
     }
 }
 impl EditorSession {
+    /// The saved project file, which `project::media_dir` places media beside;
+    /// `None` for a memory session or a project that has not been saved.
+    pub fn saved_path(&self) -> Option<&std::path::Path> {
+        match self {
+            Self::Persistent(autosave) => autosave.saved_path(),
+            Self::Memory(_) => None,
+        }
+    }
     pub fn autosave(&mut self) -> Option<&mut Autosave> {
         match self {
             Self::Persistent(s) => Some(s),

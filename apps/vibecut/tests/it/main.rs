@@ -23,6 +23,7 @@ mod sounds;
 mod timeline;
 mod tracks;
 mod transitions;
+mod voiceover;
 
 mod mcp_control;
 mod media_probe;

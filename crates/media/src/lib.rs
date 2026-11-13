@@ -31,8 +31,9 @@ pub use vision::{
     mfcc_range_with_progress,
 };
 pub use write::{
-    AudioEncoder, AudioEncoderSettings, Container, EncodePreference, H264Profile, MuxSink, Muxer,
-    VideoEncoder, VideoEncoderSettings, audio_export_container_available,
+    AUDIO_FILE_BLOCK, AudioEncoder, AudioEncoderSettings, AudioFileWriter, Container,
+    EncodePreference, H264Profile, MuxSink, Muxer, VideoEncoder, VideoEncoderSettings,
+    audio_export_container_available,
     export_container_available, h264_encoder_available,
 };
 

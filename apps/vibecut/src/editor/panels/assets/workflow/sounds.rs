@@ -166,12 +166,6 @@ impl State {
         if let Some(directory) = &self.sound_media_dir {
             return directory.clone();
         }
-        let saved = match &editor.session {
-            crate::services::lifecycle::EditorSession::Persistent(autosave) => {
-                autosave.saved_path()
-            }
-            crate::services::lifecycle::EditorSession::Memory(_) => None,
-        };
-        project::media_dir(saved)
+        project::media_dir(editor.session.saved_path())
     }
 }

@@ -12,6 +12,7 @@ Language for the editor's privacy and execution boundaries.
 - **SourceRange**: A nonempty half-open `[start, end)` range in source-media ticks.
 - **Speed**: A video or audio item's constant playback rate, 0.01x to 5x on an exact 0.001 grid. The item plays its source window for `floor(source / speed)` output ticks, with split pieces retaining their slices of that original playback; its pitch policy chooses between pitch following speed and time-stretching with pitch preserved.
 - **SourceAsset**: A source-media identity and its location, content fingerprint and probed stream information; timeline items refer to it without copying its media.
+- **Take**: One voice-over capture. It becomes a project-owned mono AAC file only when encoding finishes, then one SourceAsset and one audio item at the playhead in a single undo step; a cancelled or failed take leaves no file and no item.
 - **Transcript**: Source-language recognition result with stable segments and a provider/model/settings fingerprint.
 - **Cue**: Identified source range with source language and per-language text, independent edit flags and translation references.
 - **CueStyle**: Saved static caption appearance shared by cues in a cue track, including its font, colours, alignment and margins.
