@@ -100,10 +100,11 @@ impl control::ClipWorkflow for Recording {
 }
 
 /// Runs `clips.suggest`, then `clips.export` three times and returns what each export
-/// reported. `between` runs after the first export (to finish the analysis job it started).
+/// reported. `between` runs after each export, with its attempt (to finish the analysis job
+/// it started or to change what the detector load sees).
 fn exports(
     vision: Option<&control::VisionAccess>,
-    between: impl Fn(&mut JobRunner, Option<ClipShotsDiagnostic>),
+    between: impl Fn(usize, &mut JobRunner, Option<ClipShotsDiagnostic>),
 ) -> (Vec<Option<ClipShotsDiagnostic>>, Vec<Vec<ShotAnalysis>>) {
     let root = tempfile::tempdir().unwrap();
     let video = root.path().join("shots.mkv");
@@ -164,9 +165,7 @@ fn exports(
         };
         assert_eq!(shorts.len(), 1);
         diagnostics.push(shots);
-        if attempt == 0 {
-            between(&mut r, shots);
-        }
+        between(attempt, &mut r, shots);
     }
     let recorded = recorded.lock().unwrap().clone();
     (diagnostics, recorded)
@@ -174,7 +173,7 @@ fn exports(
 
 #[test]
 fn an_export_without_a_detector_reports_it_and_keeps_the_centred_fill() {
-    let (diagnostics, recorded) = exports(None, |_, _| {});
+    let (diagnostics, recorded) = exports(None, |_, _, _| {});
     assert_eq!(
         diagnostics,
         vec![Some(ClipShotsDiagnostic::DetectorUnavailable); 3]
@@ -189,7 +188,7 @@ fn an_export_without_model_weights_reports_them_missing() {
             engine::providers::Error::ModelMissing("yunet-2026may"),
         ))
     });
-    let (diagnostics, recorded) = exports(Some(&missing), |_, _| {});
+    let (diagnostics, recorded) = exports(Some(&missing), |_, _, _| {});
     assert_eq!(
         diagnostics,
         vec![Some(ClipShotsDiagnostic::ModelsMissing); 3]
@@ -198,9 +197,46 @@ fn an_export_without_model_weights_reports_them_missing() {
 }
 
 #[test]
+fn an_export_during_a_model_transfer_reports_busy_then_lays_out_once_it_finishes() {
+    let transfer = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let held = transfer.clone();
+    let vision = control::VisionAccess::new(move || {
+        if held.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(engine::RuntimeError::CacheBusy.into());
+        }
+        Ok((
+            Box::new(crate::support::control::NoFaces) as Box<dyn ai::vision::VisionDetector>,
+            [9; 32],
+        ))
+    });
+    let (diagnostics, recorded) = exports(Some(&vision), |attempt, runner, shots| match attempt {
+        // The download finishes between the first and second export.
+        0 => transfer.store(false, std::sync::atomic::Ordering::Release),
+        1 => {
+            let Some(ClipShotsDiagnostic::Pending { job }) = shots else {
+                panic!("the export after the transfer starts the analysis: {shots:?}");
+            };
+            finish(runner, job);
+        }
+        _ => {}
+    });
+    assert_eq!(diagnostics[0], Some(ClipShotsDiagnostic::ModelsBusy));
+    assert!(matches!(
+        diagnostics[1],
+        Some(ClipShotsDiagnostic::Pending { .. })
+    ));
+    assert_eq!(diagnostics[2], None);
+    assert!(recorded[0].is_empty() && recorded[1].is_empty());
+    assert_eq!(recorded[2].len(), 2);
+}
+
+#[test]
 fn an_export_runs_the_analysis_once_then_reuses_the_cached_shots() {
     let vision = vision_access();
-    let (diagnostics, recorded) = exports(Some(&vision), |runner, first| {
+    let (diagnostics, recorded) = exports(Some(&vision), |attempt, runner, first| {
+        if attempt > 0 {
+            return;
+        }
         let Some(ClipShotsDiagnostic::Pending { job }) = first else {
             panic!("the first export starts the analysis: {first:?}");
         };

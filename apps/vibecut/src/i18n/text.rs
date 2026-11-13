@@ -250,6 +250,7 @@ catalog! {
     ShortsSeconds { key: "shorts_seconds", en: "Audio length (s)", vi: "Độ dài âm thanh (giây)" },
     ShortsSeek { key: "shorts_seek", en: "Seek", vi: "Tua" },
     ShortsShotsFailed { key: "shorts_shots_failed", en: "Shot analysis failed. Shorts use the centred crop.", vi: "Phân tích cảnh quay thất bại. Video ngắn dùng khung cắt giữa." },
+    ShortsShotsBusy { key: "shorts_shots_busy", en: "Face data is downloading. Shorts use the centred crop until it finishes.", vi: "Dữ liệu khuôn mặt đang được tải. Video ngắn dùng khung cắt giữa cho đến khi xong." },
     ShortsShotsModels { key: "shorts_shots_models", en: "Face data missing. Download it to lay shorts out by speaker.", vi: "Thiếu dữ liệu khuôn mặt. Hãy tải về để bố cục theo người nói." },
     ShortsShotsUnavailable { key: "shorts_shots_unavailable", en: "No face detector here. Shorts use the centred crop.", vi: "Chưa có bộ nhận diện khuôn mặt. Video ngắn dùng khung cắt giữa." },
     ShortsSourceLanguage { key: "shorts_source_language", en: "Video language", vi: "Ngôn ngữ video" },

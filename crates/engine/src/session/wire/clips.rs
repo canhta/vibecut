@@ -140,6 +140,9 @@ pub enum ClipShotsDiagnostic {
     DetectorUnavailable,
     /// The detector's model weights are not installed, or their download was declined.
     ModelsMissing,
+    /// The model cache is in use (a download or check runs): the weights may be installed.
+    /// Nothing is lost; ask again after the transfer finishes.
+    ModelsBusy,
     /// The analysis runs as this job; an export after it completes reuses its cached result.
     Pending { job: JobId },
     /// The analysis could not be requested or published.

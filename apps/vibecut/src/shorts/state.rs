@@ -427,6 +427,7 @@ impl State {
         let text = match reason {
             Some(Reason::DetectorUnavailable) => Some(Text::ShortsShotsUnavailable),
             Some(Reason::ModelsMissing) => Some(Text::ShortsShotsModels),
+            Some(Reason::ModelsBusy) => Some(Text::ShortsShotsBusy),
             Some(Reason::Failed) => Some(Text::ShortsShotsFailed),
             Some(Reason::Pending { .. }) | None => None,
         };
