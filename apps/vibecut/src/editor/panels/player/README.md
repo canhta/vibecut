@@ -98,7 +98,7 @@ switch; the canvas context menu holds the notes switch. Each choice is one `prev
 `preview_overlays` preference edit recorded in the app's preference history, so it is undoable
 and never touches the project. Grid sizes follow the properties scrub rule: a drag or typed
 edit drafts the sizes in `State::grid_draft` (shown, not stored), and one `preview_guide` edit
-publishes the final value when the drag releases or the field loses focus. A drag across
+publishes the final value when the drag releases or the field loses focus. Escape, or closing the menu, drops the draft and publishes nothing. A drag across
 several values is one undo step; a drag that ends where it started records nothing. Notes show each bookmark whose span covers the playhead, start and end inclusive;
 a bookmark with an empty note shows nothing. Guides and notes are painted only here, so export
 never sees them.

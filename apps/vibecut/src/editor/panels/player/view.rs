@@ -343,9 +343,12 @@ fn guide_menu(ui: &mut egui::Ui, cx: &Context<'_>, state: &mut State, actions: &
             || cols_response.drag_stopped()
             || rows_response.lost_focus()
             || cols_response.lost_focus();
-        if ended {
+        // Escape cancels the draft like a scrub's Escape; it also closes the menu, and the
+        // focus it takes away must not publish the value being dragged.
+        let cancelled = ui.input(|input| input.key_pressed(egui::Key::Escape));
+        if ended || cancelled {
             state.grid_draft = None;
-            if draft != (GridDraft { rows, cols }) {
+            if !cancelled && draft != (GridDraft { rows, cols }) {
                 actions.push(Action::SetPreference {
                     key: "preview_guide",
                     value: serde_json::json!(Guide::Grid {
