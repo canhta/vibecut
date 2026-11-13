@@ -1,7 +1,7 @@
 //! Renders the player panel from read-only editor context.
 use super::{
     Action, Context, State,
-    overlay::{GRID_MAX, GRID_MIN, Guide, Overlay, OverlayVisibility, PLANES},
+    overlay::{GRID_MAX, GRID_MIN, Guide, Overlay, OverlayVisibility, PLANES, custom_from_draft},
     state::{GridDraft, TimecodeEdit},
 };
 use crate::{
@@ -126,8 +126,9 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
                 guide_menu(ui, cx, state, &mut actions);
             });
         if shown.is_none() {
-            // Closed mid-drag: the draft would otherwise reopen as a stale value.
+            // Closed mid-drag: the drafts would otherwise reopen as stale values.
             state.grid_draft = None;
+            state.margin_draft = None;
         }
         remember(cx, &mut actions, "preview.menu", response);
     });
@@ -323,6 +324,17 @@ fn guide_menu(ui: &mut egui::Ui, cx: &Context<'_>, state: &mut State, actions: &
             Guide::YouTubeShorts,
             Text::GuideYouTubeShorts,
         ),
+        // The margins start at zero, which shades nothing until the user sets them.
+        (
+            "preview.guide.custom",
+            Guide::Custom {
+                top: 0,
+                bottom: 0,
+                left: 0,
+                right: 0,
+            },
+            Text::GuideCustom,
+        ),
     ] {
         let selected = current.same_choice(choice);
         let response = ui.selectable_label(selected, cx.tr(text));
@@ -373,6 +385,75 @@ fn guide_menu(ui: &mut egui::Ui, cx: &Context<'_>, state: &mut State, actions: &
         }
         remember(cx, actions, "preview.guide.rows", rows_response);
         remember(cx, actions, "preview.guide.cols", cols_response);
+    }
+    if let Guide::Custom {
+        top,
+        bottom,
+        left,
+        right,
+    } = current
+    {
+        custom_margins(cx, ui, actions, state, current, [top, bottom, left, right]);
+    } else {
+        // A draft left by a kept invalid value must not reappear on a later pick.
+        state.margin_draft = None;
+    }
+}
+
+/// The custom guide's four margin fields. They follow the grid-size rule: a drag or
+/// typed edit drafts the values, and one preference edit publishes the valid final
+/// value when the gesture ends. An invalid draft stays on screen with its error.
+fn custom_margins(
+    cx: &Context<'_>,
+    ui: &mut egui::Ui,
+    actions: &mut Vec<Action>,
+    state: &mut State,
+    current: Guide,
+    margins: [u8; 4],
+) {
+    let saved = margins.map(i32::from);
+    let mut draft = state.margin_draft.unwrap_or(saved);
+    let fields = [
+        ("preview.guide.margin.top", Text::GuideTop),
+        ("preview.guide.margin.bottom", Text::GuideBottom),
+        ("preview.guide.margin.left", Text::GuideLeft),
+        ("preview.guide.margin.right", Text::GuideRight),
+    ];
+    let responses = ui
+        .horizontal_wrapped(|ui| {
+            let mut responses = Vec::with_capacity(fields.len());
+            for (value, (_, text)) in draft.iter_mut().zip(fields) {
+                ui.label(cx.tr(text));
+                responses.push(ui.add(egui::DragValue::new(value).suffix("%")));
+            }
+            responses
+        })
+        .inner;
+    // Typed values outside the model's range stay visible with this error until fixed.
+    if custom_from_draft(draft).is_none() {
+        ui.colored_label(kit::error_text(cx.dark), cx.tr(Text::GuideMarginsInvalid));
+    }
+    let ended = responses
+        .iter()
+        .any(|response| response.drag_stopped() || response.lost_focus());
+    let cancelled = ui.input(|input| input.key_pressed(egui::Key::Escape));
+    if cancelled {
+        state.margin_draft = None;
+    } else if ended {
+        state.margin_draft = None;
+        match custom_from_draft(draft) {
+            Some(guide) if guide != current => actions.push(Action::SetPreference {
+                key: "preview_guide",
+                value: serde_json::json!(guide),
+            }),
+            Some(_) => {}
+            None => state.margin_draft = Some(draft),
+        }
+    } else if responses.iter().any(egui::Response::changed) || state.margin_draft.is_some() {
+        state.margin_draft = Some(draft);
+    }
+    for ((id, _), response) in fields.into_iter().zip(responses) {
+        remember(cx, actions, id, response);
     }
 }
 

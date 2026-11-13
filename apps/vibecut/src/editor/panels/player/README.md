@@ -88,13 +88,13 @@ mutates the project. The dialog reads the session, theme and error line through 
 
 ## Guides and overlays
 
-`overlay` holds the model: the `Guide` choice (none, a grid with rows and columns in 1–24, or a platform: TikTok, Instagram Reels, YouTube Shorts, whose `covered_regions` are fractions of the frame),
+`overlay` holds the model: the `Guide` choice (none, a grid with rows and columns in 1–24, a platform: TikTok, Instagram Reels, YouTube Shorts, whose `covered_regions` are fractions of the frame, or a custom set of four margins in whole percent of the canvas, each 0–99 and each axis's pair at most 99),
 per-overlay `OverlayVisibility` and the paint planes. Planes paint
 back to front: `Scene` (the frame image, painted first), `Viewport` (the guide, fixed over the
 displayed frame) and `Hud` (bookmark notes, screen-anchored top-left). The transform handles
 are drawn after all three.
 
-The header menu holds the guide picker (None, Grid or a platform), the grid size fields and the guide
+The header menu holds the guide picker (None, Grid, a platform or Custom), the grid size fields, the custom margin fields and the guide
 switch; the canvas context menu holds the notes switch. Each choice is one `preview_guide` or
 `preview_overlays` preference edit recorded in the app's preference history, so it is undoable
 and never touches the project. Grid sizes follow the properties scrub rule: a drag or typed
@@ -105,4 +105,4 @@ a bookmark with an empty note shows nothing. Guides and notes are painted only h
 never sees them.
 
 Platform guides shade the regions the platform's UI covers, fractions and sources in
-[the editor UI doc](../../../../../../docs/product/ui/editor.md#preview-guides-and-notes); Spotlight has no primary source and is absent. Every value in this section is [new]; no capture exists for the picker or for notes.
+[the editor UI doc](../../../../../../docs/product/ui/editor.md#preview-guides-and-notes); Spotlight has no primary source and is absent. Custom margins shade the four bands they leave at the canvas edges; a zero margin shades nothing. Margin edits follow the grid-size rule: a drag or typed edit drafts the values and one preference edit publishes the valid final value when the gesture ends, while an invalid draft keeps its inline error and publishes nothing. Every value in this section is [new]; no capture exists for the picker or for notes.

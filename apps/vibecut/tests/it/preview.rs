@@ -146,6 +146,17 @@ fn build(editor: Editor) -> Harness<'static, Editor> {
     h
 }
 
+/// Types a margin into its DragValue: select the text, type the value, leave with Enter.
+fn type_margin(h: &mut Harness<Editor>, id: &str, value: &str) {
+    click(h, id);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.run_steps(1);
+    h.get(By::new().predicate(|node| node.author_id() == Some(id)))
+        .type_text(value);
+    h.key_press(egui::Key::Enter);
+    h.run_steps(3);
+}
+
 /// Double-click needs two presses inside egui's 0.3 s window; the default
 /// harness advances 0.25 s per event, so these sessions run at 0.05 s.
 fn build_fast(editor: Editor) -> Harness<'static, Editor> {
@@ -1111,6 +1122,78 @@ fn closing_the_header_menu_mid_drag_drops_the_grid_draft() {
 }
 
 #[test]
+fn custom_guide_margins_validate_inline_undo_and_restore_after_restart() {
+    let fresh = || Project::new(project(FrameRate::FPS_30, 640, 360, false).into_data()).unwrap();
+    let mut h = build(editor(fresh(), Preferences::default()));
+    let committed = h.state().session.project().clone();
+    let custom = |top, bottom, left, right| Guide::Custom {
+        top,
+        bottom,
+        left,
+        right,
+    };
+
+    click(&mut h, "preview.guide.custom");
+    assert_eq!(h.state().preferences.preview_guide, custom(0, 0, 0, 0));
+
+    type_margin(&mut h, "preview.guide.margin.top", "10");
+    assert_eq!(h.state().preferences.preview_guide, custom(10, 0, 0, 0));
+
+    // Crossing and negative margins show inline and publish nothing.
+    type_margin(&mut h, "preview.guide.margin.bottom", "95");
+    assert_eq!(
+        h.state().preferences.preview_guide,
+        custom(10, 0, 0, 0),
+        "crossing"
+    );
+    type_margin(&mut h, "preview.guide.margin.left", "-5");
+    assert_eq!(
+        h.state().preferences.preview_guide,
+        custom(10, 0, 0, 0),
+        "negative"
+    );
+    // Valid values replace the invalid draft and publish once.
+    type_margin(&mut h, "preview.guide.margin.bottom", "20");
+    type_margin(&mut h, "preview.guide.margin.left", "5");
+    assert_eq!(h.state().preferences.preview_guide, custom(10, 20, 5, 0));
+
+    // Margin edits are preference edits: the project is untouched.
+    h.key_press(egui::Key::Escape);
+    h.run_steps(3);
+    assert!(Arc::ptr_eq(&committed, h.state().session.project()));
+    assert!(!h.state().session.can_undo());
+    click(&mut h, "edit.undo");
+    assert_eq!(h.state().preferences.preview_guide, custom(10, 0, 0, 0));
+    click(&mut h, "edit.redo");
+    assert_eq!(h.state().preferences.preview_guide, custom(10, 20, 5, 0));
+    assert!(Arc::ptr_eq(&committed, h.state().session.project()));
+
+    // A restart with the saved preferences restores the guide and its margin fields.
+    let saved = h.state().preferences.clone();
+    let mut restarted = build(editor(fresh(), saved));
+    assert_eq!(
+        restarted.state().preferences.preview_guide,
+        custom(10, 20, 5, 0)
+    );
+    click(&mut restarted, "preview.guide.custom");
+    let value = |h: &Harness<Editor>, id: &str| {
+        h.get(By::new().predicate(|node| node.author_id() == Some(id)))
+            .accesskit_node()
+            .numeric_value()
+    };
+    assert_eq!(value(&restarted, "preview.guide.margin.top"), Some(10.0));
+    assert_eq!(value(&restarted, "preview.guide.margin.bottom"), Some(20.0));
+    assert_eq!(value(&restarted, "preview.guide.margin.left"), Some(5.0));
+    assert_eq!(value(&restarted, "preview.guide.margin.right"), Some(0.0));
+    let screenshot =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-56-custom-guide.png");
+    if let Some(parent) = screenshot.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
+    restarted.render().unwrap().save(&screenshot).unwrap();
+}
+
+#[test]
 fn guides_and_notes_never_change_the_exported_frame() {
     // The export frame comes from the engine's snapshot path, which takes only the
     // project. The app's guide and notes state must not reach it.
@@ -1155,9 +1238,23 @@ fn guides_and_notes_never_change_the_exported_frame() {
         },
         ..Default::default()
     });
+    let custom = frame(Preferences {
+        preview_guide: Guide::Custom {
+            top: 10,
+            bottom: 20,
+            left: 5,
+            right: 15,
+        },
+        preview_overlays: OverlayVisibility {
+            guide: true,
+            notes: true,
+        },
+        ..Default::default()
+    });
     assert!(!shown.is_empty());
     assert_eq!(shown, hidden);
     assert_eq!(platform, hidden);
+    assert_eq!(custom, hidden, "custom margins are not exported");
 }
 
 #[test]

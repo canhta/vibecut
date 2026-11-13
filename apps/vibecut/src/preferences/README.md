@@ -44,8 +44,8 @@ Version 13 replaced the translation-only `translation` and `translation_model` f
 these; there is no migration.
 
 `preview_guide` and `preview_overlays` store the preview guide choice (none, a grid with
-rows and columns 1–24, validated on load and set, or one of the platform guides TikTok, Instagram Reels and YouTube Shorts) and the per-overlay visibility. Both are presentation only;
-an edit is one `ui.prefs.set` step in app history. Version 11 introduced them and version 12 added the platform guides, with no
+rows and columns 1–24, validated on load and set, one of the platform guides TikTok, Instagram Reels and YouTube Shorts, or a custom set of four margins) and the per-overlay visibility. Both are presentation only;
+an edit is one `ui.prefs.set` step in app history. Version 11 introduced them, version 12 added the platform guides and version 14 the custom margins, with no
 migration: older documents are dropped.
 
 `adjustment_presets` is the bounded app-owned bank of named colour grades (at most 32,

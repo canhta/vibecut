@@ -21,6 +21,9 @@ pub(crate) struct State {
     pub(in crate::editor) last_view: project::ViewState,
     /// Grid size an open drag or typed edit shows; it is published once when the gesture ends.
     pub(in crate::editor) grid_draft: Option<GridDraft>,
+    /// Custom margins, as typed or dragged, an open gesture shows before it publishes.
+    /// Kept while invalid so the inline error stays until the value is fixed.
+    pub(in crate::editor) margin_draft: Option<[i32; 4]>,
 }
 
 /// The grid size a picker gesture is drafting, as rows and columns.
@@ -48,6 +51,7 @@ impl State {
             key_color_pick: None,
             last_view: project::ViewState::default(),
             grid_draft: None,
+            margin_draft: None,
         }
     }
 }
