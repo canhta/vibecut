@@ -157,6 +157,12 @@ impl Editor {
         self.with_assets(|assets, port| assets.set_sound_library(port, library))
     }
 
+    /// Read the Stickers catalogue and its downloads from `store` instead of the per-user store.
+    /// Tests and audit scenes use it with a store rooted in a temporary directory.
+    pub fn set_sticker_store(&mut self, store: Arc<libraries::stickers::StickerStore>) {
+        self.assets.sticker_store = Some(store);
+    }
+
     /// Record why the app-shared Sounds library did not open; its section shows
     /// the reason with a Retry row.
     pub fn set_sound_open_error(&mut self, error: &engine::SoundError) {

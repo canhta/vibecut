@@ -106,6 +106,8 @@ pub(in crate::editor) struct State {
     pub(in crate::editor) sticker_thumbnails: super::stickers::Thumbnails,
     /// Stickers tab: the Emoji and Icons downloads, created on the first explicit download.
     pub(in crate::editor) sticker_downloads: Option<super::stickers::StickerDownloads>,
+    /// Injected sticker catalogue for tests and audit scenes; `None` reads the per-user store.
+    pub(in crate::editor) sticker_store: Option<std::sync::Arc<libraries::stickers::StickerStore>>,
 }
 
 impl Default for State {
@@ -163,6 +165,7 @@ impl Default for State {
             sticker_expanded: false,
             sticker_thumbnails: Default::default(),
             sticker_downloads: None,
+            sticker_store: None,
         }
     }
 }

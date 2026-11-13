@@ -4980,31 +4980,238 @@ fn stickers_panel_searches_switches_inserts_and_keeps_recents_in_preferences() {
     assert!(path.exists());
 }
 
-#[test]
-fn stickers_emoji_and_icons_tabs_offer_a_download_card_until_a_collection_is_ready() {
-    use libraries::stickers::CollectionState;
+/// Serves bodies by URL from memory. `offline` fails every URL like an unreachable network, and
+/// `gate` holds the body of one URL inside its transfer until the test releases it.
+#[derive(Default)]
+struct ScriptedStickers {
+    bodies: std::sync::Mutex<std::collections::BTreeMap<String, Vec<u8>>>,
+    offline: bool,
+    gate: Option<(String, std::sync::Arc<StickerGate>)>,
+}
+
+/// Lets the test wait until a transfer is held, then release it. The transfer thread records
+/// entry and blocks until release; nothing depends on elapsed time.
+#[derive(Default)]
+struct StickerGate {
+    state: std::sync::Mutex<(bool, bool)>,
+    changed: std::sync::Condvar,
+}
+
+impl StickerGate {
+    fn entered(&self) -> bool {
+        self.state.lock().unwrap().0
+    }
+
+    fn release(&self) {
+        self.state.lock().unwrap().1 = true;
+        self.changed.notify_all();
+    }
+
+    fn hold(&self) {
+        let mut state = self.state.lock().unwrap();
+        state.0 = true;
+        self.changed.notify_all();
+        while !state.1 {
+            state = self.changed.wait(state).unwrap();
+        }
+    }
+}
+
+/// A body read in pieces of four bytes; the gated one holds at its second read, so a cancel set
+/// before release is seen at the transfer's next check.
+struct HeldBody {
+    data: std::io::Cursor<Vec<u8>>,
+    gate: Option<std::sync::Arc<StickerGate>>,
+    reads: usize,
+}
+
+impl std::io::Read for HeldBody {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.reads += 1;
+        if self.reads == 2
+            && let Some(gate) = &self.gate
+        {
+            gate.hold();
+        }
+        let take = buf.len().min(4);
+        std::io::Read::read(&mut self.data, &mut buf[..take])
+    }
+}
+
+impl transport::DownloadTransport for ScriptedStickers {
+    fn get(
+        &self,
+        url: &str,
+        _: &[(String, String)],
+    ) -> Result<transport::HttpStreamResponse, transport::Error> {
+        if self.offline {
+            return Err(transport::Error::Network);
+        }
+        let data = self
+            .bodies
+            .lock()
+            .unwrap()
+            .get(url)
+            .cloned()
+            .ok_or(transport::Error::Network)?;
+        let gate = self
+            .gate
+            .as_ref()
+            .filter(|(gated, _)| gated == url)
+            .map(|(_, gate)| gate.clone());
+        Ok(transport::HttpStreamResponse {
+            status: 200,
+            headers: Vec::new(),
+            body: Box::new(HeldBody {
+                data: std::io::Cursor::new(data),
+                gate,
+                reads: 0,
+            }),
+        })
+    }
+}
+
+const STICKER_LICENCE: &[u8] = b"MIT License (test copy)\n";
+const STICKER_COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
+const STICKER_SVG: &[u8] = b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"10\" fill=\"currentColor\"/></svg>";
+
+/// A pinned collection of the given files, each at its own bytes; the URLs are the ones the
+/// scripted source serves.
+fn sticker_collection(
+    id: &str,
+    category: libraries::stickers::Category,
+    values: &[&str],
+) -> libraries::stickers::Collection {
+    use sha2::{Digest, Sha256};
+    let sha = |bytes: &[u8]| -> String {
+        Sha256::digest(bytes)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
+    };
+    libraries::stickers::Collection {
+        id: id.into(),
+        name: format!("{id} collection"),
+        category,
+        author: "Test Author".into(),
+        repo: format!("owner/{id}"),
+        commit: STICKER_COMMIT.into(),
+        license: "MIT".into(),
+        license_path: "LICENSE".into(),
+        license_size: STICKER_LICENCE.len() as u64,
+        license_sha256: sha(STICKER_LICENCE),
+        entries: values
+            .iter()
+            .map(|value| libraries::stickers::Entry {
+                value: (*value).into(),
+                name: format!("Test {value}"),
+                keywords: vec![format!("kw-{value}")],
+                path: format!("icons/{value}.svg"),
+                size: STICKER_SVG.len() as u64,
+                sha256: sha(STICKER_SVG),
+            })
+            .collect(),
+    }
+}
+
+/// The scripted source serving the licence and every file of the collections.
+fn serve(
+    collections: &[libraries::stickers::Collection],
+    gate: Option<(&str, std::sync::Arc<StickerGate>)>,
+    offline: bool,
+) -> ScriptedStickers {
+    let mut bodies = std::collections::BTreeMap::new();
+    for collection in collections {
+        bodies.insert(
+            collection.raw_url(&collection.license_path),
+            STICKER_LICENCE.to_vec(),
+        );
+        for entry in &collection.entries {
+            bodies.insert(collection.raw_url(&entry.path), STICKER_SVG.to_vec());
+        }
+    }
+    ScriptedStickers {
+        bodies: std::sync::Mutex::new(bodies),
+        offline,
+        gate: gate.map(|(url, gate)| (url.to_owned(), gate)),
+    }
+}
+
+/// The Stickers panel reading `collections` from a temporary store and the scripted source.
+fn sticker_panel(
+    root: &std::path::Path,
+    collections: Vec<libraries::stickers::Collection>,
+    source: ScriptedStickers,
+) -> Harness<'static, Editor> {
+    let store = libraries::stickers::StickerStore::new(
+        root.to_path_buf(),
+        collections,
+        std::sync::Arc::new(source),
+    )
+    .unwrap();
     let mut f = fixture();
     f.editor.preferences.assets_tab = AssetsTab::Stickers;
+    f.editor.set_sticker_store(std::sync::Arc::new(store));
     let mut h = build(f.editor);
     h.run_steps(3);
+    h
+}
+
+/// Releases a held transfer when a test unwinds, so the runner can shut down. Declared after the
+/// harness so it drops first.
+struct ReleaseOnDrop(std::sync::Arc<StickerGate>);
+
+impl Drop for ReleaseOnDrop {
+    fn drop(&mut self) {
+        self.0.release();
+    }
+}
+
+/// Drives frames until `done` holds; the download job advances on each frame.
+fn run_until(harness: &mut Harness<Editor>, done: impl Fn(&Harness<Editor>) -> bool) {
+    for _ in 0..50_000 {
+        harness.run_steps(1);
+        if done(harness) {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    panic!("sticker download did not reach the expected state");
+}
+
+/// Nothing was cached: the collection directory is absent and the root holds no staging files.
+fn no_sticker_cache(root: &std::path::Path, collection: &str) -> bool {
+    !root.join(collection).exists() && std::fs::read_dir(root).unwrap().next().is_none()
+}
+
+fn sticker_catalogue() -> Vec<libraries::stickers::Collection> {
+    use libraries::stickers::Category;
+    vec![
+        sticker_collection("noto", Category::Emoji, &["grin"]),
+        sticker_collection("lucide", Category::Icons, &["heart"]),
+        sticker_collection("phosphor", Category::Icons, &["star"]),
+    ]
+}
+
+#[test]
+fn stickers_emoji_and_icons_tabs_offer_a_download_card_until_a_collection_is_ready() {
+    let root = tempfile::tempdir().unwrap();
+    let mut h = sticker_panel(
+        root.path(),
+        sticker_catalogue(),
+        serve(&sticker_catalogue(), None, false),
+    );
     for id in ["stickers.category.emoji", "stickers.category.icons"] {
         assert!(has_widget(&h, id), "{id}");
     }
 
-    // A collection that is not ready is offered on its tab with the explicit download; a ready
-    // one is listed as stickers and offers nothing. The native cache decides which.
-    let ready = |collection: &str| {
-        libraries::stickers::native_store()
-            .is_some_and(|store| store.state(collection).ok() == Some(CollectionState::Ready))
-    };
+    // Nothing is downloaded: each collection of the tab is offered with its own card.
     click(&mut h, "stickers.category.emoji");
-    assert_eq!(has_widget(&h, "stickers.download.noto"), !ready("noto"));
+    assert!(has_widget(&h, "stickers.download.noto"));
+    assert!(!has_widget(&h, "stickers.insert.noto-grin"));
     click(&mut h, "stickers.category.icons");
-    assert_eq!(has_widget(&h, "stickers.download.lucide"), !ready("lucide"));
-    assert_eq!(
-        has_widget(&h, "stickers.download.phosphor"),
-        !ready("phosphor")
-    );
+    assert!(has_widget(&h, "stickers.download.lucide"));
+    assert!(has_widget(&h, "stickers.download.phosphor"));
     assert!(!has_widget(&h, "stickers.download.noto"));
 
     // All lists what is ready and offers no download; Flags and Shapes never offer one.
@@ -5012,6 +5219,75 @@ fn stickers_emoji_and_icons_tabs_offer_a_download_card_until_a_collection_is_rea
     assert!(!has_widget(&h, "stickers.download.lucide"));
     click(&mut h, "stickers.category.flags");
     assert!(!has_widget(&h, "stickers.download.noto"));
+    assert!(no_sticker_cache(root.path(), "noto"));
+}
+
+#[test]
+fn stickers_download_shows_progress_then_the_collection_tiles() {
+    let root = tempfile::tempdir().unwrap();
+    let catalogue = sticker_catalogue();
+    let gate = std::sync::Arc::new(StickerGate::default());
+    let url = catalogue[0].raw_url("icons/grin.svg");
+    let source = serve(&catalogue, Some((url.as_str(), gate.clone())), false);
+    let mut h = sticker_panel(root.path(), catalogue, source);
+    let _release = ReleaseOnDrop(gate.clone());
+    click(&mut h, "stickers.category.emoji");
+    click(&mut h, "stickers.download.noto");
+
+    // The file is held mid-transfer: the card shows progress and Cancel, not the button.
+    run_until(&mut h, |_| gate.entered());
+    assert!(has_widget(&h, "stickers.download.progress"));
+    assert!(has_widget(&h, "stickers.download.cancel"));
+    assert!(!has_widget(&h, "stickers.download.noto"));
+
+    // Released: the file verifies, publishes, the card goes and its tile is listed.
+    gate.release();
+    run_until(&mut h, |h| has_widget(h, "stickers.insert.noto-grin"));
+    assert!(!has_widget(&h, "stickers.download.noto"));
+    assert!(!has_widget(&h, "stickers.download.progress"));
+    assert!(root.path().join("noto").join("grin.svg").exists());
+}
+
+#[test]
+fn stickers_cancel_mid_download_leaves_no_cache_and_the_card_returns() {
+    let root = tempfile::tempdir().unwrap();
+    let catalogue = sticker_catalogue();
+    let gate = std::sync::Arc::new(StickerGate::default());
+    let url = catalogue[0].raw_url("icons/grin.svg");
+    let source = serve(&catalogue, Some((url.as_str(), gate.clone())), false);
+    let mut h = sticker_panel(root.path(), catalogue, source);
+    let _release = ReleaseOnDrop(gate.clone());
+    click(&mut h, "stickers.category.emoji");
+    click(&mut h, "stickers.download.noto");
+    run_until(&mut h, |_| gate.entered());
+
+    // Cancel is set while the transfer is held; releasing lets it reach its next check.
+    click(&mut h, "stickers.download.cancel");
+    gate.release();
+    run_until(&mut h, |h| {
+        has_widget(h, "stickers.download.noto") && !has_widget(h, "stickers.download.cancel")
+    });
+    assert!(!has_widget(&h, "stickers.insert.noto-grin"));
+    assert!(no_sticker_cache(root.path(), "noto"));
+}
+
+#[test]
+fn stickers_offline_download_shows_the_offline_state_and_offers_a_retry() {
+    let root = tempfile::tempdir().unwrap();
+    let catalogue = sticker_catalogue();
+    let mut h = sticker_panel(
+        root.path(),
+        catalogue.clone(),
+        serve(&catalogue, None, true),
+    );
+    click(&mut h, "stickers.category.emoji");
+    click(&mut h, "stickers.download.noto");
+
+    // A transient network failure is the offline state; the button stays for a retry.
+    run_until(&mut h, |h| has_widget(h, "stickers.download.offline"));
+    assert!(has_widget(&h, "stickers.download.noto"));
+    assert!(!has_widget(&h, "stickers.download.failed"));
+    assert!(no_sticker_cache(root.path(), "noto"));
 }
 
 fn pointer_drag(harness: &mut Harness<Editor>, from: egui::Pos2, to: egui::Pos2) {

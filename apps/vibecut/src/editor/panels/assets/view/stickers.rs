@@ -148,7 +148,8 @@ impl View<'_> {
             ui.label(caption(size, dark));
             match running {
                 Some((_, true)) => {
-                    ui.label(caption(self.tr(Text::StickerCancelling), dark));
+                    let response = ui.label(caption(self.tr(Text::StickerCancelling), dark));
+                    self.remember("stickers.download.cancelling", &response, None);
                 }
                 Some((progress, false)) => {
                     ui.ctx().request_repaint_after(Duration::from_millis(100));
@@ -158,7 +159,8 @@ impl View<'_> {
                         Text::StickerDownloading,
                         &[("percent", &i18n::number(locale, percent))],
                     );
-                    ui.label(caption(text, dark));
+                    let response = ui.label(caption(text, dark));
+                    self.remember("stickers.download.progress", &response, None);
                     ui.add(egui::ProgressBar::new(progress).desired_width(ui.available_width()));
                     let response = ui.button(self.tr(Text::StickerDownloadCancel));
                     self.remember("stickers.download.cancel", &response, None);
@@ -169,10 +171,14 @@ impl View<'_> {
                 None => {
                     match problem {
                         Some(DownloadProblem::Offline) => {
-                            ui.label(caption(self.tr(Text::StickerDownloadOffline), dark));
+                            let response =
+                                ui.label(caption(self.tr(Text::StickerDownloadOffline), dark));
+                            self.remember("stickers.download.offline", &response, None);
                         }
                         Some(DownloadProblem::Failed) => {
-                            ui.label(caption(self.tr(Text::StickerDownloadFailed), dark));
+                            let response =
+                                ui.label(caption(self.tr(Text::StickerDownloadFailed), dark));
+                            self.remember("stickers.download.failed", &response, None);
                         }
                         None => {}
                     }

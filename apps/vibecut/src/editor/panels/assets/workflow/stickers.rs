@@ -68,6 +68,16 @@ impl State {
         port.store_preference("sticker_recents", serde_json::json!([]));
     }
 
+    /// The sticker catalogue the tab reads: the injected store when one is set, else the per-user
+    /// store.
+    pub(in crate::editor) fn sticker_catalogue(
+        &self,
+    ) -> Option<&libraries::stickers::StickerStore> {
+        self.sticker_store
+            .as_deref()
+            .or_else(libraries::stickers::native_store)
+    }
+
     /// Start the explicit download of one collection. The card shows its licence credit before
     /// the button, so the button is the acknowledgement. One download runs at a time.
     pub(in crate::editor) fn download_sticker(&mut self, budget: &ByteBudget, collection: &str) {
@@ -87,8 +97,17 @@ impl State {
             return;
         }
         downloads.problem = None;
-        let Some(store) = libraries::stickers::native_store() else {
-            downloads.problem = Some((collection.to_owned(), DownloadProblem::Failed));
+        let injected = self.sticker_store.clone();
+        let Some(store) = injected
+            .as_deref()
+            .or_else(libraries::stickers::native_store)
+        else {
+            if let Some(downloads) = self.sticker_downloads.as_mut() {
+                downloads.problem = Some((collection.to_owned(), DownloadProblem::Failed));
+            }
+            return;
+        };
+        let Some(downloads) = self.sticker_downloads.as_mut() else {
             return;
         };
         match store.submit_download(&mut downloads.runner, collection, true) {
