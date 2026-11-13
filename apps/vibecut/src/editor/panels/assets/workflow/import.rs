@@ -60,7 +60,7 @@ impl State {
         if paths.is_empty() {
             return Ok(());
         }
-        let first = self.next_asset_id(&port.session);
+        let first = self.next_asset_id(port.session);
         self.import_total = paths.len();
         self.import_completed = 0;
         self.import_imported = 0;
@@ -256,8 +256,8 @@ impl State {
                 }
             }
         }
-        self.prune_asset_state(&port.session);
-        self.prune_media_selection(&port.session);
+        self.prune_asset_state(port.session);
+        self.prune_media_selection(port.session);
         if !Arc::ptr_eq(&before, port.session.project()) {
             port.sync();
         }

@@ -93,7 +93,7 @@ fn crop_scene_animated(
         testkit::item::item(
             project::ItemId(0),
             project::ItemParams::Video(project::VideoParams {
-                crop: crop,
+                crop,
                 ..project::VideoParams::plain()
             }),
         )
@@ -1061,7 +1061,7 @@ fn fit_scene(
         testkit::item::item(
             project::ItemId(0),
             project::ItemParams::Video(project::VideoParams {
-                fit: fit,
+                fit,
                 ..project::VideoParams::plain()
             }),
         )

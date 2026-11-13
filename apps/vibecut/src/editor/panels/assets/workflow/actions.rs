@@ -34,13 +34,13 @@ impl State {
                 }
                 Action::Command(id) => port.request(Request::Action(id)),
                 Action::Select(id, modifiers) => self.select_asset(port, id, modifiers),
-                Action::Delete(ids) => self.request_media_delete(&port.session, ids),
+                Action::Delete(ids) => self.request_media_delete(port.session, ids),
                 Action::ExportClips(ids) => match self.queue_clip_export(port.read.budget, ids) {
                     Ok(()) => port.request(Request::ExportClips),
                     Err(error) => port.fail(error.to_string()),
                 },
                 Action::ClipExportCancel => {
-                    if let Err(error) = self.cancel_clip_export(&mut port.session) {
+                    if let Err(error) = self.cancel_clip_export(port.session) {
                         port.fail(error.to_string());
                     }
                 }

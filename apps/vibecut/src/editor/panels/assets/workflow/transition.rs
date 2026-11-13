@@ -126,8 +126,8 @@ impl State {
         port: &mut Port<'_>,
         kind: &str,
     ) {
-        let cuts = cuts(&port.session);
-        let selected = selected_cut(&port.session, port.read.playhead, &cuts);
+        let cuts = cuts(port.session);
+        let selected = selected_cut(port.session, port.read.playhead, &cuts);
         match selected {
             Some(cut) => self.add_transition_at_cut(port, kind, cut),
             None => {
@@ -138,7 +138,7 @@ impl State {
     }
 
     fn add_transition_at_cut(&mut self, port: &mut Port<'_>, kind: &str, cut: Cut) {
-        if let Some(reason) = refusal(&port.session, cut) {
+        if let Some(reason) = refusal(port.session, cut) {
             let text = port.tr(reason);
             port.toast(text, None);
             return;
@@ -191,7 +191,7 @@ impl State {
         let pointer = ctx.input(|input| input.pointer.interact_pos());
         let rects = port.read.item_rects;
         let target = pointer.and_then(|point| {
-            cuts(&port.session).into_iter().find(|cut| {
+            cuts(port.session).into_iter().find(|cut| {
                 let (Some((_, a)), Some((_, b))) = (
                     rects.iter().find(|(id, _)| *id == cut.from),
                     rects.iter().find(|(id, _)| *id == cut.to),
@@ -205,7 +205,7 @@ impl State {
             })
         });
         if let Some(cut) = target {
-            let valid = refusal(&port.session, cut).is_none();
+            let valid = refusal(port.session, cut).is_none();
             if let Some((_, rect)) = rects.iter().find(|(id, _)| *id == cut.to) {
                 ctx.layer_painter(egui::LayerId::new(
                     egui::Order::Foreground,

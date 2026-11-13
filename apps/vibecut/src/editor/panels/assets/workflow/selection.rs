@@ -148,7 +148,7 @@ impl State {
         id: AssetId,
         modifiers: egui::Modifiers,
     ) {
-        let ids = self.media_order(&port.session, port.read.preferences);
+        let ids = self.media_order(port.session, port.read.preferences);
         crate::editor::selection::click(
             &mut self.media_selection,
             &mut self.media_anchor,
@@ -219,7 +219,7 @@ impl State {
                 self.media_selection.clear();
                 self.media_anchor = None;
                 self.media_reveal = None;
-                self.prune_media_selection(&port.session);
+                self.prune_media_selection(port.session);
                 if !Arc::ptr_eq(&before, port.session.project()) {
                     port.sync();
                 }

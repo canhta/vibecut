@@ -907,8 +907,8 @@ fn preview_audio_mix_obeys_item_gain_and_mute() {
                 testkit::item::item(
                     project::ItemId(1),
                     project::ItemParams::Audio(project::AudioParams {
-                        volume: volume,
-                        muted: muted,
+                        volume,
+                        muted,
                         ..project::AudioParams::default()
                     }),
                 )
@@ -2036,7 +2036,7 @@ fn split_project(
         testkit::item::item(
             ItemId(1),
             ItemParams::Video(VideoParams {
-                background: background,
+                background,
                 ..VideoParams::plain()
             }),
         )

@@ -507,7 +507,8 @@ fn deterministic_catalog_and_schema_document_receipts() {
         .map(|spec| serde_json::to_vec(&spec.output_schema).unwrap().len())
         .sum();
     println!("output_schema_bytes={outputs}");
-    assert!(outputs < 2 << 20, "output schemas {outputs} bytes");
+    // Measured 483,812 bytes for the narrowed schemas; 1 MiB leaves about twice that.
+    assert!(outputs < 1 << 20, "output schemas {outputs} bytes");
     let mut job_control: Vec<_> = registry()
         .iter()
         .filter(|s| s.effect == Effect::JobControl)
@@ -1082,7 +1083,8 @@ fn unavailable_commands_are_refused_before_dispatch_on_every_transport() {
     // The UI reads `enabled`; the app's own calls and the MCP and CLI adapters meet the
     // same admission rule in the engine, as internal and external callers.
     use engine::SessionError;
-    let cases: [(&str, Value, fn(&SessionError) -> bool); 2] = [
+    type Case = (&'static str, Value, fn(&SessionError) -> bool);
+    let cases: [Case; 2] = [
         ("undo", json!({}), |e| matches!(e, SessionError::NoHistory)),
         ("media.remove", json!({"assets":[1]}), |e| {
             matches!(e, SessionError::Unavailable)

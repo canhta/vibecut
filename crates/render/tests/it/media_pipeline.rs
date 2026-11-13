@@ -1992,8 +1992,8 @@ fn export_item_mute_and_gain_change_samples() {
                 .and_then(|track| track.items.first_mut())
             {
                 item.content = project::ItemParams::Audio(project::AudioParams {
-                    volume: volume,
-                    muted: muted,
+                    volume,
+                    muted,
                     ..project::AudioParams::default()
                 });
             }
