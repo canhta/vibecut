@@ -58,6 +58,20 @@ impl Editor {
             })
             .collect()
     }
+    /// The engine cut target for the active scope. Mask points have no clipboard
+    /// payload yet, so they have no cut target.
+    pub(in crate::editor) fn cut_target(&self) -> Option<engine::CutTarget> {
+        use crate::editor::selection::SelectionScope;
+        match self.selection_scopes.active(self.session.selection()) {
+            SelectionScope::Keyframes => Some(engine::CutTarget::Keyframes {
+                keys: self.clipboard_keys(),
+            }),
+            SelectionScope::Items => Some(engine::CutTarget::Items {
+                items: self.session.selection().iter().copied().collect(),
+            }),
+            SelectionScope::MaskPoints | SelectionScope::Transition | SelectionScope::None => None,
+        }
+    }
     fn clipboard_available(&self, copy: bool) -> bool {
         if !self.properties.input_ready(&self.session)
             || self.session.transaction_active()
@@ -401,6 +415,15 @@ impl Editor {
                 action: UiAction::Copy,
                 ..
             } => self.clipboard_available(true),
+            ActionTarget::Ui {
+                action: UiAction::Cut,
+                ..
+            } => {
+                self.clipboard_available(true)
+                    && self
+                        .cut_target()
+                        .is_some_and(|target| self.session.can_cut(&target))
+            }
             ActionTarget::Ui {
                 action: UiAction::Paste,
                 ..

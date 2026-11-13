@@ -207,7 +207,7 @@ They keep only the safe category; typed in-process causes and static messages re
 than 256 ordinary entries in total. It neither opens other roots nor adds a control command;
 the desktop releases the access mutex before running maintenance IO.
 
-The Agent-granted `clipboard.copy`, `clipboard.copy_keyframes`,
+The Agent-granted `clipboard.copy`, `clipboard.copy_keyframes`, `clipboard.cut`,
 `clipboard.paste` and `clipboard.paste_keyframes` use ordinary
 revision/receipt admission. `clipboard.read` returns the same Session's
 nullable bounded keyframe snapshot without a receipt. Replay leaves a newer store intact;

@@ -1,7 +1,7 @@
 //! Executes the commands declared `SessionControl`.
 use super::{Session, Snapshot};
+use crate::session::{CutTarget, SessionError, edit, wire};
 use crate::session::{EditError, Result};
-use crate::session::{SessionError, edit, wire};
 use crate::{Command, Outcome};
 use project::Project;
 use std::sync::Arc;
@@ -76,6 +76,7 @@ impl Session {
                 }
                 Ok(outcome(false))
             }
+            Command::CutSelection { target } => self.cut(target),
             Command::TimelineSetRipple { enabled } => self.set_ripple(enabled),
             Command::TimelinePreview { commands } => self.preview(commands, wire, ripple),
             Command::SwitchScene { scene } => self.switch_scene(scene, wire),
@@ -115,6 +116,44 @@ impl Session {
                 "lifecycle command requires its library or persistence owner",
             )),
         }
+    }
+
+    /// Copy the target into its clipboard, then delete it in one transaction. The
+    /// payload is captured first and stored only after the delete commits, so a
+    /// refused cut (locked, stale or empty) leaves the previous clipboard in place.
+    /// The delete follows the session ripple setting like any other delete.
+    fn cut(&mut self, target: CutTarget) -> Result<Outcome> {
+        if self.transaction_active() {
+            return Err(EditError::Session(SessionError::TransactionActive));
+        }
+        match target {
+            CutTarget::Items { items } => {
+                let Some(payload) = crate::session::clipboard::ItemClipboard::capture(
+                    self.project().data(),
+                    &items,
+                )?
+                else {
+                    return Ok(outcome(false));
+                };
+                self.transaction(|session| session.apply(Command::Delete { items }))?;
+                self.item_clipboard = Some(Arc::new(payload));
+                self.clipboard = None;
+            }
+            CutTarget::Keyframes { keys } => {
+                let Some(payload) = crate::session::clipboard::KeyframeClipboard::capture(
+                    self.project().data(),
+                    &keys,
+                )?
+                else {
+                    return Ok(outcome(false));
+                };
+                self.transaction(|session| session.apply(Command::DeleteKeyframes { keys }))?;
+                self.clipboard = Some(Arc::new(payload));
+                self.item_clipboard = None;
+            }
+        }
+        self.invalidate_revision(false)?;
+        Ok(outcome(true))
     }
 
     fn set_ripple(&mut self, enabled: bool) -> Result<Outcome> {

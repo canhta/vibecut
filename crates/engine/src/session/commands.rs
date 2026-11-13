@@ -618,6 +618,20 @@ fn required_option<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
 ) -> std::result::Result<Option<T>, D::Error> {
     Option::<T>::deserialize(d)
 }
+/// What `clipboard.cut` copies and then removes: one item set or one keyframe set.
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CutTarget {
+    Items {
+        #[schemars(length(max = 1024))]
+        items: Vec<ItemId>,
+    },
+    Keyframes {
+        #[schemars(length(max = 4096))]
+        keys: Vec<KeyframeRef>,
+    },
+}
+
 commands! {
     AddCleanupEffect, "audio.add_cleanup_effect", "Add audio cleanup effect", Edit { item: ItemId, effect: project::CleanupEffect } => Audio, serde_json::json!({"item":5,"effect":{"id":1,"enabled":true,"wet_percent":100.0,"kind":{"kind":"hum","mains":"hz50","harmonics":5,"q":30.0}}}), available = UnlockedItem;
     ApplyLoudness, "audio.apply_loudness", "Apply measured loudness gains", Edit { gains: project::LoudnessGains } => Timeline, serde_json::json!({"gains":{"key":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"clip":[],"master_db":0.0}});
@@ -655,6 +669,7 @@ commands! {
     ChaptersGenerate, "chapters.generate", "Generate chapters", JobControl { language: captions::LanguageTag, max_chapters: usize } => Words, serde_json::json!({"language":"en","max_chapters":10}), grant = Agent;
     CopyItems, "clipboard.copy", "Copy selected items", SessionControl { #[schemars(length(max = 1024))] items: Vec<ItemId> } => Timeline, serde_json::json!({"items":[1]}), available = NoTransaction, grant = Agent;
     CopyKeyframes, "clipboard.copy_keyframes", "Copy selected keyframes", SessionControl { #[schemars(length(max = 4096))] keys: Vec<KeyframeRef> } => Timeline, serde_json::json!({"keys":[{"item":1,"path":"opacity","component":null,"time":0}]}), available = NoTransaction, grant = Agent;
+    CutSelection, "clipboard.cut", "Cut selected items or keyframes", SessionControl { target: CutTarget } => Timeline, serde_json::json!({"target":{"kind":"items","items":[1]}}), available = UnlockedItem, grant = Agent;
     PasteItems, "clipboard.paste", "Paste items", Edit { at: Tick, source: ItemPasteSource } => Timeline, serde_json::json!({"at":0,"source":{"kind":"payload","payload":{"version":1,"span":1000,"items":[{"trackKind":"video","trackIndex":0,"item":{"blendMode":"normal","masks":[],"effects":[],"animations":{},"id":0,"hidden":false,"source_asset":null,"source_range":{"start":0,"end":1000},"start":0,"retime":{"speed":1.0,"maintain_pitch":true,"reverse":false},"content":{"kind":"overlay","params":{"color":[255,0,0,255]}}}}]}}}), available = NoTransaction, grant = Agent;
     PasteKeyframes, "clipboard.paste_keyframes", "Paste keyframes", Edit { item: ItemId, at: Tick, source: KeyframePasteSource } => Timeline, serde_json::json!({"item":1,"at":12,"source":{"kind":"payload","payload":{"version":1,"origin":0,"params":[{"path":"opacity","param":{"kind":"value","channels":{"value":{"kind":"scalar","value":0.7},"keys":[{"time":0,"value":{"kind":"scalar","value":0.25},"segment":"linear","tangent":"flat","incoming":null,"outgoing":null}],"before":"hold","after":"hold"}}}]}}}), available = UnlockedItem, grant = Agent;
     ReadClipboard, "clipboard.read", "Read keyframe clipboard", Read {} => Timeline, serde_json::json!({}), available = NoTransaction, grant = Agent;

@@ -46,6 +46,7 @@
 | `subtitles.dismiss` — Dismiss caption notice | Edit | — | — | subtitle editor workflow |
 | `media.insert` — Add to timeline | File | — | `timeline.insert` | — |
 | `edit.copy` — Copy | Edit | Ctrl+C | — | clipboard |
+| `edit.cut` — Cut | Edit | Ctrl+X | — | clipboard |
 | `edit.paste` — Paste | Edit | Ctrl+V | — | clipboard |
 | `timeline.split` — Split | Edit | Ctrl+B | `split_at` | — |
 | `timeline.split_left` — Split and remove left | Edit | Q | `timeline.split_left` | — |

@@ -187,6 +187,32 @@ impl Session {
             && !keys.is_empty()
             && super::KeyframeClipboard::can_capture(self.project().data(), keys)
     }
+    /// Current admission for the desktop Cut action: a non-empty copyable target whose
+    /// items or keyframes all sit on unlocked tracks, with no open transaction.
+    pub fn can_cut(&self, target: &super::CutTarget) -> bool {
+        if self.transaction_active() {
+            return false;
+        }
+        let data = self.project().data();
+        let timeline = &data.scene().timeline;
+        let unlocked = |item: ItemId| {
+            timeline
+                .iter()
+                .any(|t| !t.locked && t.items.iter().any(|i| i.id == item))
+        };
+        match target {
+            super::CutTarget::Items { items } => {
+                !items.is_empty()
+                    && items.iter().all(|&item| unlocked(item))
+                    && super::ItemClipboard::can_capture(data, items)
+            }
+            super::CutTarget::Keyframes { keys } => {
+                !keys.is_empty()
+                    && keys.iter().all(|key| unlocked(key.item))
+                    && super::KeyframeClipboard::can_capture(data, keys)
+            }
+        }
+    }
     /// Current target/lock/value/time admission for desktop Paste; zero-key Params qualify.
     pub fn can_paste_keyframes(&self, item: ItemId, at: Tick) -> bool {
         if self.transaction_active() {

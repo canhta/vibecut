@@ -125,6 +125,7 @@ pub enum UiAction {
     RevealMedia,
     InsertText,
     Copy,
+    Cut,
     Paste,
     ApplyTextAnimation(engine::TextAnimationPreset),
     Subtitles,

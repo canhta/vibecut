@@ -32,7 +32,9 @@ snapshot with its track kind/index and group-relative offsets; Keyframes scope c
 the selected keys for one item. Paste needs one in-app entry: keyframes paste into the
 single selected item, items paste at the playhead on the relative track (falling back to
 the last track of that kind), overwrite overlapped ranges and advance the playhead to the
-pasted span's end. A mask-point scope is unavailable.
+pasted span's end. A mask-point scope is unavailable. Cut (Ctrl+X) is `clipboard.cut` on the
+same Items or Keyframes target: it enables only for a non-empty, unlocked selection and runs
+the copy and delete as one engine command, one undo step.
 
 The shared current eligibility check runs before draft flushing or selection/view writes,
 and before the timeline temporarily takes area state. Busy/save/transaction/inline edits,

@@ -17,10 +17,10 @@ mod commands;
 pub use command_facts::{Availability, GrantClass, Lifecycle};
 use commands::EditCommand;
 pub use commands::{
-    CaptionPreset, CaptionStyleApply, Command, CommandKind, CommandSpec, CreatedId, Effect,
-    EmphasisMode, Example, Fixture, ItemParamPatch, ItemPlacement, KeyframeRef, Move, NewItem,
-    Outcome, Placement, TextAnimationPreset, TrackPlacement, TrimEdge, declaration_order_error,
-    lifecycle, registry,
+    CaptionPreset, CaptionStyleApply, Command, CommandKind, CommandSpec, CreatedId, CutTarget,
+    Effect, EmphasisMode, Example, Fixture, ItemParamPatch, ItemPlacement, KeyframeRef, Move,
+    NewItem, Outcome, Placement, TextAnimationPreset, TrackPlacement, TrimEdge,
+    declaration_order_error, lifecycle, registry,
 };
 mod edit;
 pub(crate) mod filler;

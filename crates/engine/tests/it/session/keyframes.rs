@@ -1906,6 +1906,40 @@ fn clipboard_refusal_is_atomic_across_paths_locks_batches_and_stale_refs() {
         assert_eq!(s.revision(), rev);
         assert_eq!(s.history_len(), history);
     }
+    // Cut shares Copy's admission: an invalid target refuses before any delete or
+    // clipboard change, and a valid cut is one undo step that removes the keys.
+    for keys in [
+        vec![k.clone(), k.clone()],
+        vec![KeyframeRef {
+            time: frame(3),
+            ..k.clone()
+        }],
+    ] {
+        assert!(
+            s.apply(Command::CutSelection {
+                target: engine::CutTarget::Keyframes { keys },
+            })
+            .is_err()
+        );
+        assert_eq!(s.project(), &before);
+        assert_eq!(s.history_len(), history);
+    }
+    let mut cut = session();
+    let original = cut.project().clone();
+    let cut_history = cut.history_len();
+    cut.apply(Command::CutSelection {
+        target: engine::CutTarget::Keyframes {
+            keys: vec![k.clone()],
+        },
+    })
+    .unwrap();
+    assert_ne!(cut.project(), &original);
+    assert_eq!(cut.history_len().0, cut_history.0 + 1);
+    assert!(cut.clipboard_has_entry());
+    assert!(!cut.can_copy_keyframes(&[k.clone()]));
+    cut.undo().unwrap();
+    assert_eq!(cut.project(), &original);
+    assert!(cut.clipboard_has_entry(), "undo keeps the cut payload");
     let param = Param::Value(
         Channel::new(
             ParamValue::Scalar(0.7),

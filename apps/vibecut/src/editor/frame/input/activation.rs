@@ -24,7 +24,7 @@ impl Editor {
         if (id.starts_with("subtitles.style.")
             || id.starts_with("text.animation.")
             || id.starts_with("graphic.insert.")
-            || matches!(id, "edit.copy" | "edit.paste"))
+            || matches!(id, "edit.copy" | "edit.cut" | "edit.paste"))
             && !self.action_enabled(id)
         {
             return Err(Error::ActionDisabled(spec.id));
@@ -130,6 +130,18 @@ impl Editor {
                         return Err(Error::Invalid("clipboard scope"));
                     }
                 },
+                UiAction::Cut => {
+                    let scope = self.selection_scopes.active(self.session.selection());
+                    let target = self.cut_target().ok_or(Error::Invalid("clipboard scope"))?;
+                    self.session
+                        .apply(engine::Command::CutSelection { target })?;
+                    match scope {
+                        crate::editor::selection::SelectionScope::Keyframes => {
+                            self.selection_scopes.keyframes.clear();
+                        }
+                        _ => self.session.set_selection(Default::default())?,
+                    }
+                }
                 UiAction::Paste => {
                     let scope = self.selection_scopes.active(self.session.selection());
                     let mut pasted_items = false;

@@ -1247,6 +1247,7 @@ catalog! {
     ActionDistributeHorizontal { key: "action_distribute_horizontal", en: "Distribute horizontally", vi: "Phân bố ngang" },
     ActionDistributeVertical { key: "action_distribute_vertical", en: "Distribute vertically", vi: "Phân bố dọc" },
     ActionEditCopy { key: "action_edit_copy", en: "Copy", vi: "Sao chép" },
+    ActionEditCut { key: "action_edit_cut", en: "Cut", vi: "Cắt" },
     ActionEditPaste { key: "action_edit_paste", en: "Paste", vi: "Dán" },
     ActionEditRedo { key: "action_edit_redo", en: "Redo", vi: "Làm lại" },
     ActionEditUndo { key: "action_edit_undo", en: "Undo", vi: "Hoàn tác" },

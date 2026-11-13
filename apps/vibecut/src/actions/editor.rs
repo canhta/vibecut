@@ -332,6 +332,14 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         &["Ctrl+C"],
     ),
     ActionSpec::ui(
+        "edit.cut",
+        Text::ActionEditCut,
+        ActionCategory::Edit,
+        "clipboard",
+        UiAction::Cut,
+        &["Ctrl+X"],
+    ),
+    ActionSpec::ui(
         "edit.paste",
         Text::ActionEditPaste,
         ActionCategory::Edit,

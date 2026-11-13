@@ -608,6 +608,21 @@ Effect: `SessionControl`. Fixture: `Timeline`.
 }
 ```
 
+## `clipboard.cut` — Cut selected items or keyframes
+
+Effect: `SessionControl`. Fixture: `Timeline`.
+
+```json
+{
+  "target": {
+    "items": [
+      1
+    ],
+    "kind": "items"
+  }
+}
+```
+
 ## `clipboard.paste` — Paste items
 
 Effect: `Edit`. Fixture: `Timeline`.

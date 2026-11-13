@@ -5710,6 +5710,42 @@ fn clipboard_keys_menus_zero_key_target_refusal_undo_and_bilingual_captures() {
             h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
             h.run_steps(2);
             assert_eq!(h.state().session.project(), &items_before);
+            // Ctrl+X cuts the selected item as one undo step; Ctrl+V restores it at the
+            // playhead, and two undos return to the pre-cut project.
+            click_item(&mut h, source);
+            assert!(h.state().action_enabled("edit.cut"));
+            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::X);
+            h.run_steps(2);
+            assert!(
+                !h.state()
+                    .session
+                    .project()
+                    .data()
+                    .scene()
+                    .timeline
+                    .iter()
+                    .any(|t| t.items.iter().any(|i| i.id == source))
+            );
+            assert_eq!(h.state().session.history_len().0, item_history + 1);
+            assert!(h.state().session.clipboard_has_entry());
+            h.state_mut().dispatch(AppCommand::Seek(end)).unwrap();
+            h.run_steps(2);
+            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::V);
+            h.run_steps(2);
+            let restored = *h.state().selection().iter().next().unwrap();
+            assert_eq!(item(h.state(), restored).start, end);
+            assert_eq!(item(h.state(), restored).content, source_item.content);
+            let screenshot =
+                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-55-cut.png");
+            if let Some(parent) = screenshot.parent() {
+                std::fs::create_dir_all(parent).unwrap();
+            }
+            h.render().unwrap().save(&screenshot).unwrap();
+            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+            h.run_steps(2);
+            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+            h.run_steps(2);
+            assert_eq!(h.state().session.project(), &items_before);
             // The item context menu dispatches the same Paste command.
             click_item(&mut h, target);
             h.state_mut().dispatch(AppCommand::Seek(end)).unwrap();
@@ -5775,7 +5811,7 @@ fn clipboard_direct_actions_preserve_focused_property_drafts_and_text_paste_stay
     let before = h.state().session.project().clone();
     let rev = h.state().session.revision();
     let history = h.state().session.history_len();
-    for id in ["edit.copy", "edit.paste"] {
+    for id in ["edit.copy", "edit.cut", "edit.paste"] {
         assert!(!h.state().action_enabled(id));
         assert!(h.state_mut().activate(id).is_err());
     }

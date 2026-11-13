@@ -1921,6 +1921,85 @@ fn clipboard_items_round_trip_preserves_content_and_advances_the_playhead() {
     let bytes = project::encode(s.project(), false).unwrap();
     let loaded = Session::new(project::decode(&bytes).unwrap().project, 10).unwrap();
     assert!(!loaded.clipboard_has_entry(), "clipboard is not persisted");
+
+    // Cut copies the same payload and deletes the item in one undo step; a paste
+    // after the cut restores it at the playhead.
+    let mut s = session();
+    let before = s.project().clone();
+    let history = s.history_len();
+    let out = s
+        .apply(Command::CutSelection {
+            target: engine::CutTarget::Items {
+                items: vec![ItemId(10)],
+            },
+        })
+        .unwrap();
+    assert!(out.changed);
+    assert!(
+        s.project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .all(|t| t.items.iter().all(|i| i.id != ItemId(10)))
+    );
+    assert_eq!(s.history_len().0, history.0 + 1);
+    assert!(s.clipboard_has_entry());
+    let pasted = s
+        .apply(Command::PasteItems {
+            at: Tick(200),
+            source: ItemPasteSource::Stored,
+        })
+        .unwrap();
+    assert_eq!(get(&s, paste(&pasted)[0].0).start, Tick(200));
+    s.undo().unwrap();
+    assert!(s.clipboard_has_entry(), "undo keeps the cut payload");
+    s.undo().unwrap();
+    assert!(Arc::ptr_eq(&before, s.project()));
+    let bytes = project::encode(s.project(), false).unwrap();
+    let loaded = Session::new(project::decode(&bytes).unwrap().project, 10).unwrap();
+    assert_eq!(
+        loaded.project(),
+        s.project(),
+        "cut then undo round-trips the project"
+    );
+    assert!(!loaded.clipboard_has_entry(), "clipboard is not persisted");
+
+    // A locked track refuses the cut and leaves project, history and clipboard alone.
+    let mut s = session();
+    let track = s.project().data().scene().timeline.overlays[0].id;
+    s.apply(Command::SetTrackLocked {
+        track,
+        locked: true,
+    })
+    .unwrap();
+    let before = s.project().clone();
+    let history = s.history_len();
+    assert!(
+        s.apply(Command::CutSelection {
+            target: engine::CutTarget::Items {
+                items: vec![ItemId(10)],
+            },
+        })
+        .is_err()
+    );
+    assert!(Arc::ptr_eq(&before, s.project()));
+    assert_eq!(s.history_len(), history);
+    assert!(!s.clipboard_has_entry());
+
+    // An empty selection is a no-op.
+    let mut s = session();
+    let before = s.project().clone();
+    let history = s.history_len();
+    assert!(
+        !s.apply(Command::CutSelection {
+            target: engine::CutTarget::Items { items: vec![] },
+        })
+        .unwrap()
+        .changed
+    );
+    assert!(Arc::ptr_eq(&before, s.project()));
+    assert_eq!(s.history_len(), history);
 }
 
 #[test]
