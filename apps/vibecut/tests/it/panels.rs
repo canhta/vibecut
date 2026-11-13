@@ -4507,6 +4507,29 @@ fn freeform_mask_path_tile_edits_points_and_publishes_one_step_per_drag() {
     point_target(&mut harness, "preview.mask.point.2", egui::Modifiers::SHIFT);
     assert_eq!(harness.state().selection_scopes.mask_points.len(), 2);
 
+    // A marquee over empty canvas replaces the scope with the anchors its box
+    // covers: anchors 1 and 2 (right and bottom), with 15 px of slack.
+    let (right, bottom) = (
+        widget_rect(&harness, "preview.mask.point.1").center(),
+        widget_rect(&harness, "preview.mask.point.2").center(),
+    );
+    pointer_drag(
+        &mut harness,
+        egui::pos2(right.x.max(bottom.x) + 15.0, right.y.max(bottom.y) + 15.0),
+        egui::pos2(right.x.min(bottom.x) - 15.0, right.y.min(bottom.y) - 15.0),
+    );
+    assert_eq!(
+        harness
+            .state()
+            .selection_scopes
+            .mask_points
+            .iter()
+            .map(|point| point.point)
+            .collect::<Vec<_>>(),
+        vec![1, 2],
+        "the marquee replaces the Shift-built scope with the anchors it covers"
+    );
+
     // One completed drag is one undo step, even through many pointer moves.
     let before = harness.state().session.history_len();
     let start = widget_rect(&harness, "preview.mask.point.1").center();

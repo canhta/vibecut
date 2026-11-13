@@ -27,7 +27,10 @@ selected anchors' in/out tangents are drawn through `render::viewport::MaskGeome
 the same mask-box, item and viewport affine that draws the contour, so handles stay on
 the rendered curve under mask and item rotation and scale. Clicking an anchor selects
 it, Shift toggles it, dragging a selected anchor moves the canonical point set by one
-mask-local delta and dragging a tangent changes only that side. Clicking the curve
+mask-local delta and dragging a tangent changes only that side. A press on empty canvas
+that releases without moving clears the point scope, or the item selection when no point
+is selected; one that moves draws a marquee and, on release, selects the anchors inside
+its box (Shift adds them to the scope). Clicking the curve
 within 6 logical pixels inserts one anchor at the nearest cubic parameter; Delete
 removes the selected anchors through `masks.remove_point` as one undo step and never
 deletes the item. Escape cancels a live drag, then clears the point scope, then falls

@@ -310,6 +310,38 @@ impl Editor {
         self.properties.clear_drafts();
         self.desk().select();
     }
+    /// Replace the point scope with the anchors a marquee covered (Shift adds
+    /// to it). The point scope only ever holds one mask of one item.
+    pub(in crate::editor) fn select_mask_points(
+        &mut self,
+        item: ItemId,
+        mask: &str,
+        points: &[usize],
+        toggle: bool,
+    ) {
+        if toggle {
+            self.selection_scopes
+                .mask_points
+                .retain(|target| target.item == item && target.mask == mask);
+        } else {
+            self.selection_scopes.mask_points.clear();
+        }
+        for point in points {
+            self.selection_scopes
+                .mask_points
+                .insert(crate::selection::MaskPointSelection {
+                    item,
+                    mask: mask.to_owned(),
+                    point: *point,
+                });
+        }
+        if self.selection.len() != 1 || !self.selection.contains(&item) {
+            self.selection.clear();
+            self.selection.insert(item);
+        }
+        self.properties.clear_drafts();
+        self.desk().select();
+    }
     /// Drop the mask-point scope and keep the item selected.
     pub(in crate::editor) fn clear_mask_points(&mut self) {
         if self.selection_scopes.mask_points.is_empty() {

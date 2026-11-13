@@ -51,6 +51,13 @@ pub(crate) enum Action {
     },
     /// Leave the mask-point scope without changing the item selection.
     MaskPointClear,
+    /// Select the anchors a marquee covered, adding to the scope when `toggle`.
+    MaskPointMarquee {
+        item: ItemId,
+        mask: String,
+        points: Vec<usize>,
+        toggle: bool,
+    },
     /// Stage one absolute mask path candidate from a handle drag.
     MaskPathPreview {
         item: ItemId,

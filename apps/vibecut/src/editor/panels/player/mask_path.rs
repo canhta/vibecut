@@ -18,17 +18,31 @@ use time::Tick;
 const SEGMENT_HIT: f64 = 6.0;
 /// Samples per cubic when locating the nearest segment parameter.
 const SAMPLES: usize = 64;
+/// Pointer travel before a press on empty canvas becomes a marquee; the same
+/// threshold as the media marquee.
+const MARQUEE_MOVE: f64 = 4.0;
 
 #[derive(Default)]
 pub(in crate::editor) struct State {
     drag: Option<Drag>,
+    marquee: Option<Marquee>,
 }
 
 impl State {
     /// Abandon a mask gesture; the caller discards its staged candidate.
     pub(in crate::editor) fn cancel(&mut self) -> bool {
-        self.drag.take().is_some()
+        let marquee = self.marquee.take().is_some();
+        self.drag.take().is_some() || marquee
     }
+}
+
+/// A press on empty canvas inside the path target: anchors inside the box
+/// become the point selection when released after moving.
+struct Marquee {
+    origin: [f64; 2],
+    current: [f64; 2],
+    toggle: bool,
+    moved: bool,
 }
 
 struct Target {
@@ -103,6 +117,7 @@ pub(super) fn show(
         .and_then(|item| target(cx.staged_project(), &renderer(cx)?, item, at))
     else {
         state.drag = None;
+        state.marquee = None;
         return false;
     };
     let pointer = ui.input(|i| i.pointer.interact_pos());
@@ -143,6 +158,31 @@ pub(super) fn show(
             paint(ui, &target, viewport, &selected, cx.dark, Some(pointer));
         } else {
             paint(ui, &target, viewport, &selected, cx.dark, None);
+        }
+        return true;
+    }
+
+    if let Some(mut marquee) = state.marquee.take() {
+        if down {
+            if let Some(pointer) = pointer {
+                marquee.current = [f64::from(pointer.x), f64::from(pointer.y)];
+                marquee.moved |= distance(marquee.origin, marquee.current) > MARQUEE_MOVE;
+            }
+            paint(ui, &target, viewport, &selected, cx.dark, None);
+            paint_marquee(ui, frame, &marquee, cx.dark);
+            state.marquee = Some(marquee);
+        } else if marquee.moved {
+            actions.push(Action::MaskPointMarquee {
+                item: target.item,
+                mask: target.mask.clone(),
+                points: marquee_points(&target, viewport, &marquee),
+                toggle: marquee.toggle,
+            });
+        } else if !cx.mask_points.is_empty() {
+            actions.push(Action::MaskPointClear);
+        } else {
+            // A plain click on empty canvas keeps the item-level clear.
+            actions.push(Action::ClearSelection);
         }
         return true;
     }
@@ -243,11 +283,55 @@ pub(super) fn show(
         });
         return true;
     }
-    if !cx.mask_points.is_empty() && frame.contains(pointer) {
-        actions.push(Action::MaskPointClear);
+    if frame.contains(pointer) {
+        // Empty canvas inside the frame: a release without travel clears the
+        // point scope, a drag marquees the anchors it covers.
+        state.marquee = Some(Marquee {
+            origin: screen,
+            current: screen,
+            toggle: shift,
+            moved: false,
+        });
         return true;
     }
     false
+}
+
+fn distance(a: [f64; 2], b: [f64; 2]) -> f64 {
+    (a[0] - b[0]).hypot(a[1] - b[1])
+}
+
+/// Anchors whose screen position lies inside the marquee box.
+fn marquee_points(target: &Target, viewport: &Viewport, marquee: &Marquee) -> Vec<usize> {
+    let [a, b] = [marquee.origin, marquee.current];
+    let (min_x, max_x) = (a[0].min(b[0]), a[0].max(b[0]));
+    let (min_y, max_y) = (a[1].min(b[1]), a[1].max(b[1]));
+    target
+        .path
+        .vertices
+        .iter()
+        .enumerate()
+        .filter_map(|(index, vertex)| {
+            let [x, y] = target.geometry.point(viewport, vertex.p).ok()?;
+            (min_x <= x && x <= max_x && min_y <= y && y <= max_y).then_some(index)
+        })
+        .collect()
+}
+
+fn paint_marquee(ui: &egui::Ui, frame: egui::Rect, marquee: &Marquee, dark: bool) {
+    let rect = egui::Rect::from_two_pos(
+        egui::pos2(marquee.origin[0] as f32, marquee.origin[1] as f32),
+        egui::pos2(marquee.current[0] as f32, marquee.current[1] as f32),
+    );
+    let painter = ui.painter().with_clip_rect(frame);
+    let accent = kit::accent(dark);
+    painter.rect_filled(rect, 0.0, accent.gamma_multiply(0.15));
+    painter.rect_stroke(
+        rect,
+        0.0,
+        egui::Stroke::new(1.0, accent),
+        egui::StrokeKind::Inside,
+    );
 }
 
 fn renderer<'a>(cx: &'a Context<'_>) -> Option<render::Renderer<'a>> {

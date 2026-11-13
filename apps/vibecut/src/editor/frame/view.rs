@@ -333,6 +333,12 @@ impl Editor {
                     self.select_mask_point(target, toggle)
                 }
                 Action::MaskPointClear => self.clear_mask_points(),
+                Action::MaskPointMarquee {
+                    item,
+                    mask,
+                    points,
+                    toggle,
+                } => self.select_mask_points(item, &mask, &points, toggle),
                 Action::MaskPathPreview { item, mask, path } => {
                     self.preview_mask_path(item, &mask, &path)
                 }
