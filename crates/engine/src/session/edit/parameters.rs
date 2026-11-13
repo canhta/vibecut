@@ -7,7 +7,7 @@ use time::Tick;
 
 /// Canvas and source pixel sizes a fit change needs to record the computed fit
 /// into a transform; read once before the candidate is borrowed for writing.
-pub(super) struct FitSizes {
+pub(in crate::session) struct FitSizes {
     canvas: [f64; 2],
     sources: BTreeMap<ItemId, [f64; 2]>,
 }
@@ -83,262 +83,41 @@ fn enter_manual(target: &mut Item, sizes: &FitSizes) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn apply_patch(
-    target: &mut Item,
-    patch: &crate::ItemParamPatch,
-    copied_text_bytes: &mut usize,
-    sizes: &FitSizes,
-) -> Result<()> {
-    if let crate::ItemParamPatch::Fit(mode) = patch {
-        if *mode == project::FitMode::Manual {
-            enter_manual(target, sizes)?;
-        } else if let ItemParams::Video(params) = &mut target.content {
-            params.fit = *mode;
+/// What applying a patch to one item needs beyond the item: the fit sizes read before the
+/// candidate was borrowed, and the running total of text a copy brings in.
+pub(in crate::session) struct ApplyCx<'a> {
+    sizes: &'a FitSizes,
+    copied_text_bytes: &'a mut usize,
+}
+impl<'a> ApplyCx<'a> {
+    fn new(sizes: &'a FitSizes, copied_text_bytes: &'a mut usize) -> Self {
+        Self {
+            sizes,
+            copied_text_bytes,
         }
-        return Ok(());
     }
-    if let Some((field, value)) = patch.transform() {
-        target.animations.set(
-            project::AnimationPath::from(field.builtin()),
-            project::Param::new(project::ParamValue::Scalar(value))?,
-        )?;
-        return Ok(());
+    /// Sets a video item's fit; Manual first records the computed fit into its scale.
+    pub(in crate::session) fn fit(&self, target: &mut Item, mode: project::FitMode) -> Result<()> {
+        if mode == project::FitMode::Manual {
+            enter_manual(target, self.sizes)?;
+        } else if let ItemParams::Video(params) = &mut target.content {
+            params.fit = mode;
+        }
+        Ok(())
     }
-    if let crate::ItemParamPatch::TextContent(value) | crate::ItemParamPatch::TextFont(value) =
-        patch
-    {
-        *copied_text_bytes = copied_text_bytes
-            .checked_add(value.as_str().len())
+    /// Counts text bytes against the per-session copy limit.
+    pub(in crate::session) fn charge_text(&mut self, bytes: usize) -> Result<()> {
+        *self.copied_text_bytes = self
+            .copied_text_bytes
+            .checked_add(bytes)
             .filter(|bytes| *bytes <= crate::session::wire::MAX_TEXT_BYTES)
             .ok_or(EditError::Control(
                 crate::session::wire::ControlError::Limit,
             ))?;
+        Ok(())
     }
-    match patch {
-        crate::ItemParamPatch::BlendMode(mode) => target.blend_mode = *mode,
-        crate::ItemParamPatch::Opacity(value) => {
-            target.animations.set(
-                project::AnimationPath::from(project::BuiltinPath::Opacity),
-                project::Param::new(project::ParamValue::Scalar(*value))?,
-            )?;
-        }
-        crate::ItemParamPatch::AudioGain(v) => {
-            match &mut target.content {
-                ItemParams::Audio(p) => p.volume = *v,
-                ItemParams::Video(p) => p.volume = *v,
-                _ => {}
-            }
-            target.animations.set(
-                project::AnimationPath::from(project::BuiltinPath::Volume),
-                project::Param::new(project::ParamValue::Scalar(f64::from(*v)))?,
-            )?;
-        }
-        crate::ItemParamPatch::AudioMuted(v) => {
-            match &mut target.content {
-                ItemParams::Audio(p) => p.muted = *v,
-                ItemParams::Video(p) => p.muted = *v,
-                _ => {}
-            }
-            target.animations.set(
-                project::AnimationPath::from(project::BuiltinPath::Muted),
-                project::Param::new(project::ParamValue::Bool(*v))?,
-            )?;
-        }
-        crate::ItemParamPatch::Crop(crop) => {
-            if let ItemParams::Video(p) = &mut target.content {
-                p.crop = *crop;
-            }
-        }
-        crate::ItemParamPatch::ReduceNoise(on) => {
-            if let ItemParams::Video(p) = &mut target.content {
-                p.reduce_noise = *on;
-            }
-        }
-        crate::ItemParamPatch::TextContent(v) => {
-            if let ItemParams::Text(p) = &mut target.content {
-                p.content = v.clone();
-            }
-        }
-        crate::ItemParamPatch::TextFont(v) => {
-            if let ItemParams::Text(p) = &mut target.content {
-                p.font = v.clone();
-            }
-        }
-        crate::ItemParamPatch::TextWeight(v) => {
-            if let ItemParams::Text(p) = &mut target.content {
-                p.weight = *v;
-            }
-        }
-        crate::ItemParamPatch::TextItalic(v) => {
-            if let ItemParams::Text(p) = &mut target.content {
-                p.italic = *v;
-            }
-        }
-        crate::ItemParamPatch::TextLetterSpacing(v) => {
-            if let ItemParams::Text(p) = &mut target.content {
-                p.letter_spacing = *v;
-            }
-        }
-        crate::ItemParamPatch::TextLineHeight(v) => {
-            if let ItemParams::Text(p) = &mut target.content {
-                p.line_height = *v;
-            }
-        }
-        crate::ItemParamPatch::TextBackground(v) => {
-            if let ItemParams::Text(p) = &mut target.content {
-                p.background = v.clone();
-            }
-        }
-        crate::ItemParamPatch::TextBackgroundColor(value) => {
-            if let ItemParams::Text(p) = &mut target.content {
-                p.background.get_or_insert_with(Default::default).color = *value;
-            }
-        }
-        crate::ItemParamPatch::TextAlign(v) => {
-            if let ItemParams::Text(p) = &mut target.content {
-                p.align = *v;
-            }
-        }
-        crate::ItemParamPatch::TextDecoration(v) => {
-            if let ItemParams::Text(p) = &mut target.content {
-                p.decoration = *v;
-            }
-        }
-        crate::ItemParamPatch::TextBackgroundPaddingX(v) => {
-            if let ItemParams::Text(p) = &mut target.content {
-                p.background.get_or_insert_with(Default::default).padding_x = *v;
-            }
-        }
-        crate::ItemParamPatch::TextBackgroundPaddingY(v) => {
-            if let ItemParams::Text(p) = &mut target.content {
-                p.background.get_or_insert_with(Default::default).padding_y = *v;
-            }
-        }
-        crate::ItemParamPatch::TextBackgroundOffsetX(v) => {
-            if let ItemParams::Text(p) = &mut target.content {
-                p.background.get_or_insert_with(Default::default).offset_x = *v;
-            }
-        }
-        crate::ItemParamPatch::TextBackgroundOffsetY(v) => {
-            if let ItemParams::Text(p) = &mut target.content {
-                p.background.get_or_insert_with(Default::default).offset_y = *v;
-            }
-        }
-        crate::ItemParamPatch::TextBackgroundCornerRadius(v) => {
-            if let ItemParams::Text(p) = &mut target.content {
-                p.background.get_or_insert_with(Default::default).radius = *v;
-            }
-        }
-        crate::ItemParamPatch::TextStroke(v) => {
-            if let ItemParams::Text(p) = &mut target.content {
-                p.stroke = v.clone();
-            }
-        }
-        crate::ItemParamPatch::TextShadow(v) => {
-            if let ItemParams::Text(p) = &mut target.content {
-                p.shadow = v.clone();
-            }
-        }
-        crate::ItemParamPatch::TextGlow(v) => {
-            if let ItemParams::Text(p) = &mut target.content {
-                p.glow = *v;
-            }
-        }
-        crate::ItemParamPatch::TextSize(v) => {
-            if let ItemParams::Text(p) = &mut target.content {
-                p.font_size = *v;
-            }
-        }
-        crate::ItemParamPatch::TextColor(v) => {
-            if let ItemParams::Text(p) = &mut target.content {
-                p.color = *v;
-            }
-        }
-        crate::ItemParamPatch::GraphicFill(v) => match &mut target.content {
-            ItemParams::Overlay(p) => p.color = *v,
-            ItemParams::Graphic(
-                project::GraphicParams::Rectangle { fill, .. }
-                | project::GraphicParams::Ellipse { fill, .. }
-                | project::GraphicParams::Polygon { fill, .. }
-                | project::GraphicParams::Star { fill, .. },
-            ) => *fill = *v,
-            _ => {}
-        },
-        crate::ItemParamPatch::GraphicStroke(v) => {
-            if let ItemParams::Graphic(
-                project::GraphicParams::Rectangle { stroke, .. }
-                | project::GraphicParams::Ellipse { stroke, .. }
-                | project::GraphicParams::Polygon { stroke, .. }
-                | project::GraphicParams::Star { stroke, .. },
-            ) = &mut target.content
-            {
-                *stroke = *v;
-                return Ok(());
-            }
-            let [r, g, b, a] = v.0;
-            target.animations.set(
-                project::AnimationPath::new("params.strokeColor")?,
-                project::Param::new(project::ParamValue::Text(
-                    format!("#{r:02X}{g:02X}{b:02X}{a:02X}").into(),
-                ))?,
-            )?;
-        }
-        crate::ItemParamPatch::GraphicStrokeWidth(v) => {
-            if let ItemParams::Graphic(
-                project::GraphicParams::Rectangle { stroke_width, .. }
-                | project::GraphicParams::Ellipse { stroke_width, .. }
-                | project::GraphicParams::Polygon { stroke_width, .. }
-                | project::GraphicParams::Star { stroke_width, .. },
-            ) = &mut target.content
-            {
-                *stroke_width = *v;
-            }
-        }
-        crate::ItemParamPatch::GraphicStrokeAlign(v) => {
-            if let ItemParams::Graphic(
-                project::GraphicParams::Rectangle { stroke_align, .. }
-                | project::GraphicParams::Ellipse { stroke_align, .. }
-                | project::GraphicParams::Polygon { stroke_align, .. }
-                | project::GraphicParams::Star { stroke_align, .. },
-            ) = &mut target.content
-            {
-                *stroke_align = *v;
-            }
-        }
-        crate::ItemParamPatch::GraphicCornerRadius(v) => {
-            if let ItemParams::Graphic(
-                project::GraphicParams::Rectangle { corner_radius, .. }
-                | project::GraphicParams::Polygon { corner_radius, .. },
-            ) = &mut target.content
-            {
-                *corner_radius = *v;
-            }
-        }
-        crate::ItemParamPatch::GraphicSides(v) => {
-            if let ItemParams::Graphic(project::GraphicParams::Polygon { sides, .. }) =
-                &mut target.content
-            {
-                *sides = *v;
-            }
-        }
-        crate::ItemParamPatch::GraphicPoints(v) => {
-            if let ItemParams::Graphic(project::GraphicParams::Star { points, .. }) =
-                &mut target.content
-            {
-                *points = *v;
-            }
-        }
-        crate::ItemParamPatch::GraphicDepth(v) => {
-            if let ItemParams::Graphic(project::GraphicParams::Star { depth, .. }) =
-                &mut target.content
-            {
-                *depth = *v;
-            }
-        }
-        _ => return Err(EditError::Invalid("item patch")),
-    }
-    Ok(())
 }
+
 pub(super) fn execute_set_item_param(
     mut data: ProjectData,
     id: ItemId,
@@ -363,7 +142,7 @@ pub(super) fn execute_set_item_field(
     if !patch.compatible(&target.content) {
         return Err(EditError::Invalid("incompatible item parameter"));
     }
-    apply_patch(target, &patch, copied_text_bytes, &sizes)?;
+    patch.apply(target, &mut ApplyCx::new(&sizes, copied_text_bytes))?;
 
     Ok(data)
 }
@@ -382,6 +161,7 @@ pub(super) fn execute_set_item_param_many(
         return Err(EditError::Invalid("duplicate item selection"));
     }
     let sizes = FitSizes::new(&data, &patch, &items);
+    let mut cx = ApplyCx::new(&sizes, copied_text_bytes);
     // Walk the candidate once: large selections must not rescan the timeline per ID.
     for track in data.scene_mut().timeline.iter_mut() {
         for target in &mut track.items {
@@ -391,7 +171,7 @@ pub(super) fn execute_set_item_param_many(
             if track.locked {
                 return Err(EditError::Locked(track.id));
             }
-            apply_patch(target, &patch, copied_text_bytes, &sizes)?;
+            patch.apply(target, &mut cx)?;
         }
     }
     if let Some(id) = remaining.into_iter().next() {

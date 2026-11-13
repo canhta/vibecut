@@ -6,11 +6,12 @@ pub(crate) use session::transitions;
 pub use session::wire::{Failure, JobFailurePolicy};
 pub use session::{
     AnimationPreset, AnimationSlot, Availability, CaptionPreset, CaptionStyleApply,
-    ChapterSidecars, ClipAnimations, Command, CommandKind, CommandSpec, CreatedId, CueId,
-    CutTarget, DEFAULT_BOOKMARK_COLOR, Effect, EmphasisMode, Example, Fixture, GrantClass,
-    ItemClipboard, ItemParamPatch, ItemPasteSource, ItemPlacement, KeyframeClipboard,
-    KeyframePasteSource, KeyframeRef, Lifecycle, Move, NewItem, Outcome, Placement, TrackPlacement,
-    TranscriptCue, TranscriptView, TranscriptWord, TrimEdge, WordId, declaration_order_error,
+    ChapterSidecars, ClipAnimations, CollectionLimit, Command, CommandKind, CommandSpec, CreatedId,
+    CueId, CutTarget, DEFAULT_BOOKMARK_COLOR, Effect, EmphasisMode, Example, Fixture, GrantClass,
+    ITEM_PARAMS, ItemClipboard, ItemParam, ItemParamPatch, ItemPasteSource, ItemPlacement,
+    KeyframeClipboard, KeyframePasteSource, KeyframeRef, Lifecycle, Move, NewItem, Outcome,
+    ParamBounds, ParamParseError, ParamTarget, ParamUnit, Placement, TrackPlacement, TranscriptCue,
+    TranscriptView, TranscriptWord, TrimEdge, WordId, declaration_order_error, item_param,
     lifecycle, registry,
 };
 pub use session::{

@@ -9,5 +9,6 @@
 )]
 
 pub mod fixture;
+pub mod item;
 pub mod oracle;
 pub mod source;

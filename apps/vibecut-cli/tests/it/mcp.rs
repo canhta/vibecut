@@ -375,6 +375,14 @@ fn caption_style_command_run_custom_values_stale_revision_and_replay() {
     std::fs::write(&path, project::encode(session.project(), true).unwrap()).unwrap();
     let mut client = Client::start(&["mcp".as_ref(), path.as_os_str(), "--no-save".as_ref()]);
     let initial = client.call("inspect", json!({}), None, None);
+    // Nothing to undo: the admission step refuses before dispatch, as it does for the UI.
+    let unavailable = client.call(
+        "undo",
+        json!({}),
+        Some(&initial["rev_after"]),
+        Some("undo-empty"),
+    );
+    assert_eq!(unavailable["value"]["value"], "refused", "{unavailable}");
     let highlight = client.call(
         "captions.set_word_highlight",
         json!({"item":item,"enabled":true}),
@@ -822,8 +830,8 @@ fn full_tool_and_command_pages_cover_the_live_registry_without_schema_drift() {
         let result = &page["result"]["structuredContent"];
         assert!(result.get("error").is_none(), "{result}");
         entries.extend(result["entries"].as_array().unwrap().iter().cloned());
-        // Each page carries the one result schema every command shares.
-        assert_eq!(result["output_schema"], *engine::control::output_schema());
+        // Each entry carries its own narrowed output schema; a page repeats no union.
+        assert!(result.get("output_schema").is_none());
         if result["next_cursor"].is_null() {
             break;
         }
@@ -842,7 +850,7 @@ fn full_tool_and_command_pages_cover_the_live_registry_without_schema_drift() {
         assert_eq!(spec["effect"], "edit");
         assert!(spec.get("curated").is_none());
         assert_eq!(spec["params_schema"]["additionalProperties"], false);
-        assert!(spec.get("output_schema").is_none());
+        assert_eq!(spec["output_schema"]["properties"]["kind"]["const"], "edit");
     }
     assert!(
         engine::control::output_schema()["$defs"]["ProjectData"]["properties"]

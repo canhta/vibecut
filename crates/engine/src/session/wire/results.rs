@@ -19,9 +19,8 @@ pub enum ControlResult {
     Inspection {
         project: Box<project::ProjectData>,
     },
-    /// `output_schema` is the schema of this enum, shared by every entry.
+    /// Every entry carries its own params and output schemas.
     Catalog {
-        output_schema: serde_json::Value,
         entries: Vec<CommandSpec>,
     },
     Providers {
@@ -113,35 +112,96 @@ pub struct ProviderView {
     pub languages: Vec<String>,
     pub target_languages: Vec<String>,
 }
+/// The variant a command declares and a result carries, named by the `kind` tag it serializes under.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ResultKind {
+    Clipboard,
+    Edit,
+    Inspection,
+    Catalog,
+    Providers,
+    Fonts,
+    Font,
+    BrandKit,
+    SoundSearch,
+    SoundSaved,
+    SoundUnsaved,
+    StickerSearch,
+    MusicSearch,
+    MusicSaved,
+    MusicUnsaved,
+    Fillers,
+    ChapterSidecars,
+    JobAccepted,
+    ClipExports,
+    Job,
+    Snapshot,
+    CancelRequested,
+    Published,
+}
+impl ResultKind {
+    /// The `kind` tag of this variant on the wire.
+    pub const fn tag(self) -> &'static str {
+        match self {
+            Self::Clipboard => "clipboard",
+            Self::Edit => "edit",
+            Self::Inspection => "inspection",
+            Self::Catalog => "catalog",
+            Self::Providers => "providers",
+            Self::Fonts => "fonts",
+            Self::Font => "font",
+            Self::BrandKit => "brand_kit",
+            Self::SoundSearch => "sound_search",
+            Self::SoundSaved => "sound_saved",
+            Self::SoundUnsaved => "sound_unsaved",
+            Self::StickerSearch => "sticker_search",
+            Self::MusicSearch => "music_search",
+            Self::MusicSaved => "music_saved",
+            Self::MusicUnsaved => "music_unsaved",
+            Self::Fillers => "fillers",
+            Self::ChapterSidecars => "chapter_sidecars",
+            Self::JobAccepted => "job_accepted",
+            Self::ClipExports => "clip_exports",
+            Self::Job => "job",
+            Self::Snapshot => "snapshot",
+            Self::CancelRequested => "cancel_requested",
+            Self::Published => "published",
+        }
+    }
+}
+impl ControlResult {
+    pub fn kind(&self) -> ResultKind {
+        match self {
+            Self::Clipboard { .. } => ResultKind::Clipboard,
+            Self::Edit { .. } => ResultKind::Edit,
+            Self::Inspection { .. } => ResultKind::Inspection,
+            Self::Catalog { .. } => ResultKind::Catalog,
+            Self::Providers { .. } => ResultKind::Providers,
+            Self::Fonts { .. } => ResultKind::Fonts,
+            Self::Font { .. } => ResultKind::Font,
+            Self::BrandKit { .. } => ResultKind::BrandKit,
+            Self::SoundSearch { .. } => ResultKind::SoundSearch,
+            Self::SoundSaved { .. } => ResultKind::SoundSaved,
+            Self::SoundUnsaved { .. } => ResultKind::SoundUnsaved,
+            Self::StickerSearch { .. } => ResultKind::StickerSearch,
+            Self::MusicSearch { .. } => ResultKind::MusicSearch,
+            Self::MusicSaved { .. } => ResultKind::MusicSaved,
+            Self::MusicUnsaved { .. } => ResultKind::MusicUnsaved,
+            Self::Fillers { .. } => ResultKind::Fillers,
+            Self::ChapterSidecars { .. } => ResultKind::ChapterSidecars,
+            Self::JobAccepted { .. } => ResultKind::JobAccepted,
+            Self::ClipExports { .. } => ResultKind::ClipExports,
+            Self::Job { .. } => ResultKind::Job,
+            Self::Snapshot { .. } => ResultKind::Snapshot,
+            Self::CancelRequested { .. } => ResultKind::CancelRequested,
+            Self::Published { .. } => ResultKind::Published,
+        }
+    }
+}
 impl std::fmt::Debug for ControlResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let kind = match self {
-            Self::Clipboard { .. } => "clipboard",
-            Self::Edit { .. } => "edit",
-            Self::Inspection { .. } => "inspection",
-            Self::Catalog { .. } => "catalog",
-            Self::Providers { .. } => "providers",
-            Self::Fonts { .. } => "fonts",
-            Self::Font { .. } => "font",
-            Self::BrandKit { .. } => "brand_kit",
-            Self::SoundSearch { .. } => "sound_search",
-            Self::SoundSaved { .. } => "sound_saved",
-            Self::SoundUnsaved { .. } => "sound_unsaved",
-            Self::StickerSearch { .. } => "sticker_search",
-            Self::MusicSearch { .. } => "music_search",
-            Self::MusicSaved { .. } => "music_saved",
-            Self::MusicUnsaved { .. } => "music_unsaved",
-            Self::Fillers { .. } => "fillers",
-            Self::ChapterSidecars { .. } => "chapter_sidecars",
-            Self::JobAccepted { .. } => "job_accepted",
-            Self::ClipExports { .. } => "clip_exports",
-            Self::Job { .. } => "job",
-            Self::Snapshot { .. } => "snapshot",
-            Self::CancelRequested { .. } => "cancel_requested",
-            Self::Published { .. } => "published",
-        };
         f.debug_struct("ControlResult")
-            .field("kind", &kind)
+            .field("kind", &self.kind().tag())
             .finish_non_exhaustive()
     }
 }

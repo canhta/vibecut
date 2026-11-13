@@ -25,17 +25,9 @@ fn generated_catalog_is_deterministic_and_matches_checked_in_output() {
         .keys()
         .cloned()
         .collect::<Vec<_>>();
-    assert_eq!(
-        keys,
-        [
-            "api_version",
-            "entries",
-            "limits",
-            "output_schema",
-            "registry_hash"
-        ]
-    );
-    assert_eq!(value["output_schema"], *engine::control::output_schema());
+    assert_eq!(keys, ["api_version", "entries", "limits", "registry_hash"]);
+    // Each entry carries its own narrowed output schema; the union is not repeated.
+    assert!(value.get("output_schema").is_none());
     assert_eq!(
         value["entries"],
         serde_json::to_value(engine::registry()).unwrap()

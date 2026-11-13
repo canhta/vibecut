@@ -490,21 +490,16 @@ fn track_order_half_opacity_and_half_open_frames() {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![project::Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: project::ItemId(1),
-            source_asset: None,
-            source_range: TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
-            start: Tick::ZERO,
-            content: project::ItemParams::Overlay(project::OverlayParams {
-                color: project::Color([0, 0, 255, 128]),
-            }),
-        }],
+        items: vec![
+            testkit::item::item(
+                project::ItemId(1),
+                project::ItemParams::Overlay(project::OverlayParams {
+                    color: project::Color([0, 0, 255, 128]),
+                }),
+            )
+            .source(TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap())
+            .build(),
+        ],
     });
     let project = project::Project::new(data).unwrap();
     let hooks = Hooks::default();
@@ -554,21 +549,18 @@ fn animated_overlay_project(
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![project::Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations,
-            id: project::ItemId(0),
-            source_asset: None,
-            source_range: time::SourceRange::new(Tick::ZERO, duration).unwrap(),
-            start,
-            content: project::ItemParams::Overlay(project::OverlayParams {
-                color: project::Color([255, 255, 255, 255]),
-            }),
-        }],
+        items: vec![
+            testkit::item::item(
+                project::ItemId(0),
+                project::ItemParams::Overlay(project::OverlayParams {
+                    color: project::Color([255, 255, 255, 255]),
+                }),
+            )
+            .source(time::SourceRange::new(Tick::ZERO, duration).unwrap())
+            .start(start)
+            .animations(animations)
+            .build(),
+        ],
     });
     project::Project::new(data).unwrap()
 }
@@ -651,19 +643,11 @@ fn text_item_font_background_and_position_reach_the_compositor() {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![project::Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: project::ItemId(1),
-            source_asset: None,
-            source_range: time::SourceRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
-            start: Tick::ZERO,
-            content: project::ItemParams::Text(text.clone()),
-        }],
+        items: vec![
+            testkit::item::item(project::ItemId(1), project::ItemParams::Text(text.clone()))
+                .source(time::SourceRange::new(Tick::ZERO, tick(1, 1)).unwrap())
+                .build(),
+        ],
     });
     let baseline = project::Project::new(data).unwrap();
     let hooks = Hooks::default();
@@ -782,19 +766,11 @@ Cut",
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![project::Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: project::ItemId(1),
-            source_asset: None,
-            source_range: time::SourceRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
-            start: Tick::ZERO,
-            content: project::ItemParams::Text(text),
-        }],
+        items: vec![
+            testkit::item::item(project::ItemId(1), project::ItemParams::Text(text))
+                .source(time::SourceRange::new(Tick::ZERO, tick(1, 1)).unwrap())
+                .build(),
+        ],
     });
     let baseline = project::Project::new(data).unwrap();
     let hooks = Hooks::default();
@@ -927,25 +903,19 @@ fn preview_audio_mix_obeys_item_gain_and_mute() {
             muted: false,
             hidden: false,
             locked: false,
-            items: vec![project::Item {
-                hidden: false,
-                blend_mode: Default::default(),
-                retime: Default::default(),
-                masks: Vec::new(),
-                effects: Vec::new(),
-                animations: Default::default(),
-                id: project::ItemId(1),
-                source_asset: Some(media::AssetId(1)),
-                source_range: time::SourceRange::new(Tick::ZERO, duration).unwrap(),
-                start: Tick::ZERO,
-                content: project::ItemParams::Audio(project::AudioParams {
-                    fades: Default::default(),
-                    volume,
-                    muted,
-                    source: Default::default(),
-                    cleanup: Default::default(),
-                }),
-            }],
+            items: vec![
+                testkit::item::item(
+                    project::ItemId(1),
+                    project::ItemParams::Audio(project::AudioParams {
+                        volume: volume,
+                        muted: muted,
+                        ..project::AudioParams::default()
+                    }),
+                )
+                .asset(media::AssetId(1))
+                .source(time::SourceRange::new(Tick::ZERO, duration).unwrap())
+                .build(),
+            ],
         });
         project::Project::new(data).unwrap()
     };
@@ -1298,23 +1268,19 @@ fn immutable_text_reuse_is_bounded_invalidates_and_matches_uncached_pixels() {
     let items = cases
         .into_iter()
         .enumerate()
-        .map(|(n, (content, font_size, color))| project::Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: project::ItemId(n as u64 + 1),
-            source_asset: None,
-            source_range: TimeRange::new(Tick::ZERO, frame).unwrap(),
-            start: Tick(frame.0 * n as i64),
-            content: project::ItemParams::Text(project::TextParams {
-                content: content.into(),
-                font_size,
-                color: project::Color(color),
-                ..Default::default()
-            }),
+        .map(|(n, (content, font_size, color))| {
+            testkit::item::item(
+                project::ItemId(n as u64 + 1),
+                project::ItemParams::Text(project::TextParams {
+                    content: content.into(),
+                    font_size,
+                    color: project::Color(color),
+                    ..Default::default()
+                }),
+            )
+            .source(TimeRange::new(Tick::ZERO, frame).unwrap())
+            .start(Tick(frame.0 * n as i64))
+            .build()
         })
         .collect();
     d.scene_mut().timeline.insert_track(project::Track {
@@ -1375,23 +1341,19 @@ fn text_cache_releases_inactive_entries_under_new_frame_pressure() {
     let items = [40.0, 42.0]
         .into_iter()
         .enumerate()
-        .map(|(n, font_size)| project::Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: project::ItemId(n as u64 + 1),
-            source_asset: None,
-            source_range: TimeRange::new(Tick::ZERO, dt).unwrap(),
-            start: Tick(dt.0 * n as i64),
-            content: project::ItemParams::Text(project::TextParams {
-                content: "Tiếng Việt 中文".into(),
-                font_size,
-                color: project::Color([255; 4]),
-                ..Default::default()
-            }),
+        .map(|(n, font_size)| {
+            testkit::item::item(
+                project::ItemId(n as u64 + 1),
+                project::ItemParams::Text(project::TextParams {
+                    content: "Tiếng Việt 中文".into(),
+                    font_size,
+                    color: project::Color([255; 4]),
+                    ..Default::default()
+                }),
+            )
+            .source(TimeRange::new(Tick::ZERO, dt).unwrap())
+            .start(Tick(dt.0 * n as i64))
+            .build()
         })
         .collect();
     d.scene_mut().timeline.insert_track(project::Track {
@@ -1463,28 +1425,24 @@ fn caption_expansion_is_refused_before_raster_allocation() {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![project::Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: project::ItemId(0),
-            source_asset: Some(media::AssetId(0)),
-            source_range: range,
-            start: Tick::ZERO,
-            content: project::ItemParams::Caption(project::CaptionParams {
-                emphasis: Default::default(),
-                word_highlight: false,
-                preset: None,
-                overrides: captions::CaptionOverrides::default(),
-                cues: captions::CueTrack {
-                    styles: Vec::new(),
-                    cues,
-                },
-            }),
-        }],
+        items: vec![
+            testkit::item::item(
+                project::ItemId(0),
+                project::ItemParams::Caption(project::CaptionParams {
+                    emphasis: Default::default(),
+                    word_highlight: false,
+                    preset: None,
+                    overrides: captions::CaptionOverrides::default(),
+                    cues: captions::CueTrack {
+                        styles: Vec::new(),
+                        cues,
+                    },
+                }),
+            )
+            .asset(media::AssetId(0))
+            .source(range)
+            .build(),
+        ],
     });
     let p = project::Project::new(d).unwrap();
     let h = Hooks::default();
@@ -2074,29 +2032,19 @@ fn split_project(
                 .unwrap();
         }
     }
-    data.scene_mut().timeline.main.items.push(Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        masks: vec![],
-        effects: vec![],
-        animations,
-        id: ItemId(1),
-        source_asset: Some(media::AssetId(1)),
-        source_range: SourceRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
-        start: Tick::ZERO,
-        content: ItemParams::Video(VideoParams {
-            crop: None,
-            fades: Default::default(),
-            source_audio_enabled: false,
-            volume: 0.0,
-            muted: false,
-            cleanup: Default::default(),
-            background,
-            reduce_noise: false,
-            fit: Default::default(),
-        }),
-    });
+    data.scene_mut().timeline.main.items.push(
+        testkit::item::item(
+            ItemId(1),
+            ItemParams::Video(VideoParams {
+                background: background,
+                ..VideoParams::plain()
+            }),
+        )
+        .asset(media::AssetId(1))
+        .source(SourceRange::new(Tick::ZERO, tick(1, 1)).unwrap())
+        .animations(animations)
+        .build(),
+    );
     Project::new(data).unwrap()
 }
 

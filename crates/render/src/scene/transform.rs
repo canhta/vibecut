@@ -246,19 +246,10 @@ pub mod arrange {
         }
 
         fn item(content: ItemParams, animations: Animations) -> Item {
-            Item {
-                hidden: false,
-                blend_mode: Default::default(),
-                retime: Default::default(),
-                masks: Vec::new(),
-                effects: Vec::new(),
-                animations,
-                id: ItemId(1),
-                source_asset: None,
-                source_range: SourceRange::new(Tick::ZERO, Tick(1)).unwrap(),
-                start: Tick::ZERO,
-                content,
-            }
+            testkit::item::item(ItemId(1), content)
+                .source(SourceRange::new(Tick::ZERO, Tick(1)).unwrap())
+                .animations(animations)
+                .build()
         }
 
         fn transformed(animations: &[(BuiltinPath, f64)]) -> Animations {
@@ -367,13 +358,7 @@ pub mod arrange {
                 "text with a zero Transform sits at the canvas centre"
             );
             let audio = item(
-                ItemParams::Audio(project::AudioParams {
-                    volume: 0.0,
-                    muted: false,
-                    source: Default::default(),
-                    fades: Default::default(),
-                    cleanup: Default::default(),
-                }),
+                ItemParams::Audio(project::AudioParams::default()),
                 Animations::default(),
             );
             assert!(matches!(

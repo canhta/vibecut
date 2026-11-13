@@ -68,68 +68,11 @@ fn video_fixture() -> Option<SourceAsset> {
     Some(SourceAsset::import(AssetId(2), path).unwrap())
 }
 
-fn audio_item(id: u64, start: Tick, source: SourceRange, asset: &SourceAsset) -> Item {
-    Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        masks: Vec::new(),
-        effects: Vec::new(),
-        animations: Default::default(),
-        id: ItemId(id),
-        source_asset: Some(asset.id()),
-        source_range: source,
-        start,
-        content: ItemParams::Audio(project::AudioParams {
-            fades: Default::default(),
-            volume: 0.0,
-            muted: false,
-            source: Default::default(),
-            cleanup: Default::default(),
-        }),
-    }
-}
-
-fn video_item(id: u64, start: Tick, source: SourceRange, asset: &SourceAsset) -> Item {
-    Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        masks: Vec::new(),
-        effects: Vec::new(),
-        animations: Default::default(),
-        id: ItemId(id),
-        source_asset: Some(asset.id()),
-        source_range: source,
-        start,
-        content: ItemParams::Video(project::VideoParams {
-            fades: Default::default(),
-            source_audio_enabled: false,
-            volume: 0.0,
-            muted: false,
-            crop: None,
-            fit: Default::default(),
-            cleanup: Default::default(),
-            background: project::ClipBackground::None,
-            reduce_noise: false,
-        }),
-    }
-}
-
 fn caption_item(audio: &SourceAsset, word: SourceRange) -> Item {
     let language = captions::LanguageTag::parse("en").unwrap();
-    Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        masks: Vec::new(),
-        effects: Vec::new(),
-        animations: Default::default(),
-        id: ItemId(90),
-        source_asset: Some(audio.id()),
-        source_range: range(0, 12),
-        start: Tick::ZERO,
-        content: ItemParams::Caption(project::CaptionParams {
+    testkit::item::item(
+        ItemId(90),
+        ItemParams::Caption(project::CaptionParams {
             emphasis: Default::default(),
             word_highlight: false,
             preset: None,
@@ -155,7 +98,10 @@ fn caption_item(audio: &SourceAsset, word: SourceRange) -> Item {
                 }],
             },
         }),
-    }
+    )
+    .asset(audio.id())
+    .source(range(0, 12))
+    .build()
 }
 
 /// One audio clip across the whole fixture plus an optional caption word.
@@ -164,14 +110,13 @@ fn single_clip(audio: &SourceAsset, word: Option<SourceRange>) -> Project {
         .unwrap()
         .into_data();
     data.assets.push(audio.clone());
-    data.scene_mut()
-        .timeline
-        .insert_track(audio_track(vec![audio_item(
-            1,
-            Tick::ZERO,
-            range(0, 12),
-            audio,
-        )]));
+    data.scene_mut().timeline.insert_track(audio_track(vec![
+        testkit::item::audio(ItemId(1))
+            .asset(audio.id())
+            .source(range(0, 12))
+            .start(Tick::ZERO)
+            .build(),
+    ]));
     if let Some(word) = word {
         data.scene_mut().timeline.insert_track(Track {
             id: TrackId(9),
@@ -208,8 +153,20 @@ fn five_clips(audio: &SourceAsset, video: &SourceAsset) -> Project {
         let start = ms(pair[0]);
         let end = ms(pair[1]);
         let source = SourceRange::new(start, end).unwrap();
-        videos.push(video_item(index as u64 + 1, start, source, video));
-        audios.push(audio_item(index as u64 + 11, start, source, audio));
+        videos.push(
+            testkit::item::video(ItemId(index as u64 + 1))
+                .asset(video.id())
+                .source(source)
+                .start(start)
+                .build(),
+        );
+        audios.push(
+            testkit::item::audio(ItemId(index as u64 + 11))
+                .asset(audio.id())
+                .source(source)
+                .start(start)
+                .build(),
+        );
     }
     let mut data = Project::empty(ProjectId(0), "pauses".into())
         .unwrap()
@@ -508,29 +465,16 @@ fn interview_first_300_seconds_lists_candidates_and_their_cost() {
         .unwrap()
         .into_data();
     data.assets.push(asset.clone());
-    let item = Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        masks: Vec::new(),
-        effects: Vec::new(),
-        animations: Default::default(),
-        id: ItemId(1),
-        source_asset: Some(asset.id()),
-        source_range: range(0, 300),
-        start: Tick::ZERO,
-        content: ItemParams::Video(project::VideoParams {
-            fades: Default::default(),
+    let item = testkit::item::item(
+        ItemId(1),
+        ItemParams::Video(project::VideoParams {
             source_audio_enabled: true,
-            volume: 0.0,
-            muted: false,
-            crop: None,
-            fit: Default::default(),
-            cleanup: Default::default(),
-            background: project::ClipBackground::None,
-            reduce_noise: false,
+            ..project::VideoParams::plain()
         }),
-    };
+    )
+    .asset(asset.id())
+    .source(range(0, 300))
+    .build();
     data.scene_mut().timeline.main.items = vec![item];
     let started = Instant::now();
     let found = candidates(Project::new(data).unwrap(), PauseSettings::default());

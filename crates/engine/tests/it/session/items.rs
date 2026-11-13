@@ -597,28 +597,15 @@ fn audible_session() -> (Session, TrackId, TrackId, ItemId) {
         video,
         0,
         ItemParams::Video(project::VideoParams {
-            fades: Default::default(),
             source_audio_enabled: true,
-            volume: 0.0,
-            muted: false,
-            crop: None,
-            fit: Default::default(),
-            cleanup: Default::default(),
-            background: project::ClipBackground::None,
-            reduce_noise: false,
+            ..project::VideoParams::plain()
         }),
     );
     insert(
         &mut s,
         audio,
         0,
-        ItemParams::Audio(project::AudioParams {
-            fades: Default::default(),
-            volume: 0.0,
-            muted: false,
-            source: Default::default(),
-            cleanup: Default::default(),
-        }),
+        ItemParams::Audio(project::AudioParams::default()),
     );
     (s, video, audio, clip)
 }
@@ -2200,21 +2187,15 @@ fn arrange_overlay(id: u64, x: f64, y: f64) -> Item {
             )
             .unwrap();
     }
-    Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        masks: Vec::new(),
-        effects: Vec::new(),
-        animations,
-        id: ItemId(id),
-        source_asset: None,
-        source_range: SourceRange::new(Tick::ZERO, Tick(100)).unwrap(),
-        start: Tick::ZERO,
-        content: ItemParams::Overlay(project::OverlayParams {
+    testkit::item::item(
+        ItemId(id),
+        ItemParams::Overlay(project::OverlayParams {
             color: Color([10, 20, 30, 255]),
         }),
-    }
+    )
+    .source(SourceRange::new(Tick::ZERO, Tick(100)).unwrap())
+    .animations(animations)
+    .build()
 }
 
 fn arrange_session(items: &[(u64, f64, f64)]) -> Session {
@@ -2478,4 +2459,62 @@ fn align_translates_curve_values_and_refuses_whole_lists() {
         Err(EditError::Locked(_))
     ));
     assert_eq!(two.project(), &before);
+}
+
+/// The parameter table is the one declaration: every row names its kinds and bounds, is
+/// found by its wire name, and is the field the patch serializes under.
+#[test]
+fn item_param_table_rows_declare_kinds_and_bounds_and_parse_by_wire_name() {
+    use engine::{ITEM_PARAMS, ItemParamPatch, ParamBounds, ParamParseError, item_param};
+    // One text per payload type: numbers, switches, words, colours and cleared shapes.
+    const SAMPLES: [&str; 7] = [
+        "1",
+        "true",
+        "multiply",
+        "fill",
+        "center",
+        "#FF0000FF",
+        "none",
+    ];
+    let mut names = std::collections::BTreeSet::new();
+    for row in ITEM_PARAMS {
+        assert!(names.insert(row.name), "{} is declared twice", row.name);
+        assert!(!row.targets.is_empty(), "{} names no kind", row.name);
+        assert_eq!(item_param(row.name), Some(row));
+        if let ParamBounds::Range { min, max, .. } = row.bounds {
+            assert!(min < max, "{} has an empty range", row.name);
+            for edge in [min, max] {
+                assert!(
+                    ItemParamPatch::parse(row.name, &edge.to_string()).is_ok(),
+                    "{} refuses its own bound {edge}",
+                    row.name
+                );
+            }
+        }
+        // A crop is placed by dragging, so no text reads as one.
+        if row.name == "crop" {
+            assert_eq!(
+                ItemParamPatch::parse(row.name, "1"),
+                Err(ParamParseError::Value)
+            );
+            continue;
+        }
+        let patch = SAMPLES
+            .iter()
+            .find_map(|text| ItemParamPatch::parse(row.name, text).ok())
+            .unwrap_or_else(|| panic!("{} reads no sample text", row.name));
+        assert_eq!(patch.field(), row.name);
+        assert_eq!(patch.row(), row);
+        let wire = serde_json::to_value(&patch).unwrap();
+        assert_eq!(wire["field"], row.name);
+        assert_eq!(
+            serde_json::from_value::<ItemParamPatch>(wire).unwrap(),
+            patch
+        );
+    }
+    assert_eq!(
+        ItemParamPatch::parse("audio_gain", "1"),
+        Err(ParamParseError::Unknown)
+    );
+    assert_eq!(item_param("audio_gain"), None);
 }

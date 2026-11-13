@@ -108,7 +108,7 @@ impl Panel<'_, '_> {
     /// The playhead's item-relative time when this field already has keys and
     /// the playhead sits inside the item; an edit must then upsert a key.
     fn animated_time(&self, item: ItemId, field: &str) -> Option<time::Tick> {
-        let animatable = field == "audio_gain"
+        let animatable = field == "volume"
             || field.starts_with("params.")
             || matches!(
                 project::BuiltinPath::parse(field),

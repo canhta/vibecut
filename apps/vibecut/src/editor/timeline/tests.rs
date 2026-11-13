@@ -284,24 +284,11 @@ impl Rig {
             _ => panic!("track"),
         };
         let content = if kind == TrackKind::Audio {
-            ItemParams::Audio(project::AudioParams {
-                volume: 0.0,
-                muted: false,
-                source: Default::default(),
-                fades: Default::default(),
-                cleanup: Default::default(),
-            })
+            ItemParams::Audio(project::AudioParams::default())
         } else {
             ItemParams::Video(project::VideoParams {
                 source_audio_enabled: true,
-                volume: 0.0,
-                muted: false,
-                crop: None,
-                fades: Default::default(),
-                fit: Default::default(),
-                cleanup: Default::default(),
-                background: project::ClipBackground::None,
-                reduce_noise: false,
+                ..project::VideoParams::plain()
             })
         };
         let first = match session
@@ -449,24 +436,11 @@ fn source(id: u64, hash: u8, kind: TrackKind) -> media::SourceAsset {
 
 fn new_media_item(asset: AssetId, kind: TrackKind) -> NewItem {
     let content = if kind == TrackKind::Audio {
-        ItemParams::Audio(project::AudioParams {
-            volume: 0.0,
-            muted: false,
-            source: Default::default(),
-            fades: Default::default(),
-            cleanup: Default::default(),
-        })
+        ItemParams::Audio(project::AudioParams::default())
     } else {
         ItemParams::Video(project::VideoParams {
             source_audio_enabled: true,
-            volume: 0.0,
-            muted: false,
-            crop: None,
-            fades: Default::default(),
-            fit: Default::default(),
-            cleanup: Default::default(),
-            background: project::ClipBackground::None,
-            reduce_noise: false,
+            ..project::VideoParams::plain()
         })
     };
     NewItem {
@@ -544,13 +518,7 @@ fn desktop_media_access_serves_mcp_generation_and_the_timeline_display() {
                 source_asset: Some(AssetId(1)),
                 source_range: SourceRange::new(Tick::ZERO, Tick(TICKS_PER_SECOND)).unwrap(),
                 start: Tick::ZERO,
-                content: ItemParams::Audio(project::AudioParams {
-                    volume: 0.0,
-                    muted: false,
-                    source: Default::default(),
-                    fades: Default::default(),
-                    cleanup: Default::default(),
-                }),
+                content: ItemParams::Audio(project::AudioParams::default()),
             },
         })
         .unwrap()

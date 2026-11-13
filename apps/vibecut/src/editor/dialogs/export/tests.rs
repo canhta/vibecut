@@ -52,35 +52,21 @@ fn project(empty: bool, source: bool) -> Project {
         );
     }
     if !empty {
-        d.scene_mut().timeline.main.items.push(project::Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            id: project::ItemId(1),
-            source_asset: source.then_some(AssetId(1)),
-            source_range: range,
-            start: Tick::ZERO,
-            content: if source {
-                ItemParams::Video(project::VideoParams {
-                    fades: Default::default(),
-                    source_audio_enabled: false,
-                    volume: 0.0,
-                    muted: false,
-                    crop: None,
-                    fit: Default::default(),
-                    cleanup: Default::default(),
-                    background: project::ClipBackground::None,
-                    reduce_noise: false,
-                })
-            } else {
-                ItemParams::Overlay(project::OverlayParams {
-                    color: project::Color([100, 150, 200, 255]),
-                })
-            },
-            animations: Default::default(),
-            effects: vec![],
-            masks: vec![],
-        });
+        d.scene_mut().timeline.main.items.push(
+            testkit::item::item(
+                project::ItemId(1),
+                if source {
+                    ItemParams::Video(project::VideoParams::plain())
+                } else {
+                    ItemParams::Overlay(project::OverlayParams {
+                        color: project::Color([100, 150, 200, 255]),
+                    })
+                },
+            )
+            .source_asset(source.then_some(AssetId(1)))
+            .source(range)
+            .build(),
+        );
     }
     Project::new(d).unwrap()
 }

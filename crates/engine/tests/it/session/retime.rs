@@ -1,8 +1,8 @@
 #![allow(clippy::unwrap_used, reason = "validated test fixtures and assertions")]
 use engine::{Command, EditError, Placement, Session, TrimEdge};
 use project::{
-    AnimationPath, Animations, AudioParams, Item, ItemId, ItemParams, Keyframe, Param, ParamValue,
-    Project, ProjectId, Retime, Track, TrackId, TrackKind, VideoParams,
+    AnimationPath, Animations, Item, ItemId, ItemParams, Keyframe, Param, ParamValue, Project,
+    ProjectId, Retime, Track, TrackId, TrackKind,
 };
 use time::{FrameRate, SourceRange, Speed, TICKS_PER_SECOND, Tick};
 
@@ -12,8 +12,18 @@ const FRAME: i64 = SECOND / 30;
 #[test]
 fn timeline_group_trim_refuses_unrepresentable_edges_and_source_exhaustion() {
     let mut s = session(
-        vec![video(1, 0, range(10 * SECOND, 30 * SECOND))],
-        vec![audio(2, 0, range(10 * SECOND, 30 * SECOND))],
+        vec![
+            testkit::item::video(ItemId(1))
+                .asset(media::AssetId(1))
+                .source(range(10 * SECOND, 30 * SECOND))
+                .build(),
+        ],
+        vec![
+            testkit::item::audio(ItemId(2))
+                .asset(media::AssetId(1))
+                .source(range(10 * SECOND, 30 * SECOND))
+                .build(),
+        ],
         false,
     );
     s.apply(set_speed(&[1, 2], 0.5, true)).unwrap();
@@ -40,8 +50,18 @@ fn timeline_group_trim_refuses_unrepresentable_edges_and_source_exhaustion() {
 #[test]
 fn reverse_keeps_the_span_undoes_and_refuses_retained_pieces() {
     let mut s = session(
-        vec![video(1, 0, range(10 * SECOND, 30 * SECOND))],
-        vec![audio(2, 0, range(10 * SECOND, 30 * SECOND))],
+        vec![
+            testkit::item::video(ItemId(1))
+                .asset(media::AssetId(1))
+                .source(range(10 * SECOND, 30 * SECOND))
+                .build(),
+        ],
+        vec![
+            testkit::item::audio(ItemId(2))
+                .asset(media::AssetId(1))
+                .source(range(10 * SECOND, 30 * SECOND))
+                .build(),
+        ],
         false,
     );
     let span = item(&s, 1).end().unwrap();
@@ -102,8 +122,8 @@ proptest::proptest! {
         rate in proptest::sample::select(vec![0.5, 1.0, 2.0, 5.0]),
         movement in 0i64..20, trim in 1i64..20, start_edge in proptest::bool::ANY
     ) {
-        let mut s = session(vec![video(1, 0, range(10*SECOND,30*SECOND))],
-            vec![audio(2, 0, range(10*SECOND,30*SECOND))], false);
+        let mut s = session(vec![testkit::item::video(ItemId(1)).asset(media::AssetId(1)).source(range(10*SECOND,30*SECOND)).build()],
+            vec![testkit::item::audio(ItemId(2)).asset(media::AssetId(1)).source(range(10*SECOND,30*SECOND)).build()], false);
         s.apply(set_speed(&[1,2], rate, true)).unwrap();
         s.apply(Command::TimelineMoveItems {
             items: vec![ItemId(1), ItemId(2)],
@@ -174,44 +194,6 @@ fn asset() -> media::SourceAsset {
         )
         .build()
 }
-fn video(id: u64, start: i64, source: SourceRange) -> Item {
-    Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        masks: Vec::new(),
-        effects: Vec::new(),
-        animations: Default::default(),
-        id: ItemId(id),
-        source_asset: Some(media::AssetId(1)),
-        source_range: source,
-        start: Tick(start),
-        content: ItemParams::Video(VideoParams {
-            fades: Default::default(),
-            source_audio_enabled: false,
-            volume: 0.0,
-            muted: false,
-            crop: None,
-            fit: Default::default(),
-            cleanup: Default::default(),
-            background: project::ClipBackground::None,
-            reduce_noise: false,
-        }),
-    }
-}
-fn audio(id: u64, start: i64, source: SourceRange) -> Item {
-    Item {
-        hidden: false,
-        content: ItemParams::Audio(AudioParams {
-            fades: Default::default(),
-            volume: 0.0,
-            muted: false,
-            source: Default::default(),
-            cleanup: Default::default(),
-        }),
-        ..video(id, start, source)
-    }
-}
 fn opacity_keys(times: &[i64]) -> Animations {
     let mut param = Param::new(ParamValue::Scalar(1.0)).unwrap();
     for time in times {
@@ -278,7 +260,10 @@ fn set_speed_adjusts_duration_stretches_keys_and_undoes() {
         (2.0, 2 * SECOND, SECOND / 2),
         (5.0, 4 * SECOND / 5, SECOND / 5),
     ] {
-        let mut clip = video(1, 0, range(SECOND, 5 * SECOND));
+        let mut clip = testkit::item::video(ItemId(1))
+            .asset(media::AssetId(1))
+            .source(range(SECOND, 5 * SECOND))
+            .build();
         clip.animations = opacity_keys(&[SECOND]);
         let mut s = session(vec![clip], vec![], true);
         let before = s.project().clone();
@@ -333,7 +318,10 @@ fn set_speed_adjusts_duration_stretches_keys_and_undoes() {
 
 #[test]
 fn trim_and_split_map_through_the_speed_and_move_keys_by_output_time() {
-    let mut clip = video(1, 0, range(0, 8 * SECOND));
+    let mut clip = testkit::item::video(ItemId(1))
+        .asset(media::AssetId(1))
+        .source(range(0, 8 * SECOND))
+        .build();
     clip.retime.speed = speed(2.0);
     clip.animations = opacity_keys(&[SECOND, 3 * SECOND]);
     let mut s = session(vec![clip], vec![], false);
@@ -396,11 +384,18 @@ fn trim_and_split_map_through_the_speed_and_move_keys_by_output_time() {
     let mut s = session(
         vec![
             {
-                let mut a = video(1, 0, range(0, 4 * SECOND));
+                let mut a = testkit::item::video(ItemId(1))
+                    .asset(media::AssetId(1))
+                    .source(range(0, 4 * SECOND))
+                    .build();
                 a.retime.speed = speed(2.0);
                 a
             },
-            video(2, 2 * SECOND, range(0, SECOND)),
+            testkit::item::video(ItemId(2))
+                .asset(media::AssetId(1))
+                .source(range(0, SECOND))
+                .start(Tick(2 * SECOND))
+                .build(),
         ],
         vec![],
         false,
@@ -412,7 +407,21 @@ fn trim_and_split_map_through_the_speed_and_move_keys_by_output_time() {
 #[test]
 fn linked_video_and_audio_stay_in_sync_through_rate_change_trim_and_split() {
     let source = range(2 * SECOND, 12 * SECOND);
-    let mut s = session(vec![video(1, 0, source)], vec![audio(2, 0, source)], false);
+    let mut s = session(
+        vec![
+            testkit::item::video(ItemId(1))
+                .asset(media::AssetId(1))
+                .source(source)
+                .build(),
+        ],
+        vec![
+            testkit::item::audio(ItemId(2))
+                .asset(media::AssetId(1))
+                .source(source)
+                .build(),
+        ],
+        false,
+    );
     s.apply(set_speed(&[1, 2], 1.7, false)).unwrap();
     s.apply(Command::TrimStart {
         item: ItemId(1),
@@ -463,8 +472,15 @@ fn speed_edits_refuse_atomically_and_ripple_only_on_a_magnetic_main_track() {
     };
     let mut s = session(
         vec![
-            video(1, 0, range(0, 2 * SECOND)),
-            video(2, 2 * SECOND, range(0, 2 * SECOND)),
+            testkit::item::video(ItemId(1))
+                .asset(media::AssetId(1))
+                .source(range(0, 2 * SECOND))
+                .build(),
+            testkit::item::video(ItemId(2))
+                .asset(media::AssetId(1))
+                .source(range(0, 2 * SECOND))
+                .start(Tick(2 * SECOND))
+                .build(),
             overlay,
         ],
         vec![],
@@ -490,8 +506,15 @@ fn speed_edits_refuse_atomically_and_ripple_only_on_a_magnetic_main_track() {
     // A magnetic main track closes and opens gaps by the duration change.
     let mut s = session(
         vec![
-            video(1, 0, range(0, 2 * SECOND)),
-            video(2, 2 * SECOND, range(0, 2 * SECOND)),
+            testkit::item::video(ItemId(1))
+                .asset(media::AssetId(1))
+                .source(range(0, 2 * SECOND))
+                .build(),
+            testkit::item::video(ItemId(2))
+                .asset(media::AssetId(1))
+                .source(range(0, 2 * SECOND))
+                .start(Tick(2 * SECOND))
+                .build(),
         ],
         vec![],
         true,
@@ -515,14 +538,30 @@ fn speed_edits_refuse_atomically_and_ripple_only_on_a_magnetic_main_track() {
         );
     }
     // Four source ticks at 5x would play for no output tick.
-    let mut s = session(vec![video(1, 0, range(0, 4))], vec![], false);
+    let mut s = session(
+        vec![
+            testkit::item::video(ItemId(1))
+                .asset(media::AssetId(1))
+                .source(range(0, 4))
+                .build(),
+        ],
+        vec![],
+        false,
+    );
     assert!(s.apply(set_speed(&[1], 5.0, false)).is_err());
 }
 
 #[test]
 fn split_inside_retimed_transition_preserves_output_span() {
-    let mut a = video(1, 0, range(0, 4 * SECOND));
-    let mut b = video(2, 2 * SECOND, range(4 * SECOND, 8 * SECOND));
+    let mut a = testkit::item::video(ItemId(1))
+        .asset(media::AssetId(1))
+        .source(range(0, 4 * SECOND))
+        .build();
+    let mut b = testkit::item::video(ItemId(2))
+        .asset(media::AssetId(1))
+        .source(range(4 * SECOND, 8 * SECOND))
+        .start(Tick(2 * SECOND))
+        .build();
     a.retime.speed = speed(2.0);
     b.retime.speed = speed(2.0);
     let mut s = session(vec![a, b], vec![], true);
@@ -642,7 +681,10 @@ fn transition_splits_preserve_every_frame_mapping_history_and_persistence() {
     for rate in [0.5, 1., 2., 0.333, 1.501, 5.] {
         for alignment in [Start, Center, End] {
             for definition in project::TRANSITION_DEFINITIONS {
-                let mut a = video(1, 0, range(4 * SECOND, 8 * SECOND));
+                let mut a = testkit::item::video(ItemId(1))
+                    .asset(media::AssetId(1))
+                    .source(range(4 * SECOND, 8 * SECOND))
+                    .build();
                 a.retime.speed = speed(rate);
                 let cut = a.end().unwrap().0;
                 let mut opacity = Param::new(ParamValue::Scalar(0.2)).unwrap();
@@ -656,7 +698,11 @@ fn transition_splits_preserve_every_frame_mapping_history_and_persistence() {
                 a.animations
                     .set(AnimationPath::new("opacity").unwrap(), opacity)
                     .unwrap();
-                let mut b = video(2, cut, range(12 * SECOND, 16 * SECOND));
+                let mut b = testkit::item::video(ItemId(2))
+                    .asset(media::AssetId(1))
+                    .source(range(12 * SECOND, 16 * SECOND))
+                    .start(Tick(cut))
+                    .build();
                 b.retime.speed = speed(rate);
                 let mut s = session(vec![a, b], vec![], true);
                 s.apply(Command::AddTransition {
@@ -789,8 +835,15 @@ fn transition_splits_preserve_every_frame_mapping_history_and_persistence() {
 #[test]
 fn split_continuations_refuse_corrupt_mapping_and_piece_references() {
     use serde_json::json;
-    let mut a = video(1, 0, range(4 * SECOND, 8 * SECOND));
-    let mut b = video(2, 2 * SECOND, range(12 * SECOND, 16 * SECOND));
+    let mut a = testkit::item::video(ItemId(1))
+        .asset(media::AssetId(1))
+        .source(range(4 * SECOND, 8 * SECOND))
+        .build();
+    let mut b = testkit::item::video(ItemId(2))
+        .asset(media::AssetId(1))
+        .source(range(12 * SECOND, 16 * SECOND))
+        .start(Tick(2 * SECOND))
+        .build();
     a.retime.speed = speed(2.);
     b.retime.speed = speed(2.);
     let mut s = session(vec![a, b], vec![], true);
@@ -870,7 +923,10 @@ fn retimed_fades_and_audio_replay_survive_repeated_cuts_history_and_persistence(
                 project::FadeCurve::EqualPower,
                 project::FadeCurve::Exponential,
             ] {
-                let mut a = audio(1, 0, range(SECOND, SECOND + SECOND / 5));
+                let mut a = testkit::item::audio(ItemId(1))
+                    .asset(media::AssetId(1))
+                    .source(range(SECOND, SECOND + SECOND / 5))
+                    .build();
                 let start = SECOND / 7 + 1;
                 a.start = Tick(start);
                 a.retime.speed = speed(rate);

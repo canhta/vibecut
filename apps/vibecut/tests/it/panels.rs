@@ -400,15 +400,8 @@ fn fixture() -> Fixture {
         Tick(2 * SECOND),
         Some(AssetId(1)),
         ItemParams::Video(project::VideoParams {
-            fades: Default::default(),
             source_audio_enabled: true,
-            volume: 0.0,
-            muted: false,
-            crop: None,
-            fit: Default::default(),
-            cleanup: Default::default(),
-            background: project::ClipBackground::None,
-            reduce_noise: false,
+            ..project::VideoParams::plain()
         }),
     );
     let graphic = insert(
@@ -427,17 +420,7 @@ fn fixture() -> Fixture {
         Tick(3 * SECOND),
         Tick(SECOND),
         Some(AssetId(3)),
-        ItemParams::Video(project::VideoParams {
-            fades: Default::default(),
-            source_audio_enabled: false,
-            volume: 0.0,
-            muted: false,
-            crop: None,
-            fit: Default::default(),
-            cleanup: Default::default(),
-            background: project::ClipBackground::None,
-            reduce_noise: false,
-        }),
+        ItemParams::Video(project::VideoParams::plain()),
     );
     let silent_video = insert(
         &mut session,
@@ -445,17 +428,7 @@ fn fixture() -> Fixture {
         Tick(4 * SECOND),
         Tick(SECOND),
         Some(AssetId(4)),
-        ItemParams::Video(project::VideoParams {
-            fades: Default::default(),
-            source_audio_enabled: false,
-            volume: 0.0,
-            muted: false,
-            crop: None,
-            fit: Default::default(),
-            cleanup: Default::default(),
-            background: project::ClipBackground::None,
-            reduce_noise: false,
-        }),
+        ItemParams::Video(project::VideoParams::plain()),
     );
     let text = insert(
         &mut session,
@@ -476,13 +449,7 @@ fn fixture() -> Fixture {
         Tick::ZERO,
         Tick(2 * SECOND),
         Some(AssetId(2)),
-        ItemParams::Audio(project::AudioParams {
-            fades: Default::default(),
-            volume: 0.0,
-            muted: false,
-            source: Default::default(),
-            cleanup: Default::default(),
-        }),
+        ItemParams::Audio(project::AudioParams::default()),
     );
     let mut playback = Playback::new(
         &session,
@@ -1417,7 +1384,7 @@ fn reachable_element_kinds_show_their_reference_tab_sets() {
         (
             fixture.audio,
             ElementKind::Audio.tabs(),
-            Some("inspector.audio_gain"),
+            Some("inspector.volume"),
         ),
     ] {
         select(&mut harness, item);
@@ -1949,7 +1916,7 @@ fn hiding_a_scrub_field_rolls_back_and_closes_gesture() {
         assert!(!harness.state().session.gesture_active(), "{change}");
         harness
             .state_mut()
-            .set_item_field(fixture.audio, "audio_gain", "3")
+            .set_item_field(fixture.audio, "volume", "3")
             .unwrap();
         assert_eq!(harness.state().session.history_len().0, history.0 + 1);
     }
@@ -2048,7 +2015,7 @@ fn opacity_and_audio_gain_scrub_through_their_tabs() {
     let history = harness.state().session.history_len();
     drag(
         &mut harness,
-        "inspector.audio_gain.scrub",
+        "inspector.volume.scrub",
         egui::vec2(16.0, 0.0),
     );
     assert_eq!(harness.state().session.history_len().0, history.0 + 1);
@@ -2059,13 +2026,13 @@ fn opacity_and_audio_gain_scrub_through_their_tabs() {
 
     // The Audio tab is volume and two fades: sliders with fields, no mute checkbox.
     for id in [
-        "inspector.audio_gain.slider",
+        "inspector.volume.slider",
         "inspector.audio_fade_in.slider",
         "inspector.audio_fade_out.slider",
     ] {
         assert!(has_widget(&harness, id), "{id}");
     }
-    assert!(!has_widget(&harness, "inspector.audio_muted"));
+    assert!(!has_widget(&harness, "inspector.muted"));
     // Each fade is one audio.set_fade step; the second clamps to the 2 s clip less the first.
     let history = harness.state().session.history_len();
     enter(&mut harness, "inspector.audio_fade_in", "1");

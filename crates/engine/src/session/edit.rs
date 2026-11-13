@@ -113,6 +113,12 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
                 crate::session::wire::ControlError::Limit,
             ));
         }
+        // The declaration states which parameters are collections and how large each may be.
+        if command.exceeds_collection_limit() {
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
+        }
         match command {
             Command::PasteKeyframes { at, source, .. } => {
                 if *at < Tick::ZERO || at.0 > super::wire::MAX_SAFE_INTEGER {
@@ -170,72 +176,7 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
                 return Err(EditError::Invalid("nested ripple policy"));
             }
             Command::Batch { commands } | Command::TimelineEdit { commands, .. } => {
-                if commands.len() > super::wire::MAX_BATCH_COMMANDS {
-                    return Err(EditError::Control(
-                        crate::session::wire::ControlError::Limit,
-                    ));
-                }
                 stack.extend(commands.iter().map(|c| (c, depth + 1)));
-            }
-            Command::MoveItems { moves } if moves.len() > super::wire::MAX_COLLECTION => {
-                return Err(EditError::Control(
-                    crate::session::wire::ControlError::Limit,
-                ));
-            }
-            Command::TimelineMoveItems { items, .. }
-            | Command::TimelineTrim { items, .. }
-            | Command::TimelineSplitLeft { items, .. }
-            | Command::TimelineSplitRight { items, .. }
-            | Command::DuplicateItems { items }
-            | Command::SetItemsHidden { items, .. }
-            | Command::SetItemsFlipped { items, .. }
-            | Command::AlignItems { items, .. }
-            | Command::DistributeItems { items, .. }
-            | Command::SetItemsMuted { items, .. }
-            | Command::SetItemsBackground { items, .. }
-            | Command::ExtractAudio { items }
-            | Command::RecoverAudio { items }
-            | Command::Delete { items }
-            | Command::SetItemParamMany { items, .. }
-            | Command::SetSpeed { items, .. }
-            | Command::SetReverse { items, .. }
-            | Command::ReplaceMedia { items, .. }
-                if items.len() > super::wire::MAX_COLLECTION =>
-            {
-                return Err(EditError::Control(
-                    crate::session::wire::ControlError::Limit,
-                ));
-            }
-            Command::TranscriptDeleteRange { word_ids }
-                if word_ids.len() > super::wire::MAX_COLLECTION =>
-            {
-                return Err(EditError::Control(
-                    crate::session::wire::ControlError::Limit,
-                ));
-            }
-            Command::TranscriptMergeCues { cue_ids }
-                if cue_ids.len() > super::wire::MAX_COLLECTION =>
-            {
-                return Err(EditError::Control(
-                    crate::session::wire::ControlError::Limit,
-                ));
-            }
-            Command::RemoveMaskPoint { points, .. }
-                if points.len() > super::wire::MAX_COLLECTION =>
-            {
-                return Err(EditError::Control(
-                    crate::session::wire::ControlError::Limit,
-                ));
-            }
-            Command::RemoveFillers { ids, .. } if ids.len() > super::wire::MAX_COLLECTION => {
-                return Err(EditError::Control(
-                    crate::session::wire::ControlError::Limit,
-                ));
-            }
-            Command::RemoveAssets { assets } if assets.len() > super::wire::MAX_COLLECTION => {
-                return Err(EditError::Control(
-                    crate::session::wire::ControlError::Limit,
-                ));
             }
             other => outside_edit(other)?,
         }
@@ -319,15 +260,7 @@ pub(crate) fn apply(
     clipboards: ClipboardRefs<'_>,
 ) -> Result<project::Project> {
     let previous_cuts = (!data.scene().timeline.transitions.is_empty()
-        && !matches!(
-            &command,
-            Command::AddTransition { .. }
-                | Command::MoveTransition { .. }
-                | Command::SetTransitionDuration { .. }
-                | Command::SetTransitionParam { .. }
-                | Command::RemoveTransition { .. }
-                | Command::Batch { .. }
-        ))
+        && !command.kind().owns_transitions())
     .then(|| crate::transitions::cuts(&data.scene().timeline));
     let command = match command.into_edit() {
         Ok(command) => command,
@@ -992,7 +925,7 @@ mod effects;
 mod masks;
 mod media_edits;
 mod motion;
-mod parameters;
+pub(in crate::session) mod parameters;
 mod project_edits;
 mod retime;
 mod text;

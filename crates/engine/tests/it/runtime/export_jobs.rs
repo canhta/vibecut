@@ -37,25 +37,18 @@ fn project() -> Arc<project::Project> {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![project::Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: project::ItemId(0),
-            source_asset: None,
-            source_range: time::TimeRange::new(
-                time::Tick::ZERO,
-                time::Tick(time::TICKS_PER_SECOND),
+        items: vec![
+            testkit::item::item(
+                project::ItemId(0),
+                project::ItemParams::Overlay(project::OverlayParams {
+                    color: project::Color([30, 160, 90, 255]),
+                }),
             )
-            .unwrap(),
-            start: time::Tick::ZERO,
-            content: project::ItemParams::Overlay(project::OverlayParams {
-                color: project::Color([30, 160, 90, 255]),
-            }),
-        }],
+            .source(
+                time::TimeRange::new(time::Tick::ZERO, time::Tick(time::TICKS_PER_SECOND)).unwrap(),
+            )
+            .build(),
+        ],
     });
     Arc::new(project::Project::new(d).unwrap())
 }
@@ -583,27 +576,24 @@ fn caption_project() -> project::Project {
         items: [0, 2]
             .into_iter()
             .enumerate()
-            .map(|(n, at)| Item {
-                hidden: false,
-                blend_mode: Default::default(),
-                retime: Default::default(),
-                masks: Vec::new(),
-                effects: Vec::new(),
-                id: ItemId(n as u64 + 1),
-                animations: Default::default(),
-                source_asset: Some(media::AssetId(1)),
-                source_range: range,
-                start: Tick(at * time::TICKS_PER_SECOND),
-                content: ItemParams::Caption(CaptionParams {
-                    emphasis: Default::default(),
-                    word_highlight: false,
-                    preset: None,
-                    overrides: captions::CaptionOverrides::default(),
-                    cues: CueTrack {
-                        styles: Vec::new(),
-                        cues: vec![cue.clone()],
-                    },
-                }),
+            .map(|(n, at)| {
+                testkit::item::item(
+                    ItemId(n as u64 + 1),
+                    ItemParams::Caption(CaptionParams {
+                        emphasis: Default::default(),
+                        word_highlight: false,
+                        preset: None,
+                        overrides: captions::CaptionOverrides::default(),
+                        cues: CueTrack {
+                            styles: Vec::new(),
+                            cues: vec![cue.clone()],
+                        },
+                    }),
+                )
+                .asset(media::AssetId(1))
+                .source(range)
+                .start(Tick(at * time::TICKS_PER_SECOND))
+                .build()
             })
             .collect(),
     });
@@ -631,28 +621,20 @@ fn registered_subtitle_export_maps_repeated_items_and_preserves_gaps_without_med
                 .items
                 .insert(
                     1,
-                    project::Item {
-                        hidden: false,
-                        blend_mode: Default::default(),
-                        retime: Default::default(),
-                        id: project::ItemId(3),
-                        masks: Vec::new(),
-                        effects: Vec::new(),
-                        animations: Default::default(),
-                        source_asset: None,
-                        source_range: time::SourceRange::new(
-                            Tick::ZERO,
-                            Tick(time::TICKS_PER_SECOND),
-                        )
-                        .unwrap(),
-                        start: Tick(time::TICKS_PER_SECOND),
-                        content: project::ItemParams::Text(project::TextParams {
+                    testkit::item::item(
+                        project::ItemId(3),
+                        project::ItemParams::Text(project::TextParams {
                             content: "Ordinary title".into(),
                             font_size: 32.0,
                             color: project::Color([255; 4]),
                             ..Default::default()
                         }),
-                    },
+                    )
+                    .source(
+                        time::SourceRange::new(Tick::ZERO, Tick(time::TICKS_PER_SECOND)).unwrap(),
+                    )
+                    .start(Tick(time::TICKS_PER_SECOND))
+                    .build(),
                 );
         }
         let session = engine::Session::new(project::Project::new(data).unwrap(), 10).unwrap();
@@ -813,17 +795,7 @@ fn registered_burn_job_exports_and_typed_missing_media_preserves_previous_output
         .find(|item| item.id == project::ItemId(0))
         .unwrap();
     video.source_asset = Some(media::AssetId(1));
-    video.content = project::ItemParams::Video(project::VideoParams {
-        fades: Default::default(),
-        source_audio_enabled: false,
-        volume: 0.0,
-        muted: false,
-        crop: None,
-        fit: Default::default(),
-        cleanup: Default::default(),
-        background: project::ClipBackground::None,
-        reduce_noise: false,
-    });
+    video.content = project::ItemParams::Video(project::VideoParams::plain());
     session = engine::Session::new(project::Project::new(data).unwrap(), 10).unwrap();
     std::fs::write(&path, b"previous").unwrap();
     let (id, _) = session

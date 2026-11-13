@@ -22,7 +22,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     serde_json::to_writer(
         &mut artifact,
         &serde_json::json!({
-            "output_schema": engine::control::output_schema(),
             "entries": engine::registry(),
         }),
     )?;

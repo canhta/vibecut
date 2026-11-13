@@ -273,13 +273,7 @@ fn prepare_clip(
                 source_asset: Some(options.asset.id()),
                 source_range: *range,
                 start: *start,
-                content: ItemParams::Audio(project::AudioParams {
-                    volume: 0.0,
-                    muted: false,
-                    source: Default::default(),
-                    fades: Default::default(),
-                    cleanup: Default::default(),
-                }),
+                content: ItemParams::Audio(project::AudioParams::default()),
             });
             next_item = next_item
                 .checked_add(1)
@@ -530,15 +524,9 @@ fn slot_item(
         source_range: range,
         start,
         content: ItemParams::Video(VideoParams {
-            fades: Default::default(),
-            source_audio_enabled: false,
-            volume: 0.0,
-            muted: false,
             crop: slot.crop,
             fit: slot.fit,
-            cleanup: Default::default(),
-            reduce_noise: false,
-            background: project::ClipBackground::None,
+            ..VideoParams::plain()
         }),
     })
 }

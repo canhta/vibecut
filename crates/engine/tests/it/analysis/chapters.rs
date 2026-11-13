@@ -4,9 +4,7 @@ use engine::chapters::{ChapterJob, ChapterRequest, decode};
 use engine::jobs::{JobRunner, JobState, RunnerConfig, SystemClock};
 use engine::providers::{ConsentPrompt, TextAccess, UploadRequest};
 use engine::{AnalysisError, ByteBudget};
-use project::{
-    CaptionParams, Item, ItemId, ItemParams, Project, ProjectId, Track, TrackId, TrackKind,
-};
+use project::{CaptionParams, ItemId, ItemParams, Project, ProjectId, Track, TrackId, TrackKind};
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -62,32 +60,29 @@ fn project() -> Arc<Project> {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            id: ItemId(4),
-            animations: Default::default(),
-            source_asset: Some(media::AssetId(0)),
-            source_range: SourceRange::new(Tick::ZERO, second(3)).unwrap(),
-            start: second(1),
-            content: ItemParams::Caption(CaptionParams {
-                emphasis: Default::default(),
-                word_highlight: false,
-                preset: None,
-                overrides: captions::CaptionOverrides::default(),
-                cues: captions::CueTrack {
-                    styles: Vec::new(),
-                    cues: vec![
-                        cue("cue-a", 0, 1, "en", "First"),
-                        cue("cue-b", 1, 2, "en", "Second"),
-                        cue("cue-c", 2, 3, "en", "Third"),
-                    ],
-                },
-            }),
-        }],
+        items: vec![
+            testkit::item::item(
+                ItemId(4),
+                ItemParams::Caption(CaptionParams {
+                    emphasis: Default::default(),
+                    word_highlight: false,
+                    preset: None,
+                    overrides: captions::CaptionOverrides::default(),
+                    cues: captions::CueTrack {
+                        styles: Vec::new(),
+                        cues: vec![
+                            cue("cue-a", 0, 1, "en", "First"),
+                            cue("cue-b", 1, 2, "en", "Second"),
+                            cue("cue-c", 2, 3, "en", "Third"),
+                        ],
+                    },
+                }),
+            )
+            .asset(media::AssetId(0))
+            .source(SourceRange::new(Tick::ZERO, second(3)).unwrap())
+            .start(second(1))
+            .build(),
+        ],
     });
     Arc::new(Project::new(data).unwrap())
 }

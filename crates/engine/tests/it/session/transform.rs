@@ -6,7 +6,7 @@
 use crate::support::session::{get, project, range, session};
 use engine::{Command, ItemParamPatch, Session};
 use media::{AssetId, ContentHash};
-use project::{Color, Item, ItemId, ItemParams, Project};
+use project::{Color, ItemId, ItemParams, Project};
 use time::Tick;
 
 fn transform_patch(field: project::TransformField, value: f64) -> ItemParamPatch {
@@ -88,29 +88,12 @@ fn crop_patch_is_validated_undoable_persisted_and_survives_trim_and_retime() {
         )
         .build();
     data.assets.push(asset);
-    data.scene_mut().timeline.main.items = vec![Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        masks: Vec::new(),
-        effects: Vec::new(),
-        animations: Default::default(),
-        id: ItemId(20),
-        source_asset: Some(AssetId(7)),
-        source_range: range(0, 500),
-        start: Tick::ZERO,
-        content: ItemParams::Video(project::VideoParams {
-            crop: None,
-            fades: Default::default(),
-            source_audio_enabled: false,
-            volume: 0.0,
-            muted: false,
-            fit: Default::default(),
-            cleanup: Default::default(),
-            background: project::ClipBackground::None,
-            reduce_noise: false,
-        }),
-    }];
+    data.scene_mut().timeline.main.items = vec![
+        testkit::item::video(ItemId(20))
+            .asset(AssetId(7))
+            .source(range(0, 500))
+            .build(),
+    ];
     let mut s = Session::new(Project::new(data).unwrap(), 100).unwrap();
     let initial = s.project().clone();
     let crop = |s: &Session| match &get(s, 20).content {
@@ -251,29 +234,13 @@ fn fit_session(animations: project::Animations) -> Session {
         )
         .build();
     data.assets.push(asset);
-    data.scene_mut().timeline.main.items = vec![Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        masks: Vec::new(),
-        effects: Vec::new(),
-        animations,
-        id: ItemId(20),
-        source_asset: Some(AssetId(7)),
-        source_range: range(0, 500),
-        start: Tick::ZERO,
-        content: ItemParams::Video(project::VideoParams {
-            crop: None,
-            fades: Default::default(),
-            source_audio_enabled: false,
-            volume: 0.0,
-            muted: false,
-            fit: Default::default(),
-            cleanup: Default::default(),
-            reduce_noise: false,
-            background: project::ClipBackground::None,
-        }),
-    }];
+    data.scene_mut().timeline.main.items = vec![
+        testkit::item::video(ItemId(20))
+            .asset(AssetId(7))
+            .source(range(0, 500))
+            .animations(animations)
+            .build(),
+    ];
     Session::new(Project::new(data).unwrap(), 100).unwrap()
 }
 fn fit_of(s: &Session) -> project::FitMode {

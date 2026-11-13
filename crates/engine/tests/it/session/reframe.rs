@@ -13,9 +13,7 @@ use engine::control::{
 };
 use engine::jobs::{JobId, JobRunner};
 use engine::{Command, Session};
-use project::{
-    Item, ItemId, ItemParams, Project, ProjectId, Track, TrackId, TrackKind, VideoParams,
-};
+use project::{Item, ItemId, ItemParams, Project, ProjectId, Track, TrackId, TrackKind};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::{
@@ -68,29 +66,12 @@ fn project(source: &media::SourceAsset) -> Project {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: ItemId(8),
-            source_asset: Some(media::AssetId(97)),
-            source_range: SourceRange::new(Tick::ZERO, duration).expect("fixture range"),
-            start: Tick::ZERO,
-            content: ItemParams::Video(VideoParams {
-                fades: Default::default(),
-                source_audio_enabled: false,
-                volume: 0.0,
-                muted: false,
-                crop: None,
-                fit: Default::default(),
-                cleanup: Default::default(),
-                background: project::ClipBackground::None,
-                reduce_noise: false,
-            }),
-        }],
+        items: vec![
+            testkit::item::video(ItemId(8))
+                .asset(media::AssetId(97))
+                .source(SourceRange::new(Tick::ZERO, duration).expect("fixture range"))
+                .build(),
+        ],
     });
     Project::new(data).unwrap()
 }

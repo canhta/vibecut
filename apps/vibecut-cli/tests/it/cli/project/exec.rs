@@ -376,21 +376,14 @@ fn cli_clipboard_item_payload_pastes_with_relative_track_overwrite() {
         Tick(time::TICKS_PER_SECOND * 3),
         [255, 255, 255, 255],
     );
-    let pasted = project::Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        masks: Vec::new(),
-        effects: Vec::new(),
-        animations: Default::default(),
-        id: project::ItemId(0),
-        source_asset: None,
-        source_range: TimeRange::new(Tick::ZERO, Tick(time::TICKS_PER_SECOND)).unwrap(),
-        start: Tick::ZERO,
-        retime: Default::default(),
-        content: project::ItemParams::Overlay(project::OverlayParams {
+    let pasted = testkit::item::item(
+        project::ItemId(0),
+        project::ItemParams::Overlay(project::OverlayParams {
             color: project::Color([0, 0, 255, 255]),
         }),
-    };
+    )
+    .source(TimeRange::new(Tick::ZERO, Tick(time::TICKS_PER_SECOND)).unwrap())
+    .build();
     let payload = json!({
         "version": 1,
         "span": time::TICKS_PER_SECOND,
@@ -732,23 +725,19 @@ fn exec_shared_field_id_list_persists_only_compatible_item_fields() {
         hidden: false,
         locked: false,
         items: (0..2)
-            .map(|i| project::Item {
-                hidden: false,
-                retime: Default::default(),
-                blend_mode: Default::default(),
-                masks: Vec::new(),
-                effects: vec![],
-                animations: Default::default(),
-                id: project::ItemId(i + 10),
-                source_asset: None,
-                source_range: TimeRange::new(Tick::ZERO, Tick(100)).unwrap(),
-                start: Tick(i as i64 * 100),
-                content: project::ItemParams::Text(project::TextParams {
-                    content: format!("Text {i}").into(),
-                    font_size: 24.0 + i as f32,
-                    color: project::Color([255; 4]),
-                    ..Default::default()
-                }),
+            .map(|i| {
+                testkit::item::item(
+                    project::ItemId(i + 10),
+                    project::ItemParams::Text(project::TextParams {
+                        content: format!("Text {i}").into(),
+                        font_size: 24.0 + i as f32,
+                        color: project::Color([255; 4]),
+                        ..Default::default()
+                    }),
+                )
+                .source(TimeRange::new(Tick::ZERO, Tick(100)).unwrap())
+                .start(Tick(i as i64 * 100))
+                .build()
             })
             .collect(),
     });
@@ -803,24 +792,19 @@ fn exec_scrub_equivalent_params_use_the_single_item_command() {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![project::Item {
-            hidden: false,
-            retime: Default::default(),
-            blend_mode: Default::default(),
-            masks: Vec::new(),
-            effects: vec![],
-            animations: Default::default(),
-            id: project::ItemId(10),
-            source_asset: None,
-            source_range: TimeRange::new(Tick::ZERO, Tick(100)).unwrap(),
-            start: Tick::ZERO,
-            content: project::ItemParams::Text(project::TextParams {
-                content: "Scrub".into(),
-                font_size: 32.0,
-                color: project::Color([255; 4]),
-                ..Default::default()
-            }),
-        }],
+        items: vec![
+            testkit::item::item(
+                project::ItemId(10),
+                project::ItemParams::Text(project::TextParams {
+                    content: "Scrub".into(),
+                    font_size: 32.0,
+                    color: project::Color([255; 4]),
+                    ..Default::default()
+                }),
+            )
+            .source(TimeRange::new(Tick::ZERO, Tick(100)).unwrap())
+            .build(),
+        ],
     });
     let original = project::Project::new(data).unwrap();
     fs::write(&path, project::encode(&original, true).unwrap()).unwrap();

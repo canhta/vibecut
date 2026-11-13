@@ -15,8 +15,7 @@ use engine::jobs::{
 };
 use engine::{ByteBudget, Command, Session, control::Error as EngineError};
 use project::{
-    Color, Item, ItemId, ItemParams, OverlayParams, Project, ProjectId, Track, TrackId, TrackKind,
-    VideoParams,
+    Color, ItemId, ItemParams, OverlayParams, Project, ProjectId, Track, TrackId, TrackKind,
 };
 use serde_json::{Value, json};
 use std::{path::Path, sync::Arc, time::Duration};
@@ -179,48 +178,29 @@ pub(crate) fn seed() -> Session {
             hidden: false,
             locked: false,
             items: vec![
-                Item {
-                    hidden: false,
-                    blend_mode: Default::default(),
-                    retime: Default::default(),
-                    masks: vec![project::Mask::new("mask1", project::MaskShape::Rectangle)],
-                    effects: vec![
-                        project::effect_definition("blur")
-                            .unwrap()
-                            .instance("blur1"),
-                    ],
-                    id: ItemId(1),
-                    animations,
-                    source_asset: None,
-                    source_range: SourceRange::new(Tick::ZERO, duration).unwrap(),
-                    start: Tick::ZERO,
-                    content: ItemParams::Overlay(OverlayParams {
+                testkit::item::item(
+                    ItemId(1),
+                    ItemParams::Overlay(OverlayParams {
                         color: Color([0, 64, 128, 255]),
                     }),
-                },
-                Item {
-                    hidden: false,
-                    blend_mode: Default::default(),
-                    retime: Default::default(),
-                    masks: Vec::new(),
-                    effects: Vec::new(),
-                    id: ItemId(5),
-                    animations: Default::default(),
-                    source_asset: Some(media::AssetId(0)),
-                    source_range: SourceRange::new(Tick::ZERO, duration).unwrap(),
-                    start: duration,
-                    content: ItemParams::Video(project::VideoParams {
-                        fades: Default::default(),
-                        source_audio_enabled: false,
-                        volume: 0.0,
-                        muted: false,
-                        crop: None,
-                        fit: Default::default(),
-                        cleanup: Default::default(),
-                        background: project::ClipBackground::None,
-                        reduce_noise: false,
-                    }),
-                },
+                )
+                .source(SourceRange::new(Tick::ZERO, duration).unwrap())
+                .masks(vec![project::Mask::new(
+                    "mask1",
+                    project::MaskShape::Rectangle,
+                )])
+                .effects(vec![
+                    project::effect_definition("blur")
+                        .unwrap()
+                        .instance("blur1"),
+                ])
+                .animations(animations)
+                .build(),
+                testkit::item::video(ItemId(5))
+                    .asset(media::AssetId(0))
+                    .source(SourceRange::new(Tick::ZERO, duration).unwrap())
+                    .start(duration)
+                    .build(),
             ],
         },
         Track {
@@ -239,44 +219,40 @@ pub(crate) fn seed() -> Session {
             muted: false,
             hidden: false,
             locked: false,
-            items: vec![Item {
-                hidden: false,
-                blend_mode: Default::default(),
-                retime: Default::default(),
-                masks: Vec::new(),
-                effects: Vec::new(),
-                id: ItemId(4),
-                animations: Default::default(),
-                source_asset: Some(media::AssetId(0)),
-                source_range: SourceRange::new(Tick::ZERO, duration).unwrap(),
-                start: Tick::ZERO,
-                content: ItemParams::Caption(project::CaptionParams {
-                    emphasis: Default::default(),
-                    word_highlight: false,
-                    preset: None,
-                    overrides: captions::CaptionOverrides::default(),
-                    cues: captions::CueTrack {
-                        styles: Vec::new(),
-                        cues: vec![captions::Cue {
-                            word_timing: captions::CueWordTiming::Unverified,
-                            id: "cue-1".into(),
-                            range: SourceRange::new(Tick::ZERO, duration).unwrap(),
-                            source_lang: captions::LanguageTag::parse("en").unwrap(),
-                            texts: [(
-                                captions::LanguageTag::parse("en").unwrap(),
-                                captions::CueText {
-                                    text: "Hello".into(),
-                                    edited: false,
-                                    translation_ref: None,
-                                },
-                            )]
-                            .into_iter()
-                            .collect(),
-                            style: None,
-                        }],
-                    },
-                }),
-            }],
+            items: vec![
+                testkit::item::item(
+                    ItemId(4),
+                    ItemParams::Caption(project::CaptionParams {
+                        emphasis: Default::default(),
+                        word_highlight: false,
+                        preset: None,
+                        overrides: captions::CaptionOverrides::default(),
+                        cues: captions::CueTrack {
+                            styles: Vec::new(),
+                            cues: vec![captions::Cue {
+                                word_timing: captions::CueWordTiming::Unverified,
+                                id: "cue-1".into(),
+                                range: SourceRange::new(Tick::ZERO, duration).unwrap(),
+                                source_lang: captions::LanguageTag::parse("en").unwrap(),
+                                texts: [(
+                                    captions::LanguageTag::parse("en").unwrap(),
+                                    captions::CueText {
+                                        text: "Hello".into(),
+                                        edited: false,
+                                        translation_ref: None,
+                                    },
+                                )]
+                                .into_iter()
+                                .collect(),
+                                style: None,
+                            }],
+                        },
+                    }),
+                )
+                .asset(media::AssetId(0))
+                .source(SourceRange::new(Tick::ZERO, duration).unwrap())
+                .build(),
+            ],
         },
     ];
     data.scene_mut().timeline.overlays.reverse();
@@ -343,19 +319,14 @@ pub(crate) fn with_text(seed: &Session) -> Session {
         .unwrap();
     assert!(track.items.is_empty());
     track.kind = TrackKind::Text;
-    track.items.push(Item {
-        id: ItemId(3),
-        start: Tick::ZERO,
-        source_asset: None,
-        source_range: SourceRange::new(Tick::ZERO, Tick(time::TICKS_PER_SECOND)).unwrap(),
-        content: ItemParams::Text(project::TextParams::new("Tiếng Việt\nEnglish")),
-        animations: Default::default(),
-        effects: Vec::new(),
-        masks: Vec::new(),
-        blend_mode: Default::default(),
-        hidden: false,
-        retime: Default::default(),
-    });
+    track.items.push(
+        testkit::item::item(
+            ItemId(3),
+            ItemParams::Text(project::TextParams::new("Tiếng Việt\nEnglish")),
+        )
+        .source(SourceRange::new(Tick::ZERO, Tick(time::TICKS_PER_SECOND)).unwrap())
+        .build(),
+    );
     Session::new(Project::new(data).unwrap(), 10).unwrap()
 }
 /// The text fixture with items 1, 3 and 5 spread apart for even spacing.
@@ -472,29 +443,12 @@ pub(crate) fn with_reframe(seed: &Session, path: &Path) -> Session {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: ItemId(8),
-            source_asset: Some(media::AssetId(97)),
-            source_range: SourceRange::new(Tick::ZERO, duration).expect("fixture range"),
-            start: Tick::ZERO,
-            content: ItemParams::Video(VideoParams {
-                fades: Default::default(),
-                source_audio_enabled: false,
-                volume: 0.0,
-                muted: false,
-                crop: None,
-                fit: Default::default(),
-                cleanup: Default::default(),
-                background: project::ClipBackground::None,
-                reduce_noise: false,
-            }),
-        }],
+        items: vec![
+            testkit::item::video(ItemId(8))
+                .asset(media::AssetId(97))
+                .source(SourceRange::new(Tick::ZERO, duration).expect("fixture range"))
+                .build(),
+        ],
     });
     Session::new(Project::new(data).unwrap(), 10).unwrap()
 }
@@ -568,29 +522,12 @@ pub(crate) fn with_thumbnails(seed: &Session, path: &Path) -> Session {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: ItemId(6),
-            source_asset: Some(media::AssetId(97)),
-            source_range: SourceRange::new(Tick::ZERO, duration).unwrap(),
-            start: Tick::ZERO,
-            content: ItemParams::Video(project::VideoParams {
-                fades: Default::default(),
-                source_audio_enabled: false,
-                volume: 0.0,
-                muted: false,
-                crop: None,
-                fit: Default::default(),
-                cleanup: Default::default(),
-                background: project::ClipBackground::None,
-                reduce_noise: false,
-            }),
-        }],
+        items: vec![
+            testkit::item::video(ItemId(6))
+                .asset(media::AssetId(97))
+                .source(SourceRange::new(Tick::ZERO, duration).unwrap())
+                .build(),
+        ],
     });
     Session::new(Project::new(data).unwrap(), 10).unwrap()
 }
@@ -754,25 +691,12 @@ pub(crate) fn with_audio(seed: &Session) -> Session {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![Item {
-            hidden: false,
-            retime: Default::default(),
-            blend_mode: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            id: ItemId(5),
-            animations: Default::default(),
-            source_asset: Some(media::AssetId(97)),
-            source_range: SourceRange::new(Tick::ZERO, duration).unwrap(),
-            start: Tick::ZERO,
-            content: ItemParams::Audio(project::AudioParams {
-                fades: Default::default(),
-                volume: 0.0,
-                muted: false,
-                source: Default::default(),
-                cleanup: Default::default(),
-            }),
-        }],
+        items: vec![
+            testkit::item::audio(ItemId(5))
+                .asset(media::AssetId(97))
+                .source(SourceRange::new(Tick::ZERO, duration).unwrap())
+                .build(),
+        ],
     });
     Session::new(Project::new(data).unwrap(), 10).unwrap()
 }

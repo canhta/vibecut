@@ -96,24 +96,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
             effect = effect.with("lut", project::EffectValue::Lut(Some(id)))?;
         }
-        data.scene_mut().timeline.main.items.push(project::Item {
-            id: project::ItemId(1),
-            source_asset: None,
-            source_range: time::TimeRange::new(
+        data.scene_mut().timeline.main.items.push(
+            testkit::item::item(
+                project::ItemId(1),
+                project::ItemParams::Overlay(project::OverlayParams {
+                    color: project::Color([51, 117, 193, 255]),
+                }),
+            )
+            .source(time::TimeRange::new(
                 time::Tick::ZERO,
                 time::Tick(time::TICKS_PER_SECOND),
-            )?,
-            start: time::Tick::ZERO,
-            content: project::ItemParams::Overlay(project::OverlayParams {
-                color: project::Color([51, 117, 193, 255]),
-            }),
-            effects: vec![effect],
-            masks: Vec::new(),
-            animations: Default::default(),
-            retime: Default::default(),
-            blend_mode: Default::default(),
-            hidden: false,
-        });
+            )?)
+            .effects(vec![effect])
+            .build(),
+        );
         let project = project::Project::new(data)?;
         let settings = render::RenderSettings::from_project(&project);
         let mut renderer = render::Renderer::new(&project, settings)?;

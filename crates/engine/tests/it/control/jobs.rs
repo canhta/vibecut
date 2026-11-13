@@ -15,7 +15,7 @@ use engine::control::{
 };
 use engine::jobs::{JobBytes, JobKind, JobRunner, JobSpec, JobState, ResourceClass};
 use engine::{Command, Session};
-use project::{Color, Item, ItemId, ItemParams, OverlayParams, Project, Track, TrackId, TrackKind};
+use project::{Color, ItemId, ItemParams, OverlayParams, Project, Track, TrackId, TrackKind};
 use serde_json::{Value, json};
 use std::{sync::Mutex, time::Duration};
 use time::{FrameRate, SourceRange, Tick};
@@ -824,21 +824,16 @@ fn export_control_admits_typed_settings_refuses_old_range_and_preserves_revision
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![Item {
-            hidden: false,
-            id: ItemId(1),
-            start: Tick::ZERO,
-            source_asset: None,
-            source_range: SourceRange::new(Tick::ZERO, Tick(time::TICKS_PER_SECOND)).unwrap(),
-            content: ItemParams::Overlay(OverlayParams {
-                color: Color([20, 80, 120, 255]),
-            }),
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: vec![],
-            effects: vec![],
-            animations: Default::default(),
-        }],
+        items: vec![
+            testkit::item::item(
+                ItemId(1),
+                ItemParams::Overlay(OverlayParams {
+                    color: Color([20, 80, 120, 255]),
+                }),
+            )
+            .source(SourceRange::new(Tick::ZERO, Tick(time::TICKS_PER_SECOND)).unwrap())
+            .build(),
+        ],
     });
     let mut session = Session::new(Project::new(data).unwrap(), 10).unwrap();
     let mut runner = runner();
@@ -1458,25 +1453,12 @@ fn pause_candidates_job_reports_reviewed_spans_through_job_status() {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: ItemId(1),
-            source_asset: Some(asset.id()),
-            source_range: SourceRange::new(time::Tick::ZERO, duration).unwrap(),
-            start: time::Tick::ZERO,
-            content: ItemParams::Audio(project::AudioParams {
-                fades: Default::default(),
-                volume: 0.0,
-                muted: false,
-                source: Default::default(),
-                cleanup: Default::default(),
-            }),
-        }],
+        items: vec![
+            testkit::item::audio(ItemId(1))
+                .asset(asset.id())
+                .source(SourceRange::new(time::Tick::ZERO, duration).unwrap())
+                .build(),
+        ],
     });
     let mut s = Session::new(project::Project::new(data).unwrap(), 10).unwrap();
     let mut r = runner();

@@ -86,25 +86,12 @@ fn session() -> Session {
         hidden: false,
         muted: false,
         locked: false,
-        items: vec![project::Item {
-            hidden: false,
-            id: project::ItemId(1),
-            source_asset: Some(media::AssetId(1)),
-            source_range: TimeRange::new(Tick::ZERO, seconds).unwrap(),
-            start: Tick::ZERO,
-            retime: Default::default(),
-            animations: Default::default(),
-            effects: vec![],
-            masks: vec![],
-            blend_mode: Default::default(),
-            content: project::ItemParams::Audio(project::AudioParams {
-                volume: 0.0,
-                muted: false,
-                source: Default::default(),
-                fades: Default::default(),
-                cleanup: Default::default(),
-            }),
-        }],
+        items: vec![
+            testkit::item::audio(project::ItemId(1))
+                .asset(media::AssetId(1))
+                .source(TimeRange::new(Tick::ZERO, seconds).unwrap())
+                .build(),
+        ],
     });
     Session::new(project::Project::new(data).unwrap(), 1).unwrap()
 }

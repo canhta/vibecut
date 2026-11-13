@@ -56,7 +56,7 @@ fn keyframe_cluster_rect(row: Rect) -> Rect {
 fn animatable_groups(specs: &[ScrubSpec]) -> Vec<(&'static str, Vec<ScrubSpec>)> {
     let mut groups: Vec<(&'static str, Vec<ScrubSpec>)> = Vec::new();
     for spec in specs.iter().copied().filter(|spec| {
-        spec.field == "audio_gain"
+        spec.field == "volume"
             || spec.field.starts_with("params.")
             || matches!(
                 project::BuiltinPath::parse(spec.field),
@@ -1395,17 +1395,13 @@ impl<'a, 'c> Panel<'a, 'c> {
                             panel.scrub_field(
                                 ui,
                                 item,
-                                ScrubSpec {
-                                    field: "params.strokeWidth",
-                                    label: Text::GraphicWidth,
-                                    min: 0.,
-                                    max: 64.,
-                                    step: 1.,
-                                    pixels_per_step: 2.,
-                                    decimals: 0,
-                                    suffix: "",
-                                    scale: 1.0,
-                                },
+                                ScrubSpec::of(
+                                    "graphic_stroke_width",
+                                    Text::GraphicWidth,
+                                    1.,
+                                    2.,
+                                    0,
+                                ),
                             );
                             panel.graphic_align(ui, item);
                             match read::item(panel.cx.session.project(), item)
@@ -1417,32 +1413,24 @@ impl<'a, 'c> Panel<'a, 'c> {
                                     panel.scrub_field(
                                         ui,
                                         item,
-                                        ScrubSpec {
-                                            field: "params.sides",
-                                            label: Text::GraphicSides,
-                                            min: 3.,
-                                            max: 12.,
-                                            step: 1.,
-                                            pixels_per_step: 2.,
-                                            decimals: 0,
-                                            suffix: "",
-                                            scale: 1.0,
-                                        },
+                                        ScrubSpec::of(
+                                            "graphic_sides",
+                                            Text::GraphicSides,
+                                            1.,
+                                            2.,
+                                            0,
+                                        ),
                                     );
                                     panel.scrub_field(
                                         ui,
                                         item,
-                                        ScrubSpec {
-                                            field: "params.cornerRadius",
-                                            label: Text::BackgroundRadius,
-                                            min: 0.,
-                                            max: 50.,
-                                            step: 1.,
-                                            pixels_per_step: 2.,
-                                            decimals: 0,
-                                            suffix: "%",
-                                            scale: 1.0,
-                                        },
+                                        ScrubSpec::of(
+                                            "graphic_corner_radius",
+                                            Text::BackgroundRadius,
+                                            1.,
+                                            2.,
+                                            0,
+                                        ),
                                     );
                                 }
                                 Some(project::ItemParams::Graphic(
@@ -1451,32 +1439,24 @@ impl<'a, 'c> Panel<'a, 'c> {
                                     panel.scrub_field(
                                         ui,
                                         item,
-                                        ScrubSpec {
-                                            field: "params.points",
-                                            label: Text::GraphicPoints,
-                                            min: 3.,
-                                            max: 12.,
-                                            step: 1.,
-                                            pixels_per_step: 2.,
-                                            decimals: 0,
-                                            suffix: "",
-                                            scale: 1.0,
-                                        },
+                                        ScrubSpec::of(
+                                            "graphic_points",
+                                            Text::GraphicPoints,
+                                            1.,
+                                            2.,
+                                            0,
+                                        ),
                                     );
                                     panel.scrub_field(
                                         ui,
                                         item,
-                                        ScrubSpec {
-                                            field: "params.depth",
-                                            label: Text::GraphicDepth,
-                                            min: 1.,
-                                            max: 99.,
-                                            step: 1.,
-                                            pixels_per_step: 2.,
-                                            decimals: 0,
-                                            suffix: "%",
-                                            scale: 1.0,
-                                        },
+                                        ScrubSpec::of(
+                                            "graphic_depth",
+                                            Text::GraphicDepth,
+                                            1.,
+                                            2.,
+                                            0,
+                                        ),
                                     );
                                 }
                                 Some(project::ItemParams::Graphic(
@@ -1485,17 +1465,13 @@ impl<'a, 'c> Panel<'a, 'c> {
                                     panel.scrub_field(
                                         ui,
                                         item,
-                                        ScrubSpec {
-                                            field: "params.cornerRadius",
-                                            label: Text::BackgroundRadius,
-                                            min: 0.,
-                                            max: 50.,
-                                            step: 1.,
-                                            pixels_per_step: 2.,
-                                            decimals: 0,
-                                            suffix: "%",
-                                            scale: 1.0,
-                                        },
+                                        ScrubSpec::of(
+                                            "graphic_corner_radius",
+                                            Text::BackgroundRadius,
+                                            1.,
+                                            2.,
+                                            0,
+                                        ),
                                     );
                                 }
                                 _ => {}

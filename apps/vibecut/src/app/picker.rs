@@ -352,33 +352,15 @@ mod tests {
             .into_data();
         data.assets
             .push(media::SourceAsset::import(media::AssetId(1), path).unwrap());
-        data.scene_mut().timeline.main.items.push(project::Item {
-            id: project::ItemId(2),
-            source_asset: Some(media::AssetId(1)),
-            source_range: time::SourceRange::new(
-                time::Tick::ZERO,
-                time::Tick(time::TICKS_PER_SECOND),
-            )
-            .unwrap(),
-            start: time::Tick::ZERO,
-            content: project::ItemParams::Video(project::VideoParams {
-                fades: Default::default(),
-                source_audio_enabled: false,
-                volume: 0.,
-                muted: false,
-                crop: None,
-                fit: Default::default(),
-                cleanup: Default::default(),
-                background: project::ClipBackground::None,
-                reduce_noise: false,
-            }),
-            effects: vec![],
-            masks: vec![],
-            animations: Default::default(),
-            retime: Default::default(),
-            blend_mode: Default::default(),
-            hidden: false,
-        });
+        data.scene_mut().timeline.main.items.push(
+            testkit::item::video(project::ItemId(2))
+                .asset(media::AssetId(1))
+                .source(
+                    time::SourceRange::new(time::Tick::ZERO, time::Tick(time::TICKS_PER_SECOND))
+                        .unwrap(),
+                )
+                .build(),
+        );
         let session = engine::Session::new(project::Project::new(data).unwrap(), 20).unwrap();
         let playback = Playback::new(
             &session,
