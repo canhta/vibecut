@@ -556,6 +556,9 @@ impl Subtitles {
                     self.text_focus = None;
                     ui.label(controls.tr(Text::SubEmpty));
                     self.style_ui(ui, session, options, at, bank_ready, &mut controls);
+                    // Words picked in another scene stay selected here, so the pane still
+                    // answers a cut with its scene refusal instead of vanishing.
+                    self.transcript_ui(ui, session, controls.locale, dark, &mut controls.widgets);
                     return;
                 }
                 let items: Vec<_> = session

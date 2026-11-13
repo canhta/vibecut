@@ -40,8 +40,12 @@ fn click(h: &mut Harness<'_, Editor>, id: &str) {
 }
 /// A pointer click holding `modifiers`, for Shift and Ctrl selection.
 fn click_modifiers(h: &mut Harness<'_, Editor>, id: &str, modifiers: egui::Modifiers) {
+    // The rows sit far down the scrolling panel, where a pointer click cannot reach them, so
+    // the click goes through AccessKit with the modifiers held for the frames around it.
+    h.event(egui::Event::ModifiersChanged(modifiers));
     h.get(By::new().predicate(|n| n.author_id() == Some(id)))
-        .click_modifiers(modifiers);
+        .click_accesskit();
+    h.event(egui::Event::ModifiersChanged(egui::Modifiers::default()));
     h.run_steps(3);
 }
 fn wait(h: &mut Harness<'_, Editor>, ready: impl Fn(&Editor) -> bool) {
@@ -2797,6 +2801,24 @@ fn filler_toggles(h: &Harness<'_, Editor>) -> Vec<String> {
     .collect()
 }
 
+/// The cues of every caption item in the active scene, in timeline order. A word cut splits
+/// the item, and the original id stays on the earliest piece, which may hold no cue.
+fn scene_cues(e: &Editor) -> Vec<captions::Cue> {
+    e.session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .filter_map(|i| match &i.content {
+            ItemParams::Caption(p) => Some(p.cues.cues.clone()),
+            _ => None,
+        })
+        .flatten()
+        .collect()
+}
+
 #[test]
 fn filler_cut_list_removes_only_checked_candidates_as_one_undo_step() {
     let mut h = harness(editor_with_cues("vi", filler_cues()), 1.0);
@@ -2817,7 +2839,7 @@ fn filler_cut_list_removes_only_checked_candidates_as_one_undo_step() {
 
     click(&mut h, "subtitles.fillers.apply");
     assert_eq!(h.state().session.history_len().0, history + 1);
-    let cues = track(h.state()).cues;
+    let cues = scene_cues(h.state());
     assert!(
         !cues[0]
             .texts

@@ -234,9 +234,8 @@ impl Subtitles {
     }
     pub fn inspect(&self, session: &Session) -> Inspection {
         let state = self
-            .active
-            .as_ref()
-            .and_then(|a| a.events.state.lock().ok());
+            .consent_events()
+            .and_then(|events| events.state.lock().ok());
         let job = self
             .active
             .as_ref()
