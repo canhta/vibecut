@@ -1,13 +1,15 @@
 //! Sticker pixels: bundled flag SVGs rasterised at the destination pixel size, shapes drawn
 //! through the generated graphic contours, and a placeholder for an asset that cannot be drawn.
 
-use super::Placement;
-use super::draw::draw_graphic;
-use super::sticker_flags::FLAGS;
 use crate::image::{color, over};
+use crate::scene::Placement;
+use crate::scene::draw::draw_graphic;
 use crate::{ExecutionHooks, Image, MemoryKind, Result, check};
+use flags::FLAGS;
 use project::{GraphicParams, Item, ItemParams, StickerParams};
 use time::Tick;
+
+mod flags;
 
 /// Longest side, in pixels, a single sticker raster may have.
 pub const MAX_STICKER_RASTER_SIDE: u32 = 8192;
@@ -122,7 +124,7 @@ fn shape_graphic(value: &str) -> Option<GraphicParams> {
 
 /// Draws one sticker into the item's layer. A sticker whose asset is missing or invalid paints a
 /// placeholder in its place and returns the typed failure for the caller to report.
-pub(super) fn draw_sticker(
+pub(in crate::scene) fn draw_sticker(
     target: &mut Image,
     item: &Item,
     params: &StickerParams,
