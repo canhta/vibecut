@@ -4,6 +4,7 @@ use egui_kittest::{
     kittest::{By, Queryable},
 };
 use engine::{ByteBudget, Session};
+use media::{AssetData, AssetId, ContentHash, SourceAsset, SourceProbe};
 use project::{AspectPreset, CanvasSize, Project, ProjectId};
 use std::{
     path::{Path, PathBuf},
@@ -316,13 +317,65 @@ fn details_rows_and_info_section_collapse_and_persist() {
             .get(By::new().label("Test").role(egui::accesskit::Role::Label))
             .rect()
             .top();
-        let (aspect_row, resolution_row, rate_row) = (top(aspect), top(resolution), top(rate));
-        assert!(name < aspect_row && aspect_row < resolution_row && resolution_row < rate_row);
+        let (imported_row, aspect_row, resolution_row, rate_row) = (
+            top("Imported media:"),
+            top(aspect),
+            top(resolution),
+            top(rate),
+        );
+        assert!(
+            name < imported_row
+                && imported_row < aspect_row
+                && aspect_row < resolution_row
+                && resolution_row < rate_row
+        );
         harness.get_by_label("Name:");
         harness.get_by_label("Aspect ratio:");
         harness.get_by_label("Resolution:");
         harness.get_by_label("Frame rate:");
         harness.get_by_label("Modify");
+        // No user media yet: the value is the empty dash, not the stay-in-place text.
+        assert!(
+            harness
+                .query_by_label("Stay in original location")
+                .is_none()
+        );
+    }
+
+    // Imported media reads `Stay in original location` for user assets, which are referenced
+    // by path and never copied; ephemeral assets are internal and do not count.
+    for (ephemeral, stays) in [(false, true), (true, false)] {
+        let mut data = Project::empty(ProjectId(1), "Test".into())
+            .unwrap()
+            .into_data();
+        data.assets.push(
+            SourceAsset::try_from(AssetData {
+                ephemeral,
+                id: AssetId(1),
+                path: std::env::temp_dir().join("vibecut-details-media.mp4"),
+                content_hash: ContentHash::from_bytes(&[1; 8]),
+                probe: SourceProbe {
+                    format: "mov,mp4".into(),
+                    duration: None,
+                    streams: Vec::new(),
+                },
+            })
+            .unwrap(),
+        );
+        let mut harness = build(editor_with(
+            Project::new(data).unwrap(),
+            Preferences::default(),
+        ));
+        harness.run_steps(3);
+        click(&mut harness, "inspector.details");
+        harness.get_by_label("Imported media:");
+        assert_eq!(
+            harness
+                .query_by_label("Stay in original location")
+                .is_some(),
+            stays,
+            "stay-in-place text for ephemeral={ephemeral}"
+        );
     }
 
     // A saved project shows its path row; the unsaved one above does not.
