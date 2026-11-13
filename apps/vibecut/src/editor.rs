@@ -731,13 +731,10 @@ impl Editor {
             .map(SourceAsset::id)
             .ok_or(Error::Invalid("import the file before replacing"))?;
         self.desk()
-            .apply_result(
-                Command::ReplaceMedia {
-                    items: vec![item],
-                    asset,
-                },
-                false,
-            )
+            .apply_result(Command::ReplaceMedia {
+                items: vec![item],
+                asset,
+            })
             .map(|_| ())
     }
     /// Native picker destination applied through the consumed `preview.snapshot`

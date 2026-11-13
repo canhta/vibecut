@@ -5,6 +5,7 @@ use crate::editor::{
 
 impl Editor {
     pub fn ui(&mut self, ui: &mut egui::Ui) {
+        self.sync_gap_policy();
         // Agents can change selection or the project between pointer events.
         let actions = self.properties.reconcile(
             self.session.project(),
@@ -333,12 +334,9 @@ impl Editor {
                 }
                 Action::TransformEnd { commit } => self.end_preview_transform(commit),
                 Action::MasterPreview { volume, muted } => {
-                    self.desk().preview(
-                        Command::TimelinePreview {
-                            commands: vec![Command::SetMaster { volume, muted }],
-                        },
-                        false,
-                    );
+                    self.desk().preview(Command::TimelinePreview {
+                        commands: vec![Command::SetMaster { volume, muted }],
+                    });
                 }
                 Action::MasterEnd { commit } => self.end_preview_transform(commit),
                 Action::MasterSet { volume, muted } => {
@@ -430,7 +428,7 @@ impl Editor {
                     let command = Command::RenameProject {
                         name: name.clone().into(),
                     };
-                    if self.desk().apply_result(command, false).is_err() {
+                    if self.desk().apply_result(command).is_err() {
                         self.frame.rename = Some(name);
                     }
                 }

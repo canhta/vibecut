@@ -1102,4 +1102,7 @@ pub struct Outcome {
     pub changed: bool,
     pub created: Vec<CreatedId>,
     pub placements: Vec<ItemPlacement>,
+    /// The edit closed the span it vacated: the session ripple or the main-track magnet moved
+    /// a later piece to the cut.
+    pub closed_span: bool,
 }

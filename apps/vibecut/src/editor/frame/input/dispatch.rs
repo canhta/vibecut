@@ -658,16 +658,11 @@ impl Editor {
         if commands.is_empty() {
             return Ok(());
         }
-        let closes_span = self
-            .session
-            .closes_vacated_spans(&commands, self.preferences.ripple);
-        let created = self
-            .session
-            .apply(Command::TimelineEdit {
-                commands,
-                ripple: self.preferences.ripple,
-            })?
-            .created;
+        self.sync_gap_policy();
+        let outcome = self.session.apply(Command::Batch { commands })?;
+        // The kept right piece moves to the cut only when the engine closed the span.
+        let closes_span = outcome.closed_span;
+        let created = outcome.created;
         let created_items: Vec<ItemId> = created
             .iter()
             .filter_map(|id| match id {
@@ -707,7 +702,6 @@ impl Editor {
             | EngineAction::Align(_)
             | EngineAction::Distribute(_) => self.prune_selection(),
         }
-        // The kept right piece moves to the cut only when the engine closed the span.
         if route == EngineAction::SplitLeft
             && closes_span
             && let Some(start) = created_items

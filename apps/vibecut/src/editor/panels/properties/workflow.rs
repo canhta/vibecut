@@ -202,10 +202,7 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
                 Ok(())
             }
             Action::SetAnimatedParam { item, path, param } => desk
-                .apply_result(
-                    engine::Command::SetAnimatedParam { item, path, param },
-                    false,
-                )
+                .apply_result(engine::Command::SetAnimatedParam { item, path, param })
                 .map(|_| ()),
             Action::ColorPreview { command } => state.preview_color(desk, command),
             Action::ColorCommit { command, recent } => state.commit_color(desk, command, recent),

@@ -96,6 +96,7 @@ fn unchanged() -> crate::Outcome {
         changed: false,
         created: Vec::new(),
         placements: Vec::new(),
+        closed_span: false,
     }
 }
 

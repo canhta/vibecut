@@ -748,6 +748,7 @@ fn outcome(changed: bool) -> Outcome {
         changed,
         created: Vec::new(),
         placements: Vec::new(),
+        closed_span: false,
     }
 }
 fn cleanup(step: Step) {

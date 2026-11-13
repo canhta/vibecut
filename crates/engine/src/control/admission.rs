@@ -418,6 +418,7 @@ impl Session {
                     changed: false,
                     created: Vec::new(),
                     placements: Vec::new(),
+                    closed_span: false,
                 },
             }),
             Err(error) => ResponseValue::Error(error.code()),

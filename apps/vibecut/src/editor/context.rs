@@ -270,36 +270,6 @@ pub(crate) struct Desk<'a> {
     editor: &'a mut crate::editor::Editor,
 }
 
-/// The editor's ripple preference as a command: an edit or replacement preview is
-/// wrapped in `timeline.edit` so the policy never rides on session state; a
-/// `batch` becomes the policy's own command list. Library audio and every non-edit
-/// command carry no policy.
-fn ripple_policy(command: engine::Command, ripple: bool) -> engine::Command {
-    use engine::{Command, Effect};
-    match command {
-        Command::Batch { commands } => Command::TimelineEdit { commands, ripple },
-        command @ Command::TimelinePreview { .. } => Command::TimelineEdit {
-            commands: vec![command],
-            ripple,
-        },
-        command
-            if command.effect() == Effect::Edit
-                && !matches!(
-                    command,
-                    Command::TimelineEdit { .. }
-                        | Command::AddLibrarySound { .. }
-                        | Command::AddLibraryMusic { .. }
-                ) =>
-        {
-            Command::TimelineEdit {
-                commands: vec![command],
-                ripple,
-            }
-        }
-        command => command,
-    }
-}
-
 impl<'a> Desk<'a> {
     pub(in crate::editor) fn new(editor: &'a mut crate::editor::Editor) -> Self {
         Self { editor }
@@ -340,9 +310,8 @@ impl<'a> Desk<'a> {
     pub(in crate::editor) fn run_command(
         &mut self,
         command: engine::Command,
-        ripple: bool,
     ) -> std::result::Result<engine::Outcome, engine::EditError> {
-        self.editor.session.apply(ripple_policy(command, ripple))
+        self.editor.session.apply(command)
     }
 
     /// Run one registered action through the editor's shared activation path.
@@ -370,8 +339,8 @@ impl<'a> Desk<'a> {
 
     /// Stage a preview and always show it; a reversal must restore the entry
     /// frame even when the engine reports no net change.
-    pub(in crate::editor) fn preview(&mut self, command: engine::Command, ripple: bool) -> bool {
-        match self.run_command(command, ripple) {
+    pub(in crate::editor) fn preview(&mut self, command: engine::Command) -> bool {
+        match self.run_command(command) {
             Ok(_) => {
                 self.sync();
                 true
@@ -387,10 +356,9 @@ impl<'a> Desk<'a> {
     pub(in crate::editor) fn apply_result(
         &mut self,
         command: engine::Command,
-        ripple: bool,
     ) -> crate::Result<engine::Outcome> {
         let before = self.editor.session.project().clone();
-        match self.editor.session.apply(ripple_policy(command, ripple)) {
+        match self.editor.session.apply(command) {
             Ok(outcome) => {
                 if outcome.changed
                     || !std::sync::Arc::ptr_eq(&before, self.editor.session.project())
