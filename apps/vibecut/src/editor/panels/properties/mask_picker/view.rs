@@ -12,6 +12,8 @@ const TILE: f32 = 60.0;
 const TILE_GAP: f32 = 8.0;
 const CELL_HEIGHT: f32 = 78.0;
 const FIELD_WIDTH: f32 = 64.0;
+/// Extra space between two fields of one row, on top of the `XXS` item spacing.
+const SPEC_GAP: f32 = 3.0;
 const DONE: Vec2 = Vec2::new(90.0, 34.0);
 
 /// The playhead as the mask's keys see it: the item's animations, the item-relative
@@ -176,7 +178,7 @@ pub fn show(
         .pivot(Align2::LEFT_TOP)
         .fixed_pos(anchor)
         .constrain_to(ctx.content_rect().shrink(8.0));
-    window.show(ctx, |ui| {
+    let popover = window.show(ctx, |ui| {
         ui.set_width(WIDTH);
         header(ui, tr, &mut event);
         ui.add_space(theme::space::XS);
@@ -226,6 +228,9 @@ pub fn show(
             }
         });
     });
+    if let Some(popover) = popover {
+        record(&mut event.widgets, "inspector.mask.popover", popover.response);
+    }
     event
 }
 
@@ -551,6 +556,9 @@ fn feather_row(
             .color(theme::text(dark)),
     );
     ui.horizontal(|ui| {
+        // Field, stepper and cluster sit `XXS` apart as in `row`; the rail keeps the `MD`
+        // gap before the field, supplied as the difference after the item spacing.
+        ui.spacing_mut().item_spacing.x = theme::space::XXS;
         let reserve = keys.map_or(0.0, |_| theme::size::KEYFRAME_CLUSTER + theme::space::XXS);
         let group = FIELD_WIDTH + theme::size::STEPPER + theme::space::XXS + reserve;
         let rail_width = (ui.available_width() - group - theme::space::MD).max(40.0);
@@ -579,6 +587,7 @@ fn feather_row(
             state.set_feather_preview(None);
             changes.push(("feather", value));
         }
+        ui.add_space(theme::space::MD - theme::space::XXS);
         let spec = Spec {
             id: "inspector.mask.feather",
             key: "feather",
@@ -731,7 +740,7 @@ fn row(
     );
     // Each field and its stepper sit `XXS` apart inside the field's own row.
     let spec_width = specs.len() as f32 * (FIELD_WIDTH + theme::space::XXS + theme::size::STEPPER);
-    let gap = (specs.len().saturating_sub(1)) as f32 * (theme::space::XXS + 3.0);
+    let gap = (specs.len().saturating_sub(1)) as f32 * (theme::space::XXS + SPEC_GAP);
     let reserve = keys.map_or(0.0, |_| theme::size::KEYFRAME_CLUSTER + theme::space::XXS);
     let mut value_ui = ui.new_child(
         egui::UiBuilder::new()
@@ -744,7 +753,7 @@ fn row(
     value_ui.spacing_mut().item_spacing.x = theme::space::XXS;
     for (index, spec) in specs.iter().enumerate() {
         if index > 0 {
-            value_ui.add_space(3.0);
+            value_ui.add_space(SPEC_GAP);
         }
         if let Some(value) = number(
             &mut value_ui,

@@ -1852,6 +1852,24 @@ fn mask_diamond_keys_the_centre_at_the_playhead_and_removes_it_again() {
         .unwrap()
         .path("center_x")
         .unwrap();
+    // Every row-end cluster sits inside the popover: its previous, toggle and next cells.
+    let popover = widget_rect(&harness, "inspector.mask.popover");
+    for lead in ["feather", "width", "center_x", "rotation"] {
+        for id in [
+            format!("inspector.mask.keyframe.{lead}.previous"),
+            format!("inspector.mask.keyframe.{lead}"),
+            format!("inspector.mask.keyframe.{lead}.next"),
+        ] {
+            let cell = widget_rect(&harness, &id);
+            assert!(
+                cell.left() >= popover.left()
+                    && cell.right() <= popover.right()
+                    && cell.top() >= popover.top()
+                    && cell.bottom() <= popover.bottom(),
+                "{id} {cell:?} lies inside the popover {popover:?}"
+            );
+        }
+    }
     let keys = |harness: &Harness<Editor>| {
         item(harness, fixture.video)
             .animations
