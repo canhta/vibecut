@@ -1,6 +1,6 @@
 //! Case-insensitive search over the flag and shape catalogs, in catalog order.
-use super::flags::{COUNTRIES, Country, REGION_GROUPS, REGIONS};
 use super::SHAPE_VALUES;
+use super::flags::{COUNTRIES, Country, REGION_GROUPS, REGIONS};
 
 /// Results returned when a caller gives no limit.
 pub const DEFAULT_SEARCH_LIMIT: usize = 100;
@@ -92,8 +92,7 @@ fn resolve_regions(query: &str) -> Option<Vec<&'static str>> {
     let ids: Vec<&'static str> = REGIONS
         .iter()
         .filter(|region| {
-            region.id.to_lowercase() == query
-                || region.aliases.iter().any(|alias| *alias == query)
+            region.id.to_lowercase() == query || region.aliases.iter().any(|alias| *alias == query)
         })
         .map(|region| region.id)
         .collect();
