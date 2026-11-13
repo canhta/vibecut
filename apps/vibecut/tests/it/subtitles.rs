@@ -37,6 +37,24 @@ fn has(h: &Harness<'_, Editor>, id: &str) -> bool {
         .next()
         .is_some()
 }
+/// The Identify filler words switch shows its label on screen, and the switch's accessible name
+/// is that same text.
+fn assert_fillers_switch_labelled(h: &Harness<'_, Editor>, locale: Locale) {
+    let label = vibecut::i18n::text(locale, Text::SubIdentifyFillers);
+    assert_eq!(
+        h.query_all(By::new().label(label).role(egui::accesskit::Role::Label))
+            .count(),
+        1,
+        "the switch shows its visible label {label:?}"
+    );
+    assert_eq!(
+        h.query_all(By::new().label(label).role(egui::accesskit::Role::CheckBox))
+            .count(),
+        1,
+        "the switch's accessible name is {label:?}"
+    );
+}
+
 fn click(h: &mut Harness<'_, Editor>, id: &str) {
     h.query_all(By::new().predicate(|n| n.author_id() == Some(id)))
         .next()
@@ -1940,8 +1958,10 @@ fn capabilities_locale_and_choices_persist_without_loading_models() {
     assert!(has(&h, "subtitles.import") && !has(&h, "subtitles.translate"));
     click(&mut h, "captions.section.auto");
     assert!(has(&h, "subtitles.generate") && has(&h, "subtitles.delete_current"));
+    assert_fillers_switch_labelled(&h, h.state().preferences.locale);
     h.state_mut().preferences.locale = Locale::Vi;
     h.run_steps(3);
+    assert_fillers_switch_labelled(&h, Locale::Vi);
     assert_eq!(h.state().preferences.subtitles.transcription, "whisper.cpp");
     assert!(h.state().models().is_none());
 }

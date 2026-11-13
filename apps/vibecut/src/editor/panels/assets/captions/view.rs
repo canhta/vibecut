@@ -632,13 +632,19 @@ impl Subtitles {
             c.language(ui, "subtitles.source", &mut options.source, false);
             ui.label(c.tr(Text::SubBilingualCaptions));
             self.bilingual_select(ui, "subtitles.bilingual.language", options, c);
-            let r = crate::kit::toggle(
-                ui,
-                "subtitles.identify_fillers",
-                &mut self.identify_fillers,
-                c.tr(Text::SubIdentifyFillers),
-            );
-            c.remember("subtitles.identify_fillers", &r);
+            // Label left, 36x16 switch at the right edge: the switch row's layout.
+            ui.horizontal(|ui| {
+                ui.label(c.tr(Text::SubIdentifyFillers));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let r = crate::kit::toggle(
+                        ui,
+                        "subtitles.identify_fillers",
+                        &mut self.identify_fillers,
+                        c.tr(Text::SubIdentifyFillers),
+                    );
+                    c.remember("subtitles.identify_fillers", &r);
+                });
+            });
             ui.label(c.tr(Text::ShortsTranscriber));
             c.provider(
                 ui,
