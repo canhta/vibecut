@@ -17,6 +17,8 @@ pub enum LutInvalidReason {
     Count,
     Number,
     Metadata,
+    /// A declared input or output colour space other than SDR sRGB/Rec.709.
+    Space,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LutUnavailableReason {
@@ -81,6 +83,44 @@ fn bit_max(v: f32) -> f32 {
         .find(|m| v <= *m)
         .unwrap_or(65535.0)
 }
+/// Colour-space declaration in a comment line: `INPUT_COLORSPACE: <name>` or
+/// `OUTPUT_COLORSPACE: <name>` (key case-insensitive, `:` or `=` optional). Neither format
+/// defines a space tag, so this is the one convention admitted; untagged tables are SDR.
+/// The render pipeline carries only 8-bit SDR BT.709/sRGB pixels, so a table declaring
+/// any other space refuses rather than being applied as if it were SDR.
+fn space_tag(comment: &str, line: usize) -> Result<()> {
+    let lower = comment.trim().to_ascii_lowercase();
+    let Some(rest) = ["input_colorspace", "output_colorspace"]
+        .iter()
+        .find_map(|key| lower.strip_prefix(key))
+    else {
+        return Ok(());
+    };
+    let name: String = rest
+        .trim_start_matches(|c: char| c == ':' || c == '=' || c.is_whitespace())
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .collect();
+    if matches!(name.as_str(), "srgb" | "rec709" | "bt709") {
+        Ok(())
+    } else {
+        Err(invalid(line, LutInvalidReason::Space))
+    }
+}
+/// Samples per axis of a resampled shaped `.3dl`.
+const SHAPED_SIZE: usize = 65;
+/// Segment index and fraction of `t` on strictly increasing `nodes` spanning 0..=1.
+fn segment(nodes: &[f64], t: f64) -> (usize, f64) {
+    let last = nodes.len() - 2;
+    let i = nodes
+        .partition_point(|x| *x <= t)
+        .saturating_sub(1)
+        .min(last);
+    (
+        i,
+        ((t - nodes[i]) / (nodes[i + 1] - nodes[i])).clamp(0., 1.),
+    )
+}
 fn triple(text: &str, line: usize) -> Result<[f64; 3]> {
     let mut words = text.split_whitespace();
     let mut values = [0.; 3];
@@ -130,7 +170,11 @@ impl Cube3d {
                 }
             }
             let raw = raw.trim();
-            if raw.is_empty() || raw.starts_with('#') {
+            if let Some(comment) = raw.strip_prefix('#') {
+                space_tag(comment, line)?;
+                continue;
+            }
+            if raw.is_empty() {
                 continue;
             }
             if raw.split_whitespace().next() == Some("TITLE") {
@@ -262,11 +306,15 @@ impl Cube3d {
             _lease: lease,
         })
     }
-    /// Autodesk `.3dl`: optional `3DMESH` / `Mesh <in> <out>` headers, one integer input
-    /// mesh line of 2..=65 strictly increasing values, then N³ integer rows with blue
-    /// changing fastest. The mesh must be uniform to within one input code value; a
-    /// shaped (non-uniform) mesh needs a 1D shaper and refuses as unsupported. Output
-    /// depth is the `Mesh` header's or else the smallest integer depth holding the peak.
+    /// Autodesk Flame/Lustre `.3dl` (format source: OpenColorIO `FileFormat3DL.cpp`).
+    /// Optional `3DMESH` and `Mesh <in> <out>` headers (`in` must give 2^in + 1 samples),
+    /// one integer input mesh line of 2..=65 strictly increasing values (the shaper:
+    /// the axis position of each node), then N^3 integer rows with blue changing
+    /// fastest, then optional `LUT<bits>` and `gamma 1.0` footer lines. A mesh uniform to
+    /// within one code value is read as is; a shaped (non-uniform) mesh is resampled
+    /// trilinearly onto a uniform 65-point grid. Output depth is the `Mesh` header's or
+    /// the footer's (they must agree), else the smallest integer depth holding the peak.
+    /// Any other directive, footer or a gamma other than 1.0 refuses as unsupported.
     pub fn parse_3dl(bytes: &[u8], hooks: &dyn ExecutionHooks) -> Result<Self> {
         use LutInvalidReason as R;
         check(hooks)?;
@@ -278,6 +326,10 @@ impl Cube3d {
         let mut size: Option<usize> = None;
         let mut domain: Option<([f64; 3], [f64; 3])> = None;
         let mut out_bits: Option<u32> = None;
+        let mut in_bits: Option<u32> = None;
+        let mut nodes: Option<Vec<f64>> = None;
+        let mut footer_bits: Option<u32> = None;
+        let mut gamma = false;
         let mut samples: Vec<[f32; 3]> = Vec::new();
         let mut lease = None;
         let mut header = 0usize;
@@ -287,7 +339,9 @@ impl Cube3d {
             if raw.len() > 1024 {
                 return Err(invalid(line, R::Metadata));
             }
-            let raw = raw.split('#').next().unwrap_or_default().trim();
+            let (code, comment) = raw.split_once('#').unwrap_or((raw, ""));
+            space_tag(comment, line)?;
+            let raw = code.trim();
             if raw.is_empty() {
                 continue;
             }
@@ -307,10 +361,17 @@ impl Cube3d {
                         .map(|v| v.parse::<u32>().ok())
                         .collect::<Option<Vec<u32>>>()
                         .ok_or_else(|| invalid(line, R::Header))?;
-                    let bits = match values.as_slice() {
-                        [_, bits] if (8..=16u32).contains(bits) && out_bits.is_none() => *bits,
+                    let (input, bits) = match values.as_slice() {
+                        [input, bits]
+                            if (0..=6u32).contains(input)
+                                && (8..=16u32).contains(bits)
+                                && out_bits.is_none() =>
+                        {
+                            (*input, *bits)
+                        }
                         _ => return Err(invalid(line, R::Header)),
                     };
+                    in_bits = Some(input);
                     out_bits = Some(bits);
                     continue;
                 }
@@ -339,15 +400,25 @@ impl Cube3d {
                         f64::from(low) + f64::from(high - low) * i as f64 / (n - 1) as f64;
                     (f64::from(*m) - expected).abs() <= 1.0
                 });
+                // `Mesh <in> <out>` declares 2^in + 1 samples per axis (OpenColorIO
+                // `FileFormat3DL.cpp`, Lustre example `Mesh 4 12` = 17 points).
+                if in_bits.is_some_and(|b| n != (1usize << b) + 1) {
+                    return Err(invalid(line, R::Header));
+                }
                 if !uniform {
-                    return Err(Error::Unsupported(
-                        "non-uniform 3dl input mesh needs a shaper",
-                    ));
+                    let span = f64::from(high - low);
+                    nodes = Some(mesh.iter().map(|m| f64::from(m - low) / span).collect());
                 }
                 let in_max = f64::from(bit_max(high as f32));
                 domain = Some(([f64::from(low) / in_max; 3], [f64::from(high) / in_max; 3]));
                 let count = n * n * n;
-                let reserved = count
+                // A shaped mesh is resampled onto a uniform grid; both tables are live then.
+                let held = if nodes.is_some() {
+                    count + SHAPED_SIZE.pow(3)
+                } else {
+                    count
+                };
+                let reserved = held
                     .checked_mul(std::mem::size_of::<[f32; 3]>())
                     .and_then(|v| v.checked_add(std::mem::size_of::<Self>() + 64))
                     .ok_or_else(|| invalid(line, R::Size))?;
@@ -363,6 +434,37 @@ impl Cube3d {
                 continue;
             }
             let n = size.unwrap_or_default();
+            if samples.len() == n * n * n
+                && first
+                    .as_bytes()
+                    .first()
+                    .is_some_and(u8::is_ascii_alphabetic)
+            {
+                // Lustre footer after the table: `LUT<bits>` and `gamma 1.0`.
+                let lower = first.to_ascii_lowercase();
+                let words = raw.split_whitespace().count();
+                if let Some(bits) = lower
+                    .strip_prefix("lut")
+                    .and_then(|b| b.parse::<u32>().ok())
+                    .filter(|b| (8..=16).contains(b) && words == 1 && footer_bits.is_none())
+                {
+                    footer_bits = Some(bits);
+                } else if lower == "gamma" && words == 2 && !gamma {
+                    let value = raw
+                        .split_whitespace()
+                        .nth(1)
+                        .and_then(|v| v.parse::<f64>().ok())
+                        .filter(|v| v.is_finite())
+                        .ok_or_else(|| invalid(line, R::Number))?;
+                    if value != 1.0 {
+                        return Err(Error::Unsupported("3dl gamma footer other than 1.0"));
+                    }
+                    gamma = true;
+                } else {
+                    return Err(Error::Unsupported("3dl footer"));
+                }
+                continue;
+            }
             let values = raw
                 .split_whitespace()
                 .map(|v| v.parse::<u32>().ok())
@@ -380,6 +482,12 @@ impl Cube3d {
         let n = size.ok_or_else(|| invalid(0, R::Header))?;
         if samples.len() != n * n * n {
             return Err(invalid(0, R::Count));
+        }
+        if let Some(bits) = footer_bits {
+            if out_bits.is_some_and(|b| b != bits) {
+                return Err(invalid(0, R::Header));
+            }
+            out_bits = Some(bits);
         }
         let peak = samples.iter().flatten().fold(0f32, |a, v| a.max(*v));
         let out_max = match out_bits {
@@ -401,6 +509,10 @@ impl Cube3d {
             }
         }
         let (min, max) = domain.ok_or_else(|| invalid(0, R::Header))?;
+        let (n, samples) = match nodes {
+            Some(nodes) => (SHAPED_SIZE, Self::resample_shaped(&samples, &nodes, hooks)?),
+            None => (n, samples),
+        };
         Self::assemble(
             n,
             min,
@@ -408,6 +520,52 @@ impl Cube3d {
             samples,
             lease.ok_or_else(|| invalid(0, R::Count))?,
         )
+    }
+    /// Resamples a red-fastest table whose axis nodes sit at `nodes` (0..=1, strictly
+    /// increasing, the same on all three axes) onto a uniform `SHAPED_SIZE` grid by
+    /// trilinear interpolation between the real nodes.
+    fn resample_shaped(
+        samples: &[[f32; 3]],
+        nodes: &[f64],
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<Vec<[f32; 3]>> {
+        let n = nodes.len();
+        let m = SHAPED_SIZE;
+        let axis: Vec<(usize, f64)> = (0..m)
+            .map(|k| segment(nodes, k as f64 / (m - 1) as f64))
+            .collect();
+        let mut out = Vec::new();
+        out.try_reserve_exact(m * m * m)?;
+        if out.capacity() > m * m * m {
+            return Err(Error::Budget {
+                requested: (out.capacity() * 12) as u64,
+                limit: (m * m * m * 12) as u64,
+            });
+        }
+        for &(bi, bf) in &axis {
+            check(hooks)?;
+            for &(gi, gf) in &axis {
+                for &(ri, rf) in &axis {
+                    let mut value = [0f64; 3];
+                    for (db, wb) in [(0, 1. - bf), (1, bf)] {
+                        for (dg, wg) in [(0, 1. - gf), (1, gf)] {
+                            for (dr, wr) in [(0, 1. - rf), (1, rf)] {
+                                let weight = wb * wg * wr;
+                                if weight == 0. {
+                                    continue;
+                                }
+                                let at = ((bi + db) * n + gi + dg) * n + ri + dr;
+                                for (v, s) in value.iter_mut().zip(samples[at]) {
+                                    *v += weight * f64::from(s);
+                                }
+                            }
+                        }
+                    }
+                    out.push(value.map(|v| v as f32));
+                }
+            }
+        }
+        Ok(out)
     }
     /// Stable canonical text, consumed by durable import publication.
     pub fn write_cube(&self, writer: &mut dyn Write, hooks: &dyn ExecutionHooks) -> Result<()> {
@@ -924,6 +1082,155 @@ mod tests {
         assert!(matches!(
             Cube3d::parse_3dl(valid.as_bytes(), &hooks),
             Err(Error::Cancelled)
+        ));
+    }
+
+    #[test]
+    fn three_dl_shaper_footer_and_space_variants() {
+        let hooks = Hooks::default();
+        let body = "0 0 0
+0 1023 0
+1023 0 0
+1023 1023 0
+0 0 1023
+0 1023 1023
+1023 0 1023
+1023 1023 1023
+";
+        let valid = format!(
+            "3DMESH
+0 1023
+{body}"
+        );
+        // Shaped mesh: nodes 0, 100, 1023 hold the identity at those positions, so the
+        // uniform resample reproduces the identity everywhere.
+        let nodes = [0u32, 100, 1023];
+        let mut shaped = String::from(
+            "3DMESH
+Mesh 1 10
+0 100 1023
+",
+        );
+        for r in nodes {
+            for g in nodes {
+                for b in nodes {
+                    shaped.push_str(&format!(
+                        "{r} {g} {b}
+"
+                    ));
+                }
+            }
+        }
+        // Mesh 1 means 3 samples per axis.
+        let cube = Cube3d::parse_3dl(shaped.as_bytes(), &hooks).unwrap();
+        assert_eq!(cube.size, SHAPED_SIZE);
+        for probe in [[0.05, 0.5, 0.97], [0.1, 0.2, 0.3], [1., 0., 0.4]] {
+            let out = cube.sample(probe);
+            for (a, b) in out.iter().zip(probe) {
+                assert!((a - b).abs() < 1e-4, "{out:?} vs {probe:?}");
+            }
+        }
+        drop(cube);
+        // Footer and tag variants that load.
+        for source in [
+            format!(
+                "{valid}LUT10
+gamma 1.0
+"
+            ),
+            format!(
+                "Mesh 0 10
+0 1023
+{body}LUT10
+"
+            ),
+            format!(
+                "# INPUT_COLORSPACE: Rec.709
+# output_colorspace = sRGB
+{valid}"
+            ),
+            format!(
+                "{valid}# INPUT_COLORSPACE: BT.709
+"
+            ),
+        ] {
+            Cube3d::parse_3dl(source.as_bytes(), &hooks).unwrap();
+        }
+        // Variants that refuse: footer conflicts, gamma, unknown footer, wrong Mesh size,
+        // and a declared space the SDR pipeline does not carry.
+        for source in [
+            format!(
+                "Mesh 0 10
+0 1023
+{body}LUT12
+"
+            ),
+            format!(
+                "{valid}gamma 2.2
+"
+            ),
+            format!(
+                "{valid}LUT10
+LUT10
+"
+            ),
+            format!(
+                "{valid}shaper 1
+"
+            ),
+            format!(
+                "Mesh 2 10
+0 1023
+{body}"
+            ),
+            format!(
+                "# INPUT_COLORSPACE: Rec2020
+{valid}"
+            ),
+            format!(
+                "{valid}# OUTPUT_COLORSPACE: ACEScg
+"
+            ),
+        ] {
+            assert!(Cube3d::parse_3dl(source.as_bytes(), &hooks).is_err());
+            assert_eq!(hooks.bytes.load(Ordering::SeqCst), 0);
+        }
+        let cube_source = |tag: &str| {
+            format!(
+                "{tag}LUT_3D_SIZE 2
+0 0 0
+1 0 0
+0 1 0
+1 1 0
+0 0 1
+1 0 1
+0 1 1
+1 1 1
+"
+            )
+        };
+        Cube3d::parse(
+            cube_source(
+                "# INPUT_COLORSPACE: sRGB
+",
+            )
+            .as_bytes(),
+            &hooks,
+        )
+        .unwrap();
+        assert!(matches!(
+            Cube3d::parse(
+                cube_source(
+                    "# OUTPUT_COLORSPACE: P3-D65
+"
+                )
+                .as_bytes(),
+                &hooks
+            ),
+            Err(Error::InvalidLut {
+                reason: LutInvalidReason::Space,
+                ..
+            })
         ));
     }
 
