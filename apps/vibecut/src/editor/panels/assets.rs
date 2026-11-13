@@ -31,13 +31,14 @@ pub(in crate::editor) enum AudioSection {
     Sounds,
 }
 
-/// The Captions tab's three pages, chosen in its sub-navigation.
+/// The Captions tab's four pages, chosen in its sub-navigation.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(in crate::editor) enum CaptionsSection {
     #[default]
     Auto,
     Add,
     Translate,
+    Chapters,
 }
 
 use super::super::{

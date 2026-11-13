@@ -1,4 +1,5 @@
 //! Captions panel: presentation and bounded staging through existing engine owners.
+mod chapters;
 mod editing;
 mod fillers;
 mod import;
@@ -160,6 +161,7 @@ pub struct Subtitles {
     retry_source: Option<ItemId>,
     fillers: fillers::Cuts,
     transcript: transcript::Pane,
+    chapters: chapters::Panel,
 }
 impl Drop for Subtitles {
     fn drop(&mut self) {
@@ -212,6 +214,7 @@ impl Subtitles {
             retry_source: None,
             fillers: fillers::Cuts::default(),
             transcript: Default::default(),
+            chapters: Default::default(),
         })
     }
     /// Tests inject the text-provider opener for the filler cut list.
@@ -220,14 +223,19 @@ impl Subtitles {
         self
     }
     pub fn busy(&self) -> bool {
-        self.active.is_some() || self.export.is_some() || self.classify.is_some()
+        self.active.is_some()
+            || self.export.is_some()
+            || self.classify.is_some()
+            || self.chapters.run.is_some()
     }
-    /// The run whose consent sheet is open: the active job, or the filler classification.
+    /// The run whose consent sheet is open: the active job, the filler classification or the
+    /// chapter generation.
     fn consent_events(&self) -> Option<&Arc<TaskEvents>> {
         self.active
             .as_ref()
             .map(|active| &active.events)
             .or_else(|| self.classify.as_ref().map(|run| &run.events))
+            .or_else(|| self.chapters.run.as_ref().map(|run| &run.events))
     }
     pub fn inspect(&self, session: &Session) -> Inspection {
         let state = self
@@ -309,6 +317,10 @@ impl Subtitles {
         }
         if let Some(run) = &self.classify {
             run.cancel.cancel();
+        }
+        if let Some(run) = &self.chapters.run {
+            run.cancel.cancel();
+            let _ = self.runner.cancel_job(run.id);
         }
     }
     pub fn approve_upload(&mut self, approved: bool) -> Result<()> {
@@ -528,6 +540,7 @@ impl Subtitles {
     pub fn tick(&mut self, session: &mut Session) -> Result<bool> {
         self.runner.tick()?;
         self.poll_classify();
+        self.tick_chapters(session);
         let mut changed = false;
         if self.active.as_ref().is_some_and(|a| {
             self.runner

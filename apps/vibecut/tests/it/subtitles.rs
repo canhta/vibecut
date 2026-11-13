@@ -3036,7 +3036,7 @@ impl ai::text::chapters::ChapterGenerator for NoChapters {
 
 /// The lent text access of each run: the scripted classifier behind that run's own sheet.
 fn filler_text_opener(fail: bool, calls: Arc<AtomicUsize>) -> TextOpener {
-    Arc::new(move |provider, model, consent| {
+    Arc::new(move |_task, provider, model, consent| {
         let config = ai::ProviderConfig::new(
             provider.into(),
             model.into(),

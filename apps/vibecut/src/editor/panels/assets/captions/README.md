@@ -67,7 +67,17 @@ is the captions panel's own upload sheet, so approval, refusal and cancellation 
 `approve_upload` path as every other upload; a refusal shows the declined line and sends nothing,
 and a provider failure shows its own line. The desktop text opener
 ([`ai_access`](../../../../services/ai_access.rs)) builds the access with `choose_filler` and
-the process credentials; no fallback exists. Remove selected passes exactly the checked candidate
+the process credentials; no fallback exists.
+
+`chapters.rs` is the Chapters page, the fourth sub-page (`CaptionsSection::Chapters`). Generate lends a `TextAccess` built for
+`TextTask::Chapters` (`choose_chapter`, the text provider with the `chapters_model` snapshot) through `run_text` and
+runs `chapters.generate` with 10 chapters; the job's own `TaskEvents` sheet gates the upload, so a
+refusal sends nothing and maps to the declined line (the job fails with the permission code). The
+panel's `busy`, consent sheet and cancel cover the run. Its title and description are drafts:
+export takes a folder from the picker (`Pick::ChapterDir`, applied on the next tick) and runs
+`chapters.export_sidecars` with the drafts as the document, so the edited text is what is written.
+An existing pair is refused by the engine and reported; no success line appears for a failure.
+Blank titles are refused before the command. Remove selected passes exactly the checked candidate
 ids to `timeline.remove_fillers` as one command, with `confirm_edited` set only after the inline
 confirmation of an edited caption. After a removal the list clears and shows `Removed N`; a fresh
 Find reads again. There is no applying state: the removal is synchronous, so nothing is in flight
@@ -76,7 +86,7 @@ the project itself. Lexicon and limits belong to the [captions crate](../../../.
 
 Import accepts SRT and VTT from the Add captions page. Caption files (SRT, VTT, TXT) and the burned MP4 are not panel controls: the export dialog's caption section raises `EditorAction::ExportCaption`, the window's native save picker returns the path, and `export_caption_output` runs `export_subtitles` or `burn_subtitles`. The native dialog already confirmed any replacement, so the write sets overwrite. TXT is one cue per line with no timings, serialized by captions.
 
-The Captions tab shows one of three pages, `CaptionsSection` in `assets::State` (Auto captions, Add captions, Translate). The page is presentation state, never persisted. Generate's Delete current captions checkbox (`delete_current`) removes the selected caption item after the generated one applies; that is a second command, so it is a second undo step. The Identify filler words switch (`identify_fillers`) shows or hides the filler cut list. Its persisted behaviour belongs to the AI-edit filler work.
+The Captions tab shows one of four pages, `CaptionsSection` in `assets::State` (Auto captions, Add captions, Translate, Chapters). The page is presentation state, never persisted. Generate's Delete current captions checkbox (`delete_current`) removes the selected caption item after the generated one applies; that is a second command, so it is a second undo step. The Identify filler words switch (`identify_fillers`) shows or hides the filler cut list. Its persisted behaviour belongs to the AI-edit filler work.
 
 The Style chooser applies Outline or Box to the current caption item, independently of cue
 selection, through `captions.apply_style`. Custom and Mixed describe saved cue values rather

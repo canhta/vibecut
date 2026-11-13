@@ -37,9 +37,10 @@ fetched lists and price acknowledgements are never serialized. A document whose 
 `PREFERENCES_VERSION` is refused through the version refusal; there is no migration.
 
 The text-task provider is one persisted choice, `subtitles.text_provider`, shared by
-translation and `fillers.classify`. The models are not shared: each task takes its own
+translation, `fillers.classify` and `chapters.generate`. The models are not shared: each task takes its own
 `AiPreferences` row for that provider, the Translate row into the transient
-`subtitles.translation_model` and the ClassifyFillers row into `subtitles.fillers_model`.
+`subtitles.translation_model`, the ClassifyFillers row into `subtitles.fillers_model` and the
+GenerateChapters row into `subtitles.chapters_model`.
 Version 13 replaced the translation-only `translation` and `translation_model` fields with
 these; there is no migration.
 
