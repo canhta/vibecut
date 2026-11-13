@@ -62,12 +62,14 @@ pub enum ControlResult {
     Fillers {
         candidates: Vec<FillerCandidate>,
     },
-    /// Transcript matches, best first in source order. `partial` and `stale` are set when
-    /// the transcript covers less than its media or an index was rebuilt from older content.
+    /// Transcript matches in source order. `partial` is set when a transcript covers less
+    /// than its media; `stale` when an index was replaced for older content; `rebuilt` counts
+    /// the indexes built by this query.
     TranscriptSearch {
         hits: Vec<TranscriptHit>,
         partial: bool,
         stale: bool,
+        rebuilt: usize,
     },
     ChapterSidecars {
         paths: super::ChapterSidecars,

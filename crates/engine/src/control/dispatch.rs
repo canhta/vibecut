@@ -196,6 +196,7 @@ impl Session {
                         .collect(),
                     partial: answer.partial,
                     stale: answer.stale,
+                    rebuilt: answer.rebuilt,
                 })
             }
             Command::FillerCandidates {

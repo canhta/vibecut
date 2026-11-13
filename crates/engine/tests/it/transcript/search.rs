@@ -9,7 +9,13 @@ use engine::{
     cache::ArtifactCache,
     transcript::search::{Answer, Segment, Source, fold, query},
 };
+use crate::support::control::{Allow, media_access, ok, request, runner, seed};
+use engine::Session;
+use engine::control::{Caller, ControlResult, MediaAccess};
 use media::AssetId;
+use project::{ItemParams, Project};
+use serde_json::json;
+use std::sync::Mutex;
 use time::Tick;
 
 fn cache(dir: &tempfile::TempDir) -> ArtifactCache {
@@ -165,6 +171,107 @@ fn limit_caps_hits_and_invalid_queries_refuse() {
     assert!(query(&mut cache, &sources, "chao", 0).is_err());
     assert!(query(&mut cache, &sources, "chao", 201).is_err());
     assert!(query(&mut cache, &sources, &"x".repeat(257), 10).is_err());
+}
+
+/// The seed session with its caption cue text replaced; the caption item keeps its source asset.
+fn with_cue_text(base: &Session, text: &str) -> Session {
+    let mut data = base.project().data().clone();
+    for item in data
+        .scene_mut()
+        .timeline
+        .iter_mut()
+        .flat_map(|track| &mut track.items)
+    {
+        if let ItemParams::Caption(params) = &mut item.content {
+            for cue in &mut params.cues.cues {
+                for cue_text in cue.texts.values_mut() {
+                    cue_text.text = text.into();
+                }
+            }
+        }
+    }
+    Session::new(Project::new(data).unwrap(), 10).unwrap()
+}
+
+/// One `transcript.search` request through the control dispatch, as an agent sends it.
+fn search(s: &mut Session, media: &Mutex<MediaAccess>, key: &str, query: &str) -> ControlResult {
+    let mut r = runner();
+    let allow = Allow;
+    let req = request(s, "transcript.search", json!({ "query": query }), key);
+    ok(s.control_request(
+        req,
+        Caller {
+            principal: "local-mcp",
+            external: true,
+            policy: &allow,
+            fonts: None,
+            sounds: None,
+            music: None,
+            stickers: None,
+            brand: None,
+            media: Some(media),
+            chapters: None,
+            captions: None,
+            vision: None,
+        },
+        &mut r,
+    )
+    .unwrap())
+}
+
+#[test]
+fn transcript_search_command_reports_hits_and_index_staleness() {
+    let dir = tempfile::tempdir().unwrap();
+    let media = Mutex::new(media_access(dir.path()));
+    let mut s = with_cue_text(&seed(), "Xin chào các bạn");
+
+    // The seed's caption item carries asset 0 over one second; its cue covers all of it.
+    let ControlResult::TranscriptSearch {
+        hits,
+        partial,
+        stale,
+        rebuilt,
+    } = search(&mut s, &media, "search-first", "chao")
+    else {
+        panic!("transcript search result");
+    };
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].asset, AssetId(0));
+    assert_eq!(hits[0].start, Tick::ZERO);
+    assert_eq!(hits[0].end, Tick(time::TICKS_PER_SECOND));
+    assert_eq!(hits[0].snippet, "Xin chào các bạn");
+    assert_eq!((partial, stale, rebuilt), (false, false, 1));
+
+    // Same media and transcript: the cached index answers without a rebuild.
+    let ControlResult::TranscriptSearch {
+        stale, rebuilt, ..
+    } = search(&mut s, &media, "search-repeat", "chao")
+    else {
+        panic!("transcript search result");
+    };
+    assert_eq!((stale, rebuilt), (false, 0));
+
+    // Editing the cue changes the transcript; the next query rebuilds and reports stale.
+    let mut edited = with_cue_text(&s, "Xin chào mọi người");
+    let ControlResult::TranscriptSearch {
+        hits,
+        stale,
+        rebuilt,
+        ..
+    } = search(&mut edited, &media, "search-edited", "moi nguoi")
+    else {
+        panic!("transcript search result");
+    };
+    assert_eq!((stale, rebuilt, hits.len()), (true, 1, 1));
+    assert_eq!(hits[0].snippet, "Xin chào mọi người");
+
+    // A word only the old wording had no longer matches.
+    let ControlResult::TranscriptSearch { hits, .. } =
+        search(&mut edited, &media, "search-old", "ban")
+    else {
+        panic!("transcript search result");
+    };
+    assert!(hits.is_empty());
 }
 
 #[test]
