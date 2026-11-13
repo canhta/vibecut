@@ -264,7 +264,13 @@ fn invalid_targets_are_disabled_with_reasons_without_history() {
         *editor.session = Session::new(Project::new(data).unwrap(), 100).unwrap();
         let mut h = build(editor);
         open(&mut h);
-        select_pair(&mut h);
+        // The session owns the selection and refuses items the project no longer has,
+        // so the empty timeline is the state with nothing selectable.
+        if state == "empty" {
+            h.run_steps(3);
+        } else {
+            select_pair(&mut h);
+        }
         if state == "unrelated" {
             h.state_mut()
                 .select([ItemId(1), ItemId(3)].into_iter().collect())

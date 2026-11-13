@@ -289,6 +289,8 @@ fn blend_dropdown_and_opacity_field_dispatch_real_edits() {
         .get(By::new().predicate(|n| n.author_id() == Some("inspector.group.basic")))
         .click();
     harness.run_steps(2);
+    // Blend sits under Transform in Basic, below the fold of this window.
+    crate::panels::reveal(&mut harness, "inspector.blendMode");
     harness
         .get(By::new().predicate(|n| n.author_id() == Some("inspector.blendMode")))
         .click();
@@ -301,6 +303,7 @@ fn blend_dropdown_and_opacity_field_dispatch_real_edits() {
         item(harness.state(), id).blend_mode,
         project::BlendMode::Multiply
     );
+    crate::panels::reveal(&mut harness, "inspector.opacity");
     harness
         .get(By::new().predicate(|n| n.author_id() == Some("inspector.opacity")))
         .click();
@@ -3590,10 +3593,14 @@ fn property_diamond_toggles_a_keyframe_at_the_playhead() {
                 project::Param::Color(_) => 0,
             })
     };
-    let diamond = widget(&harness, "inspector.keyframe.opacity");
-    click_at(&mut harness, diamond.center());
+    crate::panels::reveal(&mut harness, "inspector.keyframe.opacity");
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.keyframe.opacity")))
+        .click();
+    harness.run_steps(2);
     assert_eq!(key_count(&harness), 1);
     // Editing the animated field writes a key at the playhead instead of wiping curves.
+    crate::panels::reveal(&mut harness, "inspector.opacity");
     harness
         .get(By::new().predicate(|n| n.author_id() == Some("inspector.opacity")))
         .click();
@@ -3635,8 +3642,11 @@ fn property_diamond_toggles_a_keyframe_at_the_playhead() {
             .time,
         Tick(2 * SECOND)
     );
-    let diamond = widget(&harness, "inspector.keyframe.opacity");
-    click_at(&mut harness, diamond.center());
+    crate::panels::reveal(&mut harness, "inspector.keyframe.opacity");
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.keyframe.opacity")))
+        .click();
+    harness.run_steps(2);
     assert_eq!(key_count(&harness), 0, "a second press removes the key");
     // An X/Y pair shares one diamond: both keys land, and go, in one undo step.
     harness
@@ -3654,13 +3664,23 @@ fn property_diamond_toggles_a_keyframe_at_the_playhead() {
             })
     };
     let history = harness.state().session.history_len();
-    let diamond = widget(&harness, "inspector.keyframe.transform.positionX");
-    click_at(&mut harness, diamond.center());
+    harness
+        .get(
+            By::new()
+                .predicate(|n| n.author_id() == Some("inspector.keyframe.transform.positionX")),
+        )
+        .click_accesskit();
+    harness.run_steps(2);
     assert_eq!(keys_of(&harness, "transform.positionX"), 1);
     assert_eq!(keys_of(&harness, "transform.positionY"), 1);
     assert_eq!(harness.state().session.history_len().0, history.0 + 1);
-    let diamond = widget(&harness, "inspector.keyframe.transform.positionX");
-    click_at(&mut harness, diamond.center());
+    harness
+        .get(
+            By::new()
+                .predicate(|n| n.author_id() == Some("inspector.keyframe.transform.positionX")),
+        )
+        .click_accesskit();
+    harness.run_steps(2);
     assert_eq!(keys_of(&harness, "transform.positionX"), 0);
     assert_eq!(keys_of(&harness, "transform.positionY"), 0);
     assert_eq!(harness.state().session.history_len().0, history.0 + 2);
@@ -5592,6 +5612,7 @@ fn clipboard_direct_actions_preserve_focused_property_drafts_and_text_paste_stay
     h.get(By::new().predicate(|n| n.author_id() == Some("inspector.group.basic")))
         .click();
     h.run_steps(2);
+    crate::panels::reveal(&mut h, "inspector.opacity");
     h.get(By::new().predicate(|n| n.author_id() == Some("inspector.opacity")))
         .click();
     h.run_steps(1);

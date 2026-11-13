@@ -43,7 +43,6 @@ fn lut_picker_applies_real_job_and_discards_stale_completion() {
             .unwrap();
     let fixture = fixture();
     let video = fixture.image;
-    let image = fixture.video;
     let mut data = fixture.editor.session.project().data().clone();
     let picture = root.path().join("synthetic.png");
     image::RgbaImage::from_fn(64, 64, |x, y| {
@@ -289,7 +288,9 @@ fn lut_picker_applies_real_job_and_discards_stale_completion() {
     h.run_steps(2);
     click(&mut h, "inspector.lut.import");
     h.state_mut().take_lifecycle_action();
-    h.state_mut().select([image].into_iter().collect()).unwrap();
+    // The session refuses a selection naming an item the project lacks, so the stale
+    // pick is a selection that no longer targets the video item.
+    h.state_mut().select(Default::default()).unwrap();
     assert!(h.state_mut().lut_picked_file(Some(source)).is_err());
     assert_eq!(h.state().session.project(), &applied);
 }
@@ -506,57 +507,101 @@ fn select(harness: &mut Harness<Editor>, item: ItemId) {
     harness.run_steps(3);
 }
 
-fn click(harness: &mut Harness<Editor>, id: &str) {
-    if matches!(
+/// The mask row lives under the Mask sub-tab of Basic.
+fn open_mask(harness: &mut Harness<Editor>) {
+    click(harness, "inspector.tab.mask");
+}
+
+/// Wheel the inspector until `id` sits fully inside its visible body, then wait for the
+/// scroll animation to settle.
+pub(crate) fn reveal(harness: &mut Harness<Editor>, id: &str) {
+    // Measure from the tab strip the selected kind shows (Text or Adjust).
+    let tab = ["inspector.tab.text", "inspector.tab.adjust"]
+        .into_iter()
+        .find(|tab| has_widget(harness, tab));
+    // A control clipped out of a tall body is not drawn yet: scroll toward it first.
+    for _ in 0..12 {
+        if has_widget(harness, id) {
+            break;
+        }
+        let panel = harness.state().panels()["inspector"];
+        harness.hover_at(panel.center());
+        harness.event(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -120.0),
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
+            modifiers: egui::Modifiers::NONE,
+        });
+        harness.run_steps(8);
+    }
+    for _ in 0..12 {
+        let panel = harness.state().panels()["inspector"];
+        // The multi-selection inspector has no tab strip: start under the panel top.
+        let top = tab.map_or(panel.top() + 44.0, |tab| {
+            widget_rect(harness, tab).bottom() + 8.0
+        });
+        let viewport = egui::Rect::from_min_max(
+            egui::pos2(panel.left() + 12.0, top),
+            panel.max - egui::vec2(12.0, 12.0),
+        );
+        let target = widget_rect(harness, id);
+        if viewport.contains_rect(target) {
+            break;
+        }
+        harness.hover_at(viewport.center());
+        harness.event(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, if target.top() < top { 120.0 } else { -120.0 }),
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
+            modifiers: egui::Modifiers::NONE,
+        });
+        harness.run_steps(8);
+    }
+    // Wheel scrolling animates over frames: click only once the target is still.
+    for _ in 0..30 {
+        let before = widget_rect(harness, id);
+        harness.run_steps(2);
+        if widget_rect(harness, id) == before {
+            break;
+        }
+    }
+}
+
+/// Controls that sit below the first screen of a tall inspector body (Blend lives under
+/// Transform) or in the scrolling Text, Adjust and Arrange groups.
+fn needs_reveal(id: &str) -> bool {
+    matches!(
         id,
         "inspector.text_color.picker" | "inspector.background_color"
     ) || id.starts_with("inspector.text_")
         || id.starts_with("text.animation.")
         || id.starts_with("inspector.lut.")
         || id.starts_with("inspector.transform.distribute_")
-    {
-        // Measure from the tab strip the selected kind shows (Text or Adjust).
-        let tab = ["inspector.tab.text", "inspector.tab.adjust"]
-            .into_iter()
-            .find(|tab| has_widget(harness, tab));
-        for _ in 0..12 {
-            let panel = harness.state().panels()["inspector"];
-            // The multi-selection inspector has no tab strip: start under the panel top.
-            let top = tab.map_or(panel.top() + 44.0, |tab| {
-                widget_rect(harness, tab).bottom() + 8.0
-            });
-            let viewport = egui::Rect::from_min_max(
-                egui::pos2(panel.left() + 12.0, top),
-                panel.max - egui::vec2(12.0, 12.0),
-            );
-            let target = widget_rect(harness, id);
-            if viewport.contains_rect(target) {
-                break;
-            }
-            harness.hover_at(viewport.center());
-            harness.event(egui::Event::MouseWheel {
-                unit: egui::MouseWheelUnit::Point,
-                delta: egui::vec2(0.0, if target.top() < top { 120.0 } else { -120.0 }),
-                phase: egui::TouchPhase::Move,
-                source: egui::MouseWheelSource::Unknown,
-                modifiers: egui::Modifiers::NONE,
-            });
-            harness.run_steps(8);
-        }
-        // Wheel scrolling animates over frames: click only once the target is still.
-        for _ in 0..30 {
-            let before = widget_rect(harness, id);
-            harness.run_steps(2);
-            if widget_rect(harness, id) == before {
-                break;
-            }
-        }
+        || blend_control(id)
+}
+
+/// The Blend section's controls, which sit below Transform in Basic.
+fn blend_control(id: &str) -> bool {
+    id.starts_with("inspector.opacity")
+        || id.starts_with("inspector.blendMode")
+        || id.starts_with("inspector.section.blending")
+}
+
+fn click(harness: &mut Harness<Editor>, id: &str) {
+    if id == "inspector.mask.row" && !has_widget(harness, id) {
+        open_mask(harness);
+    }
+    if needs_reveal(id) {
+        reveal(harness, id);
     }
     if matches!(id, "inspector.tab.transform" | "inspector.tab.mask") && !has_widget(harness, id) {
         click(harness, "inspector.group.basic");
     }
     harness
-        .get(By::new().predicate(|node| node.author_id() == Some(id)))
+        .query(By::new().predicate(|node| node.author_id() == Some(id)))
+        .unwrap_or_else(|| panic!("missing {id}"))
         .click();
     harness.run_steps(2);
 }
@@ -622,6 +667,9 @@ fn names(tabs: &[PropertiesTab]) -> Vec<String> {
 }
 
 fn drag_to(harness: &mut Harness<Editor>, id: &str, delta: egui::Vec2) {
+    if needs_reveal(id) {
+        reveal(harness, id);
+    }
     let start = widget_rect(harness, id).center();
     harness.hover_at(start);
     harness.run_steps(1);
@@ -1445,6 +1493,7 @@ fn mask_row_opens_every_capture_shape_and_none_removes_one_command_step_each() {
     let mut harness = build(fixture.editor);
     harness.run_steps(3);
     select(&mut harness, fixture.video);
+    open_mask(&mut harness);
     assert!(has_widget(&harness, "inspector.mask.row"));
     assert!(mask_of(&harness, fixture.video).is_none());
 
@@ -1624,6 +1673,7 @@ fn mask_row_is_absent_off_video_and_image_and_locked_tracks_are_read_only() {
         );
     }
     select(&mut harness, fixture.image);
+    open_mask(&mut harness);
     assert!(has_widget(&harness, "inspector.mask.row"));
     click(&mut harness, "inspector.mask.row");
     click(&mut harness, "inspector.mask.shape.circle");
@@ -2145,6 +2195,10 @@ fn text_presets_and_animations_click_edit_undo_reopen_and_capture_both_locales()
             let reopened = project::load(&file).unwrap().project;
             assert_eq!(reopened, **h.state().session.project());
             h.state_mut().session = Memory(Box::new(Session::new(reopened, 10).unwrap()));
+            // The session owns the selection, so a reopened project starts with none.
+            h.state_mut()
+                .select([f.text].into_iter().collect())
+                .unwrap();
             h.run_steps(3);
             h.state_mut()
                 .dispatch(vibecut::AppCommand::Seek(at))
