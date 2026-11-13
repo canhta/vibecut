@@ -987,9 +987,6 @@ impl<'a, 'c> Panel<'a, 'c> {
             .filter(|field| matches!(field.id, "text_content" | "text_font"))
             .cloned()
             .collect();
-        let background = fields
-            .into_iter()
-            .find(|field| field.id == "text_background");
         self.panel_section(
             ui,
             "inspector.section.text_font",
@@ -1006,10 +1003,7 @@ impl<'a, 'c> Panel<'a, 'c> {
             Text::TextFormat,
             true,
             false,
-            |panel, ui| {
-                panel.scrub_field(ui, item, TEXT_SIZE_SCRUB);
-                panel.text_format_controls(ui, item);
-            },
+            |panel, ui| panel.text_format_controls(ui, item),
         );
         self.panel_section(
             ui,
@@ -1019,26 +1013,13 @@ impl<'a, 'c> Panel<'a, 'c> {
             true,
             false,
             |panel, ui| {
-                panel.color_row(
-                    ui,
-                    "inspector.text_color.picker",
-                    Text::ColorPicker,
-                    ColorTarget::Text(item),
-                );
-                if let Some(field) = &background {
-                    panel.text_background_toggle(ui, field);
-                }
-                panel.color_row(
-                    ui,
-                    "inspector.background_color",
-                    Text::BackgroundColor,
-                    ColorTarget::Background(item),
-                );
+                panel.text_style_rows(ui);
                 panel.text_style_controls(ui, item);
             },
         );
+        self.opacity_row(ui, item);
         self.transform_section(ui, item);
-        self.blending_section(ui, item);
+        self.blending_section(ui, item, false);
         self.panel_section(
             ui,
             "inspector.section.text_animation",
@@ -1053,8 +1034,9 @@ impl<'a, 'c> Panel<'a, 'c> {
         );
     }
 
-    /// The Blending section after Transform: blend mode and opacity, with its own reset.
-    fn blending_section(&mut self, ui: &mut egui::Ui, item: ItemId) {
+    /// The Blending section after Transform: the blend mode, and the opacity too where the
+    /// tab has no Opacity row of its own. Its reset restores both.
+    fn blending_section(&mut self, ui: &mut egui::Ui, item: ItemId, with_opacity: bool) {
         let blend_reset = self.panel_section(
             ui,
             "inspector.section.blending",
@@ -1062,7 +1044,13 @@ impl<'a, 'c> Panel<'a, 'c> {
             Text::Blending,
             true,
             true,
-            |panel, ui| panel.blend_section(ui, item),
+            |panel, ui| {
+                if with_opacity {
+                    panel.blend_section(ui, item);
+                } else {
+                    panel.blend_control(ui, item);
+                }
+            },
         );
         if blend_reset {
             self.state.drafts.clear();
@@ -1145,7 +1133,7 @@ impl<'a, 'c> Panel<'a, 'c> {
             }
             PropertiesTab::Transform => {
                 self.transform_section(ui, item);
-                self.blending_section(ui, item);
+                self.blending_section(ui, item, true);
             }
             PropertiesTab::Graphic => {
                 self.panel_section(

@@ -211,7 +211,6 @@ pub(super) fn readme_project(source: &Path) -> Result<(Editor, ItemId, ItemId), 
             content: "Chapter one".into(),
             font_size: 52.0,
             color: Color([255, 255, 255, 255]),
-            position: project::TextPosition { x: 50.0, y: 70.0 },
             ..Default::default()
         }),
     )?;

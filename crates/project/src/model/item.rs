@@ -302,18 +302,6 @@ pub struct AudioParams {
     #[serde(default)]
     pub cleanup: crate::AudioCleanup,
 }
-/// Percentages of the canvas; `(50, 84.5)` reproduces the original lower-third box.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct TextPosition {
-    pub x: f32,
-    pub y: f32,
-}
-impl Default for TextPosition {
-    fn default() -> Self {
-        Self { x: 50.0, y: 84.5 }
-    }
-}
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TextBackground {
@@ -487,7 +475,6 @@ pub struct TextParams {
     #[serde(default)]
     pub glow: bool,
     pub background: Option<TextBackground>,
-    pub position: TextPosition,
 }
 impl Default for TextParams {
     fn default() -> Self {
@@ -512,7 +499,6 @@ impl TextParams {
             shadow: None,
             glow: false,
             background: None,
-            position: TextPosition::default(),
         }
     }
 }
@@ -534,7 +520,6 @@ pub struct TextStyle {
     pub shadow: Option<TextShadow>,
     pub glow: bool,
     pub background: Option<TextBackground>,
-    pub position: TextPosition,
 }
 impl TextStyle {
     /// The style of `params`, leaving its content behind.
@@ -553,7 +538,6 @@ impl TextStyle {
             shadow: params.shadow.clone(),
             glow: params.glow,
             background: params.background.clone(),
-            position: params.position,
         }
     }
     /// Copy this style over `params`, keeping its content.
@@ -571,7 +555,6 @@ impl TextStyle {
         params.shadow = self.shadow.clone();
         params.glow = self.glow;
         params.background = self.background.clone();
-        params.position = self.position;
     }
     /// Whether every stored field satisfies the text-item bounds.
     pub fn valid(&self) -> bool {
@@ -582,10 +565,6 @@ impl TextStyle {
             self.line_height,
         ) && self.font_size.is_finite()
             && (1.0..=4096.0).contains(&self.font_size)
-            && self.position.x.is_finite()
-            && self.position.y.is_finite()
-            && (0.0..=100.0).contains(&self.position.x)
-            && (0.0..=100.0).contains(&self.position.y)
             && self.stroke.as_ref().is_none_or(TextStroke::valid)
             && self.shadow.as_ref().is_none_or(TextShadow::valid)
             && self.background.as_ref().is_none_or(TextBackground::valid)

@@ -326,7 +326,6 @@ fn item_patch(field: &str, value: &str) -> Result<ItemParamPatch> {
                 .parse()
                 .map_err(|_| Error::Invalid("text size"))?,
         ),
-        "text_color" => ItemParamPatch::TextColor(parse_color(value)?),
         "text_weight" => ItemParamPatch::TextWeight(
             value
                 .trim()
@@ -356,7 +355,35 @@ fn item_patch(field: &str, value: &str) -> Result<ItemParamPatch> {
                 })
             })
         }
-        "text_background_color" => ItemParamPatch::TextBackgroundColor(parse_color(value)?),
+        "text_color" => ItemParamPatch::TextColor(parse_color(value)?),
+        "text_stroke" => {
+            let value = value.trim();
+            ItemParamPatch::TextStroke(if value.eq_ignore_ascii_case("none") {
+                None
+            } else {
+                Some(project::TextStroke {
+                    color: parse_color(value)?,
+                    ..Default::default()
+                })
+            })
+        }
+        "text_shadow" => {
+            let value = value.trim();
+            ItemParamPatch::TextShadow(if value.eq_ignore_ascii_case("none") {
+                None
+            } else {
+                Some(project::TextShadow {
+                    color: parse_color(value)?,
+                    ..Default::default()
+                })
+            })
+        }
+        "text_glow" => ItemParamPatch::TextGlow(
+            value
+                .trim()
+                .parse()
+                .map_err(|_| Error::Invalid("text glow"))?,
+        ),
         _ => return Err(Error::Invalid("shared field")),
     })
 }

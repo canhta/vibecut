@@ -69,10 +69,10 @@ fn arrow_step(spec: ScrubSpec) -> f64 {
 
 /// Where a numeric field sits: its dim prefix, width and the extra gap before its stepper.
 #[derive(Clone, Copy)]
-struct Layout {
-    prefix: Option<&'static str>,
-    width: f32,
-    gap: f32,
+pub(super) struct Layout {
+    pub(super) prefix: Option<&'static str>,
+    pub(super) width: f32,
+    pub(super) gap: f32,
 }
 
 impl Panel<'_, '_> {
@@ -339,7 +339,7 @@ impl Panel<'_, '_> {
     }
 
     /// The scrub drag target over a label: drags the value one engine undo step.
-    fn scrub_handle(
+    pub(super) fn scrub_handle(
         &mut self,
         ui: &mut egui::Ui,
         item: ItemId,
@@ -412,7 +412,7 @@ impl Panel<'_, '_> {
     }
 
     /// Draft field (commit on Enter or blur, Escape cancels) with its stepper.
-    fn numeric_edit(
+    pub(super) fn numeric_edit(
         &mut self,
         ui: &mut egui::Ui,
         item: ItemId,

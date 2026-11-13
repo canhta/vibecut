@@ -972,8 +972,17 @@ fn text_style_patches_update_one_field_and_validate() {
         ItemParamPatch::TextBackgroundCornerRadius(20.0),
         ItemParamPatch::TextAlign(project::TextAlign::Right),
         ItemParamPatch::TextDecoration(project::TextDecoration::LineThrough),
-        ItemParamPatch::TextPositionX(25.0),
-        ItemParamPatch::TextPositionY(30.0),
+        ItemParamPatch::TextStroke(Some(project::TextStroke {
+            color: Color([9, 8, 7, 255]),
+            width: 4.0,
+        })),
+        ItemParamPatch::TextShadow(Some(project::TextShadow {
+            color: Color([3, 2, 1, 200]),
+            offset_x: 5.0,
+            offset_y: -6.0,
+            blur: 2.0,
+        })),
+        ItemParamPatch::TextGlow(true),
     ] {
         let before = s.project().clone();
         assert!(
@@ -1025,7 +1034,9 @@ fn text_style_patches_update_one_field_and_validate() {
     assert_eq!(json["params"]["align"], "right");
     assert_eq!(json["params"]["decoration"], "line_through");
     assert_eq!(json["params"]["background"]["offset_x"], -30.5);
-    assert_eq!(p.position, project::TextPosition { x: 25.0, y: 30.0 });
+    assert_eq!(p.stroke.as_ref().unwrap().width, 4.0);
+    assert_eq!(p.shadow.as_ref().unwrap().blur, 2.0);
+    assert!(p.glow);
 
     let after = s.project().clone();
     for patch in [
@@ -1036,8 +1047,16 @@ fn text_style_patches_update_one_field_and_validate() {
         ItemParamPatch::TextLetterSpacing(project::MAX_LETTER_SPACING + 1.0),
         ItemParamPatch::TextLineHeight(-1.0),
         ItemParamPatch::TextLineHeight(f32::INFINITY),
-        ItemParamPatch::TextPositionX(101.0),
-        ItemParamPatch::TextPositionY(f32::NAN),
+        ItemParamPatch::TextStroke(Some(project::TextStroke {
+            color: Color([0; 4]),
+            width: project::TextStroke::MAX_WIDTH + 1.0,
+        })),
+        ItemParamPatch::TextShadow(Some(project::TextShadow {
+            color: Color([0; 4]),
+            offset_x: project::TextShadow::MAX_OFFSET + 1.0,
+            offset_y: 0.0,
+            blur: 0.0,
+        })),
         ItemParamPatch::TextBackgroundPaddingX(-1.0),
         ItemParamPatch::TextBackgroundPaddingY(129.0),
         ItemParamPatch::TextBackgroundCornerRadius(f32::NAN),

@@ -42,6 +42,11 @@ impl Panel<'_, '_> {
     /// outside its keyed range, as before the section moved into Basic.
     pub(super) fn blend_section(&mut self, ui: &mut egui::Ui, item: ItemId) {
         self.blend_control(ui, item);
+        self.opacity_row(ui, item);
+    }
+
+    /// The Opacity slider with its keyframe diamond; keyed outside its range it is disabled.
+    pub(super) fn opacity_row(&mut self, ui: &mut egui::Ui, item: ItemId) {
         let editable = !read::channel_has_keys(self.cx.session.project(), item, "opacity")
             || read::range_of(self.cx.session.project(), item)
                 .is_some_and(|(start, end)| start <= self.cx.playhead && self.cx.playhead < end);

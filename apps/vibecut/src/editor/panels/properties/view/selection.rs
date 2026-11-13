@@ -32,6 +32,7 @@ impl Panel<'_, '_> {
             ui.label(self.tr(Text::NoSharedFields));
         }
         self.shared_field_controls(ui, fields);
+        self.text_style_rows(ui);
         let items = self.cx.selection().iter().copied().collect::<Vec<_>>();
         self.arrange_controls(ui, &items);
     }
@@ -41,6 +42,13 @@ impl Panel<'_, '_> {
         fields: impl IntoIterator<Item = crate::editor::properties::SharedField>,
     ) {
         for field in fields {
+            // The text style rows own these: colour parts, toggles and glow.
+            if matches!(
+                field.id,
+                "text_background" | "text_stroke" | "text_shadow" | "text_glow"
+            ) {
+                continue;
+            }
             if field.id == "audio_muted" {
                 self.audio_mute_control(ui, &field);
                 continue;
@@ -129,52 +137,11 @@ impl Panel<'_, '_> {
                 self.compatible_count(ui, field.compatible);
                 continue;
             }
-            if field.id == "text_background" {
-                let enabled = field.value.as_deref().is_some_and(|value| value != "none");
-                self.text_background_toggle(ui, &field);
-                if enabled {
-                    let id = "inspector.text_background_color";
-                    let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
-                    self.row_label(ui, row, self.tr(Text::BackgroundColor));
-                    let mut value = self
-                        .state
-                        .drafts
-                        .get("text_background_color")
-                        .cloned()
-                        .or_else(|| field.value.clone())
-                        .unwrap_or_default();
-                    let width = value_ui.available_width().min(150.0);
-                    let response = kit::value_field(
-                        &mut value_ui,
-                        id,
-                        &mut value,
-                        width,
-                        None,
-                        self.tr(Text::BackgroundColor),
-                    );
-                    self.remember(id, &response);
-                    if response.changed() {
-                        self.state
-                            .drafts
-                            .insert("text_background_color".to_owned(), value.clone());
-                    }
-                    if (response.lost_focus()
-                        || (response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))))
-                        && self.state.drafts.contains_key("text_background_color")
-                    {
-                        self.set_shared_field("text_background_color", &value);
-                        self.state.drafts.remove("text_background_color");
-                    }
-                }
-                self.compatible_count(ui, field.compatible);
-                continue;
-            }
             let (label, id) = match field.id {
                 "opacity" => (Text::Opacity, "inspector.opacity"),
                 "audio_gain" => (Text::AudioGain, "inspector.audio_gain"),
                 "text_content" => (Text::TextContent, "inspector.text_content"),
                 "text_size" => (Text::TextSize, "inspector.text_size"),
-                "text_background" => (Text::BackgroundColor, "inspector.text_background_color"),
                 _ => (Text::TextColor, "inspector.text_color"),
             };
             let mut value = self

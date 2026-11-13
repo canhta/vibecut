@@ -2288,7 +2288,7 @@ fn mixed_text_inspector_applies_one_field_and_restores_selected_items() {
         assert_eq!(field.compatible, 2);
         assert_eq!(
             field.value.is_none(),
-            matches!(field.id, "text_content" | "text_size" | "text_color"),
+            matches!(field.id, "text_content" | "text_size"),
             "{} mixed state",
             field.id
         );
@@ -2447,7 +2447,6 @@ fn text_insert_and_style_controls_use_one_undo_step_per_edit() {
     assert_eq!(text.font.as_str(), "Inter");
     assert_eq!(text.font_size, 48.0);
     assert_eq!(text.background, None);
-    assert_eq!(text.position, project::TextPosition::default());
     let text_track_count = harness
         .state()
         .session
@@ -2491,7 +2490,6 @@ fn text_insert_and_style_controls_use_one_undo_step_per_edit() {
         .get(By::new().predicate(|n| n.author_id() == Some("inspector.text_background")))
         .click();
     harness.run_steps(2);
-    // Colour and position are not typed here: colour is a swatch, position is the Transform row.
     for (field, value) in [("text_content", "Xin chào")] {
         let id = format!("inspector.{field}");
         harness
@@ -2504,18 +2502,60 @@ fn text_insert_and_style_controls_use_one_undo_step_per_edit() {
         harness.key_press(egui::Key::Tab);
         harness.run_steps(2);
     }
+    // Colour is the swatch popover's hex entry, one commit; position is the shared Transform
+    // row's X and Y fields, one commit each.
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.text_color.picker")))
+        .click();
+    harness.run_steps(3);
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("color.hex")))
+        .click();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.event(egui::Event::Text("#11223344".into()));
+    harness.key_press(egui::Key::Enter);
+    harness.run_steps(3);
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+    for (id, value) in [
+        ("inspector.transform.positionX", "25"),
+        ("inspector.transform.positionY", "30"),
+    ] {
+        harness
+            .get(By::new().predicate(|n| n.author_id() == Some(id)))
+            .click();
+        harness.run_steps(1);
+        harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+        harness.event(egui::Event::Text(value.into()));
+        harness.key_press(egui::Key::Enter);
+        harness.run_steps(2);
+    }
     assert_eq!(
         harness.state().session.history_len().0,
-        style_history + 3,
+        style_history + 6,
         "each committed field edit is one undo step"
     );
-    let ItemParams::Text(text) = &item(harness.state(), selected[0]).content else {
+    let selected_item = item(harness.state(), selected[0]);
+    let ItemParams::Text(text) = &selected_item.content else {
         panic!("text item")
     };
     assert_eq!(text.content.as_str(), "Xin chào");
     assert_eq!(text.font.as_str(), "Noto Serif");
     assert_eq!(text.font_size, 64.0);
     assert!(text.background.is_some());
+    assert_eq!(text.color, Color([17, 34, 51, 68]));
+    assert_eq!(
+        project::TransformField::PositionX
+            .value_at(&selected_item.animations, Tick::ZERO)
+            .unwrap(),
+        25.0
+    );
+    assert_eq!(
+        project::TransformField::PositionY
+            .value_at(&selected_item.animations, Tick::ZERO)
+            .unwrap(),
+        30.0
+    );
     for (field, value) in [
         ("text_font", ""),
         ("text_size", "4097"),
@@ -2531,11 +2571,12 @@ fn text_insert_and_style_controls_use_one_undo_step_per_edit() {
     let decoded = project::decode(&encoded).unwrap();
     assert_eq!(decoded.project, **harness.state().session.project());
 
-    for _ in 0..9 {
+    // Insert, size, then the six style edits above.
+    for _ in 0..8 {
         harness.state_mut().activate("edit.undo").unwrap();
     }
     assert_eq!(harness.state().session.project(), &before);
-    for _ in 0..9 {
+    for _ in 0..8 {
         harness.state_mut().activate("edit.redo").unwrap();
     }
     let ItemParams::Text(text) = &item(harness.state(), selected[0]).content else {

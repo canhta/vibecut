@@ -1,7 +1,11 @@
 //! Text style rows of the Text tab: weight, slant, line, alignment, spacing and the
 //! background box geometry. Every edit goes through the registered item field.
 use super::Panel;
-use crate::editor::properties::{Id, ItemId, ScrubSpec, Text, egui, read, theme};
+use super::number_edit::Layout;
+use crate::editor::properties::{
+    ColorTarget, Id, ItemId, ScrubSpec, TEXT_SIZE_SCRUB, Text, TextPart, egui, read, shared_fields,
+    theme,
+};
 use crate::kit;
 
 const fn spec(field: &'static str, label: Text, min: f64, max: f64, decimals: usize) -> ScrubSpec {
@@ -102,38 +106,16 @@ impl Panel<'_, '_> {
         clicked
     }
 
-    /// Format: weight, slant, decoration, alignment, letter spacing and line height.
+    /// Format: one row of size, bold, italic, underline and alignment, then the line
+    /// decoration, letter spacing and line height.
     pub(super) fn text_format_controls(&mut self, ui: &mut egui::Ui, item: ItemId) {
         let Some(project::ItemParams::Text(params)) =
             read::item(self.cx.session.project(), item).map(|found| found.content.clone())
         else {
             return;
         };
-        use project::{TextAlign, TextDecoration};
-        let bold = params.weight >= 600;
-        if let Some(choice) = self.choice_row(
-            ui,
-            "inspector.text_weight",
-            Text::TextWeight,
-            &[("normal", Text::WeightNormal), ("bold", Text::WeightBold)],
-            usize::from(bold),
-        ) {
-            let weight = if choice == 1 { "700" } else { "400" };
-            self.set_item_field(item, "text_weight", weight);
-        }
-        if let Some(choice) = self.choice_row(
-            ui,
-            "inspector.text_italic",
-            Text::TextSlant,
-            &[("normal", Text::SlantNormal), ("italic", Text::SlantItalic)],
-            usize::from(params.italic),
-        ) {
-            self.set_item_field(
-                item,
-                "text_italic",
-                if choice == 1 { "true" } else { "false" },
-            );
-        }
+        use project::TextDecoration;
+        self.format_row(ui, item, &params);
         let lines = [
             TextDecoration::None,
             TextDecoration::Underline,
@@ -157,24 +139,245 @@ impl Panel<'_, '_> {
         {
             self.set_item_field(item, "text_decoration", word);
         }
-        let aligns = [TextAlign::Left, TextAlign::Center, TextAlign::Right];
-        let at = aligns.iter().position(|a| *a == params.align).unwrap_or(1);
-        if let Some(choice) = self.choice_row(
-            ui,
-            "inspector.text_align",
-            Text::TextAlign,
-            &[
-                ("left", Text::AlignLeft),
-                ("center", Text::AlignCenter),
-                ("right", Text::AlignRight),
-            ],
-            at,
-        ) && let Some(word) = ["left", "center", "right"].get(choice)
-        {
-            self.set_item_field(item, "text_align", word);
-        }
         self.scrub_field(ui, item, LETTER_SPACING);
         self.scrub_field(ui, item, LINE_HEIGHT);
+    }
+
+    /// The Format row: a size field with its drag grip, then bold, italic and underline
+    /// toggles and the three alignment cells, all on one property row.
+    fn format_row(&mut self, ui: &mut egui::Ui, item: ItemId, params: &project::TextParams) {
+        use project::{TextAlign, TextDecoration};
+        let (row, _) = ui.allocate_exact_size(
+            egui::vec2(ui.available_width(), theme::size::PROPERTY_ROW),
+            egui::Sense::hover(),
+        );
+        let mut cells = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(row)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
+        cells.spacing_mut().item_spacing.x = theme::space::XXS;
+        let size =
+            super::super::read::item_value(self.cx.session.project(), item, TEXT_SIZE_SCRUB.field)
+                .unwrap_or(f64::from(params.font_size));
+        let (grip, _) =
+            cells.allocate_exact_size(egui::vec2(12.0, theme::size::FIELD), egui::Sense::hover());
+        self.scrub_handle(&mut cells, item, TEXT_SIZE_SCRUB, size, grip);
+        self.numeric_edit(
+            &mut cells,
+            item,
+            TEXT_SIZE_SCRUB,
+            size,
+            Layout {
+                prefix: None,
+                width: 54.0,
+                gap: 4.0,
+            },
+        );
+        let bold = params.weight >= 600;
+        if self.glyph_toggle(
+            &mut cells,
+            "inspector.text_weight",
+            Text::TextBoldGlyph,
+            Text::WeightBold,
+            bold,
+        ) {
+            self.set_item_field(item, "text_weight", if bold { "400" } else { "700" });
+        }
+        let italic = params.italic;
+        if self.glyph_toggle(
+            &mut cells,
+            "inspector.text_italic",
+            Text::TextItalicGlyph,
+            Text::SlantItalic,
+            italic,
+        ) {
+            self.set_item_field(item, "text_italic", if italic { "false" } else { "true" });
+        }
+        let underline = params.decoration == TextDecoration::Underline;
+        if self.glyph_toggle(
+            &mut cells,
+            "inspector.text_underline",
+            Text::TextUnderlineGlyph,
+            Text::DecorationUnderline,
+            underline,
+        ) {
+            self.set_item_field(
+                item,
+                "text_decoration",
+                if underline { "none" } else { "underline" },
+            );
+        }
+        for (word, label, icon, align) in [
+            (
+                "left",
+                Text::AlignLeft,
+                kit::Icon::AlignLeft,
+                TextAlign::Left,
+            ),
+            (
+                "center",
+                Text::AlignCenter,
+                kit::Icon::AlignCenterHorizontal,
+                TextAlign::Center,
+            ),
+            (
+                "right",
+                Text::AlignRight,
+                kit::Icon::AlignRight,
+                TextAlign::Right,
+            ),
+        ] {
+            let response = kit::icon_button(
+                &mut cells,
+                &format!("inspector.text_align.{word}"),
+                icon,
+                self.tr(label),
+                params.align == align,
+            );
+            if response.clicked() {
+                self.set_item_field(item, "text_align", word);
+            }
+        }
+    }
+
+    /// A two-state glyph button (B, I, U); returns whether it was clicked.
+    fn glyph_toggle(
+        &mut self,
+        ui: &mut egui::Ui,
+        id: &str,
+        glyph: Text,
+        label: Text,
+        on: bool,
+    ) -> bool {
+        let button = egui::Button::new(egui::RichText::new(self.tr(glyph)).strong()).selected(on);
+        let response = ui
+            .add_sized([theme::size::FIELD, theme::size::FIELD], button)
+            .on_hover_text(self.tr(label));
+        self.remember(id, &response);
+        response.clicked()
+    }
+
+    /// The text items among the selection, in timeline order.
+    fn selected_texts(&self) -> Vec<ItemId> {
+        self.cx
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| &track.items)
+            .filter(|item| {
+                self.cx.selection().contains(&item.id)
+                    && matches!(item.content, project::ItemParams::Text(_))
+            })
+            .map(|item| item.id)
+            .collect()
+    }
+
+    /// The Style rows every text selection shares: the fill swatch, the background box, the
+    /// outline and the shadow (each a toggle with a swatch) and the glow switch. A row writes
+    /// every selected text in one edit, and a mixed value shows no swatch.
+    pub(super) fn text_style_rows(&mut self, ui: &mut egui::Ui) {
+        let items = self.selected_texts();
+        if items.is_empty() {
+            return;
+        }
+        let fields = shared_fields(self.cx.session.project(), self.cx.selection());
+        let field = |id: &str| fields.iter().find(|field| field.id == id);
+        let swatch = |part| ColorTarget::Texts {
+            items: items.clone(),
+            part,
+        };
+        self.color_row(
+            ui,
+            "inspector.text_color.picker",
+            Text::TextFill,
+            swatch(TextPart::Fill),
+        );
+        if let Some(background) = field("text_background") {
+            self.text_background_toggle(ui, background);
+            if background.value.as_deref().is_some_and(|v| v != "none") {
+                self.color_row(
+                    ui,
+                    "inspector.background_color",
+                    Text::BackgroundColor,
+                    swatch(TextPart::Background),
+                );
+            }
+        }
+        if let Some(stroke) = field("text_stroke") {
+            self.text_effect_toggle(
+                ui,
+                stroke,
+                Text::TextStroke,
+                "inspector.text_stroke",
+                "#000000FF",
+            );
+            if stroke.value.as_deref().is_some_and(|v| v != "none") {
+                self.color_row(
+                    ui,
+                    "inspector.text_stroke.picker",
+                    Text::ColorPicker,
+                    swatch(TextPart::Stroke),
+                );
+            }
+        }
+        if let Some(shadow) = field("text_shadow") {
+            self.text_effect_toggle(
+                ui,
+                shadow,
+                Text::TextShadow,
+                "inspector.text_shadow",
+                "#000000A0",
+            );
+            if shadow.value.as_deref().is_some_and(|v| v != "none") {
+                self.color_row(
+                    ui,
+                    "inspector.text_shadow.picker",
+                    Text::ColorPicker,
+                    swatch(TextPart::Shadow),
+                );
+            }
+        }
+        if let Some(glow) = field("text_glow") {
+            let mut on = glow.value.as_deref() == Some("true");
+            let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+            self.row_label(ui, row, self.tr(Text::TextGlow));
+            let width = value_ui.available_width();
+            value_ui.add_space((width - theme::size::TOGGLE_WIDTH).max(0.0));
+            let response = kit::toggle(
+                &mut value_ui,
+                "inspector.text_glow",
+                &mut on,
+                self.tr(Text::TextGlow),
+            );
+            self.remember("inspector.text_glow", &response);
+            if response.clicked() {
+                self.set_shared_field("text_glow", if on { "true" } else { "false" });
+            }
+        }
+    }
+
+    /// A checkbox row for an outline or shadow: on sets `on_value`, off clears it.
+    fn text_effect_toggle(
+        &mut self,
+        ui: &mut egui::Ui,
+        field: &crate::editor::properties::SharedField,
+        label: Text,
+        id: &str,
+        on_value: &str,
+    ) {
+        let mut checked = field.value.as_deref().is_some_and(|value| value != "none");
+        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        self.row_label(ui, row, self.tr(label));
+        let response = value_ui
+            .add(egui::Checkbox::without_text(&mut checked).indeterminate(field.value.is_none()));
+        self.remember(id, &response);
+        if response.changed() {
+            self.set_shared_field(field.id, if checked { on_value } else { "none" });
+        }
     }
 
     /// Style: the saved style bank, then the background box geometry.

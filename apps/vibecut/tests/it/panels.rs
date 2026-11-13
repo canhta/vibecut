@@ -2750,10 +2750,9 @@ fn text_tab_edits_every_style_field_one_undo_step_each_and_shows_effects() {
     let text = fixture.text;
     // Each toggle row is one registered edit, one undo step, and reads back what it wrote.
     type Check = fn(&project::TextParams) -> bool;
-    let toggles: [(&str, Check); 7] = [
-        ("inspector.text_weight.bold", |p| p.weight == 700),
-        ("inspector.text_weight.normal", |p| p.weight == 400),
-        ("inspector.text_italic.italic", |p| p.italic),
+    let toggles: [(&str, Check); 6] = [
+        ("inspector.text_weight", |p| p.weight == 700),
+        ("inspector.text_italic", |p| p.italic),
         ("inspector.text_decoration.underline", |p| {
             p.decoration == TextDecoration::Underline
         }),

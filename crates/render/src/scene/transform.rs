@@ -315,15 +315,11 @@ pub mod arrange {
                 ]),
             );
             text.start = Tick(100);
-            text.content = ItemParams::Text({
-                let mut params = TextParams::new("Box");
-                params.position = project::TextPosition { x: 60.0, y: 40.0 };
-                params
-            });
+            text.content = ItemParams::Text(TextParams::new("Box"));
             assert!(
                 close(
                     bounds(&data, &text, Tick::ZERO).unwrap(),
-                    rect(105.0, -5.0, 50.0, 80.0)
+                    rect(85.0, 39.5, 50.0, 80.0)
                 ),
                 "before the item starts, its first transform sample is used"
             );

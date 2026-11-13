@@ -13,6 +13,9 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use time::Tick;
 
+/// Text box anchor as canvas fractions: the lower-third centre (50 %, 84.5 %). Text items
+/// have no placement of their own; the Transform offsets move them from here.
+const TEXT_ANCHOR: (f64, f64) = (0.5, 0.845);
 /// Glow halo radius as a fraction of the font size; the reference exposes one switch.
 const GLOW_SIZE: f32 = 0.15;
 /// Largest glow halo radius in output pixels.
@@ -20,17 +23,17 @@ const GLOW_MAX: f32 = 64.0;
 
 /// The placement saved in the project, without transient render overrides:
 /// full canvas for video, image, overlay and other placed kinds, the text box
-/// around its saved position, and the centred graphic author square. Captions
+/// at the text anchor, and the centred graphic author square. Captions
 /// resolve through their style; audio has no box.
 pub(super) fn saved_placement(canvas: &project::Canvas, item: &Item) -> Option<Placement> {
     Some(match &item.content {
-        ItemParams::Text(params) => {
+        ItemParams::Text(_) => {
             let width = 0.8;
             let height = 0.25;
             Placement {
                 destination: Rect {
-                    x: f64::from(params.position.x) / 100.0 - width / 2.0,
-                    y: f64::from(params.position.y) / 100.0 - height / 2.0,
+                    x: TEXT_ANCHOR.0 - width / 2.0,
+                    y: TEXT_ANCHOR.1 - height / 2.0,
                     width,
                     height,
                 },

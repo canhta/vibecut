@@ -134,7 +134,7 @@ fn named_preset_banks_validate_every_entry_names_closed_fields_and_schema() {
         data.text_presets
     );
     for case in [
-        "65", "id", "name", "nfd", "font", "size", "position", "box", "stroke", "shadow",
+        "65", "id", "name", "nfd", "font", "size", "box", "stroke", "shadow",
     ] {
         let mut invalid = data.clone();
         match case {
@@ -151,7 +151,6 @@ fn named_preset_banks_validate_every_entry_names_closed_fields_and_schema() {
             }
             "font" => invalid.text_presets[0].style.font = " ".into(),
             "size" => invalid.text_presets[0].style.font_size = f32::NAN,
-            "position" => invalid.text_presets[0].style.position.x = 101.0,
             "box" => {
                 invalid.text_presets[0].style.background = Some(TextBackground {
                     padding_x: -1.0,

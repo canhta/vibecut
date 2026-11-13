@@ -391,6 +391,12 @@ pub(super) fn text_item_locale(
     ] {
         editor.set_shared_field(field, value)?;
     }
+    // Move the box up with the Transform position (pixels), where the old text position
+    // reached about 70 % of the frame. The offset is unmeasured: re-check it in ui-audit.
+    editor.session.apply(Command::SetItemField {
+        item,
+        patch: ItemParamPatch::PositionY(-156.6),
+    })?;
     let mut app = harness_sized(App::Editor(Box::new(editor)), scale, [1440.0, 1440.0]);
     wait_for_presented(&mut app)?;
     app.run_steps(2);

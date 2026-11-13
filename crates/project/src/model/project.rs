@@ -532,10 +532,6 @@ fn validate(data: &ProjectData) -> Result<()> {
                         p.line_height,
                     ) || !p.font_size.is_finite()
                         || !(1.0..=4096.0).contains(&p.font_size)
-                        || !p.position.x.is_finite()
-                        || !p.position.y.is_finite()
-                        || !(0.0..=100.0).contains(&p.position.x)
-                        || !(0.0..=100.0).contains(&p.position.y)
                         || p.stroke.as_ref().is_some_and(|s| !s.valid())
                         || p.shadow.as_ref().is_some_and(|s| !s.valid())
                         || p.background.as_ref().is_some_and(|b| !b.valid())

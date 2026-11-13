@@ -186,8 +186,9 @@ pub enum ItemParamPatch {
     TextBackgroundCornerRadius(f32),
     TextAlign(project::TextAlign),
     TextDecoration(project::TextDecoration),
-    TextPositionX(f32),
-    TextPositionY(f32),
+    TextStroke(Option<project::TextStroke>),
+    TextShadow(Option<project::TextShadow>),
+    TextGlow(bool),
     #[serde(rename = "transform.positionX")]
     PositionX(f64),
     #[serde(rename = "transform.positionY")]
@@ -248,8 +249,9 @@ impl ItemParamPatch {
                         | Self::TextBackgroundCornerRadius(_)
                         | Self::TextAlign(_)
                         | Self::TextDecoration(_)
-                        | Self::TextPositionX(_)
-                        | Self::TextPositionY(_),
+                        | Self::TextStroke(_)
+                        | Self::TextShadow(_)
+                        | Self::TextGlow(_),
                     ItemParams::Text(_)
                 )
                 | (
@@ -322,9 +324,9 @@ impl ItemParamPatch {
             Self::TextBackgroundOffsetX(v) | Self::TextBackgroundOffsetY(v) => {
                 v.is_finite() && v.abs() <= project::TextBackground::MAX_OFFSET
             }
-            Self::TextPositionX(v) | Self::TextPositionY(v) => {
-                v.is_finite() && (0.0..=100.0).contains(v)
-            }
+            Self::TextStroke(stroke) => stroke.as_ref().is_none_or(project::TextStroke::valid),
+            Self::TextShadow(shadow) => shadow.as_ref().is_none_or(project::TextShadow::valid),
+            Self::TextGlow(_) => true,
             _ => false,
         };
         if valid {

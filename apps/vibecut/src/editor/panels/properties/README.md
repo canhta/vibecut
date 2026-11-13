@@ -40,13 +40,16 @@ elsewhere. The multi-selection inspector shows the same row under its shared fie
 The multi-selection inspector shows audio gain and mute plus text content, font, size,
 colour and background for compatible items, a dash for mixed values and the
 compatible/selected count. A single element uses per-type tabs. The Text tab is one tab of
-sections in order: Font (content, font), Format (size scrub, bold, italic, decoration,
-alignment, letter and line spacing), Style (colour swatch, background box with its colour
-and geometry, saved styles), the shared Transform section (Scale, Position X/Y, Rotate,
-Arrange, flips; the same component as video items), Blending (blend menu, opacity scrub) and
-Animation. Text has no hex colour field and no bare position fields: each property has one
-control, and text position is the Transform Position row. Video and image items keep
-Transform and Blending under Basic, then Audio (see below) and Speed for video and audio. Speed is a 0.01–5x scrub with a
+sections in order: Font (content, font), Format (one row: size with its drag grip, bold,
+italic, underline, alignment; then line decoration, letter and line spacing), Style (fill
+swatch, background box, outline and shadow each as a toggle with a swatch, glow switch,
+saved styles, background geometry), Opacity, the shared Transform section (Scale, Position
+X/Y, Rotate, Arrange, flips; the same component as video items), Blending (blend mode) and
+Animation. Text has no hex colour field and no bare position fields: each colour is one
+swatch, and text position is the Transform Position row. The Style colour rows are
+`ColorTarget::Texts`, the same control for one text or many: a mixed value shows no swatch,
+and each commit is one `set_item_param_many` edit. Video and image items keep Transform and
+Blending under Basic, then Audio (see below) and Speed. Speed is a 0.01–5x scrub with a
 reset and, for items with audio, a `Change pitch` checkbox that is on while pitch
 follows speed (`maintain_pitch` off). Speed edits use `timeline.set_speed`, one undo
 step per commit; trim bounds extend by the retimed output length. Caption generation
