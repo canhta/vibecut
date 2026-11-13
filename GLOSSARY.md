@@ -12,6 +12,7 @@ Language for the editor's privacy and execution boundaries.
 - **SourceRange**: A nonempty half-open `[start, end)` range in source-media ticks.
 - **Speed**: A video or audio item's constant playback rate, 0.01x to 5x on an exact 0.001 grid. The item plays its source window for `floor(source / speed)` output ticks, with split pieces retaining their slices of that original playback; its pitch policy chooses between pitch following speed and time-stretching with pitch preserved.
 - **SourceAsset**: A source-media identity and its location, content fingerprint and probed stream information; timeline items refer to it without copying its media.
+- **Proxy**: A low-resolution intra-frame copy of a source's video in the app cache, keyed by the source content hash and never named by a project; preview reads it while the project's choice is on, and export always reads the source ([engine artifacts](crates/engine/src/artifacts/README.md#preview-proxies)).
 - **Transcript**: Source-language recognition result with stable segments and a provider/model/settings fingerprint.
 - **Cue**: Identified source range with source language and per-language text, independent edit flags and translation references.
 - **CueStyle**: Saved static caption appearance shared by cues in a cue track, including its font, colours, alignment and margins.

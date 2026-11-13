@@ -42,6 +42,7 @@ impl Panel<'_, '_> {
                 panel.size_row(ui, false);
                 panel.frame_rate_row(ui);
                 panel.reset_original_row(ui);
+                panel.proxy_rows(ui);
             },
         );
         self.panel_section(
@@ -397,6 +398,121 @@ impl Panel<'_, '_> {
             egui::WidgetInfo::labeled(egui::Role::ComboBox, true, self.tr(Text::FrameRateLabel))
         });
         self.remember("inspector.canvas.fps", &response);
+    }
+
+    /// The per-project proxy choice and its generation. The checkbox only
+    /// states what preview reads; export and the project file never see it.
+    fn proxy_rows(&mut self, ui: &mut egui::Ui) {
+        use crate::editor::context::{ProxyAction as A, ProxyPhase as P};
+        let proxy = self.cx.cache.proxy.clone();
+        let Some(index) = proxy.index.clone() else {
+            return;
+        };
+        let enabled = self.cx.session.metadata().proxy_preview;
+        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        self.row_label(ui, row, self.tr(Text::Proxy));
+        let state = self.tr(if enabled {
+            Text::ProxyOn
+        } else {
+            Text::ProxyOff
+        });
+        let mut next = enabled;
+        // The admitted Properties checkbox box is 12 logical pixels.
+        value_ui.spacing_mut().icon_width = 12.0;
+        let response = value_ui
+            .add(egui::Checkbox::new(&mut next, state))
+            .on_hover_text(self.tr(Text::ProxyHint));
+        self.remember("inspector.proxy.toggle", &response);
+        if response.changed() {
+            self.actions.push(Action::Proxy(A::Toggle(next)));
+        }
+        let mut sources = std::collections::BTreeSet::new();
+        let (mut total, mut ready) = (0usize, 0usize);
+        for asset in &self.cx.session.project().data().assets {
+            let video = !asset.is_image()
+                && asset
+                    .probe()
+                    .streams
+                    .iter()
+                    .any(|stream| stream.kind == media::StreamKind::Video);
+            if video && sources.insert(asset.content_hash().0) {
+                total += 1;
+                ready += usize::from(index.contains(asset.content_hash()));
+            }
+        }
+        if total == 0 {
+            return;
+        }
+        let (_, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        value_ui.horizontal(|ui| {
+            if proxy.phase == P::Generating {
+                let percent = (proxy.progress.clamp(0.0, 1.0) * 100.0).round() as u32;
+                let text = i18n::format(
+                    self.cx.locale,
+                    Text::ProxyGenerating,
+                    &[
+                        ("done", &(proxy.done + 1).min(proxy.total).to_string()),
+                        ("total", &proxy.total.to_string()),
+                        ("percent", &percent.to_string()),
+                    ],
+                );
+                let response = ui.label(egui::RichText::new(text).small().color(self.secondary()));
+                self.remember("inspector.proxy.progress", &response);
+                let response = kit::icon_button(
+                    ui,
+                    "inspector.proxy.cancel",
+                    kit::Icon::X,
+                    self.tr(Text::ProxyCancel),
+                    false,
+                );
+                self.remember_with_icon(
+                    "inspector.proxy.cancel",
+                    Some(kit::Icon::X.name()),
+                    &response,
+                );
+                if response.clicked() {
+                    self.actions.push(Action::Proxy(A::Cancel));
+                }
+            } else {
+                let label = self.tr(Text::ProxyGenerate);
+                let response = ui
+                    .add_enabled_ui(ready < total, |ui| {
+                        ui.add(
+                            egui::Button::new(label)
+                                .fill(theme::field(self.cx.dark))
+                                .min_size(egui::vec2(150.0, theme::size::FIELD)),
+                        )
+                    })
+                    .inner;
+                response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
+                self.remember("inspector.proxy.generate", &response);
+                if response.clicked() {
+                    self.actions.push(Action::Proxy(A::Generate));
+                }
+            }
+        });
+        let status = i18n::format(
+            self.cx.locale,
+            Text::ProxyReady,
+            &[("ready", &ready.to_string()), ("total", &total.to_string())],
+        );
+        let response = ui.label(egui::RichText::new(status).small().color(self.secondary()));
+        self.remember("inspector.proxy.status", &response);
+        let warning = if proxy.phase == P::Failed {
+            Some(Text::ProxyFailed)
+        } else if enabled && !index.fallbacks().is_empty() {
+            Some(Text::ProxyMissing)
+        } else {
+            None
+        };
+        if let Some(key) = warning {
+            let response = ui.label(
+                egui::RichText::new(self.tr(key))
+                    .small()
+                    .color(theme::warning(self.cx.dark)),
+            );
+            self.remember("inspector.proxy.warning", &response);
+        }
     }
 
     fn reset_original_row(&mut self, ui: &mut egui::Ui) {

@@ -399,6 +399,17 @@ impl State {
     ) -> crate::Result<()> {
         self.media.tick(session)
     }
+    pub(in crate::editor) fn set_proxies(&mut self, index: Option<engine::proxies::ProxyIndex>) {
+        self.media.set_proxies(index);
+    }
+    pub(in crate::editor) fn request_proxy(
+        &mut self,
+        action: crate::editor::context::ProxyAction,
+        assets: &[media::SourceAsset],
+        budget: &engine::ByteBudget,
+    ) {
+        self.media.request_proxy(action, assets, budget);
+    }
     pub(in crate::editor) fn request_cache(&mut self, action: crate::editor::context::CacheAction) {
         self.media.request_cache(action);
     }

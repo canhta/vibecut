@@ -76,6 +76,7 @@ pub(in crate::editor) struct Media {
     cache: CacheUi,
     cache_worker: Option<CacheWorker>,
     cache_operation: CacheOperation,
+    proxies: super::proxies::Proxies,
 }
 
 impl Default for Media {
@@ -93,6 +94,7 @@ impl Default for Media {
             cache: CacheUi::default(),
             cache_worker: None,
             cache_operation: CacheOperation::Inspect,
+            proxies: Default::default(),
         }
     }
 }
@@ -107,8 +109,29 @@ impl Media {
         self.cache.phase = CachePhase::Idle;
     }
 
+    /// Adopt the preview's proxy index so generated proxies reach preview.
+    pub(in crate::editor) fn set_proxies(&mut self, index: Option<engine::proxies::ProxyIndex>) {
+        self.proxies.set_index(index);
+    }
+
+    /// Queue, cancel or acknowledge one proxy intention for the project's sources.
+    pub(in crate::editor) fn request_proxy(
+        &mut self,
+        action: crate::editor::context::ProxyAction,
+        assets: &[media::SourceAsset],
+        budget: &engine::ByteBudget,
+    ) {
+        if action == crate::editor::context::ProxyAction::Generate
+            && self.ensure_runner(budget).is_err()
+        {
+            return;
+        }
+        self.proxies.request(action, assets, self.access.as_ref());
+    }
+
     pub(in crate::editor) fn cache_ui(&self) -> CacheUi {
         let mut ui = self.cache.clone();
+        ui.proxy = self.proxies.ui();
         if ui.cause.is_none() {
             ui.cause = self.visual_cause.borrow().clone();
         }
@@ -307,15 +330,8 @@ impl Media {
         }
     }
 
-    fn control(
-        &mut self,
-        session: &mut engine::Session,
-        command: engine::Command,
-        budget: &engine::ByteBudget,
-    ) -> crate::Result<engine::control::Result<engine::control::ControlResult>> {
-        let Some(access) = &self.access else {
-            return Err(crate::Error::Invalid("media cache unavailable"));
-        };
+    /// The one job runner this owner schedules visuals and proxies on.
+    fn ensure_runner(&mut self, budget: &engine::ByteBudget) -> crate::Result<()> {
         if self.runner.is_none() {
             let runner = engine::jobs::JobRunner::new(
                 engine::jobs::RunnerConfig {
@@ -331,6 +347,19 @@ impl Media {
             )?;
             self.runner = Some(runner);
         }
+        Ok(())
+    }
+
+    fn control(
+        &mut self,
+        session: &mut engine::Session,
+        command: engine::Command,
+        budget: &engine::ByteBudget,
+    ) -> crate::Result<engine::control::Result<engine::control::ControlResult>> {
+        let Some(access) = &self.access else {
+            return Err(crate::Error::Invalid("media cache unavailable"));
+        };
+        self.ensure_runner(budget)?;
         let runner = self
             .runner
             .as_mut()
@@ -374,6 +403,13 @@ impl Media {
         }
         if let Some(runner) = &mut self.runner {
             runner.tick()?;
+        }
+        if let Some(access) = &self.access {
+            self.proxies.tick(
+                access,
+                self.runner.as_mut(),
+                &session.project().data().assets,
+            );
         }
         let ids: Vec<engine::jobs::JobId> = self.jobs.keys().copied().collect();
         for id in ids {

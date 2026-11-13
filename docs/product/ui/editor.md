@@ -126,10 +126,20 @@ With no element selected the inspector's Settings tab shows three sections using
 
 Timeline previews follows Background in the scrollable Settings body, reusing section headers,
 property rows, 22 px fields and the trash glyph. Refresh/Clear become Cancel during work;
-failed operations offer Retry. Size is verified file bytes in the two shared process media
-stores; the scope tooltip names exclusions and concurrent regeneration. Snapshot age, retained,
+failed operations offer Retry. Size is verified file bytes in the three shared process media
+stores (waveforms and scene analysis, timeline images, proxy videos); the scope tooltip names
+exclusions and concurrent regeneration. Snapshot age, retained,
 in-use, missing and failed counts accompany partial results; removed roots request restart.
 This composition is new and has no matching reference image for comparison metrics.
+
+Proxy sits at the end of the Project section (220: the CapCut Details panel lists `Proxy` with
+the value `Turned off`). Ours is a per-project checkbox row whose text states `Turned on` or
+`Turned off`, a Generate proxies button (a Cancel icon with `n of m (p%)` while running), a
+`n of m clips have a proxy` line and a warning line when a proxy file was removed (the original
+plays) or generation failed. Toggling is session presentation state, not an edit: no undo step,
+and the shown frame is re-rendered from the chosen source. The checkbox row and button are new compositions, while CapCut opens a `Modify` dialog from Details, and its proxy resolution, codec and any
+progress presentation are unmeasured. Open: CapCut's proxy raster and bitrate, its dialog
+geometry, and whether it generates on import by default.
 
 ## Shortcuts
 

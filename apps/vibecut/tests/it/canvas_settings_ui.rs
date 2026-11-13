@@ -446,3 +446,191 @@ fn timeline_cache_settings_share_two_stores_clear_refresh_and_preserve_projects(
         project::encode(&before, false).unwrap()
     );
 }
+
+fn proxy_source() -> Option<std::path::PathBuf> {
+    if !testkit::oracle::require("proxy settings") {
+        return None;
+    }
+    testkit::oracle::generate(
+        &testkit::fixture::dir("proxy-settings"),
+        "proxy settings",
+        "source.mkv",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=s=128x72:r=10:d=2",
+            "-c:v",
+            "ffv1",
+            "-pix_fmt",
+            "yuv420p",
+        ],
+    )
+}
+
+fn proxied_editor(source: &std::path::Path) -> Editor {
+    let asset = media::SourceAsset::import(media::AssetId(1), source.to_path_buf()).unwrap();
+    let duration = asset.probe().duration.unwrap();
+    let mut data = Project::empty(ProjectId(1), "Proxy".into())
+        .unwrap()
+        .into_data();
+    data.assets.push(asset);
+    data.scene_mut().timeline.insert_track(project::Track {
+        id: project::TrackId(1),
+        name: "Video".into(),
+        kind: project::TrackKind::Video,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![project::Item {
+            hidden: false,
+            blend_mode: Default::default(),
+            retime: Default::default(),
+            masks: Vec::new(),
+            effects: Vec::new(),
+            animations: Default::default(),
+            id: project::ItemId(1),
+            source_asset: Some(media::AssetId(1)),
+            source_range: time::TimeRange::new(time::Tick::ZERO, duration).unwrap(),
+            start: time::Tick::ZERO,
+            content: project::ItemParams::Video(project::VideoParams {
+                fades: Default::default(),
+                source_audio_enabled: false,
+                volume: 0.0,
+                muted: false,
+                crop: None,
+                cleanup: Default::default(),
+            }),
+        }],
+    });
+    let session = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    let mut playback = Playback::new(
+        &session,
+        ByteBudget::new(256 << 20).unwrap(),
+        Arc::new(vibecut::services::playback::Proxied(
+            engine::proxies::ProxyIndex::default(),
+        )),
+    )
+    .unwrap();
+    playback.set_device_available(true);
+    Editor::new(session, playback, Preferences::default())
+}
+
+#[test]
+fn proxy_settings_toggle_generate_and_clear_degrade_to_the_source() {
+    use vibecut::app::Workspace;
+    let Some(source) = proxy_source() else {
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let mut workspace =
+        Workspace::new(dir.path().join("recovery"), Preferences::default(), None).unwrap();
+    let id = workspace.register_editor(Box::new(proxied_editor(&source)));
+    let before = workspace.editor_mut(id).unwrap().session.project().clone();
+    let history = workspace.editor_mut(id).unwrap().session.history_len();
+    let hash = before.data().assets[0].content_hash();
+    let mut harness = crate::gpu::builder()
+        .with_size(egui::vec2(1727.0, 1029.0))
+        .build_ui_state(
+            move |ui, app: &mut Workspace| app.window_ui(id, ui),
+            workspace,
+        );
+    harness.run_steps(3);
+    let present = |h: &Harness<Workspace>, name: &str| {
+        h.query_all(By::new().predicate(|node| node.author_id() == Some(name)))
+            .next()
+            .is_some()
+    };
+    let until =
+        |h: &mut Harness<Workspace>, what: &str, done: &dyn Fn(&Harness<Workspace>) -> bool| {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+            while !done(h) {
+                assert!(std::time::Instant::now() < deadline, "timed out: {what}");
+                std::thread::yield_now();
+                h.run_steps(2);
+            }
+        };
+    let value = |h: &Harness<Workspace>, name: &str| {
+        h.get(By::new().predicate(|node| node.author_id() == Some(name)))
+            .value()
+            .map(|value| value.to_string())
+    };
+    let click = |h: &mut Harness<Workspace>, name: &str| {
+        h.get(By::new().predicate(|node| node.author_id() == Some(name)))
+            .click();
+        h.run_steps(3);
+    };
+    let proxies = |h: &mut Harness<Workspace>| {
+        h.state_mut()
+            .editor_mut(id)
+            .unwrap()
+            .playback
+            .proxies()
+            .unwrap()
+            .clone()
+    };
+
+    // Fold the background colours away so the proxy rows and the cache controls
+    // share one screen.
+    click(&mut harness, "inspector.section.background");
+
+    // Off by default; the toggle takes effect on the open project without
+    // reopening it and is not an edit.
+    assert!(present(&harness, "inspector.proxy.toggle"));
+    assert!(!proxies(&mut harness).enabled());
+    assert_eq!(
+        value(&harness, "inspector.proxy.status").as_deref(),
+        Some("0 of 1 clips have a proxy")
+    );
+    click(&mut harness, "inspector.proxy.toggle");
+    let editor = harness.state_mut().editor_mut(id).unwrap();
+    assert!(editor.session.metadata().proxy_preview);
+    assert_eq!(editor.session.history_len(), history);
+    assert!(Arc::ptr_eq(editor.session.project(), &before));
+    assert!(proxies(&mut harness).enabled());
+
+    // Generate: progress with cancel while running, then the source has a proxy.
+    click(&mut harness, "inspector.proxy.generate");
+    until(&mut harness, "proxy generation", &|h| {
+        !present(h, "inspector.proxy.progress") && present(h, "inspector.proxy.generate")
+    });
+    assert!(proxies(&mut harness).contains(hash));
+    assert_eq!(
+        value(&harness, "inspector.proxy.status").as_deref(),
+        Some("1 of 1 clips have a proxy")
+    );
+    assert!(!present(&harness, "inspector.proxy.warning"));
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-88-proxy-cache.png");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let image = harness.render().unwrap();
+    assert_eq!(image.dimensions(), (1727, 1029));
+    image.save(&path).unwrap();
+
+    // Clear while the project is open: the cache reports the removal and the
+    // next preview request falls back to the source with a typed diagnostic.
+    click(&mut harness, "inspector.cache.clear");
+    until(&mut harness, "cache clear", &|h| {
+        !present(h, "inspector.cache.cancel")
+            && value(h, "inspector.cache.size").as_deref() == Some("0 B")
+    });
+    click(&mut harness, "inspector.proxy.toggle");
+    click(&mut harness, "inspector.proxy.toggle");
+    until(&mut harness, "source fallback", &|h| {
+        present(h, "inspector.proxy.warning")
+    });
+    assert_eq!(
+        value(&harness, "inspector.proxy.warning").as_deref(),
+        Some("A proxy file was removed, so the original plays. Generate it again.")
+    );
+    assert!(!proxies(&mut harness).contains(hash));
+    assert_eq!(
+        proxies(&mut harness).fallbacks(),
+        vec![(hash, engine::proxies::ProxyFallback::Missing)]
+    );
+    // Neither the project nor its serialized bytes ever name a proxy.
+    let editor = harness.state_mut().editor_mut(id).unwrap();
+    assert!(Arc::ptr_eq(editor.session.project(), &before));
+    let json = serde_json::to_string(editor.session.project().data()).unwrap();
+    assert!(!json.contains("proxies") && !json.contains(".mp4"));
+}

@@ -29,9 +29,38 @@ pub(crate) enum CachePhase {
     Cancelling,
     Failed,
 }
+/// Human-only preview-proxy intentions. The choice itself is session
+/// presentation state; generation is a desktop job beside the cache controls.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ProxyAction {
+    Toggle(bool),
+    Generate,
+    Cancel,
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum ProxyPhase {
+    #[default]
+    Idle,
+    Generating,
+    Failed,
+}
+/// Proxy generation as the Settings tab shows it.
+#[derive(Clone, Default)]
+pub(crate) struct ProxyUi {
+    pub(crate) phase: ProxyPhase,
+    /// Of the sources queued by the last request, how many finished.
+    pub(crate) done: usize,
+    pub(crate) total: usize,
+    /// Progress of the source being encoded, 0..=1.
+    pub(crate) progress: f32,
+    pub(crate) cause: Option<std::sync::Arc<engine::ArtifactError>>,
+    /// The proxies preview may read; `None` when the app composes none.
+    pub(crate) index: Option<engine::proxies::ProxyIndex>,
+}
 /// Neutral Settings projection; worker and cache custody stay in the media owner.
 #[derive(Clone)]
 pub(crate) struct CacheUi {
+    pub(crate) proxy: ProxyUi,
     pub(crate) phase: CachePhase,
     pub(crate) report: Option<std::sync::Arc<engine::cache::CacheMaintenanceReport>>,
     pub(crate) cause: Option<std::sync::Arc<engine::control::Error>>,
@@ -40,6 +69,7 @@ pub(crate) struct CacheUi {
 impl Default for CacheUi {
     fn default() -> Self {
         Self {
+            proxy: ProxyUi::default(),
             phase: CachePhase::Unavailable,
             report: None,
             cause: None,
@@ -226,6 +256,7 @@ pub(crate) enum Request {
     /// Move the shared transport.
     Seek(time::Tick),
     Cache(CacheAction),
+    Proxy(ProxyAction),
     /// Open the model manager on a missing model.
     OpenModel(String),
 }

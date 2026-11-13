@@ -112,6 +112,15 @@ The Add track action uses the active item's compatible kind above its track, or 
 the overlay section end with no active item. Commands and undo/persistence:
 [engine](../../../../../crates/engine/src/session/edit/README.md#edit-semantics-and-limits).
 
+## Preview proxies
+
+`proxies.rs` queues proxy generation for the project's video sources on the media owner's runner,
+one job at a time, and offers cached proxies to preview through the shared `ProxyIndex` while the
+project's choice is on. The Settings tab's Proxy rows raise `Request::Proxy`; the frame applies the
+toggle through `Session::set_proxy_preview` (no history entry) and re-renders the shown frame.
+Cancel stops the running job and clears the queue. A cleared or deleted proxy file falls back to the
+source and shows a warning until it is generated again.
+
 ## Clip visuals
 
 Video and image clips paint the cached thumbnail strip across their visible source range;

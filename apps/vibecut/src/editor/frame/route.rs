@@ -738,6 +738,24 @@ impl Editor {
             Err(error) => self.desk().fail(error.to_string()),
         }
     }
+    /// Apply one proxy intention. The on/off choice is session presentation
+    /// state: it reaches preview through the shared index on the next frame
+    /// request and never edits the project, its history or export.
+    fn proxy_intention(&mut self, action: crate::editor::context::ProxyAction) {
+        if let crate::editor::context::ProxyAction::Toggle(on) = action {
+            if let Err(error) = self.session.set_proxy_preview(on) {
+                self.desk().fail(error.to_string());
+                return;
+            }
+            if let Some(index) = self.playback.proxies() {
+                index.set_enabled(on);
+            }
+            self.desk().sync();
+        }
+        let budget = self.playback.budget().clone();
+        let assets = self.session.project().data().assets.clone();
+        self.timeline.request_proxy(action, &assets, &budget);
+    }
     /// Lend the write context to one area for this frame.
     pub(in crate::editor) fn desk(&mut self) -> Desk<'_> {
         Desk::new(self)
@@ -748,6 +766,7 @@ impl Editor {
             for request in std::mem::take(&mut self.requests) {
                 match request {
                     Request::Cache(action) => self.timeline.request_cache(action),
+                    Request::Proxy(action) => self.proxy_intention(action),
                     Request::ImportLut => {
                         self.lifecycle_action =
                             Some(crate::services::lifecycle::EditorAction::ImportLut);
