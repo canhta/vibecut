@@ -467,7 +467,10 @@ impl Stretch {
             if k > 0
                 && let Some(previous) = self.previous
             {
-                chosen = nominal + self.best_offset(source, previous + hop, nominal);
+                // A late shift must not push the grain's first hop past the window end,
+                // or the item's last output samples would read silence.
+                chosen = (nominal + self.best_offset(source, previous + hop, nominal))
+                    .min((length - hop).max(nominal));
             }
             self.add_grain(source, output, chosen);
         }

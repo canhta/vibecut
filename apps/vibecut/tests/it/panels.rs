@@ -1049,7 +1049,12 @@ fn clip_background_kinds_start_from_their_session_value_and_blur_presets_commit(
             color: Color([0, 0, 0, 255])
         }
     );
-    click(&mut harness, "inspector.clip_swatch.40");
+    click(&mut harness, "inspector.clip_background.color");
+    harness.run_steps(2);
+    click(&mut harness, "color.swatch.5");
+    harness.run_steps(2);
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
     let chosen = match background(&harness) {
         project::ClipBackground::Solid { color } => color,
         other => panic!("solid after a swatch, got {other:?}"),
@@ -5905,7 +5910,10 @@ fn catalogue_tabs_star_list_unstar_and_show_the_empty_state() {
             f.editor.preferences.adjustment_presets =
                 vec![vibecut::preferences::AdjustmentPreset {
                     name: row.item.to_owned(),
-                    params: BTreeMap::new(),
+                    // A saved preset holds the whole colour grade set, or the bank is refused.
+                    params: project::effect_definition("color_grade")
+                        .unwrap()
+                        .defaults(),
                 }];
         }
         let mut h = build(f.editor);

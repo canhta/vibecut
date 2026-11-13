@@ -96,10 +96,27 @@ pub(super) fn rows(
     };
     let needle = query.trim().to_lowercase();
     if tab == StickerTab::Favorites {
-        // Starred ids resolve like recents; a stale id drops out here.
+        // Starred ids resolve like recents; a stale id drops out here. A search keeps the
+        // flags the catalog search finds (name, code or region) and shapes by name.
+        let found: Vec<String> = if needle.is_empty() {
+            Vec::new()
+        } else {
+            search_catalog(query, StickerCategory::Flags, Some(u32::MAX))
+                .results
+                .into_iter()
+                .map(|entry| entry.id)
+                .collect()
+        };
         let results: Vec<Tile> = known_recents(favorites, locale)
             .into_iter()
-            .filter(|tile| needle.is_empty() || tile.name.to_lowercase().contains(&needle))
+            .filter(|tile| {
+                needle.is_empty()
+                    || if tile.shape {
+                        tile.name.to_lowercase().contains(&needle)
+                    } else {
+                        found.contains(&tile.id)
+                    }
+            })
             .collect();
         return StickerRows {
             recent: Vec::new(),
