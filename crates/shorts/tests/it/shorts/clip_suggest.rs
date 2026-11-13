@@ -392,6 +392,30 @@ fn heuristic_suggestion_snaps_inside_the_source() {
             assert!(segment.range.start() >= Tick::ZERO);
         }
     }
+    // A two-hour source (the analyser's 360,000-window ceiling) would overflow the result
+    // limit with exact windows: they merge to peak windows that still cover the whole source.
+    let mut long = result.clone();
+    let window = Tick::from_seconds_f64(0.02, Rounding::Nearest).unwrap();
+    let mut start = Tick::ZERO;
+    long.energy.clear();
+    for index in 0..360_000u32 {
+        let end = start + window;
+        let range = time::SourceRange::new(start, end).unwrap();
+        long.energy.push(engine::control::ClipEnergy(
+            range,
+            (index % 97) as f32 / 97.0,
+        ));
+        start = end;
+    }
+    let long_end = start;
+    let bytes = engine::control::encode_clips(long).unwrap();
+    assert!(bytes.len() <= engine::control::MAX_CLIPS_RESULT_BYTES);
+    let decoded = engine::control::decode_clips(&bytes).unwrap();
+    assert!(!decoded.energy.is_empty());
+    assert_eq!(decoded.energy[0].0.start(), Tick::ZERO);
+    assert_eq!(decoded.energy[decoded.energy.len() - 1].0.end(), long_end);
+    assert!(decoded.energy.iter().any(|window| window.1 > 0.98));
+    assert_eq!(decoded.clips.len(), result.clips.len());
 }
 #[test]
 fn maximum_model_ids_run_shorts_asr_with_explicit_unknown_price_and_isolated_checkpoints() {

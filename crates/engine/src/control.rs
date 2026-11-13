@@ -153,6 +153,7 @@ mod receipts;
 mod resync;
 pub use clips::{
     ClipWorkflow, ClipsExportRequest, ClipsSuggestRequest, MAX_CLIPS_RESULT_BYTES, decode_clips,
+    encode_clips,
 };
 pub use media::MediaAccess;
 

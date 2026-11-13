@@ -11,7 +11,7 @@ use captions::NfcText;
 use engine::cache::CacheKey;
 use engine::control::{
     ClipEnergy, ClipsResult, ClipsSuggestRequest, Error as EngineError, MAX_CLIPS_RESULT_BYTES,
-    bounded_json,
+    encode_clips,
 };
 use engine::jobs::{JobBytes, JobId, JobKind, JobRunner, JobSpec, ResourceClass};
 use engine::providers::{Cost, approve_upload};
@@ -247,7 +247,7 @@ pub(crate) fn submit_suggest(
                 }
             }
             hooks.check_cancelled()?;
-            let mut result = ClipsResult {
+            let result = ClipsResult {
                 asset: asset.id(),
                 source_language,
                 transcription_provider: providers.transcription().id().into(),
@@ -268,15 +268,8 @@ pub(crate) fn submit_suggest(
                 suggestion_cost: cost_view(&suggestion_cost),
                 elapsed_seconds: started.elapsed().as_secs_f64(),
             };
-            // Hours-long sources can exceed the result limit with their energy windows; the
-            // candidates stay exact and only the trim hints are dropped.
-            match bounded_json(&result, MAX_CLIPS_RESULT_BYTES) {
-                Ok(bytes) => Ok(bytes),
-                Err(_) => {
-                    result.energy.clear();
-                    Ok(bounded_json(&result, MAX_CLIPS_RESULT_BYTES)?)
-                }
-            }
+            // Hours-long sources downsample their energy windows to fit the result limit.
+            Ok(encode_clips(result)?)
         },
     )?;
     Ok(id)

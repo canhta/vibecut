@@ -2,13 +2,13 @@
 use super::{Error as EngineError, Result};
 use crate::cache::CacheKey;
 use crate::jobs::{JobId, JobRunner};
-use crate::session::wire::{ClipExportShort, ClipsResult};
+use crate::session::wire::{ClipEnergy, ClipExportShort, ClipsResult, bounded_json};
 use crate::subtitles::CaptionAccess;
 use crate::{EditError, Session};
 use captions::{CueTrack, Format, LanguageTag, NfcText};
 use std::path::PathBuf;
 use std::sync::Arc;
-use time::Tick;
+use time::{SourceRange, Tick};
 
 /// Largest retained output of one suggestion job; also its result reservation.
 pub const MAX_CLIPS_RESULT_BYTES: usize = 16 << 20;
@@ -98,4 +98,37 @@ pub fn decode_clips(bytes: &[u8]) -> Result<ClipsResult> {
     }
     serde_json::from_slice(bytes)
         .map_err(|_| EngineError::Edit(EditError::Invalid("clip suggestion output is malformed")))
+}
+
+/// Encode a finished suggestion within [`MAX_CLIPS_RESULT_BYTES`]. When the speech-energy
+/// windows of an hours-long source overflow it, adjacent windows are merged in groups of
+/// 2, 4, 8, ... until the result fits: a merged window spans its group's ranges and keeps the
+/// group's peak RMS, so speech stays visible to trim snapping at a coarser resolution and the
+/// lane still covers the whole source. Every other field stays exact.
+pub fn encode_clips(mut result: ClipsResult) -> Result<Vec<u8>> {
+    let mut group = 1usize;
+    let full = std::mem::take(&mut result.energy);
+    loop {
+        result.energy = merge_energy(&full, group);
+        match bounded_json(&result, MAX_CLIPS_RESULT_BYTES) {
+            Ok(bytes) => return Ok(bytes),
+            Err(_) if group < full.len() => group = group.saturating_mul(2),
+            Err(error) => return Err(EngineError::Control(error)),
+        }
+    }
+}
+
+fn merge_energy(windows: &[ClipEnergy], group: usize) -> Vec<ClipEnergy> {
+    if group <= 1 {
+        return windows.to_vec();
+    }
+    windows
+        .chunks(group)
+        .filter_map(|chunk| {
+            let (first, last) = (chunk.first()?, chunk.last()?);
+            let range = SourceRange::new(first.0.start(), last.0.end()).ok()?;
+            let peak = chunk.iter().map(|window| window.1).fold(0.0f32, f32::max);
+            Some(ClipEnergy(range, peak))
+        })
+        .collect()
 }

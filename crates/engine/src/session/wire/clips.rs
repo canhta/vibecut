@@ -91,8 +91,8 @@ pub struct ClipsResult {
     /// Suggestions the provider contract dropped.
     pub dropped: Vec<ClipRefusal>,
     pub cues: Vec<Cue>,
-    /// Speech-energy windows over the whole source, in source order. Empty when the source is
-    /// too long for them to fit the result limit; the suggestion itself is unaffected.
+    /// Speech-energy windows over the whole source, in source order. Merged into coarser
+    /// peak-RMS windows when the source is too long for them to fit the result limit.
     pub energy: Vec<ClipEnergy>,
     pub transcript_segments: usize,
     /// ASR windows served from the checkpoint cache.
