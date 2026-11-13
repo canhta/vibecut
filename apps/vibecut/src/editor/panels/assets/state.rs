@@ -55,7 +55,7 @@ pub(in crate::editor) struct State {
     pub(super) sounds_mode: super::sounds::SoundsMode,
     pub(super) sounds_commercial: bool,
     pub(in crate::editor) audio_section: super::AudioSection,
-    pub(super) music_mode: super::music::MusicMode,
+    pub(super) music_mode: super::sounds::music::MusicMode,
     pub(super) music_chip: &'static str,
     pub(super) music_search: String,
     /// Masked key draft; never inspected, logged or persisted.
@@ -113,7 +113,7 @@ impl Default for State {
             sounds_mode: super::sounds::SoundsMode::Discover,
             sounds_commercial: true,
             audio_section: super::AudioSection::Sounds,
-            music_mode: super::music::MusicMode::Browse,
+            music_mode: super::sounds::music::MusicMode::Browse,
             music_chip: libraries::music::CHIPS[1],
             music_search: String::new(),
             music_key: String::new(),

@@ -10,13 +10,14 @@ impl Editor {
     /// Attach the process-shared music session. One library and credential are
     /// shared by every project window; each editor owns only its presentation.
     pub fn set_music_session(&mut self, session: std::sync::Arc<MusicSession>) -> Result<()> {
-        let music = super::super::music::Music::new(session, self.playback.budget().clone())?;
+        let music =
+            super::super::sounds::music::Music::new(session, self.playback.budget().clone())?;
         self.music = Some(music);
         Ok(())
     }
 
     /// Injection boundary for tests and audit scenes.
-    pub fn set_music(&mut self, music: super::super::music::Music) {
+    pub fn set_music(&mut self, music: super::super::sounds::music::Music) {
         self.music = Some(music);
     }
 
@@ -50,20 +51,20 @@ impl Editor {
         };
         if let Err(error) = self.add_music_to_timeline(&music) {
             if let Some(music) = &mut self.music {
-                music.add_failed(super::super::music::MusicProblem::from_app(&error));
+                music.add_failed(super::super::sounds::music::MusicProblem::from_app(&error));
             }
             self.desk().fail(error.to_string());
         }
     }
 
-    pub(crate) fn music_set_mode(&mut self, mode: super::super::music::MusicMode) {
+    pub(crate) fn music_set_mode(&mut self, mode: super::super::sounds::music::MusicMode) {
         self.assets.music_mode = mode;
         self.music_search(false);
     }
 
     pub(crate) fn music_set_chip(&mut self, chip: &'static str) {
         self.assets.music_chip = chip;
-        self.assets.music_mode = super::super::music::MusicMode::Browse;
+        self.assets.music_mode = super::super::sounds::music::MusicMode::Browse;
         self.assets.music_search.clear();
         self.music_search(false);
     }
@@ -162,7 +163,7 @@ impl Editor {
         {
             if let Err(error) = self.add_music_to_timeline(&track) {
                 if let Some(state) = &mut self.music {
-                    state.add_failed(super::super::music::MusicProblem::from_app(&error));
+                    state.add_failed(super::super::sounds::music::MusicProblem::from_app(&error));
                 }
                 self.desk().fail(error.to_string());
             }

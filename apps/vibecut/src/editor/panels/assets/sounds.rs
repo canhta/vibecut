@@ -25,6 +25,7 @@ use std::{
 };
 use transport::HttpTransport;
 
+pub mod music;
 pub(super) mod sink;
 
 const PAGE_SIZE: u32 = 30;

@@ -19,7 +19,7 @@ pub use assets::captions::{Inspection as SubtitlesInspection, Subtitles};
 pub use assets::effects::{
     EffectPreviewStatus, EffectPreviews, PREVIEW_SCALE, PREVIEW_SIZE, SETTLE_BUDGET,
 };
-pub use assets::music::{Music, MusicMode, MusicProblem};
+pub use assets::sounds::music::{Music, MusicMode, MusicProblem};
 pub use assets::sounds::{Client, Sounds, SoundsMode, SoundsProblem};
 pub use assets::{
     AssetState, AssetsTab, ImportEvent, ImportProbe, ImportQueue, MAX_IMPORT_FILES, MediaSort,

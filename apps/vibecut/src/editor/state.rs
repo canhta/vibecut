@@ -167,7 +167,7 @@ pub struct Inspection {
     pub media_highlight: Option<AssetId>,
     pub media_delete_pending: Vec<AssetId>,
     pub sounds: Option<super::assets::sounds::SoundsView>,
-    pub music: Option<super::assets::music::MusicView>,
+    pub music: Option<super::assets::sounds::music::MusicView>,
     pub export: Option<crate::export::ExportInspection>,
     pub export_options: crate::export::ExportOptions,
     /// Working crop while its dialog is open; the project keeps its own copy.
@@ -290,7 +290,7 @@ pub struct Editor {
     pub(super) toast: Option<Toast>,
     pub(super) assets: super::assets::State,
     pub(super) dialogs: super::dialogs::State,
-    pub(super) music: Option<super::assets::music::Music>,
+    pub(super) music: Option<super::assets::sounds::music::Music>,
     pub(super) music_media_dir: Option<PathBuf>,
     /// A copy-snapshot action waits for the next frame's egui context.
     pub(super) copy_snapshot_requested: bool,

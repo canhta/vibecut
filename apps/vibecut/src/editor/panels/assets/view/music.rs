@@ -1,6 +1,6 @@
 //! Renders the Audio tab's Music section: chips, results and saved tracks.
 use super::super::AudioSection;
-use super::super::music::{MusicMode, MusicProblem, MusicView};
+use super::super::sounds::music::{MusicMode, MusicProblem, MusicView};
 use super::{
     Action, Align2, Color32, FontId, Icon, Id, Rect, Text, Vec2, View, egui, icons, theme,
 };

@@ -3,7 +3,6 @@ pub mod captions;
 pub mod effects;
 pub mod import;
 pub mod media_panel;
-pub mod music;
 mod projection;
 pub mod sounds;
 mod state;
@@ -60,7 +59,7 @@ struct Model {
     marquee: Option<MediaMarquee>,
     failed: bool,
     sounds: Option<sounds::SoundsView>,
-    music: Option<music::MusicView>,
+    music: Option<sounds::music::MusicView>,
     /// Full project-derived music attribution records, independent of Saved.
     music_credits: Vec<String>,
     /// Set when the project's credit text exceeds its bounded aggregate.
@@ -133,7 +132,7 @@ pub(in crate::editor) enum Action {
     SoundsAdd(u64),
     SoundsCancelCache,
     SoundsRetry,
-    MusicMode(music::MusicMode),
+    MusicMode(sounds::music::MusicMode),
     MusicChip(&'static str),
     MusicSearch {
         more: bool,

@@ -1,7 +1,7 @@
 # Assets
 
-Interface: `State`, `show`, `Action`, `prepare`, `media_panel`, `import`, `sounds`,
-`music`, `captions`.
+Interface: `State`, `show`, `Action`, `prepare`, `media_panel`, `import`, `sounds`
+(with its `music` section), `captions`.
 
 The area owns its navigation drafts, the media selection and thumbnail caches, the
 import batch and its last report, and the prepared workflow projection; `show` consumes
@@ -39,22 +39,4 @@ Recent lists up to 50 ids of both kinds, newest first and deduplicated, from `Pr
 
 The tile grid reuses the measured Effects card pitch (88 px cards, 15 px gaps) until a Stickers grid is measured. Sticker-specific geometry, the preview count of 24 and the five-second default length are open.
 
-## Music section
-
-The Audio tab's Music page consumes the libraries music library. A section switch at
-the top of the 120 px navigation column chooses Music or Sound effects; Music holds
-Saved, then one chip per source tag. Discover answers anonymously from the open
-source, Saved is the offline local library, and the free-text field sends `q` while a
-chip sends `tags`. Rows are 48 px on the existing audio pitch: a 32 px cover with a
-24 px play/pause overlay, the title, `artist · duration · licence`, the full
-attribution, and 24 px bookmark (save) and add buttons. Every row's accessible label
-and hover text also carry the source page. Add downloads into the local cache when
-needed and applies `music.add_to_timeline` as one undo step; unsave and clear-all only
-reach the cache. Provider, cache, publication, no-audio-device and cancelled failures
-are typed states with creator copy; a failed download changes no project bytes.
-
-A header disclosure lists the project's complete used-track credits from
-`Project::music_credits` and copies that exact block; unused saved tracks are excluded.
-The settings sheet applies or removes the optional source key for this process only,
-using a masked field and a direct source-terms link; the key never enters project,
-preferences, automation, undo or logs.
+Music section: [sounds](sounds/README.md#music-section).

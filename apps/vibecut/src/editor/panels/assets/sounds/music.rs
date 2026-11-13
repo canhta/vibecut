@@ -190,7 +190,7 @@ impl Music {
         let downloads = Arc::new(MusicDownloads::ureq(session.library().clone()));
         let preview = Arc::new(MusicPreview::new(
             downloads.clone(),
-            Arc::new(super::sounds::sink::OutputSink::new(budget.clone())),
+            Arc::new(super::sink::OutputSink::new(budget.clone())),
         ));
         Self::with_parts(session, client, downloads, preview, budget)
     }
@@ -205,7 +205,7 @@ impl Music {
         let downloads = Arc::new(MusicDownloads::ureq(session.library().clone()));
         let preview = Arc::new(MusicPreview::new(
             downloads.clone(),
-            Arc::new(super::sounds::sink::OutputSink::new(budget.clone())),
+            Arc::new(super::sink::OutputSink::new(budget.clone())),
         ));
         Self::with_parts(session, Some(client), downloads, preview, budget)
     }
