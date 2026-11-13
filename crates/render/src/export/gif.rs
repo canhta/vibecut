@@ -69,7 +69,8 @@ pub(super) fn gif_export(
             sources,
             hooks,
         )?;
-        let rgba = image.video_rgba8(1, hooks)?;
+        // A GIF has no colour tags: pack with the sRGB transfer so project colours survive.
+        let rgba = image.video_rgba8(13, hooks)?;
         hooks.progress(Stage::Encode, n as f32 / count as f32)?;
         for packet in encoder.encode_rgba8(&rgba.bytes, offset)? {
             mux.write_packet(track, &packet)?;
