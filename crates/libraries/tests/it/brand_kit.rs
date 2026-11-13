@@ -1,4 +1,5 @@
 //! Brand kit store: kit lifecycle, ordered entries, verified media, limits and folder archives.
+#![allow(clippy::unwrap_used, clippy::panic)]
 use engine::BrandKitError;
 use engine::control::BrandEntryState;
 use libraries::brand_kit::{BrandKit, MAX_ENTRIES, MAX_KITS, MAX_NAME_BYTES};
