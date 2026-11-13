@@ -1026,7 +1026,7 @@ fn workspace_home_raw_text_clipboard_routes_into_the_real_search_field() {
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
     h.run_steps(1);
     h.state_mut().text_clipboard =
-        vibecut::services::text_clipboard::TextClipboard::new(|| Some("English".into()));
+        vibecut::services::clipboard::TextClipboard::new(|| Some("English".into()));
     h.input_mut().events.push(egui::Event::Key {
         key: egui::Key::C,
         physical_key: None,

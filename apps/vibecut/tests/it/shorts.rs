@@ -809,7 +809,7 @@ fn workspace_shorts_raw_text_paste_reaches_the_real_trim_field() {
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
     h.run_steps(1);
     h.state_mut().text_clipboard =
-        vibecut::services::text_clipboard::TextClipboard::new(|| Some("14.000".into()));
+        vibecut::services::clipboard::TextClipboard::new(|| Some("14.000".into()));
     h.input_mut().events.push(egui::Event::Key {
         key: egui::Key::V,
         physical_key: None,
