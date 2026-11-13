@@ -1,6 +1,6 @@
 # Persistence and publication
 
-Versioned project JSON, the writer lease, atomic files, recovery snapshots, optional metadata and bounded streaming output.
+Versioned project JSON, the writer lease, atomic files, recovery snapshots, optional metadata, bundles and bounded streaming output.
 
 ## Envelope and limits
 
@@ -63,6 +63,10 @@ Unix compares device/inode from the retained descriptor and current name. Window
 `media_dir(project)` returns the project's media folder: the full project filename with `.media` appended, beside the project file (`Tiếng Việt.vibecut` gives `Tiếng Việt.vibecut.media`; `cut.v2.vibecut` gives `cut.v2.vibecut.media`). The path is used as given, without canonicalization. An unsaved session passes `None` and gets the one fallback, `<temp dir>/vibecut-media`. Library media added to a project is stored here so library cleanup never removes bytes a project references. The app and CLI music and sounds workflows call this function; no other code builds the folder name.
 
 `WriterLease::save_metadata` validates, then atomically replaces the sidecar under the project lease and content precondition. Sidecar symlinks are refused. Project writer destinations reserve the `.meta.json` suffix, including case variants and canonical aliases, so saving a project cannot replace another project's metadata. A sidecar write error is returned and does not roll back a previously successful project publication. Callers acknowledge a save only after both writes succeed.
+
+## Bundles
+
+A bundle is a self-contained directory holding the envelope, a manifest and hash-named media and LUT copies, written and extracted by `bundle::export` / `bundle::import`. Format, hostile-input rules and relink behaviour: [Project bundles](bundle/README.md). Save and Save As keep using the lease and atomic writer above.
 
 ## Streaming output
 

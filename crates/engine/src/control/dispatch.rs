@@ -70,6 +70,15 @@ fn music_access<'a>(caller: &Caller<'a>) -> crate::session::Result<&'a super::Mu
 }
 
 impl Session {
+    /// Publishing reads the committed project, never an open gesture's preview.
+    fn reject_open_transaction(&self) -> Result<()> {
+        if self.transaction_active() {
+            return Err(EngineError::Session(
+                crate::session::SessionError::TransactionActive,
+            ));
+        }
+        Ok(())
+    }
     pub(super) fn run_control(
         &mut self,
         command: Command,
@@ -1076,6 +1085,24 @@ impl Session {
                 let outcome = self.apply(Command::Batch { commands })?;
                 Ok(ControlResult::Edit { outcome })
             }
+            Command::SaveProjectAs { path, replace } => {
+                self.reject_open_transaction()?;
+                super::publish::save_copy(
+                    self.project(),
+                    self.metadata(),
+                    &path,
+                    replace,
+                    self.protected_paths(),
+                )
+            }
+            Command::ExportProjectBundle { path } => {
+                self.reject_open_transaction()?;
+                super::publish::export_bundle(self.project(), &path)
+            }
+            Command::ImportProjectBundle {
+                bundle,
+                destination,
+            } => super::publish::import_bundle(&bundle, &destination),
             command => self
                 .apply_control(command)
                 .map(|outcome| ControlResult::Edit { outcome })

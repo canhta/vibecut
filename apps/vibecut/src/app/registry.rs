@@ -274,6 +274,7 @@ impl Workspace {
             }
             self.lending.reclaim_models(window);
         }
+        self.run_deletions();
         self.rekey_windows();
         let count = self.windows.len();
         self.windows
@@ -294,6 +295,34 @@ impl Workspace {
         self.home.runner.borrow_mut().drain_events();
         if let Some(error) = self.lending.tick_models() {
             self.home.error.get_or_insert(error);
+        }
+    }
+    /// Header Delete: save and leave the project, and only once its writer lease is
+    /// gone move it to Trash through Home's library worker. A project the catalog
+    /// does not list (opened from an arbitrary file) is refused; a failed or
+    /// cancelled leave clears the intent so a later exit cannot delete it.
+    fn run_deletions(&mut self) {
+        let mut trash = Vec::new();
+        for (id, window) in &mut self.windows {
+            if std::mem::take(&mut window.delete_requested) {
+                let outcome = if self.projects.entries().iter().any(|entry| entry.id == *id) {
+                    window.persist(None, true, false, false)
+                } else {
+                    Err(Error::Invalid("project is not in the library"))
+                };
+                match outcome {
+                    Ok(()) => window.delete_on_leave = true,
+                    Err(error) => window.error = Some(error),
+                }
+            } else if window.delete_on_leave && !window.busy() {
+                window.delete_on_leave = false;
+                if window.editor.is_none() && window.error.is_none() {
+                    trash.push(*id);
+                }
+            }
+        }
+        if !trash.is_empty() {
+            self.projects.request_delete(trash);
         }
     }
     fn rekey_windows(&mut self) {
@@ -564,6 +593,46 @@ mod tests {
                 .as_str(),
             "picker test"
         );
+    }
+    #[test]
+    fn header_delete_refuses_a_project_the_library_does_not_list_and_keeps_the_editor() {
+        let root = tempfile::tempdir().unwrap();
+        let mut workspace =
+            Workspace::new(root.path().join("recovery"), Preferences::default(), None).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while workspace.busy() {
+            workspace.tick();
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let autosave = Autosave::new(
+            &workspace.home.root,
+            fresh("not listed").unwrap(),
+            workspace.home.budget.clone(),
+            Arc::new(ManualClock::default()),
+            Schedule::default(),
+        )
+        .unwrap();
+        let playback = Playback::new(
+            autosave.session(),
+            workspace.home.budget.clone(),
+            Arc::new(Files),
+        )
+        .unwrap();
+        workspace.home.editor = Some(Box::new(Editor::persisted(
+            autosave,
+            playback,
+            Preferences::default(),
+        )));
+        workspace.tick();
+        let window = workspace.focused_window_mut().unwrap();
+        window.delete_requested = true;
+        workspace.tick();
+        let window = workspace.focused_window_mut().unwrap();
+        assert!(window.editor.is_some());
+        assert!(!window.delete_on_leave && !window.delete_requested);
+        assert!(matches!(window.error(), Some(Error::Invalid(_))));
+        assert!(!workspace.busy());
     }
     #[test]
     fn lane_preferences_are_dropped_only_for_projects_whose_file_is_gone() {

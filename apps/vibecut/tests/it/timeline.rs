@@ -4513,6 +4513,8 @@ fn context_and_header_menus_expose_registered_items_and_reasons() {
         "window.home",
         "project.save",
         "project.save_as",
+        "project.menu.rename",
+        "project.delete",
         "preferences.open",
         "models.open",
         "layout.reset",

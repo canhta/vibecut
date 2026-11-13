@@ -132,6 +132,9 @@
 | `project.save_as` — Save as | File | — | — | workspace lifecycle |
 | `window.home` — Go to Home | File | — | — | workspace lifecycle |
 | `project.rename` — Rename project | File | — | — | project rename input |
+| `project.delete` — Delete project | File | — | — | project delete confirmation |
+| `project.cancel_delete` — Cancel project delete | File | — | — | project delete confirmation |
+| `project.confirm_delete` — Move project to Trash | File | — | — | workspace lifecycle |
 | `project.exit` — Exit project | File | — | — | project lifecycle |
 | `import.cancel` — Cancel import | File | — | — | workspace import queue |
 | `appearance.theme` — Toggle theme | View | — | — | preference store |

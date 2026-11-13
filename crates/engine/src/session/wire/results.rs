@@ -86,6 +86,19 @@ pub enum ControlResult {
     CancelRequested {
         job: JobId,
     },
+    /// A project copy, bundle or extracted project was published.
+    Published {
+        /// The copy's project file, the bundle directory or the extracted project file.
+        path: std::path::PathBuf,
+        /// Identity of the published project, as a decimal string.
+        project_id: String,
+        /// Distinct media files copied, or present in the extracted bundle.
+        copied: usize,
+        /// Assets with no media; they enter the relink state.
+        missing: Vec<u64>,
+        /// Hex ids of LUTs with no copied bundle.
+        missing_luts: Vec<String>,
+    },
 }
 #[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct ProviderView {
@@ -122,6 +135,7 @@ impl std::fmt::Debug for ControlResult {
             Self::Job { .. } => "job",
             Self::Snapshot { .. } => "snapshot",
             Self::CancelRequested { .. } => "cancel_requested",
+            Self::Published { .. } => "published",
         };
         f.debug_struct("ControlResult")
             .field("kind", &kind)

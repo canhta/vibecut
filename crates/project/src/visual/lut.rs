@@ -77,6 +77,9 @@ impl fmt::Debug for LutRecord {
     }
 }
 impl LutRecord {
+    /// The three immutable files a bundle directory holds: the canonical cube
+    /// (whose BLAKE3 is the id), the copied original and the provenance record.
+    pub const FILES: [&'static str; 3] = ["canonical.cube", "original", "provenance.json"];
     /// Structural validation only; render/import owners verify actual bytes.
     pub fn validate(&self) -> Result<()> {
         if self.name.as_str().trim().is_empty()

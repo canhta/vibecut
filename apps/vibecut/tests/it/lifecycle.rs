@@ -420,6 +420,23 @@ fn failed_create_and_refused_save_as_keep_the_editor_recoverable() {
     idle(&mut app);
     assert!(app.error().is_none(), "{:?}", app.error());
     assert!(path.exists());
+    // The picker confirmed an existing destination: Save As replaces it. The
+    // project's own file is refused, and nothing changes on refusal.
+    let existing = root.path().join("existing.vibecut");
+    std::fs::write(&existing, b"stale").unwrap();
+    app.persist(Some(path.clone()), false, false, false)
+        .unwrap();
+    idle(&mut app);
+    assert!(
+        app.error().is_some(),
+        "Save As onto the open file is refused"
+    );
+    assert!(app.focused_editor().is_some());
+    app.persist(Some(existing.clone()), false, false, false)
+        .unwrap();
+    idle(&mut app);
+    assert!(app.error().is_none(), "{:?}", app.error());
+    assert!(project::load(&existing).is_ok());
 }
 
 #[test]
@@ -714,24 +731,26 @@ fn project_windows_keep_independent_edits_undo_and_playback_and_reopen_focuses_o
     assert_eq!(app.viewport(first), Some(original_viewport));
     assert_eq!(app.windows.len(), 2);
     assert!(!app.windows.contains_key(&original_id));
-    assert!(std::sync::Arc::ptr_eq(
+    // Save As is `project.save_as` followed by reopening the window on the copy:
+    // the window and viewport carry over, history and playback restart.
+    assert!(!std::sync::Arc::ptr_eq(
         &first_port,
         &app.editor_mut(first).unwrap().playback.audio_port()
     ));
+    assert!(!app.editor_mut(first).unwrap().action_enabled("edit.undo"));
     assert_eq!(std::fs::read(&paths[0]).unwrap(), original_bytes);
     assert_eq!(project::load(&copy).unwrap().project.data().id, first);
-    app.editor_mut(first)
-        .unwrap()
-        .activate("edit.undo")
-        .unwrap();
     assert_eq!(
-        app.editor_mut(first).unwrap().session.project().data().id,
-        first
+        app.editor_mut(first)
+            .unwrap()
+            .session
+            .project()
+            .data()
+            .name
+            .as_str(),
+        "first edit",
+        "the copy carries the issuing project's unsaved edits"
     );
-    app.editor_mut(first)
-        .unwrap()
-        .activate("edit.redo")
-        .unwrap();
     app.open(copy.clone()).unwrap();
     assert_eq!(app.focused_project(), Some(first));
     app.open(paths[0].clone()).unwrap();
@@ -1005,4 +1024,85 @@ fn workspace_editor_raw_text_paste_edits_rename_without_dispatching_clipboard_ac
             .session
             .clipboard_has_entry()
     );
+}
+
+#[test]
+fn header_delete_asks_first_then_saves_leaves_and_moves_the_library_project_to_trash() {
+    let root = tempfile::tempdir().unwrap();
+    let projects = root.path().join("projects");
+    let directory = projects.join(format!("{:016x}", 1));
+    {
+        let mut library = engine::library::ProjectLibrary::open(
+            &projects,
+            engine::ByteBudget::new(128 << 20).unwrap(),
+        )
+        .unwrap();
+        let id = project::ProjectId(1);
+        library
+            .execute(
+                id,
+                Command::CreateProject {
+                    id,
+                    name: "Doomed".into(),
+                },
+            )
+            .unwrap();
+    }
+    let mut app = Workspace::with_projects(
+        root.path().join("recovery"),
+        projects.clone(),
+        Preferences::default(),
+        None,
+    )
+    .unwrap();
+    idle(&mut app);
+    app.open(directory.join("project.vibecut")).unwrap();
+    idle(&mut app);
+    assert!(app.focused_editor().is_some());
+    let mut h = crate::gpu::builder()
+        .with_size(egui::vec2(1440.0, 900.0))
+        .build_ui_state(
+            |ui, a: &mut Workspace| {
+                a.tick();
+                if let Some(id) = a.focused_project() {
+                    a.window_ui(id, ui);
+                } else {
+                    a.ui(ui);
+                }
+            },
+            app,
+        );
+    h.run_steps(3);
+    let click = |h: &mut egui_kittest::Harness<'_, Workspace>, id: &'static str| {
+        h.get(By::new().predicate(|n| n.author_id() == Some(id)))
+            .click();
+        h.run_steps(3);
+    };
+    // Cancel keeps the project open and on disk.
+    click(&mut h, "window.menu");
+    click(&mut h, "project.delete");
+    click(&mut h, "project.cancel_delete");
+    assert!(h.state().focused_editor().is_some());
+    assert!(directory.exists());
+    // Confirm saves, leaves, and only then moves the directory into Trash.
+    click(&mut h, "window.menu");
+    click(&mut h, "project.delete");
+    click(&mut h, "project.confirm_delete");
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while h.state().focused_editor().is_some() || directory.exists() {
+        h.run_steps(1);
+        assert!(Instant::now() < deadline, "delete timeout");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert!(h.state().error().is_none(), "{:?}", h.state().error());
+    let trashed: Vec<_> = std::fs::read_dir(&projects)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with(".trash-"))
+        .collect();
+    assert_eq!(trashed.len(), 1, "{trashed:?}");
+    let kept = projects
+        .join(trashed.first().unwrap())
+        .join("project.vibecut");
+    assert!(kept.is_file());
 }

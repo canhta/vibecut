@@ -339,6 +339,13 @@ impl Editor {
                     self.lifecycle_action =
                         Some(crate::services::lifecycle::EditorAction::OpenFeedback)
                 }
+                UiAction::DeleteProject => self.frame.delete_open = true,
+                UiAction::CancelDeleteProject => self.frame.delete_open = false,
+                UiAction::ConfirmDeleteProject => {
+                    self.frame.delete_open = false;
+                    self.lifecycle_action =
+                        Some(crate::services::lifecycle::EditorAction::DeleteProject);
+                }
                 UiAction::RenameProject => {
                     self.frame.rename =
                         Some(self.session.project().data().name.as_str().to_owned());

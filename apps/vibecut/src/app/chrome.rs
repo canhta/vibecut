@@ -77,6 +77,10 @@ impl EditorWindow {
                         self.request_close();
                         Ok(())
                     }
+                    EditorAction::DeleteProject => {
+                        self.delete_requested = true;
+                        Ok(())
+                    }
                     EditorAction::OpenHelp => {
                         ui.ctx().open_url(egui::OpenUrl::new_tab(HELP_URL));
                         Ok(())

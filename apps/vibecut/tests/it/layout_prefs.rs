@@ -337,7 +337,7 @@ fn details_rows_and_info_section_collapse_and_persist() {
     )
     .unwrap();
     let saved_path = root.path().join("title.vibecut");
-    saving.save_as(saved_path.clone()).unwrap();
+    saving.save_to(saved_path.clone()).unwrap();
     // Save As publishes on a worker; the path is the saved one once tick acknowledges it.
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     while saving.saved_path().is_none() {

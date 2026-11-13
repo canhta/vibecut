@@ -1743,6 +1743,27 @@ Effect: `SessionControl`. Fixture: `Library`.
 }
 ```
 
+## `project.export_bundle` — Export project bundle
+
+Effect: `SessionControl`. Fixture: `Timeline`.
+
+```json
+{
+  "path": "$output/bundle"
+}
+```
+
+## `project.import_bundle` — Import project bundle
+
+Effect: `SessionControl`. Fixture: `Timeline`.
+
+```json
+{
+  "bundle": "$output/bundle",
+  "destination": "$output/imported"
+}
+```
+
 ## `project.purge` — Permanently delete trashed project
 
 Effect: `SessionControl`. Fixture: `Library`.
@@ -1775,6 +1796,17 @@ Effect: `SessionControl`. Fixture: `Save`.
 
 ```json
 {}
+```
+
+## `project.save_as` — Save project copy
+
+Effect: `SessionControl`. Fixture: `Timeline`.
+
+```json
+{
+  "path": "$output/copy.vibecut",
+  "replace": false
+}
 ```
 
 ## `project.set_background` — Set canvas background colour

@@ -141,7 +141,7 @@ fn live_sessions_are_excluded_and_candidates_are_exclusively_claimed() {
 }
 
 #[test]
-fn recover_discard_and_save_as_preserve_original_then_promote() {
+fn recover_discard_and_save_to_preserve_original_then_promote() {
     let dir = tempfile::tempdir().unwrap();
     let original = dir.path().join("gốc project.vibecut");
     project::WriterLease::acquire(&original)
@@ -173,7 +173,7 @@ fn recover_discard_and_save_as_preserve_original_then_promote() {
     .unwrap();
     assert!(matches!(a.save(), Err(RecoveryError::SaveAsRequired)));
     let destination = dir.path().join("recovered.vibecut");
-    a.save_as(destination.clone()).unwrap();
+    a.save_to(destination.clone()).unwrap();
     saved(&mut a);
     assert!(!a.is_dirty());
     assert_eq!(
@@ -222,7 +222,7 @@ fn stale_save_completion_cannot_acknowledge_new_edits() {
         None,
         Arc::new(TestClock::default()),
     );
-    a.save_as(dir.path().join("saved.vibecut")).unwrap();
+    a.save_to(dir.path().join("saved.vibecut")).unwrap();
     edit(&mut a); // Deterministic: completion cannot be acknowledged before tick.
     until(|| match a.tick() {
         Err(RecoveryError::Edit(engine::EditError::Session(engine::SessionError::StaleResult))) => {
@@ -416,7 +416,7 @@ fn undo_to_saved_state_retires_obsolete_recovery_and_internal_save_is_refused() 
     a.flush().unwrap();
     let directory = fs::read_dir(&root).unwrap().next().unwrap().unwrap().path();
     assert!(matches!(
-        a.save_as(directory.join("lock")),
+        a.save_to(directory.join("lock")),
         Err(RecoveryError::Edit(engine::EditError::Invalid(_)))
     ));
     drop(a);
@@ -660,7 +660,7 @@ fn foreign_edit_before_first_save_cannot_become_a_fresh_write_time_baseline() {
     assert!(project::WriterLease::acquire(&path).is_ok());
 }
 #[test]
-fn stale_save_as_retains_source_lease_and_never_adopts_its_receipt() {
+fn stale_save_to_retains_source_lease_and_never_adopts_its_receipt() {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("source.vibecut");
     let destination = dir.path().join("destination.vibecut");
@@ -673,7 +673,7 @@ fn stale_save_as_retains_source_lease_and_never_adopts_its_receipt() {
         Arc::new(TestClock::default()),
     );
     edit(&mut a);
-    a.save_as(destination.clone()).unwrap();
+    a.save_to(destination.clone()).unwrap();
     busy(&source);
     busy(&destination);
     edit(&mut a);
@@ -703,7 +703,7 @@ fn stale_save_as_retains_source_lease_and_never_adopts_its_receipt() {
     );
 }
 #[test]
-fn acknowledged_save_as_transfers_lease_and_receipt_together() {
+fn acknowledged_save_to_transfers_lease_and_receipt_together() {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("source.vibecut");
     let destination = dir.path().join("destination.vibecut");
@@ -719,7 +719,7 @@ fn acknowledged_save_as_transfers_lease_and_receipt_together() {
     let old_id = a.session().project().data().id;
     edit(&mut a);
     a.session_mut().undo().unwrap();
-    a.save_as(destination.clone()).unwrap();
+    a.save_to(destination.clone()).unwrap();
     busy(&source);
     busy(&destination);
     saved(&mut a);
@@ -731,7 +731,7 @@ fn acknowledged_save_as_transfers_lease_and_receipt_together() {
         new_id
     );
     assert_eq!(a.saved_receipt().unwrap().project_id(), new_id);
-    a.save_as(dir.path().join("./destination.vibecut")).unwrap();
+    a.save_to(dir.path().join("./destination.vibecut")).unwrap();
     saved(&mut a);
     assert_eq!(a.session().project().data().id, new_id);
     a.session_mut().redo().unwrap();
@@ -789,7 +789,7 @@ fn acknowledged_save_as_transfers_lease_and_receipt_together() {
     assert!(project::WriterLease::acquire(&destination).is_ok());
 }
 #[test]
-fn save_as_refusals_preserve_source_identity_lease_and_both_files() {
+fn save_to_refusals_preserve_source_identity_lease_and_both_files() {
     for publication_failure in [false, true] {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source.vibecut");
@@ -816,7 +816,7 @@ fn save_as_refusals_preserve_source_identity_lease_and_both_files() {
         .unwrap();
         edit(&mut a);
         if publication_failure {
-            a.save_as(destination.clone()).unwrap();
+            a.save_to(destination.clone()).unwrap();
             // The worker is queued behind the budget reservation. Change the
             // acquired destination before its final publication precondition.
             destination_bytes = project::encode(session(2).project(), true).unwrap();
@@ -833,7 +833,7 @@ fn save_as_refusals_preserve_source_identity_lease_and_both_files() {
                 Ok(()) => false,
             });
         } else {
-            let error = a.save_as(destination.clone()).unwrap_err();
+            let error = a.save_to(destination.clone()).unwrap_err();
             assert!(matches!(project_cause(&error), Some(project::Error::Busy)));
         }
         busy(&source);
@@ -876,7 +876,7 @@ fn queued_save_cancellation_on_drop_releases_leases_without_publishing() {
     )
     .unwrap();
     edit(&mut a);
-    a.save_as(destination.clone()).unwrap();
+    a.save_to(destination.clone()).unwrap();
     for _ in 0..5 {
         a.tick().unwrap();
     }
@@ -894,7 +894,7 @@ fn queued_save_cancellation_on_drop_releases_leases_without_publishing() {
 }
 #[cfg(unix)]
 #[test]
-fn save_as_alias_reuses_the_before_load_lease_and_canonical_receipt() {
+fn save_to_alias_reuses_the_before_load_lease_and_canonical_receipt() {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("source.vibecut");
     seed(&source);
@@ -907,7 +907,7 @@ fn save_as_alias_reuses_the_before_load_lease_and_canonical_receipt() {
         Arc::new(TestClock::default()),
     );
     edit(&mut a);
-    a.save_as(alias.clone()).unwrap();
+    a.save_to(alias.clone()).unwrap();
     busy(&source);
     saved(&mut a);
     busy(&alias);
@@ -988,7 +988,7 @@ fn refused_job_submission_retains_the_before_load_lease_and_original_bytes() {
 
 #[cfg(unix)]
 #[test]
-fn save_as_symlink_into_recovery_storage_is_refused_before_publication() {
+fn save_to_symlink_into_recovery_storage_is_refused_before_publication() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("journals");
     let mut a = open(&root, 1, None, Arc::new(TestClock::default()));
@@ -1001,7 +1001,7 @@ fn save_as_symlink_into_recovery_storage_is_refused_before_publication() {
     let before = fs::read(&snapshot).unwrap();
     let alias = dir.path().join("save-destination.vibecut");
     std::os::unix::fs::symlink(&snapshot, &alias).unwrap();
-    let result = a.save_as(alias);
+    let result = a.save_to(alias);
     if result.is_ok() {
         saved(&mut a);
         a.flush().unwrap();
@@ -1020,7 +1020,7 @@ fn save_as_symlink_into_recovery_storage_is_refused_before_publication() {
 }
 
 #[test]
-fn save_as_admission_refusals_allow_another_destination_without_releasing_source() {
+fn save_to_admission_refusals_allow_another_destination_without_releasing_source() {
     for refuse_lock_io in [false, true] {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source.vibecut");
@@ -1043,7 +1043,7 @@ fn save_as_admission_refusals_allow_another_destination_without_releasing_source
         } else {
             dir.path().join("reserved.meta.json")
         };
-        let error = a.save_as(refused.clone()).unwrap_err();
+        let error = a.save_to(refused.clone()).unwrap_err();
         if refuse_lock_io {
             assert!(matches!(
                 project_cause(&error),
@@ -1063,7 +1063,7 @@ fn save_as_admission_refusals_allow_another_destination_without_releasing_source
         busy(&source);
         assert_eq!(fs::read(&source).unwrap(), before);
         let destination = dir.path().join("valid.vibecut");
-        a.save_as(destination.clone()).unwrap();
+        a.save_to(destination.clone()).unwrap();
         a.flush().unwrap();
         assert!(!a.is_dirty());
         assert_eq!(
@@ -1078,7 +1078,7 @@ fn save_as_admission_refusals_allow_another_destination_without_releasing_source
 }
 
 #[test]
-fn clipboard_survives_refused_and_pending_save_as_and_clears_only_on_adoption() {
+fn clipboard_survives_refused_and_pending_save_to_and_clears_only_on_adoption() {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("source.vibecut");
     seed(&source);
@@ -1142,7 +1142,7 @@ fn clipboard_survives_refused_and_pending_save_as_and_clears_only_on_adoption() 
             }],
         })
         .unwrap();
-    assert!(a.save_as(dir.path().join("reserved.meta.json")).is_err());
+    assert!(a.save_to(dir.path().join("reserved.meta.json")).is_err());
     assert!(
         a.session_mut()
             .apply(Command::PasteKeyframes {
@@ -1154,7 +1154,7 @@ fn clipboard_survives_refused_and_pending_save_as_and_clears_only_on_adoption() 
             .changed
     );
     let old = a.session().project().data().id;
-    a.save_as(dir.path().join("destination.vibecut")).unwrap();
+    a.save_to(dir.path().join("destination.vibecut")).unwrap();
     assert_eq!(a.session().project().data().id, old);
     assert!(a.session().clipboard_has_entry());
     saved(&mut a);

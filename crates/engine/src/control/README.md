@@ -82,6 +82,17 @@ receipt. Success and typed execution errors are both receipted; a failed publica
 composition root's dirty state, the same request replays the stored error, and a retry that must
 execute again uses a fresh key.
 
+`project.save_as {path, replace}`, `project.export_bundle {path}` and `project.import_bundle {bundle,
+destination}` are Human lifecycle commands that need no composition-root lease, so
+`control_request` runs them (`publish.rs`) through ordinary admission. Save-as writes a copy of the
+committed project under a fresh identity with its view metadata. `replace` is required: an
+existing destination is refused unless it is true, in which case the writer lease replaces it
+atomically; the session's protected paths (its own project and sidecar, aliases included) are
+refused either way. The open project, its lease and its history are untouched. The bundle pair calls
+[project bundles](../../../project/src/persistence/README.md#bundles): export copies media and
+imported LUT bundles; import extracts into a new directory. All three return
+`ControlResult::Published`; save-as and export refuse while a gesture is open.
+
 The composition root supplies `Caller` and a mandatory trusted `Policy`, outside client JSON.
 Engine invokes it on the command and every batch child before effects and before receipt replay.
 It enforces source, destination, overwrite and provider consent through their owners; it is not

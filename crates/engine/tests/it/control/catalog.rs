@@ -359,7 +359,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
                     engine::recovery::Schedule::default(),
                 )
                 .unwrap();
-                autosave.save_as(root.path().join("saved.vibecut")).unwrap();
+                autosave.save_to(root.path().join("saved.vibecut")).unwrap();
                 autosave.flush().unwrap();
                 autosave.apply(typed).unwrap();
                 autosave.flush().unwrap();
@@ -667,8 +667,11 @@ fn deterministic_catalog_and_schema_document_receipts() {
             "project.create",
             "project.delete",
             "project.duplicate",
+            "project.export_bundle",
+            "project.import_bundle",
             "project.purge",
             "project.restore",
+            "project.save_as",
             "project.thumbnail",
             "sounds.add_to_timeline",
             "sounds.save",
@@ -711,13 +714,20 @@ fn deterministic_catalog_and_schema_document_receipts() {
             "project.create",
             "project.delete",
             "project.duplicate",
+            "project.export_bundle",
+            "project.import_bundle",
             "project.purge",
             "project.restore",
             "project.save",
+            "project.save_as",
             "project.thumbnail",
         ]
     );
     assert_eq!(engine::lifecycle("project.save"), Some(Lifecycle::Save));
+    assert_eq!(
+        engine::lifecycle("project.save_as"),
+        Some(Lifecycle::SaveAs)
+    );
     for spec in registry()
         .iter()
         .filter(|s| s.effect == engine::Effect::FilePublish)

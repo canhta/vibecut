@@ -37,6 +37,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         "probe" => media::probe(context, rest),
         "media" => media::generate(context, rest),
         "project" => project::project(context, rest),
+        "bundle" => project::bundle(context, rest),
         "exec" => project::exec(context, rest),
         "normalize" => media::normalize(context, rest),
         "scenes" => media::scenes(context, rest),

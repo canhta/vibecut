@@ -369,7 +369,7 @@ impl State {
         }
     }
 
-    pub(super) fn request_delete(&mut self, ids: Vec<ProjectId>) {
+    pub fn request_delete(&mut self, ids: Vec<ProjectId>) {
         if ids.is_empty() {
             return;
         }

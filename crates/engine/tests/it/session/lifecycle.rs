@@ -96,7 +96,7 @@ fn project_creation_rename_undo_and_view_state_have_distinct_history() {
     assert_eq!(session.metadata(), &metadata);
 }
 #[test]
-fn autosave_metadata_survives_save_as_and_reopen() {
+fn autosave_metadata_survives_save_to_and_reopen() {
     use engine::{
         ByteBudget,
         jobs::SystemClock,
@@ -138,7 +138,7 @@ fn autosave_metadata_survives_save_as_and_reopen() {
         playhead: Tick(3),
     })
     .unwrap();
-    a.save_as(path.clone()).unwrap();
+    a.save_to(path.clone()).unwrap();
     a.flush().unwrap();
     assert!(!a.is_dirty());
     drop(a);

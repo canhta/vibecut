@@ -3,6 +3,7 @@ mod assets;
 mod input;
 mod layout;
 mod player;
+mod project_delete;
 mod route;
 mod shortcuts;
 mod topbar;
@@ -24,6 +25,8 @@ pub(super) struct State {
     pub(super) layout_drag: Option<[f32; 3]>,
     pub(super) rename: Option<String>,
     pub(super) rename_focus: bool,
+    /// The header Delete confirmation is open.
+    pub(super) delete_open: bool,
     /// Header controls painted this frame, routed by the frame after `show`.
     pub(super) painted: Vec<(&'static str, Option<&'static str>, egui::Response)>,
     /// Automation records for every control the editor painted.
@@ -55,6 +58,7 @@ impl State {
             layout_drag: None,
             rename: None,
             rename_focus: false,
+            delete_open: false,
             painted: Vec::new(),
             widgets: Widgets::default(),
             panels: BTreeMap::new(),

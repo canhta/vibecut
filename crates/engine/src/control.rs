@@ -155,6 +155,7 @@ mod dispatch;
 mod fork;
 mod media;
 mod output;
+mod publish;
 mod receipts;
 mod resync;
 pub use clips::{

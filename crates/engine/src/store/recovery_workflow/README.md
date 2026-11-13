@@ -53,10 +53,12 @@ transfers those capabilities to and from its worker without holding a state mute
 Worker error or unwind retains the capabilities until the failed Autosave is dropped; Drop joins
 and cancels workers before releasing their leases.
 
+`Autosave::save_to` is the save-to-path primitive behind Save (first path adoption and every re-save); the desktop's Save As is the registry command `project.save_as`, after which the window reopens on the copy and `retire()` closes the old session: it settles in-flight work and removes that session's journal and snapshots so it is not offered for recovery.
+
 `Candidate::recover()` returns never-saved work for `Autosave::new`; `save()` then returns
-SaveAsRequired. `save_as(path)` acquires the destination before queuing journal publication and
+SaveAsRequired. `save_to(path)` acquires the destination before queuing journal publication and
 project saving on the worker, and keeps both source and destination leases until acknowledgement.
-Ordinary save and aliases reuse the before-load lease. Save As requires an absolute native path,
+Ordinary save and aliases reuse the before-load lease. `save_to` requires an absolute native path,
 and saves inside recovery storage are refused. Paths in journals and save receipts are canonical
 native paths; non-UTF-8 descriptor paths return a typed unsupported encoding error without
 changing the original file.
@@ -74,12 +76,12 @@ baseline. A stale save-as releases the destination lease and never adopts its pa
 the existing saved path keeps its source lease.
 
 Direct stale acknowledgement remains nonsticky; a stale error inside a failed worker stays
-sticky. Explicit pending Save As admission can be corrected with another destination while
+sticky. Explicit pending `save_to` admission can be corrected with another destination while
 retaining the source lease. Automatic journal admission follows the existing sticky failure
 path; code delegation alone changes neither admission nor runtime retry/cancellation policy.
 
-An acknowledged Save As transfers path, receipt, fresh ProjectId and destination lease together.
-The worker journals the original snapshot before attempting publication, so a completed Save As
+An acknowledged `save_to` to a new path transfers path, receipt, fresh ProjectId and destination lease together.
+The worker journals the original snapshot before attempting publication, so a completed `save_to`
 leaves no recovery entry under the original identity, and later dirty snapshots use the new
 identity and path. A failed publication keeps the original identity, path and lease. The Session
 keeps its undo/redo history; restoring a historical snapshot keeps the current ProjectId, so

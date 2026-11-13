@@ -14,6 +14,7 @@ pub use animation::{
 pub use model::*;
 pub use persistence::atomic;
 pub use persistence::autosave;
+pub use persistence::bundle;
 pub use persistence::{
     FORMAT_ID, Loaded, MAX_SEPARATORS, METADATA_VERSION, Metadata, SCHEMA_VERSION, SaveReceipt,
     Thumbnail, ViewState, WriterLease, atomic_write, decode, encode, load, media_dir,
