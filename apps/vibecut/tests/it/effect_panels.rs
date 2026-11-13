@@ -1044,7 +1044,7 @@ fn adjustment_layer_inserts_at_playhead_takes_an_effect_moves_and_changes_previe
         &mut session,
         main,
         Tick::ZERO,
-        Tick(4 * SECOND),
+        Tick(8 * SECOND),
         None,
         ItemParams::Overlay(project::OverlayParams {
             color: Color([255, 0, 0, 255]),
@@ -1099,6 +1099,38 @@ fn adjustment_layer_inserts_at_playhead_takes_an_effect_moves_and_changes_previe
     assert_eq!(item(&harness, layer).start, Tick(SECOND));
     assert_eq!(effect_ids(&harness, layer), vec!["black_white".to_owned()]);
     assert_eq!(wait_centre(&mut harness, |p| p == red), red);
+
+    // The layer now spans 1s..6s. Inside it the effect shows; the end handle trims it to 3s.
+    let project = harness.state().session.project().clone();
+    harness
+        .state_mut()
+        .playback
+        .seek(Tick(2 * SECOND), false, project)
+        .unwrap();
+    assert_ne!(wait_centre(&mut harness, |p| p != red), red);
+    let history = harness.state().session.history_len();
+    let handle = widget_rect(&harness, &format!("timeline.item.{}.trim_end", layer.0)).center();
+    let to = handle - egui::vec2(3.0 * zoom, 0.0);
+    harness.drag_at(handle);
+    harness.run_steps(1);
+    harness.hover_at(to);
+    harness.run_steps(2);
+    harness.drop_at(to);
+    harness.run_steps(2);
+    assert_eq!(item(&harness, layer).end().unwrap(), Tick(3 * SECOND));
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    // Past the new end (4s, inside the 8s base layer) the preview shows no effect.
+    let project = harness.state().session.project().clone();
+    harness
+        .state_mut()
+        .playback
+        .seek(Tick(4 * SECOND), false, project)
+        .unwrap();
+    assert_eq!(wait_centre(&mut harness, |p| p == red), red);
+    // One undo restores the 6s end.
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert_eq!(item(&harness, layer).end().unwrap(), Tick(6 * SECOND));
 }
 
 #[test]
