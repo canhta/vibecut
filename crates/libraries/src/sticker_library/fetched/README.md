@@ -9,7 +9,7 @@ Downloadable emoji and icon stickers. The Stickers panel's Emoji and Icons categ
 | `sanitize` | `check_svg`, the admission check for sticker bytes. | Deny by default; bytes are never rewritten. |
 | `store` | `StickerStore`: cache state, verified reads, offline test. | `state` is cheap (names and sizes); `read` checks size, SHA-256, sidecar and `check_svg`. |
 | `downloads` | `submit_download`, the explicit transfer job. | `JobKind::DownloadSticker` over staging, verification and one rename; cancel leaves nothing. |
-| `render_source` | `StickerStore` as render's `StickerSource`, and `native_store`. | `svg` returns `read` bytes; a missing file is `NotDownloaded`, changed or unsafe bytes `Corrupt`, an id outside the catalog `Unknown`. `native_store` opens the per-user store once and lends it to render. |
+| `render_source` | `StickerStore` as render's `StickerSource`, and `native_store`. | `svg` returns `read` bytes with a white root `color` added when the root names none (so `currentColor` draws white); a missing file is `NotDownloaded`, changed or unsafe bytes `Corrupt`, an id outside the catalog `Unknown`. `native_store` opens the per-user store once and lends it to render. |
 | `search` | Category search over flags, emoji and icons. | Name and keyword match; collections that are not `Ready` are reported, never listed. |
 
 ## Collections

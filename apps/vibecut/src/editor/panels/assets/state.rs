@@ -104,6 +104,8 @@ pub(in crate::editor) struct State {
     pub(super) sticker_tab: super::stickers::StickerTab,
     pub(super) sticker_expanded: bool,
     pub(in crate::editor) sticker_thumbnails: super::stickers::Thumbnails,
+    /// Stickers tab: the Emoji and Icons downloads, created on the first explicit download.
+    pub(in crate::editor) sticker_downloads: Option<super::stickers::StickerDownloads>,
 }
 
 impl Default for State {
@@ -160,6 +162,7 @@ impl Default for State {
             sticker_tab: Default::default(),
             sticker_expanded: false,
             sticker_thumbnails: Default::default(),
+            sticker_downloads: None,
         }
     }
 }

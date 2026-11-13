@@ -4,13 +4,15 @@ use super::State;
 use crate::editor::{Port, Request};
 
 impl State {
-    /// Start-of-frame work: open the first Music page and report a finished clip export.
+    /// Start-of-frame work: open the first Music page, pump the sticker downloads and report a
+    /// finished clip export.
     pub(in crate::editor) fn begin_frame(&mut self, port: &mut Port<'_>) {
         if port.read.preferences.assets_tab == AssetsTab::Sounds
             && self.audio_section == AudioSection::Music
         {
             self.music_loaded();
         }
+        self.poll_sticker_download();
         if let Some((text, detail)) = self.poll_clip_exports() {
             let message = port.tr(text);
             port.toast(message, detail);
@@ -102,6 +104,10 @@ impl State {
                 Action::InsertSticker(id) => self.insert_sticker(port, &id),
                 Action::InsertShape(id) => port.request(Request::InsertShape(id)),
                 Action::ClearStickerRecents => self.clear_sticker_recents(port),
+                Action::DownloadSticker(collection) => {
+                    self.download_sticker(port.read.budget, &collection);
+                }
+                Action::CancelStickerDownload => self.cancel_sticker_download(),
             }
         }
     }

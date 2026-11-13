@@ -4980,6 +4980,40 @@ fn stickers_panel_searches_switches_inserts_and_keeps_recents_in_preferences() {
     assert!(path.exists());
 }
 
+#[test]
+fn stickers_emoji_and_icons_tabs_offer_a_download_card_until_a_collection_is_ready() {
+    use libraries::stickers::CollectionState;
+    let mut f = fixture();
+    f.editor.preferences.assets_tab = AssetsTab::Stickers;
+    let mut h = build(f.editor);
+    h.run_steps(3);
+    for id in ["stickers.category.emoji", "stickers.category.icons"] {
+        assert!(has_widget(&h, id), "{id}");
+    }
+
+    // A collection that is not ready is offered on its tab with the explicit download; a ready
+    // one is listed as stickers and offers nothing. The native cache decides which.
+    let ready = |collection: &str| {
+        libraries::stickers::native_store()
+            .is_some_and(|store| store.state(collection).ok() == Some(CollectionState::Ready))
+    };
+    click(&mut h, "stickers.category.emoji");
+    assert_eq!(has_widget(&h, "stickers.download.noto"), !ready("noto"));
+    click(&mut h, "stickers.category.icons");
+    assert_eq!(has_widget(&h, "stickers.download.lucide"), !ready("lucide"));
+    assert_eq!(
+        has_widget(&h, "stickers.download.phosphor"),
+        !ready("phosphor")
+    );
+    assert!(!has_widget(&h, "stickers.download.noto"));
+
+    // All lists what is ready and offers no download; Flags and Shapes never offer one.
+    click(&mut h, "stickers.category.all");
+    assert!(!has_widget(&h, "stickers.download.lucide"));
+    click(&mut h, "stickers.category.flags");
+    assert!(!has_widget(&h, "stickers.download.noto"));
+}
+
 fn pointer_drag(harness: &mut Harness<Editor>, from: egui::Pos2, to: egui::Pos2) {
     harness.event(egui::Event::PointerMoved(from));
     harness.run_steps(1);

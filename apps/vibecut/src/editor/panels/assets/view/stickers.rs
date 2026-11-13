@@ -2,10 +2,11 @@
 //! section with Clear, and the tile grid. Shape tiles insert through their graphic commands;
 //! flag tiles through the sticker insert.
 
-use super::super::stickers::{StickerTab, Tile};
+use super::super::stickers::{DownloadProblem, Offer, StickerTab, Tile};
 use super::super::{Action, Align2, Color32, Icon, Rect, Text, Vec2, egui, theme};
 use super::View;
 use crate::i18n;
+use std::time::Duration;
 
 /// Tile edge and gaps from the measured Stickers grid (`theme::size::STICKER_*`).
 const TILE: f32 = theme::size::STICKER_TILE;
@@ -25,6 +26,8 @@ impl View<'_> {
         ui.horizontal(|ui| {
             for (tab, label) in [
                 (StickerTab::All, Text::AssetsAll),
+                (StickerTab::Emoji, Text::StickerEmoji),
+                (StickerTab::Icons, Text::StickerIcons),
                 (StickerTab::Flags, Text::StickerFlags),
                 (StickerTab::Shapes, Text::GraphicShapes),
             ] {
@@ -70,6 +73,10 @@ impl View<'_> {
             .id_salt("stickers.list")
             .auto_shrink([false, false])
             .show(ui, |ui| {
+                for offer in &rows.offers {
+                    self.download_card(ui, offer);
+                    ui.add_space(theme::space::SM);
+                }
                 if !rows.recent.is_empty() {
                     ui.horizontal(|ui| {
                         ui.label(
@@ -97,6 +104,89 @@ impl View<'_> {
                     self.tile_grid(ui, &rows.results, false, ready);
                 }
             });
+    }
+
+    /// One collection the tab does not hold yet: its name, licence credit and size, then the
+    /// download action, or the progress with cancel, or the offline and retry states.
+    fn download_card(&mut self, ui: &mut egui::Ui, offer: &Offer) {
+        let locale = self.cx.preferences.locale;
+        let dark = self.cx.preferences.dark;
+        let downloads = self.state.sticker_downloads.as_ref();
+        let running = downloads
+            .and_then(|downloads| downloads.active.as_ref())
+            .filter(|active| active.collection == offer.collection)
+            .map(|active| (active.progress, active.cancelling));
+        let busy = downloads.is_some_and(|downloads| downloads.active.is_some());
+        let problem = downloads
+            .and_then(|downloads| downloads.problem.as_ref())
+            .filter(|(collection, _)| *collection == offer.collection)
+            .map(|(_, problem)| *problem);
+        let kib = offer.bytes.div_ceil(1024);
+        ui.group(|ui| {
+            ui.set_width(ui.available_width());
+            ui.label(
+                egui::RichText::new(&offer.name)
+                    .font(theme::label_font())
+                    .size(theme::type_size::SMALL_LABEL)
+                    .color(theme::text(dark)),
+            );
+            let credit = i18n::format(
+                locale,
+                Text::StickerLicence,
+                &[
+                    ("author", &offer.author),
+                    ("license", &offer.license),
+                    ("source", &offer.source),
+                ],
+            );
+            ui.label(caption(credit, dark));
+            let size = i18n::format(
+                locale,
+                Text::StickerDownloadSize,
+                &[("kib", &i18n::number(locale, kib))],
+            );
+            ui.label(caption(size, dark));
+            match running {
+                Some((_, true)) => {
+                    ui.label(caption(self.tr(Text::StickerCancelling), dark));
+                }
+                Some((progress, false)) => {
+                    ui.ctx().request_repaint_after(Duration::from_millis(100));
+                    let percent = (progress * 100.0).round() as u64;
+                    let text = i18n::format(
+                        locale,
+                        Text::StickerDownloading,
+                        &[("percent", &i18n::number(locale, percent))],
+                    );
+                    ui.label(caption(text, dark));
+                    ui.add(egui::ProgressBar::new(progress).desired_width(ui.available_width()));
+                    let response = ui.button(self.tr(Text::StickerDownloadCancel));
+                    self.remember("stickers.download.cancel", &response, None);
+                    if response.clicked() {
+                        self.actions.push(Action::CancelStickerDownload);
+                    }
+                }
+                None => {
+                    match problem {
+                        Some(DownloadProblem::Offline) => {
+                            ui.label(caption(self.tr(Text::StickerDownloadOffline), dark));
+                        }
+                        Some(DownloadProblem::Failed) => {
+                            ui.label(caption(self.tr(Text::StickerDownloadFailed), dark));
+                        }
+                        None => {}
+                    }
+                    let id = format!("stickers.download.{}", offer.collection);
+                    let response =
+                        ui.add_enabled(!busy, egui::Button::new(self.tr(Text::StickerDownload)));
+                    self.remember(id, &response, None);
+                    if response.clicked() {
+                        self.actions
+                            .push(Action::DownloadSticker(offer.collection.clone()));
+                    }
+                }
+            }
+        });
     }
 
     fn tile_grid(&mut self, ui: &mut egui::Ui, tiles: &[Tile], recent: bool, ready: bool) {
@@ -159,6 +249,14 @@ impl View<'_> {
             }
         });
     }
+}
+
+/// Secondary small text of the download card.
+fn caption(text: impl Into<String>, dark: bool) -> egui::RichText {
+    egui::RichText::new(text)
+        .font(theme::label_font())
+        .size(theme::type_size::SMALL_LABEL)
+        .color(theme::secondary(dark))
 }
 
 fn slug(id: &str) -> String {

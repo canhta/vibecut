@@ -165,4 +165,8 @@ pub(in crate::editor) enum Action {
     /// Insert one shape through its `graphic.insert.*` command and record it as recent.
     InsertShape(String),
     ClearStickerRecents,
+    /// Download one Emoji or Icons collection on the user's explicit action; its card shows the
+    /// licence credit before the button.
+    DownloadSticker(String),
+    CancelStickerDownload,
 }

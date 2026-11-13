@@ -140,6 +140,7 @@ pub(in crate::editor) fn prepare(
             state.sticker_expanded,
             &cx.preferences.sticker_recents,
             cx.preferences.locale,
+            libraries::stickers::native_store(),
         )
     });
     state.model = Model {

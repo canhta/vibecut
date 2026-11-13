@@ -816,3 +816,26 @@ fn control_and_render_serve_every_collection_and_refuse_until_downloaded() {
         Err(render::StickerError::Invalid { .. })
     ));
 }
+
+#[test]
+fn fetched_icons_render_white_unless_the_root_names_a_colour() {
+    use render::StickerSource;
+    let plain: &[u8] = b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path d=\"M0 0h24v24H0z\" fill=\"currentColor\"/></svg>";
+    let named: &[u8] = b"<svg xmlns=\"http://www.w3.org/2000/svg\" color=\"#123456\" viewBox=\"0 0 24 24\"><path d=\"M0 0h24v24H0z\" fill=\"currentColor\"/></svg>";
+    let files: [(&str, &[u8]); 2] = [("plain", plain), ("named", named)];
+    let collection = demo(&files);
+    let server = Server::serving(&collection, &files);
+    let root = tempfile::tempdir().unwrap();
+    let store = store(root.path(), collection, server);
+    let mut runner = runner();
+    assert_eq!(download(&store, &mut runner), JobState::Completed);
+
+    // The lent bytes gain a white root colour; the cached file keeps its verified bytes.
+    let white = String::from_utf8(store.svg("demo:plain").unwrap()).unwrap();
+    assert!(
+        white.starts_with("<svg xmlns=\"http://www.w3.org/2000/svg\" color=\"#FFFFFF\" viewBox")
+    );
+    assert_eq!(store.read("demo:plain").unwrap(), plain);
+    // A root that names its own colour keeps it.
+    assert_eq!(store.svg("demo:named").unwrap(), named);
+}
