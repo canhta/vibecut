@@ -136,6 +136,12 @@ impl Subtitles {
                 let r = ui.label(i18n::text(locale, Text::SubTranscriptEmpty));
                 remember(widgets, "subtitles.transcript.empty".into(), &r);
             });
+            // Words picked in another scene can still be selected here; the cut must
+            // reach the engine so its scene refusal is shown.
+            if cut {
+                self.transcript_cut(session);
+                ui.ctx().request_repaint();
+            }
             return;
         }
         let pages = view.cues.len().div_ceil(PAGE);
