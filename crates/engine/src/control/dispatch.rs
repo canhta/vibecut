@@ -873,10 +873,16 @@ impl Session {
                 }
                 let plan = crate::plan_asset_exports(self.project(), &asset_ids, &dir, overwrite)?;
                 let paths = plan.iter().map(|export| export.path.clone()).collect();
-                let (job, _) = crate::submit_asset_exports(
+                let sources = self.asset_export_sources.clone();
+                let (job, _) = crate::submit_asset_exports_with_sources(
                     runner,
                     crate::control_preview::control_key(fingerprint)?,
                     plan,
+                    move || match &sources {
+                        Some(sources) => (**sources)(),
+                        None => Box::new(render::FileSources::default())
+                            as Box<dyn render::SourceProvider>,
+                    },
                 )?;
                 Ok(ControlResult::JobAccepted {
                     word_highlight_warnings: project::CaptionWordWarnings::default(),

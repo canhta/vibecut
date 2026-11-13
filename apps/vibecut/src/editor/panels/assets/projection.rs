@@ -167,6 +167,7 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
         graphic_previews,
         importing: editor.assets.importing(),
         selection: editor.assets.media_selection.clone(),
+        clip_export: editor.assets.clip_export_status(),
         reveal: editor.assets.media_reveal.map(|reveal| reveal.asset),
         marquee: editor.assets.media_marquee.clone(),
         failed: !editor.assets.import_failures.is_empty() || editor.assets.import_notice.is_some(),

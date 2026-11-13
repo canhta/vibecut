@@ -47,6 +47,7 @@ impl Checkpoint {
             gesture,
             timeline_preview,
             grouping: _,
+            asset_export_sources: _,
             ripple,
         } = session;
         Self {
@@ -90,6 +91,7 @@ impl Checkpoint {
             gesture,
             timeline_preview,
             grouping: _,
+            asset_export_sources: _,
             ripple,
         } = session;
         *clipboard = self.clipboard;

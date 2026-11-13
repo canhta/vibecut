@@ -162,6 +162,7 @@ to [Properties](../../../apps/vibecut/src/editor/panels/properties/README.md).
 - Multi-track timeline geometry: only one video track is captured, so audio, text, sticker and effect track heights, clip colours and vertical stacking are unmeasured.
 - Menus, context menus, the keyframe lane, selected text and caption properties, and error, offline and import-failure states are not captured.
 - Shortcut search, rebinding capture, conflict state and preset management are not captured.
+- Media tab export: the clear-search row placement, the export progress strip (token height and gap from `kit::size::CONTROL` and `kit::space::MD`) and the export refusal and outcome toast copy are new compositions without a captured reference; their placement against CapCut is unverified.
 
 The Captions Style chooser lists Saved in project as live selections, retaining Outline/Box/Custom/Mixed as value summaries. A selected preset stores its ID plus a sparse override patch; the Overrides popup applies or resets the complete style in one undo step and never commits a caption draft. Save current style and Manage saved styles open a small name editor using the existing 22 px/12 px control system. Manage remains available for a nonempty bank without a caption target, while deleting a selected style refuses. Enter/blur confirms once; Escape/Cancel changes nothing. Snapshot, target, time, tab, bank and readiness changes discard stale input. This bank composition is adopted new UI, with reference parity unverified.
 
