@@ -8,6 +8,7 @@ Headless source-timed transcript and multilingual cue storage, BCP 47 language p
 |---|---|---|
 | `emphasis.rs` | Chooses up to three keyword word ids per cue from verified word timings with per-language stopword data and validates stored selections. | [Keyword emphasis](src/emphasis/README.md) |
 | `filler.rs` | Finds whole-word filler candidates through per-language lexicon data over cue word timings. | [Filler detection](src/filler/README.md) |
+| `find.rs` | Previews and writes find-replace over each cue's source text: timings, translations and edited cues never move. | - |
 | `interchange/` | Round-trips SRT and WebVTT subtitle files and exports plain TXT through cue tracks. | [SRT, WebVTT and TXT](src/interchange/README.md) |
 | `interchange/ass/` | Parses ASS documents into typed cues and maps styles. | [ASS import and style mapping](src/interchange/ass/README.md) |
 | `language.rs` | Owns BCP 47 language tags and editable subtitle profiles. | [Language profiles](src/language/README.md) |

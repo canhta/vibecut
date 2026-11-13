@@ -582,6 +582,7 @@ impl Subtitles {
                                     self.ui_result(result);
                                 }
                             });
+                            self.find_ui(ui, session, &mut controls, locale);
                             self.cues_ui(ui, session, options, &mut controls, dark);
                             self.transcript_ui(
                                 ui,
@@ -802,7 +803,7 @@ impl Subtitles {
             self.glossary_ui(ui, c);
         });
     }
-    fn ui_result(&mut self, result: Result<()>) {
+    pub(super) fn ui_result(&mut self, result: Result<()>) {
         if let Err(e) = result {
             match e {
                 Error::Engine(e) => self.fail(Arc::new(e)),

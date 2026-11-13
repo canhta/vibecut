@@ -57,6 +57,8 @@ divides at the caret's text fraction, and the playhead split snaps to the neares
 word edge. Empty or zero-length results are refused. Split and each merge commit one
 engine command, one undo step.
 
+Find and replace ([find.rs](find.rs)) sits above the cue list, under the selection tools. Its query, replacement, Match case and Whole word settings are session state; the scope is the selected cues, or every cue of the item when none is selected. Find previews the match count, the cues with matches and the cues that would be skipped: edit-protected cues, cues that would become empty, and cues over the per-cue limit. Replace all writes only that preview, as one `captions` batch command and one undo step. It refuses unless the inputs, the scope and a recomputed plan still equal the preview. Matching runs over each cue's source text; translations, timings and skipped cues stay as they were. Rules: [find-replace](../../../../../../../crates/captions/README.md).
+
 The filler cut list ([fillers.rs](fillers.rs)) is a section after the cue list. Find calls
 `timeline.filler_candidates` for the first cue language of the active scene's caption items (the read
 is scene-wide, and a word cut splits an item) and refuses with a word-timing message when no cue
