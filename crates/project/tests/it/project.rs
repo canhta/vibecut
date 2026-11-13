@@ -109,6 +109,8 @@ fn named_preset_banks_validate_every_entry_names_closed_fields_and_schema() {
     });
     styled.glow = true;
     let text_style = TextStyle::from_params(&styled);
+    // Recent colours are project state: newest first, round-tripped through the file.
+    data.recent_colors = vec![project::Color([1, 2, 3, 255]), project::Color([9, 8, 7, 128])];
     data.text_presets = (0..64)
         .map(|id| SavedTextPreset {
             id: TextPresetId(id),

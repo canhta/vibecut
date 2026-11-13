@@ -187,7 +187,9 @@ Commands and groups catch unwinding panics, restore their engine state and retur
 and what it deliberately keeps, is the [rollback contract](state/README.md#rollback). Aborts,
 OOM and double-panic termination cannot be recovered; the application owns panic-hook policy.
 Successful undo and redo always break merging. App presentation, scopes and preferences are not
-Session state.
+Session state. Recent colours are project data, so they are not bookkeeping outside history:
+a colour commit is one `batch` of the colour command and `project.record_recent_colour`, one
+undo step that restores the list with the colour.
 
 ## Project lifecycle and view state
 

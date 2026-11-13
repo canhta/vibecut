@@ -19,7 +19,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 /// Bumped when the local preference document changes incompatibly.
-pub const PREFERENCES_VERSION: u32 = 13;
+pub const PREFERENCES_VERSION: u32 = 14;
 /// Room for every provider/feature choice and its bounded recent IDs.
 pub const MAX_PREFERENCES_BYTES: u64 = 32 * 1024;
 /// Total open-lane entries across every project; keeps the document bounded.
@@ -59,7 +59,6 @@ pub const PREFERENCE_KEYS: &[&str] = &[
     "preview_axis",
     "playback_loop",
     "keybindings",
-    "recent_colors",
     "timeline_lanes",
     "font_picker",
     "adjustment_presets",
@@ -155,7 +154,6 @@ pub struct Preferences {
     /// App-local action overrides. Defaults and action metadata live in
     /// `actions`; this is the only persisted binding map.
     pub keybindings: KeybindingPreferences,
-    pub recent_colors: Vec<project::Color>,
     /// Items whose keyframe lanes stay open, keyed by the project they belong
     /// to: item ids restart in every project.
     pub timeline_lanes: BTreeMap<project::ProjectId, BTreeSet<u64>>,
@@ -204,7 +202,6 @@ impl Default for Preferences {
             playback_loop: false,
             snapshot_directory: None,
             keybindings: KeybindingPreferences::default(),
-            recent_colors: Vec::new(),
             timeline_lanes: BTreeMap::new(),
             font_picker: FontPickerPreferences::default(),
             adjustment_presets: Vec::new(),
@@ -261,9 +258,6 @@ impl Preferences {
             return Err(Error::Invalid("snapshot directory"));
         }
         self.keybindings.validate()?;
-        if self.recent_colors.len() > 16 {
-            return Err(Error::Invalid("recent colours"));
-        }
         if self.timeline_lane_count() > MAX_TIMELINE_LANES {
             return Err(Error::Invalid("timeline lanes"));
         }
@@ -366,7 +360,6 @@ impl Preferences {
             "playback_loop" => Ok(serde_json::Value::Bool(self.playback_loop)),
             "snapshot_directory" => Ok(serde_json::to_value(&self.snapshot_directory)?),
             "keybindings" => Ok(serde_json::to_value(&self.keybindings)?),
-            "recent_colors" => Ok(serde_json::to_value(&self.recent_colors)?),
             "timeline_lanes" => Ok(serde_json::to_value(&self.timeline_lanes)?),
             "font_picker" => Ok(serde_json::to_value(&self.font_picker)?),
             "adjustment_presets" => Ok(serde_json::to_value(&self.adjustment_presets)?),
@@ -412,7 +405,6 @@ impl Preferences {
             "playback_loop" => self.playback_loop = serde_json::from_value(value)?,
             "snapshot_directory" => self.snapshot_directory = serde_json::from_value(value)?,
             "keybindings" => self.keybindings = serde_json::from_value(value)?,
-            "recent_colors" => self.recent_colors = serde_json::from_value(value)?,
             "timeline_lanes" => self.timeline_lanes = serde_json::from_value(value)?,
             "font_picker" => self.font_picker = serde_json::from_value(value)?,
             "adjustment_presets" => self.adjustment_presets = serde_json::from_value(value)?,

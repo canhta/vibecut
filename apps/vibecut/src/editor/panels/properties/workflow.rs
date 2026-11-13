@@ -134,7 +134,6 @@ fn route(state: &mut State, port: &mut Port<'_>, actions: Vec<Action>) {
                 preset,
             } => canvas::set_canvas(port, width, height, preset),
             Action::SetFps { num, den } => canvas::set_canvas_fps(port, num, den),
-            Action::SetBackground(color) => canvas::set_canvas_background(port, color),
             Action::SetClipBackground { items, background } => {
                 background::set_clip_background(port, items, background)
             }
@@ -207,7 +206,7 @@ fn route(state: &mut State, port: &mut Port<'_>, actions: Vec<Action>) {
                 .apply_result(engine::Command::SetAnimatedParam { item, path, param })
                 .map(|_| ()),
             Action::ColorPreview { command } => state.preview_color(port, command),
-            Action::ColorCommit { command, recent } => state.commit_color(port, command, recent),
+            Action::ColorCommit { command, record } => state.commit_color(port, command, record),
             Action::Font(action) => state.font_action(port, action),
             Action::Mask(action) => state.mask_action(port, action),
             Action::Error(message) => {

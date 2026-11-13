@@ -4071,3 +4071,89 @@ fn streak_pending_edit_invalidates_on_selection_panel_effect_and_lock() {
         }
     }
 }
+
+#[test]
+fn colour_popover_eyedropper_samples_the_player_frame_as_one_step() {
+    let (editor, _) = chroma_frame_fixture();
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    let overlay = harness
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| matches!(item.content, ItemParams::Overlay(_)))
+        .map(|item| item.id)
+        .expect("overlay item");
+    select(&mut harness, overlay);
+    harness.run_steps(2);
+    click(&mut harness, "inspector.graphic_fill");
+    harness.run_steps(2);
+    click(&mut harness, "color.eyedropper");
+    harness.run_steps(2);
+    assert!(has_widget(&harness, "color.eyedropper.status"), "armed");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while harness.state().playback.frame().is_none() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "preview frame did not arrive"
+        );
+        harness.run_steps(1);
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    let stage = widget_rect(&harness, "preview.canvas");
+    let canvas = {
+        let canvas = &harness.state().session.project().data().canvas;
+        [canvas.width, canvas.height]
+    };
+    let scale = vibecut::services::preview::fit_scale(stage.size(), canvas);
+    let displayed = egui::Rect::from_center_size(
+        stage.center(),
+        egui::vec2(canvas[0] as f32, canvas[1] as f32) * scale,
+    );
+    let pos = displayed.center();
+    let expected = vibecut::services::preview::sample_color(
+        &harness.state().playback.frame().unwrap().image,
+        displayed,
+        pos,
+    )
+    .expect("the clicked pixel is inside the frame");
+
+    let history = harness.state().session.history_len();
+    click_pos(&mut harness, pos);
+    harness.run_steps(3);
+    let colour = harness
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| item.id == overlay)
+        .and_then(|item| match &item.content {
+            ItemParams::Overlay(params) => Some(params.color),
+            _ => None,
+        })
+        .expect("overlay colour");
+    assert_eq!(
+        colour.0[..3],
+        expected.0[..3],
+        "the sampled player pixel becomes the fill"
+    );
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+
+    // Escape leaves the sampling mode and keeps the popover open.
+    click(&mut harness, "color.eyedropper");
+    harness.run_steps(2);
+    assert!(has_widget(&harness, "color.eyedropper.status"));
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+    assert!(!has_widget(&harness, "color.eyedropper.status"));
+    assert!(has_widget(&harness, "color.hex"));
+}

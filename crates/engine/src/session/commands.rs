@@ -738,6 +738,7 @@ commands! {
     SaveProject, "project.save", "Save project", SessionControl {} => Save, serde_json::json!({}), idle = true, grant = Agent, lifecycle = Save;
     SaveProjectAs, "project.save_as", "Save project copy", SessionControl { path: std::path::PathBuf, replace: bool } => Timeline, serde_json::json!({"path":"$output/copy.vibecut","replace":false}), idle = true, grant = Human, lifecycle = SaveAs, returns = [Published];
     SetBackground, "project.set_background", "Set canvas background colour", Edit { color: Color } => Timeline, serde_json::json!({"color":[0,0,0,255]});
+    RecordRecentColour, "project.record_recent_colour", "Move a colour to the front of the project's recent colours", Edit { color: Color } => Timeline, serde_json::json!({"color":[0,0,0,255]});
     SetCanvas, "project.set_canvas", "Set canvas size", Edit { width: u32, height: u32, #[serde(default)] preset: Option<project::AspectPreset> } => Timeline, serde_json::json!({"width":1080,"height":1920,"preset":"9:16"});
     SetFps, "project.set_fps", "Set canvas frame rate", Edit { num: i64, den: i64 } => Timeline, serde_json::json!({"num":30,"den":1});
     SetViewState, "project.set_view_state", "Set timeline view", SessionControl { zoom: f64, scroll: f64, playhead: Tick } => Timeline, serde_json::json!({"zoom":2.0,"scroll":10.0,"playhead":0}), grant = Agent;

@@ -682,6 +682,9 @@ pub(crate) fn apply(
         EditCommand::SetBackground { color } => {
             data = project_edits::execute_set_background(data, color)?;
         }
+        EditCommand::RecordRecentColour { color } => {
+            data = project_edits::execute_record_recent_colour(data, color);
+        }
         EditCommand::SetSpeed {
             items,
             speed,

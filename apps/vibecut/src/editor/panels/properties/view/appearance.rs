@@ -158,7 +158,7 @@ impl Panel<'_, '_> {
     }
 
     /// A colour row: the label left, a swatch with its hex right. Clicking opens
-    /// the picker as a popover hanging off the panel's left edge.
+    /// the colour popover hanging under the field's right edge.
     pub(super) fn color_row(
         &mut self,
         ui: &mut egui::Ui,
@@ -218,8 +218,7 @@ impl Panel<'_, '_> {
         let response = response.on_hover_text(self.tr(label));
         self.remember_with_icon(id, None, &response);
         if response.clicked() {
-            let panel_left = self.state.area.map_or(rect.left(), |panel| panel.left());
-            let anchor = egui::pos2(panel_left - theme::space::PANEL_GUTTER, row.top());
+            let anchor = egui::pos2(rect.right(), rect.bottom() + theme::space::XS);
             match self
                 .state
                 .open_picker(self.cx.session.project(), target, Some(anchor))

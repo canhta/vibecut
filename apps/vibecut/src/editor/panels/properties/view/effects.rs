@@ -1128,7 +1128,7 @@ impl Panel<'_, '_> {
                     self.actions.extend(self.state.close_picker());
                     self.actions.push(Action::ColorCommit {
                         command,
-                        recent: self.cx.preferences.recent_colors.clone(),
+                        record: None,
                     });
                 }
                 Err(error) => self.fail(error),

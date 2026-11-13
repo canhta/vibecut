@@ -128,6 +128,8 @@ pub(crate) struct Context<'a> {
     pub(crate) effect_targets: Option<std::collections::BTreeSet<project::ItemId>>,
     /// Armed chroma-key eyedropper; the player samples its next click.
     pub(crate) key_color_pick: Option<crate::editor::KeyPick>,
+    /// The colour popover's eyedropper is armed; the player samples its next click.
+    pub(crate) colour_sampling: bool,
 }
 impl Context<'_> {
     /// The selected items; the engine session is their only owner.

@@ -1099,26 +1099,45 @@ fn scale_is_uniform_until_toggled_and_steppers_move_one_unit() {
 }
 
 #[test]
-fn color_picker_is_a_popover_left_of_the_properties_panel() {
+fn color_picker_is_a_popover_hanging_under_its_swatch() {
     let fixture = fixture();
     let mut harness = build(fixture.editor);
     harness.run_steps(3);
     select(&mut harness, fixture.graphic);
     click(&mut harness, "inspector.graphic_fill");
-    let panel = harness.state().panels()["inspector"];
-    let picker = harness
-        .state()
-        .inspect()
-        .unwrap()
-        .widgets
-        .into_iter()
-        .find(|widget| widget.id == "color.hex")
-        .expect("picker open")
-        .rect;
+    harness.run_steps(2);
+    let swatch = widget_rect(&harness, "inspector.graphic_fill");
+    let picker = widget_rect(&harness, "color.hex");
     assert!(
-        picker.right() <= panel.left(),
-        "{picker:?} covers {panel:?}"
+        picker.top() >= swatch.bottom(),
+        "{picker:?} is not under {swatch:?}"
     );
+}
+
+#[test]
+fn color_picker_closes_on_escape_and_keeps_the_last_committed_value() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    select(&mut harness, fixture.text);
+    click(&mut harness, "inspector.text_color.picker");
+    harness.run_steps(3);
+    let history = harness.state().session.history_len().0;
+    click(&mut harness, "color.swatch.5");
+    harness.run_steps(2);
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+    assert!(
+        !harness
+            .state()
+            .inspect()
+            .unwrap()
+            .widgets
+            .iter()
+            .any(|widget| widget.id == "color.hex")
+    );
+    assert_eq!(harness.state().session.history_len().0, history + 1);
 }
 
 #[test]
@@ -1165,7 +1184,6 @@ fn color_drag_isolated_until_release_one_undo_and_escape_cancels() {
     assert_eq!(harness.state().session.project(), &before);
     assert_eq!(harness.state().inspect().unwrap().color_preview, None);
     let history = harness.state().session.history_len();
-    let recents = harness.state().preferences.recent_colors.clone();
     click(&mut harness, "inspector.text_color.picker");
     harness.run_steps(2);
     let slider = widget_rect(&harness, "color.v.slider");
@@ -1179,24 +1197,10 @@ fn color_drag_isolated_until_release_one_undo_and_escape_cancels() {
     harness.run_steps(2);
     assert_eq!(harness.state().session.project(), &before);
     assert_eq!(harness.state().session.history_len(), history);
-    assert_eq!(harness.state().preferences.recent_colors, recents);
 }
 
 #[test]
-fn picker_hex_hsv_recents_unavailable_and_screenshot() {
-    #[cfg(not(target_os = "macos"))]
-    {
-        let mut native = vibecut::services::color_picker::NativeEyedropper::default();
-        assert_eq!(
-            native.state,
-            vibecut::services::color_picker::EyedropperState::Unavailable
-        );
-        assert!(matches!(
-            native.start(),
-            Err(vibecut::Error::Unsupported(_))
-        ));
-        assert_eq!(native.poll().unwrap(), None);
-    }
+fn picker_hex_hsv_recents_and_screenshot() {
     let mut fixture = fixture();
     // A screenshot needs a healthy generated preview, not the offline media
     // deliberately retained by the general panel fixture.
@@ -1233,32 +1237,21 @@ fn picker_hex_hsv_recents_unavailable_and_screenshot() {
     assert!(
         matches!(item(&harness,fixture.text).content,ItemParams::Text(p) if p.color==Color([0,0,255,128]))
     );
-    harness
-        .state_mut()
-        .set_eyedropper(vibecut::services::color_picker::NativeEyedropper::unavailable())
-        .unwrap();
-    click(&mut harness, "color.eyedropper");
     assert_eq!(
-        harness.state().inspect().unwrap().eyedropper,
-        Some(vibecut::services::color_picker::EyedropperState::Unavailable)
-    );
-    assert!(has_widget(&harness, "color.eyedropper.status"));
-    let dir = tempfile::tempdir().unwrap();
-    let store = PreferenceStore::new(dir.path().join("prefs.json"));
-    store.save(&harness.state().preferences).unwrap();
-    assert_eq!(
-        store.load_with_warning().0.recent_colors,
-        harness.state().preferences.recent_colors
-    );
-    assert_eq!(
-        harness.state().preferences.recent_colors.first(),
+        harness
+            .state()
+            .session
+            .project()
+            .data()
+            .recent_colors
+            .first(),
         Some(&Color([0, 0, 255, 128]))
     );
     let path =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-45-colour.png");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     harness.render().unwrap().save(&path).unwrap();
-    let swatch = vibecut::services::color_picker::palette::solid(5).unwrap();
+    let swatch = vibecut::services::color_picker::palette::recommended(5).unwrap();
     click(&mut harness, "color.swatch.5");
     assert!(matches!(item(&harness,fixture.text).content,ItemParams::Text(p) if p.color==swatch));
     click(&mut harness, "color.recent.1");
@@ -1357,7 +1350,6 @@ fn shared_picker_edits_background_graphic_and_canvas_through_commands() {
         }
         let committed = harness.state().session.project().clone();
         let history = harness.state().session.history_len();
-        let recents = harness.state().preferences.recent_colors.clone();
         let slider = widget_rect(&harness, "color.a.slider");
         harness.drag_at(slider.right_center());
         harness.run_steps(2);
@@ -1376,11 +1368,6 @@ fn shared_picker_edits_background_graphic_and_canvas_through_commands() {
         harness.run_steps(2);
         assert_eq!(harness.state().session.project(), &committed, "{button}");
         assert_eq!(harness.state().session.history_len(), history, "{button}");
-        assert_eq!(
-            harness.state().preferences.recent_colors,
-            recents,
-            "{button}"
-        );
         harness.drag_at(slider.right_center());
         harness.run_steps(2);
         harness.hover_at(slider.left_center());
@@ -1394,11 +1381,6 @@ fn shared_picker_edits_background_graphic_and_canvas_through_commands() {
         assert_eq!(
             harness.state().inspect().unwrap().color_preview,
             None,
-            "{button}"
-        );
-        assert_eq!(
-            harness.state().preferences.recent_colors,
-            recents,
             "{button}"
         );
         click(&mut harness, button);

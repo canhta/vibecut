@@ -1,7 +1,7 @@
 //! The validated project snapshot, its editable candidate and whole-project invariants.
 use super::item::{AudioSource, ItemParams, TextStyle, valid_volume};
 use super::scene::{Scene, SceneId, SceneScope, Scenes};
-use super::settings::{AspectPreset, Canvas, CanvasSize, Settings};
+use super::settings::{AspectPreset, Canvas, CanvasSize, Color, Settings};
 use super::track::TrackKind;
 use crate::{Error, Result};
 use captions::NfcText;
@@ -17,6 +17,8 @@ id!(TextPresetId);
 pub const MAX_CAPTION_PRESETS: usize = 64;
 /// Maximum number of named text styles in one project.
 pub const MAX_TEXT_PRESETS: usize = 64;
+/// Most recent colours a project keeps, newest first.
+pub const MAX_RECENT_COLORS: usize = 16;
 
 /// Whether a preset name is storable: 1..=64 extended graphemes, at most 256
 /// UTF-8 bytes, no controls, no leading or trailing whitespace. Input is never trimmed.
@@ -105,6 +107,8 @@ pub struct ProjectData {
     pub settings: Settings,
     pub caption_presets: Vec<SavedCaptionPreset>,
     pub text_presets: Vec<SavedTextPreset>,
+    /// Colours committed through the colour popover, newest first, without duplicates.
+    pub recent_colors: Vec<Color>,
 }
 impl ProjectData {
     /// Candidates with an invalid current ID read main; validation still refuses them.
@@ -152,6 +156,7 @@ impl Project {
             settings: Settings::default(),
             caption_presets: Vec::new(),
             text_presets: Vec::new(),
+            recent_colors: Vec::new(),
         })
     }
     pub fn data(&self) -> &ProjectData {
@@ -281,6 +286,14 @@ fn validate(data: &ProjectData) -> Result<()> {
             || !text_preset_names.insert(&preset.name)
         {
             return Err(Error::Invalid("text preset"));
+        }
+    }
+    if data.recent_colors.len() > MAX_RECENT_COLORS {
+        return Err(Error::TooLarge("recent colours"));
+    }
+    for (index, color) in data.recent_colors.iter().enumerate() {
+        if data.recent_colors[..index].contains(color) {
+            return Err(Error::Invalid("recent colour"));
         }
     }
     let c = &data.canvas;

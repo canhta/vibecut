@@ -34,6 +34,7 @@ impl Editor {
             disabled: std::collections::BTreeSet::new(),
             effect_targets: None,
             key_color_pick: self.player.key_color_pick.clone(),
+            colour_sampling: self.properties.sampling_colour(),
         }
     }
     /// Run `paint` with the timeline state and its context, then apply what it returns.

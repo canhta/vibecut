@@ -4,7 +4,6 @@ use crate::i18n;
 use crate::{
     editor::properties::{Action, ColorTarget, Id, Text, egui, theme},
     kit,
-    services::color_picker::palette,
 };
 use project::AspectPreset;
 
@@ -18,9 +17,6 @@ const RATES: [time::FrameRate; 5] = [
     time::FrameRate::FPS_120,
 ];
 
-const SWATCHES_PER_ROW: usize = 12;
-const SWATCH_SIZE: f32 = 20.0;
-const SWATCH_ROW: f32 = 24.0;
 /// Preference key of the Settings canvas section, which Modify opens.
 pub(super) const SECTION_KEY: &str = "inspector.canvas";
 
@@ -61,7 +57,6 @@ impl Panel<'_, '_> {
                     Text::CanvasBackground,
                     ColorTarget::Canvas,
                 );
-                panel.background_palette(ui);
             },
         );
         self.panel_section(
@@ -547,77 +542,5 @@ impl Panel<'_, '_> {
                 preset: Some(AspectPreset::Original),
             });
         }
-    }
-
-    fn background_palette(&mut self, ui: &mut egui::Ui) {
-        let current = self.cx.session.project().data().canvas.background;
-        self.swatch_palette(
-            ui,
-            current,
-            "inspector.canvas.palette",
-            "inspector.canvas_swatch",
-            Action::SetBackground,
-        );
-    }
-
-    /// The reference's solid swatch grid. `pick` builds the action for a swatch
-    /// click; `prefix` names the swatch ids for automation.
-    pub(super) fn swatch_palette(
-        &mut self,
-        ui: &mut egui::Ui,
-        current: project::Color,
-        scroll_id: &'static str,
-        prefix: &'static str,
-        pick: impl Fn(project::Color) -> Action,
-    ) {
-        let dark = self.cx.dark;
-        let rows = palette::SOLID.len().div_ceil(SWATCHES_PER_ROW);
-        egui::ScrollArea::vertical()
-            .id_salt(scroll_id)
-            .max_height(150.0)
-            .show_rows(ui, SWATCH_ROW, rows, |ui, range| {
-                ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
-                for row in range {
-                    ui.horizontal(|ui| {
-                        for column in 0..SWATCHES_PER_ROW {
-                            let index = row * SWATCHES_PER_ROW + column;
-                            let Some(color) = palette::solid(index) else {
-                                break;
-                            };
-                            let [r, g, b, a] = color.0;
-                            let (rect, response) = ui.allocate_exact_size(
-                                egui::Vec2::splat(SWATCH_SIZE),
-                                egui::Sense::click(),
-                            );
-                            ui.painter().rect_filled(
-                                rect,
-                                2.0,
-                                egui::Color32::from_rgba_unmultiplied(r, g, b, a),
-                            );
-                            if response.hovered() {
-                                ui.painter().rect_stroke(
-                                    rect,
-                                    2.0,
-                                    egui::Stroke::new(theme::space::HAIRLINE, theme::hover(dark)),
-                                    egui::StrokeKind::Inside,
-                                );
-                            }
-                            if current == color {
-                                ui.painter().rect_stroke(
-                                    rect,
-                                    2.0,
-                                    egui::Stroke::new(theme::space::HAIRLINE, theme::accent(dark)),
-                                    egui::StrokeKind::Inside,
-                                );
-                            }
-                            let response = response.on_hover_text(render::color::hex(color));
-                            self.remember(format!("{prefix}.{index}"), &response);
-                            if response.clicked() {
-                                self.actions.push(pick(color));
-                            }
-                        }
-                    });
-                }
-            });
     }
 }

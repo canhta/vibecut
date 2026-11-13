@@ -25,9 +25,10 @@ impl Editor {
         }
         // The armed eyedropper is a one-click mode: Escape leaves it without
         // also deselecting the clip whose panel opened it.
-        if self.player.key_color_pick.is_some() {
+        if self.player.key_color_pick.is_some() || self.properties.sampling_colour() {
             if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
                 self.player.key_color_pick = None;
+                self.properties.stop_sampling();
             }
             return;
         }

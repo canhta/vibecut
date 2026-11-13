@@ -111,7 +111,6 @@ pub(in crate::editor) enum Action {
         num: i64,
         den: i64,
     },
-    SetBackground(project::Color),
     /// One clip-background commit over the listed video items, one undo step.
     SetClipBackground {
         items: Vec<ItemId>,
@@ -208,9 +207,11 @@ pub(in crate::editor) enum Action {
     ColorPreview {
         command: engine::Command,
     },
+    /// One colour commit: the command and, when a picked colour, its recent-colour record
+    /// (one undo step together).
     ColorCommit {
         command: engine::Command,
-        recent: Vec<project::Color>,
+        record: Option<project::Color>,
     },
     /// Font picker commands, preferences and family selection.
     Font(super::font_picker::Action),

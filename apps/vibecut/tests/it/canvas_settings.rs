@@ -187,10 +187,12 @@ fn canvas_settings_pick_preset_custom_fps_swatch_reset_and_persist() {
     harness.key_press(egui::Key::Escape);
     harness.run_steps(2);
 
-    // The background section exposes the whole solid palette and commits one step.
+    // The background row opens the shared popover; its recommended grid commits one step.
     let history = harness.state().session.history_len().0;
-    let swatch = palette::solid(5).unwrap();
-    click(&mut harness, "inspector.canvas_swatch.5");
+    let swatch = palette::recommended(5).unwrap();
+    click(&mut harness, "inspector.canvas_background");
+    harness.run_steps(2);
+    click(&mut harness, "color.swatch.5");
     assert_eq!(canvas(&harness).background, swatch);
     assert_eq!(harness.state().session.history_len().0, history + 1);
 

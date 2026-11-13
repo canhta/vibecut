@@ -663,6 +663,7 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("project.set_canvas", Effect::Edit, true, true),
         ("project.set_fps", Effect::Edit, true, true),
         ("project.set_background", Effect::Edit, true, true),
+        ("project.record_recent_colour", Effect::Edit, true, true),
         ("timeline.set_item_param_many", Effect::Edit, true, true),
         ("audio.set_fade", Effect::Edit, true, true),
         ("audio.add_cleanup_effect", Effect::Edit, true, true),
