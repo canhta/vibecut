@@ -1330,6 +1330,48 @@ fn cli_retimes_linked_clips_and_the_export_follows_speed_and_pitch() {
         .count();
     let hertz = crossings as f64 / ((to - from) as f64 / 48000.0);
     assert!((hertz - 440.0).abs() < 15.0, "measured {hertz} Hz");
+
+    // Reverse then export: the same 0.5 s at 2x plays backwards with the same frame count.
+    exec(
+        &project,
+        "timeline.set_reverse",
+        json!({"items":[0,1],"reverse":true}),
+    );
+    assert_eq!(
+        info(&project)["duration"]["seconds"],
+        0.5,
+        "reverse keeps the span"
+    );
+    let reversed_path = dir.path().join("retime-reversed.mp4");
+    let output = cli(&[
+        os("export"),
+        project.as_os_str(),
+        os("--out"),
+        reversed_path.as_os_str(),
+        os("--json"),
+    ]);
+    assert_eq!(
+        code(&output),
+        0,
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let probe = tool_command("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "stream=codec_type,nb_frames,duration",
+            "-of",
+            "json",
+        ])
+        .arg(&reversed_path)
+        .output()
+        .unwrap();
+    let value: Value = serde_json::from_slice(&probe.stdout).unwrap();
+    let streams = value["streams"].as_array().unwrap();
+    let video_stream = streams.iter().find(|s| s["codec_type"] == "video").unwrap();
+    assert_eq!(video_stream["nb_frames"], "15", "reversed frame count");
 }
 
 #[test]

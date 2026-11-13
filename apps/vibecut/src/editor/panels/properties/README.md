@@ -43,7 +43,7 @@ compatible/selected count. A single element uses per-type tabs: Text (content, f
 background, position, size scrub, colour), Basic's Blend section (blend menu, opacity scrub), Audio
 (see below), and Speed for video and audio. Speed is a 0.01–5x scrub with a
 reset and, for items with audio, a `Change pitch` checkbox that is on while pitch
-follows speed (`maintain_pitch` off). Speed edits use `timeline.set_speed`, one undo
+follows speed (`maintain_pitch` off). A `Reverse` switch (video and audio) uses `timeline.set_reverse`, one undo step, and keeps the span. Speed edits use `timeline.set_speed`, one undo
 step per commit; trim bounds extend by the retimed output length. Caption generation
 refuses a retimed source item. The text button inserts a five-second title at the
 playhead in one undo step.

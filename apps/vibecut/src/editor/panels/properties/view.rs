@@ -631,6 +631,9 @@ impl<'a, 'c> Panel<'a, 'c> {
             maintain_pitch,
         });
     }
+    fn set_reverse(&mut self, item: ItemId, reverse: bool) {
+        self.actions.push(Action::SetReverse { item, reverse });
+    }
     fn set_effect_param(&mut self, item: ItemId, effect: &str, key: &str, value: f64) {
         self.actions.push(Action::SetEffectParam {
             item,

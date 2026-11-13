@@ -14,6 +14,7 @@ fn media(source_range: time::SourceRange, thousandths: u16, start: i64) -> Item 
             window: None,
             speed: Speed::from_thousandths(thousandths).unwrap(),
             maintain_pitch: false,
+            reverse: false,
         },
         masks: Vec::new(),
         effects: Vec::new(),
@@ -293,6 +294,7 @@ fn persistence_roundtrips_speed_and_pitch_and_refuses_invalid_retime() {
             window: None,
             speed: Speed::from_thousandths(speed).unwrap(),
             maintain_pitch: pitch,
+            reverse: false,
         };
         assert!(
             Project::new(candidate).is_err(),
@@ -347,5 +349,119 @@ fn long_retime_mapping_keeps_audio_and_video_within_one_sample_grid() {
                 "speed {thousandths}, n {n}"
             );
         }
+    }
+}
+
+#[test]
+fn reversed_clip_plays_its_source_backwards_and_cuts_keep_the_mapping() {
+    let second = TICKS_PER_SECOND;
+    for thousandths in SPEEDS {
+        let mut item = media(range(0, 4 * second), thousandths, 10 * second);
+        item.retime.reverse = true;
+        let end = item.end().unwrap();
+        let length = end.0 - item.start.0;
+        // The first output tick shows the last source tick and the mapping only falls.
+        assert_eq!(
+            item.source_time_at(item.start).unwrap(),
+            Tick(4 * second - 1),
+            "{thousandths}"
+        );
+        let mut previous = Tick(4 * second);
+        for step in 0..200 {
+            let at = Tick(item.start.0 + length * step / 200);
+            let source = item.source_time_at(at).unwrap();
+            assert!(
+                source <= previous && source >= Tick(0),
+                "{thousandths} {step}"
+            );
+            previous = source;
+        }
+        // The last output tick stays within a few ticks of the source start.
+        assert!(
+            item.source_time_at(Tick(end.0 - 1)).unwrap().0 <= 10,
+            "{thousandths}"
+        );
+        // Source -> output -> source is exact: the first output tick at or before a source tick.
+        for local in [0, 1, second / 3] {
+            let source = item.source_time_at(Tick(item.start.0 + local)).unwrap();
+            let at = item.output_time_of(source).unwrap();
+            assert_eq!(
+                item.source_time_at(at).unwrap(),
+                source,
+                "{thousandths} {local}"
+            );
+        }
+        for local in [1, 7, 99, length / 3] {
+            let at = Tick(item.start.0 + local);
+            let (left, right) = item.split_at(at).unwrap();
+            assert!(left.retime.reverse && right.retime.reverse);
+            assert_eq!(item.trim_start(at).unwrap(), right, "{thousandths} {local}");
+            assert_eq!(item.trim_end(at).unwrap(), left, "{thousandths} {local}");
+            let left_item = Item {
+                source_range: left.source_range,
+                start: left.start,
+                retime: left.retime,
+                ..item.clone()
+            };
+            let right_item = Item {
+                source_range: right.source_range,
+                start: right.start,
+                retime: right.retime,
+                ..item.clone()
+            };
+            assert_eq!(left_item.end().unwrap(), at);
+            assert_eq!(right_item.end().unwrap(), end, "no lost output ticks");
+            assert_eq!(left.source_range.end(), item.source_range.end());
+            assert_eq!(right.source_range.start(), item.source_range.start());
+            // Earlier output shows later source; the pieces meet within one tick.
+            assert!(right.source_range.end().0 <= left.source_range.start().0 + 1);
+            for t in [item.start, Tick(at.0 - 1), at, Tick(end.0 - 1)] {
+                let piece = if t < at { &left_item } else { &right_item };
+                assert_eq!(
+                    piece.source_time_at(t).unwrap(),
+                    item.source_time_at(t).unwrap(),
+                    "{thousandths} {local}"
+                );
+            }
+        }
+        // Frame index rows for 30 fps numbered frames 0..120 at whole-speed rates:
+        // output frame n shows source frame 119 - k*n, so no frame is duplicated or dropped.
+        let frame = second / 30;
+        if let Some(k) = [1i64, 2]
+            .into_iter()
+            .find(|k| i64::from(thousandths) == k * 1000)
+        {
+            for n in 0..120 / k {
+                let source = item.source_time_at(Tick(item.start.0 + n * frame)).unwrap();
+                assert_eq!(source.0 / frame, 119 - k * n, "{thousandths} frame {n}");
+            }
+        }
+        // A forward split piece flips in place: its window is mirrored, its span
+        // and duration stay, and flipping back restores it exactly.
+        let mut forward = item.clone();
+        forward.retime.reverse = false;
+        let (_, right) = forward.split_at(Tick(item.start.0 + length / 3)).unwrap();
+        let piece = Item {
+            source_range: right.source_range,
+            start: right.start,
+            retime: right.retime,
+            ..forward.clone()
+        };
+        let mut flipped = piece.clone();
+        flipped.set_reversed(true).unwrap();
+        assert!(flipped.retime.reverse);
+        assert_eq!(flipped.start, piece.start);
+        assert_eq!(flipped.duration().unwrap(), piece.duration().unwrap());
+        assert_eq!(flipped.end().unwrap(), piece.end().unwrap());
+        // The same source span, within the floored rounding of the mapping.
+        let slack = 2 * i64::from(thousandths.div_ceil(1000)) + 2;
+        assert!((flipped.source_range.start().0 - piece.source_range.start().0).abs() <= slack);
+        assert!((flipped.source_range.end().0 - piece.source_range.end().0).abs() <= slack);
+        flipped.set_reversed(false).unwrap();
+        assert_eq!(flipped.retime, piece.retime, "{thousandths}");
+        assert_eq!(flipped.source_range, piece.source_range, "{thousandths}");
+
+        let json = serde_json::to_string(&item.retime).unwrap();
+        assert_eq!(serde_json::from_str::<Retime>(&json).unwrap(), item.retime);
     }
 }

@@ -336,7 +336,7 @@ pub(crate) fn mix_raw(
             .source_range
             .start()
             .to_units(i64::from(rate), Rounding::Nearest)?;
-        let mut input = if item.retime.speed.is_unity() {
+        let mut input = if item.retime.speed.is_unity() && !item.retime.reverse {
             let source = origin
                 .checked_add(a - output_origin)
                 .ok_or(Error::Invalid("source sample position"))?;
@@ -347,7 +347,10 @@ pub(crate) fn mix_raw(
                 .end()
                 .to_units(i64::from(rate), Rounding::Nearest)?
                 - origin;
-            let pitch = if item.retime.maintain_pitch {
+            // A reversed item retimes the window's samples reversed, so the reversal
+            // lands before rate conversion and time stretch: pitch is kept as usual.
+            // At 1x the identity resampler (Follow, ratio 1) is exact.
+            let pitch = if item.retime.maintain_pitch && !item.retime.speed.is_unity() {
                 Pitch::Keep
             } else {
                 Pitch::Follow
@@ -362,10 +365,26 @@ pub(crate) fn mix_raw(
             let retimer = retimers
                 .get_mut(&item.id)
                 .ok_or(Error::Invalid("retime state"))?;
+            let reverse = item.retime.reverse;
             let mut pull = |at: i64, count: usize| -> Result<Vec<Vec<f32>>> {
-                Ok(sources
-                    .audio(asset, item.id, origin + at, count, rate, hooks)?
-                    .planes)
+                if !reverse {
+                    return Ok(sources
+                        .audio(asset, item.id, origin + at, count, rate, hooks)?
+                        .planes);
+                }
+                // Reversed sample `n` is window sample `length - 1 - n`: the block
+                // `[at, at + count)` is window `[length - at - count, length - at)`, reversed.
+                let first = length
+                    .checked_sub(at)
+                    .and_then(|t| t.checked_sub(count as i64))
+                    .ok_or(Error::Invalid("reversed source position"))?;
+                let mut planes = sources
+                    .audio(asset, item.id, origin + first, count, rate, hooks)?
+                    .planes;
+                for plane in &mut planes {
+                    plane.reverse();
+                }
+                Ok(planes)
             };
             let planes = retimer.read(a - output_origin, (b - a) as usize, &mut pull, hooks)?;
             let mut block = AudioBlock::new(

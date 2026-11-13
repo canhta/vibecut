@@ -550,7 +550,10 @@ fn deterministic_catalog_and_schema_document_receipts() {
         (Availability::CanUndo, &["undo"]),
         (Availability::CanRedo, &["redo"]),
         (Availability::Assets, &["media.remove"]),
-        (Availability::RetimableItem, &["timeline.set_speed"]),
+        (
+            Availability::RetimableItem,
+            &["timeline.set_speed", "timeline.set_reverse"],
+        ),
         (Availability::RemovableTrack, &["track.remove"]),
         (
             Availability::VisualItem,

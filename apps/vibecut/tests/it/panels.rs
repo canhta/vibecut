@@ -2593,6 +2593,21 @@ fn speed_tab_scrubs_resets_and_toggles_pitch_through_one_command() {
         project::Retime::default()
     );
 
+    // Reverse is one undo step that keeps the span; the switch reads back from the item.
+    let history = harness.state().session.history_len();
+    let span = item(&harness, fixture.video).duration().unwrap();
+    click(&mut harness, "inspector.speed.reverse");
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    let reversed = item(&harness, fixture.video);
+    assert!(reversed.retime.reverse);
+    assert_eq!(
+        reversed.duration().unwrap(),
+        span,
+        "reverse keeps the duration"
+    );
+    harness.state_mut().session.undo().unwrap();
+    assert!(!item(&harness, fixture.video).retime.reverse);
+
     // Audio items get the same controls; a video without audio has nothing to pitch-shift.
     select(&mut harness, fixture.audio);
     click(&mut harness, "inspector.tab.speed");
@@ -2624,6 +2639,11 @@ fn speed_tab_renders_the_retimed_clip_controls() {
     std::fs::create_dir_all(&target).unwrap();
     image.save(target.join("p1-41-retime.png")).unwrap();
     assert!(image.width() > 0 && image.height() > 0);
+    click(&mut harness, "inspector.speed.reverse");
+    harness.run_steps(3);
+    let reversed = harness.render().expect("offscreen render");
+    reversed.save(target.join("p1-65-reverse.png")).unwrap();
+    assert!(item(&harness, fixture.video).retime.reverse);
 }
 
 #[test]
