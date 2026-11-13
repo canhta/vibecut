@@ -110,17 +110,19 @@ fn captions_editor(
     editor.prepare_subtitles()?;
     if filled {
         editor
-            .with_subtitles(|panel, session, _| -> Result<(), Box<dyn std::error::Error>> {
-                panel.tick(session)?;
-                panel.edit_text(
-                    session,
-                    &"cue-0".into(),
-                    captions::LanguageTag::parse("en")?,
-                    "Hello, and welcome to the caption editor.",
-                )?;
-                panel.select_cue(session, 0, false, false)?;
-                Ok(())
-            })
+            .with_subtitles(
+                |panel, session, _| -> Result<(), Box<dyn std::error::Error>> {
+                    panel.tick(session)?;
+                    panel.edit_text(
+                        session,
+                        &"cue-0".into(),
+                        captions::LanguageTag::parse("en")?,
+                        "Hello, and welcome to the caption editor.",
+                    )?;
+                    panel.select_cue(session, 0, false, false)?;
+                    Ok(())
+                },
+            )
             .ok_or("captions missing")??;
         editor
             .playback
