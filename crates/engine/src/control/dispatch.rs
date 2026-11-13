@@ -50,12 +50,12 @@ fn sound_access<'a>(caller: &Caller<'a>) -> crate::session::Result<&'a super::So
         "sound library unavailable",
     ))
 }
-fn sticker_access<'a>(
-    caller: &Caller<'a>,
-) -> crate::session::Result<&'a super::StickerAccess<'a>> {
-    caller.stickers.ok_or(crate::session::EditError::Unsupported(
-        "sticker catalog unavailable",
-    ))
+fn sticker_access<'a>(caller: &Caller<'a>) -> crate::session::Result<&'a super::StickerAccess<'a>> {
+    caller
+        .stickers
+        .ok_or(crate::session::EditError::Unsupported(
+            "sticker catalog unavailable",
+        ))
 }
 fn brand_access<'a>(
     caller: &Caller<'a>,

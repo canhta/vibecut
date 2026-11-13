@@ -4,10 +4,10 @@ use super::libraries::{with_fonts, with_stickers};
 use crate::args::CliError;
 use crate::output::Output;
 use engine::Failure;
-use engine::control::{FontAccess, StickerAccess};
 use engine::control::{
     Caller, ControlResult, ErrorCode, MediaAccess, Policy, Response, ResponseValue,
 };
+use engine::control::{FontAccess, StickerAccess};
 use engine::jobs::{JobRunner, RunnerConfig, SystemClock};
 use engine::{Command, Session, control, control::Error as EngineError};
 use project::{Project, WriterLease};
@@ -50,7 +50,14 @@ pub(crate) fn control(
 ) -> Result<Output, CliError> {
     with_fonts(|fonts| {
         with_stickers(|stickers| {
-            control_with(context, project_path, allow_overwrite, save, fonts, stickers)
+            control_with(
+                context,
+                project_path,
+                allow_overwrite,
+                save,
+                fonts,
+                stickers,
+            )
         })
     })
 }

@@ -362,7 +362,10 @@ impl<'a> Renderer<'a> {
                     })
                     .collect::<Result<Vec<_>>>()?;
                 let has_passes = runs.iter().any(|run| !run.is_empty());
-                let graphic = matches!(item.content, ItemParams::Graphic(_) | ItemParams::Sticker(_));
+                let graphic = matches!(
+                    item.content,
+                    ItemParams::Graphic(_) | ItemParams::Sticker(_)
+                );
                 let final_opacity =
                     if graphic || masked || blended || has_passes || transform.active() {
                         let opacity = placement.opacity;
@@ -388,9 +391,9 @@ impl<'a> Renderer<'a> {
                         super::draw::draw_graphic(&mut out, item, local, placement, hooks)?
                     }
                     ItemParams::Sticker(p) => {
-                        if let Some(error) =
-                            super::sticker::draw_sticker(&mut out, item, p, local, placement, hooks)?
-                            && !self.sticker_errors.contains(&error)
+                        if let Some(error) = super::sticker::draw_sticker(
+                            &mut out, item, p, local, placement, hooks,
+                        )? && !self.sticker_errors.contains(&error)
                         {
                             self.sticker_errors.push(error);
                         }

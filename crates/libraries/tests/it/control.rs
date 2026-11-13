@@ -624,7 +624,11 @@ fn flag_search_matches_names_codes_regions_and_continents() {
 
     let everything = search_flags("", 100);
     assert_eq!(
-        (everything.total, everything.items.len(), everything.has_more),
+        (
+            everything.total,
+            everything.items.len(),
+            everything.has_more
+        ),
         (271, 100, true),
         "empty query returns every row, limited, with a total"
     );
@@ -692,15 +696,32 @@ fn recent_stickers_cap_order_dedupe_and_clear() {
     assert_eq!(recents.ids()[49], ids[221], "the oldest kept entry is last");
 
     assert!(recents.record(&ids[221]));
-    assert_eq!(recents.ids().len(), 50, "re-recording does not grow the list");
-    assert_eq!(recents.ids()[0], ids[221], "re-recording moves the id to the front");
+    assert_eq!(
+        recents.ids().len(),
+        50,
+        "re-recording does not grow the list"
+    );
+    assert_eq!(
+        recents.ids()[0],
+        ids[221],
+        "re-recording moves the id to the front"
+    );
     assert_eq!(recents.ids()[1], ids[270]);
 
-    assert!(recents.record(" flags:us "), "ids are trimmed and canonicalised");
+    assert!(
+        recents.record(" flags:us "),
+        "ids are trimmed and canonicalised"
+    );
     assert_eq!(recents.ids()[0], "flags:US");
-    assert!(!recents.record("flags:ZZ"), "unknown flag codes are refused");
+    assert!(
+        !recents.record("flags:ZZ"),
+        "unknown flag codes are refused"
+    );
     assert!(!recents.record("nope:x"), "unknown providers are refused");
-    assert!(!recents.record("shapes:pentagon"), "unknown shapes are refused");
+    assert!(
+        !recents.record("shapes:pentagon"),
+        "unknown shapes are refused"
+    );
     assert_eq!(recents.ids().len(), 50);
 
     let loaded = Recents::from_ids(
@@ -708,7 +729,11 @@ fn recent_stickers_cap_order_dedupe_and_clear() {
             .map(str::to_owned)
             .into_iter(),
     );
-    assert_eq!(loaded.ids(), ["flags:AD", "shapes:star"], "dedupe keeps the first");
+    assert_eq!(
+        loaded.ids(),
+        ["flags:AD", "shapes:star"],
+        "dedupe keeps the first"
+    );
 
     recents.clear();
     assert!(recents.ids().is_empty());
@@ -719,7 +744,10 @@ fn recent_stickers_persist_round_trip_and_refuse_malformed_files() {
     use libraries::stickers::Recents;
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("stickers").join("recents.json");
-    assert!(Recents::load(&path).unwrap().ids().is_empty(), "a missing file is empty");
+    assert!(
+        Recents::load(&path).unwrap().ids().is_empty(),
+        "a missing file is empty"
+    );
 
     let mut recents = Recents::default();
     recents.record("shapes:star");
@@ -846,8 +874,14 @@ fn sticker_commands_search_insert_undo_redo_and_round_trip() {
             json!({"sticker": "flags:vn", "start": 0, "duration": -1}),
         ),
     ] {
-        let response =
-            control_stickers(&mut s, &mut r, Some(&access), "stickers.insert", params, key);
+        let response = control_stickers(
+            &mut s,
+            &mut r,
+            Some(&access),
+            "stickers.insert",
+            params,
+            key,
+        );
         assert!(
             matches!(response.value, ResponseValue::Error(_)),
             "{key}: {response:?}"

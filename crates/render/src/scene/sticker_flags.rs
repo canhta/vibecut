@@ -1,6 +1,7 @@
 //! Bundled flag SVGs, one `include_bytes!` row per file under `assets/stickers/flags`, sorted by code.
 //! Generated from the directory listing; `cargo xtask assets` checks that every file has its sidecar.
 
+#[rustfmt::skip]
 pub(super) static FLAGS: &[(&str, &[u8])] = &[
     ("ad", include_bytes!("../../../../assets/stickers/flags/ad.svg")),
     ("ae", include_bytes!("../../../../assets/stickers/flags/ae.svg")),

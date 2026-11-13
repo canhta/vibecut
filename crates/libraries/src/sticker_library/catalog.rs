@@ -46,12 +46,17 @@ pub fn search_catalog(query: &str, category: StickerCategory, limit: Option<u32>
     let results = shapes
         .iter()
         .map(|shape| shape_entry(shape.value))
-        .chain(flags.iter().flat_map(|page| &page.items).map(|flag| StickerEntry {
-            id: build_sticker_id(FLAGS_PROVIDER, flag.code),
-            name: flag.name.to_owned(),
-            width: FLAG_SIZE.0,
-            height: FLAG_SIZE.1,
-        }))
+        .chain(
+            flags
+                .iter()
+                .flat_map(|page| &page.items)
+                .map(|flag| StickerEntry {
+                    id: build_sticker_id(FLAGS_PROVIDER, flag.code),
+                    name: flag.name.to_owned(),
+                    width: FLAG_SIZE.0,
+                    height: FLAG_SIZE.1,
+                }),
+        )
         .take(limit)
         .collect();
     StickerPage {

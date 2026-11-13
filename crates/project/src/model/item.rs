@@ -637,7 +637,9 @@ impl StickerParams {
     }
     /// The provider half of the id.
     pub fn provider(&self) -> &str {
-        self.sticker.split_once(':').map_or("", |(provider, _)| provider)
+        self.sticker
+            .split_once(':')
+            .map_or("", |(provider, _)| provider)
     }
     /// The value half of the id.
     pub fn value(&self) -> &str {
@@ -916,11 +918,7 @@ impl ItemParams {
     fn has_placed_box(&self) -> bool {
         matches!(
             self,
-            Self::Video(_)
-                | Self::Text(_)
-                | Self::Overlay(_)
-                | Self::Graphic(_)
-                | Self::Sticker(_)
+            Self::Video(_) | Self::Text(_) | Self::Overlay(_) | Self::Graphic(_) | Self::Sticker(_)
         )
     }
 }

@@ -1723,7 +1723,12 @@ fn stickers_draw_flags_and_shapes_and_report_missing_assets_with_a_placeholder()
     assert!(errors.is_empty());
     assert!(at(&circle, 64, 64)[3] > 0.99 && at(&circle, 1, 1)[3] < 0.01);
     let (diamond, _) = render("shapes:diamond", (512, 512));
-    for (x, y, inside) in [(64, 10, true), (10, 64, true), (20, 20, false), (4, 4, false)] {
+    for (x, y, inside) in [
+        (64, 10, true),
+        (10, 64, true),
+        (20, 20, false),
+        (4, 4, false),
+    ] {
         assert_eq!(at(&diamond, x, y)[3] > 0.99, inside, "diamond ({x}, {y})");
     }
     let (star, _) = render("shapes:star", (512, 512));

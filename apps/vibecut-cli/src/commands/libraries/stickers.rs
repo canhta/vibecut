@@ -41,9 +41,9 @@ fn stickers_search(context: &Context, args: Vec<OsString>) -> Result<Output, Cli
         let value = utf8(&arg, "stickers search argument")?;
         match value {
             "--category" => {
-                let raw = args
-                    .next()
-                    .ok_or_else(|| CliError::Usage("--category requires all, flags or shapes".into()))?;
+                let raw = args.next().ok_or_else(|| {
+                    CliError::Usage("--category requires all, flags or shapes".into())
+                })?;
                 category = utf8(&raw, "category")?.to_owned();
             }
             "--limit" => limit = Some(parse_u32(args.next(), "--limit")?),
