@@ -18,6 +18,7 @@ pub enum ParamTarget {
     Caption,
     Overlay,
     Sticker,
+    Effect,
     Rectangle,
     Ellipse,
     Polygon,
@@ -33,6 +34,7 @@ impl ParamTarget {
             ItemParams::Caption(_) => Self::Caption,
             ItemParams::Overlay(_) => Self::Overlay,
             ItemParams::Sticker(_) => Self::Sticker,
+            ItemParams::Effect(_) => Self::Effect,
             ItemParams::Graphic(GraphicParams::Rectangle { .. }) => Self::Rectangle,
             ItemParams::Graphic(GraphicParams::Ellipse { .. }) => Self::Ellipse,
             ItemParams::Graphic(GraphicParams::Polygon { .. }) => Self::Polygon,
@@ -418,13 +420,15 @@ pub const fn item_param(name: &str) -> Option<&'static ItemParam> {
 }
 
 use ParamTarget as T;
-/// Everything that draws a picture: all kinds except audio.
+/// Everything that takes a placement: all kinds except audio. An adjustment layer draws no
+/// picture, but its transform, opacity and blend place the region it adjusts.
 const PICTURE: &[T] = &[
     T::Video,
     T::Text,
     T::Caption,
     T::Overlay,
     T::Sticker,
+    T::Effect,
     T::Rectangle,
     T::Ellipse,
     T::Polygon,

@@ -22,7 +22,7 @@ Project, scene, track, item and bookmark IDs are separate `u64` newtypes; media 
 
 `Timeline` owns `overlays` (topmost first), one mandatory `main` Video track named `Main Track`, `audio` (topmost first), and persisted `magnet` state (default on). `iter` / `iter_mut` traverse bottom-to-top render order; UI reverses it. `insert_track` places a secondary track at the highest position of its group. An engine edit never removes main.
 
-Track kinds are Video, Audio, Text, Sticker, Effect, Filter and Adjustment. Captions share Text tracks. Generated solid-colour `ItemParams::Overlay` uses Video tracks. Sticker, Effect, Filter and Adjustment accept empty tracks.
+Track kinds are Video, Audio, Text, Sticker, Effect, Filter and Adjustment. Captions share Text tracks. Generated solid-colour `ItemParams::Overlay` uses Video tracks. Sticker, Effect, Filter and Adjustment accept empty tracks. `ItemParams::Effect(EffectParams)` is the standalone adjustment layer and lives on Effect tracks: it carries no content of its own (`params` is `{}`), generates its range like an overlay (no media reference, no retime, local content ticks) and takes the ordinary item effect stack, masks, transform, opacity and blend. The [render scene](../../../render/src/scene/README.md#adjustment-layers) applies that stack to everything composited below it.
 
 ## Items
 

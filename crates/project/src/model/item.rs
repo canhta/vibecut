@@ -654,6 +654,11 @@ pub struct CaptionParams {
 pub struct OverlayParams {
     pub color: Color,
 }
+/// A standalone adjustment layer: no picture of its own, only the item's effect stack, masks,
+/// transform, opacity and blend, applied to everything composited below it while it is active.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct EffectParams {}
 /// A bundled sticker: its `provider:value` id and the intrinsic pixel size captured at insert.
 /// Stickers take transform, blend and effects but no masks.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -933,6 +938,7 @@ pub enum ItemParams {
     Overlay(OverlayParams),
     Graphic(GraphicParams),
     Sticker(StickerParams),
+    Effect(EffectParams),
 }
 impl ItemParams {
     pub fn kind(&self) -> TrackKind {
@@ -943,6 +949,7 @@ impl ItemParams {
             Self::Caption(_) => TrackKind::Text,
             Self::Overlay(_) | Self::Graphic(_) => TrackKind::Video,
             Self::Sticker(_) => TrackKind::Sticker,
+            Self::Effect(_) => TrackKind::Effect,
         }
     }
     /// Visual kinds that carry a placed raster layer a reflection can mirror.
@@ -962,7 +969,12 @@ impl ItemParams {
     fn has_placed_box(&self) -> bool {
         matches!(
             self,
-            Self::Video(_) | Self::Text(_) | Self::Overlay(_) | Self::Graphic(_) | Self::Sticker(_)
+            Self::Video(_)
+                | Self::Text(_)
+                | Self::Overlay(_)
+                | Self::Graphic(_)
+                | Self::Sticker(_)
+                | Self::Effect(_)
         )
     }
 }
