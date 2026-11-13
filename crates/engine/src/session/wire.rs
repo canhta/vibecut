@@ -12,7 +12,7 @@ pub use clips::{
     ClipAdjustment, ClipCandidateView, ClipEdge, ClipEnergy, ClipExportShort, ClipPieceRange,
     ClipPieceSpan, ClipRefusal, ClipShotsDiagnostic, ClipSubtitleFile, ClipsResult,
 };
-pub use contract::{contract_schema, output_schema, reference_markdown, registry_hash};
+pub use contract::{contract_schema, output_schema, reference_markdown, registry_hash, skill_reference_markdown};
 pub use envelope::{
     API_VERSION, ControlError, ErrorCode, Event, Failure, JobFailurePolicy, Payload, Request,
     Response, ResponseValue, Revision,

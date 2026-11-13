@@ -31,5 +31,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         root.join("../../docs/product/agent-control/commands.md"),
         engine::control::reference_markdown()?,
     )?;
+    let skill = root.join("../../packaging/agent-kit/skills/vibecut/references/commands.md");
+    if let Some(parent) = skill.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(skill, engine::control::skill_reference_markdown())?;
     Ok(())
 }

@@ -97,3 +97,25 @@ payload in structuredContent. Attached UI and MCP share the selected Editor's Se
 store; other editors and headless processes start empty. No item or keyframe payload is
 written to the system clipboard. Transfer and lifetime:
 [clipboard](../../../crates/engine/src/session/README.md#clipboard).
+
+## Agent install
+
+The [agent kit](../../../packaging/agent-kit/README.md) is an Agent Skill (`skills/vibecut/`) teaching the loop open, inspect, run commands, preview, verify, export. It is also a Claude Code plugin root. Its `references/commands.md` is generated from the engine registry by `cargo xtask catalog`, and the registry digest test fails when it drifts; hand-written references never list commands. Each agent needs two things: the server entry from [Client configuration](#client-configuration) and the skill folder.
+
+| Agent | Skill | Server and instructions |
+|---|---|---|
+| Claude Code | `claude --plugin-dir <repo>/packaging/agent-kit`, or copy `skills/vibecut` to `~/.claude/skills/` (all projects) or `.claude/skills/` (committed to a repository) | `.mcp.json` above, or `claude mcp add vibecut -- <vibecut-cli> mcp <project>` |
+| Codex | Copy `skills/vibecut` to `~/.agents/skills/` or a repository's `.agents/skills/` | `config.toml` above; add the snippet below to `AGENTS.md` |
+| opencode | Copy `skills/vibecut` to `~/.config/opencode/skills/` or `.opencode/skills/`; it also reads `.claude/skills` and `.agents/skills` | `opencode.json` above, or `opencode mcp add vibecut -- <vibecut-cli> mcp <project>` |
+| Other MCP clients | Put `SKILL.md` and `references/` in the client's instructions or rules | Stdio server: `command` = `vibecut-cli`, `args` = `["mcp", "<project>"]`; no environment variables or token |
+
+Codex `AGENTS.md` snippet, for clients without skill support too:
+
+```md
+## VibeCut
+Edit video only through the `vibecut` MCP server. Read packaging/agent-kit/skills/vibecut/SKILL.md first. Always inspect before editing, pass `base_rev` and a fresh `idempotency_key` on every edit, and look at a preview frame before exporting.
+```
+
+Sources: Claude Code [plugins](https://code.claude.com/docs/en/plugins), [skills](https://code.claude.com/docs/en/skills) and [MCP](https://code.claude.com/docs/en/mcp); Codex [skill roots](https://github.com/openai/codex/blob/main/codex-rs/ext/skills/src/host_roots.rs), [stdio servers](https://github.com/openai/codex/blob/main/codex-rs/config/src/mcp_types.rs) and [AGENTS.md](https://github.com/openai/codex/blob/main/codex-rs/core/gpt_5_1_prompt.md); opencode [skills](https://opencode.ai/docs/skills.md) and [MCP servers](https://opencode.ai/docs/mcp-servers.md).
+
+`packaging/agent-kit/conformance.json` is the headless conformance script: initialize, inspect, edit, refused stale edit, undo, preview frame, refused export outside the output grant. `cargo test -p vibecut-cli` runs it through the stdio test client, and an agent harness replays the same steps through its own client and compares each step's `expect` pointers.

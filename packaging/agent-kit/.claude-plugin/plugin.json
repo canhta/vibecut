@@ -1,0 +1,4 @@
+{
+  "name": "vibecut",
+  "description": "Edit video projects in VibeCut through its MCP server and CLI: inspect, run commands, preview frames, verify, export."
+}

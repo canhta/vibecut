@@ -1,0 +1,7 @@
+# Permissions, consent and destructive actions
+
+- The command table lists every command, but not every command is open to you. Source-file imports (`import.add_asset`, sound and caption imports, `fonts.import`, font downloads), the project library (create, duplicate, trash, restore, purge) and UI gestures are refused with `permission`. Ask the person to do these in the app or CLI.
+- Output goes only to the directory the person granted when starting the server (`--output-dir`, or the app's output grant). The destination is an absolute immediate child of that directory and `overwrite` must be `false`. You cannot create directories or replace files.
+- AI features (`captions.generate`, `chapters.generate`, `fillers.classify`, remote `clips.suggest`) upload data only after the person approved the provider in the app. Without a stored approval they refuse before anything leaves the machine. Never retry with another provider to get around a refusal; the default `heuristic` clip suggestion uploads nothing.
+- Destructive edits are ordinary undoable commands: the session keeps 100 undo steps. Prefer one `batch` per intent so a single `undo` reverts it. Before a large removal, `inspect` and say what you will remove.
+- Headless mode saves on exit unless started with `--no-save`; `project.save` is explicit. With the desktop app attached, saving belongs to the app and `project.save` refuses.
