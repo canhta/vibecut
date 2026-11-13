@@ -846,7 +846,7 @@ pub(crate) fn stepper(ui: &mut Ui, id: &str, label: &str) -> (Response, Response
         let step_id = format!("{id}.{}", if up { "increase" } else { "decrease" });
         // A direct interaction, not a `push_id` scope: an empty scope still advances the
         // cursor by the item spacing, which would leave a gap after the stepper.
-        let response = ui.interact(cell, ui.id().with(&step_id), Sense::click());
+        let response = ui.interact(cell, ui.scope_id().with(&step_id), Sense::click());
         let center = egui::pos2(
             cell.center().x,
             cell.center().y + if up { 1.0 } else { -1.0 },
