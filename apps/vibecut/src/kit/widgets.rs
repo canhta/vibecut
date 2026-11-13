@@ -195,16 +195,18 @@ pub(crate) struct KeyframeControl<'a> {
 
 /// One hit cell of the keyframe cluster: hover fill, automation ID and focus ring.
 fn keyframe_cell(ui: &mut Ui, id: &str, area: Rect, enabled: bool) -> Response {
-    let sense = if enabled {
-        Sense::click()
+    let cell = ui.make_persistent_id(id);
+    let response = if enabled {
+        ui.interact(area, cell, Sense::click())
     } else {
-        // A press on a disabled arrow must not fall through to the toggle a few pixels
+        // A press on a disabled cell must not fall through to the toggle a few pixels
         // away (egui hands a click on a non-clicking widget to the closest clickable one).
         // This backstop takes the press; it is not focusable, so it has no AccessKit node.
         ui.interact(area, ui.make_persistent_id((id, "backstop")), Sense::CLICK);
-        Sense::hover()
+        // The cell itself is a disabled widget, so its response and node read disabled.
+        ui.add_enabled_ui(false, |ui| ui.interact(area, cell, Sense::hover()))
+            .inner
     };
-    let response = ui.interact(area, ui.make_persistent_id(id), sense);
     if enabled
         && (response.hovered() || response.has_focus() || response.is_pointer_button_down_on())
     {
