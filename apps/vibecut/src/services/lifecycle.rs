@@ -80,6 +80,8 @@ pub enum EditorAction {
     ImportMedia,
     ImportLut,
     ExportClips,
+    /// The folder the chapters page writes its sidecar pair into.
+    ChapterFolder,
     ExportSave,
     ExportCaption(CaptionOutput),
     SnapshotSave,

@@ -3,7 +3,7 @@
 //! `chapters.generate` job and export is `chapters.export_sidecars`; both are registry commands.
 //! The upload sheet is the panel's own `TaskEvents`, shared with every other text upload.
 use super::view::{Controls, time_text};
-use super::{Repaint, Subtitles, terminal};
+use super::{Subtitles, terminal};
 use crate::{
     egui,
     i18n::{self, Locale, Text},
@@ -24,7 +24,7 @@ use engine::{
     transcript::Cancellation,
 };
 use project::ItemParams;
-use std::{path::PathBuf, pin::Pin, sync::Arc, task::Poll};
+use std::{path::PathBuf, sync::Arc};
 
 /// Chapters requested per generation. The page offers no other count.
 const CHAPTER_LIMIT: usize = 10;
@@ -42,9 +42,9 @@ pub(super) struct Panel {
     pub(super) description: String,
     problem: Option<Text>,
     saved: Option<usize>,
-    /// The native folder dialog of the export, polled on every tick.
-    folder: Option<FolderPick>,
-    /// The folder the dialog chose; the next tick writes the pair into it.
+    /// Export was pressed: the next frame hands the window a folder-picker request.
+    pub(super) folder_requested: bool,
+    /// The folder the window's picker chose; the next tick writes the pair into it.
     pub(super) export_to: Option<PathBuf>,
 }
 
@@ -53,12 +53,6 @@ pub(super) struct Run {
     pub(super) id: JobId,
     pub(super) cancel: Cancellation,
     pub(super) events: Arc<TaskEvents>,
-}
-
-/// The pending folder dialog and the waker that repaints the window when it answers.
-struct FolderPick {
-    future: Pin<Box<dyn std::future::Future<Output = Option<rfd::FileHandle>> + Send>>,
-    waker: std::task::Waker,
 }
 
 impl Panel {
@@ -192,7 +186,7 @@ impl Subtitles {
             self.generate_chapters(session, options);
         }
         if export {
-            self.choose_folder(ui.ctx());
+            self.chapters.folder_requested = true;
         }
     }
 
@@ -248,16 +242,8 @@ impl Subtitles {
         }
     }
 
-    /// Open the native folder dialog for the export; its answer arrives on a later tick.
-    fn choose_folder(&mut self, ctx: &egui::Context) {
-        self.chapters.folder = Some(FolderPick {
-            future: Box::pin(rfd::AsyncFileDialog::new().pick_folder()),
-            waker: std::task::Waker::from(Arc::new(Repaint(ctx.clone()))),
-        });
-    }
-
-    /// Native folder-dialog injection: the same export the page's folder choice starts. The
-    /// next tick writes the pair; an existing pair is refused by the engine.
+    /// The folder the window's picker chose for the export, and the engine path every export
+    /// takes. The next tick writes the pair; an existing pair is refused by the engine.
     pub fn export_chapters_to(&mut self, dir: PathBuf) {
         self.chapters.export_to = Some(dir);
     }
@@ -265,21 +251,9 @@ impl Subtitles {
     /// Apply a finished chapter job and a chosen folder. Called on every tick, where the session
     /// is mutable.
     pub(super) fn tick_chapters(&mut self, session: &mut Session) {
-        self.poll_folder();
         self.finish_chapter_run();
         if let Some(dir) = self.chapters.export_to.take() {
             self.export_chapters(session, dir);
-        }
-    }
-
-    fn poll_folder(&mut self) {
-        let Some(pick) = self.chapters.folder.as_mut() else {
-            return;
-        };
-        let mut context = std::task::Context::from_waker(&pick.waker);
-        if let Poll::Ready(folder) = std::future::Future::poll(pick.future.as_mut(), &mut context) {
-            self.chapters.folder = None;
-            self.chapters.export_to = folder.map(|folder| folder.path().to_owned());
         }
     }
 

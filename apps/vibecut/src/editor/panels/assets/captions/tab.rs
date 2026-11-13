@@ -2,7 +2,7 @@
 use super::Subtitles;
 use crate::editor::panels::assets::State;
 use crate::editor::{Arc, Error, Port, Request, Result, Tick, egui};
-use crate::services::lifecycle::CaptionOutput;
+use crate::services::lifecycle::{CaptionOutput, EditorAction};
 use std::path::PathBuf;
 
 impl State {
@@ -101,6 +101,9 @@ impl State {
         }
         if let Some(model) = panel.requested_model.take() {
             requests.push(Request::OpenModel(model));
+        }
+        if std::mem::take(&mut panel.chapters.folder_requested) {
+            requests.push(Request::Lifecycle(EditorAction::ChapterFolder));
         }
         requests
     }

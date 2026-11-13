@@ -18,7 +18,10 @@ use std::{
 };
 use vibecut::{
     Editor, Subtitles, SubtitlesInspection, egui,
-    services::ai_access::{Opener, SharedConsent, TextOpener, TextTask},
+    services::{
+        ai_access::{Opener, SharedConsent, TextOpener, TextTask},
+        lifecycle::EditorAction,
+    },
 };
 #[path = "support/subtitles.rs"]
 mod fixture;
@@ -288,6 +291,21 @@ fn chapters_generate_waits_for_approval_and_export_writes_the_edited_title() {
     assert_eq!(document["title"], "Edited title");
     assert_eq!(document["description"], "Generated description");
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn chapters_export_asks_the_window_for_a_folder_and_writes_nothing_yet() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut h = chapter_harness(chapter_text_opener(false, calls), None);
+    generate_approved(&mut h);
+    let before = h.state().session.project().clone();
+    click(&mut h, "subtitles.chapters.export");
+    assert_eq!(
+        h.state_mut().take_lifecycle_action(),
+        Some(EditorAction::ChapterFolder),
+        "export asks the window's picker for a folder"
+    );
+    assert_eq!(h.state().session.project(), &before);
 }
 
 #[test]

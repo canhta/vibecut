@@ -74,7 +74,7 @@ the process credentials; no fallback exists.
 runs `chapters.generate` with 10 chapters; the job's own `TaskEvents` sheet gates the upload, so a
 refusal sends nothing and maps to the declined line (the job fails with the permission code). The
 panel's `busy`, consent sheet and cancel cover the run. Its title and description are drafts:
-export takes a folder from the picker (`Pick::ChapterDir`, applied on the next tick) and runs
+export raises `EditorAction::ChapterFolder`, the window's folder picker returns the folder through `export_chapters_to` (applied on the next tick), and the export runs
 `chapters.export_sidecars` with the drafts as the document, so the edited text is what is written.
 An existing pair is refused by the engine and reported; no success line appears for a failure.
 Blank titles are refused before the command. Remove selected passes exactly the checked candidate
