@@ -1,3 +1,4 @@
+//! Tract ONNX detector running the pinned vision models.
 use super::{
     FaceBox, FaceEmbedding, FaceFrame, IdentityFrame, PROMPTS, RECIPE, SceneFrame, SceneResult,
     SpeakerChunk, VisionDetector, VisionFingerprint, classify_embedding, decisions::decode_faces,

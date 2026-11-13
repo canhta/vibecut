@@ -1,3 +1,4 @@
+//! Speaker aggregation, scene classification and face decoding from raw detector outputs.
 use super::{
     ActiveSpeaker, Error, ExecutionHooks, MAX_CHUNKS, MAX_SHOT_FRAMES, MAX_TRACKS, SceneKind,
     SceneResult, TrackScores, finite,

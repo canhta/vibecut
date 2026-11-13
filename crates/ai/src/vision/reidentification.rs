@@ -1,3 +1,4 @@
+//! Face identity embedding input and bounded output validation.
 use super::{finite, sized};
 use crate::Error;
 

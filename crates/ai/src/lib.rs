@@ -1,31 +1,29 @@
 //! Offline provider policy and validated transcription/alignment/translation execution.
-#[cfg(feature = "candle-align")]
-pub mod alignment;
-pub mod anthropic;
-mod assembly;
-pub mod chapters;
-pub mod clips;
-mod contracts;
-pub mod conversation;
-pub mod elevenlabs;
-pub mod emphasis;
-pub mod fillers;
-#[cfg(feature = "gipformer")]
-pub mod gipformer;
-pub mod models;
-pub mod openai;
-mod remote;
+mod foundation;
+mod providers;
+mod recognition;
 pub mod speech;
-pub mod structured;
-mod translation;
-pub mod transport;
+mod text;
 pub mod vision;
-pub use translation::*;
+
+pub use foundation::{models, transport};
+pub use providers::{anthropic, elevenlabs, openai};
+#[cfg(feature = "candle-align")]
+pub use recognition::alignment;
+#[cfg(feature = "gipformer")]
+pub use recognition::gipformer;
 #[cfg(feature = "whisper")]
-pub mod whisper;
+pub use recognition::whisper;
+pub use text::{chapters, clips, conversation, emphasis, fillers, structured};
+
+use foundation::{contracts, remote};
+use recognition::assembly;
+use text::translation;
+
 pub use assembly::*;
 pub use contracts::*;
 pub use remote::{MAX_REMOTE_MODELS, UploadDisclosure, defaults, list_remote_models};
+pub use translation::*;
 
 /// Transcript-text operations accept these exact BCP 47 tags; `zh` is a request
 /// tag that adapters normalise rather than a distinct model language.

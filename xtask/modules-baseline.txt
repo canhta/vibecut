@@ -1,16 +1,4 @@
 doc	apps/vibecut/build.rs	first line is not a //! responsibility line
 doc	apps/vibecut/src/main.rs	first line is not a //! responsibility line
 doc	apps/vibecut/src/subtitles/view.rs	first line is not a //! responsibility line
-doc	crates/ai/src/alignment/mel.rs	first line is not a //! responsibility line
-doc	crates/ai/src/alignment/model.rs	first line is not a //! responsibility line
-doc	crates/ai/src/alignment/path.rs	first line is not a //! responsibility line
-doc	crates/ai/src/alignment/tokenize.rs	first line is not a //! responsibility line
-doc	crates/ai/src/assembly.rs	first line is not a //! responsibility line
-doc	crates/ai/src/bin/local_asr.rs	first line is not a //! responsibility line
-doc	crates/ai/src/clips/heuristic.rs	first line is not a //! responsibility line
-doc	crates/ai/src/clips/remote.rs	first line is not a //! responsibility line
-doc	crates/ai/src/vision/decisions.rs	first line is not a //! responsibility line
-doc	crates/ai/src/vision/reidentification.rs	first line is not a //! responsibility line
-doc	crates/ai/src/vision/tract.rs	first line is not a //! responsibility line
 folder	apps/vibecut/src	22 direct children (limit 12)
-folder	crates/ai/src	22 direct children (limit 12)

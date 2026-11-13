@@ -55,7 +55,7 @@ every other adapter returns `Unsupported`, which engine reports as `AutoLanguage
 
 `TextProvider` is the user's explicit transcript-text provider and model for the chapters and
 fillers operations, listed by `provider_options` and resolved by `choose_chapter` /
-`choose_filler`; there is no fallback, and [`ai::defaults`](../../../ai/src/remote/defaults.rs) owns the shipped model ids. `TextAccess::open(provider, credentials, consent)`
+`choose_filler`; there is no fallback, and [`ai::defaults`](../../../ai/src/foundation/remote/defaults.rs) owns the shipped model ids. `TextAccess::open(provider, credentials, consent)`
 builds the chapter adapter, the filler classifier and the emphasis selector once (`with_emphasis` adds one to a `new` access; `prepare_emphasis` refuses `ConsentRequired` without it); `TextAccess::new(chapters,
 fillers, consent)` lends already built ones. Composition roots construct one access per process
 and lend it through `control::Caller.chapters`; the desktop shares it with its MCP inbox with

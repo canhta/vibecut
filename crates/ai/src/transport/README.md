@@ -1,7 +1,0 @@
-# Transport
-
-`ApiKey` is the provider credential: `new` admits a printable ASCII key of at most 4096 bytes, never serialized or logged, and Debug always redacts it. `wav`/`wav_bytes` encode validated mono PCM16 audio and `Multipart` builds bounded upload forms for transcription and speech adapters.
-
-Bounded HTTPS itself lives in the [`transport` crate](../../../transport/README.md): `HttpRequest`, `HttpResponse`, `HttpTransport`, `DownloadTransport`, `UreqTransport`, `download_redirect`, `retry_after` and `transport::Error`. This module imports those seams and re-exports none of them, so the network policy, timeout and `ureq` declaration have one owner. `From<transport::Error>` maps `Invalid`/`Payload`/`Network` onto the existing `ai::Error` variants; adapters therefore keep their public error results.
-
-`TextModel` is the one structured text-model request path over that transport. `new` admits exactly one official backend, base URL and model-bound settings fingerprint; `send` takes one `TextRequest` (prompt name/instructions, schema, exact payload, stage, hooks and byte ceiling), builds the OpenAI Responses or Anthropic Messages body, checks the per-operation wire and consent byte ceilings, observes cancellation, and returns only the decoded JSON object. Operation owners (`chapters`, `fillers`) supply the prompt, schema name/schema and typed result validation; the transport never retries or switches provider.

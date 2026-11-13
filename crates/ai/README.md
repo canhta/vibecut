@@ -8,23 +8,27 @@ Adapters cap response-parser allocation before building transport records; engin
 
 | Module | Contract |
 |---|---|
-| `alignment/` | [Local Candle alignment](src/alignment/README.md) |
-| `anthropic.rs` | [Anthropic translator](src/anthropic/README.md) |
-| `assembly.rs` | [Recognition and time](src/assembly/README.md) |
-| `chapters/` | [Chapter generation](src/chapters/README.md) |
-| `clips/` | [Transcript clip suggestions](src/clips/README.md) |
-| `contracts.rs` | [Provider contracts](src/contracts/README.md) |
-| `conversation/` | [Agent chat conversation](src/conversation/README.md) |
-| `elevenlabs.rs` | [ElevenLabs transcription and speech synthesis](src/elevenlabs/README.md) |
-| `emphasis/` | [Caption emphasis selection](src/emphasis/README.md) |
-| `fillers/` | [Filler classification](src/fillers/README.md) |
-| `gipformer/` | [Local Gipformer](src/gipformer/README.md) |
-| `models.rs` | [Model catalog and language-neutral weights](src/models/README.md) |
-| `openai/` | [OpenAI adapters](src/openai/README.md) |
-| `remote.rs` | [Shared remote provider admission](src/remote/README.md) |
-| `speech.rs` | [Speech synthesis](src/speech/README.md) |
-| `structured.rs` | [source](src/structured.rs) |
-| `translation.rs` | [Contextual text translation](src/translation/README.md) |
-| `transport/` | [Provider credentials, payload encoding and structured text-model request](src/transport/README.md) |
+| `foundation/` | [Contracts, remote admission, models, transport](src/foundation/README.md) |
+| `foundation/contracts/` | [Provider contracts](src/foundation/contracts/README.md) |
+| `foundation/models/` | [Model catalog and language-neutral weights](src/foundation/models/README.md) |
+| `foundation/remote/` | [Shared remote provider admission](src/foundation/remote/README.md) |
+| `foundation/transport/` | [Provider credentials, payload encoding and structured text-model request](src/foundation/transport/README.md) |
+| `providers/` | [Remote provider adapters](src/providers/README.md) |
+| `providers/anthropic/` | [Anthropic translator](src/providers/anthropic/README.md) |
+| `providers/elevenlabs/` | [ElevenLabs transcription and speech synthesis](src/providers/elevenlabs/README.md) |
+| `providers/openai/` | [OpenAI adapters](src/providers/openai/README.md) |
+| `recognition/` | [Local recognition engines and assembly](src/recognition/README.md) |
+| `recognition/alignment/` | [Local Candle alignment](src/recognition/alignment/README.md) |
+| `recognition/assembly/` | [Recognition and time](src/recognition/assembly/README.md) |
+| `recognition/gipformer/` | [Local Gipformer](src/recognition/gipformer/README.md) |
+| `recognition/whisper/` | [Local Whisper](src/recognition/whisper/README.md) |
+| `speech/` | [Speech synthesis](src/speech/README.md) |
+| `text/` | [Transcript-text operations](src/text/README.md) |
+| `text/chapters/` | [Chapter generation](src/text/chapters/README.md) |
+| `text/clips/` | [Transcript clip suggestions](src/text/clips/README.md) |
+| `text/conversation/` | [Agent chat conversation](src/text/conversation/README.md) |
+| `text/emphasis/` | [Caption emphasis selection](src/text/emphasis/README.md) |
+| `text/fillers/` | [Filler classification](src/text/fillers/README.md) |
+| `text/structured` | [Strict JSON format and parser](src/text/README.md) |
+| `text/translation/` | [Contextual text translation](src/text/translation/README.md) |
 | `vision/` | [Local vision detectors](src/vision/README.md) |
-| `whisper/` | [Local Whisper](src/whisper/README.md) |

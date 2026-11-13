@@ -13,7 +13,7 @@ SFace attribution and licence disposition: [SFACE.attribution](../../SFACE.attri
 Media supplies borrowed, finite prepared tensors through validated constructors:
 
 - `FaceFrame`: `[1,3,384,640]` CHW BGR, values 0..=255, bottom/right letterbox. Returned boxes use prepared pixels, may extend past the frame and are not clipped. YuNet score threshold 0.6, IoU NMS threshold 0.3, top 5000 candidates, at most 256 boxes (excess is a typed failure).
-- `SceneFrame`: `[1,3,224,224]` RGB, CLIP normalized; media owns resize/crop and mean/std. The two fixed CLIP prompts (see [models](../models/README.md)) are derived once per loaded bundle, kept in memory and fingerprinted; the towers and prompt plan are not retained. No text inference per frame.
+- `SceneFrame`: `[1,3,224,224]` RGB, CLIP normalized; media owns resize/crop and mean/std. The two fixed CLIP prompts (see [models](../foundation/models/README.md)) are derived once per loaded bundle, kept in memory and fingerprinted; the towers and prompt plan are not retained. No text inference per frame.
 - `SpeakerChunk`: 25..=75 frames at 25 fps, 112x112 grayscale 0..=255, and exactly four 13-coefficient MFCC frames per video frame (100 Hz), absolute values capped at 1e6. Media owns the crop/MFCC recipe; ai does no padding, tracking, decoding or timestamp conversion.
 
 The adapter verifies and owns the exact bytes it parses, including external data files. It decodes from the verified slice without a second whole-file buffer and inlines external slices before ONNX loading; no path resolver or mutable mmap touches weights. For ASD it checks input names, f32 and ranks, clears input dimension annotations, output shapes and stale `value_info`, then binds concrete input facts without changing weights or operators.
