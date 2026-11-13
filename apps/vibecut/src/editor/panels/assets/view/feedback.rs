@@ -55,19 +55,7 @@ pub(in crate::editor) fn import_overlay(
                             actions.push(Action::Command("import.cancel".into()));
                         }
                     });
-                    let (bar, _) = ui.allocate_exact_size(
-                        Vec2::new(ui.available_width(), 2.0),
-                        egui::Sense::hover(),
-                    );
-                    ui.painter().rect_filled(bar, 0.0, theme::field(cx.dark));
-                    ui.painter().rect_filled(
-                        Rect::from_min_size(
-                            bar.min,
-                            Vec2::new(bar.width() * percent as f32 / 100.0, bar.height()),
-                        ),
-                        0.0,
-                        theme::accent(cx.dark),
-                    );
+                    crate::kit::progress_bar(ui, "import.progress", state.import_fraction());
                     ui.label(
                         egui::RichText::new(i18n::format(
                             cx.locale,
@@ -125,36 +113,23 @@ pub(in crate::editor) fn toast(toast: Option<&Toast>, cx: &Context<'_>, ctx: &eg
     let Some(toast) = toast else {
         return;
     };
-    let text = toast.text.clone();
-    let detail = toast.detail.clone();
-    egui::Area::new(Id::unique("import.toast"))
-        .order(egui::Order::Foreground)
-        .anchor(egui::Align2::RIGHT_BOTTOM, Vec2::new(-16.0, -16.0))
-        .show(ctx, |ui| {
-            egui::Frame::new()
-                .fill(theme::panel(cx.dark))
-                .stroke(egui::Stroke::new(1.0, theme::border(cx.dark)))
-                .corner_radius(12)
-                .inner_margin(12)
-                .show(ui, |ui| {
-                    ui.set_max_width(320.0);
-                    let response = ui.label(
-                        egui::RichText::new(text)
-                            .size(theme::type_size::CHROME)
-                            .strong(),
-                    );
-                    response.ctx.accesskit_node_builder(response.id, |node| {
-                        node.set_author_id("import.toast");
-                    });
-                    if let Some(detail) = detail {
-                        ui.label(
-                            egui::RichText::new(detail)
-                                .small()
-                                .color(theme::secondary(cx.dark)),
-                        );
-                    }
-                });
+    crate::kit::toast(ctx, "import.toast", |ui| {
+        let response = ui.label(
+            egui::RichText::new(toast.text.as_str())
+                .size(theme::type_size::CHROME)
+                .strong(),
+        );
+        response.ctx.accesskit_node_builder(response.id, |node| {
+            node.set_author_id("import.toast");
         });
+        if let Some(detail) = &toast.detail {
+            ui.label(
+                egui::RichText::new(detail.as_str())
+                    .small()
+                    .color(theme::secondary(cx.dark)),
+            );
+        }
+    });
 }
 
 fn remember(actions: &mut Vec<Action>, id: &str, response: &egui::Response, glyph: Option<Icon>) {

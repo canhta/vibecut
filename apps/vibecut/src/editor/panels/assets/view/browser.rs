@@ -103,6 +103,11 @@ impl View<'_> {
                         } else {
                             Text::AssetsNoMatches
                         },
+                        if self.cx.failed {
+                            crate::kit::Tone::Error
+                        } else {
+                            crate::kit::Tone::Quiet
+                        },
                     );
                 } else {
                     self.grid(ui, &rows);

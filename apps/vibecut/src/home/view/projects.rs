@@ -103,15 +103,18 @@ pub(super) fn section(
                     Text::ProjectsNoResults
                 };
                 ui.add_space(24.0);
-                ui.vertical_centered(|ui| {
-                    ui.add(kit::tinted(
-                        if trash { Icon::Trash } else { Icon::FilmStrip },
-                        24.0,
-                        kit::secondary(dark),
-                    ));
-                    ui.add_space(8.0);
-                    ui.label(egui::RichText::new(tr(text)).color(kit::secondary(dark)));
-                });
+                let (rect, _) = ui.allocate_exact_size(
+                    egui::vec2(ui.available_width(), kit::size::PANEL_STATE),
+                    egui::Sense::hover(),
+                );
+                kit::panel_state(
+                    ui,
+                    "projects.state",
+                    rect,
+                    if trash { Icon::Trash } else { Icon::FilmStrip },
+                    tr(text),
+                    kit::Tone::Quiet,
+                );
             } else {
                 ui.add_enabled_ui(!state.busy(), |ui| match projects.view {
                     ProjectsView::Grid => grid(ui, state, &shown, locale, &mut actions),

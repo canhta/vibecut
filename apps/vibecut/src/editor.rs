@@ -80,15 +80,6 @@ impl Editor {
     pub(in crate::editor) fn tr(&self, key: Text) -> &'static str {
         i18n::text(self.preferences.locale, key)
     }
-    pub(in crate::editor) fn accent(&self) -> Color32 {
-        theme::accent(self.preferences.dark)
-    }
-    pub(in crate::editor) fn panel_fill(&self) -> Color32 {
-        theme::panel(self.preferences.dark)
-    }
-    pub(in crate::editor) fn secondary(&self) -> Color32 {
-        theme::secondary(self.preferences.dark)
-    }
     /// Inject the catalog command adapter. Production opens it lazily; tests
     /// and audits supply a recording fake.
     pub fn set_font_backend(&mut self, backend: Box<dyn properties::font_picker::Backend>) {
@@ -692,7 +683,7 @@ impl Editor {
         self.frame.widgets.clear();
         self.tick();
         ui.painter()
-            .rect_filled(ui.max_rect(), 0.0, self.panel_fill());
+            .rect_filled(ui.max_rect(), 0.0, theme::panel(self.preferences.dark));
         self.frame.panels.insert("media", ui.max_rect());
         self.show_assets(ui);
         self.show_import_overlay(ui.ctx());

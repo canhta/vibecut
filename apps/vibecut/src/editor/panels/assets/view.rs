@@ -215,11 +215,21 @@ pub(in crate::editor) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) 
                 {
                     view.actions.push(Action::Command("text.insert".into()));
                 }
-                view.empty(ui, Icon::TextT, Text::AssetsNoStyles);
+                view.empty(
+                    ui,
+                    Icon::TextT,
+                    Text::AssetsNoStyles,
+                    crate::kit::Tone::Quiet,
+                );
             }
             tab => {
                 let _ = tab;
-                view.empty(ui, Icon::FolderOpen, Text::AssetsUnavailable);
+                view.empty(
+                    ui,
+                    Icon::FolderOpen,
+                    Text::AssetsUnavailable,
+                    crate::kit::Tone::Quiet,
+                );
             }
         }
     });
@@ -282,7 +292,12 @@ impl View<'_> {
     fn adjustment(&mut self, ui: &mut egui::Ui) {
         let presets = self.cx.preferences.adjustment_presets.clone();
         if presets.is_empty() {
-            self.empty(ui, Icon::SlidersHorizontal, Text::AdjustmentPresetsEmpty);
+            self.empty(
+                ui,
+                Icon::SlidersHorizontal,
+                Text::AdjustmentPresetsEmpty,
+                crate::kit::Tone::Quiet,
+            );
             return;
         }
         for (index, preset) in presets.iter().enumerate() {
@@ -424,17 +439,8 @@ impl View<'_> {
         );
         self.remember("assets.search", &response, None);
     }
-    fn empty(&mut self, ui: &mut egui::Ui, glyph: Icon, label: Text) {
+    fn empty(&mut self, ui: &mut egui::Ui, glyph: Icon, label: Text, tone: crate::kit::Tone) {
         let rect = ui.available_rect_before_wrap();
-        let center = egui::pos2(rect.center().x, rect.top() + rect.height() * 0.36);
-        icons::tinted(glyph, 32.0, theme::secondary(self.cx.preferences.dark))
-            .paint_at(ui, Rect::from_center_size(center, Vec2::splat(32.0)));
-        ui.painter().text(
-            center + Vec2::new(0.0, 32.0),
-            Align2::CENTER_TOP,
-            self.tr(label),
-            FontId::proportional(theme::type_size::BODY),
-            theme::secondary(self.cx.preferences.dark),
-        );
+        crate::kit::panel_state(ui, "assets.state", rect, glyph, self.tr(label), tone);
     }
 }

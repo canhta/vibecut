@@ -516,15 +516,28 @@ impl Subtitles {
                         .as_ref()
                         .and_then(|(id, _)| self.runner.snapshot(*id))
                     {
-                        crate::services::progress::job_progress(ui, &job, locale);
+                        crate::services::progress::job_progress(
+                            ui,
+                            "subtitles.progress",
+                            &job,
+                            locale,
+                        );
                     } else {
-                        ui.label(controls.tr(if snapshot.cancelling {
+                        let status = controls.tr(if snapshot.cancelling {
                             Text::ShortsCancelling
                         } else {
                             stage_text(snapshot.stage)
-                        }));
+                        });
                         if let Some(progress) = snapshot.progress {
-                            ui.add(egui::ProgressBar::new(progress).show_percentage());
+                            crate::services::progress::line(
+                                ui,
+                                "subtitles.progress",
+                                locale,
+                                status,
+                                progress,
+                            );
+                        } else {
+                            ui.label(status);
                         }
                     }
                     if controls.button(
@@ -1578,86 +1591,88 @@ impl Subtitles {
         let Some(upload) = upload else {
             return;
         };
-        let modal = egui::Modal::new(egui::Id::unique("subtitles.consent")).show(ctx, |ui| {
-            ui.set_width(380.0);
-            ui.heading(c.tr(Text::SubApprove));
-            ui.label(i18n::format(
-                c.locale,
-                Text::ShortsUploadIdentity,
-                &[
-                    ("provider", &upload.provider),
-                    ("model", &upload.model),
-                    ("languages", &upload.languages),
-                ],
-            ));
-            ui.label(c.tr(if upload.operation == CatalogOperation::Transcribe {
-                Text::ShortsUploadAudio
-            } else {
-                Text::ShortsUploadTranscript
-            }));
-            if matches!(upload.cost, Cost::Unknown) {
+        let modal = egui::Modal::new(egui::Id::unique("subtitles.consent"))
+            .frame(crate::kit::dialog_frame(ctx))
+            .show(ctx, |ui| {
+                ui.set_width(380.0);
+                crate::kit::dialog_title(ui, c.tr(Text::SubApprove));
                 ui.label(i18n::format(
                     c.locale,
-                    Text::ShortsValue,
+                    Text::ShortsUploadIdentity,
                     &[
-                        ("label", c.tr(Text::ShortsSeconds)),
-                        ("value", &i18n::decimal(c.locale, upload.audio_seconds, 2)),
+                        ("provider", &upload.provider),
+                        ("model", &upload.model),
+                        ("languages", &upload.languages),
                     ],
                 ));
-                ui.label(c.tr(Text::ShortsUnknownCost));
-            } else {
-                ui.label(i18n::format(
-                    c.locale,
-                    Text::SubDisclosure,
-                    &[
-                        ("seconds", &i18n::decimal(c.locale, upload.audio_seconds, 2)),
-                        ("cost", &cost_text(c.locale, &upload.cost)),
-                    ],
-                ));
-            }
-            for (i, (_, url)) in upload.terms.iter().enumerate() {
-                if url.starts_with("https://") {
-                    let r = ui.hyperlink_to(c.tr(Text::SubProviderPolicy), url);
-                    c.remember(format!("subtitles.consent.policy.{i}"), &r);
+                ui.label(c.tr(if upload.operation == CatalogOperation::Transcribe {
+                    Text::ShortsUploadAudio
+                } else {
+                    Text::ShortsUploadTranscript
+                }));
+                if matches!(upload.cost, Cost::Unknown) {
+                    ui.label(i18n::format(
+                        c.locale,
+                        Text::ShortsValue,
+                        &[
+                            ("label", c.tr(Text::ShortsSeconds)),
+                            ("value", &i18n::decimal(c.locale, upload.audio_seconds, 2)),
+                        ],
+                    ));
+                    ui.label(c.tr(Text::ShortsUnknownCost));
+                } else {
+                    ui.label(i18n::format(
+                        c.locale,
+                        Text::SubDisclosure,
+                        &[
+                            ("seconds", &i18n::decimal(c.locale, upload.audio_seconds, 2)),
+                            ("cost", &cost_text(c.locale, &upload.cost)),
+                        ],
+                    ));
                 }
-            }
-            let mut acknowledged = false;
-            if let Some(active) = &self.active
-                && let Ok(mut state) = active.events.state.lock()
-                && let Some(pending) = &mut state.upload
-            {
-                if matches!(upload.cost, engine::providers::Cost::Unknown) {
-                    let response = ui.checkbox(
-                        &mut pending.price_acknowledged,
-                        c.tr(Text::ModelRemoteUnknownPrice),
-                    );
-                    c.remember("subtitles.consent.unknown_price", &response);
+                for (i, (_, url)) in upload.terms.iter().enumerate() {
+                    if url.starts_with("https://") {
+                        let r = ui.hyperlink_to(c.tr(Text::SubProviderPolicy), url);
+                        c.remember(format!("subtitles.consent.policy.{i}"), &r);
+                    }
                 }
-                acknowledged = pending.price_acknowledged;
-            }
-            ui.horizontal(|ui| {
-                if c.button(
-                    ui,
-                    "subtitles.consent.approve",
-                    Text::ShortsConsent,
-                    Icon::UploadSimple,
-                    !matches!(upload.cost, engine::providers::Cost::Unknown) || acknowledged,
-                ) {
-                    let result = self.approve_upload(true);
-                    self.ui_result(result);
+                let mut acknowledged = false;
+                if let Some(active) = &self.active
+                    && let Ok(mut state) = active.events.state.lock()
+                    && let Some(pending) = &mut state.upload
+                {
+                    if matches!(upload.cost, engine::providers::Cost::Unknown) {
+                        let response = ui.checkbox(
+                            &mut pending.price_acknowledged,
+                            c.tr(Text::ModelRemoteUnknownPrice),
+                        );
+                        c.remember("subtitles.consent.unknown_price", &response);
+                    }
+                    acknowledged = pending.price_acknowledged;
                 }
-                if c.button(
-                    ui,
-                    "subtitles.consent.deny",
-                    Text::ShortsDeny,
-                    Icon::X,
-                    true,
-                ) {
-                    let result = self.approve_upload(false);
-                    self.ui_result(result);
-                }
+                ui.horizontal(|ui| {
+                    if c.button(
+                        ui,
+                        "subtitles.consent.approve",
+                        Text::ShortsConsent,
+                        Icon::UploadSimple,
+                        !matches!(upload.cost, engine::providers::Cost::Unknown) || acknowledged,
+                    ) {
+                        let result = self.approve_upload(true);
+                        self.ui_result(result);
+                    }
+                    if c.button(
+                        ui,
+                        "subtitles.consent.deny",
+                        Text::ShortsDeny,
+                        Icon::X,
+                        true,
+                    ) {
+                        let result = self.approve_upload(false);
+                        self.ui_result(result);
+                    }
+                });
             });
-        });
         if modal.should_close() {
             let result = self.approve_upload(false);
             self.ui_result(result);
@@ -1749,27 +1764,29 @@ impl Subtitles {
         }
         let mut confirmed = false;
         let mut cancelled = false;
-        let modal = egui::Modal::new(egui::Id::unique("subtitles.overwrite")).show(ctx, |ui| {
-            ui.heading(c.tr(Text::SubOverwrite));
-            if c.button(
-                ui,
-                "subtitles.overwrite.confirm",
-                Text::SubOverwrite,
-                Icon::Export,
-                true,
-            ) {
-                confirmed = true;
-            }
-            if c.button(
-                ui,
-                "subtitles.overwrite.cancel",
-                Text::Cancel,
-                Icon::X,
-                true,
-            ) {
-                cancelled = true;
-            }
-        });
+        let modal = egui::Modal::new(egui::Id::unique("subtitles.overwrite"))
+            .frame(crate::kit::dialog_frame(ctx))
+            .show(ctx, |ui| {
+                crate::kit::dialog_title(ui, c.tr(Text::SubOverwrite));
+                if c.button(
+                    ui,
+                    "subtitles.overwrite.confirm",
+                    Text::SubOverwrite,
+                    Icon::Export,
+                    true,
+                ) {
+                    confirmed = true;
+                }
+                if c.button(
+                    ui,
+                    "subtitles.overwrite.cancel",
+                    Text::Cancel,
+                    Icon::X,
+                    true,
+                ) {
+                    cancelled = true;
+                }
+            });
         if confirmed && let Some((path, kind)) = self.overwrite.take() {
             let result = self.export_file(session, path, kind, options, true);
             self.ui_result(result);

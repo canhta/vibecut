@@ -1,4 +1,4 @@
-//! One engine-job stage line and progress bar for every job surface.
+//! One status line with its percentage and progress bar for every job surface.
 use crate::{
     egui,
     i18n::{self, Locale, Text},
@@ -6,7 +6,7 @@ use crate::{
 use engine::jobs::{JobSnapshot, JobStage};
 
 /// The export and shorts surfaces render the same engine stages and fraction.
-pub fn job_progress(ui: &mut egui::Ui, snapshot: &JobSnapshot, locale: Locale) {
+pub fn job_progress(ui: &mut egui::Ui, id: &str, snapshot: &JobSnapshot, locale: Locale) {
     let stage = match snapshot.stage {
         JobStage::Queued | JobStage::Starting => Text::ExportQueued,
         JobStage::Admit => Text::ExportAdmit,
@@ -17,6 +17,19 @@ pub fn job_progress(ui: &mut egui::Ui, snapshot: &JobSnapshot, locale: Locale) {
         JobStage::Publish => Text::ExportPublish,
         _ => Text::ExportProgress,
     };
-    ui.label(i18n::text(locale, stage));
-    ui.add(egui::ProgressBar::new(snapshot.progress).show_percentage());
+    line(ui, id, locale, i18n::text(locale, stage), snapshot.progress);
+}
+
+/// A `status N%` line over the kit progress bar; the surface owns the status words.
+pub fn line(ui: &mut egui::Ui, id: &str, locale: Locale, status: &str, fraction: f32) {
+    let percent = (fraction.clamp(0.0, 1.0) * 100.0).floor() as u64;
+    ui.label(i18n::format(
+        locale,
+        Text::ProcessingPercent,
+        &[
+            ("status", status),
+            ("percent", &i18n::number(locale, percent)),
+        ],
+    ));
+    crate::kit::progress_bar(ui, id, fraction);
 }

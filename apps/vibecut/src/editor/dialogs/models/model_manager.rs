@@ -480,14 +480,10 @@ impl ModelManager {
         }
         let tr = |key| i18n::text(locale, key);
         let modal = egui::Modal::new(egui::Id::unique("models.dialog"))
-            .frame(
-                egui::Frame::window(&ctx.global_style())
-                    .corner_radius(12)
-                    .inner_margin(24),
-            )
+            .frame(crate::kit::dialog_frame(ctx))
             .show(ctx, |ui| {
                 ui.set_width(880.0_f32.min(ctx.content_rect().width() - 80.0));
-                ui.label(egui::RichText::new(tr(Text::Models)).strong().size(18.0));
+                crate::kit::dialog_title(ui, tr(Text::Models));
                 ui.weak(tr(Text::ModelsHint));
                 ui.add_space(12.0);
                 let body_height = (ctx.content_rect().height() - 300.0).clamp(260.0, 520.0);
@@ -690,12 +686,17 @@ impl ModelManager {
                 JobStage::Backoff => Text::ModelQueued,
                 _ => Text::ModelDownloading,
             };
-            ui.label(i18n::format(
+            crate::services::progress::line(
+                ui,
+                "models.progress",
                 locale,
-                Text::ModelProgress,
-                &[("model", &job.model), ("stage", tr(stage))],
-            ));
-            ui.add(egui::ProgressBar::new(job.snapshot.progress).show_percentage());
+                &i18n::format(
+                    locale,
+                    Text::ModelProgress,
+                    &[("model", &job.model), ("stage", tr(stage))],
+                ),
+                job.snapshot.progress,
+            );
         }
         // One explicit scope for the action row: the installed check, a problem
         // row and the job progress above appear asynchronously, and without it
@@ -706,11 +707,16 @@ impl ModelManager {
                 ui.horizontal(|ui| {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let active = self.active();
-                        let close = ui.add_enabled(
-                            !active,
-                            egui::Button::new(tr(Text::ModelClose))
-                                .min_size(egui::vec2(90.0, 34.0)),
-                        );
+                        let close = ui
+                            .add_enabled_ui(!active, |ui| {
+                                crate::kit::dialog_button(
+                                    ui,
+                                    "models.close",
+                                    tr(Text::ModelClose),
+                                    false,
+                                )
+                            })
+                            .inner;
                         if close.clicked() {
                             self.open = false;
                             self.accepted.clear();
@@ -718,11 +724,16 @@ impl ModelManager {
                         record(widgets, "models.close".into(), close);
                         if active {
                             let cancelling = self.job.as_ref().is_some_and(|job| job.cancelling);
-                            let cancel = ui.add_enabled(
-                                !cancelling,
-                                egui::Button::new(tr(Text::ModelCancel))
-                                    .min_size(egui::vec2(90.0, 34.0)),
-                            );
+                            let cancel = ui
+                                .add_enabled_ui(!cancelling, |ui| {
+                                    crate::kit::dialog_button(
+                                        ui,
+                                        "models.cancel",
+                                        tr(Text::ModelCancel),
+                                        false,
+                                    )
+                                })
+                                .inner;
                             if cancel.clicked() {
                                 self.cancel();
                             }
@@ -738,14 +749,16 @@ impl ModelManager {
                             } else {
                                 Text::ModelDownload
                             };
-                            let response = ui.add_enabled(
-                                enabled,
-                                egui::Button::new(
-                                    egui::RichText::new(tr(label)).color(theme::on_accent(dark)),
-                                )
-                                .fill(theme::accent(dark))
-                                .min_size(egui::vec2(120.0, 34.0)),
-                            );
+                            let response = ui
+                                .add_enabled_ui(enabled, |ui| {
+                                    crate::kit::dialog_button(
+                                        ui,
+                                        &format!("models.download.{id}"),
+                                        tr(label),
+                                        true,
+                                    )
+                                })
+                                .inner;
                             if response.clicked()
                                 && let Err(error) = self.start(&id)
                             {
