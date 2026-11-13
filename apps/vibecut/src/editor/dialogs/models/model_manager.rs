@@ -122,7 +122,7 @@ impl Drop for ModelManager {
 }
 impl ModelManager {
     /// Present the pinned ai catalog over the process's one shared cache. No files are fetched.
-    pub fn open_shared(cache: &crate::services::model_cache::ModelCache) -> Result<Self> {
+    pub fn open_shared(cache: &crate::services::ai_access::ModelCache) -> Result<Self> {
         Self::with_shared(
             cache.budget().clone(),
             ai::foundation::models::catalog()?,

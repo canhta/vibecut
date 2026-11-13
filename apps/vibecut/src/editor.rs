@@ -671,7 +671,7 @@ impl Editor {
     /// Lend the process models cache the model manager opens over.
     pub fn set_model_cache(
         &mut self,
-        cache: std::sync::Arc<crate::services::model_cache::ModelCache>,
+        cache: std::sync::Arc<crate::services::ai_access::ModelCache>,
     ) {
         self.dialogs.models.set_cache(cache);
     }

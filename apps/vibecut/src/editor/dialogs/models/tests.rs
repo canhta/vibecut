@@ -385,7 +385,7 @@ impl ai::ExecutionHooks for NoHooks {
 
 #[test]
 fn a_detector_lookup_while_the_manager_is_open_reads_the_shared_cache_and_is_not_busy() {
-    use crate::services::model_cache::ModelCache;
+    use crate::services::ai_access::ModelCache;
     let dir = tempfile::tempdir().unwrap();
     let fixture = model("fixture-faces", "MIT", &[3u8; 1024]);
     let budget = ByteBudget::new(4 << 20).unwrap();

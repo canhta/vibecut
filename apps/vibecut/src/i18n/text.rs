@@ -45,8 +45,8 @@ catalog! {
     ModelRemoteNoKey { key: "ai_no_key", en: "Add a valid service key to refresh. Default and custom models are still available.", vi: "Thêm khóa dịch vụ hợp lệ để làm mới. Vẫn có thể dùng mô hình mặc định và tùy chỉnh." },
     ModelRemoteRefresh { key: "ai_refresh", en: "Refresh models", vi: "Làm mới mô hình" },
     ModelRemoteSpeech { key: "ai_speech", en: "Text to speech", vi: "Chuyển chữ thành giọng nói" },
-    ModelRemoteUnknownPrice { key: "ai_unknown_price", en: "I accept that this model's price is unknown to VibeCut for this job kind.", vi: "Tôi chấp nhận rằng VibeCut chưa biết giá của mô hình này cho loại tác vụ này." },
     ModelTextProvider { key: "ai_text_provider", en: "Text tasks provider", vi: "Nhà cung cấp tác vụ văn bản" },
+    ModelRemoteUnknownPrice { key: "ai_unknown_price", en: "I accept that this model's price is unknown to VibeCut for this job kind.", vi: "Tôi chấp nhận rằng VibeCut chưa biết giá của mô hình này cho loại tác vụ này." },
     // Common
     AddKeyframe { key: "add_keyframe", en: "Add keyframe", vi: "Thêm khung hình chính" },
     AfterKeyframes { key: "after_keyframes", en: "After", vi: "Sau" },

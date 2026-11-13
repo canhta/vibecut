@@ -103,7 +103,7 @@ groups = ["layout"]
 
 [[crate.layer]]
 name = "operations"
-groups = ["boundaries", "batch_export"]
+groups = ["boundaries", "batch_export", "vision"]
 
 [[crate.layer]]
 name = "workflow"
@@ -136,6 +136,10 @@ group = "workflow_jobs"
 [[crate.module]]
 name = "error"
 group = "error"
+
+[[crate.module]]
+name = "vision"
+group = "vision"
 
 # Desktop app: docs/engineering/structure.md#desktop-app-appsvibecutsrc.
 # Foundation (kit, i18n, input) sits below the services. Home, Shorts and each

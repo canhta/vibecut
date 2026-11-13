@@ -6,7 +6,6 @@ pub mod color_picker;
 pub mod crop;
 pub mod gpu;
 pub mod lifecycle;
-pub mod model_cache;
 pub mod playback;
 pub mod preview;
 pub mod progress;

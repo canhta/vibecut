@@ -1,6 +1,6 @@
 //! Keeps the model manager the editor reuses between frames.
 use super::model_manager::{ModelInspection, ModelManager};
-use crate::services::model_cache::ModelCache;
+use crate::services::ai_access::ModelCache;
 use crate::{Error, Result};
 use std::sync::Arc;
 
