@@ -5,6 +5,7 @@ mod captions;
 mod deletion;
 mod effects;
 mod feedback;
+mod filters;
 mod music;
 mod sounds;
 mod stickers;
@@ -14,8 +15,8 @@ pub(in crate::editor) use deletion::show as delete_dialog;
 pub(in crate::editor) use feedback::{drop_overlay, import_overlay, toast};
 
 use super::{
-    Action, Align2, AssetRow, AssetState, AssetsTab, AudioSection, Color32, EffectRow, FontId,
-    Icon, Id, MediaKind, MediaSortKey, MediaSortOrder, MediaView, Model, Recorded, Rect, Row,
+    Action, Align2, AssetRow, AssetState, AssetsTab, AudioSection, Color32, EffectRow, FilterRow,
+    FontId, Icon, Id, MediaKind, MediaSortKey, MediaSortOrder, MediaView, Model, Recorded, Rect, Row,
     State, Text, Vec2, asset_state_color, egui, icons, state, theme,
 };
 use state::Filter;
@@ -46,6 +47,7 @@ pub(in crate::editor) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) 
                         AssetsTab::Effects,
                         AssetsTab::Transitions,
                         AssetsTab::Captions,
+                        AssetsTab::Filters,
                         AssetsTab::Adjustment,
                     ] {
                         let id = format!("assets.tab.{}", tab.id());
@@ -56,7 +58,7 @@ pub(in crate::editor) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) 
                         });
                         let response = if compact {
                             ui.allocate_ui_with_layout(
-                                Vec2::new(rect.width() / 8.0, 42.0),
+                                Vec2::new(rect.width() / 9.0, 42.0),
                                 egui::Layout::centered_and_justified(egui::Direction::TopDown),
                                 |ui| {
                                     crate::kit::icon_button(
@@ -125,6 +127,10 @@ pub(in crate::editor) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) 
                     view.effects_nav(ui);
                     return;
                 }
+                if cx.preferences.assets_tab == AssetsTab::Filters {
+                    view.filters_nav(ui);
+                    return;
+                }
                 if cx.preferences.assets_tab == AssetsTab::Transitions {
                     view.transition_nav(ui);
                     return;
@@ -180,6 +186,7 @@ pub(in crate::editor) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) 
             }
             AssetsTab::Captions => view.actions.push(Action::Captions(content)),
             AssetsTab::Effects => view.effects(ui),
+            AssetsTab::Filters => view.filters(ui),
             AssetsTab::Transitions => view.transitions(ui),
             AssetsTab::Stickers => view.stickers(ui),
             AssetsTab::Adjustment => view.adjustment(ui),
@@ -385,6 +392,7 @@ impl View<'_> {
         let hint = self.tr(match self.cx.preferences.assets_tab {
             AssetsTab::Transitions => Text::TransitionSearch,
             AssetsTab::Effects => Text::EffectSearch,
+            AssetsTab::Filters => Text::FilterSearch,
             AssetsTab::Stickers => Text::StickerSearch,
             _ => Text::AssetsSearch,
         });

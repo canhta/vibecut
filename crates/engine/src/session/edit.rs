@@ -540,6 +540,17 @@ pub(crate) fn apply(
                 "sticker insertion requires control dispatch",
             ));
         }
+        EditCommand::FiltersInsert {
+            placement,
+            filter,
+            start,
+            duration,
+            intensity,
+        } => {
+            data = effects::execute_insert_filter(
+                data, placement, &filter, start, duration, intensity, created, next,
+            )?;
+        }
         EditCommand::InsertItem {
             placement,
             item: new,

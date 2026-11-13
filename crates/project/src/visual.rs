@@ -4,7 +4,6 @@ mod blend;
 mod crop;
 mod curve;
 mod effects;
-mod effects_catalog;
 mod lut;
 mod mask;
 pub use lut::{LutId, LutRecord, LutReference};
@@ -20,9 +19,9 @@ pub use curve::{CURVE_GRID, CURVE_MAX_POINTS, CURVE_MIN_POINTS, ToneCurve};
 pub use effects::{
     ANGLE_MAX, CHROMA_KEY_COLOR_DEFAULT, CHROMA_KEY_INTENSITY_DEFAULT, CHROMA_KEY_MAX,
     CHROMA_KEY_MIN, EffectDefinition, EffectInstance, EffectParamDefinition, EffectParamKind,
-    EffectParamUpdate, EffectShelf, EffectValue, GAIN_MAX, GAIN_MIN, GAMMA_MAX, GAMMA_MIN,
+    EffectParamUpdate, EffectShelf, EffectValue, FilterDefinition, FilterShelf, GAIN_MAX, GAIN_MIN, GAMMA_MAX, GAMMA_MIN,
     GRADE_BASIC, GRADE_MAX, GRADE_MIN, HSL_BANDS, HSL_CONTROLS, LIFT_MAX, LIFT_MIN,
-    PACKED_COLOR_MAX, POINT_MAX, effect_definition, effect_definitions, packed_color,
+    PACKED_COLOR_MAX, POINT_MAX, effect_definition, effect_definitions, filter_definition, filter_definitions, packed_color,
 };
 pub use mask::{
     MASK_SCALARS, Mask, MaskMode, MaskPath, MaskShape, MaskStroke, MaskVertex, StrokeAlign,

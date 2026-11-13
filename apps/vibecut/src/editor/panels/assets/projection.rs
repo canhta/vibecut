@@ -1,9 +1,9 @@
 //! Prepares the area's read-only workflow projection before rendering.
-use super::effects::preview_instance;
+use super::effects::{EffectPreviews, preview_instance};
 use super::stickers;
 use super::{
-    AssetRow, AssetState, AssetsTab, BTreeMap, EffectRow, Icon, MediaKind, Model, Row, State, Text,
-    asset_row, egui, file_name,
+    AssetRow, AssetState, AssetsTab, BTreeMap, EffectRow, FilterRow, Icon, MediaKind, Model, Row,
+    State, Text, asset_row, egui, file_name,
 };
 use crate::editor::Context;
 
@@ -18,7 +18,11 @@ pub(in crate::editor) fn prepare(
 ) {
     let rows = if !matches!(
         cx.preferences.assets_tab,
-        AssetsTab::Text | AssetsTab::Effects | AssetsTab::Transitions | AssetsTab::Captions
+        AssetsTab::Text
+            | AssetsTab::Effects
+            | AssetsTab::Filters
+            | AssetsTab::Transitions
+            | AssetsTab::Captions
     ) {
         state.refresh_media_sizes(cx.session);
         let sizes = state.media_size_map();
@@ -101,6 +105,7 @@ pub(in crate::editor) fn prepare(
             });
         }
     }
+    let filters = filter_rows(state, cx, ctx);
     let mut preferences = cx.preferences.clone();
     if !matches!(
         preferences.assets_tab,
@@ -108,6 +113,7 @@ pub(in crate::editor) fn prepare(
             | AssetsTab::Sounds
             | AssetsTab::Text
             | AssetsTab::Effects
+            | AssetsTab::Filters
             | AssetsTab::Transitions
             | AssetsTab::Captions
             | AssetsTab::Stickers
@@ -147,6 +153,7 @@ pub(in crate::editor) fn prepare(
         rows,
         thumbnails,
         effects,
+        filters,
         transition_refusal,
         transition_drag_enabled,
         insertion_ready,
@@ -162,4 +169,47 @@ pub(in crate::editor) fn prepare(
         music_credits,
         music_credits_failed,
     };
+}
+
+/// The Filters tiles. Looks are static, so their previews render once at time zero on the
+/// procedural picture and stay until the tab is left; the previews exist only while it shows.
+fn filter_rows(state: &mut State, cx: &Context<'_>, ctx: &egui::Context) -> Vec<FilterRow> {
+    let shown = cx.preferences.assets_tab == AssetsTab::Filters;
+    if !shown {
+        if let Some(previews) = &mut state.filter_previews {
+            previews.update(false, std::time::Duration::ZERO);
+        }
+        return Vec::new();
+    }
+    if state.filter_previews.is_none() {
+        state.filter_previews = EffectPreviews::filters().ok();
+    }
+    let Some(previews) = &mut state.filter_previews else {
+        return Vec::new();
+    };
+    previews.update(true, std::time::Duration::ZERO);
+    if let Err(error) = previews.tick() {
+        tracing::warn!(category = "filter_preview", error = %error, "preview tick failed");
+    }
+    let mut pending = false;
+    let mut rows = Vec::new();
+    for definition in project::filter_definitions() {
+        let Ok(instance) = definition.instance("filter") else {
+            continue;
+        };
+        previews.ensure(definition.id, &instance, &project::Animations::default());
+        let status = previews.status(definition.id);
+        pending |= status == Some(super::effects::EffectPreviewStatus::Pending);
+        rows.push(FilterRow {
+            id: definition.id,
+            name: definition.name,
+            shelf: definition.shelf,
+            status,
+            texture: previews.texture(ctx, definition.id),
+        });
+    }
+    if pending {
+        ctx.request_repaint_after(std::time::Duration::from_millis(33));
+    }
+    rows
 }

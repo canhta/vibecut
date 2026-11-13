@@ -46,6 +46,9 @@ pub(in crate::editor) struct State {
     /// Effects tab: the tile preview owner and the drag in flight.
     pub(in crate::editor) effect_previews: Option<super::effects::EffectPreviews>,
     pub(in crate::editor) effect_drag: Option<String>,
+    /// Filters tab: the chosen shelf and the tile preview owner, built when the tab first shows.
+    pub(super) filter_shelf: project::FilterShelf,
+    pub(in crate::editor) filter_previews: Option<super::effects::EffectPreviews>,
     pub(super) transition_family: Option<&'static str>,
     pub(super) transition_previews: BTreeMap<&'static str, super::transition::Preview>,
     pub(in crate::editor) transition_drag: Option<(&'static str, std::sync::Arc<project::Project>)>,
@@ -115,6 +118,8 @@ impl Default for State {
             effect_shelf: None,
             effect_previews: None,
             effect_drag: None,
+            filter_shelf: project::FilterShelf::Featured,
+            filter_previews: None,
             transition_family: None,
             transition_previews: BTreeMap::new(),
             transition_drag: None,

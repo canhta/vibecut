@@ -1,9 +1,8 @@
 //! The admitted effect kinds as data: id, name, shelf and parameter schema.
 use super::{
-    curve::ToneCurve,
-    effects::{EffectDefinition, EffectParamDefinition, EffectParamKind, EffectShelf, EffectValue},
+    EffectDefinition, EffectParamDefinition, EffectParamKind, EffectShelf, EffectValue,
 };
-use crate::Color;
+use crate::{Color, ToneCurve};
 
 /// Slider range of every basic colour-grade control.
 pub const GRADE_MIN: f64 = -50.0;

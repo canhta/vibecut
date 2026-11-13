@@ -56,6 +56,7 @@ struct Model {
     rows: Vec<Row>,
     thumbnails: BTreeMap<AssetId, egui::TextureHandle>,
     effects: Vec<EffectRow>,
+    filters: Vec<FilterRow>,
     transition_refusal: Option<Text>,
     transition_drag_enabled: bool,
     insertion_ready: bool,
@@ -105,6 +106,14 @@ struct EffectRow {
     status: Option<effects::EffectPreviewStatus>,
     texture: Option<egui::TextureHandle>,
 }
+/// One Filters tile: a look from the catalogue and its rendered preview.
+struct FilterRow {
+    id: &'static str,
+    name: &'static str,
+    shelf: project::FilterShelf,
+    status: Option<effects::EffectPreviewStatus>,
+    texture: Option<egui::TextureHandle>,
+}
 pub(in crate::editor) struct Recorded {
     pub(in crate::editor) id: String,
     pub(in crate::editor) response: egui::Response,
@@ -129,6 +138,8 @@ pub(in crate::editor) enum Action {
     EffectDrag(&'static str),
     AddEffect(&'static str),
     RetryEffect(&'static str),
+    /// Insert one filter clip at the playhead.
+    AddFilter(&'static str),
     TransitionDrag(&'static str),
     AddTransition(&'static str),
     SoundsMode(sounds::SoundsMode),

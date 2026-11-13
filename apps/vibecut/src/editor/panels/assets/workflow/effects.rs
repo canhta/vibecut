@@ -1,10 +1,46 @@
-//! Applies effect choices from the Effects tab.
+//! Applies choices from the tabs that add effect stacks.
 use super::super::effects::{EffectPreviews, preview_instance};
-use super::super::{Arc, Text, egui};
+use super::super::{Arc, CreatedId, TICKS_PER_SECOND, Text, Tick, egui};
 use super::State;
 use crate::editor::{Port, Request, Result, context::single};
+use std::collections::BTreeSet;
+
+/// A filter clip is three seconds long, as the reference's is.
+const FILTER_DURATION: Tick = Tick(3 * TICKS_PER_SECOND);
 
 impl State {
+    /// Insert one filter clip on its own effect lane at the playhead at full Intensity as one
+    /// undo step, and select it. A refused edit changes nothing.
+    pub(in crate::editor) fn insert_filter(&mut self, port: &mut Port<'_>, filter: &str) {
+        if !port.read.insertion_available {
+            return;
+        }
+        let Ok(at) = port.playhead() else {
+            let text = port.tr(Text::InsertFailed);
+            port.toast(text, None);
+            return;
+        };
+        // A refusal is already on the error line through `apply_result`.
+        let Ok(outcome) = port.apply_result(engine::Command::FiltersInsert {
+            placement: engine::Placement::Auto,
+            filter: filter.to_owned(),
+            start: at,
+            duration: FILTER_DURATION,
+            intensity: 100.0,
+        }) else {
+            return;
+        };
+        let created = outcome.created.into_iter().find_map(|id| match id {
+            CreatedId::Item(item) => Some(item),
+            _ => None,
+        });
+        let Some(item) = created else {
+            return;
+        };
+        port.select(BTreeSet::from([item]));
+        port.reset_selection(true);
+    }
+
     /// Build the thumbnail previews that share playback's byte budget with the native
     /// effect adapter. The frame attaches the adapter to playback itself.
     pub(in crate::editor) fn effect_previews_for(

@@ -2407,6 +2407,58 @@ fn click_pos(harness: &mut Harness<Editor>, pos: egui::Pos2) {
     harness.run_steps(2);
 }
 
+#[test]
+fn filters_tab_shows_shelves_renders_tiles_and_adds_one_undoable_clip() {
+    let f = fixture();
+    let mut harness = build(f.editor);
+    harness.run_steps(3);
+    click(&mut harness, "assets.tab.filters");
+    for shelf in project::FilterShelf::ALL {
+        assert!(
+            has_widget(&harness, &format!("filters.shelf.{}", shelf.id())),
+            "{}",
+            shelf.id()
+        );
+    }
+    harness.state_mut().settle_previews(SETTLE_BUDGET).unwrap();
+    harness.run_steps(3);
+    // Featured is the first shelf; its tiles are rendered by the pipeline, not placeholders.
+    for filter in project::filter_definitions()
+        .iter()
+        .filter(|filter| filter.shelf == project::FilterShelf::Featured)
+    {
+        assert!(
+            has_widget(&harness, &format!("filters.tile.{}.ready", filter.id)),
+            "{}",
+            filter.id
+        );
+    }
+    let before = harness.state().session.project().clone();
+    click(&mut harness, "filters.tile.cool_steel");
+    let after = harness.state().session.project().clone();
+    let layers: Vec<_> = after
+        .data()
+        .scene()
+        .timeline
+        .overlays
+        .iter()
+        .filter(|track| track.kind == TrackKind::Effect)
+        .collect();
+    assert_eq!(layers.len(), 1);
+    let clip = &layers[0].items[0];
+    assert_eq!(clip.content, ItemParams::Effect(project::EffectParams::default()));
+    assert_eq!(clip.effects.len(), 1);
+    assert_eq!(clip.effects[0].kind, "color_grade");
+    assert_eq!(clip.source_range.duration(), Tick(3 * SECOND));
+    // Applying is one undo step.
+    harness.state_mut().activate("edit.undo").unwrap();
+    assert_eq!(harness.state().session.project(), &before);
+    // A shelf click switches the tiles: Mono holds Noir.
+    click(&mut harness, "filters.shelf.mono");
+    harness.run_steps(3);
+    assert!(has_widget(&harness, "filters.tile.noir"));
+}
+
 fn add_chroma_effect(session: &mut Session, item: ItemId) {
     session
         .apply(Command::AddEffect {

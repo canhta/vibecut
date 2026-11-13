@@ -69,6 +69,7 @@ impl State {
                 Action::TransitionDrag(kind) => self.begin_transition_drag(port, kind),
                 Action::AddTransition(kind) => self.add_transition_from_selection(port, kind),
                 Action::RetryEffect(kind) => self.retry_effect(kind),
+                Action::AddFilter(filter) => self.insert_filter(port, filter),
                 Action::SoundsMode(mode) => self.sounds_set_mode(mode),
                 Action::SoundsSearch { more } => self.sounds_search(more),
                 Action::SoundsCommercial(on) => self.sounds_set_commercial(on),

@@ -24,6 +24,8 @@ size; later inserts keep it, including after deleting all items or switching sce
 execute in caller order, so simultaneous first inserts have one deterministic winner. FPS,
 canvas and insertion share one history step ([`execute_insert_item`](clips.rs)).
 
+`filters.insert {placement, filter, start, duration, intensity}` inserts a filter clip in one history step: an effect item (the adjustment layer) whose stack is the catalogued look's `color_grade` instance (`filter`) and whose opacity channel is `intensity / 100` (100 stores none). An unknown filter id or an intensity outside 0..=100 refuses and changes nothing; removal is an ordinary delete ([`execute_insert_filter`](effects.rs)).
+
 ## Timeline placement
 
 `Placement::Auto` uses the unlocked main track for video when magnet is enabled or main is

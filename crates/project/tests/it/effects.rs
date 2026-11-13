@@ -1162,3 +1162,26 @@ fn whole_image_catalogue_defines_the_26_entries_on_their_shelves() {
         );
     }
 }
+
+#[test]
+fn filter_catalogue_holds_twenty_looks_and_four_tools_that_all_build_valid_grades() {
+    let all = filter_definitions();
+    let looks = all.iter().filter(|filter| filter.is_look()).count();
+    assert_eq!((looks, all.len() - looks), (20, 4));
+    let mut ids: Vec<_> = all.iter().map(|filter| filter.id).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids.len(), all.len(), "unique ids");
+    // Shelves in tab order: Featured, Movies, Retro, Night, Mono, Tools, Life.
+    let shelf = |shelf: FilterShelf| all.iter().filter(|filter| filter.shelf == shelf).count();
+    assert_eq!(FilterShelf::ALL.map(shelf), [4, 2, 5, 4, 3, 4, 2]);
+    let neutral = effect_definition("color_grade").unwrap().instance("filter");
+    for filter in all {
+        let instance = filter.instance("filter").unwrap();
+        instance.validate().unwrap();
+        assert_eq!(instance.kind, "color_grade");
+        assert_ne!(instance, neutral, "{} changes nothing", filter.id);
+        assert_eq!(filter_definition(filter.id).unwrap().name, filter.name);
+    }
+    assert!(filter_definition("nope").is_none());
+}

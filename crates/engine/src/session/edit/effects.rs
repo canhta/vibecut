@@ -1,5 +1,58 @@
 //! Applies effects commands to a candidate project.
-use super::{EditError, Item, ItemId, ItemParams, ProjectData, Result, item};
+use super::{
+    CreatedId, EditError, Item, ItemId, ItemParams, NewItem, Placement, ProjectData, Result,
+    SourceRange, Tick, item,
+};
+
+/// Insert one filter clip: an effect item on an effect track whose stack is the look's colour
+/// grade and whose opacity is the Intensity (0..=100 percent; 100 stores no channel).
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the edit dispatcher passes the command fields and the id allocators straight through"
+)]
+pub(super) fn execute_insert_filter(
+    data: ProjectData,
+    placement: Placement,
+    filter: &str,
+    start: Tick,
+    duration: Tick,
+    intensity: f64,
+    created: &mut Vec<CreatedId>,
+    next: &mut Option<u64>,
+) -> Result<ProjectData> {
+    let definition = project::filter_definition(filter).ok_or(EditError::Invalid("filter"))?;
+    if !intensity.is_finite() || !(0.0..=100.0).contains(&intensity) {
+        return Err(EditError::Invalid("filter intensity"));
+    }
+    let mut animations = project::Animations::default();
+    if intensity < 100.0 {
+        animations.set(
+            project::AnimationPath::from(project::BuiltinPath::Opacity),
+            project::Param::new(project::ParamValue::Scalar(intensity / 100.0))?,
+        )?;
+    }
+    let new = NewItem {
+        animations,
+        source_asset: None,
+        source_range: SourceRange::new(Tick::ZERO, duration).map_err(EditError::from)?,
+        start,
+        retime: Default::default(),
+        content: ItemParams::Effect(project::EffectParams::default()),
+    };
+    let mut data = super::clips::execute_insert_item(data, placement, new, created, next)?;
+    let id = created
+        .iter()
+        .rev()
+        .find_map(|created| match created {
+            CreatedId::Item(id) => Some(*id),
+            _ => None,
+        })
+        .ok_or(EditError::Invalid("filter insert"))?;
+    effect_item(&mut data, id)?
+        .effects
+        .push(definition.instance("filter")?);
+    Ok(data)
+}
 
 pub(super) fn effect_item(data: &mut ProjectData, id: ItemId) -> Result<&mut Item> {
     let target = item(data, id)?;
