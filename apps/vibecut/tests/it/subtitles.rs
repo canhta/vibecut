@@ -5,7 +5,7 @@ use egui_kittest::{
     Harness,
     kittest::{By, NodeT, Queryable},
 };
-use engine::{ByteBudget, Command, Session, providers::Cost};
+use engine::{ByteBudget, Command, Session, WordId, providers::Cost};
 use project::ItemParams;
 use std::{
     collections::BTreeSet,
@@ -18,7 +18,7 @@ use std::{
 use time::{TICKS_PER_SECOND, Tick};
 use vibecut::{
     AssetsTab, Editor, Subtitles, SubtitlesInspection, egui,
-    i18n::Locale,
+    i18n::{Locale, Text},
     preferences::{PreferenceStore, SubtitleOptions as Options},
     services::ai_access::{Choice, Opener, SharedConsent, TextOpener},
 };
@@ -36,6 +36,12 @@ fn click(h: &mut Harness<'_, Editor>, id: &str) {
         .next()
         .unwrap_or_else(|| panic!("missing {id}; {:?}", panel(h.state())))
         .click_accesskit();
+    h.run_steps(3);
+}
+/// A pointer click holding `modifiers`, for Shift and Ctrl selection.
+fn click_modifiers(h: &mut Harness<'_, Editor>, id: &str, modifiers: egui::Modifiers) {
+    h.get(By::new().predicate(|n| n.author_id() == Some(id)))
+        .click_modifiers(modifiers);
     h.run_steps(3);
 }
 fn wait(h: &mut Harness<'_, Editor>, ready: impl Fn(&Editor) -> bool) {
@@ -3056,4 +3062,280 @@ fn filler_cut_list_reports_a_provider_failure_after_approval() {
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     assert!(filler_toggles(&h).is_empty());
     assert_eq!(h.state().session.project(), &before);
+}
+
+/// Transcript pane: word and cue ids of the caption item shown in `h`.
+fn transcript_word(h: &Harness<'_, Editor>, cue: &str, word: usize) -> String {
+    let item = panel(h.state()).item.unwrap().0;
+    format!("subtitles.transcript.word.{item}.{cue}.{word}")
+}
+
+fn transcript_cue(h: &Harness<'_, Editor>, cue: &str) -> String {
+    let item = panel(h.state()).item.unwrap().0;
+    format!("subtitles.transcript.cue.{item}.{cue}")
+}
+
+/// Words the engine reads for the active scene, across every caption cue.
+fn transcript_words(e: &Editor) -> usize {
+    e.session
+        .transcript()
+        .unwrap()
+        .cues
+        .iter()
+        .map(|cue| cue.words.len())
+        .sum()
+}
+
+fn transcript_refusal(h: &Harness<'_, Editor>) -> Option<Text> {
+    panel(h.state()).transcript_refusal
+}
+
+#[test]
+fn transcript_pane_shows_no_words_for_an_empty_caption_track() {
+    let track = CueTrack {
+        styles: Vec::new(),
+        cues: Vec::new(),
+    };
+    let mut h = harness(editor_with_cues("en", track), 1.0);
+    h.run_steps(3);
+    assert_eq!(transcript_words(h.state()), 0);
+    assert!(
+        h.query_all(By::new().predicate(|n| n.author_id() == Some("subtitles.transcript.empty")))
+            .next()
+            .is_some()
+    );
+    assert_eq!(panel(h.state()).transcript_selected, 0);
+    assert!(transcript_refusal(&h).is_none());
+}
+
+#[test]
+fn transcript_shift_selection_cut_parks_the_playhead_and_undo_restores_the_words() {
+    let mut h = harness(editor_with_cues("en", transcript_cues(false)), 1.0);
+    h.run_steps(3);
+    let before = transcript_words(h.state());
+    assert_eq!(before, 4);
+    let anchor = transcript_word(&h, "cue-0", 1);
+    click(&mut h, &anchor);
+    assert_eq!(panel(h.state()).transcript_selected, 1);
+    let second = transcript_word(&h, "cue-1", 0);
+    click_modifiers(&mut h, &second, egui::Modifiers::SHIFT);
+    assert_eq!(panel(h.state()).transcript_selected, 2);
+    assert_eq!(
+        h.state().playback.position().unwrap(),
+        Tick(3 * TICKS_PER_SECOND)
+    );
+    let history = h.state().session.history_len().0;
+    click(&mut h, "subtitles.transcript.delete");
+    assert_eq!(transcript_words(h.state()), before - 2);
+    assert_eq!(h.state().session.history_len().0, history + 1);
+    assert_eq!(panel(h.state()).transcript_selected, 0);
+    assert!(transcript_refusal(&h).is_none());
+    assert_eq!(
+        h.state().playback.position().unwrap(),
+        Tick(2 * TICKS_PER_SECOND)
+    );
+    h.state_mut().session.undo().unwrap();
+    h.run_steps(3);
+    assert_eq!(transcript_words(h.state()), before);
+}
+
+#[test]
+fn transcript_merge_joins_selected_adjacent_cues_as_one_undo_step() {
+    let mut h = harness(editor_with_cues("en", transcript_cues(false)), 1.0);
+    h.run_steps(3);
+    let first = transcript_cue(&h, "cue-0");
+    click(&mut h, &first);
+    let second = transcript_cue(&h, "cue-1");
+    click_modifiers(&mut h, &second, egui::Modifiers::COMMAND);
+    let history = h.state().session.history_len().0;
+    click(&mut h, "subtitles.transcript.merge");
+    h.run_steps(3);
+    assert_eq!(h.state().session.transcript().unwrap().cues.len(), 1);
+    assert_eq!(h.state().session.history_len().0, history + 1);
+    assert_eq!(transcript_words(h.state()), 4);
+    assert!(transcript_refusal(&h).is_none());
+}
+
+#[test]
+fn transcript_cut_of_edited_text_is_refused_with_its_reason_and_changes_nothing() {
+    let mut h = harness(editor_with_cues("en", transcript_cues(true)), 1.0);
+    h.run_steps(3);
+    let word = transcript_word(&h, "cue-0", 0);
+    click(&mut h, &word);
+    let before = h.state().session.project().clone();
+    let history = h.state().session.history_len();
+    click(&mut h, "subtitles.transcript.delete");
+    assert_eq!(transcript_refusal(&h), Some(Text::SubTranscriptProtected));
+    assert_eq!(h.state().session.project(), &before);
+    assert_eq!(h.state().session.history_len(), history);
+    assert_eq!(panel(h.state()).transcript_selected, 1);
+}
+
+#[test]
+fn transcript_cut_across_scenes_is_refused_and_keeps_the_project() {
+    let mut h = harness(editor_with_cues("en", transcript_cues(false)), 1.0);
+    h.run_steps(3);
+    let word = transcript_word(&h, "cue-0", 0);
+    click(&mut h, &word);
+    let original = h.state().session.project().data().current_scene_id;
+    h.state_mut()
+        .session
+        .apply(Command::CreateScene {
+            name: "Scene 2".into(),
+        })
+        .unwrap();
+    let other = h
+        .state()
+        .session
+        .project()
+        .data()
+        .scenes
+        .iter()
+        .map(|scene| scene.id)
+        .find(|id| *id != original)
+        .unwrap();
+    if h.state().session.project().data().current_scene_id != other {
+        h.state_mut()
+            .session
+            .apply(Command::SwitchScene { scene: other })
+            .unwrap();
+    }
+    h.run_steps(3);
+    let before = h.state().session.project().clone();
+    let history = h.state().session.history_len();
+    click(&mut h, "subtitles.transcript.delete");
+    assert_eq!(transcript_refusal(&h), Some(Text::SubTranscriptScene));
+    assert_eq!(h.state().session.project(), &before);
+    assert_eq!(h.state().session.history_len(), history);
+}
+
+#[test]
+fn transcript_selection_follows_an_external_cut_and_undo_restores_the_view() {
+    let mut h = harness(editor_with_cues("en", transcript_cues(false)), 1.0);
+    h.run_steps(3);
+    let item = panel(h.state()).item.unwrap();
+    let word = transcript_word(&h, "cue-1", 0);
+    click(&mut h, &word);
+    assert_eq!(panel(h.state()).transcript_selected, 1);
+    let cut = WordId {
+        item,
+        cue: "cue-1".into(),
+        word: 0,
+    };
+    h.state_mut()
+        .session
+        .apply(Command::TranscriptDeleteRange {
+            word_ids: vec![cut],
+        })
+        .unwrap();
+    h.run_steps(3);
+    assert_eq!(panel(h.state()).transcript_selected, 0);
+    assert_eq!(transcript_words(h.state()), 3);
+    h.state_mut().session.undo().unwrap();
+    h.run_steps(3);
+    assert_eq!(transcript_words(h.state()), 4);
+}
+
+#[test]
+fn transcript_locked_track_marks_its_cues_and_refuses_a_merge() {
+    let mut h = harness(editor_with_cues("en", transcript_cues(false)), 1.0);
+    h.run_steps(3);
+    let track = h.state().session.transcript().unwrap().cues[0].track;
+    h.state_mut()
+        .session
+        .apply(Command::SetTrackLocked {
+            track,
+            locked: true,
+        })
+        .unwrap();
+    h.run_steps(3);
+    let item = panel(h.state()).item.unwrap().0;
+    let marker = format!("subtitles.transcript.locked.{item}.cue-0");
+    assert!(
+        h.query_all(By::new().predicate(|n| n.author_id() == Some(marker.as_str())))
+            .next()
+            .is_some(),
+        "the locked track marks its cue"
+    );
+    let first = transcript_cue(&h, "cue-0");
+    click(&mut h, &first);
+    let second = transcript_cue(&h, "cue-1");
+    click_modifiers(&mut h, &second, egui::Modifiers::COMMAND);
+    let before = h.state().session.project().clone();
+    let history = h.state().session.history_len();
+    click(&mut h, "subtitles.transcript.merge");
+    assert_eq!(transcript_refusal(&h), Some(Text::SubTranscriptLocked));
+    assert_eq!(h.state().session.project(), &before);
+    assert_eq!(h.state().session.history_len(), history);
+    assert_eq!(h.state().session.transcript().unwrap().cues.len(), 2);
+}
+
+/// Offscreen screenshot evidence; wgpu rendering stays out of CI.
+#[test]
+#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-ai-03-transcript-edit.png"]
+fn transcript_pane_renders_a_selection_and_its_refusal() {
+    let mut h = harness(editor_with_cues("en", transcript_cues(true)), 1.0);
+    h.run_steps(3);
+    let word = transcript_word(&h, "cue-0", 0);
+    click(&mut h, &word);
+    click(&mut h, "subtitles.transcript.delete");
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let target = root.join("target");
+    std::fs::create_dir_all(&target).unwrap();
+    let image = h.render().expect("offscreen render");
+    image
+        .save(target.join("p1-ai-03-transcript-edit.png"))
+        .unwrap();
+    assert!(image.width() > 0 && image.height() > 0);
+}
+
+/// Two time-adjacent English cues, "Hello world" (1-3 s) and "good day" (3-5 s), each
+/// with two measured words. `edited_first` protects the first cue's source text.
+fn transcript_cues(edited_first: bool) -> captions::CueTrack {
+    captions::CueTrack {
+        styles: Vec::new(),
+        cues: vec![
+            verified_english_cue("cue-0", 1, "Hello world", 5, edited_first),
+            verified_english_cue("cue-1", 3, "good day", 4, false),
+        ],
+    }
+}
+
+fn verified_english_cue(id: &str, start: i64, text: &str, split: usize, edited: bool) -> captions::Cue {
+    let source = lang("en");
+    let at = |seconds: i64| Tick(seconds * TICKS_PER_SECOND);
+    let left = time::SourceRange::new(at(start), at(start + 1)).unwrap();
+    let right = time::SourceRange::new(at(start + 1), at(start + 2)).unwrap();
+    captions::Cue {
+        word_timing: captions::CueWordTiming::Words {
+            language: source.clone(),
+            text: text.into(),
+            records: vec![
+                captions::VerifiedCueWord {
+                    bytes: 0..split,
+                    source_range: left,
+                    projection: captions::WordProjection::Visible(left),
+                    provenance: captions::TimingProvenance::Native,
+                },
+                captions::VerifiedCueWord {
+                    bytes: split + 1..text.len(),
+                    source_range: right,
+                    projection: captions::WordProjection::Visible(right),
+                    provenance: captions::TimingProvenance::Native,
+                },
+            ],
+        },
+        id: id.into(),
+        range: time::SourceRange::new(at(start), at(start + 2)).unwrap(),
+        source_lang: source.clone(),
+        texts: std::collections::BTreeMap::from([(
+            source,
+            captions::CueText {
+                text: text.into(),
+                edited,
+                translation_ref: None,
+            },
+        )]),
+        style: None,
+    }
 }
