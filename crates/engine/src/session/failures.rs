@@ -61,6 +61,27 @@ pub enum FontError {
     ImportActive,
 }
 
+/// Sticker catalog failures that are not a collection state.
+#[derive(Debug, thiserror::Error)]
+pub enum StickerError {
+    #[error("the sticker store is not available in this session")]
+    Unavailable,
+    #[error("collection is not a downloadable sticker collection")]
+    NotDownloadable,
+    #[error("a download for this collection is already running")]
+    DownloadActive,
+    #[error("downloaded sticker bytes failed their pinned size or hash")]
+    Integrity,
+    #[error("sticker server did not answer with a complete file")]
+    Response,
+    #[error("sticker image is not a safe SVG: {0}")]
+    UnsafeSvg(&'static str),
+    #[error("sticker catalog entry is invalid")]
+    Catalog,
+    #[error("sticker is not in the downloaded collection")]
+    NotCached,
+}
+
 /// Brand kit store failures.
 #[derive(Debug, thiserror::Error)]
 pub enum BrandKitError {
@@ -218,6 +239,20 @@ impl Failure for FontError {
             | Self::InvalidImport
             | Self::Conflict
             | Self::ImportActive => ErrorCode::Refused,
+        }
+    }
+}
+impl Failure for StickerError {
+    fn code(&self) -> ErrorCode {
+        match self {
+            Self::Unavailable
+            | Self::NotDownloadable
+            | Self::DownloadActive
+            | Self::Integrity
+            | Self::Response
+            | Self::UnsafeSvg(_)
+            | Self::Catalog
+            | Self::NotCached => ErrorCode::Refused,
         }
     }
 }

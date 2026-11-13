@@ -1,6 +1,6 @@
 # Sticker flags
 
-Country and regional flags for the Stickers panel's Flags provider. Each SVG is unmodified from [flag-icons](https://github.com/lipis/flag-icons), as shipped in the reference catalog.
+Country and regional flags for the Stickers panel's Flags provider. Each SVG is unmodified from [flag-icons](https://github.com/lipis/flag-icons) v7.5.0 (commit `7aa5b2bdddd570ece62c812c0cb588ccdc099e2e`; all 271 files and `LICENSE` were compared with that commit on 2026-11-13, ignoring line endings) and recorded as such in its sidecar.
 
 - Author: Panayiotis Lipiridis
 - Licence: MIT, see [LICENSE](LICENSE)

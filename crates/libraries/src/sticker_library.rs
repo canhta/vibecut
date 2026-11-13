@@ -1,11 +1,16 @@
-//! Bundled sticker ids and the flag catalog the Stickers panel searches. Stickers are flags only;
-//! shapes are graphic items inserted by their own commands.
+//! Sticker ids, the bundled flag catalog and the downloadable emoji and icon collections the
+//! Stickers panel searches. Shapes are graphic items inserted by their own commands.
 mod catalog;
+mod fetched;
 mod flags;
 mod recents;
 mod search;
 
 pub use catalog::{FLAG_SIZE, insert_sticker, resolve_sticker, search_catalog};
+pub use fetched::{
+    Category, Collection, CollectionState, Entry, FETCHED_SIZE, Item, MAX_SVG_BYTES, Page,
+    StickerStore, Unavailable, check_svg, curated_collections, is_offline,
+};
 pub use recents::{MAX_RECENT_STICKERS, Recents};
 pub use search::{DEFAULT_SEARCH_LIMIT, FlagMatch, FlagPage, search_flags};
 

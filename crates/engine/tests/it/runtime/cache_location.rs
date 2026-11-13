@@ -189,6 +189,7 @@ fn cache_location_child() {
         let models = base.join("VibeCut/models");
         assert_eq!(location.models(), models);
         assert_eq!(location.fonts(), base.join("VibeCut/fonts"));
+        assert_eq!(location.stickers(), base.join("VibeCut/stickers"));
         assert_eq!(location.waveform(), models.join("waveform"));
         assert_eq!(location.thumbnails(), models.join("thumbnails"));
         assert!(!base.exists(), "discovery performs no directory creation");

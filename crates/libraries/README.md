@@ -11,5 +11,6 @@ Use `brand_kit::BrandKit` for the user's brand kits, which live outside projects
 | `music_library/` | Provides openly licensed music for projects. | [Music library](src/music_library/README.md) |
 | `brand_kit/` | Stores the user's brand kits; projects copy values out of them. | [Brand kit](src/brand_kit/README.md) |
 | `sticker_library/` | Searches bundled flag stickers and keeps recent ids outside projects. | [Sticker library](src/sticker_library/README.md) |
+| `sticker_library/fetched/` | Downloads, verifies and searches the pinned emoji and icon collections. | [Sticker collections](src/sticker_library/fetched/README.md) |
 
 Follow [verification](../../docs/engineering/verification.md#checks) for tests and evidence.

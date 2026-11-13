@@ -686,6 +686,29 @@ pub struct OverlayParams {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct EffectParams {}
+
+/// Export credit lines by sticker provider id, one per sticker collection. The licence ids and
+/// authors are those recorded beside each collection's files in `libraries`, which tests that
+/// every collection it offers has a line here.
+const STICKER_CREDITS: [(&str, &str); 4] = [
+    (
+        "flags",
+        "Flags: flag-icons by Panayiotis Lipiridis (MIT) https://github.com/lipis/flag-icons",
+    ),
+    (
+        "noto",
+        "Emoji: Noto Emoji by Google (Apache-2.0) https://github.com/googlefonts/noto-emoji",
+    ),
+    (
+        "lucide",
+        "Icons: Lucide by Lucide Icons and Contributors (ISC) https://github.com/lucide-icons/lucide",
+    ),
+    (
+        "phosphor",
+        "Icons: Phosphor Icons by Phosphor Icons (MIT) https://github.com/phosphor-icons/core",
+    ),
+];
+
 /// A bundled sticker: its `provider:value` id and the intrinsic pixel size captured at insert.
 /// Stickers take transform, blend and effects but no masks.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -716,6 +739,15 @@ impl StickerParams {
     /// The value half of the id.
     pub fn value(&self) -> &str {
         self.sticker.split_once(':').map_or("", |(_, value)| value)
+    }
+
+    /// Credit line of the collection that provides this sticker, written into the export
+    /// `comment` tag. `None` for a provider that has no collection (a retired id).
+    pub fn credit(&self) -> Option<&'static str> {
+        STICKER_CREDITS
+            .iter()
+            .find(|(provider, _)| *provider == self.provider())
+            .map(|(_, line)| *line)
     }
     /// `provider:value` of ASCII letters, digits, `-`, `_` and `.`, with an intrinsic size in range.
     pub fn validate(&self) -> Result<()> {

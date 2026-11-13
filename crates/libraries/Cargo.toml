@@ -17,6 +17,7 @@ time.workspace = true
 transport.workspace = true
 blake3.workspace = true
 fontdb = { version = "0.24.0", default-features = false, features = ["std", "fs", "fontconfig"] }
+roxmltree = "0.20.0"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha2.workspace = true
@@ -27,4 +28,3 @@ wuff = { version = "0.2.10", default-features = false, features = ["brotli"] }
 [dev-dependencies]
 tempfile.workspace = true
 brotli = "9.1.1"
-roxmltree = "0.20.0"

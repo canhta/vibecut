@@ -161,7 +161,7 @@ publication error is not retried. The closure must do its final cancellation-awa
 before sealing, and failure never yields a `JobOutput`.
 
 `Transcribe`, `Translate`, `SuggestClips`, `GenerateChapters`, `ClassifyFillers`,
-`DownloadModel`, `SoundDownload` and `DownloadFont` jobs retry direct `RuntimeError::NetworkTransient` or its transparent root composition, or an
+`DownloadModel`, `SoundDownload`, `DownloadFont` and `DownloadSticker` jobs retry direct `RuntimeError::NetworkTransient` or its transparent root composition, or an
 `ai::Error` whose `is_transient` is true (network, provider server, rate limit or structured
 schema failure). An `ai` rate limit carrying
 `Retry-After` raises that attempt's backoff, capped at five minutes. Auth, quota, payload,

@@ -36,6 +36,7 @@ pub enum ArtifactKind {
     Emphasis,
     SoundAudio,
     FontDownload,
+    StickerDownload,
     Loudness,
     Proxy,
 }
@@ -90,6 +91,7 @@ impl CacheKey {
             ArtifactKind::Emphasis => b"emphasis",
             ArtifactKind::SoundAudio => b"sound-audio",
             ArtifactKind::FontDownload => b"font-download",
+            ArtifactKind::StickerDownload => b"sticker-download",
             ArtifactKind::Loudness => b"loudness",
             ArtifactKind::Proxy => b"proxy",
         };

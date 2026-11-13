@@ -16,7 +16,7 @@ pub use session::{
 };
 pub use session::{
     AssetUsage, BrandKitError, ChangeSummary, EditError, FontError, Fork, JobTarget, MusicError,
-    Session, SessionError, SoundError,
+    Session, SessionError, SoundError, StickerError,
 };
 mod runtime;
 pub use runtime::cache;

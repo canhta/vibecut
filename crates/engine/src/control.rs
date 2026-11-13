@@ -59,6 +59,8 @@ pub enum Error {
     Font(#[from] FontError),
     #[error("brand kit operation failed")]
     BrandKit(#[from] crate::BrandKitError),
+    #[error("sticker catalog operation failed")]
+    Sticker(#[from] crate::StickerError),
     #[error(transparent)]
     Providers(#[from] providers::Error),
     #[error(transparent)]
@@ -91,6 +93,7 @@ impl Error {
             Self::Music(inner) => inner.code(),
             Self::Font(inner) => inner.code(),
             Self::BrandKit(inner) => inner.code(),
+            Self::Sticker(inner) => inner.code(),
             Self::Providers(inner) => return (inner.code(), inner.transient()),
             Self::Transcript(inner) => return (inner.code(), inner.transient()),
             Self::Subtitles(inner) => return (inner.code(), inner.transient()),
