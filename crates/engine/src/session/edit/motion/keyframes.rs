@@ -1,7 +1,7 @@
 //! Applies keyframes commands to a candidate project.
-use super::{ItemId, ProjectData, Result, Tick, item};
+use super::super::{ItemId, ProjectData, Result, Tick, item};
 
-pub(super) fn execute_set_animated_param(
+pub(in super::super) fn execute_set_animated_param(
     mut data: ProjectData,
     id: ItemId,
     path: project::AnimationPath,
@@ -13,7 +13,7 @@ pub(super) fn execute_set_animated_param(
 }
 /// Add a key at `time`, or remove the one already there. `value` is used for a
 /// missing channel or missing key; the caller reads the field's current value.
-pub(super) fn execute_toggle_keyframe(
+pub(in super::super) fn execute_toggle_keyframe(
     mut data: ProjectData,
     id: ItemId,
     path: project::AnimationPath,
@@ -40,7 +40,7 @@ pub(super) fn execute_toggle_keyframe(
     Ok(data)
 }
 /// Remove several keyframes atomically; a stale entry refuses every removal.
-pub(super) fn execute_delete_keyframes(
+pub(in super::super) fn execute_delete_keyframes(
     mut data: ProjectData,
     keys: Vec<crate::KeyframeRef>,
 ) -> Result<ProjectData> {
@@ -58,7 +58,7 @@ pub(super) fn execute_delete_keyframes(
     }
     Ok(data)
 }
-pub(super) fn execute_set_keyframe_extrapolation(
+pub(in super::super) fn execute_set_keyframe_extrapolation(
     mut data: ProjectData,
     id: ItemId,
     path: project::AnimationPath,
@@ -73,7 +73,7 @@ pub(super) fn execute_set_keyframe_extrapolation(
         .set_extrapolation(before, after)?;
     Ok(data)
 }
-pub(super) fn execute_add_keyframe(
+pub(in super::super) fn execute_add_keyframe(
     mut data: ProjectData,
     id: ItemId,
     path: project::AnimationPath,
@@ -88,7 +88,7 @@ pub(super) fn execute_add_keyframe(
 
     Ok(data)
 }
-pub(super) fn execute_remove_keyframe(
+pub(in super::super) fn execute_remove_keyframe(
     mut data: ProjectData,
     id: ItemId,
     path: project::AnimationPath,
@@ -103,7 +103,7 @@ pub(super) fn execute_remove_keyframe(
 
     Ok(data)
 }
-pub(super) fn execute_retime_keyframe(
+pub(in super::super) fn execute_retime_keyframe(
     mut data: ProjectData,
     id: ItemId,
     path: project::AnimationPath,
@@ -120,7 +120,7 @@ pub(super) fn execute_retime_keyframe(
     Ok(data)
 }
 #[allow(clippy::too_many_arguments)]
-pub(super) fn execute_set_keyframe_handle(
+pub(in super::super) fn execute_set_keyframe_handle(
     mut data: ProjectData,
     id: ItemId,
     path: project::AnimationPath,
@@ -138,7 +138,7 @@ pub(super) fn execute_set_keyframe_handle(
 
     Ok(data)
 }
-pub(super) fn execute_scale_keyframe_time(
+pub(in super::super) fn execute_scale_keyframe_time(
     mut data: ProjectData,
     id: ItemId,
     numerator: i64,
@@ -152,7 +152,7 @@ pub(super) fn execute_scale_keyframe_time(
 }
 /// Give the segment leaving every addressed key the same curve, atomically: a
 /// stale key or a key with no outgoing segment refuses the whole selection.
-pub(super) fn execute_set_easing(
+pub(in super::super) fn execute_set_easing(
     mut data: ProjectData,
     keys: Vec<crate::KeyframeRef>,
     curve: project::EasingCurve,

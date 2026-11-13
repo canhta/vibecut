@@ -1,5 +1,5 @@
 //! Expands built-in clip animations into ordinary editable keys on the channels they own.
-use super::{ItemId, ProjectData, Result, Tick, item};
+use super::super::{ItemId, ProjectData, Result, Tick, item};
 use crate::session::EditError;
 use crate::{AnimationPreset as P, AnimationSlot, ClipAnimations};
 use project::{
@@ -499,7 +499,7 @@ impl ClipAnimations {
     }
 }
 
-pub(super) fn execute_set_clip_animation(
+pub(in super::super) fn execute_set_clip_animation(
     mut data: ProjectData,
     id: ItemId,
     slot: AnimationSlot,
@@ -589,7 +589,7 @@ pub(super) fn execute_set_clip_animation(
 /// Re-fit the item's animations to its new length after a trim has shifted its keys:
 /// durations clamp to the clip, Out shrinks before In, and a clip under two frames loses
 /// them. `before` and `before_length` are read from the item ahead of the trim.
-pub(super) fn refit(
+pub(in super::super) fn refit(
     target: &mut Item,
     before: ClipAnimations,
     before_length: Tick,

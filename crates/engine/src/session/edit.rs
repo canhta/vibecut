@@ -986,13 +986,12 @@ fn check_timeline(data: &mut ProjectData) -> Result<()> {
     }
     Ok(())
 }
-mod animation;
 mod audio;
 mod clips;
 mod effects;
-mod keyframes;
 mod masks;
 mod media_edits;
+mod motion;
 mod parameters;
 mod project_edits;
 mod retime;
@@ -1000,6 +999,7 @@ mod text;
 mod tracks;
 mod transitions;
 
+use motion::{animation, keyframes};
 pub use project_edits::DEFAULT_BOOKMARK_COLOR;
 
 pub(crate) use clips::{close_vacated_tails as ripple, magnet_scope};

@@ -110,7 +110,7 @@ higher engine workflows delegate through `engine::control::Error::Edit`. Command
 
 `clip.set_animation { item, slot, preset, duration }` expands one built-in look once into
 ordinary item-relative keys on one unlocked active-scene Text, Video, Image, Overlay,
-Graphic or Sticker item ([`animation.rs`](animation.rs)). `slot` is `in` (the first edge),
+Graphic or Sticker item ([`motion/animation.rs`](motion/animation.rs)). `slot` is `in` (the first edge),
 `out` (the last edge) or `combo` (the whole clip); `preset` null removes the slot. Looks are
 named for creators, not source parity. The twelve In/Out looks are Fade, Slide left, right,
 up and down (a quarter of the canvas width or height; the name is the direction the picture
