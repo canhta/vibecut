@@ -1816,7 +1816,7 @@ fn consent_denial_provider_change_cancel_and_stale_results_never_apply() {
         );
         match action {
             "deny" => click(&mut h, "subtitles.consent.deny"),
-            "change" => h.state_mut().preferences.subtitles.translation = "anthropic".into(),
+            "change" => h.state_mut().preferences.subtitles.text_provider = "anthropic".into(),
             "cancel" => h.state_mut().subtitles_mut().unwrap().cancel(),
             "provider-failure" => click(&mut h, "subtitles.consent.approve"),
             _ => {

@@ -164,6 +164,24 @@ fn localized_model_preferences_custom_selection_persists_and_refresh_is_explicit
                 .ai_models
                 .options("openai", Operation::Transcribe, &[]);
         assert!(options.contains(&selected));
+        // The text-task row stores one provider; translation and filler runs read it.
+        assert_eq!(bench.editor().preferences.subtitles.text_provider, "openai");
+        bench.click("preferences.text.provider.combo");
+        bench.click("preferences.text.provider.anthropic");
+        assert_eq!(
+            bench.editor().preferences.subtitles.text_provider,
+            "anthropic"
+        );
+        let subtitles = &bench.editor().preferences.subtitles;
+        let models = &bench.editor().preferences.ai_models;
+        assert_eq!(
+            subtitles.translation_model,
+            models.model("anthropic", Operation::Translate)
+        );
+        assert_eq!(
+            subtitles.fillers_model,
+            models.model("anthropic", Operation::ClassifyFillers)
+        );
     }
 }
 #[test]
