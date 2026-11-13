@@ -275,6 +275,10 @@ pub(crate) enum Request {
     /// Insert one shape through its `graphic.insert.*` action when it is enabled, then
     /// tell the assets area to record it as recent.
     InsertShape(String),
+    /// Ask the window to open the native media picker for one clip's replacement.
+    ReplaceMedia(project::ItemId),
+    /// Edits changed the project: drop the nested selection scopes it left dangling.
+    PruneSelection,
 }
 
 /// The shared editor context. One area receives it for one frame; its edit

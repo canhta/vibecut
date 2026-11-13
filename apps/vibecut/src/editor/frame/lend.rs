@@ -1,6 +1,6 @@
 //! Lends areas their ports and applies the notes they leave behind.
 use crate::editor::{Editor, SelectionScopes};
-use crate::editor::{Note, Port, Read, Rect, Vec2, assets, egui};
+use crate::editor::{Note, Port, Read, Rect, Vec2, assets, egui, timeline};
 
 impl Editor {
     /// Lend the assets state and a port to one workflow step, then apply the notes the
@@ -27,6 +27,35 @@ impl Editor {
         let result = run(&mut state, &mut port);
         let notes = port.into_notes();
         self.assets = state;
+        self.apply_notes(notes);
+        result
+    }
+
+    /// Lend the timeline state and a port to one step, then apply the notes the step left,
+    /// in order. Cross-area requests the notes carry run once the state is back.
+    pub(in crate::editor) fn with_timeline<T>(
+        &mut self,
+        run: impl FnOnce(&mut timeline::State, &mut Port<'_>) -> T,
+    ) -> T {
+        let insertion_available = self.insertion_available();
+        let caption_bank_ready = self.caption_bank_ready();
+        let mut state = std::mem::take(&mut self.timeline);
+        let item_rects = state.item_rects().to_vec();
+        let mut port = Port::new(
+            &mut self.session,
+            Read {
+                budget: self.playback.budget(),
+                preferences: &self.preferences,
+                playhead: self.playback.position().ok(),
+                item_rects: &item_rects,
+                now: self.clock.now(),
+                insertion_available,
+                caption_bank_ready,
+            },
+        );
+        let result = run(&mut state, &mut port);
+        let notes = port.into_notes();
+        self.timeline = state;
         self.apply_notes(notes);
         result
     }

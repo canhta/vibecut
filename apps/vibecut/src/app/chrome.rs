@@ -42,7 +42,7 @@ impl EditorWindow {
             && let Some(item) = self
                 .editor
                 .as_mut()
-                .and_then(|editor| editor.replace_request.take())
+                .and_then(|editor| editor.take_replace_request())
             && let Err(error) = self.pick(ui.ctx(), PickerAction::ReplaceMedia { item })
         {
             self.error = Some(error);

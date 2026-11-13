@@ -1,11 +1,19 @@
 # Timeline
 
-Interface: `State`, `show`, `show_scenes`, `Action`, `Gesture`, `DropZone`.
+Interface: `State`, `show`, `show_scenes`, `apply`, `Action`, `Gesture`, `DropZone`.
 
 The area owns its layout constants (toolbar, ruler, label and scrollbar sizes, zoom
 bounds and padding, edge auto-scroll, ruler spacing, clip label length) in `timeline.rs`,
 its snapping in `snapping.rs` and the persisted-view conversions on `State`
 (`adopt_stored_view`, `stored_view`, `zoom_step`); the frame reads none of them.
+
+`apply(state, port, actions)` applies the actions `show` returns through the frame's
+`Port`: engine commands, gesture previews and publishes, scene renames, generation jobs,
+lane and easing preferences, and the Replace media request. The selection scopes, the
+inspector's open scrub and the gesture openers belong to the frame, so `apply` stops at
+the first action that needs them and returns it with the rest; the frame applies it and
+calls again. `State` holds the Replace media request until the window takes it for the
+native picker; the area leaves it as `Request::ReplaceMedia`.
 
 Each item has a 16 px chevron opening its keyframe lanes. The open set is presentation
 state stored as `timeline_lanes` in the preference document, keyed by owning project so

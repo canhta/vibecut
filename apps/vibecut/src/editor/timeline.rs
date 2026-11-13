@@ -2,8 +2,9 @@
 //!
 //! `show(state, cx, ui)` paints the panel (toolbar, ruler, headers, lanes,
 //! scrollbars) from the shared read-only [`Context`] and returns the
-//! requests the frame routes. The panel never touches the session, the
-//! selection or the transport; the frame applies each [`Action`].
+//! requests it makes. The panel never touches the session, the selection or
+//! the transport while painting; `apply(state, port, actions)` then applies
+//! each [`Action`] through the frame's `Port`.
 mod action;
 mod audio;
 mod graph;
@@ -19,6 +20,9 @@ pub(super) use action::{Action, Gesture};
 pub(super) use state::{DropZone, State, Tool};
 pub(super) use view::{TOOLBAR_ACTIONS, add_track_command, show, show_scenes};
 pub(super) use visuals::Media;
+pub(super) use workflow::{
+    apply, command_on_selection, discard_gesture, discard_timeline_preview, release_graph,
+};
 
 use super::{
     Align2, AssetId, BTreeSet, BookmarkId, Color32, Command, Context, FontId, FrameRate, Icon, Id,

@@ -336,7 +336,6 @@ impl Editor {
             lifecycle_action: None,
             clock: Arc::new(SystemClock::default()),
             toast: None,
-            replace_request: None,
             assets: asset_state,
             dialogs: dialogs::State::default(),
             copy_snapshot_requested: false,
@@ -483,7 +482,7 @@ impl Editor {
             media_sort: self.preferences.media_sort,
             media_order,
             media_highlight,
-            replace_request: self.replace_request,
+            replace_request: self.timeline.replace_request(),
             media_delete_pending,
             sounds: self.assets.sounds.as_ref().map(|sounds| sounds.view()),
             music: self.assets.music.as_ref().map(|music| music.view()),
@@ -730,9 +729,10 @@ impl Editor {
             }
         }
     }
-    /// Ask the window to open the native media picker for one clip's replacement.
-    pub(in crate::editor) fn request_replace_media(&mut self, item: ItemId) {
-        self.replace_request = Some(item);
+    /// The clip whose Replace media request waits for the window's native picker; taking it
+    /// hands the request over.
+    pub(crate) fn take_replace_request(&mut self) -> Option<ItemId> {
+        self.timeline.take_replace_request()
     }
     /// Replace one clip's source with a file that is already a project asset. A file
     /// that has not been imported refuses, so the timeline never gains an unlisted source.

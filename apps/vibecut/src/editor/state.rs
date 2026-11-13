@@ -291,8 +291,6 @@ pub struct Editor {
     /// Time base for transient UI timers (toast and media reveal).
     pub(super) clock: Arc<dyn Clock>,
     pub(super) toast: Option<Toast>,
-    /// A timeline "Replace media" request waiting for the window to open the native picker.
-    pub(crate) replace_request: Option<ItemId>,
     pub(super) assets: super::assets::State,
     pub(super) dialogs: super::dialogs::State,
     /// A copy-snapshot action waits for the next frame's egui context.

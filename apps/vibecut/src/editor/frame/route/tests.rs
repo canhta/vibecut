@@ -108,7 +108,7 @@ fn previews_and_drops_outside_an_open_gesture_edit_nothing() {
     } = rig();
     let project = editor.session.project().clone();
     let history = editor.session.history_len();
-    editor.route_timeline(vec![
+    editor.apply_timeline(vec![
         shift(first, SECOND),
         timeline::Action::PreviewGesture(Box::new(timeline::Gesture::Move {
             items: vec![first],
@@ -129,7 +129,7 @@ fn a_gesture_publishes_one_undo_step_from_many_previews() {
     } = rig();
     let history = editor.session.history_len().0;
     let before = editor.session.project().clone();
-    editor.route_timeline(vec![
+    editor.apply_timeline(vec![
         timeline::Action::BeginPreview {
             select: Some(first),
         },
@@ -157,7 +157,7 @@ fn a_gesture_publishes_one_undo_step_from_many_previews() {
         editor.inspect().unwrap().preview,
         Some("timeline.move_items")
     );
-    editor.route_timeline(vec![timeline::Action::EndPreview]);
+    editor.apply_timeline(vec![timeline::Action::EndPreview]);
     assert!(!editor.session.gesture_active());
     assert_eq!(editor.session.history_len().0, history + 1);
     assert_eq!(start_of(&editor, first), Tick(3 * SECOND));
@@ -171,7 +171,7 @@ fn a_refused_track_drop_rolls_the_whole_gesture_back() {
     } = rig();
     let before = editor.session.project().clone();
     let history = editor.session.history_len();
-    editor.route_timeline(vec![
+    editor.apply_timeline(vec![
         timeline::Action::BeginPreview { select: None },
         shift(first, SECOND),
         timeline::Action::PreviewGesture(Box::new(timeline::Gesture::Move {
@@ -205,17 +205,17 @@ fn selection_requests_update_the_session_selection() {
         second,
         ..
     } = rig();
-    editor.route_timeline(vec![timeline::Action::Select {
+    editor.apply_timeline(vec![timeline::Action::Select {
         item: first,
         modifiers: egui::Modifiers::NONE,
     }]);
     assert_eq!(editor.session.selection(), &BTreeSet::from([first]));
-    editor.route_timeline(vec![
+    editor.apply_timeline(vec![
         timeline::Action::Marquee(BTreeSet::from([first, second])),
         timeline::Action::SettleSelection,
     ]);
     assert_eq!(editor.session.selection(), &BTreeSet::from([first, second]));
-    editor.route_timeline(vec![timeline::Action::ClearSelection]);
+    editor.apply_timeline(vec![timeline::Action::ClearSelection]);
     assert!(editor.session.selection().is_empty());
 }
 
@@ -224,7 +224,7 @@ fn commands_seeks_activations_scene_renames_and_failures_reach_their_owners() {
     let Rig {
         mut editor, track, ..
     } = rig();
-    editor.route_timeline(vec![timeline::Action::Command(Box::new(
+    editor.apply_timeline(vec![timeline::Action::Command(Box::new(
         Command::SetTrackLocked {
             track,
             locked: true,
@@ -240,23 +240,23 @@ fn commands_seeks_activations_scene_renames_and_failures_reach_their_owners() {
             .iter()
             .any(|candidate| candidate.id == track && candidate.locked)
     );
-    editor.route_timeline(vec![timeline::Action::Seek(Tick(2 * SECOND))]);
+    editor.apply_timeline(vec![timeline::Action::Seek(Tick(2 * SECOND))]);
     assert_eq!(editor.playback.position().unwrap(), Tick(2 * SECOND));
     assert!(!editor.preferences.ripple);
-    editor.route_timeline(vec![timeline::Action::Activate("timeline.ripple".into())]);
+    editor.apply_timeline(vec![timeline::Action::Activate("timeline.ripple".into())]);
     assert!(
         editor.preferences.ripple,
         "activation goes through the action registry"
     );
     // A rename the engine refuses is reported and its draft stays open.
-    editor.route_timeline(vec![timeline::Action::RenameScene {
+    editor.apply_timeline(vec![timeline::Action::RenameScene {
         scene: project::SceneId(99),
         name: "Nowhere".into(),
     }]);
     assert!(editor.error.take().is_some());
     assert!(editor.timeline.scenes.is_renaming());
     let scene = editor.session.project().data().current_scene_id;
-    editor.route_timeline(vec![timeline::Action::RenameScene {
+    editor.apply_timeline(vec![timeline::Action::RenameScene {
         scene,
         name: "Renamed".into(),
     }]);
@@ -265,6 +265,6 @@ fn commands_seeks_activations_scene_renames_and_failures_reach_their_owners() {
         editor.session.project().data().scene().name.as_str(),
         "Renamed"
     );
-    editor.route_timeline(vec![timeline::Action::Fail("nope".into())]);
+    editor.apply_timeline(vec![timeline::Action::Fail("nope".into())]);
     assert_eq!(editor.error.as_deref(), Some("nope"));
 }
