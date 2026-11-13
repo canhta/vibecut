@@ -46,9 +46,75 @@ pub(super) fn set_noise_reduction(port: &mut Port<'_>, item: ItemId, enabled: bo
                 enabled: true,
                 wet_percent: 100.0,
                 kind: project::NOISE_REDUCTION_DEFAULT,
+                preset: None,
             },
         },
         None => return Ok(()),
+    };
+    port.apply_result(command)?;
+    Ok(())
+}
+
+/// The Voice enhancement preset over the item's cleanup chain, found by the effects' preset
+/// marker. `enabled` sets every marked effect on or off and, when turning on, adds the preset's
+/// effects the chain lacks with the next free ids after the chain's highest, the way every new
+/// effect gets its id; `wet_percent` sets the mix of every marked or added effect. Values the
+/// user tuned stay. All edits go in one batch, so one undo step, and nothing changes when
+/// nothing would.
+pub(super) fn set_voice_enhancement(
+    port: &mut Port<'_>,
+    item: ItemId,
+    enabled: Option<bool>,
+    wet_percent: Option<f32>,
+) -> Result<()> {
+    let project = port.view().session.project();
+    let present = read::cleanup_effects(project, item).ok_or(Error::Invalid(
+        "voice enhancement needs an audio or video item",
+    ))?;
+    let first_id = read::next_cleanup_effect_id(project, item).ok_or(Error::Invalid(
+        "voice enhancement needs an audio or video item",
+    ))?;
+    let marked = |effect: &&project::CleanupEffect| {
+        effect.preset == Some(project::CleanupPreset::VoiceEnhancement)
+    };
+    let mut commands = Vec::new();
+    for effect in present.iter().filter(marked) {
+        let changed = project::CleanupEffect {
+            enabled: enabled.unwrap_or(effect.enabled),
+            wet_percent: wet_percent.unwrap_or(effect.wet_percent),
+            ..effect.clone()
+        };
+        if changed != *effect {
+            commands.push(engine::Command::UpdateCleanupEffect {
+                item,
+                effect: changed,
+            });
+        }
+    }
+    if enabled == Some(true) {
+        // A slot is missing when no marked effect has its kind.
+        let mut next_id = first_id;
+        for want in project::voice_enhancement_effects(0) {
+            let has = present.iter().filter(marked).any(|effect| {
+                std::mem::discriminant(&effect.kind) == std::mem::discriminant(&want.kind)
+            });
+            if !has {
+                commands.push(engine::Command::AddCleanupEffect {
+                    item,
+                    effect: project::CleanupEffect {
+                        id: next_id,
+                        wet_percent: wet_percent.unwrap_or(want.wet_percent),
+                        ..want
+                    },
+                });
+                next_id += 1;
+            }
+        }
+    }
+    let command = match commands.len() {
+        0 => return Ok(()),
+        1 => commands.remove(0),
+        _ => engine::Command::Batch { commands },
     };
     port.apply_result(command)?;
     Ok(())

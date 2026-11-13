@@ -610,6 +610,7 @@ fn cleanup_effect(id: u32, kind: project::CleanupKind) -> project::CleanupEffect
         enabled: true,
         wet_percent: 100.0,
         kind,
+        preset: None,
     }
 }
 
@@ -742,6 +743,7 @@ fn cleanup_effects_are_undoable_persisted_and_refuse_hostile_input_atomically() 
             enabled: false,
             wet_percent: 50.0,
             kind: project::CleanupKind::Highpass { cutoff_hz: 80.0 },
+            preset: None,
         },
     })
     .unwrap();

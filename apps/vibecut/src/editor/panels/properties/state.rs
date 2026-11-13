@@ -100,6 +100,17 @@ pub(in crate::editor) enum Action {
         preset: project::SpeedPreset,
         maintain_pitch: bool,
     },
+    /// The Audio tab's Voice enhancement switch: one batched edit adds or enables the preset's
+    /// effects, or disables them keeping their values.
+    SetVoiceEnhancement {
+        item: ItemId,
+        enabled: bool,
+    },
+    /// The preset's strength: every preset effect's dry/wet mix, in percent.
+    SetVoiceEnhancementStrength {
+        item: ItemId,
+        wet_percent: f32,
+    },
     /// The Speed tab's Reverse switch, through `timeline.set_reverse`.
     SetReverse {
         item: ItemId,

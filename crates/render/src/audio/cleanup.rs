@@ -1,12 +1,16 @@
 //! Runs one item's cleanup chain over its source audio, keeping state across contiguous blocks.
 mod biquad;
 mod declick;
+mod deess;
+mod dereverb;
 mod fft;
 mod spectral;
 
 use crate::{ExecutionHooks, MemoryKind, Reservation, Result};
 use biquad::{Biquad, Coeffs, FilterType};
 use declick::ClickRemover;
+use deess::DeEsser;
+use dereverb::Dereverber;
 use project::{AudioCleanup, CleanupKind, EqBandKind};
 use spectral::NoiseReducer;
 use std::f64::consts::{FRAC_1_SQRT_2, SQRT_2};
@@ -26,6 +30,8 @@ enum Engine {
         state: Vec<Vec<Biquad>>,
     },
     Noise(NoiseReducer),
+    Reverb(Dereverber),
+    Sibilance(DeEsser),
     Clicks(ClickRemover),
 }
 
@@ -35,6 +41,8 @@ impl Engine {
         match self {
             Self::Filters { .. } => 0,
             Self::Noise(reducer) => reducer.latency(),
+            Self::Reverb(reverb) => reverb.latency(),
+            Self::Sibilance(_) => 0,
             Self::Clicks(_) => declick::LATENCY,
         }
     }
@@ -43,6 +51,8 @@ impl Engine {
         match self {
             Self::Filters { state, .. } => state.clear(),
             Self::Noise(reducer) => reducer.reset(),
+            Self::Reverb(reverb) => reverb.reset(),
+            Self::Sibilance(deesser) => deesser.reset(),
             Self::Clicks(remover) => remover.reset(),
         }
     }
@@ -76,28 +86,9 @@ impl Stage {
         self.dry_pos = 0;
     }
 
-    /// Processes `planes` in place. Each output sample is the engine's output for the input that
-    /// entered `engine.latency()` samples earlier, mixed with that same delayed input.
-    fn process(&mut self, planes: &mut [Vec<f32>]) {
-        let latency = self.engine.latency();
-        let wet = self.wet;
-        if let Engine::Filters { sections, state } = &mut self.engine {
-            if state.len() != planes.len() {
-                *state = vec![vec![Biquad::default(); sections.len()]; planes.len()];
-            }
-            for (plane, states) in planes.iter_mut().zip(state.iter_mut()) {
-                for sample in plane.iter_mut() {
-                    let dry = f64::from(*sample);
-                    let mut x = dry;
-                    for (section, bq) in sections.iter().zip(states.iter_mut()) {
-                        x = bq.tick(section, x);
-                    }
-                    *sample = (dry + wet * (x - dry)) as f32;
-                }
-            }
-            return;
-        }
-        // Hold the dry input back by the engine's latency in a ring per channel.
+    /// Takes `planes` as the next input and returns the input that entered `latency` samples
+    /// earlier, held back in a ring per channel.
+    fn hold_dry(&mut self, planes: &[Vec<f32>], latency: usize) -> Vec<Vec<f32>> {
         let ring_len = latency.max(1);
         if self.dry.len() != planes.len() {
             self.dry = vec![vec![0.0; ring_len]; planes.len()];
@@ -119,8 +110,39 @@ impl Stage {
             }
         }
         self.dry_pos = (start + frames) % ring_len;
+        delayed
+    }
+
+    /// Processes `planes` in place. Each output sample is the engine's output for the input that
+    /// entered `engine.latency()` samples earlier, mixed with that same delayed input.
+    fn process(&mut self, planes: &mut [Vec<f32>]) {
+        let latency = self.engine.latency();
+        let wet = self.wet;
+        if let Engine::Filters { sections, state } = &mut self.engine {
+            if state.len() != planes.len() {
+                *state = vec![vec![Biquad::default(); sections.len()]; planes.len()];
+            }
+            for (plane, states) in planes.iter_mut().zip(state.iter_mut()) {
+                for sample in plane.iter_mut() {
+                    let dry = f64::from(*sample);
+                    let mut x = dry;
+                    for (section, bq) in sections.iter().zip(states.iter_mut()) {
+                        x = bq.tick(section, x);
+                    }
+                    *sample = (dry + wet * (x - dry)) as f32;
+                }
+            }
+            return;
+        }
+        let delayed = if latency == 0 {
+            planes.to_vec()
+        } else {
+            self.hold_dry(planes, latency)
+        };
         match &mut self.engine {
             Engine::Noise(reducer) => reducer.process(planes),
+            Engine::Reverb(reverb) => reverb.process(planes),
+            Engine::Sibilance(deesser) => deesser.process(planes),
             Engine::Clicks(remover) => remover.process(planes),
             Engine::Filters { .. } => {}
         }
@@ -183,6 +205,26 @@ impl CleanupChain {
                             *reduction_db,
                             *threshold_db,
                             *smoothing_percent,
+                        ))
+                    }
+                    CleanupKind::Dereverb {
+                        amount_percent,
+                        rt60_seconds,
+                    } => {
+                        bytes += dereverb::state_bytes(rate);
+                        Engine::Reverb(Dereverber::new(rate, *amount_percent, *rt60_seconds))
+                    }
+                    CleanupKind::Deess {
+                        frequency_hz,
+                        threshold_db,
+                        reduction_db,
+                    } => {
+                        bytes += deess::STATE_BYTES;
+                        Engine::Sibilance(DeEsser::new(
+                            rate,
+                            *frequency_hz,
+                            *threshold_db,
+                            *reduction_db,
                         ))
                     }
                     CleanupKind::Declick {
@@ -345,7 +387,10 @@ fn sections(kind: &CleanupKind, sample_rate: f64) -> Vec<Coeffs> {
             })
             .collect(),
         // Spectral and sample-domain effects have their own engines, never sections.
-        CleanupKind::NoiseReduction { .. } | CleanupKind::Declick { .. } => Vec::new(),
+        CleanupKind::NoiseReduction { .. }
+        | CleanupKind::Dereverb { .. }
+        | CleanupKind::Deess { .. }
+        | CleanupKind::Declick { .. } => Vec::new(),
     }
 }
 
@@ -370,7 +415,9 @@ pub(crate) fn latency_samples(cleanup: &AudioCleanup, rate: u32) -> usize {
         .iter()
         .filter(|effect| effect.enabled && effect.wet_percent > 0.0)
         .map(|effect| match effect.kind {
-            CleanupKind::NoiseReduction { .. } => spectral::frame_size(rate),
+            CleanupKind::NoiseReduction { .. } | CleanupKind::Dereverb { .. } => {
+                spectral::frame_size(rate)
+            }
             CleanupKind::Declick { .. } => declick::LATENCY,
             _ => 0,
         })

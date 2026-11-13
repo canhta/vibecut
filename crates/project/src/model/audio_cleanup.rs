@@ -29,6 +29,17 @@ pub struct CleanupEffect {
     /// Dry/wet mix in percent: 0 passes the source through, 100 keeps only the processed signal.
     pub wet_percent: f32,
     pub kind: CleanupKind,
+    /// The preset that added this effect, if any. A marker only: the effect is edited, bypassed
+    /// and removed like any other.
+    pub preset: Option<CleanupPreset>,
+}
+
+/// A named group of cleanup effects applied together.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CleanupPreset {
+    /// The one-click voice enhancement chain, see [`voice_enhancement_effects`].
+    VoiceEnhancement,
 }
 
 /// Cleanup effect kinds and their parameters.
@@ -65,6 +76,25 @@ pub enum CleanupKind {
         /// How slowly the gate opens and closes, in percent: 0 to 100.
         smoothing_percent: f32,
     },
+    /// Late-reverberation suppression: the reverberant tail predicted from an exponential decay
+    /// model is removed by spectral subtraction.
+    Dereverb {
+        /// Over-subtraction and gain floor, in percent: 0 to 100.
+        amount_percent: f32,
+        /// Decay time of the room to remove, in seconds: 0.1 to 5.
+        rt60_seconds: f32,
+    },
+    /// De-esser: a dynamic high shelf cuts the band above `frequency_hz` while it stands out
+    /// from the broadband level.
+    Deess {
+        /// Sibilance band start and shelf corner, in Hz: 2000 to 12000.
+        frequency_hz: f32,
+        /// How far the band may stand above the broadband level before it is cut, in dB:
+        /// -40 to 0.
+        threshold_db: f32,
+        /// Deepest cut, in dB: 0 to 24.
+        reduction_db: f32,
+    },
     /// Click removal: outliers of a linear-prediction residual are replaced by interpolation.
     Declick {
         /// Detection threshold, 1 to 100: higher finds fewer, stronger clicks.
@@ -80,6 +110,69 @@ pub const NOISE_REDUCTION_DEFAULT: CleanupKind = CleanupKind::NoiseReduction {
     threshold_db: 6.0,
     smoothing_percent: 50.0,
 };
+
+/// Number of effects the voice enhancement preset adds.
+pub const VOICE_ENHANCEMENT_EFFECTS: usize = 5;
+
+/// The one-click voice enhancement preset, with ids `first_id` onward: an 80 Hz high-pass
+/// against rumble, de-reverberation, spectral noise reduction at `NOISE_REDUCTION_DEFAULT`
+/// strength, a de-esser, then a parametric equaliser with a 250 Hz mud cut, a 2.5 kHz presence
+/// boost and a 10 kHz air shelf (the structure reference's SpeechEnhance bands for a low voice).
+/// De-reverberation and noise reduction run before the boosts so they cannot lift what those
+/// stages remove. Every effect is an ordinary chain effect carrying
+/// [`CleanupPreset::VoiceEnhancement`] as its marker: tune, disable or remove any of them with
+/// the `audio.*_cleanup_effect` commands. The preset has no gain stage, so the project's loudness
+/// normalizer, which measures the chain's output, never levels twice.
+pub fn voice_enhancement_effects(first_id: u32) -> [CleanupEffect; VOICE_ENHANCEMENT_EFFECTS] {
+    let band = |kind, frequency_hz, gain_db, q| EqBand {
+        kind,
+        enabled: true,
+        frequency_hz,
+        gain_db,
+        q,
+    };
+    let effect = |offset: u32, kind| CleanupEffect {
+        id: first_id + offset,
+        enabled: true,
+        wet_percent: 100.0,
+        kind,
+        preset: Some(CleanupPreset::VoiceEnhancement),
+    };
+    [
+        effect(0, CleanupKind::Highpass { cutoff_hz: 80.0 }),
+        effect(
+            1,
+            CleanupKind::Dereverb {
+                amount_percent: 40.0,
+                rt60_seconds: 0.4,
+            },
+        ),
+        effect(2, NOISE_REDUCTION_DEFAULT),
+        effect(
+            3,
+            CleanupKind::Deess {
+                frequency_hz: 6000.0,
+                threshold_db: -12.0,
+                reduction_db: 8.0,
+            },
+        ),
+        effect(
+            4,
+            CleanupKind::ParametricEq {
+                bands: vec![
+                    band(EqBandKind::Peaking, 250.0, -3.0, 1.0),
+                    band(EqBandKind::Peaking, 2500.0, 4.0, 1.0),
+                    band(
+                        EqBandKind::HighShelf,
+                        10_000.0,
+                        2.0,
+                        std::f32::consts::FRAC_1_SQRT_2,
+                    ),
+                ],
+            },
+        ),
+    ]
+}
 
 /// Mains supply frequency of a hum removal.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -172,6 +265,27 @@ impl CleanupEffect {
                     || !finite_in(*smoothing_percent, 0.0, 100.0)
                 {
                     return Err(Error::Invalid("noise reduction parameters"));
+                }
+            }
+            CleanupKind::Dereverb {
+                amount_percent,
+                rt60_seconds,
+            } => {
+                if !finite_in(*amount_percent, 0.0, 100.0) || !finite_in(*rt60_seconds, 0.1, 5.0)
+                {
+                    return Err(Error::Invalid("dereverb parameters"));
+                }
+            }
+            CleanupKind::Deess {
+                frequency_hz,
+                threshold_db,
+                reduction_db,
+            } => {
+                if !finite_in(*frequency_hz, 2000.0, 12_000.0)
+                    || !finite_in(*threshold_db, -40.0, 0.0)
+                    || !finite_in(*reduction_db, 0.0, 24.0)
+                {
+                    return Err(Error::Invalid("deess parameters"));
                 }
             }
             CleanupKind::Declick {

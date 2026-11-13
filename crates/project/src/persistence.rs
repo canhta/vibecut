@@ -24,7 +24,7 @@ use std::{
     path::{Path, PathBuf},
 };
 pub const FORMAT_ID: &str = "vibecut.project";
-pub const SCHEMA_VERSION: u32 = 46;
+pub const SCHEMA_VERSION: u32 = 47;
 #[derive(Serialize)]
 struct EnvelopeOut<'a> {
     format: &'static str,
