@@ -3,8 +3,8 @@ use super::{Error, Result};
 use project::{ItemId, ItemParams, Project};
 
 /// Refuses naming each visible video item of the project's active scene that has stabilization
-/// switched on and no correction in `render`, so export never differs silently from a preview
-/// that drew the correction.
+/// or background removal switched on and no stored correction for it in `render`, so export never
+/// differs silently from a preview that drew the correction.
 pub fn admit(project: &Project, render: &render::RenderSettings) -> Result<()> {
     let missing: Vec<ItemId> = project
         .data()
@@ -15,8 +15,14 @@ pub fn admit(project: &Project, render: &render::RenderSettings) -> Result<()> {
         .flat_map(|track| &track.items)
         .filter(|item| {
             !item.hidden
-                && matches!(&item.content, ItemParams::Video(p) if p.stabilize.is_some())
-                && !render.stabilization.contains_key(&item.id)
+                && match &item.content {
+                    ItemParams::Video(p) => {
+                        (p.stabilize.is_some() && !render.stabilization.contains_key(&item.id))
+                            || (p.background_removal.is_some()
+                                && !render.person_mattes.contains_key(&item.id))
+                    }
+                    _ => false,
+                }
         })
         .map(|item| item.id)
         .collect();

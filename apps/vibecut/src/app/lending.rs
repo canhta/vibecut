@@ -54,11 +54,15 @@ impl Lending {
     /// Open every store beside `root`. A store that cannot open keeps its typed
     /// error here and its section shows the reason; its commands refuse as unavailable.
     pub(super) fn open(root: &Path, budget: &ByteBudget) -> Self {
+        let model_cache = Arc::new(ModelCache::new(budget.clone()));
         // The workspace root keeps test runs isolated and never races the CLI's cache root.
+        // Background removal loads its segmenter through the same verified models cache.
         let media = MediaAccess::open_in(&root.with_file_name("media"), budget.clone())
             .ok()
-            .map(|access| Arc::new(Mutex::new(access)));
-        let model_cache = Arc::new(ModelCache::new(budget.clone()));
+            .map(|mut access| {
+                access.set_segmentation(::shorts::installed_person_matte(model_cache.lookup()));
+                Arc::new(Mutex::new(access))
+            });
         let brand = BrandKit::open(&root.with_file_name("brand_kits"))
             .ok()
             .map(Arc::new);

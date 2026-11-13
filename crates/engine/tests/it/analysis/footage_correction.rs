@@ -3,11 +3,12 @@
     clippy::indexing_slicing,
     reason = "synthetic fixtures and assertions"
 )]
-//! Footage correction: stabilize measured once per source, looked up by key, applied at render.
+//! Footage correction: stabilize and the person matte measured once per source, looked up by
+//! key, applied at render.
 use engine::{
     ByteBudget, Command, RuntimeError, Session,
     cache::ArtifactCache,
-    footage::{CorrectionJob, CorrectionKind, CorrectionRequest, resolve},
+    footage::{Correction, CorrectionJob, CorrectionKind, CorrectionRequest, Segmenter, resolve},
     jobs::{JobRunner, JobState, RunnerConfig, SystemClock},
 };
 use media::{AssetId, SourceAsset};
@@ -157,16 +158,19 @@ fn analyze(asset: &SourceAsset) -> (Arc<Track>, Vec<u8>) {
     let (mut runner, mut cache, _dir) = setup();
     let request = CorrectionRequest::new(asset.clone(), CorrectionKind::Stabilize).unwrap();
     assert_eq!(request.cached(&mut cache).unwrap(), None);
-    let job = request.submit(&mut runner, &mut cache).unwrap();
+    let job = request.submit(&mut runner, &mut cache, None).unwrap();
     assert_eq!(
         wait(&mut runner, &job),
         JobState::Completed,
         "{:?}",
         runner.snapshot(job.id).and_then(|s| s.error)
     );
-    let track = job.finish(&mut runner, &mut cache).unwrap().unwrap();
+    let stored = job.finish(&mut runner, &mut cache).unwrap().unwrap();
     // A second look finds the published entry and the same track.
-    assert_eq!(request.cached(&mut cache).unwrap(), Some(track.clone()));
+    assert_eq!(request.cached(&mut cache).unwrap(), Some(stored.clone()));
+    let Correction::Stabilize(track) = stored else {
+        panic!("stabilize track");
+    };
     (track, runner.output_bytes(job.id).unwrap().to_vec())
 }
 fn whole(track: &Track) -> time::SourceRange {
@@ -292,10 +296,10 @@ fn a_cleared_cache_needs_analysis_and_export_refuses_but_split_keeps_the_correct
     let (mut runner, mut cache, _dir) = setup();
     // Nothing analysed yet: the item is listed as needing analysis and nothing fails.
     let before = resolve(s.project(), &mut cache);
-    assert_eq!(before.missing, vec![item]);
+    assert_eq!(before.missing, vec![(item, CorrectionKind::Stabilize)]);
     assert!(before.tracks.is_empty());
     let request = CorrectionRequest::new(asset, CorrectionKind::Stabilize).unwrap();
-    let job = request.submit(&mut runner, &mut cache).unwrap();
+    let job = request.submit(&mut runner, &mut cache, None).unwrap();
     assert_eq!(wait(&mut runner, &job), JobState::Completed);
     job.finish(&mut runner, &mut cache).unwrap().unwrap();
     let ready = resolve(s.project(), &mut cache);
@@ -331,10 +335,20 @@ fn a_cleared_cache_needs_analysis_and_export_refuses_but_split_keeps_the_correct
     // A cleared cache is Needs analysis again, and export refuses naming both items.
     let (_runner, mut empty, _other) = setup();
     let cleared = resolve(s.project(), &mut empty);
-    assert_eq!(cleared.missing, ids);
+    assert_eq!(
+        cleared.missing,
+        ids.iter()
+            .map(|id| (*id, CorrectionKind::Stabilize))
+            .collect::<Vec<_>>()
+    );
     let project = s.project().clone();
     let mut export = render::ExportSettings::from_project(&project);
-    export.render.stabilization = cleared.tracks;
+    cleared.attach(&mut export.render);
+    assert_export_refused(&project, export, &ids);
+}
+
+/// Export of `project` with `export` refuses before starting, naming exactly `ids`.
+fn assert_export_refused(project: &Arc<Project>, export: render::ExportSettings, ids: &[ItemId]) {
     let key = engine::cache::CacheKey::new(engine::cache::KeyInputs {
         kind: engine::cache::ArtifactKind::Preview,
         source: [0; 32],
@@ -362,4 +376,155 @@ fn a_cleared_cache_needs_analysis_and_export_refuses_but_split_keeps_the_correct
         Err(other) => panic!("wrong refusal: {other:?}"),
         Ok(_) => panic!("export started without its correction"),
     }
+}
+
+/// A stand-in segmenter: a deterministic plane from the frame's own pixels (bright is a person),
+/// counting its calls. The model's accuracy is the segmentation layer's; this proves the job.
+fn brightness_segmenter(calls: Arc<std::sync::atomic::AtomicUsize>) -> Segmenter {
+    Box::new(
+        move |frame: ai::vision::PersonFrame<'_>, hooks: &dyn ai::ExecutionHooks| {
+            if hooks.cancelled() {
+                return Err(ai::Error::Cancelled);
+            }
+            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let cells = ai::vision::MATTE_SIDE * ai::vision::MATTE_SIDE;
+            let values = frame.values();
+            ai::vision::PersonMatte::new(
+                (0..cells)
+                    .map(|i| {
+                        let mean = (values[i] + values[cells + i] + values[2 * cells + i]) / 765.0;
+                        if mean > 0.5 { 1.0 } else { mean * 0.5 }
+                    })
+                    .collect(),
+            )
+        },
+    )
+}
+/// One matte analysis in its own runner and cache: the matte and the exact bytes retained.
+fn analyze_matte(
+    asset: &SourceAsset,
+    calls: &Arc<std::sync::atomic::AtomicUsize>,
+) -> (Arc<render::matte::MatteTrack>, Vec<u8>) {
+    let (mut runner, mut cache, _dir) = setup();
+    let request = CorrectionRequest::new(asset.clone(), CorrectionKind::PersonMatte).unwrap();
+    assert_eq!(request.cached(&mut cache).unwrap(), None);
+    // A cold matte without a segmenter is the typed missing-model refusal.
+    match request.submit(&mut runner, &mut cache, None) {
+        Err(engine::AnalysisError::Providers(engine::providers::Error::ModelMissing(id))) => {
+            assert_eq!(id, engine::footage::PERSON_MODEL)
+        }
+        Err(other) => panic!("wrong refusal: {other:?}"),
+        Ok(_) => panic!("a cold matte started without its model"),
+    }
+    let job = request
+        .submit(
+            &mut runner,
+            &mut cache,
+            Some(brightness_segmenter(calls.clone())),
+        )
+        .unwrap();
+    assert_eq!(
+        wait(&mut runner, &job),
+        JobState::Completed,
+        "{:?}",
+        runner.snapshot(job.id).and_then(|s| s.error)
+    );
+    let stored = job.finish(&mut runner, &mut cache).unwrap().unwrap();
+    assert_eq!(request.cached(&mut cache).unwrap(), Some(stored.clone()));
+    // A warm entry completes without the model or the source.
+    let warm = request.submit(&mut runner, &mut cache, None).unwrap();
+    assert_eq!(wait(&mut runner, &warm), JobState::Completed);
+    let Correction::PersonMatte(matte) = stored else {
+        panic!("person matte");
+    };
+    (matte, runner.output_bytes(job.id).unwrap().to_vec())
+}
+
+#[test]
+fn a_person_matte_round_trips_one_plane_per_frame_and_two_runs_retain_the_same_bytes() {
+    let frames = 12;
+    let asset = fixture("shaky-240", 240, 135, frames);
+    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let (first, first_bytes) = analyze_matte(&asset, &calls);
+    assert_eq!(first.len(), frames);
+    assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), frames);
+    let (second, second_bytes) = analyze_matte(&asset, &calls);
+    assert_eq!(first_bytes, second_bytes);
+    assert_eq!(first, second);
+    assert_eq!(first_bytes, first.encode());
+    assert_eq!(
+        render::matte::MatteTrack::decode(&first_bytes).unwrap(),
+        *first
+    );
+    // The stand-in sees the texture, so the stored planes are not flat.
+    let plane = first.plane(0).unwrap();
+    assert!(plane.iter().any(|v| *v == 255) && plane.iter().any(|v| *v < 128));
+    // The two kinds never share a key.
+    assert_ne!(
+        CorrectionRequest::new(asset.clone(), CorrectionKind::PersonMatte)
+            .unwrap()
+            .cache_key(),
+        CorrectionRequest::new(asset, CorrectionKind::Stabilize)
+            .unwrap()
+            .cache_key()
+    );
+}
+
+#[test]
+fn a_missing_matte_renders_unmatted_and_export_refuses_until_the_analysis_is_stored() {
+    let asset = fixture("shaky-240", 240, 135, 12);
+    let (mut s, item) = session_over(asset.clone(), 12);
+    // Background removal on, stabilization off: only the matte is needed.
+    s.apply(Command::SetItemField {
+        item,
+        patch: engine::ItemParamPatch::Stabilize(None),
+    })
+    .unwrap();
+    s.apply(Command::SetItemField {
+        item,
+        patch: engine::ItemParamPatch::BackgroundRemoval(Some(project::BackgroundRemoval {
+            feather: 30.0,
+        })),
+    })
+    .unwrap();
+    let (mut runner, mut cache, _dir) = setup();
+    let before = resolve(s.project(), &mut cache);
+    assert_eq!(before.missing, vec![(item, CorrectionKind::PersonMatte)]);
+    assert!(before.mattes.is_empty());
+    let project = s.project().clone();
+    let mut export = render::ExportSettings::from_project(&project);
+    before.attach(&mut export.render);
+    assert_export_refused(&project, export, &[item]);
+    let request = CorrectionRequest::new(asset, CorrectionKind::PersonMatte).unwrap();
+    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let job = request
+        .submit(&mut runner, &mut cache, Some(brightness_segmenter(calls)))
+        .unwrap();
+    assert_eq!(wait(&mut runner, &job), JobState::Completed);
+    job.finish(&mut runner, &mut cache).unwrap().unwrap();
+    let ready = resolve(s.project(), &mut cache);
+    assert!(ready.missing.is_empty());
+    assert!(ready.mattes.contains_key(&item));
+    // A feather change keeps the key: only the item parameter differs.
+    s.apply(Command::SetItemField {
+        item,
+        patch: engine::ItemParamPatch::BackgroundRemovalFeather(80.0),
+    })
+    .unwrap();
+    assert!(resolve(s.project(), &mut cache).missing.is_empty());
+}
+
+#[test]
+fn a_cancelled_matte_publishes_nothing() {
+    let asset = fixture("shaky-240", 240, 135, 12);
+    let (mut runner, mut cache, _dir) = setup();
+    let request = CorrectionRequest::new(asset, CorrectionKind::PersonMatte).unwrap();
+    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let job = request
+        .submit(&mut runner, &mut cache, Some(brightness_segmenter(calls)))
+        .unwrap();
+    job.cancel.cancel();
+    assert_eq!(wait(&mut runner, &job), JobState::Cancelled);
+    assert!(job.finish(&mut runner, &mut cache).is_err());
+    assert_eq!(request.cached(&mut cache).unwrap(), None);
 }

@@ -299,6 +299,25 @@ impl VisionAccess {
         (self.detector)()
     }
 }
+/// The local person segmenter behind `footage.analyze {kind: person_matte}`. The composition root
+/// owns the pinned weights and their user-initiated download; engine owns the analysis job and
+/// its artifact cache. A call returns a ready segmenter running `footage::SEGMENTATION_THREADS`
+/// threads, or the typed `ModelMissing` refusal when the weights are not installed.
+pub struct SegmentationAccess {
+    load: Box<dyn Fn() -> Result<crate::footage::Segmenter> + Send + Sync>,
+}
+impl SegmentationAccess {
+    pub fn new(
+        load: impl Fn() -> Result<crate::footage::Segmenter> + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            load: Box::new(load),
+        }
+    }
+    pub(crate) fn load(&self) -> Result<crate::footage::Segmenter> {
+        (self.load)()
+    }
+}
 /// The three music-library operations the process lends to control commands. The
 /// access object owns the library root and the optional user credential, so the
 /// command carries neither; it chooses remote or local search by the request and

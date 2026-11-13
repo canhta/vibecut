@@ -29,13 +29,14 @@ pub(crate) fn control_key(
         translation: [0; 32],
     })
 }
-/// `stabilization` is the correction table the caller resolved for the session's project, so
-/// a control preview draws a stabilized clip the way the editor and export do.
+/// `corrections` are the stored footage corrections the caller resolved for the session's
+/// project, so a control preview draws a stabilized or matted clip the way the editor and export
+/// do.
 pub(crate) fn preview(
     session: &Session,
     frames: Vec<i64>,
     runner: &mut JobRunner,
-    stabilization: render::stabilize::Tracks,
+    corrections: crate::footage::Resolution,
 ) -> ArtifactResult<ControlResult> {
     if session.transaction_active() {
         return Err(ArtifactError::from(
@@ -117,7 +118,7 @@ pub(crate) fn preview(
                 let canvas = &project.data().canvas;
                 let long = canvas.width.max(canvas.height);
                 let mut settings = render::RenderSettings::from_project(&project);
-                settings.stabilization = stabilization.clone();
+                corrections.clone().attach(&mut settings);
                 settings.width = (u64::from(canvas.width) * u64::from(MAX_PREVIEW_EDGE)
                     / u64::from(long))
                 .max(1) as u32;

@@ -6,6 +6,12 @@
 
 SFace attribution and licence disposition: [SFACE.attribution](../../SFACE.attribution). Weights stay in the user cache, never bundled.
 
+## Person matte
+
+`vision::TractSegmentation::load(dir, threads, hooks)` loads the catalog's pinned `pphumanseg-2023mar` weights ([card, licence, shapes](../foundation/models/README.md)) after size/SHA-256 verification, with one fixed `[1,3,192,192]` plan on the same tract runtime and error categories as the detectors; nothing downloads implicitly. `matte(PersonFrame, hooks)` takes a finite CHW RGB 192x192 frame, 0..=255, which media prepares by stretching the whole frame (`VisionFrame::person_tensor`, bilinear, aspect not kept), normalizes it and returns a `PersonMatte`: the class-1 softmax plane, finite and within 0..=1 (1e-3 softmax slack is clamped, anything else is `VisionShape`). The same weights, runtime and input give the same plane; the fingerprint binds the weights, `PERSON_RECIPE`, runtime and threads for engine's cache key. Debug is redacted.
+
+`PersonMatte::quantized()` is the plane as one byte per cell (`round(p * 255)`), the form the engine stores. The matte carries no time and no frame size: engine owns per-frame scheduling and the cache ([footage correction](../../../engine/src/analysis/correction/README.md#person-matte)), and render owns the feather and the application at frame size ([person matte](../../../render/src/scene/correction/README.md#person-matte)), where the IoU fixtures live. Plane and frame validation and the runtime's load checks: `tests/it/matte.rs` and its ignored real-weights run.
+
 ## Local vision detectors
 
 `vision::VisionDetector` is a blocking, object-safe local inference seam. `vision::TractVision::load(VisionPaths, threads, capacity, hooks)` implements it with tract 0.23.9 (default `vision` feature); contracts and decision functions exist without the feature. No engine/media dependency. `TractVision::load_faces(yunet, threads, capacity, hooks)` loads only the pinned YuNet graph for consumers that need face boxes alone (auto reframe); `speaker` and `scene` then refuse with `VisionLoad`, and the fingerprint names exactly the graphs loaded.

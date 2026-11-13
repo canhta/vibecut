@@ -588,6 +588,59 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
                 "reduce_noise visible {passes:?}"
             );
         }
+        // The person matte reads its 192x192 plane from the instance input's first texels
+        // and the layer through an affine map (identity, scaled and offset, and rotated as a
+        // steadied clip maps), with feather off, partway and full. One plane needs a layer of
+        // at least 36,864 texels, so the row has its own layer.
+        assert!(gpu.supports(render::matte::ENTRY));
+        let (mw, mh) = (256 * scale, 160 * scale);
+        let layer = Image::from_working_pixels(
+            mw,
+            mh,
+            (0..mw * mh).map(|i| {
+                let (x, y) = (i % mw, i / mw);
+                let a = if y % 3 == 0 { 0.6 } else { 1.0 };
+                [
+                    a * (x % 11) as f32 / 11.0,
+                    a * (y % 7) as f32 / 7.0,
+                    0.2 * a,
+                    a,
+                ]
+            }),
+            &Hooks,
+        )
+        .unwrap();
+        let stored: Vec<u8> = (0..render::matte::CELLS)
+            .map(|i| ((i * 37 + i / 192 * 11) % 256) as u8)
+            .collect();
+        let (sin, cos) = 0.03_f64.sin_cos();
+        let maps = [
+            render::matte::plane_map(mw, mh, |p| p).unwrap(),
+            render::matte::plane_map(mw, mh, |p| [0.8 * p[0] + 10.0, 1.1 * p[1] - 5.0]).unwrap(),
+            render::matte::plane_map(mw, mh, |p| {
+                [cos * p[0] - sin * p[1] + 4.0, sin * p[0] + cos * p[1] - 3.0]
+            })
+            .unwrap(),
+        ];
+        for (feather, map) in [0.0, 40.0, 100.0].into_iter().zip(maps) {
+            let plane = render::matte::feathered(&stored, feather).unwrap();
+            let input = render::matte::plane_input(&plane, mw, mh, &Hooks).unwrap();
+            let passes = [render::matte::pass(map)];
+            let inputs = || EffectInputs {
+                input: &input,
+                coverage: None,
+                below: &layer,
+            };
+            let cpu = CpuEffects.apply(&layer, &passes, inputs(), &Hooks).unwrap();
+            let actual = gpu.apply(&layer, &passes, inputs(), &Hooks).unwrap();
+            let max = max_error(&cpu, &actual);
+            eprintln!("person-matte scale={scale} feather={feather} max_abs={max:e}");
+            assert!(max <= 1e-5, "GPU person_matte difference {feather}: {max}");
+            assert!(
+                max_error(&layer, &actual) > 1e-3,
+                "person_matte visible {feather}"
+            );
+        }
         // One instance with a visible prefix and a Sample read of its original
         // input, split in both device/CPU directions on the actual adapter.
         let prefix = grade_passes(-50.0, 0.0, 0.0, 0.0).unwrap();

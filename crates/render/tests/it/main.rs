@@ -9,6 +9,7 @@ mod effects;
 mod goldens;
 mod loudness;
 mod masks;
+mod matte;
 mod media_pipeline;
 mod output_alias;
 mod stabilize;

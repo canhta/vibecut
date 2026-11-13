@@ -25,6 +25,7 @@ pub(crate) use paths::{resolve_target, same_target};
 pub(crate) use registry::{Lent, run as run_command, session as standalone_session};
 pub(crate) use runtime::{
     caption_access, cli_runner, cli_runner_sized, cli_runtime, vision_access,
+    vision_and_segmentation,
 };
 
 use crate::args::CliError;

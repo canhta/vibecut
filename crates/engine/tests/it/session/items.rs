@@ -1727,6 +1727,78 @@ fn stabilize_is_a_video_item_level_with_one_undo_step_and_reads_from_text() {
     assert!(!patch.compatible(&ItemParams::Audio(project::AudioParams::default())));
 }
 
+#[test]
+fn background_removal_is_a_video_item_switch_whose_feather_is_one_undo_step() {
+    use engine::ItemParamPatch as P;
+    use project::BackgroundRemoval as B;
+    let (mut s, _video, _audio, clip) = audible_session();
+    let removal = |s: &Session| match &get_id(s, clip).content {
+        ItemParams::Video(p) => p.background_removal,
+        _ => panic!("video item"),
+    };
+    assert_eq!(removal(&s), None, "off at creation");
+    // The feather of a clip whose removal is off is refused and changes nothing.
+    assert!(
+        s.apply(Command::SetItemField {
+            item: clip,
+            patch: P::BackgroundRemovalFeather(20.0),
+        })
+        .is_err()
+    );
+    assert_eq!(removal(&s), None);
+    s.apply(Command::SetItemField {
+        item: clip,
+        patch: P::BackgroundRemoval(Some(B::default())),
+    })
+    .unwrap();
+    assert_eq!(removal(&s), Some(B { feather: 0.0 }));
+    s.apply(Command::SetItemField {
+        item: clip,
+        patch: P::BackgroundRemovalFeather(35.0),
+    })
+    .unwrap();
+    assert_eq!(removal(&s), Some(B { feather: 35.0 }));
+    s.undo().unwrap();
+    assert_eq!(removal(&s), Some(B { feather: 0.0 }));
+    s.undo().unwrap();
+    assert_eq!(removal(&s), None);
+    // Out-of-range values never reach the project.
+    assert!(
+        s.apply(Command::SetItemField {
+            item: clip,
+            patch: P::BackgroundRemoval(Some(B { feather: 101.0 })),
+        })
+        .is_err()
+    );
+    // The text an inspector or script holds: `on`, a feather, `off` or `none`; typed feathers
+    // beyond the slider are pulled in.
+    assert_eq!(
+        P::parse("background_removal", "on").unwrap(),
+        P::BackgroundRemoval(Some(B::default()))
+    );
+    assert_eq!(
+        P::parse("background_removal", "40").unwrap(),
+        P::BackgroundRemoval(Some(B { feather: 40.0 }))
+    );
+    assert_eq!(
+        P::parse("background_removal", "off").unwrap(),
+        P::BackgroundRemoval(None)
+    );
+    assert_eq!(
+        P::parse("background_removal", "none").unwrap(),
+        P::BackgroundRemoval(None)
+    );
+    assert!(P::parse("background_removal", "150").is_err());
+    assert_eq!(
+        P::parse("background_removal_feather", "150").unwrap(),
+        P::BackgroundRemovalFeather(100.0)
+    );
+    // It addresses video items only.
+    let patch = P::BackgroundRemoval(Some(B::default()));
+    assert!(patch.compatible(&get_id(&s, clip).content));
+    assert!(!patch.compatible(&ItemParams::Audio(project::AudioParams::default())));
+}
+
 /// The crop carried by a video item, `None` for any other item kind.
 fn crop_of(item: &Item) -> Option<project::Crop> {
     let ItemParams::Video(p) = &item.content else {

@@ -272,6 +272,18 @@ pub fn catalog() -> Result<Vec<Model>, Error> {
         }],
     });
     models.push(Model {
+        id: "pphumanseg-2023mar".into(), license: "Apache-2.0".into(),
+        license_url: "https://raw.githubusercontent.com/opencv/opencv_zoo/48b10fa505aeb51fbd127fc60a5c660040e823b7/models/human_segmentation_pphumanseg/LICENSE".into(),
+        source: "https://github.com/opencv/opencv_zoo/tree/48b10fa505aeb51fbd127fc60a5c660040e823b7/models/human_segmentation_pphumanseg".into(),
+        languages: Vec::new(),
+        files: vec![ModelFile {
+            name: "human_segmentation_pphumanseg_2023mar.onnx".into(),
+            url: "https://media.githubusercontent.com/media/opencv/opencv_zoo/48b10fa505aeb51fbd127fc60a5c660040e823b7/models/human_segmentation_pphumanseg/human_segmentation_pphumanseg_2023mar.onnx".into(),
+            sha256: "552d8a984054e59b5d773d24b9b12022b22046ceb2bbc4c9aaeacec36a9ddf24".into(),
+            size: 6_163_938,
+        }],
+    });
+    models.push(Model {
         id: "clip-vit-base-patch32".into(), license: "MIT".into(),
         license_url: "https://raw.githubusercontent.com/openai/CLIP/d05afc436d78f1c48dc0dbf8e5980a9d471f35f6/LICENSE".into(),
         source: "https://huggingface.co/Xenova/clip-vit-base-patch32/tree/6b7c523703ae26e39be4b03774966f8571c7f523".into(),

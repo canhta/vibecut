@@ -4,9 +4,11 @@ use crate::{Error, ExecutionHooks};
 #[cfg(feature = "vision")]
 mod tract;
 #[cfg(feature = "vision")]
-pub use tract::{TractFaceEmbedding, TractVision, VisionPaths};
+pub use tract::{TractFaceEmbedding, TractSegmentation, TractVision, VisionPaths};
 mod reidentification;
 pub use reidentification::{FaceEmbedding, IdentityFrame};
+mod matte;
+pub use matte::{MATTE_SIDE, PERSON_RECIPE, PersonFrame, PersonMatte};
 mod decisions;
 pub use decisions::{aggregate_speakers, classify_embedding};
 

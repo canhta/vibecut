@@ -83,6 +83,9 @@ pub struct MediaAccess {
     corrections: BTreeMap<JobId, CorrectionJob>,
     /// Counts published corrections, so a reader of stored corrections knows when to look again.
     correction_epoch: u64,
+    /// The installed person segmenter behind `footage.analyze {kind: person_matte}`; absent
+    /// until the composition root lends one.
+    segmentation: Option<super::SegmentationAccess>,
     reframes: BTreeMap<JobId, ReframeEntry>,
     /// Shot analyses a clip export started, with their cache identity, until published.
     analyses: BTreeMap<JobId, ([u8; 32], AnalysisJob)>,
@@ -129,6 +132,7 @@ impl MediaAccess {
             scenes: BTreeMap::new(),
             corrections: BTreeMap::new(),
             correction_epoch: 0,
+            segmentation: None,
             reframes: BTreeMap::new(),
             analyses: BTreeMap::new(),
         }
@@ -341,16 +345,34 @@ impl MediaAccess {
         Ok(id)
     }
 
+    /// Lend the installed person segmenter the person matte analysis loads from.
+    pub fn set_segmentation(&mut self, access: super::SegmentationAccess) {
+        self.segmentation = Some(access);
+    }
+
     /// Submit one source's footage correction. A warm entry completes without opening the
-    /// source; the entry is published when `job_status` first sees the job complete.
+    /// source or loading a model; the entry is published when `job_status` first sees the job
+    /// complete. A cold person matte loads the lent segmenter first and refuses with the typed
+    /// `ModelMissing` when none is lent or its weights are not installed.
     pub(crate) fn analyze_footage(
         &mut self,
         runner: &mut JobRunner,
         asset: SourceAsset,
         kind: CorrectionKind,
-    ) -> crate::analysis::Result<JobId> {
+    ) -> Result<JobId> {
         self.retain(runner);
-        let job = CorrectionRequest::new(asset, kind)?.submit(runner, &mut self.artifacts)?;
+        let request = CorrectionRequest::new(asset, kind)?;
+        let segmenter = if kind == CorrectionKind::PersonMatte
+            && request.cached(&mut self.artifacts)?.is_none()
+        {
+            let access = self.segmentation.as_ref().ok_or(EngineError::Providers(
+                crate::providers::Error::ModelMissing(crate::footage::PERSON_MODEL),
+            ))?;
+            Some(access.load()?)
+        } else {
+            None
+        };
+        let job = request.submit(runner, &mut self.artifacts, segmenter)?;
         let id = job.id;
         self.corrections.insert(id, job);
         Ok(id)

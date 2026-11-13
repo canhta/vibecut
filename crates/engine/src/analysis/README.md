@@ -24,7 +24,9 @@ Job progress, cancellation and byte admission belong to the [job runner](../runt
 `footage::CorrectionRequest::new(asset, kind)` turns one source's footage into a stored correction;
 `footage.analyze {item, kind}` runs it as a local CPU `AnalyzeFootage` job and edits nothing.
 Stabilize is the first kind: per-frame camera poses measured once per source, reused by every item,
-trim, split, retime and level over that source. See [footage correction](correction/README.md).
+trim, split, retime and level over that source. The person matte is the second: the local
+segmenter's person plane of every frame, reused by every feather. See
+[footage correction](correction/README.md).
 
 ## Reframe
 

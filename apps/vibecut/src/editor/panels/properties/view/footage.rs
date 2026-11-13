@@ -1,14 +1,15 @@
-//! Draws the Stabilize switch with its level and analysis state.
+//! Draws the footage-correction rows: the Stabilize switch with its level, and the analysis state
+//! row it shares with Auto removal.
 use super::Panel;
 use crate::editor::properties::{
     Action, ItemId, Text, egui, read, theme, workflow::jobs::footage::FootageStatus,
 };
 use crate::kit;
+use engine::footage::CorrectionKind;
 
 impl Panel<'_, '_> {
-    /// The Stabilize switch row, then, while it is on, the level row and the analysis state: a
-    /// `Needs analysis` button when no correction is stored, progress with a cancel while the
-    /// job runs. Turning the switch on starts the job; a warm cache finishes at once.
+    /// The Stabilize switch row, then, while it is on, the level row and the analysis state.
+    /// Turning the switch on starts the job; a warm cache finishes at once.
     pub(super) fn stabilize_rows(&mut self, ui: &mut egui::Ui, item: ItemId) {
         let Some(project::ItemParams::Video(params)) =
             read::item(self.cx.session.project(), item).map(|item| &item.content)
@@ -31,7 +32,10 @@ impl Panel<'_, '_> {
         if response.clicked() {
             if on {
                 self.set_item_field(item, "stabilize", project::StabilizeLevel::default().id());
-                self.actions.push(Action::AnalyzeFootage { item });
+                self.actions.push(Action::AnalyzeFootage {
+                    item,
+                    kind: CorrectionKind::Stabilize,
+                });
             } else {
                 self.set_item_field(item, "stabilize", "off");
             }
@@ -64,30 +68,58 @@ impl Panel<'_, '_> {
                 self.set_item_field(item, "stabilize", level.id());
             }
         }
-        match self.state.footage_status(item) {
+        self.correction_status(ui, item, CorrectionKind::Stabilize, "inspector.stabilize");
+    }
+
+    /// The analysis state of one switched-on correction, under `prefix`: nothing when the
+    /// correction is stored; `Needs analysis` with an `Analyze` button when it is not; `Person data
+    /// missing` with a `Download` link to the model manager when its weights are missing; progress
+    /// with a cancel while the job runs.
+    pub(super) fn correction_status(
+        &mut self,
+        ui: &mut egui::Ui,
+        item: ItemId,
+        kind: CorrectionKind,
+        prefix: &str,
+    ) {
+        match self.state.footage_status(item, kind) {
             FootageStatus::Ready => {}
             FootageStatus::NeedsAnalysis => {
                 let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
-                self.row_label(ui, row, self.tr(Text::StabilizeNeedsAnalysis));
-                let response = value_ui.button(self.tr(Text::StabilizeAnalyze));
-                self.remember("inspector.stabilize.analyze", &response);
+                self.row_label(ui, row, self.tr(Text::FootageNeedsAnalysis));
+                let response = value_ui.button(self.tr(Text::FootageAnalyze));
+                self.remember(format!("{prefix}.analyze"), &response);
                 if response.clicked() {
-                    self.actions.push(Action::AnalyzeFootage { item });
+                    self.actions.push(Action::AnalyzeFootage { item, kind });
+                }
+            }
+            FootageStatus::ModelMissing(id) => {
+                let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+                self.row_label(ui, row, self.tr(Text::FootageDataMissing));
+                let models = value_ui.button(self.tr(Text::ModelDownload));
+                self.remember(format!("{prefix}.models"), &models);
+                if models.clicked() {
+                    self.actions.push(Action::OpenModel(id.to_owned()));
+                }
+                let retry = value_ui.button(self.tr(Text::FootageAnalyze));
+                self.remember(format!("{prefix}.analyze"), &retry);
+                if retry.clicked() {
+                    self.actions.push(Action::AnalyzeFootage { item, kind });
                 }
             }
             FootageStatus::Analyzing(progress) => {
                 let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
-                self.row_label(ui, row, self.tr(Text::StabilizeAnalyzing));
+                self.row_label(ui, row, self.tr(Text::FootageAnalyzing));
                 let cancel = value_ui.button(self.tr(Text::Cancel));
-                self.remember("inspector.stabilize.cancel", &cancel);
+                self.remember(format!("{prefix}.cancel"), &cancel);
                 if cancel.clicked() {
-                    self.actions.push(Action::CancelFootage { item });
+                    self.actions.push(Action::CancelFootage { item, kind });
                 }
                 let bar = value_ui.add(
                     egui::ProgressBar::new(progress.clamp(0.0, 1.0))
                         .desired_width(value_ui.available_width().max(0.0)),
                 );
-                self.remember("inspector.stabilize.progress", &bar);
+                self.remember(format!("{prefix}.progress"), &bar);
             }
         }
     }

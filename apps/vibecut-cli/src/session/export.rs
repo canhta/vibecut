@@ -205,25 +205,28 @@ pub(crate) fn export_job_key(
 }
 
 /// Read the stored footage corrections of `project` into `settings` from the process media
-/// cache. A project with no stabilized clip opens no cache; a clip whose analysis is absent stays
-/// uncorrected and the export job refuses, naming it.
+/// cache. A project with no stabilized or matted clip opens no cache; a clip whose analysis is
+/// absent stays uncorrected and the export job refuses, naming it.
 pub(crate) fn attach_corrections(
     context: &Context,
     project: &Project,
     settings: &mut render::ExportSettings,
 ) -> Result<(), CliError> {
-    let stabilized = project
+    let corrected = project
         .data()
         .scenes
         .iter()
         .flat_map(|scene| scene.timeline.iter())
         .flat_map(|track| &track.items)
-        .any(
-            |item| matches!(&item.content, project::ItemParams::Video(p) if p.stabilize.is_some()),
-        );
-    if stabilized {
+        .any(|item| {
+            matches!(&item.content, project::ItemParams::Video(p)
+                if p.stabilize.is_some() || p.background_removal.is_some())
+        });
+    if corrected {
         let mut media = engine::control::MediaAccess::open(context.budget()?)?;
-        settings.render.stabilization = media.footage_corrections(project).tracks;
+        media
+            .footage_corrections(project)
+            .attach(&mut settings.render);
     }
     Ok(())
 }

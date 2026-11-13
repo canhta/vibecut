@@ -1,6 +1,6 @@
 //! Evaluates project items into the rendered frame.
 
-use super::draw::{blur, draw, horizontal_window};
+use super::draw::{blur, draw, horizontal_window, source_map};
 use super::raster::{TextBox, TextEntry, TextFace, TextKey, raster_text};
 use super::{Fit, Placement, RasterCacheStats, Rect, RenderSettings, Renderer};
 use crate::{
@@ -143,6 +143,47 @@ impl<'a> Renderer<'a> {
             },
         );
         Some(stabilizer)
+    }
+    /// Whether `item` has background removal on and a stored matte to remove it with.
+    fn matted(&self, item: &Item) -> bool {
+        matches!(&item.content, ItemParams::Video(p) if p.background_removal.is_some())
+            && self.settings.person_mattes.contains_key(&item.id)
+    }
+    /// The feathered matte plane of a matted video item at source time `at`, with the map from its
+    /// `layer` pixels to plane cells: through `placement` onto the decoded `image`, then through
+    /// the item's stabilization warp onto the frame the matte was measured on. `None` renders the
+    /// item unmatted.
+    fn matte_for(
+        &mut self,
+        item: &Item,
+        at: Tick,
+        image: &Image,
+        placement: Placement,
+        layer: [u32; 2],
+    ) -> Result<Option<(Vec<f32>, [f32; 6])>> {
+        let ItemParams::Video(params) = &item.content else {
+            return Ok(None);
+        };
+        let Some(removal) = params.background_removal else {
+            return Ok(None);
+        };
+        let Some(track) = self.settings.person_mattes.get(&item.id).cloned() else {
+            return Ok(None);
+        };
+        let plane = super::matte::feathered(&track.plane(track.covering(at))?, removal.feather)?;
+        let frame = [image.width(), image.height()];
+        let [ax, bx, ay, by] = source_map(layer, frame, placement)?;
+        let warp = self
+            .stabilizer_for(item)
+            .and_then(|stabilizer| stabilizer.warp(at));
+        let map = super::matte::plane_map(frame[0], frame[1], |p| {
+            let steady = [ax * p[0] + bx, ay * p[1] + by];
+            match &warp {
+                Some(warp) => warp.frame_point(steady, frame[0], frame[1]),
+                None => steady,
+            }
+        })?;
+        Ok(Some((plane, map)))
     }
     pub fn text_cache_stats(&self) -> RasterCacheStats {
         self.cache_stats
@@ -395,6 +436,14 @@ impl<'a> Renderer<'a> {
                 } else {
                     None
                 };
+                // Background removal scales this item's own layer by the stored person matte
+                // before noise reduction and every effect.
+                let matte = match &video {
+                    Some(image) => {
+                        self.matte_for(item, source_at, image, placement, [out.width, out.height])?
+                    }
+                    None => None,
+                };
                 // Noise reduction is a per-item switch whose pass runs before every
                 // colour effect, on this item's own layer.
                 let reduce_noise = matches!(&item.content, ItemParams::Video(p) if p.reduce_noise);
@@ -424,7 +473,7 @@ impl<'a> Renderer<'a> {
                         &lut_resources,
                     )?);
                 }
-                let has_passes = runs.iter().any(|run| !run.is_empty());
+                let has_passes = matte.is_some() || runs.iter().any(|run| !run.is_empty());
                 // An adjustment layer has no picture: it filters the composite below it, so an
                 // empty stack changes nothing, whatever its masks, transform and blend.
                 let adjustment = matches!(item.content, ItemParams::Effect(_));
@@ -741,6 +790,9 @@ impl<'a> Renderer<'a> {
                     // For an adjustment layer `out` is only its region; the stack runs on the
                     // backdrop copy below instead.
                     let mut filtered = out;
+                    if let Some((plane, map)) = &matte {
+                        filtered = super::matte::apply(filtered, plane, *map, adapter, hooks)?;
+                    }
                     if !adjustment {
                         for run in &runs {
                             if run.is_empty() {
@@ -915,8 +967,12 @@ impl<'a> Renderer<'a> {
                 reason,
             }]));
         }
-        // A steadied frame samples across the whole picture, so it is never decoded as a window.
-        let window = if self.settings.background_blur.is_none() && stabilizer.is_none() {
+        // A steadied or matted frame samples across the whole picture, so it is never decoded as
+        // a window.
+        let window = if self.settings.background_blur.is_none()
+            && stabilizer.is_none()
+            && !self.matted(item)
+        {
             asset
                 .probe()
                 .streams

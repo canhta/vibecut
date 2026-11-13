@@ -178,7 +178,12 @@ fn language_neutral_metadata_never_matches_a_speech_language() {
             .iter()
             .map(|model| model.id.as_str())
             .collect::<Vec<_>>(),
-        ["sface-2021dec", "yunet-2026may", "clip-vit-base-patch32"]
+        [
+            "sface-2021dec",
+            "yunet-2026may",
+            "pphumanseg-2023mar",
+            "clip-vit-base-patch32"
+        ]
     );
     for model in neutral {
         assert!(model.languages.is_empty());
@@ -237,7 +242,24 @@ fn vision_catalog_entries_pin_exact_upstream_files_and_refuse_bad_bytes() {
         clip.files.iter().map(|file| file.size).sum::<u64>(),
         607_973_425
     );
-    for model in [yunet, clip] {
+    let person = model("pphumanseg-2023mar");
+    assert_eq!(person.license, "Apache-2.0");
+    assert!(
+        person
+            .license_url
+            .ends_with("/human_segmentation_pphumanseg/LICENSE")
+    );
+    assert_eq!(person.files.len(), 1);
+    assert_eq!(
+        person.files[0].name,
+        "human_segmentation_pphumanseg_2023mar.onnx"
+    );
+    assert_eq!(person.files[0].size, 6_163_938);
+    assert_eq!(
+        person.files[0].sha256,
+        "552d8a984054e59b5d773d24b9b12022b22046ceb2bbc4c9aaeacec36a9ddf24"
+    );
+    for model in [yunet, clip, person] {
         assert!(model.language_neutral());
         assert!(model.default_eligible());
         for file in &model.files {

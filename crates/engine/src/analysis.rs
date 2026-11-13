@@ -76,7 +76,10 @@ pub mod scene_detection {
 mod correction;
 pub mod footage {
     //! Computes footage corrections once per source and looks them up by key.
-    pub use super::correction::{CorrectionJob, CorrectionRequest, Resolution, resolve};
+    pub use super::correction::{
+        Correction, CorrectionJob, CorrectionRequest, PERSON_MODEL, Resolution,
+        SEGMENTATION_THREADS, Segmenter, resolve,
+    };
     pub use crate::session::wire::CorrectionKind;
 }
 mod shot_analysis;

@@ -46,7 +46,7 @@ app-owned across project saves and closes. `lending` opens the process stores on
 is the only place an editor receives them: the saved-sound library, the music session, the
 brand kit (opened and held; `Workspace::brand_kit` hands it out, no request reads it yet),
 the model service (lent for a frame and taken back) and the one process
-`MediaAccess` under `<root>/media`, whose mutex instance is lent to every editor's
+`MediaAccess` under `<root>/media` (lent the person segmenter over the same verified models cache), whose mutex instance is lent to every editor's
 timeline display and to the desktop MCP inbox, so generation and display always share
 cache entries and a second open of that root composes
 [`RuntimeError::CacheBusy`](../../../../crates/engine/src/runtime/README.md#background-jobs-and-byte-policy)

@@ -138,6 +138,10 @@ tile centres; the sharp flag forces the nearest colour, so it changes the
 picture only with softness above zero. One block per axis on both axes emits
 no pass.
 
+## Person matte pass
+
+`person_matte` is a table entry with a native shader that reads the instance input, but no effect evaluator emits it: the scene runs it once per matted item before noise reduction and every effect, with the matte plane packed into the instance input ([person matte](../correction/README.md#person-matte)).
+
 ## Reduce noise
 
 `denoise.rs` owns the per-item `VideoParams.reduce_noise` pass. It is not an effect-stack instance: the scene prepends one run holding the single `reduce_noise` sample pass before every enabled effect, so it precedes colour adjustment, and an item with the switch off adds no run and no pass (byte-identical to an item without the feature). The sample reads the current layer only, with no temporal history and no analysis job, so a frame's result depends on that frame alone and preview equals export. `fine` is ignored; both qualities run the same pass.

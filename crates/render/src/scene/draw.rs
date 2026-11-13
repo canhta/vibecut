@@ -73,6 +73,17 @@ impl Geometry {
         })
     }
 }
+/// Where `draw` samples the source for a target point, before edge clamping: `[ax, bx, ay, by]`
+/// with the source pixel point `(ax * px + bx, ay * py + by)` for the target point `(px, py)`.
+pub(super) fn source_map(
+    target: [u32; 2],
+    source: [u32; 2],
+    placement: Placement,
+) -> Result<[f64; 4]> {
+    let g = Geometry::new(target[0], target[1], source[0], source[1], placement)?;
+    let (kx, ky) = (g.sw / g.dw, g.sh / g.dh);
+    Ok([kx, g.sx - g.dx * kx, ky, g.sy - g.dy * ky])
+}
 /// Clip-pixel gains before draw's optional source half reductions.
 pub(super) fn clip_pixel_scale(
     target: [u32; 2],
