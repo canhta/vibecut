@@ -217,7 +217,7 @@ impl Panel<'_, '_> {
         }
     }
 
-    fn preset_text(&self, preset: AspectPreset) -> &'static str {
+    pub(super) fn preset_text(&self, preset: AspectPreset) -> &'static str {
         if preset == AspectPreset::Original {
             self.tr(Text::Original)
         } else {
