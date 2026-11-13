@@ -144,7 +144,7 @@ fn right_group(bar: Rect, top: f32) -> RightGroup {
 /// The left group's scroll offset and the unscrolled right edge of its last cell,
 /// both in px, kept per toolbar between frames.
 fn left_scroll_id() -> Id {
-    Id::new("timeline.toolbar.left_scroll")
+    Id::unique("timeline.toolbar.left_scroll")
 }
 
 impl State {

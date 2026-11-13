@@ -94,7 +94,7 @@ pub(super) fn show(state: &mut State, ui: &mut egui::Ui, rect: egui::Rect, left:
                         let slot = format!("shorts.run.{index}");
                         let response = ui.interact(
                             thumb.expand2(vec2(0.0, NAME_BELOW + 12.0)),
-                            egui::Id::new(("shorts.run", index)),
+                            egui::Id::unique(("shorts.run", index)),
                             Sense::click(),
                         );
                         response.widget_info(|| {

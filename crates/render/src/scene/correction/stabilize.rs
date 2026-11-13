@@ -32,18 +32,6 @@ struct Sim {
     ty: f64,
 }
 impl Sim {
-    const ID: Self = Self {
-        a: 1.0,
-        b: 0.0,
-        tx: 0.0,
-        ty: 0.0,
-    };
-    fn apply(&self, p: [f64; 2]) -> [f64; 2] {
-        [
-            self.a * p[0] - self.b * p[1] + self.tx,
-            self.b * p[0] + self.a * p[1] + self.ty,
-        ]
-    }
     /// `self` applied after `first`.
     fn after(&self, first: &Self) -> Self {
         Self {

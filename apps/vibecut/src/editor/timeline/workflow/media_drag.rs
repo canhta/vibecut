@@ -113,7 +113,7 @@ fn paint_ghost(cx: &Context<'_>, ui: &egui::Ui, drag: &MediaDrag, pointer: egui:
     };
     let painter = ui.ctx().layer_painter(egui::LayerId::new(
         egui::Order::Tooltip,
-        egui::Id::new("media.drag.ghost"),
+        egui::Id::unique("media.drag.ghost"),
     ));
     painter.text(
         pointer + egui::vec2(12.0, 12.0),

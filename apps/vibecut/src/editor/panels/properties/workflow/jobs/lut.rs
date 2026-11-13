@@ -173,7 +173,7 @@ impl State {
     fn valid_lut_capture(&self, port: &Port<'_>) -> bool {
         self.lut.capture.as_ref().is_some_and(|capture| {
             let view = port.view();
-            let kind = super::super::element_kind(view.session.project(), capture.item)
+            let kind = super::super::super::element_kind(view.session.project(), capture.item)
                 .map(|(kind, _)| kind.id());
             capture.session == view.session.session_id()
                 && capture.revision == view.session.revision()
@@ -259,7 +259,7 @@ impl State {
         }
         Ok(())
     }
-    pub(super) fn select_lut(
+    pub(in crate::editor) fn select_lut(
         &mut self,
         port: &mut Port<'_>,
         item: ItemId,

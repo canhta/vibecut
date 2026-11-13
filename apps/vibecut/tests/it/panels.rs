@@ -2231,7 +2231,7 @@ fn opacity_and_audio_gain_scrub_through_their_tabs() {
     };
     let before = cleanup(&harness);
     assert!(preset(&before).is_empty());
-    let loudness = harness.state().session.project().settings.loudness.clone();
+    let loudness = harness.state().session.project().data().settings.loudness.clone();
     let history = harness.state().session.history_len().0;
     click(&mut harness, "inspector.voice_enhance.toggle");
     assert_eq!(harness.state().session.history_len().0, history + 1);
@@ -2271,7 +2271,7 @@ fn opacity_and_audio_gain_scrub_through_their_tabs() {
     // The preset never touches the project's loudness targets or measured gains, so enabling
     // or bypassing it cannot compound the normalizer.
     assert_eq!(
-        harness.state().session.project().settings.loudness,
+        harness.state().session.project().data().settings.loudness,
         loudness
     );
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

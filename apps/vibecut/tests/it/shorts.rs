@@ -1171,17 +1171,17 @@ fn the_back_arrow_returns_to_the_entry_and_the_run_keeps_going() {
     let mut h = harness(app, 1.0);
     h.run_steps(3);
     // The working page: the skeleton grid with a live count of zero, the arrow and Cancel.
-    assert!(h.query_by(by("shorts.back")).is_some());
-    assert!(h.query_by(by("shorts.cancel")).is_some());
+    assert!(h.query(by("shorts.back")).is_some());
+    assert!(h.query(by("shorts.cancel")).is_some());
     assert_eq!(h.state().generation_count(), Some(0));
     h.get(by("shorts.back")).click();
     h.run_steps(3);
     // The entry lists the run in progress and still runs it.
-    assert!(h.query_by(by("shorts.back")).is_none());
+    assert!(h.query(by("shorts.back")).is_none());
     assert!(h.state().busy());
     h.get(by("shorts.run.0")).click();
     h.run_steps(3);
-    assert!(h.query_by(by("shorts.back")).is_some());
+    assert!(h.query(by("shorts.back")).is_some());
     // Leaving again and finishing while away lands on the results.
     h.get(by("shorts.back")).click();
     h.run_steps(2);
@@ -1189,5 +1189,5 @@ fn the_back_arrow_returns_to_the_entry_and_the_run_keeps_going() {
     wait(h.state_mut());
     h.run_steps(3);
     assert_eq!(h.state().reviews().len(), 2);
-    assert!(h.query_by(by("shorts.candidate.0")).is_some());
+    assert!(h.query(by("shorts.candidate.0")).is_some());
 }
