@@ -4,7 +4,7 @@ use crate::{
     Editor, Error,
     editor::LibraryStore,
     model_manager::ModelManager,
-    services::{assets::music::MusicSession, model_cache::ModelCache},
+    services::{ai_access::ModelCache, assets::music::MusicSession},
 };
 use engine::{
     ByteBudget, MusicError, SoundError,
