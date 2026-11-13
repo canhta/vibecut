@@ -257,7 +257,9 @@ A caption item selected alone shows a collapsed Keywords section in its Text tab
 (`inspector.keywords`). It draws the read `Context.keywords` carries from the Captions panel,
 which owns the cue selection and the suggestion run; its chips, Choose, Preview, Clear, Suggest
 and Apply emit `Action::Keywords`, and the frame routes them to that panel (one undo step each,
-Apply as one batch). Behaviour: [captions owner](../assets/captions/README.md).
+Apply as one batch). A chosen chip uses the sub-navigation's selected style (accent label on
+the hover fill, as the Media Timeline scene row), and the section spaces its chips and actions
+at the kit density gap (8 px across, 4 px between wrapped rows). Behaviour: [captions owner](../assets/captions/README.md).
 
 Exactly one unlocked Text and no active work, transaction, save, inline/caption or
 Properties draft is required. Captured row actions revalidate their target and snapshot;
