@@ -1,9 +1,11 @@
 //! Process-private generated-fixture directories with liveness pruning.
 //!
 //! Each test process writes beneath `target/fixtures/<area>/<pid>/` and holds an
-//! exclusive lock on that directory's `.lock` file for its lifetime. At first
-//! use it removes sibling directories whose lock it can take: their owner is
-//! gone, so the files cannot be live sources.
+//! exclusive lock on the sibling `<pid>.lock` file for its lifetime. The lock is
+//! taken before the directory exists, so a directory another process can see
+//! always has a live or a dead owner, never one that is still starting. At first
+//! use a process removes sibling directories whose lock it can take: their owner
+//! is gone, so the files cannot be live sources.
 use std::{
     fs::File,
     path::{Path, PathBuf},
@@ -27,24 +29,13 @@ pub fn dir(area: &str) -> PathBuf {
     if owned.iter().any(|(name, _)| name == area) {
         return own;
     }
+    std::fs::create_dir_all(&root).unwrap();
+    let lock = open_lock(&root, &own).unwrap();
+    // Blocking: the only other holder can be a pruner removing a dead owner's
+    // folder under a recycled pid, and it releases once that folder is gone.
+    lock.lock()
+        .unwrap_or_else(|error| panic!("cannot lock fixture owner {area}: {error}"));
     std::fs::create_dir_all(&own).unwrap();
-    let lock = File::options()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(own.join(".lock"))
-        .unwrap();
-    match lock.try_lock() {
-        Ok(()) => {}
-        Err(std::fs::TryLockError::WouldBlock) => panic!(
-            "fixture owner for {area} is already locked in process {}",
-            std::process::id()
-        ),
-        Err(std::fs::TryLockError::Error(error)) => {
-            panic!("cannot lock fixture owner {area}: {error}")
-        }
-    }
     prune(&root, &own);
     owned.push((area.to_owned(), lock));
     own
@@ -97,13 +88,7 @@ fn prune(root: &Path, own: &Path) {
         if name.parse::<u32>().is_err() {
             continue;
         }
-        let Ok(lock) = File::options()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(path.join(".lock"))
-        else {
+        let Ok(lock) = open_lock(root, &path) else {
             continue;
         };
         if lock.try_lock().is_ok() {
@@ -111,4 +96,16 @@ fn prune(root: &Path, own: &Path) {
             let _ = std::fs::remove_dir_all(&path);
         }
     }
+}
+
+/// Opens the `<pid>.lock` file beside the owner folder `dir`.
+fn open_lock(root: &Path, dir: &Path) -> std::io::Result<File> {
+    let mut name = dir.file_name().unwrap_or_default().to_owned();
+    name.push(".lock");
+    File::options()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(root.join(name))
 }
