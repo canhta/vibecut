@@ -84,6 +84,10 @@ impl EditorWindow {
                     EditorAction::ClipDownload { item, mode } => {
                         self.pick(ui.ctx(), PickerAction::ClipDownload { item, mode })
                     }
+                    EditorAction::ImportSubtitles { at } => {
+                        self.pick(ui.ctx(), PickerAction::ImportSubtitles { at })
+                    }
+                    EditorAction::FontUpload => self.pick(ui.ctx(), PickerAction::FontUpload),
                     EditorAction::KeybindingsExport => {
                         self.pick(ui.ctx(), PickerAction::KeybindingsExport)
                     }

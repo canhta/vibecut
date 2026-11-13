@@ -92,6 +92,12 @@ pub enum EditorAction {
         item: project::ItemId,
         mode: engine::ClipExportMode,
     },
+    /// The Add captions Import button: the window picks an SRT/VTT file for `at`.
+    ImportSubtitles {
+        at: time::Tick,
+    },
+    /// The font picker's Import action: the window picks a custom font file.
+    FontUpload,
 }
 
 /// Project-owned documentation and issue entry points; no hosted feedback service.

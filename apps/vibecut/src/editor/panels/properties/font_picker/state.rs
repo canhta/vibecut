@@ -10,7 +10,6 @@ pub(in crate::editor) struct PendingImport {
     pub selection: BTreeSet<project::ItemId>,
     pub at: time::Tick,
     pub lifetime: u64,
-    pub choice: Option<super::FontChoice>,
     pub job: Option<JobId>,
 }
 

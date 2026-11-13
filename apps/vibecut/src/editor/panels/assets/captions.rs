@@ -79,16 +79,6 @@ pub struct Inspection {
     /// The refusal reason of the last transcript command, if it was refused.
     pub transcript_refusal: Option<Text>,
 }
-struct Picker {
-    future: std::pin::Pin<Box<dyn std::future::Future<Output = Option<rfd::FileHandle>> + Send>>,
-    waker: std::task::Waker,
-}
-struct Repaint(egui::Context);
-impl std::task::Wake for Repaint {
-    fn wake(self: Arc<Self>) {
-        self.0.request_repaint();
-    }
-}
 /// Panel state survives tab and locale changes; only Options enter preferences.
 struct BankEdit {
     confirm_pending: bool,
@@ -160,7 +150,7 @@ pub struct Subtitles {
     missing_model: Option<String>,
     completed: Option<usize>,
     pub(crate) notice: Option<usize>,
-    picker: Option<Picker>,
+    pub(crate) requested_import: Option<Tick>,
     pub(crate) requested_model: Option<String>,
     pub(crate) requested_seek: Option<Tick>,
     project: Option<project::ProjectId>,
@@ -215,7 +205,7 @@ impl Subtitles {
             missing_model: None,
             completed: None,
             notice: None,
-            picker: None,
+            requested_import: None,
             requested_model: None,
             requested_seek: None,
             project: None,

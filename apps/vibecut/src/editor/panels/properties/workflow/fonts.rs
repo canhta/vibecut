@@ -177,22 +177,65 @@ impl State {
             return Ok(());
         }
         self.ensure_font_backend(port)?;
-        let locale = port.view().preferences.locale;
-        let choice = self
-            .font_backend
-            .as_mut()
-            .ok_or(Error::Invalid("font catalog unavailable"))?
-            .choose_font(locale);
         self.font_import = Some(font_picker::PendingImport {
             snapshot: port.view().session.project().clone(),
             selection: port.view().selection().clone(),
             at: port.view().playhead,
             lifetime: self.font_picker.lifetime,
-            choice: Some(choice),
             job: None,
         });
         self.font_picker.importing = true;
         self.font_picker.import_failed = false;
+        port.request(crate::editor::Request::Lifecycle(
+            crate::services::lifecycle::EditorAction::FontUpload,
+        ));
+        Ok(())
+    }
+
+    /// The pending import still targets the snapshot, selection, playhead and picker it began with.
+    fn import_current(&self, port: &mut Port<'_>, pending: &font_picker::PendingImport) -> bool {
+        self.font_picker.open
+            && self.font_picker.lifetime == pending.lifetime
+            && std::sync::Arc::ptr_eq(&pending.snapshot, port.view().session.project())
+            && pending.selection == *port.view().selection()
+            && pending.at == port.view().playhead
+            && !port.view().session.transaction_active()
+            && port.view().session.preview_project().is_none()
+    }
+
+    /// Complete the font picker's file. `None` (a dismissed or refused pick) drops the pending
+    /// import, and so does a target that changed while the native dialog was open.
+    pub(in crate::editor) fn font_import_picked(
+        &mut self,
+        port: &mut Port<'_>,
+        path: Option<std::path::PathBuf>,
+    ) -> Result<()> {
+        if self.font_backend.is_some() && self.ensure_font_backend(port).is_err() {
+            self.cancel_font_import(port);
+            return Ok(());
+        }
+        let Some(mut pending) = self.font_import.take() else {
+            return Ok(());
+        };
+        if !self.import_current(port, &pending) {
+            self.font_import = Some(pending);
+            self.cancel_font_import(port);
+            return Ok(());
+        }
+        let (Some(path), Some(backend)) = (path, self.font_backend.as_mut()) else {
+            self.font_picker.importing = false;
+            return Ok(());
+        };
+        match port.with_session(|session| backend.import(session, path)) {
+            Ok(job) => {
+                pending.job = Some(job);
+                self.font_import = Some(pending);
+            }
+            Err(_) => {
+                self.font_picker.import_failed = true;
+                self.font_picker.importing = false;
+            }
+        }
         Ok(())
     }
 
@@ -207,17 +250,10 @@ impl State {
     }
 
     fn poll_font_import(&mut self, port: &mut Port<'_>) {
-        let Some(mut pending) = self.font_import.take() else {
+        let Some(pending) = self.font_import.take() else {
             return;
         };
-        let valid = self.font_picker.open
-            && self.font_picker.lifetime == pending.lifetime
-            && std::sync::Arc::ptr_eq(&pending.snapshot, port.view().session.project())
-            && pending.selection == *port.view().selection()
-            && pending.at == port.view().playhead
-            && !port.view().session.transaction_active()
-            && port.view().session.preview_project().is_none();
-        if !valid {
+        if !self.import_current(port, &pending) {
             self.font_import = Some(pending);
             self.cancel_font_import(port);
             return;
@@ -226,24 +262,6 @@ impl State {
             self.font_picker.importing = false;
             return;
         };
-        if let Some(choice) = pending.choice.as_mut() {
-            let mut context = std::task::Context::from_waker(std::task::Waker::noop());
-            if let std::task::Poll::Ready(path) = choice.as_mut().poll(&mut context) {
-                pending.choice = None;
-                match path.map(|path| port.with_session(|session| backend.import(session, path))) {
-                    Some(Ok(job)) => pending.job = Some(job),
-                    Some(Err(_)) => {
-                        self.font_picker.import_failed = true;
-                        self.font_picker.importing = false;
-                        return;
-                    }
-                    None => {
-                        self.font_picker.importing = false;
-                        return;
-                    }
-                }
-            }
-        }
         if let Some(job) = pending.job
             && let Some(view) = backend.job(job)
         {

@@ -4,8 +4,6 @@ use engine::jobs::{JobId, JobRunner, RunnerConfig, SystemClock};
 use engine::{ByteBudget, Command, Session};
 use std::sync::Arc;
 use std::time::Duration;
-pub type FontChoice =
-    std::pin::Pin<Box<dyn std::future::Future<Output = Option<std::path::PathBuf>> + Send>>;
 
 /// The catalog operations the picker consumes plus job progress and
 /// cancellation. A second adapter is the test host; production uses
@@ -16,7 +14,6 @@ pub trait Backend: Send {
     fn bind_budget(&mut self, _: ByteBudget) -> crate::Result<bool> {
         Ok(false)
     }
-    fn choose_font(&mut self, locale: crate::i18n::Locale) -> FontChoice;
     fn import(&mut self, session: &mut Session, path: std::path::PathBuf) -> crate::Result<JobId>;
     fn list(&mut self, session: &mut Session, query: Option<&str>)
     -> crate::Result<Vec<FontEntry>>;
@@ -31,28 +28,18 @@ pub trait Backend: Send {
 pub struct EngineBackend {
     store: Arc<libraries::fonts::FontStore>,
     runner: JobRunner,
-    choose: Box<dyn FnMut(crate::i18n::Locale) -> FontChoice + Send>,
 }
 impl EngineBackend {
     pub fn native(budget: ByteBudget) -> crate::Result<Self> {
-        let store = Arc::new(libraries::fonts::FontStore::native()?);
-        Self::with_store(store, budget, |locale| {
-            let title = crate::i18n::text(locale, crate::i18n::Text::FontUpload);
-            let dialog = rfd::AsyncFileDialog::new()
-                .set_title(title)
-                .add_filter(title, &["ttf", "otf", "woff2"]);
-            Box::pin(async move { dialog.pick_file().await.map(|file| file.path().to_owned()) })
-        })
+        Self::with_store(Arc::new(libraries::fonts::FontStore::native()?), budget)
     }
     pub fn with_store(
         store: Arc<libraries::fonts::FontStore>,
         budget: ByteBudget,
-        choose: impl FnMut(crate::i18n::Locale) -> FontChoice + Send + 'static,
     ) -> crate::Result<Self> {
         Ok(Self {
             store,
             runner: Self::runner(budget)?,
-            choose: Box::new(choose),
         })
     }
     fn runner(budget: ByteBudget) -> crate::Result<JobRunner> {
@@ -113,9 +100,6 @@ impl Backend for EngineBackend {
         self.runner.shutdown();
         self.runner = Self::runner(budget)?;
         Ok(true)
-    }
-    fn choose_font(&mut self, locale: crate::i18n::Locale) -> FontChoice {
-        (self.choose)(locale)
     }
     fn import(&mut self, session: &mut Session, path: std::path::PathBuf) -> crate::Result<JobId> {
         match self.request(
