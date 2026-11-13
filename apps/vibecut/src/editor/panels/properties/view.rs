@@ -1584,6 +1584,12 @@ fn body_ui(ui: &mut egui::Ui, area: Rect) -> egui::Ui {
     let mut body = ui.new_child(egui::UiBuilder::new().max_rect(rect));
     body.set_clip_rect(rect.intersect(ui.clip_rect()));
     body.spacing_mut().item_spacing = Vec2::ZERO;
+    // The floating scroll bar keeps its look but always owns its room at the body's right
+    // edge, so rows (and their steppers) lay out beside the bar, never under it, and the
+    // width does not change when the bar appears.
+    let scroll = &mut body.spacing_mut().scroll;
+    let room = (scroll.bar_inner_margin + scroll.bar_width).ceil();
+    scroll.content_margin.right = scroll.content_margin.right.saturating_add(room as i8);
     body
 }
 

@@ -87,10 +87,10 @@ Dialogue: 0,broken,0:00:02.00,Default,,0,0,0,,Skipped\n",
         matches!(&saved_item.content,project::ItemParams::Caption(params) if params.word_highlight)
     );
     // The saved command feeds the real CLI exporter; no preset-only export parser.
-    for (preset, border) in [("outline", 1), ("box", 3)] {
+    for (preset, border) in [("outline_bottom", 1), ("label_black", 3)] {
         let args = serde_json::json!({"item":item.id,"style":{"kind":"preset","preset":preset}})
             .to_string();
-        if preset == "box" {
+        if preset == "label_black" {
             let mut control = super::control::ControlSession::start(&project, &[]);
             let initial = control
                 .send(serde_json::json!({"request_id":"inspect","command":"inspect","params":{}}));
@@ -138,7 +138,7 @@ Dialogue: 0,broken,0:00:02.00,Default,,0,0,0,,Skipped\n",
             ),
             (
                 "captions.apply_style",
-                serde_json::json!({"item":item.id,"style":{"kind":"preset","preset":if preset=="box" {"outline"}else{"box"}}}),
+                serde_json::json!({"item":item.id,"style":{"kind":"preset","preset":if preset=="label_black" {"outline_bottom"}else{"label_black"}}}),
             ),
             (
                 "captions.apply_style",
@@ -178,7 +178,7 @@ Dialogue: 0,broken,0:00:02.00,Default,,0,0,0,,Skipped\n",
             before["value"], after["value"],
             "oversize drain preserves project and bank"
         );
-        if preset == "box" && crate::media_fixture::tools() {
+        if preset == "label_black" && crate::media_fixture::tools() {
             let protected = dir.path().join("protected.mp4");
             fs::write(&protected, b"existing destination").unwrap();
             let settings = render::OutputOptions::default();
@@ -263,7 +263,7 @@ Dialogue: 0,broken,0:00:02.00,Default,,0,0,0,,Skipped\n",
             panic!("caption")
         };
         assert_eq!(p.cues.styles[0].border_style, border);
-        assert_eq!(p.cues.styles[0].font_family.as_str(), "Inter");
+        assert_eq!(p.cues.styles[0].font_family.as_str(), "Be Vietnam Pro");
         assert!(
             p.cues
                 .cues
@@ -364,7 +364,7 @@ fn cancel_bank_export(project: project::Project, destination: std::path::PathBuf
     }
 
     let saved = project.data().caption_presets.last().unwrap();
-    assert_eq!(saved.name.as_str(), "box renamed");
+    assert_eq!(saved.name.as_str(), "label_black renamed");
     // The box look saves as a presentation value with an opaque background.
     assert!(saved.style.background.is_some());
     let caption = project

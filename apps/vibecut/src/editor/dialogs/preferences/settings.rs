@@ -55,7 +55,9 @@ pub(in crate::editor) enum Shortcuts {
 /// The last shortcut transfer's outcome, shown under the General tab.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::editor) enum ShortcutNotice {
-    Imported { unknown: usize },
+    Imported {
+        unknown: usize,
+    },
     Exported,
     /// The file was oversized, malformed or from a newer schema; nothing changed.
     Refused,
@@ -121,7 +123,7 @@ pub(super) fn show(
                 Tab::Draft => {
                     ui.label(tr(Text::SettingsDefaultFpsHint));
                     ui.horizontal(|ui| {
-                        ui.label(tr(Text::SettingsDefaultFps));
+                        let caption = ui.label(tr(Text::SettingsDefaultFps));
                         let current = prefs.default_fps;
                         let combo = egui::ComboBox::from_id_salt(FPS_COMBO)
                             .selected_text(i18n::format(
@@ -151,7 +153,7 @@ pub(super) fn show(
                             });
                         actions.push(Action::Remember(
                             "settings.draft.fps".into(),
-                            combo.response.clone(),
+                            combo.response.labelled_by(caption.id),
                         ));
                     });
                 }
@@ -184,7 +186,7 @@ pub(super) fn show(
                 Tab::Performance => {
                     ui.label(tr(Text::SettingsHardwareHint));
                     ui.horizontal(|ui| {
-                        ui.label(tr(Text::SettingsHardware));
+                        let caption = ui.label(tr(Text::SettingsHardware));
                         let current = prefs.hardware_acceleration;
                         let combo = egui::ComboBox::from_id_salt(HARDWARE_COMBO)
                             .selected_text(tr(hardware_label(current)))
@@ -212,12 +214,12 @@ pub(super) fn show(
                             });
                         actions.push(Action::Remember(
                             "settings.performance.hardware".into(),
-                            combo.response.clone(),
+                            combo.response.labelled_by(caption.id),
                         ));
                     });
                     ui.label(tr(Text::SettingsCacheHint));
                     ui.horizontal(|ui| {
-                        ui.label(tr(Text::SettingsCacheLimit));
+                        let caption = ui.label(tr(Text::SettingsCacheLimit));
                         let current = prefs.cache_limit_bytes;
                         let combo = egui::ComboBox::from_id_salt(CACHE_COMBO)
                             .selected_text(i18n::format(
@@ -248,7 +250,7 @@ pub(super) fn show(
                             });
                         actions.push(Action::Remember(
                             "settings.performance.cache".into(),
-                            combo.response.clone(),
+                            combo.response.labelled_by(caption.id),
                         ));
                     });
                     // The default must be one of the offered choices.

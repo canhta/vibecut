@@ -1110,7 +1110,9 @@ fn adjustment_layer_inserts_at_playhead_takes_an_effect_moves_and_changes_previe
     assert_ne!(wait_centre(&mut harness, |p| p != red), red);
     let history = harness.state().session.history_len();
     let handle = widget_rect(&harness, &format!("timeline.item.{}.trim_end", layer.0)).center();
-    let to = handle - egui::vec2(3.0 * zoom, 0.0);
+    // The handle sits inside the item's end, so aim at the body's left edge plus two seconds.
+    let body = widget_rect(&harness, &format!("timeline.item.{}", layer.0));
+    let to = egui::pos2(body.left() + 2.0 * zoom, handle.y);
     harness.drag_at(handle);
     harness.run_steps(1);
     harness.hover_at(to);

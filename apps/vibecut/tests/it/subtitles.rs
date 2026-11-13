@@ -599,15 +599,15 @@ fn caption_presets_apply_all_cues_undo_reopen_and_render_localized_scenes() {
             h.run_steps(3);
             click(&mut h, "subtitles.cue.cue-0");
             // A cue subset must not narrow a style operation.
-            for (id, border) in [("outline", 1), ("box", 3)] {
+            for (id, border) in [("outline_bottom", 1), ("label_black", 3)] {
                 let before = h.state().session.project().clone();
                 let history = h.state().session.history_len().0;
                 click(&mut h, "subtitles.style");
-                click(&mut h, &format!("subtitles.style.{id}"));
+                click(&mut h, &format!("subtitles.style.look.{id}"));
                 let cues = track(h.state());
                 assert_eq!(cues.styles.len(), 1);
                 assert_eq!(cues.styles[0].border_style, border);
-                assert_eq!(cues.styles[0].font_family.as_str(), "Inter");
+                assert_eq!(cues.styles[0].font_family.as_str(), "Be Vietnam Pro");
                 assert!(cues.styles[0].bold);
                 assert!(
                     cues.cues
@@ -644,7 +644,7 @@ fn caption_presets_apply_all_cues_undo_reopen_and_render_localized_scenes() {
                 image
                     .save(root.join(format!("p1-59-caption-{locale:?}-{scale}x-{id}.png")))
                     .unwrap();
-                if locale == Locale::En && scale == 1.0 && id == "box" {
+                if locale == Locale::En && scale == 1.0 && id == "label_black" {
                     image.save(root.join("p1-59-caption-style.png")).unwrap();
                 }
             }
@@ -1058,8 +1058,10 @@ fn caption_style_actions_refuse_drafts_locks_transactions_and_busy_work() {
         .unwrap();
     h.run_steps(3);
     assert_eq!(
-        h.query_all(By::new().predicate(|n| n.author_id() == Some("subtitles.style.box")))
-            .count(),
+        h.query_all(
+            By::new().predicate(|n| n.author_id() == Some("subtitles.style.look.label_black"))
+        )
+        .count(),
         0
     );
     let animation = h
@@ -1095,7 +1097,7 @@ fn caption_style_actions_refuse_drafts_locks_transactions_and_busy_work() {
         h.get(By::new().predicate(|n| n.author_id() == Some("subtitles.style")))
             .value()
             .as_deref(),
-        Some("Box")
+        Some("Label Black")
     );
     let mut content = h
         .state()
@@ -1165,12 +1167,14 @@ fn caption_style_actions_refuse_drafts_locks_transactions_and_busy_work() {
     with_panel(h.state_mut(), |p, s, _| p.select_item(s, second).unwrap());
     h.run_steps(3);
     assert_eq!(
-        h.query_all(By::new().predicate(|n| n.author_id() == Some("subtitles.style.box")))
-            .count(),
+        h.query_all(
+            By::new().predicate(|n| n.author_id() == Some("subtitles.style.look.label_black"))
+        )
+        .count(),
         0
     );
     click(&mut h, "subtitles.style");
-    click(&mut h, "subtitles.style.outline");
+    click(&mut h, "subtitles.style.look.outline_bottom");
     let original = h
         .state()
         .session
@@ -1237,9 +1241,11 @@ fn caption_style_actions_refuse_drafts_locks_transactions_and_busy_work() {
     .unwrap();
     h.run_steps(3);
     assert!(
-        h.query_all(By::new().predicate(|n| n.author_id() == Some("subtitles.style.box")))
-            .next()
-            .is_none()
+        h.query_all(
+            By::new().predicate(|n| n.author_id() == Some("subtitles.style.look.label_black"))
+        )
+        .next()
+        .is_none()
     );
     assert!(!h.state().action_enabled("subtitles.style.box"));
     let gate: Gate = Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));

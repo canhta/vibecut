@@ -1,7 +1,7 @@
 //! Text style rows of the Text tab: weight, slant, line, alignment, spacing and the
 //! background box geometry. Every edit goes through the registered item field.
 use super::Panel;
-use super::animation::{COLUMNS, GUTTER, NAME_HEIGHT, ROW_GAP, TILE};
+use super::animation::{GUTTER, NAME_HEIGHT, ROW_GAP, TILE, columns};
 use super::number_edit::Layout;
 use crate::editor::properties::{
     ColorTarget, Id, ItemId, ScrubSpec, TEXT_SIZE_SCRUB, Text, TextPart, egui, read, shared_fields,
@@ -446,7 +446,7 @@ impl Panel<'_, '_> {
         }
     }
 
-    /// The built-in text looks in shelves, six tiles to a row on the animation tab's grid.
+    /// The built-in text looks in shelves, up to six tiles to a row on the animation tab's grid.
     /// Choosing one applies it to this item as one undo step.
     fn text_look_tiles(&mut self, ui: &mut egui::Ui, item: ItemId, enabled: bool) {
         const SHELVES: [(TextShelf, Text); 5] = [
@@ -470,7 +470,7 @@ impl Panel<'_, '_> {
                 .into_iter()
                 .filter(|look| look.shelf() == shelf)
                 .collect();
-            for row in looks.chunks(COLUMNS) {
+            for row in looks.chunks(columns(ui.available_width())) {
                 ui.horizontal_top(|ui| {
                     ui.spacing_mut().item_spacing.x = GUTTER;
                     for look in row {
@@ -509,10 +509,11 @@ impl Panel<'_, '_> {
             let radius = theme::radius::UPLOAD;
             ui.painter().rect_filled(rect, radius, theme::field(dark));
             let [red, green, blue, alpha] = look.style().color.0;
+            let sample = self.tr(Text::LookSample);
             ui.painter().text(
                 rect.center(),
                 egui::Align2::CENTER_CENTER,
-                "Aa",
+                sample,
                 theme::label_font(),
                 egui::Color32::from_rgba_unmultiplied(red, green, blue, alpha),
             );

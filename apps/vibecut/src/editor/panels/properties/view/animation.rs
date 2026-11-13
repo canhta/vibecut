@@ -15,6 +15,17 @@ pub(in crate::editor) use previews::Previews;
 pub(super) const DISABLED: &str = "animation.edit";
 /// Measured grid (capture 221759, logical px): six columns of 58 px square tiles, 15 px apart.
 pub(super) const COLUMNS: usize = 6;
+
+/// The columns a tile grid takes in `width`: the measured six when they fit, fewer in a narrower
+/// body (never under one), so a grid row never widens the inspector past its body.
+pub(super) fn columns(width: f32) -> usize {
+    let fit = ((width + GUTTER) / (TILE + GUTTER)).floor();
+    if fit.is_finite() && fit >= 1.0 {
+        (fit as usize).min(COLUMNS)
+    } else {
+        1
+    }
+}
 pub(super) const TILE: f32 = 58.0;
 pub(super) const GUTTER: f32 = 15.0;
 /// Name under a tile (capture 221759: a 12 px line), and the gap that brings the row pitch
@@ -155,7 +166,7 @@ impl Panel<'_, '_> {
         ui.add_space(theme::space::XS);
     }
 
-    /// The None tile, then one group per shelf of the looks this slot offers, six tiles to a
+    /// The None tile, then one group per shelf of the looks this slot offers, up to six tiles to a
     /// row. Returns the clicked entry: `Some(None)` removes the slot. The Favorites shelf
     /// shows only starred looks and no None tile.
     fn animation_tiles(
@@ -221,7 +232,7 @@ impl Panel<'_, '_> {
                         .color(self.text_color()),
                 ));
             }
-            for row in entries.chunks(COLUMNS) {
+            for row in entries.chunks(columns(ui.available_width())) {
                 ui.horizontal_top(|ui| {
                     ui.spacing_mut().item_spacing.x = GUTTER;
                     for entry in row {
