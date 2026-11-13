@@ -980,3 +980,214 @@ fn an_unavailable_detector_is_reported_once_and_can_be_dismissed() {
     h.run_steps(3);
     assert_eq!(count(&h), 0);
 }
+
+#[test]
+fn a_busy_model_cache_is_asked_again_until_the_answer_clears() {
+    use engine::control::ClipShotsDiagnostic;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let calls = Arc::new(AtomicUsize::new(0));
+    let seen = calls.clone();
+    let mut app = fixture::app();
+    // The download finishes after the second ask: busy, busy, then an answer without evidence.
+    app.with_shot_source(Arc::new(move |_, _, _, _| {
+        let ask = seen.fetch_add(1, Ordering::SeqCst);
+        Ok((
+            Vec::new(),
+            (ask < 2).then_some(ClipShotsDiagnostic::ModelsBusy),
+        ))
+    }));
+    app.generate().unwrap();
+    wait(&mut app);
+    // The first answer is busy: the toast says so and no thread waits.
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    let mut h = harness(app, 1.0);
+    h.run_steps(3);
+    let busy = vibecut::i18n::text(Locale::En, vibecut::i18n::Text::ShortsShotsBusy);
+    assert!(h.query_by_label(busy).is_some());
+    // The bounded re-ask runs from `tick` until the busy answer clears, then the notice goes.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while calls.load(Ordering::SeqCst) < 3 {
+        h.run_steps(2);
+        assert!(std::time::Instant::now() < deadline, "re-ask timeout");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    h.run_steps(3);
+    assert!(h.query_by_label(busy).is_none());
+    assert_eq!(calls.load(Ordering::SeqCst), 3);
+}
+
+/// The managed library's stand-in: runs kept in memory, newest first.
+#[derive(Default)]
+struct MemoryRuns(Mutex<Vec<(project::ProjectId, project::Project)>>);
+impl vibecut::shorts::RunStore for MemoryRuns {
+    fn list(&self) -> engine::control::Result<Vec<vibecut::shorts::RunEntry>> {
+        Ok(self
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .map(|(id, project)| {
+                let run = project.data().shorts_run.as_ref().unwrap();
+                vibecut::shorts::RunEntry {
+                    id: *id,
+                    source_name: run.source_name.as_str().to_owned(),
+                    clips: run.clips.len(),
+                    poster: project::Thumbnail::Unavailable,
+                    modified_unix_ms: 0,
+                }
+            })
+            .collect())
+    }
+    fn save(
+        &self,
+        project: project::Project,
+        _: project::Thumbnail,
+    ) -> engine::control::Result<project::ProjectId> {
+        assert!(project.data().shorts_run.is_some());
+        let id = project.data().id;
+        self.0.lock().unwrap().push((id, project));
+        Ok(id)
+    }
+    fn load(&self, id: project::ProjectId) -> engine::control::Result<project::Project> {
+        Ok(self
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|(kept, _)| *kept == id)
+            .unwrap()
+            .1
+            .clone())
+    }
+    fn remove(&self, id: project::ProjectId) -> engine::control::Result<()> {
+        self.0.lock().unwrap().retain(|(kept, _)| *kept != id);
+        Ok(())
+    }
+}
+
+fn run_window(
+    path: &std::path::Path,
+    runs: Arc<MemoryRuns>,
+    opener: vibecut::services::ai_access::Opener,
+) -> Shorts {
+    let path = path.to_owned();
+    let mut app = Shorts::with_access(
+        vibecut::preferences::Preferences::default().look(),
+        ByteBudget::new(512 << 20).unwrap(),
+        opener,
+        Arc::new(move |_| Ok(fixture::asset_in(0, path.clone()))),
+        Arc::new(fixture::Pixels),
+    )
+    .unwrap();
+    app.request.min_seconds = 1;
+    app.request.max_seconds = 20;
+    app.captions = false;
+    app.lend_runs(runs);
+    app
+}
+
+fn tick_until(app: &mut Shorts, done: impl Fn(&Shorts) -> bool) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while !done(app) {
+        app.tick();
+        assert!(std::time::Instant::now() < deadline, "runs timeout");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
+#[test]
+fn a_finished_run_is_kept_and_its_recent_entry_reopens_the_results() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("interview.mp4");
+    std::fs::write(&path, b"video").unwrap();
+    let runs = Arc::new(MemoryRuns::default());
+    let mut first = run_window(&path, runs.clone(), once(fixture::source()).0);
+    first.pick_video(path.clone()).unwrap();
+    first.generate().unwrap();
+    wait(&mut first);
+    tick_until(&mut first, |app| app.runs().len() == 1);
+    assert_eq!(first.runs()[0].source_name, "interview.mp4");
+    assert_eq!(first.runs()[0].clips, 2);
+    // A new window finds the run in the library and reopens its results without ASR or ranking.
+    let mut second = run_window(&path, runs.clone(), once(fixture::source()).0);
+    tick_until(&mut second, |app| app.runs().len() == 1);
+    let id = second.runs()[0].id;
+    second.open_run(id).unwrap();
+    tick_until(&mut second, |app| app.source().is_some());
+    assert!(second.error().is_none());
+    assert_eq!(second.reviews().len(), 2);
+    let kept = &second.source().unwrap().candidates;
+    let made = &fixture::source().candidates;
+    assert_eq!(kept[0].proposal.title, made[0].proposal.title);
+    assert_eq!(kept[0].segments[0].range, made[0].segments[0].range);
+    assert_eq!(kept[1].proposal.score, made[1].proposal.score);
+    // The marker stays in the library: the in-memory source is an ordinary project.
+    assert!(second.source().unwrap().project.data().shorts_run.is_none());
+    // Removing the entry forgets the run and leaves the video where it is.
+    second.remove_run(id);
+    tick_until(&mut second, |app| app.runs().is_empty());
+    assert!(path.is_file());
+}
+
+#[test]
+fn a_run_whose_video_moved_reports_it_instead_of_opening() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("interview.mp4");
+    std::fs::write(&path, b"video").unwrap();
+    let runs = Arc::new(MemoryRuns::default());
+    let mut first = run_window(&path, runs.clone(), once(fixture::source()).0);
+    first.pick_video(path.clone()).unwrap();
+    first.generate().unwrap();
+    wait(&mut first);
+    tick_until(&mut first, |app| app.runs().len() == 1);
+    std::fs::remove_file(&path).unwrap();
+    let mut second = run_window(&path, runs, once(fixture::source()).0);
+    tick_until(&mut second, |app| app.runs().len() == 1);
+    let id = second.runs()[0].id;
+    second.open_run(id).unwrap();
+    tick_until(&mut second, |app| app.error().is_some());
+    assert!(second.source().is_none());
+}
+
+#[test]
+fn the_back_arrow_returns_to_the_entry_and_the_run_keeps_going() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let gate = Arc::new(AtomicBool::new(false));
+    let hold = gate.clone();
+    let opener = fixture::staged(move |_, hooks| {
+        while !hold.load(Ordering::SeqCst) {
+            hooks.check_cancelled()?;
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        Ok(fixture::source())
+    });
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("interview.mp4");
+    std::fs::write(&path, b"video").unwrap();
+    let mut app = run_window(&path, Arc::new(MemoryRuns::default()), opener);
+    app.pick_video(path).unwrap();
+    app.generate().unwrap();
+    let mut h = harness(app, 1.0);
+    h.run_steps(3);
+    // The working page: the skeleton grid with a live count of zero, the arrow and Cancel.
+    assert!(h.query_by(by("shorts.back")).is_some());
+    assert!(h.query_by(by("shorts.cancel")).is_some());
+    assert_eq!(h.state().generation_count(), Some(0));
+    h.get(by("shorts.back")).click();
+    h.run_steps(3);
+    // The entry lists the run in progress and still runs it.
+    assert!(h.query_by(by("shorts.back")).is_none());
+    assert!(h.state().busy());
+    h.get(by("shorts.run.0")).click();
+    h.run_steps(3);
+    assert!(h.query_by(by("shorts.back")).is_some());
+    // Leaving again and finishing while away lands on the results.
+    h.get(by("shorts.back")).click();
+    h.run_steps(2);
+    gate.store(true, Ordering::SeqCst);
+    wait(h.state_mut());
+    h.run_steps(3);
+    assert_eq!(h.state().reviews().len(), 2);
+    assert!(h.query_by(by("shorts.candidate.0")).is_some());
+}

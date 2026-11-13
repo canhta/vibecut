@@ -152,6 +152,8 @@ pub trait ExecutionHooks: Send + Sync {
     /// Native work has observed cancellation. The job owner can enter Cancelling
     /// immediately while the current native operation drains; no result is returned.
     fn cancelling(&self) {}
+    /// Results produced so far by a job that yields them one by one; the latest count wins.
+    fn produced(&self, _count: u32) {}
 }
 pub(crate) fn checkpoint(hooks: &dyn ExecutionHooks, stage: Stage) -> Result<(), Error> {
     if hooks.cancelled() {

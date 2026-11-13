@@ -5,11 +5,13 @@
 //! root must carry out. The window owns its own size, chrome and layout and
 //! imports only the kit, the catalog and the engine.
 
+mod runs;
 mod state;
 mod view;
 
 use crate::egui;
 
+pub use runs::{RunEntry, RunStore};
 pub use state::{
     ClipCandidate, Decision, GenerationRequest, Importer, Review, ReviewSource, ShotSource, State,
     TaskEvents, desktop_importer,

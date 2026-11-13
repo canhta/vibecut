@@ -99,6 +99,10 @@ restored, and recovery never promotes a `.trash-*` directory: Trash is listed on
 `list_trash()` and restored through `project.restore`. macOS behaviour of the directory-move
 barrier requires platform verification.
 
+### Shorts runs
+
+A run of the shorts window is an ordinary managed project whose `shorts_run` is set ([project model](../../../project/src/model/README.md#shorts-run)); no second store exists. `list` and `list_trash` never return runs, `list_runs` returns only them, so Home neither shows nor trashes them. `save_run(project, poster)` publishes the project by the same staged rename as every entry but keeps the source file where it is instead of copying media: a run holds only suggestions and cues, and its source may be hours of video. A moved source is reported when the run reopens. The poster is the first short's frame in the metadata thumbnail. `MAX_RUNS` (24) bounds the kept runs; saving one more removes the least recently saved. `remove_run` accepts only a run and deletes then purges it (no Trash entry); it never touches exported files. `load_run` reads one run read-only. The composition root lends the library (see the [app](../../../../apps/vibecut/src/app/README.md)); calls block.
+
 `project.thumbnail` captures the active scene at output tick zero through the production CPU
 compositor, at most 128 pixels per edge, independent of playhead or preview buffers. Rendering
 failure, including a denied allocation, stores Unavailable, for which adapters show a

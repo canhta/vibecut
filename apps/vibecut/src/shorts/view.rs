@@ -7,6 +7,7 @@ use crate::i18n;
 mod options;
 mod pick;
 mod progress;
+mod recent;
 mod results;
 mod review;
 mod toast;
@@ -55,7 +56,7 @@ pub(super) fn show(state: &mut State, cx: &Context, ui: &mut egui::Ui) -> Vec<Ac
         }
     }
     let mut actions = Vec::new();
-    if state.generating.is_some() {
+    if state.generating.is_some() && !state.away {
         progress::show(state, ui, rect);
     } else if state.source.is_some() && state.editing {
         review::show(state, cx, ui, rect, &mut actions);

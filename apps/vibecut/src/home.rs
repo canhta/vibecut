@@ -14,6 +14,7 @@ use crate::{egui, i18n::Text, kit::Look};
 
 pub use preferences::{ProjectsPreferences, ProjectsSortKey, ProjectsView};
 pub use state::{Action, State};
+pub use workflow::Catalog;
 /// The window Home opens at; the editor and shorts windows own their own sizes.
 pub const WINDOW: [f32; 2] = [1728.0, 1030.0];
 

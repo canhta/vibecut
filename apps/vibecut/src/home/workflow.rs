@@ -11,10 +11,46 @@ use project::ProjectId;
 use std::{
     path::PathBuf,
     sync::{
+        Arc, Mutex,
         atomic::{AtomicU64, Ordering},
         mpsc::{Receiver, Sender},
     },
 };
+
+/// The managed library the catalog worker opened, lent to the other windows of the process.
+/// The library holds one exclusive catalog lease, so no window opens a second handle: the
+/// worker publishes its handle here after a successful open and withdraws it when it stops.
+/// Calls block, so callers run them off the UI thread.
+#[derive(Clone, Default)]
+pub struct Catalog(Arc<Mutex<Option<Arc<Mutex<ProjectLibrary>>>>>);
+
+impl Catalog {
+    /// Run `run` against the library, or fail typed while the catalog is not open.
+    pub fn with<T>(
+        &self,
+        run: impl FnOnce(&mut ProjectLibrary) -> engine::library::Result<T>,
+    ) -> engine::control::Result<T> {
+        // The handle is held only for this call, so a Retry that reopens the catalog is never
+        // kept busy by a lent clone.
+        let library = self
+            .0
+            .lock()
+            .map_err(|_| engine::RuntimeError::Poisoned)?
+            .clone()
+            .ok_or(engine::EditError::Unsupported(
+                "project library is unavailable",
+            ))?;
+        let mut library = library
+            .lock()
+            .map_err(|_| engine::RuntimeError::Poisoned)?;
+        Ok(run(&mut library)?)
+    }
+    fn set(&self, library: Option<Arc<Mutex<ProjectLibrary>>>) {
+        if let Ok(mut slot) = self.0.lock() {
+            *slot = library;
+        }
+    }
+}
 
 pub(super) enum Request {
     List,
@@ -105,8 +141,9 @@ pub(super) fn catalog_worker(
     budget: ByteBudget,
     requests: Receiver<Request>,
     events: Sender<Event>,
+    catalog: Catalog,
 ) {
-    let mut library = match ProjectLibrary::open(&root, budget) {
+    let library = match ProjectLibrary::open(&root, budget) {
         Ok(library) => library,
         Err(error) => {
             let _ = events.send(Event::Ready(Err(error.to_string())));
@@ -114,8 +151,15 @@ pub(super) fn catalog_worker(
         }
     };
     let initial = library.list().map_err(|error| error.to_string());
+    let library = Arc::new(Mutex::new(library));
+    catalog.set(Some(library.clone()));
     let _ = events.send(Event::Ready(initial));
     while let Ok(request) = requests.recv() {
+        // Each request holds the library for its own duration; the shorts window's runs
+        // take turns with it.
+        let Ok(mut library) = library.lock() else {
+            break;
+        };
         match request {
             Request::List => {
                 let listed = library.list().map_err(|error| error.to_string());
@@ -238,6 +282,7 @@ pub(super) fn catalog_worker(
             }
         }
     }
+    catalog.set(None);
 }
 
 #[cfg(test)]

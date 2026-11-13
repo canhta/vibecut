@@ -69,6 +69,9 @@ pub struct JobSnapshot {
     pub stage: JobStage,
     /// Finite normalized progress, 0..=1. Failed/cancelled jobs never imply completion.
     pub progress: f32,
+    /// Results the job has produced so far, for jobs that produce them one by one (clip
+    /// suggestions). A running count, not a promise: the retained output is authoritative.
+    pub produced: u32,
     pub state: JobState,
     pub attempts: u8,
     pub error: Option<Arc<dyn Failure + 'static>>,
@@ -105,6 +108,7 @@ struct Progress {
     stage: JobStage,
     value: f32,
     at: Duration,
+    produced: u32,
 }
 #[derive(Clone)]
 pub struct JobContext {
@@ -163,6 +167,15 @@ impl JobContext {
         }
         publish()
     }
+    /// Results produced so far. Never rate limited; the latest count wins.
+    pub fn produced(&self, count: u32) -> RuntimeResult<()> {
+        self.check_cancelled()?;
+        self.progress
+            .lock()
+            .map_err(|_| RuntimeError::Poisoned)?
+            .produced = count;
+        Ok(())
+    }
     /// Latest value only, at most once per configured interval (including stage
     /// changes). Invalid values are refused without changing visible progress.
     pub fn progress(&self, stage: JobStage, value: f32) -> RuntimeResult<()> {
@@ -177,6 +190,7 @@ impl JobContext {
                 stage,
                 value,
                 at: now,
+                produced: p.produced,
             };
         }
         Ok(())
@@ -195,6 +209,9 @@ impl ai::ExecutionHooks for JobContext {
     }
     fn cancelling(&self) {
         self.cancel.cancel();
+    }
+    fn produced(&self, count: u32) {
+        self.produced(count).ok();
     }
 }
 impl From<ai::Stage> for JobStage {
@@ -354,6 +371,7 @@ impl JobRunner {
                 stage: JobStage::Starting,
                 value: 0.0,
                 at: self.clock.now(),
+                produced: 0,
             })),
             clock: self.clock.clone(),
             interval: self.config.progress_interval,
@@ -364,6 +382,7 @@ impl JobRunner {
             input: spec.input,
             stage: JobStage::Queued,
             progress: 0.0,
+            produced: 0,
             state: JobState::Queued,
             attempts: 0,
             error: None,
@@ -484,9 +503,12 @@ impl JobRunner {
                 s.state = JobState::Cancelling;
                 self.events.insert(s.id, s.clone());
             }
-            if s.state != JobState::Publishing && (s.stage != p.stage || s.progress != p.value) {
+            if s.state != JobState::Publishing
+                && (s.stage != p.stage || s.progress != p.value || s.produced != p.produced)
+            {
                 s.stage = p.stage;
                 s.progress = p.value;
+                s.produced = p.produced;
                 self.events.insert(s.id, s.clone());
             }
         }
@@ -538,11 +560,13 @@ impl JobRunner {
             pending.snapshot.state = JobState::Running;
             pending.snapshot.stage = JobStage::Starting;
             pending.snapshot.progress = 0.0;
+            pending.snapshot.produced = 0;
             if let Ok(mut p) = pending.context.progress.lock() {
                 *p = Progress {
                     stage: JobStage::Starting,
                     value: 0.0,
                     at: now,
+                    produced: 0,
                 };
             }
             let context = pending.context.clone();

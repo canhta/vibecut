@@ -12,6 +12,10 @@ Project, scene, track, item and bookmark IDs are separate `u64` newtypes; media 
 
 `Project::duration` uses the active scene. `Project::scene_ids(SceneScope)` resolves Active, All or an explicit nonempty, unique Selected list; unknown or duplicate IDs and more than 256 selections refuse. `for_scene` creates a validated immutable snapshot of one scene; preview, mixing and export consume it.
 
+## Shorts run
+
+`ProjectData.shorts_run` is `None` for every editor project. A run of the shorts window sets it: the project holds the source asset and the source-timed caption cues (the ordinary caption item), and the `ShortsRun` holds the settings, the ranked shorts (title, hook, reason, score, snapped segments and the pieces the suggestion named) and the speech-energy windows, at most `MAX_RUN_CLIPS` shorts, `MAX_RUN_PIECES` pieces each and `MAX_RUN_ENERGY` windows (longer sources merge adjacent windows before saving). `ShortsRun::asset` must name a project asset. Nothing here is migrated: schema 41 added the field.
+
 ## Scenes
 
 `ProjectData.scenes` is a nonempty array (`Scenes`) with one protected main scene and up to 255 secondary scenes. `current_scene_id` identifies an existing scene. A candidate with no main, multiple mains, duplicate IDs or a missing active scene is refused; loading never repairs it. Item, track, animation and bookmark validation and aggregate budgets span every scene, including inactive ones.

@@ -218,6 +218,8 @@ impl Workspace {
             // The process media cache is the engine's analysis cache and the detector is the
             // installed local one; absent weights surface as the review's `models_missing` notice.
             shorts.lend_analysis(self.lending.media(), Some(self.lending.vision()));
+            // The earlier runs live in the managed library the Home catalog worker holds.
+            shorts.lend_runs(Arc::new(super::runs::CatalogRuns(self.projects.catalog())));
             self.shorts = Some(shorts);
         }
         self.shorts_window = true;

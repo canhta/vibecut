@@ -4,7 +4,7 @@ Versioned project JSON, the writer lease, atomic files, recovery snapshots, opti
 
 ## Envelope and limits
 
-`encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`, `project`. The current schema is `SCHEMA_VERSION` (45): 42 added `Retime.curve` speed curves, 43 added `recent_colors`, 44 added stabilize corrections and 45 added person-matte background removal. Older schemas return `TooOld` and newer ones `TooNew`; nothing is migrated or defaulted. Unknown envelope or project fields are refused.
+`encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`, `project`. The current schema is `SCHEMA_VERSION` (46): 42 added `Retime.curve` speed curves, 43 added `recent_colors`, 44 added stabilize corrections, 45 added person-matte background removal and 46 added `shorts_run`. Older schemas return `TooOld` and newer ones `TooNew`; nothing is migrated or defaulted. Unknown envelope or project fields are refused.
 
 ProjectId is stored as a canonical decimal string to keep all u64 bits for control clients; other IDs are numeric. Leases, hashes and receipts are not persisted in the envelope.
 

@@ -18,6 +18,7 @@ use engine::{
 };
 pub use shorts::ClipCandidate;
 
+use super::runs::{self, RunStore, Runs};
 use shorts::{
     ClipBatch, ClipBatchRequest, ClipShort,
     clip_boundaries::{ClipBoundarySettings, snap_clip_boundaries},
@@ -198,7 +199,18 @@ pub struct State {
     /// The typed reason there are no layouts, shown once in the toast.
     pub(super) shots_notice: Option<Text>,
     pub(super) shots_reported: bool,
+    /// A busy model cache (a download running) answered the shot analysis: when to ask again
+    /// and how many asks are left. Never blocks the UI thread; `tick` only compares the clock.
+    pub(super) shots_busy: Option<(std::time::Instant, u8)>,
+    /// The earlier runs, kept in the managed project library the composition root lends.
+    pub(super) runs: Runs,
+    /// The user left the working page with the back arrow; the run goes on without it.
+    pub(super) away: bool,
 }
+
+/// Pause between asks while the model cache is busy, and the most asks of one review.
+const BUSY_RETRY: Duration = Duration::from_secs(2);
+const BUSY_ASKS: u8 = 90;
 
 /// Poster frames of the suggestions, decoded off the UI thread, then uploaded once.
 #[derive(Default)]
@@ -376,6 +388,9 @@ impl State {
             shots_job: None,
             shots_notice: None,
             shots_reported: false,
+            shots_busy: None,
+            runs: Runs::default(),
+            away: false,
         })
     }
     /// Lend the process media cache and face detector to the review's shot analysis. Either
@@ -396,6 +411,43 @@ impl State {
             )
         });
     }
+    /// Lend the persistence of runs: the managed library of the process. Without it the entry
+    /// screen has no Recent row and finished runs are not kept.
+    pub fn lend_runs(&mut self, store: Arc<dyn RunStore>) {
+        self.runs.lend(store);
+    }
+    /// The earlier runs, most recently saved first.
+    pub fn runs(&self) -> &[runs::RunEntry] {
+        &self.runs.entries
+    }
+    /// Reopen an earlier run's results. The load runs off the UI thread; the review appears
+    /// from `tick` once it arrives.
+    pub fn open_run(&mut self, id: project::ProjectId) -> Result<()> {
+        if self.busy() {
+            return Err(Error::Invalid("shorts operation in progress"));
+        }
+        self.runs.load(id);
+        Ok(())
+    }
+    /// Forget an earlier run. Exported files stay where they are.
+    pub fn remove_run(&mut self, id: project::ProjectId) {
+        self.runs.remove(id);
+    }
+    /// The back arrow of the working page: back to the entry while the run goes on.
+    pub fn leave_run(&mut self) {
+        if self.generating.is_some() {
+            self.away = true;
+        }
+    }
+    /// Return from the entry to the running run's working page.
+    pub fn return_to_run(&mut self) {
+        self.away = false;
+    }
+    /// Shorts the running suggestion has produced so far; the final count comes with its result.
+    pub fn generation_count(&self) -> Option<u32> {
+        let job = self.generating.as_ref()?;
+        self.runner.snapshot(job.id).map(|snapshot| snapshot.produced)
+    }
     /// Replace the resolver; tests script the analysis here.
     pub fn with_shot_source(&mut self, source: ShotSource) {
         self.shots_source = source;
@@ -415,6 +467,19 @@ impl State {
         let resolved = (self.shots_source)(&mut self.runner, asset, &pieces, &source.cues.cues);
         use engine::control::ClipShotsDiagnostic as Reason;
         let (shots, mut reason) = resolved.unwrap_or((Vec::new(), Some(Reason::Failed)));
+        // A busy answer clears when the download ends: ask again, a bounded number of times.
+        let was_busy = self.shots_busy.is_some();
+        self.shots_busy = if matches!(reason, Some(Reason::ModelsBusy)) {
+            let left = self.shots_busy.map_or(BUSY_ASKS, |(_, left)| left.saturating_sub(1));
+            (left > 0).then(|| (std::time::Instant::now() + BUSY_RETRY, left))
+        } else {
+            None
+        };
+        if was_busy && !matches!(reason, Some(Reason::ModelsBusy)) {
+            // The busy notice no longer holds; a later failure may report again.
+            self.shots_notice = None;
+            self.shots_reported = false;
+        }
         // A second pending answer after the job finished is a failed publication, not a wait.
         if last && matches!(reason, Some(Reason::Pending { .. })) {
             reason = Some(Reason::Failed);
@@ -517,7 +582,10 @@ impl State {
         (self.undo.len(), self.redo.len())
     }
     pub fn busy(&self) -> bool {
-        self.generating.is_some() || self.exporting() || self.picker.is_some()
+        self.generating.is_some()
+            || self.exporting()
+            || self.picker.is_some()
+            || self.runs.loading()
     }
     pub fn cancelling(&self) -> bool {
         self.generating
@@ -564,6 +632,7 @@ impl State {
         Ok(())
     }
     fn reset_source(&mut self) {
+        self.shots_busy = None;
         self.crop_entry = None;
         self.crop_cancelled = false;
         self.crop_focused = false;
@@ -642,6 +711,7 @@ impl State {
         self.shots_job = None;
         self.shots_notice = None;
         self.shots_reported = false;
+        self.shots_busy = None;
         self.generating = Some(Generating { id, cancel, events });
         self.error = None;
         self.cancelled = false;
@@ -669,6 +739,7 @@ impl State {
             self.reset_drafts();
         }
         self.poll_picker();
+        self.poll_runs();
         if let Err(e) = self.runner.tick() {
             self.fail(e.into(), Text::ShortsError);
         }
@@ -679,6 +750,8 @@ impl State {
             .and_then(|job| self.runner.snapshot(job.id))
             .is_some_and(|s| terminal(s.state));
         if done && let Some(job) = self.generating.take() {
+            // The results or the failure show where the user is.
+            self.away = false;
             let snapshot = self.runner.snapshot(job.id);
             let state = snapshot.as_ref().map_or(JobState::Failed, |s| s.state);
             if job.cancel.cancelled() || state == JobState::Cancelled {
@@ -718,6 +791,11 @@ impl State {
                 }
             }
         }
+        if let Some((at, _)) = self.shots_busy
+            && std::time::Instant::now() >= at
+        {
+            self.refresh_shots(false);
+        }
         if self.preview_dirty {
             self.preview_dirty = false;
             if let Err(e) = self.refresh_preview() {
@@ -729,6 +807,143 @@ impl State {
         {
             self.fail(e, Text::ShortsError);
         }
+    }
+    /// Apply what the run store finished: listings update themselves, a loaded run becomes the
+    /// review, failures take the toast.
+    fn poll_runs(&mut self) {
+        for event in self.runs.drain() {
+            let result = match event {
+                runs::Event::Listed(Err(e))
+                | runs::Event::Saved(Err(e))
+                | runs::Event::Removed(Err(e))
+                | runs::Event::Loaded(Err(e)) => Err(Error::Engine(e)),
+                runs::Event::Loaded(Ok(project)) => self.adopt_run(project),
+                runs::Event::Listed(Ok(_))
+                | runs::Event::Saved(Ok(_))
+                | runs::Event::Removed(Ok(())) => Ok(()),
+            };
+            if let Err(e) = result {
+                self.fail(e, Text::ShortsError);
+            }
+        }
+    }
+    /// Install a persisted run as the review. The source must still be where the run found it.
+    fn adopt_run(&mut self, project: project::Project) -> Result<()> {
+        if self.generating.is_some() {
+            return Err(Error::Invalid("shorts operation in progress"));
+        }
+        let data = project.data();
+        let run = data
+            .shorts_run
+            .clone()
+            .ok_or(Error::Invalid("shorts run"))?;
+        let asset = data
+            .assets
+            .iter()
+            .find(|asset| asset.id() == run.asset)
+            .cloned()
+            .ok_or(Error::Invalid("shorts source asset"))?;
+        if !matches!(asset.availability(), Ok(media::AssetAvailability::Present)) {
+            self.fail(
+                Error::Invalid("shorts source moved"),
+                Text::ShortsSourceUnavailable,
+            );
+            return Ok(());
+        }
+        let duration = asset
+            .probe()
+            .duration
+            .filter(|duration| *duration > Tick::ZERO)
+            .ok_or(Error::Invalid("shorts source duration"))?;
+        let cues = runs::cues_of(&project);
+        let request = GenerationRequest {
+            path: asset.path().to_path_buf(),
+            language: run.request.language.clone(),
+            transcription_provider: run.request.transcription_provider.clone(),
+            transcription_model: run.request.transcription_model.clone(),
+            suggestion_provider: run.request.suggestion_provider.clone(),
+            suggestion_model: run.request.suggestion_model.clone(),
+            count: run.request.count as usize,
+            min_seconds: run.request.min_seconds,
+            max_seconds: run.request.max_seconds,
+            max_segments: run.request.max_segments as usize,
+        };
+        let boundaries = review_boundaries(&asset, duration, &request)?;
+        let transcript = transcript_from(
+            &cues,
+            &run.source_language,
+            &run.transcription_provider,
+            &run.transcription_model,
+        );
+        let (candidates, energy) = runs::from_run(&run);
+        // The in-memory source is an ordinary project: the run marker stays in the library.
+        let mut source_data = project.into_data();
+        source_data.shorts_run = None;
+        let source_project = project::Project::new(source_data)?;
+        self.reset_source();
+        self.request = request;
+        self.asset = Some(asset);
+        self.duration = duration;
+        self.shots = Vec::new();
+        self.shots_job = None;
+        self.shots_notice = None;
+        self.shots_reported = false;
+        self.cancelled = false;
+        self.install(ReviewSource {
+            project: source_project,
+            asset: run.asset,
+            transcript,
+            cues: captions::CueTrack {
+                styles: Vec::new(),
+                cues,
+            },
+            energy,
+            boundaries,
+            candidates,
+        })?;
+        self.refresh_shots(false);
+        Ok(())
+    }
+    /// Keep the finished run in the library: the source project with its suggestions.
+    fn keep_run(&mut self, language: captions::LanguageTag) -> Result<()> {
+        if !self.runs.lent() {
+            return Ok(());
+        }
+        let (Some(source), Some(asset)) = (&self.source, &self.asset) else {
+            return Ok(());
+        };
+        if source.candidates.is_empty() {
+            return Ok(());
+        }
+        let name = asset
+            .path()
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| "video".into());
+        let run = runs::to_run(
+            &self.request,
+            name.as_str().into(),
+            source.asset,
+            language,
+            &source.candidates,
+            &source.energy,
+        );
+        // A fresh identity per run; the library names it by that identity.
+        let forked = source.project.fork()?;
+        let id = forked.data().id;
+        let mut data = forked.into_data();
+        data.name = format!("{name} {:08x}", id.0 as u32).as_str().into();
+        data.shorts_run = Some(run);
+        let project = project::Project::new(data)?;
+        let at = source
+            .candidates
+            .first()
+            .and_then(|candidate| candidate.segments.first())
+            .map_or(Tick::ZERO, |segment| segment.range.start());
+        let asset = asset.clone();
+        self.runs.save(project, asset, at);
+        Ok(())
     }
     /// Decode the retained suggestion, rebuild the source project from its cues and install
     /// the review. The caller releases the job output afterwards.
@@ -746,7 +961,12 @@ impl State {
         let session =
             engine::transcript::build_session(&asset, &result.cues, duration, true, None)?;
         let project = session.project().as_ref().clone();
-        let transcript = transcript_from(&result);
+        let transcript = transcript_from(
+            &result.cues,
+            &result.source_language,
+            &result.transcription_provider,
+            &result.transcription_model,
+        );
         let boundaries = review_boundaries(&asset, duration, &self.request)?;
         let cues = captions::CueTrack {
             styles: Vec::new(),
@@ -775,6 +995,9 @@ impl State {
             candidates,
         })?;
         self.refresh_shots(false);
+        if let Err(e) = self.keep_run(result.source_language.clone()) {
+            self.fail(e, Text::ShortsError);
+        }
         Ok(())
     }
     pub(super) fn install(&mut self, source: ReviewSource) -> Result<()> {
@@ -1204,9 +1427,13 @@ impl State {
 }
 /// Rebuild the recognition context from the suggestion's source cues. Cues carry the
 /// exact native word proof the suggestion was snapped from; no ASR runs again.
-fn transcript_from(result: &engine::control::ClipsResult) -> captions::Transcript {
-    let segments = result
-        .cues
+fn transcript_from(
+    cues: &[captions::Cue],
+    source_language: &captions::LanguageTag,
+    transcription_provider: &str,
+    transcription_model: &str,
+) -> captions::Transcript {
+    let segments = cues
         .iter()
         .filter_map(|cue| {
             let text = cue.texts.get(&cue.source_lang)?;
@@ -1236,10 +1463,10 @@ fn transcript_from(result: &engine::control::ClipsResult) -> captions::Transcrip
         })
         .collect();
     captions::Transcript {
-        source_lang: result.source_language.clone(),
+        source_lang: source_language.clone(),
         fingerprint: captions::Fingerprint {
-            provider: result.transcription_provider.clone().into(),
-            model: result.transcription_model.clone().into(),
+            provider: transcription_provider.into(),
+            model: transcription_model.into(),
             settings: "clips.suggest".into(),
         },
         segments,

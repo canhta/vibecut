@@ -733,6 +733,7 @@ fn full_source_project(
         caption_presets: data.caption_presets.clone(),
         text_presets: data.text_presets.clone(),
         recent_colors: data.recent_colors.clone(),
+        shorts_run: None,
     })?)
 }
 
