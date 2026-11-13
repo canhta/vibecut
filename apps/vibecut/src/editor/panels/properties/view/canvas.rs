@@ -482,17 +482,28 @@ impl Panel<'_, '_> {
         }
     }
 
+    /// One full-row action. The button carries the label alone, so the text is
+    /// drawn once; a translation longer than the row truncates with an ellipsis
+    /// instead of running into a second copy of itself.
     fn reset_original_row(&mut self, ui: &mut egui::Ui) {
         let original = self.cx.session.project().data().original_canvas_size;
-        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        let (row, _) = ui.allocate_exact_size(
+            egui::vec2(ui.available_width(), theme::size::PROPERTY_ROW),
+            egui::Sense::hover(),
+        );
         let label = self.tr(Text::ResetOriginal);
-        self.row_label(ui, row, label);
-        let response = value_ui
+        let button = egui::Rect::from_min_size(
+            egui::pos2(row.left(), row.center().y - theme::size::FIELD / 2.0),
+            egui::vec2(row.width(), theme::size::FIELD),
+        );
+        let response = ui
             .add_enabled_ui(original.is_some(), |ui| {
-                ui.add(
+                ui.put(
+                    button,
                     egui::Button::new(label)
+                        .truncate()
                         .fill(theme::field(self.cx.dark))
-                        .min_size(egui::vec2(150.0, theme::size::FIELD)),
+                        .min_size(button.size()),
                 )
             })
             .inner;
