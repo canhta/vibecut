@@ -367,16 +367,15 @@ fn run(
                     if let Some(path) = &path {
                         // Save As is `project.save_as`: publish a copy, then continue
                         // on that copy and close this session cleanly.
-                        let reopened = save_as_copy(
-                            autosave,
-                            path,
-                            root,
-                            budget.child(512 << 20)?,
-                            persistence.clone(),
-                            preferences.clone(),
-                        )?;
+                        // The copy's preview shares the ring bytes this one holds, so
+                        // memory pressure from other windows cannot refuse the reopen.
+                        let opened = save_as_copy(autosave, path, root, persistence.clone())?;
+                        let playback = editor
+                            .playback
+                            .successor(opened.session(), preview_sources())?;
+                        let reopened = open_editor(opened, playback, preferences.clone(), root)?;
                         if let Some(old) = active.editor.replace(reopened) {
-                            retire(*old);
+                            retire(old.session);
                         }
                     } else {
                         autosave.apply(Command::SaveProject {})?;
@@ -417,9 +416,10 @@ fn run(
             });
         }
     };
+    let playback = Playback::new(autosave.session(), budget, preview_sources())?;
     Ok(Completed::Opened(open_editor(
         autosave,
-        budget,
+        playback,
         preferences,
         root,
     )?))
@@ -428,12 +428,11 @@ fn run(
 /// An editor over an opened or recovered session, restored to its saved playhead.
 fn open_editor(
     autosave: Autosave,
-    budget: ByteBudget,
+    mut playback: Playback,
     preferences: Preferences,
     root: &Path,
 ) -> Result<Box<Editor>> {
     let view = autosave.session().metadata().view;
-    let mut playback = Playback::new(autosave.session(), budget, preview_sources())?;
     playback.seek(
         view.playhead.min(autosave.session().project().duration()),
         false,
@@ -460,10 +459,8 @@ fn save_as_copy(
     autosave: &mut Autosave,
     path: &Path,
     root: &Path,
-    budget: ByteBudget,
     persistence: ByteBudget,
-    preferences: Preferences,
-) -> Result<Box<Editor>> {
+) -> Result<Autosave> {
     let mut runner = JobRunner::new(
         RunnerConfig {
             concurrency: [1, 1, 1],
@@ -501,21 +498,20 @@ fn save_as_copy(
     );
     runner.shutdown();
     published?;
-    let opened = Autosave::open(
+    Ok(Autosave::open(
         root,
         path,
         100,
         persistence,
         Arc::new(SystemClock::default()),
         Schedule::default(),
-    )?;
-    open_editor(opened, budget, preferences, root)
+    )?)
 }
 
-/// Close the editor a Save As replaced and drop its recovery journal. A failed
+/// Close the session a Save As replaced and drop its recovery journal. A failed
 /// cleanup leaves a recovery candidate for the next start, never a lost save.
-fn retire(old: Editor) {
-    if let EditorSession::Persistent(autosave) = old.session {
+fn retire(old: EditorSession) {
+    if let EditorSession::Persistent(autosave) = old {
         let _ = (*autosave).retire();
     }
 }

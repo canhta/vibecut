@@ -77,7 +77,8 @@ pub struct AudioPort {
     playing: AtomicBool,
     failed: AtomicBool,
     underruns: AtomicU64,
-    _lease: ByteLease,
+    /// The ring's bytes; a successor port over the same budget shares them.
+    lease: Arc<ByteLease>,
 }
 impl AudioPort {
     fn new(budget: &ByteBudget) -> Result<Self> {
@@ -85,7 +86,10 @@ impl AudioPort {
             ByteOwner::DecodedFrames,
             (RING_FRAMES * std::mem::size_of::<Slot>()) as u64,
         )?;
-        Ok(Self {
+        Ok(Self::with_lease(Arc::new(lease)))
+    }
+    fn with_lease(lease: Arc<ByteLease>) -> Self {
+        Self {
             slots: (0..RING_FRAMES)
                 .map(|_| Slot {
                     epoch: AtomicU64::new(0),
@@ -100,8 +104,8 @@ impl AudioPort {
             playing: AtomicBool::new(false),
             failed: AtomicBool::new(false),
             underruns: AtomicU64::new(0),
-            _lease: lease,
-        })
+            lease,
+        }
     }
     /// Stereo f32 at the project's render-owned sample rate. `latency_frames`
     /// comes from the device's callback/playback timestamp difference.
@@ -300,10 +304,27 @@ impl Playback {
             .unwrap_or(true)
     }
     pub fn new(session: &Session, budget: ByteBudget, sources: Arc<dyn Sources>) -> Result<Self> {
+        let port = AudioPort::new(&budget)?;
+        Self::over(session, budget, sources, port)
+    }
+    /// A fresh preview of `session`, a copy of the project this preview shows, over the
+    /// same budget. Its new audio ring shares the bytes this ring holds, so the copy
+    /// opens under any memory pressure; this preview must be dropped once the copy
+    /// replaces it.
+    pub fn successor(&self, session: &Session, sources: Arc<dyn Sources>) -> Result<Self> {
+        let port = AudioPort::with_lease(self.port.lease.clone());
+        Self::over(session, self.budget.clone(), sources, port)
+    }
+    fn over(
+        session: &Session,
+        budget: ByteBudget,
+        sources: Arc<dyn Sources>,
+        port: AudioPort,
+    ) -> Result<Self> {
         if let Some(index) = sources.proxies() {
             index.set_enabled(session.metadata().proxy_preview);
         }
-        let port = Arc::new(AudioPort::new(&budget)?);
+        let port = Arc::new(port);
         let request = Arc::new(Mutex::new(Request {
             render_state: Arc::new(RenderState::default()),
             effects: None,
@@ -1023,8 +1044,40 @@ fn video_loop(
 
 #[cfg(test)]
 mod tests {
-    use super::{loop_window, plan_block, wrap_units};
+    #![allow(clippy::unwrap_used)]
+    use super::{Files, Playback, loop_window, plan_block, wrap_units};
+    use engine::{ByteBudget, ByteOwner, Session};
+    use std::sync::Arc;
     use time::Tick;
+
+    #[test]
+    fn a_successor_opens_on_a_full_budget_and_shares_the_ring_bytes() {
+        let session = Session::new(
+            project::Project::empty(project::ProjectId(1), "full".into()).unwrap(),
+            10,
+        )
+        .unwrap();
+        let budget = ByteBudget::new(64 << 20).unwrap();
+        let playback = Playback::new(&session, budget.clone(), Arc::new(Files)).unwrap();
+        let ring = (super::RING_FRAMES * std::mem::size_of::<super::Slot>()) as u64;
+        let snapshot = budget.snapshot().unwrap();
+        let pressure = budget
+            .reserve(ByteOwner::Export, snapshot.limit - snapshot.used)
+            .unwrap();
+        assert!(Playback::new(&session, budget.clone(), Arc::new(Files)).is_err());
+        let successor = playback.successor(&session, Arc::new(Files)).unwrap();
+        assert!(!Arc::ptr_eq(
+            &playback.audio_port(),
+            &successor.audio_port()
+        ));
+        drop(pressure);
+        drop(playback);
+        assert!(
+            budget.snapshot().unwrap().used >= ring,
+            "the successor keeps the ring"
+        );
+        drop(successor);
+    }
 
     type Bounds = Option<(i64, i64)>;
 
