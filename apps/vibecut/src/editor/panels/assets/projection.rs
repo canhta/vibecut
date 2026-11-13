@@ -136,6 +136,20 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
         Ok(credits) => (credits, false),
         Err(_) => (Vec::new(), true),
     };
+    let stickers = (preferences.assets_tab == AssetsTab::Stickers).then(|| {
+        let query = editor
+            .assets
+            .searches
+            .get(&AssetsTab::Stickers)
+            .map_or("", String::as_str);
+        stickers::rows(
+            query,
+            editor.assets.sticker_tab,
+            editor.assets.sticker_expanded,
+            &editor.preferences.sticker_recents,
+            editor.preferences.locale,
+        )
+    });
     editor.assets.model = Model {
         preferences,
         rows,
@@ -144,20 +158,7 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
         transition_refusal,
         transition_drag_enabled,
         insertion_ready: editor.insertion_available(),
-        stickers: (preferences.assets_tab == AssetsTab::Stickers).then(|| {
-            let query = editor
-                .assets
-                .searches
-                .get(&AssetsTab::Stickers)
-                .map_or("", String::as_str);
-            stickers::rows(
-                query,
-                editor.assets.sticker_tab,
-                editor.assets.sticker_expanded,
-                &editor.preferences.sticker_recents,
-                editor.preferences.locale,
-            )
-        }),
+        stickers,
         importing: editor.assets.importing(),
         selection: editor.assets.media_selection.clone(),
         clip_export: editor.assets.clip_export_status(),
