@@ -230,7 +230,9 @@ original and scaled by 1727/3680 to the 1727×1029 logical frame, like the other
   are unmeasured; the web capture gives only the label "In and out motion duration" and 0.5 s.
 
 Ours follows the grid exactly (six columns, 58 px square tiles, 15 px gutter) and the
-three-cell bar and the property row for Duration. Remaining differences and causes:
+three-cell bar and the property row for Duration. A narrower inspector body, beside its
+reserved scroll-bar room, takes as many whole columns as fit, so a tile row never widens the
+body; the text looks share this grid. Remaining differences and causes:
 - Tiles show a rendered preview of the look with its name beneath (12 px line, then a 12 px gap
   to the next row, so the row pitch is the measured 82 px). The preview is a one-second,
   twelve-frame strip of a neutral square moved by the look's own keys, rendered once by the

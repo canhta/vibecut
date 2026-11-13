@@ -2560,6 +2560,33 @@ fn text_presets_and_animations_click_edit_undo_reopen_and_capture_both_locales()
                     .as_deref(),
                 Some("30%")
             );
+            // Every inspector stepper lies inside the body (the panel less its 12 px inset)
+            // and beside its scroll bar, so a pointer reaches it on the tall Text tab.
+            let panel = h.state().panels()["inspector"];
+            let body = egui::Rect::from_min_max(
+                egui::pos2(panel.left() + 12.0, panel.top()),
+                egui::pos2(panel.right() - 12.0, panel.bottom()),
+            );
+            let steppers: Vec<_> = h
+                .state()
+                .inspect()
+                .unwrap()
+                .widgets
+                .into_iter()
+                .filter(|w| {
+                    w.id.starts_with("inspector.")
+                        && (w.id.ends_with(".increase") || w.id.ends_with(".decrease"))
+                })
+                .collect();
+            assert!(!steppers.is_empty());
+            for stepper in &steppers {
+                assert!(
+                    stepper.rect.left() >= body.left() && stepper.rect.right() <= body.right(),
+                    "{} {:?} outside the inspector body {body:?}",
+                    stepper.id,
+                    stepper.rect
+                );
+            }
             click(&mut h, "inspector.opacity.increase");
             let at = Tick(38_102_400_000);
             let value = |h: &Harness<Editor>| {
