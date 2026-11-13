@@ -2093,6 +2093,7 @@ fn split_project(
             muted: false,
             cleanup: Default::default(),
             background,
+            reduce_noise: false,
         }),
     });
     Project::new(data).unwrap()

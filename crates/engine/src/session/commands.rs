@@ -306,6 +306,8 @@ pub enum ItemParamPatch {
     #[serde(rename = "transform.rotate")]
     Rotate(f64),
     Crop(Option<project::Crop>),
+    /// Per-item noise-reduction switch of a video item.
+    ReduceNoise(bool),
     GraphicFill(Color),
     GraphicStroke(Color),
     GraphicStrokeWidth(f64),
@@ -336,7 +338,7 @@ impl ItemParamPatch {
             (
                 Self::AudioGain(_) | Self::AudioMuted(_),
                 ItemParams::Audio(_) | ItemParams::Video(_)
-            ) | (Self::Crop(_), ItemParams::Video(_))
+            ) | (Self::Crop(_) | Self::ReduceNoise(_), ItemParams::Video(_))
                 | (
                     Self::TextContent(_)
                         | Self::TextFont(_)
@@ -409,7 +411,7 @@ impl ItemParamPatch {
             Self::TextContent(v) => v.as_str().len() <= 1 << 20,
             Self::TextFont(v) => !v.as_str().trim().is_empty() && v.as_str().len() <= 256,
             Self::TextWeight(v) => project::valid_weight(*v),
-            Self::TextItalic(_) => true,
+            Self::TextItalic(_) | Self::ReduceNoise(_) => true,
             Self::TextLetterSpacing(v) => project::valid_letter_spacing(*v),
             Self::TextLineHeight(v) => project::valid_line_height(*v),
             Self::TextSize(v) => v.is_finite() && (1.0..=4096.0).contains(v),

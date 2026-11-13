@@ -185,6 +185,7 @@ fn prepare_clip(
                 crop: None,
                 cleanup: Default::default(),
                 background: project::ClipBackground::None,
+                reduce_noise: false,
             }),
         });
         next_item = next_item

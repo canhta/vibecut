@@ -28,6 +28,8 @@ pub struct VideoParams {
     /// Fill behind the clip wherever the clip does not cover the canvas; absent is none.
     #[serde(default)]
     pub background: ClipBackground,
+    /// Per-item switch for the edge-preserving noise-reduction pass; off leaves the picture untouched.
+    pub reduce_noise: bool,
 }
 /// What fills the canvas behind a visual clip. Exclusive: one kind per clip.
 /// The blur reads the clip's own decoded frame, so it never feeds back.

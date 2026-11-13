@@ -821,6 +821,7 @@ fn registered_burn_job_exports_and_typed_missing_media_preserves_previous_output
         crop: None,
         cleanup: Default::default(),
         background: project::ClipBackground::None,
+        reduce_noise: false,
     });
     session = engine::Session::new(project::Project::new(data).unwrap(), 10).unwrap();
     std::fs::write(&path, b"previous").unwrap();

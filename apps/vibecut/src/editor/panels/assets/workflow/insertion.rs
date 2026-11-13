@@ -93,6 +93,7 @@ impl State {
                             crop: None,
                             cleanup: Default::default(),
                             background: project::ClipBackground::None,
+                            reduce_noise: false,
                         }),
                         _ => ItemParams::Audio(project::AudioParams {
                             fades: Default::default(),

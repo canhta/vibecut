@@ -194,6 +194,7 @@ fn video(id: u64, start: i64, source: SourceRange) -> Item {
             crop: None,
             cleanup: Default::default(),
             background: project::ClipBackground::None,
+            reduce_noise: false,
         }),
     }
 }

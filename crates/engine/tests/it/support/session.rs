@@ -172,6 +172,7 @@ pub(crate) fn five_clip_pairs() -> Session {
                     crop: None,
                     cleanup: Default::default(),
                     background: project::ClipBackground::None,
+                    reduce_noise: false,
                 }),
             }
         })

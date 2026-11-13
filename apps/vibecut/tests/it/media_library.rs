@@ -235,6 +235,7 @@ fn insert_video(editor: &mut Editor, asset: AssetId) -> project::ItemId {
                     crop: None,
                     cleanup: Default::default(),
                     background: project::ClipBackground::None,
+                    reduce_noise: false,
                 }),
             },
         })

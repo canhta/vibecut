@@ -300,6 +300,7 @@ impl Rig {
                 fades: Default::default(),
                 cleanup: Default::default(),
                 background: project::ClipBackground::None,
+                reduce_noise: false,
             })
         };
         let first = match session
@@ -463,6 +464,7 @@ fn new_media_item(asset: AssetId, kind: TrackKind) -> NewItem {
             fades: Default::default(),
             cleanup: Default::default(),
             background: project::ClipBackground::None,
+            reduce_noise: false,
         })
     };
     NewItem {

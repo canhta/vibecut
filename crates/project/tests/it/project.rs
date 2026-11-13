@@ -488,6 +488,7 @@ fn populated(path: PathBuf) -> Project {
             }),
             cleanup: Default::default(),
             background: project::ClipBackground::None,
+            reduce_noise: true,
         }),
         ItemParams::Audio(AudioParams {
             fades: project::Fades {

@@ -138,6 +138,14 @@ tile centres; the sharp flag forces the nearest colour, so it changes the
 picture only with softness above zero. One block per axis on both axes emits
 no pass.
 
+## Reduce noise
+
+`denoise.rs` owns the per-item `VideoParams.reduce_noise` pass. It is not an effect-stack instance: the scene prepends one run holding the single `reduce_noise` sample pass before every enabled effect, so it precedes colour adjustment, and an item with the switch off adds no run and no pass (byte-identical to an item without the feature). The sample reads the current layer only, with no temporal history and no analysis job, so a frame's result depends on that frame alone and preview equals export. `fine` is ignored; both qualities run the same pass.
+
+The pass is a bilateral filter over a 5x5 window in output pixels. A tap's weight is a spatial gaussian (sigma 1.2) times a range gaussian (sigma 0.1) of its straight sRGB-encoded colour and alpha distance to the centre, so taps across an edge weigh almost nothing. Taps outside the image are skipped and the weights renormalise; the centre weighs one, so the result is a convex combination of premultiplied pixels. The two sigmas are the pass uniforms. There is one strength: the reference shows only a toggle (screen 14, `Reduce image noise` beside Stabilize and Remove flicker; no levels observed), so no level exists. The sigma values are new decisions, not measured parity. An export that would stream-copy a single untouched video item is refused when the switch is on.
+
+The pass has no native pipeline yet; the run splitter leaves it to the CPU. A shader port is the follow-up if the measured cost breaks real-time preview. The ignored `measure_reduce_noise` probe prints the CPU frame time at 1080p and 4K; the numbers stay unmeasured until the combined build runs it.
+
 ## Whole-image entries (265)
 
 `whole_image.rs` owns the CPU references of the 26 E2 entries. Warps and generators are

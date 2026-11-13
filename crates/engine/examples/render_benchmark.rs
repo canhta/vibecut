@@ -233,6 +233,7 @@ fn export_benchmark(
                 crop: None,
                 cleanup: Default::default(),
                 background: project::ClipBackground::None,
+                reduce_noise: false,
             }),
         }],
     });

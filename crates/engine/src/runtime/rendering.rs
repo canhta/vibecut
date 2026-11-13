@@ -650,6 +650,7 @@ fn full_source_project(
                     crop: None,
                     cleanup: Default::default(),
                     background: project::ClipBackground::None,
+                    reduce_noise: false,
                 }),
             }],
         },

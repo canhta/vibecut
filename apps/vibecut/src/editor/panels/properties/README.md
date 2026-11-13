@@ -141,6 +141,10 @@ The footer's `Apply to all` copies the selected item's complete grade (including
 
 The Adjust tab appends three lift/gamma/gain wheels and one tone-curve editor inside their sub-tabs. Each wheel has a triangular chroma puck, a vertical master and a reset; the plot has Red, Green, Blue and Luma channel cells and a reset. A wheel drag writes its three stored percentages through `effects.update_param` inside one engine gesture, the release is one undo step, and reset writes the three neutrals as one batch. A curve click adds one point snapped to the exact 1/4096 grid, a drag moves an interior point within its neighbours, a double-click removes an interior point and endpoints stay fixed; every edit replaces the whole validated curve through `effects.update_param`. A non-finite point, a point with no grid room between its neighbours or an endpoint edit is refused with no command. Reset restores the two-point identity. Viewing a clip with no grade shows the neutral wheels and identity curves and adds nothing; the first edit creates `color_grade` carrying that value. Wheel and plot geometry is a [new composition](../../../../../../docs/product/ui/editor.md#adjust-tabs-basic-set-hsl-wheels-and-curves) below the measured rows; ids are `effects.<instance>.wheel.<family>`, `.master`, `.reset`, `effects.<instance>.curve.<channel>`, `.plot`, `.reset`, `effects.<instance>.tab.<basic|hsl|curves|wheel>`, `effects.<instance>.hsl.<band>`, `.apply_all` and `.save_preset`.
 
+## Reduce image noise
+
+A video item's Basic tab ends with the `Reduce image noise` toggle row (`inspector.reduce_noise`). A click sends one `timeline.set_item_param` with field `reduce_noise` and `true` or `false`, one undo step. Layout and the unmeasured parts: [editor design](../../../../../../docs/product/ui/editor.md).
+
 ## Blend and opacity
 
 Visual selections show a blend dropdown (`inspector.blendMode`, options

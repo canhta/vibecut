@@ -72,6 +72,7 @@ fn policy_insert(id: u64) -> Command {
                 crop: None,
                 cleanup: Default::default(),
                 background: project::ClipBackground::None,
+                reduce_noise: false,
             }),
         },
     }

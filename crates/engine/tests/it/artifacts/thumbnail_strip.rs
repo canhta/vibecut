@@ -182,6 +182,7 @@ fn item(asset: &SourceAsset, source: SourceRange, start: Tick, speed: f64) -> It
             fades: Default::default(),
             cleanup: Default::default(),
             background: project::ClipBackground::None,
+            reduce_noise: false,
         }),
     }
 }

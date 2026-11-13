@@ -31,6 +31,7 @@ fn media(source_range: time::SourceRange, thousandths: u16, start: i64) -> Item 
             crop: None,
             cleanup: Default::default(),
             background: project::ClipBackground::None,
+            reduce_noise: false,
         }),
     }
 }

@@ -604,6 +604,7 @@ fn audible_session() -> (Session, TrackId, TrackId, ItemId) {
             crop: None,
             cleanup: Default::default(),
             background: project::ClipBackground::None,
+            reduce_noise: false,
         }),
     );
     insert(
@@ -1684,6 +1685,24 @@ fn crop_position_channels_need_a_crop_stay_in_frame_and_follow_split_duplicate_a
         param: held,
     })
     .unwrap();
+}
+
+#[test]
+fn reduce_noise_is_a_video_item_switch_with_one_undo_step() {
+    let (mut s, _video, _audio, clip) = audible_session();
+    let noise = |s: &Session| match &get_id(s, clip).content {
+        ItemParams::Video(p) => p.reduce_noise,
+        _ => panic!("video item"),
+    };
+    assert!(!noise(&s), "off at creation");
+    s.apply(Command::SetItemField {
+        item: clip,
+        patch: engine::ItemParamPatch::ReduceNoise(true),
+    })
+    .unwrap();
+    assert!(noise(&s));
+    s.undo().unwrap();
+    assert!(!noise(&s));
 }
 
 /// The crop carried by a video item, `None` for any other item kind.

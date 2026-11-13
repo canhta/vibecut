@@ -274,6 +274,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
                     crop: None,
                     cleanup: Default::default(),
                     background: project::ClipBackground::None,
+                    reduce_noise: false,
                 }),
             },
         })

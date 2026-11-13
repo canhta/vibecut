@@ -115,6 +115,7 @@ pub(crate) fn fixture() -> Fixture {
             crop: None,
             cleanup: Default::default(),
             background: project::ClipBackground::None,
+            reduce_noise: false,
         }),
     );
     let video_b = insert(
@@ -131,6 +132,7 @@ pub(crate) fn fixture() -> Fixture {
             crop: None,
             cleanup: Default::default(),
             background: project::ClipBackground::None,
+            reduce_noise: false,
         }),
     );
     let _audio_item = insert(
@@ -334,6 +336,20 @@ fn blend_dropdown_and_opacity_field_dispatch_real_edits() {
             .unwrap(),
         Some(project::ParamValue::Scalar(0.5))
     );
+    // The Reduce image noise switch sets the video item's flag as one undo step.
+    let noise = |harness: &Harness<'_, Editor>| match &item(harness.state(), id).content {
+        project::ItemParams::Video(params) => params.reduce_noise,
+        _ => panic!("video item"),
+    };
+    assert!(!noise(&harness));
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.reduce_noise")))
+        .click();
+    harness.run_steps(2);
+    assert!(noise(&harness));
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert!(!noise(&harness));
 }
 
 pub(crate) fn widget(harness: &Harness<'_, Editor>, id: &str) -> egui::Rect {
@@ -3536,6 +3552,7 @@ fn clip_details_remain_visible_after_scrolling_deep_into_a_long_clip() {
             crop: None,
             cleanup: Default::default(),
             background: project::ClipBackground::None,
+            reduce_noise: false,
         }),
     );
     let mut h = harness(f.editor);

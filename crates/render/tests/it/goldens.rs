@@ -108,6 +108,7 @@ fn crop_scene_animated(
             muted: false,
             cleanup: Default::default(),
             background: project::ClipBackground::None,
+            reduce_noise: false,
         }),
     }];
     project::Project::new(data).unwrap()
@@ -364,6 +365,7 @@ fn scene() -> project::Project {
                 crop: None,
                 cleanup: Default::default(),
                 background: project::ClipBackground::None,
+                reduce_noise: false,
             }),
             Some(media::AssetId(1)),
         ),

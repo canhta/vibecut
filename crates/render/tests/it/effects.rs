@@ -1588,6 +1588,7 @@ fn content_scene(effects: Vec<project::EffectInstance>) -> project::Project {
             muted: false,
             cleanup: Default::default(),
             background: project::ClipBackground::None,
+            reduce_noise: false,
         }),
     });
     Project::new(data).unwrap()
@@ -5368,4 +5369,169 @@ fn measure_whole_image_1080p() {
     }
     drop(input);
     assert_eq!(hooks.used.load(Ordering::SeqCst), 0);
+}
+
+/// A 32x32 opaque grey source whose bytes come from `grey(x, y)`.
+struct GreyFrames(fn(u32, u32) -> u8);
+impl SourceProvider for GreyFrames {
+    fn status(
+        &mut self,
+        _: &media::SourceAsset,
+        _: bool,
+        _: &dyn ExecutionHooks,
+    ) -> Result<Option<UnavailableReason>> {
+        Ok(None)
+    }
+    fn video(
+        &mut self,
+        _: &media::SourceAsset,
+        _: project::ItemId,
+        _: time::Tick,
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<Option<Image>> {
+        Ok(Some(Image::from_rgba8(
+            32,
+            32,
+            &grey_bytes(self.0),
+            false,
+            13,
+            hooks,
+        )?))
+    }
+    fn audio(
+        &mut self,
+        _: &media::SourceAsset,
+        _: project::ItemId,
+        _: i64,
+        n: usize,
+        rate: u32,
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<AudioBlock> {
+        AudioBlock::new(rate, 2, n, MemoryKind::Decoded, hooks)
+    }
+}
+fn grey_bytes(grey: fn(u32, u32) -> u8) -> Vec<u8> {
+    (0..32 * 32)
+        .flat_map(|i| {
+            let v = grey(i % 32, i / 32);
+            [v, v, v, 255]
+        })
+        .collect()
+}
+/// Deterministic noise of +-20 around mid grey.
+fn noisy_grey(x: u32, y: u32) -> u8 {
+    let hash =
+        (x.wrapping_mul(374_761_393) ^ y.wrapping_mul(668_265_263)).wrapping_mul(2_246_822_519);
+    (128 + ((hash >> 13) % 41) as i32 - 20) as u8
+}
+fn step_grey(x: u32, _: u32) -> u8 {
+    if x < 16 { 60 } else { 200 }
+}
+fn noise_scene(reduce_noise: bool) -> project::Project {
+    let mut data = content_scene(vec![]).into_data();
+    data.canvas.width = 32;
+    data.canvas.height = 32;
+    let item = data.scene_mut().timeline.main.items.first_mut().unwrap();
+    let project::ItemParams::Video(params) = &mut item.content else {
+        panic!("video item");
+    };
+    params.reduce_noise = reduce_noise;
+    project::Project::new(data).unwrap()
+}
+fn variance(frame: &Image) -> f32 {
+    let samples: Vec<f32> = (4..28)
+        .flat_map(|y| (4..28).map(move |x| (x, y)))
+        .map(|(x, y)| frame.pixels()[y * 32 + x][0])
+        .collect();
+    let mean = samples.iter().sum::<f32>() / samples.len() as f32;
+    samples.iter().map(|v| (v - mean) * (v - mean)).sum::<f32>() / samples.len() as f32
+}
+
+#[test]
+fn reduce_noise_lowers_flat_variance_keeps_edges_and_preview_equals_export() {
+    let hooks = Hooks::default();
+    let (off, on) = (noise_scene(false), noise_scene(true));
+    let render = |project: &project::Project, grey: fn(u32, u32) -> u8| {
+        let mut renderer = Renderer::new(project, RenderSettings::from_project(project)).unwrap();
+        let export = renderer
+            .render_frame(time::Tick::ZERO, &mut GreyFrames(grey), &hooks)
+            .unwrap();
+        let preview = renderer
+            .preview_frame(time::Tick::ZERO, &mut GreyFrames(grey), &hooks)
+            .unwrap();
+        assert_eq!(export.pixels(), preview.pixels(), "preview equals export");
+        export
+    };
+    // Off draws the source untouched.
+    let source = |grey| Image::from_rgba8(32, 32, &grey_bytes(grey), false, 13, &hooks).unwrap();
+    let raw = render(&off, noisy_grey);
+    assert_eq!(raw.pixels(), source(noisy_grey).pixels());
+    // On: flat-area variance falls to at most half of the source's.
+    let filtered = render(&on, noisy_grey);
+    assert!(variance(&raw) > 0.0);
+    assert!(
+        variance(&filtered) <= 0.5 * variance(&raw),
+        "variance {} -> {}",
+        variance(&raw),
+        variance(&filtered)
+    );
+    // A clean step keeps at least 98 % of its contrast across the edge.
+    let edge = render(&on, step_grey);
+    let clean = source(step_grey);
+    let kept = edge.pixels()[16 * 32 + 16][0] - edge.pixels()[16 * 32 + 15][0];
+    let original = clean.pixels()[16 * 32 + 16][0] - clean.pixels()[16 * 32 + 15][0];
+    assert!(kept >= 0.98 * original, "edge {original} -> {kept}");
+    // The pass is the one registered sample entry with admitted uniforms.
+    for pass in reduce_noise_passes() {
+        assert_eq!(pass.entry_point(), "reduce_noise");
+        validate_pass(&pass, 32, 32).unwrap();
+    }
+    let bad = EffectPass::Sample {
+        entry_point: "reduce_noise",
+        uniforms: vec![Uniform::Float(0.0), Uniform::Float(0.1)],
+    };
+    assert!(matches!(
+        validate_pass(&bad, 32, 32),
+        Err(Error::Unsupported(_))
+    ));
+}
+
+#[test]
+#[ignore = "manual CPU cost of the reduce-noise pass at 1080p and 4K"]
+fn measure_reduce_noise() {
+    let hooks = Hooks::default();
+    for (width, height) in [(1920_u32, 1080_u32), (3840, 2160)] {
+        let input = Image::from_working_pixels(
+            width,
+            height,
+            (0..width * height).map(|i| {
+                let v = ((i.wrapping_mul(2_654_435_761) >> 20) % 64) as f32 / 255.0 + 0.3;
+                [v, v, v, 1.0]
+            }),
+            &hooks,
+        )
+        .unwrap();
+        let passes = reduce_noise_passes();
+        let run = || {
+            CpuEffects
+                .apply(
+                    &input,
+                    &passes,
+                    EffectInputs {
+                        input: &input,
+                        below: &input,
+                        coverage: None,
+                    },
+                    &hooks,
+                )
+                .unwrap()
+        };
+        drop(run());
+        let start = std::time::Instant::now();
+        for _ in 0..3 {
+            drop(run());
+        }
+        let ms = start.elapsed().as_secs_f64() * 1000.0 / 3.0;
+        eprintln!("NOISE_COST reduce_noise {ms:.3} ms/frame {width}x{height}");
+    }
 }

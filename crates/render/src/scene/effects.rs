@@ -4,10 +4,12 @@ use project::{Animations, EffectInstance, EffectParamKind, EffectValue, Item, Pa
 use std::{borrow::Cow, collections::BTreeMap};
 use time::{Rounding, Tick};
 
+mod denoise;
 mod image_ops;
 mod layers;
 pub mod lut;
 mod whole_image;
+pub use denoise::reduce_noise_passes;
 pub use layers::{
     FrameLayer, MAX_FRAME_LAYERS, composite_layers, reference_layers, validate_layers,
 };
@@ -1349,7 +1351,7 @@ struct SampleOp {
     valid: fn(&[f32], u32, u32) -> bool,
     apply: fn(&SampleInputs<'_>, u32, u32, &[f32]) -> [f32; 4],
 }
-static SAMPLE_OPS: [SampleOp; 30] = [
+static SAMPLE_OPS: [SampleOp; 31] = [
     SampleOp {
         entry_point: "pixelate",
         len: 3,
@@ -1378,6 +1380,12 @@ static SAMPLE_OPS: [SampleOp; 30] = [
         len: 1,
         valid: |v, _, _| v.first().is_some_and(|a| (-1.0..=1.0).contains(a)),
         apply: vignette_sample,
+    },
+    SampleOp {
+        entry_point: "reduce_noise",
+        len: 2,
+        valid: denoise::valid_reduce_noise,
+        apply: denoise::reduce_noise_sample,
     },
     SampleOp {
         entry_point: "grain",

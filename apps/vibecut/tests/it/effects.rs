@@ -1512,6 +1512,7 @@ fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
         muted: false,
         cleanup: Default::default(),
         background: project::ClipBackground::None,
+        reduce_noise: false,
     });
     data.scene_mut().timeline.main.items.push(first);
     data.scene_mut().timeline.insert_track(project::Track {

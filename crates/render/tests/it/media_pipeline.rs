@@ -62,6 +62,7 @@ fn video_project(path: &Path) -> project::Project {
                 crop: None,
                 cleanup: Default::default(),
                 background: project::ClipBackground::None,
+                reduce_noise: false,
             }),
         }],
     });

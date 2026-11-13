@@ -56,6 +56,7 @@ pub fn source_session(
                     crop: None,
                     cleanup: Default::default(),
                     background: project::ClipBackground::None,
+                    reduce_noise: false,
                 }),
             },
         })?;
