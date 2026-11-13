@@ -208,4 +208,8 @@ pub(in crate::editor) enum Action {
         id: String,
         favorite: bool,
     },
+    /// Download one Emoji or Icons collection on the user's explicit action; its card shows the
+    /// licence credit before the button.
+    DownloadSticker(String),
+    CancelStickerDownload,
 }

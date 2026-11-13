@@ -147,6 +147,7 @@ pub(in crate::editor) fn prepare(
             &cx.preferences.sticker_recents,
             cx.preferences.catalog_favorites.list("stickers"),
             cx.preferences.locale,
+            state.sticker_catalogue(),
         )
     });
     let scenes = if preferences.assets_tab == AssetsTab::Media

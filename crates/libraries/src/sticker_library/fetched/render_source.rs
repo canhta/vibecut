@@ -11,11 +11,40 @@ impl StickerSource for StickerStore {
         if self.resolve(sticker).is_none() {
             return Err(StickerFault::Unknown);
         }
-        self.read(sticker).map_err(|error| match error {
-            Error::Sticker(StickerError::NotCached) => StickerFault::NotDownloaded,
-            _ => StickerFault::Corrupt,
-        })
+        self.read(sticker)
+            .map(with_default_colour)
+            .map_err(|error| match error {
+                Error::Sticker(StickerError::NotCached) => StickerFault::NotDownloaded,
+                _ => StickerFault::Corrupt,
+            })
     }
+}
+
+/// White, the default colour of a fetched sticker. Lucide and Phosphor draw `currentColor`, which
+/// resolves to black unless the root names a colour; the root gets `color="#FFFFFF"` so the tile
+/// and the inserted sticker read on the dark panel. A root that names its own colour keeps it.
+/// Only the lent bytes change; the cached file keeps its verified bytes.
+fn with_default_colour(bytes: Vec<u8>) -> Vec<u8> {
+    let Some(at) = default_colour_offset(&bytes) else {
+        return bytes;
+    };
+    let (head, tail) = bytes.split_at(at);
+    let mut coloured = Vec::with_capacity(bytes.len() + 16);
+    coloured.extend_from_slice(head);
+    coloured.extend_from_slice(b" color=\"#FFFFFF\"");
+    coloured.extend_from_slice(tail);
+    coloured
+}
+
+/// The byte offset just after `<svg` of the root, when the root names no colour and is a plain
+/// `svg` element. `None` leaves the bytes unchanged.
+fn default_colour_offset(bytes: &[u8]) -> Option<usize> {
+    let text = std::str::from_utf8(bytes).ok()?;
+    let document = roxmltree::Document::parse(text).ok()?;
+    let root = document.root_element();
+    let start = root.range().start;
+    (root.attribute("color").is_none() && text.get(start..start + 4) == Some("<svg"))
+        .then_some(start + 4)
 }
 
 /// The per-user store over the curated collections, opened once per process and lent to the
