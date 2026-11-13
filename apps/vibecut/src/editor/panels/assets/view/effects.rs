@@ -115,7 +115,12 @@ impl View<'_> {
                 .max_rect(cards),
             |ui| {
                 if rows.is_empty() {
-                    self.empty(ui, Icon::FilmStrip, Text::AssetsNoMatches);
+                    self.empty(
+                        ui,
+                        Icon::FilmStrip,
+                        Text::AssetsNoMatches,
+                        crate::kit::Tone::Quiet,
+                    );
                     return;
                 }
                 egui::ScrollArea::vertical()

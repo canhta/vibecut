@@ -1,29 +1,29 @@
 //! Integration tests share one binary and one copy of their helpers.
 
-mod canvas_settings_ui;
+mod canvas_settings;
 mod crop_dialog;
 mod desktop;
+mod effect_panels;
 mod effects;
-mod effects_ui;
-mod export_ui;
+mod export;
 mod gpu;
-mod keybindings_ui;
+mod keybindings;
 mod layout_prefs;
 mod lifecycle;
 mod media_import;
 mod media_library;
-mod models_ui;
-mod music_ui;
+mod models;
+mod music;
 mod panels;
-mod preview_ui;
-mod projects_ui;
-mod scenes_ui;
-mod shorts_ui;
-mod sounds_ui;
-mod timeline_ui;
-mod tracks_ui;
+mod preview;
+mod projects;
+mod scenes;
+mod shorts;
+mod sounds;
+mod timeline;
+mod tracks;
 mod transitions;
 
 mod mcp_control;
-mod media_probe_ui;
-mod subtitles_ui;
+mod media_probe;
+mod subtitles;

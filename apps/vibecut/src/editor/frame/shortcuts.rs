@@ -36,11 +36,7 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ctx: &egui::Context) -> 
     let content_height = rows_height.clamp(96.0, CONTENT_MAX);
     let mut close_requested = false;
     let output = egui::Modal::new(Id::unique("shortcuts.dialog"))
-        .frame(
-            egui::Frame::window(&ctx.global_style())
-                .corner_radius(12)
-                .inner_margin(egui::Margin::ZERO),
-        )
+        .frame(crate::kit::dialog_frame(ctx).inner_margin(egui::Margin::ZERO))
         .show(ctx, |ui| {
             ui.set_width(width);
             let (title_rect, _) =

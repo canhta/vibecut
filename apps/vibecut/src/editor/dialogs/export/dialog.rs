@@ -669,9 +669,7 @@ impl ExportDialog {
         }
         let tr = |k| i18n::text(locale, k);
         let active = self.active();
-        let frame = egui::Frame::window(&ctx.global_style())
-            .corner_radius(12)
-            .inner_margin(24);
+        let frame = crate::kit::dialog_frame(ctx);
         let frame_margin = frame.total_margin();
         let modal = egui::Modal::new(egui::Id::unique("export.dialog"))
             .frame(frame)
@@ -682,11 +680,7 @@ impl ExportDialog {
                 );
                 let dialog_height = 820.0_f32.min(ctx.content_rect().height() - 48.0);
                 ui.set_height(dialog_height - frame_margin.sum().y);
-                ui.label(
-                    egui::RichText::new(tr(Text::ExportTitle))
-                        .strong()
-                        .size(18.0),
-                );
+                crate::kit::dialog_title(ui, tr(Text::ExportTitle));
                 ui.add_space(12.0);
                 let reserved = if self.phase() == ExportPhase::Settings {
                     198.0
@@ -816,7 +810,7 @@ impl ExportDialog {
                             } else {
                                 Text::ExportProgress
                             }));
-                            job_progress(ui, snapshot, locale);
+                            job_progress(ui, "export.progress", snapshot, locale);
                         }
                     }
                     ExportPhase::Failed => {
@@ -833,7 +827,9 @@ impl ExportDialog {
                         }
                     }
                 }
-                ui.add_space((ui.available_height() - 34.0).max(0.0));
+                ui.add_space(
+                    (ui.available_height() - crate::kit::size::DIALOG_BUTTON_HEIGHT).max(0.0),
+                );
                 ui.horizontal(|ui| {
                     let duration = options.output.ranges(project).map_or(0.0, |scenes| {
                         scenes
@@ -857,28 +853,37 @@ impl ExportDialog {
                         egui::Layout::right_to_left(egui::Align::Center),
                         |ui| match self.phase() {
                             ExportPhase::Running => {
-                                let r = ui.add_enabled(
-                                    !self.cancelling,
-                                    egui::Button::new(tr(Text::Cancel))
-                                        .min_size(egui::vec2(90.0, 34.0)),
-                                );
+                                let r = ui
+                                    .add_enabled_ui(!self.cancelling, |ui| {
+                                        crate::kit::dialog_button(
+                                            ui,
+                                            "export.cancel",
+                                            tr(Text::Cancel),
+                                            false,
+                                        )
+                                    })
+                                    .inner;
                                 if r.clicked() {
                                     self.cancel();
                                 }
                                 result.widgets.push(("export.cancel", r));
                             }
                             ExportPhase::Failed => {
-                                let r = ui.add_sized(
-                                    [90.0, 34.0],
-                                    egui::Button::new(tr(Text::ExportRetry)),
+                                let r = crate::kit::dialog_button(
+                                    ui,
+                                    "export.retry",
+                                    tr(Text::ExportRetry),
+                                    false,
                                 );
                                 if r.clicked() {
                                     result.action = Some(DialogAction::Retry);
                                 }
                                 result.widgets.push(("export.retry", r));
-                                let r = ui.add_sized(
-                                    [90.0, 34.0],
-                                    egui::Button::new(tr(Text::ExportCopy)),
+                                let r = crate::kit::dialog_button(
+                                    ui,
+                                    "export.copy",
+                                    tr(Text::ExportCopy),
+                                    false,
                                 );
                                 if r.clicked()
                                     && let Some(text) = &self.diagnostics
@@ -886,9 +891,11 @@ impl ExportDialog {
                                     ui.ctx().copy_text(text.clone());
                                 }
                                 result.widgets.push(("export.copy", r));
-                                let r = ui.add_sized(
-                                    [90.0, 34.0],
-                                    egui::Button::new(tr(Text::CloseScenes)),
+                                let r = crate::kit::dialog_button(
+                                    ui,
+                                    "export.close",
+                                    tr(Text::CloseScenes),
+                                    false,
                                 );
                                 if r.clicked() {
                                     self.open = false;
@@ -896,14 +903,22 @@ impl ExportDialog {
                                 result.widgets.push(("export.close", r));
                             }
                             ExportPhase::Ready => {
-                                let r =
-                                    ui.add_sized([90.0, 34.0], egui::Button::new(tr(Text::Save)));
+                                let r = crate::kit::dialog_button(
+                                    ui,
+                                    "export.save",
+                                    tr(Text::Save),
+                                    false,
+                                );
                                 if r.clicked() {
                                     result.action = Some(DialogAction::Save);
                                 }
                                 result.widgets.push(("export.save", r));
-                                let r =
-                                    ui.add_sized([90.0, 34.0], egui::Button::new(tr(Text::Cancel)));
+                                let r = crate::kit::dialog_button(
+                                    ui,
+                                    "export.close",
+                                    tr(Text::Cancel),
+                                    false,
+                                );
                                 if r.clicked() {
                                     self.discard_finished();
                                     self.open = false;
@@ -911,21 +926,26 @@ impl ExportDialog {
                                 result.widgets.push(("export.close", r));
                             }
                             ExportPhase::Settings => {
-                                let r =
-                                    ui.add_sized([90.0, 34.0], egui::Button::new(tr(Text::Cancel)));
+                                let r = crate::kit::dialog_button(
+                                    ui,
+                                    "export.close",
+                                    tr(Text::Cancel),
+                                    false,
+                                );
                                 if r.clicked() {
                                     self.open = false;
                                 }
                                 result.widgets.push(("export.close", r));
-                                let r = ui.add_enabled(
-                                    settings::valid(options, project),
-                                    egui::Button::new(
-                                        egui::RichText::new(tr(Text::Export))
-                                            .color(theme::on_accent(dark)),
-                                    )
-                                    .fill(theme::accent(dark))
-                                    .min_size(egui::vec2(90.0, 34.0)),
-                                );
+                                let r = ui
+                                    .add_enabled_ui(settings::valid(options, project), |ui| {
+                                        crate::kit::dialog_button(
+                                            ui,
+                                            "export.run",
+                                            tr(Text::Export),
+                                            true,
+                                        )
+                                    })
+                                    .inner;
                                 if r.clicked() {
                                     result.action = Some(DialogAction::Start);
                                 }

@@ -110,7 +110,12 @@ impl View<'_> {
                 .max_rect(cards),
             |ui| {
                 if definitions.is_empty() {
-                    self.empty(ui, Icon::ArrowsLeftRight, Text::AssetsNoMatches);
+                    self.empty(
+                        ui,
+                        Icon::ArrowsLeftRight,
+                        Text::AssetsNoMatches,
+                        crate::kit::Tone::Quiet,
+                    );
                     return;
                 }
                 egui::ScrollArea::vertical()

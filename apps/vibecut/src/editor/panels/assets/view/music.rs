@@ -106,7 +106,12 @@ impl View<'_> {
         let credits_failed = self.cx.music_credits_failed;
         let Some(view) = self.cx.music.clone() else {
             self.music_credits(ui, &credits, credits_failed);
-            self.empty(ui, Icon::MusicNotes, Text::MusicUnavailable);
+            self.empty(
+                ui,
+                Icon::MusicNotes,
+                Text::MusicUnavailable,
+                crate::kit::Tone::Quiet,
+            );
             return;
         };
         let dark = self.cx.preferences.dark;
@@ -224,6 +229,7 @@ impl View<'_> {
                 } else {
                     Text::MusicNoResults
                 },
+                crate::kit::Tone::Quiet,
             );
             return;
         }
