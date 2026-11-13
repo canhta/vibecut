@@ -71,7 +71,10 @@ Typed commands admit at most 1024 commands and nesting depth 16; each collection
 Locks protect item structure and item properties: item edits, insertion, moves into or out of a
 track and track removal refuse a locked track; `track.set_flags`, `track.rename`,
 `track.reorder` and `track.set_locked` remain permitted on one, so it can be unlocked
-([`tracks.rs`](tracks.rs)).
+([`tracks.rs`](tracks.rs)). Transcript word cuts (`transcript.delete_range`, `remove_fillers`)
+refuse `Locked` when any item a span overlaps, on any track, is locked; `transcript.merge_cues`
+refuses when its caption item's track is locked. Both run one shared check in [`text.rs`](text.rs)
+before any change.
 
 `timeline.split_all {at}` cuts every unlocked item whose span contains `at`, on every track of the active scene, as one undo step. Locked tracks are skipped as the single-item split of a selection skips them; a playhead with nothing unlocked under it refuses the edit ([`execute_split_all`](clips.rs)).
 
