@@ -251,6 +251,41 @@ fn prepare_clip(
                 .ok_or(EngineError::Session(engine::SessionError::IdExhausted))?;
         }
     }
+    // Audio is one continuous item per segment, so the export ramps only at
+    // segment edges and never inside speech at a shot cut.
+    let mut audio_items = Vec::new();
+    if options
+        .asset
+        .probe()
+        .streams
+        .iter()
+        .any(|stream| stream.kind == media::StreamKind::Audio)
+    {
+        for (range, start) in ranges.iter().zip(&starts) {
+            audio_items.push(Item {
+                hidden: false,
+                blend_mode: Default::default(),
+                retime: Default::default(),
+                masks: Vec::new(),
+                effects: Vec::new(),
+                animations: Default::default(),
+                id: ItemId(next_item),
+                source_asset: Some(options.asset.id()),
+                source_range: *range,
+                start: *start,
+                content: ItemParams::Audio(project::AudioParams {
+                    volume: 0.0,
+                    muted: false,
+                    source: Default::default(),
+                    fades: Default::default(),
+                    cleanup: Default::default(),
+                }),
+            });
+            next_item = next_item
+                .checked_add(1)
+                .ok_or(EngineError::Session(engine::SessionError::IdExhausted))?;
+        }
+    }
     let mut caption_items = Vec::new();
     let mut sidecar_bytes = 0u64;
     let caption_track = if options.languages.is_empty() {
@@ -337,6 +372,17 @@ fn prepare_clip(
             hidden: false,
             locked: false,
             items,
+        });
+    }
+    if !audio_items.is_empty() {
+        timeline.insert_track(Track {
+            id: TrackId(AUDIO_TRACK),
+            name: "Audio".into(),
+            kind: TrackKind::Audio,
+            muted: false,
+            hidden: false,
+            locked: false,
+            items: audio_items,
         });
     }
     if caption_track.is_some() {
@@ -433,6 +479,8 @@ const PORTRAIT: [u32; 2] = [1080, 1920];
 /// Track id of the second layout slot; the first slot is the main track (2) and
 /// the captions are track 3.
 const SLOT_TRACK_FIRST: u64 = 4;
+/// Track id of the segment audio; the layout slots take 4 to 6.
+const AUDIO_TRACK: u64 = 7;
 /// The engine's cap on the shots of one analysis.
 const MAX_SHOTS: usize = 4096;
 
@@ -447,7 +495,8 @@ fn source_frame(asset: &media::SourceAsset) -> Option<[f64; 2]> {
 }
 
 /// One layout slot as a video item: crop and fit in its params, scale and
-/// position as static transform channels. Only slot 0 plays the source audio.
+/// position as static transform channels. Video items are silent: the audio is
+/// one item per segment, so a shot cut never ramps the speech.
 fn slot_item(
     id: ItemId,
     asset: media::AssetId,
@@ -482,7 +531,7 @@ fn slot_item(
         start,
         content: ItemParams::Video(VideoParams {
             fades: Default::default(),
-            source_audio_enabled: slot.audio,
+            source_audio_enabled: false,
             volume: 0.0,
             muted: false,
             crop: slot.crop,

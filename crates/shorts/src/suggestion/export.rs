@@ -45,6 +45,7 @@ pub(crate) fn submit_export(
     }
     let mut batch = ClipBatchRequest::new(request.result.asset, shorts, request.directory);
     batch.cues = request.cues;
+    batch.shots = request.shots;
     batch.languages = request.languages;
     batch.subtitle_formats = request.formats;
     batch.overwrite = request.overwrite;

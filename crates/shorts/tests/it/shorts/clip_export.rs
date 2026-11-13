@@ -1337,7 +1337,11 @@ mod layouts {
             rate: u32,
             hooks: &dyn ExecutionHooks,
         ) -> render::Result<AudioBlock> {
-            AudioBlock::new(rate, 2, frames, MemoryKind::Decoded, hooks)
+            let mut block = AudioBlock::new(rate, 2, frames, MemoryKind::Decoded, hooks)?;
+            for plane in block.planes_mut() {
+                plane.fill(0.1);
+            }
+            Ok(block)
         }
     }
 
@@ -1792,13 +1796,43 @@ mod layouts {
         assert_eq!(slot.items.len(), 1);
         assert_eq!(slot.items[0].source_range, range(1, 2));
         assert_eq!(slot.items[0].start, Tick::ZERO);
-        let audio = |item: &project::Item| match &item.content {
-            project::ItemParams::Video(params) => params.source_audio_enabled,
+        // Every video item is silent; the audio is one item per segment, so a shot cut
+        // inside a segment never splits the speech.
+        let silent = |item: &project::Item| match &item.content {
+            project::ItemParams::Video(params) => !params.source_audio_enabled,
             _ => panic!("video item"),
         };
-        assert!(main.items.iter().all(audio));
-        assert!(!audio(&slot.items[0]));
+        assert!(main.items.iter().all(silent));
+        assert!(silent(&slot.items[0]));
+        let timeline = &batch.project(0).unwrap().data().scene().timeline;
+        assert_eq!(timeline.audio.len(), 1);
+        let audio: Vec<_> = timeline.audio[0]
+            .items
+            .iter()
+            .map(|item| (item.source_range, item.start))
+            .collect();
+        assert_eq!(
+            audio,
+            vec![(range(1, 3), Tick::ZERO), (range(10, 12), seconds(2))]
+        );
         assert_eq!(batch.duration(0), Some(seconds(4)));
+        // The export mixes with its 10 ms cut ramps: the samples run through the shot cut
+        // at output 1 s unchanged, and the ramp still opens the segment.
+        let prepared = batch.project(0).unwrap();
+        let rate = prepared.data().settings.audio_sample_rate as usize;
+        let fade = batch.settings(0).unwrap().audio_cut_fade_ms;
+        let mut mixer = render::AudioMixer::new(prepared, 2, fade, &Hooks).unwrap();
+        let latency = mixer.latency_samples();
+        let mixed = mixer.mix(0, rate * 5 / 4, &mut Coded, &Hooks).unwrap();
+        let plane = &mixed.planes()[0];
+        let plateau = plane[rate / 2];
+        assert!(plateau > 0.05, "the source is audible: {plateau}");
+        let around = &plane[rate + latency - 100..rate + latency + 100];
+        assert!(
+            around.iter().all(|v| (v - plateau).abs() < 1e-6),
+            "no ramp at the shot cut"
+        );
+        assert!(plane[latency] < plateau / 2.0, "the segment still ramps in");
         // The cut itself switches the rendered frame.
         near(
             &frame(&batch, ms(900)),

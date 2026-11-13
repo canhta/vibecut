@@ -71,10 +71,13 @@ pub enum ControlResult {
         revision: Revision,
         paths: Vec<std::path::PathBuf>,
     },
-    /// `clips.export` accepted: one job per selected short, in selection order.
+    /// `clips.export` accepted: one job per selected short, in selection order. `shots` is
+    /// `None` when the per-shot analysis laid the shorts out, else why every short is a
+    /// centred Fill.
     ClipExports {
         revision: Revision,
         shorts: Vec<super::ClipExportShort>,
+        shots: Option<super::ClipShotsDiagnostic>,
     },
     Job {
         snapshot: JobView,

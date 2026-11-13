@@ -1,13 +1,15 @@
 //! Lends process media caches and durable LUT sources to generation/import jobs.
 use super::{Error as EngineError, Result};
 use crate::{
-    analysis::{AnalysisSettings, ReframeJob, ReframeRequest, ReframeTarget},
+    analysis::{
+        AnalysisJob, AnalysisRequest, AnalysisSettings, ReframeJob, ReframeRequest, ReframeTarget,
+    },
     artifacts::thumbnail_strip::{
         self, ThumbnailStripJob, ThumbnailStripRequest, ThumbnailStripState,
     },
     artifacts::thumbnails::ThumbnailCache,
     cache::ArtifactCache,
-    jobs::{JobId, JobKind, JobRunner},
+    jobs::{JobId, JobKind, JobRunner, JobState},
     scene_detection::{DetectionJob, DetectionRequest, DetectionSettings},
     waveform::{self, WaveformJob, WaveformRequest, WaveformState},
 };
@@ -71,6 +73,8 @@ pub struct MediaAccess {
     strips: BTreeMap<JobId, ThumbnailStripJob>,
     scenes: BTreeMap<JobId, DetectionJob>,
     reframes: BTreeMap<JobId, ReframeEntry>,
+    /// Shot analyses a clip export started, with their cache identity, until published.
+    analyses: BTreeMap<JobId, ([u8; 32], AnalysisJob)>,
 }
 
 impl MediaAccess {
@@ -107,6 +111,7 @@ impl MediaAccess {
             strips: BTreeMap::new(),
             scenes: BTreeMap::new(),
             reframes: BTreeMap::new(),
+            analyses: BTreeMap::new(),
         }
     }
 
@@ -283,6 +288,7 @@ impl MediaAccess {
         if let Some(handle) = self.scenes.remove(&job) {
             handle.finish(runner, &mut self.artifacts)?;
         }
+        self.publish_analyses(runner);
         // Keep the reframe handle: `reframe.apply` reads the same retained
         // output after `job_status` has already published the cache entry.
         if let Some(entry) = self.reframes.get_mut(&job)
@@ -297,12 +303,72 @@ impl MediaAccess {
         Ok(())
     }
 
+    /// Publish finished shot analyses into the cache and drop failed ones, so the next
+    /// lookup of their request is a hit or a fresh submission.
+    fn publish_analyses(&mut self, runner: &mut JobRunner) {
+        let ids: Vec<JobId> = self.analyses.keys().copied().collect();
+        for id in ids {
+            match runner.snapshot(id).map(|snapshot| snapshot.state) {
+                Some(JobState::Completed) => {
+                    if let Some((_, job)) = self.analyses.get(&id) {
+                        // A failed publication leaves the entry uncached: the next export
+                        // reports it pending again and resubmits.
+                        let _ = job.finish(runner, &mut self.artifacts);
+                    }
+                    self.analyses.remove(&id);
+                }
+                Some(JobState::Failed | JobState::Cancelled) | None => {
+                    self.analyses.remove(&id);
+                }
+                Some(_) => {}
+            }
+        }
+    }
+
+    /// The per-shot analysis for a clip export: the cached result of `request` when there
+    /// is one, else its running job (submitted here when none runs) with empty shots.
+    pub(crate) fn clip_shots(
+        &mut self,
+        runner: &mut JobRunner,
+        request: &AnalysisRequest,
+        detector: Box<dyn VisionDetector>,
+    ) -> (
+        Vec<crate::ShotAnalysis>,
+        Option<crate::session::wire::ClipShotsDiagnostic>,
+    ) {
+        use crate::session::wire::ClipShotsDiagnostic::{Failed, Pending};
+        self.retain(runner);
+        self.publish_analyses(runner);
+        match request.cached(&mut self.artifacts) {
+            Ok(Some(result)) => return (result.shots, None),
+            Ok(None) => {}
+            Err(_) => return (Vec::new(), Some(Failed)),
+        }
+        let key = request.key_bytes();
+        if let Some(id) = self
+            .analyses
+            .iter()
+            .find_map(|(id, (running, _))| (*running == key).then_some(*id))
+        {
+            return (Vec::new(), Some(Pending { job: id }));
+        }
+        match request.submit(runner, &mut self.artifacts, BoxedDetector(detector)) {
+            Ok(job) => {
+                let id = job.id;
+                self.analyses.insert(id, (key, job));
+                (Vec::new(), Some(Pending { job: id }))
+            }
+            Err(_) => (Vec::new(), Some(Failed)),
+        }
+    }
+
     /// Drop a cancelled or failed job without publishing it.
     pub(crate) fn forget(&mut self, job: JobId) {
         self.waveforms.remove(&job);
         self.strips.remove(&job);
         self.scenes.remove(&job);
         self.reframes.remove(&job);
+        self.analyses.remove(&job);
     }
 
     fn retain(&mut self, runner: &JobRunner) {
@@ -311,5 +377,6 @@ impl MediaAccess {
         self.strips.retain(|id, _| runner.snapshot(*id).is_some());
         self.scenes.retain(|id, _| runner.snapshot(*id).is_some());
         self.reframes.retain(|id, _| runner.snapshot(*id).is_some());
+        self.analyses.retain(|id, _| runner.snapshot(*id).is_some());
     }
 }

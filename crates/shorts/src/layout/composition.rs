@@ -12,7 +12,7 @@ pub(crate) struct Geometry {
 }
 
 /// One video item of a layout: the existing item params that place a piece of
-/// the source. Slot 0 carries the audio; every other slot is silent.
+/// the source. Slots are silent: the short's audio is one item per segment.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Slot {
     pub crop: Option<Crop>,
@@ -21,7 +21,6 @@ pub(crate) struct Slot {
     pub scale: [f64; 2],
     /// Static `transform.position{X,Y}` in canvas pixels, y down.
     pub offset: [f64; 2],
-    pub audio: bool,
 }
 
 /// Fraction of the canvas height the speaker takes in Gameplay, the one
@@ -139,24 +138,18 @@ fn slot_pixels(cell: &Cell, canvas: [f64; 2]) -> ([f64; 2], [f64; 2]) {
 /// A person slot: the source window of the slot's aspect around the person,
 /// stretched over the canvas and scaled into the cell, so the picture keeps its
 /// aspect.
-fn person_slot(
-    cell: &Cell,
-    geometry: Geometry,
-    track: Option<&engine::FaceTrack>,
-    audio: bool,
-) -> Slot {
+fn person_slot(cell: &Cell, geometry: Geometry, track: Option<&engine::FaceTrack>) -> Slot {
     let (size, offset) = slot_pixels(cell, geometry.canvas);
     Slot {
         crop: window(size, geometry.source, track.map(choice::center)),
         fit: FitMode::Manual,
         scale: [size[0] / geometry.canvas[0], size[1] / geometry.canvas[1]],
         offset,
-        audio,
     }
 }
 
 /// A content slot: the whole frame, letterboxed inside the cell by the Fit box.
-fn content_slot(cell: &Cell, geometry: Geometry, audio: bool) -> Slot {
+fn content_slot(cell: &Cell, geometry: Geometry) -> Slot {
     let (size, offset) = slot_pixels(cell, geometry.canvas);
     let boxed = FitMode::Fit
         .place(size, geometry.source)
@@ -169,7 +162,6 @@ fn content_slot(cell: &Cell, geometry: Geometry, audio: bool) -> Slot {
             boxed[1] * size[1] / geometry.canvas[1],
         ],
         offset,
-        audio,
     }
 }
 
@@ -187,7 +179,6 @@ pub(super) fn compose(
         fit,
         scale: [1.0, 1.0],
         offset: [0.0, 0.0],
-        audio: true,
     };
     match layout {
         Layout::Fit => vec![whole(FitMode::Fit, None)],
@@ -212,10 +203,9 @@ pub(super) fn compose(
             let mut tracks = tracks.into_iter();
             cells
                 .iter()
-                .enumerate()
-                .map(|(at, c)| match c.role {
-                    Role::Person => person_slot(c, geometry, tracks.next(), at == 0),
-                    Role::Content => content_slot(c, geometry, at == 0),
+                .map(|c| match c.role {
+                    Role::Person => person_slot(c, geometry, tracks.next()),
+                    Role::Content => content_slot(c, geometry),
                 })
                 .collect()
         }

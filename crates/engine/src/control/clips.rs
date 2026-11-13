@@ -2,7 +2,9 @@
 use super::{Error as EngineError, Result};
 use crate::cache::CacheKey;
 use crate::jobs::{JobId, JobRunner};
-use crate::session::wire::{ClipEnergy, ClipExportShort, ClipsResult, bounded_json};
+use crate::session::wire::{
+    ClipEnergy, ClipExportShort, ClipShotsDiagnostic, ClipsResult, bounded_json,
+};
 use crate::subtitles::CaptionAccess;
 use crate::{EditError, Session};
 use captions::{CueTrack, Format, LanguageTag, NfcText};
@@ -38,6 +40,10 @@ pub struct ClipsExportRequest {
     pub result: ClipsResult,
     /// Source-timed cues, with any translations, that captions are burned from.
     pub cues: CueTrack,
+    /// The cached per-shot analysis covering the selected pieces, exactly as
+    /// `AnalysisResult::shots` returns it; empty when none is available (the export then
+    /// reports why), which keeps every short a centred Fill.
+    pub shots: Vec<crate::ShotAnalysis>,
     /// Zero-based candidate indices; 1..=1000 distinct values.
     pub select: Vec<usize>,
     pub languages: Vec<LanguageTag>,
@@ -87,6 +93,77 @@ impl CaptionAccess {
             .as_ref()
             .and_then(|lent| lent.downcast_ref::<Arc<dyn ClipWorkflow>>())
     }
+}
+
+/// The per-shot analysis a clip export lays its shorts out from, over the hull of the
+/// selected pieces: the cached result of that exact request, else why there is none.
+/// A missing result starts the analysis as a job, so a later export reuses it. Nothing here
+/// fails the export: without evidence every short is a centred Fill and the diagnostic
+/// says why. Speech evidence is the suggestion's source cues.
+pub(super) fn export_shots(
+    runner: &mut JobRunner,
+    session: &Session,
+    media: Option<&std::sync::Mutex<super::MediaAccess>>,
+    vision: Option<&super::VisionAccess>,
+    result: &ClipsResult,
+    select: &[usize],
+) -> Result<(Vec<crate::ShotAnalysis>, Option<ClipShotsDiagnostic>)> {
+    use ClipShotsDiagnostic::{DetectorUnavailable, Failed, ModelsMissing};
+    let pieces: Vec<SourceRange> = select
+        .iter()
+        .filter_map(|index| result.clips.get(*index))
+        .flat_map(|clip| clip.segments.iter().map(|piece| piece.range))
+        .collect();
+    let hull = pieces
+        .iter()
+        .map(|range| range.start())
+        .min()
+        .zip(pieces.iter().map(|range| range.end()).max())
+        .and_then(|(start, end)| SourceRange::new(start, end).ok());
+    let asset = session
+        .project()
+        .data()
+        .assets
+        .iter()
+        .find(|asset| asset.id() == result.asset);
+    let (Some(range), Some(asset)) = (hull, asset) else {
+        // No selected piece or source: the workflow reports its own refusal.
+        return Ok((Vec::new(), None));
+    };
+    let (Some(vision), Some(media)) = (vision, media) else {
+        return Ok((Vec::new(), Some(DetectorUnavailable)));
+    };
+    let Ok((detector, models)) = vision.load() else {
+        return Ok((Vec::new(), Some(ModelsMissing)));
+    };
+    let mut speech: Vec<SourceRange> = result
+        .cues
+        .iter()
+        .filter_map(|cue| cue.range.intersect(range))
+        .collect();
+    speech.sort_by_key(|range| range.start());
+    let mut merged: Vec<SourceRange> = Vec::new();
+    for next in speech {
+        match merged.last_mut() {
+            Some(last) if next.start() <= last.end() => {
+                if let Ok(joined) = SourceRange::new(last.start(), last.end().max(next.end())) {
+                    *last = joined;
+                }
+            }
+            _ => merged.push(next),
+        }
+    }
+    let Ok(request) = crate::AnalysisRequest::new(
+        asset.clone(),
+        range,
+        merged,
+        models,
+        crate::AnalysisSettings::default(),
+    ) else {
+        return Ok((Vec::new(), Some(Failed)));
+    };
+    let mut media = media.lock().map_err(|_| crate::RuntimeError::Poisoned)?;
+    Ok(media.clip_shots(runner, &request, detector))
 }
 
 /// Decode the retained bytes of a finished `clips.suggest` job.
