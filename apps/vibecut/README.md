@@ -82,10 +82,10 @@ crate-private. A new export needs a named consumer here.
 ## Checks
 
 The offscreen audit is an example tool. `examples/ui_audit.rs` is the stable CLI
-and composition root holding the example tests; its private implementation lives under
-`examples/audit/`.
+and composition root holding the two test-fixture `#[path]` seams and the example tests;
+its private implementation lives under `examples/audit/`.
 `application.rs` owns the harness, app and theme, `fixture.rs` the shared
-deterministic media and session fixtures with `fixture/{shorts,subtitles}.rs`, `scenes.rs` the scene registry with
+deterministic media and session fixtures, `scenes.rs` the scene registry with
 `scenes/{home,editor,properties,timeline,shorts,assets}.rs`, `readme.rs` the
 README capture/import/edit/publication workflow with
 `readme/{source,process,media,publication,project}.rs`, and `report.rs` reference

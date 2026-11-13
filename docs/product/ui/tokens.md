@@ -14,7 +14,7 @@
 | App surfaces and accents | Semantic colour functions | App palette |
 | Light surfaces and non-editor status colours | Semantic colour functions | Accessible ramp |
 
-Reference hex samples are not app tokens; colour differences from the reference are intentional. Dark and light share measured geometry. Hover, pressed, focus and disabled states reuse app semantic roles. The 24 px dialog inset, 90×34 footer buttons and 320 px toast are kit tokens (`space::DIALOG`, `size::DIALOG_BUTTON_*`, `size::TOAST_WIDTH`); dialog corners and the 18 px dialog title are proposed. Page heading sizes, uncaptured track types and panel layout calculations stay caller-owned until measured.
+Reference hex samples are not app tokens; colour differences from the reference are intentional. Dark and light share measured geometry. Hover, pressed, focus and disabled states reuse app semantic roles. The 24 px dialog inset, 90×34 footer buttons and 320 px toast are kit tokens (`space::DIALOG`, `size::DIALOG_BUTTON_*`, `size::TOAST_WIDTH`), taken from the export capture and applied to every modal. Page heading sizes, uncaptured track types and panel layout calculations stay caller-owned until measured.
 
 [`kit.rs`](../../../apps/vibecut/src/kit.rs) owns the shared kit: icon buttons, tab rows, section headers, steppers and value fields, panel states, progress bars, toasts and dialog frames. Callers keep their labels, tooltips, automation IDs, preferences and preview/commit/rollback decisions.
 

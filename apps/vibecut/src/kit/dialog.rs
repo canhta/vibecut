@@ -7,7 +7,7 @@ use super::widgets::author;
 use super::{radius, size, space, type_size};
 use eframe::egui::{self, Response, RichText, Ui, Vec2};
 
-/// The modal frame: window fill, 12 px corners [proposed] and the 24 px inset
+/// The modal frame: window fill, 12 px corners and the 24 px inset
 /// the export capture measures.
 pub(crate) fn dialog_frame(ctx: &egui::Context) -> egui::Frame {
     egui::Frame::window(&ctx.global_style())
@@ -15,7 +15,7 @@ pub(crate) fn dialog_frame(ctx: &egui::Context) -> egui::Frame {
         .inner_margin(space::DIALOG)
 }
 
-/// The dialog heading, 18 px semibold [proposed].
+/// The dialog heading, 18 px semibold.
 pub(crate) fn dialog_title(ui: &mut Ui, text: &str) -> Response {
     ui.label(RichText::new(text).strong().size(type_size::DIALOG_TITLE))
 }

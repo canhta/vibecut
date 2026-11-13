@@ -816,7 +816,9 @@ impl ExportDialog {
                         }
                     }
                 }
-                ui.add_space((ui.available_height() - crate::kit::size::DIALOG_BUTTON_HEIGHT).max(0.0));
+                ui.add_space(
+                    (ui.available_height() - crate::kit::size::DIALOG_BUTTON_HEIGHT).max(0.0),
+                );
                 ui.horizontal(|ui| {
                     let duration = options.output.ranges(project).map_or(0.0, |scenes| {
                         scenes

@@ -5,6 +5,11 @@
 //! and 2x, plus an `index.html` that places each render beside its matching
 //! reference image from the local reference set when one exists.
 //! This is an audit tool, not a test: it never runs in `cargo xtask ci`.
+#[path = "../tests/it/support/shorts.rs"]
+mod shorts_fixture;
+#[path = "../tests/it/support/subtitles.rs"]
+mod subtitles_fixture;
+
 mod audit;
 
 use audit::Failure;
@@ -27,7 +32,7 @@ mod tests {
     const UNADDRESSED: &[&str] = &[];
 
     #[test]
-    #[ignore = "run once after the combined build to fill UNADDRESSED or fix the nodes, then drop this attribute"]
+    #[ignore = "baseline filled by the next combined build"]
     fn every_interactive_node_has_a_label_and_an_automation_id() -> Result<(), Failure> {
         let found = super::audit::unaddressed_nodes()?;
         let new: Vec<_> = found

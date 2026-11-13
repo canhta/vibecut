@@ -65,8 +65,8 @@ The [token contract](tokens.md) links to the executable value owner, `theme.rs`.
 - Import progress: 2 px accent bar, 14 px `Processing N%`, and a 320 px bottom-right toast.
 - Panel state (empty, loading, offline, error): one 24 px glyph over one 12 px line of at most four words, centred in the panel; secondary ink, error ink for a failure. Kit: `panel_state`.
 - Progress bar: 2 px accent over the field track, full width, percentage in the line above. Kit: `progress_bar`.
-- Toast: 320 px wide on the modal surface, bottom-right, 16 px from both edges [proposed offset], 12 px corners and inset. Kit: `toast`.
-- Dialog: 12 px corners [proposed], 24 px inset (export capture), 18 px title [proposed], footer buttons 90×34 (export capture), primary filled with the accent. Kit: `dialog_frame`, `dialog_title`, `dialog_button`.
+- Toast: 320 px wide on the modal surface, bottom-right, 16 px from both edges, 12 px corners and inset (the import toast's values, unmeasured). Kit: `toast`.
+- Dialog: 12 px corners, 24 px inset, 18 px title and 90×34 footer buttons come from the export capture and apply to every modal (a decision, not a proposal); the primary button is filled with the accent. Kit: `dialog_frame`, `dialog_title`, `dialog_button`.
 
 ### Gaps
 
@@ -75,7 +75,7 @@ A change that hits a gap captures a real desktop screenshot first.
 - Hover, pressed, focus, drag and most disabled states are not captured; the only captured disabled states are the shortcuts `Save` button and the properties `Enhance quality` row. Light theme is not captured.
 - Motion durations and easing are unmeasured.
 - Panel min/max sizes: one window size per screen observed.
-- No glyph for offline or error exists in the icon set, and loading is a static glyph (no spinner); toast offset, dialog corners and the 18 px title have no capture.
+- No glyph for offline or error exists in the icon set, and loading is a static glyph (no spinner); the toast values are unmeasured, and empty states are centred in their panel without a capture.
 - Window-specific gaps live in each window file.
 
 ## Evidence

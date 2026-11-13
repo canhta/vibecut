@@ -104,7 +104,10 @@ pub(super) fn section(
                 };
                 ui.add_space(24.0);
                 let (rect, _) = ui.allocate_exact_size(
-                    egui::vec2(ui.available_width(), kit::size::PANEL_STATE),
+                    egui::vec2(
+                        ui.available_width(),
+                        kit::icon::STATE + kit::space::MD + kit::type_size::BODY * 1.5,
+                    ),
                     egui::Sense::hover(),
                 );
                 kit::panel_state(

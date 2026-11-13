@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used)]
-//! Synthetic captions for the offscreen audit scenes.
+//! Shared synthetic captions for real editor tests and offscreen audit scenes.
 use captions::{Cue, CueText, CueTrack, LanguageTag};
 use engine::{ByteBudget, Command, NewItem, Session};
 use project::{ItemParams, Project, ProjectId};

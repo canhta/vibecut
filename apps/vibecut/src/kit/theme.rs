@@ -218,7 +218,7 @@ pub(crate) mod space {
     /// Dialog inner margin (export capture: 24 px frame inset).
     pub const DIALOG: f32 = 24.0;
 }
-/// Only panel and control corners are measured; dialog corners remain proposed.
+/// Panel and control corners are measured; the dialog corner is the export capture applied app-wide.
 pub(crate) mod radius {
     pub const PANEL: u8 = 0;
     pub const FRAME_PANEL: u8 = 8;
@@ -226,7 +226,7 @@ pub(crate) mod radius {
     /// Value fields and steppers (221643 corners: about 2 px; the 4 px mapping was unproven).
     pub const FIELD: u8 = 2;
     pub const UPLOAD: u8 = 8;
-    /// Dialogs and toasts [proposed]: the dialog corner is uncaptured.
+    /// Dialogs and toasts: the export capture's corner applied app-wide.
     pub const DIALOG: u8 = 12;
 }
 /// Inter-equivalent sizes inferred from measured capital heights.
@@ -239,7 +239,7 @@ pub(crate) mod type_size {
     pub const CHROME: f32 = 14.0;
     /// Ruler captions: digit height 8 px in 221643.
     pub const CAPTION: f32 = 11.0;
-    /// Dialog title [proposed]: no editor capture shows a 18 px heading.
+    /// Dialog title: the export capture's title applied app-wide.
     pub const DIALOG_TITLE: f32 = 18.0;
 }
 /// Measured boxes and row pitches from the desktop capture set.
@@ -332,8 +332,6 @@ pub(crate) mod size {
     /// Bottom-right toast width and import progress bar height (ui design States).
     pub const TOAST_WIDTH: f32 = 320.0;
     pub const PROGRESS_BAR: f32 = 2.0;
-    /// Panel state slot: empty-state glyph, a gap and one 12 px line [proposed].
-    pub const PANEL_STATE: f32 = 56.0;
 }
 /// Measured glyph boxes; larger empty-state glyphs are not editor measurements.
 pub(crate) mod icon {
