@@ -16,8 +16,8 @@ pub use persistence::atomic;
 pub use persistence::autosave;
 pub use persistence::{
     FORMAT_ID, Loaded, MAX_SEPARATORS, METADATA_VERSION, Metadata, SCHEMA_VERSION, SaveReceipt,
-    Thumbnail, ViewState, WriterLease, atomic_write, decode, encode, load, metadata_path,
-    read_metadata,
+    Thumbnail, ViewState, WriterLease, atomic_write, decode, encode, load, media_dir,
+    metadata_path, read_metadata,
 };
 pub use visual::{
     ANGLE_MAX, BlendMode, CHROMA_KEY_COLOR_DEFAULT, CHROMA_KEY_INTENSITY_DEFAULT, CHROMA_KEY_MAX,

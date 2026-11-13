@@ -58,6 +58,10 @@ Unix compares device/inode from the retained descriptor and current name. Window
 
 `read_metadata(path)` supports bounded read-only catalog display; mutations go through the WriterLease. `WriterLease::validate` checks the baseline and stable lock identity without requiring a project file to exist.
 
+## Project media folder
+
+`media_dir(project)` returns the project's media folder: the full project filename with `.media` appended, beside the project file (`Tiếng Việt.vibecut` gives `Tiếng Việt.vibecut.media`; `cut.v2.vibecut` gives `cut.v2.vibecut.media`). The path is used as given, without canonicalization. An unsaved session passes `None` and gets the one fallback, `<temp dir>/vibecut-media`. Library media added to a project is stored here so library cleanup never removes bytes a project references. The app and CLI music and sounds workflows call this function; no other code builds the folder name.
+
 `WriterLease::save_metadata` validates, then atomically replaces the sidecar under the project lease and content precondition. Sidecar symlinks are refused. Project writer destinations reserve the `.meta.json` suffix, including case variants and canonical aliases, so saving a project cannot replace another project's metadata. A sidecar write error is returned and does not roll back a previously successful project publication. Callers acknowledge a save only after both writes succeed.
 
 ## Streaming output

@@ -207,13 +207,12 @@ impl Editor {
         if let Some(directory) = &self.music_media_dir {
             return directory.clone();
         }
-        if let crate::services::lifecycle::EditorSession::Persistent(autosave) = &self.session
-            && let Some(path) = autosave.saved_path()
-        {
-            let mut media = path.as_os_str().to_os_string();
-            media.push(".media");
-            return PathBuf::from(media);
-        }
-        std::env::temp_dir().join("vibecut-music-media")
+        let saved = match &self.session {
+            crate::services::lifecycle::EditorSession::Persistent(autosave) => {
+                autosave.saved_path()
+            }
+            crate::services::lifecycle::EditorSession::Memory(_) => None,
+        };
+        project::media_dir(saved)
     }
 }

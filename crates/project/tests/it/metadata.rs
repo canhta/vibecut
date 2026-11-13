@@ -1,6 +1,31 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 use project::{Metadata, Project, ProjectId, ViewState, WriterLease};
+use std::path::PathBuf;
 use time::Tick;
+
+#[test]
+fn media_dir_rows_cover_saved_unsaved_and_dotted_project_names() {
+    let root = tempfile::tempdir().unwrap();
+    let rows: [(PathBuf, PathBuf); 3] = [
+        (
+            root.path().join("Tiếng Việt.vibecut"),
+            root.path().join("Tiếng Việt.vibecut.media"),
+        ),
+        (
+            root.path().join("cut.v2.final.vibecut"),
+            root.path().join("cut.v2.final.vibecut.media"),
+        ),
+        (root.path().join("plain"), root.path().join("plain.media")),
+    ];
+    for (project, expected) in &rows {
+        assert_eq!(project::media_dir(Some(project.as_path())), *expected);
+    }
+    assert_eq!(
+        project::media_dir(None),
+        std::env::temp_dir().join("vibecut-media")
+    );
+}
+
 #[test]
 fn optional_metadata_roundtrips_without_changing_project_bytes() {
     let root = tempfile::tempdir().unwrap();

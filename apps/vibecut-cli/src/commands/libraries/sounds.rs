@@ -223,14 +223,13 @@ fn sounds_add(args: Vec<OsString>) -> Result<Output, CliError> {
     let library = SoundLibrary::open(&library)?;
     // Project-owned media sits beside the project file, so library cleanup never
     // removes bytes this project references.
-    let mut media = project.clone().into_os_string();
-    media.push(".media");
+    let media = project::media_dir(Some(project.as_path()));
     let saved = run_leased(&project, History::Single, WritePolicy::Always, |session| {
         let outcome = add_saved(
             session,
             &library,
             id,
-            Path::new(&media),
+            &media,
             engine::Placement::Auto,
             start,
         )?;
