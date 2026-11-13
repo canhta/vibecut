@@ -248,7 +248,7 @@ Rectangle, ellipse, polygon and star items use `timeline.insert` with `content.k
 
 ## Clipboard
 
-A long-lived `control` session supports `clipboard.copy`, `clipboard.copy_keyframes`,
+A long-lived `control` session supports `clipboard.copy`, `clipboard.copy_keyframes`, `clipboard.cut`,
 `clipboard.read`, `clipboard.paste` and `clipboard.paste_keyframes`. Read returns
 `{kind:"clipboard", payload:...}` for the keyframe slot; a client may send that
 version-one payload explicitly with `source:{kind:"payload",payload:...}`. Item paste

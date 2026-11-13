@@ -576,6 +576,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
                 "audio.remove_cleanup_effect",
                 "audio.set_fade",
                 "audio.update_cleanup_effect",
+                "clipboard.cut",
                 "clipboard.paste_keyframes",
                 "delete",
                 "keyframes.add",

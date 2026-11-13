@@ -167,9 +167,16 @@ Named caption preset IDs share the existing allocator and loaded maximum with sc
 
 `clipboard.rs` owns `KeyframeClipboard`, `ItemClipboard` and their `Stored | Payload`
 paste sources, consumed by `clipboard.copy`, `clipboard.copy_keyframes`, `clipboard.read`,
-`clipboard.paste` and `clipboard.paste_keyframes`. One Session slot holds the most recent
+`clipboard.cut`, `clipboard.paste` and `clipboard.paste_keyframes`. One Session slot holds the most recent
 copy of either kind; a successful copy of one clears the other. Copy of an empty or
 already-identical scope preserves the store.
+
+`clipboard.cut` takes one `CutTarget` (items or keyframes). It captures the same payload as
+Copy, then runs the matching delete (the item delete follows the session ripple setting;
+keyframes use `keyframes.delete_selection`) in one transaction, so it is one undo step. The payload is stored
+only after that delete commits: a locked, stale or empty target refuses or no-ops and leaves
+the previous slot untouched. Mask-point cut is not an engine target; its payload belongs to
+the mask owner.
 
 ### Keyframe clipboard
 
