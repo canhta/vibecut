@@ -269,7 +269,7 @@ impl View<'_> {
                             "media.insert",
                             Icon::Plus,
                             Text::AddToTimeline,
-                            !importing && !self.cx.selection().is_empty(),
+                            !importing && !self.cx.selection.is_empty(),
                         ) {
                             self.actions.push(Action::Command("media.insert".into()));
                         }
@@ -441,11 +441,11 @@ impl View<'_> {
             self.actions
                 .push(Action::Select(row.id, ui.input(|input| input.modifiers)));
         }
-        if response.secondary_clicked() && !self.cx.selection().contains(&row.id) {
+        if response.secondary_clicked() && !self.cx.selection.contains(&row.id) {
             self.actions
                 .push(Action::Select(row.id, egui::Modifiers::NONE));
         }
-        let selected = self.cx.selection().contains(&row.id);
+        let selected = self.cx.selection.contains(&row.id);
         let dark = self.cx.preferences.dark;
         if list {
             ui.painter().rect_filled(
@@ -585,10 +585,10 @@ impl View<'_> {
             );
             let export = export.on_disabled_hover_text(self.tr(Text::NotAvailableYet));
             self.remember("media.export_clip", &export, Some(Icon::Export));
-            let mut button = egui::Button::new(if selected && self.cx.selection().len() > 1 {
+            let mut button = egui::Button::new(if selected && self.cx.selection.len() > 1 {
                 i18n::format_count(
                     self.cx.preferences.locale,
-                    self.cx.selection().len() as u64,
+                    self.cx.selection.len() as u64,
                     Text::DeleteItemsOther,
                     Text::DeleteItemsOther,
                 )
@@ -602,7 +602,7 @@ impl View<'_> {
             self.remember("media.delete", &response, Some(Icon::Trash));
             if response.clicked() {
                 let ids = if selected {
-                    self.cx.selection().iter().copied().collect()
+                    self.cx.selection.iter().copied().collect()
                 } else {
                     vec![row.id]
                 };

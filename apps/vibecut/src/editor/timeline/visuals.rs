@@ -284,7 +284,10 @@ impl Media {
             self.pending.borrow_mut().remove(&key);
             return Ok(());
         }
-        let result = match self.control(session, request.command(), budget) {
+        let result = match self
+            .ensure_runner(budget)
+            .and_then(|()| self.control(session, request.command()))
+        {
             Ok(result) => result,
             Err(error) => {
                 self.pending.borrow_mut().remove(&key);
@@ -307,17 +310,13 @@ impl Media {
         }
     }
 
-    fn control(
-        &mut self,
-        session: &mut engine::Session,
-        command: engine::Command,
-        budget: &engine::ByteBudget,
-    ) -> crate::Result<engine::control::Result<engine::control::ControlResult>> {
-        let Some(access) = &self.access else {
+    /// Create the job runner on first use; later status polls reuse it.
+    fn ensure_runner(&mut self, budget: &engine::ByteBudget) -> crate::Result<()> {
+        if self.access.is_none() {
             return Err(crate::Error::Invalid("media cache unavailable"));
-        };
+        }
         if self.runner.is_none() {
-            let runner = engine::jobs::JobRunner::new(
+            self.runner = Some(engine::jobs::JobRunner::new(
                 engine::jobs::RunnerConfig {
                     concurrency: [1, 1, 1],
                     queue: 32,
@@ -328,9 +327,19 @@ impl Media {
                 },
                 budget.clone(),
                 std::sync::Arc::new(engine::jobs::SystemClock::default()),
-            )?;
-            self.runner = Some(runner);
+            )?);
         }
+        Ok(())
+    }
+
+    fn control(
+        &mut self,
+        session: &mut engine::Session,
+        command: engine::Command,
+    ) -> crate::Result<engine::control::Result<engine::control::ControlResult>> {
+        let Some(access) = &self.access else {
+            return Err(crate::Error::Invalid("media cache unavailable"));
+        };
         let runner = self
             .runner
             .as_mut()
