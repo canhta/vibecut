@@ -814,6 +814,7 @@ impl Editor {
                             &kind,
                         );
                     }
+                    Request::ArmKeyColor(pick) => self.player.key_color_pick = pick,
                     Request::InsertShape(id) => {
                         if self.action_enabled(&id) {
                             self.action(&id);

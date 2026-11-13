@@ -1,4 +1,3 @@
 frame-type	apps/vibecut/src/editor/context.rs	names `Editor`, the frame record; take a port instead
 frame-type	apps/vibecut/src/editor/context/bench.rs	names `Editor`, the frame record; take a port instead
 frame-type	apps/vibecut/src/editor/dialogs/preferences/shortcuts.rs	names `Editor`, the frame record; take a port instead
-frame-type	apps/vibecut/src/editor/panels/player/crop.rs	names `Editor`, the frame record; take a port instead

@@ -1,13 +1,14 @@
 //! Crop dialog over the shared crop control and the item crop patch.
 
+use super::State;
 use crate::{
     Result,
-    editor::{Desk, Editor},
+    editor::Port,
     egui,
     i18n::{self, Locale, Text},
     kit as theme,
     kit::Icon,
-    services::crop::control,
+    services::{crop::control, lifecycle::EditorSession},
 };
 use project::ItemId;
 
@@ -142,9 +143,9 @@ struct Target {
 }
 
 /// The single selected video or image clip, with its source pixel aspect.
-fn target(editor: &Editor) -> Option<Target> {
-    let id = crate::editor::context::single(editor.session.selection())?;
-    let project = editor.session.project();
+fn target(session: &EditorSession) -> Option<Target> {
+    let id = crate::editor::context::single(session.selection())?;
+    let project = session.project();
     let data = project.data();
     let item = data
         .scene()
@@ -210,15 +211,15 @@ impl Dialog {
 }
 
 /// Open the dialog for the selected clip; a non-croppable target refuses.
-pub(crate) fn open(editor: &mut Editor) -> Result<()> {
-    let target = target(editor).ok_or(crate::Error::Unsupported("crop target"))?;
-    editor.player.crop = Some(Dialog::new(target));
+pub(crate) fn open(state: &mut State, port: &Port<'_>) -> Result<()> {
+    let target = target(port.session).ok_or(crate::Error::Unsupported("crop target"))?;
+    state.crop = Some(Dialog::new(target));
     Ok(())
 }
 
-/// Whether the current selection has a source frame the dialog can show.
-pub(crate) fn available(editor: &Editor) -> bool {
-    target(editor).is_some()
+/// Whether the session's selection has a source frame the dialog can show.
+pub(crate) fn available(session: &EditorSession) -> bool {
+    target(session).is_some()
 }
 
 enum Action {
@@ -234,56 +235,52 @@ struct Output {
 
 /// Draw the open dialog over the frame's context. Every gesture stays in the
 /// dialog; only Apply reaches the engine, as one undo step.
-pub(crate) fn show(editor: &mut Editor, ctx: &egui::Context) {
-    let Some(mut dialog) = editor.player.crop.take() else {
+pub(crate) fn show(state: &mut State, port: &mut Port<'_>, ctx: &egui::Context) {
+    let Some(mut dialog) = state.crop.take() else {
         return;
     };
-    let Some(target) = target(editor) else {
+    let Some(target) = target(port.session) else {
         return;
     };
     if target.item != dialog.item {
         return;
     }
-    let texture = editor.player.texture.handle().cloned();
+    let texture = state.texture.handle().cloned();
     let output = dialog.ui(
         ctx,
-        editor.preferences.locale,
-        editor.preferences.dark,
+        port.locale(),
+        port.dark(),
         target.aspect,
         texture.as_ref(),
     );
     for (id, response) in output.widgets {
-        editor.remember(id, &response);
+        port.widget(id, None, None, &response);
     }
     if output.close {
         return;
     }
     match output.action {
         Some(Action::Apply) => {
-            if let Err(error) = dialog.apply(&mut editor.desk()) {
-                editor.desk().fail(error.to_string());
-                editor.player.crop = Some(dialog);
+            if dialog.apply(port).is_err() {
+                state.crop = Some(dialog);
             }
         }
-        None => editor.player.crop = Some(dialog),
+        None => state.crop = Some(dialog),
     }
 }
 
 impl Dialog {
-    /// One documented crop patch, or no history entry when the box is unchanged.
-    fn apply(&self, desk: &mut Desk<'_>) -> Result<()> {
+    /// One documented crop patch, or no history entry when the box is unchanged. A
+    /// refusal reaches the error line through the port.
+    fn apply(&self, port: &mut Port<'_>) -> Result<()> {
         let patch = self.patch();
         if patch == self.original {
             return Ok(());
         }
-        desk.run_command(
-            engine::Command::SetItemField {
-                item: self.item,
-                patch: engine::ItemParamPatch::Crop(patch),
-            },
-            false,
-        )?;
-        desk.sync();
+        port.apply_result(engine::Command::SetItemField {
+            item: self.item,
+            patch: engine::ItemParamPatch::Crop(patch),
+        })?;
         Ok(())
     }
 

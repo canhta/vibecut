@@ -82,8 +82,9 @@ actual jump shares `playback.seek` and preserves play state, selection and histo
 
 The toolbar Crop modal edits a transient `project::Crop` through the shared `crop`
 control, locked to the selected ratio (Custom resizes freely, Original keeps the source
-shape), and writes it with one `timeline.set_item_param` patch on Apply, so closing never
-mutates the project.
+shape) and writes it with one `timeline.set_item_param` patch on Apply, so closing never
+mutates the project. The dialog reads the session, theme and error line through the frame's
+`Port` and never names `Editor`.
 
 ## Guides and overlays
 
