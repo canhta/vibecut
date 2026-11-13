@@ -41,7 +41,7 @@ Sounds rows: [sounds](sounds/README.md).
 
 ## Media sub-navigation
 
-Import heads the Media group; Media and Timeline are its two pages, with one active row. Timeline lists the project's scenes in project order, the main scene marked and the open scene selected. A click switches scene through `Request::SwitchScene`, the scene row's switch without its select mode. The page shows while the sub-navigation is visible, as Music does. Create and rename stay in the scene sheet until the reference shows them here. Scene commands and the sheet: [timeline scene switcher](../../timeline/README.md#scene-switcher).
+Import heads the Media group; Media and Timeline are its two pages, with one active row. Timeline lists the project's scenes in project order, the main scene marked and the open scene selected in the sub-navigation's style (accent label on the shared row fill, not egui's selection fill). A click switches scene through `Request::SwitchScene`, the scene row's switch without its select mode. The page shows while the sub-navigation is visible, as Music does. Create and rename stay in the scene sheet until the reference shows them here. Scene commands and the sheet: [timeline scene switcher](../../timeline/README.md#scene-switcher).
 
 ## Stickers
 
