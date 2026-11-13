@@ -94,9 +94,19 @@ Geometry is in the [measured frame](#measured-frame). Empty, loading, unavailabl
 
 ### Preview guides and notes
 
-[new] No reference capture shows a guide picker or a notes overlay; the reference source's guide picker is unreachable and its bookmark notes have a web-only layout. The picker sits in the player menu and offers None or Grid (rows and columns 1–24, default 3×3), with a show switch. Notes show each active bookmark's text top-left over the frame, behind a context-menu switch (default on). Guides are hidden by default; both choices persist and are undoable preference edits, and a grid-size drag is one undo step. Export never shows guides or notes.
+[new] No reference capture shows a guide picker or a notes overlay; the reference source's guide picker is unreachable and its bookmark notes have a web-only layout. The picker sits in the player menu and offers None, Grid (rows and columns 1–24, default 3×3) and one row per platform (TikTok, Instagram Reels, YouTube Shorts), with a show switch. A platform row shades the regions that platform's own UI covers, as translucent fills over the displayed frame (the Viewport plane); it draws no lines. Notes show each active bookmark's text top-left over the frame, behind a context-menu switch (default on). Guides are hidden by default; both choices persist and are undoable preference edits, and a grid-size drag is one undo step. Export never shows guides or notes.
 
-Open: the geometry and styling of the guide picker and notes (layout, spacing, width). Platform safe-area guides (TikTok, Reels, Shorts, Spotlight) are a separate ticket, to be built once their geometry is measured.
+Platform safe-area geometry is measured from each platform's own published creator or advertiser material, accessed 2026-11-13. These are the platforms' ad-creative safe zones; none publishes a separate organic-post figure. Fractions are of the frame; the painted regions are the complement of the safe area.
+
+| Platform | Source | Frame | Covered | Fractions |
+|---|---|---|---|---|
+| TikTok | TikTok Ads Help, "TikTok Auction In-Feed Ads" (https://ads.tiktok.com/help/article/video-ads-specifications?lang=en), "In-Feed-Standard Version LTR" safe-zone file, `In-Feed/Feed.png` | 720×1280 | 80 px each side, 160 px top, 440 px bottom, and a 120 px wide rail on the right of the safe area from 720 px above the bottom up to the bottom band | sides 1/9 (0.1111), top 0.125, bottom 0.34375; rail x 0.7222–0.8889, y 0.4375–0.65625 |
+| Instagram Reels | Meta Ads Guide, "Awareness Image Ad Specs on Instagram Reels" (https://www.facebook.com/business/ads-guide/update/image/instagram-reels), "roughly 14% of the top, 35% of the bottom, and 6% on each side" | 1440×2560 | top, bottom and sides | top 0.14, bottom 0.35, sides 0.06 |
+| YouTube Shorts | Google Ads Help, "About video ad specs" (https://support.google.com/google-ads/answer/13547298?hl=en), vertical safe-zone template https://services.google.com/fh/files/misc/youtubesafezoneoverlay_vertical_final.png; the safe rectangle measured from the template's transparent pixels is x 48–887, y 288–1247 | 1080×1920 | top, bottom, left and a wider right column | top 0.15 (288/1920), bottom 0.35 (672/1920), left 0.0444 (48/1080), right 0.1778 (192/1080) |
+
+Spotlight stays out: Snapchat's safe-zone help page renders only through script and its text could not be read; every pixel figure found for Spotlight came from third-party sites, so no primary source was verified. The Reels figure is for image ads on Reels; Meta's Stories guidance differs (14% top, 20% bottom). Google publishes the template for YouTube vertical video ads and says Shorts inventory is covered; no separate organic-Shorts figure exists. The TikTok file varies with caption length and the Anchor format; only the standard In-Feed file is used.
+
+Open: the geometry and styling of the guide picker and notes (layout, spacing, width), the shade colour and opacity of platform regions, and the Spotlight guide until a primary source exists.
 
 ## Effects
 

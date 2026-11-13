@@ -88,13 +88,13 @@ mutates the project. The dialog reads the session, theme and error line through 
 
 ## Guides and overlays
 
-`overlay` holds the model: the `Guide` choice (none, or a grid with rows and columns in 1–24),
+`overlay` holds the model: the `Guide` choice (none, a grid with rows and columns in 1–24, or a platform: TikTok, Instagram Reels, YouTube Shorts, whose `covered_regions` are fractions of the frame),
 per-overlay `OverlayVisibility` and the paint planes. Planes paint
 back to front: `Scene` (the frame image, painted first), `Viewport` (the guide, fixed over the
 displayed frame) and `Hud` (bookmark notes, screen-anchored top-left). The transform handles
 are drawn after all three.
 
-The header menu holds the guide picker (None or Grid), the grid size fields and the guide
+The header menu holds the guide picker (None, Grid or a platform), the grid size fields and the guide
 switch; the canvas context menu holds the notes switch. Each choice is one `preview_guide` or
 `preview_overlays` preference edit recorded in the app's preference history, so it is undoable
 and never touches the project. Grid sizes follow the properties scrub rule: a drag or typed
@@ -104,5 +104,5 @@ several values is one undo step; a drag that ends where it started records nothi
 a bookmark with an empty note shows nothing. Guides and notes are painted only here, so export
 never sees them.
 
-Platform safe-area guides are not in this module; they wait for measured geometry in their own
-ticket. Every value in this section is [new]; no capture exists for the picker or for notes.
+Platform guides shade the regions the platform's UI covers, fractions and sources in
+[the editor UI doc](../../../../../../docs/product/ui/editor.md#preview-guides-and-notes); Spotlight has no primary source and is absent. Every value in this section is [new]; no capture exists for the picker or for notes.
