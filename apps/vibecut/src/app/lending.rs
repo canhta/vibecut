@@ -4,7 +4,10 @@ use crate::{
     Editor, Error, editor::LibraryStore, model_manager::ModelManager,
     services::assets::music::MusicSession,
 };
-use engine::{ByteBudget, MusicError, SoundError, control::MediaAccess};
+use engine::{
+    ByteBudget, MusicError, SoundError,
+    control::{MediaAccess, VisionAccess},
+};
 use libraries::{brand_kit::BrandKit, music::MusicLibrary, sounds::SoundLibrary};
 use std::{
     path::{Path, PathBuf},
@@ -26,6 +29,9 @@ pub(super) struct Lending {
     media: Option<Arc<Mutex<MediaAccess>>>,
     /// The user's brand kits. No editor or control consumer reads it yet.
     brand: Option<Arc<BrandKit>>,
+    /// The installed local face detector behind the shorts review's shot layouts. It reads the
+    /// shared verified model cache on each load and never downloads.
+    vision: Arc<VisionAccess>,
     /// The model service follows the focused editor: it is lent for a frame and
     /// taken back, so downloads outlive any one project window.
     models: Option<ModelManager>,
@@ -57,11 +63,15 @@ impl Lending {
             music: open_music(root),
             media,
             brand,
+            vision: Arc::new(::shorts::installed_faces(budget.clone(), None)),
             models: None,
         }
     }
     pub(super) fn media(&self) -> Option<Arc<Mutex<MediaAccess>>> {
         self.media.clone()
+    }
+    pub(super) fn vision(&self) -> Arc<VisionAccess> {
+        self.vision.clone()
     }
     pub(super) fn brand(&self) -> Option<Arc<BrandKit>> {
         self.brand.clone()

@@ -51,7 +51,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
     }
     let budget = context.budget()?;
     let media = Mutex::new(MediaAccess::open(budget.clone())?);
-    let vision = crate::session::vision_access(budget.clone(), None);
+    let vision = shorts::installed_faces(budget.clone(), None);
     let mut runner = cli_runner(budget)?;
     let mut lease = WriterLease::acquire(&project_path)?;
     let loaded = lease.load()?;
