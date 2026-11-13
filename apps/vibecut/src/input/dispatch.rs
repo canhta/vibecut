@@ -45,10 +45,6 @@ pub enum Dispatch {
     Blocked(BlockedReason),
     NoMatch,
     FellThrough(&'static str),
-    Unavailable {
-        action: &'static str,
-        owner: &'static str,
-    },
     Action {
         action: &'static str,
         chord: Chord,

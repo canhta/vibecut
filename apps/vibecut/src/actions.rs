@@ -331,17 +331,6 @@ impl ActionSpec {
         )
     }
 
-    /// Every registered row is runnable; rows whose feature is not built are not registered.
-    pub const fn available(&self) -> bool {
-        true
-    }
-
-    fn owner(self) -> Option<&'static str> {
-        match self.target {
-            ActionTarget::Ui { owner, .. } => Some(owner),
-            ActionTarget::Engine(_) => None,
-        }
-    }
 }
 
 /// Every key, menu and button action in the desktop app.
@@ -534,8 +523,6 @@ impl Keymap {
                 spec.id,
                 DispatchInfo {
                     bindable: true,
-                    available: spec.available(),
-                    owner: spec.owner(),
                     requires_clipboard: spec.requires_clipboard,
                 },
             );

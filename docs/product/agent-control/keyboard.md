@@ -141,6 +141,6 @@
 | `ui.keybindings.reset` — Restore shortcuts | View | — | — | shortcut dialog |
 <!-- END GENERATED KEYMAP -->
 
-Every project mutation uses its engine command id (`vibecut-cli commands --json` lists the schemas). UI-only actions stay app-owned; actions marked unavailable are registered but do not run.
+Every project mutation uses its engine command id (`vibecut-cli commands --json` lists the schemas). UI-only actions stay app-owned.
 
 Bindings persist in the app preference store. A recorded chord is refused when another action already uses it; resetting an action removes its `isCustomized` marker. A binding profile with an unsupported format or version is refused with a typed diagnostic.

@@ -165,6 +165,8 @@ pub struct Inspection {
     pub media_sort: MediaSort,
     pub media_order: Vec<AssetId>,
     pub media_highlight: Option<AssetId>,
+    /// A clip whose Replace media request is waiting for the window's native picker.
+    pub replace_request: Option<ItemId>,
     pub media_delete_pending: Vec<AssetId>,
     pub sounds: Option<super::assets::sounds::SoundsView>,
     pub music: Option<super::assets::music::MusicView>,

@@ -439,6 +439,7 @@ impl Editor {
             media_sort: self.preferences.media_sort,
             media_order,
             media_highlight,
+            replace_request: self.replace_request,
             media_delete_pending,
             sounds: self.assets.sounds.as_ref().map(|sounds| sounds.view()),
             music: self.music.as_ref().map(|music| music.view()),
@@ -608,15 +609,18 @@ impl Editor {
     pub fn models(&self) -> Option<&dialogs::models::model_manager::ModelManager> {
         self.dialogs.models.manager()
     }
-    /// The folder beside the saved project that holds its frozen stills: `<project>.media`.
-    /// `None` until the project has a saved path, because the engine refuses a relative folder.
-    pub fn media_directory(&self) -> Option<PathBuf> {
-        match &self.session {
-            crate::services::lifecycle::EditorSession::Persistent(saving) => saving
-                .saved_path()
-                .map(|path| path.with_extension("media")),
-            crate::services::lifecycle::EditorSession::Memory(_) => None,
+    /// The folder that holds the frozen stills: `<saved project path>.media`, the same rule
+    /// the sound and music folders use. Before the first save, a temp folder keeps freeze
+    /// usable; the combined build moves it onto the shared media-folder helper.
+    pub fn media_directory(&self) -> PathBuf {
+        if let crate::services::lifecycle::EditorSession::Persistent(saving) = &self.session
+            && let Some(path) = saving.saved_path()
+        {
+            let mut media = path.as_os_str().to_os_string();
+            media.push(".media");
+            return PathBuf::from(media);
         }
+        std::env::temp_dir().join("vibecut-freeze-media")
     }
     /// Hold the selected video item's frame at the playhead for the default hold.
     pub(in crate::editor) fn freeze_selected_frame(&mut self) -> Result<()> {
@@ -624,9 +628,7 @@ impl Editor {
             .freeze_target()
             .ok_or(Error::Invalid("freeze selection"))?;
         let at = self.playback.position()?;
-        let dir = self
-            .media_directory()
-            .ok_or(Error::Invalid("save the project before freezing"))?;
+        let dir = self.media_directory();
         let protected = self
             .session
             .autosave()
