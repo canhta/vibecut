@@ -1089,16 +1089,7 @@ fn speed_presets_and_curves_apply_stretch_keys_undo_and_survive_a_split() {
         at,
     })
     .unwrap();
-    let pieces: Vec<Item> = s
-        .project()
-        .data()
-        .scene()
-        .timeline
-        .main
-        .items
-        .iter()
-        .cloned()
-        .collect();
+    let pieces: Vec<Item> = s.project().data().scene().timeline.main.items.to_vec();
     assert_eq!(pieces.len(), 2);
     let (left, right) = (pieces.first().unwrap(), pieces.last().unwrap());
     assert_eq!(
