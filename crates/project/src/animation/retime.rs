@@ -17,6 +17,9 @@ pub struct Retime {
     pub speed: Speed,
     /// On time-stretches audio so pitch is preserved; off lets pitch follow speed.
     pub maintain_pitch: bool,
+    /// Plays the visible source range backwards: the first output tick shows its
+    /// last source tick and the last output tick shows its first.
+    pub reverse: bool,
     /// Retained mapping and audio processing window after a cut. New speed
     /// edits establish a new window; splitting only advances its output offset.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -38,6 +41,7 @@ impl Default for Retime {
         Self {
             speed: Speed::UNITY,
             maintain_pitch: true,
+            reverse: false,
             window: None,
         }
     }
@@ -53,6 +57,34 @@ pub struct Cut {
 
 fn overflow() -> Error {
     Error::Invalid("retime time overflow")
+}
+
+/// Visible source range of a reversed piece covering window-output ticks
+/// `[offset, offset + duration)`. The first output tick shows source tick
+/// `we - 1 - floor(offset * speed)`; the piece that reaches the window's output
+/// end keeps the window's start, as a forward piece keeps its end.
+fn reverse_visible(
+    window: RetimeWindow,
+    speed: Speed,
+    offset: Tick,
+    duration: Tick,
+) -> Result<SourceRange> {
+    let we = window.source_range.end();
+    let total = speed.output_duration(window.source_range.duration())?;
+    let end = offset.checked_add(duration).ok_or_else(overflow)?;
+    let upper = we
+        .checked_sub(speed.source_offset(offset, Rounding::Floor)?)
+        .ok_or_else(overflow)?;
+    let lower = if end == total {
+        window.source_range.start()
+    } else {
+        let last = end.checked_sub(Tick(1)).ok_or_else(overflow)?;
+        let back = speed.source_offset(last, Rounding::Floor)?;
+        we.checked_sub(Tick(1))
+            .and_then(|t| t.checked_sub(back))
+            .ok_or_else(overflow)?
+    };
+    SourceRange::new(lower, upper).map_err(|_| Error::Invalid("retime continuation window"))
 }
 
 impl Item {
@@ -75,19 +107,24 @@ impl Item {
                 .retime
                 .speed
                 .output_duration(w.source_range.duration())?;
+            let visible_mismatch = if self.retime.reverse {
+                self.source_range != reverse_visible(w, self.retime.speed, w.offset, w.duration)?
+            } else {
+                self.source_time_at(self.start)? != self.source_range.start()
+                    || self.source_range.end()
+                        != if end == total {
+                            w.source_range.end()
+                        } else {
+                            self.source_time_at(self.end()?)?
+                        }
+            };
             if w.offset < Tick::ZERO
                 || w.duration <= Tick::ZERO
                 || end > total
                 || w.source_range.start() < Tick::ZERO
                 || self.source_range.start() < w.source_range.start()
                 || self.source_range.end() > w.source_range.end()
-                || self.source_time_at(self.start)? != self.source_range.start()
-                || self.source_range.end()
-                    != if end == total {
-                        w.source_range.end()
-                    } else {
-                        self.source_time_at(self.end()?)?
-                    }
+                || visible_mismatch
             {
                 return Err(Error::Invalid("retime continuation window"));
             }
@@ -120,6 +157,14 @@ impl Item {
         let window = self.retime_window()?;
         let local = local.checked_add(window.offset).ok_or_else(overflow)?;
         let offset = self.retime.speed.source_offset(local, Rounding::Floor)?;
+        if self.retime.reverse {
+            return window
+                .source_range
+                .end()
+                .checked_sub(Tick(1))
+                .and_then(|last| last.checked_sub(offset))
+                .ok_or_else(overflow);
+        }
         window
             .source_range
             .start()
@@ -128,12 +173,27 @@ impl Item {
     }
 
     /// First timeline tick whose source position reaches `source` (ceiling).
+    /// On a reversed item the source position falls as the timeline advances, so
+    /// this is the first tick whose source position is at or before `source`.
     ///
     /// # Errors
     ///
     /// Returns an error on arithmetic overflow.
     pub fn output_time_of(&self, source: Tick) -> Result<Tick> {
         let window = self.retime_window()?;
+        if self.retime.reverse {
+            let back = window
+                .source_range
+                .end()
+                .checked_sub(Tick(1))
+                .and_then(|last| last.checked_sub(source))
+                .ok_or_else(overflow)?;
+            let local = self.retime.speed.output_offset(back, Rounding::Ceil)?;
+            return local
+                .checked_sub(window.offset)
+                .and_then(|t| self.start.checked_add(t))
+                .ok_or_else(overflow);
+        }
         let offset = source
             .checked_sub(window.source_range.start())
             .ok_or_else(overflow)?;
@@ -154,6 +214,12 @@ impl Item {
     pub fn split_at(&self, at: Tick) -> Result<(Cut, Cut)> {
         if at <= self.start || at >= self.end()? {
             return Err(Error::Invalid("split must be inside item"));
+        }
+        if self.retime.reverse {
+            return Ok((
+                self.reverse_cut(self.start, at)?,
+                self.reverse_cut(at, self.end()?)?,
+            ));
         }
         let left_output = at.checked_sub(self.start).ok_or_else(overflow)?;
         let cut = self.source_time_at(at)?;
@@ -179,6 +245,23 @@ impl Item {
                 )?,
             },
         ))
+    }
+
+    /// The piece of a reversed item covering timeline ticks `[from, to)`, inside
+    /// the item: its visible source range is derived from the retained window.
+    fn reverse_cut(&self, from: Tick, to: Tick) -> Result<Cut> {
+        let offset = from.checked_sub(self.start).ok_or_else(overflow)?;
+        let duration = to.checked_sub(from).ok_or_else(overflow)?;
+        if duration <= Tick::ZERO {
+            return Err(Error::Invalid("split leaves an empty piece"));
+        }
+        let window = self.retime_window()?;
+        let local = window.offset.checked_add(offset).ok_or_else(overflow)?;
+        Ok(Cut {
+            source_range: reverse_visible(window, self.retime.speed, local, duration)?,
+            start: from,
+            retime: self.slice_retime(offset, duration)?,
+        })
     }
 
     fn slice_retime(&self, offset: Tick, duration: Tick) -> Result<Retime> {
@@ -212,6 +295,12 @@ impl Item {
                 source_range: self.source_range,
                 retime: self.retime,
             });
+        }
+        if self.retime.reverse {
+            if at > self.start && at < self.end()? {
+                return self.reverse_cut(at, self.end()?);
+            }
+            return Err(Error::Invalid("reverse trim must stay inside the item"));
         }
         if self.retime.window.is_some() && at > self.start && at < self.end()? {
             let offset = at.checked_sub(self.start).ok_or_else(overflow)?;
@@ -263,6 +352,12 @@ impl Item {
                 source_range: self.source_range,
                 retime: self.retime,
             });
+        }
+        if self.retime.reverse {
+            if at > self.start && at < self.end()? {
+                return self.reverse_cut(self.start, at);
+            }
+            return Err(Error::Invalid("reverse trim must stay inside the item"));
         }
         if self.retime.window.is_some() && at > self.start && at < self.end()? {
             let duration = at.checked_sub(self.start).ok_or_else(overflow)?;

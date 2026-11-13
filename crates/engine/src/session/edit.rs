@@ -183,6 +183,7 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
             | Command::Delete { items }
             | Command::SetItemParamMany { items, .. }
             | Command::SetSpeed { items, .. }
+            | Command::SetReverse { items, .. }
                 if items.len() > super::wire::MAX_COLLECTION =>
             {
                 return Err(EditError::Control(
@@ -700,6 +701,9 @@ pub(crate) fn apply(
             maintain_pitch,
         } => {
             data = retime::execute_set_speed(data, items, speed, maintain_pitch)?;
+        }
+        EditCommand::SetReverse { items, reverse } => {
+            data = retime::execute_set_reverse(data, items, reverse)?;
         }
         EditCommand::SetItemParamMany { items, patch } => {
             data = parameters::execute_set_item_param_many(data, items, patch, copied_text_bytes)?;

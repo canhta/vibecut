@@ -97,6 +97,7 @@ fn fixture(thousandths: u16, maintain_pitch: bool, output_seconds: f64) -> proje
                 window: None,
                 speed,
                 maintain_pitch,
+                reverse: false,
             },
             animations: Default::default(),
             effects: vec![],

@@ -573,6 +573,7 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("set_item_param", Effect::Edit, true, true),
         ("timeline.set_item_param", Effect::Edit, true, true),
         ("timeline.set_speed", Effect::Edit, true, true),
+        ("timeline.set_reverse", Effect::Edit, true, true),
         ("project.set_canvas", Effect::Edit, true, true),
         ("project.set_fps", Effect::Edit, true, true),
         ("project.set_background", Effect::Edit, true, true),

@@ -37,6 +37,39 @@ fn timeline_group_trim_refuses_unrepresentable_edges_and_source_exhaustion() {
     }
 }
 
+#[test]
+fn reverse_keeps_the_span_undoes_and_refuses_retained_pieces() {
+    let mut s = session(
+        vec![video(1, 0, range(10 * SECOND, 30 * SECOND))],
+        vec![audio(2, 0, range(10 * SECOND, 30 * SECOND))],
+        false,
+    );
+    let span = item(&s, 1).end().unwrap();
+    s.apply(set_reverse(&[1, 2], true)).unwrap();
+    for id in [1, 2] {
+        assert!(item(&s, id).retime.reverse);
+        assert_eq!(item(&s, id).end().unwrap(), span, "reverse keeps the span");
+    }
+    s.apply(set_speed(&[1], 2.0, true)).unwrap();
+    assert!(
+        item(&s, 1).retime.reverse,
+        "a speed change keeps the direction"
+    );
+    s.undo().unwrap();
+    s.undo().unwrap();
+    assert!(!item(&s, 1).retime.reverse);
+    assert!(s.apply(set_reverse(&[1, 1], true)).is_err());
+    assert!(s.apply(set_reverse(&[], true)).is_err());
+    assert!(s.apply(set_reverse(&[999], true)).is_err());
+}
+
+fn set_reverse(items: &[u64], reverse: bool) -> Command {
+    Command::SetReverse {
+        items: items.iter().map(|id| ItemId(*id)).collect(),
+        reverse,
+    }
+}
+
 proptest::proptest! {
     #![proptest_config(proptest::test_runner::Config::with_cases(128))]
     #[test]
@@ -236,7 +269,8 @@ fn set_speed_adjusts_duration_stretches_keys_and_undoes() {
             Retime {
                 window: None,
                 speed: speed(value),
-                maintain_pitch: true
+                maintain_pitch: true,
+                reverse: false
             }
         );
         let keys: Vec<_> = after
