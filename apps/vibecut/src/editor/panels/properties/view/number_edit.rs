@@ -78,6 +78,18 @@ struct Layout {
 impl Panel<'_, '_> {
     /// Writes one field; with uniform scale on, Scale X also writes Scale Y.
     fn write_field(&mut self, item: ItemId, spec: ScrubSpec, value: &str) {
+        // Fades are seconds on `audio.set_fade`, not item params, and never keyed.
+        if let Some(edge) = read::fade_edge(spec.field) {
+            match value.trim().parse::<f64>() {
+                Ok(seconds) => self.actions.push(Action::SetFade {
+                    item,
+                    edge,
+                    seconds,
+                }),
+                Err(_) => self.fail(Error::Invalid("fade duration")),
+            }
+            return;
+        }
         if (spec.field == "opacity" || spec.field.starts_with("params."))
             && read::channel_has_keys(self.cx.session.project(), item, spec.field)
             && self.animated_time(item, spec.field).is_none()

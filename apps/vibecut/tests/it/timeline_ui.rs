@@ -2670,10 +2670,8 @@ fn audio_mute_and_volume_controls_commit_one_step_and_persist() {
         .click();
     harness.run_steps(2);
     let history = harness.state().session.history_len().0;
-    harness
-        .get(By::new().predicate(|n| n.author_id() == Some("inspector.audio_muted")))
-        .click();
-    harness.run_steps(2);
+    // Mute lives on the clip menu; the Audio tab carries volume and fades only.
+    open_item_menu(&mut harness, audio, "mute");
     assert_eq!(harness.state().session.history_len().0, history + 1);
     let ItemParams::Audio(params) = &item(harness.state(), audio).content else {
         panic!("audio")

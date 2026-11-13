@@ -1,5 +1,6 @@
 //! Applies the properties workflows.
 mod appearance;
+mod audio;
 mod canvas;
 mod commands;
 mod effects;
@@ -98,6 +99,11 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
                 speed,
                 maintain_pitch,
             } => speed::set_speed(desk, item, speed, maintain_pitch),
+            Action::SetFade {
+                item,
+                edge,
+                seconds,
+            } => audio::set_fade(desk, item, edge, seconds),
             Action::SetTransitionDuration {
                 transition,
                 duration,

@@ -11,8 +11,7 @@ use crate::kit;
 mod dialog;
 
 use super::{
-    AUDIO_GAIN_SCRUB, ElementKind, ItemId, PropertiesTab, ScrubSpec, SelectionScope,
-    TEXT_SIZE_SCRUB, shared_fields,
+    ElementKind, ItemId, PropertiesTab, ScrubSpec, SelectionScope, TEXT_SIZE_SCRUB, shared_fields,
 };
 
 /// Fields that share one diamond: an X/Y pair keys together.
@@ -1231,25 +1230,9 @@ impl<'a, 'c> Panel<'a, 'c> {
                     },
                 );
             }
-            PropertiesTab::Audio if kind == ElementKind::Audio => {
-                self.panel_section(
-                    ui,
-                    "inspector.section.audio",
-                    "inspector.audio",
-                    Text::Audio,
-                    true,
-                    false,
-                    |panel, ui| {
-                        panel.scrub_field(ui, item, AUDIO_GAIN_SCRUB);
-                        if let Some(field) =
-                            shared_fields(panel.cx.session.project(), panel.cx.selection())
-                                .into_iter()
-                                .find(|field| field.id == "audio_muted")
-                        {
-                            panel.audio_mute_control(ui, &field);
-                        }
-                    },
-                );
+            // The tab list already drops a video without source audio.
+            PropertiesTab::Audio if matches!(kind, ElementKind::Audio | ElementKind::Video) => {
+                self.audio_section(ui, item);
             }
             PropertiesTab::Speed if matches!(kind, ElementKind::Video | ElementKind::Audio) => {
                 self.panel_section(
@@ -1305,6 +1288,8 @@ fn body_ui(ui: &mut egui::Ui, area: Rect) -> egui::Ui {
     body.spacing_mut().item_spacing = Vec2::ZERO;
     body
 }
+
+mod audio;
 
 mod canvas;
 
