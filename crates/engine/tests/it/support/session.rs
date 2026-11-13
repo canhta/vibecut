@@ -57,32 +57,14 @@ pub(crate) fn project() -> Project {
         .first_mut()
         .unwrap()
         .items = vec![
-        Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: ItemId(10),
-            source_asset: None,
-            source_range: range(100, 140),
-            start: Tick(0),
-            content: content(),
-        },
-        Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: ItemId(11),
-            source_asset: None,
-            source_range: range(200, 240),
-            start: Tick(60),
-            content: content(),
-        },
+        testkit::item::item(ItemId(10), content())
+            .source(range(100, 140))
+            .start(Tick(0))
+            .build(),
+        testkit::item::item(ItemId(11), content())
+            .source(range(200, 240))
+            .start(Tick(60))
+            .build(),
     ];
     Project::new(data).unwrap()
 }
@@ -153,29 +135,11 @@ pub(crate) fn five_clip_pairs() -> Session {
         .map(|(index, pair)| {
             let start = pair.first().copied().unwrap_or_default();
             let end = pair.last().copied().unwrap_or_default();
-            Item {
-                hidden: false,
-                blend_mode: Default::default(),
-                retime: Default::default(),
-                masks: Vec::new(),
-                effects: Vec::new(),
-                animations: Default::default(),
-                id: ItemId(index as u64 + 1),
-                source_asset: Some(AssetId(2)),
-                source_range: range(edge(start).0, edge(end).0),
-                start: edge(start),
-                content: ItemParams::Video(project::VideoParams {
-                    fades: Default::default(),
-                    source_audio_enabled: false,
-                    volume: 0.0,
-                    muted: false,
-                    crop: None,
-                    fit: Default::default(),
-                    cleanup: Default::default(),
-                    background: project::ClipBackground::None,
-                    reduce_noise: false,
-                }),
-            }
+            testkit::item::video(ItemId(index as u64 + 1))
+                .asset(AssetId(2))
+                .source(range(edge(start).0, edge(end).0))
+                .start(edge(start))
+                .build()
         })
         .collect();
     data.scene_mut().timeline.insert_track(Track {
@@ -191,25 +155,11 @@ pub(crate) fn five_clip_pairs() -> Session {
             .map(|(index, pair)| {
                 let start = pair.first().copied().unwrap_or_default();
                 let end = pair.last().copied().unwrap_or_default();
-                Item {
-                    hidden: false,
-                    blend_mode: Default::default(),
-                    retime: Default::default(),
-                    masks: Vec::new(),
-                    effects: Vec::new(),
-                    animations: Default::default(),
-                    id: ItemId(index as u64 + 11),
-                    source_asset: Some(AssetId(1)),
-                    source_range: range(edge(start).0, edge(end).0),
-                    start: edge(start),
-                    content: ItemParams::Audio(project::AudioParams {
-                        fades: Default::default(),
-                        volume: 0.0,
-                        muted: false,
-                        source: Default::default(),
-                        cleanup: Default::default(),
-                    }),
-                }
+                testkit::item::audio(ItemId(index as u64 + 11))
+                    .asset(AssetId(1))
+                    .source(range(edge(start).0, edge(end).0))
+                    .start(edge(start))
+                    .build()
             })
             .collect(),
     });
@@ -287,18 +237,9 @@ pub(crate) fn caption_words_item(
     source: (i64, i64),
     cues: Vec<captions::Cue>,
 ) -> Item {
-    Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        masks: Vec::new(),
-        effects: Vec::new(),
-        animations: Default::default(),
-        id: ItemId(id),
-        source_asset: Some(AssetId(7)),
-        source_range: range(source.0, source.1),
-        start: Tick(start),
-        content: ItemParams::Caption(project::CaptionParams {
+    testkit::item::item(
+        ItemId(id),
+        ItemParams::Caption(project::CaptionParams {
             emphasis: Default::default(),
             word_highlight: false,
             preset: None,
@@ -308,22 +249,17 @@ pub(crate) fn caption_words_item(
                 cues,
             },
         }),
-    }
+    )
+    .asset(AssetId(7))
+    .source(range(source.0, source.1))
+    .start(Tick(start))
+    .build()
 }
 pub(crate) fn clip_item(id: u64, start: i64, source: (i64, i64)) -> Item {
-    Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        masks: Vec::new(),
-        effects: Vec::new(),
-        animations: Default::default(),
-        id: ItemId(id),
-        source_asset: None,
-        source_range: range(source.0, source.1),
-        start: Tick(start),
-        content: content(),
-    }
+    testkit::item::item(ItemId(id), content())
+        .source(range(source.0, source.1))
+        .start(Tick(start))
+        .build()
 }
 pub(crate) fn word_asset(data: &mut project::ProjectData, duration: i64) {
     data.assets.push(

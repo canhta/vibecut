@@ -398,8 +398,8 @@ mod tests {
     use super::*;
     use crate::editor::panels::player::state::PreviewAxis;
     use project::{
-        Color, Item, ItemParams, MaskPath, MaskShape, OverlayParams, Project, ProjectId, Track,
-        TrackId, TrackKind,
+        Color, ItemParams, MaskPath, MaskShape, OverlayParams, Project, ProjectId, Track, TrackId,
+        TrackKind,
     };
     use time::{SourceRange, TICKS_PER_SECOND};
 
@@ -427,21 +427,17 @@ mod tests {
             muted: false,
             hidden: false,
             locked: false,
-            items: vec![Item {
-                hidden: false,
-                blend_mode: Default::default(),
-                retime: Default::default(),
-                masks: vec![mask],
-                effects: Vec::new(),
-                animations: Default::default(),
-                id: ItemId(1),
-                source_asset: None,
-                source_range: SourceRange::new(Tick::ZERO, Tick(20 * TICKS_PER_SECOND)).unwrap(),
-                start: Tick::ZERO,
-                content: ItemParams::Overlay(OverlayParams {
-                    color: Color([255; 4]),
-                }),
-            }],
+            items: vec![
+                testkit::item::item(
+                    ItemId(1),
+                    ItemParams::Overlay(OverlayParams {
+                        color: Color([255; 4]),
+                    }),
+                )
+                .source(SourceRange::new(Tick::ZERO, Tick(20 * TICKS_PER_SECOND)).unwrap())
+                .masks(vec![mask])
+                .build(),
+            ],
         });
         let project = Project::new(data).unwrap();
         let renderer =

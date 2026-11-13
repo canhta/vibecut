@@ -27,21 +27,14 @@ use vibecut::{
 };
 
 fn overlay(id: u64) -> Item {
-    Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        masks: Vec::new(),
-        effects: Vec::new(),
-        animations: Default::default(),
-        id: ItemId(id),
-        source_asset: None,
-        source_range: SourceRange::new(Tick::ZERO, Tick(20 * TICKS_PER_SECOND)).unwrap(),
-        start: Tick::ZERO,
-        content: ItemParams::Overlay(OverlayParams {
+    testkit::item::item(
+        ItemId(id),
+        ItemParams::Overlay(OverlayParams {
             color: project::Color([30, 160, 90, 255]),
         }),
-    }
+    )
+    .source(SourceRange::new(Tick::ZERO, Tick(20 * TICKS_PER_SECOND)).unwrap())
+    .build()
 }
 
 fn project(fps: FrameRate, width: u32, height: u32, two_items: bool) -> Project {
@@ -76,19 +69,13 @@ fn text(id: u64) -> Item {
             project::Param::new(project::ParamValue::Scalar(0.345 * 360.0)).unwrap(),
         )
         .unwrap();
-    Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        masks: Vec::new(),
-        effects: Vec::new(),
-        animations,
-        id: ItemId(id),
-        source_asset: None,
-        source_range: SourceRange::new(Tick::ZERO, Tick(20 * TICKS_PER_SECOND)).unwrap(),
-        start: Tick::ZERO,
-        content: ItemParams::Text(project::TextParams::new("Hello world")),
-    }
+    testkit::item::item(
+        ItemId(id),
+        ItemParams::Text(project::TextParams::new("Hello world")),
+    )
+    .source(SourceRange::new(Tick::ZERO, Tick(20 * TICKS_PER_SECOND)).unwrap())
+    .animations(animations)
+    .build()
 }
 
 fn text_project(track_locked: bool, track_hidden: bool) -> Project {

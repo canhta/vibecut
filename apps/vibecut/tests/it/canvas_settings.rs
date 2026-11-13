@@ -482,29 +482,12 @@ fn proxied_editor(source: &std::path::Path) -> Editor {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![project::Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: project::ItemId(1),
-            source_asset: Some(media::AssetId(1)),
-            source_range: time::TimeRange::new(time::Tick::ZERO, duration).unwrap(),
-            start: time::Tick::ZERO,
-            content: project::ItemParams::Video(project::VideoParams {
-                fades: Default::default(),
-                source_audio_enabled: false,
-                volume: 0.0,
-                muted: false,
-                crop: None,
-                cleanup: Default::default(),
-                reduce_noise: false,
-                background: project::ClipBackground::None,
-                fit: Default::default(),
-            }),
-        }],
+        items: vec![
+            testkit::item::video(project::ItemId(1))
+                .asset(media::AssetId(1))
+                .source(time::TimeRange::new(time::Tick::ZERO, duration).unwrap())
+                .build(),
+        ],
     });
     let session = Session::new(Project::new(data).unwrap(), 10).unwrap();
     let mut playback = Playback::new(

@@ -66,21 +66,16 @@ pub(crate) fn overlay_project_color(
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![project::Item {
-            hidden: false,
-            retime: Default::default(),
-            blend_mode: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: project::ItemId(0),
-            source_asset: None,
-            source_range: TimeRange::new(Tick::ZERO, duration).unwrap(),
-            start: Tick::ZERO,
-            content: project::ItemParams::Overlay(project::OverlayParams {
-                color: project::Color(color),
-            }),
-        }],
+        items: vec![
+            testkit::item::item(
+                project::ItemId(0),
+                project::ItemParams::Overlay(project::OverlayParams {
+                    color: project::Color(color),
+                }),
+            )
+            .source(TimeRange::new(Tick::ZERO, duration).unwrap())
+            .build(),
+        ],
     });
     let project = project::Project::new(data).unwrap();
     fs::write(project_path, project::encode(&project, true).unwrap()).unwrap();

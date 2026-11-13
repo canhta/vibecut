@@ -52,21 +52,18 @@ fn session() -> Session {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            id: ItemId(2),
-            source_asset: None,
-            source_range: SourceRange::new(frame(50), frame(650)).unwrap(),
-            start: frame(100),
-            content: ItemParams::Overlay(OverlayParams {
-                color: Color([255; 4]),
-            }),
-            animations: animated(),
-        }],
+        items: vec![
+            testkit::item::item(
+                ItemId(2),
+                ItemParams::Overlay(OverlayParams {
+                    color: Color([255; 4]),
+                }),
+            )
+            .source(SourceRange::new(frame(50), frame(650)).unwrap())
+            .start(frame(100))
+            .animations(animated())
+            .build(),
+        ],
     });
     Session::new(Project::new(data).unwrap(), 100).unwrap()
 }
@@ -1875,17 +1872,7 @@ fn clipboard_translates_output_local_bezier_snapshot_with_one_undo() {
         .find(|i| i.id == ItemId(2))
         .unwrap();
     video.source_asset = Some(media::AssetId(99));
-    video.content = ItemParams::Video(VideoParams {
-        source_audio_enabled: false,
-        volume: 0.0,
-        muted: false,
-        crop: None,
-        fades: Default::default(),
-        fit: Default::default(),
-        cleanup: Default::default(),
-        background: project::ClipBackground::None,
-        reduce_noise: false,
-    });
+    video.content = ItemParams::Video(VideoParams::plain());
     video.retime.speed = time::Speed::from_thousandths(2000).unwrap();
     let mut s = Session::new(Project::new(data).unwrap(), 100).unwrap();
     let q = frame(1).0;
@@ -3333,19 +3320,13 @@ fn graphic_appearance_keys_follow_trim_split_move_and_time_scaling_without_media
             ),
         )
         .unwrap();
-    data.scene_mut().timeline.main.items.push(Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        masks: vec![],
-        effects: vec![],
-        animations,
-        id: ItemId(397),
-        source_asset: None,
-        source_range: SourceRange::new(Tick(30), Tick(130)).unwrap(),
-        start: Tick(20),
-        retime: Default::default(),
-        content: ItemParams::Graphic(GraphicParams::rectangle()),
-    });
+    data.scene_mut().timeline.main.items.push(
+        testkit::item::item(ItemId(397), ItemParams::Graphic(GraphicParams::rectangle()))
+            .source(SourceRange::new(Tick(30), Tick(130)).unwrap())
+            .start(Tick(20))
+            .animations(animations)
+            .build(),
+    );
     let mut s = Session::new(Project::new(data).unwrap(), 100).unwrap();
     s.apply(Command::TrimStart {
         item: ItemId(397),

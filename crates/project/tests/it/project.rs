@@ -388,29 +388,9 @@ pub(crate) fn source(path: PathBuf) -> SourceAsset {
         .build()
 }
 fn item(id: u64, start: i64) -> Item {
-    Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        masks: vec![Mask::new(
-            "glyphs",
-            MaskShape::Text {
-                content: "Mask".into(),
-                font_size: 20.0,
-                font: "Lobster".into(),
-                weight: 600,
-                italic: true,
-                letter_spacing: 2.0,
-                line_height: 30.0,
-            },
-        )],
-        retime: Default::default(),
-        effects: Vec::new(),
-        animations: Default::default(),
-        id: ItemId(id),
-        source_asset: None,
-        source_range: range(0, 10),
-        start: Tick(start),
-        content: ItemParams::Text(TextParams {
+    testkit::item::item(
+        ItemId(id),
+        ItemParams::Text(TextParams {
             content: "Tiếng Việt".into(),
             font: "Be Vietnam Pro".into(),
             font_size: 32.0,
@@ -441,7 +421,22 @@ fn item(id: u64, start: i64) -> Item {
                 radius: 20.0,
             }),
         }),
-    }
+    )
+    .source(range(0, 10))
+    .start(Tick(start))
+    .masks(vec![Mask::new(
+        "glyphs",
+        MaskShape::Text {
+            content: "Mask".into(),
+            font_size: 20.0,
+            font: "Lobster".into(),
+            weight: 600,
+            italic: true,
+            letter_spacing: 2.0,
+            line_height: 30.0,
+        },
+    )])
+    .build()
 }
 fn track(items: Vec<Item>) -> Track {
     Track {
@@ -475,10 +470,7 @@ fn populated(path: PathBuf) -> Project {
     };
     let contents = [
         ItemParams::Video(VideoParams {
-            fades: Default::default(),
             source_audio_enabled: true,
-            volume: 0.0,
-            muted: false,
             crop: Some(Crop {
                 x: 0.1,
                 y: 0.2,
@@ -486,9 +478,8 @@ fn populated(path: PathBuf) -> Project {
                 height: 0.5,
             }),
             fit: FitMode::Stretch,
-            cleanup: Default::default(),
-            background: project::ClipBackground::None,
             reduce_noise: true,
+            ..VideoParams::plain()
         }),
         ItemParams::Audio(AudioParams {
             fades: project::Fades {
@@ -505,8 +496,7 @@ fn populated(path: PathBuf) -> Project {
             },
             volume: -6.0,
             muted: true,
-            source: Default::default(),
-            cleanup: Default::default(),
+            ..AudioParams::default()
         }),
         item(0, 0).content,
         ItemParams::Caption(CaptionParams {
@@ -537,23 +527,18 @@ fn populated(path: PathBuf) -> Project {
             muted: true,
             hidden: true,
             locked: true,
-            items: vec![Item {
-                hidden: false,
-                blend_mode: Default::default(),
-                retime: Default::default(),
-                masks: Vec::new(),
-                effects: Vec::new(),
-                animations: if matches!(content, ItemParams::Video(_)) {
-                    crop_channels(&[(0, 0.1), (10, 0.5)], &[(0, 0.0), (10, 0.5)])
-                } else {
-                    Default::default()
-                },
-                id: ItemId(i as u64),
-                source_asset,
-                source_range: range(0, 10),
-                start: Tick(5),
-                content,
-            }],
+            items: vec![
+                testkit::item::item(ItemId(i as u64), content)
+                    .source_asset(source_asset)
+                    .source(range(0, 10))
+                    .start(Tick(5))
+                    .animations(if matches!(content, ItemParams::Video(_)) {
+                        crop_channels(&[(0, 0.1), (10, 0.5)], &[(0, 0.0), (10, 0.5)])
+                    } else {
+                        Default::default()
+                    })
+                    .build(),
+            ],
         });
     }
     for (index, kind) in [
@@ -871,11 +856,8 @@ fn model_trust_boundaries() {
         .first_mut()
         .unwrap()
         .content = ItemParams::Audio(AudioParams {
-        fades: Default::default(),
         volume: f32::NAN,
-        muted: false,
-        source: Default::default(),
-        cleanup: Default::default(),
+        ..AudioParams::default()
     });
     cases.push(d);
     let mut d = base.clone();
@@ -896,10 +878,7 @@ fn model_trust_boundaries() {
             },
             fade_out: project::Fade::default(),
         },
-        volume: 0.0,
-        muted: false,
-        source: Default::default(),
-        cleanup: Default::default(),
+        ..AudioParams::default()
     });
     cases.push(d);
     let mut d = base.clone();
@@ -920,10 +899,7 @@ fn model_trust_boundaries() {
                 curve: project::FadeCurve::default(),
             },
         },
-        volume: 0.0,
-        muted: false,
-        source: Default::default(),
-        cleanup: Default::default(),
+        ..AudioParams::default()
     });
     cases.push(d);
     type Corrupt = fn(&mut TextParams);
@@ -1260,25 +1236,18 @@ fn music_candidate(music: LibraryMusic) -> ProjectData {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![Item {
-            id: ItemId(1),
-            hidden: false,
-            blend_mode: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            retime: Default::default(),
-            source_asset: Some(AssetId(3)),
-            source_range: range(0, 10),
-            start: Tick::ZERO,
-            content: ItemParams::Audio(AudioParams {
-                fades: Default::default(),
-                volume: 0.0,
-                muted: false,
-                source: AudioSource::Music { music },
-                cleanup: Default::default(),
-            }),
-        }],
+        items: vec![
+            testkit::item::item(
+                ItemId(1),
+                ItemParams::Audio(AudioParams {
+                    source: AudioSource::Music { music },
+                    ..AudioParams::default()
+                }),
+            )
+            .asset(AssetId(3))
+            .source(range(0, 10))
+            .build(),
+        ],
     });
     data
 }
@@ -2250,15 +2219,9 @@ fn fit_box_reads_the_asset_stream_and_the_crop_and_ignores_other_items() {
     let mut video = item(1, 0);
     video.source_asset = Some(AssetId(3));
     video.content = ItemParams::Video(VideoParams {
-        fades: Default::default(),
         source_audio_enabled: true,
-        volume: 0.0,
-        muted: false,
-        crop: None,
         fit: FitMode::Fit,
-        cleanup: Default::default(),
-        reduce_noise: false,
-        background: project::ClipBackground::None,
+        ..VideoParams::plain()
     });
     let assets = [asset];
     // 16:9 inside a square canvas: a 1000 x 562.5 box centred vertically.

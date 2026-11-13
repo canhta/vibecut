@@ -167,27 +167,21 @@ fn item_blur_is_isolated_from_track_below_and_uses_animation() {
         .into_data();
     data.canvas.width = 256;
     data.canvas.height = 144;
-    let item = Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        masks: vec![],
-        effects: vec![
-            effect_definition("blur")
-                .unwrap()
-                .instance("b")
-                .with("intensity", EffectValue::Scalar(100.0))
-                .unwrap(),
-        ],
-        animations: Default::default(),
-        id: ItemId(1),
-        source_asset: None,
-        source_range: SourceRange::new(Tick::ZERO, FrameRate::FPS_30.tick_of(30).unwrap()).unwrap(),
-        start: Tick::ZERO,
-        content: ItemParams::Overlay(OverlayParams {
+    let item = testkit::item::item(
+        ItemId(1),
+        ItemParams::Overlay(OverlayParams {
             color: Color([255, 0, 0, 255]),
         }),
-    };
+    )
+    .source(SourceRange::new(Tick::ZERO, FrameRate::FPS_30.tick_of(30).unwrap()).unwrap())
+    .effects(vec![
+        effect_definition("blur")
+            .unwrap()
+            .instance("b")
+            .with("intensity", EffectValue::Scalar(100.0))
+            .unwrap(),
+    ])
+    .build();
     data.canvas.background = Color([0, 0, 255, 255]);
     data.scene_mut().timeline.insert_track(Track {
         id: TrackId(1),
@@ -905,25 +899,23 @@ fn colour_grade_stages_precede_the_lut_and_a_later_chroma_key() {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![project::Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: vec![],
-            effects: vec![grade.clone(), key.clone()],
-            animations: Default::default(),
-            id: project::ItemId(1),
-            source_asset: None,
-            source_range: time::SourceRange::new(
-                time::Tick::ZERO,
-                time::FrameRate::FPS_30.tick_of(30).unwrap(),
+        items: vec![
+            testkit::item::item(
+                project::ItemId(1),
+                ItemParams::Overlay(OverlayParams {
+                    color: Color([0; 4]),
+                }),
             )
-            .unwrap(),
-            start: time::Tick::ZERO,
-            content: ItemParams::Overlay(OverlayParams {
-                color: Color([0; 4]),
-            }),
-        }],
+            .source(
+                time::SourceRange::new(
+                    time::Tick::ZERO,
+                    time::FrameRate::FPS_30.tick_of(30).unwrap(),
+                )
+                .unwrap(),
+            )
+            .effects(vec![grade.clone(), key.clone()])
+            .build(),
+        ],
     });
     let project = Project::new(data).unwrap();
     // The overlay lives on the inserted track 1, not on the main track.
@@ -1170,24 +1162,23 @@ fn masked_item_chroma_key_composes_with_track_below() {
     mask.width = 0.5;
     mask.height = 1.0;
     mask.center_x = -0.25;
-    let item = |effects: Vec<EffectInstance>| Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        id: ItemId(1),
-        masks: vec![mask.clone()],
-        effects,
-        animations: Default::default(),
-        source_asset: None,
-        source_range: time::SourceRange::new(
-            time::Tick::ZERO,
-            time::FrameRate::FPS_30.tick_of(30).unwrap(),
+    let item = |effects: Vec<EffectInstance>| {
+        testkit::item::item(
+            ItemId(1),
+            ItemParams::Overlay(OverlayParams {
+                color: Color([0, 255, 0, 255]),
+            }),
         )
-        .unwrap(),
-        start: time::Tick::ZERO,
-        content: ItemParams::Overlay(OverlayParams {
-            color: Color([0, 255, 0, 255]),
-        }),
+        .source(
+            time::SourceRange::new(
+                time::Tick::ZERO,
+                time::FrameRate::FPS_30.tick_of(30).unwrap(),
+            )
+            .unwrap(),
+        )
+        .masks(vec![mask.clone()])
+        .effects(effects)
+        .build()
     };
     let render = |effects| {
         let mut data = data.clone();
@@ -1252,24 +1243,23 @@ fn masked_item_grade_applies_only_inside_the_mask() {
     mask.width = 0.5;
     mask.height = 1.0;
     mask.center_x = -0.25;
-    let item = |effects: Vec<EffectInstance>| Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        id: ItemId(1),
-        masks: vec![mask.clone()],
-        effects,
-        animations: Default::default(),
-        source_asset: None,
-        source_range: time::SourceRange::new(
-            time::Tick::ZERO,
-            time::FrameRate::FPS_30.tick_of(30).unwrap(),
+    let item = |effects: Vec<EffectInstance>| {
+        testkit::item::item(
+            ItemId(1),
+            ItemParams::Overlay(OverlayParams {
+                color: Color([128, 128, 128, 255]),
+            }),
         )
-        .unwrap(),
-        start: time::Tick::ZERO,
-        content: ItemParams::Overlay(OverlayParams {
-            color: Color([128, 128, 128, 255]),
-        }),
+        .source(
+            time::SourceRange::new(
+                time::Tick::ZERO,
+                time::FrameRate::FPS_30.tick_of(30).unwrap(),
+            )
+            .unwrap(),
+        )
+        .masks(vec![mask.clone()])
+        .effects(effects)
+        .build()
     };
     let render = |effects| {
         let mut data = data.clone();
@@ -1390,28 +1380,23 @@ fn an_adapter_that_lacks_a_pass_falls_back_to_cpu_for_it() {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: vec![],
-            effects: vec![
+        items: vec![
+            testkit::item::item(
+                ItemId(1),
+                ItemParams::Overlay(OverlayParams {
+                    color: Color([100, 50, 20, 255]),
+                }),
+            )
+            .source(SourceRange::new(Tick::ZERO, FrameRate::FPS_30.tick_of(30).unwrap()).unwrap())
+            .effects(vec![
                 effect_definition("color_grade")
                     .unwrap()
                     .instance("g")
                     .with("brightness", EffectValue::Scalar(50.0))
                     .unwrap(),
-            ],
-            animations: Default::default(),
-            id: ItemId(1),
-            source_asset: None,
-            source_range: SourceRange::new(Tick::ZERO, FrameRate::FPS_30.tick_of(30).unwrap())
-                .unwrap(),
-            start: Tick::ZERO,
-            content: ItemParams::Overlay(OverlayParams {
-                color: Color([100, 50, 20, 255]),
-            }),
-        }],
+            ])
+            .build(),
+        ],
     });
     let project = Project::new(data).unwrap();
     let render = |settings: RenderSettings| {
@@ -1569,29 +1554,13 @@ fn content_scene(effects: Vec<project::EffectInstance>) -> project::Project {
     data.canvas.width = 4;
     data.canvas.height = 4;
     data.assets.push(asset);
-    data.scene_mut().timeline.main.items.push(Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        masks: vec![],
-        effects,
-        animations: Default::default(),
-        id: ItemId(1),
-        source_asset: Some(media::AssetId(1)),
-        source_range: SourceRange::new(Tick::ZERO, tick(2, 1)).unwrap(),
-        start: Tick::ZERO,
-        content: ItemParams::Video(VideoParams {
-            crop: None,
-            fades: Default::default(),
-            source_audio_enabled: false,
-            volume: 0.0,
-            muted: false,
-            fit: Default::default(),
-            cleanup: Default::default(),
-            background: project::ClipBackground::None,
-            reduce_noise: false,
-        }),
-    });
+    data.scene_mut().timeline.main.items.push(
+        testkit::item::video(ItemId(1))
+            .asset(media::AssetId(1))
+            .source(SourceRange::new(Tick::ZERO, tick(2, 1)).unwrap())
+            .effects(effects)
+            .build(),
+    );
     Project::new(data).unwrap()
 }
 

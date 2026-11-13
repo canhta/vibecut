@@ -108,15 +108,8 @@ pub(crate) fn fixture() -> Fixture {
         SourceRange::new(Tick::ZERO, Tick(6 * SECOND)).unwrap(),
         Some(AssetId(1)),
         ItemParams::Video(project::VideoParams {
-            fades: Default::default(),
             source_audio_enabled: true,
-            volume: 0.0,
-            muted: false,
-            crop: None,
-            fit: Default::default(),
-            cleanup: Default::default(),
-            background: project::ClipBackground::None,
-            reduce_noise: false,
+            ..project::VideoParams::plain()
         }),
     );
     let video_b = insert(
@@ -126,15 +119,8 @@ pub(crate) fn fixture() -> Fixture {
         SourceRange::new(Tick(6 * SECOND), Tick(10 * SECOND)).unwrap(),
         Some(AssetId(1)),
         ItemParams::Video(project::VideoParams {
-            fades: Default::default(),
             source_audio_enabled: true,
-            volume: 0.0,
-            muted: false,
-            crop: None,
-            fit: Default::default(),
-            cleanup: Default::default(),
-            background: project::ClipBackground::None,
-            reduce_noise: false,
+            ..project::VideoParams::plain()
         }),
     );
     let _audio_item = insert(
@@ -143,13 +129,7 @@ pub(crate) fn fixture() -> Fixture {
         Tick::ZERO,
         SourceRange::new(Tick::ZERO, Tick(10 * SECOND)).unwrap(),
         Some(AssetId(2)),
-        ItemParams::Audio(project::AudioParams {
-            fades: Default::default(),
-            volume: 0.0,
-            muted: false,
-            source: Default::default(),
-            cleanup: Default::default(),
-        }),
+        ItemParams::Audio(project::AudioParams::default()),
     );
     let _text_item = insert(
         &mut session,
@@ -2716,11 +2696,9 @@ fn mixed_audio_mute_shows_indeterminate_and_undo_restores_each_item() {
         SourceRange::new(Tick::ZERO, Tick(10 * SECOND)).unwrap(),
         Some(AssetId(2)),
         ItemParams::Audio(project::AudioParams {
-            fades: Default::default(),
             volume: -6.0,
             muted: true,
-            source: Default::default(),
-            cleanup: Default::default(),
+            ..project::AudioParams::default()
         }),
     );
     let video = fixture.video_a;
@@ -3605,15 +3583,8 @@ fn clip_details_remain_visible_after_scrolling_deep_into_a_long_clip() {
         SourceRange::new(Tick::ZERO, duration).unwrap(),
         Some(AssetId(3)),
         ItemParams::Video(project::VideoParams {
-            fades: Default::default(),
             source_audio_enabled: true,
-            volume: 0.0,
-            muted: false,
-            crop: None,
-            fit: Default::default(),
-            cleanup: Default::default(),
-            background: project::ClipBackground::None,
-            reduce_noise: false,
+            ..project::VideoParams::plain()
         }),
     );
     let mut h = harness(f.editor);

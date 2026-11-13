@@ -682,24 +682,22 @@ fn masked_scene(width: u32, height: u32, masks: Vec<project::Mask>) -> project::
     data.canvas.width = width;
     data.canvas.height = height;
     data.canvas.background = project::Color([0; 4]);
-    data.scene_mut().timeline.main.items.push(project::Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        id: project::ItemId(1),
-        masks,
-        effects: vec![],
-        animations: Default::default(),
-        source_asset: None,
-        source_range: time::SourceRange::new(
-            time::Tick::ZERO,
-            time::FrameRate::FPS_30.tick_of(30).unwrap(),
+    data.scene_mut().timeline.main.items.push(
+        testkit::item::item(
+            project::ItemId(1),
+            project::ItemParams::Overlay(project::OverlayParams {
+                color: project::Color([255; 4]),
+            }),
         )
-        .unwrap(),
-        start: time::Tick::ZERO,
-        content: project::ItemParams::Overlay(project::OverlayParams {
-            color: project::Color([255; 4]),
-        }),
-    });
+        .source(
+            time::SourceRange::new(
+                time::Tick::ZERO,
+                time::FrameRate::FPS_30.tick_of(30).unwrap(),
+            )
+            .unwrap(),
+        )
+        .masks(masks)
+        .build(),
+    );
     project::Project::new(data).unwrap()
 }

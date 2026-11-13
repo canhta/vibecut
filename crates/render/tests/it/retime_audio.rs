@@ -87,30 +87,18 @@ fn fixture(thousandths: u16, maintain_pitch: bool, output_seconds: f64) -> proje
         hidden: false,
         muted: false,
         locked: false,
-        items: vec![project::Item {
-            hidden: false,
-            id: project::ItemId(1),
-            source_asset: Some(media::AssetId(1)),
-            source_range: TimeRange::new(Tick::ZERO, Tick(source_ticks)).unwrap(),
-            start: Tick::ZERO,
-            retime: project::Retime {
-                window: None,
-                speed,
-                maintain_pitch,
-                reverse: false,
-            },
-            animations: Default::default(),
-            effects: vec![],
-            masks: vec![],
-            blend_mode: Default::default(),
-            content: project::ItemParams::Audio(project::AudioParams {
-                fades: Default::default(),
-                volume: 0.0,
-                muted: false,
-                source: Default::default(),
-                cleanup: Default::default(),
-            }),
-        }],
+        items: vec![
+            testkit::item::audio(project::ItemId(1))
+                .asset(media::AssetId(1))
+                .source(TimeRange::new(Tick::ZERO, Tick(source_ticks)).unwrap())
+                .retime(project::Retime {
+                    window: None,
+                    speed,
+                    maintain_pitch,
+                    reverse: false,
+                })
+                .build(),
+        ],
     });
     project::Project::new(data).unwrap()
 }

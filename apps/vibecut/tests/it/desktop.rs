@@ -1207,25 +1207,12 @@ fn new_seek_cancels_audio_preroll_and_keeps_the_replacement_epoch_alive() {
         hidden: false,
         muted: false,
         locked: false,
-        items: vec![project::Item {
-            hidden: false,
-            id: project::ItemId(1),
-            source_asset: Some(media::AssetId(1)),
-            source_range: SourceRange::new(Tick::ZERO, duration).unwrap(),
-            start: Tick::ZERO,
-            animations: Default::default(),
-            effects: vec![],
-            masks: vec![],
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            content: ItemParams::Audio(project::AudioParams {
-                fades: Default::default(),
-                volume: 0.0,
-                muted: false,
-                source: Default::default(),
-                cleanup: Default::default(),
-            }),
-        }],
+        items: vec![
+            testkit::item::audio(project::ItemId(1))
+                .asset(media::AssetId(1))
+                .source(SourceRange::new(Tick::ZERO, duration).unwrap())
+                .build(),
+        ],
     });
     let session = Session::new(Project::new(data).unwrap(), 10).unwrap();
     let gate = Arc::new(Gate {
@@ -1432,24 +1419,11 @@ fn controlled_preview(audio: bool) -> (Session, Playback, std::sync::mpsc::Recei
                 retime: Default::default(),
                 animations: Default::default(),
                 content: if audio {
-                    ItemParams::Audio(project::AudioParams {
-                        volume: 0.0,
-                        muted: false,
-                        source: Default::default(),
-                        fades: Default::default(),
-                        cleanup: Default::default(),
-                    })
+                    ItemParams::Audio(project::AudioParams::default())
                 } else {
                     ItemParams::Video(project::VideoParams {
-                        volume: 0.0,
                         muted: true,
-                        source_audio_enabled: false,
-                        crop: None,
-                        fades: Default::default(),
-                        fit: Default::default(),
-                        cleanup: Default::default(),
-                        background: project::ClipBackground::None,
-                        reduce_noise: false,
+                        ..project::VideoParams::plain()
                     })
                 },
             },

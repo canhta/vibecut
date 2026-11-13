@@ -365,25 +365,12 @@ fn audio_controls_are_atomic_undoable_persisted_and_strict() {
         hidden: false,
         muted: false,
         locked: false,
-        items: vec![Item {
-            hidden: false,
-            id: ItemId(20),
-            source_asset: Some(AssetId(7)),
-            source_range: range(0, 1000),
-            start: Tick::ZERO,
-            animations: Default::default(),
-            effects: vec![],
-            masks: vec![],
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            content: ItemParams::Audio(project::AudioParams {
-                fades: Default::default(),
-                volume: 0.0,
-                muted: false,
-                source: Default::default(),
-                cleanup: Default::default(),
-            }),
-        }],
+        items: vec![
+            testkit::item::audio(ItemId(20))
+                .asset(AssetId(7))
+                .source(range(0, 1000))
+                .build(),
+        ],
     });
     let mut session = Session::new(Project::new(data).unwrap(), 100).unwrap();
     for command in [

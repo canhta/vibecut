@@ -190,29 +190,12 @@ fn video_project(asset: &SourceAsset) -> project::Project {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![project::Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: ItemId(1),
-            source_asset: Some(asset.id()),
-            source_range: TimeRange::new(Tick::ZERO, duration).unwrap(),
-            start: Tick::ZERO,
-            content: project::ItemParams::Video(project::VideoParams {
-                fades: Default::default(),
-                source_audio_enabled: false,
-                volume: 0.0,
-                muted: false,
-                crop: None,
-                cleanup: Default::default(),
-                reduce_noise: false,
-                background: project::ClipBackground::None,
-                fit: Default::default(),
-            }),
-        }],
+        items: vec![
+            testkit::item::video(ItemId(1))
+                .asset(asset.id())
+                .source(TimeRange::new(Tick::ZERO, duration).unwrap())
+                .build(),
+        ],
     });
     project::Project::new(data).unwrap()
 }

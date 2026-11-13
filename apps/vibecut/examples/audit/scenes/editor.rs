@@ -212,14 +212,7 @@ pub(super) fn player_editor(theme: Theme, empty: bool) -> Result<Editor, Failure
             Some(AssetId(1)),
             ItemParams::Video(VideoParams {
                 source_audio_enabled: true,
-                volume: 0.0,
-                crop: None,
-                muted: false,
-                fades: Default::default(),
-                fit: Default::default(),
-                cleanup: Default::default(),
-                background: project::ClipBackground::None,
-                reduce_noise: false,
+                ..VideoParams::plain()
             }),
         )?;
     }

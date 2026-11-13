@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 use engine::control::{self, Caller, ControlResult, ErrorCode, Policy, Request, ResponseValue};
 use engine::{ArtifactError, ByteBudget, Command, Session};
-use project::{Item, ItemId, ItemParams, OverlayParams, Project, ProjectId, Track, TrackId};
+use project::{ItemId, ItemParams, OverlayParams, Project, ProjectId, Track, TrackId};
 use std::{path::PathBuf, sync::Arc};
 use time::{FrameRate, SourceRange, TICKS_PER_SECOND, Tick};
 
@@ -42,21 +42,16 @@ fn project(name: &str, width: u32, height: u32, duration: Tick) -> Project {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: ItemId(1),
-            source_asset: None,
-            source_range: SourceRange::new(Tick::ZERO, duration).unwrap(),
-            start: Tick::ZERO,
-            content: ItemParams::Overlay(OverlayParams {
-                color: project::Color([30, 160, 90, 255]),
-            }),
-        }],
+        items: vec![
+            testkit::item::item(
+                ItemId(1),
+                ItemParams::Overlay(OverlayParams {
+                    color: project::Color([30, 160, 90, 255]),
+                }),
+            )
+            .source(SourceRange::new(Tick::ZERO, duration).unwrap())
+            .build(),
+        ],
     });
     Project::new(data).unwrap()
 }

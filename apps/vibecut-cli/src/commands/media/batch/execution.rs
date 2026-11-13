@@ -197,7 +197,7 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::panic)]
     use super::*;
     use project::ProjectId;
-    use project::{Item, ItemId, ItemParams, OverlayParams, Project, Track, TrackId, TrackKind};
+    use project::{ItemId, ItemParams, OverlayParams, Project, Track, TrackId, TrackKind};
     use std::{collections::BTreeMap, fs};
 
     fn overlay_project() -> Project {
@@ -213,21 +213,16 @@ mod tests {
             muted: false,
             hidden: false,
             locked: false,
-            items: vec![Item {
-                hidden: false,
-                blend_mode: Default::default(),
-                retime: Default::default(),
-                masks: Vec::new(),
-                effects: Vec::new(),
-                animations: Default::default(),
-                id: ItemId(0),
-                source_asset: None,
-                source_range: TimeRange::new(Tick::ZERO, Tick(time::TICKS_PER_SECOND)).unwrap(),
-                start: Tick::ZERO,
-                content: ItemParams::Overlay(OverlayParams {
-                    color: project::Color([30, 160, 90, 255]),
-                }),
-            }],
+            items: vec![
+                testkit::item::item(
+                    ItemId(0),
+                    ItemParams::Overlay(OverlayParams {
+                        color: project::Color([30, 160, 90, 255]),
+                    }),
+                )
+                .source(TimeRange::new(Tick::ZERO, Tick(time::TICKS_PER_SECOND)).unwrap())
+                .build(),
+            ],
         });
         Project::new(data).unwrap()
     }

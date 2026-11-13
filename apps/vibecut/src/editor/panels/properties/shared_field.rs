@@ -101,7 +101,7 @@ mod tests {
     #[test]
     #[allow(clippy::unwrap_used, reason = "validated fixture assertions")]
     fn shared_fields_distinguish_mixed_values_from_equal_values() {
-        use project::{Color, Item, ProjectId, TextParams, Track, TrackId, TrackKind};
+        use project::{Color, ProjectId, TextParams, Track, TrackId, TrackKind};
         let mut data = Project::empty(ProjectId(1), "".into()).unwrap().into_data();
         data.scene_mut().timeline.insert_track(Track {
             id: TrackId(1),
@@ -111,25 +111,21 @@ mod tests {
             hidden: false,
             locked: false,
             items: (0..2)
-                .map(|n| Item {
-                    hidden: false,
-                    blend_mode: Default::default(),
-                    retime: Default::default(),
-                    masks: Vec::new(),
-                    effects: vec![],
-                    animations: Default::default(),
-                    id: ItemId(n + 10),
-                    source_asset: None,
-                    source_range: time::SourceRange::new(Tick::ZERO, Tick(100)).unwrap(),
-                    start: Tick(n as i64 * 100),
-                    content: ItemParams::Text(TextParams {
-                        content: "Keep".into(),
-                        font: "Inter".into(),
-                        font_size: 24.0 + n as f32,
-                        color: Color([10, 20, 30, 255]),
-                        background: None,
-                        ..TextParams::default()
-                    }),
+                .map(|n| {
+                    testkit::item::item(
+                        ItemId(n + 10),
+                        ItemParams::Text(TextParams {
+                            content: "Keep".into(),
+                            font: "Inter".into(),
+                            font_size: 24.0 + n as f32,
+                            color: Color([10, 20, 30, 255]),
+                            background: None,
+                            ..TextParams::default()
+                        }),
+                    )
+                    .source(time::SourceRange::new(Tick::ZERO, Tick(100)).unwrap())
+                    .start(Tick(n as i64 * 100))
+                    .build()
                 })
                 .collect(),
         });
