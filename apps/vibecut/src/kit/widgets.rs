@@ -179,6 +179,136 @@ pub(crate) fn icon_button(
     response
 }
 
+/// What a row-end keyframe cluster shows: the three tooltips and the state of
+/// each cell. The caller owns the keys; the widget only paints and reports.
+pub(crate) struct KeyframeControl<'a> {
+    pub previous_label: &'a str,
+    pub toggle_label: &'a str,
+    pub next_label: &'a str,
+    /// A key exists at the playhead: the diamond is filled.
+    pub keyed: bool,
+    /// The playhead is inside the item, so a key can be added or removed.
+    pub can_toggle: bool,
+    pub has_previous: bool,
+    pub has_next: bool,
+}
+
+/// One hit cell of the keyframe cluster: hover fill, automation ID and focus ring.
+fn keyframe_cell(ui: &mut Ui, id: &str, area: Rect, enabled: bool) -> Response {
+    let sense = if enabled {
+        Sense::click()
+    } else {
+        Sense::hover()
+    };
+    let response = ui.interact(area, ui.make_persistent_id(id), sense);
+    if enabled
+        && (response.hovered() || response.has_focus() || response.is_pointer_button_down_on())
+    {
+        paint(ui).rect_filled(area, radius::CONTROL, theme::hover(ui.visuals().dark_mode));
+    }
+    author(&response, id);
+    focus_ring(ui, &response);
+    response
+}
+
+/// The measured row-end keyframe cluster `< diamond >` inside `rect`
+/// (`KEYFRAME_CLUSTER` wide): previous key, toggle at the playhead, next key.
+/// Each cell is its own response with the automation IDs `{id}.previous`, `{id}`
+/// and `{id}.next`; an arrow with no key on its side is disabled. The returned
+/// responses are previous, toggle and next.
+pub(crate) fn keyframe_cluster(
+    ui: &mut Ui,
+    id: &str,
+    rect: Rect,
+    control: &KeyframeControl<'_>,
+) -> [Response; 3] {
+    let dark = ui.visuals().dark_mode;
+    let cell_area = |left: f32, width: f32| {
+        Rect::from_min_size(
+            egui::pos2(left, rect.top()),
+            Vec2::new(width, rect.height()),
+        )
+    };
+    let previous_area = cell_area(rect.left(), size::KEYFRAME_ARROW_CELL);
+    let toggle_area = cell_area(previous_area.right(), size::KEYFRAME_TOGGLE_CELL);
+    let next_area = cell_area(toggle_area.right(), size::KEYFRAME_ARROW_CELL);
+    let previous = keyframe_cell(
+        ui,
+        &format!("{id}.previous"),
+        previous_area,
+        control.has_previous,
+    );
+    let toggle = keyframe_cell(ui, id, toggle_area, control.can_toggle);
+    let next = keyframe_cell(ui, &format!("{id}.next"), next_area, control.has_next);
+    let ink = |enabled: bool| {
+        if enabled {
+            theme::text(dark)
+        } else {
+            theme::disabled(dark)
+        }
+    };
+    for (area, direction, enabled) in [
+        (previous_area, -1.0_f32, control.has_previous),
+        (next_area, 1.0, control.has_next),
+    ] {
+        let center = area.center();
+        let half_width = size::KEYFRAME_ARROW_WIDTH / 2.0;
+        let half_height = size::KEYFRAME_ARROW_HEIGHT / 2.0;
+        paint(ui).add(egui::Shape::line(
+            vec![
+                center + egui::vec2(-direction * half_width, -half_height),
+                center + egui::vec2(direction * half_width, 0.0),
+                center + egui::vec2(-direction * half_width, half_height),
+            ],
+            Stroke::new(space::HAIRLINE, ink(enabled)),
+        ));
+    }
+    let center = toggle_area.center();
+    let half = size::KEYFRAME_GLYPH / 2.0;
+    let points = vec![
+        center - egui::vec2(half, 0.0),
+        center - egui::vec2(0.0, half),
+        center + egui::vec2(half, 0.0),
+        center + egui::vec2(0.0, half),
+    ];
+    if control.keyed && control.can_toggle {
+        paint(ui).add(egui::Shape::convex_polygon(
+            points,
+            theme::accent(dark),
+            Stroke::NONE,
+        ));
+    } else {
+        paint(ui).add(egui::Shape::closed_line(
+            points,
+            Stroke::new(space::HAIRLINE, ink(control.can_toggle)),
+        ));
+    }
+    for (response, enabled, label, selected) in [
+        (
+            &previous,
+            control.has_previous,
+            control.previous_label,
+            false,
+        ),
+        (
+            &toggle,
+            control.can_toggle,
+            control.toggle_label,
+            control.keyed,
+        ),
+        (&next, control.has_next, control.next_label, false),
+    ] {
+        response.widget_info(|| {
+            egui::WidgetInfo::selected(egui::Role::Button, enabled, selected, label)
+        });
+    }
+    [
+        previous.on_hover_text(control.previous_label),
+        toggle.on_hover_text(control.toggle_label),
+        next.on_hover_text(control.next_label),
+    ]
+}
+
 /// A single-line primary action in an exact-width, 22 px window-bar box.
 pub(crate) fn action_button(
     ui: &mut Ui,
@@ -363,10 +493,14 @@ pub(crate) fn icon_tab(
 pub(crate) struct SectionResponse {
     pub toggle: Response,
     pub reset: Option<Response>,
+    /// The enable checkbox before the label, when the section has one.
+    pub enable: Option<Response>,
 }
 
-/// Measured header: label with a caret, then reset and the keyframe group at
-/// the right edge. A hairline closes the section.
+/// Measured header: an optional enable checkbox, the label with a caret, then
+/// reset and the keyframe group at the right edge. `enable` is the checkbox's
+/// label and checked state; a click on it is the caller's to apply. A hairline
+/// closes the section.
 pub(crate) fn section_header_with(
     ui: &mut Ui,
     id: &str,
@@ -374,13 +508,50 @@ pub(crate) fn section_header_with(
     open: &mut bool,
     reset_label: Option<&str>,
     keyframe_label: Option<&str>,
+    enable: Option<(&str, bool)>,
 ) -> SectionResponse {
     let dark = ui.visuals().dark_mode;
     let row = ui.allocate_ui_with_layout(
         Vec2::new(ui.available_width(), size::SECTION),
         egui::Layout::left_to_right(egui::Align::Center),
         |ui| {
-            let reserved = reset_label.map_or(0.0, |_| size::CONTROL + space::MD)
+            let enable = enable.map(|(enable_label, checked)| {
+                let enable_id = format!("{id}.enable");
+                let (rect, response) = ui
+                    .allocate_exact_size(Vec2::new(size::CHECKBOX, size::CHECKBOX), Sense::click());
+                if checked {
+                    paint(ui).rect_filled(rect, radius::CONTROL, theme::accent(dark));
+                    paint(ui).add(egui::Shape::line(
+                        vec![
+                            rect.min + egui::vec2(3.0, 6.0),
+                            rect.min + egui::vec2(5.0, 8.5),
+                            rect.min + egui::vec2(9.0, 3.5),
+                        ],
+                        Stroke::new(1.5, theme::on_accent(dark)),
+                    ));
+                } else {
+                    paint(ui).rect_stroke(
+                        rect,
+                        radius::CONTROL,
+                        Stroke::new(space::HAIRLINE, theme::border(dark)),
+                        egui::StrokeKind::Inside,
+                    );
+                }
+                response.widget_info(|| {
+                    egui::WidgetInfo::selected(
+                        egui::Role::CheckBox,
+                        ui.is_enabled(),
+                        checked,
+                        enable_label,
+                    )
+                });
+                author(&response, &enable_id);
+                focus_ring(ui, &response);
+                response.on_hover_text(enable_label)
+            });
+            let enable_width = enable.as_ref().map_or(0.0, |_| size::CHECKBOX + space::MD);
+            let reserved = enable_width
+                + reset_label.map_or(0.0, |_| size::CONTROL + space::MD)
                 + keyframe_label.map_or(0.0, |_| size::KEYFRAME + space::MD);
             let width = (ui.available_width() - reserved).max(0.0);
             let (rect, toggle) =
@@ -469,7 +640,11 @@ pub(crate) fn section_header_with(
                 author(&response, &keyframe_id);
                 focus_ring(ui, &response);
             }
-            SectionResponse { toggle, reset }
+            SectionResponse {
+                toggle,
+                reset,
+                enable,
+            }
         },
     );
     paint(ui).hline(

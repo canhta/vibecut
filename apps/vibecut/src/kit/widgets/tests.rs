@@ -19,6 +19,7 @@ fn section_header_keeps_reset_and_toggle_separate() {
                 &mut state.0,
                 Some("Reset"),
                 Some("Key"),
+                None,
             );
             state.1 |= header.reset.is_some_and(|reset| reset.clicked());
         },
@@ -80,4 +81,75 @@ fn rail_slider_maps_a_press_to_its_fraction() {
     harness.run();
     let value = *harness.state();
     assert!((value - 0.5).abs() < 0.05, "centre press, got {value}");
+}
+
+#[test]
+fn section_header_enable_checkbox_is_its_own_control() {
+    let mut harness = harness(
+        |ui, state: &mut (bool, bool)| {
+            let header = section_header_with(
+                ui,
+                "section",
+                "Blend",
+                &mut state.0,
+                Some("Reset"),
+                None,
+                Some(("Enable", false)),
+            );
+            state.1 |= header.enable.is_some_and(|enable| enable.clicked());
+        },
+        (true, false),
+    );
+    harness.run();
+    harness.get_by_label("Enable").click();
+    harness.run();
+    assert_eq!(
+        *harness.state(),
+        (true, true),
+        "the checkbox must not collapse"
+    );
+}
+
+#[test]
+fn keyframe_cluster_reports_each_cell_and_disables_empty_sides() {
+    let mut harness = harness(
+        |ui, clicks: &mut [u32; 3]| {
+            let (rect, _) = ui.allocate_exact_size(
+                Vec2::new(size::KEYFRAME_CLUSTER, size::CONTROL),
+                Sense::hover(),
+            );
+            let cells = keyframe_cluster(
+                ui,
+                "key",
+                rect,
+                &KeyframeControl {
+                    previous_label: "Previous",
+                    toggle_label: "Toggle",
+                    next_label: "Next",
+                    keyed: false,
+                    can_toggle: true,
+                    has_previous: false,
+                    has_next: true,
+                },
+            );
+            for (count, cell) in clicks.iter_mut().zip(&cells) {
+                *count += u32::from(cell.clicked());
+            }
+        },
+        [0; 3],
+    );
+    harness.run();
+    assert!(
+        harness
+            .get_by_label("Previous")
+            .accesskit_node()
+            .is_disabled()
+    );
+    harness.get_by_label("Previous").click();
+    harness.run();
+    harness.get_by_label("Toggle").click();
+    harness.run();
+    harness.get_by_label("Next").click();
+    harness.run();
+    assert_eq!(*harness.state(), [0, 1, 1], "an empty side never fires");
 }

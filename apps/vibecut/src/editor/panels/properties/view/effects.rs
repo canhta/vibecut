@@ -1107,40 +1107,19 @@ impl Panel<'_, '_> {
         }));
         let exists = target.rgb_keys(project, true);
         let key_id = format!("{id}.keyframe");
-        let rect = Rect::from_min_size(
-            egui::pos2(
-                row.left() + super::VALUE_COLUMN - theme::size::CONTROL - theme::space::XS,
-                row.top(),
-            ),
-            Vec2::new(theme::size::CONTROL, row.height()),
+        let neighbours = target.key_neighbours(project, Tick(self.cx.playhead.0 - start.0));
+        let clicked = self.keyframe_cluster(
+            ui,
+            &key_id,
+            super::keyframe_cluster_rect(row),
+            super::ClusterState {
+                start,
+                keyed: exists,
+                can_toggle: !locked && inside,
+                neighbours,
+            },
         );
-        let mut strip = ui.new_child(
-            egui::UiBuilder::new()
-                .max_rect(rect)
-                .layout(egui::Layout::left_to_right(egui::Align::Center)),
-        );
-        let response = strip
-            .add_enabled_ui(!locked && inside, |ui| {
-                crate::kit::icon_button(
-                    ui,
-                    &key_id,
-                    Icon::Diamond,
-                    self.tr(if exists {
-                        Text::RemoveKeyframe
-                    } else {
-                        Text::AddKeyframe
-                    }),
-                    exists,
-                )
-            })
-            .inner
-            .on_disabled_hover_text(self.tr(if locked {
-                Text::EffectLocked
-            } else {
-                Text::EffectKeyframeTime
-            }));
-        self.remember_with_icon(key_id, Some(Icon::Diamond.name()), &response);
-        if response.clicked() {
+        if clicked {
             match target.toggle_rgb(project) {
                 Ok(command) => {
                     self.actions.extend(self.state.close_picker());
@@ -1357,7 +1336,7 @@ impl Panel<'_, '_> {
                 self.finish_scrub(true);
             }
             let reserve = if parameter.animatable {
-                theme::size::CONTROL + theme::space::XS
+                theme::size::KEYFRAME_CLUSTER + theme::space::MD
             } else {
                 0.0
             };
@@ -1528,19 +1507,29 @@ impl Panel<'_, '_> {
         let inside = start <= at && at <= end;
         let relative = at.saturating_sub(start);
         let exists = read::has_key_at(self.cx.session.project(), item, &path, relative);
-        let label = self.tr(if exists {
-            Text::RemoveKeyframe
-        } else {
-            Text::AddKeyframe
-        });
+        let neighbours = read::neighbour_keys(
+            self.cx.session.project(),
+            item,
+            &[path.as_str()],
+            Tick(at.0 - start.0),
+        );
         let id = format!("effects.{effect}.param.{}.keyframe", parameter.id);
-        let response = ui
-            .add_enabled_ui(inside, |ui| {
-                crate::kit::icon_button(ui, &id, Icon::Diamond, label, exists)
-            })
-            .inner;
-        self.remember_with_icon(id, Some(Icon::Diamond.name()), &response);
-        if response.clicked() && inside {
+        let (rect, _) = ui.allocate_exact_size(
+            Vec2::new(theme::size::KEYFRAME_CLUSTER, theme::size::CONTROL),
+            egui::Sense::hover(),
+        );
+        let clicked = self.keyframe_cluster(
+            ui,
+            &id,
+            rect,
+            super::ClusterState {
+                start,
+                keyed: exists,
+                can_toggle: inside,
+                neighbours,
+            },
+        );
+        if clicked && inside {
             self.actions.push(Action::ToggleKeyframe {
                 item,
                 fields: vec![(path, current)],

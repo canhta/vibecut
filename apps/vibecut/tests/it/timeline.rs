@@ -3603,6 +3603,38 @@ fn property_diamond_toggles_a_keyframe_at_the_playhead() {
         .click();
     harness.run_steps(2);
     assert_eq!(key_count(&harness), 1);
+    // The row-end arrows: with the only key under the playhead neither side has a key;
+    // from later in the clip the previous arrow is live and seeks the playhead back to it.
+    let arrow_disabled = |harness: &Harness<'_, Editor>, id: &str| {
+        harness
+            .get(By::new().predicate(|n| n.author_id() == Some(id)))
+            .accesskit_node()
+            .is_disabled()
+    };
+    assert!(arrow_disabled(
+        &harness,
+        "inspector.keyframe.opacity.previous"
+    ));
+    assert!(arrow_disabled(&harness, "inspector.keyframe.opacity.next"));
+    harness
+        .state_mut()
+        .dispatch(AppCommand::Seek(Tick(3 * SECOND)))
+        .unwrap();
+    harness.run_steps(2);
+    assert!(!arrow_disabled(
+        &harness,
+        "inspector.keyframe.opacity.previous"
+    ));
+    assert!(arrow_disabled(&harness, "inspector.keyframe.opacity.next"));
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.keyframe.opacity.previous")))
+        .click();
+    harness.run_steps(3);
+    assert_eq!(
+        harness.state().inspect().unwrap().position,
+        Tick(2 * SECOND),
+        "the previous arrow seeks to the key"
+    );
     // Editing the animated field writes a key at the playhead instead of wiping curves.
     crate::panels::reveal(&mut harness, "inspector.opacity");
     harness

@@ -73,6 +73,9 @@ pub(in crate::editor) struct State {
     focus: Option<String>,
     /// One Scale control moves both axes; a view setting, not project data.
     uniform_scale: bool,
+    /// The blend mode an unchecked Blend checkbox replaced with Normal, so a re-check
+    /// restores it. A view memory only: the project's blend mode is the one truth.
+    blend_restore: Option<(ItemId, project::BlendMode)>,
     /// Project/Details switch shown while no single element is selected.
     details: bool,
     /// Set by Modify: the next Settings frame focuses and scrolls to the canvas width.
@@ -192,6 +195,7 @@ impl Default for State {
             selection: BTreeSet::new(),
             focus: None,
             uniform_scale: true,
+            blend_restore: None,
             details: false,
             canvas_focus: false,
             scrub: None,

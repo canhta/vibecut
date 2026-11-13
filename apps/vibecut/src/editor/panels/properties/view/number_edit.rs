@@ -175,12 +175,50 @@ impl Panel<'_, '_> {
 
     /// One slider row: the label above, the rail and the value group below.
     pub(super) fn slider_row(&mut self, ui: &mut egui::Ui, item: ItemId, spec: ScrubSpec) {
+        self.slider_row_in(ui, item, spec, true);
+    }
+
+    /// A slider row whose label, rail and value are read-only unless `editable`. The
+    /// row-end keyframe cluster stays live either way, so its arrows still navigate.
+    pub(super) fn slider_row_in(
+        &mut self,
+        ui: &mut egui::Ui,
+        item: ItemId,
+        spec: ScrubSpec,
+        editable: bool,
+    ) {
         let Some(current) = self.item_value(item, spec.field) else {
             return;
         };
         let (row, _) = ui.allocate_exact_size(
             Vec2::new(ui.available_width(), SLIDER_ROW),
             egui::Sense::hover(),
+        );
+        let line = Rect::from_min_size(
+            egui::pos2(row.left(), row.top() + 14.0),
+            Vec2::new(row.width(), theme::size::FIELD),
+        );
+        ui.add_enabled_ui(editable, |ui| {
+            self.slider_controls(ui, item, spec, current, row, line);
+        });
+        self.keyframe_diamonds(ui, line, item, &[spec]);
+    }
+
+    fn slider_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        item: ItemId,
+        spec: ScrubSpec,
+        current: f64,
+        row: Rect,
+        line: Rect,
+    ) {
+        let line = Rect::from_min_size(
+            line.min,
+            Vec2::new(
+                (line.width() - super::keyframe_reserve(&[spec])).max(0.0),
+                line.height(),
+            ),
         );
         let label = self.tr(spec.label);
         let galley = ui.painter().layout_no_wrap(
@@ -201,10 +239,6 @@ impl Panel<'_, '_> {
             theme::text(self.cx.dark),
         );
         self.scrub_handle(ui, item, spec, current, label_rect);
-        let line = Rect::from_min_size(
-            egui::pos2(row.left(), row.top() + 14.0),
-            Vec2::new(row.width(), theme::size::FIELD),
-        );
         let group = SLIDER_FIELD + theme::space::XXS + theme::size::STEPPER;
         let mut child = ui.new_child(
             egui::UiBuilder::new()
@@ -245,7 +279,6 @@ impl Panel<'_, '_> {
             kit::rail_slider(&mut rail_ui, &id, current, spec.min..=max, rail_width);
         self.remember(id, &response);
         self.drive_scrub(item, spec, current, &response, value);
-        self.keyframe_diamonds(ui, row, item, &[spec]);
     }
 
     /// Rows with one or two fields sharing a label: Position (X, Y), Rotate, Text size.
@@ -288,11 +321,12 @@ impl Panel<'_, '_> {
             return;
         };
         self.scrub_handle(ui, item, first, current, label_rect);
+        let specs: Vec<ScrubSpec> = fields.iter().map(|(spec, _)| *spec).collect();
         let mut child = ui.new_child(
             egui::UiBuilder::new()
                 .max_rect(Rect::from_min_max(
                     egui::pos2(row.left() + VALUE_COLUMN, row.top()),
-                    row.max,
+                    egui::pos2(row.right() - super::keyframe_reserve(&specs), row.bottom()),
                 ))
                 .layout(egui::Layout::left_to_right(egui::Align::Center)),
         );
@@ -316,7 +350,6 @@ impl Panel<'_, '_> {
                 },
             );
         }
-        let specs: Vec<ScrubSpec> = fields.iter().map(|(spec, _)| *spec).collect();
         self.keyframe_diamonds(ui, row, item, &specs);
     }
 

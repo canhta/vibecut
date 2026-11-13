@@ -103,6 +103,8 @@ pub(in crate::editor) enum Action {
         fields: Vec<(String, f64)>,
         time: time::Tick,
     },
+    /// Move the playhead to a neighbouring key (project time), through the shared transport.
+    SeekToKey(time::Tick),
     /// Upsert a key at the playhead while a channel is already animated.
     SetKeyframeAt {
         item: ItemId,
