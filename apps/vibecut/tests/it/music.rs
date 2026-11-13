@@ -24,7 +24,7 @@ use std::{
 };
 use transport::{DownloadTransport, HttpRequest, HttpResponse, HttpStreamResponse, HttpTransport};
 use vibecut::{
-    Editor, Music, MusicMode, egui,
+    Editor, LibraryProblem, LibraryStore, Music, MusicMode, egui,
     preferences::Preferences,
     services::music::MusicSession,
     services::playback::{Files, Playback},
@@ -1058,4 +1058,80 @@ fn a_late_browse_reply_never_overwrites_saved_and_pending_searches_coalesce() {
         1,
         "superseded requests never reach the provider"
     );
+}
+
+fn bare_editor() -> Editor {
+    let session =
+        Session::new(Project::empty(ProjectId(92), "Library".into()).unwrap(), 50).unwrap();
+    let mut playback = Playback::new(
+        &session,
+        ByteBudget::new(512 << 20).unwrap(),
+        Arc::new(Files),
+    )
+    .unwrap();
+    playback.set_device_available(true);
+    Editor::new(session, playback, Preferences::default())
+}
+
+fn has_id(editor: &Editor, id: &str) -> bool {
+    editor
+        .inspect()
+        .unwrap()
+        .widgets
+        .iter()
+        .any(|widget| widget.id == id)
+}
+
+#[test]
+fn a_library_that_fails_to_open_shows_its_reason_and_retry_asks_the_owner_again() {
+    let cases = [
+        (
+            engine::MusicError::Project(project::Error::Busy),
+            engine::SoundError::Project(project::Error::Busy),
+            LibraryProblem::Busy,
+        ),
+        (
+            engine::MusicError::LibraryCorrupt,
+            engine::SoundError::LibraryCorrupt,
+            LibraryProblem::Corrupt,
+        ),
+        (
+            engine::MusicError::Io(std::io::Error::other("disk")),
+            engine::SoundError::Io(std::io::Error::other("disk")),
+            LibraryProblem::Io,
+        ),
+    ];
+    for (music_error, sound_error, expected) in cases {
+        let mut editor = bare_editor();
+        editor.set_sound_open_error(&sound_error);
+        editor.set_music_open_error(&music_error);
+        editor.preferences.assets_tab = vibecut::AssetsTab::Sounds;
+        let mut harness = build(editor);
+        wait(&mut harness, "sounds retry row", |editor| {
+            has_id(editor, "sounds.open.retry")
+        });
+        assert_eq!(harness.state().sound_open_problem(), Some(expected));
+        click(&mut harness, "sounds.open.retry");
+        harness.run_steps(2);
+        assert_eq!(
+            harness.state_mut().take_library_reopens(),
+            vec![LibraryStore::Sounds],
+            "Retry asks the lending owner for the Sounds store"
+        );
+
+        click(&mut harness, "audio.section.music");
+        wait(&mut harness, "music retry row", |editor| {
+            has_id(editor, "music.open.retry")
+        });
+        assert_eq!(harness.state().music_open_problem(), Some(expected));
+        assert!(!has_id(harness.state(), "music.tab.saved"));
+        click(&mut harness, "music.open.retry");
+        harness.run_steps(2);
+        assert_eq!(
+            harness.state_mut().take_library_reopens(),
+            vec![LibraryStore::Music],
+            "Retry asks the lending owner for the Music store"
+        );
+        assert_eq!(music_count(harness.state()), 0);
+    }
 }

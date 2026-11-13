@@ -268,6 +268,7 @@ impl Workspace {
             // before the next UI pass. They must reuse the app owner too.
             if let Some(editor) = &mut window.editor {
                 self.lending.lend_models(editor);
+                self.lending.reopen_requested(editor);
             }
             window.tick();
             if let Some((from, to)) = window.saved_as.take() {

@@ -20,7 +20,7 @@ pub use assets::effects::{
     EffectPreviewStatus, EffectPreviews, PREVIEW_SCALE, PREVIEW_SIZE, SETTLE_BUDGET,
 };
 pub use assets::sounds::music::{Music, MusicMode, MusicProblem};
-pub use assets::sounds::{Client, Sounds, SoundsMode, SoundsProblem};
+pub use assets::sounds::{Client, LibraryProblem, LibraryStore, Sounds, SoundsMode, SoundsProblem};
 pub use assets::{
     AssetState, AssetsTab, ImportEvent, ImportProbe, ImportQueue, MAX_IMPORT_FILES, MediaSort,
     MediaSortKey, MediaSortOrder, MediaView, ThumbnailSource,
@@ -167,6 +167,40 @@ impl Editor {
         library: Arc<libraries::sounds::SoundLibrary>,
     ) -> Result<()> {
         self.with_assets(|assets, desk| assets.set_sound_library(desk, library))
+    }
+
+    /// Record why the app-shared Sounds library did not open; its section shows
+    /// the reason with a Retry row.
+    pub fn set_sound_open_error(&mut self, error: &engine::SoundError) {
+        self.assets.sounds_open = Some(LibraryProblem::from_sound(error));
+    }
+
+    /// Record why the app-shared Music library did not open.
+    pub fn set_music_open_error(&mut self, error: &engine::MusicError) {
+        self.assets.music_open = Some(LibraryProblem::from_music(error));
+    }
+
+    /// Why the Sounds library did not open, when it did not.
+    pub fn sound_open_problem(&self) -> Option<LibraryProblem> {
+        self.assets.sounds_open
+    }
+
+    /// Why the Music library did not open, when it did not.
+    pub fn music_open_problem(&self) -> Option<LibraryProblem> {
+        self.assets.music_open
+    }
+
+    /// A section's Retry asks the lending owner to open this store again. The
+    /// request is drained by the next frame's tick.
+    pub(crate) fn request_library_reopen(&mut self, store: LibraryStore) {
+        if !self.assets.library_reopens.contains(&store) {
+            self.assets.library_reopens.push(store);
+        }
+    }
+
+    /// Take the pending re-open requests; only the lending owner calls this.
+    pub fn take_library_reopens(&mut self) -> Vec<LibraryStore> {
+        std::mem::take(&mut self.assets.library_reopens)
     }
 
     /// Injection boundary for tests and audit scenes.

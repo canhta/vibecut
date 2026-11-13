@@ -42,6 +42,10 @@ Auth, quota, rate-limit, network, server, malformed-response, size, publication 
 no-audio-device failures are typed states with creator copy; a missing token is a
 local-only state. Engine's `RuntimeError::CacheBusy` retains the panel's `CacheBusy` category
 when a shared download owner refuses an add; it leaves the project and pending add untouched.
+
+A library that fails to open (busy writer lease, damaged file, or IO) shows its reason
+and a Retry row in the Sounds and Music sections. The typed error stays with the lending
+point in `app/lending.rs`, which is the only owner that reopens the store on Retry.
 The panel changes project JSON only through the add command.
 
 ## Music section

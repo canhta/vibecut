@@ -13,6 +13,7 @@ impl Editor {
         let music =
             super::super::sounds::music::Music::new(session, self.playback.budget().clone())?;
         self.music = Some(music);
+        self.assets.music_open = None;
         Ok(())
     }
 

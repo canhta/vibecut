@@ -143,6 +143,8 @@ pub(in crate::editor) enum Action {
     MusicCancelCache,
     MusicRetry,
     MusicRetryAdd,
+    /// Ask the lending owner to open a store whose open failed.
+    LibraryRetry(sounds::LibraryStore),
     MusicCredits,
     MusicKeyApply,
     MusicKeyRemove,
