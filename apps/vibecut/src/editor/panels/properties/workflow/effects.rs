@@ -78,6 +78,14 @@ pub(in crate::editor) fn effect_refusal(project: &project::Project, id: ItemId) 
     if kind == ElementKind::Audio {
         return Some(Text::EffectAudioUnsupported);
     }
+    // A filter clip carries only its look: effects go on an adjustment layer instead.
+    if track
+        .items
+        .iter()
+        .any(|item| item.id == id && project::is_filter_clip(item))
+    {
+        return Some(Text::EffectFilterClip);
+    }
     if !matches!(
         kind,
         ElementKind::Video | ElementKind::Image | ElementKind::Sticker | ElementKind::Graphic

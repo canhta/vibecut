@@ -28,6 +28,8 @@ four), and are disabled when that side has none. They stay live outside the item
 on a read-only keyed slider. A click queues `Action::SeekToKey`, which the workflow
 sends through the shared `Request::Seek` transport request; no project edit, no undo step.
 
+A selected filter clip (an effect item whose stack holds the `filter` instance) shows one Filter section in its Effects tab: the look's name (`inspector.filter.look`) and an Intensity slider with its field and keyframe cluster. Intensity is the clip's opacity channel (0 to 100 percent, default 100), so it uses the opacity row's widget ids (`inspector.opacity`, `.slider`, `.scrub`), the ordinary `timeline.set_item_param` path and one undo step per typed value or scrub gesture. `effect_refusal` refuses every user-added effect on a filter clip with the filter-clip message; effects go on an adjustment layer.
+
 The Transform section also carries two reflection toggles below Rotate. They activate
 `timeline.flip_horizontal` / `timeline.flip_vertical`, the same registered commands as
 the timeline toolbar, so a Properties click and a toolbar click share one typed edit,

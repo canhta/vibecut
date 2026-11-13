@@ -102,7 +102,7 @@ The `test-kinds` cargo feature appends one catalog-only `hold_time` kind on `Ins
 
 A filter is a `FilterDefinition` in `filter_definitions()`: an id, our name, a `FilterShelf` (Featured, Movies, Retro, Night, Mono, Life or Tools) and the `color_grade` scalars and tone curves it changes from neutral. `FilterDefinition::instance(id)` builds the validated colour-grade instance at full strength. The catalogue holds 20 looks (the 8 procedural looks and 4 creative presets of the reference implementation, renamed, plus 8 authored ones) and the 4 Tools grades, which are not counted among the looks. Looks are procedural grades over the basic, lift, gain, HSL and curve controls; no third-party LUT or picture is used, and no generated LUT is built yet. The values are new decisions, not measured parity.
 
-A filter clip is not a new item kind: it is an effect item (`ItemParams::Effect` on an Effect track, the adjustment layer) whose stack holds that one instance, and its Intensity is the item's `opacity` channel (0..=1 shown as 0..=100, default 100). Intensity 0 leaves the picture below unchanged. The engine's `filters.insert` builds that item in one edit.
+A filter clip is not a new item kind: it is an effect item (`ItemParams::Effect` on an Effect track, the adjustment layer) whose stack holds that one instance, and its Intensity is the item's `opacity` channel (0..=1 shown as 0..=100, default 100). Intensity 0 leaves the picture below unchanged. The engine's `filters.insert` builds that item in one edit. `is_filter_clip(item)` recognises it by the `FILTER_INSTANCE_ID` instance on an effect item, and `filter_look(item)` names the catalogued look whose instance it still equals; a filter clip refuses user-added effects.
 
 ## Video transitions
 

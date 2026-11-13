@@ -10,7 +10,10 @@ use std::collections::BTreeMap;
 mod catalog;
 mod filters;
 
-pub use filters::{FilterDefinition, FilterShelf, filter_definition, filter_definitions};
+pub use filters::{
+    FILTER_INSTANCE_ID, FilterDefinition, FilterShelf, filter_definition, filter_definitions,
+    filter_look, is_filter_clip,
+};
 
 pub use catalog::{
     CHROMA_KEY_COLOR_DEFAULT, CHROMA_KEY_INTENSITY_DEFAULT, CHROMA_KEY_MAX, CHROMA_KEY_MIN,

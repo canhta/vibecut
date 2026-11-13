@@ -1555,6 +1555,9 @@ impl<'a, 'c> Panel<'a, 'c> {
             {
                 self.remove_background_controls(ui, item);
             }
+            PropertiesTab::Effects if kind == ElementKind::Effect => {
+                self.filter_section(ui, item);
+            }
             PropertiesTab::Effects
                 if matches!(
                     kind,
@@ -1591,6 +1594,8 @@ mod canvas;
 mod playback;
 
 mod effects;
+
+mod filter;
 
 mod text_style;
 

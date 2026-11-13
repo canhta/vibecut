@@ -50,7 +50,7 @@ pub(super) fn execute_insert_filter(
         .ok_or(EditError::Invalid("filter insert"))?;
     effect_item(&mut data, id)?
         .effects
-        .push(definition.instance("filter")?);
+        .push(definition.instance(project::FILTER_INSTANCE_ID)?);
     Ok(data)
 }
 

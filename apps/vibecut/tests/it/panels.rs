@@ -709,6 +709,71 @@ fn enter(harness: &mut Harness<Editor>, id: &str, value: &str) {
 }
 
 #[test]
+fn filter_clip_shows_its_look_and_an_intensity_that_types_scrubs_and_undoes() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    let outcome = harness
+        .state_mut()
+        .session
+        .apply(Command::FiltersInsert {
+            placement: Placement::Auto,
+            filter: "noir".to_owned(),
+            start: Tick::ZERO,
+            duration: Tick(3 * SECOND),
+            intensity: 100.0,
+        })
+        .unwrap();
+    let Some(CreatedId::Item(clip)) = outcome.created.last().copied() else {
+        panic!("created {:?}", outcome.created)
+    };
+    select(&mut harness, clip);
+    assert!(has_widget(&harness, "inspector.section.filter"));
+    assert!(has_widget(&harness, "inspector.filter.look"));
+    let intensity = |harness: &Harness<Editor>| {
+        let value = item(harness, clip)
+            .animations
+            .value_at(&project::BuiltinPath::Opacity.into(), Tick::ZERO)
+            .unwrap();
+        match value {
+            Some(project::ParamValue::Scalar(value)) => value,
+            None => 1.0,
+            other => panic!("opacity {other:?}"),
+        }
+    };
+    // Intensity reads 0 to 100, default 100.
+    assert_eq!(
+        harness
+            .get(By::new().predicate(|n| n.author_id() == Some("inspector.opacity")))
+            .value()
+            .as_deref(),
+        Some("100%")
+    );
+    let history = harness.state().session.history_len();
+    enter(&mut harness, "inspector.opacity", "45");
+    assert!((intensity(&harness) - 0.45).abs() < 1e-9);
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    // A scrub is one undo step however far it travels.
+    let history = harness.state().session.history_len();
+    drag(
+        &mut harness,
+        "inspector.opacity.scrub",
+        egui::vec2(20.0, 0.0),
+    );
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    assert!(intensity(&harness) > 0.45);
+    harness.state_mut().session.undo().unwrap();
+    assert!((intensity(&harness) - 0.45).abs() < 1e-9);
+    harness.state_mut().session.undo().unwrap();
+    assert!((intensity(&harness) - 1.0).abs() < 1e-9);
+    // Typing past the range clamps to the 0 to 100 span.
+    enter(&mut harness, "inspector.opacity", "250");
+    assert!((intensity(&harness) - 1.0).abs() < 1e-9);
+    enter(&mut harness, "inspector.opacity", "0");
+    assert!(intensity(&harness).abs() < 1e-9);
+}
+
+#[test]
 fn transform_fields_clamp_reset_scrub_cancel_and_persist() {
     let fixture = fixture();
     let mut harness = build(fixture.editor);

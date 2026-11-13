@@ -25,8 +25,8 @@ use crate::editor::{
     SelectionScope, StreamKind, Text, Tick, TrackKind, Vec2, egui, icons, theme,
 };
 use gesture::{
-    AUDIO_GAIN_SCRUB, EffectReorder, GraphDrag, OPACITY_SCRUB, SPEED_SCRUB, ScrubDrag, ScrubSpec,
-    ScrubTarget, TEXT_SIZE_SCRUB, TRANSITION_DURATION_SCRUB, effect_scrub_spec,
+    AUDIO_GAIN_SCRUB, EffectReorder, GraphDrag, INTENSITY_SCRUB, OPACITY_SCRUB, SPEED_SCRUB,
+    ScrubDrag, ScrubSpec, ScrubTarget, TEXT_SIZE_SCRUB, TRANSITION_DURATION_SCRUB, effect_scrub_spec,
 };
 
 use workflow::transform_scrub;

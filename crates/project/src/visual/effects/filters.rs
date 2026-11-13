@@ -1,6 +1,6 @@
 //! The filter looks as data: each one is a colour-grade parameter set with a shelf.
 use super::{EffectInstance, EffectValue, effect_definition};
-use crate::{Result, ToneCurve};
+use crate::{Item, ItemParams, Result, ToneCurve};
 
 /// Where a look is offered in the Filters tab. `Tools` holds the technical grades that are not
 /// looks and are not counted among them.
@@ -333,6 +333,29 @@ static DEFINITIONS: &[FilterDefinition] = &[
         &[("saturation", 20.0)],
     ),
 ];
+
+/// The id of the colour-grade instance a filter clip's stack holds.
+pub const FILTER_INSTANCE_ID: &str = "filter";
+
+/// Whether the item is a filter clip: an effect item whose stack holds the filter instance.
+pub fn is_filter_clip(item: &Item) -> bool {
+    matches!(item.content, ItemParams::Effect(_))
+        && item
+            .effects
+            .iter()
+            .any(|effect| effect.id == FILTER_INSTANCE_ID)
+}
+
+/// The catalogued look a filter clip carries, when its instance still equals one.
+pub fn filter_look(item: &Item) -> Option<&'static FilterDefinition> {
+    let instance = item
+        .effects
+        .iter()
+        .find(|effect| effect.id == FILTER_INSTANCE_ID)?;
+    DEFINITIONS.iter().find(|definition| {
+        definition.instance(FILTER_INSTANCE_ID).ok().as_ref() == Some(instance)
+    })
+}
 
 /// Every filter, looks first and then the Tools shelf.
 pub fn filter_definitions() -> &'static [FilterDefinition] {

@@ -2408,6 +2408,35 @@ fn click_pos(harness: &mut Harness<Editor>, pos: egui::Pos2) {
 }
 
 #[test]
+fn a_filter_clip_refuses_user_added_effects() {
+    let f = fixture();
+    let mut harness = build(f.editor);
+    harness.run_steps(3);
+    let outcome = harness
+        .state_mut()
+        .session
+        .apply(Command::FiltersInsert {
+            placement: Placement::Auto,
+            filter: "noir".to_owned(),
+            start: Tick::ZERO,
+            duration: Tick(3 * SECOND),
+            intensity: 100.0,
+        })
+        .unwrap();
+    let Some(CreatedId::Item(clip)) = outcome.created.last().copied() else {
+        panic!("created {:?}", outcome.created)
+    };
+    select(&mut harness, clip);
+    click(&mut harness, "assets.tab.effects");
+    let before = harness.state().session.project().clone();
+    let history = harness.state().session.history_len();
+    click(&mut harness, "effects.add.blur");
+    assert_eq!(harness.state().session.project(), &before);
+    assert_eq!(harness.state().session.history_len(), history);
+    assert_eq!(item(&harness, clip).effects.len(), 1);
+}
+
+#[test]
 fn filters_tab_shows_shelves_renders_tiles_and_adds_one_undoable_clip() {
     let f = fixture();
     let mut harness = build(f.editor);

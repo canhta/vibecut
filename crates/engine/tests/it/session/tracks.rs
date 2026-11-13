@@ -625,6 +625,8 @@ fn filter_clip_is_one_undo_step_an_effect_item_with_intensity_and_round_trips() 
             .instance("filter")
             .unwrap()
     );
+    assert!(project::is_filter_clip(clip));
+    assert_eq!(project::filter_look(clip).unwrap().id, "noir");
     // Intensity is the opacity channel; 100 stores none.
     let opacity = project::AnimationPath::from(project::BuiltinPath::Opacity);
     assert!(clip.animations.get(&opacity).is_some());
