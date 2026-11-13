@@ -52,7 +52,7 @@ use crate::{
     kit as theme,
     kit::{self as icons, Icon},
     preferences::{Preferences, drag_panel},
-    services::playback::Playback,
+    services::{lifecycle::CaptionOutput, playback::Playback},
 };
 use engine::{
     Command, CreatedId, ItemParamPatch, NewItem, Session,
@@ -617,6 +617,11 @@ impl Editor {
             .transpose()?
             .unwrap_or_default();
         self.dialogs.export.save_to(path, protected)
+    }
+    /// Save the caption output the export dialog asked for; the captions panel runs it.
+    pub fn caption_output_picked(&mut self, path: PathBuf, output: CaptionOutput) -> Result<()> {
+        self.with_assets(|assets, port| assets.export_caption_output(port, path, output));
+        Ok(())
     }
     /// Cancelling the native save dialog keeps the finished job for a later save.
     pub fn export_save_cancelled(&mut self) {

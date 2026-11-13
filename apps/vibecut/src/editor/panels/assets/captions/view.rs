@@ -1,9 +1,11 @@
 //! Paints the captions panel and its dialogs from the staged cue, style and job state.
-use super::{Options, Pick, Picker, Repaint, Subtitles, key};
+use super::{Options, Picker, Repaint, Subtitles, key};
+use crate::editor::panels::assets::CaptionsSection;
 use crate::i18n;
 use crate::{
     Error, Result, egui,
     i18n::{Locale, Text},
+    services::lifecycle::CaptionOutput,
 };
 use crate::{
     kit as theme,
@@ -14,9 +16,14 @@ use captions::LanguageTag;
 use engine::providers::{CatalogOperation, Cost, provider_options_for};
 use engine::transcript::Stage;
 use engine::{Command, Session};
-use project::ItemParams;
+use project::{ItemId, ItemParams};
 use std::{collections::BTreeSet, path::PathBuf, sync::Arc, time::Duration};
 use time::{TICKS_PER_SECOND, Tick};
+
+/// Target languages the translation and bilingual choices offer.
+const TARGET_LANGUAGES: [&str; 4] = ["vi", "en", "zh-Hans", "zh-Hant"];
+/// The Auto captions footer row: the 24 px primary button under a 12 px gap and an 8 px inset.
+const AUTO_FOOTER_HEIGHT: f32 = theme::size::CONTROL + theme::space::LG + theme::space::MD;
 
 fn output_languages(options: &Options, source: &LanguageTag) -> Result<Vec<LanguageTag>> {
     let target = LanguageTag::parse(&options.target)?;
@@ -74,35 +81,6 @@ impl Controls {
         self.remember(id, &r);
         r.clicked()
     }
-    /// Text-only button of a fixed width, for the aligned import/export row.
-    fn row_button(
-        &mut self,
-        ui: &mut egui::Ui,
-        id: &str,
-        text: Text,
-        enabled: bool,
-        width: f32,
-    ) -> bool {
-        let label = self.tr(match text {
-            Text::SubImport => Text::Import,
-            Text::SubBurn => Text::SubMp4,
-            _ => text,
-        });
-        let scope = ui.make_persistent_id(id);
-        let r = ui
-            .scope_builder(egui::UiBuilder::new().scope_id(scope), |ui| {
-                ui.add_enabled(
-                    enabled,
-                    egui::Button::new(label)
-                        .wrap_mode(egui::TextWrapMode::Truncate)
-                        .min_size(egui::vec2(width, 26.0)),
-                )
-            })
-            .inner
-            .on_hover_text(self.tr(text));
-        self.remember(id, &r);
-        r.clicked()
-    }
     fn icon_button(
         &mut self,
         ui: &mut egui::Ui,
@@ -132,7 +110,7 @@ impl Controls {
             .selected_text(language_name(self.locale, selected))
             .show_ui(ui, |ui| {
                 let tags: &[&str] = if target {
-                    &["vi", "en", "zh-Hans", "zh-Hant"]
+                    &TARGET_LANGUAGES
                 } else {
                     &["auto", "vi", "en", "zh"]
                 };
@@ -278,6 +256,7 @@ impl Subtitles {
         locale: Locale,
         dark: bool,
         bank_ready: bool,
+        section: CaptionsSection,
     ) -> Vec<(String, egui::Response)> {
         self.refresh(session);
         let frame = ui.ctx().cumulative_frame_nr();
@@ -313,362 +292,174 @@ impl Subtitles {
         };
         self.poll_picker(session, options, at);
         let busy = self.busy();
-        egui::ScrollArea::vertical()
-            .id_salt("subtitles.panel.scroll")
-            .show(ui, |ui| {
-                ui.set_max_width(ui.available_width());
-                ui.spacing_mut().item_spacing.x = 4.0;
-                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
-                ui.heading(controls.tr(Text::Caption));
-                // One aligned row: Import then the four exports, equal widths.
-                let gap = ui.spacing().item_spacing.x;
-                let width = ((ui.available_width() - gap * 4.0) / 5.0).max(28.0);
-                ui.horizontal(|ui| {
-                    for (id, label, pick) in [
-                        ("subtitles.import", Text::SubImport, Pick::Import),
-                        ("subtitles.export.srt", Text::SubSrt, Pick::Srt),
-                        ("subtitles.export.vtt", Text::SubVtt, Pick::Vtt),
-                        ("subtitles.export.txt", Text::SubTxt, Pick::Txt),
-                        ("subtitles.export.burn", Text::SubBurn, Pick::Burn),
-                    ] {
-                        let enabled = !busy
-                            && self.picker.is_none()
-                            && (matches!(pick, Pick::Import) || self.item.is_some());
-                        if controls.row_button(ui, id, label, enabled, width) {
-                            self.prepare_pick(ui.ctx(), session, pick, locale);
+        let footer = section == CaptionsSection::Auto;
+        let scroll_height = if footer {
+            (ui.available_height() - AUTO_FOOTER_HEIGHT).max(0.0)
+        } else {
+            ui.available_height()
+        };
+        ui.vertical(|ui| {
+            egui::ScrollArea::vertical()
+                .id_salt("subtitles.panel.scroll")
+                .max_height(scroll_height)
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.set_max_width(ui.available_width());
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+                    match section {
+                        CaptionsSection::Auto => {
+                            self.auto_page(ui, options, &mut controls, busy);
+                        }
+                        CaptionsSection::Add => {
+                            self.add_page(ui, session, &mut controls, locale, busy)
+                        }
+                        CaptionsSection::Translate => {
+                            self.translate_page(ui, session, options, &mut controls, busy);
                         }
                     }
-                });
-                let r = egui::CollapsingHeader::new(controls.tr(Text::SubGenerate))
-                    .id_salt("subtitles.generate.settings")
-                    .default_open(self.item.is_none())
-                    .show(ui, |ui| {
-                        ui.add_enabled_ui(!busy, |ui| {
-                            ui.label(controls.tr(Text::ShortsSourceLanguage));
-                            controls.language(ui, "subtitles.source", &mut options.source, false);
-                            ui.label(controls.tr(Text::ShortsTranscriber));
-                            controls.provider(
-                                ui,
-                                "subtitles.transcriber",
-                                &mut options.transcription,
-                                &mut options.transcription_model,
-                                CatalogOperation::Transcribe,
-                                &options.source,
-                            );
-                            ui.label(controls.tr(Text::SubSelectMedia));
-                            let source = session
-                                .selection()
-                                .iter()
-                                .find(|id| {
-                                    session
-                                        .project()
-                                        .data()
-                                        .scene()
-                                        .timeline
-                                        .iter()
-                                        .flat_map(|t| &t.items)
-                                        .any(|i| {
-                                            i.id == **id
-                                                && matches!(
-                                                    i.content,
-                                                    ItemParams::Video(_) | ItemParams::Audio(_)
-                                                )
-                                        })
-                                })
-                                .copied();
-                            if controls.button(
-                                ui,
-                                "subtitles.generate",
-                                Text::SubGenerate,
-                                Icon::Sparkle,
-                                source.is_some() && options.transcription_supported(),
-                            ) && let Some(source) = source
-                            {
-                                let result = self
-                                    .flush_drafts(session)
-                                    .and_then(|_| self.generate(session, source, options));
-                                self.ui_result(result);
-                            }
-                        });
-                    });
-                controls.remember("subtitles.generate.settings", &r.header_response);
-                let r = egui::CollapsingHeader::new(controls.tr(Text::SubTranslate))
-                    .id_salt("subtitles.translation.settings")
-                    .show(ui, |ui| {
-                        ui.add_enabled_ui(!busy, |ui| {
-                            ui.label(controls.tr(Text::SubTarget));
-                            controls.language(ui, "subtitles.target", &mut options.target, true);
-                            ui.label(controls.tr(Text::SubTranslator));
-                            controls.provider(
-                                ui,
-                                "subtitles.translator",
-                                &mut options.translation,
-                                &mut options.translation_model,
-                                CatalogOperation::Translate,
-                                &options.source,
-                            );
-                            let r = ui
-                                .checkbox(&mut options.bilingual, controls.tr(Text::SubBilingual));
-                            controls.remember("subtitles.bilingual", &r);
-                            let r =
-                                ui.checkbox(&mut self.force, controls.tr(Text::SubReplaceEdited));
-                            controls.remember("subtitles.force", &r);
-                            if controls.button(
-                                ui,
-                                "subtitles.translate",
-                                Text::SubTranslate,
-                                Icon::Translate,
-                                !self.selected.is_empty()
-                                    && self.item.is_some()
-                                    && options.validate().is_ok(),
-                            ) {
-                                let result = self
-                                    .flush_drafts(session)
-                                    .and_then(|_| self.translate(session, options));
-                                self.ui_result(result);
-                            }
-                            self.glossary_ui(ui, &mut controls);
-                        });
-                    });
-                controls.remember("subtitles.translation.settings", &r.header_response);
-                if matches!(
-                    options.transcription.as_str(),
-                    "whisper.cpp" | "whisper" | "gipformer"
-                ) {
-                    options.local_transcription_model = options.transcription_model.clone();
-                }
-                if options.source != previous_options.source {
-                    options.remember_source(project);
-                }
-                if *options != previous_options {
-                    let result = self.flush_drafts(session).map(|_| ());
-                    self.ui_result(result);
-                }
-                if let Some(problem) = self.problem {
-                    ui.colored_label(theme::error_text(dark), controls.tr(problem));
-                    if matches!(problem, Text::SubNoSpeech | Text::SubLowConfidence)
-                        && options.source != "auto"
-                        && self.retry_source.is_some()
-                        && controls.button(
-                            ui,
-                            "subtitles.retry_auto",
-                            Text::SubRetryAuto,
-                            Icon::ArrowClockwise,
-                            !busy,
-                        )
-                    {
-                        let result = self
-                            .flush_drafts(session)
-                            .and_then(|_| self.retry_auto(session, options));
+                    if matches!(
+                        options.transcription.as_str(),
+                        "whisper.cpp" | "whisper" | "gipformer"
+                    ) {
+                        options.local_transcription_model = options.transcription_model.clone();
+                    }
+                    if options.source != previous_options.source {
+                        options.remember_source(project);
+                    }
+                    if *options != previous_options {
+                        let result = self.flush_drafts(session).map(|_| ());
                         self.ui_result(result);
                     }
-                    if problem == Text::SubDraftConflict && self.caption(session).is_none() {
-                        let label = ui.label(controls.tr(Text::SubDraftRecovery));
-                        for ((id, language), draft) in &mut self.drafts {
-                            let r = ui
-                                .add(
-                                    egui::TextEdit::multiline(draft)
-                                        .desired_rows(2)
-                                        .char_limit(64 * 1024)
-                                        .desired_width(ui.available_width())
-                                        .id_salt((
-                                            "subtitles.recovery",
-                                            id.as_str(),
-                                            language.as_str(),
-                                        )),
-                                )
-                                .labelled_by(label.id);
-                            if r.has_focus() {
-                                self.text_focus = Some(r.id);
+                    if let Some(problem) = self.problem {
+                        ui.colored_label(theme::error_text(dark), controls.tr(problem));
+                        if matches!(problem, Text::SubNoSpeech | Text::SubLowConfidence)
+                            && options.source != "auto"
+                            && self.retry_source.is_some()
+                            && controls.button(
+                                ui,
+                                "subtitles.retry_auto",
+                                Text::SubRetryAuto,
+                                Icon::ArrowClockwise,
+                                !busy,
+                            )
+                        {
+                            let result = self
+                                .flush_drafts(session)
+                                .and_then(|_| self.retry_auto(session, options));
+                            self.ui_result(result);
+                        }
+                        if problem == Text::SubDraftConflict && self.caption(session).is_none() {
+                            let label = ui.label(controls.tr(Text::SubDraftRecovery));
+                            for ((id, language), draft) in &mut self.drafts {
+                                let r = ui
+                                    .add(
+                                        egui::TextEdit::multiline(draft)
+                                            .desired_rows(2)
+                                            .char_limit(64 * 1024)
+                                            .desired_width(ui.available_width())
+                                            .id_salt((
+                                                "subtitles.recovery",
+                                                id.as_str(),
+                                                language.as_str(),
+                                            )),
+                                    )
+                                    .labelled_by(label.id);
+                                if r.has_focus() {
+                                    self.text_focus = Some(r.id);
+                                }
+                                controls.remember(
+                                    format!(
+                                        "subtitles.recovery.{}.{}",
+                                        id.as_str(),
+                                        language.as_str()
+                                    ),
+                                    &r,
+                                );
                             }
-                            controls.remember(
-                                format!("subtitles.recovery.{}.{}", id.as_str(), language.as_str()),
-                                &r,
-                            );
                         }
-                    }
-                    if let Some(id) = self.missing_model.clone()
-                        && controls.button(ui, "subtitles.models", Text::Models, Icon::File, !busy)
-                    {
-                        self.requested_model = Some(id);
-                    }
-                    if controls.button(ui, "subtitles.dismiss", Text::ShortsDismiss, Icon::X, true)
-                    {
-                        if self.problem == Some(Text::SubDraftConflict) {
-                            self.drafts.clear();
-                            self.draft_project = Some(session.project().clone());
+                        if let Some(id) = self.missing_model.clone()
+                            && controls.button(
+                                ui,
+                                "subtitles.models",
+                                Text::Models,
+                                Icon::File,
+                                !busy,
+                            )
+                        {
+                            self.requested_model = Some(id);
                         }
-                        self.problem = None;
-                        self.completed = None;
-                    }
-                } else if let Some(count) = self.completed {
-                    ui.label(i18n::format(
-                        locale,
-                        Text::SubDone,
-                        &[("count", &i18n::number(locale, count as u64))],
-                    ));
-                }
-                if busy {
-                    let snapshot = self.inspect(session);
-                    ui.spinner();
-                    if let Some(job) = self
-                        .export
-                        .as_ref()
-                        .and_then(|(id, _)| self.runner.snapshot(*id))
-                    {
-                        crate::services::progress::job_progress(
+                        if controls.button(
                             ui,
-                            "subtitles.progress",
-                            &job,
+                            "subtitles.dismiss",
+                            Text::ShortsDismiss,
+                            Icon::X,
+                            true,
+                        ) {
+                            if self.problem == Some(Text::SubDraftConflict) {
+                                self.drafts.clear();
+                                self.draft_project = Some(session.project().clone());
+                            }
+                            self.problem = None;
+                            self.completed = None;
+                        }
+                    } else if let Some(count) = self.completed {
+                        ui.label(i18n::format(
                             locale,
-                        );
-                    } else {
-                        let status = controls.tr(if snapshot.cancelling {
-                            Text::ShortsCancelling
-                        } else {
-                            stage_text(snapshot.stage)
-                        });
-                        if let Some(progress) = snapshot.progress {
-                            crate::services::progress::line(
+                            Text::SubDone,
+                            &[("count", &i18n::number(locale, count as u64))],
+                        ));
+                    }
+                    if busy {
+                        let snapshot = self.inspect(session);
+                        ui.spinner();
+                        if let Some(job) = self
+                            .export
+                            .as_ref()
+                            .and_then(|(id, _)| self.runner.snapshot(*id))
+                        {
+                            crate::services::progress::job_progress(
                                 ui,
                                 "subtitles.progress",
+                                &job,
                                 locale,
-                                status,
-                                progress,
                             );
                         } else {
-                            ui.label(status);
-                        }
-                    }
-                    if controls.button(
-                        ui,
-                        "subtitles.cancel",
-                        Text::Cancel,
-                        Icon::X,
-                        !snapshot.cancelling,
-                    ) {
-                        self.cancel();
-                    }
-                    ui.ctx().request_repaint_after(Duration::from_millis(20));
-                }
-                ui.separator();
-                if self.item.is_none() {
-                    self.text_focus = None;
-                    ui.label(controls.tr(Text::SubEmpty));
-                    self.style_ui(ui, session, options, at, bank_ready, &mut controls);
-                    // Words picked in another scene stay selected here, so the pane still
-                    // answers a cut with its scene refusal instead of vanishing.
-                    self.transcript_ui(ui, session, controls.locale, dark, &mut controls.widgets);
-                    return;
-                }
-                let items: Vec<_> = session
-                    .project()
-                    .data()
-                    .scene()
-                    .timeline
-                    .iter()
-                    .flat_map(|t| &t.items)
-                    .filter(|i| matches!(i.content, ItemParams::Caption(_)))
-                    .map(|i| i.id)
-                    .collect();
-                if items.len() > 1 {
-                    let mut selected = self.item;
-                    let r = egui::ComboBox::from_id_salt(egui::Id::unique("subtitles.item"))
-                        .selected_text(i18n::format(
-                            locale,
-                            Text::SubItem,
-                            &[("id", &self.item.map_or(String::new(), |i| i.0.to_string()))],
-                        ))
-                        .show_ui(ui, |ui| {
-                            for item in items {
-                                let r = ui.selectable_value(
-                                    &mut selected,
-                                    Some(item),
-                                    i18n::format(
-                                        locale,
-                                        Text::SubItem,
-                                        &[("id", &item.0.to_string())],
-                                    ),
+                            let status = controls.tr(if snapshot.cancelling {
+                                Text::ShortsCancelling
+                            } else {
+                                stage_text(snapshot.stage)
+                            });
+                            if let Some(progress) = snapshot.progress {
+                                crate::services::progress::line(
+                                    ui,
+                                    "subtitles.progress",
+                                    locale,
+                                    status,
+                                    progress,
                                 );
-                                controls.remember(format!("subtitles.item.{}", item.0), &r);
+                            } else {
+                                ui.label(status);
                             }
-                        })
-                        .response;
-                    controls.remember("subtitles.item", &r);
-                    if selected != self.item
-                        && let Some(item) = selected
-                    {
-                        let result = self
-                            .flush_drafts(session)
-                            .and_then(|_| self.select_item(session, item));
-                        self.ui_result(result);
+                        }
+                        if controls.button(
+                            ui,
+                            "subtitles.cancel",
+                            Text::Cancel,
+                            Icon::X,
+                            !snapshot.cancelling,
+                        ) {
+                            self.cancel();
+                        }
+                        ui.ctx().request_repaint_after(Duration::from_millis(20));
                     }
-                }
-                self.style_ui(ui, session, options, at, bank_ready, &mut controls);
-                self.text_focus = None;
-                ui.add_enabled_ui(
-                    !busy && self.bank.is_none() && self.style_edit.is_none(),
-                    |ui| {
-                        ui.horizontal_wrapped(|ui| {
-                            if controls.icon_button(
-                                ui,
-                                "subtitles.select_all",
-                                Text::SubSelectAll,
-                                Icon::Plus,
-                                true,
-                            ) && let Some((_, p)) = self.caption(session)
-                            {
-                                self.selected = p.cues.cues.iter().map(|c| c.id.clone()).collect();
-                            }
-                            if controls.icon_button(
-                                ui,
-                                "subtitles.split",
-                                Text::Split,
-                                Icon::Scissors,
-                                self.selected.len() == 1,
-                            ) {
-                                let result = self
-                                    .flush_drafts(session)
-                                    .and_then(|_| self.split(session, at));
-                                self.ui_result(result);
-                            }
-                            if controls.icon_button(
-                                ui,
-                                "subtitles.merge",
-                                Text::SubMerge,
-                                Icon::ArrowsInLineHorizontal,
-                                self.selected.len() > 1,
-                            ) {
-                                let result =
-                                    self.flush_drafts(session).and_then(|_| self.merge(session));
-                                self.ui_result(result);
-                            }
-                            if controls.icon_button(
-                                ui,
-                                "subtitles.earlier",
-                                Text::SubEarlier,
-                                Icon::SkipBack,
-                                !self.selected.is_empty(),
-                            ) {
-                                let result = self
-                                    .flush_drafts(session)
-                                    .and_then(|_| self.nudge(session, false));
-                                self.ui_result(result);
-                            }
-                            if controls.icon_button(
-                                ui,
-                                "subtitles.later",
-                                Text::SubLater,
-                                Icon::SkipForward,
-                                !self.selected.is_empty(),
-                            ) {
-                                let result = self
-                                    .flush_drafts(session)
-                                    .and_then(|_| self.nudge(session, true));
-                                self.ui_result(result);
-                            }
-                        });
-                        self.cues_ui(ui, session, options, &mut controls, dark);
+                    ui.separator();
+                    if self.item.is_none() {
+                        self.text_focus = None;
+                        ui.label(controls.tr(Text::SubEmpty));
+                        self.style_ui(ui, session, options, at, bank_ready, &mut controls);
+                        // Words picked in another scene stay selected here, so the pane still
+                        // answers a cut with its scene refusal instead of vanishing.
                         self.transcript_ui(
                             ui,
                             session,
@@ -676,19 +467,143 @@ impl Subtitles {
                             dark,
                             &mut controls.widgets,
                         );
-                    },
-                );
-                self.fillers_ui(ui, session, &mut controls, locale, options);
-            });
+                        return;
+                    }
+                    let items: Vec<_> = session
+                        .project()
+                        .data()
+                        .scene()
+                        .timeline
+                        .iter()
+                        .flat_map(|t| &t.items)
+                        .filter(|i| matches!(i.content, ItemParams::Caption(_)))
+                        .map(|i| i.id)
+                        .collect();
+                    if items.len() > 1 {
+                        let mut selected = self.item;
+                        let r = egui::ComboBox::from_id_salt(egui::Id::unique("subtitles.item"))
+                            .selected_text(i18n::format(
+                                locale,
+                                Text::SubItem,
+                                &[("id", &self.item.map_or(String::new(), |i| i.0.to_string()))],
+                            ))
+                            .show_ui(ui, |ui| {
+                                for item in items {
+                                    let r = ui.selectable_value(
+                                        &mut selected,
+                                        Some(item),
+                                        i18n::format(
+                                            locale,
+                                            Text::SubItem,
+                                            &[("id", &item.0.to_string())],
+                                        ),
+                                    );
+                                    controls.remember(format!("subtitles.item.{}", item.0), &r);
+                                }
+                            })
+                            .response;
+                        controls.remember("subtitles.item", &r);
+                        if selected != self.item
+                            && let Some(item) = selected
+                        {
+                            let result = self
+                                .flush_drafts(session)
+                                .and_then(|_| self.select_item(session, item));
+                            self.ui_result(result);
+                        }
+                    }
+                    self.style_ui(ui, session, options, at, bank_ready, &mut controls);
+                    self.text_focus = None;
+                    ui.add_enabled_ui(
+                        !busy && self.bank.is_none() && self.style_edit.is_none(),
+                        |ui| {
+                            ui.horizontal_wrapped(|ui| {
+                                if controls.icon_button(
+                                    ui,
+                                    "subtitles.select_all",
+                                    Text::SubSelectAll,
+                                    Icon::Plus,
+                                    true,
+                                ) && let Some((_, p)) = self.caption(session)
+                                {
+                                    self.selected =
+                                        p.cues.cues.iter().map(|c| c.id.clone()).collect();
+                                }
+                                if controls.icon_button(
+                                    ui,
+                                    "subtitles.split",
+                                    Text::Split,
+                                    Icon::Scissors,
+                                    self.selected.len() == 1,
+                                ) {
+                                    let result = self
+                                        .flush_drafts(session)
+                                        .and_then(|_| self.split(session, at));
+                                    self.ui_result(result);
+                                }
+                                if controls.icon_button(
+                                    ui,
+                                    "subtitles.merge",
+                                    Text::SubMerge,
+                                    Icon::ArrowsInLineHorizontal,
+                                    self.selected.len() > 1,
+                                ) {
+                                    let result = self
+                                        .flush_drafts(session)
+                                        .and_then(|_| self.merge(session));
+                                    self.ui_result(result);
+                                }
+                                if controls.icon_button(
+                                    ui,
+                                    "subtitles.earlier",
+                                    Text::SubEarlier,
+                                    Icon::SkipBack,
+                                    !self.selected.is_empty(),
+                                ) {
+                                    let result = self
+                                        .flush_drafts(session)
+                                        .and_then(|_| self.nudge(session, false));
+                                    self.ui_result(result);
+                                }
+                                if controls.icon_button(
+                                    ui,
+                                    "subtitles.later",
+                                    Text::SubLater,
+                                    Icon::SkipForward,
+                                    !self.selected.is_empty(),
+                                ) {
+                                    let result = self
+                                        .flush_drafts(session)
+                                        .and_then(|_| self.nudge(session, true));
+                                    self.ui_result(result);
+                                }
+                            });
+                            self.cues_ui(ui, session, options, &mut controls, dark);
+                            self.transcript_ui(
+                                ui,
+                                session,
+                                controls.locale,
+                                dark,
+                                &mut controls.widgets,
+                            );
+                        },
+                    );
+                    if self.identify_fillers {
+                        self.fillers_ui(ui, session, &mut controls, locale, options);
+                    }
+                });
+            if footer {
+                self.auto_footer(ui, session, options, &mut controls, busy);
+            }
+        });
         self.bank_ui(ui, session, at, &mut controls);
         self.style_editor_ui(ui, session, at, &mut controls);
         controls.widgets
     }
+    /// The consent sheet, the only modal the panel still owns.
     pub(crate) fn dialogs(
         &mut self,
         ctx: &egui::Context,
-        session: &Session,
-        options: &Options,
         locale: Locale,
     ) -> Vec<(String, egui::Response)> {
         let mut controls = Controls {
@@ -697,8 +612,184 @@ impl Subtitles {
             widgets: Vec::new(),
         };
         self.consent_ui(ctx, &mut controls);
-        self.overwrite_ui(ctx, session, options, &mut controls);
         controls.widgets
+    }
+    /// Auto captions: spoken language, the bilingual choice, the filler switch and our
+    /// transcription service below them.
+    fn auto_page(
+        &mut self,
+        ui: &mut egui::Ui,
+        options: &mut Options,
+        c: &mut Controls,
+        busy: bool,
+    ) {
+        ui.add_enabled_ui(!busy, |ui| {
+            ui.label(c.tr(Text::SubSpokenLanguage));
+            c.language(ui, "subtitles.source", &mut options.source, false);
+            ui.label(c.tr(Text::SubBilingualCaptions));
+            self.bilingual_select(ui, "subtitles.bilingual.language", options, c);
+            let r = crate::kit::toggle(
+                ui,
+                "subtitles.identify_fillers",
+                &mut self.identify_fillers,
+                c.tr(Text::SubIdentifyFillers),
+            );
+            c.remember("subtitles.identify_fillers", &r);
+            ui.label(c.tr(Text::ShortsTranscriber));
+            c.provider(
+                ui,
+                "subtitles.transcriber",
+                &mut options.transcription,
+                &mut options.transcription_model,
+                CatalogOperation::Transcribe,
+                &options.source,
+            );
+        });
+    }
+    /// The second-language choice: Off, or the language the bilingual export and the
+    /// translation target share.
+    fn bilingual_select(
+        &mut self,
+        ui: &mut egui::Ui,
+        id: &str,
+        options: &mut Options,
+        c: &mut Controls,
+    ) {
+        let before = options.bilingual.then(|| options.target.clone());
+        let mut choice = before.clone();
+        let off = c.tr(Text::SubBilingualOff);
+        let locale = c.locale;
+        let shown = choice
+            .as_deref()
+            .map_or_else(|| off.to_owned(), |tag| language_name(locale, tag));
+        let r = egui::ComboBox::from_id_salt(id)
+            .width(ui.available_width().max(30.0))
+            .selected_text(shown)
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut choice, None, off);
+                for tag in TARGET_LANGUAGES {
+                    ui.selectable_value(
+                        &mut choice,
+                        Some(tag.to_owned()),
+                        language_name(locale, tag),
+                    );
+                }
+            })
+            .response;
+        c.remember("subtitles.bilingual.language", &r);
+        if choice != before {
+            match choice {
+                Some(tag) => {
+                    options.bilingual = true;
+                    options.target = tag;
+                }
+                None => options.bilingual = false,
+            }
+        }
+    }
+    /// Auto captions footer: the delete-current checkbox at the left, the primary button at
+    /// the right. The button is disabled with its reason as its tooltip.
+    fn auto_footer(
+        &mut self,
+        ui: &mut egui::Ui,
+        session: &mut Session,
+        options: &mut Options,
+        c: &mut Controls,
+        busy: bool,
+    ) {
+        let source = source_clip(session);
+        let reason = if busy {
+            Some(Text::SubTranscribing)
+        } else if source.is_none() {
+            Some(Text::SubSelectMedia)
+        } else if !options.transcription_supported() {
+            Some(Text::SubChooseProvider)
+        } else {
+            None
+        };
+        ui.horizontal(|ui| {
+            let r = ui.checkbox(&mut self.delete_current, c.tr(Text::SubDeleteCurrent));
+            c.remember("subtitles.delete_current", &r);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let r = ui.add_enabled(
+                    reason.is_none(),
+                    egui::Button::new(c.tr(Text::SubGenerate))
+                        .min_size(egui::vec2(0.0, theme::size::CONTROL)),
+                );
+                let r = match reason {
+                    Some(text) => r.on_disabled_hover_text(c.tr(text)),
+                    None => r,
+                };
+                c.remember("subtitles.generate", &r);
+                if r.clicked()
+                    && let Some(source) = source
+                {
+                    let result = self
+                        .flush_drafts(session)
+                        .and_then(|_| self.generate(session, source, options));
+                    self.ui_result(result);
+                }
+            });
+        });
+    }
+    /// Add captions: file import. Manual caption entry is not offered here.
+    fn add_page(
+        &mut self,
+        ui: &mut egui::Ui,
+        session: &mut Session,
+        c: &mut Controls,
+        locale: Locale,
+        busy: bool,
+    ) {
+        let enabled = !busy && self.picker.is_none();
+        let r = ui.add_enabled(
+            enabled,
+            egui::Button::new(c.tr(Text::SubImport))
+                .min_size(egui::vec2(0.0, theme::size::CONTROL)),
+        );
+        c.remember("subtitles.import", &r);
+        if r.clicked() {
+            self.prepare_import(ui.ctx(), session, locale);
+        }
+    }
+    /// Translate: target language, translator, the replace-edited choice, the translate
+    /// action and the glossary.
+    fn translate_page(
+        &mut self,
+        ui: &mut egui::Ui,
+        session: &mut Session,
+        options: &mut Options,
+        c: &mut Controls,
+        busy: bool,
+    ) {
+        ui.add_enabled_ui(!busy, |ui| {
+            ui.label(c.tr(Text::SubTarget));
+            c.language(ui, "subtitles.target", &mut options.target, true);
+            ui.label(c.tr(Text::SubTranslator));
+            c.provider(
+                ui,
+                "subtitles.translator",
+                &mut options.translation,
+                &mut options.translation_model,
+                CatalogOperation::Translate,
+                &options.source,
+            );
+            let r = ui.checkbox(&mut self.force, c.tr(Text::SubReplaceEdited));
+            c.remember("subtitles.force", &r);
+            if c.button(
+                ui,
+                "subtitles.translate",
+                Text::SubTranslate,
+                Icon::Translate,
+                !self.selected.is_empty() && self.item.is_some() && options.validate().is_ok(),
+            ) {
+                let result = self
+                    .flush_drafts(session)
+                    .and_then(|_| self.translate(session, options));
+                self.ui_result(result);
+            }
+            self.glossary_ui(ui, c);
+        });
     }
     fn ui_result(&mut self, result: Result<()>) {
         if let Err(e) = result {
@@ -713,75 +804,74 @@ impl Subtitles {
         }
     }
     fn glossary_ui(&mut self, ui: &mut egui::Ui, c: &mut Controls) {
-        let r = egui::CollapsingHeader::new(c.tr(Text::SubGlossary))
-            .id_salt("subtitles.glossary")
-            .show(ui, |ui| {
-                let mut remove = None;
-                for (i, term) in self.glossary.iter_mut().enumerate() {
-                    let mut source = term.term.as_str().to_owned();
-                    let mut target = term
-                        .translation
-                        .as_ref()
-                        .map_or(String::new(), |t| t.as_str().to_owned());
-                    let label = ui.label(c.tr(Text::SubTerm));
-                    let r = ui.add(
-                        egui::TextEdit::singleline(&mut source)
-                            .id_salt(("subtitles.glossary.term", i))
-                            .hint_text(c.tr(Text::SubTerm))
-                            .char_limit(256)
-                            .desired_width(ui.available_width()),
-                    );
-                    if r.has_focus() {
-                        self.text_focus = Some(r.id);
-                    }
-                    let r = r.labelled_by(label.id);
-                    c.remember(format!("subtitles.glossary.{i}.term"), &r);
-                    if r.changed() {
-                        term.term = source.into();
-                    }
-                    let label = ui.label(c.tr(Text::SubTermTranslation));
-                    let r = ui.add(
-                        egui::TextEdit::singleline(&mut target)
-                            .id_salt(("subtitles.glossary.translation", i))
-                            .hint_text(c.tr(Text::SubTermTranslation))
-                            .char_limit(256)
-                            .desired_width(ui.available_width()),
-                    );
-                    if r.has_focus() {
-                        self.text_focus = Some(r.id);
-                    }
-                    let r = r.labelled_by(label.id);
-                    c.remember(format!("subtitles.glossary.{i}.translation"), &r);
-                    if r.changed() {
-                        term.translation = (!target.is_empty()).then(|| target.into());
-                    }
-                    if c.button(
-                        ui,
-                        &format!("subtitles.glossary.{i}.remove"),
-                        Text::Delete,
-                        Icon::Trash,
-                        true,
-                    ) {
-                        remove = Some(i);
-                    }
+        let r = ui.label(egui::RichText::new(c.tr(Text::SubGlossary)).strong());
+        c.remember("subtitles.glossary", &r);
+        ui.vertical(|ui| {
+            let mut remove = None;
+            for (i, term) in self.glossary.iter_mut().enumerate() {
+                let mut source = term.term.as_str().to_owned();
+                let mut target = term
+                    .translation
+                    .as_ref()
+                    .map_or(String::new(), |t| t.as_str().to_owned());
+                let label = ui.label(c.tr(Text::SubTerm));
+                let r = ui.add(
+                    egui::TextEdit::singleline(&mut source)
+                        .id_salt(("subtitles.glossary.term", i))
+                        .hint_text(c.tr(Text::SubTerm))
+                        .char_limit(256)
+                        .desired_width(ui.available_width()),
+                );
+                if r.has_focus() {
+                    self.text_focus = Some(r.id);
                 }
-                if let Some(i) = remove {
-                    self.glossary.remove(i);
+                let r = r.labelled_by(label.id);
+                c.remember(format!("subtitles.glossary.{i}.term"), &r);
+                if r.changed() {
+                    term.term = source.into();
+                }
+                let label = ui.label(c.tr(Text::SubTermTranslation));
+                let r = ui.add(
+                    egui::TextEdit::singleline(&mut target)
+                        .id_salt(("subtitles.glossary.translation", i))
+                        .hint_text(c.tr(Text::SubTermTranslation))
+                        .char_limit(256)
+                        .desired_width(ui.available_width()),
+                );
+                if r.has_focus() {
+                    self.text_focus = Some(r.id);
+                }
+                let r = r.labelled_by(label.id);
+                c.remember(format!("subtitles.glossary.{i}.translation"), &r);
+                if r.changed() {
+                    term.translation = (!target.is_empty()).then(|| target.into());
                 }
                 if c.button(
                     ui,
-                    "subtitles.glossary.add",
-                    Text::SubAddTerm,
-                    Icon::Plus,
-                    self.glossary.len() < 128,
+                    &format!("subtitles.glossary.{i}.remove"),
+                    Text::Delete,
+                    Icon::Trash,
+                    true,
                 ) {
-                    self.glossary.push(ai::GlossaryTerm {
-                        term: "".into(),
-                        translation: None,
-                    });
+                    remove = Some(i);
                 }
-            });
-        c.remember("subtitles.glossary", &r.header_response);
+            }
+            if let Some(i) = remove {
+                self.glossary.remove(i);
+            }
+            if c.button(
+                ui,
+                "subtitles.glossary.add",
+                Text::SubAddTerm,
+                Icon::Plus,
+                self.glossary.len() < 128,
+            ) {
+                self.glossary.push(ai::GlossaryTerm {
+                    term: "".into(),
+                    translation: None,
+                });
+            }
+        });
     }
     fn style_ui(
         &mut self,
@@ -1689,51 +1779,20 @@ impl Subtitles {
             self.ui_result(result);
         }
     }
-    fn prepare_pick(
-        &mut self,
-        ctx: &egui::Context,
-        session: &mut Session,
-        kind: Pick,
-        locale: Locale,
-    ) {
+    /// The import button opens the SRT/VTT picker after the drafts are flushed.
+    fn prepare_import(&mut self, ctx: &egui::Context, session: &mut Session, locale: Locale) {
         match self.flush_drafts(session) {
-            Ok(_) => self.pick(ctx, kind, locale),
+            Ok(_) => self.pick(ctx, locale),
             Err(_) => self.problem = Some(Text::SubEditFailed),
         }
     }
-    fn pick(&mut self, ctx: &egui::Context, kind: Pick, locale: Locale) {
-        let picker = rfd::AsyncFileDialog::new();
+    fn pick(&mut self, ctx: &egui::Context, locale: Locale) {
+        let dialog = rfd::AsyncFileDialog::new()
+            .add_filter(i18n::text(locale, Text::SubImport), &["srt", "vtt"]);
         let future: std::pin::Pin<
             Box<dyn std::future::Future<Output = Option<rfd::FileHandle>> + Send>,
-        > = match kind {
-            Pick::Import => Box::pin(
-                picker
-                    .add_filter(i18n::text(locale, Text::SubImport), &["srt", "vtt"])
-                    .pick_file(),
-            ),
-            Pick::Srt => Box::pin(
-                picker
-                    .set_file_name(format!("{}.srt", i18n::text(locale, Text::SubFileBase)))
-                    .save_file(),
-            ),
-            Pick::Vtt => Box::pin(
-                picker
-                    .set_file_name(format!("{}.vtt", i18n::text(locale, Text::SubFileBase)))
-                    .save_file(),
-            ),
-            Pick::Txt => Box::pin(
-                picker
-                    .set_file_name(format!("{}.txt", i18n::text(locale, Text::SubFileBase)))
-                    .save_file(),
-            ),
-            Pick::Burn => Box::pin(
-                picker
-                    .set_file_name(format!("{}.mp4", i18n::text(locale, Text::SubFileBase)))
-                    .save_file(),
-            ),
-        };
+        > = Box::pin(dialog.pick_file());
         self.picker = Some(Picker {
-            kind,
             future,
             waker: std::task::Waker::from(Arc::new(Repaint(ctx.clone()))),
         });
@@ -1744,65 +1803,12 @@ impl Subtitles {
         };
         let mut context = std::task::Context::from_waker(&picker.waker);
         if let std::task::Poll::Ready(file) = picker.future.as_mut().poll(&mut context) {
-            let kind = picker.kind;
             self.picker = None;
             if let Some(file) = file {
                 let path = file.path().to_owned();
-                let result = match kind {
-                    Pick::Import => self.import_file(session, path, &options.source, at),
-                    _ => {
-                        if path.exists() {
-                            self.overwrite = Some((path, kind));
-                            Ok(())
-                        } else {
-                            self.export_file(session, path, kind, options, false)
-                        }
-                    }
-                };
+                let result = self.import_file(session, path, &options.source, at);
                 self.ui_result(result);
             }
-        }
-    }
-    fn overwrite_ui(
-        &mut self,
-        ctx: &egui::Context,
-        session: &Session,
-        options: &Options,
-        c: &mut Controls,
-    ) {
-        if self.overwrite.is_none() {
-            return;
-        }
-        let mut confirmed = false;
-        let mut cancelled = false;
-        let modal = egui::Modal::new(egui::Id::unique("subtitles.overwrite"))
-            .frame(crate::kit::dialog_frame(ctx))
-            .show(ctx, |ui| {
-                crate::kit::dialog_title(ui, c.tr(Text::SubOverwrite));
-                if c.button(
-                    ui,
-                    "subtitles.overwrite.confirm",
-                    Text::SubOverwrite,
-                    Icon::Export,
-                    true,
-                ) {
-                    confirmed = true;
-                }
-                if c.button(
-                    ui,
-                    "subtitles.overwrite.cancel",
-                    Text::Cancel,
-                    Icon::X,
-                    true,
-                ) {
-                    cancelled = true;
-                }
-            });
-        if confirmed && let Some((path, kind)) = self.overwrite.take() {
-            let result = self.export_file(session, path, kind, options, true);
-            self.ui_result(result);
-        } else if cancelled || modal.should_close() {
-            self.overwrite = None;
         }
     }
     /// Native picker injection uses the same engine export admission as the panel.
@@ -1817,11 +1823,7 @@ impl Subtitles {
         self.export_file(
             session,
             path,
-            match format {
-                captions::Format::Srt => Pick::Srt,
-                captions::Format::WebVtt => Pick::Vtt,
-                captions::Format::Txt => Pick::Txt,
-            },
+            CaptionOutput::File(format),
             options,
             overwrite,
         )
@@ -1833,13 +1835,13 @@ impl Subtitles {
         options: &Options,
         overwrite: bool,
     ) -> Result<()> {
-        self.export_file(session, path, Pick::Burn, options, overwrite)
+        self.export_file(session, path, CaptionOutput::Burned, options, overwrite)
     }
     fn export_file(
         &mut self,
         session: &Session,
         path: PathBuf,
-        kind: Pick,
+        output: CaptionOutput,
         options: &Options,
         overwrite: bool,
     ) -> Result<()> {
@@ -1874,7 +1876,7 @@ impl Subtitles {
             .timeline
             .iter()
             .filter(|t| {
-                if matches!(kind, Pick::Burn) {
+                if matches!(output, CaptionOutput::Burned) {
                     !t.hidden
                 } else {
                     t.id == track
@@ -1896,8 +1898,8 @@ impl Subtitles {
                 }
             }
         }
-        let command = match kind {
-            Pick::Burn => Command::BurnSubtitles {
+        let command = match output {
+            CaptionOutput::Burned => Command::BurnSubtitles {
                 range: time::TimeRange::new(Tick::ZERO, session.project().duration())?,
                 languages,
                 style: render::CaptionStyle::default(),
@@ -1905,19 +1907,13 @@ impl Subtitles {
                 path,
                 overwrite,
             },
-            Pick::Srt | Pick::Vtt | Pick::Txt => Command::ExportSubtitles {
+            CaptionOutput::File(format) => Command::ExportSubtitles {
                 track,
-                format: match kind {
-                    Pick::Srt => captions::Format::Srt,
-                    Pick::Vtt => captions::Format::WebVtt,
-                    Pick::Txt => captions::Format::Txt,
-                    _ => return Err(Error::Invalid("export format")),
-                },
+                format,
                 languages,
                 path,
                 overwrite,
             },
-            Pick::Import => return Err(Error::Invalid("export format")),
         };
         self.export = Some(session.submit_export_command(&mut self.runner, key()?, command)?);
         self.export_count = Some(count);
@@ -1925,6 +1921,25 @@ impl Subtitles {
         self.completed = None;
         Ok(())
     }
+}
+/// The first selected clip the Auto captions run can transcribe (video or audio).
+fn source_clip(session: &Session) -> Option<ItemId> {
+    session
+        .selection()
+        .iter()
+        .find(|id| {
+            session
+                .project()
+                .data()
+                .scene()
+                .timeline
+                .iter()
+                .flat_map(|t| &t.items)
+                .any(|i| {
+                    i.id == **id && matches!(i.content, ItemParams::Video(_) | ItemParams::Audio(_))
+                })
+        })
+        .copied()
 }
 /// Character index from an egui text cursor to a UTF-8 byte offset.
 fn byte_offset(text: &str, chars: usize) -> Option<usize> {

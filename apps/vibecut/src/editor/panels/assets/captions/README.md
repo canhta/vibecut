@@ -74,8 +74,9 @@ Find reads again. There is no applying state: the removal is synchronous, so not
 to show. Its state lives in `Subtitles`, resets when the caption item changes, and never mutates
 the project itself. Lexicon and limits belong to the [captions crate](../../../../../../../crates/captions/README.md).
 
-Import accepts SRT and VTT. Export offers SRT, VTT, TXT and burned MP4; TXT is one cue
-per line with no timings, serialized by captions.
+Import accepts SRT and VTT from the Add captions page. Caption files (SRT, VTT, TXT) and the burned MP4 are not panel controls: the export dialog's caption section raises `EditorAction::ExportCaption`, the window's native save picker returns the path, and `export_caption_output` runs `export_subtitles` or `burn_subtitles`. The native dialog already confirmed any replacement, so the write sets overwrite. TXT is one cue per line with no timings, serialized by captions.
+
+The Captions tab shows one of three pages, `CaptionsSection` in `assets::State` (Auto captions, Add captions, Translate). The page is presentation state, never persisted. Generate's Delete current captions checkbox (`delete_current`) removes the selected caption item after the generated one applies; that is a second command, so it is a second undo step. The Identify filler words switch (`identify_fillers`) shows or hides the filler cut list. Its persisted behaviour belongs to the AI-edit filler work.
 
 The Style chooser applies Outline or Box to the current caption item, independently of cue
 selection, through `captions.apply_style`. Custom and Mixed describe saved cue values rather

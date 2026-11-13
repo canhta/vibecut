@@ -1,4 +1,5 @@
 //! Keeps the export sheet state alongside the requests it returns.
+mod caption_outputs;
 mod dialog;
 mod settings;
 mod state;
@@ -19,6 +20,8 @@ pub(in crate::editor) enum Action {
     Start(ExportOptions),
     Retry,
     Save,
+    /// A caption file or the burned MP4, saved through the window's native picker.
+    Caption(crate::services::lifecycle::CaptionOutput),
     Options(ExportOptions),
     Saved(std::path::PathBuf),
     Remember {

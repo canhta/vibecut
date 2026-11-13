@@ -625,6 +625,7 @@ pub(crate) enum DialogAction {
     Retry,
     Save,
     Start,
+    Caption(crate::services::lifecycle::CaptionOutput),
 }
 pub(crate) struct DialogUi {
     pub widgets: Vec<(&'static str, egui::Response)>,
@@ -806,6 +807,13 @@ impl ExportDialog {
                                         options,
                                         project,
                                         self.selection_range,
+                                        &mut result,
+                                    );
+                                    ui.add_space(14.0);
+                                    super::caption_outputs::show(
+                                        ui,
+                                        locale,
+                                        project,
                                         &mut result,
                                     );
                                     ui.add_space(14.0);
