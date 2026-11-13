@@ -389,7 +389,11 @@ impl View<'_> {
                                     theme::text(cx.preferences.dark)
                                 }),
                         )
-                        .selected(scene.active),
+                        // The sub-navigation's selected style: the open scene is the accent
+                        // label on the shared row fill. egui's `selected` would paint the
+                        // accent fill under that same accent label.
+                        .fill(theme::hover(cx.preferences.dark))
+                        .stroke(egui::Stroke::NONE),
                     );
                     self.remember(
                         format!("assets.timeline.scene.{}", scene.id.0),

@@ -665,6 +665,75 @@ fn media_timeline_entry_lists_the_scenes_and_a_click_switches_scene() {
     assert!(!has_widget(&harness, &row_ids[0]));
 }
 
+/// Relative luminance of an sRGB pixel, as WCAG 2 defines it.
+fn relative_luminance(pixel: [u8; 3]) -> f64 {
+    let linear = |channel: u8| {
+        let c = f64::from(channel) / 255.0;
+        if c <= 0.03928 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * linear(pixel[0]) + 0.7152 * linear(pixel[1]) + 0.0722 * linear(pixel[2])
+}
+
+fn contrast_ratio(a: [u8; 3], b: [u8; 3]) -> f64 {
+    let (la, lb) = (relative_luminance(a), relative_luminance(b));
+    (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
+}
+
+#[test]
+fn open_scene_row_on_media_timeline_keeps_its_label_readable_in_both_themes() {
+    for dark in [true, false] {
+        let editor = editor_with(
+            Preferences {
+                dark,
+                ..Preferences::default()
+            },
+            &[(1, "alpha.mp4")],
+        );
+        let mut harness = build(editor);
+        harness.run_steps(3);
+        let scenes = timeline_fixture(&mut harness);
+        click(&mut harness, "assets.subnav.timeline");
+
+        let open = harness.state().session.project().data().current_scene_id;
+        let other = scenes
+            .iter()
+            .map(|(id, _)| *id)
+            .find(|id| *id != open)
+            .unwrap();
+        let selected = widget_rect(&harness, &format!("assets.timeline.scene.{}", open.0));
+        let plain = widget_rect(&harness, &format!("assets.timeline.scene.{}", other.0));
+
+        let image = harness.render().expect("offscreen render");
+        let scale = image.width() as f32 / 1440.0;
+        let px = |v: f32| (v * scale) as u32;
+        let rgb = |x: u32, y: u32| {
+            let p = image.get_pixel(x, y);
+            [p[0], p[1], p[2]]
+        };
+        // Background sampled inside the row's padding, clear of the label.
+        let fill = rgb(px(selected.left() + 3.0), px(selected.top() + 3.0));
+        assert_eq!(
+            fill,
+            rgb(px(plain.left() + 3.0), px(plain.top() + 3.0)),
+            "the open row uses the shared row fill, not egui's accent selection fill (dark={dark})"
+        );
+        let mut best = 1.0_f64;
+        for y in px(selected.top())..px(selected.bottom()) {
+            for x in px(selected.left())..px(selected.right()) {
+                best = best.max(contrast_ratio(rgb(x, y), fill));
+            }
+        }
+        assert!(
+            best >= 4.5,
+            "open scene label contrast {best:.2} is below 4.5 (dark={dark})"
+        );
+    }
+}
+
 /// Offscreen screenshot evidence; wgpu rendering stays out of CI.
 #[test]
 #[ignore = "renders through wgpu; run with --ignored to refresh target/p1-330-media-timeline.png"]
