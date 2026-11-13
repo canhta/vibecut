@@ -28,7 +28,9 @@ struct Snapshot {
 /// - everything else follows the setting (the main-track magnet rule is applied in `commit`).
 fn gap_ripple(command: &Command, setting: bool) -> bool {
     match command {
-        Command::AddLibrarySound { .. } | Command::AddLibraryMusic { .. } => false,
+        Command::AddLibrarySound { .. }
+        | Command::AddLibraryMusic { .. }
+        | Command::DubPlace { .. } => false,
         Command::RemovePauses { .. }
         | Command::TranscriptDeleteRange { .. }
         | Command::RemoveFillers { .. } => true,
@@ -714,6 +716,84 @@ impl Session {
         })
     }
 
+    /// One undo step: the take's asset, its narration item, the stretch that fits it to
+    /// its cue and the ducking of the original audio commit or roll back together.
+    fn place_dub(
+        &mut self,
+        placement: Placement,
+        start: Tick,
+        asset: media::SourceAsset,
+        narration: project::Narration,
+        speed: time::Speed,
+        ripple: bool,
+    ) -> Result<Outcome> {
+        let duration = asset
+            .probe()
+            .duration
+            .filter(|duration| *duration > Tick::ZERO)
+            .ok_or(EditError::Invalid("narration audio duration"))?;
+        let ducking = narration.ducking;
+        let mut stored = narration;
+        stored.ducking.enabled = false;
+        let source_asset = asset.id();
+        let mut created = Vec::new();
+        let mut placements = Vec::new();
+        self.transaction(|session| {
+            created.extend(
+                session
+                    .staged_with(
+                        Command::AddAsset {
+                            asset: asset.clone(),
+                        },
+                        false,
+                        ripple,
+                    )?
+                    .created,
+            );
+            let outcome = session.staged_with(
+                Command::InsertItem {
+                    placement,
+                    item: NewItem {
+                        retime: Default::default(),
+                        animations: project::Animations::default(),
+                        source_asset: Some(source_asset),
+                        source_range: SourceRange::new(Tick::ZERO, duration)?,
+                        start,
+                        content: ItemParams::Audio(AudioParams {
+                            source: AudioSource::Narration {
+                                narration: stored.clone(),
+                            },
+                            ..AudioParams::default()
+                        }),
+                    },
+                },
+                false,
+                ripple,
+            )?;
+            let item = outcome
+                .created
+                .iter()
+                .find_map(|id| match id {
+                    crate::CreatedId::Item(item) => Some(*item),
+                    _ => None,
+                })
+                .ok_or(EditError::Invalid("narration item"))?;
+            created.extend(outcome.created);
+            placements.extend(outcome.placements);
+            session.staged_with(Command::DubSetFit { item, speed }, false, ripple)?;
+            if ducking.enabled {
+                session.staged_with(Command::DubSetDucking { item, ducking }, false, ripple)?;
+            }
+            Ok::<(), EditError>(())
+        })?;
+        Ok(Outcome {
+            changed: true,
+            created,
+            placements,
+            closed_span: false,
+        })
+    }
+
     /// End of the last item Paste in this command tree, for repeated-paste advance.
     fn pasted_span_end(&self, command: &Command) -> Option<Tick> {
         match command {
@@ -770,6 +850,15 @@ impl Session {
                     AudioSource::Music { music },
                     ripple,
                 );
+            }
+            Command::DubPlace {
+                placement,
+                start,
+                asset,
+                narration,
+                speed,
+            } => {
+                return self.place_dub(placement, start, asset, narration, speed, ripple);
             }
             command => command,
         };

@@ -182,7 +182,18 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
         Arc::new(engine::providers::AllowAll),
         Arc::new(Mutex::new(cache)),
     )
-    .with_clips(Arc::new(CannedClips));
+    .with_clips(Arc::new(CannedClips))
+    .with_dubbing(Arc::new(engine::dubbing::Narrator::new(Arc::new(
+        crate::support::dubbing::Opener::new(vec![(
+            "openai",
+            "gpt-audio-1.5",
+            Arc::new(crate::support::dubbing::Voice::new(
+                "openai",
+                "gpt-audio-1.5",
+                crate::support::dubbing::Script::Samples(24_000),
+            )),
+        )]),
+    ))));
     let mut exercised = std::collections::BTreeSet::new();
     for spec in registry() {
         let mut s = seed();
@@ -211,6 +222,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
             Fixture::TransitionCut => s = crate::session::transition_session(false),
             Fixture::Transition => s = crate::session::transition_session(true),
             Fixture::Audio => s = with_audio(&s),
+            Fixture::Narration => s = crate::support::control::with_narration(&s),
             Fixture::CleanupEffect => {
                 s = with_audio(&s);
                 s.apply(Command::AddCleanupEffect {
@@ -593,6 +605,10 @@ fn deterministic_catalog_and_schema_document_receipts() {
         ),
         (Availability::RemovableTrack, &["track.remove"]),
         (
+            Availability::NarrationItem,
+            &["dub.set_ducking", "dub.set_fit"],
+        ),
+        (
             Availability::VisualItem,
             &[
                 "clipboard.paste_mask_points",
@@ -680,6 +696,9 @@ fn deterministic_catalog_and_schema_document_receipts() {
             "color.import_lut",
             "color.register_lut",
             "commit_gesture",
+            "dub.cancel",
+            "dub.generate",
+            "dub.place",
             "fonts.download",
             "fonts.import",
             "import.add_asset",
@@ -748,6 +767,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
             "clips.export",
             "clips.suggest",
             "color.import_lut",
+            "dub.generate",
             "export",
             "export.clip",
             "export.clips",

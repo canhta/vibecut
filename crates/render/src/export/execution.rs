@@ -793,6 +793,14 @@ pub(super) fn licence_tags(project: &Project) -> media::Result<Vec<(String, Stri
                 AudioSource::Music { music } => {
                     records.insert(music.attribution_record());
                 }
+                AudioSource::Narration { narration } => {
+                    records.insert(format!(
+                        "AI-generated voice - {} {} - voice {}",
+                        narration.provider.as_str(),
+                        narration.model.as_str(),
+                        narration.voice.as_str()
+                    ));
+                }
                 AudioSource::Upload => {}
             },
             ItemParams::Sticker(params) => {

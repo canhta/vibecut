@@ -36,6 +36,8 @@ pub enum CatalogOperation {
     ClassifyFillers,
     /// Verified-word cue upload for caption keyword emphasis.
     SelectEmphasis,
+    /// Exact narration text upload for speech synthesis; audio comes back.
+    SynthesizeSpeech,
 }
 /// Offline capability data used by CLI and UI pickers. No provider is constructed.
 #[derive(Clone, Debug, PartialEq, Eq)]

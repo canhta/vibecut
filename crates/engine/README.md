@@ -29,6 +29,7 @@ generated path.
 | `subtitles/` | Produces source-timed subtitle output. | [Subtitles](src/subtitles/README.md) |
 | `transcript/` | Acquires source-timed cues from the user's chosen providers. | [Transcript](src/transcript/README.md) |
 | `transcript/search/` | Finds transcript text through a cached per-asset index. | [Transcript search index](src/transcript/search/README.md) |
+| `dubbing/` | Synthesizes narration takes with the user's chosen provider. | [Dubbing](src/dubbing/README.md) |
 | `analysis/` | Measures source media. | [Analysis](src/analysis/README.md) |
 | `analysis/shot_analysis/` | Produces conservative source-time shot analysis. | [Per-shot analysis](src/analysis/shot_analysis/README.md) |
 | `analysis/reframe/` | Turns a source range into a subject path and crop keys. | [Reframe analysis](src/analysis/reframe/README.md) |

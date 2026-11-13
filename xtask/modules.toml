@@ -16,7 +16,7 @@ groups = ["substrate"]
 
 [[crate.layer]]
 name = "features"
-groups = ["subtitles", "analysis", "artifacts"]
+groups = ["subtitles", "analysis", "artifacts", "dubbing"]
 
 [[crate.layer]]
 name = "control"
@@ -37,6 +37,10 @@ group = "substrate"
 [[crate.module]]
 name = "subtitles"
 group = "subtitles"
+
+[[crate.module]]
+name = "dubbing"
+group = "dubbing"
 
 [[crate.module]]
 name = "analysis"

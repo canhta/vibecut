@@ -700,6 +700,33 @@ pub(crate) fn with_audio(seed: &Session) -> Session {
     });
     Session::new(Project::new(data).unwrap(), 10).unwrap()
 }
+/// The audio seed plus narration item 6, one second long, right after item 5.
+pub(crate) fn with_narration(seed: &Session) -> Session {
+    let audio = with_audio(seed);
+    let mut data = audio.project().data().clone();
+    let duration = Tick(time::TICKS_PER_SECOND);
+    let mut item = testkit::item::audio(ItemId(6))
+        .asset(media::AssetId(97))
+        .source(SourceRange::new(Tick::ZERO, duration).unwrap())
+        .build();
+    item.start = duration;
+    item.content = ItemParams::Audio(project::AudioParams {
+        source: project::AudioSource::Narration {
+            narration: crate::support::dubbing::narration(duration),
+        },
+        ..project::AudioParams::default()
+    });
+    data.scene_mut().timeline.insert_track(Track {
+        id: TrackId(6),
+        name: "Narration".into(),
+        kind: TrackKind::Audio,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![item],
+    });
+    Session::new(Project::new(data).unwrap(), 10).unwrap()
+}
 /// The seed whose item 5 is a video with an audible source asset.
 pub(crate) fn with_source_audio(seed: &Session) -> Session {
     let mut data = seed.project().data().clone();

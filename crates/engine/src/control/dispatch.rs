@@ -17,6 +17,7 @@ impl From<ProviderOption> for ProviderView {
                 CatalogOperation::GenerateChapters => "generate_chapters",
                 CatalogOperation::ClassifyFillers => "classify_fillers",
                 CatalogOperation::SelectEmphasis => "select_emphasis",
+                CatalogOperation::SynthesizeSpeech => "synthesize_speech",
             }
             .into(),
             provider: p.id.into(),
@@ -798,9 +799,45 @@ impl Session {
                     .map(|outcome| ControlResult::Edit { outcome })
                     .map_err(EngineError::from)
             }
-            Command::JobCancel { job } => {
+            Command::JobCancel { job } | Command::DubCancel { job } => {
                 runner.cancel_job(job)?;
                 Ok(ControlResult::CancelRequested { job })
+            }
+            Command::DubGenerate {
+                provider,
+                model,
+                voice,
+                language,
+                text,
+                cue_duration,
+                provider_speed_thousandths,
+            } => {
+                let unavailable =
+                    || EngineError::Edit(crate::EditError::Unsupported("narration unavailable"));
+                let access = caller
+                    .captions
+                    .ok_or(crate::providers::Error::ConsentRequired)?;
+                let workflow = access.dubbing().ok_or_else(unavailable)?;
+                let job = workflow.generate(
+                    runner,
+                    access,
+                    super::DubGenerateRequest {
+                        provider,
+                        model,
+                        voice,
+                        language,
+                        text,
+                        cue_duration,
+                        provider_speed_thousandths,
+                    },
+                    crate::control_preview::control_key(fingerprint)?,
+                )?;
+                Ok(ControlResult::JobAccepted {
+                    word_highlight_warnings: project::CaptionWordWarnings::default(),
+                    job,
+                    revision: self.revision(),
+                    paths: Vec::new(),
+                })
             }
             Command::Preview { frames } => {
                 let corrections = self.footage_corrections(caller.media)?;

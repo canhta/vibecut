@@ -103,6 +103,7 @@ pub fn approve_upload(
         CatalogOperation::GenerateChapters => ai::Operation::GenerateChapters,
         CatalogOperation::ClassifyFillers => ai::Operation::ClassifyFillers,
         CatalogOperation::SelectEmphasis => ai::Operation::SelectEmphasis,
+        CatalogOperation::SynthesizeSpeech => ai::Operation::Synthesize,
     };
     if request.config != scope.provider
         || operation != scope.operation

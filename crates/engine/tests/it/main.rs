@@ -2,6 +2,7 @@
 mod analysis;
 mod artifacts;
 mod control;
+mod dubbing;
 mod providers;
 mod runtime;
 mod session;
