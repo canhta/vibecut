@@ -796,7 +796,7 @@ fn clip_export_menu_refuses_with_reason_and_cancel_ends_the_running_job() {
         .state_mut()
         .export_clips_picked(dir.path().to_path_buf())
         .unwrap();
-    gate.wait_entered();
+    gate.wait_entered(&mut harness);
     harness.run_steps(2);
     assert!(
         has_widget(&harness, "media.export.cancel"),
@@ -833,7 +833,7 @@ fn clip_export_failure_reports_the_failure_copy() {
         .state_mut()
         .export_clips_picked(dir.path().to_path_buf())
         .unwrap();
-    gate.wait_entered();
+    gate.wait_entered(&mut harness);
     gate.release();
     let toast = await_clip_outcome(&mut harness);
     assert!(toast.starts_with("Clip export failed"), "{toast}");
@@ -856,31 +856,38 @@ impl ExportGate {
     fn arm(&self) {
         self.armed.store(true, Ordering::SeqCst);
     }
-    fn wait_entered(&self) {
+    /// Step the editor until the export holds its source. The clip-export runner starts a
+    /// queued job only on the frame's tick, so the wait has to drive frames.
+    fn wait_entered(&self, harness: &mut Harness<Editor>) {
         let deadline = Instant::now() + Duration::from_secs(10);
-        let mut state = self.state.lock().unwrap();
-        while !state.0 {
+        while !self.lock().0 {
             assert!(Instant::now() < deadline, "export never reached its source");
-            state = self
-                .wake
-                .wait_timeout(state, Duration::from_millis(20))
-                .unwrap()
-                .0;
+            harness.run_steps(1);
+            std::thread::sleep(Duration::from_millis(2));
         }
     }
     fn release(&self) {
-        self.state.lock().unwrap().1 = true;
+        self.lock().1 = true;
         self.wake.notify_all();
+    }
+    /// The state survives a panicking holder, so the release in Drop never panics twice.
+    fn lock(&self) -> std::sync::MutexGuard<'_, (bool, bool)> {
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
 impl Sources for ExportGate {
     fn create(&self) -> Box<dyn render::SourceProvider> {
         if self.armed.load(Ordering::SeqCst) {
-            let mut state = self.state.lock().unwrap();
+            let mut state = self.lock();
             state.0 = true;
             self.wake.notify_all();
             while !state.1 {
-                state = self.wake.wait(state).unwrap();
+                state = self
+                    .wake
+                    .wait(state)
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
             }
         }
         Box::new(render::FileSources::default())
