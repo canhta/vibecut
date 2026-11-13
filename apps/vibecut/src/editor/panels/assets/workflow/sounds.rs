@@ -166,13 +166,12 @@ impl State {
         if let Some(directory) = &self.sound_media_dir {
             return directory.clone();
         }
-        if let crate::services::lifecycle::EditorSession::Persistent(autosave) = &editor.session
-            && let Some(path) = autosave.saved_path()
-        {
-            let mut media = path.as_os_str().to_os_string();
-            media.push(".media");
-            return PathBuf::from(media);
-        }
-        std::env::temp_dir().join("vibecut-sounds-media")
+        let saved = match &editor.session {
+            crate::services::lifecycle::EditorSession::Persistent(autosave) => {
+                autosave.saved_path()
+            }
+            crate::services::lifecycle::EditorSession::Memory(_) => None,
+        };
+        project::media_dir(saved)
     }
 }

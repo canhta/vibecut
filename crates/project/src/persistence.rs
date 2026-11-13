@@ -17,7 +17,11 @@ pub use writer::{SaveReceipt, WriterLease};
 use crate::{Error, Project, Result};
 use bounds::{MAX_BYTES, Writer, check};
 use serde::{Deserialize, Serialize};
-use std::{fs::File, io::Read, path::Path};
+use std::{
+    fs::File,
+    io::Read,
+    path::{Path, PathBuf},
+};
 pub const FORMAT_ID: &str = "vibecut.project";
 pub const SCHEMA_VERSION: u32 = 38;
 #[derive(Serialize)]
@@ -124,6 +128,17 @@ pub(crate) fn read_bytes(path: &Path) -> Result<Vec<u8>> {
 /// Read optional bounded metadata without acquiring an editing lease (catalog display).
 pub fn read_metadata(path: &Path) -> Metadata {
     metadata::load(path)
+}
+
+/// Project-owned media folder: `<project filename>.media` beside the project file.
+/// An unsaved session has no project, so it uses the one temporary fallback.
+pub fn media_dir(project_path: Option<&Path>) -> PathBuf {
+    let Some(project) = project_path else {
+        return std::env::temp_dir().join("vibecut-media");
+    };
+    let mut media = project.as_os_str().to_os_string();
+    media.push(".media");
+    PathBuf::from(media)
 }
 
 impl std::fmt::Debug for Loaded {
