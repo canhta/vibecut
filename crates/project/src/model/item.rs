@@ -25,14 +25,18 @@ pub struct VideoParams {
     /// Non-destructive cleanup of the item's source audio; the source media is never changed.
     #[serde(default)]
     pub cleanup: crate::AudioCleanup,
-    /// Fill behind the clip wherever the clip does not cover the canvas.
+    /// Fill behind the clip wherever the clip does not cover the canvas; absent is none.
+    #[serde(default)]
     pub background: ClipBackground,
 }
 /// What fills the canvas behind a visual clip. Exclusive: one kind per clip.
 /// The blur reads the clip's own decoded frame, so it never feeds back.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ClipBackground {
+    #[default]
     None,
     Solid { color: Color },
     Blur { intensity: u32 },
