@@ -58,8 +58,9 @@ word edge. Empty or zero-length results are refused. Split and each merge commit
 engine command, one undo step.
 
 The filler cut list ([fillers.rs](fillers.rs)) is a section after the cue list. Find calls
-`timeline.filler_candidates` for the caption item's first cue language and refuses with a
-word-timing message when no cue has measured words. Find with AI runs `fillers.classify` on a
+`timeline.filler_candidates` for the first cue language of the active scene's caption items (the read
+is scene-wide, and a word cut splits an item) and refuses with a word-timing message when no cue
+has measured words. Find with AI runs `fillers.classify` on a
 worker thread with the configured text provider (`translation` in the subtitle options), because
 `submit` requests consent synchronously. The worker's [`TaskEvents`](../../../../services/ai_task.rs)
 is the captions panel's own upload sheet, so approval, refusal and cancellation use the same

@@ -18,7 +18,7 @@ use engine::{
     fillers::FillerRequest,
     transcript::Cancellation,
 };
-use project::{ItemId, Project};
+use project::{ItemId, ItemParams, Project};
 use std::{
     collections::BTreeSet,
     sync::{Arc, mpsc},
@@ -262,17 +262,25 @@ impl Subtitles {
 
     /// The language the caption item's first cue is in, or why no candidates can be read.
     fn filler_language(&self, session: &Session) -> Result<LanguageTag, Text> {
-        let (language, timed) = match self.caption(session) {
-            Some((_, params)) => (
-                params.cues.cues.first().map(|cue| cue.source_lang.clone()),
-                params
-                    .cues
-                    .cues
-                    .iter()
-                    .any(|cue| matches!(cue.word_timing, CueWordTiming::Words { .. })),
-            ),
-            None => (None, false),
-        };
+        // The read is scene-wide, and a word cut splits a caption item, so the cues of every
+        // caption item decide the language, not only the selected piece (which may hold none).
+        let cues: Vec<_> = session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| &track.items)
+            .filter_map(|item| match &item.content {
+                ItemParams::Caption(params) => Some(params),
+                _ => None,
+            })
+            .flat_map(|params| params.cues.cues.iter())
+            .collect();
+        let language = cues.first().map(|cue| cue.source_lang.clone());
+        let timed = cues
+            .iter()
+            .any(|cue| matches!(cue.word_timing, CueWordTiming::Words { .. }));
         let language = language.filter(|_| timed).ok_or(Text::FillersNoTimings)?;
         FillerLexicon::builtin(&language).map_err(|_| Text::FillersUnsupported)?;
         Ok(language)
