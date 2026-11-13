@@ -625,7 +625,9 @@ fn validate(data: &ProjectData) -> Result<()> {
                 return Err(Error::Invalid("generated item cannot reference media"));
             }
             if let ItemParams::Video(p) = &item.content
-                && (!valid_volume(p.volume) || p.crop.as_ref().is_some_and(|crop| !crop.valid()))
+                && (!valid_volume(p.volume)
+                    || p.crop.as_ref().is_some_and(|crop| !crop.valid())
+                    || !p.background.valid())
             {
                 return Err(Error::Invalid("video parameters"));
             }

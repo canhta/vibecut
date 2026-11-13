@@ -405,6 +405,7 @@ fn fixture() -> Fixture {
             muted: false,
             crop: None,
             cleanup: Default::default(),
+            background: ClipBackground::None,
         }),
     );
     let graphic = insert(
@@ -430,6 +431,7 @@ fn fixture() -> Fixture {
             muted: false,
             crop: None,
             cleanup: Default::default(),
+            background: ClipBackground::None,
         }),
     );
     let silent_video = insert(
@@ -445,6 +447,7 @@ fn fixture() -> Fixture {
             muted: false,
             crop: None,
             cleanup: Default::default(),
+            background: ClipBackground::None,
         }),
     );
     let text = insert(
@@ -1358,6 +1361,7 @@ fn every_registry_kind_has_its_reference_tab_set() {
             ElementKind::Video,
             &[
                 PropertiesTab::Transform,
+                PropertiesTab::Background,
                 PropertiesTab::RemoveBackground,
                 PropertiesTab::Mask,
                 PropertiesTab::Audio,

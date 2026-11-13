@@ -82,6 +82,11 @@ pub(in crate::editor) enum Action {
         den: i64,
     },
     SetBackground(project::Color),
+    /// One clip-background commit over the listed video items, one undo step.
+    SetClipBackground {
+        items: Vec<ItemId>,
+        background: project::ClipBackground,
+    },
     ResetTransform(ItemId),
     /// The Blend section's defaults (blend mode and opacity) as one undo step.
     ResetBlend(ItemId),

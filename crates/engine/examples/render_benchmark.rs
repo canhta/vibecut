@@ -232,6 +232,7 @@ fn export_benchmark(
                 muted: false,
                 crop: None,
                 cleanup: Default::default(),
+                background: ClipBackground::None,
             }),
         }],
     });

@@ -107,6 +107,7 @@ fn crop_scene_animated(
             volume: 0.0,
             muted: false,
             cleanup: Default::default(),
+            background: ClipBackground::None,
         }),
     }];
     project::Project::new(data).unwrap()
@@ -362,6 +363,7 @@ fn scene() -> project::Project {
                 muted: false,
                 crop: None,
                 cleanup: Default::default(),
+                background: ClipBackground::None,
             }),
             Some(media::AssetId(1)),
         ),

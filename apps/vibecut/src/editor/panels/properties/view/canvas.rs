@@ -428,10 +428,29 @@ impl Panel<'_, '_> {
 
     fn background_palette(&mut self, ui: &mut egui::Ui) {
         let current = self.cx.session.project().data().canvas.background;
+        self.swatch_palette(
+            ui,
+            current,
+            "inspector.canvas.palette",
+            "inspector.canvas_swatch",
+            Action::SetBackground,
+        );
+    }
+
+    /// The reference's solid swatch grid. `pick` builds the action for a swatch
+    /// click; `prefix` names the swatch ids for automation.
+    pub(super) fn swatch_palette(
+        &mut self,
+        ui: &mut egui::Ui,
+        current: project::Color,
+        scroll_id: &'static str,
+        prefix: &'static str,
+        pick: impl Fn(project::Color) -> Action,
+    ) {
         let dark = self.cx.dark;
         let rows = palette::SOLID.len().div_ceil(SWATCHES_PER_ROW);
         egui::ScrollArea::vertical()
-            .id_salt("inspector.canvas.palette")
+            .id_salt(scroll_id)
             .max_height(150.0)
             .show_rows(ui, SWATCH_ROW, rows, |ui, range| {
                 ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
@@ -469,9 +488,9 @@ impl Panel<'_, '_> {
                                 );
                             }
                             let response = response.on_hover_text(render::color::hex(color));
-                            self.remember(format!("inspector.canvas_swatch.{index}"), &response);
+                            self.remember(format!("{prefix}.{index}"), &response);
                             if response.clicked() {
-                                self.actions.push(Action::SetBackground(color));
+                                self.actions.push(pick(color));
                             }
                         }
                     });

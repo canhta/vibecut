@@ -605,6 +605,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
                 "timeline.distribute_items",
                 "timeline.duplicate",
                 "timeline.move_items",
+                "timeline.set_background",
                 "timeline.set_flipped",
                 "timeline.set_hidden",
                 "timeline.set_item_param",

@@ -274,6 +274,26 @@ pub(super) fn sigma_passes(sigma: f32, width: u32, height: u32) -> Result<Vec<Ef
         })
         .collect())
 }
+/// Blurs a clip background frame at a preset intensity through the shared image
+/// blur. Sigma follows the blur effect's scale: intensity / 5 at 1920x1080 on
+/// the smaller axis.
+pub(super) fn clip_background_blur(
+    image: &Image,
+    intensity: u32,
+    hooks: &dyn ExecutionHooks,
+) -> Result<Image> {
+    /// Largest sigma the direct kernel accepts (256 iterations of sigma / 8 squared).
+    const DIRECT_SIGMA_MAX: f32 = 128.0;
+    let scale = (f64::from(image.width) / 1920.0).min(f64::from(image.height) / 1080.0);
+    let sigma = (f64::from(intensity) / 5.0 * scale) as f32;
+    if sigma <= DIRECT_SIGMA_MAX {
+        return image_ops::blur(image, sigma, hooks);
+    }
+    // Heavy on larger canvases: blur half resolution at half sigma, then scale back up.
+    let half = image_ops::downsample(image, hooks)?;
+    let blurred = image_ops::blur(&half, sigma / 2.0, hooks)?;
+    image_ops::upsample(&blurred, image.width, image.height, hooks)
+}
 /// Linear-light mid grey that contrast pivots around.
 pub const GRADE_PIVOT: f32 = 0.18;
 /// BT.709 luma coefficients, also the key's luma for the shadow stage.

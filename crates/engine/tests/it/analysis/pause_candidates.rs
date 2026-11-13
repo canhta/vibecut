@@ -109,6 +109,7 @@ fn video_item(id: u64, start: Tick, source: SourceRange, asset: &SourceAsset) ->
             muted: false,
             crop: None,
             cleanup: Default::default(),
+            background: ClipBackground::None,
         }),
     }
 }
@@ -523,6 +524,7 @@ fn interview_first_300_seconds_lists_candidates_and_their_cost() {
             muted: false,
             crop: None,
             cleanup: Default::default(),
+            background: ClipBackground::None,
         }),
     };
     data.scene_mut().timeline.main.items = vec![item];

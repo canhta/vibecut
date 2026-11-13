@@ -178,6 +178,7 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
             | Command::AlignItems { items, .. }
             | Command::DistributeItems { items, .. }
             | Command::SetItemsMuted { items, .. }
+            | Command::SetItemsBackground { items, .. }
             | Command::ExtractAudio { items }
             | Command::RecoverAudio { items }
             | Command::Delete { items }
@@ -656,6 +657,9 @@ pub(crate) fn apply(
         }
         EditCommand::SetItemsMuted { items, muted } => {
             data = clips::execute_set_items_muted(data, items, muted)?;
+        }
+        EditCommand::SetItemsBackground { items, background } => {
+            data = clips::execute_set_items_background(data, items, background)?;
         }
         EditCommand::ExtractAudio { items } => {
             data = clips::execute_extract_audio(data, items, created, next)?;

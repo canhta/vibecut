@@ -568,6 +568,7 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("timeline.distribute_items", Effect::Edit, true, true),
         ("timeline.set_hidden", Effect::Edit, true, true),
         ("timeline.set_muted", Effect::Edit, true, true),
+        ("timeline.set_background", Effect::Edit, true, true),
         ("timeline.extract_audio", Effect::Edit, true, true),
         ("timeline.recover_audio", Effect::Edit, true, true),
         ("set_item_param", Effect::Edit, true, true),

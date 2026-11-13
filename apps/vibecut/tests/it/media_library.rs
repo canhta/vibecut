@@ -230,6 +230,7 @@ fn insert_video(editor: &mut Editor, asset: AssetId) -> project::ItemId {
                     muted: false,
                     crop: None,
                     cleanup: Default::default(),
+                    background: ClipBackground::None,
                 }),
             },
         })

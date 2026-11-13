@@ -299,6 +299,7 @@ impl Rig {
                 crop: None,
                 fades: Default::default(),
                 cleanup: Default::default(),
+                background: ClipBackground::None,
             })
         };
         let first = match session
@@ -460,6 +461,7 @@ fn new_media_item(asset: AssetId, kind: TrackKind) -> NewItem {
             crop: None,
             fades: Default::default(),
             cleanup: Default::default(),
+            background: ClipBackground::None,
         })
     };
     NewItem {

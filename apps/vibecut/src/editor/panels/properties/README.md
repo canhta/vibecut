@@ -82,6 +82,10 @@ batched with a `transition.set_duration` shrink when the span is longer than the
 must grow into, so one click is one undo step; a span moved by hand shows none selected.
 Remove is `transition.remove`.
 
+## Background sub-tab
+
+A video clip's Background cell sits second in the Basic sub-tab bar. It is listed only while the clip leaves part of the canvas open at the playhead (`read::clip_background_visible`, which asks `render::arrange::covers_canvas`). The kind row is None, Colour and Blur. Choosing a kind commits one `timeline.set_background` undo step: Colour starts from the current solid colour or black, and Blur starts from the current intensity or 10. Colour shows the colour row with Hex and the shared solid swatch grid. Blur shows Light, Medium and Heavy (100, 200 and 500). Apply to all copies the current background to every unlocked video item as one undo step. Controls send `Action::SetClipBackground`; the workflow sends `timeline.set_background`.
+
 ## Remove BG sub-tab
 
 Video and image items get a `Remove BG` cell in the Basic sub-tab bar. Switching

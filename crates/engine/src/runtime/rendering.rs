@@ -635,6 +635,7 @@ fn full_source_project(
                 muted: false,
                 crop: None,
                 cleanup: Default::default(),
+                background: ClipBackground::None,
             }),
         }],
     };
