@@ -23,6 +23,7 @@ pub enum ExportFormat {
     Mp4,
     Mov,
     Webm,
+    Gif,
 }
 impl ExportFormat {
     pub fn extension(self) -> &'static str {
@@ -30,6 +31,7 @@ impl ExportFormat {
             Self::Mp4 => "mp4",
             Self::Mov => "mov",
             Self::Webm => "webm",
+            Self::Gif => "gif",
         }
     }
     pub fn container(self) -> media::Container {
@@ -37,6 +39,7 @@ impl ExportFormat {
             Self::Mp4 => media::Container::Mp4,
             Self::Mov => media::Container::Mov,
             Self::Webm => media::Container::WebM,
+            Self::Gif => media::Container::Gif,
         }
     }
     pub(super) fn label(self) -> Text {
@@ -44,6 +47,7 @@ impl ExportFormat {
             Self::Mp4 => Text::ExportMp4,
             Self::Mov => Text::ExportMov,
             Self::Webm => Text::ExportWebm,
+            Self::Gif => Text::ExportGif,
         }
     }
 }

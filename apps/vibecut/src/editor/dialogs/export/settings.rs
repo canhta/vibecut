@@ -123,7 +123,10 @@ pub(super) fn show(
             let row_label = ui.label(tr(Text::ExportBitRate));
             ui.horizontal(|ui| {
                 let mut custom = options.output.bit_rate.is_some();
-                let r = ui.checkbox(&mut custom, tr(Text::ExportCustom));
+                let r = ui.add_enabled(
+                    options.format != super::ExportFormat::Gif,
+                    egui::Checkbox::new(&mut custom, tr(Text::ExportCustom)),
+                );
                 if r.changed() {
                     options.output.bit_rate = custom.then_some(options.quality.value().1);
                 }
@@ -185,6 +188,7 @@ pub(super) fn show(
                         (super::ExportFormat::Mp4, "export.format.mp4"),
                         (super::ExportFormat::Mov, "export.format.mov"),
                         (super::ExportFormat::Webm, "export.format.webm"),
+                        (super::ExportFormat::Gif, "export.format.gif"),
                     ] {
                         if !media::export_container_available(format.container()) {
                             continue;
@@ -194,6 +198,9 @@ pub(super) fn show(
                         if r.changed() {
                             options.output.codec = render::VideoCodec::Automatic;
                             options.output.profile = media::H264Profile::Automatic;
+                            if format == super::ExportFormat::Gif {
+                                options.output.bit_rate = None;
+                            }
                         }
                         result.widgets.push((id, r));
                     }
@@ -289,6 +296,9 @@ pub(super) fn show(
                 .widgets
                 .push(("export.profile", combo.response.labelled_by(row_label.id)));
             ui.end_row();
+            if options.format == super::ExportFormat::Gif {
+                gif_rows(ui, locale, options, field_width, result);
+            }
             let row_label = ui.label(tr(Text::ExportScene));
             let previous_scene = options.output.scene;
             let label = match options.output.scene {
@@ -452,13 +462,57 @@ pub(super) fn show(
     ui.add_space(12.0);
     let r = ui.checkbox(&mut options.include_audio, tr(Text::IncludeAudio));
     result.widgets.push(("export.audio.include", r));
-    let mut settings = options.settings(project);
-    if options.output.ranges(project).is_err() || options.output.apply(&mut settings).is_err() {
+    if !valid(options, project) {
         ui.colored_label(ui.visuals().error_fg_color, tr(Text::ExportInvalidRange));
     }
 }
 
+/// Colors and dithering for GIF output, as two more grid rows.
+fn gif_rows(
+    ui: &mut egui::Ui,
+    locale: Locale,
+    options: &mut ExportOptions,
+    field_width: f32,
+    result: &mut DialogUi,
+) {
+    let tr = |key| i18n::text(locale, key);
+    let row_label = ui.label(tr(Text::ExportGifColors));
+    let r = ui.add(
+        egui::DragValue::new(&mut options.output.gif.max_colors)
+            .range(media::GIF_MIN_COLORS..=media::GIF_MAX_COLORS)
+            .speed(1),
+    );
+    result
+        .widgets
+        .push(("export.gif.colors", r.labelled_by(row_label.id)));
+    ui.end_row();
+    let row_label = ui.label(tr(Text::ExportGifDither));
+    let label = |dither| match dither {
+        media::GifDither::None => tr(Text::ExportGifDitherNone),
+        media::GifDither::Bayer => tr(Text::ExportGifDitherBayer),
+    };
+    let combo = egui::ComboBox::from_id_salt(egui::IdSalt::new("export.gif.dither"))
+        .width(field_width)
+        .selected_text(label(options.output.gif.dither))
+        .show_ui(ui, |ui| {
+            for (dither, id) in [
+                (media::GifDither::None, "export.gif.dither.none"),
+                (media::GifDither::Bayer, "export.gif.dither.bayer"),
+            ] {
+                let r = ui.selectable_value(&mut options.output.gif.dither, dither, label(dither));
+                result.widgets.push((id, r));
+            }
+        });
+    result.widgets.push((
+        "export.gif.dither",
+        combo.response.labelled_by(row_label.id),
+    ));
+    ui.end_row();
+}
+
 pub(super) fn valid(options: &ExportOptions, project: &project::Project) -> bool {
+    let mut settings = options.settings(project);
     options.output.ranges(project).is_ok()
-        && options.output.apply(&mut options.settings(project)).is_ok()
+        && options.output.apply(&mut settings).is_ok()
+        && options.output.check_gif(project, &settings).is_ok()
 }

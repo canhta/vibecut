@@ -44,13 +44,12 @@ pub enum VideoCodec {
 }
 impl VideoCodec {
     /// Whether this codec can be written into `container`. WebM carries VP9
-    /// only and the other containers H.264 only; `Automatic` fits all of them.
+    /// only, MP4 and MOV H.264 only and GIF neither; `Automatic` fits all of them.
     pub fn fits(self, container: media::Container) -> bool {
-        let webm = matches!(container, media::Container::WebM);
         match self {
             Self::Automatic => true,
-            Self::H264 => !webm,
-            Self::Vp9 => webm,
+            Self::H264 => matches!(container, media::Container::Mp4 | media::Container::Mov),
+            Self::Vp9 => matches!(container, media::Container::WebM),
         }
     }
 }
@@ -72,6 +71,8 @@ pub struct OutputOptions {
     pub bit_rate: Option<usize>,
     pub codec: VideoCodec,
     pub profile: media::H264Profile,
+    /// Palette choices; used only when the container is GIF.
+    pub gif: media::GifOptions,
     pub range: RangeChoice,
     pub scene: SceneChoice,
 }
@@ -102,6 +103,7 @@ impl Default for OutputOptions {
             bit_rate: None,
             codec: VideoCodec::Automatic,
             profile: media::H264Profile::Automatic,
+            gif: media::GifOptions::default(),
             range: RangeChoice::Full,
             scene: SceneChoice::Active,
         }
@@ -158,7 +160,21 @@ impl OutputOptions {
         {
             return Err(Error::Invalid("output frame rate"));
         }
-        Ok(())
+        self.gif
+            .validate()
+            .map_err(|limit| Error::Media(limit.into()))
+    }
+    /// GIF admission for the exact scenes, geometry, rate and palette `settings`
+    /// resolve to, including each scene's duration. Other containers pass.
+    pub fn check_gif(self, project: &Project, settings: &ExportSettings) -> Result<()> {
+        if settings.container != media::Container::Gif {
+            return Ok(());
+        }
+        let mut configured = settings.clone();
+        self.apply(&mut configured)?;
+        self.ranges(project)?
+            .into_iter()
+            .try_for_each(|(_, range)| super::gif::admission(range, &configured))
     }
     /// Admit every scene and range before starting any file.
     pub fn ranges(self, project: &Project) -> Result<Vec<(SceneId, TimeRange)>> {
@@ -198,9 +214,10 @@ impl OutputOptions {
         Ok(TimeRange::new(start, end)?)
     }
     /// Whether `profile` can be requested for `container`: an explicit H.264
-    /// profile has no meaning in WebM.
+    /// profile has no meaning in WebM or GIF.
     pub fn profile_fits(profile: media::H264Profile, container: media::Container) -> bool {
-        profile == media::H264Profile::Automatic || !matches!(container, media::Container::WebM)
+        profile == media::H264Profile::Automatic
+            || matches!(container, media::Container::Mp4 | media::Container::Mov)
     }
     /// Safe word-highlight preflight for the exact selected scenes and output geometry.
     /// Shares the immutable caption reader and shaped fit with preview/burn; no media IO.
@@ -243,6 +260,12 @@ impl OutputOptions {
         {
             return Err(Error::Unsupported("codec/profile for container"));
         }
+        if settings.container == media::Container::Gif {
+            if self.bit_rate.is_some() {
+                return Err(Error::Unsupported("bit rate for GIF"));
+            }
+            settings.gif = self.gif;
+        }
         if let Some([width, height]) = self.resolution {
             settings.render.width = width;
             settings.render.height = height;
@@ -261,6 +284,16 @@ impl OutputOptions {
             || self.profile != media::H264Profile::Automatic
         {
             settings.mode = crate::ExportMode::Encode;
+        }
+        if settings.container == media::Container::Gif {
+            media::GifEncoderSettings {
+                width: settings.render.width,
+                height: settings.render.height,
+                frame_rate: settings.fps,
+                options: settings.gif,
+            }
+            .validate()
+            .map_err(|limit| Error::Media(limit.into()))?;
         }
         Ok(())
     }

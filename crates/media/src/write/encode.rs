@@ -159,14 +159,48 @@ pub fn h264_encoder_available() -> bool {
         .any(|(name, _)| ff::encoder::find_by_name(name).is_some())
 }
 
-/// Registry admission for the built-in video/audio pairs; opening still reports
-/// device-specific failures through the normal encoder error path.
+/// Registry admission for the built-in video/audio pairs and the silent GIF
+/// encoder; opening still reports device-specific failures through the normal
+/// encoder error path.
 pub fn export_container_available(container: crate::Container) -> bool {
+    if matches!(container, crate::Container::Gif) {
+        return ff::encoder::find_by_name("gif").is_some();
+    }
     let webm = matches!(container, crate::Container::WebM);
     video_candidates(webm)
         .iter()
         .any(|(name, _)| ff::encoder::find_by_name(name).is_some())
         && ff::encoder::find_by_name(if webm { "libopus" } else { "aac" }).is_some()
+}
+
+/// Drains every packet the encoder has ready under the retained-byte bound.
+/// After `send_eof` (`finished`) it drains through EOF, not EAGAIN.
+pub(super) fn receive_video_packets(
+    encoder: &mut ff::encoder::Video,
+    time_base: TimeBase,
+    finished: bool,
+) -> Result<Vec<Packet>> {
+    let mut packets = Vec::new();
+    let mut retained_bytes = 0;
+    loop {
+        let mut inner = ff::Packet::empty();
+        match encoder.receive_packet(&mut inner) {
+            Ok(()) => {
+                retained_bytes = encoded_video_batch_bytes(retained_bytes, &inner)?;
+                packets
+                    .try_reserve(1)
+                    .map_err(|_| MediaError::TooLarge("encoded video batch allocation"))?;
+                if inner.duration() <= 0 {
+                    inner.set_duration(1);
+                }
+                packets.push(Packet { inner, time_base });
+            }
+            Err(ff::Error::Eof) => break,
+            Err(e) if !finished && drained(e) => break,
+            Err(e) => return Err(error("receive encoded video")(e)),
+        }
+    }
+    Ok(packets)
 }
 
 pub struct VideoEncoder {
@@ -451,31 +485,7 @@ impl VideoEncoder {
         self.receive()
     }
     fn receive(&mut self) -> Result<Vec<Packet>> {
-        let mut packets = Vec::new();
-        let mut retained_bytes = 0;
-        loop {
-            let mut inner = ff::Packet::empty();
-            match self.encoder.receive_packet(&mut inner) {
-                Ok(()) => {
-                    retained_bytes = encoded_video_batch_bytes(retained_bytes, &inner)?;
-                    packets
-                        .try_reserve(1)
-                        .map_err(|_| MediaError::TooLarge("encoded video batch allocation"))?;
-                    if inner.duration() <= 0 {
-                        inner.set_duration(1);
-                    }
-                    packets.push(Packet {
-                        inner,
-                        time_base: self.time_base,
-                    });
-                }
-                Err(ff::Error::Eof) => break,
-                // After send_eof FFmpeg must drain through EOF, not EAGAIN.
-                Err(e) if !self.finished && drained(e) => break,
-                Err(e) => return Err(error("receive encoded video")(e)),
-            }
-        }
-        Ok(packets)
+        receive_video_packets(&mut self.encoder, self.time_base, self.finished)
     }
     pub fn flush(&mut self) -> Result<Vec<Packet>> {
         if self.finished {

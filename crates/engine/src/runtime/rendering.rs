@@ -210,6 +210,7 @@ pub fn submit_scene_exports_with_sources(
     }
     let mut settings = settings;
     options.apply(&mut settings)?;
+    options.check_gif(&project, &settings)?;
     if let [(scene, range)] = scenes.as_slice() {
         let snapshot = if *scene == project.data().current_scene_id {
             project.clone()

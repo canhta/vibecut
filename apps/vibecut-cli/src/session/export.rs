@@ -124,7 +124,7 @@ fn export_configured(
         .extension()
         .and_then(|extension| extension.to_str())
         .and_then(media::Container::from_extension)
-        .ok_or_else(|| CliError::Usage("output extension must be mp4, mov or webm".into()))?;
+        .ok_or_else(|| CliError::Usage("output extension must be mp4, mov, webm or gif".into()))?;
     options.apply(&mut settings)?;
     let key = export_job_key(&project, range, &settings)?;
 

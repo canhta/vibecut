@@ -245,6 +245,7 @@ mod tests {
                         "bit_rate": null,
                         "codec": "automatic",
                         "fps": null,
+                        "gif": {"dither": "bayer", "max_colors": 256},
                         "profile": "automatic",
                         "range": {"kind": "full"},
                         "resolution": null,

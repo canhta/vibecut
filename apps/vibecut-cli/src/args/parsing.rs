@@ -21,7 +21,7 @@ Usage:
   vibecut-cli control <project> [--allow-overwrite] [--no-save]
   vibecut-cli mcp <project> [--output-dir <directory>] [--all-tools] [--no-save]
   vibecut-cli mcp --attach --socket <endpoint>
-  vibecut-cli export <project> --out <mp4|mov|webm> [--settings <JSON>] [--aspect 9:16] [--allow-degraded] [--overwrite]
+  vibecut-cli export <project> --out <mp4|mov|webm|gif> [--settings <JSON>] [--aspect 9:16] [--allow-degraded] [--overwrite]
   vibecut-cli batch <job-file> [--allow-degraded] [--allow-overwrite]
   vibecut-cli captions import <project> <file.ass> [--language <tag>] [--start <ticks>]
                        [--track <id>] [--name <name>]

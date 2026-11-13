@@ -31,7 +31,9 @@ pub use vision::{
     mfcc_range_with_progress,
 };
 pub use write::{
-    AudioEncoder, AudioEncoderSettings, Container, EncodePreference, H264Profile, MuxSink, Muxer,
+    AudioEncoder, AudioEncoderSettings, Container, EncodePreference, GIF_MAX_COLORS, GIF_MAX_EDGE,
+    GIF_MAX_FPS, GIF_MAX_FRAMES, GIF_MAX_PIXELS, GIF_MAX_SECONDS, GIF_MIN_COLORS, GifDither,
+    GifEncoder, GifEncoderSettings, GifLimit, GifOptions, H264Profile, MuxSink, Muxer,
     VideoEncoder, VideoEncoderSettings, export_container_available, h264_encoder_available,
 };
 
@@ -54,6 +56,8 @@ pub enum MediaError {
     },
     #[error("media limit exceeded: {0}")]
     TooLarge(&'static str),
+    #[error(transparent)]
+    Gif(#[from] GifLimit),
     #[error("media operation cancelled")]
     Cancelled,
     #[error("{operation}: {source}")]
