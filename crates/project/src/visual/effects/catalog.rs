@@ -1,7 +1,5 @@
 //! The admitted effect kinds as data: id, name, shelf and parameter schema.
-use super::{
-    EffectDefinition, EffectParamDefinition, EffectParamKind, EffectShelf, EffectValue,
-};
+use super::{EffectDefinition, EffectParamDefinition, EffectParamKind, EffectShelf, EffectValue};
 use crate::{Color, ToneCurve};
 
 /// Slider range of every basic colour-grade control.

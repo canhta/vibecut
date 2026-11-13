@@ -229,7 +229,11 @@ pub fn show(
         });
     });
     if let Some(popover) = popover {
-        record(&mut event.widgets, "inspector.mask.popover", popover.response);
+        record(
+            &mut event.widgets,
+            "inspector.mask.popover",
+            popover.response,
+        );
     }
     event
 }

@@ -489,15 +489,31 @@ mod tests {
         assert!(ids(StickerTab::All).is_empty());
         assert!(ids(StickerTab::Flags).is_empty());
 
-        let offer = rows("", StickerTab::Emoji, false, &[], &[], Locale::En, Some(&store))
-            .offers
-            .remove(0);
+        let offer = rows(
+            "",
+            StickerTab::Emoji,
+            false,
+            &[],
+            &[],
+            Locale::En,
+            Some(&store),
+        )
+        .offers
+        .remove(0);
         assert!(!offer.author.is_empty() && !offer.license.is_empty());
         assert!(offer.source.starts_with("https://"));
         assert!(offer.bytes > 0);
 
         // Nothing is cached, so the emoji tab lists no entries and the flags stay in All.
-        let emoji = rows("", StickerTab::Emoji, false, &[], &[], Locale::En, Some(&store));
+        let emoji = rows(
+            "",
+            StickerTab::Emoji,
+            false,
+            &[],
+            &[],
+            Locale::En,
+            Some(&store),
+        );
         assert_eq!(emoji.total, 0);
         assert!(emoji.results.is_empty());
         let all = rows(

@@ -131,11 +131,7 @@ impl View<'_> {
             Some(EffectPreviewStatus::Pending) => "pending",
             _ => "failed",
         };
-        self.remember(
-            format!("filters.tile.{}.{status}", row.id),
-            &response,
-            None,
-        );
+        self.remember(format!("filters.tile.{}.{status}", row.id), &response, None);
         let response = response.on_hover_text(self.tr(Text::FilterAdd));
         if response.clicked() {
             self.actions.push(Action::AddFilter(row.id));

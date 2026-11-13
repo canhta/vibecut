@@ -12,7 +12,8 @@ use crate::{
 };
 pub use destination::validate_output_path;
 use execution::{
-    OmittedSources, admission, admit_stickers, audio_only_export, copy_export, copy_plan, encoded_export,
+    OmittedSources, admission, admit_stickers, audio_only_export, copy_export, copy_plan,
+    encoded_export,
 };
 use gif::gif_export;
 use media::{Container, EncodePreference};

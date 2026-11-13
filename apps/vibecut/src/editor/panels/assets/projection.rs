@@ -2,8 +2,8 @@
 use super::effects::{EffectPreviews, preview_instance};
 use super::stickers;
 use super::{
-    AssetRow, AssetState, AssetsTab, BTreeMap, EffectRow, FilterRow, Icon, MediaKind,
-    MediaSection, Model, Row, SceneRow, State, Text, asset_row, egui, file_name,
+    AssetRow, AssetState, AssetsTab, BTreeMap, EffectRow, FilterRow, Icon, MediaKind, MediaSection,
+    Model, Row, SceneRow, State, Text, asset_row, egui, file_name,
 };
 use crate::editor::Context;
 

@@ -313,7 +313,12 @@ static DEFINITIONS: &[FilterDefinition] = &[
         ],
     ),
     // Tools: technical grades, not counted among the looks.
-    look("lift_shadows", "Lift Shadows", S::Tools, &[("shadow", 40.0)]),
+    look(
+        "lift_shadows",
+        "Lift Shadows",
+        S::Tools,
+        &[("shadow", 40.0)],
+    ),
     look(
         "protect_highlights",
         "Protect Highlights",
@@ -352,9 +357,9 @@ pub fn filter_look(item: &Item) -> Option<&'static FilterDefinition> {
         .effects
         .iter()
         .find(|effect| effect.id == FILTER_INSTANCE_ID)?;
-    DEFINITIONS.iter().find(|definition| {
-        definition.instance(FILTER_INSTANCE_ID).ok().as_ref() == Some(instance)
-    })
+    DEFINITIONS
+        .iter()
+        .find(|definition| definition.instance(FILTER_INSTANCE_ID).ok().as_ref() == Some(instance))
 }
 
 /// Every filter, looks first and then the Tools shelf.

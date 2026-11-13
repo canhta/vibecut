@@ -2618,7 +2618,10 @@ fn filters_tab_shows_shelves_renders_tiles_and_adds_one_undoable_clip() {
         .collect();
     assert_eq!(layers.len(), 1);
     let clip = &layers[0].items[0];
-    assert_eq!(clip.content, ItemParams::Effect(project::EffectParams::default()));
+    assert_eq!(
+        clip.content,
+        ItemParams::Effect(project::EffectParams::default())
+    );
     assert_eq!(clip.effects.len(), 1);
     assert_eq!(clip.effects[0].kind, "color_grade");
     assert_eq!(clip.source_range.duration(), Tick(3 * SECOND));
