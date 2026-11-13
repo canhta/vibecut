@@ -8,7 +8,7 @@ use std::{
 };
 use time::Tick;
 
-pub const METADATA_VERSION: u32 = 3;
+pub const METADATA_VERSION: u32 = 4;
 /// Small uncompressed sRGB RGBA thumbnail; consumers never decode untrusted images.
 #[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
@@ -77,6 +77,9 @@ pub struct Metadata {
     pub thumbnail: Thumbnail,
     pub view: ViewState,
     pub scene_views: std::collections::BTreeMap<crate::SceneId, ViewState>,
+    /// Preview reads each source's cached proxy while on. A presentation choice
+    /// like the view; the project file never names a proxy and export reads sources.
+    pub proxy_preview: bool,
     pub created_unix_ms: u64,
     pub modified_unix_ms: u64,
 }
@@ -88,6 +91,7 @@ impl Default for Metadata {
             thumbnail: Thumbnail::Missing,
             view: ViewState::default(),
             scene_views: Default::default(),
+            proxy_preview: false,
             created_unix_ms: now,
             modified_unix_ms: now,
         }

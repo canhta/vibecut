@@ -45,6 +45,7 @@ pub(super) fn decode(kind: JobKind, bytes: Option<&[u8]>) -> Result<Option<JobOu
         | JobKind::AnalyzeSpeechActivity
         | JobKind::GenerateWaveform
         | JobKind::GenerateClipThumbnails
+        | JobKind::GenerateProxy
         | JobKind::EffectThumbnail
         | JobKind::Export
         | JobKind::Import

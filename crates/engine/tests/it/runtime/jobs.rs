@@ -2422,6 +2422,57 @@ fn cache_maintenance_counts_envelopes_pins_missing_and_snapshot_replacement() {
 }
 
 #[test]
+fn file_artifacts_account_by_length_survive_reopen_and_retire_when_deleted() {
+    use engine::cache::CacheOperation::{Clear, Inspect};
+    let dir = tempfile::tempdir().unwrap();
+    let budget = ByteBudget::new(8192).unwrap();
+    let (mut cache, _) = ArtifactCache::open(dir.path(), budget.clone(), 8).unwrap();
+    let staged = cache.stage_path(key(1));
+    std::fs::write(&staged, [7u8; 3000]).unwrap();
+    cache.publish_file(key(1), &staged).unwrap();
+    assert!(!staged.exists());
+    let report = cache.maintenance().unwrap().run(Inspect, || false);
+    assert_eq!(
+        (report.disk_bytes, report.entries, report.failed),
+        (3000, 1, 0)
+    );
+    assert_eq!(
+        budget.snapshot().unwrap().used,
+        report.disk_bytes,
+        "the budget and the cache report the same physical bytes"
+    );
+    let path = cache.file(key(1)).unwrap().unwrap();
+    assert_eq!(std::fs::metadata(&path).unwrap().len(), 3000);
+    assert!(matches!(cache.get(key(1)), Err(B::Edit(_))));
+    drop(cache);
+    let (mut cache, corrupt) = ArtifactCache::open(dir.path(), budget.clone(), 8).unwrap();
+    assert_eq!(corrupt, 0);
+    assert_eq!(cache.file(key(1)).unwrap().as_deref(), Some(path.as_path()));
+    assert_eq!(budget.snapshot().unwrap().used, 3000);
+    // Deleting the file behind the cache retires the entry and its charge.
+    std::fs::remove_file(&path).unwrap();
+    assert!(matches!(cache.file(key(1)), Err(B::CacheCorrupt)));
+    assert_eq!(budget.snapshot().unwrap().used, 0);
+    assert!(cache.file(key(1)).unwrap().is_none());
+    // An oversized file is refused and its staging file removed.
+    let staged = cache.stage_path(key(2));
+    std::fs::write(&staged, [0u8; 5000]).unwrap();
+    assert!(matches!(
+        cache.publish_file(key(2), &staged),
+        Err(B::ArtifactTooLarge)
+    ));
+    assert!(!staged.exists());
+    // Clear removes a file artifact like any other entry.
+    let staged = cache.stage_path(key(3));
+    std::fs::write(&staged, [3u8; 1000]).unwrap();
+    cache.publish_file(key(3), &staged).unwrap();
+    let report = cache.maintenance().unwrap().run(Clear, || false);
+    assert_eq!((report.removed_bytes, report.disk_bytes), (1000, 0));
+    assert_eq!(budget.snapshot().unwrap().used, 0);
+    assert!(cache.file(key(3)).unwrap().is_none());
+}
+
+#[test]
 fn cache_maintenance_cancel_keeps_prior_removals_and_independent_roots() {
     use engine::cache::CacheOperation::{Clear, Inspect};
     let dir = tempfile::tempdir().unwrap();

@@ -81,6 +81,13 @@ pub mod thumbnails {
     //! Produces cached source thumbnails.
     pub use super::frame_thumbnails::{RetainedThumbnail, ThumbnailCache, thumbnail_key};
 }
+mod proxy;
+mod proxy_sources;
+pub mod proxies {
+    //! Generates preview proxies and resolves preview reads to them.
+    pub use super::proxy::{ProxyJob, ProxyReady, ProxyRequest, proxy_key};
+    pub use super::proxy_sources::{ProxyFallback, ProxyIndex, ProxySources};
+}
 mod frame_snapshot;
 pub mod thumbnail_strip;
 pub mod snapshot {

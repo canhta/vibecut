@@ -29,6 +29,16 @@ fn project_creation_rename_undo_and_view_state_have_distinct_history() {
         .unwrap();
     assert_eq!(session.project(), &snapshot);
     assert_eq!(session.history_len(), (1, 0));
+    // The proxy choice is presentation state beside the view: no history entry
+    // and no change to the project snapshot or its serialized bytes.
+    let bytes = serde_json::to_vec(session.project().data()).unwrap();
+    assert!(!session.metadata().proxy_preview);
+    assert!(session.set_proxy_preview(true).unwrap());
+    assert!(!session.set_proxy_preview(true).unwrap());
+    assert!(session.metadata().proxy_preview);
+    assert_eq!(session.project(), &snapshot);
+    assert_eq!(session.history_len(), (1, 0));
+    assert_eq!(serde_json::to_vec(session.project().data()).unwrap(), bytes);
     session.undo().unwrap();
     assert_eq!(session.project().data().name.as_str(), "New project");
     assert_eq!(
