@@ -634,7 +634,7 @@ fn flag_search_matches_names_codes_regions_and_continents() {
     );
     assert_eq!(codes(""), codes("   "), "whitespace is an empty query");
     assert_eq!(codes("catalonia"), ["ES-CT"]);
-    assert_eq!(codes("  Saint Helena "), ["SH-HL"]);
+    assert_eq!(codes("  Saint Helena "), ["SH", "SH-HL"]);
     assert_eq!(codes("ascension"), ["SH-AC"]);
     assert_eq!(
         codes("Organisations"),

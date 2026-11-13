@@ -149,7 +149,7 @@ fn timed_words_choose_sentence_then_clause_and_pause() {
         .into_iter()
         .enumerate()
         .map(|(i, word)| Word {
-            provenance: None,
+            provenance: Some(captions::TimingProvenance::Native),
             text: word.into(),
             range: Some(range(
                 i as i64 * TICKS_PER_SECOND,
