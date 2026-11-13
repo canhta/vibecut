@@ -5,7 +5,8 @@ mod session;
 pub(crate) use session::transitions;
 pub use session::wire::{Failure, JobFailurePolicy};
 pub use session::{
-    AssetUsage, EditError, FontError, JobTarget, MusicError, Session, SessionError, SoundError,
+    AssetUsage, BrandKitError, EditError, FontError, JobTarget, MusicError, Session, SessionError,
+    SoundError,
 };
 pub use session::{
     Availability, CaptionPreset, CaptionStyleApply, ChapterSidecars, Command, CommandKind,

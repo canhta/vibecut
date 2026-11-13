@@ -3,7 +3,8 @@ use crate::jobs::{JobId, JobRunner};
 use crate::{Command, Session};
 
 pub use crate::session::wire::{
-    API_VERSION, CaptionsResult, ClipAdjustment, ClipCandidateView, ClipEdge, ClipEnergy,
+    API_VERSION, BrandColorView, BrandEntryState, BrandKitView, BrandMediaView, CaptionsResult,
+    ClipAdjustment, ClipCandidateView, ClipEdge, ClipEnergy,
     ClipExportShort, ClipPieceRange, ClipPieceSpan, ClipRefusal, ClipSubtitleFile, ClipsResult,
     ControlError, ControlResult, CostView, Cursor, ErrorCode, Event, Failure, FillerCandidate,
     FontEntry, FontLoad, FontLoadState, FontOrigin, FontState, JobOutput, JobView, LIMITS, Limits,
@@ -55,6 +56,8 @@ pub enum Error {
     Music(#[from] MusicError),
     #[error("font catalog operation failed")]
     Font(#[from] FontError),
+    #[error("brand kit operation failed")]
+    BrandKit(#[from] crate::BrandKitError),
     #[error(transparent)]
     Providers(#[from] providers::Error),
     #[error(transparent)]
@@ -86,6 +89,7 @@ impl Error {
             Self::Sounds(inner) => inner.code(),
             Self::Music(inner) => inner.code(),
             Self::Font(inner) => inner.code(),
+            Self::BrandKit(inner) => inner.code(),
             Self::Providers(inner) => return (inner.code(), inner.transient()),
             Self::Transcript(inner) => return (inner.code(), inner.transient()),
             Self::Subtitles(inner) => return (inner.code(), inner.transient()),
@@ -198,6 +202,18 @@ impl<'a> FontAccess<'a> {
         }
     }
 }
+/// The brand kit operation the process lends to control commands: the active kit's
+/// contents, or `None` when no kit is active. It is composition state borrowed for one
+/// request; the kernel owns no store and copies nothing into a project.
+#[derive(Clone, Copy)]
+pub struct BrandAccess<'a> {
+    list: &'a dyn Fn() -> Result<Option<BrandKitView>>,
+}
+impl<'a> BrandAccess<'a> {
+    pub fn new(list: &'a dyn Fn() -> Result<Option<BrandKitView>>) -> Self {
+        Self { list }
+    }
+}
 /// The three sound-library operations the process lends to control commands. The
 /// access object owns the library root and the provider credential, so the command
 /// carries neither; it chooses remote or local search by the credential's presence.
@@ -300,6 +316,9 @@ pub struct Caller<'a> {
     /// The process music library behind `music.search`, `music.save` and
     /// `music.unsave`. Without it those commands refuse `Unsupported`.
     pub music: Option<&'a MusicAccess<'a>>,
+    /// The process brand kit store behind `brand.list`. Without it that command refuses
+    /// [`crate::BrandKitError::Unavailable`].
+    pub brand: Option<&'a BrandAccess<'a>>,
     /// The process artifact caches behind `media.generate_waveform` and
     /// `media.generate_clip_thumbnails`. Without them those commands refuse.
     /// One mutex instance is shared by the desktop timeline display and the
@@ -408,6 +427,7 @@ mod tests {
                     fonts: None,
                     sounds: None,
                     music: None,
+                    brand: None,
                     media: None,
                     chapters: None,
                     captions: None,

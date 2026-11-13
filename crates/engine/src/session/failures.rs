@@ -57,6 +57,36 @@ pub enum FontError {
     ImportActive,
 }
 
+/// Brand kit store failures.
+#[derive(Debug, thiserror::Error)]
+pub enum BrandKitError {
+    #[error("the brand kit store is not available in this session")]
+    Unavailable,
+    #[error("no brand kit or entry has this identity")]
+    NotFound,
+    #[error("brand kit limit reached")]
+    Limit,
+    #[error("brand kit input is invalid: {0}")]
+    Invalid(&'static str),
+    #[error("brand kit entry is missing or fails verification")]
+    Integrity,
+    #[error("brand kit IO failed")]
+    Io(#[from] std::io::Error),
+    #[error("brand kit persistence failed")]
+    Project(#[from] project::Error),
+}
+impl Failure for BrandKitError {
+    fn code(&self) -> ErrorCode {
+        match self {
+            Self::Unavailable => ErrorCode::Unavailable,
+            Self::NotFound | Self::Integrity => ErrorCode::Refused,
+            Self::Limit => ErrorCode::Limit,
+            Self::Invalid(_) => ErrorCode::InvalidParams,
+            Self::Io(_) | Self::Project(_) => ErrorCode::Io,
+        }
+    }
+}
+
 /// Sound library failures.
 #[derive(Debug, thiserror::Error)]
 pub enum SoundError {

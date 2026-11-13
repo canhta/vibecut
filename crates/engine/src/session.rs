@@ -5,7 +5,7 @@ mod failures;
 mod revision;
 mod state;
 pub(crate) mod wire;
-pub use failures::{FontError, MusicError, SessionError, SoundError};
+pub use failures::{BrandKitError, FontError, MusicError, SessionError, SoundError};
 pub(crate) use state::identity_entropy;
 pub use state::{JobTarget, Session};
 pub use wire::ChapterSidecars;

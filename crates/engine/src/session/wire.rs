@@ -24,7 +24,8 @@ pub(crate) use ledger::{Ledger, Receipt};
 pub use limits::*;
 pub use results::{ControlResult, JobOutput, JobView, ProviderView};
 pub use views::{
-    CaptionsResult, ChangeKind, ChapterSidecars, CostView, DetectionResult, EmphasisSuggestion,
+    BrandColorView, BrandEntryState, BrandKitView, BrandMediaView, CaptionsResult, ChangeKind,
+    ChapterSidecars, CostView, DetectionResult, EmphasisSuggestion,
     FillerCandidate, FontEntry, FontLoad, FontLoadState, FontOrigin, FontState, JobId, JobKind,
     JobStage, JobState, LoudnessResult, Measured, MusicEntry, MusicPage, MusicSource, OutputSpan,
     PauseCandidates, PreviewFrame, PreviewResult, ReframeReason, ReframeReport, ReframeShotReport,

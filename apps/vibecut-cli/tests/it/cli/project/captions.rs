@@ -448,6 +448,7 @@ fn cancel_bank_export(project: project::Project, destination: std::path::PathBuf
             fonts: None,
             sounds: None,
             music: None,
+            brand: None,
             media: None,
             chapters: None,
             captions: None,

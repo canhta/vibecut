@@ -72,6 +72,7 @@ pub(crate) mod wire {
                 fonts: None,
                 sounds: None,
                 music: None,
+                brand: None,
                 media: None,
                 chapters: None,
                 captions: None,

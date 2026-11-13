@@ -29,6 +29,47 @@ pub enum FontState {
     NotDownloaded,
 }
 
+/// The active brand kit: its contents only, never local paths. Entries whose file is
+/// missing or corrupt stay listed with a state, so the kit is never silently reduced.
+#[derive(Clone, Debug, PartialEq, Serialize, schemars::JsonSchema)]
+pub struct BrandKitView {
+    pub id: u64,
+    pub name: String,
+    pub colors: Vec<BrandColorView>,
+    /// Font family names, resolved by the font store when a project uses them.
+    pub fonts: Vec<String>,
+    pub media: Vec<BrandMediaView>,
+    pub text_presets: Vec<project::SavedTextPreset>,
+    pub caption_presets: Vec<project::SavedCaptionPreset>,
+}
+
+/// One named brand colour as RGBA bytes.
+#[derive(Clone, Debug, PartialEq, Serialize, schemars::JsonSchema)]
+pub struct BrandColorView {
+    pub name: String,
+    pub rgba: [u8; 4],
+}
+
+/// One stored media file of the kit.
+#[derive(Clone, Debug, PartialEq, Serialize, schemars::JsonSchema)]
+pub struct BrandMediaView {
+    pub id: u64,
+    pub name: String,
+    /// Lowercase SHA-256 of the stored bytes, which is also the stored file's name.
+    pub sha256: String,
+    pub size: u64,
+    pub state: BrandEntryState,
+}
+
+/// Whether a stored kit file is present and matches its recorded hash and size.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BrandEntryState {
+    Available,
+    Missing,
+    Corrupt,
+}
+
 /// One family in a listing.
 #[derive(Clone, Debug, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct FontEntry {

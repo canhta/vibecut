@@ -47,7 +47,7 @@ Features register commands through the registry; the kernel never names a featur
 
 ## Libraries (`crates/libraries/src`)
 
-`font_catalog/` and `sound_library/` are independent features exposed as `fonts` and `sounds`; each owns its local cache and admission limits and shares the [`transport`](../../crates/transport/README.md) crate's bounded HTTPS client. Imports point down to `engine`, `transport` and the domain crates.
+`brand_kit/` is the user's brand kit store, outside projects. `font_catalog/` and `sound_library/` are independent features exposed as `fonts` and `sounds`; each owns its local cache and admission limits and shares the [`transport`](../../crates/transport/README.md) crate's bounded HTTPS client. Imports point down to `engine`, `transport` and the domain crates.
 
 ## Desktop app (`apps/vibecut/src`)
 

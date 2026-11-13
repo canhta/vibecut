@@ -1,6 +1,7 @@
 //! Defines the typed results a control command returns.
 use super::{
-    EmphasisSuggestion, ErrorCode, FillerCandidate, FontEntry, FontLoad, JobId, JobKind, JobStage,
+    BrandKitView, EmphasisSuggestion, ErrorCode, FillerCandidate, FontEntry, FontLoad, JobId,
+    JobKind, JobStage,
     JobState, MusicPage, PauseCandidates, PreviewResult, Revision, SavedMusicEntry,
     SavedSoundEntry, SnapshotResult, SoundPage,
 };
@@ -30,6 +31,10 @@ pub enum ControlResult {
     },
     Font {
         font: FontLoad,
+    },
+    /// The active brand kit, or `None` when the store has no active kit.
+    BrandKit {
+        kit: Option<BrandKitView>,
     },
     SoundSaved {
         saved: SavedSoundEntry,
@@ -98,6 +103,7 @@ impl std::fmt::Debug for ControlResult {
             Self::Providers { .. } => "providers",
             Self::Fonts { .. } => "fonts",
             Self::Font { .. } => "font",
+            Self::BrandKit { .. } => "brand_kit",
             Self::SoundSearch { .. } => "sound_search",
             Self::SoundSaved { .. } => "sound_saved",
             Self::SoundUnsaved { .. } => "sound_unsaved",

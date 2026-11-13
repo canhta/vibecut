@@ -94,6 +94,7 @@ impl EngineBackend {
                 fonts: Some(&access),
                 sounds: None,
                 music: None,
+                brand: None,
                 media: None,
                 chapters: None,
                 captions: None,

@@ -302,6 +302,7 @@ impl Inbox {
             fonts: None,
             sounds: None,
             music: None,
+            brand: None,
             media,
             chapters,
             captions,

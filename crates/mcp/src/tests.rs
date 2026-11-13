@@ -663,6 +663,7 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("fonts.load", Effect::Read, true, true),
         ("fonts.download", Effect::JobControl, false, false),
         ("fonts.import", Effect::JobControl, false, false),
+        ("brand.list", Effect::Read, true, true),
     ];
     let root = tempfile::tempdir().unwrap();
     let grant = Grants::output(root.path()).unwrap();

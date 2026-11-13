@@ -68,6 +68,7 @@ pub(crate) fn run(
         fonts: lent.fonts,
         sounds: lent.sounds,
         music: lent.music,
+        brand: None,
         media: lent.media,
         chapters: None,
         captions: lent.captions,

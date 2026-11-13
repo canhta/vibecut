@@ -153,6 +153,7 @@ fn control_with(
             fonts,
             sounds: None,
             music: None,
+            brand: None,
             media: media.as_ref(),
             chapters: None,
             captions: Some(&captions),

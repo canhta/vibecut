@@ -1,4 +1,5 @@
 //! Provides external assets for project use.
+pub mod brand_kit;
 mod font_catalog;
 pub mod fonts {
     //! Resolves font assets for project rendering.

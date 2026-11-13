@@ -44,6 +44,7 @@ pub(crate) fn caller(policy: &dyn Policy) -> Caller<'_> {
         fonts: None,
         sounds: None,
         music: None,
+        brand: None,
         media: None,
         chapters: None,
         captions: None,

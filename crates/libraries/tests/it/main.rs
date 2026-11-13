@@ -1,4 +1,5 @@
 //! Behaviour coverage for the external asset libraries.
+mod brand_kit;
 mod control;
 mod font_catalog;
 mod music;

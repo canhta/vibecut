@@ -368,6 +368,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
                     fonts: Some(&fonts),
                     sounds: Some(&sounds),
                     music: Some(&music),
+                    brand: None,
                     media: Some(&media),
                     chapters: Some(&chapters),
                     captions: Some(&captions),

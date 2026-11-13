@@ -50,6 +50,11 @@ fn sound_access<'a>(caller: &Caller<'a>) -> crate::session::Result<&'a super::So
         "sound library unavailable",
     ))
 }
+fn brand_access<'a>(
+    caller: &Caller<'a>,
+) -> std::result::Result<&'a super::BrandAccess<'a>, crate::BrandKitError> {
+    caller.brand.ok_or(crate::BrandKitError::Unavailable)
+}
 fn music_access<'a>(caller: &Caller<'a>) -> crate::session::Result<&'a super::MusicAccess<'a>> {
     caller.music.ok_or(crate::session::EditError::Unsupported(
         "music library unavailable",
@@ -155,6 +160,9 @@ impl Session {
             }),
             Command::FontsLoad { family } => Ok(ControlResult::Font {
                 font: (font_access(caller)?.load)(family.as_str())?,
+            }),
+            Command::BrandList {} => Ok(ControlResult::BrandKit {
+                kit: (brand_access(caller)?.list)()?,
             }),
             Command::FillerCandidates {
                 language,
