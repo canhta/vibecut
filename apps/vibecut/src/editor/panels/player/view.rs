@@ -76,51 +76,59 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
             cx.tr(Text::Preview),
             false,
         );
-        egui::Popup::menu(&response).show(|ui| {
-            menu(
-                ui,
-                cx,
-                &mut actions,
-                "preview.snapshot",
-                Text::SnapshotSave,
-                !empty,
-                "preview.snapshot",
-                None,
-            );
-            menu(
-                ui,
-                cx,
-                &mut actions,
-                "preview.copy",
-                Text::SnapshotCopy,
-                !empty,
-                "preview.copy_snapshot",
-                None,
-            );
-            ui.separator();
-            menu(
-                ui,
-                cx,
-                &mut actions,
-                "transport.back",
-                Text::Back,
-                !empty,
-                "transport.back",
-                None,
-            );
-            menu(
-                ui,
-                cx,
-                &mut actions,
-                "transport.forward",
-                Text::Forward,
-                !empty,
-                "transport.forward",
-                None,
-            );
-            ui.separator();
-            guide_menu(ui, cx, state, &mut actions);
-        });
+        // Commands close the menu themselves; the guide picker and its grid-size
+        // fields stay open while they are edited or dragged.
+        let shown = egui::Popup::menu(&response)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .show(|ui| {
+                menu(
+                    ui,
+                    cx,
+                    &mut actions,
+                    "preview.snapshot",
+                    Text::SnapshotSave,
+                    !empty,
+                    "preview.snapshot",
+                    None,
+                );
+                menu(
+                    ui,
+                    cx,
+                    &mut actions,
+                    "preview.copy",
+                    Text::SnapshotCopy,
+                    !empty,
+                    "preview.copy_snapshot",
+                    None,
+                );
+                ui.separator();
+                menu(
+                    ui,
+                    cx,
+                    &mut actions,
+                    "transport.back",
+                    Text::Back,
+                    !empty,
+                    "transport.back",
+                    None,
+                );
+                menu(
+                    ui,
+                    cx,
+                    &mut actions,
+                    "transport.forward",
+                    Text::Forward,
+                    !empty,
+                    "transport.forward",
+                    None,
+                );
+                ui.separator();
+                guide_menu(ui, cx, state, &mut actions);
+            });
+        if shown.is_none() {
+            // Closed mid-drag: the draft would otherwise reopen as a stale value.
+            state.grid_draft = None;
+        }
         remember(cx, &mut actions, "preview.menu", response);
     });
     let footer = Rect::from_min_max(

@@ -663,10 +663,12 @@ fn screen(viewport: &render::viewport::Viewport, point: [f64; 2]) -> egui::Pos2 
     egui::pos2(x as f32, y as f32)
 }
 
-/// The item's box centre and the viewport the player uses for its gestures.
+/// The item's on-canvas box centre (its Transform offset applied, so the point
+/// is where the box is drawn, pressed and rotated about) and the viewport the
+/// player uses for its gestures.
 fn box_centre(h: &Harness<Editor>) -> ([f64; 2], render::Rect, render::viewport::Viewport) {
     let (geometry, viewport) = item_geometry(h);
-    let bounds = geometry.bounds();
+    let bounds = geometry.transformed_bounds();
     (
         [
             bounds.x + bounds.width / 2.0,
@@ -1073,6 +1075,37 @@ fn grid_size_drag_publishes_one_undo_step_from_its_start() {
         h.state().preferences.preview_guide,
         Guide::Grid { rows, cols: 3 }
     );
+}
+
+#[test]
+fn closing_the_header_menu_mid_drag_drops_the_grid_draft() {
+    let project = Project::new(project(FrameRate::FPS_30, 640, 360, false).into_data()).unwrap();
+    let mut h = build(editor(project, Preferences::default()));
+    click(&mut h, "preview.guide.grid");
+    let rows = |h: &Harness<Editor>| {
+        h.get(By::new().predicate(|node| node.author_id() == Some("preview.guide.rows")))
+            .accesskit_node()
+            .numeric_value()
+    };
+    let start = h
+        .get(By::new().predicate(|node| node.author_id() == Some("preview.guide.rows")))
+        .rect()
+        .center();
+    h.hover_at(start);
+    h.run_steps(1);
+    h.drag_at(start);
+    h.run_steps(1);
+    h.hover_at(start - egui::vec2(0.0, 60.0));
+    h.run_steps(2);
+    assert_ne!(rows(&h), Some(3.0), "the open drag shows its draft");
+    // The menu closes before the drag ends: nothing is published.
+    h.key_press(egui::Key::Escape);
+    h.run_steps(3);
+    h.drop_at(start - egui::vec2(0.0, 60.0));
+    h.run_steps(3);
+    assert_eq!(h.state().preferences.preview_guide, Guide::default());
+    click(&mut h, "preview.guide.grid");
+    assert_eq!(rows(&h), Some(3.0), "the stale draft is gone");
 }
 
 #[test]
