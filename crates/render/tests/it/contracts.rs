@@ -1889,7 +1889,11 @@ fn stickers_draw_flags_and_report_missing_assets_with_a_placeholder() {
     assert_eq!(at(&missing, 64, 4)[3], 0.);
 }
 
-/// A 4x4 clip, left two columns red and right two green: its seam is the probe.
+/// Side of the square split clip. Bilinear upscaling ramps over one source column, so the
+/// clip has enough columns that the ramp stays well under the smallest blur sigma probed.
+const SPLIT_SIDE: u32 = 256;
+
+/// A square clip, left half red and right half green: its seam is the probe.
 struct SplitClip;
 impl SourceProvider for SplitClip {
     fn status(
@@ -1907,16 +1911,23 @@ impl SourceProvider for SplitClip {
         _: time::Tick,
         hooks: &dyn ExecutionHooks,
     ) -> Result<Option<Image>> {
-        let bytes: Vec<u8> = (0..16)
+        let bytes: Vec<u8> = (0..SPLIT_SIDE * SPLIT_SIDE)
             .flat_map(|pixel| {
-                if pixel % 4 < 2 {
+                if pixel % SPLIT_SIDE < SPLIT_SIDE / 2 {
                     [255u8, 0, 0, 255]
                 } else {
                     [0u8, 255, 0, 255]
                 }
             })
             .collect();
-        Ok(Some(Image::from_rgba8(4, 4, &bytes, false, 13, hooks)?))
+        Ok(Some(Image::from_rgba8(
+            SPLIT_SIDE,
+            SPLIT_SIDE,
+            &bytes,
+            false,
+            13,
+            hooks,
+        )?))
     }
     fn audio(
         &mut self,
@@ -1952,7 +1963,7 @@ fn split_project(
                 .start(Tick::ZERO)
                 .frame_count(30)
                 .variable_frame_rate(false)
-                .size(4, 4)
+                .size(SPLIT_SIDE, SPLIT_SIDE)
                 .build(),
         )
         .build();
