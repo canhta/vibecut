@@ -184,7 +184,7 @@ impl State {
             .ok_or(Error::Invalid("font catalog unavailable"))?
             .choose_font(locale);
         self.font_import = Some(font_picker::PendingImport {
-            snapshot: desk.editor().session.project().clone(),
+            snapshot: desk.view().session.project().clone(),
             selection: desk.view().selection().clone(),
             at: desk.view().playhead,
             lifetime: self.font_picker.lifetime,
@@ -212,11 +212,11 @@ impl State {
         };
         let valid = self.font_picker.open
             && self.font_picker.lifetime == pending.lifetime
-            && std::sync::Arc::ptr_eq(&pending.snapshot, desk.editor().session.project())
+            && std::sync::Arc::ptr_eq(&pending.snapshot, desk.view().session.project())
             && pending.selection == *desk.view().selection()
             && pending.at == desk.view().playhead
-            && !desk.editor().session.transaction_active()
-            && desk.editor().session.preview_project().is_none();
+            && !desk.view().session.transaction_active()
+            && desk.view().session.preview_project().is_none();
         if !valid {
             self.font_import = Some(pending);
             self.cancel_font_import(desk);

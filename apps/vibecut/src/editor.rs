@@ -89,11 +89,8 @@ impl Editor {
     }
     /// Open the shared colour picker on a target the workspace owns.
     pub fn open_color_picker(&mut self, target: ColorTarget) -> Result<()> {
-        let actions = self
-            .properties
-            .open_picker(self.session.project(), target, None)?;
-        properties::apply(&mut self.desk(), actions);
-        Ok(())
+        self.desk()
+            .lend_properties(|state, desk| state.open_color_picker(desk, target))
     }
     /// Inject the native capability boundary for an open picker.
     pub fn set_eyedropper(
@@ -117,19 +114,13 @@ impl Editor {
         effect: Option<&str>,
         color: project::Color,
     ) -> Result<()> {
-        let mut state = std::mem::take(&mut self.properties);
-        let result = {
-            let mut desk = self.desk();
-            state.pick_key_color(&mut desk, item, effect, color)
-        };
-        self.properties = state;
-        result
+        self.desk()
+            .lend_properties(|state, desk| state.pick_key_color(desk, item, effect, color))
     }
     /// Poll the active font download; the frame ticks it once per frame.
     pub(in crate::editor) fn poll_fonts(&mut self) {
-        let mut state = std::mem::take(&mut self.properties);
-        state.poll_fonts(&mut self.desk());
-        self.properties = state;
+        self.desk()
+            .lend_properties(|state, desk| state.poll_fonts(desk));
     }
     /// End the properties scrub gesture, if one is open.
     pub(in crate::editor) fn finish_scrub(&mut self, commit: bool) {
@@ -262,13 +253,8 @@ impl Editor {
 
     /// Complete the source picker through the captured properties workflow.
     pub fn lut_picked_file(&mut self, path: Option<std::path::PathBuf>) -> Result<()> {
-        let mut state = std::mem::take(&mut self.properties);
-        let result = state.picked_lut(&mut self.desk(), path);
-        if result.is_err() {
-            state.abort_lut();
-        }
-        self.properties = state;
-        result
+        self.desk()
+            .lend_properties(|state, desk| state.lut_picked_file(desk, path))
     }
 
     pub fn new(session: Session, playback: Playback, preferences: Preferences) -> Self {

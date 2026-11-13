@@ -38,8 +38,8 @@ pub(super) fn set_alignment(
 
 pub(super) fn remove(desk: &mut Desk<'_>, transition: TransitionId) -> Result<()> {
     desk.apply_result(Command::RemoveTransition { transition }, false)?;
-    if desk.editor().selection_scopes.transition == Some(transition) {
-        desk.editor().selection_scopes.transition = None;
+    if desk.view().transition == Some(transition) {
+        desk.clear_transition_scope();
     }
     Ok(())
 }

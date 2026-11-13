@@ -26,9 +26,7 @@ pub(in crate::editor) fn apply(desk: &mut Desk<'_>, actions: Vec<Action>) {
     if actions.is_empty() {
         return;
     }
-    let mut state = std::mem::take(&mut desk.editor().properties);
-    route(&mut state, desk, actions);
-    desk.editor().properties = state;
+    desk.lend_properties(|state, desk| route(state, desk, actions));
 }
 
 fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
@@ -93,7 +91,7 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
                 // Activation runs on the editor, which holds a placeholder while
                 // this pass carries the area state. A refusal did not write it.
                 if desk.act(id) {
-                    state.set_details(desk.editor().properties.details());
+                    state.set_details(desk.view().details);
                 }
                 Ok(())
             }
@@ -227,6 +225,30 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
 }
 
 impl State {
+    /// Open the shared colour picker on a target the workspace owns.
+    pub(in crate::editor) fn open_color_picker(
+        &mut self,
+        desk: &mut Desk<'_>,
+        target: super::ColorTarget,
+    ) -> Result<()> {
+        let actions = self.open_picker(desk.view().session.project(), target, None)?;
+        route(self, desk, actions);
+        Ok(())
+    }
+
+    /// Complete the source picker; a refusal drops the captured LUT target.
+    pub(in crate::editor) fn lut_picked_file(
+        &mut self,
+        desk: &mut Desk<'_>,
+        path: Option<std::path::PathBuf>,
+    ) -> Result<()> {
+        let result = self.picked_lut(desk, path);
+        if result.is_err() {
+            self.abort_lut();
+        }
+        result
+    }
+
     /// Switch one element kind's remembered tab as one preference edit.
     fn set_tab(
         &mut self,

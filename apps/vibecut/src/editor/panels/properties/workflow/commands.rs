@@ -67,7 +67,7 @@ fn text_target(
     snapshot: &std::sync::Arc<project::Project>,
     what: &'static str,
 ) -> Result<()> {
-    if !desk.editor().clip_animation_available(state)
+    if !desk.view().edit_ready
         || state.animation_target(desk.view().session, desk.view().selection()) != Some(item)
         || !std::sync::Arc::ptr_eq(snapshot, desk.view().session.project())
     {

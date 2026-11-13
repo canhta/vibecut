@@ -149,8 +149,13 @@ impl Editor {
     }
 
     pub(in crate::editor) fn insertion_available(&self) -> bool {
-        self.properties.input_ready(&self.session)
-            && !self.player.transform.text_edit_open()
+        self.properties.input_ready(&self.session) && self.edit_ready()
+    }
+
+    /// Whether no frame-owned surface (text edit, caption edit, save, import, dialog)
+    /// blocks an edit the properties area would start.
+    pub(in crate::editor) fn edit_ready(&self) -> bool {
+        !self.player.transform.text_edit_open()
             && self
                 .assets
                 .captions
@@ -171,18 +176,7 @@ impl Editor {
         state
             .animation_target(&self.session, self.session.selection())
             .is_some()
-            && !self.player.transform.text_edit_open()
-            && self
-                .assets
-                .captions
-                .as_ref()
-                .is_none_or(|s| s.edit_ready(&self.session))
-            && !matches!(&self.session, crate::services::lifecycle::EditorSession::Persistent(s) if s.saving())
-            && !self.importing()
-            && self.lifecycle_action.is_none()
-            && !self.overlay_open
-            && !self.dialogs.export.is_open()
-            && !self.dialogs.models.is_open()
+            && self.edit_ready()
     }
     fn split_targets(&self) -> Vec<ItemId> {
         let at = self.playback.position().unwrap_or(Tick::ZERO);

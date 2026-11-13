@@ -148,6 +148,13 @@ pub(in crate::editor) struct View<'a> {
     pub(in crate::editor) session: &'a engine::Session,
     pub(in crate::editor) preferences: &'a crate::preferences::Preferences,
     pub(in crate::editor) playhead: time::Tick,
+    /// Whether no frame-owned surface blocks an edit the area would start.
+    pub(in crate::editor) edit_ready: bool,
+    /// The properties area's Project/Details choice as the frame holds it; an activation
+    /// that runs while the area's own state is lent writes it here.
+    pub(in crate::editor) details: bool,
+    /// The selected timeline transition, if any.
+    pub(in crate::editor) transition: Option<project::TransitionId>,
 }
 impl View<'_> {
     /// The selected items; the engine session is their only owner.
@@ -441,7 +448,27 @@ impl<'a> Desk<'a> {
             session: &self.editor.session,
             preferences: &self.editor.preferences,
             playhead: self.editor.playback.position().unwrap_or(time::Tick::ZERO),
+            edit_ready: self.editor.edit_ready(),
+            details: self.editor.properties.details(),
+            transition: self.editor.selection_scopes.transition,
         }
+    }
+
+    /// Lend the properties state apart from the editor for one step. The editor holds a
+    /// placeholder meanwhile, so an activation the step runs cannot reach the lent state.
+    pub(in crate::editor) fn lend_properties<T>(
+        &mut self,
+        run: impl FnOnce(&mut crate::editor::properties::State, &mut Self) -> T,
+    ) -> T {
+        let mut state = std::mem::take(&mut self.editor.properties);
+        let result = run(&mut state, self);
+        self.editor.properties = state;
+        result
+    }
+
+    /// Leave the selected transition scope after the transition is gone.
+    pub(in crate::editor) fn clear_transition_scope(&mut self) {
+        self.editor.selection_scopes.transition = None;
     }
 
     /// Run one catalog operation against the editable session.
