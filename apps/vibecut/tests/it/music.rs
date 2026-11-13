@@ -271,6 +271,33 @@ impl PreviewSink for Sink {
     }
 }
 
+/// A search transport that holds every reply until the gate opens.
+struct GatedSearch {
+    gate: Arc<Gate>,
+    body: Vec<u8>,
+    calls: AtomicUsize,
+}
+
+impl HttpTransport for GatedSearch {
+    fn send(&self, request: HttpRequest) -> Result<HttpResponse, transport::Error> {
+        self.send_bounded(request, 1 << 20)
+    }
+
+    fn send_bounded(
+        &self,
+        _request: HttpRequest,
+        _max_bytes: usize,
+    ) -> Result<HttpResponse, transport::Error> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.gate.wait();
+        Ok(HttpResponse {
+            status: 200,
+            headers: Vec::new(),
+            body: self.body.clone(),
+        })
+    }
+}
+
 fn library(root: &std::path::Path) -> Arc<MusicLibrary> {
     Arc::new(MusicLibrary::open(root).unwrap())
 }
@@ -977,4 +1004,58 @@ fn a_missing_audio_device_is_a_typed_preview_failure() {
             music.preview_problem == Some(vibecut::MusicProblem::NoAudioDevice)
         })
     });
+}
+
+#[test]
+fn a_late_browse_reply_never_overwrites_saved_and_pending_searches_coalesce() {
+    let root = tempfile::tempdir().unwrap();
+    let library = library(root.path());
+    library.save(&result("kept")).unwrap();
+    let gate = Arc::new(Gate::new());
+    let transport = Arc::new(GatedSearch {
+        gate: gate.clone(),
+        body: serde_json::to_vec(&page(vec![result("remote")], 1)).unwrap(),
+        calls: AtomicUsize::new(0),
+    });
+    let mut editor = editor(
+        library,
+        Some(MusicClient::new(None, transport.clone())),
+        Arc::new(Download {
+            gate: None,
+            status: 200,
+        }),
+        Sink::available(),
+        root.path().join("media"),
+    );
+    editor.preferences.assets_tab = vibecut::AssetsTab::Sounds;
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    open_music(&mut harness);
+    // The first Browse request is held in flight; Saved must answer at once.
+    click(&mut harness, "music.tab.saved");
+    wait(&mut harness, "saved rows", |editor| {
+        editor.inspect().unwrap().music.is_some_and(|music| {
+            music.mode == MusicMode::Saved
+                && music.results.len() == 1
+                && music.results[0].id == "kept"
+        })
+    });
+    // Two more chips while the single worker is busy leave one newest pending.
+    click(&mut harness, "music.chip.piano");
+    click(&mut harness, "music.tab.saved");
+    gate.release();
+    for _ in 0..30 {
+        harness.run_steps(1);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let music = harness.state().inspect().unwrap().music.unwrap();
+    assert_eq!(music.mode, MusicMode::Saved);
+    assert_eq!(music.results.len(), 1);
+    assert_eq!(music.results[0].id, "kept", "a stale reply replaced Saved");
+    assert!(!music.searching);
+    assert_eq!(
+        transport.calls.load(Ordering::SeqCst),
+        1,
+        "superseded requests never reach the provider"
+    );
 }

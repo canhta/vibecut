@@ -2128,30 +2128,43 @@ fn music_library_attribution_and_licence_url_are_written_into_export_metadata() 
         items: vec![item(1, Tick::ZERO), item(2, duration)],
     });
     let p = project::Project::new(data).unwrap();
-    let mut settings = ExportSettings::from_project(&p);
-    settings.overwrite = project::atomic::Overwrite::Replace;
-    let output = root().join("music-metadata.mp4");
-    export(
-        &p,
-        TimeRange::new(Tick::ZERO, p.duration()).unwrap(),
-        &settings,
-        &output,
-        &Hooks::default(),
-    )
-    .unwrap();
-    let info = probe(&output);
-    let comment = info["format"]["tags"]["comment"]
-        .as_str()
-        .expect("licence comment tag");
-    assert!(comment.contains("\"Night Walk\" by Example Artist"));
-    assert!(comment.contains("CC BY 4.0"));
-    assert!(comment.contains("https://creativecommons.org/licenses/by/4.0/"));
-    assert!(comment.contains("https://commons.example/wiki/File:Night_Walk.ogg"));
-    assert_eq!(
-        comment.matches("Night Walk").count(),
-        1,
-        "duplicate music items collapse into one record: {comment}"
-    );
+    for (container, extension) in [
+        (media::Container::Mp4, "mp4"),
+        (media::Container::WebM, "webm"),
+    ] {
+        let mut settings = ExportSettings::from_project(&p);
+        settings.container = container;
+        settings.mode = ExportMode::Encode;
+        settings.overwrite = project::atomic::Overwrite::Replace;
+        let output = root().join(format!("music-metadata.{extension}"));
+        export(
+            &p,
+            TimeRange::new(Tick::ZERO, p.duration()).unwrap(),
+            &settings,
+            &output,
+            &Hooks::default(),
+        )
+        .unwrap();
+        let info = probe(&output);
+        // Matroska writers may upper-case tag names; the record is what matters.
+        let comment = info["format"]["tags"]
+            .as_object()
+            .and_then(|tags| {
+                tags.iter()
+                    .find(|(name, _)| name.eq_ignore_ascii_case("comment"))
+            })
+            .and_then(|(_, value)| value.as_str())
+            .unwrap_or_else(|| panic!("{extension} licence comment tag"));
+        assert!(comment.contains("\"Night Walk\" by Example Artist"));
+        assert!(comment.contains("CC BY 4.0"));
+        assert!(comment.contains("https://creativecommons.org/licenses/by/4.0/"));
+        assert!(comment.contains("https://commons.example/wiki/File:Night_Walk.ogg"));
+        assert_eq!(
+            comment.matches("Night Walk").count(),
+            1,
+            "duplicate music items collapse into one record ({extension}): {comment}"
+        );
+    }
 }
 
 #[test]

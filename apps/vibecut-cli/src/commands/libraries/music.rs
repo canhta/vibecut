@@ -4,7 +4,7 @@ use crate::args::{parse_i64, parse_u32, utf8};
 use crate::output::tick_json;
 use crate::output::{Output, hex, json_path};
 use crate::session::{
-    Context, Edit, History, Lent, WritePolicy, cli_runner, run_command, run_leased,
+    Context, Edit, History, Lent, WritePolicy, cli_runner, resolve_target, run_command, run_leased,
     standalone_session, with_music,
 };
 use engine::control::{ControlResult, MusicEntry, MusicSource};
@@ -254,6 +254,9 @@ fn music_add(args: Vec<OsString>) -> Result<Output, CliError> {
         }
     }
     let library = MusicLibrary::open(&library)?;
+    // Resolve the project once: the asset keeps the absolute media path, so it stays
+    // valid from any later working directory or alias of the project.
+    let project = resolve_target(&project)?;
     // Project-owned media sits beside the project file, so library cleanup never
     // removes bytes this project references.
     let mut media = project.clone().into_os_string();

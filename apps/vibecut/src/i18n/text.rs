@@ -761,6 +761,7 @@ catalog! {
     MusicCredits { key: "music_credits", en: "Credits", vi: "Ghi công" },
     MusicCreditsCopied { key: "music_credits_copied", en: "Credits copied", vi: "Đã sao chép ghi công" },
     MusicCreditsFailed { key: "music_credits_failed", en: "Credits are too long to show.", vi: "Ghi công quá dài để hiển thị." },
+    MusicDownloadAdd { key: "music_download_add", en: "Download and add", vi: "Tải về và thêm" },
     MusicInvalid { key: "music_invalid", en: "The music service sent an unexpected reply.", vi: "Dịch vụ nhạc trả về phản hồi không mong đợi." },
     MusicKey { key: "music_key", en: "API key", vi: "Khóa API" },
     MusicKeyApply { key: "music_key_apply", en: "Apply key", vi: "Áp dụng khóa" },

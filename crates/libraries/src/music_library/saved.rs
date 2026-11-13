@@ -1,8 +1,8 @@
 //! Persists the saved music collection.
 use super::{
-    AtomicBool, Deref, Error, LIBRARY_FORMAT, LIBRARY_VERSION, MAX_LIBRARY_BYTES, MAX_SAVED, Music,
-    MusicLibrary, MusicResult, Mutex, Operation, OwnedDirectory, Path, Read, SavedMusic,
-    SearchPage, SearchRequest, SearchSource, StoredLibrary, fs,
+    AtomicBool, AtomicU64, Deref, Error, LIBRARY_FORMAT, LIBRARY_VERSION, MAX_LIBRARY_BYTES,
+    MAX_SAVED, Music, MusicLibrary, MusicResult, Mutex, Operation, OwnedDirectory, Path, Read,
+    SavedMusic, SearchPage, SearchRequest, SearchSource, StoredLibrary, fs,
 };
 impl MusicLibrary {
     pub fn open(root: &Path) -> Music<Self> {
@@ -21,6 +21,7 @@ impl MusicLibrary {
             audio,
             lease,
             state,
+            revision: AtomicU64::new(0),
             operation: AtomicBool::new(false),
         })
     }
@@ -34,6 +35,12 @@ impl MusicLibrary {
 }
 
 impl MusicLibrary {
+    /// Count of committed Saved changes in this process; a changed value means a
+    /// held copy of [`Self::saved`] is stale.
+    pub fn revision(&self) -> u64 {
+        self.revision.load(super::Ordering::Acquire)
+    }
+
     pub fn saved(&self) -> Music<Vec<SavedMusic>> {
         Ok(self
             .state
@@ -189,6 +196,7 @@ impl MusicLibrary {
 impl<T: Deref<Target = MusicLibrary>> Operation<T> {
     fn commit(&self, state: Vec<SavedMusic>) -> Music<()> {
         *self.0.state.lock().map_err(|_| Error::LibraryCorrupt)? = state;
+        self.0.revision.fetch_add(1, super::Ordering::AcqRel);
         Ok(())
     }
     fn persist(&self, state: &[SavedMusic]) -> Music<()> {

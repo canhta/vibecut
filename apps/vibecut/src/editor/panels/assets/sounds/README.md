@@ -60,3 +60,15 @@ A header disclosure lists the project's complete used-track credits from
 The settings sheet applies or removes the optional source key for this process only,
 using a masked field and a direct source-terms link; the key never enters project,
 preferences, automation, undo or logs.
+
+Every search request, Browse or Saved, first retires the one in flight (a generation
+check), so a late Browse reply never overwrites Saved or a newer query. One remote
+worker is retained; only the newest later request waits for it. Saved is re-read when
+another window changes the shared library (`MusicLibrary::revision`), keeping this
+window's mode and query. Saved pages by 15 and `Load more` shows for both modes.
+
+An add is an `AddIntent` (track plus the playhead start at click time). The intent
+rides the cache job, a refused timeline add keeps it, and Retry resubmits that exact
+intent: it never reloads search and a later playhead move never retargets it. User
+Cancel drops it. The add slot of an uncached row shows the download glyph labelled
+"Download and add"; a cached row shows Add. Selecting a row never downloads.

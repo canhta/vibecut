@@ -40,6 +40,7 @@ pub(crate) enum Icon {
     Cursor,
     Diamond,
     DotsThree,
+    DownloadSimple,
     Export,
     Eye,
     EyeSlash,
@@ -113,6 +114,7 @@ impl Icon {
         Self::Cursor,
         Self::Diamond,
         Self::DotsThree,
+        Self::DownloadSimple,
         Self::Export,
         Self::Eye,
         Self::EyeSlash,
@@ -185,6 +187,7 @@ impl Icon {
             Self::Cursor => "cursor",
             Self::Diamond => "diamond",
             Self::DotsThree => "dots-three",
+            Self::DownloadSimple => "download-simple",
             Self::Export => "export",
             Self::Eye => "eye",
             Self::EyeSlash => "eye-slash",
@@ -341,6 +344,10 @@ const ICONS: &[(&str, &[u8])] = &[
     (
         "dots-three",
         include_bytes!("../../../../assets/icons/phosphor/regular/dots-three.svg"),
+    ),
+    (
+        "download-simple",
+        include_bytes!("../../../../assets/icons/phosphor/regular/download-simple.svg"),
     ),
     (
         "export",
