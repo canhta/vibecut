@@ -156,6 +156,10 @@ and stores no words or keys. No matching selected-title desktop reference exists
 captures are non-comparable for reference metrics. Eligibility and input lifetime belong
 to [Properties](../../../apps/vibecut/src/editor/panels/properties/README.md).
 
+### Transcript pane
+
+The docs named no place for a word-level transcript, so it is a section of the Captions tab [proposed], below the cue tools and cue list and above the bank and style editors. Placement choice: a section, not a tab or a window, because it reads the same caption items the cue list edits. It has no heading of its own. Its first row holds two icon-only controls with tooltips, Delete words (trash) and Merge (the cue-merge glyph), at the existing 28 px icon-button size with 16 px icons. Below them, each cue is a selectable time chip followed by its words as selectable text, with the caption list's paging controls past 50 cues. Selected words and cues use the selectable-label state. Protected (edited) cues carry the existing Edited marker and their words the warning colour; a locked track shows a lock icon on its cues. The empty state is the subtitles icon and `No words`. A refused command shows one error-coloured sentence above the controls and keeps the selection. No new measurement exists for any of this, so reference parity is unverified. Behaviour: [captions owner](../../../apps/vibecut/src/editor/panels/assets/captions/README.md).
+
 ## Gaps
 
 - Multi-track timeline geometry: only one video track is captured, so audio, text, sticker and effect track heights, clip colours and vertical stacking are unmeasured.

@@ -2,6 +2,7 @@
 mod editing;
 mod import;
 mod tab;
+mod transcript;
 mod view;
 pub use crate::services::ai_task::TaskEvents;
 use crate::{
@@ -68,6 +69,10 @@ pub struct Inspection {
     pub error: Option<Arc<dyn engine::Failure + 'static>>,
     pub completed: Option<usize>,
     pub consent: Option<UploadRequest>,
+    /// Words selected in the transcript pane.
+    pub transcript_selected: usize,
+    /// The refusal reason of the last transcript command, if it was refused.
+    pub transcript_refusal: Option<Text>,
 }
 #[derive(Clone, Copy)]
 enum Pick {
@@ -154,6 +159,7 @@ pub struct Subtitles {
     pub(crate) requested_seek: Option<Tick>,
     project: Option<project::ProjectId>,
     retry_source: Option<ItemId>,
+    transcript: transcript::Pane,
 }
 impl Drop for Subtitles {
     fn drop(&mut self) {
@@ -212,6 +218,7 @@ impl Subtitles {
             requested_seek: None,
             project: None,
             retry_source: None,
+            transcript: Default::default(),
         })
     }
     pub fn busy(&self) -> bool {
@@ -260,6 +267,8 @@ impl Subtitles {
             consent: state
                 .as_ref()
                 .and_then(|s| s.upload.as_ref().map(|u| u.request.clone())),
+            transcript_selected: self.transcript.selected(),
+            transcript_refusal: self.transcript.refusal(),
         }
     }
     pub(crate) fn editing(&self, ctx: &egui::Context) -> bool {

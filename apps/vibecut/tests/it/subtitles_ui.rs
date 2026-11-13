@@ -5,7 +5,7 @@ use egui_kittest::{
     Harness,
     kittest::{By, NodeT, Queryable},
 };
-use engine::{ByteBudget, Command, Session, providers::Cost};
+use engine::{ByteBudget, Command, Session, WordId, providers::Cost};
 use project::ItemParams;
 use std::{
     collections::BTreeSet,
@@ -18,13 +18,13 @@ use std::{
 use time::{TICKS_PER_SECOND, Tick};
 use vibecut::{
     AssetsTab, Editor, Subtitles, SubtitlesInspection, egui,
-    i18n::Locale,
+    i18n::{Locale, Text},
     preferences::{PreferenceStore, SubtitleOptions as Options},
     services::ai_access::{Choice, Opener},
 };
 #[path = "support/subtitles.rs"]
 mod fixture;
-use fixture::{editor, lang};
+use fixture::{editor, editor_with_cues, lang, transcript_cues};
 fn harness(editor: Editor, scale: f32) -> Harness<'static, Editor> {
     crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 1000.0))
@@ -2725,4 +2725,199 @@ fn verified_word_warning_tracks_manual_source_changes_and_actual_undo() {
     h.state_mut().session.undo().unwrap();
     h.run_steps(3);
     assert!(h.query_all(warning()).next().is_none());
+}
+
+/// Transcript pane: word and cue ids of the caption item shown in `h`.
+fn transcript_word(h: &Harness<'_, Editor>, cue: &str, word: usize) -> String {
+    let item = panel(h.state()).item.unwrap().0;
+    format!("subtitles.transcript.word.{item}.{cue}.{word}")
+}
+
+fn transcript_cue(h: &Harness<'_, Editor>, cue: &str) -> String {
+    let item = panel(h.state()).item.unwrap().0;
+    format!("subtitles.transcript.cue.{item}.{cue}")
+}
+
+/// Words the engine reads for the active scene, across every caption cue.
+fn transcript_words(e: &Editor) -> usize {
+    e.session
+        .transcript()
+        .unwrap()
+        .cues
+        .iter()
+        .map(|cue| cue.words.len())
+        .sum()
+}
+
+fn transcript_refusal(h: &Harness<'_, Editor>) -> Option<Text> {
+    panel(h.state()).transcript_refusal
+}
+
+#[test]
+fn transcript_pane_shows_no_words_for_an_empty_caption_track() {
+    let track = CueTrack {
+        styles: Vec::new(),
+        cues: Vec::new(),
+    };
+    let mut h = harness(editor_with_cues("en", track), 1.0);
+    h.run_steps(3);
+    assert_eq!(transcript_words(h.state()), 0);
+    assert!(
+        h.query_all(By::new().predicate(|n| n.author_id() == Some("subtitles.transcript.empty")))
+            .next()
+            .is_some()
+    );
+    assert_eq!(panel(h.state()).transcript_selected, 0);
+    assert!(transcript_refusal(&h).is_none());
+}
+
+#[test]
+fn transcript_shift_selection_cut_parks_the_playhead_and_undo_restores_the_words() {
+    let mut h = harness(editor_with_cues("en", transcript_cues(false)), 1.0);
+    h.run_steps(3);
+    let before = transcript_words(h.state());
+    assert_eq!(before, 4);
+    let anchor = transcript_word(&h, "cue-0", 1);
+    click(&mut h, &anchor);
+    assert_eq!(panel(h.state()).transcript_selected, 1);
+    let second = transcript_word(&h, "cue-1", 0);
+    h.input_mut().modifiers = egui::Modifiers::SHIFT;
+    click(&mut h, &second);
+    h.input_mut().modifiers = egui::Modifiers::default();
+    assert_eq!(panel(h.state()).transcript_selected, 2);
+    assert_eq!(
+        h.state().playback.position().unwrap(),
+        Tick(3 * TICKS_PER_SECOND)
+    );
+    let history = h.state().session.history_len().0;
+    click(&mut h, "subtitles.transcript.delete");
+    assert_eq!(transcript_words(h.state()), before - 2);
+    assert_eq!(h.state().session.history_len().0, history + 1);
+    assert_eq!(panel(h.state()).transcript_selected, 0);
+    assert!(transcript_refusal(&h).is_none());
+    assert_eq!(
+        h.state().playback.position().unwrap(),
+        Tick(2 * TICKS_PER_SECOND)
+    );
+    h.state_mut().session.undo().unwrap();
+    h.run_steps(3);
+    assert_eq!(transcript_words(h.state()), before);
+}
+
+#[test]
+fn transcript_merge_joins_selected_adjacent_cues_as_one_undo_step() {
+    let mut h = harness(editor_with_cues("en", transcript_cues(false)), 1.0);
+    h.run_steps(3);
+    let first = transcript_cue(&h, "cue-0");
+    click(&mut h, &first);
+    let second = transcript_cue(&h, "cue-1");
+    h.input_mut().modifiers = egui::Modifiers::COMMAND;
+    click(&mut h, &second);
+    h.input_mut().modifiers = egui::Modifiers::default();
+    let history = h.state().session.history_len().0;
+    click(&mut h, "subtitles.transcript.merge");
+    h.run_steps(3);
+    assert_eq!(h.state().session.transcript().unwrap().cues.len(), 1);
+    assert_eq!(h.state().session.history_len().0, history + 1);
+    assert_eq!(transcript_words(h.state()), 4);
+    assert!(transcript_refusal(&h).is_none());
+}
+
+#[test]
+fn transcript_cut_of_edited_text_is_refused_with_its_reason_and_changes_nothing() {
+    let mut h = harness(editor_with_cues("en", transcript_cues(true)), 1.0);
+    h.run_steps(3);
+    let word = transcript_word(&h, "cue-0", 0);
+    click(&mut h, &word);
+    let before = h.state().session.project().clone();
+    let history = h.state().session.history_len();
+    click(&mut h, "subtitles.transcript.delete");
+    assert_eq!(transcript_refusal(&h), Some(Text::SubTranscriptProtected));
+    assert_eq!(h.state().session.project(), &before);
+    assert_eq!(h.state().session.history_len(), history);
+    assert_eq!(panel(h.state()).transcript_selected, 1);
+}
+
+#[test]
+fn transcript_cut_across_scenes_is_refused_and_keeps_the_project() {
+    let mut h = harness(editor_with_cues("en", transcript_cues(false)), 1.0);
+    h.run_steps(3);
+    let word = transcript_word(&h, "cue-0", 0);
+    click(&mut h, &word);
+    let original = h.state().session.project().data().current_scene_id;
+    h.state_mut()
+        .session
+        .apply(Command::CreateScene {
+            name: "Scene 2".into(),
+        })
+        .unwrap();
+    let other = h
+        .state()
+        .session
+        .project()
+        .data()
+        .scenes
+        .iter()
+        .map(|scene| scene.id)
+        .find(|id| *id != original)
+        .unwrap();
+    if h.state().session.project().data().current_scene_id != other {
+        h.state_mut()
+            .session
+            .apply(Command::SwitchScene { scene: other })
+            .unwrap();
+    }
+    h.run_steps(3);
+    let before = h.state().session.project().clone();
+    let history = h.state().session.history_len();
+    click(&mut h, "subtitles.transcript.delete");
+    assert_eq!(transcript_refusal(&h), Some(Text::SubTranscriptScene));
+    assert_eq!(h.state().session.project(), &before);
+    assert_eq!(h.state().session.history_len(), history);
+}
+
+#[test]
+fn transcript_selection_follows_an_external_cut_and_undo_restores_the_view() {
+    let mut h = harness(editor_with_cues("en", transcript_cues(false)), 1.0);
+    h.run_steps(3);
+    let item = panel(h.state()).item.unwrap();
+    let word = transcript_word(&h, "cue-1", 0);
+    click(&mut h, &word);
+    assert_eq!(panel(h.state()).transcript_selected, 1);
+    let cut = WordId {
+        item,
+        cue: "cue-1".into(),
+        word: 0,
+    };
+    h.state_mut()
+        .session
+        .apply(Command::TranscriptDeleteRange {
+            word_ids: vec![cut],
+        })
+        .unwrap();
+    h.run_steps(3);
+    assert_eq!(panel(h.state()).transcript_selected, 0);
+    assert_eq!(transcript_words(h.state()), 3);
+    h.state_mut().session.undo().unwrap();
+    h.run_steps(3);
+    assert_eq!(transcript_words(h.state()), 4);
+}
+
+/// Offscreen screenshot evidence; wgpu rendering stays out of CI.
+#[test]
+#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-ai-03-transcript-edit.png"]
+fn transcript_pane_renders_a_selection_and_its_refusal() {
+    let mut h = harness(editor_with_cues("en", transcript_cues(true)), 1.0);
+    h.run_steps(3);
+    let word = transcript_word(&h, "cue-0", 0);
+    click(&mut h, &word);
+    click(&mut h, "subtitles.transcript.delete");
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let target = root.join("target");
+    std::fs::create_dir_all(&target).unwrap();
+    let image = h.render().expect("offscreen render");
+    image
+        .save(target.join("p1-ai-03-transcript-edit.png"))
+        .unwrap();
+    assert!(image.width() > 0 && image.height() > 0);
 }

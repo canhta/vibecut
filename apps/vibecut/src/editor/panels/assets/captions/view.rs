@@ -653,6 +653,13 @@ impl Subtitles {
                             }
                         });
                         self.cues_ui(ui, session, options, &mut controls, dark);
+                        self.transcript_ui(
+                            ui,
+                            session,
+                            controls.locale,
+                            dark,
+                            &mut controls.widgets,
+                        );
                     },
                 );
             });

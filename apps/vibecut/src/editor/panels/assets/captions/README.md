@@ -21,6 +21,18 @@ timeline shortcuts. All edits are registered engine commands in the shared histo
 Cue, import, text and glossary limits belong to [captions](../../../../../../../crates/captions/README.md).
 Design: [captions workflow](../../../../../../../docs/product/ui/editor.md#captions-workflow).
 
+`transcript.rs` is the transcript pane below the cue list. It reads `Session::transcript()`
+for every caption item of the active scene, keyed by the project snapshot it was read from, so
+undo, redo and any edit rebuild the view. Its selection (words, cues and their anchor) is the
+pane's own state and survives only while its ids still exist; words of another scene stay
+selected so a cut there is refused rather than silently dropped. A word click, Shift range and
+Cmd/Ctrl toggle select; each click moves the playhead to the word. Delete sends the selected
+words as one `transcript.delete_range`; Merge sends the selected cues as one
+`transcript.merge_cues` and needs two. A refusal (protected text, another scene, a locked track,
+non-adjacent cues) keeps the selection, changes nothing and shows its reason; success clears the
+selection and parks the playhead at the earliest cut word. Each command is one undo step. The
+pane pages by 50 cues like the cue list. Placement and states: [transcript pane](../../../../../../../docs/product/ui/editor.md#transcript-pane) [proposed].
+
 The spoken-language select lists Auto plus every language the configured ASR adapters
 accept. Auto is the default; a project's explicit choice is stored in
 `SubtitleOptions::project_sources`, so another project starts from Auto. Auto runs the local

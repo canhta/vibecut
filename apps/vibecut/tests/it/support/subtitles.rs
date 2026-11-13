@@ -143,3 +143,54 @@ pub fn editor_with_cues(source: &str, track: CueTrack) -> Editor {
     editor.prepare_subtitles().unwrap();
     editor
 }
+
+/// Two time-adjacent English cues, "Hello world" (1-3 s) and "good day" (3-5 s), each
+/// with two measured words. `edited_first` protects the first cue's source text.
+pub fn transcript_cues(edited_first: bool) -> CueTrack {
+    CueTrack {
+        styles: Vec::new(),
+        cues: vec![
+            verified_english_cue("cue-0", 1, "Hello world", 5, edited_first),
+            verified_english_cue("cue-1", 3, "good day", 4, false),
+        ],
+    }
+}
+
+fn verified_english_cue(id: &str, start: i64, text: &str, split: usize, edited: bool) -> Cue {
+    let source = lang("en");
+    let at = |seconds: i64| Tick(seconds * TICKS_PER_SECOND);
+    let left = SourceRange::new(at(start), at(start + 1)).unwrap();
+    let right = SourceRange::new(at(start + 1), at(start + 2)).unwrap();
+    Cue {
+        word_timing: captions::CueWordTiming::Words {
+            language: source.clone(),
+            text: text.into(),
+            records: vec![
+                captions::VerifiedCueWord {
+                    bytes: 0..split,
+                    source_range: left,
+                    projection: captions::WordProjection::Visible(left),
+                    provenance: captions::TimingProvenance::Native,
+                },
+                captions::VerifiedCueWord {
+                    bytes: split + 1..text.len(),
+                    source_range: right,
+                    projection: captions::WordProjection::Visible(right),
+                    provenance: captions::TimingProvenance::Native,
+                },
+            ],
+        },
+        id: id.into(),
+        range: SourceRange::new(at(start), at(start + 2)).unwrap(),
+        source_lang: source.clone(),
+        texts: BTreeMap::from([(
+            source,
+            CueText {
+                text: text.into(),
+                edited,
+                translation_ref: None,
+            },
+        )]),
+        style: None,
+    }
+}
