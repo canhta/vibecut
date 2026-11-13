@@ -1,7 +1,7 @@
 //! Renders a clip's playback controls: the Audio tab's volume and fades, and the constant
 //! speed rows. Mute lives on the track header and the clip menu.
 use super::Panel;
-use crate::editor::properties::workflow::jobs::loudness::{Failed, scope_target};
+use crate::editor::properties::workflow::jobs::loudness::{Cause, Failed, scope_target};
 use crate::editor::properties::{
     AUDIO_GAIN_SCRUB, Action, Icon, ItemId, SPEED_SCRUB, ScrubSpec, Text, egui, read, theme,
 };
@@ -40,6 +40,16 @@ fn parse_loudness(text: &str, suffix: &str) -> Option<f32> {
         .parse::<f32>()
         .ok()?;
     value.is_finite().then_some(value)
+}
+
+/// The phrase that names a failed measurement's cause.
+const fn cause_text(cause: Cause) -> Text {
+    match cause {
+        Cause::Source => Text::LoudnessCauseSource,
+        Cause::Decode => Text::LoudnessCauseDecode,
+        Cause::Cancelled => Text::LoudnessCauseCancelled,
+        Cause::Other => Text::LoudnessCauseOther,
+    }
 }
 
 /// One result line: the scope's label, then its detail.
@@ -154,12 +164,22 @@ impl Panel<'_, '_> {
                 self.actions.push(Action::CancelLoudness);
             }
         }
+        // The status line takes a full property row, so it lines up with the rows above it.
+        let secondary = self.secondary();
         for line in self.loudness_status(&frame) {
-            let status = ui.label(
-                egui::RichText::new(line)
-                    .size(theme::type_size::BODY)
-                    .color(self.secondary()),
-            );
+            let status = ui
+                .allocate_ui_with_layout(
+                    egui::vec2(ui.available_width(), theme::size::PROPERTY_ROW),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        ui.label(
+                            egui::RichText::new(line)
+                                .size(theme::type_size::BODY)
+                                .color(secondary),
+                        )
+                    },
+                )
+                .inner;
             self.remember("inspector.loudness.status", &status);
         }
     }
@@ -299,12 +319,8 @@ impl Panel<'_, '_> {
         }
         match &frame.failed {
             Some(Failed::Stale) => return vec![tr(Text::LoudnessStale)],
-            Some(Failed::Measurement(reason)) => {
-                let reason = if reason.is_empty() {
-                    tr(Text::LoudnessNoReason)
-                } else {
-                    reason.clone()
-                };
+            Some(Failed::Measurement(cause)) => {
+                let reason = tr(cause_text(*cause));
                 return vec![i18n::format(
                     locale,
                     Text::LoudnessFailed,

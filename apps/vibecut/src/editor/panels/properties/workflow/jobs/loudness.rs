@@ -6,16 +6,40 @@ use crate::editor::properties::State;
 use crate::editor::{Error, Port, Result};
 use engine::{
     Session,
-    control::{ControlResult, JobOutput, Revision},
+    control::{ControlResult, ErrorCode, Failure, JobOutput, Revision},
     jobs::{JobId, JobRunner, JobState},
 };
 use project::{LoudnessScope, LoudnessTarget};
 
+/// Why the last measurement ended without gains, from the engine's typed error code.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::editor) enum Cause {
+    /// A source file is missing or changed while it is measured.
+    Source,
+    /// The media could not be decoded.
+    Decode,
+    /// The job was cancelled outside the panel.
+    Cancelled,
+    /// Any other engine failure, or a job that ended without output.
+    Other,
+}
+
+impl Cause {
+    fn of(code: ErrorCode) -> Self {
+        match code {
+            ErrorCode::Unavailable => Self::Source,
+            ErrorCode::Media => Self::Decode,
+            ErrorCode::Cancelled => Self::Cancelled,
+            _ => Self::Other,
+        }
+    }
+}
+
 /// Why the last measurement ended without gains.
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::editor) enum Failed {
-    /// The job failed or its output could not be read.
-    Measurement(String),
+    /// The job failed, was cancelled, or its output could not be read.
+    Measurement(Cause),
     /// The project changed while the job ran, so its gains would be stale.
     Stale,
 }
@@ -268,15 +292,15 @@ impl State {
             self.loudness.cancel();
             return;
         };
-        if let Err(error) = runner.tick() {
+        if runner.tick().is_err() {
             self.loudness.cancel();
-            self.loudness.failure = Some(Failed::Measurement(error.to_string()));
+            self.loudness.failure = Some(Failed::Measurement(Cause::Other));
             return;
         }
         runner.drain_events();
         let Some(snapshot) = runner.snapshot(job) else {
             self.loudness.cancel();
-            self.loudness.failure = Some(Failed::Measurement(String::new()));
+            self.loudness.failure = Some(Failed::Measurement(Cause::Other));
             return;
         };
         self.loudness.progress = snapshot.progress;
@@ -294,31 +318,42 @@ impl State {
                     _ => None,
                 };
                 let Some(JobOutput::Loudness(result)) = output else {
-                    self.loudness.failure =
-                        Some(Failed::Measurement("loudness job output".to_owned()));
+                    self.loudness.failure = Some(Failed::Measurement(Cause::Other));
                     return;
                 };
                 match port.apply_result(engine::Command::ApplyLoudness {
                     gains: result.gains.clone(),
                 }) {
                     Ok(_) => self.loudness.result = Some(result),
-                    Err(error) => {
-                        self.loudness.failure = Some(Failed::Measurement(error.to_string()));
-                    }
+                    Err(_) => self.loudness.failure = Some(Failed::Measurement(Cause::Other)),
                 }
             }
             JobState::Failed => {
-                let reason = snapshot
+                let cause = snapshot
                     .error
-                    .map_or_else(String::new, |error| error.to_string());
+                    .map_or(Cause::Other, |error| Cause::of(error.code()));
                 self.loudness.capture = None;
-                self.loudness.failure = Some(Failed::Measurement(reason));
+                self.loudness.failure = Some(Failed::Measurement(cause));
             }
             JobState::Cancelled => {
                 self.loudness.capture = None;
                 self.loudness.progress = 0.0;
+                self.loudness.failure = Some(Failed::Measurement(Cause::Cancelled));
             }
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn engine_codes_name_the_cause() {
+        assert_eq!(Cause::of(ErrorCode::Unavailable), Cause::Source);
+        assert_eq!(Cause::of(ErrorCode::Media), Cause::Decode);
+        assert_eq!(Cause::of(ErrorCode::Cancelled), Cause::Cancelled);
+        assert_eq!(Cause::of(ErrorCode::Render), Cause::Other);
     }
 }

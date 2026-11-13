@@ -197,6 +197,16 @@ fn detect_review_apply_splits_every_reviewed_cut() {
         _ => panic!("review"),
     };
     assert!(candidates >= 1);
+    // The count line picks the locale's plural row: one candidate reads in the singular.
+    let line = if candidates == 1 {
+        "1 scene change".to_owned()
+    } else {
+        format!("{candidates} scene changes")
+    };
+    assert!(
+        bench.harness_mut().query_by_label(&line).is_some(),
+        "the review shows {line:?}"
+    );
     let screenshot =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p2-ai-05-scene-split.png");
     std::fs::create_dir_all(screenshot.parent().unwrap()).unwrap();
