@@ -38,6 +38,10 @@ target restores the entry project. The stored window clamps to the clip and agai
 other edge. The gain curve uses the project's fade-curve evaluation; right-clicking a
 handle re-shapes that edge as one `audio.set_fade` command.
 
+## Missing media
+
+A Video or Audio clip whose asset file is gone keeps its asset record, which is the relink state. The clip view asks the display contract (`VisualQuery::availability`, fed from the engine's `MediaAccess::source_availability`; the area never probes a path) and, for a missing source, draws the field fill and the warning marker in the strip and waveform bands in place of footage. It asks the display queries and the generation commands for nothing. The bands carry the hover and accessibility name "Media missing. Replace media to relink", and the clip menu's Replace media is the relink action (it opens the picker for a file already in the project). The desktop owner holds each engine answer for two seconds per asset and path, so a file deleted while the project is open shows on a later paint, and replacing the clip's source, which names another asset, clears the state at once. A reference capture of CapCut's missing-media clip does not exist; colours and glyph reuse the failed-visual marker and are [proposed](../../../../../docs/product/ui/editor.md#gaps).
+
 ## Graph popover
 
 The toolbar graph button (right of the flip buttons, glyph is the keyframe diamond until the

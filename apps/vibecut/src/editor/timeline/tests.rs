@@ -22,6 +22,8 @@ struct FakeVisuals {
     waves: RefCell<BTreeMap<AssetId, FakeWave>>,
     requests: RefCell<Vec<VisualRequest>>,
     calls: RefCell<Vec<VisualCall>>,
+    /// Assets whose source file the stand-in reports gone.
+    missing: RefCell<BTreeSet<AssetId>>,
     textures: RefCell<BTreeMap<(AssetId, Tick), egui::TextureHandle>>,
 }
 
@@ -164,6 +166,14 @@ impl VisualQuery for FakeVisuals {
                     .push(VisualRequest::Waveform { asset: asset.id() });
                 WaveState::Pending
             }
+        }
+    }
+
+    fn availability(&self, asset: &media::SourceAsset) -> media::AssetAvailability {
+        if self.missing.borrow().contains(&asset.id()) {
+            media::AssetAvailability::Missing
+        } else {
+            media::AssetAvailability::Present
         }
     }
 
@@ -853,6 +863,126 @@ fn thumbnail_strip_and_waveform_render_and_trim_updates_them() {
         .join("../../target/p1-18-clip-visuals.png");
     std::fs::create_dir_all(screenshot.parent().unwrap()).unwrap();
     render_bands(&mut harness).save(&screenshot).unwrap();
+}
+
+#[test]
+fn a_clip_whose_source_file_is_missing_draws_the_relink_state_until_replaced() {
+    let render_state = egui_kittest::wgpu::create_render_state(
+        egui_kittest::wgpu::default_wgpu_setup(),
+        eframe::egui_wgpu::RendererOptions::PREDICTABLE,
+    );
+    let mut rig = Rig::visual(TrackKind::Video);
+    rig.visuals.strip_ready(AssetId(1), ranges(4));
+    rig.visuals.missing.borrow_mut().insert(AssetId(1));
+    let first = rig.first;
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1000.0, 260.0))
+        .renderer(egui_kittest::wgpu::WgpuTestRenderer::from_render_state(
+            render_state,
+        ))
+        .build_ui_state(|ui, rig: &mut Rig| rig.paint(ui), rig);
+    harness.run_steps(3);
+    let strip = format!("timeline.item.{}.filmstrip", first.0);
+    let wave = format!("timeline.item.{}.waveform", first.0);
+    let missing = "Media missing. Replace media to relink";
+    assert_eq!(harness.state().tooltip(&strip).as_deref(), Some(missing));
+    assert_eq!(harness.state().tooltip(&wave).as_deref(), Some(missing));
+    assert!(
+        harness.state().calls().is_empty(),
+        "a missing source asks the display queries for nothing"
+    );
+    assert!(
+        harness.state_mut().take().is_empty(),
+        "a missing source requests no generation and edits nothing"
+    );
+    // The band is the warning marker on the field fill, not footage.
+    let image = harness.render().unwrap();
+    let band = harness.state().rect(&strip);
+    let marker = image
+        .get_pixel(band.left() as u32 + 5, band.center().y as u32)
+        .0;
+    let warning = theme::warning(true).to_array();
+    assert!(
+        marker[..3]
+            .iter()
+            .zip(warning[..3].iter())
+            .all(|(actual, expected)| actual.abs_diff(*expected) < 8),
+        "{marker:?} is not the warning marker {warning:?}"
+    );
+    let screenshot = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/418-missing-media-clip.png");
+    std::fs::create_dir_all(screenshot.parent().unwrap()).unwrap();
+    image.save(&screenshot).unwrap();
+
+    // Replace media points the clip at a listed present source: the state clears.
+    let other = testkit::source::asset(2, std::env::temp_dir().join("replacement.mp4"))
+        .format("mov,mp4")
+        .duration(Tick(5 * SECOND))
+        .hash([8; 32])
+        .stream(testkit::source::video().duration(Tick(5 * SECOND)).build())
+        .build();
+    let session = &mut harness.state_mut().session;
+    session.apply(Command::AddAsset { asset: other }).unwrap();
+    session
+        .apply(Command::ReplaceMedia {
+            items: vec![first],
+            asset: AssetId(2),
+        })
+        .unwrap();
+    harness.run_steps(2);
+    assert_ne!(harness.state().tooltip(&strip).as_deref(), Some(missing));
+    assert!(
+        harness
+            .state()
+            .calls()
+            .iter()
+            .any(|call| call.asset == AssetId(2)),
+        "the replaced clip queries its new source"
+    );
+    // Undo restores the missing source and with it the state.
+    harness.state_mut().session.undo().unwrap();
+    harness.run_steps(2);
+    assert_eq!(harness.state().tooltip(&strip).as_deref(), Some(missing));
+}
+
+#[test]
+fn the_desktop_owner_reads_availability_from_the_engine_media_status() {
+    let sources = tempfile::tempdir().unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    let present = sources.path().join("present.mp4");
+    std::fs::write(&present, b"x").unwrap();
+    let source = |id: u64, path: std::path::PathBuf| {
+        testkit::source::asset(id, path)
+            .format("mov,mp4")
+            .duration(Tick(SECOND))
+            .hash([3; 32])
+            .stream(testkit::source::video().duration(Tick(SECOND)).build())
+            .build()
+    };
+    let gone = source(2, sources.path().join("gone.mp4"));
+    let kept = source(3, present);
+    let mut media = Media::default();
+    // Without the process media access nothing is confirmed absent.
+    assert_eq!(media.availability(&gone), media::AssetAvailability::Present);
+    media.set_access(Arc::new(Mutex::new(
+        engine::control::MediaAccess::open_in(
+            cache.path(),
+            engine::ByteBudget::new(64 << 20).unwrap(),
+        )
+        .unwrap(),
+    )));
+    let reopened = source(4, sources.path().join("deleted-before-reopen.mp4"));
+    assert_eq!(
+        media.availability(&reopened),
+        media::AssetAvailability::Missing
+    );
+    assert_eq!(media.availability(&kept), media::AssetAvailability::Present);
+    // A relinked path is a new answer, not the held one.
+    let relinked = source(4, sources.path().join("present.mp4"));
+    assert_eq!(
+        media.availability(&relinked),
+        media::AssetAvailability::Present
+    );
 }
 
 #[test]

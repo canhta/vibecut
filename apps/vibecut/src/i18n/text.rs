@@ -1477,6 +1477,7 @@ catalog! {
     CropTitle { key: "crop_title", en: "Crop", vi: "Cắt" },
 
     // Timeline clip visuals.
+    MediaMissing { key: "media_missing", en: "Media missing. Replace media to relink", vi: "Thiếu media. Dùng Thay media để liên kết lại" },
     TimelineThumbnails { key: "timeline_thumbnails", en: "Thumbnails", vi: "Ảnh thu nhỏ" },
     TimelineWaveform { key: "timeline_waveform", en: "Waveform", vi: "Dạng sóng" },
     VisualClipping { key: "visual_clipping", en: "Audio clips past 0 dBFS", vi: "Âm thanh vượt 0 dBFS" },

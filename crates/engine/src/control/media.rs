@@ -234,6 +234,13 @@ impl MediaAccess {
         self.luts.clone()
     }
 
+    /// Whether one source's file is still on disk: a single metadata read, no
+    /// decode and no hashing. The timeline's missing-media state reads this and
+    /// never probes a path itself.
+    pub fn source_availability(&self, asset: &SourceAsset) -> Result<media::AssetAvailability> {
+        Ok(asset.availability()?)
+    }
+
     /// Cache-only waveform bars for one clip's visible range. Maps trim and
     /// retime and reads the same summary [`Self::generate_waveform`] publishes.
     pub fn waveform_display(
