@@ -42,7 +42,7 @@ gains. The gains' key is `loudness::content_key`: a hash of the active
 scene's audible items (timing, source content, volume/mute and their automation), track mutes,
 sample rate and both targets; the master fader is excluded because measurement ignores it.
 
-`submit_export*` calls `admit_loudness` (owned by `runtime/`, exported as `loudness::admit`),
+`submit_export*` calls `loudness_admission::admit` (owned by `runtime/`, public as `loudness::admit`),
 which returns `runtime::Result<()>` and refuses `RuntimeError::LoudnessStale` when a target is
 set and the stored gains are missing or measured for different audio, so preview and export
 cannot disagree. Undo restores the gains with the

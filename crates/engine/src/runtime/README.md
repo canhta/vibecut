@@ -1,7 +1,6 @@
 # Runtime
 
-Interface: `jobs`, `cache`, `ByteBudget`, `submit_export`, `submit_export_publication`,
-`admit_loudness`.
+Interface: `jobs`, `cache`, `ByteBudget`, `submit_export`, `submit_export_publication`.
 
 Single- and multi-scene export submission, completed-export publication, subtitle mapping
 and the Session export entrypoints implemented in this execution owner return `runtime::Result`.
@@ -195,7 +194,7 @@ owner implements the Media projection once (`Media`, ordinary defaults), consume
 managed Library and Runtime. Kernel learns neither foreign execution projection.
 
 
-`admit_loudness` returns the runtime result directly. `LoudnessStale` refuses missing or
+`loudness_admission::admit` (public as `analysis::loudness::admit`) returns the runtime result directly. `LoudnessStale` refuses missing or
 mismatched measured gains with code `Refused`, no source and no transience. Export
 submission composes this error before admitting any single- or multi-scene job;
 no target needs no measurement. The content key excludes the master fader.

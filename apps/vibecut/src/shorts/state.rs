@@ -16,7 +16,7 @@ use engine::{
     jobs::{JobId, JobRunner, JobState, RunnerConfig, SystemClock},
     transcript::Cancellation,
 };
-pub use shorts::ClipCandidate as Candidate;
+pub use shorts::ClipCandidate;
 
 use shorts::{
     ClipBatch, ClipBatchRequest, ClipShort,
@@ -38,7 +38,7 @@ pub struct ReviewSource {
     pub cues: captions::CueTrack,
     pub energy: Vec<media::SpeechEnergyWindow>,
     pub boundaries: ClipBoundarySettings,
-    pub candidates: Vec<Candidate>,
+    pub candidates: Vec<ClipCandidate>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Decision {
@@ -1150,7 +1150,7 @@ fn review_boundaries(
     })
 }
 
-fn candidate_from_view(view: &engine::control::ClipCandidateView) -> Result<Candidate> {
+fn candidate_from_view(view: &engine::control::ClipCandidateView) -> Result<ClipCandidate> {
     let role = |name: &str| match name {
         "hook" => Ok(engine::ClipRole::Hook),
         "context" => Ok(engine::ClipRole::Context),
@@ -1170,7 +1170,7 @@ fn candidate_from_view(view: &engine::control::ClipCandidateView) -> Result<Cand
             role: role(piece.role.as_str())?,
         });
     }
-    Ok(Candidate {
+    Ok(ClipCandidate {
         proposal: engine::ClipProposal {
             segments: pieces,
             title: view.title.clone(),

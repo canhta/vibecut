@@ -1,6 +1,6 @@
 # Long video to shorts
 
-Interface: `State`, `show`, `Action`, `Context`, `WINDOW`, `Candidate`, `Decision`,
+Interface: `State`, `show`, `Action`, `Context`, `WINDOW`, `ClipCandidate`, `Decision`,
 `GenerationRequest`, `Importer`, `desktop_importer`, `Review`, `ReviewSource`, `TaskEvents`.
 
 The Home `home.shorts` card opens a separate native viewport. `show` draws the whole

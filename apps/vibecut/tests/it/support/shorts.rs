@@ -28,7 +28,7 @@ use time::{FrameRate, SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
     preferences::Preferences,
     services::{ai_access::Opener, playback::Sources},
-    shorts::{Candidate, Importer, ReviewSource, State as Shorts},
+    shorts::{ClipCandidate, Importer, ReviewSource, State as Shorts},
 };
 pub fn tick(n: i64) -> Tick {
     Tick(n * TICKS_PER_SECOND)
@@ -142,7 +142,7 @@ pub fn source_at(offset: i64) -> ReviewSource {
             max_segments: 4,
         },
         candidates: vec![
-            Candidate {
+            ClipCandidate {
                 proposal: ClipProposal {
                     segments: Vec::new(),
                     title: "Điều đáng nhớ từ cuộc trò chuyện".into(),
@@ -155,7 +155,7 @@ pub fn source_at(offset: i64) -> ReviewSource {
                 duration: tick(7),
                 adjustments: Vec::new(),
             },
-            Candidate {
+            ClipCandidate {
                 proposal: ClipProposal {
                     segments: Vec::new(),
                     title: "A second idea".into(),

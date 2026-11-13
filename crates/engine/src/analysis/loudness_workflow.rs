@@ -2,7 +2,7 @@
 //! the production mix graph, and export admission. The job never edits the
 //! project; the caller applies its gains through `audio.apply_loudness`.
 use crate::analysis::{Error as AnalysisError, Result};
-use crate::runtime::{LOUDNESS_VERSION as VERSION, loudness_content_key as content_key};
+use crate::runtime::loudness_admission::{VERSION, content_key};
 use crate::session::wire::LoudnessResult;
 use crate::{
     cache::{ArtifactKind, CacheKey, KeyInputs},

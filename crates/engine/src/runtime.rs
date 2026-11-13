@@ -135,9 +135,7 @@ pub mod transfer {
     pub(crate) use super::verified_transfer::header;
     pub use super::verified_transfer::response;
 }
-mod loudness_admission;
-pub(crate) use loudness_admission::VERSION as LOUDNESS_VERSION;
-pub use loudness_admission::{admit as admit_loudness, content_key as loudness_content_key};
+pub(crate) mod loudness_admission;
 mod rendering;
 pub use rendering::{
     AssetExport, plan_asset_exports, submit_asset_exports, submit_export,

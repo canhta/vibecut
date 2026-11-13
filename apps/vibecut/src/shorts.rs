@@ -11,7 +11,7 @@ mod view;
 use crate::egui;
 
 pub use state::{
-    Candidate, Decision, GenerationRequest, Importer, Review, ReviewSource, State, TaskEvents,
+    ClipCandidate, Decision, GenerationRequest, Importer, Review, ReviewSource, State, TaskEvents,
     desktop_importer,
 };
 

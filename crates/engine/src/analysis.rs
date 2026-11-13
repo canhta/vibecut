@@ -95,6 +95,6 @@ pub mod waveform;
 pub mod loudness {
     //! Measures source audio loudness.
     pub use super::loudness_workflow::{decode, submit_loudness};
-    pub use crate::runtime::{admit_loudness as admit, loudness_content_key as content_key};
+    pub use crate::runtime::loudness_admission::{admit, content_key};
     pub use crate::session::wire::{LoudnessResult, Measured};
 }
