@@ -705,7 +705,11 @@ impl ExportDialog {
                 // The footer is laid out first from the bottom, so the settings scroll inside
                 // whatever height remains and never run under it.
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-                    ui.horizontal(|ui| {
+                    // A plain horizontal row in a bottom-up column takes the column's full
+                    // height; the footer row is exactly one button tall.
+                    let footer = egui::vec2(ui.available_width(), theme::size::DIALOG_BUTTON_HEIGHT);
+                    let row = egui::Layout::left_to_right(egui::Align::Center);
+                    ui.allocate_ui_with_layout(footer, row, |ui| {
                         let duration = options.output.ranges(project).map_or(0.0, |scenes| {
                             scenes
                                 .iter()
@@ -829,7 +833,14 @@ impl ExportDialog {
                             },
                         );
                     });
-                    ui.vertical(|ui| {
+                    // A top-down child of a bottom-up column starts at the column top, so the
+                    // status lines get last pass's measured height and re-run once if it changed.
+                    let status_id = ui.id().with("export.status.height");
+                    let status_height =
+                        ui.ctx().data(|data| data.get_temp::<f32>(status_id)).unwrap_or(0.0);
+                    let status_size = egui::vec2(ui.available_width(), status_height);
+                    let status_layout = egui::Layout::top_down(egui::Align::Min);
+                    let status = ui.allocate_ui_with_layout(status_size, status_layout, |ui| {
                         self.empty = options.output.scene == SceneChoice::Active
                             && project.duration() == time::Tick::ZERO;
                         if self.empty {
@@ -861,10 +872,24 @@ impl ExportDialog {
                             }
                         }
                     });
+                    let measured = status.response.rect.height();
+                    if (measured - status_height).abs() > 0.5 {
+                        ui.ctx().data_mut(|data| data.insert_temp(status_id, measured));
+                        ui.ctx().request_discard("export status height");
+                    }
                     ui.add_space(12.0);
                     ui.separator();
                     ui.add_space(16.0);
-                    ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                    // A bottom-up cursor has no top edge, so the form gets an explicit rect from
+                    // the column top down to the separator.
+                    let body = egui::Rect::from_min_max(
+                        ui.max_rect().min,
+                        egui::pos2(ui.max_rect().right(), ui.cursor().max.y),
+                    );
+                    let builder = egui::UiBuilder::new()
+                        .max_rect(body)
+                        .layout(egui::Layout::top_down(egui::Align::Min));
+                    ui.scope_builder(builder, |ui| {
                         let body_height = ui.available_height().max(0.0);
                         ui.horizontal_top(|ui| {
                             ui.spacing_mut().item_spacing.x = 0.0;

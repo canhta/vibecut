@@ -396,6 +396,31 @@ fn export_progress_then_save_writes_toast_and_closes_without_an_extra_screen() {
     assert!(toast.contains("My Project.mp4"), "{toast}");
 }
 
+#[test]
+fn export_form_scrolls_the_caption_outputs_above_the_fixed_footer() {
+    let mut bench = bench(editor(true, false));
+    open(&mut bench);
+    let before = rect(&bench, "export.captions.srt");
+    bench.harness_mut().hover_at(egui::pos2(900.0, 400.0));
+    for _ in 0..10 {
+        bench.harness_mut().event(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -100.0),
+            modifiers: egui::Modifiers::NONE,
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Wheel,
+        });
+        bench.harness_mut().run_steps(2);
+    }
+    let after = rect(&bench, "export.captions.srt");
+    let footer = rect(&bench, "export.run");
+    assert!(after.top() < before.top(), "the form did not scroll: {before:?} {after:?}");
+    assert!(
+        after.bottom() <= footer.top(),
+        "the caption outputs scroll under the footer: {after:?} {footer:?}"
+    );
+}
+
 fn rect(bench: &DialogBench, id: &str) -> egui::Rect {
     bench
         .editor()
