@@ -10,6 +10,7 @@ Engine owns editing commands and history. Media owns `SourceAsset`. Captions own
 | `animation/` | Parameters, keyframes, curves, fades, retime | [Animated parameters and retime](src/animation/README.md) |
 | `visual/` | Persisted visual item properties | [Visual properties](src/visual/README.md) |
 | `preset.rs`, `preset/` | Built-in text and caption looks: shelves, our names and the style values they copy; data only, applied by `engine` | `src/preset/text.rs`, `src/preset/caption.rs` |
+| `visual/effects/` | Effect parameter model, effect catalogue, filter looks | [Effects](src/visual/effects/README.md) |
 | `persistence/` | JSON envelope, writer lease, atomic files, autosave, metadata, bundles, streaming output | [Persistence and publication](src/persistence/README.md) |
 | `persistence/bundle/` | Bundle directory export and import, with media and LUT copies | [Project bundles](src/persistence/bundle/README.md) |
 

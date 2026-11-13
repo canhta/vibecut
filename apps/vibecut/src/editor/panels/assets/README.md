@@ -20,6 +20,10 @@ startup. Pending, failed and ready states stay visible; a failed tile offers Ret
 tile drops onto a video, image, sticker or graphic clip, or `+` adds it to the
 selected clip. The tab's preview jobs and drag state live in [`effects`](effects/README.md).
 
+## Filters panel
+
+The Filters tab sits between Captions and Adjustment (the reference strip order; the icon is the existing half-circle, proposed). Its sub-navigation lists the shelves Featured, Movies, Retro, Night, Mono, Tools and Life from `project::filter_definitions()`; Portrait and Landscape are not built (how the reference tunes them is unverified) and the Favorites entry and tile star wait for 222 (hook: `view/filters.rs`). Tiles use the Effects grid metrics and show the look graded by our own pipeline on a procedural dusk landscape (`EffectPreviews::filters`, one render at time zero on the CPU compositor; no photograph). A tile or its click inserts one filter clip through `filters.insert` at the playhead: an effect item on its own Effect lane, 3 s long, Intensity 100, selected afterwards, one undo step. The clip's Intensity is its opacity (0..=100 percent), edited in Properties with the other effect-item controls.
+
 ## Adjustment presets
 
 The Adjustment tab opens with `Add adjustment layer` (`adjustment.insert`): a label and a plus button in one row. The plus inserts an effect item (`ItemParams::Effect`, no media) at the playhead through `InsertItem` with auto placement, which finds or creates an Effect track. The layer is five seconds long, as text and graphics are, and is selected afterwards in one undo step. It is refused while insertion is unavailable and changes nothing then. The layer has no picture; its stack takes effects from the Effects tab (`+` or a tile drop), see the [properties owner](../properties/README.md#effects-tab). The label, row geometry and five-second length are proposed: the desktop Adjustment capture has no measured entry for this (ui-reference 07 G7), so only the tab's place in the feature strip is reference-backed.

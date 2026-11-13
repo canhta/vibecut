@@ -50,6 +50,7 @@ pub(super) fn assets_scene(theme: Theme, scale: f32, state: &str) -> Result<AppH
     }
     editor.preferences.assets_tab = match state {
         "effects" => vibecut::AssetsTab::Effects,
+        "filters" => vibecut::AssetsTab::Filters,
         "transitions" => vibecut::AssetsTab::Transitions,
         "text" => vibecut::AssetsTab::Text,
         "captions" => vibecut::AssetsTab::Captions,
@@ -144,6 +145,13 @@ pub(super) fn assets_scene(theme: Theme, scale: f32, state: &str) -> Result<AppH
         }
         clock.0.store(100, Ordering::SeqCst);
         app.run_steps(1);
+    }
+    if state == "filters" {
+        // The tiles render once; wait for them so job timing cannot choose pixels.
+        if let App::Assets(editor) = &mut app.state_mut().app {
+            editor.settle_previews(vibecut::SETTLE_BUDGET)?;
+        }
+        app.run_steps(2);
     }
     Ok(app)
 }

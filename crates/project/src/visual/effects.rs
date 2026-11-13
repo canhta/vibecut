@@ -7,7 +7,15 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-pub use super::effects_catalog::{
+mod catalog;
+mod filters;
+
+pub use filters::{
+    FILTER_INSTANCE_ID, FilterDefinition, FilterShelf, filter_definition, filter_definitions,
+    filter_look, is_filter_clip,
+};
+
+pub use catalog::{
     CHROMA_KEY_COLOR_DEFAULT, CHROMA_KEY_INTENSITY_DEFAULT, CHROMA_KEY_MAX, CHROMA_KEY_MIN,
     GAIN_MAX, GAIN_MIN, GAMMA_MAX, GAMMA_MIN, GRADE_BASIC, GRADE_MAX, GRADE_MIN, HSL_BANDS,
     HSL_CONTROLS, LIFT_MAX, LIFT_MIN, effect_definitions,

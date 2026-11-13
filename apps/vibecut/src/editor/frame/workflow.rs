@@ -91,6 +91,9 @@ impl Editor {
         if let Some(previews) = &mut self.assets.effect_previews {
             previews.settle(timeout)?;
         }
+        if let Some(previews) = &mut self.assets.filter_previews {
+            previews.settle(timeout)?;
+        }
         Ok(())
     }
 }

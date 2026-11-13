@@ -51,7 +51,7 @@ Built-in kinds: `blur` has `intensity` 0–100 (default 15, animatable). `color_
 Pixel-local monochrome, channel mixing, selective colour, threshold, gamma,
 inversion, levels, posterisation, strobe and two-tone definitions use the same typed
 parameter admission. Their hard/soft ranges, insertion defaults and scalar animation
-flags live in [the catalogue](effects_catalog.rs). Keep Colour's colour, Swap Colour's
+flags live in [the catalogue](effects/catalog.rs). Keep Colour's colour, Swap Colour's
 target/replacement, Two-tone's endpoints and Strobe's colour animate through the existing
 linear-light RGBA composite in [animation](../animation/README.md#parameters). A present
 composite owns its base even with no keys; missing data keeps the static sRGB bytes.
@@ -62,7 +62,7 @@ Chroma-key colour, choice, boolean and Point values remain static. No path/compo
 shape or serialized meaning changes.
 
 Streak Blur animates direction (degrees) and length (full-resolution clip pixels).
-[The catalogue](effects_catalog.rs) owns ranges/defaults/shelf; render owns crop/fit axis conversion before transform.
+[The catalogue](effects/catalog.rs) owns ranges/defaults/shelf; render owns crop/fit axis conversion before transform.
 
 Edge Lines is Stylize with an invert flag and an animatable 0–100 blend percent.
 Colour Relief is Stylize with an animatable direction (degrees), relief (full-resolution
@@ -83,7 +83,7 @@ corner_pin and basic_3d on Distort; echo_glow, edge_glow, glint, wonder_glow,
 volumetric_rays, light_leaks, lens_flare and rgb_split on Glow & Light; brush_strokes,
 roughen_edges, camera_shake and posterize_time on Stylize; drop_shadow, long_shadow,
 gradient, four_color_gradient, color_key and luma_key on Overlay & Key. Ranges, defaults
-and animation flags live in [the catalogue](effects_catalog.rs). Author-level lengths
+and animation flags live in [the catalogue](effects/catalog.rs). Author-level lengths
 and radii are full-resolution clip pixels; render converts them through the item's
 axis gains before sampling. `corner_pin`, the Magnifier/Sphere/Twirl centres, the two
 Gradients' points and the Sun Rays source are `Point` values in frame fractions. Lens
@@ -97,6 +97,12 @@ but no Properties control or edit command addresses them yet; that is the deferr
 Point contract from the earlier E1 port, not a second representation.
 
 The `test-kinds` cargo feature appends one catalog-only `hold_time` kind on `Inspector`; it is off in every production build.
+
+## Filters
+
+A filter is a `FilterDefinition` in `filter_definitions()`: an id, our name, a `FilterShelf` (Featured, Movies, Retro, Night, Mono, Life or Tools) and the `color_grade` scalars and tone curves it changes from neutral. `FilterDefinition::instance(id)` builds the validated colour-grade instance at full strength. The catalogue holds 20 looks (the 8 procedural looks and 4 creative presets of the reference implementation, renamed, plus 8 authored ones) and the 4 Tools grades, which are not counted among the looks. Looks are procedural grades over the basic, lift, gain, HSL and curve controls; no third-party LUT or picture is used, and no generated LUT is built yet. The values are new decisions, not measured parity.
+
+A filter clip is not a new item kind: it is an effect item (`ItemParams::Effect` on an Effect track, the adjustment layer) whose stack holds that one instance, and its Intensity is the item's `opacity` channel (0..=1 shown as 0..=100, default 100). Intensity 0 leaves the picture below unchanged. The engine's `filters.insert` builds that item in one edit. `is_filter_clip(item)` recognises it by the `FILTER_INSTANCE_ID` instance on an effect item, and `filter_look(item)` names the catalogued look whose instance it still equals; a filter clip refuses user-added effects.
 
 ## Video transitions
 

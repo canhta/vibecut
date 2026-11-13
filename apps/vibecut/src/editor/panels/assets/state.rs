@@ -56,6 +56,11 @@ pub(in crate::editor) struct State {
     pub(in crate::editor) paste_at: Option<super::Tick>,
     /// Assets the current import batch added, in probe order.
     pub(in crate::editor) import_added: Vec<super::AssetId>,
+    /// Filters tab: the chosen shelf and the tile preview owner, built when the tab first shows.
+    pub(super) filter_shelf: project::FilterShelf,
+    /// Filters tab: list only the starred looks.
+    pub(super) filter_favorites: bool,
+    pub(in crate::editor) filter_previews: Option<super::effects::EffectPreviews>,
     pub(super) transition_family: Option<&'static str>,
     /// Transitions tab: the Favorites sub-navigation entry replaces the family filter.
     pub(super) transition_favorites: bool,
@@ -138,6 +143,9 @@ impl Default for State {
             os_files: Default::default(),
             paste_at: None,
             import_added: Vec::new(),
+            filter_shelf: project::FilterShelf::Featured,
+            filter_favorites: false,
+            filter_previews: None,
             transition_family: None,
             transition_favorites: false,
             adjustment_favorites: false,

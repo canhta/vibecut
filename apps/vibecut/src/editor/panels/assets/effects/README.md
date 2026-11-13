@@ -32,4 +32,7 @@ covers the same fraction of the picture as in an export, like Blur's
 [reference sigma](../../../../../../../crates/render/src/scene/effects.rs). Thumbnails are
 the interactive preview, so the engine evaluates them coarse (`fine=false`);
 `SETTLE_BUDGET` is the CPU reference's whole-library wait budget.
+`EffectPreviews::filters()` is the same owner over the Filters tab's procedural landscape
+(sky, sun, ridges, lake, grey ramp, six colour chips) instead of the checker; the tab holds one
+and updates it at a fixed clock, so each look renders once.
 Streak's visible demo uses length8/direction45; insertion keeps catalog identity.

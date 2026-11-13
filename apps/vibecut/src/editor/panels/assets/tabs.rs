@@ -21,12 +21,13 @@ pub enum AssetsTab {
     Effects,
     Transitions,
     Captions,
+    Filters,
     Adjustment,
     Settings,
 }
 
 impl AssetsTab {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Media,
         Self::Sounds,
         Self::Text,
@@ -34,6 +35,7 @@ impl AssetsTab {
         Self::Effects,
         Self::Transitions,
         Self::Captions,
+        Self::Filters,
         Self::Adjustment,
         Self::Settings,
     ];
@@ -47,6 +49,7 @@ impl AssetsTab {
             Self::Effects => "effects",
             Self::Transitions => "transitions",
             Self::Captions => "captions",
+            Self::Filters => "filters",
             Self::Adjustment => "adjustment",
             Self::Settings => "settings",
         }
@@ -65,6 +68,7 @@ impl AssetsTab {
             Self::Effects => Text::Effects,
             Self::Transitions => Text::Transitions,
             Self::Captions => Text::Caption,
+            Self::Filters => Text::Filters,
             Self::Adjustment => Text::Adjustment,
             Self::Settings => Text::Settings,
         }
@@ -79,6 +83,7 @@ impl AssetsTab {
             Self::Effects => Icon::Sparkle,
             Self::Transitions => Icon::ArrowsLeftRight,
             Self::Captions => Icon::Subtitles,
+            Self::Filters => Icon::CircleHalf,
             Self::Adjustment => Icon::SlidersHorizontal,
             Self::Settings => Icon::GearSix,
         }

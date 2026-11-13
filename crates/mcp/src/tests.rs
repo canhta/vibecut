@@ -621,6 +621,7 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("chapters.generate", Effect::JobControl, true, true),
         ("chapters.export_sidecars", Effect::FilePublish, true, false),
         ("fillers.classify", Effect::JobControl, true, true),
+        ("filters.insert", Effect::Edit, true, true),
         ("move_item", Effect::Edit, true, true),
         ("move_items", Effect::Edit, true, true),
         ("timeline.move_items", Effect::Edit, true, true),

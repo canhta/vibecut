@@ -65,6 +65,9 @@ impl ScrubSpec {
     }
 }
 pub(super) const OPACITY_SCRUB: ScrubSpec = ScrubSpec::of("opacity", Text::Opacity, 0.01, 4.0, 2);
+/// A filter clip's Intensity: the clip's opacity channel, shown 0 to 100 percent.
+pub(super) const INTENSITY_SCRUB: ScrubSpec =
+    ScrubSpec::of("opacity", Text::FilterIntensity, 0.01, 4.0, 2);
 pub(super) const TEXT_SIZE_SCRUB: ScrubSpec =
     ScrubSpec::of("text_size", Text::TextSize, 1.0, 2.0, 0);
 pub(super) const SPEED_SCRUB: ScrubSpec = ScrubSpec {

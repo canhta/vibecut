@@ -33,6 +33,100 @@ pub const PREVIEW_SCALE: [f64; 2] = [
 /// longer than the release panel the person actually sees.
 pub const SETTLE_BUDGET: Duration = Duration::from_secs(60);
 
+/// The Effects tab's checker ramp.
+fn checker_pixel(x: f32, y: f32) -> [f32; 4] {
+    let checker = if ((x as u32 / 32) + (y as u32 / 18)).is_multiple_of(2) {
+        0.68
+    } else {
+        0.24
+    };
+    let shade = checker + x / PREVIEW_WIDTH as f32 * 0.18;
+    [shade * 0.55, shade * 0.78, shade, 1.0]
+}
+
+/// The Filters tab's procedural picture: a dusk sky with a sun, two ridges, a rippled lake, a
+/// grey ramp down the left edge and six colour chips along the bottom, so a tile shows what a
+/// look does to sky, shadows, saturated colours and neutrals. No photograph is involved.
+fn filter_pixel(x: f32, y: f32) -> [f32; 4] {
+    let (width, height) = (PREVIEW_WIDTH as f32, PREVIEW_HEIGHT as f32);
+    let horizon = 0.56_f32;
+    let ramp = width * 0.05;
+    let chip_height = height * 0.12;
+    let chips: [[f32; 3]; 6] = [
+        [0.85, 0.12, 0.1],
+        [0.95, 0.8, 0.1],
+        [0.15, 0.7, 0.2],
+        [0.1, 0.75, 0.8],
+        [0.15, 0.25, 0.85],
+        [0.8, 0.2, 0.75],
+    ];
+    let mix = |a: [f32; 3], b: [f32; 3], t: f32| {
+        [
+            a[0] + (b[0] - a[0]) * t,
+            a[1] + (b[1] - a[1]) * t,
+            a[2] + (b[2] - a[2]) * t,
+        ]
+    };
+    let ridge = |u: f32, k: f32| {
+        0.12 * k * (0.55 + 0.25 * (u * 7.3 + k).sin() + 0.15 * (u * 17.1 + 2.0 * k).sin())
+    };
+    let sky = |v: f32| {
+        mix(
+            [0.98, 0.62, 0.32],
+            [0.16, 0.3, 0.62],
+            (1.0 - v / horizon).clamp(0.0, 1.0).powf(0.8),
+        )
+    };
+    let (u, v) = ((x + 0.5) / width, (y + 0.5) / height);
+    let mut colour = if v < horizon {
+        let mut c = sky(v);
+        let distance = (((u - 0.68) * width / height).powi(2) + (v - 0.33).powi(2)).sqrt();
+        if distance < 0.07 {
+            c = [1.0, 0.93, 0.7];
+        } else {
+            let glow = (1.0 - (distance - 0.07) / 0.25).clamp(0.0, 1.0).powi(2) * 0.35;
+            c = mix(c, [1.0, 0.85, 0.55], glow);
+        }
+        if horizon - v < ridge(u, 1.6) {
+            c = mix([0.36, 0.4, 0.52], c, 0.2);
+        }
+        if horizon - v < ridge(u, 0.9) {
+            c = mix(
+                [0.16, 0.2, 0.12],
+                [0.3, 0.28, 0.2],
+                ((horizon - v) / 0.12).clamp(0.0, 1.0),
+            );
+        }
+        c
+    } else {
+        let mirror = horizon - (v - horizon);
+        let ripple = 0.04 * ((v * 140.0).sin() * (u * 9.0 + v * 30.0).cos());
+        let reflection = sky(mirror.max(0.0));
+        mix(
+            mix(reflection, [0.05, 0.12, 0.22], 0.45 + (v - horizon) * 0.8),
+            [0.0; 3],
+            0.1 + ripple,
+        )
+    };
+    if x < ramp {
+        let grey = 1.0 - v;
+        colour = [grey, grey, grey];
+    }
+    if y >= height - chip_height && x >= ramp {
+        let index = (((x - ramp) / (width - ramp)) * 6.0).floor().clamp(0.0, 5.0) as usize;
+        colour = chips[index];
+    }
+    let linear = |c: f32| {
+        let c = c.clamp(0.0, 1.0);
+        if c <= 0.04045 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    [linear(colour[0]), linear(colour[1]), linear(colour[2]), 1.0]
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EffectPreviewStatus {
     Pending,
@@ -73,19 +167,30 @@ pub struct EffectPreviews {
 
 impl EffectPreviews {
     pub fn new(cache: EffectThumbnails, budget: ByteBudget) -> Result<Self> {
+        Self::with_picture(cache, budget, checker_pixel)
+    }
+
+    /// Previews that grade the filter picture (a dusk landscape with a grey ramp and colour
+    /// chips) on the reference CPU compositor. The Filters tab owns one of these.
+    pub fn filters() -> Result<Self> {
+        let budget = ByteBudget::new(PREVIEW_BUDGET)?;
+        let cache = EffectThumbnails::new(Arc::new(render::effects::CpuEffects), budget.clone());
+        Self::with_picture(cache, budget, filter_pixel)
+    }
+
+    /// `pixel` maps a source pixel's column and row to its working-space RGBA.
+    fn with_picture(
+        cache: EffectThumbnails,
+        budget: ByteBudget,
+        pixel: fn(f32, f32) -> [f32; 4],
+    ) -> Result<Self> {
         let source = Arc::new(render::Image::from_working_pixels(
             PREVIEW_WIDTH,
             PREVIEW_HEIGHT,
             (0..(PREVIEW_WIDTH * PREVIEW_HEIGHT) as usize).map(|index| {
                 let x = (index % PREVIEW_WIDTH as usize) as f32;
                 let y = (index / PREVIEW_WIDTH as usize) as f32;
-                let checker = if ((x as u32 / 32) + (y as u32 / 18)).is_multiple_of(2) {
-                    0.68
-                } else {
-                    0.24
-                };
-                let shade = checker + x / PREVIEW_WIDTH as f32 * 0.18;
-                [shade * 0.55, shade * 0.78, shade, 1.0]
+                pixel(x, y)
             }),
             &ByteBudgetHooks::new(&budget, None),
         )?);

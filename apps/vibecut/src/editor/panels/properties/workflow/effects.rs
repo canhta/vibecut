@@ -78,11 +78,14 @@ pub(in crate::editor) fn effect_refusal(project: &project::Project, id: ItemId) 
     if kind == ElementKind::Audio {
         return Some(Text::EffectAudioUnsupported);
     }
+    let item = track.items.iter().find(|item| item.id == id)?;
+    // A filter clip carries only its look: effects go on an adjustment layer instead.
+    if project::is_filter_clip(item) {
+        return Some(Text::EffectFilterClip);
+    }
     // An adjustment layer is an effect item on an Effect track; it takes a stack like a clip.
     let adjustment = track.kind == project::TrackKind::Effect
-        && track.items.iter().any(|item| {
-            item.id == id && matches!(item.content, project::ItemParams::Effect(_))
-        });
+        && matches!(item.content, project::ItemParams::Effect(_));
     if !adjustment
         && !matches!(
             kind,

@@ -154,6 +154,12 @@ pub(super) const SCENES: &[Scene] = &[
         build: |theme, scale| assets_scene(theme, scale, "effects-phase3-vi"),
     },
     Scene {
+        name: "assets-filters",
+        reference_dark: Some("capcut-desktop-2026-11-05/capcut-desktop-221739.png"),
+        reference_light: None,
+        build: |theme, scale| assets_scene(theme, scale, "filters"),
+    },
+    Scene {
         name: "assets-transitions",
         reference_dark: None,
         reference_light: None,

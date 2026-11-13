@@ -567,6 +567,7 @@ fn feature_tabs_never_touch_and_the_media_sub_navigation_lists_two_rows() {
             "effects",
             "transitions",
             "captions",
+            "filters",
             "adjustment",
         ]
         .map(|tab| widget_rect(&harness, &format!("assets.tab.{tab}")));

@@ -5743,3 +5743,69 @@ fn adjustment_layer_transform_limits_its_region_and_opacity_mixes() {
         "half opacity",
     );
 }
+
+/// A filter clip: the look's colour grade on an adjustment layer whose opacity is Intensity.
+fn filter_layer(look: &project::FilterDefinition, intensity: f64) -> project::Track {
+    let mut layer = adjustment(
+        2,
+        "",
+        0,
+        30,
+        &[(project::BuiltinPath::Opacity, intensity / 100.0)],
+    );
+    layer.items[0].effects = vec![look.instance("filter").unwrap()];
+    layer
+}
+
+#[test]
+fn every_filter_changes_the_picture_and_intensity_zero_is_identity_and_export_equals_preview() {
+    let (plain, settings) = adjusted_scene(Vec::new());
+    let unfiltered = frame(&plain, &settings, 0);
+    for look in project::filter_definitions() {
+        // Intensity 0 leaves every pixel's exact bits.
+        let (project, settings) = adjusted_scene(vec![filter_layer(look, 0.0)]);
+        assert_eq!(
+            frame(&project, &settings, 0).pixels(),
+            unfiltered.pixels(),
+            "{} at intensity 0",
+            look.id
+        );
+        // At full intensity the look changes the picture below it and spares the layer above.
+        let (project, settings) = adjusted_scene(vec![filter_layer(look, 100.0)]);
+        let exported = frame(&project, &settings, 0);
+        // The Tools grades target tone ranges this saturated scene may not reach, so only
+        // looks must change it.
+        if look.is_look() {
+            assert_ne!(
+                exported.pixels(),
+                unfiltered.pixels(),
+                "{} at intensity 100",
+                look.id
+            );
+        }
+        assert_eq!(at(&exported, GREEN_TOP), at(&unfiltered, GREEN_TOP));
+        // The preview path composes the same frame as the export path.
+        let preview = Renderer::new(&project, settings.clone())
+            .unwrap()
+            .preview_frame(
+                tick(0, 30),
+                &mut crate::support::Empty,
+                &Hooks::default(),
+            )
+            .unwrap();
+        assert_eq!(preview.pixels(), exported.pixels(), "{} preview", look.id);
+        // Half intensity lands between the two.
+        let (project, settings) = adjusted_scene(vec![filter_layer(look, 50.0)]);
+        let half = at(&frame(&project, &settings, 0), RED_MIDDLE);
+        let (start, end) = (at(&unfiltered, RED_MIDDLE), at(&exported, RED_MIDDLE));
+        for channel in 0..3 {
+            let middle = (f64::from(start[channel]) + f64::from(end[channel])) / 2.0;
+            assert!(
+                (f64::from(half[channel]) - middle).abs() <= 1e-4,
+                "{} channel {channel}: {} != {middle}",
+                look.id,
+                half[channel]
+            );
+        }
+    }
+}

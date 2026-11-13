@@ -587,3 +587,76 @@ fn adjustment_layer_inserts_on_an_effect_track_moves_undoes_and_persists() {
     }
     assert_eq!(s.project(), &moved);
 }
+
+#[test]
+fn filter_clip_is_one_undo_step_an_effect_item_with_intensity_and_round_trips() {
+    let mut s = Session::new(Project::empty(ProjectId(266), "Look".into()).unwrap(), 20).unwrap();
+    let empty = s.project().clone();
+    let insert = |filter: &str, intensity: f64| Command::FiltersInsert {
+        placement: Placement::default(),
+        filter: filter.to_owned(),
+        start: Tick(10),
+        duration: Tick(762_048_000_000),
+        intensity,
+    };
+    // An unknown filter and an out-of-range intensity change nothing.
+    assert!(s.apply(insert("nope", 100.0)).is_err());
+    assert!(s.apply(insert("noir", 101.0)).is_err());
+    assert_eq!(s.project(), &empty);
+
+    let outcome = s.apply(insert("noir", 40.0)).unwrap();
+    let [CreatedId::Track(track), CreatedId::Item(item)] = outcome.created[..] else {
+        panic!("created {:?}", outcome.created)
+    };
+    let inserted = s.project().clone();
+    let layer = &inserted.data().scene().timeline.overlays[0];
+    assert_eq!((layer.id, layer.kind), (track, TrackKind::Effect));
+    let clip = &layer.items[0];
+    assert_eq!((clip.id, clip.start), (item, Tick(10)));
+    assert_eq!(
+        clip.content,
+        ItemParams::Effect(project::EffectParams::default())
+    );
+    assert_eq!(clip.effects.len(), 1);
+    assert_eq!(
+        clip.effects[0],
+        project::filter_definition("noir")
+            .unwrap()
+            .instance("filter")
+            .unwrap()
+    );
+    assert!(project::is_filter_clip(clip));
+    assert_eq!(project::filter_look(clip).unwrap().id, "noir");
+    // Intensity is the opacity channel; 100 stores none.
+    let opacity = project::AnimationPath::from(project::BuiltinPath::Opacity);
+    assert!(clip.animations.get(&opacity).is_some());
+    let full = s.apply(insert("noir", 100.0)).unwrap();
+    let Some(CreatedId::Item(second)) = full.created.last().copied() else {
+        panic!("created {:?}", full.created)
+    };
+    let both = s.project().clone();
+    let second_clip = both
+        .data()
+        .scene()
+        .timeline
+        .overlays
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|candidate| candidate.id == second)
+        .unwrap();
+    assert!(second_clip.animations.get(&opacity).is_none());
+
+    let loaded = project::decode(&project::encode(&both, false).unwrap())
+        .unwrap()
+        .project;
+    assert_eq!(&loaded, both.as_ref());
+    // Apply and remove are one undo step each.
+    s.undo().unwrap();
+    assert_eq!(s.project(), &inserted);
+    s.undo().unwrap();
+    assert_eq!(s.project(), &empty);
+    s.redo().unwrap();
+    s.apply(Command::Delete { items: vec![item] }).unwrap();
+    s.undo().unwrap();
+    assert_eq!(s.project(), &inserted);
+}
