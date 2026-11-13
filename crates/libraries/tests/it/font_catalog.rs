@@ -803,8 +803,11 @@ fn search_orders_prefix_matches_first_and_one_entry_per_family() {
 #[test]
 fn system_fonts_load_lazily_and_unknown_families_fall_back_deterministically() {
     let dir = tempfile::tempdir().unwrap();
-    let file = dir.path().join("VibeCutFixtureSans-Regular.ttf");
-    fs::write(&file, FIXTURE).unwrap();
+    // The text registry is process-wide and other tests load the fixture family, so this
+    // test owns a family of its own: only its loads can make it available.
+    let fixture = renamed(FIXTURE, "VibeCut Fixture Sans", "VibeCut LazySys Sans");
+    let file = dir.path().join("VibeCutLazySysSans-Regular.ttf");
+    fs::write(&file, &fixture).unwrap();
     let scans = Arc::new(AtomicUsize::new(0));
     let counter = scans.clone();
     let scan_dir = dir.path().to_path_buf();
@@ -822,30 +825,30 @@ fn system_fonts_load_lazily_and_unknown_families_fall_back_deterministically() {
     .unwrap();
     assert_eq!(scans.load(Ordering::SeqCst), 0, "no scan before first use");
 
-    let listed = store.list(Some("fixture")).unwrap();
-    assert_eq!(names(&listed), ["VibeCut Fixture Sans"]);
+    let listed = store.list(Some("lazysys")).unwrap();
+    assert_eq!(names(&listed), ["VibeCut LazySys Sans"]);
     assert_eq!(scans.load(Ordering::SeqCst), 1);
 
     // Listing read no font bytes: damage the file and loading it is what fails.
     fs::write(&file, b"damaged").unwrap();
     assert!(matches!(
-        store.load("VibeCut Fixture Sans"),
+        store.load("VibeCut LazySys Sans"),
         Err(EngineError::Font(FontError::Face(
             text::FontError::Unreadable
         )))
     ));
-    assert!(!text::is_available("VibeCut Fixture Sans"));
-    fs::write(&file, FIXTURE).unwrap();
+    assert!(!text::is_available("VibeCut LazySys Sans"));
+    fs::write(&file, &fixture).unwrap();
 
-    let loaded = store.load("vibecut fixture sans").unwrap();
+    let loaded = store.load("vibecut lazysys sans").unwrap();
     assert_eq!(loaded.state, FontLoadState::Loaded);
     assert_eq!(loaded.origin, Some(FontOrigin::System));
-    assert_eq!(loaded.effective_family, "VibeCut Fixture Sans");
+    assert_eq!(loaded.effective_family, "VibeCut LazySys Sans");
     assert_eq!(loaded.styles, ["Regular"]);
     assert_eq!(scans.load(Ordering::SeqCst), 1, "one scan per store");
-    let (missing, faces) = laid_out_faces("VibeCut Fixture Sans");
+    let (missing, faces) = laid_out_faces("VibeCut LazySys Sans");
     assert!(!missing);
-    let registered = text::resolve("VibeCut Fixture Sans", "Regular").face;
+    let registered = text::resolve("VibeCut LazySys Sans", "Regular").face;
     assert!(faces.contains(&registered));
 
     // A bundled family needs no registration; an unknown one reports a typed state and the
