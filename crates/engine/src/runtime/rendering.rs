@@ -609,34 +609,36 @@ fn full_source_project(
     range: time::TimeRange,
 ) -> Result<project::Project> {
     let data = source.data();
-    let mut timeline = project::Timeline::default();
-    timeline.main = project::Track {
-        id: project::TrackId(2),
-        name: "Main Track".into(),
-        kind: project::TrackKind::Video,
-        muted: false,
-        hidden: false,
-        locked: false,
-        items: vec![project::Item {
+    let timeline = project::Timeline {
+        main: project::Track {
+            id: project::TrackId(2),
+            name: "Main Track".into(),
+            kind: project::TrackKind::Video,
+            muted: false,
             hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: project::ItemId(1),
-            source_asset: Some(asset.id()),
-            source_range: range,
-            start: time::Tick::ZERO,
-            content: project::ItemParams::Video(project::VideoParams {
-                fades: Default::default(),
-                source_audio_enabled: true,
-                volume: 0.0,
-                muted: false,
-                crop: None,
-                cleanup: Default::default(),
-            }),
-        }],
+            locked: false,
+            items: vec![project::Item {
+                hidden: false,
+                blend_mode: Default::default(),
+                retime: Default::default(),
+                masks: Vec::new(),
+                effects: Vec::new(),
+                animations: Default::default(),
+                id: project::ItemId(1),
+                source_asset: Some(asset.id()),
+                source_range: range,
+                start: time::Tick::ZERO,
+                content: project::ItemParams::Video(project::VideoParams {
+                    fades: Default::default(),
+                    source_audio_enabled: true,
+                    volume: 0.0,
+                    muted: false,
+                    crop: None,
+                    cleanup: Default::default(),
+                }),
+            }],
+        },
+        ..Default::default()
     };
     let scenes = vec![project::Scene {
         id: project::SceneId(0),
