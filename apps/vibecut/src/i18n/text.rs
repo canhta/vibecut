@@ -427,6 +427,7 @@ catalog! {
     MaskStars { key: "mask_stars", en: "Stars", vi: "Ngôi sao" },
     MaskText { key: "mask_text", en: "Text", vi: "Văn bản" },
     Media { key: "media", en: "Media", vi: "Tư liệu" },
+    MediaTimeline { key: "media_timeline", en: "Timeline", vi: "Dòng thời gian" },
     Position { key: "position", en: "Position", vi: "Vị trí" },
     PositionX { key: "position_x", en: "Position X", vi: "Vị trí X" },
     PositionY { key: "position_y", en: "Position Y", vi: "Vị trí Y" },

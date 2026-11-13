@@ -649,6 +649,11 @@ impl Editor {
                             self.with_assets(|assets, port| assets.remember_sticker(port, &id));
                         }
                     }
+                    Request::SwitchScene(scene) => {
+                        if let Err(error) = self.switch_scene(scene) {
+                            self.fail(error.to_string());
+                        }
+                    }
                 }
             }
         }

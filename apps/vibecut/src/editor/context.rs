@@ -291,6 +291,8 @@ pub(crate) enum Request {
     /// Insert one shape through its `graphic.insert.*` action when it is enabled, then
     /// tell the assets area to record it as recent.
     InsertShape(String),
+    /// Switch the open scene the way the scene sheet's row does, without its select mode.
+    SwitchScene(project::SceneId),
     /// Arm or leave the chroma-key eyedropper the player samples next.
     ArmKeyColor(Option<crate::editor::KeyPick>),
     /// Ask the window to open the native media picker for one clip's replacement.

@@ -15,8 +15,8 @@ pub(in crate::editor) use feedback::{drop_overlay, import_overlay, toast};
 
 use super::{
     Action, Align2, AssetRow, AssetState, AssetsTab, AudioSection, Color32, EffectRow, FontId,
-    Icon, Id, MediaKind, MediaSortKey, MediaSortOrder, MediaView, Model, Recorded, Rect, Row,
-    State, Text, Vec2, asset_state_color, egui, icons, state, theme,
+    Icon, Id, MediaKind, MediaSection, MediaSortKey, MediaSortOrder, MediaView, Model, Recorded,
+    Rect, Row, State, Text, Vec2, asset_state_color, egui, icons, state, theme,
 };
 use state::Filter;
 
@@ -135,13 +135,24 @@ pub(in crate::editor) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) 
                 }
                 let label = view.tr(active);
                 if cx.preferences.assets_tab == AssetsTab::Media {
-                    // Import heads a group (caret, neutral); the shown view, Media, is the one
-                    // active row.
+                    // Import heads a group (caret, neutral); the shown page, Media or
+                    // Timeline, is the one active row.
                     let response = view.nav_row(ui, label, false, true);
                     view.remember("assets.subnav", &response, None);
+                    let section = view.state.media_section;
                     let label = view.tr(Text::Media);
-                    let response = view.nav_row(ui, label, true, false);
+                    let response = view.nav_row(ui, label, section == MediaSection::Media, false);
+                    if response.clicked() {
+                        view.state.media_section = MediaSection::Media;
+                    }
                     view.remember("assets.subnav.media", &response, None);
+                    let label = view.tr(Text::MediaTimeline);
+                    let response =
+                        view.nav_row(ui, label, section == MediaSection::Timeline, false);
+                    if response.clicked() {
+                        view.state.media_section = MediaSection::Timeline;
+                    }
+                    view.remember("assets.subnav.timeline", &response, None);
                     return;
                 }
                 let is_text = cx.preferences.assets_tab == AssetsTab::Text;
@@ -167,6 +178,11 @@ pub(in crate::editor) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) 
     ui.scope_builder(egui::UiBuilder::new().max_rect(content), |ui| {
         ui.set_clip_rect(content.intersect(ui.clip_rect()));
         match cx.preferences.assets_tab {
+            AssetsTab::Media
+                if view.state.media_section == MediaSection::Timeline && nav.width() > 0.0 =>
+            {
+                view.scene_list(ui)
+            }
             AssetsTab::Media if cx.rows.is_empty() && !cx.importing && !cx.failed => {
                 view.empty_media(ui)
             }
@@ -258,6 +274,45 @@ impl View<'_> {
         }
     }
 
+    /// The Media Timeline page: one row per scene in project order, the open scene
+    /// selected and the main scene marked. A click switches scene.
+    fn scene_list(&mut self, ui: &mut egui::Ui) {
+        let cx = self.cx;
+        let main = self.tr(Text::MainScene);
+        egui::ScrollArea::vertical()
+            .id_salt("assets.timeline")
+            .show(ui, |ui| {
+                for scene in &cx.scenes {
+                    let label = if scene.main {
+                        format!("{} ({main})", scene.name)
+                    } else {
+                        scene.name.clone()
+                    };
+                    let response = ui.add_sized(
+                        [ui.available_width(), 40.0],
+                        egui::Button::new(
+                            egui::RichText::new(label)
+                                .font(theme::label_font())
+                                .size(theme::type_size::SMALL_LABEL)
+                                .color(if scene.active {
+                                    theme::accent(cx.preferences.dark)
+                                } else {
+                                    theme::text(cx.preferences.dark)
+                                }),
+                        )
+                        .selected(scene.active),
+                    );
+                    self.remember(
+                        format!("assets.timeline.scene.{}", scene.id.0),
+                        &response,
+                        None,
+                    );
+                    if response.clicked() && !scene.active {
+                        self.actions.push(Action::SwitchScene(scene.id));
+                    }
+                }
+            });
+    }
     fn empty_media(&mut self, ui: &mut egui::Ui) {
         let area = ui.available_rect_before_wrap();
         let drop = Rect::from_min_size(

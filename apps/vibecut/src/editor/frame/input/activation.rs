@@ -315,10 +315,7 @@ impl Editor {
                         let is_main = target.is_main;
                         self.timeline.scenes.toggle(scene, is_main);
                     } else {
-                        self.cancel_interaction();
-                        self.session.apply(engine::Command::SwitchScene { scene })?;
-                        self.session.set_selection(Default::default())?;
-                        self.selection_scopes = SelectionScopes::default();
+                        self.switch_scene(scene)?;
                     }
                 }
                 UiAction::Export => self.open_export()?,

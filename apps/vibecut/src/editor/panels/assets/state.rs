@@ -63,6 +63,8 @@ pub(in crate::editor) struct State {
     pub(super) sounds_mode: super::sounds::SoundsMode,
     pub(super) sounds_commercial: bool,
     pub(in crate::editor) audio_section: super::AudioSection,
+    /// Media tab: the shown sub-navigation page.
+    pub(in crate::editor) media_section: super::MediaSection,
     pub(super) music_mode: super::sounds::music::MusicMode,
     pub(super) music_chip: &'static str,
     pub(super) music_search: String,
@@ -128,6 +130,7 @@ impl Default for State {
             sounds_mode: super::sounds::SoundsMode::Discover,
             sounds_commercial: true,
             audio_section: super::AudioSection::Sounds,
+            media_section: super::MediaSection::Media,
             music_mode: super::sounds::music::MusicMode::Browse,
             music_chip: libraries::music::CHIPS[1],
             music_search: String::new(),
