@@ -1,7 +1,7 @@
 //! Lends areas their ports and applies the notes they leave behind.
+use crate::editor::panels::player;
 use crate::editor::{Editor, SelectionScopes};
 use crate::editor::{Note, Port, Read, Rect, Vec2, assets, egui, timeline};
-use crate::editor::panels::player;
 
 impl Editor {
     /// Lend the assets state and a port to one workflow step, then apply the notes the

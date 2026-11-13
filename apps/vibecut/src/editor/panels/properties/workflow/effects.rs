@@ -184,37 +184,28 @@ fn set_key_color(
 ) -> Result<()> {
     let [r, g, b, _] = color.0;
     let packed = (u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b)) as f64;
-    desk.apply_result(
-        engine::Command::UpdateEffectParam {
-            item,
-            effect: effect.to_owned(),
-            key: "key_color".into(),
-            value: project::EffectParamUpdate::Scalar(packed),
-        },
-        false,
-    )?;
+    desk.apply_result(engine::Command::UpdateEffectParam {
+        item,
+        effect: effect.to_owned(),
+        key: "key_color".into(),
+        value: project::EffectParamUpdate::Scalar(packed),
+    })?;
     Ok(())
 }
 
 pub(super) fn remove_effect(desk: &mut Desk<'_>, item: ItemId, effect: &str) {
-    let _ = desk.apply_result(
-        engine::Command::RemoveEffect {
-            item,
-            effect: effect.to_owned(),
-        },
-        false,
-    );
+    let _ = desk.apply_result(engine::Command::RemoveEffect {
+        item,
+        effect: effect.to_owned(),
+    });
 }
 
 pub(super) fn toggle_effect(desk: &mut Desk<'_>, item: ItemId, effect: &str, enabled: bool) {
-    let _ = desk.apply_result(
-        engine::Command::ToggleEffect {
-            item,
-            effect: effect.to_owned(),
-            enabled,
-        },
-        false,
-    );
+    let _ = desk.apply_result(engine::Command::ToggleEffect {
+        item,
+        effect: effect.to_owned(),
+        enabled,
+    });
 }
 
 pub(super) fn reorder_effect(desk: &mut Desk<'_>, item: ItemId, effect: &str, target_effect: &str) {
@@ -253,13 +244,10 @@ pub(super) fn reorder_effect(desk: &mut Desk<'_>, item: ItemId, effect: &str, ta
     if order == current {
         return;
     }
-    let _ = desk.apply_result(
-        engine::Command::ReorderEffects {
-            item,
-            order: order.clone(),
-        },
-        false,
-    );
+    let _ = desk.apply_result(engine::Command::ReorderEffects {
+        item,
+        order: order.clone(),
+    });
 }
 
 pub(super) fn set_effect_param(
@@ -315,7 +303,7 @@ pub(super) fn set_effect_values(
         } else {
             engine::Command::Batch { commands }
         };
-        desk.apply_result(command, false)?;
+        desk.apply_result(command)?;
     } else {
         // First edit on a panel that shows a registered effect at neutral:
         // add it carrying the edited values, inside the open gesture.
@@ -333,13 +321,10 @@ pub(super) fn set_effect_values(
         for (key, value) in values {
             instance.set_param(key, *value)?;
         }
-        desk.apply_result(
-            engine::Command::AddEffect {
-                item,
-                effect: instance,
-            },
-            false,
-        )?;
+        desk.apply_result(engine::Command::AddEffect {
+            item,
+            effect: instance,
+        })?;
     }
     desk.sync();
     Ok(())
@@ -403,7 +388,7 @@ pub(super) fn apply_grade_to_all(desk: &mut Desk<'_>, source: ItemId) -> Result<
     if commands.is_empty() {
         return Ok(());
     }
-    desk.apply_result(engine::Command::Batch { commands }, false)?;
+    desk.apply_result(engine::Command::Batch { commands })?;
     desk.sync();
     Ok(())
 }

@@ -462,14 +462,15 @@ fn linked_video_and_audio_stay_in_sync_through_rate_change_trim_and_split() {
 
 #[test]
 fn speed_edits_refuse_atomically_and_ripple_only_on_a_magnetic_main_track() {
-    let overlay = Item {
-        hidden: false,
-        source_asset: None,
-        content: ItemParams::Overlay(project::OverlayParams {
+    let overlay = testkit::item::item(
+        ItemId(3),
+        ItemParams::Overlay(project::OverlayParams {
             color: project::Color([1, 2, 3, 255]),
         }),
-        ..video(3, 4 * SECOND, range(0, SECOND))
-    };
+    )
+    .source(range(0, SECOND))
+    .start(Tick(4 * SECOND))
+    .build();
     let mut s = session(
         vec![
             testkit::item::video(ItemId(1))

@@ -9,7 +9,7 @@ use crate::support::session::Wire;
 use crate::support::session::{get, project, range, session};
 use engine::{Command, CreatedId, Session};
 use media::{AssetData, AssetId, ContentHash, SourceAsset, SourceProbe};
-use project::{Color, Item, ItemId, ItemParams, Project, Track, TrackId, TrackKind};
+use project::{Color, ItemId, ItemParams, Project, Track, TrackId, TrackKind};
 use proptest::prelude::*;
 use serde_json::json;
 use std::collections::BTreeMap;

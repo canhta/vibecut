@@ -14,15 +14,12 @@ pub(super) fn set_fade(
         .ok_or(Error::Invalid("fade needs an audio or video item"))?
         .curve;
     let duration = time::Tick::from_seconds_f64(seconds, time::Rounding::Nearest)?;
-    desk.apply_result(
-        engine::Command::SetFade {
-            item,
-            edge,
-            duration,
-            curve,
-        },
-        false,
-    )?;
+    desk.apply_result(engine::Command::SetFade {
+        item,
+        edge,
+        duration,
+        curve,
+    })?;
     Ok(())
 }
 
@@ -53,6 +50,6 @@ pub(super) fn set_noise_reduction(desk: &mut Desk<'_>, item: ItemId, enabled: bo
         },
         None => return Ok(()),
     };
-    desk.apply_result(command, false)?;
+    desk.apply_result(command)?;
     Ok(())
 }

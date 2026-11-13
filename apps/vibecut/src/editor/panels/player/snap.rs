@@ -233,7 +233,7 @@ fn snap_axis(edges: &[f64], targets: &[(f64, Source)], threshold: f64) -> Option
 mod tests {
     use super::*;
     use project::{
-        AnimationPath, Item, ItemParams, Param, ParamValue, Project, ProjectId, TextParams, Track,
+        AnimationPath, ItemParams, Param, ParamValue, Project, ProjectId, TextParams, Track,
         TrackId, TrackKind, TransformField,
     };
     use time::{SourceRange, TICKS_PER_SECOND, Tick};

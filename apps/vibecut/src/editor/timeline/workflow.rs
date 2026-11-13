@@ -6,7 +6,7 @@ mod item_drag;
 mod viewport;
 mod volume;
 
-pub(super) use apply::{
+pub(in crate::editor) use apply::{
     apply, command_on_selection, discard_gesture, discard_timeline_preview, release_graph,
 };
 pub(super) use viewport::{

@@ -211,7 +211,7 @@ impl Dialog {
 }
 
 /// Open the dialog for the selected clip; a non-croppable target refuses.
-pub(crate) fn open(state: &mut State, port: &Port<'_>) -> Result<()> {
+pub(in crate::editor) fn open(state: &mut State, port: &Port<'_>) -> Result<()> {
     let target = target(port.session).ok_or(crate::Error::Unsupported("crop target"))?;
     state.crop = Some(Dialog::new(target));
     Ok(())
@@ -235,7 +235,7 @@ struct Output {
 
 /// Draw the open dialog over the frame's context. Every gesture stays in the
 /// dialog; only Apply reaches the engine, as one undo step.
-pub(crate) fn show(state: &mut State, port: &mut Port<'_>, ctx: &egui::Context) {
+pub(in crate::editor) fn show(state: &mut State, port: &mut Port<'_>, ctx: &egui::Context) {
     let Some(mut dialog) = state.crop.take() else {
         return;
     };

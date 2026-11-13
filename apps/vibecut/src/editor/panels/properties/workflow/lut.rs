@@ -291,15 +291,12 @@ impl State {
             .and_then(|i| i.effects.iter().find(|e| e.kind == "color_grade"))
             .map(|e| e.id.clone())
         {
-            desk.apply_result(
-                engine::Command::UpdateEffectParam {
-                    item,
-                    effect,
-                    key: "lut".into(),
-                    value: project::EffectParamUpdate::LutRef(project::LutReference { lut: None }),
-                },
-                false,
-            )?;
+            desk.apply_result(engine::Command::UpdateEffectParam {
+                item,
+                effect,
+                key: "lut".into(),
+                value: project::EffectParamUpdate::LutRef(project::LutReference { lut: None }),
+            })?;
         }
         self.lut.unavailable = None;
         Ok(())

@@ -11,13 +11,10 @@ pub(super) fn set_duration(
     transition: TransitionId,
     duration: Tick,
 ) -> Result<()> {
-    desk.apply_result(
-        Command::SetTransitionDuration {
-            transition,
-            duration,
-        },
-        false,
-    )?;
+    desk.apply_result(Command::SetTransitionDuration {
+        transition,
+        duration,
+    })?;
     Ok(())
 }
 
@@ -31,13 +28,13 @@ pub(super) fn set_alignment(
 ) -> Result<()> {
     let commands = alignment_commands(desk.view().session.project(), transition, alignment)?;
     if !commands.is_empty() {
-        desk.apply_result(Command::Batch { commands }, false)?;
+        desk.apply_result(Command::Batch { commands })?;
     }
     Ok(())
 }
 
 pub(super) fn remove(desk: &mut Desk<'_>, transition: TransitionId) -> Result<()> {
-    desk.apply_result(Command::RemoveTransition { transition }, false)?;
+    desk.apply_result(Command::RemoveTransition { transition })?;
     if desk.view().transition == Some(transition) {
         desk.clear_transition_scope();
     }

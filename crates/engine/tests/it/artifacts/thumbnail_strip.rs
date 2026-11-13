@@ -13,7 +13,7 @@ use engine::{
     thumbnails::ThumbnailCache,
 };
 use media::{AssetId, SourceAsset, THUMBNAIL_MAX_EDGE};
-use project::{ItemId, Project, ProjectId, Retime, Track, TrackId, TrackKind};
+use project::{ItemId, Project, ProjectId, Track, TrackId, TrackKind};
 use std::{
     path::{Path, PathBuf},
     sync::{
@@ -249,7 +249,7 @@ fn trim_and_retime_map_to_source_frames() {
 
     // Trim: source 1..3 s starts at timeline zero.
     let trimmed = testkit::item::video(ItemId(1))
-        .asset(&asset.id())
+        .asset(asset.id())
         .source(range(1, 3))
         .start(Tick::ZERO)
         .speed(1.0)
@@ -273,7 +273,7 @@ fn trim_and_retime_map_to_source_frames() {
 
     // Retime 2x: 3 s of source spans 1.5 s of timeline.
     let retimed = testkit::item::video(ItemId(1))
-        .asset(&asset.id())
+        .asset(asset.id())
         .source(range(0, 3))
         .start(Tick::ZERO)
         .speed(2.0)
@@ -295,7 +295,7 @@ fn trim_and_retime_map_to_source_frames() {
 
     // Trim and retime together: source 1..3 s at 2x spans 1 s of timeline.
     let both = testkit::item::video(ItemId(1))
-        .asset(&asset.id())
+        .asset(asset.id())
         .source(range(1, 3))
         .start(Tick::ZERO)
         .speed(2.0)
@@ -316,7 +316,7 @@ fn trim_and_retime_map_to_source_frames() {
 
     // A later clip start moves the same source window down the timeline.
     let moved = testkit::item::video(ItemId(1))
-        .asset(&asset.id())
+        .asset(asset.id())
         .source(range(1, 3))
         .start(t(5))
         .speed(1.0)
@@ -356,7 +356,7 @@ fn cold_pending_ready_and_hostile_inputs() {
     };
     let asset = source_asset(&path, 1);
     let clip = testkit::item::video(ItemId(1))
-        .asset(&asset.id())
+        .asset(asset.id())
         .source(range(0, 3))
         .start(Tick::ZERO)
         .speed(1.0)
@@ -423,7 +423,7 @@ fn cold_pending_ready_and_hostile_inputs() {
         display(
             &asset,
             &testkit::item::video(ItemId(1))
-                .asset(&other.id())
+                .asset(other.id())
                 .source(range(0, 3))
                 .start(Tick::ZERO)
                 .speed(1.0)
@@ -451,7 +451,7 @@ fn cold_pending_ready_and_hostile_inputs() {
         )))
     ));
     let long = testkit::item::video(ItemId(1))
-        .asset(&asset.id())
+        .asset(asset.id())
         .source(range(0, 300))
         .start(Tick::ZERO)
         .speed(1.0)
@@ -501,7 +501,7 @@ fn cold_pending_ready_and_hostile_inputs() {
         display(
             &audio,
             &testkit::item::video(ItemId(1))
-                .asset(&audio.id())
+                .asset(audio.id())
                 .source(range(0, 1))
                 .start(Tick::ZERO)
                 .speed(1.0)
@@ -528,7 +528,7 @@ fn still_images_repeat_one_cached_frame() {
     assert_eq!(request.positions(), &[Tick::ZERO]);
     let (_strip, _runner, mut cache, _dir) = run(&request);
     let clip = testkit::item::video(ItemId(1))
-        .asset(&asset.id())
+        .asset(asset.id())
         .source(range(0, 1))
         .start(Tick::ZERO)
         .speed(1.0)
@@ -572,7 +572,7 @@ fn warm_hit_opens_no_source_and_changed_content_misses() {
     let strip = again.finish(&mut runner, &mut cache).unwrap().unwrap();
     assert_eq!(strip.positions(), first.positions());
     let clip = testkit::item::video(ItemId(1))
-        .asset(&asset.id())
+        .asset(asset.id())
         .source(range(0, 3))
         .start(Tick::ZERO)
         .speed(1.0)
@@ -597,7 +597,7 @@ fn warm_hit_opens_no_source_and_changed_content_misses() {
     let changed_request =
         ThumbnailStripRequest::new(changed.clone(), range(0, 3), t(1), THUMBNAIL_MAX_EDGE).unwrap();
     let changed_clip_item = testkit::item::video(ItemId(1))
-        .asset(&changed.id())
+        .asset(changed.id())
         .source(range(0, 3))
         .start(Tick::ZERO)
         .speed(1.0)
@@ -680,7 +680,7 @@ fn deleted_source_fails_and_keeps_no_frames() {
     assert_eq!(runner.memory_budget().snapshot().unwrap().used, 0);
     assert_eq!(entries(dir.path()), 0);
     let clip = testkit::item::video(ItemId(1))
-        .asset(&asset.id())
+        .asset(asset.id())
         .source(range(0, 3))
         .start(Tick::ZERO)
         .speed(1.0)
@@ -779,7 +779,7 @@ fn cancelling_a_changed_source_keeps_the_previous_cache() {
     );
 
     let clip = testkit::item::video(ItemId(1))
-        .asset(&asset.id())
+        .asset(asset.id())
         .source(range(0, 3))
         .start(Tick::ZERO)
         .speed(1.0)
@@ -797,7 +797,7 @@ fn cancelling_a_changed_source_keeps_the_previous_cache() {
         ThumbnailStripState::Ready(_)
     ));
     let changed_clip_item = testkit::item::video(ItemId(1))
-        .asset(&changed.id())
+        .asset(changed.id())
         .source(range(0, 3))
         .start(Tick::ZERO)
         .speed(1.0)
@@ -838,7 +838,7 @@ fn corrupt_cached_frames_are_failed_and_regenerate() {
         }
     }
     let clip = testkit::item::video(ItemId(1))
-        .asset(&asset.id())
+        .asset(asset.id())
         .source(range(0, 3))
         .start(Tick::ZERO)
         .speed(1.0)
@@ -892,7 +892,7 @@ fn project_json_stays_byte_identical_after_generation() {
         locked: false,
         items: vec![
             testkit::item::video(ItemId(1))
-                .asset(&asset.id())
+                .asset(asset.id())
                 .source(range(0, 3))
                 .start(Tick::ZERO)
                 .speed(1.0)
@@ -974,7 +974,7 @@ fn interview_samples_one_visible_range() {
     let asset = SourceAsset::import(AssetId(30), path).unwrap();
     let duration = asset.probe().duration.unwrap();
     let clip = testkit::item::video(ItemId(1))
-        .asset(&asset.id())
+        .asset(asset.id())
         .source(SourceRange::new(Tick::ZERO, duration).unwrap())
         .start(Tick::ZERO)
         .speed(1.0)

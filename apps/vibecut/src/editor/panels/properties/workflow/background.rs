@@ -8,9 +8,6 @@ pub(super) fn set_clip_background(
     items: Vec<ItemId>,
     background: project::ClipBackground,
 ) -> Result<()> {
-    desk.apply_result(
-        engine::Command::SetItemsBackground { items, background },
-        false,
-    )?;
+    desk.apply_result(engine::Command::SetItemsBackground { items, background })?;
     Ok(())
 }

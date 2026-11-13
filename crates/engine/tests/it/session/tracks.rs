@@ -3,7 +3,7 @@ use crate::support::session::{new_item, project, range};
 use engine::{Command, CreatedId, EditError, ItemParamPatch, Move, Placement, Session};
 use media::{AssetId, ContentHash};
 use project::{
-    Color, Item, ItemId, ItemParams, OverlayParams, Project, ProjectId, Track, TrackId, TrackKind,
+    Color, ItemId, ItemParams, OverlayParams, Project, ProjectId, Track, TrackId, TrackKind,
 };
 use serde_json::json;
 use std::sync::Arc;

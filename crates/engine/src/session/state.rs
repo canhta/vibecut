@@ -958,8 +958,18 @@ mod tests {
             ("pause cut always closes", pauses(), false, true),
             ("filler cut always closes", fillers(), false, true),
             ("word cut always closes", words(), false, true),
-            ("batch follows an off setting", batch(vec![delete()]), false, false),
-            ("batch follows an on setting", batch(vec![delete()]), true, true),
+            (
+                "batch follows an off setting",
+                batch(vec![delete()]),
+                false,
+                false,
+            ),
+            (
+                "batch follows an on setting",
+                batch(vec![delete()]),
+                true,
+                true,
+            ),
             (
                 "a nested span cut closes the batch",
                 batch(vec![delete(), batch(vec![pauses()])]),

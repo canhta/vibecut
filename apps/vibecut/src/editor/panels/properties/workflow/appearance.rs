@@ -35,7 +35,7 @@ impl State {
     ) -> Result<()> {
         let mut preferences = desk.view().preferences.clone();
         preferences.set("recent_colors", serde_json::to_value(recent)?)?;
-        if let Err(error) = desk.apply_result(command, false) {
+        if let Err(error) = desk.apply_result(command) {
             // The engine refused: show the committed project again.
             desk.sync();
             return Err(error);

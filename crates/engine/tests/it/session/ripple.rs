@@ -620,9 +620,21 @@ fn the_session_alone_decides_the_gap_and_reports_whether_a_span_closed() {
     // (name, magnet, session ripple, command, span closed)
     let rows: Vec<(&str, bool, bool, Command, bool)> = vec![
         ("main delete, magnet on", true, false, delete(&[21]), true),
-        ("main delete, magnet off", false, false, delete(&[21]), false),
+        (
+            "main delete, magnet off",
+            false,
+            false,
+            delete(&[21]),
+            false,
+        ),
         ("main delete, ripple on", false, true, delete(&[21]), true),
-        ("overlay delete, magnet on", true, false, delete(&[10]), false),
+        (
+            "overlay delete, magnet on",
+            true,
+            false,
+            delete(&[10]),
+            false,
+        ),
         ("overlay delete, ripple on", true, true, delete(&[10]), true),
         (
             "split keeping both pieces, magnet on",

@@ -17,15 +17,12 @@ pub(super) fn set_clip_animation(
     snapshot: std::sync::Arc<project::Project>,
 ) -> Result<()> {
     text_target(state, desk, item, &snapshot, "clip animation")?;
-    desk.apply_result(
-        engine::Command::SetClipAnimation {
-            item,
-            slot,
-            preset,
-            duration,
-        },
-        false,
-    )?;
+    desk.apply_result(engine::Command::SetClipAnimation {
+        item,
+        slot,
+        preset,
+        duration,
+    })?;
     Ok(())
 }
 
@@ -37,13 +34,10 @@ pub(in crate::editor) fn apply_text_preset(
     snapshot: std::sync::Arc<project::Project>,
 ) -> Result<()> {
     text_target(state, desk, item, &snapshot, "text preset")?;
-    desk.apply_result(
-        engine::Command::ApplyTextPreset {
-            items: vec![item],
-            preset,
-        },
-        false,
-    )?;
+    desk.apply_result(engine::Command::ApplyTextPreset {
+        items: vec![item],
+        preset,
+    })?;
     Ok(())
 }
 
@@ -55,7 +49,7 @@ pub(in crate::editor) fn save_text_preset(
 ) -> Result<()> {
     text_target(state, desk, item, &snapshot, "text preset")?;
     let name = next_preset_name(desk.view().session.project())?;
-    desk.apply_result(engine::Command::SaveTextPreset { item, name }, false)?;
+    desk.apply_result(engine::Command::SaveTextPreset { item, name })?;
     Ok(())
 }
 
@@ -102,7 +96,7 @@ pub(in crate::editor) fn set_shared_field(
     }
     let patch = item_patch(field, value)?;
     let items = desk.view().selection().iter().copied().collect();
-    desk.apply_result(engine::Command::SetItemParamMany { items, patch }, false)?;
+    desk.apply_result(engine::Command::SetItemParamMany { items, patch })?;
     Ok(())
 }
 
@@ -147,15 +141,12 @@ pub(super) fn set_keyframe_at(
     time: time::Tick,
     value: f64,
 ) -> Result<()> {
-    desk.apply_result(
-        engine::Command::AddKeyframe {
-            item,
-            path: project::AnimationPath::new(field)?,
-            component: None,
-            key: project::Keyframe::new(time, project::ParamValue::Scalar(value)),
-        },
-        false,
-    )?;
+    desk.apply_result(engine::Command::AddKeyframe {
+        item,
+        path: project::AnimationPath::new(field)?,
+        component: None,
+        key: project::Keyframe::new(time, project::ParamValue::Scalar(value)),
+    })?;
     Ok(())
 }
 
@@ -189,28 +180,25 @@ pub(super) fn reset_transform(desk: &mut Desk<'_>, item: ItemId) -> Result<()> {
             flipped: false,
         });
     }
-    desk.apply_result(engine::Command::Batch { commands }, false)?;
+    desk.apply_result(engine::Command::Batch { commands })?;
     Ok(())
 }
 
 /// Reset the Blend section's channels (blend mode and opacity) to their engine
 /// defaults as one atomic batch, one undo step.
 pub(super) fn reset_blend(desk: &mut Desk<'_>, item: ItemId) -> Result<()> {
-    desk.apply_result(
-        engine::Command::Batch {
-            commands: vec![
-                engine::Command::SetItemParamMany {
-                    items: vec![item],
-                    patch: ItemParamPatch::BlendMode(project::BlendMode::Normal),
-                },
-                engine::Command::SetItemParamMany {
-                    items: vec![item],
-                    patch: ItemParamPatch::Opacity(1.0),
-                },
-            ],
-        },
-        false,
-    )?;
+    desk.apply_result(engine::Command::Batch {
+        commands: vec![
+            engine::Command::SetItemParamMany {
+                items: vec![item],
+                patch: ItemParamPatch::BlendMode(project::BlendMode::Normal),
+            },
+            engine::Command::SetItemParamMany {
+                items: vec![item],
+                patch: ItemParamPatch::Opacity(1.0),
+            },
+        ],
+    })?;
     Ok(())
 }
 
@@ -254,18 +242,15 @@ pub(in crate::editor) fn set_item_field(
             .ok()
             .filter(|v| v.is_finite() && (min..=max).contains(v))
             .ok_or(Error::Invalid("graphic scalar"))?;
-        desk.apply_result(
-            engine::Command::SetAnimatedParam {
-                item,
-                path: project::AnimationPath::new(field)?,
-                param: project::Param::new(project::ParamValue::Scalar(value))?,
-            },
-            false,
-        )?;
+        desk.apply_result(engine::Command::SetAnimatedParam {
+            item,
+            path: project::AnimationPath::new(field)?,
+            param: project::Param::new(project::ParamValue::Scalar(value))?,
+        })?;
         return Ok(());
     }
     let patch = item_patch(field, value)?;
-    desk.apply_result(engine::Command::SetItemField { item, patch }, false)?;
+    desk.apply_result(engine::Command::SetItemField { item, patch })?;
     Ok(())
 }
 

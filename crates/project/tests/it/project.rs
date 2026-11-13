@@ -520,6 +520,7 @@ fn populated(path: PathBuf) -> Project {
             ItemParams::Video(_) | ItemParams::Audio(_) | ItemParams::Caption(_)
         )
         .then_some(AssetId(3));
+        let video = matches!(content, ItemParams::Video(_));
         data.scene_mut().timeline.insert_track(Track {
             id: TrackId(i as u64 + 1),
             name: "Track".into(),
@@ -532,7 +533,7 @@ fn populated(path: PathBuf) -> Project {
                     .source_asset(source_asset)
                     .source(range(0, 10))
                     .start(Tick(5))
-                    .animations(if matches!(content, ItemParams::Video(_)) {
+                    .animations(if video {
                         crop_channels(&[(0, 0.1), (10, 0.5)], &[(0, 0.0), (10, 0.5)])
                     } else {
                         Default::default()

@@ -2,8 +2,8 @@
 use engine::{Command, Session};
 use media::{AssetId, ContentHash};
 use project::{
-    AudioParams, Fade, FadeCurve, FadeEdge, Item, ItemId, ItemParams, Project, ProjectId, Track,
-    TrackId, TrackKind,
+    AudioParams, Fade, FadeCurve, FadeEdge, ItemId, ItemParams, Project, ProjectId, Track, TrackId,
+    TrackKind,
 };
 use serde_json::json;
 use time::{SourceRange, Tick};

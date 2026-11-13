@@ -11,7 +11,7 @@ use engine::{
     waveform::{MAX_COLUMNS, WaveformRequest, WaveformState, display},
 };
 use media::{AssetId, SourceAsset};
-use project::{ItemId, Project, ProjectId, Retime, Track, TrackId, TrackKind};
+use project::{ItemId, Project, ProjectId, Track, TrackId, TrackKind};
 use std::{
     path::{Path, PathBuf},
     sync::{
@@ -216,7 +216,7 @@ fn trim_and_retime_map_to_bucket_positions() {
 
     // Trim: source 1..3 s starts at timeline zero.
     let trimmed = testkit::item::audio(ItemId(1))
-        .asset(&asset.id())
+        .asset(asset.id())
         .source(range(1, 3))
         .start(Tick::ZERO)
         .speed(1.0)
@@ -235,7 +235,7 @@ fn trim_and_retime_map_to_bucket_positions() {
     // Retime 2x: 3 s of source spans 1.5 s of timeline. Bars that meet a
     // section boundary share its 16 ms bucket, so assert the section centres.
     let retimed = testkit::item::audio(ItemId(1))
-        .asset(&asset.id())
+        .asset(asset.id())
         .source(range(0, 3))
         .start(Tick::ZERO)
         .speed(2.0)
@@ -256,7 +256,7 @@ fn trim_and_retime_map_to_bucket_positions() {
 
     // Trim and retime together: source 1..3 s at 2x spans 1 s of timeline.
     let both = testkit::item::audio(ItemId(1))
-        .asset(&asset.id())
+        .asset(asset.id())
         .source(range(1, 3))
         .start(Tick::ZERO)
         .speed(2.0)
@@ -268,7 +268,7 @@ fn trim_and_retime_map_to_bucket_positions() {
 
     // A later clip start moves the same source window down the timeline.
     let moved = testkit::item::audio(ItemId(1))
-        .asset(&asset.id())
+        .asset(asset.id())
         .source(range(1, 3))
         .start(t(5))
         .speed(1.0)
@@ -296,7 +296,7 @@ fn cold_pending_ready_over_and_unsupported_states() {
     let request = WaveformRequest::new(asset.clone()).unwrap();
     let (mut runner, mut cache, _dir) = setup();
     let clip = testkit::item::audio(ItemId(1))
-        .asset(&asset.id())
+        .asset(asset.id())
         .source(range(0, 3))
         .start(Tick::ZERO)
         .speed(1.0)
@@ -329,7 +329,7 @@ fn cold_pending_ready_over_and_unsupported_states() {
     let (summary, _runner, mut loud_cache, _dir) = run(&request);
     assert!((0..summary.bucket_count()).any(|bucket| summary.over(bucket)));
     let clip = testkit::item::audio(ItemId(1))
-        .asset(&loud_asset.id())
+        .asset(loud_asset.id())
         .source(range(0, 1))
         .start(Tick::ZERO)
         .speed(1.0)
@@ -344,7 +344,7 @@ fn cold_pending_ready_over_and_unsupported_states() {
         Err(AnalysisError::Edit(engine::EditError::Unsupported(_)))
     ));
     let clip = testkit::item::audio(ItemId(1))
-        .asset(&video.id())
+        .asset(video.id())
         .source(range(0, 1))
         .start(Tick::ZERO)
         .speed(1.0)
@@ -435,7 +435,7 @@ fn warm_hit_opens_no_source_and_changed_content_misses() {
     let changed = source_asset(&loud_path, 2);
     let request = WaveformRequest::new(changed.clone()).unwrap();
     let clip = testkit::item::audio(ItemId(1))
-        .asset(&changed.id())
+        .asset(changed.id())
         .source(range(0, 1))
         .start(Tick::ZERO)
         .speed(1.0)
@@ -462,7 +462,7 @@ fn stereo_display_combines_channels_and_reports_over() {
     let (summary, _runner, mut cache, _dir) = run(&request);
     assert_eq!(summary.channels(), 2);
     let clip = testkit::item::audio(ItemId(1))
-        .asset(&asset.id())
+        .asset(asset.id())
         .source(range(0, 1))
         .start(Tick::ZERO)
         .speed(1.0)
@@ -539,7 +539,7 @@ fn cancelling_a_changed_source_keeps_the_previous_cache() {
     assert_eq!(cache.len(), 1, "cancel leaves the previous entry intact");
 
     let clip = testkit::item::audio(ItemId(1))
-        .asset(&asset.id())
+        .asset(asset.id())
         .source(range(0, 3))
         .start(Tick::ZERO)
         .speed(1.0)
@@ -549,7 +549,7 @@ fn cancelling_a_changed_source_keeps_the_previous_cache() {
         WaveformState::Ready(_)
     ));
     let changed_clip = testkit::item::audio(ItemId(1))
-        .asset(&changed.id())
+        .asset(changed.id())
         .source(range(0, 1))
         .start(Tick::ZERO)
         .speed(1.0)
@@ -573,7 +573,7 @@ fn corrupt_cache_is_failed_and_regenerates() {
         .put(request.cache_key(), b"not a waveform summary")
         .unwrap();
     let clip = testkit::item::audio(ItemId(1))
-        .asset(&asset.id())
+        .asset(asset.id())
         .source(range(0, 3))
         .start(Tick::ZERO)
         .speed(1.0)
@@ -616,7 +616,7 @@ fn project_json_stays_byte_identical_after_generation() {
         locked: false,
         items: vec![
             testkit::item::audio(ItemId(1))
-                .asset(&asset.id())
+                .asset(asset.id())
                 .source(range(0, 3))
                 .start(Tick::ZERO)
                 .speed(1.0)
@@ -640,7 +640,7 @@ fn outside_asset_and_hostile_columns_are_typed_refusals() {
     let request = WaveformRequest::new(asset.clone()).unwrap();
     let (_summary, _runner, mut cache, _dir) = run(&request);
     let mismatched = testkit::item::audio(ItemId(1))
-        .asset(&other.id())
+        .asset(other.id())
         .source(range(0, 3))
         .start(Tick::ZERO)
         .speed(1.0)
@@ -653,7 +653,7 @@ fn outside_asset_and_hostile_columns_are_typed_refusals() {
         )))
     ));
     let clip = testkit::item::audio(ItemId(1))
-        .asset(&asset.id())
+        .asset(asset.id())
         .source(range(0, 3))
         .start(Tick::ZERO)
         .speed(1.0)
@@ -696,7 +696,7 @@ fn interview_generates_a_complete_summary() {
     assert!(summary.total_samples() > 1_400 * 48_000);
     let duration = asset.probe().duration.unwrap();
     let clip = testkit::item::audio(ItemId(1))
-        .asset(&asset.id())
+        .asset(asset.id())
         .source(SourceRange::new(Tick::ZERO, duration).unwrap())
         .start(Tick::ZERO)
         .speed(1.0)

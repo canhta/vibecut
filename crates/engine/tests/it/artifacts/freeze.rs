@@ -60,14 +60,17 @@ fn session(dir: &Path) -> Session {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![Item {
-            content: ItemParams::Overlay(OverlayParams {
-                color: project::Color([0, 0, 0, 255]),
-            }),
-            source_asset: None,
-            source_range: SourceRange::new(Tick::ZERO, Tick(secs(1))).unwrap(),
-            ..video(3, 0, secs(1))
-        }],
+        items: vec![
+            testkit::item::item(
+                ItemId(3),
+                ItemParams::Overlay(OverlayParams {
+                    color: project::Color([0, 0, 0, 255]),
+                }),
+            )
+            .source(SourceRange::new(Tick::ZERO, Tick(secs(1))).unwrap())
+            .start(Tick(0))
+            .build(),
+        ],
     });
     Session::new(Project::new(data).unwrap(), 10).unwrap()
 }

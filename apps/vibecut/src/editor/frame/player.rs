@@ -191,11 +191,4 @@ impl Editor {
         self.player.last_view = view;
         Ok(())
     }
-
-    pub(in crate::editor) fn seek_to(&mut self, at: Tick) {
-        let at = at.clamp(Tick::ZERO, self.session.project().duration());
-        if let Err(error) = self.seek(at) {
-            self.desk().fail(error.to_string());
-        }
-    }
 }
