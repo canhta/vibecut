@@ -180,6 +180,8 @@ editor for the full font, size, colour, outline, box, position, safe-area and ma
 This uncaptured composition is new; desktop reference parity is unverified.
 Availability and edit behavior belong to the [captions owner](../../../apps/vibecut/src/editor/panels/assets/captions/README.md).
 
+The filler cut list is a collapsed `Filler words` section below the cue list, a placement the Captions tab rebuild may move. Find reads the caption item's lexicon candidates; each row is a checkbox with the cue time and kind (filled pause or discourse marker), all checked at first. Remove selected removes only the checked candidates in one undo step, and a selection that includes an edited caption first shows one inline confirmation row. Empty results are one line (`No fillers found`, or `Word timings needed` when no cue carries measured words). `Find with AI` sends the words to the configured text provider after the same upload sheet every other AI call uses: while it waits the section says `Approve the upload to continue.`, a refusal says `Upload not approved. Nothing was sent.`, and a provider failure says it failed. Cancel stops the run. There is no applying state, because removal is one synchronous command. Row geometry and the section's spacing are [proposed]: no desktop capture of this section exists, and the reference's placement of its "Identify filler words" switch is unmeasured.
+
 The Animation control is shared by the Text tab's Animation section and the Animation tab of
 video, image, sticker and graphic items (Video order: Basic group, Audio, Animation, Speed,
 Adjust, Effects, after the web capture's Audio, Animation, Speed).
