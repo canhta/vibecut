@@ -67,7 +67,10 @@ Typed commands admit at most 1024 commands and nesting depth 16; each collection
 Locks protect item structure and item properties: item edits, insertion, moves into or out of a
 track and track removal refuse a locked track; `track.set_flags`, `track.rename`,
 `track.reorder` and `track.set_locked` remain permitted on one, so it can be unlocked
-([`tracks.rs`](tracks.rs)).
+([`tracks.rs`](tracks.rs)). Transcript word cuts (`transcript.delete_range`, `remove_fillers`)
+refuse `Locked` when any item a span overlaps, on any track, is locked; `transcript.merge_cues`
+refuses when its caption item's track is locked. Both run one shared check in [`text.rs`](text.rs)
+before any change.
 
 Ripple policy is independent of app preferences and is a command, not a method:
 `timeline.edit {commands, ripple}` supplies it for a whole batch (a typed caller wraps one atomic

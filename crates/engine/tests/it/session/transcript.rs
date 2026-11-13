@@ -536,7 +536,7 @@ fn transcript_delete_refuses_protected_locked_and_foreign_words_atomically() {
     ));
     assert_unchanged(&protected, &before, &revision);
 
-    // A locked caption track refuses the whole edit.
+    // A word cut inside one caption item on a locked caption track refuses the whole edit.
     let mut locked = word_project(false, true);
     let before = project::encode(locked.project(), false).unwrap();
     let revision = locked.revision();
@@ -544,9 +544,30 @@ fn transcript_delete_refuses_protected_locked_and_foreign_words_atomically() {
         locked.apply(Command::TranscriptDeleteRange {
             word_ids: vec![word(4, "câu-1", 0)]
         }),
-        Err(EditError::Locked(_))
+        Err(EditError::Locked(TrackId(9)))
     ));
     assert_unchanged(&locked, &before, &revision);
+
+    // The same cut refuses when only a clip it overlaps is locked: every item a span
+    // touches counts, not just the caption track holding the selected word.
+    let mut data = word_project(false, false).project().data().clone();
+    let main = data.scene().timeline.main.id;
+    data.scene_mut()
+        .timeline
+        .iter_mut()
+        .find(|track| track.id == main)
+        .unwrap()
+        .locked = true;
+    let mut overlapped = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    let before = project::encode(overlapped.project(), false).unwrap();
+    let revision = overlapped.revision();
+    assert!(matches!(
+        overlapped.apply(Command::TranscriptDeleteRange {
+            word_ids: vec![word(4, "câu-1", 0)]
+        }),
+        Err(EditError::Locked(id)) if id == main
+    ));
+    assert_unchanged(&overlapped, &before, &revision);
 
     // A word that lives in another scene refuses with the typed scene boundary.
     let mut data = word_project(false, false).project().data().clone();

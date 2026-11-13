@@ -1,6 +1,6 @@
 //! Applies text commands to a candidate project.
 use super::{
-    Arc, BTreeMap, BTreeSet, ClipboardRefs, Command, CreatedId, EditError, ItemId, ItemParams,
+    Arc, BTreeMap, BTreeSet, ClipboardRefs, Command, CreatedId, EditError, Item, ItemId, ItemParams,
     NewItem, Placement, ProjectData, Result, SourceRange, Tick, TrackId, TrackKind, TrackPlacement,
     TrimSources, apply, item, set_range,
 };
@@ -647,6 +647,8 @@ pub(super) fn execute_remove_fillers(
 
 /// Remove exactly `selected` measured words as reviewed output spans. Consecutive
 /// selected words join one span; an unselected word inside a run refuses the edit.
+/// The cut touches every item any span overlaps, on every track, so a locked track
+/// among them refuses before the cutter changes anything.
 fn cut_selected_words(
     data: ProjectData,
     selected: &BTreeSet<crate::WordId>,
@@ -684,6 +686,10 @@ fn cut_selected_words(
     if let Some((start, end)) = run {
         spans.push(SourceRange::new(start, end)?);
     }
+    refuse_locked(&data, |item| {
+        let end = item.end()?;
+        Ok(spans.iter().any(|span| item.start < span.end() && span.start() < end))
+    })?;
     super::clips::remove_output_ranges(
         data,
         &spans,
@@ -715,7 +721,7 @@ pub(super) fn execute_transcript_merge(
         .first()
         .ok_or(EditError::Invalid("merge cue count"))?
         .item;
-    let (track_id, locked) = item_track(&data, item_id).ok_or_else(|| {
+    let track_id = item_track(&data, item_id).ok_or_else(|| {
         if item_in_other_scene(&data, item_id) {
             EditError::SceneBoundary
         } else {
@@ -723,7 +729,7 @@ pub(super) fn execute_transcript_merge(
         }
     })?;
     for id in cue_ids.iter().skip(1) {
-        let (other, _) = item_track(&data, id.item).ok_or_else(|| {
+        let other = item_track(&data, id.item).ok_or_else(|| {
             if item_in_other_scene(&data, id.item) {
                 EditError::SceneBoundary
             } else {
@@ -737,9 +743,7 @@ pub(super) fn execute_transcript_merge(
             return Err(EditError::CuesAcrossItems);
         }
     }
-    if locked {
-        return Err(EditError::Locked(track_id));
-    }
+    refuse_locked(&data, |item| Ok(item.id == item_id))?;
 
     let retained = sources.contains_key(&item_id);
     let item = data
@@ -883,14 +887,27 @@ fn merge_adjacent(cues: &mut captions::CueTrack, cue_ids: &[crate::CueId]) -> Re
     Ok(())
 }
 
-fn item_track(data: &ProjectData, id: ItemId) -> Option<(TrackId, bool)> {
-    data.scene().timeline.iter().find_map(|track| {
-        track
-            .items
-            .iter()
-            .any(|item| item.id == id)
-            .then_some((track.id, track.locked))
-    })
+/// The one lock check every transcript edit runs before it changes anything: refuses
+/// with `Locked` when any item `affected` selects sits on a locked track.
+fn refuse_locked(
+    data: &ProjectData,
+    mut affected: impl FnMut(&Item) -> Result<bool>,
+) -> Result<()> {
+    for track in data.scene().timeline.iter() {
+        for item in &track.items {
+            if track.locked && affected(item)? {
+                return Err(EditError::Locked(track.id));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn item_track(data: &ProjectData, id: ItemId) -> Option<TrackId> {
+    data.scene()
+        .timeline
+        .iter()
+        .find_map(|track| track.items.iter().any(|item| item.id == id).then_some(track.id))
 }
 
 fn item_in_other_scene(data: &ProjectData, id: ItemId) -> bool {
