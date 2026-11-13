@@ -23,8 +23,7 @@ use raster::{TextEntry, TextKey};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 pub use sticker::{
-    FLAGS_PROVIDER, MAX_STICKER_RASTER_SIDE, SHAPES_PROVIDER, StickerError, StickerRaster,
-    rasterize_sticker, sticker_shape_graphic,
+    FLAGS_PROVIDER, MAX_STICKER_RASTER_SIDE, StickerError, StickerRaster, rasterize_sticker,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]

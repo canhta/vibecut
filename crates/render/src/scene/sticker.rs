@@ -1,22 +1,18 @@
-//! Sticker pixels: bundled flag SVGs rasterised at the destination pixel size, shapes drawn
-//! through the generated graphic contours, and a placeholder for an asset that cannot be drawn.
+//! Sticker pixels: bundled flag SVGs rasterised at the destination pixel size, and a placeholder
+//! for an asset that cannot be drawn. Shapes are graphic items, not stickers.
 
 use super::Placement;
-use super::draw::draw_graphic;
 use super::sticker_flags::FLAGS;
 use crate::image::{color, over};
 use crate::{ExecutionHooks, Image, MemoryKind, Result, check};
-use project::{GraphicParams, Item, ItemParams, StickerParams};
+use project::StickerParams;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, OnceLock};
-use time::Tick;
 
 /// Longest side, in pixels, a single sticker raster may have.
 pub const MAX_STICKER_RASTER_SIDE: u32 = 8192;
 /// Provider id of the bundled flags; the catalog in `libraries` uses the same value.
 pub const FLAGS_PROVIDER: &str = "flags";
-/// Provider id of the shapes drawn from graphic definitions.
-pub const SHAPES_PROVIDER: &str = "shapes";
 
 /// Why a sticker could not be drawn from its asset.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
@@ -80,7 +76,7 @@ fn flag_tree(code: &'static str, bytes: &'static [u8]) -> Option<Arc<resvg::usvg
 ///
 /// # Errors
 ///
-/// [`StickerError::Missing`] when no bundled asset has this id (shapes are not SVG assets) and
+/// [`StickerError::Missing`] when no bundled asset has this id and
 /// [`StickerError::Invalid`] for an unparsable asset or a size outside
 /// `1..=MAX_STICKER_RASTER_SIDE`.
 pub fn rasterize_sticker(
@@ -118,34 +114,11 @@ pub fn rasterize_sticker(
     })
 }
 
-/// Graphic definition a `shapes:<value>` sticker draws: a square is a rectangle with equal axes,
-/// a diamond a four-sided polygon with a vertex up. `None` for a value that is not a shape.
-pub fn sticker_shape_graphic(value: &str) -> Option<GraphicParams> {
-    let polygon = |count: f64| {
-        let mut graphic = GraphicParams::polygon();
-        if let GraphicParams::Polygon { sides, .. } = &mut graphic {
-            *sides = count;
-        }
-        graphic
-    };
-    Some(match value {
-        "square" => GraphicParams::rectangle(),
-        "circle" => GraphicParams::ellipse(),
-        "triangle" => polygon(3.),
-        "hexagon" => polygon(6.),
-        "diamond" => polygon(4.),
-        "star" => GraphicParams::star(),
-        _ => return None,
-    })
-}
-
 /// Draws one sticker into the item's layer. A sticker whose asset is missing or invalid paints a
 /// placeholder in its place and returns the typed failure for the caller to report.
 pub(super) fn draw_sticker(
     target: &mut Image,
-    item: &Item,
     params: &StickerParams,
-    local: Tick,
     placement: Placement,
     hooks: &dyn ExecutionHooks,
 ) -> Result<Option<StickerError>> {
@@ -159,21 +132,6 @@ pub(super) fn draw_sticker(
     let ph = (intrinsic.1 * fit).round().clamp(1., side) as u32;
     let x0 = (r.x * width + (dw - f64::from(pw)) / 2.).round() as i64;
     let y0 = (r.y * height + (dh - f64::from(ph)) / 2.).round() as i64;
-    if params.provider() == SHAPES_PROVIDER {
-        let Some(graphic) = sticker_shape_graphic(params.value()) else {
-            paint_placeholder(target, [x0, y0], [pw, ph], placement.opacity, hooks)?;
-            return Ok(Some(StickerError::Missing {
-                sticker: params.sticker.clone(),
-            }));
-        };
-        let drawn = Item {
-            animations: Default::default(),
-            content: ItemParams::Graphic(graphic),
-            ..item.clone()
-        };
-        draw_graphic(target, &drawn, local, placement, hooks)?;
-        return Ok(None);
-    }
     let _lease = hooks.reserve(MemoryKind::Compositor, u64::from(pw) * u64::from(ph) * 8)?;
     let raster = match rasterize_sticker(&params.sticker, pw, ph) {
         Ok(raster) => raster,

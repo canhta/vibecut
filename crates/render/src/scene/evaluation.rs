@@ -391,9 +391,9 @@ impl<'a> Renderer<'a> {
                         super::draw::draw_graphic(&mut out, item, local, placement, hooks)?
                     }
                     ItemParams::Sticker(p) => {
-                        if let Some(error) = super::sticker::draw_sticker(
-                            &mut out, item, p, local, placement, hooks,
-                        )? && !self.sticker_errors.contains(&error)
+                        if let Some(error) =
+                            super::sticker::draw_sticker(&mut out, p, placement, hooks)?
+                            && !self.sticker_errors.contains(&error)
                         {
                             self.sticker_errors.push(error);
                         }

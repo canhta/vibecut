@@ -204,7 +204,7 @@ pub struct SavedMusicEntry {
     pub saved_at_unix_ms: u64,
 }
 
-/// Category tab of the Stickers panel and the filter of `stickers.search`.
+/// Filter of `stickers.search`. Stickers are flags only, so `all` and `flags` list the same rows.
 #[derive(
     Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
 )]
@@ -213,7 +213,6 @@ pub enum StickerCategory {
     #[default]
     All,
     Flags,
-    Shapes,
 }
 
 /// One bundled sticker: the `provider:value` id a project stores, a display name and the

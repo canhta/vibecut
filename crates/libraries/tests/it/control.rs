@@ -589,7 +589,7 @@ fn music_commands_return_typed_results_and_never_edit_the_project() {
     assert!(!s.can_undo());
 }
 
-// Sticker catalogs, search and recents: the bundled flag assets, the flag and shape search rows, and the recents list with its file round trip.
+// Sticker catalogs, search and recents: the bundled flag assets, the flag search rows, and the recents list.
 fn flag_asset_dir() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/stickers/flags")
 }
@@ -660,23 +660,6 @@ fn flag_search_matches_names_codes_regions_and_continents() {
         )
     }));
     assert!(codes("zzzz-no-match").is_empty());
-}
-
-#[test]
-fn shape_search_keeps_catalog_order_and_matches_names() {
-    use libraries::stickers::search_shapes;
-    let values = |query: &str| {
-        search_shapes(query)
-            .iter()
-            .map(|shape| shape.value)
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(
-        values(""),
-        ["square", "circle", "triangle", "hexagon", "diamond", "star"]
-    );
-    assert_eq!(values("  TRI "), ["triangle"]);
-    assert!(values("zzz").is_empty());
 }
 
 #[test]
@@ -765,34 +748,24 @@ fn sticker_commands_search_insert_undo_redo_and_round_trip() {
     use engine::control::{StickerCategory, StickerEntry, StickerPage, StickerQuery};
     use libraries::stickers::{resolve_sticker, search_catalog};
     let page = search_catalog("", StickerCategory::All, Some(8));
-    assert_eq!(page.total, 277, "six shapes and 271 flags");
+    assert_eq!(page.total, 271, "every sticker is a flag");
     let ids: Vec<&str> = page.results.iter().map(|entry| entry.id.as_str()).collect();
     assert_eq!(
         ids,
         [
-            "shapes:square",
-            "shapes:circle",
-            "shapes:triangle",
-            "shapes:hexagon",
-            "shapes:diamond",
-            "shapes:star",
-            "flags:AD",
-            "flags:AE"
+            "flags:AD", "flags:AE", "flags:AF", "flags:AG", "flags:AI", "flags:AL", "flags:AM",
+            "flags:AO"
         ]
     );
-    assert_eq!((page.results[0].width, page.results[0].height), (512, 512));
-    assert_eq!((page.results[6].width, page.results[6].height), (640, 480));
+    assert_eq!((page.results[0].width, page.results[0].height), (640, 480));
     let flags = search_catalog("", StickerCategory::Flags, Some(1000));
     assert_eq!((flags.total, flags.results.len()), (271, 271));
-    let shapes = search_catalog("", StickerCategory::Shapes, None);
-    assert_eq!((shapes.total, shapes.results.len()), (6, 6));
     assert!(search_catalog("asia", StickerCategory::Flags, None).total > 0);
-    assert_eq!(
-        search_catalog("asia", StickerCategory::Shapes, None).total,
-        0
-    );
     assert_eq!(resolve_sticker(" flags:vn ").unwrap().id, "flags:VN");
-    assert_eq!(resolve_sticker("shapes:star").unwrap().name, "Star");
+    assert!(
+        resolve_sticker("shapes:star").is_none(),
+        "shapes are graphic items, not stickers"
+    );
     assert!(resolve_sticker("flags:zz").is_none());
     assert!(resolve_sticker("emoji:smile").is_none());
 
