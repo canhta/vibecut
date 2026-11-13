@@ -109,16 +109,19 @@ fn captions_editor(
     editor.preferences.assets_tab = vibecut::AssetsTab::Captions;
     editor.prepare_subtitles()?;
     if filled {
-        let mut panel = editor.subtitles.take().ok_or("captions missing")?;
-        panel.tick(&mut editor.session)?;
-        panel.edit_text(
-            &mut editor.session,
-            &"cue-0".into(),
-            captions::LanguageTag::parse("en")?,
-            "Hello, and welcome to the caption editor.",
-        )?;
-        panel.select_cue(&editor.session, 0, false, false)?;
-        editor.subtitles = Some(panel);
+        editor
+            .with_subtitles(|panel, session, _| -> Result<(), Box<dyn std::error::Error>> {
+                panel.tick(session)?;
+                panel.edit_text(
+                    session,
+                    &"cue-0".into(),
+                    captions::LanguageTag::parse("en")?,
+                    "Hello, and welcome to the caption editor.",
+                )?;
+                panel.select_cue(session, 0, false, false)?;
+                Ok(())
+            })
+            .ok_or("captions missing")??;
         editor
             .playback
             .seek(Tick(2 * SECOND), false, editor.session.project().clone())?;
