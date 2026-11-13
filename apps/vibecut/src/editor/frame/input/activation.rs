@@ -319,22 +319,25 @@ impl Editor {
                     self.dialogs.export.retry(project, blocked)?;
                 }
                 UiAction::Save => {
-                    self.lifecycle_action = Some(crate::lifecycle::EditorAction::Save)
+                    self.lifecycle_action = Some(crate::services::lifecycle::EditorAction::Save)
                 }
                 UiAction::SaveAs => {
-                    self.lifecycle_action = Some(crate::lifecycle::EditorAction::SaveAs)
+                    self.lifecycle_action = Some(crate::services::lifecycle::EditorAction::SaveAs)
                 }
                 UiAction::FocusHome => {
-                    self.lifecycle_action = Some(crate::lifecycle::EditorAction::FocusHome)
+                    self.lifecycle_action =
+                        Some(crate::services::lifecycle::EditorAction::FocusHome)
                 }
                 UiAction::ExitProject => {
-                    self.lifecycle_action = Some(crate::lifecycle::EditorAction::ExitProject)
+                    self.lifecycle_action =
+                        Some(crate::services::lifecycle::EditorAction::ExitProject)
                 }
                 UiAction::OpenHelp => {
-                    self.lifecycle_action = Some(crate::lifecycle::EditorAction::OpenHelp)
+                    self.lifecycle_action = Some(crate::services::lifecycle::EditorAction::OpenHelp)
                 }
                 UiAction::OpenFeedback => {
-                    self.lifecycle_action = Some(crate::lifecycle::EditorAction::OpenFeedback)
+                    self.lifecycle_action =
+                        Some(crate::services::lifecycle::EditorAction::OpenFeedback)
                 }
                 UiAction::RenameProject => {
                     self.frame.rename =
@@ -345,7 +348,8 @@ impl Editor {
                     if self.importing() {
                         self.assets.import_notice = Some(self.tr(Text::ImportBusy).to_owned());
                     } else {
-                        self.lifecycle_action = Some(crate::lifecycle::EditorAction::ImportMedia);
+                        self.lifecycle_action =
+                            Some(crate::services::lifecycle::EditorAction::ImportMedia);
                     }
                 }
                 UiAction::CancelImport => {

@@ -181,7 +181,7 @@ fn max_error(a: &Image, b: &Image) -> f32 {
         })
         .fold(0.0, f32::max)
 }
-fn pixel_parity(gpu: &vibecut::effects::GpuEffects, image: &Image, label: &str) {
+fn pixel_parity(gpu: &vibecut::services::gpu::effects::GpuEffects, image: &Image, label: &str) {
     let original = image.pixels().to_vec();
     for pass in pixel_rows() {
         assert!(gpu.supports(pass.entry_point()));
@@ -264,7 +264,10 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
     let (device, queue) =
         pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap();
     let gpu = std::sync::Arc::new(
-        pollster::block_on(vibecut::effects::GpuEffects::new(device, queue)).unwrap(),
+        pollster::block_on(vibecut::services::gpu::effects::GpuEffects::new(
+            device, queue,
+        ))
+        .unwrap(),
     );
     for entry in ["color_mix", "gamma_unknown", "posterize"] {
         assert!(!gpu.supports(entry), "unadmitted {entry}");
@@ -793,7 +796,7 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
     // The existing injected-compositor hook records successful REAL device runs;
     // neither an Unsupported CPU retry nor a cached image can masquerade as one.
     struct NativeStrobe {
-        gpu: std::sync::Arc<vibecut::effects::GpuEffects>,
+        gpu: std::sync::Arc<vibecut::services::gpu::effects::GpuEffects>,
         calls: std::sync::atomic::AtomicUsize,
     }
     impl EffectCompositor for NativeStrobe {
@@ -974,7 +977,10 @@ fn pixel_effects_native_1080p_measurement() {
     );
     let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
     let start = std::time::Instant::now();
-    let gpu = pollster::block_on(vibecut::effects::GpuEffects::new(device, queue)).unwrap();
+    let gpu = pollster::block_on(vibecut::services::gpu::effects::GpuEffects::new(
+        device, queue,
+    ))
+    .unwrap();
     eprintln!(
         "measurement pipeline_setup_ms={:.3}",
         start.elapsed().as_secs_f64() * 1000.0
@@ -1106,7 +1112,7 @@ fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
             .with_ansi(false)
             .with_test_writer()
             .with_filter(tracing_subscriber::filter::filter_fn(|meta| {
-                meta.target() == "vibecut::effects"
+                meta.target() == "vibecut::services::gpu::effects"
             })),
     );
     let _subscriber = tracing::subscriber::set_default(subscriber);
@@ -1130,7 +1136,10 @@ fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
         device.limits()
     );
     let gpu = std::sync::Arc::new(
-        pollster::block_on(vibecut::effects::GpuEffects::new(device, queue)).unwrap(),
+        pollster::block_on(vibecut::services::gpu::effects::GpuEffects::new(
+            device, queue,
+        ))
+        .unwrap(),
     );
     let bytes = Image::bytes(17, 9).unwrap();
     let meter = Meter::new(6 * bytes + 4096);

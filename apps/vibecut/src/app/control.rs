@@ -1,5 +1,6 @@
-//! Background control uses the same Workspace and Session as the visible app.
-use crate::{Error, Result, preferences::Preferences, workspace::Workspace};
+//! Attaches agent control to the live workspace, visible or background, through each window's own edit path.
+use super::Workspace;
+use crate::{Error, Result, preferences::Preferences};
 use std::{
     ffi::OsString,
     path::PathBuf,

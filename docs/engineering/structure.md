@@ -56,7 +56,7 @@ Lowest first; imports go down only, and a window never names another window.
 | Layer | Holds |
 |---|---|
 | Foundation | `kit/` (tokens, icons, widgets, appearance), `i18n/`, `input/`; no engine knowledge |
-| Services | `services/`: playback, preview, crop, AI task progress, the editor session with autosave, capture, the GPU effects adapter |
+| Services | `services/`: playback, preview, crop, AI task progress, the editor session with autosave, `gpu/` (the wgpu effects adapter, capture) |
 | Shared editor context | `editor/context/`: the read context, the one write context, thumbnails, the one-selected-item read and the clip display contract every editor area names |
 | Windows and areas | `home/`, `shorts/`, editor areas (`panels/` with assets, player and properties, `captions/`, `dialogs/`, `timeline/`, `widgets.rs`) |
 | Frame | `editor/frame/`, the `Editor` record (`editor/state.rs`), `actions/`, `preferences/` |
@@ -84,6 +84,8 @@ flowchart LR
 ```
 
 The crate root holds exactly `kit/`, `i18n/`, `input/`, `services/`, `home/`, `shorts/`, `editor/`, `actions/`, `preferences/`, `app/`, `lib.rs` and `main.rs`; a new shared module goes into `services/` or `kit/`, never beside them. The engine `Session` owns the item selection; areas read it and never keep a copy.
+
+Home and Shorts share one window interface: `State`, `Context`, `Action` and `show(&mut State, Context, &mut Ui) -> Vec<Action>`. `app/` builds the `Context`, draws the viewport and carries each returned `Action` out; a window never names `app/`. Stores and the model service reach an editor only through `app/lending.rs`.
 
 An editor area exposes its `State` and a `show(...)` returning actions; areas never import each other, the frame routes their actions. Captions is a tab inside `assets/`. Inside `editor/`, `xtask/modules.toml` carries a folder table: `context/` is the lowest layer, the areas above it import nothing from each other, and `frame/` and the `Editor` record route above them; each new editor module adds its own line there.
 

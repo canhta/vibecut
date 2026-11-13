@@ -967,7 +967,7 @@ fn snapshot_dialog_cancel_success_failure_and_copy_are_typed() {
     assert!(h.state().inspect().unwrap().snapshot_dialog_open);
     assert_eq!(
         h.state_mut().take_lifecycle_action(),
-        Some(vibecut::lifecycle::EditorAction::SnapshotSave)
+        Some(vibecut::services::lifecycle::EditorAction::SnapshotSave)
     );
     h.state_mut().snapshot_save_cancelled();
     let inspect = h.state().inspect().unwrap();

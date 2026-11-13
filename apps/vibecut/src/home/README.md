@@ -1,9 +1,9 @@
 # Projects page
 
-Interface: `State`, `Action`, `show`, `WINDOW`, `ProjectsPreferences`,
+Interface: `State`, `Action`, `Context`, `show`, `WINDOW`, `ProjectsPreferences`,
 `ProjectsSortKey`, `ProjectsView`.
 
-`show` draws the whole window and returns the one lifecycle `Action` the workspace must
+`show(state, Context, ui)` draws the whole window and returns the lifecycle `Action`s the composition root must
 carry out. The page never loads or mutates project JSON: a catalog worker runs every
 `project.create`, `project.duplicate`, `project.rename`, `project.delete`, `project.restore`,
 `project.purge` and `project.thumbnail` command off the UI thread, and listing is supplied by

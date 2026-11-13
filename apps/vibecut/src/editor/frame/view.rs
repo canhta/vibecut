@@ -377,8 +377,8 @@ impl Editor {
             Text::SaveFailed
         } else {
             match &self.session {
-                crate::lifecycle::EditorSession::Memory(_) => Text::NotSaved,
-                crate::lifecycle::EditorSession::Persistent(autosave) => {
+                crate::services::lifecycle::EditorSession::Memory(_) => Text::NotSaved,
+                crate::services::lifecycle::EditorSession::Persistent(autosave) => {
                     if autosave.saving() || autosave.journaled_revision() < autosave.revision() {
                         Text::SavingProject
                     } else {

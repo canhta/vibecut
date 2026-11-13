@@ -7,9 +7,9 @@ use engine::Command;
 use project::ProjectId;
 use std::time::Duration;
 use std::time::Instant;
+use vibecut::app::Workspace;
 use vibecut::egui;
 use vibecut::i18n::Locale;
-use vibecut::workspace::Workspace;
 
 pub(super) fn home(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     let directory = tempfile::tempdir()?;

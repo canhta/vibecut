@@ -728,14 +728,22 @@ mod tests {
             })
             .with_size(egui::vec2(1440.0, 900.0))
             .build_ui_state(
-                |ui, state: &mut (State, crate::appearance::Look, ProjectsPreferences)| {
+                |ui, state: &mut (State, crate::kit::Look, ProjectsPreferences)| {
                     crate::Editor::theme(ui.ctx(), state.1.dark);
                     state.0.tick();
-                    state.0.show(ui, state.1, &mut state.2, None);
+                    crate::home::show(
+                        &mut state.0,
+                        crate::home::Context {
+                            look: state.1,
+                            projects: &mut state.2,
+                            status: None,
+                        },
+                        ui,
+                    );
                 },
                 (
                     page,
-                    crate::appearance::Look::default(),
+                    crate::kit::Look::default(),
                     ProjectsPreferences::default(),
                 ),
             );
@@ -796,29 +804,36 @@ mod tests {
             })
             .with_size(egui::vec2(1440.0, 900.0))
             .build_ui_state(
-                |ui, state: &mut (State, crate::appearance::Look, ProjectsPreferences)| {
+                |ui, state: &mut (State, crate::kit::Look, ProjectsPreferences)| {
                     crate::Editor::theme(ui.ctx(), state.1.dark);
                     state.0.tick();
-                    state.0.show(ui, state.1, &mut state.2, None);
+                    crate::home::show(
+                        &mut state.0,
+                        crate::home::Context {
+                            look: state.1,
+                            projects: &mut state.2,
+                            status: None,
+                        },
+                        ui,
+                    );
                 },
                 (
                     page,
-                    crate::appearance::Look::default(),
+                    crate::kit::Look::default(),
                     ProjectsPreferences::default(),
                 ),
             );
-        let card =
-            |harness: &Harness<'_, (State, crate::appearance::Look, ProjectsPreferences)>| {
-                format!(
-                    "{:?}",
-                    harness
-                        .get(By::new().predicate(|node| {
-                            node.author_id() == Some("projects.card.0000000000000001")
-                        }))
-                        .accesskit_node()
-                        .id()
-                )
-            };
+        let card = |harness: &Harness<'_, (State, crate::kit::Look, ProjectsPreferences)>| {
+            format!(
+                "{:?}",
+                harness
+                    .get(By::new().predicate(|node| {
+                        node.author_id() == Some("projects.card.0000000000000001")
+                    }))
+                    .accesskit_node()
+                    .id()
+            )
+        };
         harness.run_steps(2);
         let before = card(&harness);
 

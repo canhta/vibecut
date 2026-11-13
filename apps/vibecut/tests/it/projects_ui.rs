@@ -11,10 +11,10 @@ use std::{
 };
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
+    app::Workspace,
     egui,
     home::{ProjectsSortKey, ProjectsView},
     preferences::Preferences,
-    workspace::Workspace,
 };
 
 const CREATED: u64 = 1_780_000_000_000;

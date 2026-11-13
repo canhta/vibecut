@@ -4,7 +4,7 @@ use engine::{Command, NewItem, Placement};
 use project::{Color, ItemParams, OverlayParams};
 use std::time::{Duration, Instant};
 use time::{SourceRange, Tick};
-use vibecut::{egui, preferences::Preferences, workspace::Workspace};
+use vibecut::{app::Workspace, egui, preferences::Preferences};
 fn idle(app: &mut Workspace) {
     let deadline = Instant::now() + Duration::from_secs(20);
     while app.busy() {

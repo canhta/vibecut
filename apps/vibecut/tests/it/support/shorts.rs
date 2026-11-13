@@ -351,7 +351,7 @@ pub fn once(source: ReviewSource) -> (Opener, Arc<Mutex<Option<ReviewSource>>>) 
 pub fn importer_at(offset: i64) -> Importer {
     Arc::new(move |_| Ok(asset_at(offset)))
 }
-pub fn state(look: vibecut::appearance::Look, opener: Opener, offset: i64) -> Shorts {
+pub fn state(look: vibecut::Look, opener: Opener, offset: i64) -> Shorts {
     let mut app = Shorts::with_access(
         look,
         ByteBudget::new(512 << 20).unwrap(),

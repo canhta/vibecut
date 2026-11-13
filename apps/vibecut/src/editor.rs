@@ -228,14 +228,14 @@ impl Editor {
 
     pub fn new(session: Session, playback: Playback, preferences: Preferences) -> Self {
         Self::with_session(
-            crate::lifecycle::EditorSession::Memory(Box::new(session)),
+            crate::services::lifecycle::EditorSession::Memory(Box::new(session)),
             playback,
             preferences,
         )
     }
     /// A transient preview editor draws with the caller's appearance and
     /// defaults for every other preference; the shorts window owns its state.
-    pub fn preview(session: Session, playback: Playback, look: crate::appearance::Look) -> Self {
+    pub fn preview(session: Session, playback: Playback, look: crate::kit::Look) -> Self {
         let preferences = Preferences {
             locale: look.locale,
             dark: look.dark,
@@ -244,7 +244,7 @@ impl Editor {
         Self::new(session, playback, preferences)
     }
     fn with_session(
-        session: crate::lifecycle::EditorSession,
+        session: crate::services::lifecycle::EditorSession,
         playback: Playback,
         preferences: Preferences,
     ) -> Self {
@@ -309,7 +309,7 @@ impl Editor {
         preferences: Preferences,
     ) -> Self {
         Self::with_session(
-            crate::lifecycle::EditorSession::Persistent(Box::new(autosave)),
+            crate::services::lifecycle::EditorSession::Persistent(Box::new(autosave)),
             playback,
             preferences,
         )
@@ -643,7 +643,7 @@ impl Editor {
     }
     /// Tests and non-window callers consume the same lifecycle request the
     /// workspace turns into the native picker.
-    pub fn take_lifecycle_action(&mut self) -> Option<crate::lifecycle::EditorAction> {
+    pub fn take_lifecycle_action(&mut self) -> Option<crate::services::lifecycle::EditorAction> {
         self.lifecycle_action.take()
     }
     /// Default filename and last directory for the native snapshot dialog.

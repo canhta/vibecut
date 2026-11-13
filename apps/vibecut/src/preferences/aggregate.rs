@@ -188,8 +188,8 @@ impl Default for Preferences {
 }
 impl Preferences {
     /// The copied appearance value windows draw with.
-    pub fn look(&self) -> crate::appearance::Look {
-        crate::appearance::Look {
+    pub fn look(&self) -> crate::kit::Look {
+        crate::kit::Look {
             locale: self.locale,
             dark: self.dark,
         }

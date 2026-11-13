@@ -65,7 +65,7 @@ pub(super) fn apply(desk: &mut crate::editor::Desk<'_>, action: Action) {
             }
         }
         Action::Save => {
-            editor.lifecycle_action = Some(crate::lifecycle::EditorAction::ExportSave);
+            editor.lifecycle_action = Some(crate::services::lifecycle::EditorAction::ExportSave);
         }
         Action::Options(options) => {
             editor

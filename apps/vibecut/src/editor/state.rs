@@ -271,7 +271,7 @@ pub(super) struct AssetRow {
 /// App state only. The immutable engine project is read through Session, never copied
 /// into a parallel frontend project model. Every edit dispatches its registry ID.
 pub struct Editor {
-    pub session: crate::lifecycle::EditorSession,
+    pub session: crate::services::lifecycle::EditorSession,
     pub playback: Playback,
     pub preferences: Preferences,
     /// Workspace-owned dialogs take keyboard priority over the editor's sheets.
@@ -284,7 +284,7 @@ pub struct Editor {
     pub(super) error: Option<String>,
     pub(crate) persistence_error: Option<std::sync::Arc<engine::recovery::Error>>,
     pub(super) configured: bool,
-    pub(crate) lifecycle_action: Option<crate::lifecycle::EditorAction>,
+    pub(crate) lifecycle_action: Option<crate::services::lifecycle::EditorAction>,
     /// Time base for transient UI timers (toast and media reveal).
     pub(super) clock: Arc<dyn Clock>,
     pub(super) toast: Option<Toast>,

@@ -1,3 +1,4 @@
+//! The VibeCut desktop binary: native window, audio and GPU devices around the composed app.
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::{
@@ -8,12 +9,11 @@ use std::{
 };
 use vibecut::{
     Error, Result,
-    capture::Capture,
+    app::Workspace,
     egui,
     i18n::{Locale, Text},
     preferences::{PreferenceStore, Preferences},
-    services::playback::AudioPort,
-    workspace::Workspace,
+    services::{gpu::capture::Capture, playback::AudioPort},
 };
 
 fn audio(port: Arc<AudioPort>, rate: u32) -> Result<cpal::Stream> {
@@ -56,7 +56,7 @@ struct Native {
     control: Option<mcp::Server>,
     control_options: Option<(PathBuf, mcp::Grants)>,
     workspace: Workspace,
-    effects: Option<Arc<vibecut::effects::GpuEffects>>,
+    effects: Option<Arc<vibecut::services::gpu::effects::GpuEffects>>,
     store: PreferenceStore,
     saved_preferences: Preferences,
     _stream: Option<cpal::Stream>,
@@ -108,7 +108,7 @@ impl eframe::App for Native {
         }
 
         if let Some(control) = &mut self.control
-            && vibecut::control::poll_workspace(&mut self.workspace, &mut control.inbox).is_err()
+            && vibecut::app::poll_workspace(&mut self.workspace, &mut control.inbox).is_err()
         {
             tracing::warn!(category = "control_failed", "Control tick failed");
         }
@@ -326,7 +326,7 @@ fn run() -> Result<()> {
         .first()
         .is_some_and(|arg| arg == "--control-background")
     {
-        return vibecut::control::background(arguments.into_iter().skip(1).collect());
+        return vibecut::app::background(arguments.into_iter().skip(1).collect());
     }
     if arguments
         .first()
@@ -437,7 +437,7 @@ fn run() -> Result<()> {
         options,
         Box::new(move |cc| {
             let effects = cc.wgpu_render_state.as_ref().and_then(|state| {
-                match pollster::block_on(vibecut::effects::GpuEffects::new(state.device.clone(), state.queue.clone())) {
+                match pollster::block_on(vibecut::services::gpu::effects::GpuEffects::new(state.device.clone(), state.queue.clone())) {
                     Ok(adapter) => Some(Arc::new(adapter)),
                     Err(error) => { tracing::warn!(category = "effects_unavailable", error = %error, "CPU effects fallback"); None }
                 }

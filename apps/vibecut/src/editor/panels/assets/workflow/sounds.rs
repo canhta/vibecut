@@ -166,7 +166,7 @@ impl State {
         if let Some(directory) = &self.sound_media_dir {
             return directory.clone();
         }
-        if let crate::lifecycle::EditorSession::Persistent(autosave) = &editor.session
+        if let crate::services::lifecycle::EditorSession::Persistent(autosave) = &editor.session
             && let Some(path) = autosave.saved_path()
         {
             let mut media = path.as_os_str().to_os_string();

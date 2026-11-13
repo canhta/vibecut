@@ -3,6 +3,10 @@ use crate::{Error, Result};
 use engine::{Command, Session, recovery::Autosave};
 use std::ops::{Deref, DerefMut};
 
+/// The editor's session. It derefs to the engine [`Session`] for every read and edit;
+/// `Session::apply` refuses lifecycle commands (save, thumbnail), so the deref cannot
+/// bypass the journal. Those commands go through [`EditorSession::autosave`], whose
+/// `Autosave::apply` routes them.
 pub enum EditorSession {
     Memory(Box<Session>),
     Persistent(Box<Autosave>),

@@ -233,7 +233,7 @@ fn contains_file(path: &Path, names: &std::collections::BTreeSet<String>) -> boo
 
 #[test]
 fn project_windows_share_one_model_service_across_editor_close() {
-    use vibecut::workspace::Workspace;
+    use vibecut::app::Workspace;
     fn idle(app: &mut Workspace) {
         let deadline = Instant::now() + Duration::from_secs(20);
         while app.busy() {

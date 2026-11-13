@@ -25,10 +25,10 @@ use std::time::Duration;
 use std::time::Instant;
 use time::Tick;
 use vibecut::Editor;
+use vibecut::app::Workspace;
 use vibecut::i18n::Locale;
 use vibecut::services::playback::Files;
 use vibecut::services::playback::Playback;
-use vibecut::workspace::Workspace;
 
 pub(super) fn inspector_speed(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     let (mut editor, item) = media_editor(theme, Locale::En)?;

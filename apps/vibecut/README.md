@@ -14,9 +14,7 @@ Each module's contract is its README.
 | Module | README |
 |---|---|
 | `actions.rs` / `actions/` | [Action registry](src/actions/README.md) |
-| `appearance.rs` | – |
-| `capture.rs` | [Capture](src/capture/README.md) |
-| `control.rs` | [Control](src/control/README.md) |
+| `app.rs` / `app/` | [Composition root](src/app/README.md) |
 | `editor.rs` / `editor/` | [Editor presentation](src/editor/README.md) |
 | `editor/panels/assets/` | [Assets](src/editor/panels/assets/README.md) |
 | `editor/panels/assets/sounds/` | [Sounds tab](src/editor/panels/assets/sounds/README.md) |
@@ -48,21 +46,38 @@ Each module's contract is its README.
 | `editor/timeline/view/ruler/` | [Timeline ruler](src/editor/timeline/view/ruler/README.md) |
 | `editor/timeline/workflow/` | [Timeline gestures](src/editor/timeline/workflow/README.md) |
 | `editor/timeline/workflow/viewport/` | [Timeline viewport](src/editor/timeline/workflow/viewport/README.md) |
-| `effects.rs` | [GPU effects](src/effects/README.md) |
 | `home.rs` / `home/` | [Projects page](src/home/README.md) |
 | `home/view/` | [Home view](src/home/view/README.md) |
 | `i18n.rs` / `i18n/` | [Localization](src/i18n/README.md) |
 | `input.rs` / `input/` | [Key input](src/input/README.md) |
 | `kit.rs` / `kit/` | [Kit](src/kit/README.md) |
 | `kit/widgets/` | [Kit widgets](src/kit/widgets/README.md) |
-| `lifecycle.rs` | [Project lifecycle](src/lifecycle/README.md) |
 | `preferences.rs` / `preferences/` | [Preferences](src/preferences/README.md) |
 | `services.rs` / `services/` | [Services](src/services/README.md) |
 | `services/color_picker/` | [Colour picker](src/services/color_picker/README.md) |
+| `services/gpu/` | [GPU adapters](src/services/gpu/README.md) |
+| `services/lifecycle.rs` | [Project lifecycle](src/services/lifecycle/README.md) |
 | `services/remote_models/` | [Remote model selection](src/services/remote_models/README.md) |
 | `shorts.rs` / `shorts/` | [Long video to shorts](src/shorts/README.md) |
 | `shorts/view/` | [Shorts view](src/shorts/view/README.md) |
-| `workspace.rs` | [Windows and budgets](src/workspace/README.md) |
+
+## Public surface
+
+`lib.rs` exports only what `main.rs`, `tests/` and `examples/` use; everything else stays
+crate-private. A new export needs a named consumer here.
+
+| Export | Consumer |
+|---|---|
+| `app` (`Workspace`, `EditorWindow`, `poll_workspace`, `background`) | `main.rs`; `tests/it` lifecycle, control, export, import, projects, shorts, models and canvas rows; the audit scenes |
+| `actions` | keybinding, shortcut and timeline tests (`Platform`, registry reads) |
+| `home` (`WINDOW`, `ProjectsSortKey`, `ProjectsView`) | `main.rs` for the first window size; the projects tests |
+| `i18n`, `preferences` | `main.rs`, tests and the audit |
+| `input` | none directly: `actions` re-exports its types. Kept `pub` because a private `input` would turn its `pub use` lines into unused-import warnings that only a build can confirm |
+| `services` (`playback`, `lifecycle`, `gpu`, ...) | `main.rs` (audio port, capture, GPU effects); the lifecycle, effects, preview, crop and shorts tests |
+| `shorts` (`show`, `Context`, `Action`, `State`) | the shorts tests and the audit scene |
+| `Look`, `window_color`, `egui`, `Error`, `Result` | `main.rs`, tests and the audit |
+| `Editor` and its re-exported state, inspection and selection types (`AssetsTab`, `Inspection`, `Sounds`, `Music`, `Subtitles`, `PreviewZoom`, `SETTLE_BUDGET`, ...) | the editor tests, which drive and inspect it without a window |
+| `export`, `font_picker`, `model_manager`, `ColorTarget`, `ElementKind`, `PropertiesTab`, `shared_fields` | the export, font, model and properties tests |
 
 ## Checks
 

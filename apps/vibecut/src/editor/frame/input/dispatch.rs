@@ -39,7 +39,7 @@ impl Editor {
         self.preferences.assets_tab == crate::editor::AssetsTab::Captions
             && self.properties.input_ready(&self.session)
             && !self.player.transform.text_edit_open()
-            && !matches!(&self.session, crate::lifecycle::EditorSession::Persistent(s) if s.saving())
+            && !matches!(&self.session, crate::services::lifecycle::EditorSession::Persistent(s) if s.saving())
             && !self.importing()
             && self.lifecycle_action.is_none()
             && !self.overlay_open
@@ -75,7 +75,7 @@ impl Editor {
                 .captions
                 .as_ref()
                 .is_some_and(|s| !s.edit_ready(&self.session))
-            || matches!(&self.session, crate::lifecycle::EditorSession::Persistent(s) if s.saving())
+            || matches!(&self.session, crate::services::lifecycle::EditorSession::Persistent(s) if s.saving())
             || self.importing()
             || self.lifecycle_action.is_some()
             || self.overlay_open
@@ -129,7 +129,7 @@ impl Editor {
                 .captions
                 .as_ref()
                 .is_none_or(|s| s.edit_ready(&self.session))
-            && !matches!(&self.session, crate::lifecycle::EditorSession::Persistent(s) if s.saving())
+            && !matches!(&self.session, crate::services::lifecycle::EditorSession::Persistent(s) if s.saving())
             && !self.importing()
             && self.lifecycle_action.is_none()
             && !self.overlay_open
@@ -150,7 +150,7 @@ impl Editor {
                 .captions
                 .as_ref()
                 .is_none_or(|s| s.edit_ready(&self.session))
-            && !matches!(&self.session, crate::lifecycle::EditorSession::Persistent(s) if s.saving())
+            && !matches!(&self.session, crate::services::lifecycle::EditorSession::Persistent(s) if s.saving())
             && !self.importing()
             && self.lifecycle_action.is_none()
             && !self.overlay_open

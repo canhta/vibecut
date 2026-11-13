@@ -12,7 +12,7 @@ mod widgets;
 
 use super::ProjectsPreferences;
 use super::state::State;
-use crate::{appearance::Look, egui, i18n::Text};
+use crate::{egui, i18n::Text, kit::Look};
 
 /// Rail width; the page starts here.
 pub(super) const RAIL: f32 = 240.0;

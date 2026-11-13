@@ -32,7 +32,7 @@ Desktop export keeps the CPU effect reference in its render settings. Native pre
 attachment is separate from the shared render state, so a successful GPU preview
 does not attach an adapter to export. The [render effect interface](../../../../../../crates/render/src/scene/README.md#effects-and-desktop-adapter)
 accepts an optional device-free adapter; its native resource contract lives with
-[GPU effects](../../../effects/README.md).
+[GPU effects](../../../services/gpu/effects/README.md).
 
 On completion the app opens the asynchronous native save dialog with the sanitized
 `<ProjectName>.<ext>` and last save directory. Filenames keep Unicode and spaces,

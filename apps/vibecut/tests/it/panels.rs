@@ -19,7 +19,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
-use vibecut::lifecycle::EditorSession::Memory;
+use vibecut::services::lifecycle::EditorSession::Memory;
 use vibecut::{
     AssetsTab, Editor, ElementKind, PropertiesTab, egui,
     font_picker::{Backend, Status},
@@ -38,12 +38,9 @@ fn lut_picker_applies_real_job_and_discards_stale_completion() {
         "LUT_3D_SIZE 2\n0 0 0\n0 0 1\n1 0 0\n1 0 1\n0 1 0\n0 1 1\n1 1 0\n1 1 1\n",
     )
     .unwrap();
-    let mut workspace = vibecut::workspace::Workspace::new(
-        root.path().join("recovery"),
-        Preferences::default(),
-        None,
-    )
-    .unwrap();
+    let mut workspace =
+        vibecut::app::Workspace::new(root.path().join("recovery"), Preferences::default(), None)
+            .unwrap();
     let fixture = fixture();
     let video = fixture.image;
     let image = fixture.video;
@@ -119,7 +116,7 @@ fn lut_picker_applies_real_job_and_discards_stale_completion() {
     click(&mut h, "inspector.lut.import");
     assert_eq!(
         h.state_mut().take_lifecycle_action(),
-        Some(vibecut::lifecycle::EditorAction::ImportLut)
+        Some(vibecut::services::lifecycle::EditorAction::ImportLut)
     );
     assert!(
         h.get(By::new().predicate(|n| n.author_id() == Some("inspector.lut.import")))
@@ -2440,7 +2437,8 @@ fn text_fade_preflight_preserves_focused_and_unfocused_caption_and_properties_dr
     )
     .unwrap();
     saving.save_as(root.path().join("title.vibecut")).unwrap();
-    h.state_mut().session = vibecut::lifecycle::EditorSession::Persistent(Box::new(saving));
+    h.state_mut().session =
+        vibecut::services::lifecycle::EditorSession::Persistent(Box::new(saving));
     let before = h.state().session.project().clone();
     assert!(h.state_mut().activate("text.animation.fade_in").is_err());
     assert_eq!(h.state().session.project(), &before);

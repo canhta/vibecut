@@ -4,7 +4,7 @@ Interface: `State`, `show`, `Action`, `Context`, `WINDOW`, `Candidate`, `Decisio
 `GenerationRequest`, `Importer`, `desktop_importer`, `Review`, `ReviewSource`, `TaskEvents`.
 
 The Home `home.shorts` card opens a separate native viewport. `show` draws the whole
-window and returns the `Action` values the workspace must carry out; `State` owns
+window and returns the `Action` values the composition root must carry out; `State` owns
 bounded presentation and review history. Generating sends the registry command `clips.suggest`
 through `services::ai_access` (the [shorts workflow](../../../../crates/shorts/README.md) runs
 it as a runner job) on the picked or dropped local video, imported through the injectable

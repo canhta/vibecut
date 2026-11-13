@@ -127,7 +127,7 @@ impl render::SourceProvider for Gated {
 
 #[test]
 fn closing_one_window_preserves_another_windows_dirty_edit_and_running_export() {
-    use vibecut::workspace::Workspace;
+    use vibecut::app::Workspace;
     fn idle(app: &mut Workspace) {
         let deadline = Instant::now() + Duration::from_secs(20);
         while app.busy() {

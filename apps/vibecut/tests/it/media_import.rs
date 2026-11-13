@@ -343,7 +343,7 @@ fn drag_drop_imports_good_files_and_reports_typed_partial_failure() {
 
 #[test]
 fn picker_result_imports_through_workspace_and_real_editor_widgets() {
-    use vibecut::workspace::Workspace;
+    use vibecut::app::Workspace;
     let root = tempfile::tempdir().unwrap();
     let mut app =
         Workspace::new(root.path().join("recovery"), Preferences::default(), None).unwrap();

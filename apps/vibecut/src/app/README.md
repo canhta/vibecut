@@ -1,6 +1,22 @@
-# Windows and budgets
+# Composition root
 
-Interface: `Workspace`, `Window`.
+Interface: `Workspace`, `EditorWindow`, `poll_workspace`, `background`.
+
+The top app layer: it owns the window registry, focus, the stores it lends and the control
+attach, and imports every window. A window never names it; each window module (`home`,
+`shorts`, the editor) is driven through its own `show` and `Action` values.
+
+| Module | Responsibility |
+|---|---|
+| `registry` | `Workspace`: Home's lifecycle worker, the project windows by identity, focus, Save As rekeying, lane-preference pruning and the per-frame tick. |
+| `viewports` | Draws Home, each project viewport and the Shorts viewport, and carries their `Action` values out. |
+| `window` | `EditorWindow`: one editor, its writer lease, pending save and close flow. |
+| `chrome` | The window placeholders and prompts: loading, recovery, error, close. |
+| `picker` | Native file pickers a window requests, polled without blocking and delivered to its editor. |
+| `work` | Background lifecycle jobs (discover, open, create, recover, persist), their worker and their polling. |
+| `lending` | The one lending point for process stores and the model service. |
+| `geometry` | Window size and position memory inside the bounded preference document. |
+| `control` | `poll_workspace` and `background`: the control attach. |
 
 Home, Editor and Shorts are independent native viewports. `Workspace::windows` registers
 project windows by ProjectId; each owns its editor, history, playback, lease, picker,
@@ -14,8 +30,8 @@ window closes.
 
 `window_ui(project_id, ui)` drives a project surface in kittest with unchanged automation
 ids. `focused_editor`, `focused_editor_mut` and `editor_mut(ProjectId)` select the
-session explicitly; Home has no active-editor slot. `Workspace::import_picked_files`
-applies picker results through the drop import queue, so kittests inject there. Import
+session explicitly; Home has no active-editor slot. `EditorWindow::import_picked_files`
+(through `focused_window_mut`) applies picker results through the drop import queue, so kittests inject there. Import
 shutdown keeps its probe and work allowance reserved until the cancelled worker has
 joined.
 
@@ -23,8 +39,11 @@ The app shares catalog, preferences, model presentation, lifecycle runner and ag
 media accounting. Each project's media budget is a 512 MiB child of the 768 MiB
 aggregate; autosave uses separate 64 MiB project children of a 256 MiB persistence
 allowance, so export cannot consume journal or save admission. Model transfers stay
-app-owned across project saves and closes. The workspace opens the one process
-`MediaAccess` under `<root>/media` and lends the same mutex instance to every editor's
+app-owned across project saves and closes. `lending` opens the process stores once and
+is the only place an editor receives them: the saved-sound library, the music session, the
+brand kit (opened and held; `Workspace::brand_kit` hands it out, no request reads it yet),
+the model service (lent for a frame and taken back) and the one process
+`MediaAccess` under `<root>/media`, whose mutex instance is lent to every editor's
 timeline display and to the desktop MCP inbox, so generation and display always share
 cache entries and a second open of that root composes
 [`RuntimeError::CacheBusy`](../../../../crates/engine/src/runtime/README.md#background-jobs-and-byte-policy)
@@ -38,3 +57,11 @@ Root Home, Editor `window_ui` and the immediate Shorts viewport call the shared
 The composition retains one injectable reader; it claims and completes each viewport’s
 request directly, including immediate children whose framework action queue is unserviced. Editor ownership includes
 Session epoch and active scene so a late native result cannot follow a scene/window switch.
+
+## Control
+
+The optional control listener and background attach compose the CLI-owned adapter over
+the live `Workspace`; requests run against the same `Workspace` and `Session` as the
+visible app, reach a window only through that window's own edit path, and an omitted
+project target means the focused window. Syntax and boundaries:
+[MCP control](../../../../docs/product/agent-control/mcp.md).

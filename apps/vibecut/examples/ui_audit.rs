@@ -1,7 +1,7 @@
 //! Offscreen UI audit scenes for design review.
 //!
 //! `cargo xtask ui-audit` renders named scenes through the real
-//! [`vibecut::Editor`] and [`vibecut::workspace::Workspace`] widget paths at 1x
+//! [`vibecut::Editor`] and [`vibecut::app::Workspace`] widget paths at 1x
 //! and 2x, plus an `index.html` that places each render beside its matching
 //! `.spikes/ui-reference/` image when one exists.
 //! This is an audit tool, not a test: it never runs in `cargo xtask ci`.

@@ -5,12 +5,11 @@ use super::{
     widgets::{display_time, line, menu_action, quiet_buttons, semibold, set_author_id},
 };
 use crate::{
-    appearance::Look,
     egui,
     home::state::{DeleteDialog, RenameDialog, State},
     home::{ProjectsPreferences, ProjectsSortKey, ProjectsView},
     i18n::{self, Locale, Text},
-    kit::{self, Icon},
+    kit::{self, Icon, Look},
 };
 use engine::library::ProjectEntry;
 use project::{ProjectId, Thumbnail};

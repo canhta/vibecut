@@ -5,10 +5,10 @@ use time::TICKS_PER_SECOND;
 use time::Tick;
 use vibecut::Editor;
 use vibecut::Inspection;
+use vibecut::app::Workspace;
 use vibecut::egui;
 use vibecut::i18n::Locale;
 use vibecut::preferences::Preferences;
-use vibecut::workspace::Workspace;
 
 pub(super) const SECOND: i64 = TICKS_PER_SECOND;
 pub(super) const WINDOW: [f32; 2] = [1440.0, 900.0];
@@ -68,7 +68,7 @@ impl App {
                 let cx = vibecut::shorts::Context {
                     editor_available: true,
                 };
-                vibecut::shorts::show(shorts, &cx, ui);
+                vibecut::shorts::show(shorts, cx, ui);
             }
             Self::Assets(editor) => {
                 let rect =

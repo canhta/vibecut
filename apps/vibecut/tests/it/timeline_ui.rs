@@ -1996,7 +1996,8 @@ fn lifecycle_view_state_restores_and_tracks_timeline_navigation() {
             playhead: Tick::ZERO,
         })
         .unwrap();
-    let vibecut::lifecycle::EditorSession::Memory(session) = fixture.editor.session else {
+    let vibecut::services::lifecycle::EditorSession::Memory(session) = fixture.editor.session
+    else {
         panic!("memory fixture")
     };
     let editor = Editor::new(

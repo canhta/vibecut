@@ -31,7 +31,7 @@ Contention chooses CPU for that entire frame. Standalone calls use the same scop
 implementation. Each scope fixes its first geometry and exact borrowed hooks object.
 No device or GPU dependency crosses the render interface.
 
-Export attachment follows the [export dialog policy](../editor/dialogs/export/README.md).
+Export attachment follows the [export dialog policy](../../../editor/dialogs/export/README.md).
 
 Mapped uploads make all staging explicit: work A/B, readback and upload-current cost
 4I; Sample/blend add a distinct auxiliary/upload pair for 6I. Non-Sample calls drop
@@ -40,11 +40,11 @@ the auxiliary pair. Metadata has distinct slots per pass, charged at 1024 bytes/
 separately within 4096 bytes. These bounds exclude native driver/pipeline memory and
 do not guarantee export admission.
 
-Device geometry support and [aggregate byte admission](../../../../crates/engine/src/runtime/README.md#background-jobs-and-byte-policy)
+Device geometry support and [aggregate byte admission](../../../../../../crates/engine/src/runtime/README.md#background-jobs-and-byte-policy)
 are separate: supported dimensions can still refuse once caller/result images,
 decoding and encoding consume the shared budget.
 
-`composite_layers` admits exactly two layers: an opaque Normal backdrop and one Normal layer with any opacity, full canvas, so it runs the existing `blend` entry once with the backdrop as the auxiliary image. That is two uploads, one dispatch, one submission and one readback, charged as the 6I plan above with image-sized leases taken before any buffer exists; other plans (including three layers or another mode) answer `Unsupported` before device work and render's [`composite_layers`](../../../../crates/render/src/scene/README.md#effects-and-desktop-adapter) recomputes them on the CPU. `GpuEffects::work` reports cumulative uploads, dispatches, submissions and completed readbacks. Native Metal and Vulkan runs are required before admitting more than this case.
+`composite_layers` admits exactly two layers: an opaque Normal backdrop and one Normal layer with any opacity, full canvas, so it runs the existing `blend` entry once with the backdrop as the auxiliary image. That is two uploads, one dispatch, one submission and one readback, charged as the 6I plan above with image-sized leases taken before any buffer exists; other plans (including three layers or another mode) answer `Unsupported` before device work and render's [`composite_layers`](../../../../../../crates/render/src/scene/README.md#effects-and-desktop-adapter) recomputes them on the CPU. `GpuEffects::work` reports cumulative uploads, dispatches, submissions and completed readbacks. Native Metal and Vulkan runs are required before admitting more than this case.
 
 Completed scratch reuses buffer allocations only within its frame scope, not image
 contents. Every apply/composite still packs and uploads its inputs, submits and waits

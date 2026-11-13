@@ -1,35 +1,29 @@
 //! Composes the desktop application from its public interfaces.
 pub mod actions;
-pub mod appearance;
-pub mod capture;
-pub mod control;
+pub mod app;
 mod editor;
-pub mod effects;
 pub mod home;
 pub mod i18n;
 pub mod input;
 mod kit;
-pub mod lifecycle;
 pub mod preferences;
 pub mod services;
 pub mod shorts;
-pub mod workspace;
 pub use editor::dialogs::export;
 pub use editor::dialogs::models::model_manager;
 pub use editor::properties::ColorTarget;
 pub use editor::properties::font_picker;
-pub use editor::properties::{ElementKind, PropertiesTab, SharedField, shared_fields};
+pub use editor::properties::{ElementKind, PropertiesTab, shared_fields};
 pub use editor::{
-    AppCommand, AssetInspection, AssetState, AssetsTab, Client, CropAspect, CropInspection, Editor,
-    EffectPreviewStatus, EffectPreviews, ImportEvent, ImportFailure, ImportProbe, ImportQueue,
-    Inspection, KeyframeSelection, MAX_IMPORT_FILES, MaskPointSelection, MediaKind, MediaSort,
-    MediaSortKey, MediaSortOrder, MediaView, Music, MusicMode, MusicProblem, MusicView,
-    PREVIEW_SCALE, PREVIEW_SIZE, PREVIEW_SNAP_PIXELS, PreviewAxis, PreviewGuide, PreviewZoom,
-    SETTLE_BUDGET, SelectionScope, SelectionScopes, ShortcutRow, ShortcutTab, ShortcutsInspection,
-    Sounds, SoundsMode, SoundsProblem, SoundsView, Subtitles, SubtitlesInspection, TextCaret,
-    ThumbnailOutcome, ThumbnailSource, WidgetState,
+    AppCommand, AssetsTab, Client, CropAspect, CropInspection, Editor, EffectPreviewStatus,
+    EffectPreviews, ImportEvent, ImportProbe, ImportQueue, Inspection, KeyframeSelection,
+    MAX_IMPORT_FILES, MaskPointSelection, MediaSort, MediaSortKey, MediaSortOrder, MediaView,
+    Music, MusicMode, MusicProblem, PREVIEW_SCALE, PREVIEW_SIZE, PREVIEW_SNAP_PIXELS, PreviewAxis,
+    PreviewGuide, PreviewZoom, SETTLE_BUDGET, SelectionScope, ShortcutTab, Sounds, SoundsMode,
+    SoundsProblem, Subtitles, SubtitlesInspection, TextCaret, ThumbnailSource, WidgetState,
 };
 pub use eframe::egui;
+pub use kit::Look;
 
 /// Window background token. Host adapters and offscreen audits paint it behind a
 /// shell that only draws its own content (Home does not fill the window).

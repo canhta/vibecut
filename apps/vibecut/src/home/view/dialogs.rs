@@ -2,11 +2,10 @@
 
 use super::widgets::{action_button, display_time, set_author_id};
 use crate::{
-    appearance::Look,
     egui,
     home::state::State,
     i18n::{self, Text},
-    kit::{self, Icon},
+    kit::{self, Icon, Look},
 };
 use project::ProjectId;
 

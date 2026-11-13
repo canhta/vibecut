@@ -65,7 +65,7 @@ path = "crates/libraries"
 
 [[crate.layer]]
 name = "features"
-groups = ["font_catalog", "audio_library"]
+groups = ["font_catalog", "audio_library", "brand_kit", "sticker_library"]
 
 [[crate.module]]
 name = "font_catalog"
@@ -78,6 +78,14 @@ group = "audio_library"
 [[crate.module]]
 name = "music_library"
 group = "audio_library"
+
+[[crate.module]]
+name = "brand_kit"
+group = "brand_kit"
+
+[[crate.module]]
+name = "sticker_library"
+group = "sticker_library"
 
 # Shorts operations are independent; only the suggestion workflow composes them.
 [[crate]]
@@ -121,9 +129,10 @@ name = "error"
 group = "error"
 
 # Desktop app: docs/engineering/structure.md#desktop-app-appsvibecutsrc.
-# Foundation (kit, i18n, input) sits below shell. Home, Shorts and each editor
-# area are independent features of one layer that import only foundation and
-# shell; the editor frame is the one module above them that calls each area.
+# Foundation (kit, i18n, input) sits below the services. Home, Shorts and each
+# editor area are independent features of one layer that import only
+# foundation and services; the editor frame is the one module above them that
+# calls each area, and the composition root (`app`) is the top layer.
 
 [[crate]]
 name = "vibecut"
@@ -133,27 +142,25 @@ path = "apps/vibecut"
 name = "foundation"
 groups = ["foundation"]
 
-[[crate.layer]]
-name = "shell"
-groups = ["shell"]
-
 # Shared services sit below the windows and areas that call them.
 [[crate.layer]]
 name = "services"
 groups = ["services"]
 
 [[crate.layer]]
-name = "features"
+name = "windows"
 groups = [
     "home",
     "shorts",
-    "assets",
-    "properties",
 ]
 
 [[crate.layer]]
 name = "frame"
 groups = ["editor"]
+
+[[crate.layer]]
+name = "composition"
+groups = ["app"]
 
 [[crate.module]]
 name = "kit"
@@ -165,10 +172,6 @@ group = "foundation"
 
 [[crate.module]]
 name = "input"
-group = "foundation"
-
-[[crate.module]]
-name = "appearance"
 group = "foundation"
 
 [[crate.module]]
@@ -184,24 +187,8 @@ name = "preferences"
 group = "editor"
 
 [[crate.module]]
-name = "workspace"
-group = "editor"
-
-[[crate.module]]
-name = "lifecycle"
-group = "shell"
-
-[[crate.module]]
-name = "control"
-group = "editor"
-
-[[crate.module]]
-name = "capture"
-group = "shell"
-
-[[crate.module]]
-name = "effects"
-group = "assets"
+name = "app"
+group = "app"
 
 [[crate.module]]
 name = "home"

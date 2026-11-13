@@ -1,8 +1,10 @@
-//! Shared services below the windows: transport, preview, crop, AI access, AI task progress and job progress.
+//! Shared services below the windows: transport, preview, crop, AI access, AI task progress, job progress, the editor session and the GPU adapters.
 pub mod ai_access;
 pub mod ai_task;
 pub mod color_picker;
 pub mod crop;
+pub mod gpu;
+pub mod lifecycle;
 pub mod music;
 pub mod playback;
 pub mod preview;

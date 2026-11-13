@@ -3,11 +3,16 @@
 Interface: `EditorSession`, `EditorAction`, `fresh`.
 
 `EditorSession` wraps the sole engine `Autosave`; the memory variant serves headless
-editor injection. The workspace owns loading, exiting, error and recovery presentation
+editor injection. The composition root ([app](../../app/README.md)) owns loading, exiting, error and recovery presentation
 and sends blocking open, discovery, save, flush and discard work through engine's job
 runner. New, Open and Save As use rfd's asynchronous native picker (the one picker
 dependency) so autosave keeps ticking; paths stay native through the writer lease.
 Loading can be cancelled without accepting its eventual result.
+
+`EditorSession` derefs to the engine `Session`, so reads and edits need no wrapper. That
+hides nothing: `Session::apply` refuses lifecycle commands (save, thumbnail), and only
+`autosave()` (`None` for the memory variant) reaches `Autosave::apply`, which routes
+them. A caller cannot save through the wrong owner by accident.
 
 Header rename commits on Enter and cancels on Esc through `project.rename`. The timeline
 restores scale multiplier and logical-pixel horizontal scroll through

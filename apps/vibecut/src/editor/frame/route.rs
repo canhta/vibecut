@@ -328,13 +328,13 @@ impl Editor {
             self.selection_scopes.mask_points.clear();
         }
         for point in points {
-            self.selection_scopes
-                .mask_points
-                .insert(crate::editor::selection::MaskPointSelection {
+            self.selection_scopes.mask_points.insert(
+                crate::editor::selection::MaskPointSelection {
                     item,
                     mask: mask.to_owned(),
                     point: *point,
-                });
+                },
+            );
         }
         let selected = self.session.selection();
         if selected.len() != 1 || !selected.contains(&item) {
@@ -753,7 +753,8 @@ impl Editor {
                 match request {
                     Request::Cache(action) => self.timeline.request_cache(action),
                     Request::ImportLut => {
-                        self.lifecycle_action = Some(crate::lifecycle::EditorAction::ImportLut);
+                        self.lifecycle_action =
+                            Some(crate::services::lifecycle::EditorAction::ImportLut);
                     }
                     Request::Seek(at) => {
                         if let Err(error) = self.seek(at) {

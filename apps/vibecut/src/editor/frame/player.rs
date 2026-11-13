@@ -121,7 +121,7 @@ impl Editor {
             )));
         }
         self.player.snapshot.open();
-        self.lifecycle_action = Some(crate::lifecycle::EditorAction::SnapshotSave);
+        self.lifecycle_action = Some(crate::services::lifecycle::EditorAction::SnapshotSave);
         Ok(())
     }
 

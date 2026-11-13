@@ -14,8 +14,8 @@ use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
     Editor, egui,
     i18n::Locale,
-    lifecycle::EditorAction,
     preferences::{PreferenceStore, Preferences},
+    services::lifecycle::EditorAction,
     services::playback::{Files, Playback},
 };
 fn session() -> Session {
@@ -659,13 +659,17 @@ fn engine_catches_preview_worker_panic_and_app_reports_failure() {
 fn capture_headless_has_bounded_typed_timeout() {
     let context = egui::Context::default();
     let capture =
-        vibecut::capture::Capture::request(&context, None, Duration::from_millis(1)).unwrap();
+        vibecut::services::gpu::capture::Capture::request(&context, None, Duration::from_millis(1))
+            .unwrap();
     std::thread::sleep(Duration::from_millis(2));
     assert!(matches!(
         capture.poll(),
         Err(vibecut::Error::CaptureTimeout)
     ));
-    assert!(vibecut::capture::Capture::request(&context, None, Duration::from_secs(6)).is_err());
+    assert!(
+        vibecut::services::gpu::capture::Capture::request(&context, None, Duration::from_secs(6))
+            .is_err()
+    );
 }
 
 #[test]

@@ -1,9 +1,11 @@
 //! Supplies reusable visual primitives without editor state.
+mod appearance;
 mod icons;
 mod style;
 mod theme;
 mod widgets;
 
+pub use appearance::Look;
 pub(crate) use icons::{Icon, icon, install, tinted};
 pub(crate) use style::{install_editor_density, install_fonts, install_theme};
 pub(crate) use theme::{

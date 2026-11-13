@@ -239,7 +239,7 @@ fn canvas_settings_pick_preset_custom_fps_swatch_reset_and_persist() {
 #[test]
 fn timeline_cache_settings_share_two_stores_clear_refresh_and_preserve_projects() {
     use engine::cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs};
-    use vibecut::workspace::Workspace;
+    use vibecut::app::Workspace;
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("media");
     let budget = ByteBudget::new(64 << 20).unwrap();
@@ -268,7 +268,7 @@ fn timeline_cache_settings_share_two_stores_clear_refresh_and_preserve_projects(
     let mut second = editor();
     let mut data = second.session.project().as_ref().clone().into_data();
     data.id = ProjectId(2);
-    second.session = vibecut::lifecycle::EditorSession::Memory(Box::new(
+    second.session = vibecut::services::lifecycle::EditorSession::Memory(Box::new(
         Session::new(Project::new(data).unwrap(), 10).unwrap(),
     ));
     let second_id = workspace.register_editor(Box::new(second));

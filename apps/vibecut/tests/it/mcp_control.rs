@@ -104,7 +104,7 @@ fn mcp_real_app_background_attach_never_creates_a_window_or_takes_focus() {
 // while a kittest caption field still owns its uncommitted draft.
 fn socket_edits_activate_editor() {
     use egui_kittest::kittest::{By, Queryable};
-    use vibecut::{egui, preferences::Preferences, workspace::Workspace};
+    use vibecut::{app::Workspace, egui, preferences::Preferences};
 
     for (command, draft) in [("delete", false), ("project.rename", true)] {
         let root = tempfile::tempdir().unwrap();
@@ -212,7 +212,7 @@ fn socket_edits_activate_editor() {
         });
         let deadline = Instant::now() + Duration::from_secs(10);
         let response_value = loop {
-            vibecut::control::poll_workspace(h.state_mut(), &mut server.inbox).unwrap();
+            vibecut::app::poll_workspace(h.state_mut(), &mut server.inbox).unwrap();
             if let Ok(value) = receive.try_recv() {
                 break value;
             }
@@ -314,7 +314,7 @@ fn socket_edits_activate_editor() {
             });
             let deadline = Instant::now() + Duration::from_secs(10);
             let refused = loop {
-                vibecut::control::poll_workspace(h.state_mut(), &mut server.inbox).unwrap();
+                vibecut::app::poll_workspace(h.state_mut(), &mut server.inbox).unwrap();
                 if let Ok(value) = receive.try_recv() {
                     break value;
                 }

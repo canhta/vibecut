@@ -37,7 +37,7 @@ fn harness(app: Shorts, scale: f32) -> Harness<'static, Shorts> {
                 let cx = Context {
                     editor_available: true,
                 };
-                if vibecut::shorts::show(a, &cx, ui).contains(&Action::OpenEditor) {
+                if vibecut::shorts::show(a, cx, ui).contains(&Action::OpenEditor) {
                     OPENED.set(true);
                 }
             },
@@ -334,7 +334,7 @@ fn safe_trim_and_invalid_bounds_preserve_history_and_source_ranks() {
     assert_eq!(h.state().reviews()[0], before);
     for (locale, out) in [(Locale::En, "1,014.000"), (Locale::Vi, "1.014,000")] {
         let mut app = state(
-            vibecut::appearance::Look {
+            vibecut::Look {
                 locale,
                 ..Default::default()
             },
@@ -637,12 +637,9 @@ fn exact_upload_requires_explicit_approval_and_cancellation_interrupts_the_promp
 #[test]
 fn home_card_opens_a_dedicated_viewport_and_native_drop_selects_one_video() {
     let directory = tempfile::tempdir().unwrap();
-    let mut app = vibecut::workspace::Workspace::new(
-        directory.path().join("recovery"),
-        Default::default(),
-        None,
-    )
-    .unwrap();
+    let mut app =
+        vibecut::app::Workspace::new(directory.path().join("recovery"), Default::default(), None)
+            .unwrap();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     while app.busy() {
         app.tick();
@@ -652,7 +649,7 @@ fn home_card_opens_a_dedicated_viewport_and_native_drop_selects_one_video() {
     let mut h = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 1000.0))
         .build_ui_state(
-            |ui, a: &mut vibecut::workspace::Workspace| {
+            |ui, a: &mut vibecut::app::Workspace| {
                 a.tick();
                 if let Some(id) = a.focused_project() {
                     a.window_ui(id, ui);
@@ -793,14 +790,14 @@ impl render::SourceProvider for Spatial {
 fn workspace_shorts_raw_text_paste_reaches_the_real_trim_field() {
     let root = tempfile::tempdir().unwrap();
     let mut app =
-        vibecut::workspace::Workspace::new(root.path().join("recovery"), Default::default(), None)
+        vibecut::app::Workspace::new(root.path().join("recovery"), Default::default(), None)
             .unwrap();
     app.open_shorts().unwrap();
     app.request_close();
     app.shorts = Some(ready());
     let mut h = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 1000.0))
-        .build_ui_state(|ui, a: &mut vibecut::workspace::Workspace| a.ui(ui), app);
+        .build_ui_state(|ui, a: &mut vibecut::app::Workspace| a.ui(ui), app);
     h.run_steps(3);
     h.get(by("shorts.candidate.0")).click();
     h.run_steps(2);

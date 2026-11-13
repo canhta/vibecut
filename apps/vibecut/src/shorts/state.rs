@@ -1,9 +1,8 @@
 //! Retains review state for accepted shorts.
 use crate::{
-    Error, Result,
-    appearance::Look,
-    egui,
+    Error, Result, egui,
     i18n::{self, Locale, Text},
+    kit::Look,
     services::{
         ai_access::{self, Choice, Opener},
         crop,
@@ -993,7 +992,7 @@ impl State {
         let batch = self.prepare(&[self.selected], None, std::env::temp_dir())?;
         let prepared = batch.project(0).ok_or(Error::Invalid("editor project"))?;
         let mut data = prepared.data().clone();
-        data.id = crate::lifecycle::fresh(prepared.data().name.as_str())?
+        data.id = crate::services::lifecycle::fresh(prepared.data().name.as_str())?
             .project()
             .data()
             .id;

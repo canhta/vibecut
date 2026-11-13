@@ -239,7 +239,7 @@ fn caption_bank_name_invalidation_precedes_enter_and_blur() {
                 .unwrap();
                 saving.save_as(root.path().join("saved.vibecut")).unwrap();
                 h.state_mut().session =
-                    vibecut::lifecycle::EditorSession::Persistent(Box::new(saving));
+                    vibecut::services::lifecycle::EditorSession::Persistent(Box::new(saving));
                 assert!(h.state_mut().activate("subtitles.style.save").is_err());
                 h.state_mut().session.autosave().unwrap().flush().unwrap();
                 h.run_steps(3); // Acknowledge save-as's new project identity before the stale key.
