@@ -2054,6 +2054,33 @@ fn adjust_tab_grades_visual_clips_with_one_undo_step_per_gesture() {
     assert_eq!(grade(&harness, video), Some([20.0, 0.0, 0.0, 50.0]));
     type_value(&mut harness, "effects.color_grade.param.saturation", "-999");
     assert_eq!(grade(&harness, video), Some([20.0, 0.0, -50.0, 50.0]));
+    // The generic stack lists every band's rows, so each names its band; the HSL sub-tab picks
+    // a band first and keeps the bare control name.
+    let labelled = |harness: &Harness<Editor>, label: &str, id: &str| {
+        harness.get(
+            By::new()
+                .label(label)
+                .predicate(|node| node.author_id() == Some(id)),
+        );
+    };
+    click(&mut harness, "inspector.tab.effects");
+    for (label, id) in [
+        ("Red: Hue", "effects.color_grade.param.hsl_red_hue"),
+        (
+            "Green: Saturation",
+            "effects.color_grade.param.hsl_green_saturation",
+        ),
+        (
+            "Magenta: Lightness",
+            "effects.color_grade.param.hsl_magenta_lightness",
+        ),
+    ] {
+        labelled(&harness, label, id);
+    }
+    click(&mut harness, "inspector.tab.adjust");
+    click(&mut harness, "effects.color_grade.tab.hsl");
+    labelled(&harness, "Hue", "effects.color_grade.param.hsl_green_hue");
+    click(&mut harness, "effects.color_grade.tab.basic");
     let history = harness.state().session.history_len();
     type_value(&mut harness, "effects.color_grade.param.contrast", "NaN");
     assert_eq!(

@@ -118,6 +118,7 @@ impl Panel<'_, '_> {
                     parameter,
                     value,
                     true,
+                    false,
                 )
             });
         }
@@ -278,7 +279,37 @@ impl Panel<'_, '_> {
                 read::effect_param_value_at(self.cx.session.project(), item, effect, &key, at)
                     .or_else(|| parameter.default.scalar())
                     .unwrap_or(0.0);
-            self.effect_scrub_field(ui, item, effect, definition.id, parameter, current);
+            // The band is already picked above, so the row keeps the bare control name.
+            self.effect_scrub_value(
+                ui,
+                item,
+                effect,
+                definition.id,
+                parameter,
+                current,
+                false,
+                false,
+            );
+        }
+    }
+
+    /// The generic inspector lists every band's three parameters, so each HSL row names its
+    /// band; the Adjust tab picks a band first and keeps the bare control name.
+    fn hsl_row_label(&self, kind: &str, parameter: &str, label: &str) -> String {
+        let band = (kind == "color_grade")
+            .then(|| {
+                project::HSL_BANDS
+                    .iter()
+                    .find(|band| parameter.starts_with(&format!("hsl_{band}_")))
+            })
+            .flatten();
+        match band {
+            Some(band) => crate::i18n::format(
+                self.cx.locale,
+                Text::EffectHslBandRow,
+                &[("band", self.band_label(band)), ("control", label)],
+            ),
+            None => label.to_owned(),
         }
     }
 
@@ -1220,7 +1251,7 @@ impl Panel<'_, '_> {
         parameter: &project::EffectParamDefinition,
         current: f64,
     ) {
-        self.effect_scrub_value(ui, item, effect, kind, parameter, current, false);
+        self.effect_scrub_value(ui, item, effect, kind, parameter, current, false, true);
     }
     #[allow(clippy::too_many_arguments)]
     fn effect_scrub_value(
@@ -1232,6 +1263,7 @@ impl Panel<'_, '_> {
         parameter: &project::EffectParamDefinition,
         current: f64,
         row: bool,
+        name_band: bool,
     ) {
         let spec = effect_scrub_spec(parameter);
         let spatial = spatial_effect(kind) || row;
@@ -1264,6 +1296,11 @@ impl Panel<'_, '_> {
         }
         let label = crate::i18n::effect_label(kind, Some(parameter.id))
             .map_or(parameter.name, |key| self.tr(key));
+        let label = if name_band {
+            self.hsl_row_label(kind, parameter.id, label)
+        } else {
+            label.to_owned()
+        };
         let caption = (!row).then(|| ui.label(label));
         let target = ScrubTarget::Effect {
             effect: effect.to_owned(),
