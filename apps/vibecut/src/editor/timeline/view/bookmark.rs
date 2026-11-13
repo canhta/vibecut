@@ -209,11 +209,7 @@ impl State {
         });
 
         if let Some(mut picker) = open.picker.take() {
-            let event = picker.ui(
-                ctx,
-                cx.locale,
-                &cx.session.project().data().recent_colors,
-            );
+            let event = picker.ui(ctx, cx.locale, &cx.session.project().data().recent_colors);
             for (id, response) in event.widgets {
                 record(&mut widgets, &id, &response);
             }

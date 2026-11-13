@@ -35,6 +35,7 @@ The Captions and Shorts provider pickers resolve their transient request snapsho
 from this map. Downloaded local weight choices remain in their local owner. Keys,
 fetched lists and price acknowledgements are never serialized. A document whose version is not
 `PREFERENCES_VERSION` is refused through the version refusal; there is no migration.
+Version 14 removed `recent_colors`; the colour popover's recents live in the project.
 
 The text-task provider is one persisted choice, `subtitles.text_provider`, shared by
 translation and `fillers.classify`. The models are not shared: each task takes its own

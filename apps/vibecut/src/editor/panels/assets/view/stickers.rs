@@ -146,10 +146,8 @@ impl View<'_> {
                 .preferences
                 .catalog_favorites
                 .contains("stickers", &tile.id);
-            let star = Rect::from_min_size(
-                frame.right_top() - Vec2::new(24.0, 0.0),
-                Vec2::splat(24.0),
-            );
+            let star =
+                Rect::from_min_size(frame.right_top() - Vec2::new(24.0, 0.0), Vec2::splat(24.0));
             let label = self.tr(if starred {
                 Text::AssetsFavoriteRemove
             } else {
@@ -158,7 +156,7 @@ impl View<'_> {
             let response = ui
                 .interact(
                     star,
-                    egui::Id::new(("stickers.favorite", recent, tile.id.as_str())),
+                    egui::Id::unique(("stickers.favorite", recent, tile.id.as_str())),
                     egui::Sense::click(),
                 )
                 .on_hover_text(label);

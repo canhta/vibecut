@@ -21,7 +21,7 @@ pub(in crate::editor) use workflow::{
 };
 
 use crate::editor::{
-    Arc, BTreeSet, Color32, Context, Icon, Id, ItemId, ItemParams, Rect, SelectionScope,
+    Arc, BTreeSet, Color32, Context, Error, Icon, Id, ItemId, ItemParams, Rect, SelectionScope,
     StreamKind, Text, Tick, TrackKind, Vec2, egui, icons, theme,
 };
 use gesture::{
@@ -208,7 +208,9 @@ impl State {
 
     /// Whether the colour popover's eyedropper is armed: the player samples its next click.
     pub(in crate::editor) fn sampling_colour(&self) -> bool {
-        self.picker.as_ref().is_some_and(|draft| draft.picker.sampling)
+        self.picker
+            .as_ref()
+            .is_some_and(|draft| draft.picker.sampling)
     }
 
     /// Hand the player's sampled pixel to the open popover, which applies it on its next pass.

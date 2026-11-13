@@ -635,7 +635,6 @@ mod tests {
         assert!(store.save(&preferences).is_err());
         assert_eq!(store.load_with_warning().0, Preferences::default());
     }
-
 }
 
 #[cfg(test)]

@@ -633,6 +633,7 @@ fn ordered_modes_and_unclipped_strokes_keep_premultiplied_channels() {
 
 #[test]
 fn animated_mask_centre_matches_its_static_twin_only_at_key_times() {
+    use project::{Mask, MaskShape};
     let h = Hooks::default();
     let frame = |n| time::FrameRate::FPS_30.tick_of(n).unwrap();
     // The item starts at frame 5, so local time is timeline frame minus 5.

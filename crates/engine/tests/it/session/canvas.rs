@@ -546,22 +546,14 @@ fn canvas_settings_reject_invalid_sizes_rates_and_preset_mismatches() {
 
 #[test]
 fn recent_colours_belong_to_each_project_newest_first_and_undo_with_their_step() {
-    let mut first = Session::new(
-        Project::empty(ProjectId(31), "First".into()).unwrap(),
-        8,
-    )
-    .unwrap();
-    let mut second = Session::new(
-        Project::empty(ProjectId(32), "Second".into()).unwrap(),
-        8,
-    )
-    .unwrap();
+    let mut first =
+        Session::new(Project::empty(ProjectId(31), "First".into()).unwrap(), 8).unwrap();
+    let mut second =
+        Session::new(Project::empty(ProjectId(32), "Second".into()).unwrap(), 8).unwrap();
     let red = Color([255, 0, 0, 255]);
     let blue = Color([0, 0, 255, 255]);
     for color in [red, blue, red] {
-        first
-            .apply(Command::RecordRecentColour { color })
-            .unwrap();
+        first.apply(Command::RecordRecentColour { color }).unwrap();
     }
     assert_eq!(first.project().data().recent_colors, [red, blue]);
     second

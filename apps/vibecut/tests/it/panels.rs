@@ -5810,10 +5810,11 @@ fn catalogue_tabs_star_list_unstar_and_show_the_empty_state() {
         let mut f = fixture();
         f.editor.preferences.assets_tab = row.tab;
         if row.tab == AssetsTab::Adjustment {
-            f.editor.preferences.adjustment_presets = vec![vibecut::preferences::AdjustmentPreset {
-                name: row.item.to_owned(),
-                params: BTreeMap::new(),
-            }];
+            f.editor.preferences.adjustment_presets =
+                vec![vibecut::preferences::AdjustmentPreset {
+                    name: row.item.to_owned(),
+                    params: BTreeMap::new(),
+                }];
         }
         let mut h = build(f.editor);
         h.run_steps(3);
@@ -5822,10 +5823,23 @@ fn catalogue_tabs_star_list_unstar_and_show_the_empty_state() {
         }
         // Not starred yet: the star is offered and the item is not in the favourites.
         assert!(has_widget(&h, row.star), "{}", row.star);
-        assert!(!h.state().preferences.catalog_favorites.contains(row.family, row.item));
+        assert!(
+            !h.state()
+                .preferences
+                .catalog_favorites
+                .contains(row.family, row.item)
+        );
         click(&mut h, row.star);
-        assert!(h.state().preferences.catalog_favorites.contains(row.family, row.item));
-        assert_eq!(h.state().preferences.catalog_favorites.list(row.family), [row.item]);
+        assert!(
+            h.state()
+                .preferences
+                .catalog_favorites
+                .contains(row.family, row.item)
+        );
+        assert_eq!(
+            h.state().preferences.catalog_favorites.list(row.family),
+            [row.item]
+        );
 
         // Listed under Favorites of the same tab.
         click(&mut h, row.favorites_nav);
@@ -5833,7 +5847,12 @@ fn catalogue_tabs_star_list_unstar_and_show_the_empty_state() {
 
         // Unstar from the Favorites list removes it and shows the empty state.
         click(&mut h, row.star);
-        assert!(!h.state().preferences.catalog_favorites.contains(row.family, row.item));
+        assert!(
+            !h.state()
+                .preferences
+                .catalog_favorites
+                .contains(row.family, row.item)
+        );
         assert!(!has_widget(&h, row.listed), "{}", row.listed);
         assert!(!has_widget(&h, row.star), "{}", row.star);
     }

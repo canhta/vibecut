@@ -26,11 +26,11 @@ fn toggle_animation_favorite(
     preset: engine::AnimationPreset,
     favorite: bool,
 ) -> Result<()> {
-    let next = port
-        .view()
-        .preferences
-        .catalog_favorites
-        .with("animations", preset.word(), favorite)?;
+    let next =
+        port.view()
+            .preferences
+            .catalog_favorites
+            .with("animations", preset.word(), favorite)?;
     port.store_preference_result("catalog_favorites", serde_json::to_value(&next)?)
 }
 

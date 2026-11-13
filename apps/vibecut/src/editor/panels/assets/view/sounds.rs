@@ -58,10 +58,7 @@ impl View<'_> {
 
     /// Starred sounds in star order, resolved from the saved library first and then the
     /// current results. A starred id found in neither is not listed.
-    fn favorite_sounds(
-        &self,
-        view: &SoundsView,
-    ) -> Vec<libraries::sounds::SoundResult> {
+    fn favorite_sounds(&self, view: &SoundsView) -> Vec<libraries::sounds::SoundResult> {
         self.cx
             .preferences
             .catalog_favorites
@@ -365,7 +362,11 @@ impl View<'_> {
             Vec2::splat(24.0),
         );
         let key = sound.id.to_string();
-        let starred = self.cx.preferences.catalog_favorites.contains("sounds", &key);
+        let starred = self
+            .cx
+            .preferences
+            .catalog_favorites
+            .contains("sounds", &key);
         let star_label = self.tr(if starred {
             Text::AssetsFavoriteRemove
         } else {
@@ -374,11 +375,15 @@ impl View<'_> {
         let star_response = ui
             .interact(
                 star,
-                Id::new(("sounds.favorite", sound.id)),
+                Id::unique(("sounds.favorite", sound.id)),
                 egui::Sense::click(),
             )
             .on_hover_text(star_label);
-        self.remember(format!("sounds.favorite.{}", sound.id), &star_response, None);
+        self.remember(
+            format!("sounds.favorite.{}", sound.id),
+            &star_response,
+            None,
+        );
         ui.painter().text(
             star.center(),
             Align2::CENTER_CENTER,

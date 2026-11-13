@@ -289,7 +289,7 @@ impl Panel<'_, '_> {
                 let star_response = ui
                     .interact(
                         star,
-                        egui::Id::new(("inspector.animation.favorite", look.word())),
+                        egui::Id::unique(("inspector.animation.favorite", look.word())),
                         egui::Sense::click(),
                     )
                     .on_hover_text(star_label);

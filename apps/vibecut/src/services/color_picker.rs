@@ -170,8 +170,10 @@ impl Picker {
     ) {
         ui.label(i18n::text(locale, Text::ColorPicker));
         let [r, g, b, a] = self.color.0;
-        let (band, _) =
-            ui.allocate_exact_size(Vec2::new(ui.available_width(), SWATCH), egui::Sense::hover());
+        let (band, _) = ui.allocate_exact_size(
+            Vec2::new(ui.available_width(), SWATCH),
+            egui::Sense::hover(),
+        );
         ui.painter()
             .rect_filled(band, 4.0, Color32::from_rgba_unmultiplied(r, g, b, a));
 

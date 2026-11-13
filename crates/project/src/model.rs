@@ -27,8 +27,7 @@ pub use item::{
 };
 pub use project::{
     CaptionPresetId, MAX_CAPTION_PRESETS, MAX_RECENT_COLORS, MAX_TEXT_PRESETS, Project,
-    ProjectData, ProjectId,
-    SavedCaptionPreset, SavedTextPreset, TextPresetId,
+    ProjectData, ProjectId, SavedCaptionPreset, SavedTextPreset, TextPresetId,
 };
 pub use scene::{Bookmark, BookmarkId, Scene, SceneId, SceneScope, Scenes};
 pub use settings::{

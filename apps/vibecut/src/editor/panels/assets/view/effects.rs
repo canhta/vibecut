@@ -294,11 +294,7 @@ impl View<'_> {
                 egui::Sense::click(),
             )
             .on_hover_text(label);
-        self.remember(
-            format!("effects.favorite.{}", row.kind),
-            &response,
-            None,
-        );
+        self.remember(format!("effects.favorite.{}", row.kind), &response, None);
         ui.painter().text(
             star.center(),
             Align2::CENTER_CENTER,

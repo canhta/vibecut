@@ -229,10 +229,8 @@ impl View<'_> {
         }
         let favorites = self.state.adjustment_favorites;
         ui.horizontal(|ui| {
-            for (only_favorites, label) in [
-                (false, Text::AssetsAll),
-                (true, Text::AssetsFavorites),
-            ] {
+            for (only_favorites, label) in [(false, Text::AssetsAll), (true, Text::AssetsFavorites)]
+            {
                 let selected = favorites == only_favorites;
                 let response = ui.selectable_label(
                     selected,
@@ -241,7 +239,10 @@ impl View<'_> {
                         .size(theme::type_size::SMALL_LABEL),
                 );
                 self.remember(
-                    format!("assets.adjustment.category.{}", if only_favorites { "favorites" } else { "all" }),
+                    format!(
+                        "assets.adjustment.category.{}",
+                        if only_favorites { "favorites" } else { "all" }
+                    ),
                     &response,
                     None,
                 );
@@ -255,7 +256,12 @@ impl View<'_> {
             .iter()
             .enumerate()
             .filter(|(_, preset)| {
-                !favorites || self.cx.preferences.catalog_favorites.contains("filters", &preset.name)
+                !favorites
+                    || self
+                        .cx
+                        .preferences
+                        .catalog_favorites
+                        .contains("filters", &preset.name)
             })
             .collect();
         if listed.is_empty() {
