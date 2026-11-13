@@ -413,6 +413,8 @@ pub enum Fixture {
     Video,
     /// Timeline plus one real local video asset, id 97, and video item 8 over it.
     Reframe,
+    /// The `Reframe` fixture: real video item 8 over asset 97 with no analysis.
+    Freeze,
     /// The `Reframe` fixture with one completed generate already applied to item 8.
     ReframeShot,
     /// Timeline plus one real audible clip, item 5, and a master loudness target.
@@ -464,6 +466,7 @@ impl Command {
             } => Some((directory.clone(), *overwrite)),
             Self::ChaptersExportSidecars { dir, .. } => Some((dir.clone(), false)),
             Self::ExportClips { dir, overwrite, .. } => Some((dir.clone(), *overwrite)),
+            Self::FreezeFrame { dir, .. } => Some((dir.clone(), false)),
             _ => None,
         }
     }
@@ -752,6 +755,7 @@ commands! {
     TimelineEdit, "timeline.edit", "Edit timeline with ripple policy", Edit { commands: Vec<Command>, ripple: bool } => Timeline, serde_json::json!({"commands":[{"command":"delete","params":{"items":[1]}}],"ripple":true});
     ExtractAudio, "timeline.extract_audio", "Extract source audio", Edit { items: Vec<ItemId> } => SourceAudio, serde_json::json!({"items":[5]}), available = VideoItem;
     FillerCandidates, "timeline.filler_candidates", "List filler candidates", Read { language: captions::LanguageTag, include_markers: bool } => Words, serde_json::json!({"language":"en","include_markers":false}), available = CaptionItem;
+    FreezeFrame, "timeline.freeze_frame", "Freeze frame", FilePublish { item: ItemId, at: Tick, duration: Tick, dir: std::path::PathBuf } => Freeze, serde_json::json!({"item":8,"at":127008000000_i64,"duration":762048000000_i64,"dir":"$output"}), available = UnlockedItem;
     InsertItem, "timeline.insert", "Insert item", Edit { #[serde(default)] placement: Placement, item: NewItem } => Timeline, serde_json::json!({"placement":{"mode":"auto"},"item":{"animations":{},"source_asset":null,"source_range":{"start":0,"end":8467200000_i64},"start":0,"content":{"kind":"overlay","params":{"color":[255,0,0,255]}}}});
     TimelineMoveItems, "timeline.move_items", "Move timeline group", Edit { items: Vec<ItemId>, delta: Tick, #[serde(default)] placement: Option<Placement> } => Timeline, serde_json::json!({"items":[1],"delta":0,"placement":null}), available = UnlockedItem;
     PauseCandidates, "timeline.pause_candidates", "List pause candidates", JobControl { min_pause_ms: i64, pad_ms: i64, crossfade_ms: i64 } => Timeline, serde_json::json!({"min_pause_ms":500,"pad_ms":20,"crossfade_ms":20}), grant = Agent;

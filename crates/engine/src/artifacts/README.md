@@ -136,3 +136,7 @@ budget pressure, poisoned state and runner queue limits refuse.
 Effect thumbnails require explicit `EffectGeometry` matching source dimensions;
 mismatches refuse before hashing/jobs. Both positive finite gains key version3
 by f64 bits. Unknown author geometry has no default. Existing cache limits apply.
+
+## Freeze frame
+
+`freeze::freeze(session, item, at, duration, dir, protected, budget)` backs `timeline.freeze_frame`. It refuses a relative `dir`, a non-positive duration, a missing, non-Video or locked host, and a playhead not strictly inside the host's output span, before rendering. The still is `snapshot::image` at `at`, the production composite of the project at that tick; no preview screenshot is used. It is published as `freeze-<blake3 hex>.png` in `dir` through the snapshot publication owner, refusing overwrite; an existing file of that name is kept. An existing asset with the same content hash is reused, otherwise the file is imported as an image asset with the next free ID. The timeline edit is the transaction described in the [edit contract](../session/edit/README.md#timeline-placement). A missing still file keeps its asset record and recorded path, which is the media relink state. Limits: the still's composite includes the whole project at `at`, not only the host; the default 3 s duration and the toolbar placement are UI decisions and unverified against the reference.

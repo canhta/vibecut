@@ -191,6 +191,7 @@ impl Session {
         | Command::ExportSubtitles { path, .. }
         | Command::BurnSubtitles { path, .. }
         | Command::Snapshot { path, .. }
+        | Command::FreezeFrame { dir: path, .. }
         | Command::ClipsExport {
             directory: path, ..
         }

@@ -214,6 +214,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
             Fixture::Waveform => s = with_waveform(&s, &wav),
             Fixture::Thumbnails => s = with_thumbnails(&s, &png),
             Fixture::Video => s = with_video(&s, &video),
+            Fixture::Freeze => s = crate::support::control::with_reframe(&s, &video),
             Fixture::Reframe | Fixture::ReframeShot => {
                 s = crate::support::control::with_reframe(&s, &video);
                 let allow = Allow;
@@ -604,6 +605,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
                 "timeline.align_items",
                 "timeline.distribute_items",
                 "timeline.duplicate",
+                "timeline.freeze_frame",
                 "timeline.move_items",
                 "timeline.replace_media",
                 "timeline.set_flipped",
