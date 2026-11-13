@@ -212,7 +212,7 @@ impl Transition {
             .ok_or(Error::Invalid("transition side"))?
             .end()?;
         if b.source_asset.is_some() {
-            lo = lo.max(cut.sub_tick(b.retime.speed.output_duration(b.source_range.start())?)?);
+            lo = lo.max(cut.sub_tick(b.retime.output_before(b.source_range)?)?);
         }
         if let Some(id) = a.source_asset {
             let available = data
@@ -223,7 +223,7 @@ impl Transition {
                 .map(|d| d.sub_tick(a.source_range.end()))
                 .transpose()?
                 .unwrap_or(Tick::ZERO);
-            hi = hi.min(cut.add_tick(a.retime.speed.output_duration(available)?)?);
+            hi = hi.min(cut.add_tick(a.retime.output_after(available)?)?);
         }
         Ok((lo, cut, hi))
     }
@@ -759,6 +759,34 @@ mod tests {
                 (Tick(expected.0), Tick(expected.1), Tick(expected.2)),
             );
         }
+        // A curved clip is bounded by its curve: a whole curve has no handle before it, and a
+        // sliced one only the unplayed tail of its window after it.
+        let curve = crate::SpeedCurve::from_segments(
+            Tick(100),
+            &[crate::SpeedSegment {
+                span: 1000,
+                speed: time::Speed::UNITY,
+            }],
+        )
+        .unwrap();
+        let mut curved = d.clone();
+        for i in &mut curved.scene_mut().timeline.main.items {
+            i.retime.curve = Some(curve);
+        }
+        let outgoing = &mut curved.scene_mut().timeline.main.items[0];
+        outgoing.source_range = SourceRange::new(Tick(10), Tick(70)).unwrap();
+        outgoing.retime.window = Some(crate::RetimeWindow {
+            source_range: SourceRange::new(Tick(10), Tick(110)).unwrap(),
+            offset: Tick(0),
+            duration: Tick(60),
+        });
+        curved.scene_mut().timeline.main.items[1].start = Tick(60);
+        assert_eq!(
+            transition()
+                .bounds(&curved.scene().timeline, &curved)
+                .unwrap(),
+            (Tick(60), Tick(60), Tick(100)),
+        );
         let mut tr = transition();
         let bounds = tr.bounds(&d.scene().timeline, &d).unwrap();
         assert_eq!(bounds, (Tick(90), Tick(100), Tick(107)));

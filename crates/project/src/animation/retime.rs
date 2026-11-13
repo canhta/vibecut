@@ -67,6 +67,59 @@ impl Retime {
         }
     }
 
+    /// Output ticks of the window before a piece whose visible source is `visible`:
+    /// the retained offset for a curve (its real head), else the constant rate's
+    /// output for the source before `visible`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error on arithmetic overflow.
+    pub fn output_before(&self, visible: SourceRange) -> Result<Tick> {
+        match &self.curve {
+            Some(_) => Ok(self.window.map_or(Tick::ZERO, |w| w.offset)),
+            None => self.output_duration(visible.start()),
+        }
+    }
+
+    /// Output ticks a piece can still play after its
+    /// end: the unplayed tail of a curve, else the constant rate's output for
+    /// `available` source ticks past the visible end.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error on arithmetic overflow.
+    pub fn output_after(&self, available: Tick) -> Result<Tick> {
+        match (&self.curve, self.window) {
+            (Some(curve), Some(w)) => curve
+                .total_output()
+                .checked_sub(w.offset)
+                .and_then(|t| t.checked_sub(w.duration))
+                .ok_or_else(overflow),
+            (Some(_), None) => Ok(Tick::ZERO),
+            (None, _) => self.output_duration(available),
+        }
+    }
+
+    /// Output ticks from the start of a piece's visible source to the end of the
+    /// asset's `asset_duration` (a curve: to the end of the curve).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error on arithmetic overflow.
+    pub fn output_from_start(&self, visible: SourceRange, asset_duration: Tick) -> Result<Tick> {
+        match &self.curve {
+            Some(curve) => curve
+                .total_output()
+                .checked_sub(self.window.map_or(Tick::ZERO, |w| w.offset))
+                .ok_or_else(overflow),
+            None => self.output_duration(
+                asset_duration
+                    .checked_sub(visible.start())
+                    .ok_or_else(overflow)?,
+            ),
+        }
+    }
+
     fn source_offset(&self, local: Tick, rounding: Rounding) -> Result<Tick> {
         match &self.curve {
             Some(curve) => curve.source_offset(local, rounding),

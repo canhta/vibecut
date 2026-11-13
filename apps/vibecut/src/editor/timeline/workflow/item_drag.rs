@@ -36,7 +36,7 @@ impl State {
         };
         let mut origins = Vec::new();
         let mut source_range = None;
-        let mut speed = time::Speed::UNITY;
+        let mut retime = project::Retime::default();
         for track in cx.session.project().data().scene().timeline.iter() {
             for candidate in &track.items {
                 if !selection.contains(&candidate.id) {
@@ -49,11 +49,11 @@ impl State {
                         start: candidate.start,
                         end,
                         source_range: candidate.source_range,
-                        speed: candidate.retime.speed,
+                        retime: candidate.retime,
                     });
                     if candidate.id == item {
                         source_range = Some(candidate.source_range);
-                        speed = candidate.retime.speed;
+                        retime = candidate.retime;
                     }
                 }
             }
@@ -68,7 +68,7 @@ impl State {
             delta: Tick::ZERO,
             origins,
             source_range,
-            speed,
+            retime,
         });
         self.push(Action::BeginPreview { select });
     }
@@ -381,8 +381,8 @@ fn trim_bounds(cx: &Context<'_>, drag: &DragState, mode: DragMode) -> (Tick, Tic
             DragMode::TrimStart => {
                 // Output time the source before the trim point would play for.
                 let before = origin
-                    .speed
-                    .output_duration(origin.source_range.start())
+                    .retime
+                    .output_before(origin.source_range)
                     .unwrap_or(Tick::ZERO);
                 let mut start_low = (origin.start - before).max(Tick::ZERO);
                 let start_high = origin.end - minimum;
@@ -430,8 +430,8 @@ fn trim_bounds(cx: &Context<'_>, drag: &DragState, mode: DragMode) -> (Tick, Tic
                     && let Some(duration) = asset.probe().duration
                 {
                     let after = drag
-                        .speed
-                        .output_duration(duration - drag.source_range.start())
+                        .retime
+                        .output_from_start(drag.source_range, duration)
                         .unwrap_or(Tick::ZERO);
                     end_high = end_high.min(origin.start + after);
                 }

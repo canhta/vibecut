@@ -566,6 +566,30 @@ fn trim_and_move_drag_commit_one_undo_step_each() {
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
     harness.run_steps(2);
     assert_eq!(item(harness.state(), video_b).start, Tick(6 * SECOND));
+
+    // A curved clip is bounded by its curve, not by 1x of the asset: a trim past it clamps.
+    harness
+        .state_mut()
+        .session
+        .apply(Command::SetSpeedCurve {
+            items: vec![video_a],
+            segments: vec![project::SpeedSegment {
+                span: 1000,
+                speed: time::Speed::from_f64(2.0).unwrap(),
+            }],
+            maintain_pitch: true,
+        })
+        .unwrap();
+    harness.run_steps(3);
+    let curved_end = item(harness.state(), video_a).end().unwrap();
+    assert!(curved_end < Tick(6 * SECOND));
+    let handle = widget(&harness, &format!("timeline.item.{}.trim_end", video_a.0));
+    drag(
+        &mut harness,
+        handle.center(),
+        egui::pos2(body_left + 5.0 * zoom, handle.center().y),
+    );
+    assert_eq!(item(harness.state(), video_a).end().unwrap(), curved_end);
 }
 
 #[test]
