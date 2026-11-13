@@ -65,7 +65,10 @@ impl Autosave {
                 | Lifecycle::Duplicate
                 | Lifecycle::Delete
                 | Lifecycle::Restore
-                | Lifecycle::Purge,
+                | Lifecycle::Purge
+                | Lifecycle::SaveAs
+                | Lifecycle::ExportBundle
+                | Lifecycle::ImportBundle,
             )
             | None => Ok(self.session.apply(command)?),
         }

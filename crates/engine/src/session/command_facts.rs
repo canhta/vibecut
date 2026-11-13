@@ -101,6 +101,12 @@ pub enum Lifecycle {
     Purge,
     Thumbnail,
     Save,
+    /// Publishes a copy of the open project under a fresh identity.
+    SaveAs,
+    /// Writes the open project and its resources as a bundle directory.
+    ExportBundle,
+    /// Extracts a bundle into a new project directory.
+    ImportBundle,
 }
 
 /// Every fact one declaration line adds to its command.

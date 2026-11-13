@@ -711,10 +711,13 @@ commands! {
     CreateProject, "project.create", "Create project", SessionControl { id: project::ProjectId, name: NfcText } => Create, serde_json::json!({"id":"18446744073709551615","name":"Created"}), grant = Human, lifecycle = Create;
     DeleteProject, "project.delete", "Move project to trash", SessionControl {} => Library, serde_json::json!({}), grant = Human, lifecycle = Delete;
     DuplicateProject, "project.duplicate", "Duplicate project", SessionControl { id: project::ProjectId } => Library, serde_json::json!({"id":"2"}), grant = Human, lifecycle = Duplicate;
+    ExportProjectBundle, "project.export_bundle", "Export project bundle", SessionControl { path: std::path::PathBuf } => Timeline, serde_json::json!({"path":"$output/bundle"}), grant = Human, lifecycle = ExportBundle;
+    ImportProjectBundle, "project.import_bundle", "Import project bundle", SessionControl { bundle: std::path::PathBuf, destination: std::path::PathBuf } => Timeline, serde_json::json!({"bundle":"$output/bundle","destination":"$output/imported"}), grant = Human, lifecycle = ImportBundle;
     PurgeProject, "project.purge", "Permanently delete trashed project", SessionControl {} => Library, serde_json::json!({}), grant = Human, lifecycle = Purge;
     RenameProject, "project.rename", "Rename project", Edit { name: NfcText } => Timeline, serde_json::json!({"name":"Renamed"});
     RestoreProject, "project.restore", "Restore project from trash", SessionControl {} => Library, serde_json::json!({}), grant = Human, lifecycle = Restore;
     SaveProject, "project.save", "Save project", SessionControl {} => Save, serde_json::json!({}), grant = Agent, lifecycle = Save;
+    SaveProjectAs, "project.save_as", "Save project copy", SessionControl { path: std::path::PathBuf } => Timeline, serde_json::json!({"path":"$output/copy.vibecut"}), grant = Human, lifecycle = SaveAs;
     SetBackground, "project.set_background", "Set canvas background colour", Edit { color: Color } => Timeline, serde_json::json!({"color":[0,0,0,255]});
     SetCanvas, "project.set_canvas", "Set canvas size", Edit { width: u32, height: u32, #[serde(default)] preset: Option<project::AspectPreset> } => Timeline, serde_json::json!({"width":1080,"height":1920,"preset":"9:16"});
     SetFps, "project.set_fps", "Set canvas frame rate", Edit { num: i64, den: i64 } => Timeline, serde_json::json!({"num":30,"den":1});

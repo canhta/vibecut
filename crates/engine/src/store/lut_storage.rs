@@ -62,7 +62,7 @@ impl From<ControlError> for Error {
 
 const QUOTA: u64 = 256 << 20;
 const MAX_BUNDLE: u64 = (24 + 16) * 1024 * 1024 + 16384;
-const FILES: [&str; 3] = ["canonical.cube", "original.cube", "provenance.json"];
+const FILES: [&str; 3] = LutRecord::FILES;
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Provenance {

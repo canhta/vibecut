@@ -43,7 +43,30 @@ fn media_project(root: &Path) -> Project {
         asset(5, &gone),
     ]);
     fs::remove_file(gone).unwrap();
-    project
+    // One imported LUT whose three files exist and one whose directory is gone.
+    let mut data = project.into_data();
+    let kept = root.join("store/kept");
+    write(&kept.join("canonical.cube"), b"canonical look");
+    write(&kept.join("original.cube"), b"original look");
+    write(&kept.join("provenance.json"), b"{}");
+    data.luts = vec![
+        lut(&kept, Some(&kept.join("canonical.cube")), "Kept"),
+        lut(&root.join("store/gone"), None, "Gone"),
+    ];
+    Project::new(data).unwrap()
+}
+fn lut(directory: &Path, canonical: Option<&Path>, name: &str) -> project::LutRecord {
+    let hash = canonical.map_or(ContentHash::from_bytes(name.as_bytes()), |path| {
+        ContentHash::read(path).unwrap()
+    });
+    project::LutRecord {
+        id: project::LutId::new(hash),
+        name: name.into(),
+        licence: None,
+        source_name: "look.cube".into(),
+        source_hash: hash,
+        directory: directory.to_path_buf(),
+    }
 }
 fn leftovers(parent: &Path) -> Vec<String> {
     let mut names: Vec<_> = fs::read_dir(parent)
@@ -73,6 +96,14 @@ fn round_trip_copies_media_once_relinks_by_hash_and_reports_missing() {
     let exported = bundle::export(&original, &out.join("Gói dự án 1.vibecutbundle")).unwrap();
     assert_eq!(exported.copied(), 3);
     assert_eq!(exported.missing(), [AssetId(5)]);
+    assert_eq!(
+        exported.missing_luts(),
+        [original.data().luts.get(1).unwrap().id]
+    );
+    assert_eq!(
+        fs::read_dir(exported.path().join("luts")).unwrap().count(),
+        1
+    );
     let media_files = fs::read_dir(exported.path().join("media")).unwrap().count();
     assert_eq!(media_files, 3);
     // Source paths never reach the bundle.
@@ -82,6 +113,36 @@ fn round_trip_copies_media_once_relinks_by_hash_and_reports_missing() {
 
     let imported = bundle::import(exported.path(), &out.join("Đã nhập")).unwrap();
     assert_eq!(imported.missing(), [AssetId(5)]);
+    assert_eq!(
+        imported.missing_luts(),
+        [original.data().luts.get(1).unwrap().id]
+    );
+    // The copied LUT is a complete bundle the project's record points at.
+    let record = imported.project().data().luts.first().unwrap();
+    assert_eq!(record.id, original.data().luts.get(0).unwrap().id);
+    assert!(
+        record
+            .directory
+            .starts_with(out.canonicalize().unwrap().join("Đã nhập/media/luts"))
+    );
+    assert_eq!(
+        fs::read(record.directory.join("canonical.cube")).unwrap(),
+        b"canonical look"
+    );
+    assert_eq!(
+        fs::read(record.directory.join("original.cube")).unwrap(),
+        b"original look"
+    );
+    assert!(
+        !imported
+            .project()
+            .data()
+            .luts
+            .get(1)
+            .unwrap()
+            .directory
+            .exists()
+    );
     assert_eq!(
         imported.project_path(),
         out.canonicalize().unwrap().join("Đã nhập/project.vibecut")
@@ -145,7 +206,7 @@ fn hostile_or_inconsistent_bundles_are_refused_before_anything_is_published() {
     let root = tempfile::tempdir().unwrap();
     let original = media_project(root.path());
     type Mutation = fn(&mut Value);
-    let rows: [(&str, Mutation); 14] = [
+    let rows: [(&str, Mutation); 16] = [
         ("zip-slip name", |m| {
             m["media"][0]["name"] = json!("../evil")
         }),
@@ -167,6 +228,11 @@ fn hostile_or_inconsistent_bundles_are_refused_before_anything_is_published() {
         ("uppercase hash", |m| {
             let hash = m["media"][0]["hash"].as_str().unwrap().to_uppercase();
             m["media"][0]["hash"] = json!(hash);
+        }),
+        ("unknown LUT", |m| m["luts"] = json!(["0".repeat(64)])),
+        ("duplicate LUT", |m| {
+            let id = m["luts"][0].clone();
+            m["luts"].as_array_mut().unwrap().push(id);
         }),
         ("unknown field", |m| m["extra"] = json!(1)),
         ("other format", |m| m["format"] = json!("other")),
@@ -238,6 +304,19 @@ fn newer_and_older_bundles_and_tampered_media_are_typed_refusals() {
         bundle::import(made.path(), &out.path().join("imported")),
         Err(Error::Invalid(_))
     ));
+    // A LUT whose canonical cube no longer hashes to its identity is refused.
+    let (out, made) = fresh();
+    let lut_dir = fs::read_dir(made.path().join("luts"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    fs::write(lut_dir.join("canonical.cube"), b"tampered").unwrap();
+    assert!(matches!(
+        bundle::import(made.path(), &out.path().join("imported")),
+        Err(Error::Invalid(_))
+    ));
     // An existing destination is never replaced.
     let (out, made) = fresh();
     fs::create_dir(out.path().join("imported")).unwrap();
@@ -257,11 +336,12 @@ fn media_deleted_from_a_bundle_imports_as_missing_and_extra_files_are_ignored() 
     fs::write(made.path().join("media/stray.bin"), b"stray").unwrap();
     let imported = bundle::import(made.path(), &out.path().join("imported")).unwrap();
     assert_eq!(imported.missing().len(), 5);
+    // Only the LUT directory remains: every media copy was deleted.
     assert_eq!(
         fs::read_dir(out.path().join("imported/media"))
             .unwrap()
             .count(),
-        0
+        1
     );
 }
 

@@ -11,6 +11,8 @@ pub const MAX_BUNDLE_BYTES: u64 = 512 << 30;
 pub(super) const MANIFEST_FILE: &str = "bundle.json";
 pub(super) const PROJECT_FILE: &str = "project.vibecut";
 pub(super) const MEDIA_DIR: &str = "media";
+/// Imported LUT bundles, one `<id>/` directory each; extracted under `media/luts`.
+pub(super) const LUT_DIR: &str = "luts";
 pub(super) const MAX_MANIFEST_BYTES: u64 = 4 << 20;
 const MAX_NAME_BYTES: usize = 80;
 const FALLBACK_NAME: &str = "media";
@@ -24,6 +26,8 @@ pub(super) struct Manifest {
     pub schema_version: u32,
     pub generator: String,
     pub media: Vec<Entry>,
+    /// Lowercase hex ids of the project's LUTs whose bundle directory was copied.
+    pub luts: Vec<String>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

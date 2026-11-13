@@ -1,10 +1,10 @@
 //! Writes a project and its media as a new bundle directory.
-use super::files::{self, copy_verified, write_new};
+use super::files::{self, copy_lut, copy_verified, write_new};
 use super::manifest::{
-    BUNDLE_FORMAT_ID, Entry, MANIFEST_FILE, MAX_BUNDLE_BYTES, MEDIA_DIR, Manifest, PROJECT_FILE,
-    hex, sanitize, stored_name,
+    BUNDLE_FORMAT_ID, Entry, LUT_DIR, MANIFEST_FILE, MAX_BUNDLE_BYTES, MEDIA_DIR, Manifest,
+    PROJECT_FILE, hex, sanitize, stored_name,
 };
-use crate::{Error, Project, Result, SCHEMA_VERSION};
+use crate::{Error, LutId, Project, Result, SCHEMA_VERSION};
 use media::{AssetData, AssetId, SourceAsset};
 use std::{
     collections::BTreeMap,
@@ -18,6 +18,7 @@ pub struct ExportedBundle {
     path: PathBuf,
     copied: usize,
     missing: Vec<AssetId>,
+    missing_luts: Vec<LutId>,
 }
 impl ExportedBundle {
     pub fn path(&self) -> &Path {
@@ -30,6 +31,10 @@ impl ExportedBundle {
     /// Assets whose media was absent at export; importing them enters relink.
     pub fn missing(&self) -> &[AssetId] {
         &self.missing
+    }
+    /// LUTs whose copied bundle was absent at export.
+    pub fn missing_luts(&self) -> &[LutId] {
+        &self.missing_luts
     }
 }
 
@@ -91,6 +96,25 @@ pub fn export(project: &Project, destination: &Path) -> Result<ExportedBundle> {
         });
     }
     data.assets = assets;
+    // Imported LUTs are referenced resources: copy each bundle under its id.
+    let lut_root = target.staging.path().join(LUT_DIR);
+    fs::create_dir(&lut_root)?;
+    let mut luts = Vec::new();
+    let mut missing_luts = Vec::new();
+    for record in &mut data.luts {
+        let id = record.id.hex();
+        match copy_lut(&record.directory, &lut_root.join(&id), record.id)? {
+            Some(bytes) => {
+                total = total
+                    .checked_add(bytes)
+                    .filter(|total| *total <= MAX_BUNDLE_BYTES)
+                    .ok_or(Error::TooLarge("bundle size"))?;
+                luts.push(id.clone());
+            }
+            None => missing_luts.push(record.id),
+        }
+        record.directory = target.destination.join(LUT_DIR).join(&id);
+    }
     let bundled = Project::new(data)?;
     write_new(
         &target.staging.path().join(PROJECT_FILE),
@@ -101,6 +125,7 @@ pub fn export(project: &Project, destination: &Path) -> Result<ExportedBundle> {
         schema_version: SCHEMA_VERSION,
         generator: format!("VibeCut {}", env!("CARGO_PKG_VERSION")),
         media,
+        luts,
     };
     write_new(
         &target.staging.path().join(MANIFEST_FILE),
@@ -112,6 +137,7 @@ pub fn export(project: &Project, destination: &Path) -> Result<ExportedBundle> {
         path,
         copied,
         missing,
+        missing_luts,
     })
 }
 

@@ -191,12 +191,22 @@ impl Session {
         | Command::ExportSubtitles { path, .. }
         | Command::BurnSubtitles { path, .. }
         | Command::Snapshot { path, .. }
+        | Command::ExportProjectBundle { path }
+        | Command::SaveProjectAs { path }
         | Command::ClipsExport {
             directory: path, ..
         }
         | Command::ExportClips { dir: path, .. } = &command
         {
             bounded_json(path, MAX_PATH_BYTES)?;
+        }
+        if let Command::ImportProjectBundle {
+            bundle,
+            destination,
+        } = &command
+        {
+            bounded_json(bundle, MAX_PATH_BYTES)?;
+            bounded_json(destination, MAX_PATH_BYTES)?;
         }
         let key = if effectful {
             let key = request
@@ -272,7 +282,10 @@ impl Session {
                 | Lifecycle::Delete
                 | Lifecycle::Restore
                 | Lifecycle::Purge
-                | Lifecycle::Thumbnail,
+                | Lifecycle::Thumbnail
+                | Lifecycle::SaveAs
+                | Lifecycle::ExportBundle
+                | Lifecycle::ImportBundle,
             )
             | None => self.control_request(request, caller, runner),
         }

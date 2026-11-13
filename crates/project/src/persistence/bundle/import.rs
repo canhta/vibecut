@@ -1,11 +1,13 @@
 //! Validates a bundle directory and extracts it into a new project directory.
-use super::files::{self, copy_verified, open_regular, plain_directory, read_required, write_new};
+use super::files::{
+    self, copy_lut, copy_verified, open_regular, plain_directory, read_required, write_new,
+};
 use super::manifest::{
-    BUNDLE_FORMAT_ID, MANIFEST_FILE, MAX_BUNDLE_BYTES, MAX_MANIFEST_BYTES, MAX_MEDIA_BYTES,
-    MEDIA_DIR, Manifest, PROJECT_FILE, parse_hex, stored_name, valid_name,
+    BUNDLE_FORMAT_ID, LUT_DIR, MANIFEST_FILE, MAX_BUNDLE_BYTES, MAX_MANIFEST_BYTES,
+    MAX_MEDIA_BYTES, MEDIA_DIR, Manifest, PROJECT_FILE, parse_hex, stored_name, valid_name,
 };
 use crate::persistence::bounds::MAX_BYTES;
-use crate::{Error, Project, Result, SCHEMA_VERSION};
+use crate::{Error, LutId, Project, Result, SCHEMA_VERSION};
 use media::{AssetData, AssetId, SourceAsset};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -18,6 +20,7 @@ pub struct ImportedBundle {
     project_path: PathBuf,
     project: Project,
     missing: Vec<AssetId>,
+    missing_luts: Vec<LutId>,
 }
 impl ImportedBundle {
     /// The extracted `.vibecut` file.
@@ -32,6 +35,11 @@ impl ImportedBundle {
     /// hash, so a later relink accepts only identical content.
     pub fn missing(&self) -> &[AssetId] {
         &self.missing
+    }
+    /// LUTs with no bundled files; they keep their identity and fail typed at
+    /// render time until the same canonical content is imported again.
+    pub fn missing_luts(&self) -> &[LutId] {
+        &self.missing_luts
     }
 }
 
@@ -138,6 +146,31 @@ pub fn import(bundle: &Path, destination: &Path) -> Result<ImportedBundle> {
         assets.push(SourceAsset::try_from(relocated)?);
     }
     data.assets = assets;
+    // Bundled LUTs land beside the media, where managed projects keep them.
+    let luts_in = bundle.join(LUT_DIR);
+    let luts_in = plain_directory(&luts_in)?.then_some(luts_in);
+    let luts_out = media_dir.join(LUT_DIR);
+    std::fs::create_dir(&luts_out)?;
+    let mut missing_luts = Vec::new();
+    for record in &mut data.luts {
+        let id = record.id.hex();
+        let copied = match &luts_in {
+            Some(dir) if manifest.luts.contains(&id) => {
+                copy_lut(&dir.join(&id), &luts_out.join(&id), record.id)?
+            }
+            _ => None,
+        };
+        match copied {
+            Some(bytes) => {
+                total = total
+                    .checked_add(bytes)
+                    .filter(|total| *total <= MAX_BUNDLE_BYTES)
+                    .ok_or(Error::TooLarge("bundle size"))?;
+            }
+            None => missing_luts.push(record.id),
+        }
+        record.directory = inside.join(LUT_DIR).join(&id);
+    }
     let project = Project::new(data)?.fork()?;
     write_new(
         &target.staging.path().join(PROJECT_FILE),
@@ -148,6 +181,7 @@ pub fn import(bundle: &Path, destination: &Path) -> Result<ImportedBundle> {
         project_path: directory.join(PROJECT_FILE),
         project,
         missing,
+        missing_luts,
     })
 }
 
@@ -188,6 +222,13 @@ fn verified_hashes(manifest: &Manifest, project: &Project) -> Result<BTreeMap<As
             return Err(Error::Invalid("bundle entry sizes disagree"));
         }
         hashes.insert(entry.asset, recorded);
+    }
+    let known: BTreeSet<String> = project.data().luts.iter().map(|r| r.id.hex()).collect();
+    let mut listed = BTreeSet::new();
+    for id in &manifest.luts {
+        if !known.contains(id) || !listed.insert(id) {
+            return Err(Error::Invalid("bundle LUT entry"));
+        }
     }
     Ok(hashes)
 }

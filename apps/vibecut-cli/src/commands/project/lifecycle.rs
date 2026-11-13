@@ -2,8 +2,11 @@
 use crate::args::CliError;
 use crate::args::{one_path, utf8};
 use crate::output::{Output, hex, json_path};
-use crate::session::Context;
+use crate::session::{
+    Context, Edit, History, Lent, WritePolicy, cli_runner, run_command, run_leased,
+};
 use engine::Session;
+use engine::control::ControlResult;
 use project::{ProjectId, WriterLease};
 use serde_json::{Value, json};
 use std::ffi::OsString;
@@ -11,7 +14,7 @@ use std::io;
 use std::path::PathBuf;
 use time::FrameRate;
 
-pub(crate) fn run(_context: &Context, args: Vec<OsString>) -> Result<Output, CliError> {
+pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliError> {
     let mut args = args.into_iter();
     let action = args.next().ok_or_else(|| {
         CliError::Usage("usage: vibecut-cli project new|info|save-as <path> ...".into())
@@ -24,7 +27,7 @@ pub(crate) fn run(_context: &Context, args: Vec<OsString>) -> Result<Output, Cli
         "save-as" => {
             let (source, destination) =
                 two_paths(rest, "usage: vibecut-cli project save-as <path> <new-path>")?;
-            project_save_as(source, destination)
+            project_save_as(context, source, destination)
         }
         other => Err(CliError::Usage(format!(
             "unknown project action: {other}; expected new, info or save-as"
@@ -41,35 +44,72 @@ pub(super) fn two_paths(args: Vec<OsString>, usage: &str) -> Result<(PathBuf, Pa
     }
 }
 
-/// Publish a copy of `source` under a fresh identity and leave `source` untouched.
-/// The destination must not exist: this command never replaces a project.
-fn project_save_as(source: PathBuf, destination: PathBuf) -> Result<Output, CliError> {
-    match std::fs::symlink_metadata(&destination) {
-        Ok(_) => {
-            return Err(CliError::Usage(format!(
-                "destination already exists: {}",
-                destination.display()
-            )));
-        }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error.into()),
+/// Publish a copy of `source` under a fresh identity through `project.save_as`.
+/// The source is untouched and an existing destination is refused.
+fn project_save_as(
+    context: &Context,
+    source: PathBuf,
+    destination: PathBuf,
+) -> Result<Output, CliError> {
+    let params = json!({"path": json_path(&destination)?});
+    published(
+        run_on_project(context, &source, "project.save_as", params)?,
+        "saved",
+    )
+}
+
+/// Run one read-only registry command over the project under its writer lease.
+/// The project is never rewritten: these commands publish elsewhere.
+pub(super) fn run_on_project(
+    context: &Context,
+    project_file: &std::path::Path,
+    command: &str,
+    params: Value,
+) -> Result<ControlResult, CliError> {
+    let mut runner = cli_runner(context.budget()?)?;
+    let result = run_leased(
+        project_file,
+        History::Single,
+        WritePolicy::Changed,
+        |session| {
+            let value = run_command(session, &mut runner, Lent::default(), command, params, true)?;
+            Ok(Edit {
+                value,
+                changed: false,
+            })
+        },
+    );
+    runner.shutdown();
+    Ok(result?.value)
+}
+
+/// Present a `Published` result: the new path, identity and what needs relinking.
+pub(super) fn published(result: ControlResult, verb: &str) -> Result<Output, CliError> {
+    let ControlResult::Published {
+        path,
+        project_id,
+        copied,
+        missing,
+        missing_luts,
+    } = result
+    else {
+        return Err(CliError::Rejected("unexpected command result"));
+    };
+    let mut human = format!("{verb} {}", path.display());
+    if !missing.is_empty() {
+        human.push_str(&format!("; {} asset(s) need relinking", missing.len()));
     }
-    let mut lease = WriterLease::acquire(&source)?;
-    let loaded = lease.load()?;
-    let metadata = lease.metadata();
-    let receipt = lease.save_as(&destination, &loaded.project)?;
-    lease.save_metadata(&metadata)?;
+    if !missing_luts.is_empty() {
+        human.push_str(&format!("; {} LUT(s) are missing", missing_luts.len()));
+    }
     let value = json!({
-        "path": json_path(receipt.path())?,
-        "id": receipt.project_id().0.to_string(),
-        "content_hash": hex(&receipt.content_hash().0),
+        "path": json_path(&path)?,
+        "id": project_id,
+        "copied": copied,
+        "missing": missing,
+        "missing_luts": missing_luts,
     });
-    Ok(Output::new(
-        value,
-        format!("saved {}", receipt.path().display()),
-        false,
-        0,
-    ))
+    Ok(Output::new(value, human, false, 0))
 }
 
 fn project_new(path: PathBuf) -> Result<Output, CliError> {
