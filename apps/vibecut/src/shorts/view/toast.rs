@@ -11,10 +11,11 @@ use engine::jobs::JobState;
 pub(super) fn show(state: &mut State, ui: &mut egui::Ui) {
     let dark = state.preferences.dark;
     let jobs = state.batch.as_ref().map_or(0, |b| b.len());
-    if state.error.is_none() && !state.cancelled && jobs == 0 {
+    if state.error.is_none() && !state.cancelled && jobs == 0 && state.shots_notice.is_none() {
         return;
     }
     let mut dismiss = false;
+    let mut dismiss_shots = false;
     let mut retry = None;
     let mut cancel = None;
     egui::Area::new(egui::Id::unique("shorts.toast"))
@@ -52,6 +53,31 @@ pub(super) fn show(state: &mut State, ui: &mut egui::Ui) {
                             .clicked()
                             {
                                 dismiss = true;
+                            }
+                        });
+                    }
+                    if let Some(notice) = state.shots_notice {
+                        ui.horizontal(|ui| {
+                            ui.add_sized(
+                                [260.0, 24.0],
+                                egui::Label::new(
+                                    egui::RichText::new(state.tr(notice)).color(kit::text(dark)),
+                                )
+                                .wrap(),
+                            );
+                            let rect = ui.allocate_space(vec2(24.0, 24.0)).1;
+                            if widgets::icon_tap(
+                                ui,
+                                "shorts.shots.dismiss",
+                                rect,
+                                Icon::X,
+                                state.tr(Text::ShortsDismiss),
+                                true,
+                                false,
+                            )
+                            .clicked()
+                            {
+                                dismiss_shots = true;
                             }
                         });
                     }
@@ -126,6 +152,9 @@ pub(super) fn show(state: &mut State, ui: &mut egui::Ui) {
     if dismiss {
         state.error = None;
         state.cancelled = false;
+    }
+    if dismiss_shots {
+        state.shots_notice = None;
     }
     if let Some(index) = cancel
         && let Some(batch) = &state.batch

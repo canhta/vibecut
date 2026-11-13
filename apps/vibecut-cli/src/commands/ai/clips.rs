@@ -363,6 +363,8 @@ struct Plan {
 struct Report {
     result: ClipsResult,
     shorts: Vec<ClipExportShort>,
+    /// Why the export used no per-shot layouts; `None` when the analysis laid them out.
+    shots: Option<engine::control::ClipShotsDiagnostic>,
     languages: Vec<LanguageTag>,
     translation_cost: Cost,
 }
@@ -426,6 +428,7 @@ fn execute(plan: &Plan, access: &CaptionAccess, mut runner: JobRunner) -> Result
     let mut report = Report {
         result,
         shorts: Vec::new(),
+        shots: None,
         languages,
         translation_cost: Cost::Free,
     };
@@ -485,10 +488,11 @@ fn execute(plan: &Plan, access: &CaptionAccess, mut runner: JobRunner) -> Result
         }),
         true,
     )?;
-    let ControlResult::ClipExports { shorts, .. } = accepted else {
+    let ControlResult::ClipExports { shorts, shots, .. } = accepted else {
         return Err(CliError::Rejected("command did not start export jobs"));
     };
     report.shorts = shorts;
+    report.shots = shots;
     wait_for_shorts(&mut runner, &report.shorts)?;
     runner.shutdown();
     Ok(report)
@@ -586,6 +590,7 @@ fn clips_json(plan: &Plan, report: &Report) -> Result<Value, CliError> {
         },
         "subtitle_languages": report.languages.iter().map(LanguageTag::as_str).collect::<Vec<_>>(),
         "exports": exports,
+        "layouts": report.shots.map(|reason| json!(reason)),
         "elapsed_seconds": result.elapsed_seconds,
     }))
 }
@@ -630,6 +635,18 @@ fn format_name(format: engine::Format) -> &'static str {
         engine::Format::WebVtt => "web_vtt",
         engine::Format::Txt => "txt",
     }
+}
+
+/// The one output row for an export that used no per-shot layouts, and why.
+fn layouts_row(reason: engine::control::ClipShotsDiagnostic) -> String {
+    use engine::control::ClipShotsDiagnostic as Reason;
+    let label = match reason {
+        Reason::DetectorUnavailable => "no face detector",
+        Reason::ModelsMissing => "face model not installed",
+        Reason::Pending { .. } => "shot analysis started; export again to use it",
+        Reason::Failed => "shot analysis failed",
+    };
+    format!("layouts: centred crop only ({label})")
 }
 
 fn clips_human(report: &Report) -> String {
@@ -689,6 +706,9 @@ fn clips_human(report: &Report) -> String {
             );
         }
     }
+    if let Some(reason) = report.shots {
+        let _ = writeln!(human, "{}", layouts_row(reason));
+    }
     let _ = writeln!(
         human,
         "cost: transcribe {}; suggest {}; translate {}",
@@ -697,4 +717,22 @@ fn clips_human(report: &Report) -> String {
         cost_label(&report.translation_cost)
     );
     human.trim_end().to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::layouts_row;
+    use engine::control::ClipShotsDiagnostic as Reason;
+
+    #[test]
+    fn the_layouts_row_names_the_typed_reason() {
+        assert_eq!(
+            layouts_row(Reason::ModelsMissing),
+            "layouts: centred crop only (face model not installed)"
+        );
+        assert_eq!(
+            serde_json::json!(Reason::DetectorUnavailable)["state"],
+            "detector_unavailable"
+        );
+    }
 }

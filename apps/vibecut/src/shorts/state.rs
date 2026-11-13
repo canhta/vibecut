@@ -89,6 +89,24 @@ pub struct GenerationRequest {
 /// supply a described asset instead of a decodable file.
 pub type Importer =
     Arc<dyn Fn(&std::path::Path) -> engine::control::Result<media::SourceAsset> + Send + Sync>;
+/// Resolves the per-shot analysis for the pieces of a review: the engine's reuse-or-start
+/// (`engine::control::resolve_clip_shots`) on the window's runner. Injected at the lending
+/// seam; tests script it. A window nobody lent anything to runs without evidence.
+pub type ShotSource = Arc<
+    dyn Fn(
+            &mut JobRunner,
+            &media::SourceAsset,
+            &[SourceRange],
+            &[captions::Cue],
+        ) -> engine::control::Result<(
+            Vec<engine::ShotAnalysis>,
+            Option<engine::control::ClipShotsDiagnostic>,
+        )> + Send
+        + Sync,
+>;
+fn no_shots() -> ShotSource {
+    Arc::new(|_, _, _, _| Ok((Vec::new(), None)))
+}
 /// The shipped importer: FFmpeg probe of the picked file as asset 1 of the source session.
 pub fn desktop_importer() -> Importer {
     Arc::new(|path| {
@@ -171,6 +189,15 @@ pub struct State {
     pub(super) editing: bool,
     pub(super) thumbs: Thumbs,
     pub(super) configured: bool,
+    /// Resolves the per-shot analysis the engine owns; the process lends the stores.
+    pub(super) shots_source: ShotSource,
+    /// The analysis every `ClipBatch::prepare` of the review lays shorts out from.
+    pub(super) shots: Vec<engine::ShotAnalysis>,
+    /// The analysis job the review waits on; it refreshes the preview when terminal.
+    pub(super) shots_job: Option<JobId>,
+    /// The typed reason there are no layouts, shown once in the toast.
+    pub(super) shots_notice: Option<Text>,
+    pub(super) shots_reported: bool,
 }
 
 /// Poster frames of the suggestions, decoded off the UI thread, then uploaded once.
@@ -344,7 +371,70 @@ impl State {
             editing: false,
             thumbs: Thumbs::default(),
             configured: false,
+            shots_source: no_shots(),
+            shots: Vec::new(),
+            shots_job: None,
+            shots_notice: None,
+            shots_reported: false,
         })
+    }
+    /// Lend the process media cache and face detector to the review's shot analysis. Either
+    /// missing is the typed refusal the toast reports once; the window has no analysis of its own.
+    pub fn lend_analysis(
+        &mut self,
+        media: Option<Arc<std::sync::Mutex<engine::control::MediaAccess>>>,
+        vision: Option<Arc<engine::control::VisionAccess>>,
+    ) {
+        self.shots_source = Arc::new(move |runner, asset, pieces, cues| {
+            engine::control::resolve_clip_shots(
+                runner,
+                asset,
+                pieces,
+                cues,
+                media.as_deref(),
+                vision.as_deref(),
+            )
+        });
+    }
+    /// Replace the resolver; tests script the analysis here.
+    pub fn with_shot_source(&mut self, source: ShotSource) {
+        self.shots_source = source;
+    }
+    /// Ask the engine for the review's shot analysis: the cached result, or the typed reason
+    /// there is none (a pending job refreshes the preview from `tick` when it is terminal).
+    /// The preview and every export then lay shorts out from the same shots.
+    pub(super) fn refresh_shots(&mut self, last: bool) {
+        let (Some(source), Some(asset)) = (&self.source, &self.asset) else {
+            return;
+        };
+        let pieces: Vec<SourceRange> = source
+            .candidates
+            .iter()
+            .flat_map(|candidate| candidate.segments.iter().map(|piece| piece.range))
+            .collect();
+        let resolved = (self.shots_source)(&mut self.runner, asset, &pieces, &source.cues.cues);
+        use engine::control::ClipShotsDiagnostic as Reason;
+        let (shots, mut reason) = resolved.unwrap_or((Vec::new(), Some(Reason::Failed)));
+        // A second pending answer after the job finished is a failed publication, not a wait.
+        if last && matches!(reason, Some(Reason::Pending { .. })) {
+            reason = Some(Reason::Failed);
+        }
+        self.shots = shots;
+        self.shots_job = match reason {
+            Some(Reason::Pending { job }) => Some(job),
+            _ => None,
+        };
+        let text = match reason {
+            Some(Reason::DetectorUnavailable) => Some(Text::ShortsShotsUnavailable),
+            Some(Reason::ModelsMissing) => Some(Text::ShortsShotsModels),
+            Some(Reason::Failed) => Some(Text::ShortsShotsFailed),
+            Some(Reason::Pending { .. }) | None => None,
+        };
+        if text.is_some() && !self.shots_reported {
+            self.shots_reported = true;
+            self.shots_notice = text;
+        }
+        self.preview_dirty = true;
     }
     pub(super) fn pick(&mut self, ctx: &egui::Context, kind: Pick) {
         let future: std::pin::Pin<Box<dyn std::future::Future<Output = Option<rfd::FileHandle>>>> =
@@ -547,6 +637,10 @@ impl State {
         self.asset = Some(asset);
         self.duration = duration;
         self.batch = None;
+        self.shots = Vec::new();
+        self.shots_job = None;
+        self.shots_notice = None;
+        self.shots_reported = false;
         self.generating = Some(Generating { id, cancel, events });
         self.error = None;
         self.cancelled = false;
@@ -601,6 +695,26 @@ impl State {
                     .unwrap_or_else(|| Error::Invalid("missing shorts result"));
                 self.fail(error, Text::ShortsError);
                 let _ = self.runner.take_output(job.id);
+            }
+        }
+        if let Some(job) = self.shots_job
+            && let Some(state) = self
+                .runner
+                .snapshot(job)
+                .map_or(Some(JobState::Completed), |s| {
+                    terminal(s.state).then_some(s.state)
+                })
+        {
+            // The analysis job is terminal: ask the engine again, once. A failed or
+            // cancelled job is the typed failure, never a resubmission.
+            if state == JobState::Completed {
+                self.refresh_shots(true);
+            } else {
+                self.shots_job = None;
+                if !self.shots_reported {
+                    self.shots_reported = true;
+                    self.shots_notice = Some(Text::ShortsShotsFailed);
+                }
             }
         }
         if self.preview_dirty {
@@ -658,7 +772,9 @@ impl State {
                 .collect(),
             boundaries,
             candidates,
-        })
+        })?;
+        self.refresh_shots(false);
+        Ok(())
     }
     pub(super) fn install(&mut self, source: ReviewSource) -> Result<()> {
         if source.candidates.len() > 32 {
@@ -901,6 +1017,7 @@ impl State {
             );
         }
         let mut request = ClipBatchRequest::new(source.asset, shorts, directory);
+        request.shots = self.shots.clone();
         if self.captions {
             request.cues = source.cues.clone();
             request.languages = vec![source.transcript.source_lang.clone()];

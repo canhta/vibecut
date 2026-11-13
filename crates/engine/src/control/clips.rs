@@ -96,10 +96,7 @@ impl CaptionAccess {
 }
 
 /// The per-shot analysis a clip export lays its shorts out from, over the hull of the
-/// selected pieces: the cached result of that exact request, else why there is none.
-/// A missing result starts the analysis as a job, so a later export reuses it. Nothing here
-/// fails the export: without evidence every short is a centred Fill and the diagnostic
-/// says why. Speech evidence is the suggestion's source cues.
+/// selected pieces of `result`; see [`resolve_clip_shots`].
 pub(super) fn export_shots(
     runner: &mut JobRunner,
     session: &Session,
@@ -108,26 +105,46 @@ pub(super) fn export_shots(
     result: &ClipsResult,
     select: &[usize],
 ) -> Result<(Vec<crate::ShotAnalysis>, Option<ClipShotsDiagnostic>)> {
-    use ClipShotsDiagnostic::{DetectorUnavailable, Failed, ModelsMissing};
     let pieces: Vec<SourceRange> = select
         .iter()
         .filter_map(|index| result.clips.get(*index))
         .flat_map(|clip| clip.segments.iter().map(|piece| piece.range))
         .collect();
-    let hull = pieces
-        .iter()
-        .map(|range| range.start())
-        .min()
-        .zip(pieces.iter().map(|range| range.end()).max())
-        .and_then(|(start, end)| SourceRange::new(start, end).ok());
-    let asset = session
+    let Some(asset) = session
         .project()
         .data()
         .assets
         .iter()
-        .find(|asset| asset.id() == result.asset);
-    let (Some(range), Some(asset)) = (hull, asset) else {
-        // No selected piece or source: the workflow reports its own refusal.
+        .find(|asset| asset.id() == result.asset)
+    else {
+        // No source: the workflow reports its own refusal.
+        return Ok((Vec::new(), None));
+    };
+    resolve_clip_shots(runner, asset, &pieces, &result.cues, media, vision)
+}
+
+/// The per-shot analysis for laying out shorts over `pieces` of `asset`: the cached result
+/// for the hull of the pieces, else why there is none. A missing result starts the analysis
+/// as a job on `runner`, so a later call reuses it; the caller polls that job (the
+/// `Pending` diagnostic names it) and asks again when it is terminal. Nothing here fails the
+/// export or the preview: without evidence every short is a centred Fill and the diagnostic
+/// says why. Speech evidence is the source `cues`. No pieces is `(empty, None)`.
+pub fn resolve_clip_shots(
+    runner: &mut JobRunner,
+    asset: &media::SourceAsset,
+    pieces: &[SourceRange],
+    cues: &[captions::Cue],
+    media: Option<&std::sync::Mutex<super::MediaAccess>>,
+    vision: Option<&super::VisionAccess>,
+) -> Result<(Vec<crate::ShotAnalysis>, Option<ClipShotsDiagnostic>)> {
+    use ClipShotsDiagnostic::{DetectorUnavailable, Failed, ModelsMissing};
+    let Some(range) = pieces
+        .iter()
+        .map(|range| range.start())
+        .min()
+        .zip(pieces.iter().map(|range| range.end()).max())
+        .and_then(|(start, end)| SourceRange::new(start, end).ok())
+    else {
         return Ok((Vec::new(), None));
     };
     let (Some(vision), Some(media)) = (vision, media) else {
@@ -136,8 +153,7 @@ pub(super) fn export_shots(
     let Ok((detector, models)) = vision.load() else {
         return Ok((Vec::new(), Some(ModelsMissing)));
     };
-    let mut speech: Vec<SourceRange> = result
-        .cues
+    let mut speech: Vec<SourceRange> = cues
         .iter()
         .filter_map(|cue| cue.range.intersect(range))
         .collect();

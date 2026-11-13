@@ -214,10 +214,11 @@ impl Workspace {
     }
     pub fn open_shorts(&mut self) -> Result<()> {
         if self.shorts.is_none() {
-            self.shorts = Some(crate::shorts::State::new(
-                self.look(),
-                self.home.budget.clone(),
-            )?);
+            let mut shorts = crate::shorts::State::new(self.look(), self.home.budget.clone())?;
+            // The process media cache is the engine's analysis cache. The desktop has no
+            // face-detector loader yet, so the review reports it as unavailable.
+            shorts.lend_analysis(self.lending.media(), None);
+            self.shorts = Some(shorts);
         }
         self.shorts_window = true;
         Ok(())
