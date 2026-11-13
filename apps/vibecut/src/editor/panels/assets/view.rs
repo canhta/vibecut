@@ -31,6 +31,9 @@ pub(in crate::editor) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) 
     ui.painter()
         .rect_filled(strip, 0.0, theme::strip(cx.preferences.dark));
     ui.scope_builder(egui::UiBuilder::new().max_rect(strip), |ui| {
+        // The bar is hidden, so a plain wheel (vertical axis) is the only cue-free way to reach
+        // tabs clipped at narrow widths; a horizontal-only area ignores that axis by default.
+        ui.style_mut().always_scroll_the_only_direction = true;
         egui::ScrollArea::horizontal()
             .id_salt("assets.tabs")
             .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
@@ -472,5 +475,105 @@ impl View<'_> {
     fn empty(&mut self, ui: &mut egui::Ui, glyph: Icon, label: Text, tone: crate::kit::Tone) {
         let rect = ui.available_rect_before_wrap();
         crate::kit::panel_state(ui, "assets.state", rect, glyph, self.tr(label), tone);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::panic)]
+    use super::super::{Action, State};
+    use crate::editor::frame::bench::Bench;
+    use crate::editor::{Editor, egui};
+    use crate::preferences::Preferences;
+    use crate::services::playback::{Files, Playback};
+    use egui_kittest::kittest::{By, Queryable};
+    use engine::{ByteBudget, Session};
+    use project::{Project, ProjectId};
+    use std::sync::Arc;
+
+    /// Test fixture: the assets column at a 1280 px window (the reference has no capture at this
+    /// width, so the value only sizes the strip).
+    const PANEL: f32 = 420.0;
+
+    fn panel(state: &mut State, cx: &crate::editor::Context<'_>, ui: &mut egui::Ui) -> Vec<Action> {
+        let height = ui.max_rect().height();
+        ui.allocate_ui(egui::vec2(PANEL, height), |ui| {
+            super::super::show(state, cx, ui)
+        })
+        .inner
+    }
+
+    fn route(_editor: &mut Editor, _actions: Vec<Action>) {}
+
+    fn bench() -> Bench<State, Action> {
+        let session =
+            Session::new(Project::empty(ProjectId(1), "Assets".into()).unwrap(), 50).unwrap();
+        let playback = Playback::new(
+            &session,
+            ByteBudget::new(64 << 20).unwrap(),
+            Arc::new(Files),
+        )
+        .unwrap();
+        let editor = Editor::new(session, playback, Preferences::default());
+        Bench::hosted(
+            editor,
+            |editor| std::mem::take(&mut editor.assets),
+            |editor, state| editor.assets = state,
+            panel,
+            route,
+            egui::vec2(1280.0, 800.0),
+        )
+    }
+
+    fn tab(bench: &Bench<State, Action>, id: &str) -> egui::Rect {
+        bench
+            .harness()
+            .get(By::new().predicate(|node| node.author_id() == Some(id)))
+            .rect()
+    }
+
+    #[test]
+    fn every_feature_tab_is_reachable_by_wheel_at_1280_px() {
+        let ids = [
+            "assets.tab.media",
+            "assets.tab.sounds",
+            "assets.tab.text",
+            "assets.tab.stickers",
+            "assets.tab.effects",
+            "assets.tab.transitions",
+            "assets.tab.captions",
+            "assets.tab.adjustment",
+        ];
+        let mut bench = bench();
+        assert!(
+            tab(&bench, "assets.tab.adjustment").right() > PANEL,
+            "fixture: the strip must overflow the panel"
+        );
+        for id in ids {
+            for _ in 0..60 {
+                let rect = tab(&bench, id);
+                if rect.left() >= -0.5 && rect.right() <= PANEL + 0.5 {
+                    break;
+                }
+                // A negative vertical wheel reveals the right-hand tabs.
+                let turn = if rect.right() > PANEL { -120.0 } else { 120.0 };
+                let harness = bench.harness_mut();
+                harness.hover_at(egui::pos2(200.0, 21.0));
+                harness.run_steps(2);
+                harness.event(egui::Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Point,
+                    delta: egui::vec2(0.0, turn),
+                    phase: egui::TouchPhase::Move,
+                    source: egui::MouseWheelSource::Wheel,
+                    modifiers: egui::Modifiers::NONE,
+                });
+                harness.run_steps(30);
+            }
+            let rect = tab(&bench, id);
+            assert!(
+                rect.left() >= -0.5 && rect.right() <= PANEL + 0.5,
+                "{id} is not reachable by a plain wheel: {rect:?}"
+            );
+        }
     }
 }
