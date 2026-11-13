@@ -940,10 +940,10 @@ fn await_clip_outcome(harness: &mut Harness<Editor>) -> String {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         harness.run_steps(1);
-        if !has_widget(harness, "media.export.cancel") {
-            if let Some(toast) = clip_toast(harness) {
-                return toast;
-            }
+        if !has_widget(harness, "media.export.cancel")
+            && let Some(toast) = clip_toast(harness)
+        {
+            return toast;
         }
         assert!(
             Instant::now() < deadline,

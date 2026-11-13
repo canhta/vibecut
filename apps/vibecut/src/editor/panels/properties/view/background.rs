@@ -80,8 +80,8 @@ impl Panel<'_, '_> {
             self.tr(Text::ClipKindBlur),
         ];
         let cells = kit::segmented(ui, &ids, &labels, index);
-        for (position, response) in cells.iter().enumerate() {
-            self.remember(ids[position].clone(), response);
+        for (position, (id, response)) in ids.iter().zip(&cells).enumerate() {
+            self.remember(id.clone(), response);
             if !response.clicked() || position == index {
                 continue;
             }
@@ -115,8 +115,8 @@ impl Panel<'_, '_> {
             self.tr(Text::ClipBlurHeavy),
         ];
         let cells = kit::segmented(ui, &ids, &labels, index.unwrap_or(usize::MAX));
-        for (position, response) in cells.iter().enumerate() {
-            self.remember(ids[position].clone(), response);
+        for (position, (id, response)) in ids.iter().zip(&cells).enumerate() {
+            self.remember(id.clone(), response);
             if response.clicked()
                 && Some(position) != index
                 && let Some(preset) = ClipBackground::BLUR_PRESETS.get(position)

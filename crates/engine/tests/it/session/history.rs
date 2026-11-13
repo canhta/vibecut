@@ -657,6 +657,9 @@ fn a_failing_fork_transaction_drops_the_children_it_logged_and_a_good_one_applie
     assert_eq!(live.history_len(), (1, 0));
 }
 
+/// A change-summary row: its name, the commands, and the expected ids per category.
+type SummaryRow<'a> = (&'a str, Vec<Command>, [Vec<u64>; 6]);
+
 #[test]
 fn change_summary_rows_fill_one_category_each_and_an_item_can_be_in_two_lists() {
     use crate::support::control::seed;
@@ -667,7 +670,7 @@ fn change_summary_rows_fill_one_category_each_and_an_item_can_be_in_two_lists() 
         at: half,
     };
     // Added, moved, trimmed, retimed, parameters, captions.
-    let rows: Vec<(&str, Vec<Command>, [Vec<u64>; 6])> = vec![
+    let rows: Vec<SummaryRow<'_>> = vec![
         (
             "trim",
             vec![trim(1)],

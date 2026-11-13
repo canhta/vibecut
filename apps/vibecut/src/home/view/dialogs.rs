@@ -29,7 +29,7 @@ pub(super) fn show(state: &mut State, ctx: &egui::Context, look: Look) {
         let response = egui::Modal::new(egui::Id::unique("projects.rename.dialog"))
             .frame(crate::kit::dialog_frame(ctx))
             .show(ctx, |ui| {
-                crate::kit::dialog_title(ui, &title);
+                crate::kit::dialog_title(ui, title);
                 let response =
                     ui.add(egui::TextEdit::singleline(&mut dialog.name).desired_width(320.0));
                 set_author_id(&response, "projects.rename.input");
@@ -100,7 +100,7 @@ pub(super) fn show(state: &mut State, ctx: &egui::Context, look: Look) {
             .frame(crate::kit::dialog_frame(ctx))
             .show(ctx, |ui| {
                 ui.set_width(420.0);
-                crate::kit::dialog_title(ui, &title);
+                crate::kit::dialog_title(ui, title);
                 ui.label(egui::RichText::new(name).strong().size(16.0));
                 ui.label(i18n::format(
                     locale,
@@ -178,7 +178,7 @@ pub(super) fn show(state: &mut State, ctx: &egui::Context, look: Look) {
             .frame(crate::kit::dialog_frame(ctx))
             .show(ctx, |ui| {
                 ui.set_width(420.0);
-                crate::kit::dialog_title(ui, &title);
+                crate::kit::dialog_title(ui, title);
                 ui.label(prompt);
                 let names_label = names.join(", ");
                 let response =
