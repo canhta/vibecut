@@ -68,7 +68,7 @@ fn lut_cli_imports_applies_reopens_and_refuses_without_project_write() {
     let loaded = project::load(&path).unwrap().project;
     assert_eq!(loaded.data().luts.len(), 1);
     let record = &loaded.data().luts[0];
-    assert!(record.directory.join("original.cube").is_file());
+    assert!(record.directory.join("original").is_file());
     fs::remove_file(&source).unwrap();
     let budget = engine::ByteBudget::new(64 << 20).unwrap();
     let hooks = engine::ByteBudgetHooks::new(&budget, None);

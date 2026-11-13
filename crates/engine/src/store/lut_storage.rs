@@ -62,7 +62,7 @@ impl From<ControlError> for Error {
 
 const QUOTA: u64 = 256 << 20;
 const MAX_BUNDLE: u64 = (24 + 16) * 1024 * 1024 + 16384;
-const FILES: [&str; 3] = ["canonical.cube", "original.cube", "provenance.json"];
+const FILES: [&str; 3] = ["canonical.cube", "original", "provenance.json"];
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Provenance {
@@ -244,12 +244,9 @@ impl LutStore {
         context: &JobContext,
     ) -> Result<LutRecord> {
         context.check_cancelled()?;
-        if !source
-            .extension()
-            .is_some_and(|s| s.eq_ignore_ascii_case("cube"))
-        {
-            return Err(render::Error::Unsupported("only 3D cube LUTs are supported").into());
-        }
+        let format = render::lut::LutFormat::from_path(source).ok_or(render::Error::Unsupported(
+            "only 3D cube and 3dl LUTs are supported",
+        ))?;
         parents(source)?;
         let metadata = plain(source)?;
         if !metadata.is_file() || metadata.len() > render::lut::MAX_CUBE_SOURCE {
@@ -279,7 +276,7 @@ impl LutStore {
         fs::create_dir_all(&parent)?;
         let stage = super::projects::staging_directory(&parent, "lut-import")?;
         let _stage = super::projects::DirectoryGuard(Some(stage.clone()));
-        let original = stage.as_path().join("original.cube");
+        let original = stage.as_path().join("original");
         let _copy = context
             .memory_budget()
             .reserve(crate::ByteOwner::PersistentCache, 256 << 10)?;
@@ -317,7 +314,7 @@ impl LutStore {
             return Err(Error::Edit(crate::EditError::Invalid("LUT source changed")));
         }
         let (cube, source_hash) =
-            render::lut::read_cube(&original, render::lut::MAX_CUBE_SOURCE, context)?;
+            render::lut::read_lut(&original, format, render::lut::MAX_CUBE_SOURCE, context)?;
         let canonical = stage.as_path().join("canonical.cube");
         let file = fs::OpenOptions::new()
             .write(true)
