@@ -3664,22 +3664,26 @@ fn property_diamond_toggles_a_keyframe_at_the_playhead() {
             })
     };
     let history = harness.state().session.history_len();
+    // Position sits above the opacity rows just used: scroll back to it and press it.
+    crate::panels::reveal(&mut harness, "inspector.keyframe.transform.positionX");
     harness
         .get(
             By::new()
                 .predicate(|n| n.author_id() == Some("inspector.keyframe.transform.positionX")),
         )
-        .click_accesskit();
+        .click();
     harness.run_steps(2);
     assert_eq!(keys_of(&harness, "transform.positionX"), 1);
     assert_eq!(keys_of(&harness, "transform.positionY"), 1);
     assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    // Position sits above the opacity rows just used: scroll back to it and press it.
+    crate::panels::reveal(&mut harness, "inspector.keyframe.transform.positionX");
     harness
         .get(
             By::new()
                 .predicate(|n| n.author_id() == Some("inspector.keyframe.transform.positionX")),
         )
-        .click_accesskit();
+        .click();
     harness.run_steps(2);
     assert_eq!(keys_of(&harness, "transform.positionX"), 0);
     assert_eq!(keys_of(&harness, "transform.positionY"), 0);
