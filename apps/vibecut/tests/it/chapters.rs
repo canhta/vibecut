@@ -1,11 +1,14 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 //! Chapters section through the real panel: generation waits for consent, the edited title is
 //! what export writes, and every refusal and failure is shown in place.
+use crate::subtitles::fixture;
 use captions::CueTrack;
 use egui_kittest::{
     Harness,
-    kittest::{By, NodeT, Queryable},
+    kittest::{By, Queryable},
 };
+use engine::providers::TextAccess;
+use fixture::{editor, editor_with_cues, lang};
 use std::{
     collections::BTreeSet,
     path::PathBuf,
@@ -23,10 +26,6 @@ use vibecut::{
         lifecycle::EditorAction,
     },
 };
-#[path = "support/subtitles.rs"]
-mod fixture;
-use engine::providers::TextAccess;
-use fixture::{editor, editor_with_cues, lang};
 
 fn harness(editor: Editor) -> Harness<'static, Editor> {
     crate::gpu::builder()
@@ -372,13 +371,9 @@ fn chapters_without_transcript_shows_the_empty_state_and_sends_nothing() {
 
 /// Whether any widget's accessible label starts with `prefix`.
 fn has_label(h: &Harness<'_, Editor>, prefix: &str) -> bool {
-    h.query_all(By::new().predicate(|n| {
-        n.accesskit_node()
-            .label()
-            .is_some_and(|label| label.starts_with(prefix))
-    }))
-    .next()
-    .is_some()
+    h.query_all(By::new().predicate(|n| n.label().is_some_and(|label| label.starts_with(prefix))))
+        .next()
+        .is_some()
 }
 
 #[test]

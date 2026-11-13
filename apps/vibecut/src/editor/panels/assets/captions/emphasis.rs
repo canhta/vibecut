@@ -8,7 +8,7 @@ use crate::{
     i18n::Text,
     preferences::SubtitleOptions as Options,
     services::{
-        ai_access::{Consent, TextOpener},
+        ai_access::{Consent, TextOpener, TextTask},
         ai_task::TaskEvents,
     },
 };
@@ -96,8 +96,13 @@ fn outcome(error: AnalysisError) -> Outcome {
 fn suggest(input: Input) -> Result<Found, Outcome> {
     let request =
         EmphasisRequest::new(&input.project, input.item, input.cues.as_deref()).map_err(outcome)?;
-    let access = (input.opener)(&input.provider, &input.model, input.consent)
-        .map_err(|error| outcome(AnalysisError::from(error)))?;
+    let access = (input.opener)(
+        TextTask::Emphasis,
+        &input.provider,
+        &input.model,
+        input.consent,
+    )
+    .map_err(|error| outcome(AnalysisError::from(error)))?;
     let mut runner = super::job_runner(&input.budget).map_err(|_| Outcome::Failed)?;
     let job = request.submit(&mut runner, &access).map_err(outcome)?;
     loop {

@@ -27,6 +27,9 @@ candle-align = ["dep:candle-core", "dep:candle-nn", "dep:tokenizers", "dep:rustf
 whisper = ["dep:whisper-rs"]
 gipformer = ["dep:sherpa-onnx"]
 whisper-vulkan = ["whisper", "whisper-rs/vulkan"]
+# `ScriptedChat`, the deterministic chat model the agent crate's tests drive. Enabled by
+# those tests, never by a production build.
+test-chat = []
 
 [[bin]]
 name = "vibecut-local-asr"

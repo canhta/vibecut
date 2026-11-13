@@ -6,6 +6,7 @@
 mod anthropic;
 mod ledger;
 mod openai;
+#[cfg(feature = "test-chat")]
 mod scripted;
 mod sse;
 
@@ -14,6 +15,7 @@ pub use anthropic::AnthropicChat;
 use captions::NfcText;
 pub use ledger::{Ledger, default_model};
 pub use openai::OpenAiChat;
+#[cfg(feature = "test-chat")]
 pub use scripted::{Compose, ScriptedChat, ScriptedReply, ScriptedStep};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

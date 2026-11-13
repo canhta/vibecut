@@ -15,6 +15,7 @@ fn kind_name(content: &ItemParams) -> &'static str {
         ItemParams::Overlay(_) => "overlay",
         ItemParams::Graphic(_) => "graphic",
         ItemParams::Sticker(_) => "sticker",
+        ItemParams::Effect(_) => "effect",
     }
 }
 

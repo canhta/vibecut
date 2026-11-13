@@ -17,3 +17,6 @@ serde_json.workspace = true
 thiserror.workspace = true
 time.workspace = true
 transport.workspace = true
+
+[dev-dependencies]
+ai = { workspace = true, default-features = false, features = ["test-chat"] }

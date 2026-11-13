@@ -75,7 +75,8 @@ pub(in crate::editor) struct State {
 
 /// Starts the detection job for one asset and returns its id, or `None` when it refuses.
 /// Injected by tests to hold a job open deterministically; the desktop uses `media.detect_scenes`.
-pub(in crate::editor) type DetectSource = Arc<dyn Fn(&mut JobRunner, AssetId) -> Option<JobId>>;
+pub(in crate::editor) type DetectSource =
+    Arc<dyn Fn(&mut JobRunner, AssetId) -> Option<JobId> + Send + Sync>;
 
 /// What the dialog asks the frame to do after it painted.
 pub(in crate::editor) enum Action {
@@ -133,7 +134,7 @@ pub(in crate::editor) fn show(
     if !state.open {
         return actions;
     }
-    let modal = egui::Modal::new(egui::Id::new("scene_split.dialog"))
+    let modal = egui::Modal::new(egui::Id::unique("scene_split.dialog"))
         .frame(kit::dialog_frame(ui.ctx()))
         .show(ui.ctx(), |ui| {
             kit::dialog_title(ui, Text::SceneSplitTitle.text(cx.locale));
@@ -170,6 +171,7 @@ fn body(state: &State, cx: &Context<'_>, ui: &mut egui::Ui, actions: &mut Vec<Ac
         Phase::Detecting {
             progress,
             cancelling,
+            ..
         } => {
             progress::line(
                 ui,

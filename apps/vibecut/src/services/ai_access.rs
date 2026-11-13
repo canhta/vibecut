@@ -46,6 +46,7 @@ pub type TextOpener = Arc<
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TextTask {
     Chapters,
+    Emphasis,
     Fillers,
 }
 
@@ -55,6 +56,7 @@ pub fn desktop_text_opener() -> TextOpener {
     Arc::new(|task, provider, model, consent| {
         let provider = match task {
             TextTask::Chapters => engine::providers::choose_chapter(provider, Some(model))?,
+            TextTask::Emphasis => engine::providers::choose_emphasis(provider, Some(model))?,
             TextTask::Fillers => engine::providers::choose_filler(provider, Some(model))?,
         };
         TextAccess::open(

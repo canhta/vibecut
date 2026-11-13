@@ -38,10 +38,10 @@ The model cannot export, save, create, delete or open projects, download models 
 
 | Reason | Commands |
 |---|---|
-| `export` | export, subtitle burn and export, chapter sidecars, clip export, freeze frame, snapshot, save as, export bundle |
+| `export` | export, subtitle burn and export, chapter sidecars, clip export and single-clip download, freeze frame, snapshot, save as, export bundle |
 | `save` | `project.save` |
 | `project` | `project.create`, `delete`, `duplicate`, `restore`, `purge`, `thumbnail` |
-| `path` | every command that reads a source file: asset import, ASS import, LUT import, font import, bundle import, sound and music insertion |
+| `path` | every command that reads a source file: asset import, ASS import, LUT import, font import, bundle import, sound and music insertion, narration placement |
 | `history` | `undo`, `redo` (the fork has no history; discarding is the user's undo) |
 | `gesture` | gestures and timeline previews |
 | `view_state` | `project.set_view_state` |

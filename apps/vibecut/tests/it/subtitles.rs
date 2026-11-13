@@ -20,10 +20,10 @@ use vibecut::{
     AssetsTab, Editor, Subtitles, SubtitlesInspection, egui,
     i18n::{Locale, Text},
     preferences::{PreferenceStore, SubtitleOptions as Options},
-    services::ai_access::{Choice, Opener, SharedConsent, TextOpener},
+    services::ai_access::{Choice, Opener, SharedConsent, TextOpener, TextTask},
 };
 #[path = "support/subtitles.rs"]
-mod fixture;
+pub(crate) mod fixture;
 use fixture::{editor, editor_with_cues, lang};
 fn harness(editor: Editor, scale: f32) -> Harness<'static, Editor> {
     crate::gpu::builder()
@@ -3846,7 +3846,8 @@ impl ai::text::emphasis::EmphasisSelector for ScriptedEmphasis {
 
 /// The lent text access of the keyword runs: the scripted suggester behind that run's sheet.
 fn emphasis_text_opener(fail: bool, calls: Arc<AtomicUsize>) -> TextOpener {
-    Arc::new(move |provider, model, consent| {
+    Arc::new(move |task, provider, model, consent| {
+        assert_eq!(task, TextTask::Emphasis);
         let config = ai::ProviderConfig::new(
             provider.into(),
             model.into(),

@@ -790,6 +790,7 @@ impl Session {
             changed: true,
             created,
             placements,
+            skipped: Vec::new(),
             closed_span: false,
         })
     }
