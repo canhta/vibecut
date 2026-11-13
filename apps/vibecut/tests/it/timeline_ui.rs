@@ -4338,9 +4338,9 @@ fn audible_editor() -> Fixture {
 /// the gap and later main clips follow; with it off the gap stays. One undo restores both.
 #[test]
 fn split_left_on_the_main_track_closes_the_gap_only_with_magnet_on() {
-    for (magnet, after_split, after_undo_b) in [
-        (true, [0, 4 * SECOND], 6 * SECOND),
-        (false, [2 * SECOND, 6 * SECOND], 6 * SECOND),
+    for (magnet, after_split, playhead) in [
+        (true, [0, 4 * SECOND], Tick::ZERO),
+        (false, [2 * SECOND, 6 * SECOND], Tick(2 * SECOND)),
     ] {
         let fixture = fixture();
         let (video_a, video_b) = (fixture.video_a, fixture.video_b);
@@ -4361,12 +4361,13 @@ fn split_left_on_the_main_track_closes_the_gap_only_with_magnet_on() {
                 })
                 .unwrap();
         }
+        click_item(&mut h, video_a);
         h.state_mut()
             .dispatch(AppCommand::Seek(Tick(2 * SECOND)))
             .unwrap();
-        h.state_mut().select([video_a].into()).unwrap();
-        h.state_mut().activate("timeline.split_left").unwrap();
         h.run_steps(2);
+        h.key_press(egui::Key::Q);
+        h.run_steps(3);
         let starts = |h: &Harness<'_, Editor>| -> Vec<Tick> {
             h.state()
                 .session
@@ -4385,11 +4386,16 @@ fn split_left_on_the_main_track_closes_the_gap_only_with_magnet_on() {
             after_split.map(Tick).to_vec(),
             "magnet {magnet}: main starts after split left"
         );
+        assert_eq!(
+            h.state().inspect().unwrap().position,
+            playhead,
+            "magnet {magnet}: the playhead follows the kept piece only when the gap closed"
+        );
         h.state_mut().session.undo().unwrap();
         h.run_steps(2);
         assert_eq!(
             starts(&h),
-            vec![Tick::ZERO, Tick(after_undo_b)],
+            vec![Tick::ZERO, Tick(6 * SECOND)],
             "magnet {magnet}: one undo restores the main track"
         );
     }

@@ -89,6 +89,7 @@ closed, whatever the tracks: `split_at` and any split over every track keep thei
 with the magnet on. Splitting left drops the left piece and the right piece takes the cut start;
 splitting right keeps the left piece and the vacated right span closes. The edit and its shifts
 publish as one undo step ([`close_vacated_tails`](clips.rs), [session](../README.md#transactions-gestures-and-changes)).
+`Session::closes_vacated_spans(commands, ripple)` answers this decision before an edit, so a caller that moves its playhead to a kept piece asks the engine rather than repeating the magnet test.
 
 `EditError` and `AssetUsage` are declared in this owner and re-exported through Session
 and the crate. Its Result covers pure editing: safe-ID/static refusals and actual lower

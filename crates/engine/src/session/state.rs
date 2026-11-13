@@ -264,6 +264,12 @@ impl Session {
         }
         self.apply(command)
     }
+    /// Whether `timeline.edit` with these commands and ripple policy closes the span they vacate,
+    /// so a kept piece moves to the cut: the session ripple, or the main-track magnet rule.
+    /// Read-only; it answers for the current project, before the edit.
+    pub fn closes_vacated_spans(&self, commands: &[Command], ripple: bool) -> bool {
+        ripple || edit::magnet_scope(self.state.project.data(), commands).is_some()
+    }
     /// Current immutable snapshot. Timeline previews retain committed content here;
     /// explicit incremental gestures/groups expose their candidate during the transaction.
     pub fn project(&self) -> &Arc<Project> {
@@ -622,7 +628,7 @@ impl Session {
         let magnet = if ripple {
             None
         } else {
-            edit::magnet_scope(self.state.project.data(), &command)
+            edit::magnet_scope(self.state.project.data(), std::slice::from_ref(&command))
         };
         if ripple {
             edit::lift_ripple_deletes(&mut command);

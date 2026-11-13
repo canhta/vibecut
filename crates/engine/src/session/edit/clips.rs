@@ -1011,12 +1011,16 @@ pub(super) fn remove_output_ranges(
 /// or split-and-remove of listed items, and a listed item sits on the main track. The scope is
 /// every track holding a listed item, so a linked partner closes on its own track by the same
 /// rule; any other track is never shifted.
-pub(crate) fn magnet_scope(data: &ProjectData, command: &Command) -> Option<BTreeSet<TrackId>> {
+pub(crate) fn magnet_scope(data: &ProjectData, commands: &[Command]) -> Option<BTreeSet<TrackId>> {
     if !data.scene().timeline.magnet {
         return None;
     }
     let mut targets = Vec::new();
-    if !collect_removal_targets(command, &mut targets) || targets.is_empty() {
+    if !commands
+        .iter()
+        .all(|command| collect_removal_targets(command, &mut targets))
+        || targets.is_empty()
+    {
         return None;
     }
     let mut tracks = BTreeSet::new();

@@ -582,6 +582,9 @@ impl Editor {
         if commands.is_empty() {
             return Ok(());
         }
+        let closes_span = self
+            .session
+            .closes_vacated_spans(&commands, self.preferences.ripple);
         let created = self
             .session
             .apply(Command::TimelineEdit {
@@ -625,8 +628,9 @@ impl Editor {
             | EngineAction::Align(_)
             | EngineAction::Distribute(_) => self.prune_selection(),
         }
+        // The kept right piece moves to the cut only when the engine closed the span.
         if route == EngineAction::SplitLeft
-            && self.preferences.ripple
+            && closes_span
             && let Some(start) = created_items
                 .iter()
                 .filter_map(|id| {
