@@ -193,13 +193,11 @@ fn body(state: &State, cx: &Context<'_>, ui: &mut egui::Ui, actions: &mut Vec<Ac
             );
         }
         Phase::Review { result, selected } => {
-            let found = i18n::format(
+            let found = i18n::format_count(
                 cx.locale,
-                Text::SceneSplitFound,
-                &[(
-                    "count",
-                    &i18n::number(cx.locale, result.candidates.len() as u64),
-                )],
+                result.candidates.len() as u64,
+                Text::SceneSplitFoundOne,
+                Text::SceneSplitFoundOther,
             );
             ui.label(found);
             for (index, candidate) in result.candidates.iter().enumerate() {
@@ -209,6 +207,7 @@ fn body(state: &State, cx: &Context<'_>, ui: &mut egui::Ui, actions: &mut Vec<Ac
                     ChangeKind::Fade => tr(Text::SceneSplitFade),
                 };
                 let label = format!("{} · {kind}", seconds(candidate.at));
+                let label = egui::RichText::new(label).color(kit::text(cx.dark));
                 let response = ui.checkbox(&mut on, label);
                 let changed = response.changed();
                 actions.push(Action::Remember(

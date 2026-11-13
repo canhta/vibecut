@@ -2636,6 +2636,8 @@ enum LoudnessSource {
     Silent,
     /// Every block fails, so the job ends failed.
     Fail,
+    /// The first block's source file is missing, so the job ends failed with that cause.
+    Missing,
     /// Reports its first block on `entered`, then holds until `open` is set.
     Hold {
         entered: std::sync::mpsc::Sender<()>,
@@ -2665,8 +2667,8 @@ impl render::SourceProvider for LoudnessSource {
 
     fn audio(
         &mut self,
-        _: &SourceAsset,
-        _: ItemId,
+        asset: &SourceAsset,
+        item: ItemId,
         _start: i64,
         frames: usize,
         rate: u32,
@@ -2675,6 +2677,12 @@ impl render::SourceProvider for LoudnessSource {
         match self {
             Self::Silent => silent_block(frames, rate, hooks),
             Self::Fail => Err(render::Error::Invalid("source audio block")),
+            Self::Missing => Err(render::Error::Unavailable(vec![render::Unavailable {
+                asset: asset.id(),
+                item,
+                range: SourceRange::new(Tick::ZERO, Tick(1))?,
+                reason: render::UnavailableReason::Missing,
+            }])),
             Self::Hold { entered, open } => {
                 let _ = entered.send(());
                 let (lock, wake) = &**open;
@@ -2776,33 +2784,44 @@ fn loudness_held_measurement_shows_progress_and_cancel_keeps_gains_and_target() 
 }
 
 #[test]
-fn loudness_failed_measurement_shows_the_reason_and_applies_nothing() {
-    let fixture = fixture();
-    let mut harness = build(fixture.editor);
-    harness.run_steps(3);
-    select(&mut harness, fixture.audio);
-    click(&mut harness, "inspector.loudness.clip");
-    let target = loudness_of(&harness).clip;
-    harness
-        .state_mut()
-        .session
-        .set_loudness_sources(loudness_sources(LoudnessSource::Fail));
-    let history = harness.state().session.history_len().0;
-
-    click(&mut harness, "inspector.loudness.apply");
-    settle_loudness(&mut harness);
-    harness.run_steps(2);
-    // The status line sits below Apply; bring it into the panel before reading it.
-    reveal(&mut harness, "inspector.loudness.status");
-    assert_eq!(loudness_of(&harness).measured, None);
-    assert_eq!(loudness_of(&harness).clip, target);
-    assert_eq!(harness.state().session.history_len().0, history);
-    assert!(
+fn loudness_failed_measurement_names_its_cause_and_applies_nothing() {
+    // Each engine failure code reaches the panel as its own cause; none applies gains.
+    let rows = [
+        (
+            LoudnessSource::Fail,
+            "Measurement failed: the engine could not finish the measurement",
+        ),
+        (
+            LoudnessSource::Missing,
+            "Measurement failed: a source file is missing or changed",
+        ),
+    ];
+    for (source, line) in rows {
+        let fixture = fixture();
+        let mut harness = build(fixture.editor);
+        harness.run_steps(3);
+        select(&mut harness, fixture.audio);
+        click(&mut harness, "inspector.loudness.clip");
+        let target = loudness_of(&harness).clip;
         harness
-            .query(By::new().label_contains("Measurement failed"))
-            .is_some(),
-        "the failure reason shows on the Audio tab"
-    );
+            .state_mut()
+            .session
+            .set_loudness_sources(loudness_sources(source));
+        let history = harness.state().session.history_len().0;
+
+        click(&mut harness, "inspector.loudness.apply");
+        settle_loudness(&mut harness);
+        harness.run_steps(2);
+        // The status line sits below Apply; bring it into the panel before reading it.
+        reveal(&mut harness, "inspector.loudness.status");
+        assert_eq!(loudness_of(&harness).measured, None, "{line}");
+        assert_eq!(loudness_of(&harness).clip, target, "{line}");
+        assert_eq!(harness.state().session.history_len().0, history, "{line}");
+        assert!(
+            harness.query(By::new().label_contains(line)).is_some(),
+            "the failure cause shows on the Audio tab: {line}"
+        );
+    }
 }
 
 #[test]
