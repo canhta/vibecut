@@ -29,6 +29,7 @@ impl Panel<'_, '_> {
                     let fade_out = panel.fade_scrub(item, project::FadeEdge::Out);
                     panel.slider_row(ui, item, fade_out);
                     panel.noise_reduction_row(ui, item);
+                    panel.voice_enhancement_rows(ui, item);
                 });
             },
         );
@@ -55,6 +56,65 @@ impl Panel<'_, '_> {
         if response.clicked() {
             self.actions
                 .push(Action::SetNoiseReduction { item, enabled: !on });
+        }
+    }
+
+    /// Voice enhancement: one switch over the preset's cleanup effects, and while it is on a
+    /// Strength row of three dry/wet mixes. The row is [new]: the reference capture has no
+    /// equivalent. The preset's parameters stay ordinary chain effects reachable through
+    /// `audio.*_cleanup_effect`.
+    fn voice_enhancement_rows(&mut self, ui: &mut egui::Ui, item: ItemId) {
+        let project = self.cx.session.project();
+        let on = read::voice_enhancement_on(project, item);
+        let strength = read::voice_enhancement_strength(project, item);
+        let mut value = on;
+        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        self.row_label(ui, row, self.tr(Text::VoiceEnhancement));
+        let width = value_ui.available_width();
+        value_ui.add_space((width - theme::size::TOGGLE_WIDTH).max(0.0));
+        let response = kit::toggle(
+            &mut value_ui,
+            "inspector.voice_enhance.toggle",
+            &mut value,
+            self.tr(Text::VoiceEnhancement),
+        );
+        self.remember("inspector.voice_enhance.toggle", &response);
+        if response.clicked() {
+            self.actions.push(Action::SetVoiceEnhancement {
+                item,
+                enabled: !on,
+            });
+        }
+        if !on {
+            return;
+        }
+        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        self.row_label(ui, row, self.tr(Text::VoiceEnhancementStrength));
+        let levels = [
+            ("light", Text::VoiceEnhancementLight, 40.0),
+            ("medium", Text::VoiceEnhancementMedium, 70.0),
+            ("full", Text::VoiceEnhancementFull, 100.0),
+        ];
+        let ids: Vec<String> = levels
+            .iter()
+            .map(|(name, _, _)| format!("inspector.voice_enhance.strength.{name}"))
+            .collect();
+        let labels: Vec<&str> = levels.iter().map(|(_, text, _)| self.tr(*text)).collect();
+        let selected = levels
+            .iter()
+            .position(|(_, _, wet)| strength.is_some_and(|mix| (mix - wet).abs() < 0.5))
+            .unwrap_or(usize::MAX);
+        let cells = kit::segmented(&mut value_ui, &ids, &labels, selected);
+        for (index, ((id, cell), (_, _, wet_percent))) in
+            ids.iter().zip(&cells).zip(&levels).enumerate()
+        {
+            self.remember(id.clone(), cell);
+            if cell.clicked() && index != selected {
+                self.actions.push(Action::SetVoiceEnhancementStrength {
+                    item,
+                    wet_percent: *wet_percent,
+                });
+            }
         }
     }
 

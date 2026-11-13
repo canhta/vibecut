@@ -81,6 +81,66 @@ pub const NOISE_REDUCTION_DEFAULT: CleanupKind = CleanupKind::NoiseReduction {
     smoothing_percent: 50.0,
 };
 
+/// First id of the voice enhancement preset's effects. The preset owns this block of ids so an
+/// item's chain shows which effects it applied; ordinary effects take the next free id.
+pub const VOICE_ENHANCEMENT_FIRST_ID: u32 = 1_000_000;
+/// Number of effects the voice enhancement preset adds.
+pub const VOICE_ENHANCEMENT_EFFECTS: u32 = 3;
+
+/// True when `id` belongs to the voice enhancement preset.
+pub fn is_voice_enhancement_id(id: u32) -> bool {
+    (VOICE_ENHANCEMENT_FIRST_ID..VOICE_ENHANCEMENT_FIRST_ID + VOICE_ENHANCEMENT_EFFECTS)
+        .contains(&id)
+}
+
+/// The one-click voice enhancement preset: an 80 Hz high-pass against rumble, spectral noise
+/// reduction at `NOISE_REDUCTION_DEFAULT` strength, then a parametric equaliser with a 250 Hz
+/// mud cut, a 2.5 kHz presence boost and a 10 kHz air shelf (the structure reference's
+/// SpeechEnhance bands for a low voice). Noise reduction runs before the boosts so they cannot
+/// lift the floor it removes. Every effect is an ordinary chain effect: tune, disable or remove
+/// any of them with the `audio.*_cleanup_effect` commands. Loudness stays with the project's
+/// normalizer, which measures the chain's output, so the preset never levels twice.
+pub fn voice_enhancement_effects() -> [CleanupEffect; VOICE_ENHANCEMENT_EFFECTS as usize] {
+    let band = |kind, frequency_hz, gain_db, q| EqBand {
+        kind,
+        enabled: true,
+        frequency_hz,
+        gain_db,
+        q,
+    };
+    [
+        CleanupEffect {
+            id: VOICE_ENHANCEMENT_FIRST_ID,
+            enabled: true,
+            wet_percent: 100.0,
+            kind: CleanupKind::Highpass { cutoff_hz: 80.0 },
+        },
+        CleanupEffect {
+            id: VOICE_ENHANCEMENT_FIRST_ID + 1,
+            enabled: true,
+            wet_percent: 100.0,
+            kind: NOISE_REDUCTION_DEFAULT,
+        },
+        CleanupEffect {
+            id: VOICE_ENHANCEMENT_FIRST_ID + 2,
+            enabled: true,
+            wet_percent: 100.0,
+            kind: CleanupKind::ParametricEq {
+                bands: vec![
+                    band(EqBandKind::Peaking, 250.0, -3.0, 1.0),
+                    band(EqBandKind::Peaking, 2500.0, 4.0, 1.0),
+                    band(
+                        EqBandKind::HighShelf,
+                        10_000.0,
+                        2.0,
+                        std::f32::consts::FRAC_1_SQRT_2,
+                    ),
+                ],
+            },
+        },
+    ]
+}
+
 /// Mains supply frequency of a hum removal.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]

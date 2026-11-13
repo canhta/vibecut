@@ -53,3 +53,54 @@ pub(super) fn set_noise_reduction(port: &mut Port<'_>, item: ItemId, enabled: bo
     port.apply_result(command)?;
     Ok(())
 }
+
+/// The Voice enhancement preset over the item's cleanup chain. `enabled` adds the preset's
+/// effects (when missing and turning on) or sets every present one on or off; `wet_percent`
+/// sets the mix of every present or added one. Values the user tuned stay. All edits go in one
+/// batch, so one undo step, and nothing changes when nothing would.
+pub(super) fn set_voice_enhancement(
+    port: &mut Port<'_>,
+    item: ItemId,
+    enabled: Option<bool>,
+    wet_percent: Option<f32>,
+) -> Result<()> {
+    let project = port.view().session.project();
+    let present = read::cleanup_effects(project, item).ok_or(Error::Invalid(
+        "voice enhancement needs an audio or video item",
+    ))?;
+    let mut commands = Vec::new();
+    for want in project::voice_enhancement_effects() {
+        match present.iter().find(|effect| effect.id == want.id) {
+            Some(effect) => {
+                let changed = project::CleanupEffect {
+                    enabled: enabled.unwrap_or(effect.enabled),
+                    wet_percent: wet_percent.unwrap_or(effect.wet_percent),
+                    ..effect.clone()
+                };
+                if changed != *effect {
+                    commands.push(engine::Command::UpdateCleanupEffect {
+                        item,
+                        effect: changed,
+                    });
+                }
+            }
+            None if enabled == Some(true) => {
+                commands.push(engine::Command::AddCleanupEffect {
+                    item,
+                    effect: project::CleanupEffect {
+                        wet_percent: wet_percent.unwrap_or(want.wet_percent),
+                        ..want
+                    },
+                });
+            }
+            None => {}
+        }
+    }
+    let command = match commands.len() {
+        0 => return Ok(()),
+        1 => commands.remove(0),
+        _ => engine::Command::Batch { commands },
+    };
+    port.apply_result(command)?;
+    Ok(())
+}

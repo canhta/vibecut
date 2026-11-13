@@ -1023,6 +1023,11 @@ catalog! {
     TextStroke { key: "text_stroke", en: "Stroke", vi: "Viền" },
     TextStyleSection { key: "text_style_section", en: "Style", vi: "Kiểu" },
     TextUnderlineGlyph { key: "text_underline_glyph", en: "U", vi: "U" },
+    VoiceEnhancement { key: "voice_enhancement", en: "Voice enhancement", vi: "Làm rõ giọng nói" },
+    VoiceEnhancementFull { key: "voice_enhancement_full", en: "Full", vi: "Đầy đủ" },
+    VoiceEnhancementLight { key: "voice_enhancement_light", en: "Light", vi: "Nhẹ" },
+    VoiceEnhancementMedium { key: "voice_enhancement_medium", en: "Medium", vi: "Vừa" },
+    VoiceEnhancementStrength { key: "voice_enhancement_strength", en: "Strength", vi: "Cường độ" },
     WeightBold { key: "weight_bold", en: "Bold", vi: "Đậm" },
 
     // Text animation.

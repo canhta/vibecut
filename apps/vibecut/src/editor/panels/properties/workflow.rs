@@ -107,6 +107,12 @@ fn route(state: &mut State, port: &mut Port<'_>, actions: Vec<Action>) {
             Action::SetNoiseReduction { item, enabled } => {
                 audio::set_noise_reduction(port, item, enabled)
             }
+            Action::SetVoiceEnhancement { item, enabled } => {
+                audio::set_voice_enhancement(port, item, Some(enabled), None)
+            }
+            Action::SetVoiceEnhancementStrength { item, wet_percent } => {
+                audio::set_voice_enhancement(port, item, None, Some(wet_percent))
+            }
             Action::SetReverse { item, reverse } => speed::set_reverse(port, item, reverse),
             Action::SetTransitionDuration {
                 transition,

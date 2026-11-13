@@ -2073,6 +2073,74 @@ fn opacity_and_audio_gain_scrub_through_their_tabs() {
     harness.state_mut().session.undo().unwrap();
     harness.run_steps(2);
     assert_eq!(cleanup(&harness), off);
+
+    // Voice enhancement ([new]) is one batched preset over the same chain: on adds its three
+    // effects, Strength retunes all three, off disables them keeping the tuned values, and
+    // each click is one undo step. The Noise reduction switch does not touch the preset's own
+    // noise reduction effect.
+    assert!(has_widget(&harness, "inspector.voice_enhance.toggle"));
+    assert!(!has_widget(&harness, "inspector.voice_enhance.strength.full"));
+    let preset = |chain: &project::AudioCleanup| {
+        chain
+            .effects
+            .iter()
+            .filter(|effect| project::is_voice_enhancement_id(effect.id))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    let before = cleanup(&harness);
+    assert!(preset(&before).is_empty());
+    let loudness = harness.state().session.project().settings.loudness.clone();
+    let history = harness.state().session.history_len().0;
+    click(&mut harness, "inspector.voice_enhance.toggle");
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    let applied = cleanup(&harness);
+    assert_eq!(applied.effects.len(), before.effects.len() + 3);
+    assert_eq!(&applied.effects[..before.effects.len()], &before.effects[..]);
+    assert_eq!(preset(&applied), project::voice_enhancement_effects());
+    assert!(has_widget(&harness, "inspector.voice_enhance.strength.full"));
+    click(&mut harness, "inspector.voice_enhance.strength.light");
+    assert_eq!(harness.state().session.history_len().0, history + 2);
+    let tuned = preset(&cleanup(&harness));
+    assert_eq!(tuned.len(), 3);
+    for (tuned, original) in tuned.iter().zip(project::voice_enhancement_effects()) {
+        assert_eq!(tuned.wet_percent, 40.0);
+        assert_eq!(tuned.kind, original.kind);
+    }
+    click(&mut harness, "inspector.voice_enhance.toggle");
+    assert_eq!(harness.state().session.history_len().0, history + 3);
+    let bypassed = preset(&cleanup(&harness));
+    assert_eq!(bypassed.len(), 3);
+    assert!(bypassed.iter().all(|effect| !effect.enabled));
+    assert!(bypassed.iter().all(|effect| effect.wet_percent == 40.0));
+    assert!(!has_widget(&harness, "inspector.voice_enhance.strength.full"));
+    // The user's own noise reduction switch still reads its own effect, not the preset's.
+    click(&mut harness, "inspector.noise_reduction.toggle");
+    let own = cleanup(&harness);
+    assert!(own.effects[0].enabled);
+    assert_eq!(preset(&own), bypassed);
+    harness.state_mut().session.undo().unwrap();
+    harness.run_steps(2);
+    click(&mut harness, "inspector.voice_enhance.toggle");
+    let again = preset(&cleanup(&harness));
+    assert!(again.iter().all(|effect| effect.enabled));
+    assert!(again.iter().all(|effect| effect.wet_percent == 40.0));
+    // The preset never touches the project's loudness targets or measured gains, so enabling
+    // or bypassing it cannot compound the normalizer.
+    assert_eq!(
+        harness.state().session.project().settings.loudness,
+        loudness
+    );
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/p2-ai-02-voice-enhance.png");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    harness.render().unwrap().save(&path).unwrap();
+    // Undo walks the batches back: re-enable, bypass, strength, apply.
+    for _ in 0..4 {
+        harness.state_mut().session.undo().unwrap();
+    }
+    harness.run_steps(2);
+    assert_eq!(cleanup(&harness), off);
 }
 
 #[test]

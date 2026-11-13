@@ -94,7 +94,38 @@ pub(super) fn noise_reduction(
     cleanup_of(&find(project, item)?.content)?
         .effects
         .iter()
-        .find(|effect| matches!(effect.kind, project::CleanupKind::NoiseReduction { .. }))
+        .find(|effect| {
+            !project::is_voice_enhancement_id(effect.id)
+                && matches!(effect.kind, project::CleanupKind::NoiseReduction { .. })
+        })
+}
+
+/// The cleanup effects of an audible item; other kinds carry none.
+pub(super) fn cleanup_effects(
+    project: &project::Project,
+    item: ItemId,
+) -> Option<&[project::CleanupEffect]> {
+    Some(&cleanup_of(&find(project, item)?.content)?.effects)
+}
+
+/// True while every effect of the voice enhancement preset is in the item's chain and enabled.
+pub(super) fn voice_enhancement_on(project: &project::Project, item: ItemId) -> bool {
+    let Some(effects) = cleanup_effects(project, item) else {
+        return false;
+    };
+    project::voice_enhancement_effects().iter().all(|want| {
+        effects
+            .iter()
+            .any(|effect| effect.id == want.id && effect.enabled)
+    })
+}
+
+/// The preset's strength: the mix of its noise reduction effect, while the preset is in the chain.
+pub(super) fn voice_enhancement_strength(project: &project::Project, item: ItemId) -> Option<f32> {
+    cleanup_effects(project, item)?
+        .iter()
+        .find(|effect| effect.id == project::VOICE_ENHANCEMENT_FIRST_ID + 1)
+        .map(|effect| effect.wet_percent)
 }
 
 /// The smallest id above every effect id of an audible item's cleanup chain.

@@ -90,7 +90,14 @@ smoothing, full mix) or enables the item's existing one; off disables it and kee
 `audio.add_cleanup_effect` or `audio.update_cleanup_effect` undo step, and the switch reads on only while the item's
 first noise reduction effect is enabled. A chain already holding eight effects refuses the add through the error line.
 Equaliser bands have no control here: the capture shows no equaliser, so `audio.*_cleanup_effect` is their only
-surface. A Normalize loudness row is not here yet: the loudness controls have not landed.
+surface. A Voice enhancement switch ([new], no reference evidence) follows it (`inspector.voice_enhance.toggle`): on adds the
+`project::voice_enhancement_effects` preset (80 Hz high-pass, noise reduction, three-band equaliser, ids from
+`VOICE_ENHANCEMENT_FIRST_ID`) or enables the ones present; off disables them and keeps tuned values. The switch reads on only
+while all three are present and enabled, and the Noise reduction switch ignores the preset's own noise reduction effect. While
+on, a Strength row (`inspector.voice_enhance.strength.{light,medium,full}`) sets every preset effect's dry/wet mix to 40, 70 or
+100 percent. Each click is one batched edit, so one undo step. The preset adds no gain stage: loudness stays with the project
+normalizer, which measures the chain's output, so bypassing the preset never changes what the normalizer applied. The preset's
+individual bands and cutoff have no control (no reference evidence); they are reachable through `audio.*_cleanup_effect`. A Normalize loudness row is not here yet: the loudness controls have not landed.
 
 ## Transition inspector
 

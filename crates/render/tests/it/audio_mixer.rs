@@ -665,7 +665,7 @@ fn declick() -> project::CleanupKind {
 /// Left plane of `seconds` of the mix, requested in blocks of the `partition` sizes.
 fn mix_synth(
     p: &project::Project,
-    source: &mut Synth,
+    source: &mut impl SourceProvider,
     seconds: usize,
     partition: &[usize],
 ) -> Vec<f32> {
@@ -886,4 +886,133 @@ fn delayed_cleanup_is_identical_across_partitions_seeks_and_offline_export() {
         let block = mixer.mix(start as i64, 111, &mut source, &h).unwrap();
         assert_eq!(block.planes()[0], offline[start..start + 111], "{start}");
     }
+}
+
+/// Deterministic voiced speech stand-in: a 140 Hz harmonic stack to 2.8 kHz in half-second
+/// bursts (0.5 s on, 0.5 s off) over white noise at 0.02 and a 45 Hz rumble at 0.03.
+struct Voiced;
+impl Voiced {
+    fn value(n: i64) -> f32 {
+        let t = n as f64 / 48_000.0;
+        let tau = 2.0 * std::f64::consts::PI;
+        let speech = if (n / 24_000) % 2 == 1 {
+            (1..=20)
+                .map(|h| 0.08 / h as f64 * (tau * 140.0 * h as f64 * t).sin())
+                .sum::<f64>() as f32
+        } else {
+            0.0
+        };
+        speech + 0.02 * uniform(n) + 0.03 * (tau * 45.0 * t).sin() as f32
+    }
+}
+impl SourceProvider for Voiced {
+    fn status(
+        &mut self,
+        _: &media::SourceAsset,
+        _: bool,
+        _: &dyn ExecutionHooks,
+    ) -> Result<Option<UnavailableReason>> {
+        Ok(None)
+    }
+    fn video(
+        &mut self,
+        _: &media::SourceAsset,
+        _: project::ItemId,
+        _: Tick,
+        _: &dyn ExecutionHooks,
+    ) -> Result<Option<Image>> {
+        Ok(None)
+    }
+    fn audio(
+        &mut self,
+        _: &media::SourceAsset,
+        _: project::ItemId,
+        start: i64,
+        frames: usize,
+        rate: u32,
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<AudioBlock> {
+        let mut out = AudioBlock::new(rate, 2, frames, MemoryKind::Decoded, hooks)?;
+        for plane in out.planes_mut() {
+            for (n, sample) in plane.iter_mut().enumerate() {
+                *sample = Self::value(start + n as i64);
+            }
+        }
+        Ok(out)
+    }
+}
+
+#[test]
+fn voice_enhancement_preset_lifts_speech_over_noise_without_pumping_and_bypass_is_identity() {
+    // Metric, fixed before the chain was written: speech-to-noise ratio in dB, the RMS of the
+    // middle halves of the speech-on half seconds over the RMS of the middle halves of the
+    // speech-off ones, on the eight second fixture above. Pass: the preset raises it by at
+    // least 6 dB (the noise reduction stage alone is designed for 12), moves the speech level
+    // by less than 3 dB, holds the speech-on gain change across 50 ms windows within 3 dB (no
+    // pumping), peaks below 0.9, and leaves the sample grid aligned (latency is the noise
+    // reduction frame only).
+    let seconds = 8;
+    let half = 24_000;
+    let mix = |p: &project::Project, partition: &[usize]| {
+        mix_synth(p, &mut Voiced, seconds, partition)
+    };
+    let plain = mix(&fixture_of(8), &[65536]);
+    let preset = project::voice_enhancement_effects().to_vec();
+    let enhanced_project = with_cleanup(fixture_of(8), preset.clone());
+    let enhanced = mix(&enhanced_project, &[65536]);
+    let middle = |k: usize| k * half + half / 4..k * half + 3 * half / 4;
+    let gather = |signal: &[f32], ks: &[usize]| -> Vec<f32> {
+        ks.iter()
+            .flat_map(|k| signal[middle(*k)].iter().copied())
+            .collect()
+    };
+    let (speech, noise) = ([13usize, 15], [12usize, 14]);
+    let ratio = |signal: &[f32]| {
+        20.0 * (rms(&gather(signal, &speech)) / rms(&gather(signal, &noise))).log10()
+    };
+    let gain = ratio(&enhanced) - ratio(&plain);
+    assert!(gain >= 6.0, "speech-to-noise ratio only rose {gain} dB");
+    let level = 20.0
+        * (rms(&gather(&enhanced, &speech)) / rms(&gather(&plain, &speech))).log10();
+    assert!(level.abs() < 3.0, "speech level moved {level} dB");
+    let peak = enhanced.iter().fold(0.0f32, |m, x| m.max(x.abs()));
+    assert!(peak < 0.9, "peak {peak}");
+    // No pumping: the enhanced-to-plain level ratio stays steady across 50 ms windows of speech.
+    let window = 2_400;
+    let mut ratios = Vec::new();
+    for k in speech {
+        for w in 0..(half / 2) / window {
+            let at = middle(k).start + w * window;
+            let (e, p) = (&enhanced[at..at + window], &plain[at..at + window]);
+            ratios.push(20.0 * (rms(e) / rms(p)).log10());
+        }
+    }
+    let spread = ratios.iter().fold(f32::MIN, |m, r| m.max(*r))
+        - ratios.iter().fold(f32::MAX, |m, r| m.min(*r));
+    assert!(spread < 3.0, "gain changes {spread} dB across speech");
+    // Preview and export agree for any block partition, and the chain's only delay is the
+    // noise reduction frame, which the mix graph compensates.
+    assert_eq!(enhanced, mix(&enhanced_project, &[1, 7, 1031, 4093]));
+    let h = Hooks::default();
+    let mixer = AudioMixer::new(&enhanced_project, 2, 0, &h).unwrap();
+    assert_eq!(mixer.cleanup_latency_samples(), 2048);
+    // Bypass: every preset effect disabled, or at zero mix, is bit-identical to no chain.
+    let off = preset
+        .iter()
+        .cloned()
+        .map(|mut effect| {
+            effect.enabled = false;
+            effect
+        })
+        .collect();
+    assert_eq!(plain, mix(&with_cleanup(fixture_of(8), off), &[65536]));
+    let dry = preset
+        .iter()
+        .cloned()
+        .map(|mut effect| {
+            effect.wet_percent = 0.0;
+            effect
+        })
+        .collect();
+    assert_eq!(plain, mix(&with_cleanup(fixture_of(8), dry), &[65536]));
 }
