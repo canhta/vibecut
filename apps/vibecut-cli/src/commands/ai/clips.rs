@@ -695,6 +695,7 @@ fn layouts_row(reason: engine::control::ClipShotsDiagnostic) -> String {
     let label = match reason {
         Reason::DetectorUnavailable => "no face detector",
         Reason::ModelsMissing => "face model not installed",
+        Reason::ModelsBusy => "face model in use by a download; export again after it finishes",
         Reason::Pending { .. } => "shot analysis started; export again to use it",
         Reason::Failed => "shot analysis failed",
     };

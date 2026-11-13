@@ -18,6 +18,9 @@ pub type ModelLookup = Arc<
 /// come from the root's `lookup` and are never downloaded here: a missing bundle returns
 /// the typed `ModelMissing` refusal, which clip analysis reports as `models_missing` and
 /// the CLI reframe command turns into the `model download yunet-2026may` setup message.
+/// A lookup that finds the cache in use (a model transfer runs) returns `CacheBusy` at once
+/// and this loader passes it through unchanged, so analysis reports `models_busy`, never
+/// missing weights; nothing here waits, because the caller may be a UI thread.
 pub fn installed_faces(lookup: ModelLookup) -> VisionAccess {
     VisionAccess::new(move || {
         let model = engine::models::catalog_model(MODEL)?;

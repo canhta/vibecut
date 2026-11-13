@@ -137,7 +137,7 @@ pub fn resolve_clip_shots(
     media: Option<&std::sync::Mutex<super::MediaAccess>>,
     vision: Option<&super::VisionAccess>,
 ) -> Result<(Vec<crate::ShotAnalysis>, Option<ClipShotsDiagnostic>)> {
-    use ClipShotsDiagnostic::{DetectorUnavailable, Failed, ModelsMissing};
+    use ClipShotsDiagnostic::{DetectorUnavailable, Failed, ModelsBusy, ModelsMissing};
     let Some(range) = pieces
         .iter()
         .map(|range| range.start())
@@ -150,8 +150,15 @@ pub fn resolve_clip_shots(
     let (Some(vision), Some(media)) = (vision, media) else {
         return Ok((Vec::new(), Some(DetectorUnavailable)));
     };
-    let Ok((detector, models)) = vision.load() else {
-        return Ok((Vec::new(), Some(ModelsMissing)));
+    let (detector, models) = match vision.load() {
+        Ok(loaded) => loaded,
+        // A transfer holds the shared cache for its whole run: the weights are not known to
+        // be absent, and the lookup never waits here (this runs on the caller's thread).
+        Err(
+            EngineError::Runtime(crate::RuntimeError::CacheBusy)
+            | EngineError::Models(crate::models::Error::Runtime(crate::RuntimeError::CacheBusy)),
+        ) => return Ok((Vec::new(), Some(ModelsBusy))),
+        Err(_) => return Ok((Vec::new(), Some(ModelsMissing))),
     };
     let mut speech: Vec<SourceRange> = cues
         .iter()
