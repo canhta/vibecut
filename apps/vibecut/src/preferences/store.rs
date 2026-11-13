@@ -223,6 +223,10 @@ mod tests {
                 serde_json::json!([[10, 20, 30, 0], [255, 0, 100, 128]]),
             ),
             (
+                "sticker_recents",
+                serde_json::json!(["flags:VN", "graphic.insert.star"]),
+            ),
+            (
                 "timeline_lanes",
                 serde_json::json!({"12": [3, 4], "13": [7]}),
             ),

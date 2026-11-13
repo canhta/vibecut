@@ -18,7 +18,7 @@ pub use caption::style_from_cue;
 pub use captions::{CaptionBackground, CaptionOutline, CaptionPosition, CaptionStyle};
 use project::{AnimationPath, ItemId, Project};
 pub use raster::sticker::{
-    FLAGS_PROVIDER, MAX_STICKER_RASTER_SIDE, SHAPES_PROVIDER, StickerError, StickerRaster,
+    FLAGS_PROVIDER, MAX_STICKER_RASTER_SIDE, StickerError, StickerRaster,
     rasterize_sticker,
 };
 use raster::{TextEntry, TextKey};

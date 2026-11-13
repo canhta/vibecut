@@ -1810,10 +1810,10 @@ fn graphic_effect_mask_transform_and_final_opacity_keep_the_shared_stage_order()
     );
 }
 
-/// Sticker pixels: a flag SVG rasterises solid at several sizes, shapes reuse the graphic
-/// contours, and an asset that cannot be drawn paints a placeholder and reports a typed error.
+/// Sticker pixels: a flag SVG rasterises solid at several sizes, and an asset that cannot be drawn
+/// (a missing flag or a shape id) paints a placeholder and reports a typed error.
 #[test]
-fn stickers_draw_flags_and_shapes_and_report_missing_assets_with_a_placeholder() {
+fn stickers_draw_flags_and_report_missing_assets_with_a_placeholder() {
     use project::{ItemParams, StickerParams, TrackKind};
     for (w, h) in [(64_u32, 48_u32), (640, 480), (1920, 1440)] {
         let raster = rasterize_sticker("flags:VN", w, h).unwrap();
@@ -1867,21 +1867,15 @@ fn stickers_draw_flags_and_shapes_and_report_missing_assets_with_a_placeholder()
     assert!(corner[3] > 0.99 && corner[0] > 0.5 && corner[1] < 0.05);
     assert_eq!(at(&flag, 64, 4)[3], 0., "above the flag box");
 
-    // Shapes: the placement is the 512 author square scaled to the canvas.
-    let (circle, errors) = render("shapes:circle", (512, 512));
-    assert!(errors.is_empty());
-    assert!(at(&circle, 64, 64)[3] > 0.99 && at(&circle, 1, 1)[3] < 0.01);
-    let (diamond, _) = render("shapes:diamond", (512, 512));
-    for (x, y, inside) in [
-        (64, 10, true),
-        (10, 64, true),
-        (20, 20, false),
-        (4, 4, false),
-    ] {
-        assert_eq!(at(&diamond, x, y)[3] > 0.99, inside, "diamond ({x}, {y})");
-    }
-    let (star, _) = render("shapes:star", (512, 512));
-    assert!(at(&star, 64, 64)[3] > 0.99 && at(&star, 1, 1)[3] < 0.01);
+    // Shapes are graphic items; a shape-provider id is not a sticker and paints the placeholder.
+    let (shape_id, errors) = render("shapes:star", (512, 512));
+    assert_eq!(
+        errors,
+        [StickerError::Missing {
+            sticker: "shapes:star".into()
+        }]
+    );
+    assert!(at(&shape_id, 1, 17)[3] > 0.9, "placeholder border");
 
     // A missing asset keeps the frame, paints the placeholder border and names the sticker.
     let (missing, errors) = render("flags:zz", (640, 480));

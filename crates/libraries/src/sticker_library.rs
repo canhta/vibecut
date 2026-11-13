@@ -1,21 +1,16 @@
-//! Bundled sticker ids and the catalogs the Stickers panel searches.
+//! Bundled sticker ids and the flag catalog the Stickers panel searches. Stickers are flags only;
+//! shapes are graphic items inserted by their own commands.
 mod catalog;
 mod flags;
 mod recents;
 mod search;
 
-pub use catalog::{FLAG_SIZE, SHAPE_SIZE, insert_sticker, resolve_sticker, search_catalog};
+pub use catalog::{FLAG_SIZE, insert_sticker, resolve_sticker, search_catalog};
 pub use recents::{MAX_RECENT_STICKERS, Recents};
-pub use search::{
-    DEFAULT_SEARCH_LIMIT, FlagMatch, FlagPage, ShapeMatch, search_flags, search_shapes,
-};
+pub use search::{DEFAULT_SEARCH_LIMIT, FlagMatch, FlagPage, search_flags};
 
 /// Provider id of the bundled country flags.
 pub const FLAGS_PROVIDER: &str = "flags";
-/// Provider id of the bundled shapes.
-pub const SHAPES_PROVIDER: &str = "shapes";
-/// Shape values a shapes provider id may carry, in browse order.
-pub const SHAPE_VALUES: &[&str] = &["square", "circle", "triangle", "hexagon", "diamond", "star"];
 
 /// Splits `provider:value`, trimming both sides. `None` when the separator is missing, leading or trailing.
 pub fn parse_sticker_id(sticker_id: &str) -> Option<(&str, &str)> {
@@ -28,15 +23,4 @@ pub fn parse_sticker_id(sticker_id: &str) -> Option<(&str, &str)> {
 /// Builds `provider:value`.
 pub fn build_sticker_id(provider: &str, value: &str) -> String {
     format!("{provider}:{value}")
-}
-
-/// Whether the id names a known provider and a value that provider can resolve.
-pub fn is_known_sticker_id(sticker_id: &str) -> bool {
-    match parse_sticker_id(sticker_id) {
-        Some((FLAGS_PROVIDER, value)) => flags::COUNTRIES
-            .iter()
-            .any(|country| country.code.eq_ignore_ascii_case(value)),
-        Some((SHAPES_PROVIDER, value)) => SHAPE_VALUES.contains(&value),
-        _ => false,
-    }
 }

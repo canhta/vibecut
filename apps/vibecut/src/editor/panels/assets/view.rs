@@ -6,6 +6,7 @@ mod effects;
 mod feedback;
 mod music;
 mod sounds;
+mod stickers;
 mod transition;
 
 pub(in crate::editor) use deletion::show as delete_dialog;
@@ -120,7 +121,7 @@ pub(in crate::editor) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) 
         AssetsTab::Media => Text::Import,
         AssetsTab::Sounds => Text::Audio,
         AssetsTab::Text => Text::AssetsAddText,
-        AssetsTab::Stickers => Text::GraphicShapes,
+        AssetsTab::Stickers => Text::Stickers,
         AssetsTab::Effects => Text::Effects,
         tab => tab.label(),
     };
@@ -207,7 +208,7 @@ pub(in crate::editor) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) 
             }
             AssetsTab::Effects => view.effects(ui),
             AssetsTab::Transitions => view.transitions(ui),
-            AssetsTab::Stickers => view.shapes(ui),
+            AssetsTab::Stickers => view.stickers(ui),
             AssetsTab::Adjustment => view.adjustment(ui),
             AssetsTab::Text => {
                 if nav.width() == 0.0
@@ -242,53 +243,6 @@ struct View<'a> {
     actions: Vec<Action>,
 }
 impl View<'_> {
-    fn shapes(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal_wrapped(|ui| {
-            for (index, (id, label)) in [
-                ("graphic.insert.rectangle", Text::GraphicRectangle),
-                ("graphic.insert.ellipse", Text::GraphicEllipse),
-                ("graphic.insert.polygon", Text::GraphicPolygon),
-                ("graphic.insert.star", Text::GraphicStar),
-            ]
-            .into_iter()
-            .enumerate()
-            {
-                ui.vertical(|ui| {
-                    let (tile, response) =
-                        ui.allocate_exact_size(Vec2::new(88., 88.), egui::Sense::hover());
-                    let shape = tile.shrink(20.);
-                    if let Some(texture) =
-                        self.cx.graphic_previews.get(index).and_then(Option::as_ref)
-                    {
-                        ui.painter().image(
-                            texture.id(),
-                            shape,
-                            Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1., 1.)),
-                            Color32::WHITE,
-                        );
-                    } else {
-                        ui.painter().text(
-                            shape.center(),
-                            Align2::CENTER_CENTER,
-                            self.tr(Text::AssetsUnavailable),
-                            theme::label_font(),
-                            theme::text(self.cx.preferences.dark),
-                        );
-                    }
-                    let _ = response;
-                    ui.label(
-                        egui::RichText::new(self.tr(label))
-                            .font(theme::label_font())
-                            .color(theme::text(self.cx.preferences.dark)),
-                    );
-                    if self.icon(ui, id, Icon::Plus, label, self.cx.graphic_insertion_ready) {
-                        self.actions.push(Action::Command(id.into()));
-                    }
-                });
-            }
-        });
-    }
-
     fn adjustment(&mut self, ui: &mut egui::Ui) {
         let presets = self.cx.preferences.adjustment_presets.clone();
         if presets.is_empty() {
@@ -423,6 +377,7 @@ impl View<'_> {
         let hint = self.tr(match self.cx.preferences.assets_tab {
             AssetsTab::Transitions => Text::TransitionSearch,
             AssetsTab::Effects => Text::EffectSearch,
+            AssetsTab::Stickers => Text::StickerSearch,
             _ => Text::AssetsSearch,
         });
         let draft = self
