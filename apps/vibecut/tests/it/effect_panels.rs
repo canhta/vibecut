@@ -1203,6 +1203,45 @@ fn effect_param_scrub_reverses_cancels_and_commits_once() {
 }
 
 #[test]
+fn a_locked_effect_colour_keyframe_toggle_says_why_on_hover() {
+    let f = fixture();
+    let video = f.video;
+    let main = f.main;
+    let mut editor = f.editor;
+    editor
+        .session
+        .apply(Command::AddEffect {
+            item: video,
+            effect: project::effect_definition("strobe")
+                .unwrap()
+                .instance("rgb")
+                .with("duration", EffectValue::Scalar(30.0))
+                .unwrap(),
+        })
+        .unwrap();
+    editor
+        .session
+        .apply(Command::SetTrackFlags {
+            track: main,
+            muted: false,
+            hidden: false,
+            locked: true,
+        })
+        .unwrap();
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    open_effect_tabs(&mut harness, video);
+    assert!(harness.query_by_label("Track is locked").is_none());
+    let toggle = widget_rect(&harness, "effects.rgb.param.color.keyframe").center();
+    harness.hover_at(toggle);
+    harness.run_steps(60);
+    assert!(
+        harness.query_by_label("Track is locked").is_some(),
+        "the blocked toggle shows the lock reason"
+    );
+}
+
+#[test]
 fn effect_add_refuses_locked_tracks_and_the_sixty_fifth_effect() {
     let locked = fixture();
     let video = locked.video;

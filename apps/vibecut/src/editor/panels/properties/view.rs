@@ -37,6 +37,8 @@ struct ClusterState {
     keyed: bool,
     can_toggle: bool,
     neighbours: read::Neighbours,
+    /// Why the toggle cannot act, shown on hover while it cannot.
+    blocked: Option<&'static str>,
 }
 
 /// The cluster's rectangle on the right edge of a row, centred on it.
@@ -329,6 +331,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                 keyed,
                 can_toggle: enabled,
                 neighbours,
+                blocked: None,
             },
         );
         if clicked {
@@ -420,6 +423,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                 keyed: exists,
                 can_toggle: inside,
                 neighbours,
+                blocked: None,
             },
         );
         if selected.is_none() && !clicked {
@@ -743,6 +747,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                     keyed,
                     can_toggle: inside,
                     neighbours,
+                    blocked: None,
                 },
             );
             if toggled && inside {
@@ -796,6 +801,10 @@ impl<'a, 'c> Panel<'a, 'c> {
                 has_next: state.neighbours.next.is_some(),
             },
         );
+        let toggle = match state.blocked.filter(|_| !state.can_toggle) {
+            Some(reason) => toggle.on_hover_text(reason),
+            None => toggle,
+        };
         self.remember(format!("{id}.previous"), &previous);
         self.remember_with_icon(id, Some(crate::kit::Icon::Diamond.name()), &toggle);
         self.remember(format!("{id}.next"), &next);

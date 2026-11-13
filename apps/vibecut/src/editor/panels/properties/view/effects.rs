@@ -1096,15 +1096,17 @@ impl Panel<'_, '_> {
             Vec2::new(ui.available_width(), theme::size::PROPERTY_ROW),
         );
         let id = format!("effects.{effect}.param.{key}");
+        // A locked track, or a keyed colour with the playhead outside the clip.
+        let blocked = self.tr(if locked {
+            Text::EffectLocked
+        } else {
+            Text::EffectKeyframeTime
+        });
         ui.add_enabled_ui(editable, |ui| {
             self.color_row(ui, &id, label, target.clone())
         })
         .response
-        .on_disabled_hover_text(self.tr(if locked {
-            Text::EffectLocked
-        } else {
-            Text::EffectKeyframeTime
-        }));
+        .on_disabled_hover_text(blocked);
         let exists = target.rgb_keys(project, true);
         let key_id = format!("{id}.keyframe");
         let neighbours = target.key_neighbours(project, Tick(self.cx.playhead.0 - start.0));
@@ -1117,6 +1119,7 @@ impl Panel<'_, '_> {
                 keyed: exists,
                 can_toggle: !locked && inside,
                 neighbours,
+                blocked: Some(blocked),
             },
         );
         if clicked {
@@ -1527,6 +1530,7 @@ impl Panel<'_, '_> {
                 keyed: exists,
                 can_toggle: inside,
                 neighbours,
+                blocked: None,
             },
         );
         if clicked && inside {
