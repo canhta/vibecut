@@ -2,21 +2,28 @@
 use super::effects::preview_instance;
 use super::stickers;
 use super::{
-    AssetRow, AssetState, AssetsTab, BTreeMap, Editor, EffectRow, Icon, MediaKind, Model, Row,
-    Text, asset_row, egui, file_name,
+    AssetRow, AssetState, AssetsTab, BTreeMap, EffectRow, Icon, MediaKind, Model, Row, State, Text,
+    asset_row, egui, file_name,
 };
+use crate::editor::Context;
 
-pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
+/// Build the read-only projection the view draws. `now` is the editor clock and
+/// `insertion_ready` the frame's answer for whether an insertion is allowed now.
+pub(in crate::editor) fn prepare(
+    state: &mut State,
+    cx: &Context<'_>,
+    ctx: &egui::Context,
+    now: std::time::Duration,
+    insertion_ready: bool,
+) {
     let rows = if !matches!(
-        editor.preferences.assets_tab,
+        cx.preferences.assets_tab,
         AssetsTab::Text | AssetsTab::Effects | AssetsTab::Transitions | AssetsTab::Captions
     ) {
-        editor.assets.refresh_media_sizes(&editor.session);
-        let sizes = editor.assets.media_size_map();
-        let order = editor
-            .assets
-            .media_order(&editor.session, &editor.preferences);
-        let by_id: BTreeMap<_, _> = editor
+        state.refresh_media_sizes(cx.session);
+        let sizes = state.media_size_map();
+        let order = state.media_order(cx.session, cx.preferences);
+        let by_id: BTreeMap<_, _> = cx
             .session
             .project()
             .data()
@@ -28,24 +35,18 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
             .into_iter()
             .filter_map(|id| {
                 let asset = by_id.get(&id)?;
-                let status = editor
-                    .assets
+                let status = state
                     .asset_states
                     .get(&id)
                     .copied()
                     .unwrap_or(AssetState::Probing);
                 Some(Row {
-                    display: asset_row(
-                        asset,
-                        editor.preferences.locale,
-                        sizes.get(&id).copied().flatten(),
-                        status,
-                    ),
+                    display: asset_row(asset, cx.locale, sizes.get(&id).copied().flatten(), status),
                     kind: MediaKind::of(asset),
                 })
             })
             .collect();
-        rows.extend(editor.assets.pending_imports.iter().map(|(id, path)| Row {
+        rows.extend(state.pending_imports.iter().map(|(id, path)| Row {
             display: AssetRow {
                 id: *id,
                 name: file_name(path),
@@ -63,52 +64,44 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
     let thumbnails = rows
         .iter()
         .filter_map(|row| {
-            editor
-                .assets
+            state
                 .thumbnail_texture(ctx, row.display.id)
                 .map(|texture| (row.display.id, texture))
         })
         .collect();
     let mut effects = Vec::new();
-    if let Some(previews) = &mut editor.assets.effect_previews {
-        previews.update(
-            editor.preferences.assets_tab == AssetsTab::Effects,
-            editor.clock.now(),
-        );
+    if let Some(previews) = &mut state.effect_previews {
+        previews.update(cx.preferences.assets_tab == AssetsTab::Effects, now);
     }
-    if editor.preferences.assets_tab == AssetsTab::Effects {
+    if cx.preferences.assets_tab == AssetsTab::Effects {
         ctx.request_repaint_after(std::time::Duration::from_nanos(1_000_000_000 / 30));
         for definition in project::effect_definitions()
             .iter()
             .filter(|definition| definition.shelf.in_library())
         {
             let params = preview_instance(definition);
-            if let (Some(previews), Some(params)) =
-                (&mut editor.assets.effect_previews, params.as_ref())
-            {
+            if let (Some(previews), Some(params)) = (&mut state.effect_previews, params.as_ref()) {
                 previews.ensure(definition.id, params, &project::Animations::default());
             }
-            let status = editor
-                .assets
+            let status = state
                 .effect_previews
                 .as_ref()
                 .and_then(|previews| previews.status(definition.id));
-            let texture = editor
-                .assets
+            let texture = state
                 .effect_previews
                 .as_mut()
                 .and_then(|previews| previews.texture(ctx, definition.id));
             effects.push(EffectRow {
                 kind: definition.id,
                 name: crate::i18n::effect_label(definition.id, None)
-                    .map_or(definition.name, |key| editor.tr(key)),
+                    .map_or(definition.name, |key| cx.tr(key)),
                 shelf: definition.shelf,
                 status,
                 texture,
             });
         }
     }
-    let mut preferences = editor.preferences.clone();
+    let mut preferences = cx.preferences.clone();
     if !matches!(
         preferences.assets_tab,
         AssetsTab::Media
@@ -124,49 +117,48 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
     }
     let (transition_refusal, transition_drag_enabled) =
         if preferences.assets_tab == AssetsTab::Transitions {
-            let cuts = super::workflow::cuts(editor);
-            let reason = super::workflow::selected_cut(editor, &cuts)
-                .map(|cut| super::workflow::refusal(editor, cut))
+            let cuts = super::workflow::cuts(cx.session);
+            let reason = super::workflow::selected_cut(cx.session, Some(cx.playhead), &cuts)
+                .map(|cut| super::workflow::refusal(cx.session, cut))
                 .unwrap_or(Some(Text::TransitionSelectCut));
             (reason, !cuts.is_empty())
         } else {
             (None, false)
         };
-    let (music_credits, music_credits_failed) = match editor.session.project().music_credits() {
+    let (music_credits, music_credits_failed) = match cx.session.project().music_credits() {
         Ok(credits) => (credits, false),
         Err(_) => (Vec::new(), true),
     };
     let stickers = (preferences.assets_tab == AssetsTab::Stickers).then(|| {
-        let query = editor
-            .assets
+        let query = state
             .searches
             .get(&AssetsTab::Stickers)
             .map_or("", String::as_str);
         stickers::rows(
             query,
-            editor.assets.sticker_tab,
-            editor.assets.sticker_expanded,
-            &editor.preferences.sticker_recents,
-            editor.preferences.locale,
+            state.sticker_tab,
+            state.sticker_expanded,
+            &cx.preferences.sticker_recents,
+            cx.preferences.locale,
         )
     });
-    editor.assets.model = Model {
+    state.model = Model {
         preferences,
         rows,
         thumbnails,
         effects,
         transition_refusal,
         transition_drag_enabled,
-        insertion_ready: editor.insertion_available(),
+        insertion_ready,
         stickers,
-        importing: editor.assets.importing(),
-        selection: editor.assets.media_selection.clone(),
-        clip_export: editor.assets.clip_export_status(),
-        reveal: editor.assets.media_reveal.map(|reveal| reveal.asset),
-        marquee: editor.assets.media_marquee.clone(),
-        failed: !editor.assets.import_failures.is_empty() || editor.assets.import_notice.is_some(),
-        sounds: editor.assets.sounds.as_ref().map(|sounds| sounds.view()),
-        music: editor.music.as_ref().map(|music| music.view()),
+        importing: state.importing(),
+        selection: state.media_selection.clone(),
+        clip_export: state.clip_export_status(),
+        reveal: state.media_reveal.map(|reveal| reveal.asset),
+        marquee: state.media_marquee.clone(),
+        failed: !state.import_failures.is_empty() || state.import_notice.is_some(),
+        sounds: state.sounds.as_ref().map(|sounds| sounds.view()),
+        music: state.music.as_ref().map(|music| music.view()),
         music_credits,
         music_credits_failed,
     };

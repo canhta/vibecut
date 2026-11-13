@@ -648,7 +648,7 @@ impl Editor {
 
     pub(in crate::editor) fn execute_engine_action(&mut self, route: EngineAction) -> Result<()> {
         if route == EngineAction::InsertMedia {
-            self.insert_selected_assets();
+            self.with_assets(|assets, port| assets.insert_selected_assets(port));
             return Ok(());
         }
         if route == EngineAction::FreezeFrame {

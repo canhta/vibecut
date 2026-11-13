@@ -6,7 +6,7 @@ use super::super::{
     Text, UnsupportedReason, egui, error_detail, media_panel,
 };
 use super::State;
-use crate::editor::Desk;
+use crate::editor::Port;
 use crate::i18n;
 
 impl State {
@@ -113,12 +113,11 @@ impl State {
             queue.retain_assets(&session.project().data().assets);
         }
     }
-    pub(in crate::editor) fn restore_asset_state(&mut self, desk: &mut Desk<'_>) {
+    pub(in crate::editor) fn restore_asset_state(&mut self, port: &mut Port<'_>) {
         if self.importing() {
             return;
         }
-        let asset = desk
-            .editor()
+        let asset = port
             .session
             .project()
             .data()
@@ -130,7 +129,7 @@ impl State {
             let id = asset.id();
             self.asset_states.insert(id, AssetState::Probing);
             self.restoring_asset = Some(id);
-            let result = self.start_import_paths(desk, vec![asset.path().to_owned()], id.0);
+            let result = self.start_import_paths(port, vec![asset.path().to_owned()], id.0);
             if result.is_err() {
                 self.restoring_asset = None;
                 self.asset_states
@@ -145,11 +144,11 @@ impl State {
     }
     pub(in crate::editor) fn select_asset(
         &mut self,
-        desk: &mut Desk<'_>,
+        port: &mut Port<'_>,
         id: AssetId,
         modifiers: egui::Modifiers,
     ) {
-        let ids = self.media_order(desk.view().session, desk.view().preferences);
+        let ids = self.media_order(&port.session, port.read.preferences);
         crate::editor::selection::click(
             &mut self.media_selection,
             &mut self.media_anchor,
@@ -162,11 +161,10 @@ impl State {
     /// It changes presentation state only; the project snapshot is untouched.
     pub(in crate::editor) fn reveal_media(
         &mut self,
-        desk: &mut Desk<'_>,
+        port: &mut Port<'_>,
         asset: AssetId,
     ) -> Result<()> {
-        if !desk
-            .view()
+        if !port
             .session
             .project()
             .data()
@@ -178,14 +176,12 @@ impl State {
                 engine::EditError::NoAsset(asset),
             )));
         }
-        if desk.view().preferences.assets_tab != AssetsTab::Media {
-            desk.editor()
-                .preferences
-                .set("assets_tab", serde_json::to_value(AssetsTab::Media)?)?;
+        if port.read.preferences.assets_tab != AssetsTab::Media {
+            port.store_preference("assets_tab", serde_json::to_value(AssetsTab::Media)?);
         }
         self.media_reveal = Some(MediaReveal {
             asset,
-            until: desk.editor().clock.now() + MEDIA_REVEAL,
+            until: port.read.now + MEDIA_REVEAL,
         });
         Ok(())
     }
@@ -212,40 +208,36 @@ impl State {
     pub(in crate::editor) fn cancel_media_delete(&mut self) {
         self.media_delete_confirm = None;
     }
-    pub(in crate::editor) fn confirm_media_delete(&mut self, desk: &mut Desk<'_>) -> Result<()> {
+    pub(in crate::editor) fn confirm_media_delete(&mut self, port: &mut Port<'_>) -> Result<()> {
         let Some(ids) = self.media_delete_confirm.take() else {
             return Ok(());
         };
         let count = ids.len() as u64;
-        let before = desk.editor().session.project().clone();
-        match desk
-            .editor()
-            .session
-            .apply(Command::RemoveAssets { assets: ids })
-        {
+        let before = port.session.project().clone();
+        match port.session.apply(Command::RemoveAssets { assets: ids }) {
             Ok(_) => {
                 self.media_selection.clear();
                 self.media_anchor = None;
                 self.media_reveal = None;
-                self.prune_media_selection(&desk.editor().session);
-                if !Arc::ptr_eq(&before, desk.editor().session.project()) {
-                    desk.sync();
+                self.prune_media_selection(&port.session);
+                if !Arc::ptr_eq(&before, port.session.project()) {
+                    port.sync();
                 }
                 let text = i18n::format_count(
-                    desk.editor().preferences.locale,
+                    port.locale(),
                     count,
                     Text::MediaDeletedOne,
                     Text::MediaDeletedOther,
                 );
-                desk.toast(&text, None);
+                port.toast(&text, None);
                 Ok(())
             }
             Err(error) => {
                 let detail = error_detail(&error);
                 self.import_notice = Some(detail.clone());
-                let locale = desk.editor().preferences.locale;
+                let locale = port.locale();
                 let text = i18n::text(locale, Text::DeleteMediaFailed);
-                desk.toast(text, Some(detail));
+                port.toast(text, Some(detail));
                 Ok(())
             }
         }

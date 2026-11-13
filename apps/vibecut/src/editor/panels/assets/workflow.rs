@@ -1,4 +1,5 @@
 //! Applies the assets workflows.
+mod actions;
 mod adjustment;
 mod effects;
 mod import;
@@ -13,31 +14,26 @@ mod transition;
 pub(super) use transition::{cuts, refusal, selected_cut};
 
 use super::{AssetsTab, State};
-use crate::editor::{Desk, Result};
+use crate::editor::{Port, Result};
 
 impl State {
     pub(in crate::editor) fn remember_assets_tab(
         &mut self,
-        desk: &mut Desk<'_>,
+        port: &mut Port<'_>,
         tab: AssetsTab,
     ) -> Result<()> {
-        let flushed = {
-            let editor = desk.editor();
-            if editor.preferences.assets_tab == tab {
-                return Ok(());
-            }
-            if let Some(panel) = &mut self.captions {
-                panel.flush_drafts(&mut editor.session)?
-            } else {
-                false
-            }
+        if port.read.preferences.assets_tab == tab {
+            return Ok(());
+        }
+        let flushed = if let Some(panel) = &mut self.captions {
+            panel.flush_drafts(&mut *port.session)?
+        } else {
+            false
         };
         if flushed {
-            desk.sync();
+            port.sync();
         }
-        desk.editor()
-            .preferences
-            .set("assets_tab", serde_json::to_value(tab)?)?;
+        port.store_preference("assets_tab", serde_json::to_value(tab)?);
         Ok(())
     }
 }

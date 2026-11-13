@@ -2,12 +2,12 @@
 use super::super::state::MediaMarquee;
 use super::super::{AssetId, Rect, egui};
 use super::State;
-use crate::editor::Desk;
+use crate::editor::Port;
 
 impl State {
     pub(in crate::editor) fn media_marquee(
         &mut self,
-        desk: &mut Desk<'_>,
+        port: &mut Port<'_>,
         ui: &mut egui::Ui,
         content: Rect,
         background: &egui::Response,
@@ -39,7 +39,7 @@ impl State {
             if let Some(state) = &mut self.media_marquee {
                 state.moved |= marquee.origin.distance(pointer) > 4.0;
             }
-            let accent = crate::kit::accent(desk.editor().preferences.dark);
+            let accent = crate::kit::accent(port.dark());
             ui.painter().with_clip_rect(content).rect_filled(
                 rect,
                 0.0,

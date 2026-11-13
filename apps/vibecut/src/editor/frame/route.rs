@@ -260,8 +260,7 @@ impl Editor {
                 patch: transform_patch(*field, *value),
             })
             .collect();
-        self.desk()
-            .preview(Command::TimelinePreview { commands });
+        self.desk().preview(Command::TimelinePreview { commands });
     }
     /// Close a transform gesture with one undo step, or restore its entry project.
     pub(in crate::editor) fn end_preview_transform(&mut self, commit: bool) {
@@ -290,8 +289,7 @@ impl Editor {
             item,
             patch: engine::ItemParamPatch::TextContent(content.into()),
         }];
-        self.desk()
-            .preview(Command::TimelinePreview { commands });
+        self.desk().preview(Command::TimelinePreview { commands });
     }
     /// Commit an open inline edit as one undo step, or discard a net-zero session.
     pub(in crate::editor) fn commit_text_edit(&mut self) -> bool {
@@ -371,14 +369,12 @@ impl Editor {
             mask: mask.to_owned(),
             path: path.clone(),
         }];
-        self.desk()
-            .preview(Command::TimelinePreview { commands });
+        self.desk().preview(Command::TimelinePreview { commands });
     }
     /// Stage one absolute whole-mask candidate from a gizmo gesture origin.
     pub(in crate::editor) fn preview_mask_box(&mut self, item: ItemId, mask: project::Mask) {
         let commands = vec![Command::UpdateMask { item, mask }];
-        self.desk()
-            .preview(Command::TimelinePreview { commands });
+        self.desk().preview(Command::TimelinePreview { commands });
     }
     /// The anchors of the one mask the point scope holds, as `(item, mask, indices)`
     /// in path order. The scope only ever holds one mask of one item.
@@ -455,8 +451,7 @@ impl Editor {
             return false;
         }
         if self.session.gesture_active() {
-            self.desk()
-                .preview(Command::TimelineDiscardPreview {});
+            self.desk().preview(Command::TimelineDiscardPreview {});
         }
         true
     }
@@ -805,6 +800,24 @@ impl Editor {
                     Request::OpenModel(id) => {
                         if let Err(error) = self.open_model(&id) {
                             self.desk().fail(error.to_string());
+                        }
+                    }
+                    Request::Action(id) => self.action(&id),
+                    Request::ExportClips => {
+                        self.lifecycle_action =
+                            Some(crate::services::lifecycle::EditorAction::ExportClips);
+                    }
+                    Request::AddEffect { item, kind } => {
+                        crate::editor::properties::add_effect_to_item(
+                            &mut self.desk(),
+                            item,
+                            &kind,
+                        );
+                    }
+                    Request::InsertShape(id) => {
+                        if self.action_enabled(&id) {
+                            self.action(&id);
+                            self.with_assets(|assets, port| assets.remember_sticker(port, &id));
                         }
                     }
                 }

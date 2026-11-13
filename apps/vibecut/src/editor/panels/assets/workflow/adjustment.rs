@@ -1,21 +1,22 @@
 //! Applies saved colour-adjustment presets to the selected visual clip.
 
-use crate::editor::assets::{Editor, Result, Text};
-use crate::editor::context;
+use super::State;
+use crate::editor::assets::{Result, Text};
+use crate::editor::{Port, context};
 
-impl Editor {
+impl State {
     /// Apply one app-owned preset to the selected video or image item as one
     /// undo step. Locked tracks and non-visual selections refuse with a toast.
-    pub(in crate::editor) fn apply_adjustment_preset(&mut self, index: usize) {
-        let Some(item) = context::single(self.session.selection()) else {
-            let text = self.tr(Text::EffectSelectClip).to_owned();
-            self.set_toast(&text, None);
+    pub(in crate::editor) fn apply_adjustment_preset(&mut self, port: &mut Port<'_>, index: usize) {
+        let Some(item) = context::single(port.session.selection()) else {
+            let text = port.tr(Text::EffectSelectClip);
+            port.toast(text, None);
             return;
         };
-        let Some(preset) = self.preferences.adjustment_presets.get(index).cloned() else {
+        let Some(preset) = port.read.preferences.adjustment_presets.get(index).cloned() else {
             return;
         };
-        let project = self.session.project();
+        let project = port.session.project();
         let Some(target) = project
             .data()
             .scene()
@@ -78,18 +79,22 @@ impl Editor {
         } else {
             engine::Command::Batch { commands }
         };
-        let _ = self.desk().apply_result(command, false);
+        let _ = port.apply_result(command);
     }
 
     /// Delete one app-owned preset. The preference write changes no project data.
-    pub(in crate::editor) fn delete_adjustment_preset(&mut self, index: usize) -> Result<()> {
-        let mut presets = self.preferences.adjustment_presets.clone();
+    pub(in crate::editor) fn delete_adjustment_preset(
+        &mut self,
+        port: &mut Port<'_>,
+        index: usize,
+    ) -> Result<()> {
+        let mut presets = port.read.preferences.adjustment_presets.clone();
         if index >= presets.len() {
             return Ok(());
         }
         presets.remove(index);
-        self.preferences
-            .set("adjustment_presets", serde_json::to_value(presets)?)
+        port.store_preference("adjustment_presets", serde_json::to_value(presets)?);
+        Ok(())
     }
 }
 

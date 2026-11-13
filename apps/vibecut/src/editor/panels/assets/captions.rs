@@ -30,7 +30,6 @@ use std::{
     sync::{Arc, mpsc},
     time::Duration,
 };
-pub(in crate::editor) use tab::{queue_requests, show};
 use time::Tick;
 
 /// What a running job does when it finishes. Generation and translation are registry

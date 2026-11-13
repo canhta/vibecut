@@ -1,11 +1,11 @@
 //! Inserts chosen assets into the timeline.
 
 use super::super::{
-    AssetId, AssetState, BTreeSet, Command, CreatedId, ItemParams, NewItem, SelectionScopes,
-    SourceAsset, SourceRange, TICKS_PER_SECOND, Text, Tick, TrackKind, asset_kind, error_detail,
+    AssetId, AssetState, BTreeSet, Command, CreatedId, ItemParams, NewItem, SourceAsset,
+    SourceRange, TICKS_PER_SECOND, Text, Tick, TrackKind, asset_kind, error_detail,
 };
 use super::State;
-use crate::editor::Desk;
+use crate::editor::Port;
 use crate::i18n;
 
 /// New text sits in the lower third: its box centre is this fraction of the canvas height
@@ -27,9 +27,8 @@ fn lower_third(canvas_height: u32) -> project::Result<project::Animations> {
 
 impl State {
     /// Insert selected assets in library order; engine owns track and overlap policy.
-    pub(in crate::editor) fn insert_selected_assets(&mut self, desk: &mut Desk<'_>) {
-        let selected: Vec<SourceAsset> = desk
-            .editor()
+    pub(in crate::editor) fn insert_selected_assets(&mut self, port: &mut Port<'_>) {
+        let selected: Vec<SourceAsset> = port
             .session
             .project()
             .data()
@@ -42,12 +41,12 @@ impl State {
         if selected.is_empty() {
             return;
         }
-        let at = match desk.editor().playback.position() {
+        let at = match port.playhead() {
             Ok(at) => at,
             Err(_error) => {
                 tracing::warn!(category = "asset_position", "insertion unavailable");
-                let text = i18n::text(desk.editor().preferences.locale, Text::InsertFailed);
-                desk.toast(text, None);
+                let text = i18n::text(port.locale(), Text::InsertFailed);
+                port.toast(text, None);
                 return;
             }
         };
@@ -56,7 +55,7 @@ impl State {
             .filter(|asset| self.asset_states.get(&asset.id()) != Some(&AssetState::Ready))
             .map(SourceAsset::id)
             .collect();
-        let result = desk.editor().session.transaction(|session| {
+        let result = port.session.transaction(|session| {
             let mut created = Vec::new();
             let mut video_at = at;
             let mut audio_at = at;
@@ -141,32 +140,32 @@ impl State {
         });
         match result {
             Ok(created) => {
-                desk.select(created.into_iter().collect());
+                port.select(created.into_iter().collect());
                 self.import_notice = None;
             }
             Err(error) => {
                 tracing::warn!(category = "asset_insert", "insertion failed");
                 let detail = error_detail(&error);
                 self.import_notice = Some(detail.clone());
-                let text = i18n::text(desk.editor().preferences.locale, Text::InsertFailed);
-                desk.toast(text, None);
+                let text = i18n::text(port.locale(), Text::InsertFailed);
+                port.toast(text, None);
             }
         }
     }
     pub(in crate::editor) fn insert_graphic(
         &mut self,
-        desk: &mut Desk<'_>,
+        port: &mut Port<'_>,
         shape: crate::actions::GraphicShape,
     ) {
         let result = (|| -> crate::Result<project::ItemId> {
-            let start = desk.editor().playback.position()?;
+            let start = port.playhead()?;
             let content = match shape {
                 crate::actions::GraphicShape::Rectangle => project::GraphicParams::rectangle(),
                 crate::actions::GraphicShape::Ellipse => project::GraphicParams::ellipse(),
                 crate::actions::GraphicShape::Polygon => project::GraphicParams::polygon(),
                 crate::actions::GraphicShape::Star => project::GraphicParams::star(),
             };
-            let outcome = desk.editor().session.apply(Command::InsertItem {
+            let outcome = port.session.apply(Command::InsertItem {
                 placement: engine::Placement::Auto,
                 item: NewItem {
                     retime: Default::default(),
@@ -188,36 +187,35 @@ impl State {
         })();
         match result {
             Ok(item) => {
-                desk.select(std::collections::BTreeSet::from([item]));
-                desk.editor().selection_scopes = SelectionScopes::default();
-                desk.editor().properties.clear_drafts();
+                port.select(std::collections::BTreeSet::from([item]));
+                port.reset_selection(true);
             }
             Err(error) => {
                 self.import_notice = Some(error_detail(&error));
-                let text = i18n::text(desk.editor().preferences.locale, Text::InsertFailed);
-                desk.toast(text, None);
+                let text = i18n::text(port.locale(), Text::InsertFailed);
+                port.toast(text, None);
             }
         }
     }
-    pub(in crate::editor) fn insert_text(&mut self, desk: &mut Desk<'_>) {
-        let at = match desk.editor().playback.position() {
+    pub(in crate::editor) fn insert_text(&mut self, port: &mut Port<'_>) {
+        let at = match port.playhead() {
             Ok(at) => at,
             Err(_error) => {
                 tracing::warn!(category = "asset_position", "insertion unavailable");
-                let text = i18n::text(desk.editor().preferences.locale, Text::TextInsertFailed);
-                desk.toast(text, None);
+                let text = i18n::text(port.locale(), Text::TextInsertFailed);
+                port.toast(text, None);
                 return;
             }
         };
-        let content = i18n::text(desk.editor().preferences.locale, Text::TextItem).to_owned();
-        let canvas_height = desk.editor().session.project().data().canvas.height;
+        let content = i18n::text(port.locale(), Text::TextItem).to_owned();
+        let canvas_height = port.session.project().data().canvas.height;
         let Ok(animations) = lower_third(canvas_height) else {
             tracing::warn!(category = "asset_insert", "text placement unavailable");
-            let text = i18n::text(desk.editor().preferences.locale, Text::TextInsertFailed);
-            desk.toast(text, None);
+            let text = i18n::text(port.locale(), Text::TextInsertFailed);
+            port.toast(text, None);
             return;
         };
-        let result = desk.editor().session.transaction(|session| {
+        let result = port.session.transaction(|session| {
             let duration = Tick(5 * TICKS_PER_SECOND);
             let outcome = session.apply(Command::InsertItem {
                 placement: engine::Placement::Auto,
@@ -243,16 +241,15 @@ impl State {
         });
         match result {
             Ok(item) => {
-                desk.select(std::collections::BTreeSet::from([item]));
-                desk.editor().selection_scopes = SelectionScopes::default();
-                desk.editor().properties.clear_drafts();
+                port.select(std::collections::BTreeSet::from([item]));
+                port.reset_selection(true);
             }
             Err(error) => {
                 tracing::warn!(category = "asset_insert", "insertion failed");
                 let detail = error_detail(&error);
                 self.import_notice = Some(detail.clone());
-                let text = i18n::text(desk.editor().preferences.locale, Text::TextInsertFailed);
-                desk.toast(text, None);
+                let text = i18n::text(port.locale(), Text::TextInsertFailed);
+                port.toast(text, None);
             }
         }
     }

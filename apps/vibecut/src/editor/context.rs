@@ -2,6 +2,7 @@
 
 #[cfg(test)]
 pub(crate) mod bench;
+mod port;
 pub(crate) mod visuals;
 
 use crate::{
@@ -10,6 +11,7 @@ use crate::{
     services::playback::Playback,
 };
 
+pub(in crate::editor) use port::{Note, Port, Read};
 pub(crate) use visuals::VisualQuery;
 
 /// Human-only desktop cache intentions, outside editing/agent commands.
@@ -261,6 +263,18 @@ pub(crate) enum Request {
     Proxy(ProxyAction),
     /// Open the model manager on a missing model.
     OpenModel(String),
+    /// Run one registered action through the shared activation path.
+    Action(String),
+    /// Attach one effect to a clip through the properties workflow.
+    AddEffect {
+        item: project::ItemId,
+        kind: String,
+    },
+    /// Ask for the folder that receives the selected clips' export.
+    ExportClips,
+    /// Insert one shape through its `graphic.insert.*` action when it is enabled, then
+    /// tell the assets area to record it as recent.
+    InsertShape(String),
 }
 
 /// The shared editor context. One area receives it for one frame; its edit

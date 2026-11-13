@@ -89,6 +89,20 @@ Home and Shorts share one window interface: `State`, `Context`, `Action` and `sh
 
 An editor area exposes its `State` and a `show(...)` returning actions; areas never import each other, the frame routes their actions. Captions is a tab inside `assets/`. Inside `editor/`, `xtask/modules.toml` carries a folder table: `context/` is the lowest layer, the areas above it import nothing from each other, and `frame/` and the `Editor` record route above them; each new editor module adds its own line there.
 
+### Editor area ports
+
+An area never names `Editor`. The frame lends it a `Port` (`editor/context/port.rs`): the open session, a read snapshot (locale, theme, playhead, byte budget, preferences, clip rectangles, the frame's `insertion_available` and caption-bank answers) and the notes the area leaves for the frame (error line, toast, preview resync, selection reset, preference write, widget record, cross-area `Request`). The frame applies the notes after the area returns. An area handles its own actions with `apply(&mut State, &mut Port, ...)`; the frame routes only `Request`s, which cross areas. `cargo xtask modules` rule 5 (`frame-type`) fails any file under `context/` or an area that names `Editor`; `xtask/modules-baseline.txt` lists the files still waiting for their slice and each slice deletes its entries.
+
+Slice plan, one line per area: the state that moves, the port it uses and the pass-through it deletes.
+
+| Slice | Area | State that moves | Port | Pass-through deleted |
+|---|---|---|---|---|
+| 1 (done) | assets | Music (`music`, `music_media_dir`) moves from `Editor` to `assets::State` beside sounds; captions mount inside the area | `Port`: session, read snapshot, notes | `frame/assets.rs` (35-variant action map, clip-export forwards), the `Editor` forwards for insert, delete, tab and import, `Editor::{tick_music, add_effect_to_item}`, every `desk.editor()` in `panels/assets` |
+| 2 | properties | The colour-picker open and LUT pick entry points move from `Editor` onto `properties::State`; `selection_scopes` stays frame-owned and is reset through a note | `Port` | the 10 `desk.editor()` sites in `workflow`, `commands`, `fonts` and `transition`; the `Editor::{open_color_picker, lut_picked_file, pick_key_color}` bodies |
+| 3 | player | `key_color_pick` moves from `Desk` into `player::State`; the crop session reads through the port | `Port`; crop `open`, `available`, `show` and `target` take it instead of `&mut Editor` | `Desk::arm_key_color_pick`, the four `Editor`-taking functions in `panels/player/crop.rs` (its baseline entry) |
+| 4 | timeline | `replace_request` moves into `timeline::State`; scenes and toolbar already return actions | `Port`; `route_timeline` and `track_command` become `timeline::apply` | the `with_timeline` widget copy loop, the `frame/input/selection.rs` forwards, `Editor::request_replace_media` (now a `Request`) |
+| 5 | dialogs, then context | `lifecycle_action` writes (export save, voice-over) become requests; the preferences shortcut import and export take the port | `Port`; each dialog applies its own actions | the 18 non-test `.editor()` sites, `Editor`-taking `shortcuts::{import, export}` (its baseline entry); then `Desk`, `Desk::editor` and the `context.rs` and `context/bench.rs` baseline entries |
+
 ## CLI (`apps/vibecut-cli/src`)
 
 `args/`, `output/`, `session/`, `mcp/`, and `commands/` with one module per command exposing `run(context, args)`. `lib.rs` only wires them.
@@ -99,4 +113,4 @@ Start as a folder; promote to a crate when it gains a second consumer, an indepe
 
 ## Enforcement
 
-`cargo xtask modules` (in `checks`) enforces rules 1–4: `//!` lines, no `mod.rs`, banned names, folder width and the layers in `xtask/modules.toml` (including `[[crate.folder]]` tables for areas inside a module). `cargo xtask docs` checks that every crate README maps its folder modules and every folder module has a README. `xtask/modules-baseline.txt` lists known violations and may only shrink.
+`cargo xtask modules` (in `checks`) enforces rules 1–4 and the `frame-type` rule: `//!` lines, no `mod.rs`, banned names, folder width, the layers in `xtask/modules.toml` and the `[[crate.folder.forbid]]` type names (including `[[crate.folder]]` tables for areas inside a module). `cargo xtask docs` checks that every crate README maps its folder modules and every folder module has a README. `xtask/modules-baseline.txt` lists known violations and may only shrink.

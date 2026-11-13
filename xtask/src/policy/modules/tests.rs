@@ -588,6 +588,54 @@ fn folder_tables_reject_unplaced_and_stale_folder_modules() {
 }
 
 #[test]
+fn forbidden_frame_type_fails_in_listed_layers_only() {
+    let tree = Tree::new();
+    tree.config(&format!(
+        "{EDITOR_FOLDER}\n[[crate.folder.forbid]]\nname = \"Editor\"\nlayers = [\"features\"]\n"
+    ));
+    tree.write("crates/foo/src/lib.rs", "//! Foo.\npub mod editor;\n");
+    tree.write(
+        "crates/foo/src/editor.rs",
+        "//! Editor.\npub mod frame;\npub mod assets;\npub mod player;\n",
+    );
+    tree.write(
+        "crates/foo/src/editor/frame.rs",
+        "//! Frame.\npub struct Editor;\nfn f(_: &Editor) {}\n",
+    );
+    tree.write(
+        "crates/foo/src/editor/player.rs",
+        "//! Player.\n// The Editor is only a word here.\npub fn f() -> &'static str { \"Editor\" }\n#[cfg(test)]\nfn t(_: &Editor) {}\n",
+    );
+    tree.write(
+        "crates/foo/src/editor/assets.rs",
+        "//! Assets.\npub fn f(_: &mut crate::editor::Editor) {}\n",
+    );
+    let error = check(&tree.0).unwrap_err();
+    for expected in [
+        "crates/foo/src/editor/assets.rs",
+        "[frame-type]",
+        "structure rule 5",
+        "names `Editor`",
+    ] {
+        assert!(error.contains(expected), "{expected}: {error}");
+    }
+    assert!(!error.contains("editor/frame.rs"), "{error}");
+    assert!(!error.contains("editor/player.rs"), "{error}");
+    tree.baseline(&[(
+        "frame-type",
+        "crates/foo/src/editor/assets.rs",
+        "names `Editor`, the frame record; take a port instead",
+    )]);
+    check(&tree.0).unwrap();
+    tree.write(
+        "crates/foo/src/editor/assets.rs",
+        "//! Assets.\npub fn f() {}\n",
+    );
+    let error = check(&tree.0).unwrap_err();
+    assert!(error.contains("baseline entry no longer occurs"), "{error}");
+}
+
+#[test]
 fn banned_names_match_whole_names_in_any_case_and_inline_modules() {
     let tree = Tree::new();
     tree.write("crates/foo/src/lib.rs", "//! Foo.\n");

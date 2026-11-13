@@ -67,7 +67,7 @@ impl Editor {
         if id.is_none() {
             self.prune_selection();
         }
-        self.prune_media_selection();
+        self.assets.prune_media_selection(&self.session);
         if !Arc::ptr_eq(&before, self.session.project()) {
             self.desk().sync();
         }
@@ -251,23 +251,30 @@ impl Editor {
                     let next = media_panel::next_sort(self.preferences.media_sort, key);
                     self.set_preference("media_sort", serde_json::to_value(next)?)?;
                 }
-                UiAction::RequestDeleteMedia => self
-                    .request_media_delete(self.assets.media_selection().iter().copied().collect()),
-                UiAction::CancelDeleteMedia => self.cancel_media_delete(),
-                UiAction::ConfirmDeleteMedia => self.confirm_media_delete()?,
+                UiAction::RequestDeleteMedia => {
+                    let ids = self.assets.media_selection().iter().copied().collect();
+                    self.assets.request_media_delete(&self.session, ids);
+                }
+                UiAction::CancelDeleteMedia => self.assets.cancel_media_delete(),
+                UiAction::ConfirmDeleteMedia => {
+                    self.with_assets(|assets, port| assets.confirm_media_delete(port))?;
+                }
                 UiAction::RevealMedia => {
                     let asset = AssetId(argument.ok_or(Error::Unsupported("media identity"))?);
                     self.reveal_media(asset)?;
                 }
-                UiAction::InsertText => self.insert_text(),
-                UiAction::InsertGraphic(shape) => self.insert_graphic(shape),
+                UiAction::InsertText => self.with_assets(|assets, port| assets.insert_text(port)),
+                UiAction::InsertGraphic(shape) => {
+                    self.with_assets(|assets, port| assets.insert_graphic(port, shape));
+                }
                 UiAction::Subtitles | UiAction::SubtitleCue => {
                     self.prepare_subtitles()?;
                     let mut options = self.preferences.subtitles.clone();
                     let selected = self.session.selection().iter().next().copied();
                     if let Some(panel) = &mut self.assets.captions {
                         panel.activate(&mut self.session, &mut options, selected, at, id)?;
-                        crate::editor::assets::captions::queue_requests(self);
+                        let requests = self.assets.caption_requests();
+                        self.requests.extend(requests);
                     }
                     if options != self.preferences.subtitles {
                         self.set_preference("subtitles", serde_json::to_value(options)?)?;
