@@ -93,7 +93,7 @@ impl State {
             pending: 0,
             creating: false,
 
-            default_fps: crate::preferences::DEFAULT_PROJECT_FPS,
+            default_fps: crate::services::lifecycle::DEFAULT_PROJECT_FPS,
             duplicate: None,
             rename: None,
             info: None,

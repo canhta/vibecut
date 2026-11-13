@@ -3,6 +3,10 @@ use crate::{Error, Result};
 use engine::{Command, Session, recovery::Autosave};
 use std::ops::{Deref, DerefMut};
 
+/// Frame rate of a new project unless the Settings default says otherwise; Home and Shorts
+/// read it here because they sit below the preferences.
+pub const DEFAULT_PROJECT_FPS: u32 = 30;
+
 /// The editor's session. It derefs to the engine [`Session`] for every read and edit;
 /// `Session::apply` refuses lifecycle commands (save, thumbnail), so the deref cannot
 /// bypass the journal. Those commands go through [`EditorSession::autosave`], whose

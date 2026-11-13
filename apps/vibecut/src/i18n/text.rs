@@ -776,6 +776,9 @@ catalog! {
     EmptyPreview { key: "empty_preview", en: "Add media to begin", vi: "Thêm tư liệu để bắt đầu" },
     EmptyTimeline { key: "empty_timeline", en: "Your story starts here", vi: "Câu chuyện của bạn bắt đầu ở đây" },
     KeyColor { key: "key_color", en: "Key colour", vi: "Màu cần xóa" },
+    LibraryBusy { key: "library_busy", en: "Another VibeCut window is using this library. Close it, then retry.", vi: "Một cửa sổ VibeCut khác đang dùng thư viện này. Hãy đóng cửa sổ đó rồi thử lại." },
+    LibraryCorrupt { key: "library_corrupt", en: "The library file is damaged and could not be opened.", vi: "Tệp thư viện bị hỏng nên không mở được." },
+    LibraryIo { key: "library_io", en: "The library could not be read from disk.", vi: "Không đọc được thư viện từ đĩa." },
     Music { key: "music", en: "Music", vi: "Nhạc" },
     MusicAdd { key: "music_add", en: "Add to timeline", vi: "Thêm vào dòng thời gian" },
     MusicAdded { key: "music_added", en: "Added to timeline", vi: "Đã thêm vào dòng thời gian" },
@@ -859,9 +862,6 @@ catalog! {
     SoundsServer { key: "sounds_server", en: "Freesound is unavailable. Try again.", vi: "Freesound đang không khả dụng. Hãy thử lại." },
     SoundsStopPreview { key: "sounds_stop_preview", en: "Stop preview", vi: "Dừng nghe thử" },
     SoundsUnavailable { key: "sounds_unavailable", en: "Sounds are unavailable.", vi: "Âm thanh không khả dụng." },
-    LibraryBusy { key: "library_busy", en: "Another VibeCut window is using this library. Close it, then retry.", vi: "Một cửa sổ VibeCut khác đang dùng thư viện này. Hãy đóng cửa sổ đó rồi thử lại." },
-    LibraryCorrupt { key: "library_corrupt", en: "The library file is damaged and could not be opened.", vi: "Tệp thư viện bị hỏng nên không mở được." },
-    LibraryIo { key: "library_io", en: "The library could not be read from disk.", vi: "Không đọc được thư viện từ đĩa." },
     SoundsUnsave { key: "sounds_unsave", en: "Remove from saved", vi: "Bỏ khỏi mục đã lưu" },
 
     // Import.

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 /// Frame rates the project settings offer (CapCut's frame-rate select).
 pub const PROJECT_FPS: [u32; 5] = [24, 25, 30, 60, 120];
 /// Matches the frame rate new projects already get from `ProjectSettings`.
-pub const DEFAULT_PROJECT_FPS: u32 = 30;
+pub use crate::services::lifecycle::DEFAULT_PROJECT_FPS;
 /// Smallest aggregate cache budget the settings dialog accepts.
 pub const MIN_CACHE_LIMIT: u64 = 256 << 20;
 /// Largest aggregate cache budget the settings dialog accepts.

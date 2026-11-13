@@ -1111,7 +1111,7 @@ impl State {
         let mut data = prepared.data().clone();
         data.id = crate::services::lifecycle::fresh(
             prepared.data().name.as_str(),
-            crate::preferences::DEFAULT_PROJECT_FPS,
+            crate::services::lifecycle::DEFAULT_PROJECT_FPS,
         )?
         .project()
         .data()
