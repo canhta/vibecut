@@ -2386,7 +2386,7 @@ fn text_insert_button_fits_the_media_panel_in_both_locales() {
 }
 
 #[test]
-fn text_position_controls_are_reachable_in_a_normal_height_window() {
+fn text_transform_position_is_reachable_in_a_normal_height_window() {
     let fixture = fixture();
     let mut harness = crate::gpu::builder()
         .with_size(egui::vec2(1280.0, 720.0))
@@ -2398,7 +2398,8 @@ fn text_position_controls_are_reachable_in_a_normal_height_window() {
     harness.run_steps(3);
     let panel = harness.state().panels()["inspector"];
     let scroll =
-        (panel.bottom() - widget(&harness, "inspector.text_position_y").bottom() - 8.0).min(0.0);
+        (panel.bottom() - widget(&harness, "inspector.transform.positionY").bottom() - 8.0)
+            .min(0.0);
     harness
         .input_mut()
         .events
@@ -2411,7 +2412,7 @@ fn text_position_controls_are_reachable_in_a_normal_height_window() {
         modifiers: egui::Modifiers::NONE,
     });
     harness.run_steps(20);
-    assert!(panel.contains_rect(widget(&harness, "inspector.text_position_y")));
+    assert!(panel.contains_rect(widget(&harness, "inspector.transform.positionY")));
 }
 
 #[test]
@@ -2490,13 +2491,8 @@ fn text_insert_and_style_controls_use_one_undo_step_per_edit() {
         .get(By::new().predicate(|n| n.author_id() == Some("inspector.text_background")))
         .click();
     harness.run_steps(2);
-    for (field, value) in [
-        ("text_content", "Xin chào"),
-        ("text_color", "#11223344"),
-        ("text_background_color", "#01020380"),
-        ("text_position_x", "25"),
-        ("text_position_y", "30"),
-    ] {
+    // Colour and position are not typed here: colour is a swatch, position is the Transform row.
+    for (field, value) in [("text_content", "Xin chào")] {
         let id = format!("inspector.{field}");
         harness
             .get(By::new().predicate(|n| n.author_id() == Some(id.as_str())))
@@ -2510,7 +2506,7 @@ fn text_insert_and_style_controls_use_one_undo_step_per_edit() {
     }
     assert_eq!(
         harness.state().session.history_len().0,
-        style_history + 7,
+        style_history + 3,
         "each committed field edit is one undo step"
     );
     let ItemParams::Text(text) = &item(harness.state(), selected[0]).content else {
@@ -2519,17 +2515,10 @@ fn text_insert_and_style_controls_use_one_undo_step_per_edit() {
     assert_eq!(text.content.as_str(), "Xin chào");
     assert_eq!(text.font.as_str(), "Noto Serif");
     assert_eq!(text.font_size, 64.0);
-    assert_eq!(text.color, Color([17, 34, 51, 68]));
-    assert_eq!(
-        text.background.as_ref().unwrap().color,
-        Color([1, 2, 3, 128])
-    );
-    assert_eq!(text.position, project::TextPosition { x: 25.0, y: 30.0 });
+    assert!(text.background.is_some());
     for (field, value) in [
         ("text_font", ""),
         ("text_size", "4097"),
-        ("text_position_x", "101"),
-        ("text_position_y", "NaN"),
         ("text_background", "not-a-colour"),
     ] {
         assert!(

@@ -30,8 +30,6 @@ pub fn shared_fields(project: &Project, selection: &BTreeSet<ItemId>) -> Vec<Sha
         "text_size",
         "text_color",
         "text_background",
-        "text_position_x",
-        "text_position_y",
     ]
     .into_iter()
     .filter_map(|id| {
@@ -73,8 +71,6 @@ pub fn shared_fields(project: &Project, selection: &BTreeSet<ItemId>) -> Vec<Sha
                         },
                     ))
                 }
-                ("text_position_x", ItemParams::Text(p)) => Some(p.position.x.to_string()),
-                ("text_position_y", ItemParams::Text(p)) => Some(p.position.y.to_string()),
                 _ => None,
             })
             .collect();
@@ -170,16 +166,6 @@ mod tests {
                     SharedField {
                         id: "text_background",
                         value: Some("none".into()),
-                        compatible: count
-                    },
-                    SharedField {
-                        id: "text_position_x",
-                        value: Some("50".into()),
-                        compatible: count
-                    },
-                    SharedField {
-                        id: "text_position_y",
-                        value: Some("84.5".into()),
                         compatible: count
                     }
                 ]

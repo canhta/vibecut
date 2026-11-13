@@ -1,16 +1,9 @@
 //! Renders appearance controls.
 use super::Panel;
 use crate::editor::properties::{
-    Color32, ColorTarget, Id, ItemId, ItemParams, OPACITY_SCRUB, Rect, Text, Vec2, egui, read,
-    theme,
+    Color32, ColorTarget, Id, ItemId, OPACITY_SCRUB, Rect, Text, Vec2, egui, read, theme,
 };
 use crate::i18n;
-
-use crate::kit;
-
-fn value_ui_width(ui: &egui::Ui) -> f32 {
-    ui.available_width().min(FIELD_COLUMN)
-}
 
 const VALUE_COLUMN: f32 = 120.0;
 pub(super) const FIELD_COLUMN: f32 = 150.0;
@@ -155,60 +148,6 @@ impl Panel<'_, '_> {
             {
                 Ok(actions) => self.actions.extend(actions),
                 Err(error) => self.fail(error),
-            }
-        }
-    }
-    pub(super) fn text_color_field(&mut self, ui: &mut egui::Ui, item: ItemId) {
-        let Some(value) =
-            read::item(self.cx.session.project(), item).and_then(|item| match &item.content {
-                ItemParams::Text(params) => {
-                    let [r, g, b, a] = params.color.0;
-                    Some(format!("#{r:02X}{g:02X}{b:02X}{a:02X}"))
-                }
-                _ => None,
-            })
-        else {
-            return;
-        };
-        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
-        self.row_label(ui, row, self.tr(Text::TextColor));
-        let draft = self
-            .state
-            .drafts
-            .get("text_color")
-            .cloned()
-            .unwrap_or(value);
-        let mut next = draft;
-        let field_width = value_ui_width(&value_ui);
-        let response = kit::value_field(
-            &mut value_ui,
-            "inspector.text_color",
-            &mut next,
-            field_width,
-            None,
-            self.tr(Text::TextColor),
-        );
-        self.remember("inspector.text_color", &response);
-        if response.has_focus() {
-            self.state.focus = Some("text_color".to_owned());
-        }
-        if response.changed() {
-            self.state
-                .drafts
-                .insert("text_color".to_owned(), next.clone());
-        }
-        let editing = response.has_focus() || self.state.focus.as_deref() == Some("text_color");
-        if editing && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-            self.state.drafts.remove("text_color");
-            self.state.focus = None;
-            response.surrender_focus();
-            return;
-        }
-        let enter = response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-        if enter || response.lost_focus() {
-            self.state.focus = None;
-            if let Some(draft) = self.state.drafts.remove("text_color") {
-                self.set_item_field(item, "text_color", &draft);
             }
         }
     }

@@ -38,10 +38,15 @@ keyed position bound refusal or an item whose transient render placement would m
 elsewhere. The multi-selection inspector shows the same row under its shared fields.
 
 The multi-selection inspector shows audio gain and mute plus text content, font, size,
-colour, background and position for compatible items, a dash for mixed values and the
-compatible/selected count. A single element uses per-type tabs: Text (content, font,
-background, position, size scrub, colour), Basic's Blend section (blend menu, opacity scrub), Audio
-(see below), and Speed for video and audio. Speed is a 0.01–5x scrub with a
+colour and background for compatible items, a dash for mixed values and the
+compatible/selected count. A single element uses per-type tabs. The Text tab is one tab of
+sections in order: Font (content, font), Format (size scrub, bold, italic, decoration,
+alignment, letter and line spacing), Style (colour swatch, background box with its colour
+and geometry, saved styles), the shared Transform section (Scale, Position X/Y, Rotate,
+Arrange, flips; the same component as video items), Blending (blend menu, opacity scrub) and
+Animation. Text has no hex colour field and no bare position fields: each property has one
+control, and text position is the Transform Position row. Video and image items keep
+Transform and Blending under Basic, then Audio (see below) and Speed for video and audio. Speed is a 0.01–5x scrub with a
 reset and, for items with audio, a `Change pitch` checkbox that is on while pitch
 follows speed (`maintain_pitch` off). Speed edits use `timeline.set_speed`, one undo
 step per commit; trim bounds extend by the retimed output length. Caption generation
@@ -153,7 +158,7 @@ opacity or transform keys through `text.apply_animation`; the
 owns the recipes and refusal rules. A choice is selected only for an exact saved Param
 match. Other curves have no selected choice: undo or remove their keys to change modes.
 
-The same tab's Preset row lists the project's saved text styles
+The Style section's Preset row lists the project's saved text styles
 (`inspector.text_preset.saved.<id>`) and a Save style action. Apply copies the saved
 values onto this item; Save stores its current appearance as the first free `Style N`
 using `text.save_preset`. Both use the engine preset commands from

@@ -106,6 +106,8 @@ The Audio tab starts with a two-button section switch at the top of the 120 px n
 
 The Transform tab has five scrub rows with an inline reset arrow: position X and Y, independent scale X and Y, and rotation. The reset and value-row pattern is in `.spikes/ui-reference/06-properties/notes.md`.
 
+The selected Text tab groups its controls as Font, Format, Style, Transform, Blending and Animation sections, in that order, with the same Transform section as video items. The grouping is [new]: no desktop shot of a selected text item is captured, and the web capture (`.spikes/web-editors/capcut-web/screens/06-editor-text-properties.md`) gives the function order only. Rows use the 39 px property rows and 22 px fields above. Not yet matched to the reference: the Font control is a popover opener, not a dropdown; Format is one row per control rather than one row of size, B, I, U and alignment; Case and the Stroke, Shadow and Glow styles are absent (their model work is outside this change). Behaviour: [Properties](../../../apps/vibecut/src/editor/panels/properties/README.md).
+
 The shared colour window has hex plus labelled HSV and alpha entries and sliders, swatches and recent colours. Sliders preview immediately and publish once on release; Escape or close cancels the draft. It serves text, text background, graphic fill and stroke, mask stroke, marker colour and canvas background. Layout, the sixteen-colour newest-first recent list and the fixed two-pixel graphic stroke are [proposed] (coordinator-approved). `inspector-transform` and `inspector-color` are the audit scenes. The native sampler's unavailable, pending and failed copy is localized in the same window; unavailable platforms keep all manual entry controls.
 
 ## Audio tab

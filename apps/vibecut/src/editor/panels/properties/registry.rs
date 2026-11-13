@@ -45,11 +45,7 @@ impl ElementKind {
     /// Type-specific tabs from the reference registry, in its order.
     pub const fn tabs(self) -> &'static [PropertiesTab] {
         match self {
-            Self::Text => &[
-                PropertiesTab::Text,
-                PropertiesTab::Transform,
-                PropertiesTab::Effects,
-            ],
+            Self::Text => &[PropertiesTab::Text, PropertiesTab::Effects],
             // Basic sub-tabs in the reference order: Basic, Remove BG, Mask.
             Self::Video => &[
                 PropertiesTab::Transform,

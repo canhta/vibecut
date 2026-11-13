@@ -569,6 +569,33 @@ fn install_previews(state: &mut State, ctx: &egui::Context) {
     ctx.set_fonts(definitions);
 }
 
+/// The typeface a closed Font field draws its family in. The family is installed from the
+/// shared text registry on first use; the frame that installs it still draws in the UI font,
+/// because egui applies new definitions on the next pass. Unresolvable names keep the UI font.
+pub(in crate::editor) fn label_family(ctx: &egui::Context, family: &str) -> egui::FontFamily {
+    let key = preview_key(family);
+    let face = egui::FontFamily::Name(key.as_str().into());
+    if ctx.fonts(|fonts| fonts.definitions().families.contains_key(&face)) {
+        return face;
+    }
+    let resolved = text::resolve(family, "Regular");
+    if resolved.missing {
+        return egui::FontFamily::Proportional;
+    }
+    let mut definitions = ctx.fonts(|fonts| fonts.definitions().clone());
+    definitions.font_data.insert(
+        key.clone(),
+        Arc::new(egui::FontData::from_static(
+            text::face(resolved.face).bytes(),
+        )),
+    );
+    definitions
+        .families
+        .insert(face, vec![key, "Inter".into(), "CJK".into()]);
+    ctx.set_fonts(definitions);
+    egui::FontFamily::Proportional
+}
+
 fn row_family(state: &State, family: &str) -> egui::FontFamily {
     if state.preview_fonts.contains(family) {
         egui::FontFamily::Name(preview_key(family).into())

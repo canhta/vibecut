@@ -357,12 +357,6 @@ fn item_patch(field: &str, value: &str) -> Result<ItemParamPatch> {
             })
         }
         "text_background_color" => ItemParamPatch::TextBackgroundColor(parse_color(value)?),
-        "text_position_x" => ItemParamPatch::TextPositionX(
-            parse_percent(value).map_err(|_| Error::Invalid("horizontal position"))?,
-        ),
-        "text_position_y" => ItemParamPatch::TextPositionY(
-            parse_percent(value).map_err(|_| Error::Invalid("vertical position"))?,
-        ),
         _ => return Err(Error::Invalid("shared field")),
     })
 }
@@ -385,14 +379,4 @@ fn parse_word<T: serde::de::DeserializeOwned>(value: &str, what: &'static str) -
 }
 fn parse_color(value: &str) -> Result<project::Color> {
     Ok(render::color::parse_hex(value)?)
-}
-fn parse_percent(value: &str) -> Result<f32> {
-    let value: f32 = value
-        .trim()
-        .parse()
-        .map_err(|_| Error::Invalid("percentage"))?;
-    if !value.is_finite() || !(0.0..=100.0).contains(&value) {
-        return Err(Error::Invalid("percentage"));
-    }
-    Ok(value)
 }

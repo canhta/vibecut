@@ -388,7 +388,6 @@ pub(super) fn text_item_locale(
         ("text_content", "VibeCut · Tiếng Việt"),
         ("text_font", "Noto Serif"),
         ("text_background", "#000000A0"),
-        ("text_position_y", "70"),
     ] {
         editor.set_shared_field(field, value)?;
     }

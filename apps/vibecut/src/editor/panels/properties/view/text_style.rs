@@ -102,15 +102,13 @@ impl Panel<'_, '_> {
         clicked
     }
 
-    pub(super) fn text_style_controls(&mut self, ui: &mut egui::Ui, item: ItemId) {
+    /// Format: weight, slant, decoration, alignment, letter spacing and line height.
+    pub(super) fn text_format_controls(&mut self, ui: &mut egui::Ui, item: ItemId) {
         let Some(project::ItemParams::Text(params)) =
             read::item(self.cx.session.project(), item).map(|found| found.content.clone())
         else {
             return;
         };
-        let enabled = !self.cx.disabled.contains("text.animation.fade_in");
-        self.text_animation_controls(ui, item, enabled);
-        self.text_preset_controls(ui, item, &params, enabled);
         use project::{TextAlign, TextDecoration};
         let bold = params.weight >= 600;
         if let Some(choice) = self.choice_row(
@@ -177,6 +175,17 @@ impl Panel<'_, '_> {
         }
         self.scrub_field(ui, item, LETTER_SPACING);
         self.scrub_field(ui, item, LINE_HEIGHT);
+    }
+
+    /// Style: the saved style bank, then the background box geometry.
+    pub(super) fn text_style_controls(&mut self, ui: &mut egui::Ui, item: ItemId) {
+        let Some(project::ItemParams::Text(params)) =
+            read::item(self.cx.session.project(), item).map(|found| found.content.clone())
+        else {
+            return;
+        };
+        let enabled = !self.cx.disabled.contains("text.animation.fade_in");
+        self.text_preset_controls(ui, item, &params, enabled);
         // The box rows exist only while the box does, like the colour fields they sit beside.
         if params.background.is_some() {
             self.number_row(
@@ -196,7 +205,12 @@ impl Panel<'_, '_> {
     }
 
     /// One effect row and one direction row apply a combined in/out animation.
-    fn text_animation_controls(&mut self, ui: &mut egui::Ui, item: ItemId, enabled: bool) {
+    pub(super) fn text_animation_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        item: ItemId,
+        enabled: bool,
+    ) {
         use engine::TextAnimationPreset::{
             FadeIn, FadeInOut, FadeOut, ScaleIn, ScaleInOut, ScaleOut, SlideIn, SlideInOut,
             SlideOut,

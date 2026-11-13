@@ -92,10 +92,31 @@ impl Panel<'_, '_> {
                     .unwrap_or_else(|| self.tr(Text::EmptyValue).to_owned());
                 let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
                 self.row_label(ui, row, self.tr(Text::TextFont));
-                let width = value_ui.available_width();
-                let response = value_ui.add_sized(
-                    [width, theme::size::FIELD],
-                    egui::Button::new(label).truncate(),
+                let dark = self.cx.dark;
+                // A left-aligned field: the family in its own face, the popover on click.
+                let (rect, response) = value_ui.allocate_exact_size(
+                    egui::vec2(value_ui.available_width(), theme::size::FIELD),
+                    egui::Sense::click(),
+                );
+                let fill = if response.hovered() {
+                    theme::hover(dark)
+                } else {
+                    theme::field(dark)
+                };
+                let face = current
+                    .as_deref()
+                    .map_or(egui::FontFamily::Proportional, |family| {
+                        crate::editor::properties::font_picker::label_family(value_ui.ctx(), family)
+                    });
+                value_ui
+                    .painter()
+                    .rect_filled(rect, theme::radius::FIELD, fill);
+                value_ui.painter().with_clip_rect(rect).text(
+                    egui::pos2(rect.left() + theme::space::MD, rect.center().y),
+                    egui::Align2::LEFT_CENTER,
+                    label,
+                    egui::FontId::new(theme::type_size::BODY, face),
+                    theme::text(dark),
                 );
                 response.widget_info(|| {
                     egui::WidgetInfo::labeled(egui::Role::ComboBox, true, self.tr(Text::TextFont))
@@ -110,26 +131,7 @@ impl Panel<'_, '_> {
             }
             if field.id == "text_background" {
                 let enabled = field.value.as_deref().is_some_and(|value| value != "none");
-                let mut checked = enabled;
-                let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
-                self.row_label(ui, row, self.tr(Text::TextBackground));
-                let response = value_ui.add(
-                    egui::Checkbox::without_text(&mut checked).indeterminate(field.value.is_none()),
-                );
-                let name = self.tr(Text::TextBackground);
-                response
-                    .ctx
-                    .accesskit_node_builder(response.id, |node| node.set_label(name));
-                self.remember("inspector.text_background", &response);
-                if response.changed() {
-                    let color = field
-                        .value
-                        .as_deref()
-                        .filter(|value| *value != "none")
-                        .unwrap_or("#000000A0");
-                    let value = if checked { color } else { "none" };
-                    self.set_shared_field("text_background", value);
-                }
+                self.text_background_toggle(ui, &field);
                 if enabled {
                     let id = "inspector.text_background_color";
                     let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
@@ -173,8 +175,6 @@ impl Panel<'_, '_> {
                 "text_content" => (Text::TextContent, "inspector.text_content"),
                 "text_size" => (Text::TextSize, "inspector.text_size"),
                 "text_background" => (Text::BackgroundColor, "inspector.text_background_color"),
-                "text_position_x" => (Text::TextPositionX, "inspector.text_position_x"),
-                "text_position_y" => (Text::TextPositionY, "inspector.text_position_y"),
                 _ => (Text::TextColor, "inspector.text_color"),
             };
             let mut value = self
@@ -217,6 +217,34 @@ impl Panel<'_, '_> {
             }
         }
     }
+    /// The Background checkbox: on adds a box in the last colour (black 63% when none), off
+    /// removes it. Its colour is a separate row, so a box has one colour control.
+    pub(super) fn text_background_toggle(
+        &mut self,
+        ui: &mut egui::Ui,
+        field: &crate::editor::properties::SharedField,
+    ) {
+        let mut checked = field.value.as_deref().is_some_and(|value| value != "none");
+        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        self.row_label(ui, row, self.tr(Text::TextBackground));
+        let response = value_ui
+            .add(egui::Checkbox::without_text(&mut checked).indeterminate(field.value.is_none()));
+        let name = self.tr(Text::TextBackground);
+        response
+            .ctx
+            .accesskit_node_builder(response.id, |node| node.set_label(name));
+        self.remember("inspector.text_background", &response);
+        if response.changed() {
+            let color = field
+                .value
+                .as_deref()
+                .filter(|value| *value != "none")
+                .unwrap_or("#000000A0");
+            let value = if checked { color } else { "none" };
+            self.set_shared_field("text_background", value);
+        }
+    }
+
     pub(super) fn audio_mute_control(
         &mut self,
         ui: &mut egui::Ui,
