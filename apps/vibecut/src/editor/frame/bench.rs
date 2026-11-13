@@ -367,12 +367,17 @@ mod tests {
             harness.event(egui::Event::Text("#11223344".into()));
             harness.key_press(egui::Key::Enter);
             harness.run_steps(3);
-            if full_preferences || locked {
+            // Recents live in the project, so a full preference document never blocks a commit.
+            assert_eq!(bench.editor().preferences, preferences);
+            if locked {
                 assert_eq!(bench.editor().session.project(), &before);
                 assert_eq!(bench.editor().session.history_len(), history);
-                assert_eq!(bench.editor().preferences, preferences);
                 assert!(bench.editor().error.is_some());
             } else {
+                assert!(
+                    bench.editor().error.is_none(),
+                    "full preferences {full_preferences}"
+                );
                 assert_ne!(bench.editor().session.project(), &before);
                 assert_eq!(bench.editor().session.history_len().0, history.0 + 1);
                 assert_eq!(

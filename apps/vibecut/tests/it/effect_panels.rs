@@ -4189,11 +4189,8 @@ fn streak_pending_edit_invalidates_on_selection_panel_effect_and_lock() {
 
 #[test]
 fn colour_popover_eyedropper_samples_the_player_frame_as_one_step() {
-    let (editor, _) = chroma_frame_fixture();
-    let mut harness = build(editor);
-    harness.run_steps(3);
-    let overlay = harness
-        .state()
+    let (mut editor, _) = chroma_frame_fixture();
+    let overlay = editor
         .session
         .project()
         .data()
@@ -4204,6 +4201,26 @@ fn colour_popover_eyedropper_samples_the_player_frame_as_one_step() {
         .find(|item| matches!(item.content, ItemParams::Overlay(_)))
         .map(|item| item.id)
         .expect("overlay item");
+    // A half-opaque overlay over the black canvas shows a darker pixel than its fill, so
+    // the sampled colour differs and the pick is a real edit.
+    editor
+        .session
+        .apply(Command::SetAnimatedParam {
+            item: overlay,
+            path: project::BuiltinPath::Opacity.into(),
+            param: project::Param::new(project::ParamValue::Scalar(0.5)).unwrap(),
+        })
+        .unwrap();
+    // The preview opens over the edited project.
+    editor.playback = Playback::new(
+        &editor.session,
+        ByteBudget::new(64 << 20).unwrap(),
+        Arc::new(Files),
+    )
+    .unwrap();
+    editor.playback.set_device_available(true);
+    let mut harness = build(editor);
+    harness.run_steps(3);
     select(&mut harness, overlay);
     harness.run_steps(2);
     click(&mut harness, "inspector.graphic_fill");
@@ -4237,6 +4254,11 @@ fn colour_popover_eyedropper_samples_the_player_frame_as_one_step() {
         pos,
     )
     .expect("the clicked pixel is inside the frame");
+    assert_ne!(
+        expected.0[..3],
+        [10, 20, 30],
+        "the sampled pixel is not the fill"
+    );
 
     let history = harness.state().session.history_len();
     click_pos(&mut harness, pos);

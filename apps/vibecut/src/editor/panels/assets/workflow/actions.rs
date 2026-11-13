@@ -115,4 +115,21 @@ impl State {
             }
         }
     }
+
+    /// Star or unstar one catalogue tile in the preference document, validated before
+    /// the write; projects are untouched.
+    fn toggle_favorite(
+        &mut self,
+        port: &mut Port<'_>,
+        family: &str,
+        id: &str,
+        favorite: bool,
+    ) -> crate::Result<()> {
+        let next = port
+            .read
+            .preferences
+            .catalog_favorites
+            .with(family, id, favorite)?;
+        port.store_preference_result("catalog_favorites", serde_json::to_value(&next)?)
+    }
 }
