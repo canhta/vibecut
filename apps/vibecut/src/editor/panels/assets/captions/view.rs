@@ -680,6 +680,13 @@ impl Subtitles {
                 }
             })
             .response;
+        r.widget_info(|| {
+            egui::WidgetInfo::labeled(
+                egui::Role::ComboBox,
+                r.enabled(),
+                c.tr(Text::SubBilingualCaptions),
+            )
+        });
         c.remember("subtitles.bilingual.language", &r);
         if choice != before {
             match choice {
