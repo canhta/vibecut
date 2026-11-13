@@ -126,6 +126,18 @@ const MENU_ROWS: &[MenuRow] = &[
     },
     MenuRow {
         menu: "header",
+        item: "rename",
+        command: "project.rename",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "header",
+        item: "delete",
+        command: "project.delete",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "header",
         item: "settings",
         command: "preferences.open",
         unavailable: false,
@@ -336,6 +348,16 @@ fn header_exit_help_and_feedback_route_through_registered_actions() {
     ] {
         editor.activate(id).unwrap();
         assert_eq!(editor.take_lifecycle_action(), Some(expected), "{id}");
+    }
+    // Delete asks first: Cancel leaves no lifecycle request, Confirm issues one.
+    for (id, expected) in [
+        ("project.cancel_delete", None),
+        ("project.confirm_delete", Some(EditorAction::DeleteProject)),
+    ] {
+        editor.activate("project.delete").unwrap();
+        assert_eq!(editor.take_lifecycle_action(), None, "asking for {id}");
+        editor.activate(id).unwrap();
+        assert_eq!(editor.take_lifecycle_action(), expected, "{id}");
     }
     assert!(vibecut::actions::action("timeline.freeze").is_some());
     assert!(!editor.action_enabled("timeline.freeze"));

@@ -160,6 +160,12 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
             ("window.home", Icon::SquaresFour, Text::Home),
             ("project.save", Icon::FloppyDisk, Text::Save),
             ("project.save_as", Icon::FloppyDiskBack, Text::SaveAs),
+            (
+                "project.rename",
+                Icon::PencilSimple,
+                Text::ActionProjectRename,
+            ),
+            ("project.delete", Icon::Trash, Text::ActionProjectDelete),
             ("preferences.open", Icon::GearSix, Text::Settings),
             ("models.open", Icon::File, Text::Models),
             ("layout.reset", Icon::CornersOut, Text::Reset),
@@ -196,9 +202,15 @@ fn menu_entry(
         button = button.shortcut_text(shortcut);
     }
     let response = ui.push_id(id, |ui| ui.add(button)).inner;
+    // The title button already owns the `project.rename` automation id.
+    let widget = if id == "project.rename" {
+        "project.menu.rename"
+    } else {
+        id
+    };
     state
         .painted
-        .push((id, Some(icon.name()), response.clone()));
+        .push((widget, Some(icon.name()), response.clone()));
     if response.clicked() {
         actions.push(Action::Activate(id));
         ui.close();

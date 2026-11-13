@@ -14,7 +14,7 @@ hides nothing: `Session::apply` refuses lifecycle commands (save, thumbnail), an
 `autosave()` (`None` for the memory variant) reaches `Autosave::apply`, which routes
 them. A caller cannot save through the wrong owner by accident.
 
-Header rename commits on Enter and cancels on Esc through `project.rename`. The timeline
+Header rename commits on Enter and cancels on Esc through `project.rename`; the menu's Rename row focuses that same field. Header Delete opens a confirmation, then the composition root saves and leaves the project and moves it to Trash through Home's library worker only after the leave completes and the writer lease is gone. A project the catalog does not list is refused, and a failed or cancelled leave clears the intent so a later exit cannot delete it. Restoring is Home's Trash. The timeline
 restores scale multiplier and logical-pixel horizontal scroll through
 `project.set_view_state`, outside edit history; seeking and navigation save the view,
 deferring writes until an active edit gesture ends. The playhead restores through the

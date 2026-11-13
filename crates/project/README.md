@@ -9,7 +9,7 @@ Engine owns editing commands and history. Media owns `SourceAsset`. Captions own
 | `model/` | Project, scenes, tracks, items, settings | [Project model](src/model/README.md) |
 | `animation/` | Parameters, keyframes, curves, fades, retime | [Animated parameters and retime](src/animation/README.md) |
 | `visual/` | Persisted visual item properties | [Visual properties](src/visual/README.md) |
-| `persistence/` | JSON envelope, writer lease, atomic files, autosave, metadata, streaming output | [Persistence and publication](src/persistence/README.md) |
+| `persistence/` | JSON envelope, writer lease, atomic files, autosave, metadata, bundles, streaming output | [Persistence and publication](src/persistence/README.md) |
 
 The crate root re-exports the public names; module paths are private.
 

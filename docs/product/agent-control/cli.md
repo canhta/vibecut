@@ -17,6 +17,9 @@ Build with `cargo build -p vibecut-cli` through the [build wrapper](../../../xta
 | `vibecut-cli probe <file>` | Probe a media file and report format, duration and streams |
 | `vibecut-cli project new <path>` | Create an empty project, refusing to replace an existing file |
 | `vibecut-cli project info <path>` | Summary plus optional view metadata under the project writer lease |
+| `vibecut-cli project save-as <path> <new-path>` | Publish a copy under a fresh project identity (plus its view metadata), refusing an existing destination |
+| `vibecut-cli bundle export <project> <bundle-dir>` | Write a self-contained directory: project, manifest and hashed media copies; missing media is listed, not an error |
+| `vibecut-cli bundle import <bundle-dir> <project-dir>` | Extract a bundle into a new project directory under a fresh identity; media absent from the bundle is listed for relinking |
 | `vibecut-cli exec <project> <command_id> <json>` | Run one engine command under the project writer lease |
 | `vibecut-cli normalize <project> [--clip] [--master] [--target-lufs -14] [--true-peak-db -1]` | Measure and store loudness gains for clip or master scopes |
 | `vibecut-cli control <project>` | Run a revision-bound control session over newline-delimited JSON |

@@ -1,6 +1,7 @@
 //! Integration tests share one binary and one copy of their helpers.
 
 mod animation;
+mod bundle;
 mod effects;
 mod metadata;
 mod project;

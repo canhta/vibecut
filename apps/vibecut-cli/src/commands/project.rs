@@ -13,3 +13,5 @@ mod reframe;
 pub(super) use reframe::run as reframe;
 mod transcript;
 pub(super) use transcript::run as transcript;
+mod bundle;
+pub(super) use bundle::run as bundle;

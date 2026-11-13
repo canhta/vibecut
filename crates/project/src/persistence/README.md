@@ -1,6 +1,6 @@
 # Persistence and publication
 
-Versioned project JSON, the writer lease, atomic files, recovery snapshots, optional metadata and bounded streaming output.
+Versioned project JSON, the writer lease, atomic files, recovery snapshots, optional metadata, bundles and bounded streaming output.
 
 ## Envelope and limits
 
@@ -59,6 +59,14 @@ Unix compares device/inode from the retained descriptor and current name. Window
 `read_metadata(path)` supports bounded read-only catalog display; mutations go through the WriterLease. `WriterLease::validate` checks the baseline and stable lock identity without requiring a project file to exist.
 
 `WriterLease::save_metadata` validates, then atomically replaces the sidecar under the project lease and content precondition. Sidecar symlinks are refused. Project writer destinations reserve the `.meta.json` suffix, including case variants and canonical aliases, so saving a project cannot replace another project's metadata. A sidecar write error is returned and does not roll back a previously successful project publication. Callers acknowledge a save only after both writes succeed.
+
+## Bundles
+
+`bundle::export(project, destination)` writes a self-contained directory: `bundle.json` (manifest), `project.vibecut` (the ordinary envelope) and `media/<hash>-<name>` copies. The format is a directory, not an archive, so no archive dependency or parser is admitted and any file manager, sync tool or `tar`/`zip` can carry it. The manifest holds `format` (`vibecut.bundle`), `schema_version` (the envelope's `SCHEMA_VERSION`, so a newer bundle is `TooNew` and an older one `TooOld`), `generator` and one entry per asset: `asset`, `name`, lowercase hex BLAKE3 `hash` and copied `bytes`. A stored file name is always derived from `hash` and a `name` that passes the closed rule (no controls, separators or `:*?"<>|`, no trailing dot or space, at most 80 bytes); no manifest text is ever used as a path, so traversal has nothing to reach. Assets with identical content and name share one copy.
+
+Export stages in a private `.vibecut-bundle-*` directory beside the destination, syncs every file, then publishes with one rename; an existing destination is refused, and a failure leaves nothing at the destination. Each copy is hashed after it is written and must equal the asset's recorded hash, so media that changed since import is refused rather than bundled under a wrong identity. Missing media is recorded (`bytes` 0, no file) and reported by `missing()`. The envelope inside the bundle points every asset at its location inside the bundle; original source paths are not written. Media bytes are capped per file (`MAX_MEDIA_BYTES`, 64 GiB) and in total (`MAX_BUNDLE_BYTES`, 512 GiB). Imported LUT directories are app-store paths and are not bundled.
+
+`bundle::import(bundle, destination)` validates before touching the destination: the bundle and its `media/` must be plain directories, `bundle.json` (4 MiB) and `project.vibecut` must be regular files, the manifest must match the project's assets one to one with no duplicate ids, every `hash` must equal the asset's recorded content hash, names must satisfy the closed rule, and equal stored names must declare equal sizes. Links are refused everywhere (`symlink_metadata`, never followed). Each present file's length must equal the declared size; the copy is bounded, synced and hashed against the manifest and asset. A file absent from the bundle is not an error: the asset keeps its identity and hash and is reported by `missing()` so the editor shows its relink state. Files in `media/` that no entry names are ignored. The result is staged and published like export, the project gets a fresh `ProjectId` (importing twice never yields two projects with one identity), and every asset path points inside the new directory. Save and Save As keep using the lease and atomic writer above; the bundle writes only into its own new directory.
 
 ## Streaming output
 

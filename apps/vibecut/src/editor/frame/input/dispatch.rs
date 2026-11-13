@@ -70,6 +70,7 @@ impl Editor {
             || self.timeline.graph_popover_open()
             || self.frame.recording_active
             || self.frame.shortcuts_open
+            || self.frame.delete_open
             || self
                 .assets
                 .captions

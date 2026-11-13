@@ -55,6 +55,11 @@ pub struct EditorWindow {
     /// Identity pair a successful Save As produced, waiting for the workspace
     /// owner to carry lane memory from the issuing project to the copy.
     pub(super) saved_as: Option<(project::ProjectId, project::ProjectId)>,
+    /// The editor confirmed the header Delete; the workspace owns the rest.
+    pub(super) delete_requested: bool,
+    /// A save-and-leave issued for Delete is in flight. The project moves to Trash
+    /// only if that leave completes; any failure or cancel clears the intent.
+    pub(super) delete_on_leave: bool,
 }
 impl EditorWindow {
     pub(super) fn new(
@@ -99,6 +104,8 @@ impl EditorWindow {
             open_file_requested: false,
             save_as_from: None,
             saved_as: None,
+            delete_requested: false,
+            delete_on_leave: false,
         }
     }
     /// A damaged layout preference document was replaced at startup.

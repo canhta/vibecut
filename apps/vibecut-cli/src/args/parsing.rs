@@ -16,6 +16,9 @@ Usage:
   vibecut-cli media thumbnails <project> --item <id> --pixels-per-second <zoom> [--start <tick> --end <tick>]
   vibecut-cli project new <path>
   vibecut-cli project info <path>
+  vibecut-cli project save-as <path> <new-path>
+  vibecut-cli bundle export <project> <bundle-dir>
+  vibecut-cli bundle import <bundle-dir> <project-dir>
   vibecut-cli exec <project> <command_id> <json>
   vibecut-cli normalize <project> [--clip] [--master] [--target-lufs -14] [--true-peak-db -1]
   vibecut-cli control <project> [--allow-overwrite] [--no-save]

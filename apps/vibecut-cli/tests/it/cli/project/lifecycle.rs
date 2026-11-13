@@ -1,6 +1,6 @@
 //! Verifies native project command behaviour.
 use crate::cli::fixtures::{info, new_project};
-use crate::cli::process::{bin, cli, code, error_json, os, spawn};
+use crate::cli::process::{bin, cli, code, error_json, os, spawn, stdout_json};
 use serde_json::json;
 use std::ffi::OsStr;
 use std::fs;
@@ -23,6 +23,70 @@ fn project_new_and_info_round_trip_unicode_space_path() {
     let second = cli(&[os("project"), os("new"), project.as_os_str()]);
     assert_eq!(code(&second), 2);
     assert!(String::from_utf8_lossy(&second.stderr).contains("already exists"));
+
+    // Save As publishes a copy under a new identity and never replaces a file.
+    let copy = dir.path().join("bản sao.vibecut");
+    let saved = cli(&[
+        os("project"),
+        os("save-as"),
+        project.as_os_str(),
+        copy.as_os_str(),
+        os("--json"),
+    ]);
+    assert_eq!(
+        code(&saved),
+        0,
+        "{}",
+        String::from_utf8_lossy(&saved.stderr)
+    );
+    assert_ne!(stdout_json(&saved)["id"], json!(value["id"].to_string()));
+    assert_eq!(info(&copy)["name"], "Untitled");
+    let again = cli(&[
+        os("project"),
+        os("save-as"),
+        project.as_os_str(),
+        copy.as_os_str(),
+    ]);
+    assert_eq!(code(&again), 2);
+
+    // A bundle round-trips through export and import; the destinations are new.
+    let bundle = dir.path().join("gói dự án.vibecutbundle");
+    let exported = cli(&[
+        os("bundle"),
+        os("export"),
+        project.as_os_str(),
+        bundle.as_os_str(),
+        os("--json"),
+    ]);
+    assert_eq!(
+        code(&exported),
+        0,
+        "{}",
+        String::from_utf8_lossy(&exported.stderr)
+    );
+    assert_eq!(stdout_json(&exported)["missing"], json!([]));
+    let extracted = dir.path().join("đã nhập");
+    let imported = cli(&[
+        os("bundle"),
+        os("import"),
+        bundle.as_os_str(),
+        extracted.as_os_str(),
+        os("--json"),
+    ]);
+    assert_eq!(
+        code(&imported),
+        0,
+        "{}",
+        String::from_utf8_lossy(&imported.stderr)
+    );
+    assert_eq!(info(&extracted.join("project.vibecut"))["name"], "Untitled");
+    let repeat = cli(&[
+        os("bundle"),
+        os("export"),
+        project.as_os_str(),
+        bundle.as_os_str(),
+    ]);
+    assert_ne!(code(&repeat), 0);
 }
 
 #[test]

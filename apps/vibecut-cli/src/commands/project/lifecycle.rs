@@ -13,18 +13,63 @@ use time::FrameRate;
 
 pub(crate) fn run(_context: &Context, args: Vec<OsString>) -> Result<Output, CliError> {
     let mut args = args.into_iter();
-    let action = args
-        .next()
-        .ok_or_else(|| CliError::Usage("usage: vibecut-cli project new|info <path>".into()))?;
+    let action = args.next().ok_or_else(|| {
+        CliError::Usage("usage: vibecut-cli project new|info|save-as <path> ...".into())
+    })?;
     let action = utf8(&action, "project action")?;
     let rest: Vec<OsString> = args.collect();
     match action {
         "new" => project_new(one_path(rest, "usage: vibecut-cli project new <path>")?),
         "info" => project_info(one_path(rest, "usage: vibecut-cli project info <path>")?),
+        "save-as" => {
+            let (source, destination) =
+                two_paths(rest, "usage: vibecut-cli project save-as <path> <new-path>")?;
+            project_save_as(source, destination)
+        }
         other => Err(CliError::Usage(format!(
-            "unknown project action: {other}; expected new or info"
+            "unknown project action: {other}; expected new, info or save-as"
         ))),
     }
+}
+
+/// Exactly two path arguments.
+pub(super) fn two_paths(args: Vec<OsString>, usage: &str) -> Result<(PathBuf, PathBuf), CliError> {
+    let mut args = args.into_iter().map(PathBuf::from);
+    match (args.next(), args.next(), args.next()) {
+        (Some(first), Some(second), None) => Ok((first, second)),
+        _ => Err(CliError::Usage(usage.to_owned())),
+    }
+}
+
+/// Publish a copy of `source` under a fresh identity and leave `source` untouched.
+/// The destination must not exist: this command never replaces a project.
+fn project_save_as(source: PathBuf, destination: PathBuf) -> Result<Output, CliError> {
+    match std::fs::symlink_metadata(&destination) {
+        Ok(_) => {
+            return Err(CliError::Usage(format!(
+                "destination already exists: {}",
+                destination.display()
+            )));
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    let mut lease = WriterLease::acquire(&source)?;
+    let loaded = lease.load()?;
+    let metadata = lease.metadata();
+    let receipt = lease.save_as(&destination, &loaded.project)?;
+    lease.save_metadata(&metadata)?;
+    let value = json!({
+        "path": json_path(receipt.path())?,
+        "id": receipt.project_id().0.to_string(),
+        "content_hash": hex(&receipt.content_hash().0),
+    });
+    Ok(Output::new(
+        value,
+        format!("saved {}", receipt.path().display()),
+        false,
+        0,
+    ))
 }
 
 fn project_new(path: PathBuf) -> Result<Output, CliError> {

@@ -3,6 +3,7 @@
 pub mod atomic;
 pub mod autosave;
 mod bounds;
+pub mod bundle;
 mod directory;
 mod identity;
 mod metadata;

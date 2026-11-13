@@ -42,6 +42,7 @@ pub enum EditorAction {
     SaveAs,
     FocusHome,
     ExitProject,
+    DeleteProject,
     OpenHelp,
     OpenFeedback,
     ImportMedia,
