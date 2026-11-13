@@ -102,7 +102,7 @@ fn export_configured(
 ) -> Result<Output, CliError> {
     let loaded = project::load(&project_path)?;
     let project = loaded.project;
-    super::prepare_project_fonts(&project)?;
+    super::prepare_project_libraries(&project)?;
     if options.scene == render::SceneChoice::Active && project.duration() == time::Tick::ZERO {
         return Err(CliError::Rejected("project timeline is empty"));
     }

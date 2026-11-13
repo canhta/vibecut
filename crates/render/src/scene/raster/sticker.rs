@@ -1,7 +1,8 @@
-//! Sticker pixels: bundled flag SVGs rasterised at the destination pixel size, and a placeholder
-//! for an asset that cannot be drawn. Shapes are graphic items, not stickers.
+//! Sticker pixels: bundled flag SVGs and lent fetched SVGs rasterised at the destination pixel
+//! size, and a placeholder for an asset that cannot be drawn. Shapes are graphic items, not stickers.
 
 use super::sticker_flags::FLAGS;
+use super::sticker_source::fetched_tree;
 use crate::image::{color, over};
 use crate::scene::Placement;
 use crate::{ExecutionHooks, Image, MemoryKind, Result, check};
@@ -23,12 +24,17 @@ pub enum StickerError {
     /// The asset exists but does not parse as SVG, or the requested raster size is out of range.
     #[error("sticker asset cannot be rasterised")]
     Invalid { sticker: String },
+    /// The id names a fetched collection whose file is not downloaded.
+    #[error("sticker collection is not downloaded")]
+    NotDownloaded { sticker: String },
 }
 impl StickerError {
     /// The sticker id the failure belongs to.
     pub fn sticker(&self) -> &str {
         match self {
-            Self::Missing { sticker } | Self::Invalid { sticker } => sticker,
+            Self::Missing { sticker }
+            | Self::Invalid { sticker }
+            | Self::NotDownloaded { sticker } => sticker,
         }
     }
 }
@@ -71,32 +77,40 @@ fn flag_tree(code: &'static str, bytes: &'static [u8]) -> Option<Arc<resvg::usvg
     Some(tree)
 }
 
-/// Rasterises a bundled SVG sticker to exactly `width` x `height` pixels. The vector tree is scaled
-/// to that size, so the result is crisp at every size up to [`MAX_STICKER_RASTER_SIDE`].
+/// Rasterises a bundled or fetched SVG sticker to exactly `width` x `height` pixels. The vector
+/// tree is scaled to that size, so the result is crisp at every size up to
+/// [`MAX_STICKER_RASTER_SIDE`].
 ///
 /// # Errors
 ///
-/// [`StickerError::Missing`] when no bundled asset has this id and
-/// [`StickerError::Invalid`] for an unparsable asset or a size outside
+/// [`StickerError::Missing`] when no bundled asset or lent source has this id,
+/// [`StickerError::NotDownloaded`] for a fetched id whose file is not cached and
+/// [`StickerError::Invalid`] for an unparsable or unverified asset or a size outside
 /// `1..=MAX_STICKER_RASTER_SIDE`.
 pub fn rasterize_sticker(
     sticker: &str,
     width: u32,
     height: u32,
 ) -> std::result::Result<StickerRaster, StickerError> {
-    let missing = || StickerError::Missing {
-        sticker: sticker.to_owned(),
-    };
     let invalid = || StickerError::Invalid {
         sticker: sticker.to_owned(),
     };
-    let (code, bytes) = flag_svg(sticker).ok_or_else(missing)?;
-    if !(1..=MAX_STICKER_RASTER_SIDE).contains(&width)
-        || !(1..=MAX_STICKER_RASTER_SIDE).contains(&height)
-    {
-        return Err(invalid());
-    }
-    let tree = flag_tree(code, bytes).ok_or_else(invalid)?;
+    let in_range = || {
+        (1..=MAX_STICKER_RASTER_SIDE).contains(&width)
+            && (1..=MAX_STICKER_RASTER_SIDE).contains(&height)
+    };
+    let tree = if let Some((code, bytes)) = flag_svg(sticker) {
+        if !in_range() {
+            return Err(invalid());
+        }
+        flag_tree(code, bytes).ok_or_else(invalid)?
+    } else {
+        let tree = fetched_tree(sticker)?;
+        if !in_range() {
+            return Err(invalid());
+        }
+        tree
+    };
     let size = tree.size();
     if !(size.width() > 0. && size.height() > 0.) {
         return Err(invalid());

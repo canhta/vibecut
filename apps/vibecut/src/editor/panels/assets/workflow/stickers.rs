@@ -31,6 +31,7 @@ impl State {
         };
         let outcome = libraries::stickers::insert_sticker(
             &mut *port.session,
+            libraries::stickers::native_store(),
             sticker_id,
             Placement::Auto,
             at,

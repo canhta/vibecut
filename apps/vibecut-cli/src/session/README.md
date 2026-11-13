@@ -6,9 +6,10 @@ Leased control lifetime, shared export admission, runtime settings.
 
 `registry::run` sends one command through `Session::control_typed` for the adapters that have no project file (fonts and the sound library), with the access objects in `Lent` and the typed refusal kept for the CLI's exit codes. `libraries::with_fonts` and `libraries::with_sounds` build those access objects from the per-user font store, the opened library root and `FREESOUND_API_KEY`; command parameters never carry a library root or token; human-granted font import carries only its chosen source path until the job consumes it.
 
-`libraries::prepare_project_fonts` loads only referenced custom text/caption families
-from the same verified font store before control rendering and export. Opening a
-project never downloads or changes its authored family key.
+`libraries::prepare_project_libraries` loads only referenced custom text/caption families
+from the same verified font store before control rendering and export, and lends the sticker
+cache to the renderer so an export draws downloaded emoji and icons and refuses ones that are
+not downloaded. Opening a project never downloads or changes its authored family key.
 
 `runtime::vision_access` (over `shorts::installed_faces`) lends the local YuNet face detector behind `reframe.generate`.
 It reads the pinned `yunet-2026may` bundle from the shared verified model cache and never

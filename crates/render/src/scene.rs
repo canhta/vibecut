@@ -19,6 +19,8 @@ use project::{AnimationPath, ItemId, Project};
 pub use raster::sticker::{
     FLAGS_PROVIDER, MAX_STICKER_RASTER_SIDE, StickerError, StickerRaster, rasterize_sticker,
 };
+pub use raster::sticker_source::{StickerFault, StickerSource, lend_sticker_source};
+pub(crate) use raster::sticker_source::admit as admit_sticker;
 use raster::{TextEntry, TextKey};
 use std::collections::BTreeMap;
 use std::sync::Arc;

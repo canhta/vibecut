@@ -9,7 +9,7 @@ mod search;
 pub use catalog::{FLAG_SIZE, insert_sticker, resolve_sticker, search_catalog};
 pub use fetched::{
     Category, Collection, CollectionState, Entry, FETCHED_SIZE, Item, MAX_SVG_BYTES, Page,
-    StickerStore, Unavailable, check_svg, curated_collections, is_offline,
+    StickerStore, Unavailable, check_svg, curated_collections, is_offline, native_store,
 };
 pub use recents::{MAX_RECENT_STICKERS, Recents};
 pub use search::{DEFAULT_SEARCH_LIMIT, FlagMatch, FlagPage, search_flags};

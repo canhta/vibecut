@@ -16,7 +16,8 @@ pub use scene::effects::lut;
 pub use scene::{
     CaptionBackground, CaptionOutline, CaptionPosition, CaptionStyle, FLAGS_PROVIDER, Fit,
     MAX_STICKER_RASTER_SIDE, Placement, RasterCacheStats, Rect, RenderSettings, Renderer,
-    StickerError, StickerRaster, rasterize_sticker, style_from_cue,
+    StickerError, StickerFault, StickerRaster, StickerSource, lend_sticker_source,
+    rasterize_sticker, style_from_cue,
 };
 pub use scene::{arrange, blend, color, effects, mask, transitions, viewport};
 pub use sources::{FileSources, SourceProvider};

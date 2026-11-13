@@ -744,8 +744,8 @@ fn control_stickers(
 fn sticker_commands_search_insert_undo_redo_and_round_trip() {
     use engine::control::{StickerCategory, StickerEntry, StickerPage, StickerQuery};
     use libraries::stickers::{resolve_sticker, search_catalog};
-    let page = search_catalog("", StickerCategory::All, Some(8));
-    assert_eq!(page.total, 271, "every sticker is a flag");
+    let page = search_catalog(None, "", StickerCategory::All, Some(8)).unwrap();
+    assert_eq!(page.total, 271, "without a store every sticker is a flag");
     let ids: Vec<&str> = page.results.iter().map(|entry| entry.id.as_str()).collect();
     assert_eq!(
         ids,
@@ -755,22 +755,23 @@ fn sticker_commands_search_insert_undo_redo_and_round_trip() {
         ]
     );
     assert_eq!((page.results[0].width, page.results[0].height), (640, 480));
-    let flags = search_catalog("", StickerCategory::Flags, Some(1000));
+    let flags = search_catalog(None, "", StickerCategory::Flags, Some(1000)).unwrap();
     assert_eq!((flags.total, flags.results.len()), (271, 271));
-    assert!(search_catalog("asia", StickerCategory::Flags, None).total > 0);
-    assert_eq!(resolve_sticker(" flags:vn ").unwrap().id, "flags:VN");
+    let asia = search_catalog(None, "asia", StickerCategory::Flags, None).unwrap();
+    assert!(asia.total > 0);
+    assert_eq!(resolve_sticker(None, " flags:vn ").unwrap().id, "flags:VN");
     assert!(
-        resolve_sticker("shapes:star").is_none(),
+        resolve_sticker(None, "shapes:star").is_none(),
         "shapes are graphic items, not stickers"
     );
-    assert!(resolve_sticker("flags:zz").is_none());
-    assert!(resolve_sticker("emoji:smile").is_none());
+    assert!(resolve_sticker(None, "flags:zz").is_none());
+    assert!(resolve_sticker(None, "emoji:smile").is_none());
 
     let search = |query: &StickerQuery| -> control::Result<StickerPage> {
-        Ok(search_catalog(&query.query, query.category, query.limit))
+        search_catalog(None, &query.query, query.category, query.limit)
     };
     let resolve = |id: &str| -> control::Result<StickerEntry> {
-        resolve_sticker(id).ok_or(control::Error::Edit(engine::EditError::Invalid(
+        resolve_sticker(None, id).ok_or(control::Error::Edit(engine::EditError::Invalid(
             "unknown sticker id",
         )))
     };
