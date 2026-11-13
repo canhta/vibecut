@@ -759,6 +759,40 @@ mod tests {
     }
 
     #[test]
+    fn keybinding_profiles_refuse_bad_input_and_merge_or_replace() {
+        let current = KeybindingPreferences {
+            bindings: BTreeMap::from([
+                ("timeline.snap".into(), vec!["Ctrl+Shift+N".into()]),
+                ("playback.seek".into(), vec!["F7".into()]),
+            ]),
+            is_customized: BTreeSet::from(["timeline.snap".into(), "playback.seek".into()]),
+        };
+        let known = |id: &str| crate::actions::action(id).is_some();
+        let profile = format!(
+            "{{\"format\":\"{KEYBINDING_FORMAT}\",\"version\":1,\"bindings\":{{\"timeline.snap\":[\"Ctrl+Shift+K\"],\"future.action\":[\"F9\"]}},\"isCustomized\":[\"timeline.snap\"]}}"
+        );
+        let imported = KeybindingProfile::import(profile.as_bytes()).unwrap();
+        let merged = current
+            .apply_profile(imported.clone(), crate::input::ImportMode::Merge, known)            .unwrap();
+        assert_eq!(merged.unknown_actions, ["future.action"]);
+        assert_eq!(merged.preferences.bindings["timeline.snap"], ["Ctrl+Shift+K"]);
+        assert_eq!(merged.preferences.bindings["playback.seek"], ["F7"]);
+        assert!(!merged.preferences.bindings.contains_key("future.action"));
+        let replaced = current
+            .apply_profile(imported, crate::input::ImportMode::Replace, known)
+            .unwrap();
+        assert_eq!(replaced.preferences.bindings.len(), 1);
+        assert_eq!(replaced.preferences.is_customized, BTreeSet::from(["timeline.snap".into()]));
+        assert_eq!(replaced.unknown_actions, ["future.action"]);
+        // A corrupt file never reaches apply_profile, so the current bindings stay as they were.
+        assert_eq!(
+            KeybindingProfile::import(b"{\"format\":"),
+            Err(KeybindingError::Malformed)
+        );
+        assert_eq!(current.bindings.len(), 2);
+    }
+
+    #[test]
     fn unsupported_profile_versions_are_refused() {
         let newer = format!(
             "{{\"format\":\"{KEYBINDING_FORMAT}\",\"version\":2,\"bindings\":{{}},\"isCustomized\":[]}}"

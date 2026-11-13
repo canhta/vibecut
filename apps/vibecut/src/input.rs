@@ -14,8 +14,8 @@ pub use dispatch::{TextPasteRequest, complete_text_paste, take_text_paste, text_
 #[cfg(test)]
 pub(crate) use keybindings::valid_action_id;
 pub use keybindings::{
-    KEYBINDING_FORMAT, KEYBINDING_VERSION, KEYBINDINGS_RESET_COMMAND, KEYBINDINGS_SET_COMMAND,
-    KeybindingError, KeybindingIssue, KeybindingPreferences, KeybindingProfile, MAX_ACTIONS,
-    MAX_BINDINGS_PER_ACTION, MAX_CHORD_TEXT, MAX_PROFILE_BYTES,
+    ImportMode, ImportOutcome, KEYBINDING_FORMAT, KEYBINDING_VERSION, KEYBINDINGS_RESET_COMMAND,
+    KEYBINDINGS_SET_COMMAND, KeybindingError, KeybindingIssue, KeybindingPreferences,
+    KeybindingProfile, MAX_ACTIONS, MAX_BINDINGS_PER_ACTION, MAX_CHORD_TEXT, MAX_PROFILE_BYTES,
 };
 pub use keymap::{DispatchInfo, Keymap};

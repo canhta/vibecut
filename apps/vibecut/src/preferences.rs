@@ -7,6 +7,7 @@ mod aggregate;
 mod easing;
 mod font_picker;
 mod geometry;
+mod performance;
 mod store;
 mod subtitles;
 
@@ -23,5 +24,9 @@ pub use aggregate::{
 pub use easing::{EasingPreferences, EasingTab, MAX_SAVED_EASINGS, SavedEasing};
 pub use font_picker::{FontPickerPreferences, FontTab};
 pub use geometry::WindowGeometry;
+pub use performance::{
+    DEFAULT_CACHE_LIMIT, DEFAULT_PROJECT_FPS, HardwareAcceleration, MAX_CACHE_LIMIT,
+    MIN_CACHE_LIMIT, PROJECT_FPS,
+};
 pub use store::{PreferenceIssue, PreferenceStore};
 pub use subtitles::{Options as SubtitleOptions, SOURCE_LANGUAGES};

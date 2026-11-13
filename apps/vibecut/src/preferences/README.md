@@ -40,3 +40,9 @@ fetched lists and price acknowledgements are never serialized. A document whose 
 64-byte unique names, exactly the current `color_grade` parameter set with each value
 checked against its definition). Saving, applying and deleting a preset are preference
 and project-command paths; the bank never enters project JSON or project history.
+
+`default_fps` is one of the project frame rates the settings dialog offers (24, 25, 30,
+60, 120; default 30). `hardware_acceleration` is `auto`, `on` or `off`. `cache_limit_bytes`
+is the one aggregate byte budget the app opens the engine with, bounded to 256 MiB–8 GiB
+(default 768 MiB, the previous fixed value). The limit and acceleration apply at the next
+start; an open project is never changed by either.

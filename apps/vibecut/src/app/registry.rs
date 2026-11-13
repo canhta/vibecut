@@ -51,7 +51,7 @@ impl Workspace {
         preferences: Preferences,
         path: Option<PathBuf>,
     ) -> Result<Self> {
-        let budget = ByteBudget::new(768 << 20)?;
+        let budget = ByteBudget::new(preferences.cache_limit_bytes)?;
         let persistence = ByteBudget::new(256 << 20)?;
         let lending = Lending::open(&root, &budget);
         let runner = std::rc::Rc::new(std::cell::RefCell::new(JobRunner::new(

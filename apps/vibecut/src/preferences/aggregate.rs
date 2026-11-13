@@ -1,5 +1,9 @@
 //! The versioned preference document composed from its feature-owned sections.
 
+use super::performance::{
+    DEFAULT_CACHE_LIMIT, DEFAULT_PROJECT_FPS, HardwareAcceleration, validate_cache_limit,
+    validate_project_fps,
+};
 use super::{AdjustmentPreset, EasingPreferences, FontPickerPreferences, WindowGeometry};
 use crate::{
     ElementKind, PropertiesTab,
@@ -15,7 +19,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 /// Bumped when the local preference document changes incompatibly.
-pub const PREFERENCES_VERSION: u32 = 10;
+pub const PREFERENCES_VERSION: u32 = 11;
 /// Room for every provider/feature choice and its bounded recent IDs.
 pub const MAX_PREFERENCES_BYTES: u64 = 32 * 1024;
 /// Total open-lane entries across every project; keeps the document bounded.
@@ -59,6 +63,9 @@ pub const PREFERENCE_KEYS: &[&str] = &[
     "font_picker",
     "adjustment_presets",
     "easing",
+    "default_fps",
+    "hardware_acceleration",
+    "cache_limit_bytes",
 ];
 
 /// A splitter drag that keeps every region non-empty and inside its limits.
@@ -152,6 +159,12 @@ pub struct Preferences {
     pub adjustment_presets: Vec<AdjustmentPreset>,
     /// Graph editor tab and saved easing curves; user data, never project state.
     pub easing: EasingPreferences,
+    /// Frame rate new projects start with; one of `PROJECT_FPS`.
+    pub default_fps: u32,
+    /// Hardware decode/encode choice; applies after the next start.
+    pub hardware_acceleration: HardwareAcceleration,
+    /// Aggregate byte budget for frames, compositor, export and cache; applies after the next start.
+    pub cache_limit_bytes: u64,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -183,6 +196,9 @@ impl Default for Preferences {
             font_picker: FontPickerPreferences::default(),
             adjustment_presets: Vec::new(),
             easing: EasingPreferences::default(),
+            default_fps: DEFAULT_PROJECT_FPS,
+            hardware_acceleration: HardwareAcceleration::default(),
+            cache_limit_bytes: DEFAULT_CACHE_LIMIT,
         }
     }
 }
@@ -238,6 +254,8 @@ impl Preferences {
         self.font_picker.validate()?;
         super::adjustment::validate_adjustment_presets(&self.adjustment_presets)?;
         self.easing.validate()?;
+        validate_project_fps(self.default_fps)?;
+        validate_cache_limit(self.cache_limit_bytes)?;
         if serde_json::to_vec(self)?.len() as u64 > MAX_PREFERENCES_BYTES {
             return Err(Error::Invalid("preference size"));
         }
@@ -332,6 +350,9 @@ impl Preferences {
             "font_picker" => Ok(serde_json::to_value(&self.font_picker)?),
             "adjustment_presets" => Ok(serde_json::to_value(&self.adjustment_presets)?),
             "easing" => Ok(serde_json::to_value(&self.easing)?),
+            "default_fps" => Ok(serde_json::json!(self.default_fps)),
+            "hardware_acceleration" => Ok(serde_json::to_value(self.hardware_acceleration)?),
+            "cache_limit_bytes" => Ok(serde_json::json!(self.cache_limit_bytes)),
             _ => Err(Error::Unsupported("preference key")),
         }
     }
@@ -371,6 +392,11 @@ impl Preferences {
             "font_picker" => self.font_picker = serde_json::from_value(value)?,
             "adjustment_presets" => self.adjustment_presets = serde_json::from_value(value)?,
             "easing" => self.easing = serde_json::from_value(value)?,
+            "default_fps" => self.default_fps = serde_json::from_value(value)?,
+            "hardware_acceleration" => {
+                self.hardware_acceleration = serde_json::from_value(value)?;
+            }
+            "cache_limit_bytes" => self.cache_limit_bytes = serde_json::from_value(value)?,
             _ => return Err(Error::Unsupported("preference key")),
         }
         Ok(())
