@@ -108,6 +108,7 @@ fn video_params() -> ItemParams {
         volume: 0.0,
         muted: false,
         crop: None,
+        cleanup: Default::default(),
     })
 }
 
@@ -181,6 +182,7 @@ fn fixture() -> Fixture {
             volume: 0.0,
             muted: false,
             source: Default::default(),
+            cleanup: Default::default(),
         }),
     );
     let mut playback = Playback::new(

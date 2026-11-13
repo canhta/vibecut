@@ -167,6 +167,7 @@ pub(super) fn readme_project(source: &Path) -> Result<(Editor, ItemId, ItemId), 
             volume: 0.0,
             muted: false,
             crop: None,
+            cleanup: Default::default(),
         }),
     )?;
     let second = insert(
@@ -181,6 +182,7 @@ pub(super) fn readme_project(source: &Path) -> Result<(Editor, ItemId, ItemId), 
             volume: 0.0,
             muted: false,
             crop: None,
+            cleanup: Default::default(),
         }),
     )?;
     let audio = track(&mut editor.session, "Audio", TrackKind::Audio)?;
@@ -195,6 +197,7 @@ pub(super) fn readme_project(source: &Path) -> Result<(Editor, ItemId, ItemId), 
             volume: 0.0,
             muted: false,
             source: Default::default(),
+            cleanup: Default::default(),
         }),
     )?;
     let text = track(&mut editor.session, "Text", TrackKind::Text)?;

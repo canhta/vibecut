@@ -74,12 +74,14 @@ impl State {
                             volume: 0.0,
                             muted: false,
                             crop: None,
+                            cleanup: Default::default(),
                         }),
                         _ => ItemParams::Audio(project::AudioParams {
                             fades: Default::default(),
                             volume: 0.0,
                             muted: false,
                             source: Default::default(),
+                            cleanup: Default::default(),
                         }),
                     },
                 };

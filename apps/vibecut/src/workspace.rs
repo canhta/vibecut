@@ -2152,6 +2152,7 @@ mod tests {
                 volume: 0.,
                 muted: false,
                 crop: None,
+                cleanup: Default::default(),
             }),
             effects: vec![],
             masks: vec![],

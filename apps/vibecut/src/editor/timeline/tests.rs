@@ -291,6 +291,7 @@ impl Rig {
                 muted: false,
                 source: Default::default(),
                 fades: Default::default(),
+                cleanup: Default::default(),
             })
         } else {
             ItemParams::Video(project::VideoParams {
@@ -299,6 +300,7 @@ impl Rig {
                 muted: false,
                 crop: None,
                 fades: Default::default(),
+                cleanup: Default::default(),
             })
         };
         let first = match session
@@ -452,6 +454,7 @@ fn new_media_item(asset: AssetId, kind: TrackKind) -> NewItem {
             muted: false,
             source: Default::default(),
             fades: Default::default(),
+            cleanup: Default::default(),
         })
     } else {
         ItemParams::Video(project::VideoParams {
@@ -460,6 +463,7 @@ fn new_media_item(asset: AssetId, kind: TrackKind) -> NewItem {
             muted: false,
             crop: None,
             fades: Default::default(),
+            cleanup: Default::default(),
         })
     };
     NewItem {
@@ -542,6 +546,7 @@ fn desktop_media_access_serves_mcp_generation_and_the_timeline_display() {
                     muted: false,
                     source: Default::default(),
                     fades: Default::default(),
+                    cleanup: Default::default(),
                 }),
             },
         })

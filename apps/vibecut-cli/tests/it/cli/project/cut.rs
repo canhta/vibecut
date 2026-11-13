@@ -56,6 +56,7 @@ fn pause_project(project_path: &Path, audio: &Path) {
                 volume: 0.0,
                 muted: false,
                 source: Default::default(),
+                cleanup: Default::default(),
             }),
         }],
     });

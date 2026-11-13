@@ -107,6 +107,7 @@ pub(super) fn timeline_main_sized(
                 volume: 0.0,
                 muted: false,
                 crop: None,
+                cleanup: Default::default(),
             }),
         )?;
     }
@@ -438,6 +439,7 @@ pub(super) fn placement(theme: Theme, scale: f32) -> Result<AppHarness, Failure>
             volume: 0.0,
             crop: None,
             muted: false,
+            cleanup: Default::default(),
         }),
     )?;
     insert(
@@ -452,6 +454,7 @@ pub(super) fn placement(theme: Theme, scale: f32) -> Result<AppHarness, Failure>
             crop: None,
             volume: 0.0,
             muted: false,
+            cleanup: Default::default(),
         }),
     )?;
     let audio = track(&mut session, "Audio", TrackKind::Audio)?;
@@ -466,6 +469,7 @@ pub(super) fn placement(theme: Theme, scale: f32) -> Result<AppHarness, Failure>
             volume: 0.0,
             muted: false,
             source: Default::default(),
+            cleanup: Default::default(),
         }),
     )?;
     let text = track(&mut session, "Text", TrackKind::Text)?;

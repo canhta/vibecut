@@ -113,6 +113,7 @@ pub(crate) fn fixture() -> Fixture {
             volume: 0.0,
             muted: false,
             crop: None,
+            cleanup: Default::default(),
         }),
     );
     let video_b = insert(
@@ -127,6 +128,7 @@ pub(crate) fn fixture() -> Fixture {
             volume: 0.0,
             muted: false,
             crop: None,
+            cleanup: Default::default(),
         }),
     );
     let _audio_item = insert(
@@ -140,6 +142,7 @@ pub(crate) fn fixture() -> Fixture {
             volume: 0.0,
             muted: false,
             source: Default::default(),
+            cleanup: Default::default(),
         }),
     );
     let _text_item = insert(
@@ -2566,6 +2569,7 @@ fn mixed_audio_mute_shows_indeterminate_and_undo_restores_each_item() {
             volume: -6.0,
             muted: true,
             source: Default::default(),
+            cleanup: Default::default(),
         }),
     );
     let video = fixture.video_a;
@@ -3446,6 +3450,7 @@ fn clip_details_remain_visible_after_scrolling_deep_into_a_long_clip() {
             volume: 0.0,
             muted: false,
             crop: None,
+            cleanup: Default::default(),
         }),
     );
     let mut h = harness(f.editor);

@@ -396,6 +396,7 @@ fn fixture() -> Fixture {
             volume: 0.0,
             muted: false,
             crop: None,
+            cleanup: Default::default(),
         }),
     );
     let image = insert(
@@ -410,6 +411,7 @@ fn fixture() -> Fixture {
             volume: 0.0,
             muted: false,
             crop: None,
+            cleanup: Default::default(),
         }),
     );
     let graphic = insert(
@@ -433,6 +435,7 @@ fn fixture() -> Fixture {
             volume: 0.0,
             muted: false,
             source: Default::default(),
+            cleanup: Default::default(),
         }),
     );
     let mut playback = Playback::new(
@@ -2622,6 +2625,7 @@ fn chroma_frame_fixture() -> (Editor, ItemId) {
             volume: 0.0,
             muted: false,
             crop: None,
+            cleanup: Default::default(),
         }),
     );
     let mut playback = Playback::new(

@@ -1197,6 +1197,7 @@ fn new_seek_cancels_audio_preroll_and_keeps_the_replacement_epoch_alive() {
                 volume: 0.0,
                 muted: false,
                 source: Default::default(),
+                cleanup: Default::default(),
             }),
         }],
     });
@@ -1410,6 +1411,7 @@ fn controlled_preview(audio: bool) -> (Session, Playback, std::sync::mpsc::Recei
                         muted: false,
                         source: Default::default(),
                         fades: Default::default(),
+                        cleanup: Default::default(),
                     })
                 } else {
                     ItemParams::Video(project::VideoParams {
@@ -1418,6 +1420,7 @@ fn controlled_preview(audio: bool) -> (Session, Playback, std::sync::mpsc::Recei
                         source_audio_enabled: false,
                         crop: None,
                         fades: Default::default(),
+                        cleanup: Default::default(),
                     })
                 },
             },

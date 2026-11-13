@@ -2082,6 +2082,7 @@ fn source_clip(e: &mut Editor) -> project::ItemId {
                     volume: 0.0,
                     muted: false,
                     source: Default::default(),
+                    cleanup: Default::default(),
                 }),
             },
         })
