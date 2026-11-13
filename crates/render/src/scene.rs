@@ -8,10 +8,8 @@ mod evaluation;
 pub mod mask;
 mod raster;
 mod sticker;
-mod sticker_flags;
 pub(crate) mod transform;
 pub use transform::arrange;
-pub mod transition_thumbnail;
 pub mod transitions;
 pub mod viewport;
 

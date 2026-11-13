@@ -1786,7 +1786,7 @@ fn dispatcher_refuses_hostile_inputs_and_cancels_without_leaking() {
                 Err(Error::Invalid(_))
             ));
             assert!(
-                render::transition_thumbnail::ThumbnailCache::new(1)
+                render::transitions::thumbnail::ThumbnailCache::new(1)
                     .thumbnail(definition.kind, &bad, (8, 8), p as f32, &h)
                     .is_err()
             );
@@ -1848,7 +1848,7 @@ fn dispatcher_refuses_hostile_inputs_and_cancels_without_leaking() {
 #[test]
 fn thumbnails_are_generated_bounded_shared_and_evicted() {
     let h = Hooks::default();
-    let cache = transition_thumbnail::ThumbnailCache::new(2);
+    let cache = transitions::thumbnail::ThumbnailCache::new(2);
     let none = TransitionParams::new();
     let first = cache
         .thumbnail("cross_dissolve", &none, (32, 18), 0.5, &h)

@@ -80,7 +80,7 @@ impl Preview {
             }
         };
         let hooks = ByteBudgetHooks::new(&budget, None);
-        let cache = render::transition_thumbnail::ThumbnailCache::new(1);
+        let cache = render::transitions::thumbnail::ThumbnailCache::new(1);
         let result = cache
             .thumbnail(
                 kind,

@@ -19,7 +19,7 @@ pub use scene::{
     SHAPES_PROVIDER, StickerError, StickerRaster, rasterize_sticker, style_from_cue,
 };
 pub use scene::{
-    arrange, blend, color, effects, mask, transition_thumbnail, transitions, viewport,
+    arrange, blend, color, effects, mask, transitions, viewport,
 };
 pub use sources::{FileSources, SourceProvider};
 use time::SourceRange;

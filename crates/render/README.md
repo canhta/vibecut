@@ -9,7 +9,8 @@ It consumes immutable project snapshots and renders and mixes one active-scene s
 |---|---|---|---|
 | `scene/` | Evaluates project items into one RGBA frame. | `Renderer`, `RenderSettings`, `Rect`, `Placement`, `Fit`, `RasterCacheStats`, `viewport` | [Working pixels and scene](src/scene/README.md) |
 | `scene/effects/` | Evaluates effect passes and owns the CPU reference table and imported cubes. | `EffectPass`, `EffectCompositor`, `CpuEffects`, `EffectFrame`, `evaluator`, `evaluate_effect`, `apply_effect`, `content_time`, `lut` | [Effect passes](src/scene/effects/README.md) |
-| `scene/transitions/` | Implements the ported transition kinds over the working frame. | (none) | [Transition kinds](src/scene/transitions/README.md) |
+| `scene/sticker/` | Rasterises bundled flag and shape stickers. | `rasterize_sticker`, `StickerRaster`, `StickerError`, `FLAGS_PROVIDER`, `SHAPES_PROVIDER`, `MAX_STICKER_RASTER_SIDE` | [Sticker pixels](src/scene/sticker/README.md) |
+| `scene/transitions/` | Implements the ported transition kinds over the working frame. | `thumbnail::ThumbnailCache` | [Transition kinds](src/scene/transitions/README.md) |
 | `audio/` | Owns every project audio stage from mix to limiter. | `AudioBlock`, `AudioMixer`, `mix_audio`, `measure_loudness` | [Audio clock and headroom](src/audio/README.md) |
 | `audio/cleanup/` | Runs an item's source cleanup chain with filter state carried across contiguous blocks. | `CleanupChain` | [Source cleanup](src/audio/cleanup/README.md) |
 | `export/` | Runs a staged project export through to publication. | `OutputOptions`, `RangeChoice`, `SceneChoice`, `VideoCodec`, `export`, `export_with_sources`, `validate_output_path` | [Export and publication](src/export/README.md) |

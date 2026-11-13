@@ -1,9 +1,11 @@
 //! Sticker pixels: bundled flag SVGs rasterised at the destination pixel size, shapes drawn
 //! through the generated graphic contours, and a placeholder for an asset that cannot be drawn.
 
+mod flags;
+
 use super::Placement;
 use super::draw::draw_graphic;
-use super::sticker_flags::FLAGS;
+use flags::FLAGS;
 use crate::image::{color, over};
 use crate::{ExecutionHooks, Image, MemoryKind, Result, check};
 use project::{GraphicParams, Item, ItemParams, StickerParams};
