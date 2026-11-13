@@ -504,7 +504,7 @@ impl Editor {
             ActionTarget::Ui {
                 action: UiAction::Crop,
                 ..
-            } => crate::editor::panels::player::crop::available(self),
+            } => crate::editor::panels::player::crop::available(&self.session),
             ActionTarget::Ui {
                 action: UiAction::JumpBookmark(direction),
                 ..

@@ -1,6 +1,7 @@
 //! Lends areas their ports and applies the notes they leave behind.
 use crate::editor::{Editor, SelectionScopes};
 use crate::editor::{Note, Port, Read, Rect, Vec2, assets, egui};
+use crate::editor::panels::player;
 
 impl Editor {
     /// Lend the assets state and a port to one workflow step, then apply the notes the
@@ -27,6 +28,32 @@ impl Editor {
         let result = run(&mut state, &mut port);
         let notes = port.into_notes();
         self.assets = state;
+        self.apply_notes(notes);
+        result
+    }
+
+    /// Lend the player state and a port to one step, then apply the notes it left, in
+    /// order. Cross-area requests the notes carry run once the state is back.
+    pub(in crate::editor) fn with_player<T>(
+        &mut self,
+        run: impl FnOnce(&mut player::State, &mut Port<'_>) -> T,
+    ) -> T {
+        let insertion_available = self.insertion_available();
+        let caption_bank_ready = self.caption_bank_ready();
+        let mut port = Port::new(
+            &mut self.session,
+            Read {
+                budget: self.playback.budget(),
+                preferences: &self.preferences,
+                playhead: self.playback.position().ok(),
+                item_rects: self.timeline.item_rects(),
+                now: self.clock.now(),
+                insertion_available,
+                caption_bank_ready,
+            },
+        );
+        let result = run(&mut self.player, &mut port);
+        let notes = port.into_notes();
         self.apply_notes(notes);
         result
     }

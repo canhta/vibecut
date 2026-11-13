@@ -322,7 +322,9 @@ impl Editor {
                     }
                 }
                 UiAction::Export => self.open_export()?,
-                UiAction::Crop => crate::editor::panels::player::crop::open(self)?,
+                UiAction::Crop => self.with_player(|player, port| {
+                    crate::editor::panels::player::crop::open(player, port)
+                })?,
                 UiAction::RunExport => self.run_export(self.preferences.export)?,
                 action @ (UiAction::ExportMarkIn | UiAction::ExportMarkOut) => {
                     let mut options = self.preferences.export;

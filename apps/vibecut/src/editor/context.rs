@@ -275,6 +275,8 @@ pub(crate) enum Request {
     /// Insert one shape through its `graphic.insert.*` action when it is enabled, then
     /// tell the assets area to record it as recent.
     InsertShape(String),
+    /// Arm or leave the chroma-key eyedropper the player samples next.
+    ArmKeyColor(Option<crate::editor::KeyPick>),
 }
 
 /// The shared editor context. One area receives it for one frame; its edit
@@ -450,11 +452,6 @@ impl<'a> Desk<'a> {
         run: impl FnOnce(&mut engine::Session) -> crate::Result<T>,
     ) -> crate::Result<T> {
         run(&mut self.editor.session)
-    }
-
-    /// Arm or leave the chroma-key eyedropper the player samples next.
-    pub(in crate::editor) fn arm_key_color_pick(&mut self, pick: Option<crate::editor::KeyPick>) {
-        self.editor.player.key_color_pick = pick;
     }
 
     /// Show a creator-facing toast for five seconds.

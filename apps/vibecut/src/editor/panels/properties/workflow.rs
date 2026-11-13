@@ -152,7 +152,7 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
                 value,
             } => commands::set_keyframe_at(desk, item, &field, time, value),
             Action::SetKeyColorPick(pick) => {
-                desk.arm_key_color_pick(pick);
+                desk.request(crate::editor::context::Request::ArmKeyColor(pick));
                 Ok(())
             }
             Action::ToggleChromaKey { item, enabled } => {
@@ -234,7 +234,7 @@ impl State {
         kind: &'static str,
         tab: &'static str,
     ) -> Result<()> {
-        desk.arm_key_color_pick(None);
+        desk.request(crate::editor::context::Request::ArmKeyColor(None));
         self.cancel_font_import(desk);
         self.font_picker.close();
         self.chroma_staged = None;

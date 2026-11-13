@@ -196,7 +196,9 @@ impl Editor {
         self.show_drop_overlay(ui.ctx(), hovering);
         self.show_toast(ui.ctx());
         self.show_export(ui);
-        super::super::panels::player::crop::show(self, ui.ctx());
+        self.with_player(|player, port| {
+            crate::editor::panels::player::crop::show(player, port, ui.ctx());
+        });
         if let Some(subtitles) = &mut self.assets.captions {
             let widgets = subtitles.dialogs(
                 ui.ctx(),
