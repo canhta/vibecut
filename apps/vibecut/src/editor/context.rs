@@ -209,6 +209,36 @@ pub(crate) struct Desk<'a> {
     editor: &'a mut crate::editor::Editor,
 }
 
+/// The editor's ripple preference as a command: an edit or replacement preview is
+/// wrapped in `timeline.edit` so the policy never rides on session state; a
+/// `batch` becomes the policy's own command list. Library audio and every non-edit
+/// command carry no policy.
+fn ripple_policy(command: engine::Command, ripple: bool) -> engine::Command {
+    use engine::{Command, Effect};
+    match command {
+        Command::Batch { commands } => Command::TimelineEdit { commands, ripple },
+        command @ Command::TimelinePreview { .. } => Command::TimelineEdit {
+            commands: vec![command],
+            ripple,
+        },
+        command
+            if command.effect() == Effect::Edit
+                && !matches!(
+                    command,
+                    Command::TimelineEdit { .. }
+                        | Command::AddLibrarySound { .. }
+                        | Command::AddLibraryMusic { .. }
+                ) =>
+        {
+            Command::TimelineEdit {
+                commands: vec![command],
+                ripple,
+            }
+        }
+        command => command,
+    }
+}
+
 impl<'a> Desk<'a> {
     pub(in crate::editor) fn new(editor: &'a mut crate::editor::Editor) -> Self {
         Self { editor }
@@ -257,7 +287,7 @@ impl<'a> Desk<'a> {
         ripple: bool,
     ) -> std::result::Result<engine::Outcome, engine::EditError> {
         self.push_selection()?;
-        self.editor.session.apply_with_ripple(command, ripple)
+        self.editor.session.apply(ripple_policy(command, ripple))
     }
 
     /// Run one registered action through the editor's shared activation path.
@@ -311,7 +341,7 @@ impl<'a> Desk<'a> {
             return Err(crate::Error::Invalid("selection"));
         }
         let before = self.editor.session.project().clone();
-        match self.editor.session.apply_with_ripple(command, ripple) {
+        match self.editor.session.apply(ripple_policy(command, ripple)) {
             Ok(outcome) => {
                 if outcome.changed
                     || !std::sync::Arc::ptr_eq(&before, self.editor.session.project())

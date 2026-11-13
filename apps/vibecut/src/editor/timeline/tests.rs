@@ -911,24 +911,27 @@ fn pending_displays_place_holders_and_request_the_generation_commands() {
     );
     // Every request names its registered command and paints a placeholder.
     for request in &generated {
-        let (command, params) = request.command();
-        match request {
-            VisualRequest::Waveform { asset } => {
-                assert_eq!(command, "media.generate_waveform");
-                assert_eq!(params["asset"], serde_json::json!(asset));
+        match (request, request.command()) {
+            (
+                VisualRequest::Waveform { asset },
+                engine::Command::GenerateWaveform { asset: command },
+            ) => assert_eq!(command, *asset),
+            (
+                VisualRequest::Thumbnails {
+                    item,
+                    pixels_per_second,
+                    ..
+                },
+                engine::Command::GenerateClipThumbnails {
+                    item: command,
+                    pixels_per_second: speed,
+                    ..
+                },
+            ) => {
+                assert_eq!(command, *item);
+                assert_eq!(speed, *pixels_per_second);
             }
-            VisualRequest::Thumbnails {
-                item,
-                pixels_per_second,
-                ..
-            } => {
-                assert_eq!(command, "media.generate_clip_thumbnails");
-                assert_eq!(params["item"], serde_json::json!(item));
-                assert_eq!(
-                    params["pixels_per_second"],
-                    serde_json::json!(pixels_per_second)
-                );
-            }
+            (request, command) => panic!("{request:?} produced {command:?}"),
         }
     }
     assert!(

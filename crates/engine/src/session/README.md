@@ -43,8 +43,11 @@ mixed workflow callbacks usable without introducing upper-owner knowledge here.
 ## Public entry points
 
 `Session::new(project, history_limit)` admits 1..=1000 retained undo steps. `project()` exposes
-an immutable `Arc<Project>`; `apply(Command)` is the typed edit entry and `execute(id, value)`
-the JSON one. `apply_merged(command, Some(key))` combines consecutive successful changes into
+an immutable `Arc<Project>`; `apply(Command)` is the typed edit entry, with `apply_merged(command,
+Some(key))` as its keyed form (`apply` is `apply_merged(command, None)`; keyed coalescing is
+reachable only through it). The session has no method taking a command id string: decoding a wire id is
+[`control::run_wire`](../control/README.md#string-entry), and in-process control reads use
+`Session::control_command`. `apply_merged` combines consecutive successful changes into
 one undo step for a continuous gesture; call `end_merge()` at gesture end, and at save and
 selection changes. Undo, redo, an explicit boundary or a different key ends merging. Refusal or
 unwind restores the previous merge state, and a no-op with a different key ends merging without
@@ -78,7 +81,7 @@ JSON integer admission is limited to ±(2^53−1), including nested values. Proj
 decimal-string encoding at its owner, including project persistence; other IDs and Tick remain
 numbers.
 
-`execute` returns `Outcome { changed, created }`. `created` lists engine-allocated typed track,
+`apply` returns `Outcome { changed, created }`. `created` lists engine-allocated typed track,
 item and bookmark IDs in execution order, including batch children. IDs share one checked
 increasing counter initialized above all loaded IDs and are not reused after delete, undo,
 branching, cancelled previews or rolled-back groups within a Session. A failed command or batch
@@ -156,7 +159,7 @@ committed-project notifications. View changes are refused inside gestures, group
 project and then the sidecar before publishing a receipt. `Autosave::apply(Command::SaveProject
 {})` and `Autosave::apply(Command::ThumbnailProject {})` route through `Command::lifecycle()` to
 queue the registered save or refresh the cover; callers must poll or flush and check
-acknowledgement. `Session::execute` refuses create and save because they need lifecycle
+acknowledgement. `Session::apply` refuses create and save because they need lifecycle
 ownership. Destination admission refusals before a persistence job starts (including Busy,
 unsupported names and lease IO errors) return their typed error without poisoning the active
 autosave owner; choosing a different destination can succeed. Once a job is admitted,

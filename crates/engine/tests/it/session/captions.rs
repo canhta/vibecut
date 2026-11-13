@@ -5,6 +5,7 @@
     clippy::indexing_slicing,
     clippy::unreachable
 )]
+use crate::support::session::Wire;
 use crate::support::session::{get, project, range, session};
 use engine::{Command, CreatedId, Session};
 use media::{AssetData, AssetId, ContentHash, SourceAsset, SourceProbe};
@@ -71,7 +72,7 @@ fn caption_bank_selection_overrides_noops_and_ids_round_trip() {
     data.scenes = scenes.try_into().unwrap();
     let mut s = Session::new(Project::new(data).unwrap(), 30).unwrap();
     let original = s.project().clone();
-    s.execute(
+    s.wire(
         "captions.apply_style",
         json!({"item":1,"style":{"kind":"saved","preset":100}}),
     )
@@ -122,7 +123,7 @@ fn caption_bank_selection_overrides_noops_and_ids_round_trip() {
     assert_eq!(s.project(), &patched);
     // Save captures the effective full style, not the untouched cue table.
     let out = s
-        .execute(
+        .wire(
             "captions.save_preset",
             json!({"item":1,"name":"Tie\u{302}\u{301}ng Vie\u{323}\u{302}t"}),
         )
@@ -144,7 +145,7 @@ fn caption_bank_selection_overrides_noops_and_ids_round_trip() {
     let history = s.history_len();
     let revision = s.revision();
     assert!(matches!(
-        s.execute(
+        s.wire(
             "captions.save_preset",
             json!({"item":1,"name":"Tie\u{302}\u{301}ng Vie\u{323}\u{302}t"})
         ),
@@ -159,7 +160,7 @@ fn caption_bank_selection_overrides_noops_and_ids_round_trip() {
     })
     .unwrap();
     let saved = s.project().clone();
-    s.execute(
+    s.wire(
         "captions.rename_preset",
         json!({"preset":101,"name":"Renamed"}),
     )
@@ -169,7 +170,7 @@ fn caption_bank_selection_overrides_noops_and_ids_round_trip() {
     let revision = s.revision();
     let history = s.history_len();
     assert!(
-        !s.execute(
+        !s.wire(
             "captions.rename_preset",
             json!({"preset":101,"name":"Tiếng Việt"})
         )
@@ -177,7 +178,7 @@ fn caption_bank_selection_overrides_noops_and_ids_round_trip() {
         .changed
     );
     assert!(
-        !s.execute(
+        !s.wire(
             "captions.apply_style",
             json!({"item":1,"style":{"kind":"saved","preset":100,"overrides":{"size":72.0,"color":[250,240,20,200],"outline":null}}})
         )
@@ -215,11 +216,11 @@ fn caption_bank_selection_overrides_noops_and_ids_round_trip() {
     }
     // A live selection is never silently detached or deleted.
     assert!(matches!(
-        s.execute("captions.delete_preset", json!({"preset":100})),
+        s.wire("captions.delete_preset", json!({"preset":100})),
         Err(engine::EditError::Invalid(_))
     ));
     assert_eq!(s.project(), &saved);
-    s.execute("captions.delete_preset", json!({"preset":101}))
+    s.wire("captions.delete_preset", json!({"preset":101}))
         .unwrap();
     assert_eq!(
         s.project()
@@ -289,12 +290,12 @@ fn caption_bank_selection_overrides_noops_and_ids_round_trip() {
         locked: true,
     })
     .unwrap();
-    s.execute(
+    s.wire(
         "captions.rename_preset",
         json!({"preset":102,"name":"Without target"}),
     )
     .unwrap();
-    s.execute("captions.delete_preset", json!({"preset":102}))
+    s.wire("captions.delete_preset", json!({"preset":102}))
         .unwrap();
 }
 
@@ -441,7 +442,7 @@ fn caption_bank_refusals_roll_back_history_sources_and_global_allocator() {
                 json!({"item":1,"style":{"kind":"saved","preset":100,"extra":0}}),
             ),
         ] {
-            assert!(s.execute(id, params).is_err());
+            assert!(s.wire(id, params).is_err());
         }
     }
 }
@@ -674,7 +675,7 @@ fn caption_style_values_noop_history_and_saved_file_use_real_commands() {
         let text_file = files(saved_cues(&s));
         let expected = preset_style(boxed);
         let outcome = if boxed {
-            s.execute(
+            s.wire(
                 "captions.apply_style",
                 json!({"item":1,"style":{"kind":"preset","preset":"box"}}),
             )
@@ -727,7 +728,7 @@ fn caption_style_values_noop_history_and_saved_file_use_real_commands() {
         assert_eq!(s.project(), &styled);
         let mut custom = expected.clone();
         custom.primary_color = [30, 240, 80, 255];
-        s.execute(
+        s.wire(
             "captions.apply_style",
             json!({"item":1,"style":{"kind":"custom","style":custom}}),
         )
@@ -870,7 +871,7 @@ fn caption_style_refusals_and_batch_leave_the_entire_session_unchanged() {
         json!({"kind":"other"}),
     ] {
         assert!(
-            s.execute("captions.apply_style", json!({"item":1,"style":style}))
+            s.wire("captions.apply_style", json!({"item":1,"style":style}))
                 .is_err()
         );
         assert_eq!(s.project(), &before);
@@ -879,7 +880,7 @@ fn caption_style_refusals_and_batch_leave_the_entire_session_unchanged() {
     let mut style = serde_json::to_value(preset_style(false)).unwrap();
     style["extra"] = json!(0);
     assert!(
-        s.execute(
+        s.wire(
             "captions.apply_style",
             json!({"item":1,"style":{"kind":"custom","style":style}})
         )
@@ -1469,11 +1470,11 @@ fn captions_import_command_admits_json_and_rejects_bad_cues_atomically() {
     let mut dangling = params.clone();
     dangling["cues"][0]["style"] = json!(7);
     let after = s.project().clone();
-    assert!(s.execute("captions.import", dangling).is_err());
+    assert!(s.wire("captions.import", dangling).is_err());
     assert_eq!(s.project(), &after);
     let mut invalid = params.clone();
     invalid["styles"][0]["font_size_ratio"] = json!(0.0);
-    assert!(s.execute("captions.import", invalid).is_err());
+    assert!(s.wire("captions.import", invalid).is_err());
     assert_eq!(s.project(), &after);
 
     // Hostile placement, count and style bursts are refused whole, never a
@@ -1597,7 +1598,7 @@ fn captions_import_command_admits_json_and_rejects_bad_cues_atomically() {
 fn word_highlight_is_an_undoable_locked_atomic_opt_in_without_style_or_timing_edits() {
     let mut s = Session::new(style_source_project(), 30).unwrap();
     let original = s.project().clone();
-    s.execute(
+    s.wire(
         "captions.set_word_highlight",
         json!({"item":1,"enabled":true}),
     )
@@ -1612,7 +1613,7 @@ fn word_highlight_is_an_undoable_locked_atomic_opt_in_without_style_or_timing_ed
     assert_eq!(s.project().data(), &expected);
     let enabled = s.project().clone();
     assert!(
-        !s.execute(
+        !s.wire(
             "captions.set_word_highlight",
             json!({"item":1,"enabled":true})
         )
@@ -1631,7 +1632,7 @@ fn word_highlight_is_an_undoable_locked_atomic_opt_in_without_style_or_timing_ed
     .unwrap();
     let locked = s.project().clone();
     assert!(matches!(
-        s.execute(
+        s.wire(
             "captions.set_word_highlight",
             json!({"item":1,"enabled":true})
         ),
@@ -1737,7 +1738,7 @@ fn caption_emphasis_is_a_verified_subset_undoable_persistent_and_dropped_on_retr
         ),
     ] {
         assert!(matches!(
-            plain.execute(command.0, command.1),
+            plain.wire(command.0, command.1),
             Err(engine::EditError::Captions(captions::Error::NoWordTiming))
         ));
         assert!(Arc::ptr_eq(&before, plain.project()));
@@ -1746,7 +1747,7 @@ fn caption_emphasis_is_a_verified_subset_undoable_persistent_and_dropped_on_retr
     let mut s = Session::new(emphasis_project(), 30).unwrap();
     let original = s.project().clone();
     // Lexicon: the number and the longest content word win; stopwords never score.
-    s.execute(
+    s.wire(
         "captions.select_emphasis",
         json!({"item":1,"cue_ids":["source/0"],"mode":"lexicon"}),
     )
@@ -1758,7 +1759,7 @@ fn caption_emphasis_is_a_verified_subset_undoable_persistent_and_dropped_on_retr
     let selected = s.project().clone();
     // Same gesture again is deterministic and changes nothing.
     assert!(
-        !s.execute(
+        !s.wire(
             "captions.select_emphasis",
             json!({"item":1,"cue_ids":["source/0"]})
         )
@@ -1773,7 +1774,7 @@ fn caption_emphasis_is_a_verified_subset_undoable_persistent_and_dropped_on_retr
         json!([6]),
     ] {
         assert!(
-            s.execute(
+            s.wire(
                 "captions.set_emphasis",
                 json!({"item":1,"cue_id":"source/0","word_ids":ids})
             )
@@ -1782,13 +1783,13 @@ fn caption_emphasis_is_a_verified_subset_undoable_persistent_and_dropped_on_retr
         assert!(Arc::ptr_eq(&selected, s.project()));
     }
     assert!(
-        s.execute(
+        s.wire(
             "captions.set_emphasis",
             json!({"item":1,"cue_id":"missing","word_ids":[1]})
         )
         .is_err()
     );
-    s.execute(
+    s.wire(
         "captions.set_emphasis",
         json!({"item":1,"cue_id":"source/0","word_ids":[1]}),
     )
@@ -1812,7 +1813,7 @@ fn caption_emphasis_is_a_verified_subset_undoable_persistent_and_dropped_on_retr
     s.redo().unwrap();
     s.redo().unwrap();
     assert_eq!(s.project(), &manual);
-    s.execute(
+    s.wire(
         "captions.set_emphasis",
         json!({"item":1,"cue_id":"source/0","word_ids":[]}),
     )
@@ -1829,7 +1830,7 @@ fn caption_emphasis_is_a_verified_subset_undoable_persistent_and_dropped_on_retr
         };
         p.cues.cues[0].clone()
     };
-    s.execute(
+    s.wire(
         "retranslate",
         json!({"item":1,"target_language":"vi","texts":{"source/0":"Doanh thu tăng 40%"},
                "translation_ref":"again","force":true}),

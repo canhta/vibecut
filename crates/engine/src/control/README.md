@@ -2,8 +2,8 @@
 
 `color.import_lut` borrows the process media access only long enough to clone the durable store, then submits a bounded CPU job without a lock across IO. Its descriptor is `JobOutput::Lut`; a later Human `color.register_lut` edit plus ordinary grade/reference/strength edits consumes it. Agents cannot import arbitrary source paths. Registered-reference edits retain Agent policy and ordinary revision/replay/transaction guards. The [copied-resource contract](../store/README.md#imported-lut-bundles) owns publication, quota and relink.
 
-Interface: `build_request`, `Caller`, `MediaAccess`, `Policy`, `Session::control_request`,
-`Session::control_typed`, `snapshot_and_subscribe`, `JobOutput`; `Caller.fonts` and
+Interface: `build_request`, `run_wire`, `Caller`, `MediaAccess`, `Policy`, `Session::control_request`,
+`Session::control_typed`, `Session::control_command`, `snapshot_and_subscribe`, `JobOutput`; `Caller.fonts` and
 `Caller.sounds` lend the process asset libraries and `Caller.chapters` lends the process
 `TextAccess`; `Caller.captions` lends [caption workflow resources](../subtitles/README.md#caption-workflow-commands).
 
@@ -19,6 +19,20 @@ Runtime resources with the protocol entry bound. Waveform and scene generation/d
 Analysis results, and thumbnail generation/display return Artifact results. Its finisher
 composes those features. `snapshot_and_subscribe` returns only Kernel `SessionError`; its
 transaction refusal precedes observation and leaves state and runner events unchanged.
+
+## String entry
+
+`run_wire(session, id, params)` is the only function that takes a command id string. It decodes
+`id` and `params` against the registry schemas (`decode.rs`, private to `control`), then applies
+the command with wire validation. Its callers are transports and tools that hold only a typed id
+and JSON: the CLI `exec` subcommand and the wire-semantics tests. `Session` has no method that
+takes a `&str` command, and `Autosave` routes only typed lifecycle commands.
+
+`Session::control_command(command, caller, runner)` is the in-process control entry for a caller
+that holds a `Command` (the font picker, the timeline visuals, the LUT import). It keeps `Policy`
+authorization of the whole command tree and the lent access objects, and skips what only a
+transport needs: request ids, registry hash, base revision, idempotency receipts and response
+events. A refusal returns its typed cause.
 
 ## Control admission, revisions and receipts
 

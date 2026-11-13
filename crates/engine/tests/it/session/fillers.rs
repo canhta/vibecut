@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used, reason = "validated test fixtures and assertions")]
+use crate::support::session::Wire;
 use crate::support::session::{
     assert_unchanged, caption_words_item, clip_item, five_clip_pairs, project, range, word_asset,
 };
@@ -284,7 +285,7 @@ fn remove_fillers_accepts_a_classified_non_lexicon_word() {
     let mut s = filler_project(false, false);
     // `hello` is a visible measured word but not a lexicon filler; LLM
     // classification may return it and removal must apply that reviewed id.
-    s.execute(
+    s.wire(
         "timeline.remove_fillers",
         json!({"ids":["filler:4:câu-1:100"],"confirm_edited":false}),
     )

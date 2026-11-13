@@ -8,6 +8,7 @@
 use crate::support::control::{
     Allow, Deny, add, caller, error, ok, request, run, runner, seed, session,
 };
+use crate::support::session::Wire;
 use engine::control::{self, Caller, ControlResult, ErrorCode, Payload, ResponseValue};
 use engine::jobs::JobRunner;
 use engine::{Command, Session, control::Error as EngineError, registry};
@@ -1467,7 +1468,7 @@ fn clipboard_copy_receipts_preserve_newer_snapshot_and_stale_paste_is_atomic() {
         s.control_request(stale, caller(&Allow), &mut r).unwrap(),
         ErrorCode::StaleRevision,
     );
-    s.execute("keyframes.add",json!({"item":1,"path":"opacity","component":null,"key":{"time":12,"value":{"kind":"scalar","value":0.25},"segment":"linear","tangent":"broken","incoming":null,"outgoing":{"dt":4,"dv":0.2}}})).unwrap();
+    s.wire("keyframes.add",json!({"item":1,"path":"opacity","component":null,"key":{"time":12,"value":{"kind":"scalar","value":0.25},"segment":"linear","tangent":"broken","incoming":null,"outgoing":{"dt":4,"dv":0.2}}})).unwrap();
     ok(run(
         &mut s,
         &mut r,

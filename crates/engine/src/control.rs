@@ -146,6 +146,7 @@ impl From<captions::Error> for Error {
 
 mod admission;
 mod clips;
+mod decode;
 mod dispatch;
 mod media;
 mod output;
@@ -333,6 +334,21 @@ pub fn build_request(
         .entry("session_id")
         .or_insert_with(|| serde_json::json!(session.session_id()));
     serde_json::from_value(value).map_err(|_| ControlError::InvalidParams)
+}
+
+/// The string entry of the closed catalog, for callers that hold only a command id and
+/// JSON parameters (the CLI `exec` subcommand, wire-semantics tests). It decodes against
+/// the registry schemas, then runs the command with wire validation: malformed or
+/// oversized parameters fail without leaking user text or changing session state.
+/// In-process code holds a typed [`Command`] and uses [`Session::apply`] or
+/// [`Session::control_command`] instead.
+pub fn run_wire(
+    session: &mut Session,
+    id: &str,
+    params: serde_json::Value,
+) -> std::result::Result<crate::Outcome, EditError> {
+    let command = decode::decode_command(id, params)?;
+    session.apply_control(command)
 }
 
 #[cfg(test)]

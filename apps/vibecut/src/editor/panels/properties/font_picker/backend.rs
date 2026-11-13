@@ -1,10 +1,7 @@
 //! Adapts the picker to the registered engine `fonts.*` commands.
-use engine::control::{
-    API_VERSION, Caller, ControlResult, FontAccess, FontEntry, FontLoad, JobView, Policy, Request,
-    ResponseValue, registry_hash,
-};
+use engine::control::{Caller, ControlResult, FontAccess, FontEntry, FontLoad, JobView, Policy};
 use engine::jobs::{JobId, JobRunner, RunnerConfig, SystemClock};
-use engine::{ByteBudget, Session, control::Error as EngineError};
+use engine::{ByteBudget, Command, Session};
 use std::sync::Arc;
 use std::time::Duration;
 pub type FontChoice =
@@ -34,7 +31,6 @@ pub trait Backend: Send {
 pub struct EngineBackend {
     store: Arc<libraries::fonts::FontStore>,
     runner: JobRunner,
-    sequence: u64,
     choose: Box<dyn FnMut(crate::i18n::Locale) -> FontChoice + Send>,
 }
 impl EngineBackend {
@@ -56,7 +52,6 @@ impl EngineBackend {
         Ok(Self {
             store,
             runner: Self::runner(budget)?,
-            sequence: 0,
             choose: Box::new(choose),
         })
     }
@@ -74,12 +69,7 @@ impl EngineBackend {
             Arc::new(SystemClock::default()),
         )?)
     }
-    fn request(
-        &mut self,
-        session: &mut Session,
-        command: &str,
-        params: serde_json::Value,
-    ) -> crate::Result<ControlResult> {
+    fn request(&mut self, session: &mut Session, command: Command) -> crate::Result<ControlResult> {
         let store = &self.store;
         let runner = &mut self.runner;
         let list = |query: Option<&str>| store.list(query);
@@ -95,21 +85,8 @@ impl EngineBackend {
                 .map(|(id, _)| id)
         };
         let access = FontAccess::new(&list, &load, &download, &import);
-        let sequence = self.sequence;
-        self.sequence = self.sequence.wrapping_add(1);
-        let request_id = format!("vibecut-font-{}-{sequence}", std::process::id());
-        let request = Request {
-            api_version: API_VERSION,
-            registry_hash: Some(registry_hash().into()),
-            session_id: session.session_id().into(),
-            idempotency_key: Some(request_id.clone()),
-            request_id,
-            base_rev: Some(session.revision()),
-            command: command.into(),
-            params,
-        };
-        let response = session.control_request(
-            request,
+        Ok(session.control_command(
+            command,
             Caller {
                 principal: "vibecut-desktop",
                 external: false,
@@ -123,19 +100,7 @@ impl EngineBackend {
                 vision: None,
             },
             runner,
-        )?;
-        match response.value {
-            ResponseValue::Result(value) => Ok(value),
-            ResponseValue::Error(code) => {
-                Err(EngineError::Edit(engine::EditError::Invalid(match code {
-                    engine::control::ErrorCode::Permission => "font command refused",
-                    engine::control::ErrorCode::QueueFull => "font queue full",
-                    engine::control::ErrorCode::Cancelled => "font command cancelled",
-                    _ => "font command failed",
-                }))
-                .into())
-            }
-        }
+        )?)
     }
 }
 impl Backend for EngineBackend {
@@ -153,8 +118,10 @@ impl Backend for EngineBackend {
     fn import(&mut self, session: &mut Session, path: std::path::PathBuf) -> crate::Result<JobId> {
         match self.request(
             session,
-            "fonts.import",
-            serde_json::json!({"path":path,"accept_license":true}),
+            Command::FontsImport {
+                path,
+                accept_license: true,
+            },
         )? {
             ControlResult::JobAccepted { job, .. } => Ok(job),
             _ => Err(crate::Error::Invalid("fonts.import result")),
@@ -165,17 +132,19 @@ impl Backend for EngineBackend {
         session: &mut Session,
         query: Option<&str>,
     ) -> crate::Result<Vec<FontEntry>> {
-        let params = match query {
-            Some(query) => serde_json::json!({"query": query}),
-            None => serde_json::json!({}),
-        };
-        match self.request(session, "fonts.list", params)? {
+        let query = query.map(engine::NfcText::from);
+        match self.request(session, Command::FontsList { query })? {
             ControlResult::Fonts { entries } => Ok(entries),
             _ => Err(crate::Error::Invalid("fonts.list result")),
         }
     }
     fn load(&mut self, session: &mut Session, family: &str) -> crate::Result<FontLoad> {
-        match self.request(session, "fonts.load", serde_json::json!({"family": family}))? {
+        match self.request(
+            session,
+            Command::FontsLoad {
+                family: family.into(),
+            },
+        )? {
             ControlResult::Font { font } => Ok(font),
             _ => Err(crate::Error::Invalid("fonts.load result")),
         }
@@ -183,8 +152,10 @@ impl Backend for EngineBackend {
     fn download(&mut self, session: &mut Session, family: &str) -> crate::Result<JobId> {
         match self.request(
             session,
-            "fonts.download",
-            serde_json::json!({"family": family, "accept_license": true}),
+            Command::FontsDownload {
+                family: family.into(),
+                accept_license: true,
+            },
         )? {
             ControlResult::JobAccepted { job, .. } => Ok(job),
             _ => Err(crate::Error::Invalid("fonts.download result")),
@@ -195,7 +166,7 @@ impl Backend for EngineBackend {
         self.runner.snapshot(job).map(JobView::from)
     }
     fn cancel(&mut self, session: &mut Session, job: JobId) -> crate::Result<()> {
-        match self.request(session, "job_cancel", serde_json::json!({"job": job}))? {
+        match self.request(session, Command::JobCancel { job })? {
             ControlResult::CancelRequested { .. } => Ok(()),
             _ => Err(crate::Error::Invalid("job_cancel result")),
         }

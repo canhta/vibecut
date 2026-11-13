@@ -4,7 +4,7 @@ Interface: `Session`, `JobTarget` (re-exported by `session`). `checkpoint` and `
 
 ## Rollback
 
-Every command entry (`apply`, `apply_merged`, `apply_with_ripple`, `execute`, `execute_with_ripple`, control) runs inside one boundary. A refusal, an unwind, or a revision that cannot advance after a successful body all restore the same `Checkpoint`:
+Every command entry (`apply`, `apply_merged`, the control adapter's wire entry, control) runs inside one boundary. A refusal, an unwind, or a revision that cannot advance after a successful body all restore the same `Checkpoint`:
 
 | Restored | Kept as the command left it |
 |---|---|

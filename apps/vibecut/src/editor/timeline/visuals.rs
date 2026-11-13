@@ -71,7 +71,6 @@ pub(in crate::editor) struct Media {
     failed: RefCell<BTreeSet<VisualKey>>,
     queued: RefCell<Vec<VisualRequest>>,
     textures: RefCell<StripTextures>,
-    request_id: u64,
     /// False reserves bounded recovery metadata; true means a job was admitted.
     recovery: RefCell<BTreeMap<VisualKey, bool>>,
     visual_cause: RefCell<Option<Arc<engine::control::Error>>>,
@@ -91,7 +90,6 @@ impl Media {
             failed: RefCell::new(BTreeSet::new()),
             queued: RefCell::new(Vec::new()),
             textures: RefCell::new(BTreeMap::new()),
-            request_id: 0,
             recovery: RefCell::new(BTreeMap::new()),
             visual_cause: RefCell::new(None),
             cache: CacheUi::default(),
@@ -285,18 +283,15 @@ impl Media {
             self.pending.borrow_mut().remove(&key);
             return Ok(());
         }
-        let (command, params) = request.command();
-        let response = match self.control(session, command, params) {
-            Ok(response) => response,
+        let result = match self.control(session, request.command()) {
+            Ok(result) => result,
             Err(error) => {
                 self.pending.borrow_mut().remove(&key);
                 return Err(error);
             }
         };
-        match response.value {
-            engine::control::ResponseValue::Result(
-                engine::control::ControlResult::JobAccepted { job, .. },
-            ) => {
+        match result {
+            Ok(engine::control::ControlResult::JobAccepted { job, .. }) => {
                 if let Some(admitted) = self.recovery.borrow_mut().get_mut(&key) {
                     *admitted = true;
                 }
@@ -314,9 +309,8 @@ impl Media {
     fn control(
         &mut self,
         session: &mut engine::Session,
-        command: &str,
-        params: serde_json::Value,
-    ) -> crate::Result<engine::control::Response> {
+        command: engine::Command,
+    ) -> crate::Result<engine::control::Result<engine::control::ControlResult>> {
         let Some(access) = &self.access else {
             return Err(crate::Error::Invalid("media cache unavailable"));
         };
@@ -339,20 +333,8 @@ impl Media {
             .runner
             .as_mut()
             .ok_or(crate::Error::Invalid("visual job runner"))?;
-        self.request_id = self.request_id.saturating_add(1);
-        let id = self.request_id;
-        let request = engine::control::Request {
-            api_version: engine::control::API_VERSION,
-            registry_hash: Some(engine::control::registry_hash().into()),
-            session_id: session.session_id().into(),
-            request_id: format!("timeline-visual-{id}"),
-            idempotency_key: Some(format!("timeline-visual-{id}")),
-            base_rev: Some(session.revision()),
-            command: command.to_owned(),
-            params,
-        };
-        let response = session.control_request(
-            request,
+        Ok(session.control_command(
+            command,
             engine::control::Caller {
                 principal: "vibecut-timeline",
                 external: false,
@@ -366,8 +348,7 @@ impl Media {
                 vision: None,
             },
             runner,
-        )?;
-        Ok(response)
+        ))
     }
 
     /// Advance generation jobs and publish finished outputs through `job_status`.
@@ -420,11 +401,8 @@ impl Media {
         session: &mut engine::Session,
         job: engine::jobs::JobId,
     ) -> crate::Result<()> {
-        let response = self.control(session, "job_status", serde_json::json!({"job": job}))?;
-        match response.value {
-            engine::control::ResponseValue::Result(engine::control::ControlResult::Job {
-                ..
-            }) => Ok(()),
+        match self.control(session, engine::Command::JobStatus { job })? {
+            Ok(engine::control::ControlResult::Job { .. }) => Ok(()),
             _ => Err(crate::Error::Invalid("clip visual job status")),
         }
     }

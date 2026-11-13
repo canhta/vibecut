@@ -50,7 +50,7 @@ pub(crate) fn run(_context: &Context, args: Vec<OsString>) -> Result<Output, Cli
         History::Single,
         WritePolicy::Changed,
         |session| {
-            let outcome = session.execute(command_id, params)?;
+            let outcome = engine::control::run_wire(session, command_id, params)?;
             let changed = outcome.changed;
             Ok(Edit {
                 value: outcome,

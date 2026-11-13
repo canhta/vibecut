@@ -2255,13 +2255,12 @@ fn opacity_drafts_invalidate_before_blur_and_keyed_outside_edits_refuse() {
         .find(|t| t.items.iter().any(|i| i.id == f.text))
         .unwrap()
         .id;
-    f.editor
-        .session
-        .execute(
-            "move_item",
-            serde_json::json!({"item":f.text,"track":track,"start":SECOND}),
-        )
-        .unwrap();
+    engine::control::run_wire(
+        &mut f.editor.session,
+        "move_item",
+        serde_json::json!({"item":f.text,"track":track,"start":SECOND}),
+    )
+    .unwrap();
     for (at, value) in [
         (Tick::ZERO, "0.8"),
         (Tick(3 * SECOND), "0.8"),
@@ -2383,13 +2382,12 @@ fn text_fade_preflight_preserves_focused_and_unfocused_caption_and_properties_dr
         .find(|t| t.items.iter().any(|i| i.id == f.text))
         .unwrap()
         .id;
-    h.state_mut()
-        .session
-        .execute(
-            "track.set_locked",
-            serde_json::json!({"track":track.0,"locked":true}),
-        )
-        .unwrap();
+    engine::control::run_wire(
+        &mut h.state_mut().session,
+        "track.set_locked",
+        serde_json::json!({"track":track.0,"locked":true}),
+    )
+    .unwrap();
     h.run_steps(2);
     assert!(
         h.get(By::new().predicate(|n| n.author_id() == Some("text.animation.fade_in")))
@@ -2397,13 +2395,12 @@ fn text_fade_preflight_preserves_focused_and_unfocused_caption_and_properties_dr
             .is_disabled()
     );
     assert!(h.state_mut().activate("text.animation.fade_in").is_err());
-    h.state_mut()
-        .session
-        .execute(
-            "track.set_locked",
-            serde_json::json!({"track":track.0,"locked":false}),
-        )
-        .unwrap();
+    engine::control::run_wire(
+        &mut h.state_mut().session,
+        "track.set_locked",
+        serde_json::json!({"track":track.0,"locked":false}),
+    )
+    .unwrap();
     let root = tempfile::tempdir().unwrap();
     let session = Session::new((**h.state().session.project()).clone(), 10).unwrap();
     let mut saving = engine::recovery::Autosave::new(

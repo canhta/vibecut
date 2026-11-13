@@ -56,25 +56,19 @@ impl VisualRequest {
             Self::Thumbnails { item, .. } => VisualKey::Thumbnails(*item),
         }
     }
-    /// The registered `JobControl` command and its typed parameters.
-    pub(in crate::editor) fn command(&self) -> (&'static str, serde_json::Value) {
+    /// The registered `JobControl` command.
+    pub(in crate::editor) fn command(&self) -> engine::Command {
         match self {
-            Self::Waveform { asset } => (
-                "media.generate_waveform",
-                serde_json::json!({"asset": asset}),
-            ),
+            Self::Waveform { asset } => engine::Command::GenerateWaveform { asset: *asset },
             Self::Thumbnails {
                 item,
                 visible,
                 pixels_per_second,
-            } => (
-                "media.generate_clip_thumbnails",
-                serde_json::json!({
-                    "item": item,
-                    "visible": {"start": visible.start().0, "end": visible.end().0},
-                    "pixels_per_second": pixels_per_second,
-                }),
-            ),
+            } => engine::Command::GenerateClipThumbnails {
+                item: *item,
+                visible: *visible,
+                pixels_per_second: *pixels_per_second,
+            },
         }
     }
 }

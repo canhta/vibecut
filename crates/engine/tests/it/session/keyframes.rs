@@ -3,6 +3,7 @@
     clippy::panic,
     reason = "validated keyframe fixtures"
 )]
+use crate::support::session::Wire;
 use engine::{Command, Session, registry};
 use project::*;
 use serde_json::json;
@@ -215,7 +216,7 @@ fn text_slide_and_scale_presets_expand_transform_keys_and_follow_trim_and_match(
     let exit = 177_811_200_000;
     let mut s = title(None, length);
     assert_eq!(s.project().data().canvas.width, 64);
-    s.execute(
+    s.wire(
         "text.apply_animation",
         json!({"item":3,"preset":"slide_in"}),
     )
@@ -257,7 +258,7 @@ fn text_slide_and_scale_presets_expand_transform_keys_and_follow_trim_and_match(
     assert!((value - expected).abs() < 1e-8, "{value} != {expected}");
     // Scale writes both transform scale channels and refuses to overwrite keys.
     let mut s = title(None, length);
-    s.execute(
+    s.wire(
         "text.apply_animation",
         json!({"item":3,"preset":"scale_out"}),
     )
@@ -347,7 +348,7 @@ fn text_animation_refusals_and_transactions_preserve_all_state() {
         json!({"item":9007199254740992_u64,"preset":"fade_in"}),
         json!({"item":3}),
     ] {
-        assert!(s.execute("text.apply_animation", params).is_err());
+        assert!(s.wire("text.apply_animation", params).is_err());
     }
     for id in [ItemId(999), ItemId(1), ItemId(4)] {
         assert!(
@@ -399,7 +400,7 @@ fn text_animation_refusals_and_transactions_preserve_all_state() {
         ),
     ] {
         s.apply(apply()).unwrap();
-        s.execute(command, params).unwrap();
+        s.wire(command, params).unwrap();
         let before = s.project().clone();
         assert!(s.apply(apply()).is_err());
         assert_eq!(s.project(), &before);
@@ -460,7 +461,7 @@ fn text_animation_refusals_and_transactions_preserve_all_state() {
 #[test]
 fn text_animation_keys_keep_ordinary_trim_split_move_and_scale_semantics() {
     let mut s = title(Some(ParamValue::Scalar(0.6)), 254_016_000_000);
-    s.execute(
+    s.wire(
         "text.apply_animation",
         json!({"item":3,"preset":"fade_in_out"}),
     )
@@ -545,7 +546,7 @@ fn text_animation_keys_keep_ordinary_trim_split_move_and_scale_semantics() {
         assert_eq!(s.project(), &before);
     }
     assert!(
-        s.execute(
+        s.wire(
             "timeline.set_speed",
             json!({"items":[right.0],"speed":2.0,"maintain_pitch":true})
         )
@@ -2066,10 +2067,7 @@ fn clipboard_closed_payload_rejects_hostile_time_version_shape_and_color() {
         } else {
             *p.pointer_mut(pointer).unwrap() = value;
         }
-        assert!(
-            s.execute("clipboard.paste_keyframes", p).is_err(),
-            "{pointer}"
-        );
+        assert!(s.wire("clipboard.paste_keyframes", p).is_err(), "{pointer}");
         assert_eq!(s.project(), &before);
         assert_eq!(s.revision(), rev);
         assert_eq!(s.history_len(), history);
@@ -2577,7 +2575,7 @@ fn clipboard_copy_admission_counts_escaped_bases_and_selected_keys_at_the_byte_b
         assert_eq!(s.can_copy_keyframes(&keys), extra == 0);
         assert_eq!(s.revision(), rev);
         // Exercise strict wire Copy as well as typed admission.
-        let result = s.execute("clipboard.copy_keyframes", json!({"keys":keys}));
+        let result = s.wire("clipboard.copy_keyframes", json!({"keys":keys}));
         if extra == 0 {
             assert!(!result.unwrap().changed);
             let read =

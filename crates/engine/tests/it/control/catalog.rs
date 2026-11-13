@@ -32,6 +32,7 @@ use crate::support::control::with_words;
 use crate::support::control::write_png;
 use crate::support::control::write_video;
 use crate::support::control::write_wav;
+use crate::support::session::Wire;
 use engine::control::{self, Caller, ControlResult};
 use engine::jobs::{JobState, SystemClock};
 use engine::{ByteBudget, Command, Effect, Fixture, Session, registry};
@@ -771,7 +772,7 @@ fn caption_bank_fixture_selects_live_style_and_refuses_the_previous_digest() {
         control::ErrorCode::SchemaMismatch,
     );
     let before = s.project().clone();
-    s.execute(
+    s.wire(
         "captions.apply_style",
         json!({"item":4,"style":{"kind":"saved","preset":100}}),
     )
@@ -792,18 +793,18 @@ fn caption_bank_fixture_selects_live_style_and_refuses_the_previous_digest() {
     };
     assert_eq!(params.preset, Some(project::CaptionPresetId(100)));
     let out = s
-        .execute("captions.save_preset", json!({"item":4,"name":"New"}))
+        .wire("captions.save_preset", json!({"item":4,"name":"New"}))
         .unwrap();
     assert_eq!(
         serde_json::to_value(out.created).unwrap(),
         json!([{"caption_preset":101}])
     );
-    s.execute(
+    s.wire(
         "captions.rename_preset",
         json!({"preset":101,"name":"Renamed"}),
     )
     .unwrap();
-    s.execute("captions.delete_preset", json!({"preset":101}))
+    s.wire("captions.delete_preset", json!({"preset":101}))
         .unwrap();
     assert_eq!(
         s.project()

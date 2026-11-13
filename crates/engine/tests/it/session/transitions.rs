@@ -346,8 +346,8 @@ fn ripple_preserves_each_transition_offset_through_exactly_one_shift() {
     let mut s = Session::new(Project::new(data).unwrap(), 100).unwrap();
     add(&mut s, TransitionAlignment::Center, 40).unwrap();
     let before = s.project().clone();
-    s.apply_with_ripple(
-        Command::MoveItems {
+    s.apply(Command::TimelineEdit {
+        commands: vec![Command::MoveItems {
             moves: vec![
                 Move {
                     item: ItemId(10),
@@ -365,9 +365,9 @@ fn ripple_preserves_each_transition_offset_through_exactly_one_shift() {
                     start: Tick(250),
                 },
             ],
-        },
-        true,
-    )
+        }],
+        ripple: true,
+    })
     .unwrap();
     assert_eq!(tr(&s).start, Tick(130));
     s.undo().unwrap();
@@ -382,12 +382,12 @@ fn ripple_preserves_each_transition_offset_through_exactly_one_shift() {
         alignment: TransitionAlignment::Center,
     })
     .unwrap();
-    s.apply_with_ripple(
-        Command::Delete {
+    s.apply(Command::TimelineEdit {
+        commands: vec![Command::Delete {
             items: vec![ItemId(10)],
-        },
-        true,
-    )
+        }],
+        ripple: true,
+    })
     .unwrap();
     assert_eq!(tr(&s).start, Tick(80));
 }

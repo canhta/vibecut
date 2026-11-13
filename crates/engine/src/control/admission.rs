@@ -1,10 +1,10 @@
 //! Admits bounded control requests.
-use super::{Caller, receipts::control_fingerprint};
+use super::{Caller, decode::decode_command, receipts::control_fingerprint};
 use crate::Failure;
 use crate::jobs::JobRunner;
 use crate::session::wire::{
     API_VERSION, ControlResult, MAX_FRAME_BYTES, MAX_KEY_BYTES, MAX_PATH_BYTES, Payload, Request,
-    Response, ResponseValue, bounded_json, decode_command, parse_frame, registry_hash,
+    Response, ResponseValue, bounded_json, parse_frame, registry_hash,
 };
 use crate::{
     Command, Effect, Lifecycle, Outcome, Session, control::Error as EngineError, control::Result,
@@ -59,6 +59,34 @@ impl Session {
                 ))),
             },
         }
+    }
+
+    /// Trusted in-process entry for a typed command: the process-lent access objects
+    /// and the [`Policy`] authorization of the full command tree apply, but the
+    /// transport envelope (request ids, registry hash, base revision, idempotency
+    /// receipts, response events) does not exist for a caller that holds a [`Command`].
+    pub fn control_command(
+        &mut self,
+        command: Command,
+        caller: Caller<'_>,
+        runner: &mut JobRunner,
+    ) -> Result<ControlResult> {
+        let mut pending = vec![&command];
+        while let Some(child) = pending.pop() {
+            caller.policy.authorize(child, self.project())?;
+            if let Command::Batch { commands } | Command::TimelineEdit { commands, .. } = child {
+                pending.extend(commands);
+            }
+        }
+        let fingerprint = blake3::hash(
+            &serde_json::to_vec(&serde_json::json!({
+                "command": &command,
+                "base_rev": self.revision(),
+                "session_id": self.session_id(),
+            }))
+            .map_err(|_| EngineError::Control(crate::session::wire::ControlError::InvalidParams))?,
+        );
+        self.run_control(command, runner, fingerprint, &caller)
     }
 
     fn control_admitted(

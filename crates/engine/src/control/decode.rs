@@ -1,11 +1,11 @@
 //! Decodes a command id and its parameters against the registry schemas.
-use super::budget;
+use crate::session::wire::{ControlError, budget};
 use crate::session::{EditError, Result};
 use crate::{Command, registry};
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, sync::OnceLock};
 
-pub(crate) fn decode_command(id: &str, params: Value) -> Result<Command> {
+pub(super) fn decode_command(id: &str, params: Value) -> Result<Command> {
     budget(&params)?;
     type Validators = BTreeMap<&'static str, jsonschema::Validator>;
     static VALIDATORS: OnceLock<std::result::Result<Validators, ()>> = OnceLock::new();
@@ -23,17 +23,15 @@ pub(crate) fn decode_command(id: &str, params: Value) -> Result<Command> {
                 .collect()
         })
         .as_ref()
-        .map_err(|_| super::ControlError::SchemaMismatch)?;
-    let validator = validators.get(id).ok_or(EditError::Control(
-        crate::session::wire::ControlError::UnknownCommand,
-    ))?;
+        .map_err(|_| ControlError::SchemaMismatch)?;
+    let validator = validators
+        .get(id)
+        .ok_or(EditError::Control(ControlError::UnknownCommand))?;
     if !validator.is_valid(&params) {
-        return Err(EditError::Control(
-            crate::session::wire::ControlError::InvalidParams,
-        ));
+        return Err(EditError::Control(ControlError::InvalidParams));
     }
     let command: Command = serde_json::from_value(json!({"command":id,"params":params}))
-        .map_err(|_| EditError::Control(crate::session::wire::ControlError::InvalidParams))?;
+        .map_err(|_| EditError::Control(ControlError::InvalidParams))?;
     // Includes nested publications/session controls, before any first child effect.
     if matches!(
         command,

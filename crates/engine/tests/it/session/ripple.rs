@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, reason = "validated test fixtures and assertions")]
-use crate::support::session::{new_item, project, range};
+use crate::support::session::{Wire, new_item, project, range};
 use engine::{Command, EditError, Move, Session, TrimEdge};
 use project::{ItemId, Project, TrackId};
 use proptest::prelude::*;
@@ -83,7 +83,7 @@ proptest! {
         // Off is exactly the pre-existing edit semantics, including allocated ids.
         let mut baseline = Session::new(s.project().as_ref().clone(), 100).unwrap();
         baseline.apply(command.clone()).unwrap();
-        s.apply_with_ripple(command, enabled).unwrap();
+        s.apply(Command::TimelineEdit { commands: vec![command], ripple: enabled }).unwrap();
         let after_layout = ripple_layout(&s);
         if !enabled || operation >= 3 {
             prop_assert_eq!(s.project(), baseline.project());
@@ -116,7 +116,11 @@ fn ripple_preview_reversal_discard_and_refusal_preserve_the_baseline() {
     };
     // The desktop starts a gesture before its first replacement preview.
     s.begin_gesture().unwrap();
-    s.apply_with_ripple(preview(40), true).unwrap();
+    s.apply(Command::TimelineEdit {
+        commands: vec![preview(40)],
+        ripple: true,
+    })
+    .unwrap();
     assert_eq!(
         s.preview_project()
             .unwrap()
@@ -133,10 +137,33 @@ fn ripple_preview_reversal_discard_and_refusal_preserve_the_baseline() {
         s.apply(Command::TimelineSetRipple { enabled: false }),
         Err(EditError::Session(engine::SessionError::TransactionActive))
     ));
-    s.apply_with_ripple(preview(60), true).unwrap();
+    s.apply(Command::TimelineEdit {
+        commands: vec![preview(60)],
+        ripple: true,
+    })
+    .unwrap();
     assert_eq!(s.preview_project().unwrap().as_ref(), s.project().as_ref());
-    s.apply_with_ripple(preview(40), true).unwrap();
-    assert!(s.apply_with_ripple(preview(-1), true).is_err());
+    s.apply(Command::TimelineEdit {
+        commands: vec![preview(40)],
+        ripple: true,
+    })
+    .unwrap();
+    assert!(
+        s.apply(Command::TimelineEdit {
+            commands: vec![preview(-1)],
+            ripple: true
+        })
+        .is_err()
+    );
+    // Typed entries may wrap one preview in the policy; the wire still refuses
+    // a session control inside an edit batch.
+    assert!(
+        s.wire(
+            "timeline.edit",
+            json!({"commands":[{"command":"timeline.preview","params":{"commands":[]}}],"ripple":true})
+        )
+        .is_err()
+    );
     s.apply(Command::TimelineDiscardPreview {}).unwrap();
     assert_eq!(project::encode(s.project(), false).unwrap(), before);
     assert_eq!(s.history_len(), (0, 0));
@@ -161,7 +188,10 @@ fn ripple_preview_reversal_discard_and_refusal_preserve_the_baseline() {
     .unwrap();
     let staged = s.project().clone();
     assert!(matches!(
-        s.apply_with_ripple(preview(60), true),
+        s.apply(Command::TimelineEdit {
+            commands: vec![preview(60)],
+            ripple: true
+        }),
         Err(EditError::Session(engine::SessionError::TransactionActive))
     ));
     assert_eq!(s.project(), &staged);
@@ -233,14 +263,14 @@ fn ripple_batch_subtracts_occupied_spans_and_never_closes_an_old_gap_twice() {
     );
     // A move wholly before its original span still keeps its old follower adjacent.
     let (mut s, track, _) = ripple_fixture(&[10, 10], 50);
-    s.apply_with_ripple(
-        Command::MoveItem {
+    s.apply(Command::TimelineEdit {
+        commands: vec![Command::MoveItem {
             item: ItemId(10),
             track,
             start: Tick(0),
-        },
-        true,
-    )
+        }],
+        ripple: true,
+    })
     .unwrap();
     assert_eq!(
         ripple_layout(&s)
@@ -252,8 +282,8 @@ fn ripple_batch_subtracts_occupied_spans_and_never_closes_an_old_gap_twice() {
     );
     // Overlapping group tails are a union, not two independently counted gaps.
     let (mut s, track, _) = ripple_fixture(&[10, 10, 10], 50);
-    s.apply_with_ripple(
-        Command::MoveItems {
+    s.apply(Command::TimelineEdit {
+        commands: vec![Command::MoveItems {
             moves: vec![
                 Move {
                     item: ItemId(10),
@@ -266,9 +296,9 @@ fn ripple_batch_subtracts_occupied_spans_and_never_closes_an_old_gap_twice() {
                     start: Tick(10),
                 },
             ],
-        },
-        true,
-    )
+        }],
+        ripple: true,
+    })
     .unwrap();
     assert_eq!(
         ripple_layout(&s)
@@ -329,7 +359,11 @@ fn ripple_json_entries_use_one_diff_and_reject_hostile_edits_atomically() {
             },
         };
         let before = project::encode(s.project(), false).unwrap();
-        s.apply_with_ripple(command, true).unwrap();
+        s.apply(Command::TimelineEdit {
+            commands: vec![command],
+            ripple: true,
+        })
+        .unwrap();
         assert_eq!(
             ripple_layout(&s)
                 .iter()
@@ -342,31 +376,34 @@ fn ripple_json_entries_use_one_diff_and_reject_hostile_edits_atomically() {
         s.apply(Command::Undo {}).unwrap();
         assert_eq!(project::encode(s.project(), false).unwrap(), before);
         assert!(
-            s.apply_with_ripple(
-                Command::MoveItem {
+            s.apply(Command::TimelineEdit {
+                commands: vec![Command::MoveItem {
                     item: ItemId(10),
                     track,
                     start: Tick(i64::MAX)
-                },
-                true
-            )
+                }],
+                ripple: true
+            })
             .is_err()
         );
         assert_eq!(project::encode(s.project(), false).unwrap(), before);
     }
     let (mut s, _, _) = ripple_fixture(&[], 0);
     assert!(
-        !s.apply_with_ripple(Command::Delete { items: vec![] }, true)
-            .unwrap()
-            .changed
+        !s.apply(Command::TimelineEdit {
+            commands: vec![Command::Delete { items: vec![] }],
+            ripple: true
+        })
+        .unwrap()
+        .changed
     );
     let (mut s, _, _) = ripple_fixture(&[1], 0);
-    s.apply_with_ripple(
-        Command::Delete {
+    s.apply(Command::TimelineEdit {
+        commands: vec![Command::Delete {
             items: vec![ItemId(10)],
-        },
-        true,
-    )
+        }],
+        ripple: true,
+    })
     .unwrap();
     assert!(!ripple_layout(&s).iter().any(|row| row.1 == ItemId(10)));
 }

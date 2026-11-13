@@ -13,7 +13,6 @@ pub(in crate::editor) struct LutWorkflow {
     access: Option<Arc<Mutex<MediaAccess>>>,
     budget: Option<engine::ByteBudget>,
     runner: Option<JobRunner>,
-    sequence: u64,
     capture: Option<Capture>,
     pub(in crate::editor) unavailable: Option<project::LutId>,
 }
@@ -46,8 +45,7 @@ impl LutWorkflow {
     fn request(
         &mut self,
         session: &mut Session,
-        command: &str,
-        params: serde_json::Value,
+        command: engine::Command,
     ) -> Result<ControlResult> {
         if self.runner.is_none() {
             self.runner = Some(JobRunner::new(
@@ -65,24 +63,12 @@ impl LutWorkflow {
                 Arc::new(engine::jobs::SystemClock::default()),
             )?);
         }
-        self.sequence = self.sequence.wrapping_add(1);
-        let key = format!("desktop-lut-{}", self.sequence);
-        let request = engine::control::Request {
-            api_version: engine::control::API_VERSION,
-            registry_hash: Some(engine::control::registry_hash().into()),
-            session_id: session.session_id().into(),
-            request_id: key.clone(),
-            idempotency_key: Some(key),
-            base_rev: Some(session.revision()),
-            command: command.into(),
-            params,
-        };
         let access = self
             .access
             .as_ref()
             .ok_or(Error::Invalid("LUT source store unavailable"))?;
-        Ok(session.control_typed(
-            request,
+        Ok(session.control_command(
+            command,
             engine::control::Caller {
                 principal: "vibecut-desktop",
                 external: false,
@@ -163,7 +149,17 @@ impl State {
             return Err(Error::Invalid("stale LUT picker"));
         }
         let expected = self.lut.capture.as_ref().and_then(|c| c.expected);
-        let result=desk.with_session(|session|self.lut.request(session,"color.import_lut",serde_json::json!({"path":path,"name":null,"licence":null,"expected_hash":expected})))?;
+        let result = desk.with_session(|session| {
+            self.lut.request(
+                session,
+                engine::Command::ImportLut {
+                    path,
+                    name: None,
+                    licence: None,
+                    expected_hash: expected,
+                },
+            )
+        })?;
         let ControlResult::JobAccepted { job, .. } = result else {
             return Err(Error::Invalid("LUT import result"));
         };
@@ -214,7 +210,7 @@ impl State {
             JobState::Completed => {
                 let result = desk.with_session(|session| {
                     self.lut
-                        .request(session, "job_status", serde_json::json!({"job":job}))
+                        .request(session, engine::Command::JobStatus { job })
                 })?;
                 let ControlResult::Job { snapshot } = result else {
                     return Err(Error::Invalid("LUT job status"));

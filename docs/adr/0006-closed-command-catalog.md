@@ -1,6 +1,6 @@
 # Closed command catalog
 
-Status: Proposed. It takes effect when one declaration replaces the split matches; until then the current contract stays in the [engine README](../../crates/engine/src/control/README.md).
+Status: Accepted 2026-11-13. One declaration replaced the split matches; the current contract lives in the [engine README](../../crates/engine/src/control/README.md).
 
 The command set is one closed enum, not a string registry. Each declaration carries every per-command fact once: its execution family, its availability rule, its grant class, whether a curated transport tool exposes it, and its lifecycle routing. Executors live per family under `session/edit/` and are reached through the declaration. Schema, digest and the agent-facing [command reference](../product/agent-control/commands.md) are generated from that one source by one command.
 

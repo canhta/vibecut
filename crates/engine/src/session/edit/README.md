@@ -69,9 +69,11 @@ track and track removal refuse a locked track; `track.set_flags`, `track.rename`
 `track.reorder` and `track.set_locked` remain permitted on one, so it can be unlocked
 ([`tracks.rs`](tracks.rs)).
 
-Ripple policy is independent of app preferences. `Session::apply_with_ripple` and
-`execute_with_ripple` pass it for one atomic command, `timeline.edit` supplies it for a whole
-batch, nested policy wrappers refuse, and `timeline.set_ripple` sets the session default (off
+Ripple policy is independent of app preferences and is a command, not a method:
+`timeline.edit {commands, ripple}` supplies it for a whole batch (a typed caller wraps one atomic
+command the same way). A typed entry may also wrap exactly one `timeline.preview` to give a
+replacement preview the policy; the wire refuses that shape like any session control inside a
+batch. Nested policy wrappers refuse, and `timeline.set_ripple` sets the session default (off
 initially, no project or history entry, refused during a transaction). One post-command diff
 closes same-track tails vacated by delete, tail trim or leftward movement; it never shifts
 another track, and cross-track moves, splits and hide/mute leave followers unchanged. The edit

@@ -70,40 +70,6 @@ impl Autosave {
             | None => Ok(self.session.apply(command)?),
         }
     }
-    /// Dispatch a registry command; the declared lifecycle route picks the persistence
-    /// owner, and completion of a save is acknowledged by tick().
-    pub fn execute(&mut self, id: &str, params: serde_json::Value) -> Result<crate::Outcome> {
-        match crate::lifecycle(id) {
-            Some(Lifecycle::Thumbnail) => {
-                self.empty_params(&params)?;
-                self.refresh_thumbnail()?;
-                Ok(unchanged())
-            }
-            Some(Lifecycle::Save) => {
-                self.empty_params(&params)?;
-                self.save()?;
-                Ok(unchanged())
-            }
-            Some(
-                Lifecycle::Create
-                | Lifecycle::Duplicate
-                | Lifecycle::Delete
-                | Lifecycle::Restore
-                | Lifecycle::Purge,
-            )
-            | None => Ok(self.session.execute(id, params)?),
-        }
-    }
-    fn empty_params(
-        &self,
-        params: &serde_json::Value,
-    ) -> std::result::Result<(), crate::session::wire::ControlError> {
-        if *params == serde_json::json!({}) {
-            Ok(())
-        } else {
-            Err(crate::session::wire::ControlError::InvalidParams)
-        }
-    }
     fn refresh_thumbnail(&mut self) -> Result<()> {
         if self.session.transaction_active() {
             return Err(Error::from(crate::session::SessionError::TransactionActive));

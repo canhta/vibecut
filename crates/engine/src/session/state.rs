@@ -6,7 +6,6 @@ mod session_control;
 use crate::{Command, NewItem, Outcome, Placement};
 use checkpoint::Checkpoint;
 use project::{AudioParams, AudioSource, ItemId, ItemParams, Project};
-use serde_json::Value;
 use std::collections::BTreeSet;
 use std::{
     collections::VecDeque,
@@ -446,41 +445,16 @@ impl Session {
             placements: Vec::new(),
         })
     }
-    /// Strict JSON dispatch. All timing values are integer ticks; malformed/oversized
-    /// parameters fail without leaking user text or changing transaction state.
-    pub fn execute(&mut self, command_id: &str, params: Value) -> Result<Outcome> {
-        self.boundary(|session| {
-            let command = super::wire::decode_command(command_id, params)?;
-            session.commit(command, None, true, session.ripple)
-        })
-    }
     pub fn apply(&mut self, command: Command) -> Result<Outcome> {
         self.apply_merged(command, None)
-    }
-    /// Apply one atomic edit using the caller's explicit ripple policy. The policy
-    /// also covers replacement previews; it never reads an app preference store.
-    pub fn apply_with_ripple(&mut self, command: Command, ripple: bool) -> Result<Outcome> {
-        self.boundary(|session| session.commit(command, None, false, ripple))
-    }
-    /// Strict JSON dispatch with an explicit ripple policy for this edit only.
-    pub fn execute_with_ripple(
-        &mut self,
-        id: &str,
-        params: Value,
-        ripple: bool,
-    ) -> Result<Outcome> {
-        self.boundary(|session| {
-            let command = super::wire::decode_command(id, params)?;
-            session.commit(command, None, true, ripple)
-        })
     }
     /// Equal keys coalesce consecutive changed edits. Explicit gestures group all their
     /// commands regardless of key. Refusal/unwind preserves the previous merge state.
     pub fn apply_merged(&mut self, command: Command, key: Option<&str>) -> Result<Outcome> {
         self.boundary(|session| session.commit(command, key, false, session.ripple))
     }
-    /// Control and JSON admission share the candidate invariant; typed
-    /// in-process editing retains the owner's full integer domain.
+    /// The control adapter's entry: wire admission shares the candidate invariant;
+    /// typed in-process editing retains the owner's full integer domain.
     pub(crate) fn apply_control(&mut self, command: Command) -> Result<Outcome> {
         self.boundary(|session| session.commit(command, None, true, session.ripple))
     }
@@ -589,6 +563,14 @@ impl Session {
         ripple: bool,
     ) -> Result<Outcome> {
         let (command, ripple) = match command {
+            // In-process entries may give one replacement preview its ripple policy;
+            // the wire keeps refusing a session control inside a batch.
+            Command::TimelineEdit {
+                mut commands,
+                ripple,
+            } if !wire && matches!(commands.as_slice(), [Command::TimelinePreview { .. }]) => {
+                (commands.remove(0), ripple)
+            }
             Command::TimelineEdit { commands, ripple } => {
                 let command = Command::Batch { commands };
                 edit::check_budget(&command)?;

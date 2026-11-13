@@ -112,8 +112,8 @@ no cue survives.
 ## Subtitle export commands
 
 `export_subtitles` and `burn_subtitles` publish files without editing the Session or undo
-history. Dispatch their strict JSON parameters with `Session::execute_export(runner, input, id,
-params)` or their typed `Command` with `submit_export_command`; ordinary edit execution, batches
+history. Dispatch their typed `Command` with `Session::execute_export(runner, input, command)` or
+`submit_export_command`; ordinary edit execution, batches
 and active transactions refuse file publication. Both execute against a captured immutable
 project snapshot in the JobRunner.
 

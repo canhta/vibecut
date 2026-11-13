@@ -581,7 +581,10 @@ impl Editor {
         }
         let created = self
             .session
-            .apply_with_ripple(Command::Batch { commands }, self.preferences.ripple)?
+            .apply(Command::TimelineEdit {
+                commands,
+                ripple: self.preferences.ripple,
+            })?
             .created;
         let created_items: Vec<ItemId> = created
             .iter()

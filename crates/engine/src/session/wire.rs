@@ -1,7 +1,6 @@
 //! Defines the transport-neutral wire contract of one session.
 mod clips;
 mod contract;
-mod decode;
 mod envelope;
 mod json;
 mod ledger;
@@ -14,7 +13,6 @@ pub use clips::{
     ClipPieceSpan, ClipRefusal, ClipSubtitleFile, ClipsResult,
 };
 pub use contract::{contract_schema, reference_markdown, registry_hash};
-pub(crate) use decode::decode_command;
 pub use envelope::{
     API_VERSION, ControlError, ErrorCode, Event, Failure, JobFailurePolicy, Payload, Request,
     Response, ResponseValue, Revision,

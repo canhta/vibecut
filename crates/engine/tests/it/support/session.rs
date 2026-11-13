@@ -1,11 +1,22 @@
 //! Session fixtures shared by the command-family tests.
 #![allow(clippy::unwrap_used, reason = "validated test fixtures and assertions")]
-use engine::{NewItem, Session};
+use engine::{EditError, NewItem, Outcome, Session};
 use media::{AssetId, ContentHash, SourceAsset};
 use project::{
     Color, Item, ItemId, ItemParams, OverlayParams, Project, ProjectId, Track, TrackId, TrackKind,
 };
 use time::{SourceRange, Tick};
+
+/// The wire-semantics entry for tests that assert string decoding and wire
+/// validation: it is the control adapter's `run_wire`, not a `Session` method.
+pub(crate) trait Wire {
+    fn wire(&mut self, id: &str, params: serde_json::Value) -> Result<Outcome, EditError>;
+}
+impl Wire for Session {
+    fn wire(&mut self, id: &str, params: serde_json::Value) -> Result<Outcome, EditError> {
+        engine::control::run_wire(self, id, params)
+    }
+}
 
 pub(crate) fn range(a: i64, b: i64) -> SourceRange {
     SourceRange::new(Tick(a), Tick(b)).unwrap()
