@@ -355,3 +355,36 @@ fn mirror(@builtin(global_invocation_id) id: vec3<u32>) {
     let a = clamp(out.a, 0.0, 1.0);
     dst[id.y * p.width + id.x] = clamp(out, vec4<f32>(0.0), vec4<f32>(a));
 }
+// Mirrors render denoise::reduce_noise_sample; weights = [spatial sigma, range sigma].
+// A 5x5 bilateral average of the current image: each tap weighs a spatial gaussian
+// times a range gaussian of its encoded straight colour and alpha distance to the
+// centre. Taps outside the image are skipped and the weights renormalise.
+@compute @workgroup_size(8, 8)
+fn reduce_noise(@builtin(global_invocation_id) id: vec3<u32>) {
+    if id.x >= p.width || id.y >= p.height { return; }
+    let centre = src[id.y * p.width + id.x];
+    let centre_rgb = encoded_rgb(straight_rgb(centre));
+    let spatial = -0.5 / (weights[0] * weights[0]);
+    let range = -0.5 / (weights[1] * weights[1]);
+    var sum = vec4<f32>(0.0);
+    var total = 0.0;
+    for (var dy = -2; dy <= 2; dy++) {
+        let ty = i32(id.y) + dy;
+        if ty < 0 || ty >= i32(p.height) { continue; }
+        for (var dx = -2; dx <= 2; dx++) {
+            let tx = i32(id.x) + dx;
+            if tx < 0 || tx >= i32(p.width) { continue; }
+            let tap = src[u32(ty) * p.width + u32(tx)];
+            let delta = encoded_rgb(straight_rgb(tap)) - centre_rgb;
+            let da = tap.a - centre.a;
+            let distance = da * da + dot(delta, delta);
+            let weight = exp(f32(dx * dx + dy * dy) * spatial + distance * range);
+            sum += weight * tap;
+            total += weight;
+        }
+    }
+    var out = centre;
+    if total > 0.0 { out = sum / total; }
+    let a = clamp(out.a, 0.0, 1.0);
+    dst[id.y * p.width + id.x] = clamp(out, vec4<f32>(0.0), vec4<f32>(a));
+}

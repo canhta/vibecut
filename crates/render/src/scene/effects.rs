@@ -1557,7 +1557,7 @@ static OPS: &[EffectOp] = &[
     },
     EffectOp {
         entry_point: "reduce_noise",
-        wgsl: Wgsl::Absent,
+        wgsl: Wgsl::Entry,
         kernel: Kernel::Sample(SampleOp {
             len: 2,
             valid: denoise::valid_reduce_noise,

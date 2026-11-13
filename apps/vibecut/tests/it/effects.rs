@@ -561,6 +561,33 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
             eprintln!("mirror scale={scale} values={values:?} max_abs={max}");
             assert!(max <= 2e-5, "GPU mirror difference {values:?}: {max}");
         }
+        // The bilateral reduce-noise pass reads the current image only; the shipped
+        // sigmas and two off-default pairs prove the shader against the CPU
+        // reference, including the skipped taps at the image border. The window
+        // sums 25 exp() taps whose range weight amplifies the encoded distance
+        // (pow in oetf), so the row uses the grade/chroma-key tolerance of 1e-4.
+        assert!(gpu.supports("reduce_noise"));
+        let shipped = reduce_noise_passes();
+        let custom = [(0.6, 0.3), (3.0, 0.05)].map(|(spatial, range)| EffectPass::Sample {
+            entry_point: "reduce_noise",
+            uniforms: vec![Uniform::Float(spatial), Uniform::Float(range)],
+        });
+        for passes in [shipped, custom.to_vec()] {
+            let inputs = || EffectInputs {
+                input: &image,
+                coverage: None,
+                below: &image,
+            };
+            let cpu = CpuEffects.apply(&image, &passes, inputs(), &Hooks).unwrap();
+            let actual = gpu.apply(&image, &passes, inputs(), &Hooks).unwrap();
+            let max = max_error(&cpu, &actual);
+            eprintln!("reduce-noise scale={scale} {passes:?} max_abs={max:e}");
+            assert!(max <= 1e-4, "GPU reduce_noise difference {passes:?}: {max}");
+            assert!(
+                max_error(&image, &actual) > 1e-5,
+                "reduce_noise visible {passes:?}"
+            );
+        }
         // One instance with a visible prefix and a Sample read of its original
         // input, split in both device/CPU directions on the actual adapter.
         let prefix = grade_passes(-50.0, 0.0, 0.0, 0.0).unwrap();
@@ -1806,5 +1833,58 @@ fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
         }
         drop((base, top));
         assert_eq!(pressure.budget.snapshot().unwrap().used, 0);
+    }
+}
+
+#[test]
+#[ignore = "native reduce-noise frame time at 1080p and 4K; run explicitly on hardware"]
+fn reduce_noise_native_frame_time_1080p_and_4k() {
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let adapter = pollster::block_on(instance.request_adapter(&Default::default()))
+        .expect("measurement requires a native adapter");
+    assert_ne!(adapter.get_info().device_type, wgpu::DeviceType::Cpu);
+    eprintln!("NOISE_COST adapter={:?}", adapter.get_info());
+    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
+    let gpu = pollster::block_on(vibecut::services::gpu::effects::GpuEffects::new(
+        device, queue,
+    ))
+    .unwrap();
+    let passes = reduce_noise_passes();
+    for (width, height) in [(1920_u32, 1080_u32), (3840, 2160)] {
+        let input = Image::from_working_pixels(
+            width,
+            height,
+            (0..width * height).map(|i| {
+                let v = ((i.wrapping_mul(2_654_435_761) >> 20) % 64) as f32 / 255.0 + 0.3;
+                [v, v, v, 1.0]
+            }),
+            &Hooks,
+        )
+        .unwrap();
+        let inputs = || EffectInputs {
+            input: &input,
+            coverage: None,
+            below: &input,
+        };
+        let expected = CpuEffects.apply(&input, &passes, inputs(), &Hooks).unwrap();
+        // Two warm-ups, then seven timed frames; every result is checked against the CPU.
+        let mut times = Vec::new();
+        for run in 0..9 {
+            let start = std::time::Instant::now();
+            let output = gpu.apply(&input, &passes, inputs(), &Hooks).unwrap();
+            let ms = start.elapsed().as_secs_f64() * 1000.0;
+            let error = max_error(&expected, &output);
+            assert!(error <= 1e-4, "reduce_noise {width}x{height} error={error}");
+            if run >= 2 {
+                times.push(ms);
+            }
+        }
+        times.sort_by(f64::total_cmp);
+        eprintln!(
+            "NOISE_COST reduce_noise_gpu median={:.3} min={:.3} max={:.3} ms/frame {width}x{height}",
+            times[times.len() / 2],
+            times[0],
+            times[times.len() - 1]
+        );
     }
 }
