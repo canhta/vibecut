@@ -2994,6 +2994,45 @@ fn text_tab_edits_every_style_field_one_undo_step_each_and_shows_effects() {
         harness.state_mut().session.redo().unwrap();
         harness.run_steps(2);
     }
+    // Outline and shadow: their toggles reveal the geometry rows, and each row writes only its
+    // own field of the whole stroke or shadow value.
+    click(&mut harness, "inspector.text_stroke");
+    click(&mut harness, "inspector.text_shadow");
+    assert!(text_params(&harness, text).stroke.is_some());
+    assert!(text_params(&harness, text).shadow.is_some());
+    let rows: [(&str, &str, Check); 4] = [
+        ("inspector.text_stroke_width", "7", |p| {
+            let stroke = p.stroke.as_ref().unwrap();
+            stroke.width == 7.0 && stroke.color == project::Color([0, 0, 0, 255])
+        }),
+        ("inspector.text_shadow_offset_x", "-6", |p| {
+            let shadow = p.shadow.as_ref().unwrap();
+            shadow.offset_x == -6.0 && shadow.offset_y == 4.0 && shadow.blur == 4.0
+        }),
+        ("inspector.text_shadow_offset_y", "9", |p| {
+            p.shadow.as_ref().unwrap().offset_y == 9.0
+        }),
+        ("inspector.text_shadow_blur", "5", |p| {
+            p.shadow.as_ref().unwrap().blur == 5.0
+        }),
+    ];
+    for (id, value, holds) in rows {
+        let before = harness.state().session.project().clone();
+        enter(&mut harness, id, value);
+        assert!(holds(&text_params(&harness, text)), "{id}");
+        harness.state_mut().session.undo().unwrap();
+        assert_eq!(harness.state().session.project(), &before, "{id} undo");
+        harness.state_mut().session.redo().unwrap();
+        harness.run_steps(2);
+    }
+    enter(&mut harness, "inspector.text_stroke_width", "999");
+    assert_eq!(
+        text_params(&harness, text).stroke.unwrap().width,
+        project::TextStroke::MAX_WIDTH
+    );
+    enter(&mut harness, "inspector.text_shadow_blur", "-3");
+    assert_eq!(text_params(&harness, text).shadow.unwrap().blur, 0.0);
+
     // Hostile entries clamp to the field's range instead of reaching the model.
     enter(&mut harness, "inspector.text_background_padding_x", "9999");
     assert_eq!(

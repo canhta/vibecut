@@ -206,6 +206,12 @@ using `text.save_preset`. Both use the engine preset commands from
 and the row's selection compares the complete stored style. Words and animation keys are
 never saved.
 
+Below the box rows, an outline on shows Width (`inspector.text_stroke_width`) and a shadow on
+shows Offset X/Y (`inspector.text_shadow_offset_x`/`_y`) and Blur (`inspector.text_shadow_blur`).
+These fields are not engine parameter rows. `write_field` sends them as `Action::SetField`, and
+`commands::text_effect_patch` builds one `TextStroke` or `TextShadow` patch from the item's
+current value with only that field replaced, so the colour and the other geometry survive.
+
 Exactly one unlocked Text and no active work, transaction, save, inline/caption or
 Properties draft is required. Captured row actions revalidate their target and snapshot;
 direct activation uses the same readiness before any unrelated draft can flush.

@@ -26,6 +26,47 @@ const OFFSET_X: ScrubSpec = spec("text_background_offset_x", Text::BackgroundOff
 const OFFSET_Y: ScrubSpec = spec("text_background_offset_y", Text::BackgroundOffsetY, 0);
 const RADIUS: ScrubSpec = spec("text_background_corner_radius", Text::BackgroundRadius, 0);
 
+/// An outline or shadow value in canvas pixels, whole steps. The range is the model's
+/// (`TextStroke::MAX_WIDTH`, `TextShadow::MAX_OFFSET`, `TextShadow::MAX_BLUR`); no reference
+/// value is measured, so the range is not a CapCut default.
+const fn effect_spec(field: &'static str, label: Text, min: f64, max: f64) -> ScrubSpec {
+    ScrubSpec {
+        field,
+        label,
+        min,
+        max,
+        step: 1.0,
+        pixels_per_step: 2.0,
+        decimals: 0,
+        suffix: "",
+        scale: 1.0,
+    }
+}
+const STROKE_WIDTH: ScrubSpec = effect_spec(
+    "text_stroke_width",
+    Text::TextOutlineWidth,
+    0.0,
+    project::TextStroke::MAX_WIDTH as f64,
+);
+const SHADOW_OFFSET_X: ScrubSpec = effect_spec(
+    "text_shadow_offset_x",
+    Text::TextShadowOffsetX,
+    -(project::TextShadow::MAX_OFFSET as f64),
+    project::TextShadow::MAX_OFFSET as f64,
+);
+const SHADOW_OFFSET_Y: ScrubSpec = effect_spec(
+    "text_shadow_offset_y",
+    Text::TextShadowOffsetY,
+    -(project::TextShadow::MAX_OFFSET as f64),
+    project::TextShadow::MAX_OFFSET as f64,
+);
+const SHADOW_BLUR: ScrubSpec = effect_spec(
+    "text_shadow_blur",
+    Text::TextShadowBlur,
+    0.0,
+    project::TextShadow::MAX_BLUR as f64,
+);
+
 impl Panel<'_, '_> {
     /// Segmented choice row; returns the clicked option index.
     fn choice_row(
@@ -353,6 +394,19 @@ impl Panel<'_, '_> {
                 &[(OFFSET_X, Some("X")), (OFFSET_Y, Some("Y"))],
             );
             self.scrub_field(ui, item, RADIUS);
+        }
+        // The outline and shadow geometry rows exist while their toggles are on.
+        if params.stroke.is_some() {
+            self.scrub_field(ui, item, STROKE_WIDTH);
+        }
+        if params.shadow.is_some() {
+            self.number_row(
+                ui,
+                item,
+                Text::TextShadowOffset,
+                &[(SHADOW_OFFSET_X, Some("X")), (SHADOW_OFFSET_Y, Some("Y"))],
+            );
+            self.scrub_field(ui, item, SHADOW_BLUR);
         }
     }
 

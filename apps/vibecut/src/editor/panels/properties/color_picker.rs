@@ -84,8 +84,8 @@ fn text_part_colour(project: &project::Project, id: ItemId, part: TextPart) -> R
     })
 }
 
-/// The patch that sets one text part on every selected item. Outline and shadow keep the
-/// first item's width, offset and blur, since those have no control of their own yet.
+/// The patch that sets one text part on every selected item. Outline and shadow take the
+/// first item's width, offset and blur for every selected text; their geometry rows edit one item.
 fn text_part_patch(
     project: &project::Project,
     items: &[ItemId],
