@@ -331,7 +331,16 @@ impl PacketReader {
     /// Seek backward to a keyframe at or before this presentation time. Reset any
     /// decoder and decode forward, comparing frame tick PTS for an exact cut.
     pub fn seek(&mut self, time: Tick) -> Result<()> {
-        let micros = time.to_units(1_000_000, Rounding::Floor)?;
+        // FFmpeg rounds the microsecond target to the nearest unit of the stream it
+        // seeks in, which can land one unit after `time` and pick the keyframe
+        // there. Floor `time` in every stream's base first, so the rounded target
+        // never passes it.
+        let mut micros = time.to_units(1_000_000, Rounding::Floor)?;
+        for stream in self.input.streams() {
+            let base = TimeBase::from_ff(stream.time_base())?;
+            let floored = base.ticks(base.units(time, Rounding::Floor)?)?;
+            micros = micros.min(floored.to_units(1_000_000, Rounding::Floor)?);
+        }
         self.input
             .seek(micros, ..micros)
             .map_err(error("seek to preceding keyframe"))
