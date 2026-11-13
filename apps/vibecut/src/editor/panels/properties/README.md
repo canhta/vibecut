@@ -104,7 +104,9 @@ effects. While on, a Strength row (`inspector.voice_enhance.strength.{light,medi
 to 40, 70 or 100 percent. Each click is one batched edit, so one undo step. The preset adds no gain stage: loudness stays with the
 project normalizer, which measures the chain's output, so bypassing the preset never changes what the normalizer applied. The
 preset's individual bands and cutoffs have no control (no reference evidence); they are reachable through
-`audio.*_cleanup_effect`. A Normalize loudness row is not here yet: the loudness controls have not landed.
+`audio.*_cleanup_effect`.
+
+Normalize loudness sits below the fades and Noise reduction. Clip and Master are two switches: on sends `audio.set_loudness` for that scope with the shown target, off sends `audio.clear_loudness`; each is one undo step. Target and True peak are draft fields committed on Enter or blur (Escape cancels). A commit is one `audio.set_loudness` batch over the switched-on scopes, so one undo step; an out-of-range draft sends nothing and the status line says so. Apply sends `audio.measure_loudness` through the session control path onto the panel's job runner: the frame polls it, the progress bar and Cancel (`runner.cancel_job`) show while it runs, and a completed job's gains are stored with `audio.apply_loudness`. A failure shows its reason, and a project change during the job stops it with a notice. The status line then shows the result per scope, or the silent (no gain) state. The rows are project-wide, shown on any selected audio or video item, and disabled on a locked track or while measuring. Layout: [editor design](../../../../../../docs/product/ui/editor.md#audio-tab).
 
 ## Transition inspector
 

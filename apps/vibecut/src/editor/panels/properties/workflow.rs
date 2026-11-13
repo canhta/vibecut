@@ -141,6 +141,15 @@ fn route(state: &mut State, port: &mut Port<'_>, actions: Vec<Action>) {
             Action::SetVoiceEnhancementStrength { item, wet_percent } => {
                 audio::set_voice_enhancement(port, item, None, Some(wet_percent))
             }
+            Action::SetLoudnessScope { scope, enabled } => {
+                state.set_loudness_scope(port, scope, enabled)
+            }
+            Action::SetLoudnessTarget(target) => state.set_loudness_target(port, target),
+            Action::MeasureLoudness => state.start_loudness(port),
+            Action::CancelLoudness => {
+                state.cancel_loudness();
+                Ok(())
+            }
             Action::SetReverse { item, reverse } => speed::set_reverse(port, item, reverse),
             Action::SetTransitionDuration {
                 transition,

@@ -154,6 +154,93 @@ fn submit(
     )?)
 }
 
+struct Allow;
+impl engine::control::Policy for Allow {
+    fn authorize(&self, _: &engine::Command, _: &project::Project) -> engine::control::Result<()> {
+        Ok(())
+    }
+}
+
+/// Queue `audio.measure_loudness` through the control path, as the desktop and the CLI do.
+fn measure_through_control(
+    runner: &mut JobRunner,
+    session: &mut Session,
+) -> Result<JobId, EngineError> {
+    let result = session.control_command(
+        engine::Command::MeasureLoudness {},
+        engine::control::Caller {
+            principal: "test",
+            external: false,
+            policy: &Allow,
+            fonts: None,
+            sounds: None,
+            music: None,
+            stickers: None,
+            brand: None,
+            media: None,
+            chapters: None,
+            captions: None,
+            vision: None,
+        },
+        runner,
+    )?;
+    let engine::control::ControlResult::JobAccepted { job, .. } = result else {
+        panic!("measure must return a job");
+    };
+    Ok(job)
+}
+
+/// The session's loudness source seam is what `audio.measure_loudness` measures, so a test
+/// can replace the project's media with a tone, or with a source that fails.
+#[test]
+fn measure_command_reads_the_session_loudness_source_seam() {
+    let budget = ByteBudget::new(256 << 20).unwrap();
+    let mut runner = runner(&budget);
+    let mut session = session();
+    session
+        .apply(engine::Command::SetLoudness {
+            scope: project::LoudnessScope::Master,
+            target_lufs: -14.0,
+            true_peak_db: -1.0,
+        })
+        .unwrap();
+
+    let reads = Arc::new(AtomicUsize::new(0));
+    let tone = reads.clone();
+    session.set_loudness_sources(move || {
+        Box::new(Tone {
+            level: 0.1,
+            reads: tone.clone(),
+            fail: false,
+        })
+    });
+    let job = measure_through_control(&mut runner, &mut session).unwrap();
+    let result = finish(&mut runner, job).unwrap();
+    assert!(reads.load(Ordering::SeqCst) > 0, "the seam was never read");
+    assert!(
+        (f64::from(result.gains.master_db) - 6.0).abs() < 0.05,
+        "-20 LUFS to -14"
+    );
+
+    // A second run of the same content would reuse the retained job, so fail on a fresh runner.
+    runner.shutdown();
+    let mut runner = self::runner(&budget);
+    let failing = reads.clone();
+    session.set_loudness_sources(move || {
+        Box::new(Tone {
+            level: 0.1,
+            reads: failing.clone(),
+            fail: true,
+        })
+    });
+    let job = measure_through_control(&mut runner, &mut session).unwrap();
+    assert!(matches!(
+        finish(&mut runner, job),
+        Err(EngineError::Runtime(engine::RuntimeError::Failed(_)))
+    ));
+    runner.shutdown();
+}
+
 #[test]
 fn normalize_measures_applies_and_gates_export_on_unchanged_audio() {
     let budget = ByteBudget::new(256 << 20).unwrap();

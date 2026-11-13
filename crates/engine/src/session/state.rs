@@ -90,6 +90,9 @@ pub struct Session {
     /// The render source seam `export.clips` reads through. Unset, the job reads files directly.
     pub(crate) asset_export_sources:
         Option<Arc<dyn Fn() -> Box<dyn render::SourceProvider> + Send + Sync>>,
+    /// The render source seam `audio.measure_loudness` reads through. Unset, it reads files.
+    pub(crate) loudness_sources:
+        Option<Arc<dyn Fn() -> Box<dyn render::SourceProvider> + Send + Sync>>,
 }
 impl Session {
     /// Lend the render source seam `export.clips` reads through. The desktop passes the sources
@@ -101,6 +104,17 @@ impl Session {
         let sources: Arc<dyn Fn() -> Box<dyn render::SourceProvider> + Send + Sync> =
             Arc::new(sources);
         self.asset_export_sources = Some(sources);
+    }
+    /// Lend the render source seam `audio.measure_loudness` reads through. Tests replace the
+    /// project's media with a silent, failing or held provider; production leaves it unset and
+    /// reads the project's files.
+    pub fn set_loudness_sources(
+        &mut self,
+        sources: impl Fn() -> Box<dyn render::SourceProvider> + Send + Sync + 'static,
+    ) {
+        let sources: Arc<dyn Fn() -> Box<dyn render::SourceProvider> + Send + Sync> =
+            Arc::new(sources);
+        self.loudness_sources = Some(sources);
     }
     /// Retain 1..=1000 undo snapshots plus current/pending/active transaction snapshots.
     /// Candidates copy metadata; no media payload is copied.
@@ -158,6 +172,7 @@ impl Session {
             grouping: false,
             ripple: false,
             asset_export_sources: None,
+            loudness_sources: None,
         })
     }
     /// Create the default canvas/timeline through the registered lifecycle command.

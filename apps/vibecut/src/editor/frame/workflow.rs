@@ -65,6 +65,7 @@ impl Editor {
             if let Err(error) = properties.poll_footage(port) {
                 port.fail(error.to_string());
             }
+            properties.poll_loudness(port);
         });
         let failure = self.playback.error();
         self.properties.set_lut_failure(failure);

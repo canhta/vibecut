@@ -451,9 +451,15 @@ impl Session {
                 })
             }
             Command::MeasureLoudness {} => {
-                let job = crate::loudness::submit_loudness(runner, self.project().clone(), || {
-                    Box::new(render::FileSources::default())
-                })?;
+                let sources = self.loudness_sources.clone();
+                let job =
+                    crate::loudness::submit_loudness(runner, self.project().clone(), move || {
+                        match &sources {
+                            Some(sources) => (**sources)(),
+                            None => Box::new(render::FileSources::default())
+                                as Box<dyn render::SourceProvider>,
+                        }
+                    })?;
                 Ok(ControlResult::JobAccepted {
                     word_highlight_warnings: project::CaptionWordWarnings::default(),
                     job,
