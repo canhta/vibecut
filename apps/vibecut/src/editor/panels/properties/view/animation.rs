@@ -9,7 +9,10 @@ use time::{Rounding, Tick};
 const DRAFT: &str = "animation_duration";
 /// Automation marker the frame sets while the element cannot take an edit.
 pub(super) const DISABLED: &str = "animation.edit";
-const COLUMNS: usize = 3;
+/// Measured grid (capture 221759, logical px): six columns of 58 px square tiles, 15 px apart.
+const COLUMNS: usize = 6;
+const TILE: f32 = 58.0;
+const GUTTER: f32 = 15.0;
 const FIELD_WIDTH: f32 = 68.0;
 /// Stepper step in seconds; the engine clamps a duration to one frame..the clip.
 const STEP_SECONDS: f64 = 0.1;
@@ -115,7 +118,7 @@ impl Panel<'_, '_> {
         self.state.animation_slot
     }
 
-    /// The None tile and one tile per look, three to a row. Returns the clicked entry:
+    /// The None tile and one tile per look, six to a row. Returns the clicked entry:
     /// `Some(None)` removes the slot.
     fn animation_tiles(
         &mut self,
@@ -125,12 +128,10 @@ impl Panel<'_, '_> {
     ) -> Option<Option<Look>> {
         let mut entries: Vec<Option<Look>> = vec![None];
         entries.extend(Look::for_slot(slot).iter().copied().map(Some));
-        let gap = theme::space::XXS;
-        let width = ((ui.available_width() - gap * (COLUMNS - 1) as f32) / COLUMNS as f32).max(0.0);
         let mut chosen = None;
         for row in entries.chunks(COLUMNS) {
             ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = gap;
+                ui.spacing_mut().item_spacing.x = GUTTER;
                 for entry in row {
                     let label = entry.map_or(self.tr(Text::AnimationNone), |look| {
                         self.tr(look_text(look))
@@ -138,10 +139,7 @@ impl Panel<'_, '_> {
                     let word = entry.map_or("none", Look::word);
                     let selected = *entry == held;
                     let response = ui
-                        .add_sized(
-                            [width, theme::size::FIELD],
-                            egui::Button::new(label).selected(selected),
-                        )
+                        .add_sized([TILE, TILE], egui::Button::new(label).selected(selected))
                         .on_hover_text(self.tr(Text::TextAnimationTip));
                     self.remember(
                         format!("inspector.animation.{}.{word}", slot_word(slot)),
@@ -152,7 +150,7 @@ impl Panel<'_, '_> {
                     }
                 }
             });
-            ui.add_space(gap);
+            ui.add_space(GUTTER);
         }
         chosen
     }

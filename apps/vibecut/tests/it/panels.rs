@@ -2559,8 +2559,9 @@ fn text_fade_preflight_preserves_focused_and_unfocused_caption_and_properties_dr
 #[test]
 fn video_animation_tab_applies_in_out_and_combo_changes_duration_and_removes() {
     let f = fixture();
+    // The reference shots are 1727x1029 logical px; the capture must match for ui-compare.
     let mut h = crate::gpu::builder()
-        .with_size(egui::vec2(1440.0, 1000.0))
+        .with_size(egui::vec2(1727.0, 1029.0))
         .build_ui_state(|ui, e: &mut Editor| e.ui(ui), f.editor);
     h.run_steps(3);
     select(&mut h, f.video);

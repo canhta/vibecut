@@ -150,18 +150,40 @@ Availability and edit behavior belong to the [captions owner](../../../apps/vibe
 
 The Animation control is shared by the Text tab's Animation section and the Animation tab of
 video, image, sticker and graphic items (Video order: Basic group, Audio, Animation, Speed,
-Adjust, Effects, after the web capture's Audio, Animation, Speed). Desktop evidence (capture
-221759, tab Animation): a full-width three-cell In / Out / Combo bar, a search field, category
-chips, then a six-column grid of thumbnail tiles with the name beneath, None first. Ours keeps
-the three-cell bar on the 24 px control height, then a None tile and the looks as three-column
-text tiles of the 22 px field height in the 12 px type, and a Duration row (the web capture's
-"In and out motion duration", default 0.5 s) for an applied In or Out. Tooltips explain editable
-keys and the need to undo or remove existing keys before changing an animation. Not matched,
-open: no thumbnails or previews in the tiles, no search field, no category chips, six columns
-not three, the tile and gutter metrics, the Duration field's range and step (0.1 s is borrowed
-from the transition field, the clip length is the engine's only cap) and whether In and Out
-share one duration as the web capture shows (ours has one per slot, as the ticket asks); the
-look names and motions are new, not source parity. The Preset row adds a saved-style dropdown
+Adjust, Effects, after the web capture's Audio, Animation, Speed).
+
+Measured from desktop capture 221759 (In tab, None selected), flood-measured on the 3680×2284
+original and scaled by 1727/3680 to the 1727×1029 logical frame, like the other shots here:
+- Panel content x 1221–1654.5 (433 px wide) on the `#262626` panel, 8 px inside its edge.
+- In / Out / Combo bar x 1221.6–1654.3, y 121–141.7 (about 21 px high), three equal cells of
+  about 144 px, active `#3B3B3B`, inactive `#1C1C1C`.
+- Search field y 154.4–175.5 (21 px), `#1C1C1C`, 1 px `#3C3C3C` outline, 12.7 px under the bar.
+- Category chips y 201–223.4 (22.5 px high pills), a star then Trending, Basic, Light, Glitch,
+  Mask, 3D and a clipped next chip, so the row scrolls sideways; 11 px under it the grid starts.
+- Grid: six columns of 58.2 px square tiles, pitch 73.2 px (15 px gutter), x 1221–1645 (the last
+  9.6 px are the scroll gutter); first row y 234.6, row pitch 82 px (tile, then a 12 px name
+  under it); the None tile first, drawn with a 1 px accent outline when selected.
+- Duration row: not visible in this shot (nothing applied), so its height, field and range
+  are unmeasured; the web capture gives only the label "In and out motion duration" and 0.5 s.
+
+Ours follows the grid exactly (six columns, 58 px square tiles, 15 px gutter) and the
+three-cell bar and the property row for Duration. Remaining differences and causes:
+- Tiles carry the look's name inside the tile instead of a thumbnail with the name beneath, so
+  our row pitch is 58 + 15 = 73 px, not 82 px. Cause: previews need their own render job; open,
+  to be ticketed by the coordinator.
+- Our bar is the shared 24 px control height, about 3 px taller than the 21 px measured here;
+  cause: one shared kit control (the 221643 sub-tab bar measures 24).
+- No search field and no category chips. Cause: they filter and group a catalogue of hundreds
+  of animations (Trending, Basic, Light, Glitch, Mask, 3D) plus favourites; our twelve In/Out
+  and thirteen Combo looks do not map onto those categories and need no search. Open: add them
+  with a larger catalogue.
+- Names and motions of the looks are new, not source parity. Travel and drift amounts are [new].
+- In and Out each keep their own duration, as the ticket asks; the web capture shows one shared
+  "In and out motion duration".
+- The Duration field's range and step (0.1 s, borrowed from the transition field) are
+  unmeasured; the clip length is the engine's only cap.
+Tooltips explain editable keys and the need to undo or remove existing keys before changing
+an animation. The Preset row adds a saved-style dropdown
 and a Save style action; Apply copies the saved look onto the item and the selector
 shows a name only for an exact stored-style match. Save names the first free `Style N`
 and stores no words or keys. No matching selected-title desktop reference exists; these
