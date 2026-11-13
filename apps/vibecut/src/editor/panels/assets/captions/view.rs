@@ -22,8 +22,6 @@ use time::{TICKS_PER_SECOND, Tick};
 
 /// Target languages the translation and bilingual choices offer.
 const TARGET_LANGUAGES: [&str; 4] = ["vi", "en", "zh-Hans", "zh-Hant"];
-/// The Auto captions footer row: the 24 px primary button under a 12 px gap and an 8 px inset.
-const AUTO_FOOTER_HEIGHT: f32 = theme::size::CONTROL + theme::space::LG + theme::space::MD;
 
 fn output_languages(options: &Options, source: &LanguageTag) -> Result<Vec<LanguageTag>> {
     let target = LanguageTag::parse(&options.target)?;
@@ -304,296 +302,186 @@ impl Subtitles {
         };
         let busy = self.busy();
         let footer = section == CaptionsSection::Auto;
-        let scroll_height = if footer {
-            (ui.available_height() - AUTO_FOOTER_HEIGHT).max(0.0)
+        // The footer is laid out first from the bottom, so the page scrolls inside whatever
+        // height remains above it and nothing is drawn under the footer (the export dialog's rule).
+        let layout = if footer {
+            egui::Layout::bottom_up(egui::Align::Min)
         } else {
-            ui.available_height()
+            egui::Layout::top_down(egui::Align::Min)
         };
-        ui.vertical(|ui| {
-            egui::ScrollArea::vertical()
-                .id_salt("subtitles.panel.scroll")
-                .max_height(scroll_height)
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    ui.set_max_width(ui.available_width());
-                    ui.spacing_mut().item_spacing.x = 4.0;
-                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
-                    match section {
-                        CaptionsSection::Auto => {
-                            self.auto_page(ui, options, &mut controls, busy);
+        ui.with_layout(layout, |ui| {
+            if footer {
+                ui.add_space(theme::space::MD);
+                self.auto_footer(ui, session, options, &mut controls, busy);
+                ui.add_space(theme::space::LG);
+            }
+            let scroll_height = ui.available_height().max(0.0);
+            ui.vertical(|ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt("subtitles.panel.scroll")
+                    .max_height(scroll_height)
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        ui.set_max_width(ui.available_width());
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+                        match section {
+                            CaptionsSection::Auto => {
+                                self.auto_page(ui, options, &mut controls, busy);
+                            }
+                            CaptionsSection::Add => {
+                                self.add_page(ui, session, options, &mut controls, busy, at)
+                            }
+                            CaptionsSection::Translate => {
+                                self.translate_page(ui, session, options, &mut controls, busy);
+                            }
+                            CaptionsSection::Chapters => {
+                                self.chapters_page(ui, session, &mut controls, locale, options);
+                            }
                         }
-                        CaptionsSection::Add => {
-                            self.add_page(ui, session, options, &mut controls, busy, at)
+                        if matches!(
+                            options.transcription.as_str(),
+                            "whisper.cpp" | "whisper" | "gipformer"
+                        ) {
+                            options.local_transcription_model = options.transcription_model.clone();
                         }
-                        CaptionsSection::Translate => {
-                            self.translate_page(ui, session, options, &mut controls, busy);
+                        if options.source != previous_options.source {
+                            options.remember_source(project);
                         }
-                        CaptionsSection::Chapters => {
-                            self.chapters_page(ui, session, &mut controls, locale, options);
-                        }
-                    }
-                    if matches!(
-                        options.transcription.as_str(),
-                        "whisper.cpp" | "whisper" | "gipformer"
-                    ) {
-                        options.local_transcription_model = options.transcription_model.clone();
-                    }
-                    if options.source != previous_options.source {
-                        options.remember_source(project);
-                    }
-                    if *options != previous_options {
-                        let result = self.flush_drafts(session).map(|_| ());
-                        self.ui_result(result);
-                    }
-                    if let Some(problem) = self.problem {
-                        ui.colored_label(theme::error_text(dark), controls.tr(problem));
-                        if matches!(problem, Text::SubNoSpeech | Text::SubLowConfidence)
-                            && options.source != "auto"
-                            && self.retry_source.is_some()
-                            && controls.button(
-                                ui,
-                                "subtitles.retry_auto",
-                                Text::SubRetryAuto,
-                                Icon::ArrowClockwise,
-                                !busy,
-                            )
-                        {
-                            let result = self
-                                .flush_drafts(session)
-                                .and_then(|_| self.retry_auto(session, options));
+                        if *options != previous_options {
+                            let result = self.flush_drafts(session).map(|_| ());
                             self.ui_result(result);
                         }
-                        if problem == Text::SubDraftConflict && self.caption(session).is_none() {
-                            let label = ui.label(controls.tr(Text::SubDraftRecovery));
-                            for ((id, language), draft) in &mut self.drafts {
-                                let r = ui
-                                    .add(
-                                        egui::TextEdit::multiline(draft)
-                                            .desired_rows(2)
-                                            .char_limit(64 * 1024)
-                                            .desired_width(ui.available_width())
-                                            .id_salt((
-                                                "subtitles.recovery",
-                                                id.as_str(),
-                                                language.as_str(),
-                                            )),
-                                    )
-                                    .labelled_by(label.id);
-                                if r.has_focus() {
-                                    self.text_focus = Some(r.id);
+                        if let Some(problem) = self.problem {
+                            ui.colored_label(theme::error_text(dark), controls.tr(problem));
+                            if matches!(problem, Text::SubNoSpeech | Text::SubLowConfidence)
+                                && options.source != "auto"
+                                && self.retry_source.is_some()
+                                && controls.button(
+                                    ui,
+                                    "subtitles.retry_auto",
+                                    Text::SubRetryAuto,
+                                    Icon::ArrowClockwise,
+                                    !busy,
+                                )
+                            {
+                                let result = self
+                                    .flush_drafts(session)
+                                    .and_then(|_| self.retry_auto(session, options));
+                                self.ui_result(result);
+                            }
+                            if problem == Text::SubDraftConflict && self.caption(session).is_none()
+                            {
+                                let label = ui.label(controls.tr(Text::SubDraftRecovery));
+                                for ((id, language), draft) in &mut self.drafts {
+                                    let r = ui
+                                        .add(
+                                            egui::TextEdit::multiline(draft)
+                                                .desired_rows(2)
+                                                .char_limit(64 * 1024)
+                                                .desired_width(ui.available_width())
+                                                .id_salt((
+                                                    "subtitles.recovery",
+                                                    id.as_str(),
+                                                    language.as_str(),
+                                                )),
+                                        )
+                                        .labelled_by(label.id);
+                                    if r.has_focus() {
+                                        self.text_focus = Some(r.id);
+                                    }
+                                    controls.remember(
+                                        format!(
+                                            "subtitles.recovery.{}.{}",
+                                            id.as_str(),
+                                            language.as_str()
+                                        ),
+                                        &r,
+                                    );
                                 }
-                                controls.remember(
-                                    format!(
-                                        "subtitles.recovery.{}.{}",
-                                        id.as_str(),
-                                        language.as_str()
-                                    ),
-                                    &r,
-                                );
                             }
-                        }
-                        if let Some(id) = self.missing_model.clone()
-                            && controls.button(
-                                ui,
-                                "subtitles.models",
-                                Text::Models,
-                                Icon::File,
-                                !busy,
-                            )
-                        {
-                            self.requested_model = Some(id);
-                        }
-                        if controls.button(
-                            ui,
-                            "subtitles.dismiss",
-                            Text::ShortsDismiss,
-                            Icon::X,
-                            true,
-                        ) {
-                            if self.problem == Some(Text::SubDraftConflict) {
-                                self.drafts.clear();
-                                self.draft_project = Some(session.project().clone());
+                            if let Some(id) = self.missing_model.clone()
+                                && controls.button(
+                                    ui,
+                                    "subtitles.models",
+                                    Text::Models,
+                                    Icon::File,
+                                    !busy,
+                                )
+                            {
+                                self.requested_model = Some(id);
                             }
-                            self.problem = None;
-                            self.completed = None;
-                        }
-                    } else if let Some(count) = self.completed {
-                        ui.label(i18n::format(
-                            locale,
-                            Text::SubDone,
-                            &[("count", &i18n::number(locale, count as u64))],
-                        ));
-                    }
-                    if busy {
-                        let snapshot = self.inspect(session);
-                        ui.spinner();
-                        if let Some(job) = self
-                            .export
-                            .as_ref()
-                            .and_then(|(id, _)| self.runner.snapshot(*id))
-                        {
-                            crate::services::progress::job_progress(
+                            if controls.button(
                                 ui,
-                                "subtitles.progress",
-                                &job,
+                                "subtitles.dismiss",
+                                Text::ShortsDismiss,
+                                Icon::X,
+                                true,
+                            ) {
+                                if self.problem == Some(Text::SubDraftConflict) {
+                                    self.drafts.clear();
+                                    self.draft_project = Some(session.project().clone());
+                                }
+                                self.problem = None;
+                                self.completed = None;
+                            }
+                        } else if let Some(count) = self.completed {
+                            ui.label(i18n::format(
                                 locale,
-                            );
-                        } else {
-                            let status = controls.tr(if snapshot.cancelling {
-                                Text::ShortsCancelling
-                            } else {
-                                stage_text(snapshot.stage)
-                            });
-                            if let Some(progress) = snapshot.progress {
-                                crate::services::progress::line(
+                                Text::SubDone,
+                                &[("count", &i18n::number(locale, count as u64))],
+                            ));
+                        }
+                        if busy {
+                            let snapshot = self.inspect(session);
+                            ui.spinner();
+                            if let Some(job) = self
+                                .export
+                                .as_ref()
+                                .and_then(|(id, _)| self.runner.snapshot(*id))
+                            {
+                                crate::services::progress::job_progress(
                                     ui,
                                     "subtitles.progress",
+                                    &job,
                                     locale,
-                                    status,
-                                    progress,
                                 );
                             } else {
-                                ui.label(status);
-                            }
-                        }
-                        if controls.button(
-                            ui,
-                            "subtitles.cancel",
-                            Text::Cancel,
-                            Icon::X,
-                            !snapshot.cancelling,
-                        ) {
-                            self.cancel();
-                        }
-                        ui.ctx().request_repaint_after(Duration::from_millis(20));
-                    }
-                    ui.separator();
-                    if self.item.is_none() {
-                        self.text_focus = None;
-                        ui.label(controls.tr(Text::SubEmpty));
-                        self.style_ui(ui, session, options, at, bank_ready, &mut controls);
-                        // Words picked in another scene stay selected here, so the pane still
-                        // answers a cut with its scene refusal instead of vanishing.
-                        self.transcript_ui(
-                            ui,
-                            session,
-                            controls.locale,
-                            dark,
-                            &mut controls.widgets,
-                        );
-                        return;
-                    }
-                    let items: Vec<_> = session
-                        .project()
-                        .data()
-                        .scene()
-                        .timeline
-                        .iter()
-                        .flat_map(|t| &t.items)
-                        .filter(|i| matches!(i.content, ItemParams::Caption(_)))
-                        .map(|i| i.id)
-                        .collect();
-                    if items.len() > 1 {
-                        let mut selected = self.item;
-                        let r = egui::ComboBox::from_id_salt(egui::Id::unique("subtitles.item"))
-                            .selected_text(i18n::format(
-                                locale,
-                                Text::SubItem,
-                                &[("id", &self.item.map_or(String::new(), |i| i.0.to_string()))],
-                            ))
-                            .show_ui(ui, |ui| {
-                                for item in items {
-                                    let r = ui.selectable_value(
-                                        &mut selected,
-                                        Some(item),
-                                        i18n::format(
-                                            locale,
-                                            Text::SubItem,
-                                            &[("id", &item.0.to_string())],
-                                        ),
+                                let status = controls.tr(if snapshot.cancelling {
+                                    Text::ShortsCancelling
+                                } else {
+                                    stage_text(snapshot.stage)
+                                });
+                                if let Some(progress) = snapshot.progress {
+                                    crate::services::progress::line(
+                                        ui,
+                                        "subtitles.progress",
+                                        locale,
+                                        status,
+                                        progress,
                                     );
-                                    controls.remember(format!("subtitles.item.{}", item.0), &r);
+                                } else {
+                                    ui.label(status);
                                 }
-                            })
-                            .response;
-                        controls.remember("subtitles.item", &r);
-                        if selected != self.item
-                            && let Some(item) = selected
-                        {
-                            let result = self
-                                .flush_drafts(session)
-                                .and_then(|_| self.select_item(session, item));
-                            self.ui_result(result);
+                            }
+                            if controls.button(
+                                ui,
+                                "subtitles.cancel",
+                                Text::Cancel,
+                                Icon::X,
+                                !snapshot.cancelling,
+                            ) {
+                                self.cancel();
+                            }
+                            ui.ctx().request_repaint_after(Duration::from_millis(20));
                         }
-                    }
-                    self.style_ui(ui, session, options, at, bank_ready, &mut controls);
-                    self.text_focus = None;
-                    ui.add_enabled_ui(
-                        !busy && self.bank.is_none() && self.style_edit.is_none(),
-                        |ui| {
-                            ui.horizontal_wrapped(|ui| {
-                                if controls.icon_button(
-                                    ui,
-                                    "subtitles.select_all",
-                                    Text::SubSelectAll,
-                                    Icon::Plus,
-                                    true,
-                                ) && let Some((_, p)) = self.caption(session)
-                                {
-                                    self.selected =
-                                        p.cues.cues.iter().map(|c| c.id.clone()).collect();
-                                }
-                                if controls.icon_button(
-                                    ui,
-                                    "subtitles.split",
-                                    Text::Split,
-                                    Icon::Scissors,
-                                    self.selected.len() == 1,
-                                ) {
-                                    let result = self
-                                        .flush_drafts(session)
-                                        .and_then(|_| self.split(session, at));
-                                    self.ui_result(result);
-                                }
-                                if controls.icon_button(
-                                    ui,
-                                    "subtitles.merge",
-                                    Text::SubMerge,
-                                    Icon::ArrowsInLineHorizontal,
-                                    self.selected.len() > 1,
-                                ) {
-                                    let result = self
-                                        .flush_drafts(session)
-                                        .and_then(|_| self.merge(session));
-                                    self.ui_result(result);
-                                }
-                                if controls.icon_button(
-                                    ui,
-                                    "subtitles.earlier",
-                                    Text::SubEarlier,
-                                    Icon::SkipBack,
-                                    !self.selected.is_empty(),
-                                ) {
-                                    let result = self
-                                        .flush_drafts(session)
-                                        .and_then(|_| self.nudge(session, false));
-                                    self.ui_result(result);
-                                }
-                                if controls.icon_button(
-                                    ui,
-                                    "subtitles.later",
-                                    Text::SubLater,
-                                    Icon::SkipForward,
-                                    !self.selected.is_empty(),
-                                ) {
-                                    let result = self
-                                        .flush_drafts(session)
-                                        .and_then(|_| self.nudge(session, true));
-                                    self.ui_result(result);
-                                }
-                            });
-                            self.find_ui(ui, session, &mut controls, locale);
-                            self.cues_ui(ui, session, options, &mut controls, dark);
+                        ui.separator();
+                        if self.item.is_none() {
+                            self.text_focus = None;
+                            ui.label(controls.tr(Text::SubEmpty));
+                            self.style_ui(ui, session, options, at, bank_ready, &mut controls);
+                            // Words picked in another scene stay selected here, so the pane still
+                            // answers a cut with its scene refusal instead of vanishing.
                             self.transcript_ui(
                                 ui,
                                 session,
@@ -601,15 +489,138 @@ impl Subtitles {
                                 dark,
                                 &mut controls.widgets,
                             );
-                        },
-                    );
-                    if self.identify_fillers {
-                        self.fillers_ui(ui, session, &mut controls, locale, options);
-                    }
-                });
-            if footer {
-                self.auto_footer(ui, session, options, &mut controls, busy);
-            }
+                            return;
+                        }
+                        let items: Vec<_> = session
+                            .project()
+                            .data()
+                            .scene()
+                            .timeline
+                            .iter()
+                            .flat_map(|t| &t.items)
+                            .filter(|i| matches!(i.content, ItemParams::Caption(_)))
+                            .map(|i| i.id)
+                            .collect();
+                        if items.len() > 1 {
+                            let mut selected = self.item;
+                            let r =
+                                egui::ComboBox::from_id_salt(egui::Id::unique("subtitles.item"))
+                                    .selected_text(i18n::format(
+                                        locale,
+                                        Text::SubItem,
+                                        &[(
+                                            "id",
+                                            &self.item.map_or(String::new(), |i| i.0.to_string()),
+                                        )],
+                                    ))
+                                    .show_ui(ui, |ui| {
+                                        for item in items {
+                                            let r = ui.selectable_value(
+                                                &mut selected,
+                                                Some(item),
+                                                i18n::format(
+                                                    locale,
+                                                    Text::SubItem,
+                                                    &[("id", &item.0.to_string())],
+                                                ),
+                                            );
+                                            controls
+                                                .remember(format!("subtitles.item.{}", item.0), &r);
+                                        }
+                                    })
+                                    .response;
+                            controls.remember("subtitles.item", &r);
+                            if selected != self.item
+                                && let Some(item) = selected
+                            {
+                                let result = self
+                                    .flush_drafts(session)
+                                    .and_then(|_| self.select_item(session, item));
+                                self.ui_result(result);
+                            }
+                        }
+                        self.style_ui(ui, session, options, at, bank_ready, &mut controls);
+                        self.text_focus = None;
+                        ui.add_enabled_ui(
+                            !busy && self.bank.is_none() && self.style_edit.is_none(),
+                            |ui| {
+                                ui.horizontal_wrapped(|ui| {
+                                    if controls.icon_button(
+                                        ui,
+                                        "subtitles.select_all",
+                                        Text::SubSelectAll,
+                                        Icon::Plus,
+                                        true,
+                                    ) && let Some((_, p)) = self.caption(session)
+                                    {
+                                        self.selected =
+                                            p.cues.cues.iter().map(|c| c.id.clone()).collect();
+                                    }
+                                    if controls.icon_button(
+                                        ui,
+                                        "subtitles.split",
+                                        Text::Split,
+                                        Icon::Scissors,
+                                        self.selected.len() == 1,
+                                    ) {
+                                        let result = self
+                                            .flush_drafts(session)
+                                            .and_then(|_| self.split(session, at));
+                                        self.ui_result(result);
+                                    }
+                                    if controls.icon_button(
+                                        ui,
+                                        "subtitles.merge",
+                                        Text::SubMerge,
+                                        Icon::ArrowsInLineHorizontal,
+                                        self.selected.len() > 1,
+                                    ) {
+                                        let result = self
+                                            .flush_drafts(session)
+                                            .and_then(|_| self.merge(session));
+                                        self.ui_result(result);
+                                    }
+                                    if controls.icon_button(
+                                        ui,
+                                        "subtitles.earlier",
+                                        Text::SubEarlier,
+                                        Icon::SkipBack,
+                                        !self.selected.is_empty(),
+                                    ) {
+                                        let result = self
+                                            .flush_drafts(session)
+                                            .and_then(|_| self.nudge(session, false));
+                                        self.ui_result(result);
+                                    }
+                                    if controls.icon_button(
+                                        ui,
+                                        "subtitles.later",
+                                        Text::SubLater,
+                                        Icon::SkipForward,
+                                        !self.selected.is_empty(),
+                                    ) {
+                                        let result = self
+                                            .flush_drafts(session)
+                                            .and_then(|_| self.nudge(session, true));
+                                        self.ui_result(result);
+                                    }
+                                });
+                                self.find_ui(ui, session, &mut controls, locale);
+                                self.cues_ui(ui, session, options, &mut controls, dark);
+                                self.transcript_ui(
+                                    ui,
+                                    session,
+                                    controls.locale,
+                                    dark,
+                                    &mut controls.widgets,
+                                );
+                            },
+                        );
+                        if self.identify_fillers {
+                            self.fillers_ui(ui, session, &mut controls, locale, options);
+                        }
+                    });
+            });
         });
         self.bank_ui(ui, session, at, &mut controls);
         self.style_editor_ui(ui, session, at, &mut controls);
@@ -735,30 +746,37 @@ impl Subtitles {
         } else {
             None
         };
-        ui.horizontal(|ui| {
-            let r = ui.checkbox(&mut self.delete_current, c.tr(Text::SubDeleteCurrent));
-            c.remember("subtitles.delete_current", &r);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let r = ui.add_enabled(
-                    reason.is_none(),
-                    egui::Button::new(c.tr(Text::SubGenerate))
-                        .min_size(egui::vec2(0.0, theme::size::CONTROL)),
-                );
-                let r = match reason {
-                    Some(text) => r.on_disabled_hover_text(c.tr(text)),
-                    None => r,
-                };
-                c.remember("subtitles.generate", &r);
-                if r.clicked()
-                    && let Some(source) = source
-                {
-                    let result = self
-                        .flush_drafts(session)
-                        .and_then(|_| self.generate(session, source, options));
-                    self.ui_result(result);
-                }
-            });
-        });
+        // The row is exactly one primary button tall; a plain horizontal row in the bottom-up
+        // column would take the column's full height.
+        let row = egui::vec2(ui.available_width(), theme::size::CONTROL);
+        ui.allocate_ui_with_layout(
+            row,
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                let r = ui.checkbox(&mut self.delete_current, c.tr(Text::SubDeleteCurrent));
+                c.remember("subtitles.delete_current", &r);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let r = ui.add_enabled(
+                        reason.is_none(),
+                        egui::Button::new(c.tr(Text::SubGenerate))
+                            .min_size(egui::vec2(0.0, theme::size::CONTROL)),
+                    );
+                    let r = match reason {
+                        Some(text) => r.on_disabled_hover_text(c.tr(text)),
+                        None => r,
+                    };
+                    c.remember("subtitles.generate", &r);
+                    if r.clicked()
+                        && let Some(source) = source
+                    {
+                        let result = self
+                            .flush_drafts(session)
+                            .and_then(|_| self.generate(session, source, options));
+                        self.ui_result(result);
+                    }
+                });
+            },
+        );
     }
     /// Add captions: manual entry (a new caption item at the playhead, then cues typed into
     /// it) and file import. Edits to existing cues stay in the cue list below.
