@@ -4511,6 +4511,73 @@ fn audible_editor() -> Fixture {
     fixture
 }
 
+/// Q (`timeline.split_left`) on a main-track clip: with the magnet on the right piece closes
+/// the gap and later main clips follow; with it off the gap stays. One undo restores both.
+#[test]
+fn split_left_on_the_main_track_closes_the_gap_only_with_magnet_on() {
+    for (magnet, after_split, playhead) in [
+        (true, [0, 4 * SECOND], Tick::ZERO),
+        (false, [2 * SECOND, 6 * SECOND], Tick(2 * SECOND)),
+    ] {
+        let fixture = fixture();
+        let (video_a, video_b) = (fixture.video_a, fixture.video_b);
+        let mut h = harness(fixture.editor);
+        h.run_steps(3);
+        let main = h.state().session.project().data().scene().timeline.main.id;
+        h.state_mut()
+            .session
+            .apply(Command::SetTrackMagnet { enabled: magnet })
+            .unwrap();
+        for (item, start) in [(video_a, Tick::ZERO), (video_b, Tick(6 * SECOND))] {
+            h.state_mut()
+                .session
+                .apply(Command::MoveItem {
+                    item,
+                    track: main,
+                    start,
+                })
+                .unwrap();
+        }
+        click_item(&mut h, video_a);
+        h.state_mut()
+            .dispatch(AppCommand::Seek(Tick(2 * SECOND)))
+            .unwrap();
+        h.run_steps(2);
+        h.key_press(egui::Key::Q);
+        h.run_steps(3);
+        let starts = |h: &Harness<'_, Editor>| -> Vec<Tick> {
+            h.state()
+                .session
+                .project()
+                .data()
+                .scene()
+                .timeline
+                .main
+                .items
+                .iter()
+                .map(|item| item.start)
+                .collect()
+        };
+        assert_eq!(
+            starts(&h),
+            after_split.map(Tick).to_vec(),
+            "magnet {magnet}: main starts after split left"
+        );
+        assert_eq!(
+            h.state().inspect().unwrap().position,
+            playhead,
+            "magnet {magnet}: the playhead follows the kept piece only when the gap closed"
+        );
+        h.state_mut().session.undo().unwrap();
+        h.run_steps(2);
+        assert_eq!(
+            starts(&h),
+            vec![Tick::ZERO, Tick(6 * SECOND)],
+            "magnet {magnet}: one undo restores the main track"
+        );
+    }
+}
+
 fn click_item(harness: &mut Harness<'_, Editor>, id: ItemId) {
     harness
         .get(By::new().predicate(move |node| {

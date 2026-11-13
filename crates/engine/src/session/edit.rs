@@ -976,7 +976,7 @@ mod transitions;
 
 pub use project_edits::DEFAULT_BOOKMARK_COLOR;
 
-pub(crate) use clips::close_vacated_tails as ripple;
+pub(crate) use clips::{close_vacated_tails as ripple, magnet_scope};
 
 /// A global ripple pass replaces command-local shifts, including inside batches.
 /// Run only after the command budget is admitted.

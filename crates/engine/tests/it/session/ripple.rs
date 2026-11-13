@@ -463,3 +463,174 @@ fn ripple_wire_policy_is_atomic_explicit_and_cannot_nest() {
         }
     }
 }
+/// Main track 20 @0, 21 @40, 22 @80 (each 40 long) beside `project()`'s overlay items 10 @0
+/// and 11 @60, with the main-track magnet set as given.
+fn main_magnet_fixture(magnet: bool) -> Session {
+    let mut data = project().into_data();
+    let template = data
+        .scene()
+        .timeline
+        .overlays
+        .first()
+        .unwrap()
+        .items
+        .first()
+        .unwrap()
+        .clone();
+    data.scene_mut().timeline.main.items = [20, 21, 22]
+        .into_iter()
+        .enumerate()
+        .map(|(index, id)| {
+            let index = index as i64;
+            let mut item = template.clone();
+            item.id = ItemId(id);
+            item.start = Tick(index * 40);
+            item.source_range = range(100 + index * 100, 140 + index * 100);
+            item
+        })
+        .collect();
+    data.scene_mut().timeline.magnet = magnet;
+    Session::new(Project::new(data).unwrap(), 100).unwrap()
+}
+fn main_starts(s: &Session) -> Vec<i64> {
+    s.project()
+        .data()
+        .scene()
+        .timeline
+        .main
+        .items
+        .iter()
+        .map(|item| item.start.0)
+        .collect()
+}
+fn overlay_starts(s: &Session) -> Vec<(u64, i64)> {
+    s.project()
+        .data()
+        .scene()
+        .timeline
+        .overlays
+        .iter()
+        .flat_map(|track| &track.items)
+        .map(|item| (item.id.0, item.start.0))
+        .collect()
+}
+fn ids(items: &[u64]) -> Vec<ItemId> {
+    items.iter().copied().map(ItemId).collect()
+}
+#[test]
+fn main_magnet_closes_only_the_span_that_removals_vacate_in_one_undo_step() {
+    let delete = |items: &[u64]| Command::Delete { items: ids(items) };
+    let split_left = |items: &[u64]| Command::TimelineSplitLeft {
+        items: ids(items),
+        at: Tick(60),
+    };
+    let split_right = |items: &[u64]| Command::TimelineSplitRight {
+        items: ids(items),
+        at: Tick(60),
+    };
+    let both_overlays = vec![(10, 0), (11, 60)];
+    // (name, magnet, command, expected main starts, expected overlay starts)
+    let rows: Vec<(&str, bool, Command, Vec<i64>, Vec<(u64, i64)>)> = vec![
+        (
+            "delete middle, magnet on",
+            true,
+            delete(&[21]),
+            vec![0, 40],
+            both_overlays.clone(),
+        ),
+        (
+            "delete middle, magnet off",
+            false,
+            delete(&[21]),
+            vec![0, 80],
+            both_overlays.clone(),
+        ),
+        (
+            "split left mid-clip, magnet on",
+            true,
+            split_left(&[21]),
+            vec![0, 40, 60],
+            both_overlays.clone(),
+        ),
+        (
+            "split left mid-clip, magnet off",
+            false,
+            split_left(&[21]),
+            vec![0, 60, 80],
+            both_overlays.clone(),
+        ),
+        (
+            "split right mid-clip, magnet on",
+            true,
+            split_right(&[21]),
+            vec![0, 40, 60],
+            both_overlays.clone(),
+        ),
+        (
+            "split right mid-clip, magnet off",
+            false,
+            split_right(&[21]),
+            vec![0, 40, 80],
+            both_overlays.clone(),
+        ),
+        (
+            "split keeping both pieces, magnet on",
+            true,
+            Command::SplitAt {
+                item: ItemId(21),
+                at: Tick(60),
+            },
+            vec![0, 40, 60, 80],
+            both_overlays.clone(),
+        ),
+        (
+            "overlay-only delete, magnet on",
+            true,
+            delete(&[10]),
+            vec![0, 40, 80],
+            vec![(11, 60)],
+        ),
+        (
+            "batch of two main deletes closes one span, magnet on",
+            true,
+            Command::Batch {
+                commands: vec![delete(&[20]), delete(&[21])],
+            },
+            vec![0],
+            both_overlays.clone(),
+        ),
+        (
+            "main delete with a listed overlay partner, magnet on",
+            true,
+            delete(&[21, 10]),
+            vec![0, 40],
+            vec![(11, 20)],
+        ),
+        (
+            "main delete with a listed overlay partner, magnet off",
+            false,
+            delete(&[21, 10]),
+            vec![0, 80],
+            vec![(11, 60)],
+        ),
+    ];
+    for (name, magnet, command, main, overlays) in rows {
+        let mut s = main_magnet_fixture(magnet);
+        let before = s.project().clone();
+        s.apply(command).unwrap();
+        assert_eq!(main_starts(&s), main, "{name}: main track");
+        assert_eq!(overlay_starts(&s), overlays, "{name}: overlay tracks");
+        let after = s.project().clone();
+        assert_eq!(s.history_len(), (1, 0), "{name}: one undo step");
+        s.undo().unwrap();
+        assert_eq!(s.project(), &before, "{name}: undo");
+        s.redo().unwrap();
+        assert_eq!(s.project(), &after, "{name}: redo");
+    }
+    // A refused removal publishes no gap-closing candidate.
+    let mut s = main_magnet_fixture(true);
+    let before = s.project().clone();
+    assert!(s.apply(delete(&[21, 99])).is_err());
+    assert_eq!(s.project(), &before);
+    assert_eq!(s.history_len(), (0, 0));
+}
