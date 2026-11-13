@@ -15,6 +15,7 @@ pub(crate) fn run(_context: &Context, args: Vec<OsString>) -> Result<Output, Cli
         "api_version": control::API_VERSION,
         "registry_hash": control::registry_hash(),
         "limits": control::LIMITS,
+        "output_schema": control::output_schema(),
         "entries": registry,
     });
     let mut human = format!(

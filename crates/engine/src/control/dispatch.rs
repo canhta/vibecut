@@ -3,7 +3,8 @@ use super::{Caller, output};
 use crate::jobs::{JobKind, JobRunner, JobState};
 use crate::providers::{CatalogOperation, ProviderOption};
 use crate::session::wire::{
-    ControlResult, JobView, MAX_RESPONSE_BYTES, ProviderView, bounded_json, validate_wire,
+    ControlResult, JobView, MAX_RESPONSE_BYTES, ProviderView, bounded_json, output_schema,
+    validate_wire,
 };
 use crate::{Command, Session, control::Error as EngineError, control::Result, registry};
 
@@ -149,10 +150,12 @@ impl Session {
                 })
             }
             Command::Catalog {} => {
-                bounded_json(registry(), MAX_RESPONSE_BYTES - 4096)?;
-                Ok(ControlResult::Catalog {
+                let catalog = ControlResult::Catalog {
+                    output_schema: output_schema().clone(),
                     entries: registry().to_vec(),
-                })
+                };
+                bounded_json(&catalog, MAX_RESPONSE_BYTES - 4096)?;
+                Ok(catalog)
             }
             Command::ProviderCatalog {} => Ok(ControlResult::Providers {
                 entries: crate::providers::provider_options()

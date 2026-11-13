@@ -19,7 +19,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // This local artifact aggregates every page; transport caps still apply to
     // each wire response, not to the generated file containing the whole catalog.
     let mut artifact = std::io::BufWriter::new(std::fs::File::create(artifact)?);
-    serde_json::to_writer(&mut artifact, engine::registry())?;
+    serde_json::to_writer(
+        &mut artifact,
+        &serde_json::json!({
+            "output_schema": engine::control::output_schema(),
+            "entries": engine::registry(),
+        }),
+    )?;
     std::io::Write::flush(&mut artifact)?;
     std::fs::write(
         root.join("../../docs/product/agent-control/commands.md"),

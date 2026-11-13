@@ -450,20 +450,24 @@ fn all_schema_shapes_agree_on_required_fields_wrong_types_and_closed_objects() {
 }
 #[test]
 fn deterministic_catalog_and_schema_document_receipts() {
-    let first = serde_json::to_vec(registry()).unwrap();
-    let second = serde_json::to_vec(registry()).unwrap();
+    let first = serde_json::to_vec(&catalog_response()).unwrap();
+    let second = serde_json::to_vec(&catalog_response()).unwrap();
     assert_eq!(first, second);
     assert_eq!(control::registry_hash().len(), 64);
+    assert_eq!(
+        control::output_schema()["$schema"],
+        "https://json-schema.org/draft/2020-12/schema"
+    );
+    assert!(
+        jsonschema::options()
+            .offline()
+            .build(control::output_schema())
+            .is_ok()
+    );
     for spec in registry() {
         assert_eq!(
             spec.params_schema["$schema"],
             "https://json-schema.org/draft/2020-12/schema"
-        );
-        assert!(
-            jsonschema::options()
-                .offline()
-                .build(&spec.output_schema)
-                .is_ok()
         );
     }
     println!(
@@ -477,7 +481,9 @@ fn deterministic_catalog_and_schema_document_receipts() {
             .unwrap()
             .len()
     );
-    assert!(first.len() < control::MAX_RESPONSE_BYTES);
+    // The shared output schema is carried once, so commands grow the catalog by
+    // their params only: keep it under half a response for headroom.
+    assert!(first.len() < control::MAX_RESPONSE_BYTES / 2);
     let mut job_control: Vec<_> = registry()
         .iter()
         .filter(|s| s.effect == Effect::JobControl)
@@ -563,7 +569,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
         (Availability::PlayableTimeline, &["preview.snapshot"]),
         (Availability::CanUndo, &["undo"]),
         (Availability::CanRedo, &["redo"]),
-        (Availability::Assets, &["media.remove"]),
+        (Availability::Assets, &["export.clips", "media.remove"]),
         (Availability::RetimableItem, &["timeline.set_speed"]),
         (Availability::RemovableTrack, &["track.remove"]),
         (
@@ -675,6 +681,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
             "chapters.export_sidecars",
             "clips.export",
             "export",
+            "export.clips",
             "export_subtitles",
             "preview.snapshot"
         ]
@@ -840,8 +847,8 @@ fn caption_bank_fixture_selects_live_style_and_refuses_the_previous_digest() {
 
 #[test]
 fn catalog_and_frame_serialization_obey_the_literal_sixteen_mib_boundary() {
-    let registry = control::bounded_json(registry(), 16 << 20).unwrap();
-    assert!(registry.len() > 8 << 20 && registry.len() < 16 << 20);
+    let catalog = control::bounded_json(&catalog_response(), 16 << 20).unwrap();
+    assert!(catalog.len() < 8 << 20, "catalog {} bytes", catalog.len());
     let edge = "x".repeat((16 << 20) - 2);
     assert_eq!(
         control::bounded_json(&edge, 16 << 20).unwrap().len(),
@@ -860,4 +867,13 @@ fn catalog_and_frame_serialization_obey_the_literal_sixteen_mib_boundary() {
         control::parse_frame(&frame),
         Err(engine::control::ControlError::Limit)
     ));
+}
+
+/// The `catalog` command's answer: the shared output schema once, then every entry.
+fn catalog_response() -> serde_json::Value {
+    serde_json::to_value(ControlResult::Catalog {
+        output_schema: control::output_schema().clone(),
+        entries: registry().to_vec(),
+    })
+    .unwrap()
 }

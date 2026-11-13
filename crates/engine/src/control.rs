@@ -16,7 +16,7 @@ pub use crate::session::wire::{
     ReframeReason, ReframeReport, ReframeShotReport, ReframeTarget, Request, Response,
     ResponseValue, Revision, SavedMusicEntry, SavedSoundEntry, Snapshot, SoundEntry, SoundPage,
     SoundSource, StickerCategory, StickerEntry, StickerPage, TranslationsResult, bounded_json,
-    contract_schema, parse_frame, reference_markdown, registry_hash,
+    contract_schema, output_schema, parse_frame, reference_markdown, registry_hash,
 };
 
 use crate::{

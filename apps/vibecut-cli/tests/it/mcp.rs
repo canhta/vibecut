@@ -822,6 +822,8 @@ fn full_tool_and_command_pages_cover_the_live_registry_without_schema_drift() {
         let result = &page["result"]["structuredContent"];
         assert!(result.get("error").is_none(), "{result}");
         entries.extend(result["entries"].as_array().unwrap().iter().cloned());
+        // Each page carries the one result schema every command shares.
+        assert_eq!(result["output_schema"], *engine::control::output_schema());
         if result["next_cursor"].is_null() {
             break;
         }
@@ -840,12 +842,13 @@ fn full_tool_and_command_pages_cover_the_live_registry_without_schema_drift() {
         assert_eq!(spec["effect"], "edit");
         assert!(spec.get("curated").is_none());
         assert_eq!(spec["params_schema"]["additionalProperties"], false);
-        assert!(
-            spec["output_schema"]["$defs"]["ProjectData"]["properties"]
-                .get("caption_presets")
-                .is_some()
-        );
+        assert!(spec.get("output_schema").is_none());
     }
+    assert!(
+        engine::control::output_schema()["$defs"]["ProjectData"]["properties"]
+            .get("caption_presets")
+            .is_some()
+    );
     let fade = entries
         .iter()
         .find(|e| e["id"] == "text.apply_animation")

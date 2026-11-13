@@ -100,6 +100,10 @@ fn control_session_tracks_revisions_receipts_and_saves_on_exit() {
     let catalog = control.send(control_request("rc", "catalog", json!({}), None, None));
     assert_eq!(catalog["exit_code"], 0);
     assert_eq!(catalog["value"]["value"]["kind"], "catalog");
+    assert_eq!(
+        catalog["value"]["value"]["output_schema"],
+        *engine::control::output_schema()
+    );
     assert!(
         catalog["value"]["value"]["entries"]
             .as_array()

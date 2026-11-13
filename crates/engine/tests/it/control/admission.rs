@@ -710,11 +710,7 @@ fn integer_candidates_at_the_safe_limit_refuse_atomically_through_every_entry() 
     assert!(
         matches!(&result,ControlResult::Edit{outcome} if outcome.created==vec![engine::CreatedId::Track(TrackId(control::MAX_SAFE_INTEGER as u64))])
     );
-    let schema = &registry()
-        .iter()
-        .find(|spec| spec.id == "timeline.add_track")
-        .unwrap()
-        .output_schema;
+    let schema = control::output_schema();
     assert!(
         jsonschema::options()
             .offline()

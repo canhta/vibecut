@@ -52,11 +52,14 @@ undo snapshot and never splits a batch. A changed edit clears redo; failures and
 it. Undo and redo move existing snapshots, preserving exact integer timing and media and caption
 identity.
 
-`registry()` derives JSON Schema 2020-12 input and output schemas, effects, labels and
-executable examples from the same declaration as `Command`. Leaf shapes come from the owning
-types; fixed objects are closed recursively, including empty params and nested batches. Each
-standalone parameter schema keeps only its transitively referenced definitions so the catalog
-stays within the response byte budget. Domain constructors still validate invariants.
+`registry()` derives JSON Schema 2020-12 input schemas, effects, labels and executable
+examples from the same declaration as `Command`. Leaf shapes come from the owning types; fixed
+objects are closed recursively, including empty params and nested batches. Each standalone
+parameter schema keeps only its transitively referenced definitions so the catalog stays within
+the response byte budget. Every command answers with one `ControlResult`, so
+`control::output_schema()` is its single output schema: the `catalog` command, `commands --json`
+and MCP `command_list` carry it once beside the entries, and the registry digest covers it.
+Domain constructors still validate invariants.
 
 Each declaration also carries per-command facts outside the wire catalog and its digest: an
 `Availability` rule (default `Always`), a `GrantClass` (`Agent`, `Output` for the

@@ -178,7 +178,7 @@ impl ServerHandler for Handler {
             } else {
                 None
             };
-            return Ok(bounded_result(CallToolResult::structured(json!({"api_version":control::API_VERSION,"registry_hash":control::registry_hash(),"limits":control::LIMITS,"entries":entries,"next_cursor":next}))).into());
+            return Ok(bounded_result(CallToolResult::structured(json!({"api_version":control::API_VERSION,"registry_hash":control::registry_hash(),"limits":control::LIMITS,"output_schema":control::output_schema(),"entries":entries,"next_cursor":next}))).into());
         }
         let mut value = Value::Object(args);
         if request.name != "command_run" {

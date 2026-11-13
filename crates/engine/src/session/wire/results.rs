@@ -19,7 +19,9 @@ pub enum ControlResult {
     Inspection {
         project: Box<project::ProjectData>,
     },
+    /// `output_schema` is the schema of this enum, shared by every entry.
     Catalog {
+        output_schema: serde_json::Value,
         entries: Vec<CommandSpec>,
     },
     Providers {

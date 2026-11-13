@@ -363,8 +363,9 @@ pub struct CommandSpec {
     pub label: &'static str,
     pub effect: Effect,
     pub limits: super::wire::Limits,
+    /// Every command answers with one `ControlResult`; its schema is published once
+    /// beside the entries by [`crate::control::output_schema`], not per command.
     pub params_schema: serde_json::Value,
-    pub output_schema: serde_json::Value,
     pub example: Example,
     /// Declaration facts below never enter the wire catalog or its digest.
     #[serde(skip)]
@@ -834,12 +835,6 @@ pub fn registry() -> &'static [CommandSpec] {
         {
             defs.insert("CommandRoot".into(), command_root);
         }
-        let mut output = schemars::generate::SchemaSettings::draft2020_12()
-            .for_serialize()
-            .into_generator()
-            .into_root_schema_for::<super::wire::ControlResult>()
-            .to_value();
-        super::wire::close_schema(&mut output);
         declarations()
             .into_iter()
             .map(|(id, label, effect, example, facts)| {
@@ -872,7 +867,6 @@ pub fn registry() -> &'static [CommandSpec] {
                     effect,
                     limits: super::wire::LIMITS,
                     params_schema: params,
-                    output_schema: output.clone(),
                     example,
                     availability: facts.available,
                     grant: facts.grant,

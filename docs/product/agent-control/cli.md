@@ -91,7 +91,7 @@ ASR checkpoints are content-addressed complete windows in the model cache. A res
 
 ## Commands and schemas
 
-`commands --json` is the authoritative generated catalog: `api_version`, `registry_hash`, the static control `limits` and `entries`, each with command ID, label, effect, JSON Schema 2020-12 input/output shapes and a fixture example. `schema --json` returns the same `api_version`/`registry_hash` with the request, response and event envelope schemas. There is no CLI-side command table ([architecture](../../engineering/architecture.md#contracts)). `exec` takes a command ID and its `params` object:
+`commands --json` is the authoritative generated catalog: `api_version`, `registry_hash`, the static control `limits`, `output_schema` (the JSON Schema 2020-12 shape of the result every command returns, carried once) and `entries`, each with command ID, label, effect, JSON Schema 2020-12 input shape and a fixture example. The `catalog` control command returns the same `output_schema` beside its `entries`. `schema --json` returns the same `api_version`/`registry_hash` with the request, response and event envelope schemas. There is no CLI-side command table ([architecture](../../engineering/architecture.md#contracts)). `exec` takes a command ID and its `params` object:
 
 ```sh
 vibecut-cli exec demo.vibecut timeline.add_track '{"name":"Video","kind":"video"}'
