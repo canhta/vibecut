@@ -603,7 +603,7 @@ fn audible_session() -> (Session, TrackId, TrackId, ItemId) {
             muted: false,
             crop: None,
             cleanup: Default::default(),
-            background: ClipBackground::None,
+            background: project::ClipBackground::None,
         }),
     );
     insert(

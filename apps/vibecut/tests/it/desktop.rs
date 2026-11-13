@@ -1425,7 +1425,7 @@ fn controlled_preview(audio: bool) -> (Session, Playback, std::sync::mpsc::Recei
                         crop: None,
                         fades: Default::default(),
                         cleanup: Default::default(),
-                        background: ClipBackground::None,
+                        background: project::ClipBackground::None,
                     })
                 },
             },

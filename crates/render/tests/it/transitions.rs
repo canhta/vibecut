@@ -1346,7 +1346,7 @@ fn transition_consumes_both_video_handles_at_exact_source_ticks() {
             fades: Default::default(),
             crop: None,
             cleanup: Default::default(),
-            background: ClipBackground::None,
+            background: project::ClipBackground::None,
         });
     }
     let p = Project::new(d).unwrap();

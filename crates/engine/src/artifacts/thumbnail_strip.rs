@@ -661,7 +661,7 @@ mod tests {
                 muted: false,
                 crop: None,
                 cleanup: Default::default(),
-                background: ClipBackground::None,
+                background: project::ClipBackground::None,
             }),
         }
     }

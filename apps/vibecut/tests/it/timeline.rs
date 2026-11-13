@@ -114,7 +114,7 @@ pub(crate) fn fixture() -> Fixture {
             muted: false,
             crop: None,
             cleanup: Default::default(),
-            background: ClipBackground::None,
+            background: project::ClipBackground::None,
         }),
     );
     let video_b = insert(
@@ -130,7 +130,7 @@ pub(crate) fn fixture() -> Fixture {
             muted: false,
             crop: None,
             cleanup: Default::default(),
-            background: ClipBackground::None,
+            background: project::ClipBackground::None,
         }),
     );
     let _audio_item = insert(
@@ -3473,7 +3473,7 @@ fn clip_details_remain_visible_after_scrolling_deep_into_a_long_clip() {
             muted: false,
             crop: None,
             cleanup: Default::default(),
-            background: ClipBackground::None,
+            background: project::ClipBackground::None,
         }),
     );
     let mut h = harness(f.editor);

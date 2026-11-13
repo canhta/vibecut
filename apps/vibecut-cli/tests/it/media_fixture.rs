@@ -91,7 +91,7 @@ pub(super) fn media_project(project_path: &Path, video: &Path, audio: Option<&Pa
                 muted: false,
                 crop: None,
                 cleanup: Default::default(),
-                background: ClipBackground::None,
+                background: project::ClipBackground::None,
             }),
         }],
     });

@@ -44,7 +44,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 muted: false,
                 crop: None,
                 cleanup: Default::default(),
-                background: ClipBackground::None,
+                background: project::ClipBackground::None,
             }),
         },
     })?;

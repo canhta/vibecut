@@ -108,7 +108,7 @@ pub(super) fn timeline_main_sized(
                 muted: false,
                 crop: None,
                 cleanup: Default::default(),
-                background: ClipBackground::None,
+                background: project::ClipBackground::None,
             }),
         )?;
     }
@@ -441,7 +441,7 @@ pub(super) fn placement(theme: Theme, scale: f32) -> Result<AppHarness, Failure>
             crop: None,
             muted: false,
             cleanup: Default::default(),
-            background: ClipBackground::None,
+            background: project::ClipBackground::None,
         }),
     )?;
     insert(
@@ -457,7 +457,7 @@ pub(super) fn placement(theme: Theme, scale: f32) -> Result<AppHarness, Failure>
             volume: 0.0,
             muted: false,
             cleanup: Default::default(),
-            background: ClipBackground::None,
+            background: project::ClipBackground::None,
         }),
     )?;
     let audio = track(&mut session, "Audio", TrackKind::Audio)?;

@@ -50,7 +50,7 @@ fn insert_video(session: &mut Session, asset: AssetId) -> project::ItemId {
                     muted: false,
                     crop: None,
                     cleanup: Default::default(),
-                    background: ClipBackground::None,
+                    background: project::ClipBackground::None,
                 }),
             },
         })

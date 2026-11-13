@@ -238,7 +238,7 @@ fn invalid_targets_are_disabled_with_reasons_without_history() {
                         fades: Default::default(),
                         crop: None,
                         cleanup: Default::default(),
-                        background: ClipBackground::None,
+                        background: project::ClipBackground::None,
                     });
             }
             "overlap" => {

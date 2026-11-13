@@ -275,7 +275,7 @@ pub(super) fn media_editor(theme: Theme, locale: Locale) -> Result<(Editor, Item
             muted: false,
             crop: None,
             cleanup: Default::default(),
-            background: ClipBackground::None,
+            background: project::ClipBackground::None,
         }),
     )?;
     insert(
@@ -291,7 +291,7 @@ pub(super) fn media_editor(theme: Theme, locale: Locale) -> Result<(Editor, Item
             crop: None,
             muted: false,
             cleanup: Default::default(),
-            background: ClipBackground::None,
+            background: project::ClipBackground::None,
         }),
     )?;
     let audio = track(&mut session, "Audio", TrackKind::Audio)?;

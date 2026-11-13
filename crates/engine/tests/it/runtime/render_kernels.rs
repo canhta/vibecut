@@ -283,7 +283,7 @@ fn parallel_draw_matches_sequential_at_chunk_edges_and_half_reductions() {
                     muted: false,
                     crop: None,
                     cleanup: Default::default(),
-                    background: ClipBackground::None,
+                    background: project::ClipBackground::None,
                 }),
             }],
         });
