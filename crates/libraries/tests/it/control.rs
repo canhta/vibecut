@@ -942,3 +942,24 @@ fn sticker_commands_search_insert_undo_redo_and_round_trip() {
     let loaded = project::decode(&bytes).unwrap();
     assert_eq!(&loaded.project, inserted.as_ref());
 }
+
+#[test]
+fn flag_catalog_matches_the_bundled_flag_files() {
+    // `assets/stickers/flags` owns the id list; render's byte table is checked against it too.
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/stickers/flags");
+    let mut files: Vec<String> = std::fs::read_dir(dir)
+        .unwrap()
+        .filter_map(|entry| {
+            let name = entry.unwrap().file_name().into_string().ok()?;
+            name.strip_suffix(".svg").map(str::to_owned)
+        })
+        .collect();
+    files.sort();
+    let mut codes: Vec<String> = libraries::stickers::search_flags("", usize::MAX)
+        .items
+        .iter()
+        .map(|item| item.code.to_ascii_lowercase())
+        .collect();
+    codes.sort();
+    assert_eq!(codes, files);
+}

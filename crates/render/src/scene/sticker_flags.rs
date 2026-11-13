@@ -1,5 +1,5 @@
 //! Bundled flag SVGs, one `include_bytes!` row per file under `assets/stickers/flags`, sorted by code.
-//! Generated from the directory listing; `cargo xtask assets` checks that every file has its sidecar.
+//! The directory listing owns the id list; a test here and one in `libraries` check both tables against it, and `cargo xtask assets` checks that every file has its sidecar.
 
 #[rustfmt::skip]
 pub(super) static FLAGS: &[(&str, &[u8])] = &[
@@ -275,3 +275,24 @@ pub(super) static FLAGS: &[(&str, &[u8])] = &[
     ("zm", include_bytes!("../../../../assets/stickers/flags/zm.svg")),
     ("zw", include_bytes!("../../../../assets/stickers/flags/zw.svg")),
 ];
+
+#[cfg(test)]
+mod tests {
+    /// The directory `assets/stickers/flags` owns the id list; the catalog in `libraries` is
+    /// checked against the same listing, so both tables name exactly the same flags.
+    #[test]
+    fn rows_match_the_flag_files_exactly() {
+        let dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/stickers/flags");
+        let mut files: Vec<String> = std::fs::read_dir(dir)
+            .expect("flag directory")
+            .filter_map(|entry| {
+                let name = entry.expect("flag entry").file_name().into_string().ok()?;
+                name.strip_suffix(".svg").map(str::to_owned)
+            })
+            .collect();
+        files.sort();
+        let rows: Vec<&str> = super::FLAGS.iter().map(|(code, _)| *code).collect();
+        assert_eq!(rows, files);
+    }
+}

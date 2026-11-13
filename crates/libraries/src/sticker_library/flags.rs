@@ -1,4 +1,4 @@
-//! Country metadata for the flag provider; one row per catalogued flag, in source order.
+//! Country metadata for the flag provider; one row per file under `assets/stickers/flags`, which owns the id list (a test checks this table against it).
 
 /// A region and the lowercase aliases that name it in a search.
 pub(super) struct Region {
