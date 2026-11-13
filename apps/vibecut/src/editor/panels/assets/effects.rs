@@ -116,7 +116,9 @@ fn filter_pixel(x: f32, y: f32) -> [f32; 4] {
         let index = (((x - ramp) / (width - ramp)) * 6.0)
             .floor()
             .clamp(0.0, 5.0) as usize;
-        colour = chips[index];
+        if let Some(chip) = chips.get(index) {
+            colour = *chip;
+        }
     }
     let linear = |c: f32| {
         let c = c.clamp(0.0, 1.0);

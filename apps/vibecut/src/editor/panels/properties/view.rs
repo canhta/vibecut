@@ -1599,8 +1599,6 @@ mod playback;
 
 mod effects;
 
-mod filter;
-
 mod text_style;
 
 /// The path as the creator typed it: a saved path is canonical, and on Windows that adds the

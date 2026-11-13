@@ -493,7 +493,11 @@ fn reveal_tab(harness: &mut Harness<Editor>, id: &str) {
             return;
         }
         // A negative vertical wheel reveals the right-hand tabs.
-        let turn = if tab.right() > panel.right() { -120.0 } else { 120.0 };
+        let turn = if tab.right() > panel.right() {
+            -120.0
+        } else {
+            120.0
+        };
         harness.hover_at(egui::pos2(panel.center().x, tab.center().y));
         harness.run_steps(2);
         harness.event(egui::Event::MouseWheel {
