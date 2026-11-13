@@ -65,6 +65,11 @@ pub(in crate::editor) enum Action {
         edge: project::FadeEdge,
         seconds: f64,
     },
+    /// The Audio tab's Noise reduction switch, through the cleanup effect commands.
+    SetNoiseReduction {
+        item: ItemId,
+        enabled: bool,
+    },
     /// The Speed tab's Reverse switch, through `timeline.set_reverse`.
     SetReverse {
         item: ItemId,

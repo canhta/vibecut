@@ -83,8 +83,14 @@ step per commit; a drag is one gesture. The engine clamps a fade to the same roo
 a typed value above it lands on the cap. Every row is disabled on a locked track. Mute
 is not on this tab: it is the track header and the clip menu. The engine's volume floor
 is -60 dB, so the reference's -60.1 dB silent point is not reachable here until
-`project::valid_volume` changes. Noise reduction and Normalize loudness rows are not
-here yet: their engine work (spectral noise reduction, the loudness controls) has not landed.
+`project::valid_volume` changes. A Noise reduction switch follows the fades (`inspector.noise_reduction.toggle`, the
+39 px row with the shared toggle). The capture shows only the switch, so there is no strength control: on adds one
+`noise_reduction` cleanup effect at `project::NOISE_REDUCTION_DEFAULT` (12 dB reduction, 6 dB threshold, 50 %
+smoothing, full mix) or enables the item's existing one; off disables it and keeps its values. Each click is one
+`audio.add_cleanup_effect` or `audio.update_cleanup_effect` undo step, and the switch reads on only while the item's
+first noise reduction effect is enabled. A chain already holding eight effects refuses the add through the error line.
+Equaliser bands have no control here: the capture shows no equaliser, so `audio.*_cleanup_effect` is their only
+surface. A Normalize loudness row is not here yet: the loudness controls have not landed.
 
 ## Transition inspector
 

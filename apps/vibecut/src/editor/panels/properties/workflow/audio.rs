@@ -25,3 +25,34 @@ pub(super) fn set_fade(
     )?;
     Ok(())
 }
+
+/// The Noise reduction switch. Turning it on enables the item's noise reduction effect, or adds
+/// one with the default strength when it has none; turning it off disables the effect and keeps
+/// its values. One command, so one undo step.
+pub(super) fn set_noise_reduction(desk: &mut Desk<'_>, item: ItemId, enabled: bool) -> Result<()> {
+    let project = desk.view().session.project();
+    let command = match read::noise_reduction(project, item) {
+        Some(effect) if effect.enabled == enabled => return Ok(()),
+        Some(effect) => engine::Command::UpdateCleanupEffect {
+            item,
+            effect: project::CleanupEffect {
+                enabled,
+                ..effect.clone()
+            },
+        },
+        None if enabled => engine::Command::AddCleanupEffect {
+            item,
+            effect: project::CleanupEffect {
+                id: read::next_cleanup_effect_id(project, item).ok_or(Error::Invalid(
+                    "noise reduction needs an audio or video item",
+                ))?,
+                enabled: true,
+                wet_percent: 100.0,
+                kind: project::NOISE_REDUCTION_DEFAULT,
+            },
+        },
+        None => return Ok(()),
+    };
+    desk.apply_result(command, false)?;
+    Ok(())
+}

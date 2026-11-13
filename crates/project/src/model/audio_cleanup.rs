@@ -55,7 +55,31 @@ pub enum CleanupKind {
     GraphicEq { gains_db: [f32; 10] },
     /// Up to `MAX_EQ_BANDS` bands applied in order.
     ParametricEq { bands: Vec<EqBand> },
+    /// Broadband noise reduction by spectral gating. The noise floor of each frequency bin is
+    /// tracked continuously, so there is no learning step.
+    NoiseReduction {
+        /// How far gated bins are attenuated, in dB: 0 to 40.
+        reduction_db: f32,
+        /// How far a bin must rise above the tracked floor to pass, in dB: 0 to 20.
+        threshold_db: f32,
+        /// How slowly the gate opens and closes, in percent: 0 to 100.
+        smoothing_percent: f32,
+    },
+    /// Click removal: outliers of a linear-prediction residual are replaced by interpolation.
+    Declick {
+        /// Detection threshold, 1 to 100: higher finds fewer, stronger clicks.
+        threshold: f32,
+        /// Model order and longest repaired click, 1 to 100.
+        complexity: f32,
+    },
 }
+
+/// Noise reduction values a plain on/off switch applies.
+pub const NOISE_REDUCTION_DEFAULT: CleanupKind = CleanupKind::NoiseReduction {
+    reduction_db: 12.0,
+    threshold_db: 6.0,
+    smoothing_percent: 50.0,
+};
 
 /// Mains supply frequency of a hum removal.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -136,6 +160,26 @@ impl CleanupEffect {
                     {
                         return Err(Error::Invalid("parametric eq band"));
                     }
+                }
+            }
+            CleanupKind::NoiseReduction {
+                reduction_db,
+                threshold_db,
+                smoothing_percent,
+            } => {
+                if !finite_in(*reduction_db, 0.0, 40.0)
+                    || !finite_in(*threshold_db, 0.0, 20.0)
+                    || !finite_in(*smoothing_percent, 0.0, 100.0)
+                {
+                    return Err(Error::Invalid("noise reduction parameters"));
+                }
+            }
+            CleanupKind::Declick {
+                threshold,
+                complexity,
+            } => {
+                if !finite_in(*threshold, 1.0, 100.0) || !finite_in(*complexity, 1.0, 100.0) {
+                    return Err(Error::Invalid("declick parameters"));
                 }
             }
         }

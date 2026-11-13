@@ -2065,6 +2065,36 @@ fn opacity_and_audio_gain_scrub_through_their_tabs() {
     };
     assert_eq!(params.fades.fade_in.duration, Tick(SECOND));
     assert_eq!(params.fades.fade_out.duration, Tick(SECOND));
+
+    // Noise reduction is the reference's switch after the fades. On adds one effect at the
+    // default strength, off disables it and keeps its values, on again enables the same
+    // effect; each click is one undo step.
+    assert!(has_widget(&harness, "inspector.noise_reduction.toggle"));
+    let cleanup = |harness: &Harness<Editor>| {
+        let ItemParams::Audio(params) = &item(harness, fixture.audio).content else {
+            panic!("audio")
+        };
+        params.cleanup.clone()
+    };
+    assert!(cleanup(&harness).effects.is_empty());
+    let history = harness.state().session.history_len();
+    click(&mut harness, "inspector.noise_reduction.toggle");
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    let on = cleanup(&harness);
+    assert_eq!(on.effects.len(), 1);
+    assert!(on.effects[0].enabled);
+    assert_eq!(on.effects[0].kind, project::NOISE_REDUCTION_DEFAULT);
+    click(&mut harness, "inspector.noise_reduction.toggle");
+    assert_eq!(harness.state().session.history_len().0, history.0 + 2);
+    let off = cleanup(&harness);
+    assert_eq!(off.effects.len(), 1);
+    assert!(!off.effects[0].enabled);
+    assert_eq!(off.effects[0].kind, project::NOISE_REDUCTION_DEFAULT);
+    click(&mut harness, "inspector.noise_reduction.toggle");
+    assert_eq!(cleanup(&harness), on);
+    harness.state_mut().session.undo().unwrap();
+    harness.run_steps(2);
+    assert_eq!(cleanup(&harness), off);
 }
 
 #[test]

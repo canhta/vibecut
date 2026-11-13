@@ -2,8 +2,9 @@
 //! speed rows. Mute lives on the track header and the clip menu.
 use super::Panel;
 use crate::editor::properties::{
-    AUDIO_GAIN_SCRUB, Icon, ItemId, SPEED_SCRUB, ScrubSpec, Text, egui, read, theme,
+    AUDIO_GAIN_SCRUB, Action, Icon, ItemId, SPEED_SCRUB, ScrubSpec, Text, egui, read, theme,
 };
+use crate::kit;
 
 /// The reference's fade range, in seconds.
 const FADE_MAX_SECONDS: f64 = 10.0;
@@ -27,9 +28,34 @@ impl Panel<'_, '_> {
                     panel.slider_row(ui, item, fade_in);
                     let fade_out = panel.fade_scrub(item, project::FadeEdge::Out);
                     panel.slider_row(ui, item, fade_out);
+                    panel.noise_reduction_row(ui, item);
                 });
             },
         );
+    }
+
+    /// The reference's Noise reduction switch after the fades. The capture shows no strength
+    /// control, so the switch applies the default strength; other strengths come through the
+    /// `audio.*_cleanup_effect` commands and keep this switch on.
+    fn noise_reduction_row(&mut self, ui: &mut egui::Ui, item: ItemId) {
+        let on = read::noise_reduction(self.cx.session.project(), item)
+            .is_some_and(|effect| effect.enabled);
+        let mut value = on;
+        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        self.row_label(ui, row, self.tr(Text::NoiseReduction));
+        let width = value_ui.available_width();
+        value_ui.add_space((width - theme::size::TOGGLE_WIDTH).max(0.0));
+        let response = kit::toggle(
+            &mut value_ui,
+            "inspector.noise_reduction.toggle",
+            &mut value,
+            self.tr(Text::NoiseReduction),
+        );
+        self.remember("inspector.noise_reduction.toggle", &response);
+        if response.clicked() {
+            self.actions
+                .push(Action::SetNoiseReduction { item, enabled: !on });
+        }
     }
 
     /// One fade edge's scrub contract: 0 to 10 s, capped at the room the clip

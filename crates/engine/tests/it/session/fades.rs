@@ -695,6 +695,59 @@ fn cleanup_effects_are_undoable_persisted_and_refuse_hostile_input_atomically() 
     );
     assert_eq!(s.project(), &added);
 
+    // Noise reduction and de-click are bounded like every other kind, undoable and persisted.
+    for kind in [
+        project::CleanupKind::NoiseReduction {
+            reduction_db: 41.0,
+            threshold_db: 6.0,
+            smoothing_percent: 50.0,
+        },
+        project::CleanupKind::NoiseReduction {
+            reduction_db: 12.0,
+            threshold_db: f32::NAN,
+            smoothing_percent: 50.0,
+        },
+        project::CleanupKind::Declick {
+            threshold: 0.0,
+            complexity: 16.0,
+        },
+        project::CleanupKind::Declick {
+            threshold: 30.0,
+            complexity: 101.0,
+        },
+    ] {
+        assert!(
+            s.apply(Command::UpdateCleanupEffect {
+                item: ItemId(20),
+                effect: cleanup_effect(1, kind),
+            })
+            .is_err()
+        );
+        assert_eq!(s.project(), &added);
+    }
+    for kind in [
+        project::NOISE_REDUCTION_DEFAULT,
+        project::CleanupKind::Declick {
+            threshold: 30.0,
+            complexity: 16.0,
+        },
+    ] {
+        s.apply(Command::UpdateCleanupEffect {
+            item: ItemId(20),
+            effect: cleanup_effect(1, kind.clone()),
+        })
+        .unwrap();
+        assert_eq!(cleanup_of(&s, 20).effects[0].kind, kind);
+        let encoded = project::encode(s.project(), false).unwrap();
+        assert_eq!(
+            &project::decode(&encoded).unwrap().project,
+            s.project().as_ref()
+        );
+        s.undo().unwrap();
+        s.redo().unwrap();
+        assert_eq!(cleanup_of(&s, 20).effects[0].kind, kind);
+    }
+
     s.apply(Command::UpdateCleanupEffect {
         item: ItemId(20),
         effect: project::CleanupEffect {
