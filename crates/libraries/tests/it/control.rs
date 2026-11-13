@@ -724,11 +724,8 @@ fn recent_stickers_cap_order_dedupe_and_clear() {
     );
     assert_eq!(recents.ids().len(), 50);
 
-    let loaded = Recents::from_ids(
-        ["flags:ad", "flags:AD", "bad", "shapes:star"]
-            .map(str::to_owned)
-            .into_iter(),
-    );
+    let loaded =
+        Recents::from_ids(["flags:ad", "flags:AD", "bad", "shapes:star"].map(str::to_owned));
     assert_eq!(
         loaded.ids(),
         ["flags:AD", "shapes:star"],

@@ -91,9 +91,7 @@ fn resolve_regions(query: &str) -> Option<Vec<&'static str>> {
     }
     let ids: Vec<&'static str> = REGIONS
         .iter()
-        .filter(|region| {
-            region.id.to_lowercase() == query || region.aliases.iter().any(|alias| *alias == query)
-        })
+        .filter(|region| region.id.to_lowercase() == query || region.aliases.contains(&query))
         .map(|region| region.id)
         .collect();
     (!ids.is_empty()).then_some(ids)
