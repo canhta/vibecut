@@ -4474,8 +4474,8 @@ fn context_and_header_menus_expose_registered_items_and_reasons() {
     h.run_steps(3);
     assert!(menu_enabled(&h, "media.delete"));
     assert!(
-        !menu_enabled(&h, "media.export_clip"),
-        "clip export is unavailable until its engine command lands"
+        menu_enabled(&h, "media.export_clip"),
+        "a video asset exports through export.clips"
     );
     close_menu(&mut h);
 

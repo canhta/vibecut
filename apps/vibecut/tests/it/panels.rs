@@ -1320,12 +1320,14 @@ fn reachable_element_kinds_show_their_reference_tab_sets() {
         let mut seen = visible_tabs(&harness);
         seen.sort();
         // A basic group holding only Transform shows no sub-tab bar, so no transform tab.
+        // Background is listed only while a clip leaves the canvas open; these clips cover it.
         let shown: Vec<PropertiesTab> = expected
             .iter()
             .copied()
             .filter(|tab| {
                 *tab != PropertiesTab::Transform || has_widget(&harness, "inspector.tab.transform")
             })
+            .filter(|tab| *tab != PropertiesTab::Background)
             .collect();
         let mut want = names(&shown);
         want.sort();
@@ -1337,7 +1339,7 @@ fn reachable_element_kinds_show_their_reference_tab_sets() {
         .tabs()
         .iter()
         .copied()
-        .filter(|tab| *tab != PropertiesTab::Audio)
+        .filter(|tab| *tab != PropertiesTab::Audio && *tab != PropertiesTab::Background)
         .collect();
     let mut seen = visible_tabs(&harness);
     seen.sort();
