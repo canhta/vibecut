@@ -1289,11 +1289,9 @@ fn body_ui(ui: &mut egui::Ui, area: Rect) -> egui::Ui {
     body
 }
 
-mod audio;
-
 mod canvas;
 
-mod speed;
+mod playback;
 
 mod effects;
 
