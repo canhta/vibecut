@@ -6,6 +6,7 @@
 mod anthropic;
 mod ledger;
 mod openai;
+mod scripted;
 mod sse;
 
 use crate::{Error, ExecutionHooks, Money, ProviderConfig};
@@ -13,6 +14,7 @@ pub use anthropic::AnthropicChat;
 use captions::NfcText;
 pub use ledger::{Ledger, default_model};
 pub use openai::OpenAiChat;
+pub use scripted::{Compose, ScriptedChat, ScriptedReply, ScriptedStep};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -428,6 +430,14 @@ impl Conversation {
     }
     pub fn scope(&self) -> &AgentChatScope {
         &self.scope
+    }
+
+    /// Drop every message after the first `len` and forget the tool calls still owed
+    /// results, so a caller that abandoned a turn (cancelled, step limit, failed request)
+    /// can start the next one. The ledger keeps what the dropped requests cost.
+    pub fn truncate_history(&mut self, len: usize) {
+        self.history.truncate(len);
+        self.awaiting = None;
     }
 
     /// Send the user's next message and stream the reply.

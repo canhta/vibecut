@@ -83,3 +83,9 @@ Language for the editor's privacy and execution boundaries.
 animation keys held by one Session, separate from project/history and system text.
 One slot holds the latest copy; transfer and lifetime:
 [Session](crates/engine/src/session/README.md#clipboard).
+
+**Fork** - An isolated copy of a Session taken at one revision, with no history and an empty command log; commands run on it through the same control path and apply back to the live Session as one undo step, or are dropped:
+[Session](crates/engine/src/session/README.md#forks).
+
+**Agent turn** - One prompt of the in-app agent: the model-and-tools loop runs on a Fork, yields an event stream and ends with a change summary or a typed reason; the user applies or discards the Fork:
+[agent](docs/product/agent-control/agent.md).
