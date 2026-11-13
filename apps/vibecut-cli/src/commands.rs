@@ -55,6 +55,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         "providers" => ai::providers(context, rest),
         "sounds" => libraries::sounds(context, rest),
         "music" => libraries::music(context, rest),
+        "stickers" => libraries::stickers(context, rest),
         "model" => ai::model(context, rest),
         "fonts" => libraries::fonts(context, rest),
         "commands" => catalog::commands(context, rest),

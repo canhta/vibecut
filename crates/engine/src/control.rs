@@ -15,7 +15,8 @@ pub use crate::session::wire::{
     PREVIEW_QUALITY, PauseCandidates, Payload, PreviewFrame, PreviewResult, ProviderView,
     RECEIPT_RESERVATION, ReframeReason, ReframeReport, ReframeShotReport, ReframeTarget, Request,
     Response, ResponseValue, Revision, SavedMusicEntry, SavedSoundEntry, Snapshot, SoundEntry,
-    SoundPage, SoundSource, TranslationsResult, bounded_json, contract_schema, parse_frame,
+    SoundPage, SoundSource, StickerCategory, StickerEntry, StickerPage, TranslationsResult,
+    bounded_json, contract_schema, parse_frame,
     reference_markdown, registry_hash,
 };
 
@@ -248,6 +249,31 @@ pub struct SoundQuery {
     pub page_size: u32,
     pub commercial_only: bool,
 }
+/// The two sticker-catalog operations the process lends to control commands. The catalog and its
+/// bundled assets belong to the composition root; the kernel only stores the resolved id and
+/// intrinsic size and holds no sticker data of its own.
+#[derive(Clone, Copy)]
+pub struct StickerAccess<'a> {
+    search: &'a dyn Fn(&StickerQuery) -> Result<StickerPage>,
+    resolve: &'a dyn Fn(&str) -> Result<StickerEntry>,
+}
+impl<'a> StickerAccess<'a> {
+    /// `search` serves `stickers.search`; `resolve` turns the id given to `stickers.insert` into
+    /// its entry, or refuses an id the catalog does not know.
+    pub fn new(
+        search: &'a dyn Fn(&StickerQuery) -> Result<StickerPage>,
+        resolve: &'a dyn Fn(&str) -> Result<StickerEntry>,
+    ) -> Self {
+        Self { search, resolve }
+    }
+}
+/// One bounded sticker search in the form the lent catalog takes.
+#[derive(Clone, Debug)]
+pub struct StickerQuery {
+    pub query: String,
+    pub category: StickerCategory,
+    pub limit: Option<u32>,
+}
 /// A loaded detector with its adapter's complete `VisionFingerprint`.
 type LoadedVision = (Box<dyn ai::vision::VisionDetector>, [u8; 32]);
 
@@ -316,6 +342,9 @@ pub struct Caller<'a> {
     /// The process music library behind `music.search`, `music.save` and
     /// `music.unsave`. Without it those commands refuse `Unsupported`.
     pub music: Option<&'a MusicAccess<'a>>,
+    /// The process sticker catalog behind `stickers.search` and `stickers.insert`. Without it
+    /// those commands refuse `Unsupported`.
+    pub stickers: Option<&'a StickerAccess<'a>>,
     /// The process brand kit store behind `brand.list`. Without it that command refuses
     /// [`crate::BrandKitError::Unavailable`].
     pub brand: Option<&'a BrandAccess<'a>>,
@@ -427,6 +456,7 @@ mod tests {
                     fonts: None,
                     sounds: None,
                     music: None,
+                    stickers: None,
                     brand: None,
                     media: None,
                     chapters: None,

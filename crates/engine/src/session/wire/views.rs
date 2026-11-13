@@ -204,6 +204,37 @@ pub struct SavedMusicEntry {
     pub saved_at_unix_ms: u64,
 }
 
+/// Category tab of the Stickers panel and the filter of `stickers.search`.
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum StickerCategory {
+    #[default]
+    All,
+    Flags,
+    Shapes,
+}
+
+/// One bundled sticker: the `provider:value` id a project stores, a display name and the
+/// intrinsic pixel size captured at insert.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StickerEntry {
+    pub id: String,
+    pub name: String,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// One bounded page of sticker search results; `total` counts matches before the limit.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StickerPage {
+    pub total: u64,
+    pub results: Vec<StickerEntry>,
+}
+
 /// Published snapshot receipt; the PNG itself stays in `SnapshotImage`.
 #[derive(Clone, Debug, serde::Serialize, schemars::JsonSchema)]
 pub struct SnapshotResult {

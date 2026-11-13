@@ -1,10 +1,10 @@
 //! Owns the leased CLI control session through its final save.
 use super::Context;
-use super::libraries::with_fonts;
+use super::libraries::{with_fonts, with_stickers};
 use crate::args::CliError;
 use crate::output::Output;
 use engine::Failure;
-use engine::control::FontAccess;
+use engine::control::{FontAccess, StickerAccess};
 use engine::control::{
     Caller, ControlResult, ErrorCode, MediaAccess, Policy, Response, ResponseValue,
 };
@@ -48,7 +48,11 @@ pub(crate) fn control(
     allow_overwrite: bool,
     save: bool,
 ) -> Result<Output, CliError> {
-    with_fonts(|fonts| control_with(context, project_path, allow_overwrite, save, fonts))
+    with_fonts(|fonts| {
+        with_stickers(|stickers| {
+            control_with(context, project_path, allow_overwrite, save, fonts, stickers)
+        })
+    })
 }
 
 fn control_with(
@@ -57,6 +61,7 @@ fn control_with(
     allow_overwrite: bool,
     save: bool,
     fonts: Option<&FontAccess<'_>>,
+    stickers: &StickerAccess<'_>,
 ) -> Result<Output, CliError> {
     // One process is one engine Session. The lease is held from load to the
     // final save, so no other writer can interleave during the stream.
@@ -153,6 +158,7 @@ fn control_with(
             fonts,
             sounds: None,
             music: None,
+            stickers: Some(stickers),
             brand: None,
             media: media.as_ref(),
             chapters: None,

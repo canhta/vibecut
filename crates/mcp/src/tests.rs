@@ -529,6 +529,8 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("clipboard.paste", Effect::Edit, true, true),
         ("clipboard.paste_keyframes", Effect::Edit, true, true),
         ("clipboard.read", Effect::Read, true, true),
+        ("stickers.insert", Effect::Edit, true, true),
+        ("stickers.search", Effect::Read, true, true),
         ("text.apply_animation", Effect::Edit, true, true),
         ("text.apply_preset", Effect::Edit, true, true),
         ("text.save_preset", Effect::Edit, true, true),

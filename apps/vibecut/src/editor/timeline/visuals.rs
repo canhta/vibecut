@@ -344,6 +344,7 @@ impl Media {
                 fonts: None,
                 sounds: None,
                 music: None,
+                stickers: None,
                 brand: None,
                 media: Some(access.as_ref()),
                 chapters: None,

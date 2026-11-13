@@ -1,6 +1,6 @@
 //! Lends the process font, sound and music stores to registry requests.
 use crate::args::CliError;
-use engine::control::{FontAccess, MusicAccess, SoundAccess};
+use engine::control::{FontAccess, MusicAccess, SoundAccess, StickerAccess};
 use engine::jobs::JobRunner;
 use libraries::fonts::FontStore;
 use libraries::music::{MusicClient, MusicLibrary, MusicToken};
@@ -42,6 +42,25 @@ pub(crate) fn with_fonts<T>(serve: impl FnOnce(Option<&FontAccess<'_>>) -> T) ->
         .as_ref()
         .map(|_| FontAccess::new(&list, &load, &download, &import));
     serve(fonts.as_ref())
+}
+
+/// Lend the bundled sticker catalog. It has no store to open, so the access always exists.
+pub(crate) fn with_stickers<T>(serve: impl FnOnce(&StickerAccess<'_>) -> T) -> T {
+    let search = |query: &engine::control::StickerQuery| -> engine::control::Result<
+        engine::control::StickerPage,
+    > {
+        Ok(libraries::stickers::search_catalog(
+            &query.query,
+            query.category,
+            query.limit,
+        ))
+    };
+    let resolve = |id: &str| -> engine::control::Result<engine::control::StickerEntry> {
+        libraries::stickers::resolve_sticker(id).ok_or(engine::control::Error::Edit(
+            engine::EditError::Invalid("unknown sticker id"),
+        ))
+    };
+    serve(&StickerAccess::new(&search, &resolve))
 }
 
 /// Open one sound-library root and serve its three operations. Only search reads

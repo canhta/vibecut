@@ -1,8 +1,10 @@
 //! Bundled sticker ids and the catalogs the Stickers panel searches.
+mod catalog;
 mod flags;
 mod recents;
 mod search;
 
+pub use catalog::{FLAG_SIZE, SHAPE_SIZE, insert_sticker, resolve_sticker, search_catalog};
 pub use recents::{MAX_RECENT_STICKERS, Recents};
 pub use search::{DEFAULT_SEARCH_LIMIT, FlagMatch, FlagPage, ShapeMatch, search_flags, search_shapes};
 

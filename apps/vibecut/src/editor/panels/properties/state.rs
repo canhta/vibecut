@@ -472,6 +472,7 @@ pub(in crate::editor) fn element_kind(
         (_, TrackKind::Effect) => ElementKind::Effect,
         (_, TrackKind::Filter | TrackKind::Adjustment) => ElementKind::Graphic,
         (ItemParams::Overlay(_) | ItemParams::Graphic(_), _) => ElementKind::Graphic,
+        (ItemParams::Sticker(_), _) => ElementKind::Sticker,
         (ItemParams::Video(_), _) => {
             let Some(asset) = item
                 .source_asset

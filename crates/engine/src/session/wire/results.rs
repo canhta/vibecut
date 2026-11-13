@@ -3,7 +3,7 @@ use super::{
     BrandKitView, EmphasisSuggestion, ErrorCode, FillerCandidate, FontEntry, FontLoad, JobId,
     JobKind, JobStage,
     JobState, MusicPage, PauseCandidates, PreviewResult, Revision, SavedMusicEntry,
-    SavedSoundEntry, SnapshotResult, SoundPage,
+    SavedSoundEntry, SnapshotResult, SoundPage, StickerPage,
 };
 use crate::{CommandSpec, Outcome};
 use serde::Serialize;
@@ -45,6 +45,9 @@ pub enum ControlResult {
     SoundUnsaved {
         id: u64,
         removed: bool,
+    },
+    StickerSearch {
+        page: StickerPage,
     },
     MusicSearch {
         page: MusicPage,
@@ -107,6 +110,7 @@ impl std::fmt::Debug for ControlResult {
             Self::SoundSearch { .. } => "sound_search",
             Self::SoundSaved { .. } => "sound_saved",
             Self::SoundUnsaved { .. } => "sound_unsaved",
+            Self::StickerSearch { .. } => "sticker_search",
             Self::MusicSearch { .. } => "music_search",
             Self::MusicSaved { .. } => "music_saved",
             Self::MusicUnsaved { .. } => "music_unsaved",

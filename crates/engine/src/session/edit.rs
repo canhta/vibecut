@@ -560,6 +560,16 @@ pub(crate) fn apply(
         } => {
             return Err(EditError::Invalid("library audio requires a session"));
         }
+        EditCommand::StickersInsert {
+            placement: _placement,
+            sticker: _sticker,
+            start: _start,
+            duration: _duration,
+        } => {
+            return Err(EditError::Unsupported(
+                "sticker insertion requires control dispatch",
+            ));
+        }
         EditCommand::InsertItem {
             placement,
             item: new,

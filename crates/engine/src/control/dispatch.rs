@@ -50,6 +50,13 @@ fn sound_access<'a>(caller: &Caller<'a>) -> crate::session::Result<&'a super::So
         "sound library unavailable",
     ))
 }
+fn sticker_access<'a>(
+    caller: &Caller<'a>,
+) -> crate::session::Result<&'a super::StickerAccess<'a>> {
+    caller.stickers.ok_or(crate::session::EditError::Unsupported(
+        "sticker catalog unavailable",
+    ))
+}
 fn brand_access<'a>(
     caller: &Caller<'a>,
 ) -> std::result::Result<&'a super::BrandAccess<'a>, crate::BrandKitError> {
@@ -248,6 +255,41 @@ impl Session {
             Command::MusicUnsave { id } => {
                 let removed = (music_access(caller)?.unsave)(&id)?;
                 Ok(ControlResult::MusicUnsaved { id, removed })
+            }
+            Command::StickersSearch {
+                query,
+                category,
+                limit,
+            } => Ok(ControlResult::StickerSearch {
+                page: (sticker_access(caller)?.search)(&super::StickerQuery {
+                    query,
+                    category,
+                    limit,
+                })?,
+            }),
+            Command::StickersInsert {
+                placement,
+                sticker,
+                start,
+                duration,
+            } => {
+                let entry = (sticker_access(caller)?.resolve)(&sticker)?;
+                let item = crate::NewItem {
+                    animations: Default::default(),
+                    source_asset: None,
+                    source_range: time::SourceRange::new(time::Tick::ZERO, duration)
+                        .map_err(crate::EditError::from)?,
+                    start,
+                    retime: Default::default(),
+                    content: project::ItemParams::Sticker(project::StickerParams::new(
+                        entry.id,
+                        entry.width,
+                        entry.height,
+                    )),
+                };
+                self.apply_control(Command::InsertItem { placement, item })
+                    .map(|outcome| ControlResult::Edit { outcome })
+                    .map_err(EngineError::from)
             }
             Command::JobStatus { job } => {
                 let mut snapshot = JobView::from(

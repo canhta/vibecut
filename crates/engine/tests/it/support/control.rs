@@ -44,6 +44,7 @@ pub(crate) fn caller(policy: &dyn Policy) -> Caller<'_> {
         fonts: None,
         sounds: None,
         music: None,
+        stickers: None,
         brand: None,
         media: None,
         chapters: None,
@@ -977,6 +978,28 @@ pub(crate) fn fake_music_unsave(_: &str) -> engine::control::Result<bool> {
 /// Synthetic capability for registry dispatch; real-library coverage lives in `libraries`.
 pub(crate) fn music_access() -> engine::control::MusicAccess<'static> {
     engine::control::MusicAccess::new(&fake_music_search, &fake_music_save, &fake_music_unsave)
+}
+pub(crate) fn fake_sticker_search(
+    _: &engine::control::StickerQuery,
+) -> engine::control::Result<engine::control::StickerPage> {
+    Ok(engine::control::StickerPage {
+        total: 0,
+        results: Vec::new(),
+    })
+}
+pub(crate) fn fake_sticker_resolve(
+    id: &str,
+) -> engine::control::Result<engine::control::StickerEntry> {
+    Ok(engine::control::StickerEntry {
+        id: id.to_owned(),
+        name: "Fake".into(),
+        width: 640,
+        height: 480,
+    })
+}
+/// Synthetic capability for registry dispatch; real-catalog coverage lives in `libraries`.
+pub(crate) fn sticker_access() -> engine::control::StickerAccess<'static> {
+    engine::control::StickerAccess::new(&fake_sticker_search, &fake_sticker_resolve)
 }
 pub(crate) fn finish(r: &mut JobRunner, id: engine::jobs::JobId) {
     for _ in 0..10000 {

@@ -738,6 +738,8 @@ commands! {
     SoundsSearch, "sounds.search", "Search sound library", Read { query: String, page: u32, page_size: u32, commercial_only: bool } => Timeline, serde_json::json!({"query":"whoosh","page":1,"page_size":15,"commercial_only":true}), grant = Human;
     SoundsUnsave, "sounds.unsave", "Unsave library sound", Read { id: u64 } => Timeline, serde_json::json!({"id":1}), grant = Human;
     SplitAt, "split_at", "Split item", Edit { item: ItemId, at: Tick } => Timeline, serde_json::json!({"item":1,"at":8467200000_i64}), available = UnlockedItem;
+    StickersInsert, "stickers.insert", "Insert sticker", Edit { #[serde(default)] placement: Placement, sticker: String, start: Tick, duration: Tick } => Timeline, serde_json::json!({"placement":{"mode":"auto"},"sticker":"flags:vn","start":0,"duration":127008000000_i64});
+    StickersSearch, "stickers.search", "Search stickers", Read { #[serde(default)] query: String, #[serde(default)] category: super::wire::StickerCategory, #[serde(default)] limit: Option<u32> } => Timeline, serde_json::json!({"query":"asia","category":"flags","limit":20});
     ApplyTextAnimation, "text.apply_animation", "Apply text animation", Edit { item: ItemId, preset: TextAnimationPreset } => Text, serde_json::json!({"item":3,"preset":"fade_in_out"}), available = UnlockedItem, grant = Agent;
     ApplyTextPreset, "text.apply_preset", "Apply saved text preset", Edit { items: Vec<ItemId>, preset: project::TextPresetId } => TextPresetBank, serde_json::json!({"items":[3],"preset":100}), available = UnlockedItem, grant = Agent;
     SaveTextPreset, "text.save_preset", "Save text preset", Edit { item: ItemId, name: NfcText } => TextPresetBank, serde_json::json!({"item":3,"name":"Style 1"}), available = UnlockedItem, grant = Agent;

@@ -79,6 +79,7 @@ fn control<'a>(
             fonts,
             sounds: None,
             music: None,
+            stickers: None,
             brand: None,
             media: None,
             chapters: None,
@@ -119,6 +120,7 @@ fn control_sounds(
             fonts: None,
             sounds,
             music: None,
+            stickers: None,
             brand: None,
             media: None,
             chapters: None,
@@ -463,6 +465,8 @@ fn control_music(
             fonts: None,
             sounds: None,
             music,
+            stickers: None,
+            brand: None,
             media: None,
             chapters: None,
             captions: None,
@@ -726,4 +730,181 @@ fn recent_stickers_persist_round_trip_and_refuse_malformed_files() {
     std::fs::write(&path, "{not a list").unwrap();
     let error = Recents::load(&path).unwrap_err();
     assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+}
+
+// Sticker commands through the real catalog: browse and search pages, `stickers.insert` with
+// undo, redo and a project round trip, and the refusals for an unknown id or a missing catalog.
+fn control_stickers(
+    s: &mut Session,
+    r: &mut JobRunner,
+    stickers: Option<&engine::control::StickerAccess<'_>>,
+    id: &str,
+    params: Value,
+    key: &str,
+) -> Response {
+    let req = request(s, id, params, key);
+    s.control_request(
+        req,
+        Caller {
+            principal: "test",
+            external: true,
+            policy: &Allow,
+            fonts: None,
+            sounds: None,
+            music: None,
+            stickers,
+            brand: None,
+            media: None,
+            chapters: None,
+            captions: None,
+            vision: None,
+        },
+        r,
+    )
+    .unwrap()
+}
+
+#[test]
+fn sticker_commands_search_insert_undo_redo_and_round_trip() {
+    use engine::control::{StickerCategory, StickerEntry, StickerPage, StickerQuery};
+    use libraries::stickers::{resolve_sticker, search_catalog};
+    let page = search_catalog("", StickerCategory::All, Some(8));
+    assert_eq!(page.total, 277, "six shapes and 271 flags");
+    let ids: Vec<&str> = page.results.iter().map(|entry| entry.id.as_str()).collect();
+    assert_eq!(
+        ids,
+        [
+            "shapes:square",
+            "shapes:circle",
+            "shapes:triangle",
+            "shapes:hexagon",
+            "shapes:diamond",
+            "shapes:star",
+            "flags:AD",
+            "flags:AE"
+        ]
+    );
+    assert_eq!((page.results[0].width, page.results[0].height), (512, 512));
+    assert_eq!((page.results[6].width, page.results[6].height), (640, 480));
+    let flags = search_catalog("", StickerCategory::Flags, Some(1000));
+    assert_eq!((flags.total, flags.results.len()), (271, 271));
+    let shapes = search_catalog("", StickerCategory::Shapes, None);
+    assert_eq!((shapes.total, shapes.results.len()), (6, 6));
+    assert!(search_catalog("asia", StickerCategory::Flags, None).total > 0);
+    assert_eq!(
+        search_catalog("asia", StickerCategory::Shapes, None).total,
+        0
+    );
+    assert_eq!(resolve_sticker(" flags:vn ").unwrap().id, "flags:VN");
+    assert_eq!(resolve_sticker("shapes:star").unwrap().name, "Star");
+    assert!(resolve_sticker("flags:zz").is_none());
+    assert!(resolve_sticker("emoji:smile").is_none());
+
+    let search = |query: &StickerQuery| -> control::Result<StickerPage> {
+        Ok(search_catalog(&query.query, query.category, query.limit))
+    };
+    let resolve = |id: &str| -> control::Result<StickerEntry> {
+        resolve_sticker(id).ok_or(control::Error::Edit(engine::EditError::Invalid(
+            "unknown sticker id",
+        )))
+    };
+    let access = engine::control::StickerAccess::new(&search, &resolve);
+    let mut s = session();
+    let mut r = runner();
+    let initial = s.project().clone();
+
+    let ControlResult::StickerSearch { page } = ok(control_stickers(
+        &mut s,
+        &mut r,
+        Some(&access),
+        "stickers.search",
+        json!({"query": "vietnam", "category": "flags"}),
+        "search",
+    )) else {
+        panic!("stickers.search result");
+    };
+    assert_eq!(
+        page.results
+            .iter()
+            .map(|entry| entry.id.as_str())
+            .collect::<Vec<_>>(),
+        ["flags:VN"]
+    );
+    assert!(Arc::ptr_eq(&initial, s.project()), "search is not an edit");
+
+    error(
+        control_stickers(&mut s, &mut r, None, "stickers.search", json!({}), "bare"),
+        ErrorCode::Refused,
+    );
+    for (key, params) in [
+        (
+            "unknown",
+            json!({"sticker": "flags:zz", "start": 0, "duration": 1000}),
+        ),
+        (
+            "negative",
+            json!({"sticker": "flags:vn", "start": 0, "duration": -1}),
+        ),
+    ] {
+        let response =
+            control_stickers(&mut s, &mut r, Some(&access), "stickers.insert", params, key);
+        assert!(
+            matches!(response.value, ResponseValue::Error(_)),
+            "{key}: {response:?}"
+        );
+        assert!(
+            Arc::ptr_eq(&initial, s.project()),
+            "{key} leaves the project unchanged"
+        );
+    }
+
+    let ControlResult::Edit { outcome } = ok(control_stickers(
+        &mut s,
+        &mut r,
+        Some(&access),
+        "stickers.insert",
+        json!({"sticker": "flags:vn", "start": 0, "duration": 254_016_000_000_i64}),
+        "insert",
+    )) else {
+        panic!("stickers.insert result");
+    };
+    assert!(outcome.changed);
+    let placement = outcome.placements[0];
+    let inserted = s.project().clone();
+    let track = inserted
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .find(|track| track.id == placement.track)
+        .unwrap();
+    assert_eq!(track.kind, project::TrackKind::Sticker);
+    let item = track
+        .items
+        .iter()
+        .find(|item| item.id == placement.item)
+        .unwrap();
+    assert_eq!(
+        item.content,
+        project::ItemParams::Sticker(project::StickerParams::new("flags:VN", 640, 480))
+    );
+    assert!(item.masks.is_empty());
+
+    s.undo().unwrap();
+    assert!(
+        s.project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .all(|track| track.items.is_empty())
+    );
+    s.redo().unwrap();
+    assert_eq!(s.project(), &inserted);
+
+    let bytes = project::encode(&inserted, false).unwrap();
+    let text = String::from_utf8(bytes.clone()).unwrap();
+    assert!(text.contains("\"sticker\":\"flags:VN\"") && !text.contains("recents"));
+    let loaded = project::decode(&bytes).unwrap();
+    assert_eq!(&loaded.project, inserted.as_ref());
 }

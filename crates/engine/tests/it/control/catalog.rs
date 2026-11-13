@@ -18,6 +18,7 @@ use crate::support::control::request;
 use crate::support::control::runner;
 use crate::support::control::seed;
 use crate::support::control::sound_access;
+use crate::support::control::sticker_access;
 use crate::support::control::submit;
 use crate::support::control::vision_access;
 use crate::support::control::with_audio;
@@ -358,6 +359,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
         let fonts = font_access();
         let sounds = sound_access();
         let music = music_access();
+        let stickers = sticker_access();
         let result = s
             .control_request(
                 req,
@@ -368,6 +370,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
                     fonts: Some(&fonts),
                     sounds: Some(&sounds),
                     music: Some(&music),
+                    stickers: Some(&stickers),
                     brand: None,
                     media: Some(&media),
                     chapters: Some(&chapters),

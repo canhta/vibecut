@@ -35,6 +35,7 @@ Build with `cargo build -p vibecut-cli` through the [build wrapper](../../../xta
 | `vibecut-cli model list\|info\|download` | Inspect or install pinned local model files |
 | `vibecut-cli sounds search\|save\|unsave\|add` | Search Freesound with a user token or local saved sounds; save, unsave and add a cached sound |
 | `vibecut-cli music search\|save\|unsave\|add` | Search the open music aggregator anonymously or read saved music; save, unsave and add a cached track |
+| `vibecut-cli stickers search\|insert` | Search the bundled flags and shapes, or insert one as a sticker item |
 | `vibecut-cli fonts list\|resolve\|download\|import` | Search bundled, system and catalog fonts, resolve a family, or download a catalog font |
 | `vibecut-cli exec <project> keyframes.apply_preset '{"keys":[{"item":1,"path":"opacity","component":null,"time":0}],"preset":"ease_out"}'` | Ease the segment leaving each listed key with a named preset (`smooth`, `ease_out`, `ease_in`, `in_out`, `pop`, `linear`) as one undo step; `keyframes.set_handles` takes `"curve":[x1,y1,x2,y2]` instead |
 | `vibecut-cli commands` | Print the generated command registry |
@@ -240,6 +241,8 @@ selected provider/model and job kind disclosed by that command; no known money
 ceiling is fabricated. Existing token and byte bounds still apply. Job commands
 that receive resolved provider access (`chapters.generate`, `fillers.classify`)
 use that composition's model and consent, with no client override fields.
+
+Stickers: `stickers search [--category all|flags|shapes] [--limit N] [query]` runs `stickers.search` over the bundled catalog (254 country flags and 17 regional or organisation flags with region and continent keywords, plus the shapes square, circle, triangle, hexagon, diamond and star; `all` lists shapes first) and prints each `provider:value` id with its intrinsic size. `stickers insert <project> <id> [--start <ticks>] [--duration <ticks>]` runs `stickers.insert`, which resolves the id, stores it with the intrinsic size (flags 640x480, shapes 512x512) and inserts a `sticker` item on a sticker track (duration defaults to 5 seconds). A `control` session reaches both commands with the catalog lent by the CLI; `exec` cannot run `stickers.insert` because it lends no catalog, and an MCP session lends none yet. A sticker takes transform, blend and effects but no masks. Render rasterises flag SVGs at the destination size and draws shapes through the graphic contours; a missing asset paints a placeholder and the renderer reports a typed `StickerError`.
 
 Rectangle, ellipse, polygon and star items use `timeline.insert` with `content.kind=graphic`, a closed `definitionId` and explicit appearance. Edit fallbacks with `timeline.set_item_param` graphic patches, or ordinary `keyframes.*` paths for authoritative appearance. The long-lived `control` session accepts `preview.snapshot {time,path}` to publish PNG; one-shot `exec` refuses it. `export` encodes video through the same compositor. These commands are also available through the framed MCP adapter.
 
