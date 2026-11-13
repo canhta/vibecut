@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
-use crate::support::control::{request, write_png};
+use crate::support::control::{media_access, request, write_png};
 use engine::control::{Caller, ControlResult, Policy, ResponseValue};
 use engine::{Command, CreatedId, Session};
 use media::AssetId;
@@ -356,6 +356,18 @@ fn frozen_still_survives_reopen_with_a_relink_state_when_its_file_is_gone() {
         bytes,
         "round trip"
     );
+    let access = media_access(root.path());
+    let held = s
+        .project()
+        .data()
+        .assets
+        .iter()
+        .find(|record| record.id() == asset)
+        .unwrap();
+    assert_eq!(
+        access.source_availability(held).unwrap(),
+        media::AssetAvailability::Present
+    );
     std::fs::remove_file(&path).unwrap();
     let reopened = project::decode(&bytes).unwrap();
     let record = reopened
@@ -371,4 +383,9 @@ fn frozen_still_survives_reopen_with_a_relink_state_when_its_file_is_gone() {
         "relink keeps the recorded path"
     );
     assert!(!record.path().exists(), "missing file is the relink state");
+    assert_eq!(
+        access.source_availability(record).unwrap(),
+        media::AssetAvailability::Missing,
+        "the engine reports the relink state the timeline draws"
+    );
 }

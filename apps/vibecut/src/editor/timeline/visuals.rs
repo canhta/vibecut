@@ -53,6 +53,17 @@ impl engine::control::Policy for EditorPolicy {
     }
 }
 
+/// How long one availability answer holds before the engine is asked again, so a
+/// file deleted while the project is open shows within a moment of the next paint.
+const AVAILABILITY_HOLD: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// One engine availability answer: the path it was read for and when.
+struct Availability {
+    path: std::path::PathBuf,
+    state: media::AssetAvailability,
+    at: std::time::Instant,
+}
+
 /// Texture cache key: asset, cached source position and content identity.
 type StripTextures = BTreeMap<(AssetId, Tick, [u8; 32]), egui::TextureHandle>;
 
@@ -73,6 +84,9 @@ pub(in crate::editor) struct Media {
     /// False reserves bounded recovery metadata; true means a job was admitted.
     recovery: RefCell<BTreeMap<VisualKey, bool>>,
     visual_cause: RefCell<Option<Arc<engine::control::Error>>>,
+    /// The engine's last availability answer per asset with the path it was read
+    /// for and when, so a paint never stats a file every frame.
+    availability: RefCell<BTreeMap<AssetId, Availability>>,
     cache: CacheUi,
     cache_worker: Option<CacheWorker>,
     cache_operation: CacheOperation,
@@ -91,6 +105,7 @@ impl Default for Media {
             textures: RefCell::new(BTreeMap::new()),
             recovery: RefCell::new(BTreeMap::new()),
             visual_cause: RefCell::new(None),
+            availability: RefCell::new(BTreeMap::new()),
             cache: CacheUi::default(),
             cache_worker: None,
             cache_operation: CacheOperation::Inspect,
@@ -569,6 +584,31 @@ impl VisualQuery for Media {
         } else {
             WaveState::Failed
         }
+    }
+
+    fn availability(&self, asset: &media::SourceAsset) -> media::AssetAvailability {
+        let now = std::time::Instant::now();
+        if let Some(held) = self.availability.borrow().get(&asset.id())
+            && held.path == asset.path()
+            && now.duration_since(held.at) < AVAILABILITY_HOLD
+        {
+            return held.state;
+        }
+        // Without the process media access, or when the engine cannot tell, the
+        // clip draws as healthy: only a confirmed absence is the relink state.
+        let state = self
+            .query(|access| access.source_availability(asset))
+            .and_then(Result::ok)
+            .unwrap_or(media::AssetAvailability::Present);
+        self.availability.borrow_mut().insert(
+            asset.id(),
+            Availability {
+                path: asset.path().to_path_buf(),
+                state,
+                at: now,
+            },
+        );
+        state
     }
 
     fn take_requests(&self) -> Vec<VisualRequest> {

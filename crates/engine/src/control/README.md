@@ -14,6 +14,8 @@ never depend on it; natural jobs retain their own producer types. Heterogeneous 
 font/sound callbacks and trusted Policy callbacks use this mixed result. The access-presence
 guards themselves return the existing FontError or Kernel EditError.
 
+`MediaAccess::source_availability(asset)` answers whether one source file is still on disk with a single metadata read (no decode, no hashing) and returns the media crate's `AssetAvailability`; a missing file is the relink state, and an unreadable path is a typed `Media` error rather than `Missing`.
+
 `MediaAccess` setup composes Runtime caches and the durable LUT store; maintenance composes
 Runtime resources with the protocol entry bound. Waveform and scene generation/display return
 Analysis results, and thumbnail generation/display return Artifact results. Its finisher

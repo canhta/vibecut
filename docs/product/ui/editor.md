@@ -250,6 +250,7 @@ The docs named no place for a word-level transcript, so it is a section of the C
 
 - Multi-track timeline geometry: only one video track is captured, so audio, text, sticker and effect track heights, clip colours and vertical stacking are unmeasured.
 - Menus, context menus, the keyframe lane, selected text and caption properties, and error, offline and import-failure states are not captured.
+- The clip whose source file is missing (relink state) is not captured: the web pass had no project media to move away. The timeline draws the existing 12 px warning marker on the field fill in the strip and waveform bands of that clip, and the clip menu's Replace media is the relink action. The clip colours, glyph and any hover copy are [proposed], not measured.
 - Shortcut search, rebinding capture, conflict state and preset management are not captured.
 - Media tab export: the clear-search row placement, the export progress strip (token height and gap from `kit::size::CONTROL` and `kit::space::MD`) and the export refusal and outcome toast copy are new compositions without a captured reference; their placement against CapCut is unverified.
 
