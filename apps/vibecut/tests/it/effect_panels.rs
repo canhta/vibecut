@@ -4569,3 +4569,45 @@ fn colour_popover_eyedropper_samples_the_player_frame_as_one_step() {
     assert!(!has_widget(&harness, "color.eyedropper.status"));
     assert!(has_widget(&harness, "color.hex"));
 }
+
+/// The right edge of the rightmost painted text in `row` that sits left of `before`.
+fn row_text_right(harness: &Harness<Editor>, row: egui::Rect, before: f32) -> f32 {
+    let mut pending: Vec<_> = harness.output().shapes.iter().map(|s| &s.shape).collect();
+    let mut right = f32::MIN;
+    while let Some(shape) = pending.pop() {
+        match shape {
+            egui::Shape::Vec(children) => pending.extend(children),
+            egui::Shape::Text(text) => {
+                let bounds = egui::Rect::from_min_size(text.pos, text.galley.size());
+                let in_row = bounds.top() < row.bottom() && bounds.bottom() > row.top();
+                if in_row && bounds.right() <= before {
+                    right = right.max(bounds.right());
+                }
+            }
+            _ => {}
+        }
+    }
+    right
+}
+
+#[test]
+fn effect_row_name_keeps_the_kit_gap_before_the_eye_toggle() {
+    let fixture = fixture();
+    let video = fixture.video;
+    let mut editor = fixture.editor;
+    add_effect(&mut editor.session, video, "blur", true);
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    open_effect_tabs(&mut harness, video);
+    let eye = widget_rect(&harness, "effects.toggle.blur");
+    let name_right = row_text_right(&harness, eye, eye.left());
+    assert!(
+        name_right > f32::MIN,
+        "the effect name is painted left of the eye"
+    );
+    let gap = eye.left() - name_right;
+    assert!(
+        gap >= 7.5,
+        "the eye toggle sits {gap:.1} px from the effect name, below the 8 px kit gap"
+    );
+}

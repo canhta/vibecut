@@ -5,7 +5,7 @@ use super::Panel;
 use crate::{
     editor::{
         context::{KeywordAction, KeywordRun},
-        properties::Action,
+        properties::{Action, theme},
     },
     egui,
     i18n::Text,
@@ -28,6 +28,9 @@ impl Panel<'_, '_> {
         let header = egui::CollapsingHeader::new(self.tr(Text::EmphasisTitle))
             .id_salt("inspector.keywords")
             .show(ui, |ui| {
+                // The properties body runs with zero item spacing; the section restores the
+                // kit's density gap between its chips, actions and rows.
+                ui.spacing_mut().item_spacing = egui::vec2(theme::space::MD, theme::space::XS);
                 ui.horizontal_wrapped(|ui| {
                     if self.keyword_button(
                         ui,
@@ -84,7 +87,7 @@ impl Panel<'_, '_> {
                             let full = !on && keywords.shown.len() >= keywords.limit;
                             let response = ui.add_enabled(
                                 idle && !full,
-                                egui::Button::new(text.as_str()).selected(on),
+                                chip(ui.visuals().dark_mode, text.as_str(), on),
                             );
                             self.remember(format!("inspector.keywords.word.{id}"), &response);
                             if response.clicked() {
@@ -155,5 +158,22 @@ impl Panel<'_, '_> {
         );
         self.remember(id, &response);
         response.clicked()
+    }
+}
+
+/// A keyword chip. The chosen chip uses the sub-navigation's selected style, as the open
+/// scene row does: an accent label on the shared hover fill, with no outline. egui's
+/// `selected` would fill it with the accent and put the same accent under its label.
+fn chip(dark: bool, text: &str, on: bool) -> egui::Button<'_> {
+    let label = egui::RichText::new(text).color(if on {
+        theme::accent(dark)
+    } else {
+        theme::text(dark)
+    });
+    let button = egui::Button::new(label);
+    if on {
+        button.fill(theme::hover(dark)).stroke(egui::Stroke::NONE)
+    } else {
+        button
     }
 }

@@ -3966,3 +3966,67 @@ fn emphasis_ai_reports_a_provider_failure_after_approval() {
     );
     assert_eq!(h.state().session.project(), &before);
 }
+
+/// The rendered rectangle of one widget by its automation id.
+fn widget_rect(h: &Harness<'_, Editor>, id: &str) -> egui::Rect {
+    h.state()
+        .inspect()
+        .unwrap()
+        .widgets
+        .into_iter()
+        .find(|widget| widget.id == id)
+        .unwrap_or_else(|| panic!("missing widget {id}"))
+        .rect
+}
+
+/// Relative luminance of an sRGB pixel, as WCAG 2 defines it.
+fn relative_luminance(pixel: [u8; 3]) -> f64 {
+    let linear = |channel: u8| {
+        let c = f64::from(channel) / 255.0;
+        if c <= 0.03928 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * linear(pixel[0]) + 0.7152 * linear(pixel[1]) + 0.0722 * linear(pixel[2])
+}
+
+fn contrast_ratio(a: [u8; 3], b: [u8; 3]) -> f64 {
+    let (la, lb) = (relative_luminance(a), relative_luminance(b));
+    (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
+}
+
+#[test]
+fn emphasis_selected_chip_uses_the_selected_style_with_readable_label_in_both_themes() {
+    for dark in [true, false] {
+        let mut h = harness(editor_with_cues("vi", filler_cues()), 1.0);
+        h.state_mut().preferences.dark = dark;
+        h.run_steps(3);
+        open_keywords(&mut h);
+        with_panel(h.state_mut(), |panel, session, _| {
+            panel.select_cue(session, 0, false, false).unwrap();
+        });
+        h.run_steps(3);
+        press(&mut h, "inspector.keywords.word.1");
+        h.run_steps(3);
+        let chip = widget_rect(&h, "inspector.keywords.word.1");
+        let image = h.render().expect("offscreen render");
+        let rgb = |x: u32, y: u32| {
+            let p = image.get_pixel(x, y);
+            [p[0], p[1], p[2]]
+        };
+        // The chip fill, sampled in its left padding at mid height, clear of the label.
+        let fill = rgb((chip.left() + 2.0) as u32, chip.center().y as u32);
+        let mut best = 1.0_f64;
+        for y in chip.top() as u32..chip.bottom() as u32 {
+            for x in chip.left() as u32..chip.right() as u32 {
+                best = best.max(contrast_ratio(rgb(x, y), fill));
+            }
+        }
+        assert!(
+            best >= 4.5,
+            "selected keyword label contrast {best:.2} is below 4.5 (dark={dark})"
+        );
+    }
+}

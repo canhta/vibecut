@@ -864,6 +864,9 @@ impl Panel<'_, '_> {
             let row = ui
                 .scope(|ui| {
                     ui.horizontal(|ui| {
+                        // The properties body runs with zero item spacing; the row restores the
+                        // kit's density gap so the eye and trash icons do not touch the name.
+                        ui.spacing_mut().item_spacing.x = theme::space::MD;
                         let handle_id = format!("effects.row.{}.handle", effect.id);
                         let (rect, handle) = ui.allocate_exact_size(
                             Vec2::new(theme::size::CONTROL, theme::size::FIELD),
