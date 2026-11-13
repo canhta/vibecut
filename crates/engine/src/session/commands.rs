@@ -10,19 +10,125 @@ use project::{BookmarkId, Color, ItemId, ItemParams, TrackId, TrackKind};
 use serde::{Deserialize, Serialize};
 use time::{SourceRange, Tick, TimeRange};
 
-/// Built-in opacity, transform and scale recipes expanded once into ordinary editable keys.
+/// Which part of a clip an animation covers: its first edge, its last edge or all of it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum TextAnimationPreset {
-    FadeIn,
-    FadeOut,
-    FadeInOut,
-    SlideIn,
-    SlideOut,
-    SlideInOut,
-    ScaleIn,
-    ScaleOut,
-    ScaleInOut,
+pub enum AnimationSlot {
+    In,
+    Out,
+    Combo,
+}
+
+/// Built-in animation looks, named for creators. The first twelve serve In and Out (Out
+/// plays the same motion towards the edge); the last thirteen are Combo looks that span the
+/// whole clip. A look expands once into ordinary editable keys and keeps no identity.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AnimationPreset {
+    Fade,
+    SlideLeft,
+    SlideRight,
+    SlideUp,
+    SlideDown,
+    ZoomIn,
+    ZoomOut,
+    Spin,
+    Drop,
+    Rise,
+    Pop,
+    Tilt,
+    Pulse,
+    Heartbeat,
+    Sway,
+    Swing,
+    Float,
+    DriftLeft,
+    DriftRight,
+    PushIn,
+    PullOut,
+    Shake,
+    Flicker,
+    Breathe,
+    Turn,
+}
+impl AnimationPreset {
+    /// The looks the In and Out slots offer, in panel order.
+    pub const EDGE: [Self; 12] = [
+        Self::Fade,
+        Self::SlideLeft,
+        Self::SlideRight,
+        Self::SlideUp,
+        Self::SlideDown,
+        Self::ZoomIn,
+        Self::ZoomOut,
+        Self::Spin,
+        Self::Drop,
+        Self::Rise,
+        Self::Pop,
+        Self::Tilt,
+    ];
+    /// The looks the Combo slot offers, in panel order.
+    pub const COMBO: [Self; 13] = [
+        Self::Pulse,
+        Self::Heartbeat,
+        Self::Sway,
+        Self::Swing,
+        Self::Float,
+        Self::DriftLeft,
+        Self::DriftRight,
+        Self::PushIn,
+        Self::PullOut,
+        Self::Shake,
+        Self::Flicker,
+        Self::Breathe,
+        Self::Turn,
+    ];
+    /// The looks one slot offers.
+    pub fn for_slot(slot: AnimationSlot) -> &'static [Self] {
+        match slot {
+            AnimationSlot::In | AnimationSlot::Out => &Self::EDGE,
+            AnimationSlot::Combo => &Self::COMBO,
+        }
+    }
+    /// Stable snake_case word, the wire name and the suffix of panel ids.
+    pub const fn word(self) -> &'static str {
+        match self {
+            Self::Fade => "fade",
+            Self::SlideLeft => "slide_left",
+            Self::SlideRight => "slide_right",
+            Self::SlideUp => "slide_up",
+            Self::SlideDown => "slide_down",
+            Self::ZoomIn => "zoom_in",
+            Self::ZoomOut => "zoom_out",
+            Self::Spin => "spin",
+            Self::Drop => "drop",
+            Self::Rise => "rise",
+            Self::Pop => "pop",
+            Self::Tilt => "tilt",
+            Self::Pulse => "pulse",
+            Self::Heartbeat => "heartbeat",
+            Self::Sway => "sway",
+            Self::Swing => "swing",
+            Self::Float => "float",
+            Self::DriftLeft => "drift_left",
+            Self::DriftRight => "drift_right",
+            Self::PushIn => "push_in",
+            Self::PullOut => "pull_out",
+            Self::Shake => "shake",
+            Self::Flicker => "flicker",
+            Self::Breathe => "breathe",
+            Self::Turn => "turn",
+        }
+    }
+}
+
+/// The animations an item carries, read back from its keys: an In and an Out, each with a
+/// look and a duration, or one Combo, which excludes both.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ClipAnimations {
+    pub enter: Option<(AnimationPreset, Tick)>,
+    pub exit: Option<(AnimationPreset, Tick)>,
+    pub combo: Option<AnimationPreset>,
 }
 
 /// Built-in looks, applied as values rather than a persisted preset identity.
@@ -652,6 +758,7 @@ commands! {
     Catalog, "catalog", "Command catalog", Read {} => Timeline, serde_json::json!({});
     ChaptersExportSidecars, "chapters.export_sidecars", "Export chapter sidecars", FilePublish { dir: std::path::PathBuf, document: ai::text::chapters::ChapterDocument } => Words, serde_json::json!({"dir":"$output","document":{"schema_version":1,"language":"en","duration":254016000000_i64,"title":"Opening","description":"A conversation about the work.","chapters":[{"start":0,"segment_id":"4:cue-1","title":"Opening"}]}});
     ChaptersGenerate, "chapters.generate", "Generate chapters", JobControl { language: captions::LanguageTag, max_chapters: usize } => Words, serde_json::json!({"language":"en","max_chapters":10}), grant = Agent;
+    SetClipAnimation, "clip.set_animation", "Set clip animation", Edit { item: ItemId, slot: AnimationSlot, preset: Option<AnimationPreset>, duration: Option<Tick> } => Text, serde_json::json!({"item":3,"slot":"in","preset":"fade","duration":127008000000_i64}), available = UnlockedItem, grant = Agent;
     CopyItems, "clipboard.copy", "Copy selected items", SessionControl { #[schemars(length(max = 1024))] items: Vec<ItemId> } => Timeline, serde_json::json!({"items":[1]}), available = NoTransaction, grant = Agent;
     CopyKeyframes, "clipboard.copy_keyframes", "Copy selected keyframes", SessionControl { #[schemars(length(max = 4096))] keys: Vec<KeyframeRef> } => Timeline, serde_json::json!({"keys":[{"item":1,"path":"opacity","component":null,"time":0}]}), available = NoTransaction, grant = Agent;
     PasteItems, "clipboard.paste", "Paste items", Edit { at: Tick, source: ItemPasteSource } => Timeline, serde_json::json!({"at":0,"source":{"kind":"payload","payload":{"version":1,"span":1000,"items":[{"trackKind":"video","trackIndex":0,"item":{"blendMode":"normal","masks":[],"effects":[],"animations":{},"id":0,"hidden":false,"source_asset":null,"source_range":{"start":0,"end":1000},"start":0,"retime":{"speed":1.0,"maintain_pitch":true},"content":{"kind":"overlay","params":{"color":[255,0,0,255]}}}}]}}}), available = NoTransaction, grant = Agent;
@@ -742,7 +849,6 @@ commands! {
     SplitAt, "split_at", "Split item", Edit { item: ItemId, at: Tick } => Timeline, serde_json::json!({"item":1,"at":8467200000_i64}), available = UnlockedItem;
     StickersInsert, "stickers.insert", "Insert sticker", Edit { #[serde(default)] placement: Placement, sticker: String, start: Tick, duration: Tick } => Timeline, serde_json::json!({"placement":{"mode":"auto"},"sticker":"flags:vn","start":0,"duration":127008000000_i64});
     StickersSearch, "stickers.search", "Search stickers", Read { #[serde(default)] query: String, #[serde(default)] category: super::wire::StickerCategory, #[serde(default)] limit: Option<u32> } => Timeline, serde_json::json!({"query":"asia","category":"flags","limit":20});
-    ApplyTextAnimation, "text.apply_animation", "Apply text animation", Edit { item: ItemId, preset: TextAnimationPreset } => Text, serde_json::json!({"item":3,"preset":"fade_in_out"}), available = UnlockedItem, grant = Agent;
     ApplyTextPreset, "text.apply_preset", "Apply saved text preset", Edit { items: Vec<ItemId>, preset: project::TextPresetId } => TextPresetBank, serde_json::json!({"items":[3],"preset":100}), available = UnlockedItem, grant = Agent;
     SaveTextPreset, "text.save_preset", "Save text preset", Edit { item: ItemId, name: NfcText } => TextPresetBank, serde_json::json!({"item":3,"name":"Style 1"}), available = UnlockedItem, grant = Agent;
     AddTrack, "timeline.add_track", "Add track", Edit { name: NfcText, kind: TrackKind, #[serde(default)] placement: TrackPlacement } => Timeline, serde_json::json!({"name":"Added","kind":"video"});

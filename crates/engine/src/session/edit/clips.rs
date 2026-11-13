@@ -1,10 +1,12 @@
 //! Applies clips commands to a candidate project.
+use super::animation;
 use super::{
     Arc, BTreeMap, BTreeSet, CreatedId, EditError, Item, ItemId, ItemParams, Move, NewItem,
     Placement, ProjectData, Result, SourceRange, Tick, Track, TrackId, TrackKind, TrackPlacement,
     TrimSources, alloc, fades_mut, item, placement_track, ratchet_fps, sub, take_item, track,
     unlocked,
 };
+use crate::ClipAnimations;
 
 pub(super) fn move_items(data: &mut ProjectData, moves: Vec<Move>) -> Result<()> {
     let mut seen = BTreeSet::new();
@@ -464,14 +466,17 @@ pub(super) fn execute_trim_start(
     at: Tick,
     sources: &mut TrimSources,
 ) -> Result<ProjectData> {
+    let canvas = data.canvas.clone();
     let item = item(&mut data, id)?;
     let moved = item.start != at;
+    let (animations, was) = (ClipAnimations::of(item, &canvas), item.duration()?);
     let cut = item.trim_start(at)?;
     let shift = sub(item.start, cut.start)?;
     set_range(item, cut.source_range, shift, sources)?;
     item.retime = cut.retime;
     item.start = cut.start;
     let clip = item.duration()?;
+    animation::refit(item, animations, was, &canvas)?;
     if moved && let Some(fades) = fades_mut(&mut item.content) {
         let curve = fades.fade_in.curve;
         let window = fades.fade_in.window();
@@ -486,12 +491,15 @@ pub(super) fn execute_trim_end(
     at: Tick,
     sources: &mut TrimSources,
 ) -> Result<ProjectData> {
+    let canvas = data.canvas.clone();
     let item = item(&mut data, id)?;
     let moved = item.end()? != at;
+    let (animations, was) = (ClipAnimations::of(item, &canvas), item.duration()?);
     let cut = item.trim_end(at)?;
     set_range(item, cut.source_range, Tick::ZERO, sources)?;
     item.retime = cut.retime;
     let clip = item.duration()?;
+    animation::refit(item, animations, was, &canvas)?;
     if moved && let Some(fades) = fades_mut(&mut item.content) {
         let curve = fades.fade_out.curve;
         let window = fades.fade_out.window();

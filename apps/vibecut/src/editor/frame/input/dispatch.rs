@@ -137,7 +137,7 @@ impl Editor {
             && !self.dialogs.models.is_open()
     }
 
-    pub(in crate::editor) fn text_animation_available(
+    pub(in crate::editor) fn clip_animation_available(
         &self,
         state: &crate::editor::properties::State,
     ) -> bool {
@@ -391,10 +391,6 @@ impl Editor {
                 action: UiAction::Paste,
                 ..
             } => self.clipboard_available(false),
-            ActionTarget::Ui {
-                action: UiAction::ApplyTextAnimation(_),
-                ..
-            } => self.text_animation_available(&self.properties),
             ActionTarget::Ui {
                 action: UiAction::Subtitles,
                 ..

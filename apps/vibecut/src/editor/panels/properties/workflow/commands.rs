@@ -2,15 +2,30 @@
 use super::super::read;
 use crate::editor::{Desk, Error, ItemId, ItemParamPatch, Result};
 
-pub(in crate::editor) fn apply_text_animation(
+/// One animation slot of a clip: the slot, its look (`None` removes) and its duration.
+pub(super) type SlotChange = (
+    engine::AnimationSlot,
+    Option<engine::AnimationPreset>,
+    Option<time::Tick>,
+);
+
+pub(super) fn set_clip_animation(
     state: &mut super::State,
     desk: &mut Desk<'_>,
     item: ItemId,
-    preset: engine::TextAnimationPreset,
+    (slot, preset, duration): SlotChange,
     snapshot: std::sync::Arc<project::Project>,
 ) -> Result<()> {
-    text_target(state, desk, item, &snapshot, "text animation")?;
-    desk.apply_result(engine::Command::ApplyTextAnimation { item, preset }, false)?;
+    text_target(state, desk, item, &snapshot, "clip animation")?;
+    desk.apply_result(
+        engine::Command::SetClipAnimation {
+            item,
+            slot,
+            preset,
+            duration,
+        },
+        false,
+    )?;
     Ok(())
 }
 
@@ -52,13 +67,13 @@ fn text_target(
     snapshot: &std::sync::Arc<project::Project>,
     what: &'static str,
 ) -> Result<()> {
-    if !desk.editor().text_animation_available(state)
+    if !desk.editor().clip_animation_available(state)
         || state.animation_target(desk.view().session, desk.view().selection()) != Some(item)
         || !std::sync::Arc::ptr_eq(snapshot, desk.view().session.project())
     {
         return Err(Error::Invalid(match what {
             "text preset" => "text preset target changed",
-            _ => "text animation target changed",
+            _ => "clip animation target changed",
         }));
     }
     Ok(())

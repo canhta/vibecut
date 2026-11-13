@@ -92,14 +92,7 @@ impl Panel<'_, '_> {
         let cells = kit::segmented(&mut value_ui, &ids, &labels, selected);
         let mut clicked = None;
         for (index, (cell_id, response)) in ids.iter().zip(&cells).enumerate() {
-            let response = if id.starts_with("text.animation") {
-                response
-                    .clone()
-                    .on_hover_text(self.tr(Text::TextAnimationTip))
-            } else {
-                response.clone()
-            };
-            self.remember(cell_id.clone(), &response);
+            self.remember(cell_id.clone(), response);
             if response.clicked() && index != selected {
                 clicked = Some(index);
             }
@@ -388,7 +381,7 @@ impl Panel<'_, '_> {
         else {
             return;
         };
-        let enabled = !self.cx.disabled.contains("text.animation.fade_in");
+        let enabled = !self.cx.disabled.contains("animation.edit");
         self.text_preset_controls(ui, item, &params, enabled);
         // The box rows exist only while the box does, like the colour fields they sit beside.
         if params.background.is_some() {
@@ -405,82 +398,6 @@ impl Panel<'_, '_> {
                 &[(OFFSET_X, Some("X")), (OFFSET_Y, Some("Y"))],
             );
             self.scrub_field(ui, item, RADIUS);
-        }
-    }
-
-    /// One effect row and one direction row apply a combined in/out animation.
-    pub(super) fn text_animation_controls(
-        &mut self,
-        ui: &mut egui::Ui,
-        item: ItemId,
-        enabled: bool,
-    ) {
-        use engine::TextAnimationPreset::{
-            FadeIn, FadeInOut, FadeOut, ScaleIn, ScaleInOut, ScaleOut, SlideIn, SlideInOut,
-            SlideOut,
-        };
-        const ALL: [engine::TextAnimationPreset; 9] = [
-            FadeIn, FadeOut, FadeInOut, SlideIn, SlideOut, SlideInOut, ScaleIn, ScaleOut,
-            ScaleInOut,
-        ];
-        let project = self.cx.session.project();
-        let matched = read::item(project, item).and_then(|target| {
-            ALL.iter()
-                .position(|preset| preset.matches(target, project.data()))
-        });
-        let (family, direction) =
-            matched.map_or((usize::MAX, usize::MAX), |index| (index / 3, index % 3));
-        let fallback = matched.map_or((0, 0), |index| (index / 3, index % 3));
-        let mut chosen = None;
-        ui.add_enabled_ui(enabled, |ui| {
-            if let Some(index) = self.choice_row(
-                ui,
-                "text.animation.family",
-                Text::TextAnimation,
-                &[
-                    ("fade", Text::TextAnimationFade),
-                    ("slide", Text::TextAnimationSlide),
-                    ("scale", Text::TextAnimationScale),
-                ],
-                family,
-            ) {
-                chosen = Some(index * 3 + fallback.1);
-            }
-            let family_options = matched.map_or(0, |index| index / 3);
-            let options = match family_options {
-                1 => [
-                    ("slide_in", Text::TextAnimationIn),
-                    ("slide_out", Text::TextAnimationOut),
-                    ("slide_in_out", Text::TextAnimationBoth),
-                ],
-                2 => [
-                    ("scale_in", Text::TextAnimationIn),
-                    ("scale_out", Text::TextAnimationOut),
-                    ("scale_in_out", Text::TextAnimationBoth),
-                ],
-                _ => [
-                    ("fade_in", Text::TextAnimationIn),
-                    ("fade_out", Text::TextAnimationOut),
-                    ("fade_in_out", Text::TextAnimationBoth),
-                ],
-            };
-            if let Some(index) = self.choice_row(
-                ui,
-                "text.animation",
-                Text::TextAnimationDirection,
-                &options,
-                direction,
-            ) {
-                chosen = Some(fallback.0 * 3 + index);
-            }
-        });
-        if let Some(preset) = chosen.and_then(|index| ALL.get(index)).copied() {
-            self.actions
-                .push(crate::editor::properties::Action::ApplyTextAnimation {
-                    item,
-                    preset,
-                    snapshot: self.cx.session.project().clone(),
-                });
         }
     }
 

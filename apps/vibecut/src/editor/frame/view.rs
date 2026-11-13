@@ -234,12 +234,8 @@ impl Editor {
     fn inspector(&mut self, ui: &mut egui::Ui) {
         let mut properties = std::mem::take(&mut self.properties);
         let mut cx = self.context();
-        if !self.text_animation_available(&properties) {
-            cx.disabled.extend([
-                "text.animation.fade_in",
-                "text.animation.fade_out",
-                "text.animation.fade_in_out",
-            ]);
+        if !self.clip_animation_available(&properties) {
+            cx.disabled.extend(["animation.edit"]);
         }
         let actions = crate::editor::properties::show(&mut properties, &cx, ui);
         drop(cx);

@@ -86,22 +86,46 @@ ControlError, SessionError, project, time and caption sources. Project IO/busy/c
 refinements are classified here, as are the static Project/Time/Captions wrapper diagnostics;
 higher engine workflows delegate through `engine::control::Error::Edit`. Commands perform no IO or retries.
 
-## Text animation
+## Clip animation
 
-`text.apply_animation` expands one built-in look once into ordinary item-relative
-keys on one unlocked active-scene Text item. Names, not source parity: Fade animates
-`opacity`; Slide travels 25 % of the project canvas width along `transform.positionX`;
-Scale shrinks to half the item's current `transform.scale` on both axes. In/out/both
-directions share one 300 ms edge, capped at floor(duration/2), measured in integer
-ticks. Scalar bases come from the item's existing channels or their documented
-defaults and are preserved; linear keys have no handles and Hold extrapolation.
-Both coalesces only equal-time middle keys. A title must last at least two canvas
-frames. Any keyed preset channel is accepted only when the complete requested Param
-is already identical; otherwise undo or remove keys before applying another look.
-Applying a preset whose family owns no keys leaves unrelated transform keys alone.
-Locks refuse even an exact repeat. Trim, split, move and key-time scaling retain
-ordinary key semantics, without edge binding or a saved preset identity. Text
-media-speed editing remains unsupported.
+`clip.set_animation { item, slot, preset, duration }` expands one built-in look once into
+ordinary item-relative keys on one unlocked active-scene Text, Video, Image, Overlay,
+Graphic or Sticker item ([`animation.rs`](animation.rs)). `slot` is `in` (the first edge),
+`out` (the last edge) or `combo` (the whole clip); `preset` null removes the slot. Looks are
+named for creators, not source parity. The twelve In/Out looks are Fade, Slide left, right,
+up and down (a quarter of the canvas width or height; the name is the direction the picture
+travels), Zoom in and out (half the scale), Spin (180 degrees with a fade), Drop and Rise
+(a slide with a fade), Pop (a 0.2 scale with a fade) and Tilt (30 degrees with a fade). Out
+plays the same motion towards the edge. The thirteen Combo looks are Pulse, Heartbeat, Sway,
+Swing, Float, Drift left and right, Push in, Pull out, Shake, Flicker, Breathe and Turn, each
+a table of waypoints in permille of the clip. They write only `opacity`, `transform.position`,
+`transform.scale` and `transform.rotate` (the owned channels); positions are canvas pixels,
+Y grows downward and rotation is clockwise. Scalar bases come from the item's existing
+channels or their documented defaults and are kept; linear keys have no handles and Hold
+extrapolation. Values clamp to the transform bounds (so Turn tops out at 360 degrees).
+
+Durations are integer ticks, 0.5 s by default; a repeat of the slot's current look keeps its
+duration, so a duration change sends the same look with the new value. Rules, in order:
+
+- Each duration is clamped to at least one canvas frame and at most the clip length, and the
+  clip must last two canvas frames.
+- In and Out never overlap: the later one (Out) shrinks to the room In leaves, and In is held
+  one frame short of the clip while an Out exists. Out never grows back by itself. Where they
+  meet exactly they share one resting key.
+- Combo excludes In and Out: setting one clears the other side. A Combo takes no duration;
+  an In or Out look is refused in the Combo slot and the reverse; a duration without a look
+  is refused.
+- There is no stored animation identity. `ClipAnimations::of` reads the slots back from the
+  keys: a slot is found only while the keys on the channels it owns equal exactly what the
+  look writes, so hand-edited keys read as no animation. A change is accepted only when every
+  channel it touches holds no keys or exactly the current look's keys; otherwise undo or
+  remove those keys first. Keys on other channels are never touched.
+- Trimming either edge re-fits the animations found before the trim to the new length with the
+  same clamp; a clip left under two frames loses them. Split, move and key-time scaling keep
+  ordinary key semantics, and a speed change stretches the keys with the media.
+
+Locks refuse even an exact repeat; an exact repeat records no history. One command is one
+undo step.
 
 ## Text presets
 

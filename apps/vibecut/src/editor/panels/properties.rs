@@ -17,8 +17,7 @@ pub use shared_field::{SharedField, shared_fields};
 pub(in crate::editor) use state::{Action, Widget, element_kind};
 pub(in crate::editor) use view::show;
 pub(in crate::editor) use workflow::{
-    add_effect_to_item, apply, apply_text_animation, effect_refusal, set_item_field,
-    set_shared_field,
+    add_effect_to_item, apply, effect_refusal, set_item_field, set_shared_field,
 };
 
 use crate::editor::{
@@ -84,6 +83,8 @@ pub(in crate::editor) struct State {
     curve_channel: usize,
     /// Selected Adjust sub-tab and HSL band.
     adjust_tab: AdjustTab,
+    /// Animation sub-tab (In, Out or Combo) shown by the shared Animation control.
+    animation_slot: engine::AnimationSlot,
     hsl_band: usize,
     opacity_edit: Option<(Arc<project::Project>, ItemId, Tick)>,
     reorder: Option<gesture::EffectReorder>,
@@ -188,6 +189,7 @@ impl Default for State {
             graph_changed: false,
             curve_channel: 0,
             adjust_tab: AdjustTab::default(),
+            animation_slot: engine::AnimationSlot::In,
             hsl_band: 0,
             opacity_edit: None,
             reorder: None,

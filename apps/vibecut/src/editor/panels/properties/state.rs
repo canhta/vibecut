@@ -24,9 +24,12 @@ pub(in crate::editor) enum Action {
         item: ItemId,
         id: Option<project::LutId>,
     },
-    ApplyTextAnimation {
+    /// One In, Out or Combo slot of the selected clip, through `clip.set_animation`.
+    SetClipAnimation {
         item: ItemId,
-        preset: engine::TextAnimationPreset,
+        slot: engine::AnimationSlot,
+        preset: Option<engine::AnimationPreset>,
+        duration: Option<time::Tick>,
         snapshot: Arc<project::Project>,
     },
     ApplyTextPreset {
@@ -217,9 +220,7 @@ impl State {
                         track
                             .items
                             .iter()
-                            .find(|item| {
-                                item.id == id && matches!(item.content, ItemParams::Text(_))
-                            })
+                            .find(|item| item.id == id && item.content.supports_animation())
                             .map(|item| item.id)
                     })
                     .flatten()

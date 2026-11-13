@@ -148,10 +148,20 @@ editor for the full font, size, colour, outline, box, position, safe-area and ma
 This uncaptured composition is new; desktop reference parity is unverified.
 Availability and edit behavior belong to the [captions owner](../../../apps/vibecut/src/editor/panels/assets/captions/README.md).
 
-The selected-Text Animation composition uses two current segmented rows in the 22 px
-field, 12 px type and property-row spacing: Fade, Slide and Scale effects above In, Out
-and Both directions. Tooltips explain editable keys and the need to undo or remove
-existing keys before changing an animation. The Preset row adds a saved-style dropdown
+The Animation control is shared by the Text tab's Animation section and the Animation tab of
+video, image, sticker and graphic items (Video order: Basic group, Audio, Animation, Speed,
+Adjust, Effects, after the web capture's Audio, Animation, Speed). Desktop evidence (capture
+221759, tab Animation): a full-width three-cell In / Out / Combo bar, a search field, category
+chips, then a six-column grid of thumbnail tiles with the name beneath, None first. Ours keeps
+the three-cell bar on the 24 px control height, then a None tile and the looks as three-column
+text tiles of the 22 px field height in the 12 px type, and a Duration row (the web capture's
+"In and out motion duration", default 0.5 s) for an applied In or Out. Tooltips explain editable
+keys and the need to undo or remove existing keys before changing an animation. Not matched,
+open: no thumbnails or previews in the tiles, no search field, no category chips, six columns
+not three, the tile and gutter metrics, the Duration field's range and step (0.1 s is borrowed
+from the transition field, the clip length is the engine's only cap) and whether In and Out
+share one duration as the web capture shows (ours has one per slot, as the ticket asks); the
+look names and motions are new, not source parity. The Preset row adds a saved-style dropdown
 and a Save style action; Apply copies the saved look onto the item and the selector
 shows a name only for an exact stored-style match. Save names the first free `Style N`
 and stores no words or keys. No matching selected-title desktop reference exists; these

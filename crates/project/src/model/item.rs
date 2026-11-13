@@ -894,6 +894,10 @@ impl ItemParams {
     pub fn supports_arrange(&self) -> bool {
         self.has_placed_box()
     }
+    /// Visual kinds whose placed box the In, Out and Combo animations may move.
+    pub fn supports_animation(&self) -> bool {
+        self.has_placed_box()
+    }
     fn has_placed_box(&self) -> bool {
         matches!(
             self,

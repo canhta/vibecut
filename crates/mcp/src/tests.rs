@@ -519,6 +519,7 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("captions.save_preset", Effect::Edit, true, true),
         ("captions.rename_preset", Effect::Edit, true, true),
         ("captions.delete_preset", Effect::Edit, true, true),
+        ("clip.set_animation", Effect::Edit, true, true),
         ("clipboard.copy", Effect::SessionControl, true, true),
         (
             "clipboard.copy_keyframes",
@@ -531,7 +532,6 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("clipboard.read", Effect::Read, true, true),
         ("stickers.insert", Effect::Edit, true, true),
         ("stickers.search", Effect::Read, true, true),
-        ("text.apply_animation", Effect::Edit, true, true),
         ("text.apply_preset", Effect::Edit, true, true),
         ("text.save_preset", Effect::Edit, true, true),
         ("transcript.delete_range", Effect::Edit, true, true),

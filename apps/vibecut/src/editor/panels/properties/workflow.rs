@@ -11,7 +11,7 @@ mod number_edit;
 mod speed;
 mod transition;
 
-pub(in crate::editor) use commands::{apply_text_animation, set_item_field, set_shared_field};
+pub(in crate::editor) use commands::{set_item_field, set_shared_field};
 pub(in crate::editor) use effects::{add_effect_to_item, effect_refusal};
 pub(super) use number_edit::transform_scrub;
 
@@ -67,11 +67,13 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
                 desk.request(crate::editor::context::Request::Cache(action));
                 Ok(())
             }
-            Action::ApplyTextAnimation {
+            Action::SetClipAnimation {
                 item,
+                slot,
                 preset,
+                duration,
                 snapshot,
-            } => commands::apply_text_animation(state, desk, item, preset, snapshot),
+            } => commands::set_clip_animation(state, desk, item, (slot, preset, duration), snapshot),
             Action::ApplyTextPreset {
                 item,
                 preset,

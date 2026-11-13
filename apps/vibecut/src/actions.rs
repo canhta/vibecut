@@ -126,7 +126,6 @@ pub enum UiAction {
     InsertText,
     Copy,
     Paste,
-    ApplyTextAnimation(engine::TextAnimationPreset),
     Subtitles,
     SubtitleCue,
     Import,

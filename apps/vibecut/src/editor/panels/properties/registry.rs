@@ -52,6 +52,7 @@ impl ElementKind {
                 PropertiesTab::RemoveBackground,
                 PropertiesTab::Mask,
                 PropertiesTab::Audio,
+                PropertiesTab::Animation,
                 PropertiesTab::Speed,
                 PropertiesTab::Adjust,
                 PropertiesTab::Effects,
@@ -60,13 +61,19 @@ impl ElementKind {
                 PropertiesTab::Transform,
                 PropertiesTab::RemoveBackground,
                 PropertiesTab::Mask,
+                PropertiesTab::Animation,
                 PropertiesTab::Adjust,
                 PropertiesTab::Effects,
             ],
-            Self::Sticker => &[PropertiesTab::Transform, PropertiesTab::Effects],
+            Self::Sticker => &[
+                PropertiesTab::Transform,
+                PropertiesTab::Animation,
+                PropertiesTab::Effects,
+            ],
             Self::Graphic => &[
                 PropertiesTab::Graphic,
                 PropertiesTab::Transform,
+                PropertiesTab::Animation,
                 PropertiesTab::Effects,
             ],
             Self::Audio => &[PropertiesTab::Audio, PropertiesTab::Speed],
@@ -98,10 +105,11 @@ pub enum PropertiesTab {
     RemoveBackground,
     Effects,
     Graphic,
+    Animation,
 }
 
 impl PropertiesTab {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Text,
         Self::Transform,
         Self::Audio,
@@ -111,6 +119,7 @@ impl PropertiesTab {
         Self::RemoveBackground,
         Self::Effects,
         Self::Graphic,
+        Self::Animation,
     ];
 
     pub const fn id(self) -> &'static str {
@@ -124,6 +133,7 @@ impl PropertiesTab {
             Self::RemoveBackground => "remove_background",
             Self::Effects => "effects",
             Self::Graphic => "graphic",
+            Self::Animation => "animation",
         }
     }
 
@@ -142,6 +152,7 @@ impl PropertiesTab {
             Self::RemoveBackground => Text::RemoveBackground,
             Self::Effects => Text::Effects,
             Self::Graphic => Text::Graphic,
+            Self::Animation => Text::TextAnimation,
         }
     }
 }

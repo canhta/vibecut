@@ -370,8 +370,13 @@ pub(crate) fn apply(
             };
             data = clips::execute_paste_items(data, at, payload, created, next, sources)?;
         }
-        EditCommand::ApplyTextAnimation { item, preset } => {
-            data = keyframes::execute_apply_text_animation(data, item, preset)?;
+        EditCommand::SetClipAnimation {
+            item,
+            slot,
+            preset,
+            duration,
+        } => {
+            data = animation::execute_set_clip_animation(data, item, slot, preset, duration)?;
         }
         EditCommand::SelectCaptionEmphasis {
             item,
@@ -940,6 +945,7 @@ fn check_timeline(data: &mut ProjectData) -> Result<()> {
     }
     Ok(())
 }
+mod animation;
 mod audio;
 mod clips;
 mod effects;

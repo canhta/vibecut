@@ -5,30 +5,6 @@ use crate::i18n::Text;
 
 pub(super) const ACTIONS: &[ActionSpec] = &[
     ActionSpec::ui(
-        "text.animation.fade_in",
-        Text::ActionTextAnimationIn,
-        ActionCategory::Edit,
-        "text properties workflow",
-        UiAction::ApplyTextAnimation(engine::TextAnimationPreset::FadeIn),
-        &[],
-    ),
-    ActionSpec::ui(
-        "text.animation.fade_out",
-        Text::ActionTextAnimationOut,
-        ActionCategory::Edit,
-        "text properties workflow",
-        UiAction::ApplyTextAnimation(engine::TextAnimationPreset::FadeOut),
-        &[],
-    ),
-    ActionSpec::ui(
-        "text.animation.fade_in_out",
-        Text::ActionTextAnimationBoth,
-        ActionCategory::Edit,
-        "text properties workflow",
-        UiAction::ApplyTextAnimation(engine::TextAnimationPreset::FadeInOut),
-        &[],
-    ),
-    ActionSpec::ui(
         "media.view",
         Text::ActionMediaView,
         ActionCategory::View,

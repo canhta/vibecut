@@ -45,7 +45,7 @@ italic, underline, alignment; then line decoration, letter and line spacing), St
 swatch, background box, outline and shadow each as a toggle with a swatch, glow switch,
 saved styles, background geometry), Opacity, the shared Transform section (Scale, Position
 X/Y, Rotate, Arrange, flips; the same component as video items), Blending (blend mode) and
-Animation. Text has no hex colour field and no bare position fields: each colour is one
+Animation (the shared control below). Text has no hex colour field and no bare position fields: each colour is one
 swatch, and text position is the Transform Position row. The Style colour rows are
 `ColorTarget::Texts`, the same control for one text or many: texts that differ show a dash,
 and each commit is one `set_item_param_many` edit. Video and image items keep Transform and
@@ -154,13 +154,23 @@ restores blend mode Normal and opacity 1.0 (the engine's base) as one batch, one
 step; it is `ResetBlend` in the workflow. Blend has no enable checkbox yet: the project
 model has no blend-enabled field, so none is invented here.
 
-The single-Text tab offers Fade, Slide and Scale effects, each with In, Out and Both
-directions in segmented rows (`text.animation.fade_in`, `text.animation.slide_out`,
-`text.animation.scale_in_out`, and family cells). Apply creates ordinary editable
-opacity or transform keys through `text.apply_animation`; the
-[engine edit contract](../../../../../../crates/engine/src/session/edit/README.md#text-animation)
-owns the recipes and refusal rules. A choice is selected only for an exact saved Param
-match. Other curves have no selected choice: undo or remove their keys to change modes.
+## Animation
+
+One control (`animation_controls`, `view/animation.rs`) serves the Text tab's Animation
+section and the Animation tab of Video, Image, Sticker and Graphic items, so there is one
+set of ids. A segmented bar `inspector.animation.tab.in|out|combo` picks the slot (the
+choice is view state, In first); below it a None tile and one tile per look
+(`inspector.animation.<slot>.<look>`, `.none`; twelve looks for In and Out, thirteen for
+Combo) and, for an applied In or Out, a Duration field (`inspector.animation.duration`,
+`.increase`, `.decrease`; Enter or blur commits, Escape cancels, 0.1 s steps). The selected
+tile is the look read back from the item's keys by `engine::ClipAnimations::of`: only an
+exact key match is selected, so hand-edited keys select nothing. Every click, step or commit
+is one `clip.set_animation` request carrying the project snapshot it was drawn from; a
+look change keeps the slot's duration. The
+[engine edit contract](../../../../../../crates/engine/src/session/edit/README.md#clip-animation)
+owns the looks, the clamp, the In/Out overlap rule, Combo exclusivity and the trim re-fit.
+Tiles and field are disabled, and a captured request refused, on a locked track, with
+an open draft, transaction, save, inline or caption edit, like the other item edits.
 
 The Style section's Preset row lists the project's saved text styles
 (`inspector.text_preset.saved.<id>`) and a Save style action. Apply copies the saved
