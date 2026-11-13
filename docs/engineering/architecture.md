@@ -95,6 +95,7 @@ Definitions: [glossary](../../GLOSSARY.md). Contract details live in these owner
 | Chapter document, prompt and validation / sidecar publication | [ai chapters](../../crates/ai/src/text/chapters/README.md) / [engine artifacts](../../crates/engine/src/artifacts/README.md#chapter-sidecars) |
 | Filler classification input, exact-ID validation and shared text-model transport | [ai fillers](../../crates/ai/src/text/fillers/README.md) / [engine job](../../crates/engine/src/analysis/README.md#filler-classification) |
 | SpeechSynthesizer capabilities, requests, consent, PCM validation | [ai speech](../../crates/ai/src/speech/README.md) |
+| Transcript text search, folding and per-asset index entries in the artifact cache | [engine transcript search](../../crates/engine/src/transcript/search/README.md) |
 
 Every project mutation goes through the engine command registry; UI, CLI and MCP only translate their transport into it. In-process callers pass a typed `Command`; a command id with JSON parameters exists only on the control wire. A workflow that runs as a job is a registry command, so every transport can start it. Engine wraps media, render and AI execution with progress and cancellation. Per-project view state lives in the project's [metadata sidecar](../../crates/project/src/persistence/README.md#optional-project-metadata), outside undo. Recovery: [engine](../../crates/engine/src/store/recovery_workflow/README.md#session-recovery-and-save-acknowledgement).
 

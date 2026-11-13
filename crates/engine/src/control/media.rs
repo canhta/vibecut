@@ -164,6 +164,17 @@ impl MediaAccess {
         self
     }
 
+    /// Searches transcript text, indexing each asset into the same artifact cache the
+    /// waveforms and scene analyses use. Nothing here touches the project.
+    pub fn transcript_search(
+        &mut self,
+        sources: &[crate::transcript::search::Source],
+        needle: &str,
+        limit: usize,
+    ) -> crate::transcript::Result<crate::transcript::search::Answer> {
+        crate::transcript::search::query(&mut self.artifacts, sources, needle, limit)
+    }
+
     fn proxy_store(&mut self) -> crate::artifacts::Result<&mut ArtifactCache> {
         self.proxies.as_mut().ok_or(crate::artifacts::Error::Edit(
             crate::session::EditError::Unsupported("proxy cache unavailable"),

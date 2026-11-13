@@ -40,6 +40,7 @@ pub enum ArtifactKind {
     StickerDownload,
     Loudness,
     Proxy,
+    TranscriptIndex,
 }
 /// Canonical semantic inputs, in addition to source content and adapter identity.
 /// Hash normalized owner serialization, never Debug/display strings or file paths.
@@ -96,6 +97,7 @@ impl CacheKey {
             ArtifactKind::StickerDownload => b"sticker-download",
             ArtifactKind::Loudness => b"loudness",
             ArtifactKind::Proxy => b"proxy",
+            ArtifactKind::TranscriptIndex => b"transcript-index",
         };
         let mut hash = blake3::Hasher::new();
         hash.update(b"vibecut-artifact-v1");

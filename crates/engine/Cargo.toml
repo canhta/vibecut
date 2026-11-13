@@ -30,6 +30,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
 unicode-segmentation.workspace = true
+unicode-normalization.workspace = true
 
 blake3.workspace = true
 text.workspace = true

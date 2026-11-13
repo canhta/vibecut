@@ -17,6 +17,7 @@ pub use operation::{Cancellation, Progress, SilentProgress, Stage, Transcription
 pub(crate) use speech::media_duration;
 pub use speech::{RESULT_BYTES, WORK_BYTES, transcribe};
 pub(crate) use translation_run::translation_reference;
+pub mod search;
 pub mod translation {
     //! Applies selected translations through bounded attempts.
     pub use super::translation_run::{TranslationRun, TranslationTarget, window};

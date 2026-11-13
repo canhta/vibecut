@@ -62,6 +62,15 @@ pub enum ControlResult {
     Fillers {
         candidates: Vec<FillerCandidate>,
     },
+    /// Transcript matches in source order. `partial` is set when a transcript covers less
+    /// than its media; `stale` when an index was replaced for older content; `rebuilt` counts
+    /// the indexes built by this query.
+    TranscriptSearch {
+        hits: Vec<TranscriptHit>,
+        partial: bool,
+        stale: bool,
+        rebuilt: usize,
+    },
     ChapterSidecars {
         paths: super::ChapterSidecars,
     },
@@ -102,6 +111,15 @@ pub enum ControlResult {
         missing_luts: Vec<String>,
     },
 }
+/// One transcript line that matched a `transcript.search` query.
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
+pub struct TranscriptHit {
+    pub asset: media::AssetId,
+    /// Source ticks of the line in its asset.
+    pub start: time::Tick,
+    pub end: time::Tick,
+    pub snippet: String,
+}
 #[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct ProviderView {
     pub operation: String,
@@ -131,6 +149,7 @@ pub enum ResultKind {
     MusicSaved,
     MusicUnsaved,
     Fillers,
+    TranscriptSearch,
     ChapterSidecars,
     JobAccepted,
     ClipExports,
@@ -159,6 +178,7 @@ impl ResultKind {
             Self::MusicSaved => "music_saved",
             Self::MusicUnsaved => "music_unsaved",
             Self::Fillers => "fillers",
+            Self::TranscriptSearch => "transcript_search",
             Self::ChapterSidecars => "chapter_sidecars",
             Self::JobAccepted => "job_accepted",
             Self::ClipExports => "clip_exports",
@@ -188,6 +208,7 @@ impl ControlResult {
             Self::MusicSaved { .. } => ResultKind::MusicSaved,
             Self::MusicUnsaved { .. } => ResultKind::MusicUnsaved,
             Self::Fillers { .. } => ResultKind::Fillers,
+            Self::TranscriptSearch { .. } => ResultKind::TranscriptSearch,
             Self::ChapterSidecars { .. } => ResultKind::ChapterSidecars,
             Self::JobAccepted { .. } => ResultKind::JobAccepted,
             Self::ClipExports { .. } => ResultKind::ClipExports,
