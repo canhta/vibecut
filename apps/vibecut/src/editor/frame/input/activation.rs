@@ -165,7 +165,9 @@ impl Editor {
                                 source: engine::KeyframePasteSource::Stored,
                             })?
                         }
-                        crate::editor::selection::SelectionScope::Items => {
+                        // Cut leaves nothing selected, so an empty selection pastes at the playhead.
+                        crate::editor::selection::SelectionScope::Items
+                        | crate::editor::selection::SelectionScope::None => {
                             pasted_items = true;
                             self.session.apply(engine::Command::PasteItems {
                                 at,
@@ -173,8 +175,7 @@ impl Editor {
                             })?
                         }
                         crate::editor::selection::SelectionScope::MaskPoints
-                        | crate::editor::selection::SelectionScope::Transition
-                        | crate::editor::selection::SelectionScope::None => {
+                        | crate::editor::selection::SelectionScope::Transition => {
                             return Err(Error::Invalid("clipboard scope"));
                         }
                     };
