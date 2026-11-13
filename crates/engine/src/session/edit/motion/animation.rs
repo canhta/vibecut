@@ -131,7 +131,12 @@ fn shake_keys(
     };
     let mut keys = Vec::with_capacity(SHAKE.len());
     for w in SHAKE {
-        let time = start + duration.checked_scale(w.at, 1000, Rounding::Nearest)?;
+        // `checked_scale` refuses a zero factor, so the first waypoint is the edge start.
+        let time = if w.at == 0 {
+            start
+        } else {
+            start + duration.checked_scale(w.at, 1000, Rounding::Nearest)?
+        };
         let mut value = base + w.x * f64::from(canvas.width);
         if let Some(field) = transform_field(index) {
             value = field.clamp(value)?;
@@ -630,7 +635,7 @@ pub(in super::super) fn execute_set_clip_animation(
             wanted.combo = None;
         }
         (edge, Some(preset)) => {
-            if edge_look(preset).is_none() {
+            if !P::EDGE.contains(&preset) {
                 return Err(EditError::Invalid("In and Out take an edge look"));
             }
             let held = if edge == AnimationSlot::In {

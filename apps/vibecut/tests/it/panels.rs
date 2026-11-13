@@ -548,6 +548,15 @@ pub(crate) fn reveal(harness: &mut Harness<Editor>, id: &str) {
         harness.run_steps(8);
     }
     for _ in 0..12 {
+        // Wheel scrolling animates over frames, and a layout change from the previous step
+        // can still move the body: measure only once the target is still.
+        for _ in 0..30 {
+            let before = widget_rect(harness, id);
+            harness.run_steps(2);
+            if widget_rect(harness, id) == before {
+                break;
+            }
+        }
         let panel = harness.state().panels()["inspector"];
         // The multi-selection inspector has no tab strip: start under the panel top.
         let top = tab.map_or(panel.top() + 44.0, |tab| {
@@ -558,26 +567,28 @@ pub(crate) fn reveal(harness: &mut Harness<Editor>, id: &str) {
             panel.max - egui::vec2(12.0, 12.0),
         );
         let target = widget_rect(harness, id);
-        if viewport.contains_rect(target) {
+        // The wheel scrolls vertically only: a control at the panel's right edge (a stepper)
+        // is in view once its rows are.
+        if target.top() >= viewport.top() && target.bottom() <= viewport.bottom() {
             break;
         }
         harness.hover_at(viewport.center());
         harness.event(egui::Event::MouseWheel {
             unit: egui::MouseWheelUnit::Point,
-            delta: egui::vec2(0.0, if target.top() < top { 120.0 } else { -120.0 }),
+            // Wheel by the distance still to go, at least one notch.
+            delta: egui::vec2(
+                0.0,
+                if target.top() < top {
+                    (top - target.top()).max(120.0)
+                } else {
+                    -(target.bottom() - viewport.bottom()).max(120.0)
+                },
+            ),
             phase: egui::TouchPhase::Move,
             source: egui::MouseWheelSource::Unknown,
             modifiers: egui::Modifiers::NONE,
         });
         harness.run_steps(8);
-    }
-    // Wheel scrolling animates over frames: click only once the target is still.
-    for _ in 0..30 {
-        let before = widget_rect(harness, id);
-        harness.run_steps(2);
-        if widget_rect(harness, id) == before {
-            break;
-        }
     }
 }
 
@@ -3064,7 +3075,8 @@ fn video_animation_tab_applies_in_out_and_combo_changes_duration_and_removes() {
 }
 
 /// 419: tiles are 58 px squares carrying a rendered preview, the name beneath, rows 82 px
-/// apart (capture 221759); the strips come from the engine job, never from per-frame UI work.
+/// apart within a shelf (capture 221759); the strips come from the engine job, never from
+/// per-frame UI work.
 #[test]
 fn animation_tiles_show_previews_with_names_beneath_at_the_measured_pitch() {
     let f = fixture();
@@ -3076,18 +3088,20 @@ fn animation_tiles_show_previews_with_names_beneath_at_the_measured_pitch() {
     click(&mut h, "inspector.tab.animation");
     let none = widget_rect(&h, "inspector.animation.in.none");
     let fade = widget_rect(&h, "inspector.animation.in.fade");
-    let zoom = widget_rect(&h, "inspector.animation.in.zoom_in");
+    let slide = widget_rect(&h, "inspector.animation.in.slide_left");
+    // Drop opens the second row of the Basic shelf.
+    let drop = widget_rect(&h, "inspector.animation.in.drop");
     assert_eq!(none.size(), egui::vec2(58.0, 58.0));
     assert_eq!(fade.size(), egui::vec2(58.0, 58.0));
     assert!(
-        (zoom.top() - none.top() - 82.0).abs() < 0.5,
+        (drop.top() - fade.top() - 82.0).abs() < 0.5,
         "row pitch {} != 82",
-        zoom.top() - none.top()
+        drop.top() - fade.top()
     );
     assert!(
-        (fade.left() - none.left() - 73.0).abs() < 0.5,
+        (slide.left() - fade.left() - 73.0).abs() < 0.5,
         "column pitch {} != 73",
-        fade.left() - none.left()
+        slide.left() - fade.left()
     );
     // Preview pixels of a look are lighter than the dark tile fill; the None tile stays empty.
     // Only the middle of the tile counts: the favourite star in its corner is light too.
@@ -3106,34 +3120,38 @@ fn animation_tiles_show_previews_with_names_beneath_at_the_measured_pitch() {
         }
         count
     };
-    // Every look tile of the open tab carries preview pixels: wait until each is lit (the
-    // jobs run off-thread), never just the first, then assert all of them.
+    // Every look tile of the open tab carries preview pixels: the shelves run below the
+    // fold, so bring each tile into view, wait until it is lit (the jobs run off-thread),
+    // never just the first, then assert it.
     let tiles_lit = |h: &mut Harness<Editor>, slot: &str, looks: &[engine::AnimationPreset]| {
-        let rects: Vec<(&str, egui::Rect)> = looks
-            .iter()
-            .map(|look| {
-                let id = format!("inspector.animation.{slot}.{}", look.word());
-                (look.word(), widget_rect(h, &id))
-            })
-            .collect();
         let mut image = h.render().unwrap();
-        for _ in 0..200 {
-            if rects.iter().all(|(_, rect)| lit(&image, *rect) > 20) {
-                break;
-            }
-            for _ in 0..10 {
-                h.run_steps(1);
-                std::thread::sleep(std::time::Duration::from_millis(5));
-            }
+        for look in looks {
+            let id = format!("inspector.animation.{slot}.{}", look.word());
+            reveal(h, &id);
+            let rect = widget_rect(h, &id);
             image = h.render().unwrap();
-        }
-        for (word, rect) in &rects {
-            assert!(lit(&image, *rect) > 20, "{slot} tile {word} has no preview");
+            for _ in 0..200 {
+                if lit(&image, rect) > 20 {
+                    break;
+                }
+                for _ in 0..10 {
+                    h.run_steps(1);
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+                image = h.render().unwrap();
+            }
+            assert!(
+                lit(&image, rect) > 20,
+                "{slot} tile {} has no preview",
+                look.word()
+            );
         }
         image
     };
     use engine::AnimationPreset as Preset;
     tiles_lit(&mut h, "in", &Preset::EDGE);
+    reveal(&mut h, "inspector.animation.in.none");
+    let none = widget_rect(&h, "inspector.animation.in.none");
     assert_eq!(lit(&h.render().unwrap(), none), 0);
     // Out and Combo previews arrive the same way.
     click(&mut h, "inspector.animation.tab.out");
