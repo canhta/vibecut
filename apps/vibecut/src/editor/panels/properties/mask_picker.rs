@@ -4,4 +4,4 @@ mod view;
 
 pub(in crate::editor) use state::current;
 pub use state::{Choice, State};
-pub(in crate::editor) use view::{Action, show};
+pub(in crate::editor) use view::{Action, Timing, show};

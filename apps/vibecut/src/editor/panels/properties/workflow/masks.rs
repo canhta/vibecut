@@ -1,8 +1,14 @@
 //! Applies the mask row's shape and field edits through the mask commands.
 use super::super::mask_picker::{Action, Choice};
 use super::super::{State, read};
+use super::commands;
 use crate::editor::{ItemId, Port, Result};
 use project::MaskShape;
+
+/// The animation path of one mask field: `masks.<id>.params.<key>`.
+fn mask_path(mask: &str, key: &str) -> String {
+    format!("masks.{mask}.params.{key}")
+}
 
 impl State {
     pub(super) fn mask_action(&mut self, port: &mut Port<'_>, action: Action) -> Result<()> {
@@ -14,6 +20,38 @@ impl State {
             Action::Choose { item, shape } => choose_mask(port, item, shape),
             Action::Update { item, mask } => {
                 port.apply_result(engine::Command::UpdateMask { item, mask })?;
+                Ok(())
+            }
+            Action::ToggleKeyframe {
+                item,
+                mask,
+                fields,
+                time,
+            } => {
+                let fields: Vec<(String, f64)> = fields
+                    .into_iter()
+                    .map(|(key, value)| (mask_path(&mask, key), value))
+                    .collect();
+                commands::toggle_keyframes(port, item, &fields, time)
+            }
+            Action::SetKeyframe {
+                item,
+                mask,
+                key,
+                value,
+                time,
+            } => commands::set_keyframe_at(port, item, &mask_path(&mask, key), time, value),
+            Action::SetBase {
+                item,
+                mask,
+                key,
+                value,
+            } => {
+                port.apply_result(engine::Command::SetAnimatedParam {
+                    item,
+                    path: project::AnimationPath::new(mask_path(&mask, key))?,
+                    param: project::Param::new(project::ParamValue::Scalar(value))?,
+                })?;
                 Ok(())
             }
         }

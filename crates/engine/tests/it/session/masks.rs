@@ -602,3 +602,84 @@ fn mask_point_cut_copies_then_removes_the_anchors_in_one_undo_step() {
     assert_eq!(s.history_len(), history);
     assert_eq!(s.mask_point_clipboard_len(), 1);
 }
+
+fn mask_keys(s: &Session, path: &AnimationPath) -> Vec<i64> {
+    s.project()
+        .data()
+        .scene()
+        .timeline
+        .overlays
+        .first()
+        .unwrap()
+        .items
+        .first()
+        .unwrap()
+        .animations
+        .get(path)
+        .unwrap()
+        .channel(None)
+        .unwrap()
+        .keys()
+        .iter()
+        .map(|key| key.time.0)
+        .collect()
+}
+
+#[test]
+fn mask_keys_toggle_undo_retime_and_survive_a_shape_change_and_refuse_ghosts() {
+    let mut s = session();
+    let a = Mask::new("a", MaskShape::Rectangle);
+    s.apply(Command::AddMask {
+        item: ItemId(2),
+        mask: a.clone(),
+    })
+    .unwrap();
+    let path = a.path("feather").unwrap();
+    let before = s.project().clone();
+    s.apply(Command::ToggleKeyframe {
+        item: ItemId(2),
+        path: path.clone(),
+        component: None,
+        time: Tick(12),
+        value: ParamValue::Scalar(3.),
+    })
+    .unwrap();
+    let keyed = s.project().clone();
+    assert_eq!(mask_keys(&s, &path), vec![12]);
+    s.apply(Command::Undo {}).unwrap();
+    assert_eq!(s.project(), &before);
+    s.apply(Command::Redo {}).unwrap();
+    assert_eq!(s.project(), &keyed);
+
+    s.apply(Command::ScaleKeyframeTime {
+        item: ItemId(2),
+        numerator: 2,
+        denominator: 1,
+    })
+    .unwrap();
+    assert_eq!(mask_keys(&s, &path), vec![24]);
+
+    // A shape change keeps the mask id, so its keys stay on the same path.
+    let mut star = a.clone();
+    star.shape = MaskShape::Star;
+    s.apply(Command::UpdateMask {
+        item: ItemId(2),
+        mask: star,
+    })
+    .unwrap();
+    assert_eq!(mask_keys(&s, &path), vec![24]);
+
+    // A key on a mask the item does not carry refuses and leaves everything alone.
+    let ghost = AnimationPath::new("masks.ghost.params.feather").unwrap();
+    let before_ghost = s.project().clone();
+    assert!(
+        s.apply(Command::AddKeyframe {
+            item: ItemId(2),
+            path: ghost,
+            component: None,
+            key: Keyframe::new(Tick(1), ParamValue::Scalar(1.)),
+        })
+        .is_err()
+    );
+    assert_eq!(s.project(), &before_ghost);
+}

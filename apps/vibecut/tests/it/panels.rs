@@ -1795,6 +1795,49 @@ fn mask_panel_screenshot_is_available() {
     assert!(path.exists());
 }
 
+#[test]
+fn mask_diamond_keys_the_centre_at_the_playhead_and_removes_it_again() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    select(&mut harness, fixture.video);
+    click(&mut harness, "inspector.mask.row");
+    click(&mut harness, "inspector.mask.shape.rectangle");
+    let path = mask_of(&harness, fixture.video)
+        .unwrap()
+        .path("center_x")
+        .unwrap();
+    let keys = |harness: &Harness<Editor>| {
+        item(harness, fixture.video)
+            .animations
+            .get(&path)
+            .and_then(|param| param.channel(None).ok())
+            .map_or(0, |channel| channel.keys().len())
+    };
+    assert_eq!(keys(&harness), 0);
+    let history = harness.state().session.history_len();
+    click(&mut harness, "inspector.mask.keyframe.center_x");
+    assert_eq!(keys(&harness), 1, "the diamond keys the centre");
+    assert_eq!(
+        harness.state().session.history_len().0,
+        history.0 + 1,
+        "one undo step"
+    );
+    enter(&mut harness, "inspector.mask.position.x", "30");
+    assert_eq!(keys(&harness), 1, "an animated centre upserts its key");
+    assert!(
+        (mask_of(&harness, fixture.video).unwrap().center_x - 0.0).abs() < 1e-9,
+        "the stored centre keeps its base while keyed"
+    );
+    let image = harness.render().expect("offscreen render");
+    let out = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-61-mask-keys.png");
+    std::fs::create_dir_all(out.parent().unwrap()).unwrap();
+    image.save(&out).unwrap();
+    assert!(out.exists());
+    click(&mut harness, "inspector.mask.keyframe.center_x");
+    assert_eq!(keys(&harness), 0, "the same diamond removes the key");
+}
+
 fn mask_of(harness: &Harness<Editor>, id: ItemId) -> Option<project::Mask> {
     item(harness, id).masks.first().cloned()
 }

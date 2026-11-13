@@ -18,4 +18,11 @@ A locked track disables every edit.
 Feather is 0–100 px (default 0) and commits on release; size W/H and position X/Y are
 per cent of the placed item with size independent per axis; rotation is in degrees
 (default 0) and invert is off. The reference's corner radius is not rendered because
-the engine has no such parameter. All edits are one `masks.update` undo step.
+the engine has no such parameter. Stored edits are one `masks.update` undo step.
+
+Each numeric group (feather, size, position, rotation) has a row-end diamond. It keys the
+group's `masks.<id>.params.<name>` paths at the playhead through `keyframes.toggle_at`,
+or removes them when all are keyed, as one step. Fields show the mask evaluated at the
+playhead. An animated field with keys upserts its key at the playhead; one with no keys
+replaces its base with `keyframes.set_param`; any other field edits the stored mask.
+Previous and next key seeks are not wired here, so the arrows stay disabled.
