@@ -2168,6 +2168,214 @@ fn loudness_controls_switch_target_and_apply_through_commands() {
         .unwrap();
 }
 
+/// The media a loudness measurement reads in these tests.
+#[derive(Clone)]
+enum LoudnessSource {
+    /// Zero-valued blocks: silent material.
+    Silent,
+    /// Every block fails, so the job ends failed.
+    Fail,
+    /// Reports its first block on `entered`, then holds until `open` is set.
+    Hold {
+        entered: std::sync::mpsc::Sender<()>,
+        open: std::sync::Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>,
+    },
+}
+
+impl render::SourceProvider for LoudnessSource {
+    fn status(
+        &mut self,
+        _: &SourceAsset,
+        _: bool,
+        _: &dyn render::ExecutionHooks,
+    ) -> render::Result<Option<render::UnavailableReason>> {
+        Ok(None)
+    }
+
+    fn video(
+        &mut self,
+        _: &SourceAsset,
+        _: ItemId,
+        _: Tick,
+        _: &dyn render::ExecutionHooks,
+    ) -> render::Result<Option<render::Image>> {
+        Ok(None)
+    }
+
+    fn audio(
+        &mut self,
+        _: &SourceAsset,
+        _: ItemId,
+        _start: i64,
+        frames: usize,
+        rate: u32,
+        hooks: &dyn render::ExecutionHooks,
+    ) -> render::Result<render::AudioBlock> {
+        match self {
+            Self::Silent => silent_block(frames, rate, hooks),
+            Self::Fail => Err(render::Error::Invalid("source audio block")),
+            Self::Hold { entered, open } => {
+                let _ = entered.send(());
+                let (lock, wake) = &**open;
+                let mut released = lock.lock().unwrap();
+                while !*released {
+                    released = wake.wait(released).unwrap();
+                }
+                drop(released);
+                silent_block(frames, rate, hooks)
+            }
+        }
+    }
+}
+
+fn silent_block(
+    frames: usize,
+    rate: u32,
+    hooks: &dyn render::ExecutionHooks,
+) -> render::Result<render::AudioBlock> {
+    let mut block = render::AudioBlock::new(rate, 2, frames, render::MemoryKind::Decoded, hooks)?;
+    for plane in block.planes_mut() {
+        plane.fill(0.0);
+    }
+    Ok(block)
+}
+
+fn loudness_sources(
+    source: LoudnessSource,
+) -> std::sync::Arc<dyn Fn() -> Box<dyn render::SourceProvider> + Send + Sync> {
+    std::sync::Arc::new(move || Box::new(source.clone()) as Box<dyn render::SourceProvider>)
+}
+
+fn loudness_of(harness: &Harness<Editor>) -> project::Loudness {
+    harness
+        .state()
+        .session
+        .project()
+        .data()
+        .settings
+        .loudness
+        .clone()
+}
+
+/// Runs frames until the measurement has left its progress state.
+fn settle_loudness(harness: &mut Harness<Editor>) {
+    let mut steps = 0;
+    while has_widget(harness, "inspector.loudness.progress") {
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        harness.run_steps(1);
+        steps += 1;
+        assert!(steps < 5000, "loudness measurement never finished");
+    }
+}
+
+#[test]
+fn loudness_held_measurement_shows_progress_and_cancel_keeps_gains_and_target() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    select(&mut harness, fixture.audio);
+    click(&mut harness, "inspector.loudness.clip");
+    let target = loudness_of(&harness).clip;
+    assert_eq!(target, Some(project::LoudnessTarget::DEFAULT));
+    let history = harness.state().session.history_len().0;
+
+    // The source holds the job at its first block until the test opens the gate.
+    let (entered, reached) = std::sync::mpsc::channel();
+    let open = std::sync::Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
+    harness
+        .state_mut()
+        .set_loudness_sources(loudness_sources(LoudnessSource::Hold {
+            entered,
+            open: open.clone(),
+        }));
+    click(&mut harness, "inspector.loudness.apply");
+    reached
+        .recv_timeout(std::time::Duration::from_secs(60))
+        .expect("the held measurement never reached its source");
+    harness.run_steps(2);
+    assert!(has_widget(&harness, "inspector.loudness.progress"));
+    assert!(has_widget(&harness, "inspector.loudness.cancel"));
+
+    click(&mut harness, "inspector.loudness.cancel");
+    harness.run_steps(2);
+    assert!(!has_widget(&harness, "inspector.loudness.progress"));
+    assert!(!has_widget(&harness, "inspector.loudness.cancel"));
+    assert_eq!(loudness_of(&harness).measured, None);
+    assert_eq!(loudness_of(&harness).clip, target);
+    assert_eq!(harness.state().session.history_len().0, history);
+
+    // The abandoned job finishing after the release stores nothing: its poll is gone.
+    *open.0.lock().unwrap() = true;
+    open.1.notify_all();
+    harness.run_steps(3);
+    assert_eq!(loudness_of(&harness).measured, None);
+    assert_eq!(loudness_of(&harness).clip, target);
+    assert_eq!(harness.state().session.history_len().0, history);
+}
+
+#[test]
+fn loudness_failed_measurement_shows_the_reason_and_applies_nothing() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    select(&mut harness, fixture.audio);
+    click(&mut harness, "inspector.loudness.clip");
+    let target = loudness_of(&harness).clip;
+    harness
+        .state_mut()
+        .set_loudness_sources(loudness_sources(LoudnessSource::Fail));
+    let history = harness.state().session.history_len().0;
+
+    click(&mut harness, "inspector.loudness.apply");
+    settle_loudness(&mut harness);
+    harness.run_steps(2);
+    assert_eq!(loudness_of(&harness).measured, None);
+    assert_eq!(loudness_of(&harness).clip, target);
+    assert_eq!(harness.state().session.history_len().0, history);
+    assert!(
+        harness
+            .query(By::new().predicate(|node| {
+                node.label()
+                    .is_some_and(|label| label.starts_with("Measurement failed"))
+            }))
+            .is_some(),
+        "the failure reason shows on the Audio tab"
+    );
+}
+
+#[test]
+fn loudness_silent_material_applies_identity_gains_and_undo_reverts_only_them() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    select(&mut harness, fixture.audio);
+    click(&mut harness, "inspector.loudness.clip");
+    click(&mut harness, "inspector.loudness.master");
+    let target = loudness_of(&harness);
+    assert_eq!(target.master, target.clip);
+    harness
+        .state_mut()
+        .set_loudness_sources(loudness_sources(LoudnessSource::Silent));
+    let history = harness.state().session.history_len().0;
+
+    click(&mut harness, "inspector.loudness.apply");
+    settle_loudness(&mut harness);
+    // Silent material measures no loudness, so its gains are identity.
+    let measured = loudness_of(&harness)
+        .measured
+        .expect("silent material still stores its identity gains");
+    assert_eq!(measured.master_db, 0.0);
+    assert!(measured.clip.iter().all(|(_, db)| *db == 0.0));
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+
+    // Undo after Apply reverts only the gains; both targets stay.
+    harness.state_mut().session.undo().unwrap();
+    harness.run_steps(2);
+    assert_eq!(loudness_of(&harness).measured, None);
+    assert_eq!(loudness_of(&harness).clip, target.clip);
+    assert_eq!(loudness_of(&harness).master, target.master);
+}
+
 #[test]
 fn text_presets_and_animations_click_edit_undo_reopen_and_capture_both_locales() {
     for locale in [vibecut::i18n::Locale::En, vibecut::i18n::Locale::Vi] {

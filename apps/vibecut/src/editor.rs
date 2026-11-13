@@ -87,6 +87,13 @@ impl Editor {
     pub fn set_font_backend(&mut self, backend: Box<dyn properties::font_picker::Backend>) {
         self.properties.set_font_backend(backend);
     }
+    /// Test seam: the media loudness measurements read, in place of the project's files.
+    pub fn set_loudness_sources(
+        &mut self,
+        sources: std::sync::Arc<dyn Fn() -> Box<dyn render::SourceProvider> + Send + Sync>,
+    ) {
+        self.properties.set_loudness_sources(sources);
+    }
     /// Open the shared colour picker on a target the workspace owns.
     pub fn open_color_picker(&mut self, target: ColorTarget) -> Result<()> {
         self.with_properties(|state, port| state.open_color_picker(port, target))
