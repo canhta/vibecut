@@ -2,7 +2,7 @@
 use super::{
     Action, Align2, AssetRow, AssetState, AssetsTab, Color32, Filter, FontId, Icon, Id, MediaKind,
     MediaSortKey, MediaSortOrder, MediaView, Rect, Row, Text, Vec2, View, asset_state_color,
-    display_short_time, egui, icons, theme,
+    egui, icons, theme,
 };
 use crate::i18n;
 
@@ -497,7 +497,7 @@ impl View<'_> {
         }
         if !list && let Some(duration) = row.duration {
             let galley = ui.painter().layout_no_wrap(
-                display_short_time(duration),
+                time::format_short_clock(duration),
                 FontId::proportional(theme::type_size::BODY),
                 theme::on_scrim(),
             );
@@ -531,7 +531,7 @@ impl View<'_> {
                 name + Vec2::new(0.0, 16.0),
                 Align2::LEFT_TOP,
                 row.duration
-                    .map(display_short_time)
+                    .map(time::format_short_clock)
                     .unwrap_or_else(|| self.tr(Text::DurationUnknown).to_owned()),
                 FontId::proportional(theme::type_size::BODY),
                 theme::secondary(dark),

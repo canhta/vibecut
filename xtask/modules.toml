@@ -224,10 +224,6 @@ name = "context"
 group = "context"
 
 [[crate.folder.module]]
-name = "timing"
-group = "context"
-
-[[crate.folder.module]]
 name = "selection"
 group = "context"
 

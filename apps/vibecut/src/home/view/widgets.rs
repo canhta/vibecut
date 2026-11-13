@@ -5,7 +5,6 @@ use crate::{
     kit::{self, Icon},
 };
 use std::sync::Arc;
-use time::Tick;
 
 /// One line of text cut with an ellipsis at `max_width`, ready to paint.
 pub(super) fn line(
@@ -30,17 +29,6 @@ pub(super) fn set_author_id(response: &egui::Response, id: &str) {
 /// The bundled semibold face at an explicit size.
 pub(super) fn semibold(size: f32) -> egui::FontId {
     egui::FontId::new(size, egui::FontFamily::Name("Inter-SemiBold".into()))
-}
-
-/// `m:ss` below one hour, `h:mm:ss` from one hour; negative ticks read as zero.
-pub(super) fn display_time(at: Tick) -> String {
-    let seconds = at.seconds().max(0.0) as u64;
-    let (hours, minutes, seconds) = (seconds / 3600, seconds / 60 % 60, seconds % 60);
-    if hours > 0 {
-        format!("{hours}:{minutes:02}:{seconds:02}")
-    } else {
-        format!("{minutes:02}:{seconds:02}")
-    }
 }
 
 /// Flat icon-sized menu buttons: transparent until hovered, 4 px corners.
@@ -107,24 +95,4 @@ pub(super) fn menu_action(ui: &mut egui::Ui, id: &str, icon: Icon, label: &str) 
         .inner;
     set_author_id(&response, id);
     response.clicked()
-}
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn duration_display_is_stable_for_boundaries() {
-        assert_eq!(display_time(Tick::ZERO), "00:00");
-        assert_eq!(display_time(Tick(-1)), "00:00");
-        assert_eq!(
-            display_time(Tick::from_seconds_f64(65.9, time::Rounding::Nearest).unwrap()),
-            "01:05"
-        );
-        assert_eq!(
-            display_time(Tick::from_seconds_f64(3661.5, time::Rounding::Nearest).unwrap()),
-            "1:01:01"
-        );
-    }
 }

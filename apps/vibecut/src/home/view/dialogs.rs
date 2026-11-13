@@ -1,6 +1,6 @@
 //! Draws the rename, info and delete dialogs over the Home page.
 
-use super::widgets::{action_button, display_time, set_author_id};
+use super::widgets::{action_button, set_author_id};
 use crate::{
     egui,
     home::state::State,
@@ -90,7 +90,7 @@ pub(super) fn show(state: &mut State, ctx: &egui::Context, look: Look) {
             return;
         };
         let name = entry.name.as_str().to_owned();
-        let duration = display_time(entry.duration);
+        let duration = time::format_duration(entry.duration);
         let created = i18n::date(locale, entry.created_unix_ms);
         let modified = i18n::date(locale, entry.modified_unix_ms);
         let title = i18n::text(locale, Text::ProjectsInfoTitle);

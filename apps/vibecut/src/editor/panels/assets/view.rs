@@ -14,7 +14,7 @@ pub(in crate::editor) use feedback::{drop_overlay, import_overlay, toast};
 use super::{
     Action, Align2, AssetRow, AssetState, AssetsTab, AudioSection, Color32, EffectRow, FontId,
     Icon, Id, MediaKind, MediaSortKey, MediaSortOrder, MediaView, Model, Recorded, Rect, Row,
-    State, Text, Vec2, asset_state_color, display_short_time, egui, icons, state, theme,
+    State, Text, Vec2, asset_state_color, egui, icons, state, theme,
 };
 use state::Filter;
 

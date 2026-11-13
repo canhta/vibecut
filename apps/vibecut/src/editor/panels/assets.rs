@@ -35,7 +35,7 @@ use super::super::{
     Align2, Arc, AssetId, AssetRow, BTreeMap, BTreeSet, Color32, Command, ContentHash, CreatedId,
     Editor, Error, FontId, Icon, Id, ItemParams, Locale, NewItem, PathBuf, Rect, Result,
     SelectionScopes, SourceAsset, SourceRange, StreamKind, TICKS_PER_SECOND, Text, Tick, TrackKind,
-    UnsupportedReason, Vec2, display_short_time, display_time, egui, error_detail, icons, theme,
+    UnsupportedReason, Vec2, egui, error_detail, icons, theme,
 };
 use state::MediaMarquee;
 use workflow::{asset_kind, asset_row, asset_state_color, file_name};

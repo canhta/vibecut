@@ -22,7 +22,7 @@ pub(super) use visuals::Media;
 use super::{
     Align2, AssetId, BTreeSet, BookmarkId, Color32, Command, Context, FontId, FrameRate, Icon, Id,
     ItemId, ItemParams, KeyframeSelection, Locale, Rect, Result, Rounding, SourceRange, Text, Tick,
-    TrackId, TrackKind, Vec2, display_label, display_time, egui, icons, theme,
+    TrackId, TrackKind, Vec2, display_label, egui, icons, theme,
 };
 
 use layout::{BookmarkView, ItemView, TimelineLayout, TrackRow};

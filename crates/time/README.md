@@ -2,7 +2,7 @@
 
 Exact integer media time for the editor core: ticks, rational frame rates and nonempty source ranges.
 
-Owns `Tick` at 254 016 000 000 ticks per second, `FrameRate`, `TimeRange` and the `SourceRange` alias, plus conversions between ticks, floating seconds, audio samples, rational container timebases, frame indices and DF/NDF editor timecode. Media probing, variable-frame-rate policy, binary LTC/VITC encoding, project persistence and platform dependencies are excluded.
+Owns `Tick` at 254 016 000 000 ticks per second, `FrameRate`, `TimeRange` and the `SourceRange` alias, plus conversions between ticks, floating seconds, audio samples, rational container timebases, frame indices DF/NDF editor timecode and fixed display clocks. Media probing, variable-frame-rate policy, binary LTC/VITC encoding, project persistence and platform dependencies are excluded.
 
 | Module | Responsibility | Contract |
 |---|---|---|
@@ -10,6 +10,7 @@ Owns `Tick` at 254 016 000 000 ticks per second, `FrameRate`, `TimeRange` and th
 | `rate` | Compares rational frame rates and converts them to and from ticks. | [Frame rates](src/rate/README.md) |
 | `range` | Holds nonempty half-open ranges in output and source ticks. | [Ranges](src/range/README.md) |
 | `rounding` | Applies the explicit rational rounding policy. | [Rounding](src/rounding/README.md) |
+| `clock` | Formats ticks as fixed display clocks and durations. | [Clock](src/clock/README.md) |
 | `timecode` | Formats and parses signed DF/NDF editor labels. | [Timecode](src/timecode/README.md) |
 | `speed` | Maps constant playback speed to exact source and output durations. | [Speed](src/speed/README.md) |
 

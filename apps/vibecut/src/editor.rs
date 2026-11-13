@@ -36,9 +36,6 @@ use state::{
 };
 pub use widgets::WidgetState;
 
-mod timing;
-use timing::{display_short_time, display_time};
-
 mod selection;
 pub use selection::{KeyframeSelection, MaskPointSelection, SelectionScope, SelectionScopes};
 

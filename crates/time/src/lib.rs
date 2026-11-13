@@ -7,6 +7,7 @@
 //!
 //! Fallible operations report [`TimeError`]; hostile input never panics.
 
+mod clock;
 mod range;
 mod rate;
 mod rounding;
@@ -14,6 +15,7 @@ mod speed;
 mod tick;
 mod timecode;
 
+pub use clock::{format_clock, format_duration, format_short_clock};
 pub use range::{SourceRange, TimeRange};
 pub use rate::FrameRate;
 pub use rounding::Rounding;

@@ -5,7 +5,7 @@ use crate::{
     editor::timeline::{
         Action, Align2, BookmarkView, Context, FontId, FrameRate, Id, MIN_ZOOM_FLOOR,
         RULER_LABEL_SPACING, RULER_TICK_SPACING, Rect, Rounding, State, Tick, TimelineLayout, Vec2,
-        display_time, egui, frame_snap, theme,
+        egui, frame_snap, theme,
         view::{Ink, tr},
     },
     i18n::Text,
@@ -320,8 +320,10 @@ pub(in crate::editor) fn ruler_label(seconds: f64, rate: FrameRate) -> String {
         .ok()
         .and_then(|tick| rate.snap_nearest(tick).ok());
     match tick {
-        Some(tick) => time::format_timecode(tick, rate).unwrap_or_else(|_| display_time(tick)),
-        None => display_time(Tick::ZERO),
+        Some(tick) => {
+            time::format_timecode(tick, rate).unwrap_or_else(|_| time::format_clock(tick))
+        }
+        None => time::format_clock(Tick::ZERO),
     }
 }
 

@@ -2,7 +2,7 @@
 
 use crate::editor::assets::{
     AssetRow, AssetState, Color32, Icon, Locale, MediaKind, SourceAsset, StreamKind, Text,
-    TrackKind, display_time, theme,
+    TrackKind, theme,
 };
 use crate::i18n;
 
@@ -67,7 +67,7 @@ pub(in crate::editor::panels::assets) fn asset_row(
     info.push(type_label);
     info.push(asset.probe().duration.map_or_else(
         || i18n::text(locale, Text::DurationUnknown).to_owned(),
-        display_time,
+        time::format_clock,
     ));
     if let Some(size) = size {
         let size = format_media_size(locale, size);

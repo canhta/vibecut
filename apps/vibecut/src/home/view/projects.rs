@@ -2,7 +2,7 @@
 
 use super::{
     CARD_RADIUS, GRID_BLEED, GRID_GAP, GRID_INSET, ROW_GAP, THUMB, THUMB_RADIUS,
-    widgets::{display_time, line, menu_action, quiet_buttons, semibold, set_author_id},
+    widgets::{line, menu_action, quiet_buttons, semibold, set_author_id},
 };
 use crate::{
     egui,
@@ -695,7 +695,7 @@ fn card(
     } else {
         format!(
             "{} | {}",
-            display_time(entry.duration),
+            time::format_duration(entry.duration),
             i18n::date(locale, entry.created_unix_ms)
         )
     };
