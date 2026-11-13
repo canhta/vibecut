@@ -16,7 +16,7 @@ Usage:
   vibecut-cli media thumbnails <project> --item <id> --pixels-per-second <zoom> [--start <tick> --end <tick>]
   vibecut-cli project new <path>
   vibecut-cli project info <path>
-  vibecut-cli project save-as <path> <new-path>
+  vibecut-cli project save-as <path> <new-path> [--replace]
   vibecut-cli bundle export <project> <bundle-dir>
   vibecut-cli bundle import <bundle-dir> <project-dir>
   vibecut-cli exec <project> <command_id> <json>

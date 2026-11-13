@@ -1081,9 +1081,15 @@ impl Session {
                 let outcome = self.apply(Command::Batch { commands })?;
                 Ok(ControlResult::Edit { outcome })
             }
-            Command::SaveProjectAs { path } => {
+            Command::SaveProjectAs { path, replace } => {
                 self.reject_open_transaction()?;
-                super::publish::save_copy(self.project(), self.metadata(), &path)
+                super::publish::save_copy(
+                    self.project(),
+                    self.metadata(),
+                    &path,
+                    replace,
+                    self.protected_paths(),
+                )
             }
             Command::ExportProjectBundle { path } => {
                 self.reject_open_transaction()?;

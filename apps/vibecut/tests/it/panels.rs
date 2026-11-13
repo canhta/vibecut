@@ -2436,7 +2436,7 @@ fn text_fade_preflight_preserves_focused_and_unfocused_caption_and_properties_dr
         Default::default(),
     )
     .unwrap();
-    saving.save_as(root.path().join("title.vibecut")).unwrap();
+    saving.save_to(root.path().join("title.vibecut")).unwrap();
     h.state_mut().session =
         vibecut::services::lifecycle::EditorSession::Persistent(Box::new(saving));
     let before = h.state().session.project().clone();

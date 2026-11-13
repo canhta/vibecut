@@ -24,8 +24,8 @@ pending persistence operation and close flow. Reopening a canonical path focuses
 existing window. Save As runs the registry command `project.save_as` (a copy under a fresh
 ProjectId at a path that does not exist), reopens the same window on that copy and retires
 the original session with its recovery journal. The window keeps its viewport and lane
-memory; history and playback restart on the copy, and a destination that already exists is
-refused. Opening the source afterwards makes a separate window, and reopening the
+memory; history and playback restart on the copy. The picker confirmed the destination, so
+the command runs with `replace: true`; the project's own file is still refused. Opening the source afterwards makes a separate window, and reopening the
 destination focuses the issuing window. Home
 hosts catalog and startup recovery prompts; each accepted recovery becomes a project
 window. Closing Home hides it until Window > Home; the event loop exits after the last

@@ -350,7 +350,7 @@ impl Autosave {
 
 impl Autosave {
     /// Snapshot of active writer and recovery paths for external publication admission.
-    /// Includes an in-flight Save As destination even while its lease is on a worker.
+    /// Includes an in-flight save-to destination even while its lease is on a worker.
     pub fn protected_export_paths(&self) -> Result<Vec<PathBuf>> {
         let mut paths = vec![self.directory.clone()];
         for path in self

@@ -48,6 +48,32 @@ fn project_new_and_info_round_trip_unicode_space_path() {
         copy.as_os_str(),
     ]);
     assert_eq!(code(&again), 5);
+    // `--replace` is the explicit grant to overwrite; the project's own file is
+    // refused with or without it.
+    let replaced = cli(&[
+        os("project"),
+        os("save-as"),
+        project.as_os_str(),
+        copy.as_os_str(),
+        os("--replace"),
+    ]);
+    assert_eq!(
+        code(&replaced),
+        0,
+        "{}",
+        String::from_utf8_lossy(&replaced.stderr)
+    );
+    assert_eq!(info(&copy)["name"], "Untitled");
+    for flags in [&[][..], &[os("--replace")][..]] {
+        let mut args = vec![
+            os("project"),
+            os("save-as"),
+            project.as_os_str(),
+            project.as_os_str(),
+        ];
+        args.extend_from_slice(flags);
+        assert_eq!(code(&cli(&args)), 5);
+    }
 
     // A bundle round-trips through export and import; the destinations are new.
     let bundle = dir.path().join("gói dự án.vibecutbundle");

@@ -717,7 +717,7 @@ commands! {
     RenameProject, "project.rename", "Rename project", Edit { name: NfcText } => Timeline, serde_json::json!({"name":"Renamed"});
     RestoreProject, "project.restore", "Restore project from trash", SessionControl {} => Library, serde_json::json!({}), grant = Human, lifecycle = Restore;
     SaveProject, "project.save", "Save project", SessionControl {} => Save, serde_json::json!({}), grant = Agent, lifecycle = Save;
-    SaveProjectAs, "project.save_as", "Save project copy", SessionControl { path: std::path::PathBuf } => Timeline, serde_json::json!({"path":"$output/copy.vibecut"}), grant = Human, lifecycle = SaveAs;
+    SaveProjectAs, "project.save_as", "Save project copy", SessionControl { path: std::path::PathBuf, replace: bool } => Timeline, serde_json::json!({"path":"$output/copy.vibecut","replace":false}), grant = Human, lifecycle = SaveAs;
     SetBackground, "project.set_background", "Set canvas background colour", Edit { color: Color } => Timeline, serde_json::json!({"color":[0,0,0,255]});
     SetCanvas, "project.set_canvas", "Set canvas size", Edit { width: u32, height: u32, #[serde(default)] preset: Option<project::AspectPreset> } => Timeline, serde_json::json!({"width":1080,"height":1920,"preset":"9:16"});
     SetFps, "project.set_fps", "Set canvas frame rate", Edit { num: i64, den: i64 } => Timeline, serde_json::json!({"num":30,"den":1});

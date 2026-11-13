@@ -17,7 +17,7 @@ Build with `cargo build -p vibecut-cli` through the [build wrapper](../../../xta
 | `vibecut-cli probe <file>` | Probe a media file and report format, duration and streams |
 | `vibecut-cli project new <path>` | Create an empty project, refusing to replace an existing file |
 | `vibecut-cli project info <path>` | Summary plus optional view metadata under the project writer lease |
-| `vibecut-cli project save-as <path> <new-path>` | Publish a copy under a fresh project identity (plus its view metadata), refusing an existing destination |
+| `vibecut-cli project save-as <path> <new-path> [--replace]` | Publish a copy under a fresh project identity (plus its view metadata); an existing destination is refused unless `--replace` is given, and the project's own file always is |
 | `vibecut-cli bundle export <project> <bundle-dir>` | Write a self-contained directory: project, manifest and hashed media copies; missing media is listed, not an error |
 | `vibecut-cli bundle import <bundle-dir> <project-dir>` | Extract a bundle into a new project directory under a fresh identity; media absent from the bundle is listed for relinking |
 | `vibecut-cli exec <project> <command_id> <json>` | Run one engine command under the project writer lease |

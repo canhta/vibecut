@@ -6,7 +6,7 @@ impl Autosave {
     /// Native path resolution/lease acquisition can block this caller. The journal
     /// precedes the project write. Poll tick until saving() is false; leaving before
     /// acknowledgement is not a successful save boundary.
-    pub fn save_as(&mut self, path: PathBuf) -> Result<()> {
+    pub fn save_to(&mut self, path: PathBuf) -> Result<()> {
         if !path.is_absolute() {
             return Err(Error::Edit(crate::session::EditError::Invalid(
                 "save path must be absolute",
@@ -102,7 +102,7 @@ fn unchanged() -> crate::Outcome {
 impl Autosave {
     pub fn save(&mut self) -> Result<()> {
         let path = self.saved_path.clone().ok_or(Error::SaveAsRequired)?;
-        self.save_as(path)
+        self.save_to(path)
     }
 }
 

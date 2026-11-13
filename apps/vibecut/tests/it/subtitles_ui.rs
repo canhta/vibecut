@@ -237,7 +237,7 @@ fn caption_bank_name_invalidation_precedes_enter_and_blur() {
                     Default::default(),
                 )
                 .unwrap();
-                saving.save_as(root.path().join("saved.vibecut")).unwrap();
+                saving.save_to(root.path().join("saved.vibecut")).unwrap();
                 h.state_mut().session =
                     vibecut::services::lifecycle::EditorSession::Persistent(Box::new(saving));
                 assert!(h.state_mut().activate("subtitles.style.save").is_err());

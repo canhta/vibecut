@@ -346,7 +346,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
                     engine::recovery::Schedule::default(),
                 )
                 .unwrap();
-                autosave.save_as(root.path().join("saved.vibecut")).unwrap();
+                autosave.save_to(root.path().join("saved.vibecut")).unwrap();
                 autosave.flush().unwrap();
                 autosave.apply(typed).unwrap();
                 autosave.flush().unwrap();

@@ -192,7 +192,7 @@ impl Session {
         | Command::BurnSubtitles { path, .. }
         | Command::Snapshot { path, .. }
         | Command::ExportProjectBundle { path }
-        | Command::SaveProjectAs { path }
+        | Command::SaveProjectAs { path, .. }
         | Command::ClipsExport {
             directory: path, ..
         }

@@ -25,9 +25,16 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         "new" => project_new(one_path(rest, "usage: vibecut-cli project new <path>")?),
         "info" => project_info(one_path(rest, "usage: vibecut-cli project info <path>")?),
         "save-as" => {
-            let (source, destination) =
-                two_paths(rest, "usage: vibecut-cli project save-as <path> <new-path>")?;
-            project_save_as(context, source, destination)
+            let replace = rest.iter().any(|arg| arg.as_os_str() == "--replace");
+            let rest = rest
+                .into_iter()
+                .filter(|arg| arg.as_os_str() != "--replace")
+                .collect();
+            let (source, destination) = two_paths(
+                rest,
+                "usage: vibecut-cli project save-as <path> <new-path> [--replace]",
+            )?;
+            project_save_as(context, source, destination, replace)
         }
         other => Err(CliError::Usage(format!(
             "unknown project action: {other}; expected new, info or save-as"
@@ -45,13 +52,15 @@ pub(super) fn two_paths(args: Vec<OsString>, usage: &str) -> Result<(PathBuf, Pa
 }
 
 /// Publish a copy of `source` under a fresh identity through `project.save_as`.
-/// The source is untouched and an existing destination is refused.
+/// The source is untouched. An existing destination is refused unless `--replace`
+/// is given; the project's own file is refused either way.
 fn project_save_as(
     context: &Context,
     source: PathBuf,
     destination: PathBuf,
+    replace: bool,
 ) -> Result<Output, CliError> {
-    let params = json!({"path": json_path(&destination)?});
+    let params = json!({"path": json_path(&destination)?, "replace": replace});
     published(
         run_on_project(context, &source, "project.save_as", params)?,
         "saved",
@@ -67,11 +76,16 @@ pub(super) fn run_on_project(
     params: Value,
 ) -> Result<ControlResult, CliError> {
     let mut runner = cli_runner(context.budget()?)?;
+    let protected = vec![
+        project_file.to_path_buf(),
+        project::metadata_path(project_file)?,
+    ];
     let result = run_leased(
         project_file,
         History::Single,
         WritePolicy::Changed,
         |session| {
+            session.protect_paths(protected)?;
             let value = run_command(session, &mut runner, Lent::default(), command, params, true)?;
             Ok(Edit {
                 value,

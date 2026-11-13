@@ -442,7 +442,9 @@ impl Policy for Trusted {
 }
 
 /// Save As: run `project.save_as` on the session, then open the copy it wrote.
-/// History and playback restart on the copy; the original project file is untouched.
+/// The native picker already confirmed the destination, so `replace` is set; the
+/// session's own files are protected and still refused. History and playback
+/// restart on the copy; the original project file is untouched.
 fn save_as_copy(
     autosave: &mut Autosave,
     path: &Path,
@@ -463,9 +465,12 @@ fn save_as_copy(
         persistence.clone(),
         Arc::new(SystemClock::default()),
     )?;
+    let protected = autosave.protected_export_paths()?;
+    autosave.session_mut().protect_paths(protected)?;
     let published = autosave.session_mut().control_command(
         Command::SaveProjectAs {
             path: path.to_owned(),
+            replace: true,
         },
         Caller {
             principal: "vibecut-desktop",

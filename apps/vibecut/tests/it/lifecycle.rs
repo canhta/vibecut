@@ -420,6 +420,23 @@ fn failed_create_and_refused_save_as_keep_the_editor_recoverable() {
     idle(&mut app);
     assert!(app.error().is_none(), "{:?}", app.error());
     assert!(path.exists());
+    // The picker confirmed an existing destination: Save As replaces it. The
+    // project's own file is refused, and nothing changes on refusal.
+    let existing = root.path().join("existing.vibecut");
+    std::fs::write(&existing, b"stale").unwrap();
+    app.persist(Some(path.clone()), false, false, false)
+        .unwrap();
+    idle(&mut app);
+    assert!(
+        app.error().is_some(),
+        "Save As onto the open file is refused"
+    );
+    assert!(app.focused_editor().is_some());
+    app.persist(Some(existing.clone()), false, false, false)
+        .unwrap();
+    idle(&mut app);
+    assert!(app.error().is_none(), "{:?}", app.error());
+    assert!(project::load(&existing).is_ok());
 }
 
 #[test]

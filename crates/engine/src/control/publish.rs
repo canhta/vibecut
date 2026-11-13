@@ -4,14 +4,31 @@ use crate::session::wire::ControlResult;
 use project::{Metadata, Project, WriterLease, bundle};
 use std::path::Path;
 
-/// Write a copy of `project` under a fresh identity at a path that does not yet
-/// exist, with its view metadata. The open project and its lease are untouched.
+/// Write a copy of `project` under a fresh identity, with its view metadata. An
+/// existing destination is refused unless `replace` is set, in which case the
+/// writer lease publishes over it atomically. The open project's own files
+/// (`protected`, including aliases) are never a destination. The open project and
+/// its lease are untouched.
 pub(super) fn save_copy(
     project: &Project,
     metadata: &Metadata,
     path: &Path,
+    replace: bool,
+    protected: &[std::path::PathBuf],
 ) -> Result<ControlResult> {
+    let canonical = std::fs::canonicalize(path).ok();
+    if protected.iter().any(|own| {
+        own == path
+            || canonical
+                .as_ref()
+                .is_some_and(|target| std::fs::canonicalize(own).ok().as_ref() == Some(target))
+    }) {
+        return Err(EngineError::Edit(crate::EditError::Invalid(
+            "save destination is the open project",
+        )));
+    }
     match std::fs::symlink_metadata(path) {
+        Ok(_) if replace => {}
         Ok(_) => {
             return Err(EngineError::Edit(crate::EditError::Invalid(
                 "save destination exists",
