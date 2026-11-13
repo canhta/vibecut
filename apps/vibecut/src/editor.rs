@@ -19,12 +19,11 @@ pub use assets::captions::{Inspection as SubtitlesInspection, Subtitles};
 pub use assets::effects::{
     EffectPreviewStatus, EffectPreviews, PREVIEW_SCALE, PREVIEW_SIZE, SETTLE_BUDGET,
 };
-pub use assets::music::{Music, MusicMode, MusicProblem, MusicView};
-pub use assets::sounds::{Client, Sounds, SoundsMode, SoundsProblem, SoundsView};
+pub use assets::music::{Music, MusicMode, MusicProblem};
+pub use assets::sounds::{Client, Sounds, SoundsMode, SoundsProblem};
 pub use assets::{
-    AssetState, AssetsTab, ImportEvent, ImportFailure, ImportProbe, ImportQueue, MAX_IMPORT_FILES,
-    MediaKind, MediaSort, MediaSortKey, MediaSortOrder, MediaView, ThumbnailOutcome,
-    ThumbnailSource,
+    AssetState, AssetsTab, ImportEvent, ImportProbe, ImportQueue, MAX_IMPORT_FILES, MediaSort,
+    MediaSortKey, MediaSortOrder, MediaView, ThumbnailSource,
 };
 pub use panels::player::{PREVIEW_SNAP_PIXELS, PreviewAxis, PreviewGuide, TextCaret};
 pub use state::{
