@@ -1,6 +1,6 @@
 # write
 
-Frame encoding and container writing for one export.
+Frame encoding and container writing for an export or a preview proxy.
 
 ## Encoding
 
@@ -31,3 +31,7 @@ Media Foundation always receives CPU NV12 input, including with its hardware enc
 `Muxer` writes MP4, MOV and WebM over a seekable `MuxSink` (plain File or the project's bounded streaming writer), accepts stream-copy or encoded parameters, rescales timestamps and propagates trailer and fsync errors. Write to a temporary output and promote it only after successful `finish`; render and engine own cancellation, final-file replacement and restart policy. Packet buffers are shared by reference and only metadata is rescaled into the final mux time base. FFmpeg owns codec padding and edit-list creation.
 
 `Container::from_extension` resolves MP4, MOV and WebM case-insensitively for CLI and control requests; render takes an explicit container setting.
+
+## Proxies
+
+`write_proxy(source, output, limits, cancel, progress)` reads the first video stream through `VideoReader` and writes constant-rate H.264 with `VideoEncoderSettings::intra_only` (a GOP of one, so every picture is a keyframe) in an MP4 with no audio track; preview audio keeps reading the source. The raster is `proxy_size`: the source aspect fitted to `limits.max_edge`, even, never enlarged; the app asks for `PROXY_MAX_EDGE` (960), an engineering default that is not a measured reference value. Frames sit on the source's own rate grid at their source timestamps: a source frame is repeated on every grid instant before its successor and a faster source is thinned, so the proxy frame at a time is the source frame at that time. Source frames are copied to CPU before they wait for the next one. The output is refused with `TooLarge` past `limits.max_bytes` or two million frames, and cancellation, HDR, high bit depth and an unknown frame rate return their typed errors. The caller owns the temporary path, promotion and cleanup after an error. The frame-tolerance bound is recorded in `tests/it/pipeline.rs` (`PROXY_FRAME_TOLERANCE`) and is an engineering bound until a first run is recorded.
