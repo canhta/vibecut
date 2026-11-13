@@ -99,6 +99,7 @@ impl Editor {
                 assets::Action::MusicCancelCache => self.music_cancel_cache(),
                 assets::Action::MusicRetry => self.music_retry(),
                 assets::Action::MusicRetryAdd => self.music_retry_add(),
+                assets::Action::LibraryRetry(store) => self.request_library_reopen(store),
                 assets::Action::MusicCredits => {
                     let copied = crate::i18n::text(
                         self.preferences.locale,

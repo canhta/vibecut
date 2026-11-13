@@ -52,6 +52,11 @@ pub(in crate::editor) struct State {
     /// Sounds tab: the presentation owner and the add target directory.
     pub(in crate::editor) sounds: Option<super::sounds::Sounds>,
     pub(in crate::editor) sound_media_dir: Option<PathBuf>,
+    /// Why the Sounds and Music stores did not open, shown with a Retry row.
+    pub(in crate::editor) sounds_open: Option<super::sounds::LibraryProblem>,
+    pub(in crate::editor) music_open: Option<super::sounds::LibraryProblem>,
+    /// Stores a section asked the frame to re-open; drained by the lending owner.
+    pub(in crate::editor) library_reopens: Vec<super::sounds::LibraryStore>,
     pub(super) sounds_mode: super::sounds::SoundsMode,
     pub(super) sounds_commercial: bool,
     pub(in crate::editor) audio_section: super::AudioSection,
@@ -110,6 +115,9 @@ impl Default for State {
             transition_drag: None,
             sounds: None,
             sound_media_dir: None,
+            sounds_open: None,
+            music_open: None,
+            library_reopens: Vec::new(),
             sounds_mode: super::sounds::SoundsMode::Discover,
             sounds_commercial: true,
             audio_section: super::AudioSection::Sounds,

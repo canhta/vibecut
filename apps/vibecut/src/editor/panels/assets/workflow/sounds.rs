@@ -18,6 +18,7 @@ impl State {
     ) -> Result<()> {
         let sounds = Sounds::new(library, desk.editor().playback.budget().clone())?;
         self.sounds = Some(sounds);
+        self.sounds_open = None;
         Ok(())
     }
 

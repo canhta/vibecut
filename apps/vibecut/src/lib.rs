@@ -17,7 +17,7 @@ pub use editor::properties::{ElementKind, PropertiesTab, shared_fields};
 pub use editor::{
     AppCommand, AssetsTab, Client, CropAspect, CropInspection, Editor, EffectPreviewStatus,
     EffectPreviews, ImportEvent, ImportProbe, ImportQueue, Inspection, KeyframeSelection,
-    MAX_IMPORT_FILES, MaskPointSelection, MediaSort, MediaSortKey, MediaSortOrder, MediaView,
+    LibraryProblem, LibraryStore, MAX_IMPORT_FILES, MaskPointSelection, MediaSort, MediaSortKey, MediaSortOrder, MediaView,
     Music, MusicMode, MusicProblem, PREVIEW_SCALE, PREVIEW_SIZE, PREVIEW_SNAP_PIXELS, PreviewAxis,
     PreviewGuide, PreviewZoom, SETTLE_BUDGET, SelectionScope, ShortcutTab, Sounds, SoundsMode,
     SoundsProblem, Subtitles, SubtitlesInspection, TextCaret, ThumbnailSource, WidgetState,

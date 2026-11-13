@@ -105,6 +105,43 @@ impl SoundsProblem {
     }
 }
 
+/// Why a library store did not open. The typed cause stays with the lending
+/// owner; the section shows only this reason.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LibraryProblem {
+    /// Another writer holds the library's lease.
+    Busy,
+    /// The library file is damaged or unsupported.
+    Corrupt,
+    /// Reading or creating the library files failed.
+    Io,
+}
+
+impl LibraryProblem {
+    pub fn from_sound(error: &SoundError) -> Self {
+        match error {
+            SoundError::Project(project::Error::Busy) => Self::Busy,
+            SoundError::LibraryCorrupt => Self::Corrupt,
+            _ => Self::Io,
+        }
+    }
+
+    pub fn from_music(error: &engine::MusicError) -> Self {
+        match error {
+            engine::MusicError::Project(project::Error::Busy) => Self::Busy,
+            engine::MusicError::LibraryCorrupt => Self::Corrupt,
+            _ => Self::Io,
+        }
+    }
+}
+
+/// A library section that can ask the lending owner to open its store again.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LibraryStore {
+    Sounds,
+    Music,
+}
+
 /// A provider client plus its transport. Tests inject a fixture transport.
 pub struct Client {
     token: Token,

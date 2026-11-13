@@ -1,5 +1,6 @@
 //! Renders the Audio tab's Music section: chips, results and saved tracks.
 use super::super::AudioSection;
+use super::super::sounds::LibraryStore;
 use super::super::sounds::music::{MusicMode, MusicProblem, MusicView};
 use super::{
     Action, Align2, Color32, FontId, Icon, Id, Rect, Text, Vec2, View, egui, icons, theme,
@@ -106,12 +107,15 @@ impl View<'_> {
         let credits_failed = self.cx.music_credits_failed;
         let Some(view) = self.cx.music.clone() else {
             self.music_credits(ui, &credits, credits_failed);
-            self.empty(
-                ui,
-                Icon::MusicNotes,
-                Text::MusicUnavailable,
-                crate::kit::Tone::Quiet,
-            );
+            match self.state.music_open {
+                Some(problem) => self.library_open_failure(ui, LibraryStore::Music, problem),
+                None => self.empty(
+                    ui,
+                    Icon::MusicNotes,
+                    Text::MusicUnavailable,
+                    crate::kit::Tone::Quiet,
+                ),
+            }
             return;
         };
         let dark = self.cx.preferences.dark;

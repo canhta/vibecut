@@ -1,5 +1,5 @@
 //! Renders the Sounds tab's provider results, saved library and states.
-use super::super::sounds::{SoundsMode, SoundsProblem, SoundsView};
+use super::super::sounds::{LibraryProblem, LibraryStore, SoundsMode, SoundsProblem, SoundsView};
 use super::{
     Action, Align2, AssetsTab, Color32, FontId, Icon, Id, Rect, Text, Vec2, View, egui, icons,
     theme,
@@ -43,12 +43,15 @@ impl View<'_> {
 
     pub(super) fn sounds(&mut self, ui: &mut egui::Ui) {
         let Some(view) = self.cx.sounds.clone() else {
-            self.empty(
-                ui,
-                Icon::MusicNotes,
-                Text::SoundsUnavailable,
-                crate::kit::Tone::Quiet,
-            );
+            match self.state.sounds_open {
+                Some(problem) => self.library_open_failure(ui, LibraryStore::Sounds, problem),
+                None => self.empty(
+                    ui,
+                    Icon::MusicNotes,
+                    Text::SoundsUnavailable,
+                    crate::kit::Tone::Quiet,
+                ),
+            }
             return;
         };
         let area = ui.available_rect_before_wrap();
@@ -447,6 +450,37 @@ impl View<'_> {
                 && self.icon(ui, id, Icon::ArrowClockwise, Text::SoundsRetry, false)
             {
                 self.actions.push(Action::SoundsRetry);
+            }
+        });
+    }
+
+    /// A library store that did not open: its reason and a Retry row, in place of
+    /// the section's list. Retry asks the lending owner to open the store again.
+    pub(super) fn library_open_failure(
+        &mut self,
+        ui: &mut egui::Ui,
+        store: LibraryStore,
+        problem: LibraryProblem,
+    ) {
+        let dark = self.cx.preferences.dark;
+        let (retry_id, retry_label) = match store {
+            LibraryStore::Sounds => ("sounds.open.retry", Text::SoundsRetry),
+            LibraryStore::Music => ("music.open.retry", Text::MusicRetry),
+        };
+        let reason = match problem {
+            LibraryProblem::Busy => Text::LibraryBusy,
+            LibraryProblem::Corrupt => Text::LibraryCorrupt,
+            LibraryProblem::Io => Text::LibraryIo,
+        };
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            ui.label(
+                egui::RichText::new(self.tr(reason))
+                    .size(theme::type_size::BODY)
+                    .color(theme::error_text(dark)),
+            );
+            if self.icon(ui, retry_id, Icon::ArrowClockwise, retry_label, true) {
+                self.actions.push(Action::LibraryRetry(store));
             }
         });
     }
