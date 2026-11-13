@@ -45,10 +45,7 @@ pub enum Dispatch {
     Blocked(BlockedReason),
     NoMatch,
     FellThrough(&'static str),
-    Action {
-        action: &'static str,
-        chord: Chord,
-    },
+    Action { action: &'static str, chord: Chord },
 }
 
 /// Opaque custody token handed only to the text reader service.

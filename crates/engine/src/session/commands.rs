@@ -340,53 +340,50 @@ impl ItemParamPatch {
             (
                 Self::AudioGain(_) | Self::AudioMuted(_),
                 ItemParams::Audio(_) | ItemParams::Video(_)
-            ) | (Self::Crop(_) | Self::ReduceNoise(_) | Self::Fit(_), ItemParams::Video(_))
-                | (
-                    Self::TextContent(_)
-                        | Self::TextFont(_)
-                        | Self::TextWeight(_)
-                        | Self::TextItalic(_)
-                        | Self::TextLetterSpacing(_)
-                        | Self::TextLineHeight(_)
-                        | Self::TextSize(_)
-                        | Self::TextColor(_)
-                        | Self::TextBackground(_)
-                        | Self::TextBackgroundColor(_)
-                        | Self::TextBackgroundPaddingX(_)
-                        | Self::TextBackgroundPaddingY(_)
-                        | Self::TextBackgroundOffsetX(_)
-                        | Self::TextBackgroundOffsetY(_)
-                        | Self::TextBackgroundCornerRadius(_)
-                        | Self::TextAlign(_)
-                        | Self::TextDecoration(_)
-                        | Self::TextStroke(_)
-                        | Self::TextShadow(_)
-                        | Self::TextGlow(_),
-                    ItemParams::Text(_)
+            ) | (
+                Self::Crop(_) | Self::ReduceNoise(_) | Self::Fit(_),
+                ItemParams::Video(_)
+            ) | (
+                Self::TextContent(_)
+                    | Self::TextFont(_)
+                    | Self::TextWeight(_)
+                    | Self::TextItalic(_)
+                    | Self::TextLetterSpacing(_)
+                    | Self::TextLineHeight(_)
+                    | Self::TextSize(_)
+                    | Self::TextColor(_)
+                    | Self::TextBackground(_)
+                    | Self::TextBackgroundColor(_)
+                    | Self::TextBackgroundPaddingX(_)
+                    | Self::TextBackgroundPaddingY(_)
+                    | Self::TextBackgroundOffsetX(_)
+                    | Self::TextBackgroundOffsetY(_)
+                    | Self::TextBackgroundCornerRadius(_)
+                    | Self::TextAlign(_)
+                    | Self::TextDecoration(_)
+                    | Self::TextStroke(_)
+                    | Self::TextShadow(_)
+                    | Self::TextGlow(_),
+                ItemParams::Text(_)
+            ) | (
+                Self::GraphicFill(_) | Self::GraphicStroke(_),
+                ItemParams::Overlay(_) | ItemParams::Graphic(_)
+            ) | (
+                Self::GraphicStrokeWidth(_) | Self::GraphicStrokeAlign(_),
+                ItemParams::Graphic(_)
+            ) | (
+                Self::GraphicCornerRadius(_),
+                ItemParams::Graphic(
+                    project::GraphicParams::Rectangle { .. }
+                        | project::GraphicParams::Polygon { .. }
                 )
-                | (
-                    Self::GraphicFill(_) | Self::GraphicStroke(_),
-                    ItemParams::Overlay(_) | ItemParams::Graphic(_)
-                )
-                | (
-                    Self::GraphicStrokeWidth(_) | Self::GraphicStrokeAlign(_),
-                    ItemParams::Graphic(_)
-                )
-                | (
-                    Self::GraphicCornerRadius(_),
-                    ItemParams::Graphic(
-                        project::GraphicParams::Rectangle { .. }
-                            | project::GraphicParams::Polygon { .. }
-                    )
-                )
-                | (
-                    Self::GraphicSides(_),
-                    ItemParams::Graphic(project::GraphicParams::Polygon { .. })
-                )
-                | (
-                    Self::GraphicPoints(_) | Self::GraphicDepth(_),
-                    ItemParams::Graphic(project::GraphicParams::Star { .. })
-                )
+            ) | (
+                Self::GraphicSides(_),
+                ItemParams::Graphic(project::GraphicParams::Polygon { .. })
+            ) | (
+                Self::GraphicPoints(_) | Self::GraphicDepth(_),
+                ItemParams::Graphic(project::GraphicParams::Star { .. })
+            )
         )
     }
     pub(crate) fn validate(&self) -> crate::session::Result<()> {
@@ -897,8 +894,8 @@ commands! {
     RecoverAudio, "timeline.recover_audio", "Recover source audio", Edit { items: Vec<ItemId> } => Timeline, serde_json::json!({"items":[5]}), available = VideoItem;
     RemoveFillers, "timeline.remove_fillers", "Remove reviewed fillers", Edit { ids: Vec<NfcText>, confirm_edited: bool } => Words, serde_json::json!({"ids":["filler:4:cue-1:0"],"confirm_edited":false}), available = CaptionItem;
     RemovePauses, "timeline.remove_pauses", "Remove reviewed pauses", Edit { spans: Vec<OutputSpan>, crossfade_ms: i64 } => Timeline, serde_json::json!({"spans":[{"start":63504000000_i64,"end":127008000000_i64}],"crossfade_ms":20});
-    SetItemsBackground, "timeline.set_background", "Set clip background", Edit { items: Vec<ItemId>, background: project::ClipBackground } => Timeline, serde_json::json!({"items":[5],"background":{"kind":"blur","intensity":200}}), available = UnlockedItem;
     ReplaceMedia, "timeline.replace_media", "Replace media", Edit { items: Vec<ItemId>, asset: AssetId } => Timeline, serde_json::json!({"items":[5],"asset":98}), available = UnlockedItem;
+    SetItemsBackground, "timeline.set_background", "Set clip background", Edit { items: Vec<ItemId>, background: project::ClipBackground } => Timeline, serde_json::json!({"items":[5],"background":{"kind":"blur","intensity":200}}), available = UnlockedItem;
     SetItemsFlipped, "timeline.set_flipped", "Flip items", Edit { items: Vec<ItemId>, axis: project::FlipAxis, flipped: bool } => Timeline, serde_json::json!({"items":[1],"axis":"horizontal","flipped":true}), available = UnlockedItem;
     SetItemsHidden, "timeline.set_hidden", "Hide items", Edit { items: Vec<ItemId>, hidden: bool } => Timeline, serde_json::json!({"items":[1],"hidden":true}), available = UnlockedItem;
     SetItemField, "timeline.set_item_param", "Set item parameter", Edit { item: ItemId, patch: ItemParamPatch } => Timeline, serde_json::json!({"item":1,"patch":{"field":"blendMode","value":"multiply"}}), available = UnlockedItem;

@@ -1,7 +1,9 @@
 //! Freezes one video item's frame at the playhead as a held still.
 use crate::args::{CliError, parse_f64, parse_u64, seconds_ticks, utf8};
 use crate::output::{Output, json_path};
-use crate::session::{Context, Edit, History, Lent, WritePolicy, cli_runner, run_command, run_leased};
+use crate::session::{
+    Context, Edit, History, Lent, WritePolicy, cli_runner, run_command, run_leased,
+};
 use engine::CreatedId;
 use engine::control::ControlResult;
 use serde_json::json;
@@ -25,10 +27,9 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
             "--at" => at = Some(parse_f64(args.next(), "--at")?),
             "--duration" => duration = Some(parse_f64(args.next(), "--duration")?),
             "--dir" => {
-                dir = Some(PathBuf::from(
-                    args.next()
-                        .ok_or_else(|| CliError::Usage("--dir requires a folder".into()))?,
-                ));
+                dir = Some(PathBuf::from(args.next().ok_or_else(|| {
+                    CliError::Usage("--dir requires a folder".into())
+                })?));
             }
             "--help" | "-h" => {
                 return Ok(Output::new(

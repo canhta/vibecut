@@ -1,8 +1,8 @@
 //! Applies text commands to a candidate project.
 use super::{
-    Arc, BTreeMap, BTreeSet, ClipboardRefs, Command, CreatedId, EditError, Item, ItemId, ItemParams,
-    NewItem, Placement, ProjectData, Result, SourceRange, Tick, TrackId, TrackKind, TrackPlacement,
-    TrimSources, apply, item, set_range,
+    Arc, BTreeMap, BTreeSet, ClipboardRefs, Command, CreatedId, EditError, Item, ItemId,
+    ItemParams, NewItem, Placement, ProjectData, Result, SourceRange, Tick, TrackId, TrackKind,
+    TrackPlacement, TrimSources, apply, item, set_range,
 };
 
 /// Change only the opt-in. Timing, copied styles and authoritative trim sources stay intact.
@@ -688,7 +688,9 @@ fn cut_selected_words(
     }
     refuse_locked(&data, |item| {
         let end = item.end()?;
-        Ok(spans.iter().any(|span| item.start < span.end() && span.start() < end))
+        Ok(spans
+            .iter()
+            .any(|span| item.start < span.end() && span.start() < end))
     })?;
     super::clips::remove_output_ranges(
         data,
@@ -904,10 +906,13 @@ fn refuse_locked(
 }
 
 fn item_track(data: &ProjectData, id: ItemId) -> Option<TrackId> {
-    data.scene()
-        .timeline
-        .iter()
-        .find_map(|track| track.items.iter().any(|item| item.id == id).then_some(track.id))
+    data.scene().timeline.iter().find_map(|track| {
+        track
+            .items
+            .iter()
+            .any(|item| item.id == id)
+            .then_some(track.id)
+    })
 }
 
 fn item_in_other_scene(data: &ProjectData, id: ItemId) -> bool {

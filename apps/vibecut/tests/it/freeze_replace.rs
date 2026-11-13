@@ -165,7 +165,10 @@ fn clip_context_menu_replace_reaches_the_picker_seam_and_replaces_the_source() {
         Some(video),
         "Replace media is waiting for the picker"
     );
-    harness.state_mut().replace_picked_file(video, other).unwrap();
+    harness
+        .state_mut()
+        .replace_picked_file(video, other)
+        .unwrap();
     assert_eq!(source_of(harness.state(), video), Some(AssetId(3)));
     harness.state_mut().activate("edit.undo").unwrap();
     assert_eq!(harness.state().session.project(), &before);

@@ -356,8 +356,7 @@ impl<'a> Renderer<'a> {
                 };
                 // Noise reduction is a per-item switch whose pass runs before every
                 // colour effect, on this item's own layer.
-                let reduce_noise =
-                    matches!(&item.content, ItemParams::Video(p) if p.reduce_noise);
+                let reduce_noise = matches!(&item.content, ItemParams::Video(p) if p.reduce_noise);
                 let _plan = if reduce_noise || item.effects.iter().any(|effect| effect.enabled) {
                     Some(hooks.reserve(
                         MemoryKind::Compositor,

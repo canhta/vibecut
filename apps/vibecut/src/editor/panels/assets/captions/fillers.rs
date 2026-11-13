@@ -148,13 +148,8 @@ impl Subtitles {
                             Text::FillersWorking
                         };
                         ui.label(c.tr(waiting));
-                        cancel = c.button(
-                            ui,
-                            "subtitles.fillers.cancel",
-                            Text::Cancel,
-                            Icon::X,
-                            true,
-                        );
+                        cancel =
+                            c.button(ui, "subtitles.fillers.cancel", Text::Cancel, Icon::X, true);
                     });
                 }
                 ui.add_enabled_ui(idle, |ui| {

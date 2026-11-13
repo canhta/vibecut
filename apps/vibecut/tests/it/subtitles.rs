@@ -2830,10 +2830,17 @@ fn filler_cut_list_removes_only_checked_candidates_as_one_undo_step() {
         "chào ừm",
         "unchecked candidates keep their words"
     );
-    assert!(filler_toggles(&h).is_empty(), "the list clears after a removal");
+    assert!(
+        filler_toggles(&h).is_empty(),
+        "the list clears after a removal"
+    );
     h.get_by_label("Removed 1");
     click(&mut h, "subtitles.fillers.find");
-    assert_eq!(filler_toggles(&h).len(), 2, "a fresh read finds what remains");
+    assert_eq!(
+        filler_toggles(&h).len(),
+        2,
+        "a fresh read finds what remains"
+    );
 
     h.state_mut().session.undo().unwrap();
     h.run_steps(3);
@@ -3018,13 +3025,21 @@ fn filler_cut_list_finds_with_ai_only_after_the_upload_is_approved() {
     click(&mut h, "subtitles.fillers.ai");
     wait(&mut h, approval_sheet_open);
     h.get_by_label("Approve the upload to continue.");
-    assert_eq!(calls.load(Ordering::SeqCst), 0, "nothing is sent before approval");
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        0,
+        "nothing is sent before approval"
+    );
     assert_eq!(h.state().session.project(), &before);
 
     click(&mut h, "subtitles.consent.approve");
     wait(&mut h, subtitles_idle);
     assert_eq!(calls.load(Ordering::SeqCst), 1);
-    assert_eq!(filler_toggles(&h).len(), 3, "the classified words start checked");
+    assert_eq!(
+        filler_toggles(&h).len(),
+        3,
+        "the classified words start checked"
+    );
 
     let history = h.state().session.history_len().0;
     click(&mut h, "subtitles.fillers.apply");
@@ -3301,7 +3316,13 @@ fn transcript_cues(edited_first: bool) -> captions::CueTrack {
     }
 }
 
-fn verified_english_cue(id: &str, start: i64, text: &str, split: usize, edited: bool) -> captions::Cue {
+fn verified_english_cue(
+    id: &str,
+    start: i64,
+    text: &str,
+    split: usize,
+    edited: bool,
+) -> captions::Cue {
     let source = lang("en");
     let at = |seconds: i64| Tick(seconds * TICKS_PER_SECOND);
     let left = time::SourceRange::new(at(start), at(start + 1)).unwrap();

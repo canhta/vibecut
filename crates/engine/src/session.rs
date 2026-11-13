@@ -20,8 +20,7 @@ pub use commands::{
     AnimationPreset, AnimationSlot, CaptionPreset, CaptionStyleApply, ClipAnimations, Command,
     CommandKind, CommandSpec, CreatedId, CutTarget, Effect, EmphasisMode, Example, Fixture,
     ItemParamPatch, ItemPlacement, KeyframeRef, Move, NewItem, Outcome, Placement, TrackPlacement,
-    TrimEdge,
-    declaration_order_error, lifecycle, registry,
+    TrimEdge, declaration_order_error, lifecycle, registry,
 };
 mod edit;
 pub(crate) mod filler;

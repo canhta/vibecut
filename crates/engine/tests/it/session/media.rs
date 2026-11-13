@@ -270,7 +270,11 @@ fn replace_keeps_trims_timing_and_params_and_undoes_exactly() {
     assert_eq!(session.history_len(), (history.0 + 1, 0));
     let changed = session.project().clone();
     session.undo().unwrap();
-    assert_eq!(session.project(), &before, "undo restores the exact project");
+    assert_eq!(
+        session.project(),
+        &before,
+        "undo restores the exact project"
+    );
     session.redo().unwrap();
     assert_eq!(session.project(), &changed, "redo restores the replacement");
 }

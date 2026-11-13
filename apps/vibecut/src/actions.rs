@@ -330,24 +330,23 @@ impl ActionSpec {
         !matches!(
             self.target,
             ActionTarget::Ui {
-                    action: UiAction::RenameScene
-                        | UiAction::SceneRow
-                        | UiAction::SelectItem
-                        | UiAction::SubtitleCue
-                        | UiAction::RevealMedia
-                        | UiAction::PreviewZoomPreset
-                        | UiAction::Seek
-                        | UiAction::SetPreviewZoom
-                        | UiAction::SetPreference
-                        | UiAction::SetKeybinding
-                        | UiAction::ResetKeybindings
-                        | UiAction::ImportKeybindings
-                        | UiAction::ExportKeybindings,
-                    ..
-                }
+                action: UiAction::RenameScene
+                    | UiAction::SceneRow
+                    | UiAction::SelectItem
+                    | UiAction::SubtitleCue
+                    | UiAction::RevealMedia
+                    | UiAction::PreviewZoomPreset
+                    | UiAction::Seek
+                    | UiAction::SetPreviewZoom
+                    | UiAction::SetPreference
+                    | UiAction::SetKeybinding
+                    | UiAction::ResetKeybindings
+                    | UiAction::ImportKeybindings
+                    | UiAction::ExportKeybindings,
+                ..
+            }
         )
     }
-
 }
 
 /// Every key, menu and button action in the desktop app.

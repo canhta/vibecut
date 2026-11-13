@@ -13,7 +13,11 @@ pub(super) struct Piece<'a> {
 /// Split `segment` at the boundaries of the ordered, disjoint `shots`. Stretches
 /// the analysis does not cover are pieces without evidence. A piece shorter
 /// than `min` is absorbed by its neighbour, so no piece lasts under a frame.
-pub(super) fn split<'a>(segment: SourceRange, shots: &'a [ShotAnalysis], min: Tick) -> Vec<Piece<'a>> {
+pub(super) fn split<'a>(
+    segment: SourceRange,
+    shots: &'a [ShotAnalysis],
+    min: Tick,
+) -> Vec<Piece<'a>> {
     let mut pieces = Vec::new();
     let mut cursor = segment.start();
     let mut push = |start: Tick, end: Tick, evidence: Option<Evidence<'a>>| {

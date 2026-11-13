@@ -241,7 +241,10 @@ fn freeze_still_pixels_equal_the_render_frame_at_the_playhead_and_is_named_by_ha
     let asset = still_item(&s, still).source_asset.unwrap();
     let path = asset_path(&s, asset);
     let published = std::fs::read(&path).unwrap();
-    assert_eq!(published, rendered_before, "pixels equal the playhead render");
+    assert_eq!(
+        published, rendered_before,
+        "pixels equal the playhead render"
+    );
     let hash = media::ContentHash::from_bytes(&published);
     let hex: String = hash.0.iter().map(|b| format!("{b:02x}")).collect();
     assert_eq!(
@@ -295,10 +298,7 @@ fn freeze_refusals_change_nothing() {
             "refuse-relative",
         ),
         (freeze_params(1, secs(1), 0, root.path()), "refuse-zero"),
-        (
-            freeze_params(1, 0, secs(3), root.path()),
-            "refuse-at-start",
-        ),
+        (freeze_params(1, 0, secs(3), root.path()), "refuse-at-start"),
         (
             freeze_params(1, secs(2), secs(3), root.path()),
             "refuse-at-end",
@@ -307,14 +307,21 @@ fn freeze_refusals_change_nothing() {
             freeze_params(3, secs(1) / 2, secs(3), root.path()),
             "refuse-non-video",
         ),
-        (freeze_params(99, secs(1), secs(3), root.path()), "refuse-missing"),
+        (
+            freeze_params(99, secs(1), secs(3), root.path()),
+            "refuse-missing",
+        ),
     ] {
         let response = send(&mut s, "timeline.freeze_frame", params, key);
         assert!(
             matches!(response.value, ResponseValue::Error(_)),
             "{key}: {response:?}"
         );
-        assert_eq!(project::encode(s.project(), false).unwrap(), before, "{key}");
+        assert_eq!(
+            project::encode(s.project(), false).unwrap(),
+            before,
+            "{key}"
+        );
         assert_eq!(s.history_len(), history, "{key}");
         assert_eq!(s.revision(), revision, "{key}");
     }
@@ -356,7 +363,11 @@ fn frozen_still_survives_reopen_with_a_relink_state_when_its_file_is_gone() {
     let path = asset_path(&s, asset);
     let bytes = project::encode(s.project(), false).unwrap();
     let loaded = project::decode(&bytes).unwrap();
-    assert_eq!(project::encode(&loaded.project, false).unwrap(), bytes, "round trip");
+    assert_eq!(
+        project::encode(&loaded.project, false).unwrap(),
+        bytes,
+        "round trip"
+    );
     std::fs::remove_file(&path).unwrap();
     let reopened = project::decode(&bytes).unwrap();
     let record = reopened
@@ -366,6 +377,10 @@ fn frozen_still_survives_reopen_with_a_relink_state_when_its_file_is_gone() {
         .iter()
         .find(|record| record.id() == asset)
         .unwrap();
-    assert_eq!(record.path(), path.as_path(), "relink keeps the recorded path");
+    assert_eq!(
+        record.path(),
+        path.as_path(),
+        "relink keeps the recorded path"
+    );
     assert!(!record.path().exists(), "missing file is the relink state");
 }

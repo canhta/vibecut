@@ -4,8 +4,8 @@ mod audio_file;
 mod encode;
 mod gif;
 mod mux;
-mod quantize;
 mod proxy;
+mod quantize;
 
 pub use audio_file::{AUDIO_FILE_BLOCK, AudioFileWriter};
 pub use encode::{

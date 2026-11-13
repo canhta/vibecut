@@ -192,93 +192,94 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ctx: &egui::Context) -> 
     let modal = egui::Modal::new(egui::Id::unique("voiceover.dialog"))
         .frame(crate::kit::dialog_frame(ctx))
         .show(ctx, |ui| {
-        crate::kit::dialog_title(ui, tr(Text::ActionVoiceoverOpen));
-        ui.horizontal(|ui| {
-            ui.label(tr(Text::VoiceoverDevice));
-            ui.add_enabled_ui(!recording, |ui| {
-                let shown = state
-                    .device
-                    .clone()
-                    .unwrap_or_else(|| tr(Text::VoiceoverDefaultInput).to_owned());
-                let combo = egui::ComboBox::from_id_salt(DEVICE_ID)
-                    .selected_text(&shown)
-                    .show_ui(ui, |ui| {
-                        let response = ui.selectable_label(
-                            state.device.is_none(),
-                            tr(Text::VoiceoverDefaultInput),
-                        );
-                        actions.push(Action::Remember(
-                            "voiceover.device.default".into(),
-                            response.clone(),
-                        ));
-                        if response.clicked() {
-                            state.device = None;
-                        }
-                        for (index, name) in state.devices.clone().into_iter().enumerate() {
+            crate::kit::dialog_title(ui, tr(Text::ActionVoiceoverOpen));
+            ui.horizontal(|ui| {
+                ui.label(tr(Text::VoiceoverDevice));
+                ui.add_enabled_ui(!recording, |ui| {
+                    let shown = state
+                        .device
+                        .clone()
+                        .unwrap_or_else(|| tr(Text::VoiceoverDefaultInput).to_owned());
+                    let combo = egui::ComboBox::from_id_salt(DEVICE_ID)
+                        .selected_text(&shown)
+                        .show_ui(ui, |ui| {
                             let response = ui.selectable_label(
-                                state.device.as_deref() == Some(name.as_str()),
-                                name.as_str(),
+                                state.device.is_none(),
+                                tr(Text::VoiceoverDefaultInput),
                             );
                             actions.push(Action::Remember(
-                                format!("voiceover.device.{index}"),
+                                "voiceover.device.default".into(),
                                 response.clone(),
                             ));
                             if response.clicked() {
-                                state.device = Some(name);
+                                state.device = None;
                             }
-                        }
-                    });
-                actions.push(Action::Remember(DEVICE_ID.into(), combo.response));
+                            for (index, name) in state.devices.clone().into_iter().enumerate() {
+                                let response = ui.selectable_label(
+                                    state.device.as_deref() == Some(name.as_str()),
+                                    name.as_str(),
+                                );
+                                actions.push(Action::Remember(
+                                    format!("voiceover.device.{index}"),
+                                    response.clone(),
+                                ));
+                                if response.clicked() {
+                                    state.device = Some(name);
+                                }
+                            }
+                        });
+                    actions.push(Action::Remember(DEVICE_ID.into(), combo.response));
+                });
+            });
+            ui.horizontal(|ui| {
+                ui.label(tr(Text::VoiceoverLevel));
+                let meter = ui.add(
+                    egui::ProgressBar::new(meter_fraction(state.level))
+                        .desired_width(ui.spacing().slider_width),
+                );
+                actions.push(Action::Remember("voiceover.meter".into(), meter));
+            });
+            if let Some(take) = &state.take {
+                let seconds =
+                    take.recorder.frames() as f64 / f64::from(take.recorder.sample_rate());
+                let time = clock(seconds);
+                let label = ui.label(i18n::format(
+                    cx.locale,
+                    Text::VoiceoverRecording,
+                    &[("time", &time)],
+                ));
+                actions.push(Action::Remember("voiceover.time".into(), label));
+            }
+            if let Some(problem) = state.problem {
+                let label = ui.colored_label(crate::kit::error_text(cx.dark), tr(problem.text()));
+                actions.push(Action::Remember("voiceover.problem".into(), label));
+            }
+            ui.horizontal(|ui| {
+                if recording {
+                    let stop = ui.button(tr(Text::VoiceoverStop));
+                    actions.push(Action::Remember("voiceover.stop".into(), stop.clone()));
+                    if stop.clicked() {
+                        actions.push(Action::Stop);
+                    }
+                    let cancel = ui.button(tr(Text::Cancel));
+                    actions.push(Action::Remember("voiceover.cancel".into(), cancel.clone()));
+                    if cancel.clicked() {
+                        actions.push(Action::Cancel);
+                    }
+                } else {
+                    let record = ui.button(tr(Text::VoiceoverRecord));
+                    actions.push(Action::Remember("voiceover.record".into(), record.clone()));
+                    if record.clicked() {
+                        actions.push(Action::Start);
+                    }
+                    let close = ui.button(tr(Text::VoiceoverClose));
+                    actions.push(Action::Remember("voiceover.close".into(), close.clone()));
+                    if close.clicked() {
+                        actions.push(Action::Close);
+                    }
+                }
             });
         });
-        ui.horizontal(|ui| {
-            ui.label(tr(Text::VoiceoverLevel));
-            let meter = ui.add(
-                egui::ProgressBar::new(meter_fraction(state.level))
-                    .desired_width(ui.spacing().slider_width),
-            );
-            actions.push(Action::Remember("voiceover.meter".into(), meter));
-        });
-        if let Some(take) = &state.take {
-            let seconds = take.recorder.frames() as f64 / f64::from(take.recorder.sample_rate());
-            let time = clock(seconds);
-            let label = ui.label(i18n::format(
-                cx.locale,
-                Text::VoiceoverRecording,
-                &[("time", &time)],
-            ));
-            actions.push(Action::Remember("voiceover.time".into(), label));
-        }
-        if let Some(problem) = state.problem {
-            let label = ui.colored_label(crate::kit::error_text(cx.dark), tr(problem.text()));
-            actions.push(Action::Remember("voiceover.problem".into(), label));
-        }
-        ui.horizontal(|ui| {
-            if recording {
-                let stop = ui.button(tr(Text::VoiceoverStop));
-                actions.push(Action::Remember("voiceover.stop".into(), stop.clone()));
-                if stop.clicked() {
-                    actions.push(Action::Stop);
-                }
-                let cancel = ui.button(tr(Text::Cancel));
-                actions.push(Action::Remember("voiceover.cancel".into(), cancel.clone()));
-                if cancel.clicked() {
-                    actions.push(Action::Cancel);
-                }
-            } else {
-                let record = ui.button(tr(Text::VoiceoverRecord));
-                actions.push(Action::Remember("voiceover.record".into(), record.clone()));
-                if record.clicked() {
-                    actions.push(Action::Start);
-                }
-                let close = ui.button(tr(Text::VoiceoverClose));
-                actions.push(Action::Remember("voiceover.close".into(), close.clone()));
-                if close.clicked() {
-                    actions.push(Action::Close);
-                }
-            }
-        });
-    });
     if modal.should_close() {
         actions.push(Action::Close);
     }

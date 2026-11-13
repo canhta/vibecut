@@ -25,7 +25,10 @@ fn project_creation_rename_undo_and_view_state_have_distinct_history() {
         10,
     )
     .unwrap();
-    assert_eq!(fast.project().data().canvas.fps, time::FrameRate::new(60, 1).unwrap());
+    assert_eq!(
+        fast.project().data().canvas.fps,
+        time::FrameRate::new(60, 1).unwrap()
+    );
     session
         .apply(Command::RenameProject {
             name: "Tiếng Việt".into(),

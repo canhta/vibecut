@@ -10,15 +10,22 @@ use std::{path::PathBuf, sync::Arc};
 #[derive(Clone, Copy)]
 pub(super) enum PickerAction {
     Open,
-    Save { leave: bool, close: bool },
+    Save {
+        leave: bool,
+        close: bool,
+    },
     ImportMedia,
     ImportLut,
     ExportClips,
     /// Replace one clip's source with a file the project already holds.
-    ReplaceMedia { item: ItemId },
+    ReplaceMedia {
+        item: ItemId,
+    },
     ExportSave,
     SnapshotSave,
-    KeybindingsImport { replace: bool },
+    KeybindingsImport {
+        replace: bool,
+    },
     KeybindingsExport,
 }
 pub(super) struct Picker {

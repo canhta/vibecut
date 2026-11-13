@@ -110,8 +110,7 @@ pub fn freeze(
                 retime: Default::default(),
                 animations: Default::default(),
                 source_asset: Some(asset),
-                source_range: SourceRange::new(Tick::ZERO, duration)
-                    .map_err(EditError::from)?,
+                source_range: SourceRange::new(Tick::ZERO, duration).map_err(EditError::from)?,
                 start: at,
                 content: ItemParams::Video(VideoParams {
                     source_audio_enabled: false,

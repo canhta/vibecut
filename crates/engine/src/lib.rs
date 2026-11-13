@@ -5,17 +5,17 @@ mod session;
 pub(crate) use session::transitions;
 pub use session::wire::{Failure, JobFailurePolicy};
 pub use session::{
-    AssetUsage, BrandKitError, ChangeSummary, EditError, FontError, Fork, JobTarget, MusicError,
-    Session, SessionError, SoundError,
-};
-pub use session::{
     AnimationPreset, AnimationSlot, Availability, CaptionPreset, CaptionStyleApply,
     ChapterSidecars, ClipAnimations, Command, CommandKind, CommandSpec, CreatedId, CueId,
     CutTarget, DEFAULT_BOOKMARK_COLOR, Effect, EmphasisMode, Example, Fixture, GrantClass,
     ItemClipboard, ItemParamPatch, ItemPasteSource, ItemPlacement, KeyframeClipboard,
-    KeyframePasteSource, KeyframeRef, Lifecycle, Move, NewItem, Outcome, Placement,
-    TrackPlacement, TranscriptCue, TranscriptView, TranscriptWord, TrimEdge, WordId,
-    declaration_order_error, lifecycle, registry,
+    KeyframePasteSource, KeyframeRef, Lifecycle, Move, NewItem, Outcome, Placement, TrackPlacement,
+    TranscriptCue, TranscriptView, TranscriptWord, TrimEdge, WordId, declaration_order_error,
+    lifecycle, registry,
+};
+pub use session::{
+    AssetUsage, BrandKitError, ChangeSummary, EditError, FontError, Fork, JobTarget, MusicError,
+    Session, SessionError, SoundError,
 };
 mod runtime;
 pub use runtime::cache;

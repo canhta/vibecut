@@ -78,7 +78,9 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
                 preset,
                 duration,
                 snapshot,
-            } => commands::set_clip_animation(state, desk, item, (slot, preset, duration), snapshot),
+            } => {
+                commands::set_clip_animation(state, desk, item, (slot, preset, duration), snapshot)
+            }
             Action::ApplyTextPreset {
                 item,
                 preset,

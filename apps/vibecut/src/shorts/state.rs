@@ -1113,9 +1113,9 @@ impl State {
             prepared.data().name.as_str(),
             crate::preferences::DEFAULT_PROJECT_FPS,
         )?
-            .project()
-            .data()
-            .id;
+        .project()
+        .data()
+        .id;
         data.canvas.width = 1080;
         data.canvas.height = 1920;
         data.canvas.preset = Some(project::AspectPreset::Portrait);

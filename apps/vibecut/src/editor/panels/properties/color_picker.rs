@@ -115,9 +115,7 @@ impl ColorTarget {
     pub(crate) fn item(&self) -> Option<ItemId> {
         match self {
             Self::Texts { items, .. } => items.first().copied(),
-            Self::ClipBackground(id) | Self::GraphicFill(id) | Self::GraphicStroke(id) => {
-                Some(*id)
-            }
+            Self::ClipBackground(id) | Self::GraphicFill(id) | Self::GraphicStroke(id) => Some(*id),
             Self::GraphicColor { item, .. }
             | Self::MaskStroke { item, .. }
             | Self::EffectColor { item, .. } => Some(*item),
