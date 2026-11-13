@@ -1,7 +1,7 @@
 //! Downloads one timeline clip through the engine's `export.clip` job.
 use crate::args::{CliError, parse_u64, utf8};
 use crate::output::{Output, json_path, wait_for_job};
-use crate::session::{Context, cli_runner, export_job_key, prepare_project_fonts, same_target};
+use crate::session::{Context, cli_runner, export_job_key, prepare_project_libraries, same_target};
 use engine::ClipExportMode;
 use project::ItemId;
 use serde_json::json;
@@ -52,7 +52,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
             "export output must not replace the project file".into(),
         ));
     }
-    prepare_project_fonts(&project)?;
+    prepare_project_libraries(&project)?;
     let range = engine::clip_export_range(&project, clip)?;
     let key = export_job_key(
         &project,

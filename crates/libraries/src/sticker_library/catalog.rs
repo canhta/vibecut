@@ -98,7 +98,7 @@ pub fn insert_sticker(
     placement: Placement,
     start: Tick,
     duration: Tick,
-) -> Result<Outcome, EditError> {
+) -> std::result::Result<Outcome, EditError> {
     let entry =
         resolve_sticker(store, sticker_id).ok_or(EditError::Invalid("unknown sticker id"))?;
     session.apply(Command::InsertItem {

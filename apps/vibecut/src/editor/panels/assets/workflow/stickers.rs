@@ -6,7 +6,7 @@ use super::State;
 use crate::editor::Port;
 use crate::i18n;
 use engine::jobs::JobState;
-use engine::{ByteBudget, Failure, Placement};
+use engine::{ByteBudget, Placement};
 use libraries::stickers::Recents;
 use std::collections::BTreeSet;
 
@@ -73,9 +73,7 @@ impl State {
     pub(in crate::editor) fn sticker_catalogue(
         &self,
     ) -> Option<&libraries::stickers::StickerStore> {
-        self.sticker_store
-            .as_deref()
-            .or_else(libraries::stickers::native_store)
+        catalogue(self.sticker_store.as_deref())
     }
 
     /// Start the explicit download of one collection. The card shows its licence credit before
@@ -98,10 +96,7 @@ impl State {
         }
         downloads.problem = None;
         let injected = self.sticker_store.clone();
-        let Some(store) = injected
-            .as_deref()
-            .or_else(libraries::stickers::native_store)
-        else {
+        let Some(store) = catalogue(injected.as_deref()) else {
             if let Some(downloads) = self.sticker_downloads.as_mut() {
                 downloads.problem = Some((collection.to_owned(), DownloadProblem::Failed));
             }
@@ -186,5 +181,15 @@ impl State {
         };
         downloads.active = None;
         downloads.problem = ended.map(|problem| (collection, problem));
+    }
+}
+
+/// The injected store when one is set, else the per-user store.
+fn catalogue(
+    injected: Option<&libraries::stickers::StickerStore>,
+) -> Option<&libraries::stickers::StickerStore> {
+    match injected {
+        Some(store) => Some(store),
+        None => libraries::stickers::native_store(),
     }
 }

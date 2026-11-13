@@ -478,7 +478,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let store = empty_store(root.path());
         let ids = |tab| {
-            rows("", tab, false, &[], Locale::En, Some(&store))
+            rows("", tab, false, &[], &[], Locale::En, Some(&store))
                 .offers
                 .into_iter()
                 .map(|offer| offer.collection)
@@ -489,7 +489,7 @@ mod tests {
         assert!(ids(StickerTab::All).is_empty());
         assert!(ids(StickerTab::Flags).is_empty());
 
-        let offer = rows("", StickerTab::Emoji, false, &[], Locale::En, Some(&store))
+        let offer = rows("", StickerTab::Emoji, false, &[], &[], Locale::En, Some(&store))
             .offers
             .remove(0);
         assert!(!offer.author.is_empty() && !offer.license.is_empty());
@@ -497,13 +497,14 @@ mod tests {
         assert!(offer.bytes > 0);
 
         // Nothing is cached, so the emoji tab lists no entries and the flags stay in All.
-        let emoji = rows("", StickerTab::Emoji, false, &[], Locale::En, Some(&store));
+        let emoji = rows("", StickerTab::Emoji, false, &[], &[], Locale::En, Some(&store));
         assert_eq!(emoji.total, 0);
         assert!(emoji.results.is_empty());
         let all = rows(
             "asia",
             StickerTab::All,
             false,
+            &[],
             &[],
             Locale::En,
             Some(&store),
@@ -522,6 +523,7 @@ mod tests {
             StickerTab::Shapes,
             false,
             &saved,
+            &[],
             Locale::En,
             Some(&store),
         );
@@ -531,6 +533,7 @@ mod tests {
             StickerTab::Flags,
             false,
             &saved,
+            &[],
             Locale::En,
             Some(&store),
         );
@@ -541,6 +544,7 @@ mod tests {
             StickerTab::Emoji,
             false,
             &saved,
+            &[],
             Locale::En,
             Some(&store),
         );
