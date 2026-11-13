@@ -1,5 +1,6 @@
 //! Captions panel: presentation and bounded staging through existing engine owners.
 mod editing;
+mod fillers;
 mod import;
 mod tab;
 mod view;
@@ -154,6 +155,7 @@ pub struct Subtitles {
     pub(crate) requested_seek: Option<Tick>,
     project: Option<project::ProjectId>,
     retry_source: Option<ItemId>,
+    fillers: fillers::Cuts,
 }
 impl Drop for Subtitles {
     fn drop(&mut self) {
@@ -212,6 +214,7 @@ impl Subtitles {
             requested_seek: None,
             project: None,
             retry_source: None,
+            fillers: fillers::Cuts::default(),
         })
     }
     pub fn busy(&self) -> bool {

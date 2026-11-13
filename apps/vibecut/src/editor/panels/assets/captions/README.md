@@ -45,6 +45,14 @@ divides at the caret's text fraction, and the playhead split snaps to the neares
 word edge. Empty or zero-length results are refused. Split and each merge commit one
 engine command, one undo step.
 
+The filler cut list ([fillers.rs](fillers.rs)) is a section after the cue list. Find calls
+`timeline.filler_candidates` for the caption item's first cue language and refuses with a
+word-timing message when no cue has measured words. Remove selected passes exactly the checked
+candidate ids to `timeline.remove_fillers` with `confirm_edited` set only after the inline
+confirmation of an edited caption; the list then re-reads. Its state lives in `Subtitles`, resets
+when the caption item changes, and never mutates the project itself. Lexicon and limits belong to
+the [captions crate](../../../../../../../crates/captions/README.md).
+
 Import accepts SRT and VTT. Export offers SRT, VTT, TXT and burned MP4; TXT is one cue
 per line with no timings, serialized by captions.
 

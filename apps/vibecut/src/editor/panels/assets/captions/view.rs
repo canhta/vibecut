@@ -27,21 +27,21 @@ fn output_languages(options: &Options, source: &LanguageTag) -> Result<Vec<Langu
     })
 }
 
-struct Controls {
+pub(super) struct Controls {
     models: crate::services::remote_models::AiPreferences,
     locale: Locale,
     widgets: Vec<(String, egui::Response)>,
 }
 impl Controls {
-    fn tr(&self, text: Text) -> &'static str {
+    pub(super) fn tr(&self, text: Text) -> &'static str {
         i18n::text(self.locale, text)
     }
-    fn remember(&mut self, id: impl Into<String>, r: &egui::Response) {
+    pub(super) fn remember(&mut self, id: impl Into<String>, r: &egui::Response) {
         let id = id.into();
         r.ctx.accesskit_node_builder(r.id, |n| n.set_author_id(&id));
         self.widgets.push((id, r.clone()));
     }
-    fn button(
+    pub(super) fn button(
         &mut self,
         ui: &mut egui::Ui,
         id: &str,
@@ -655,6 +655,7 @@ impl Subtitles {
                         self.cues_ui(ui, session, options, &mut controls, dark);
                     },
                 );
+                self.fillers_ui(ui, session, &mut controls, locale);
             });
         self.bank_ui(ui, session, at, &mut controls);
         self.style_editor_ui(ui, session, at, &mut controls);
@@ -1906,7 +1907,7 @@ fn byte_offset(text: &str, chars: usize) -> Option<usize> {
         .nth(chars)
 }
 /// Player timecode (same formatter as the transport).
-fn time_text(tick: Tick, rate: time::FrameRate, locale: Locale) -> String {
+pub(super) fn time_text(tick: Tick, rate: time::FrameRate, locale: Locale) -> String {
     time::format_timecode(tick, rate)
         .unwrap_or_else(|_| i18n::decimal(locale, tick.0 as f64 / TICKS_PER_SECOND as f64, 3))
 }

@@ -24,7 +24,7 @@ use vibecut::{
 };
 #[path = "support/subtitles.rs"]
 mod fixture;
-use fixture::{editor, lang};
+use fixture::{editor, editor_with_cues, lang};
 fn harness(editor: Editor, scale: f32) -> Harness<'static, Editor> {
     crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 1000.0))
@@ -2725,4 +2725,152 @@ fn verified_word_warning_tracks_manual_source_changes_and_actual_undo() {
     h.state_mut().session.undo().unwrap();
     h.run_steps(3);
     assert!(h.query_all(warning()).next().is_none());
+}
+
+/// One Vietnamese cue of two measured words; the first word is `first`.
+fn timed_cue(id: &str, start: i64, text: &str, first: &str, edited: bool) -> captions::Cue {
+    let source = lang("vi");
+    let split = text.find(' ').unwrap();
+    assert!(text.starts_with(first));
+    let at = |tick: i64| Tick(tick * TICKS_PER_SECOND);
+    let left = time::SourceRange::new(at(start), at(start + 1)).unwrap();
+    let right = time::SourceRange::new(at(start + 1), at(start + 2)).unwrap();
+    captions::Cue {
+        word_timing: captions::CueWordTiming::Words {
+            language: source.clone(),
+            text: text.into(),
+            records: vec![
+                captions::VerifiedCueWord {
+                    bytes: 0..split,
+                    source_range: left,
+                    projection: captions::WordProjection::Visible(left),
+                    provenance: captions::TimingProvenance::Native,
+                },
+                captions::VerifiedCueWord {
+                    bytes: split + 1..text.len(),
+                    source_range: right,
+                    projection: captions::WordProjection::Visible(right),
+                    provenance: captions::TimingProvenance::Forced,
+                },
+            ],
+        },
+        id: id.into(),
+        range: time::SourceRange::new(at(start), at(start + 2)).unwrap(),
+        source_lang: source.clone(),
+        texts: std::collections::BTreeMap::from([(
+            source,
+            captions::CueText {
+                text: text.into(),
+                edited,
+                translation_ref: None,
+            },
+        )]),
+        style: None,
+    }
+}
+
+/// Three cues: a filled pause first, second and in an edited cue (edited last).
+fn filler_cues() -> CueTrack {
+    CueTrack {
+        styles: Vec::new(),
+        cues: vec![
+            timed_cue("cue-0", 1, "ừm chào", "ừm", false),
+            timed_cue("cue-1", 3, "chào ừm", "chào", false),
+            timed_cue("cue-2", 5, "ừm bạn", "ừm", true),
+        ],
+    }
+}
+
+/// The checkbox automation ids of the cut list, in list order.
+fn filler_toggles(h: &Harness<'_, Editor>) -> Vec<String> {
+    h.query_all(By::new().predicate(|n| {
+        n.author_id()
+            .is_some_and(|id| id.starts_with("subtitles.fillers.toggle."))
+    }))
+    .filter_map(|n| n.author_id().map(str::to_owned))
+    .collect()
+}
+
+#[test]
+fn filler_cut_list_removes_only_checked_candidates_as_one_undo_step() {
+    let mut h = harness(editor_with_cues("vi", filler_cues()), 1.0);
+    h.run_steps(3);
+    click(&mut h, "subtitles.fillers");
+    click(&mut h, "subtitles.fillers.find");
+    let toggles = filler_toggles(&h);
+    assert_eq!(toggles.len(), 3, "every lexicon candidate starts checked");
+    // Unchecking the middle and the edited candidate leaves one checked id to remove.
+    click(&mut h, &toggles[1]);
+    click(&mut h, &toggles[2]);
+    let before = h.state().session.project().clone();
+    let history = h.state().session.history_len().0;
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-ai-02-fillers.png");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    h.render().unwrap().save(&path).unwrap();
+
+    click(&mut h, "subtitles.fillers.apply");
+    assert_eq!(h.state().session.history_len().0, history + 1);
+    let cues = track(h.state()).cues;
+    assert!(
+        !cues[0]
+            .texts
+            .values()
+            .any(|text| text.text.as_str().contains("ừm")),
+        "the checked filled pause is removed"
+    );
+    assert_eq!(
+        cues[1].texts.values().next().unwrap().text.as_str(),
+        "chào ừm",
+        "unchecked candidates keep their words"
+    );
+    assert_eq!(filler_toggles(&h).len(), 2, "the list re-reads the remaining fillers");
+
+    h.state_mut().session.undo().unwrap();
+    h.run_steps(3);
+    assert_eq!(h.state().session.project(), &before);
+}
+
+#[test]
+fn filler_cut_list_asks_before_removing_edited_captions() {
+    let mut h = harness(editor_with_cues("vi", filler_cues()), 1.0);
+    h.run_steps(3);
+    click(&mut h, "subtitles.fillers");
+    click(&mut h, "subtitles.fillers.find");
+    let before = h.state().session.project().clone();
+    let history = h.state().session.history_len().0;
+
+    click(&mut h, "subtitles.fillers.apply");
+    h.get_by_label("Some are in edited captions.");
+    assert_eq!(h.state().session.project(), &before);
+    click(&mut h, "subtitles.fillers.confirm.cancel");
+    assert_eq!(h.state().session.project(), &before);
+    assert_eq!(h.state().session.history_len().0, history);
+
+    click(&mut h, "subtitles.fillers.apply");
+    click(&mut h, "subtitles.fillers.confirm");
+    assert_eq!(h.state().session.history_len().0, history + 1);
+    assert!(filler_toggles(&h).is_empty());
+    h.get_by_label("No fillers found");
+}
+
+#[test]
+fn filler_cut_list_reports_missing_timings_and_empty_results() {
+    let mut h = harness(editor("vi"), 1.0);
+    h.run_steps(3);
+    click(&mut h, "subtitles.fillers");
+    click(&mut h, "subtitles.fillers.find");
+    h.get_by_label("Word timings needed");
+    assert!(filler_toggles(&h).is_empty());
+
+    let track = CueTrack {
+        styles: Vec::new(),
+        cues: vec![timed_cue("cue-0", 1, "chào bạn", "chào", false)],
+    };
+    let mut h = harness(editor_with_cues("vi", track), 1.0);
+    h.run_steps(3);
+    click(&mut h, "subtitles.fillers");
+    click(&mut h, "subtitles.fillers.find");
+    h.get_by_label("No fillers found");
+    assert!(filler_toggles(&h).is_empty());
 }
