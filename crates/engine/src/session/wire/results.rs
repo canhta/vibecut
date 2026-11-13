@@ -1,9 +1,8 @@
 //! Defines the typed results a control command returns.
 use super::{
     BrandKitView, EmphasisSuggestion, ErrorCode, FillerCandidate, FontEntry, FontLoad, JobId,
-    JobKind, JobStage,
-    JobState, MusicPage, PauseCandidates, PreviewResult, Revision, SavedMusicEntry,
-    SavedSoundEntry, SnapshotResult, SoundPage, StickerPage,
+    JobKind, JobStage, JobState, MusicPage, PauseCandidates, PreviewResult, Revision,
+    SavedMusicEntry, SavedSoundEntry, SnapshotResult, SoundPage, StickerPage,
 };
 use crate::{CommandSpec, Outcome};
 use serde::Serialize;

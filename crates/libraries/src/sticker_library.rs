@@ -6,7 +6,9 @@ mod search;
 
 pub use catalog::{FLAG_SIZE, SHAPE_SIZE, insert_sticker, resolve_sticker, search_catalog};
 pub use recents::{MAX_RECENT_STICKERS, Recents};
-pub use search::{DEFAULT_SEARCH_LIMIT, FlagMatch, FlagPage, ShapeMatch, search_flags, search_shapes};
+pub use search::{
+    DEFAULT_SEARCH_LIMIT, FlagMatch, FlagPage, ShapeMatch, search_flags, search_shapes,
+};
 
 /// Provider id of the bundled country flags.
 pub const FLAGS_PROVIDER: &str = "flags";
