@@ -10,7 +10,9 @@ use crate::{
     Unavailable, check,
 };
 pub use destination::validate_output_path;
-use execution::{OmittedSources, admission, copy_export, copy_plan, encoded_export};
+use execution::{
+    OmittedSources, admission, audio_only_export, copy_export, copy_plan, encoded_export,
+};
 use media::{Container, EncodePreference};
 use project::{
     ItemParams, Project,
@@ -56,6 +58,9 @@ pub struct ExportSettings {
     pub audio_block: usize,
     /// Linear fades at each audible source cut; 0 disables, at most 1000 ms.
     pub audio_cut_fade_ms: u16,
+    /// Audio-only output: no video stream, renderer or stream copy. The mix graph
+    /// and audio encoder are the video path's; the container picks AAC or Opus.
+    pub audio_only: bool,
 }
 impl ExportSettings {
     pub fn from_project(project: &Project) -> Self {
@@ -79,6 +84,7 @@ impl ExportSettings {
             max_bytes: 64 << 30,
             audio_block: 2048,
             audio_cut_fade_ms: 0,
+            audio_only: false,
         }
     }
 }
@@ -116,6 +122,14 @@ pub fn export_with_sources(
     hooks: &dyn ExecutionHooks,
 ) -> Result<ExportReceipt> {
     check(hooks)?;
+    if settings.audio_only && !settings.include_audio {
+        return Err(Error::Invalid("audio-only export without audio"));
+    }
+    if settings.audio_only && settings.mode == ExportMode::StreamCopy {
+        return Err(Error::Unsupported(
+            "audio-only export has no video stream to copy",
+        ));
+    }
     if settings.resume {
         return Err(Error::Unsupported(
             "encoded export resume requires independently finalized segments and a validated manifest",
@@ -149,7 +163,15 @@ pub fn export_with_sources(
     sources.begin_audio(&[]);
     let stage = StreamingStage::new(path, settings.overwrite, settings.max_bytes)?;
     hooks.progress(Stage::Admit, 0.0)?;
-    let unavailable = admission(project, range, sources, settings.include_audio, true, hooks)?;
+    let unavailable = admission(
+        project,
+        range,
+        sources,
+        !settings.audio_only,
+        settings.include_audio,
+        true,
+        hooks,
+    )?;
     if !unavailable.is_empty()
         && (!settings.allow_degraded
             || settings
@@ -161,7 +183,7 @@ pub fn export_with_sources(
     }
     let omitted: BTreeSet<_> = unavailable.iter().map(|u| u.asset).collect();
     validate_output_path(project, path, hooks)?;
-    let copy = if settings.mode != ExportMode::Encode {
+    let copy = if settings.mode != ExportMode::Encode && !settings.audio_only {
         copy_plan(project, range, settings, hooks)?
             .filter(|plan| !omitted.contains(&plan.asset.id()))
     } else {
@@ -197,7 +219,7 @@ pub fn export_with_sources(
                 .iter()
                 .any(|s| s.video.as_ref().is_some_and(|v| v.color.is_hdr()))
         });
-    if hdr && (settings.hdr != HdrPolicy::Passthrough || copy.is_none()) {
+    if !settings.audio_only && hdr && (settings.hdr != HdrPolicy::Passthrough || copy.is_none()) {
         return Err(Error::Unsupported(
             "HDR requires unchanged passthrough; no implicit tone map",
         ));
@@ -206,7 +228,16 @@ pub fn export_with_sources(
         inner: sources,
         omitted,
     };
-    let result = if let Some(asset) = copy {
+    let result = if settings.audio_only {
+        audio_only_export(
+            project,
+            range,
+            settings,
+            stage.writer()?,
+            &mut source,
+            hooks,
+        )
+    } else if let Some(asset) = copy {
         copy_export(
             project,
             range,
@@ -237,6 +268,7 @@ pub fn export_with_sources(
                 project,
                 range,
                 source.inner,
+                !settings.audio_only,
                 settings.include_audio,
                 false,
                 hooks,
@@ -259,6 +291,7 @@ pub fn export_with_sources(
         project,
         range,
         source.inner,
+        !settings.audio_only,
         settings.include_audio,
         true,
         hooks,

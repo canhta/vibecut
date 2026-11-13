@@ -23,27 +23,37 @@ pub enum ExportFormat {
     Mp4,
     Mov,
     Webm,
+    /// Audio only: AAC in an MP4 container.
+    M4a,
+    /// Audio only: Opus in a WebM container.
+    AudioWebm,
 }
 impl ExportFormat {
     pub fn extension(self) -> &'static str {
         match self {
             Self::Mp4 => "mp4",
             Self::Mov => "mov",
-            Self::Webm => "webm",
+            Self::Webm | Self::AudioWebm => "webm",
+            Self::M4a => "m4a",
         }
     }
     pub fn container(self) -> media::Container {
         match self {
-            Self::Mp4 => media::Container::Mp4,
+            Self::Mp4 | Self::M4a => media::Container::Mp4,
             Self::Mov => media::Container::Mov,
-            Self::Webm => media::Container::WebM,
+            Self::Webm | Self::AudioWebm => media::Container::WebM,
         }
+    }
+    pub fn audio_only(self) -> bool {
+        matches!(self, Self::M4a | Self::AudioWebm)
     }
     pub(super) fn label(self) -> Text {
         match self {
             Self::Mp4 => Text::ExportMp4,
             Self::Mov => Text::ExportMov,
             Self::Webm => Text::ExportWebm,
+            Self::M4a => Text::ExportAudioM4a,
+            Self::AudioWebm => Text::ExportAudioWebm,
         }
     }
 }
@@ -97,6 +107,7 @@ impl ExportOptions {
     pub fn settings(self, project: &project::Project) -> render::ExportSettings {
         let mut settings = render::ExportSettings::from_project(project);
         settings.container = self.format.container();
+        settings.audio_only = self.format.audio_only();
         (settings.quality, settings.bit_rate) = self.quality.value();
         settings.include_audio = self.include_audio;
         // A chosen quality must be applied, rather than bypassed by Auto copy.

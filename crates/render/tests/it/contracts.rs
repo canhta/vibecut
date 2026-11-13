@@ -199,6 +199,57 @@ fn export_refuses_hostile_settings_and_zero_duration_with_typed_errors() {
             Err(Error::Invalid("export settings/range"))
         ));
     }
+    // Audio-only output refuses a missing audio request and any stream copy before staging.
+    let mut silent = ExportSettings::from_project(&p);
+    silent.audio_only = true;
+    silent.include_audio = false;
+    assert!(matches!(
+        export(
+            &p,
+            range,
+            &silent,
+            std::path::Path::new("never-written.m4a"),
+            &Hooks::default()
+        ),
+        Err(Error::Invalid("audio-only export without audio"))
+    ));
+    let mut copy = ExportSettings::from_project(&p);
+    copy.audio_only = true;
+    copy.mode = ExportMode::StreamCopy;
+    assert!(matches!(
+        export(
+            &p,
+            range,
+            &copy,
+            std::path::Path::new("never-written.m4a"),
+            &Hooks::default()
+        ),
+        Err(Error::Unsupported(_))
+    ));
+    // Audio-only options refuse video fields and MOV; `m4a` names audio-only output only.
+    assert!(matches!(
+        OutputOptions {
+            audio_only: true,
+            bit_rate: Some(128_000),
+            ..Default::default()
+        }
+        .validate(),
+        Err(Error::Invalid(
+            "audio-only output carries no video settings"
+        ))
+    ));
+    assert!(matches!(
+        OutputOptions::container_for_path(std::path::Path::new("clip.m4a"), false),
+        Err(Error::Invalid("output extension"))
+    ));
+    assert!(matches!(
+        OutputOptions::container_for_path(std::path::Path::new("clip.m4a"), true),
+        Ok(media::Container::Mp4)
+    ));
+    assert!(matches!(
+        OutputOptions::container_for_path(std::path::Path::new("clip.mov"), true),
+        Err(Error::Unsupported("audio-only container"))
+    ));
     // An empty timeline cannot form a positive range, so it refuses before staging.
     let mut data = project::Project::empty(project::ProjectId(0), "".into())
         .unwrap()
@@ -960,6 +1011,61 @@ fn publication_preserves_destination_on_cancel_fail_finalize_and_mux_limit() {
         ));
         std::fs::remove_file(path).unwrap();
     }
+    // Audio-only shares the publication contract: cancel leaves no final file, and
+    // a failed finalize keeps the previous destination byte for byte.
+    let mut audio = ExportSettings::from_project(&p);
+    audio.audio_only = true;
+    audio.overwrite = project::atomic::Overwrite::Replace;
+    let cancelled = dir.path().join("cancelled.m4a");
+    let h = Hooks {
+        event: Some(std::sync::Arc::new(|stage| {
+            if stage == Stage::Render {
+                Err(Error::Cancelled)
+            } else {
+                Ok(())
+            }
+        })),
+        ..Default::default()
+    };
+    assert!(matches!(
+        export(
+            &p,
+            TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+            &audio,
+            &cancelled,
+            &h
+        ),
+        Err(Error::Cancelled)
+    ));
+    assert!(!cancelled.exists());
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+    let path = dir.path().join("existing audio.m4a");
+    std::fs::write(&path, b"original").unwrap();
+    let h = Hooks {
+        event: Some(std::sync::Arc::new(|stage| {
+            if stage == Stage::Finalize {
+                Err(Error::Io(std::io::Error::other(
+                    "injected finalize failure",
+                )))
+            } else {
+                Ok(())
+            }
+        })),
+        ..Default::default()
+    };
+    assert!(
+        export(
+            &p,
+            TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+            &audio,
+            &path,
+            &h
+        )
+        .is_err()
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), b"original");
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    std::fs::remove_file(path).unwrap();
 }
 #[test]
 fn encoded_color_patch_uses_same_compositor_and_has_valid_audio_video() {
@@ -1040,6 +1146,44 @@ fn encoded_color_patch_uses_same_compositor_and_has_valid_audio_video() {
             );
         }
         Err(other) => panic!("unexpected software encoder failure: {other:?}"),
+    }
+    // Audio-only rows: the same mixer and audio encoder, one audio stream, no video.
+    for (container, extension, codec) in [
+        (media::Container::Mp4, "m4a", "aac"),
+        (media::Container::WebM, "webm", "opus"),
+    ] {
+        let path = root().join(format!("audio-only.{extension}"));
+        let mut s = ExportSettings::from_project(&p);
+        s.audio_only = true;
+        s.container = container;
+        s.overwrite = project::atomic::Overwrite::Replace;
+        let receipt = export(
+            &p,
+            TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+            &s,
+            &path,
+            &h,
+        )
+        .unwrap();
+        assert_eq!(receipt.video_frames, 0);
+        assert_eq!(receipt.audio_samples, 48000);
+        let info = probe(&path);
+        let streams = info["streams"].as_array().unwrap();
+        assert_eq!(streams.len(), 1, "{extension}");
+        assert_eq!(streams[0]["codec_type"], "audio");
+        assert_eq!(streams[0]["codec_name"], codec);
+        assert_eq!(streams[0]["sample_rate"], "48000");
+        assert_eq!(streams[0]["channels"], 2);
+        let duration: f64 = info["format"]["duration"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(
+            (duration - 1.0).abs() < 0.05,
+            "{extension} duration {duration}"
+        );
+        std::fs::remove_file(path).unwrap();
     }
 }
 #[test]

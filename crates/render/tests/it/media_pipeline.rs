@@ -1059,6 +1059,59 @@ fn copy_publishes_only_the_streams_selected_by_decode() {
         }
         settings.include_audio = true;
     }
+
+    // Audio-only output is the shared mastered mix: master at -6 dB, and the
+    // decoded PCM tracks the mixer within codec error at the best small alignment.
+    let mut data = p.into_data();
+    data.settings.master_volume = -6.0;
+    let mastered = project::Project::new(data).unwrap();
+    let range = TimeRange::new(Tick::ZERO, mastered.duration()).unwrap();
+    settings.audio_only = true;
+    settings.include_audio = true;
+    settings.mode = ExportMode::Encode;
+    for (container, extension) in [
+        (media::Container::Mp4, "m4a"),
+        (media::Container::WebM, "webm"),
+    ] {
+        settings.container = container;
+        let output = root().join(format!("audio-only-mastered.{extension}"));
+        let h = Hooks::default();
+        let receipt = export(&mastered, range, &settings, &output, &h).unwrap();
+        assert_eq!(receipt.video_frames, 0);
+        assert_eq!(probe(&output)["streams"].as_array().unwrap().len(), 1);
+        let mut sources = FileSources::default();
+        sources.begin_audio(&[]);
+        let mut mixer = AudioMixer::new(&mastered, 2, 0, &h).unwrap();
+        let expected = mixer
+            .mix(0, receipt.audio_samples as usize, &mut sources, &h)
+            .unwrap();
+        let reference = &expected.planes()[0];
+        let actual = pcm(&output, None);
+        let start = 24_000usize;
+        let window = &reference[start..start + 4096];
+        let energy =
+            window.iter().map(|s| f64::from(*s).powi(2)).sum::<f64>() / window.len() as f64;
+        assert!(energy > 1e-6, "{extension} reference is silent");
+        let best = (-1500isize..=1500)
+            .filter_map(|lag| {
+                let from = start.checked_add_signed(lag)?;
+                let decoded = actual.get(from..from + window.len())?;
+                Some(
+                    window
+                        .iter()
+                        .zip(decoded)
+                        .map(|(a, b)| f64::from(a - b).powi(2))
+                        .sum::<f64>()
+                        / window.len() as f64,
+                )
+            })
+            .fold(f64::INFINITY, f64::min);
+        assert!(
+            best < energy * 0.1,
+            "{extension} decoded mix error {best} against energy {energy}"
+        );
+        std::fs::remove_file(output).unwrap();
+    }
 }
 
 #[test]

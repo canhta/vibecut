@@ -21,7 +21,7 @@ Build with `cargo build -p vibecut-cli` through the [build wrapper](../../../xta
 | `vibecut-cli normalize <project> [--clip] [--master] [--target-lufs -14] [--true-peak-db -1]` | Measure and store loudness gains for clip or master scopes |
 | `vibecut-cli control <project>` | Run a revision-bound control session over newline-delimited JSON |
 | `vibecut-cli mcp <project>` / `mcp --attach --socket <endpoint>` | Serve [MCP control](mcp.md) over stdio, headless or attached to the app |
-| `vibecut-cli export <project> --out <mp4\|mov\|webm>` | Export saved scene(s) to the container selected by the extension |
+| `vibecut-cli export <project> --out <mp4\|mov\|webm\|m4a>` | Export saved scene(s) to the container selected by the extension; `m4a` and audio-only output need `"audio_only": true` in `--settings` |
 | `vibecut-cli batch <job-file>` | Render the validated export jobs in a JSON job file |
 | `vibecut-cli subtitle <in> --to <lang>` | Transcribe, translate and export SRT/burned subtitles |
 | `vibecut-cli captions import <project> <file.ass>` | Import ASS cues and styles as one caption item and print counts |
@@ -164,7 +164,7 @@ commands.
 
 ## Export admission
 
-The output extension selects MP4/H.264, MOV/H.264 or WebM/VP9 through the shared render owner. `--settings <JSON>` is `render::OutputOptions`: `version: 1`, nullable `resolution: [width,height]`, `fps: {num,den}`, `bit_rate`, `codec: automatic|h264|vp9`, `profile: automatic|main|high`, `range: {kind: full}` or `{kind: in_out|selected, start, end}` in ticks, and `scene: {kind: active|all}` or `{kind: selected, scene: <id>}`. All fields are required; other versions and unknown fields refuse. Defaults and bounds: [render contract](../../../crates/render/README.md). `--aspect` overrides output geometry; an explicit settings resolution wins. All scenes use distinct `<stem>-scene-<id>.<ext>` destinations. JSON success adds `paths` with every completed file; `path` stays the requested stem.
+The output extension selects MP4/H.264, MOV/H.264 or WebM/VP9 through the shared render owner; with `audio_only: true` it selects M4A/AAC (`m4a` or MP4) or WebM/Opus and no video field is allowed. `--settings <JSON>` is `render::OutputOptions`: `version: 1`, nullable `resolution: [width,height]`, `fps: {num,den}`, `bit_rate`, `codec: automatic|h264|vp9`, `profile: automatic|main|high`, `audio_only: bool`, `range: {kind: full}` or `{kind: in_out|selected, start, end}` in ticks, and `scene: {kind: active|all}` or `{kind: selected, scene: <id>}`. All fields are required; other versions and unknown fields refuse. Defaults and bounds: [render contract](../../../crates/render/README.md). `--aspect` overrides output geometry; an explicit settings resolution wins. All scenes use distinct `<stem>-scene-<id>.<ext>` destinations. JSON success adds `paths` with every completed file; `path` stays the requested stem.
 
 Output is staged and published only after encoding, muxing and a final source revalidation. A required source that is missing or whose content hash changed refuses the export with exit 4 and `unavailable` entries naming asset ID, item ID, source tick range and reason (`missing`, `changed`, `metadata`, `video`, `audio`); no partial file is promoted and an existing destination is preserved.
 

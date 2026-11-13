@@ -898,6 +898,7 @@ Effect: `FilePublish`. Fixture: `Timeline`.
   "overwrite": false,
   "path": "$output/export.mp4",
   "settings": {
+    "audio_only": false,
     "bit_rate": null,
     "codec": "automatic",
     "fps": null,

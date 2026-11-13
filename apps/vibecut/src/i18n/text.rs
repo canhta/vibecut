@@ -1064,6 +1064,8 @@ catalog! {
     ExportActiveScene { key: "export_active_scene", en: "Active scene", vi: "Cảnh hiện tại" },
     ExportAdmit { key: "export_admit", en: "Checking media", vi: "Đang kiểm tra tư liệu" },
     ExportAllScenes { key: "export_all_scenes", en: "All scenes", vi: "Tất cả cảnh" },
+    ExportAudioM4a { key: "export_audio_m4a", en: "M4A (audio only)", vi: "M4A (chỉ âm thanh)" },
+    ExportAudioWebm { key: "export_audio_webm", en: "WebM (audio only)", vi: "WebM (chỉ âm thanh)" },
     ExportAutomatic { key: "export_automatic", en: "Automatic", vi: "Tự động" },
     ExportBitRate { key: "export_bit_rate", en: "Bit rate", vi: "Tốc độ bit" },
     ExportBlocked { key: "export_blocked", en: "Some media is missing. Restore it or export anyway.", vi: "Thiếu một số tư liệu. Hãy khôi phục hoặc vẫn xuất." },

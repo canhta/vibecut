@@ -242,6 +242,7 @@ mod tests {
                     "quality": "very_high",
                     "include_audio": false,
                     "output": {
+                        "audio_only": false,
                         "bit_rate": null,
                         "codec": "automatic",
                         "fps": null,

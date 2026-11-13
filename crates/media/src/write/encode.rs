@@ -169,6 +169,13 @@ pub fn export_container_available(container: crate::Container) -> bool {
         && ff::encoder::find_by_name(if webm { "libopus" } else { "aac" }).is_some()
 }
 
+/// Registry admission for audio-only exports: AAC in MP4 or Opus in WebM, the
+/// same audio encoders the video pairs use.
+pub fn audio_export_container_available(container: crate::Container) -> bool {
+    let webm = matches!(container, crate::Container::WebM);
+    ff::encoder::find_by_name(if webm { "libopus" } else { "aac" }).is_some()
+}
+
 pub struct VideoEncoder {
     encoder: ff::encoder::Video,
     time_base: TimeBase,

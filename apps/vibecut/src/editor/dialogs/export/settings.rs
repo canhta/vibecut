@@ -45,6 +45,7 @@ pub(super) fn show(
     let spacious = ui.ctx().content_rect().height() >= 900.0;
     let field_width = (ui.available_width() - 131.0).clamp(96.0, 280.0);
     let identity_width = (ui.available_width() - 100.0).max(96.0);
+    let audio_only = options.format.audio_only();
     egui::Grid::new("export.identity")
         .min_col_width(84.0)
         .spacing([16.0, if spacious { 24.0 } else { 12.0 }])
@@ -73,109 +74,115 @@ pub(super) fn show(
             }
         });
     ui.add_space(if spacious { 44.0 } else { 12.0 });
-    ui.label(egui::RichText::new(tr(Text::Video)).strong());
+    let section = if audio_only { Text::Audio } else { Text::Video };
+    ui.label(egui::RichText::new(tr(section)).strong());
     ui.add_space(if spacious { 26.0 } else { 8.0 });
     egui::Grid::new("export.output")
         .num_columns(2)
         .min_col_width(115.0)
         .spacing([16.0, if spacious { 26.0 } else { 16.0 }])
         .show(ui, |ui| {
-            let row_label = ui.label(tr(Text::ExportResolution));
-            let label = options.output.resolution.map_or_else(
-                || tr(Text::ExportProjectCanvas).to_owned(),
-                |size| {
-                    RESOLUTIONS
-                        .iter()
-                        .find(|(height, _, _)| resolution_size(project, *height) == size)
-                        .map_or_else(
-                            || {
-                                let [width, height] = size;
-                                format!("{width} × {height}")
-                            },
-                            |(_, label, _)| (*label).to_owned(),
-                        )
-                },
-            );
-            let combo = egui::ComboBox::from_id_salt(egui::IdSalt::new("export.resolution"))
-                .width(field_width)
-                .height(340.0)
-                .selected_text(label)
-                .show_ui(ui, |ui| {
-                    ui.spacing_mut().interact_size.y = 36.0;
-                    let r = ui.selectable_value(
-                        &mut options.output.resolution,
-                        None,
-                        tr(Text::ExportProjectCanvas),
-                    );
-                    result.widgets.push(("export.resolution.project", r));
-                    for (h, label, id) in RESOLUTIONS {
-                        let size = resolution_size(project, h);
-                        let r =
-                            ui.selectable_value(&mut options.output.resolution, Some(size), label);
-                        result.widgets.push((id, r));
+            if !audio_only {
+                let row_label = ui.label(tr(Text::ExportResolution));
+                let label = options.output.resolution.map_or_else(
+                    || tr(Text::ExportProjectCanvas).to_owned(),
+                    |size| {
+                        RESOLUTIONS
+                            .iter()
+                            .find(|(height, _, _)| resolution_size(project, *height) == size)
+                            .map_or_else(
+                                || {
+                                    let [width, height] = size;
+                                    format!("{width} × {height}")
+                                },
+                                |(_, label, _)| (*label).to_owned(),
+                            )
+                    },
+                );
+                let combo = egui::ComboBox::from_id_salt(egui::IdSalt::new("export.resolution"))
+                    .width(field_width)
+                    .height(340.0)
+                    .selected_text(label)
+                    .show_ui(ui, |ui| {
+                        ui.spacing_mut().interact_size.y = 36.0;
+                        let r = ui.selectable_value(
+                            &mut options.output.resolution,
+                            None,
+                            tr(Text::ExportProjectCanvas),
+                        );
+                        result.widgets.push(("export.resolution.project", r));
+                        for (h, label, id) in RESOLUTIONS {
+                            let size = resolution_size(project, h);
+                            let r = ui.selectable_value(
+                                &mut options.output.resolution,
+                                Some(size),
+                                label,
+                            );
+                            result.widgets.push((id, r));
+                        }
+                    });
+                result.widgets.push((
+                    "export.resolution",
+                    combo.response.labelled_by(row_label.id),
+                ));
+                ui.end_row();
+                let row_label = ui.label(tr(Text::ExportBitRate));
+                ui.horizontal(|ui| {
+                    let mut custom = options.output.bit_rate.is_some();
+                    let r = ui.checkbox(&mut custom, tr(Text::ExportCustom));
+                    if r.changed() {
+                        options.output.bit_rate = custom.then_some(options.quality.value().1);
                     }
-                });
-            result.widgets.push((
-                "export.resolution",
-                combo.response.labelled_by(row_label.id),
-            ));
-            ui.end_row();
-            let row_label = ui.label(tr(Text::ExportBitRate));
-            ui.horizontal(|ui| {
-                let mut custom = options.output.bit_rate.is_some();
-                let r = ui.checkbox(&mut custom, tr(Text::ExportCustom));
-                if r.changed() {
-                    options.output.bit_rate = custom.then_some(options.quality.value().1);
-                }
-                result
-                    .widgets
-                    .push(("export.bitrate.custom", r.labelled_by(row_label.id)));
-                if let Some(rate) = &mut options.output.bit_rate {
-                    let r = ui.add(
-                        egui::DragValue::new(rate)
-                            .range(1_000..=1_000_000_000)
-                            .speed(1000)
-                            .suffix(" b/s"),
-                    );
                     result
                         .widgets
-                        .push(("export.bitrate", r.labelled_by(row_label.id)));
-                }
-            });
-            ui.end_row();
-            let row_label = ui.label(tr(Text::ExportCodec));
-            let codec_label = |codec| match codec {
-                render::VideoCodec::Automatic => tr(Text::ExportAutomatic),
-                render::VideoCodec::H264 => "H.264",
-                render::VideoCodec::Vp9 => "VP9",
-            };
-            let combo = egui::ComboBox::from_id_salt(egui::IdSalt::new("export.codec"))
-                .width(field_width)
-                .selected_text(codec_label(options.output.codec))
-                .show_ui(ui, |ui| {
-                    for (codec, id) in [
-                        (render::VideoCodec::Automatic, "export.codec.auto"),
-                        (render::VideoCodec::H264, "export.codec.h264"),
-                        (render::VideoCodec::Vp9, "export.codec.vp9"),
-                    ] {
-                        let allowed = codec.fits(options.format.container());
-                        let r = ui.add_enabled(
-                            allowed,
-                            egui::Button::selectable(
-                                options.output.codec == codec,
-                                codec_label(codec),
-                            ),
+                        .push(("export.bitrate.custom", r.labelled_by(row_label.id)));
+                    if let Some(rate) = &mut options.output.bit_rate {
+                        let r = ui.add(
+                            egui::DragValue::new(rate)
+                                .range(1_000..=1_000_000_000)
+                                .speed(1000)
+                                .suffix(" b/s"),
                         );
-                        if r.clicked() {
-                            options.output.codec = codec;
-                        }
-                        result.widgets.push((id, r));
+                        result
+                            .widgets
+                            .push(("export.bitrate", r.labelled_by(row_label.id)));
                     }
                 });
-            result
-                .widgets
-                .push(("export.codec", combo.response.labelled_by(row_label.id)));
-            ui.end_row();
+                ui.end_row();
+                let row_label = ui.label(tr(Text::ExportCodec));
+                let codec_label = |codec| match codec {
+                    render::VideoCodec::Automatic => tr(Text::ExportAutomatic),
+                    render::VideoCodec::H264 => "H.264",
+                    render::VideoCodec::Vp9 => "VP9",
+                };
+                let combo = egui::ComboBox::from_id_salt(egui::IdSalt::new("export.codec"))
+                    .width(field_width)
+                    .selected_text(codec_label(options.output.codec))
+                    .show_ui(ui, |ui| {
+                        for (codec, id) in [
+                            (render::VideoCodec::Automatic, "export.codec.auto"),
+                            (render::VideoCodec::H264, "export.codec.h264"),
+                            (render::VideoCodec::Vp9, "export.codec.vp9"),
+                        ] {
+                            let allowed = codec.fits(options.format.container());
+                            let r = ui.add_enabled(
+                                allowed,
+                                egui::Button::selectable(
+                                    options.output.codec == codec,
+                                    codec_label(codec),
+                                ),
+                            );
+                            if r.clicked() {
+                                options.output.codec = codec;
+                            }
+                            result.widgets.push((id, r));
+                        }
+                    });
+                result
+                    .widgets
+                    .push(("export.codec", combo.response.labelled_by(row_label.id)));
+                ui.end_row();
+            }
             let row_label = ui.label(tr(Text::ExportFormat));
             let combo = egui::ComboBox::from_id_salt(egui::IdSalt::new("export.format"))
                 .width(field_width)
@@ -185,8 +192,15 @@ pub(super) fn show(
                         (super::ExportFormat::Mp4, "export.format.mp4"),
                         (super::ExportFormat::Mov, "export.format.mov"),
                         (super::ExportFormat::Webm, "export.format.webm"),
+                        (super::ExportFormat::M4a, "export.format.m4a"),
+                        (super::ExportFormat::AudioWebm, "export.format.audio_webm"),
                     ] {
-                        if !media::export_container_available(format.container()) {
+                        let available = if format.audio_only() {
+                            media::audio_export_container_available(format.container())
+                        } else {
+                            media::export_container_available(format.container())
+                        };
+                        if !available {
                             continue;
                         }
                         let r =
@@ -202,93 +216,98 @@ pub(super) fn show(
                 .widgets
                 .push(("export.format", combo.response.labelled_by(row_label.id)));
             ui.end_row();
-            let row_label = ui.label(tr(Text::ExportFrameRate));
-            let label = options.output.fps.map_or_else(
-                || tr(Text::ExportProjectCanvas).to_owned(),
-                |fps| format!("{}", fps.as_f64()),
-            );
-            let combo = egui::ComboBox::from_id_salt(egui::IdSalt::new("export.fps"))
-                .width(field_width)
-                .selected_text(label)
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(
-                        &mut options.output.fps,
-                        None,
-                        tr(Text::ExportProjectCanvas),
-                    );
-                    for (fps, id) in [
-                        (time::FrameRate::FPS_24, "export.fps.24"),
-                        (time::FrameRate::FPS_25, "export.fps.25"),
-                        (time::FrameRate::FPS_30, "export.fps.30"),
-                        (time::FrameRate::FPS_50, "export.fps.50"),
-                        (time::FrameRate::FPS_60, "export.fps.60"),
-                    ] {
-                        let r = ui.selectable_value(
+            if !audio_only {
+                let row_label = ui.label(tr(Text::ExportFrameRate));
+                let label = options.output.fps.map_or_else(
+                    || tr(Text::ExportProjectCanvas).to_owned(),
+                    |fps| format!("{}", fps.as_f64()),
+                );
+                let combo = egui::ComboBox::from_id_salt(egui::IdSalt::new("export.fps"))
+                    .width(field_width)
+                    .selected_text(label)
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(
                             &mut options.output.fps,
-                            Some(fps),
-                            fps.num().to_string(),
+                            None,
+                            tr(Text::ExportProjectCanvas),
                         );
-                        result.widgets.push((id, r));
-                    }
-                });
-            result
-                .widgets
-                .push(("export.fps", combo.response.labelled_by(row_label.id)));
-            ui.end_row();
-            let row_label = ui.label(tr(Text::ExportQuality));
-            let combo = egui::ComboBox::from_id_salt(egui::IdSalt::new("export.quality"))
-                .width(field_width)
-                .selected_text(tr(options.quality.label()))
-                .show_ui(ui, |ui| {
-                    for (quality, id) in [
-                        (super::ExportQuality::Low, "export.quality.low"),
-                        (super::ExportQuality::Medium, "export.quality.medium"),
-                        (super::ExportQuality::High, "export.quality.high"),
-                        (super::ExportQuality::VeryHigh, "export.quality.very_high"),
-                    ] {
-                        let r =
-                            ui.selectable_value(&mut options.quality, quality, tr(quality.label()));
-                        result.widgets.push((id, r));
-                    }
-                });
-            result
-                .widgets
-                .push(("export.quality", combo.response.labelled_by(row_label.id)));
-            ui.end_row();
-            let row_label = ui.label(tr(Text::ExportProfile));
-            let label = |profile| match profile {
-                media::H264Profile::Automatic => tr(Text::ExportAutomatic),
-                media::H264Profile::Main => "Main",
-                media::H264Profile::High => "High",
-            };
-            let combo = egui::ComboBox::from_id_salt(egui::IdSalt::new("export.profile"))
-                .width(field_width)
-                .selected_text(label(options.output.profile))
-                .show_ui(ui, |ui| {
-                    for profile in [
-                        media::H264Profile::Automatic,
-                        media::H264Profile::Main,
-                        media::H264Profile::High,
-                    ] {
-                        ui.add_enabled_ui(
-                            render::OutputOptions::profile_fits(
-                                profile,
-                                options.format.container(),
-                            ),
-                            |ui| {
-                                ui.selectable_value(
-                                    &mut options.output.profile,
+                        for (fps, id) in [
+                            (time::FrameRate::FPS_24, "export.fps.24"),
+                            (time::FrameRate::FPS_25, "export.fps.25"),
+                            (time::FrameRate::FPS_30, "export.fps.30"),
+                            (time::FrameRate::FPS_50, "export.fps.50"),
+                            (time::FrameRate::FPS_60, "export.fps.60"),
+                        ] {
+                            let r = ui.selectable_value(
+                                &mut options.output.fps,
+                                Some(fps),
+                                fps.num().to_string(),
+                            );
+                            result.widgets.push((id, r));
+                        }
+                    });
+                result
+                    .widgets
+                    .push(("export.fps", combo.response.labelled_by(row_label.id)));
+                ui.end_row();
+                let row_label = ui.label(tr(Text::ExportQuality));
+                let combo = egui::ComboBox::from_id_salt(egui::IdSalt::new("export.quality"))
+                    .width(field_width)
+                    .selected_text(tr(options.quality.label()))
+                    .show_ui(ui, |ui| {
+                        for (quality, id) in [
+                            (super::ExportQuality::Low, "export.quality.low"),
+                            (super::ExportQuality::Medium, "export.quality.medium"),
+                            (super::ExportQuality::High, "export.quality.high"),
+                            (super::ExportQuality::VeryHigh, "export.quality.very_high"),
+                        ] {
+                            let r = ui.selectable_value(
+                                &mut options.quality,
+                                quality,
+                                tr(quality.label()),
+                            );
+                            result.widgets.push((id, r));
+                        }
+                    });
+                result
+                    .widgets
+                    .push(("export.quality", combo.response.labelled_by(row_label.id)));
+                ui.end_row();
+                let row_label = ui.label(tr(Text::ExportProfile));
+                let label = |profile| match profile {
+                    media::H264Profile::Automatic => tr(Text::ExportAutomatic),
+                    media::H264Profile::Main => "Main",
+                    media::H264Profile::High => "High",
+                };
+                let combo = egui::ComboBox::from_id_salt(egui::IdSalt::new("export.profile"))
+                    .width(field_width)
+                    .selected_text(label(options.output.profile))
+                    .show_ui(ui, |ui| {
+                        for profile in [
+                            media::H264Profile::Automatic,
+                            media::H264Profile::Main,
+                            media::H264Profile::High,
+                        ] {
+                            ui.add_enabled_ui(
+                                render::OutputOptions::profile_fits(
                                     profile,
-                                    label(profile),
-                                );
-                            },
-                        );
-                    }
-                });
-            result
-                .widgets
-                .push(("export.profile", combo.response.labelled_by(row_label.id)));
-            ui.end_row();
+                                    options.format.container(),
+                                ),
+                                |ui| {
+                                    ui.selectable_value(
+                                        &mut options.output.profile,
+                                        profile,
+                                        label(profile),
+                                    );
+                                },
+                            );
+                        }
+                    });
+                result
+                    .widgets
+                    .push(("export.profile", combo.response.labelled_by(row_label.id)));
+                ui.end_row();
+            }
             let row_label = ui.label(tr(Text::ExportScene));
             let previous_scene = options.output.scene;
             let label = match options.output.scene {
