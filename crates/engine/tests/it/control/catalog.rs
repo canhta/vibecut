@@ -600,6 +600,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
                 "audio.remove_cleanup_effect",
                 "audio.set_fade",
                 "audio.update_cleanup_effect",
+                "clip.set_animation",
                 "clipboard.cut",
                 "clipboard.paste_keyframes",
                 "delete",
@@ -623,7 +624,6 @@ fn deterministic_catalog_and_schema_document_receipts() {
                 "ripple_delete",
                 "set_item_param",
                 "split_at",
-                "text.apply_animation",
                 "text.apply_preset",
                 "text.save_preset",
                 "timeline.align_items",
@@ -769,8 +769,8 @@ fn text_fixture_executes_with_the_new_catalog_and_refuses_the_previous_digest() 
     let mut r = runner();
     let mut req = request(
         &s,
-        "text.apply_animation",
-        json!({"item":3,"preset":"fade_in_out"}),
+        "clip.set_animation",
+        json!({"item":3,"slot":"in","preset":"fade"}),
         "fade",
     );
     req.registry_hash =
@@ -783,8 +783,8 @@ fn text_fixture_executes_with_the_new_catalog_and_refuses_the_previous_digest() 
     assert_eq!(s.history_len(), (0, 0));
     let req = request(
         &s,
-        "text.apply_animation",
-        json!({"item":3,"preset":"fade_in_out"}),
+        "clip.set_animation",
+        json!({"item":3,"slot":"in","preset":"fade"}),
         "current-fade",
     );
     ok(s.control_request(req.clone(), caller(&Allow), &mut r)

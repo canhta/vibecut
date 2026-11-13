@@ -22,7 +22,6 @@ impl Editor {
         }
         // A disabled style action must not flush an unrelated caption draft.
         if (id.starts_with("subtitles.style.")
-            || id.starts_with("text.animation.")
             || id.starts_with("graphic.insert.")
             || matches!(id, "edit.copy" | "edit.cut" | "edit.paste"))
             && !self.action_enabled(id)
@@ -224,21 +223,6 @@ impl Editor {
                 }
                 UiAction::InsertText => self.insert_text(),
                 UiAction::InsertGraphic(shape) => self.insert_graphic(shape),
-                UiAction::ApplyTextAnimation(preset) => {
-                    let item = crate::editor::context::single(self.session.selection())
-                        .ok_or(Error::Invalid("text animation selection"))?;
-                    let snapshot = self.session.project().clone();
-                    let mut state = std::mem::take(&mut self.properties);
-                    let result = crate::editor::properties::apply_text_animation(
-                        &mut state,
-                        &mut self.desk(),
-                        item,
-                        preset,
-                        snapshot,
-                    );
-                    self.properties = state;
-                    result?;
-                }
                 UiAction::Subtitles | UiAction::SubtitleCue => {
                     self.prepare_subtitles()?;
                     let mut options = self.preferences.subtitles.clone();

@@ -5,9 +5,6 @@
 <!-- BEGIN GENERATED KEYMAP -->
 | Action | Category | Default keys | Engine command | UI owner |
 |---|---|---|---|---|
-| `text.animation.fade_in` — Fade text in | Edit | — | — | text properties workflow |
-| `text.animation.fade_out` — Fade text out | Edit | — | — | text properties workflow |
-| `text.animation.fade_in_out` — Fade text in and out | Edit | — | — | text properties workflow |
 | `media.view` — Switch media view | View | — | — | media library preferences |
 | `media.sort` — Change media sort order | View | — | — | media library preferences |
 | `media.sort.name` — Sort by name | View | — | — | media library preferences |

@@ -114,218 +114,440 @@ fn title(base: Option<ParamValue>, length: i64) -> Session {
     Session::new(Project::new(data).unwrap(), 100).unwrap()
 }
 
+fn overlay(length: i64) -> Session {
+    let mut s = session().project().data().clone();
+    s.canvas.width = 64;
+    s.canvas.height = 64;
+    let target = s
+        .scene_mut()
+        .timeline
+        .iter_mut()
+        .flat_map(|t| &mut t.items)
+        .find(|i| i.id == ItemId(2))
+        .unwrap();
+    target.animations = Animations::default();
+    target.source_range =
+        SourceRange::new(frame(50), frame(50).checked_add(Tick(length)).unwrap()).unwrap();
+    Session::new(Project::new(s).unwrap(), 100).unwrap()
+}
+
+/// A text title (item 3) or an overlay clip (item 2), `frames` canvas frames long.
+fn rig(overlay_clip: bool, frames: i64) -> (Session, ItemId) {
+    if overlay_clip {
+        (overlay(frame(frames).0), ItemId(2))
+    } else {
+        (title(None, frame(frames).0), ItemId(3))
+    }
+}
+
+fn item_in(p: &Project, id: ItemId) -> &Item {
+    p.data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .find(|i| i.id == id)
+        .unwrap()
+}
+
+type Slot = engine::AnimationSlot;
+type Look = engine::AnimationPreset;
+fn animate(
+    s: &mut Session,
+    id: ItemId,
+    slot: Slot,
+    preset: Option<Look>,
+    duration: Option<Tick>,
+) -> std::result::Result<engine::Outcome, engine::EditError> {
+    s.apply(Command::SetClipAnimation {
+        item: id,
+        slot,
+        preset,
+        duration,
+    })
+}
+fn read(s: &Session, id: ItemId) -> engine::ClipAnimations {
+    engine::ClipAnimations::of(item(s, id), &s.project().data().canvas)
+}
+fn scalar(value: &ParamValue) -> f64 {
+    let ParamValue::Scalar(value) = value else {
+        panic!("scalar")
+    };
+    *value
+}
+fn keys_of(s: &Session, id: ItemId, path: BuiltinPath) -> Vec<(i64, f64)> {
+    item(s, id)
+        .animations
+        .get(&path.into())
+        .map(|param| {
+            param
+                .channel(None)
+                .unwrap()
+                .keys()
+                .iter()
+                .map(|key| (key.time.0, scalar(&key.value)))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+const OWNED: [BuiltinPath; 6] = [
+    BuiltinPath::Opacity,
+    BuiltinPath::TransformPositionX,
+    BuiltinPath::TransformPositionY,
+    BuiltinPath::TransformScaleX,
+    BuiltinPath::TransformScaleY,
+    BuiltinPath::TransformRotate,
+];
+fn rest(path: BuiltinPath) -> f64 {
+    if matches!(
+        path,
+        BuiltinPath::Opacity | BuiltinPath::TransformScaleX | BuiltinPath::TransformScaleY
+    ) {
+        1.0
+    } else {
+        0.0
+    }
+}
+fn only(s: &Session, id: ItemId, expected: &[BuiltinPath]) {
+    for path in OWNED {
+        assert_eq!(
+            keys_of(s, id, path).is_empty(),
+            !expected.contains(&path),
+            "{path:?}"
+        );
+    }
+}
+
 #[test]
-fn text_animation_expands_literal_keys_preserves_base_and_exact_noop_redo() {
-    for (length, d, exit) in [
-        (254_016_000_000, 76_204_800_000, 177_811_200_000),
-        (16_951_334_400, 8_475_667_200, 8_475_667_200),
-        (16_951_334_401, 8_475_667_200, 8_475_667_201),
-    ] {
-        for base in [None, Some(0.0), Some(0.6)] {
-            let b = base.unwrap_or(1.0);
-            for (mode, expected) in [
-                (engine::TextAnimationPreset::FadeIn, vec![(0, 0.0), (d, b)]),
-                (
-                    engine::TextAnimationPreset::FadeOut,
-                    vec![(exit, b), (length, 0.0)],
-                ),
-                (
-                    engine::TextAnimationPreset::FadeInOut,
-                    if d == exit {
-                        vec![(0, 0.0), (d, b), (length, 0.0)]
-                    } else {
-                        vec![(0, 0.0), (d, b), (exit, b), (length, 0.0)]
-                    },
-                ),
-            ] {
-                let mut s = title(base.map(ParamValue::Scalar), length);
+fn clip_animation_edge_presets_expand_keys_for_text_and_clips_and_undo_as_one_step() {
+    use BuiltinPath::{
+        Opacity, TransformPositionX as X, TransformPositionY as Y, TransformRotate as R,
+        TransformScaleX as SX, TransformScaleY as SY,
+    };
+    // Canvas 64x64: a slide travels 16 px. Values are where an In look starts; the Out look
+    // ends at the mirror (offsets negate, scale factors reflect around 1, opacity stays 0).
+    let table: [(Look, &[(BuiltinPath, f64)]); 12] = [
+        (Look::Fade, &[(Opacity, 0.0)]),
+        (Look::SlideLeft, &[(X, 16.0)]),
+        (Look::SlideRight, &[(X, -16.0)]),
+        (Look::SlideUp, &[(Y, 16.0)]),
+        (Look::SlideDown, &[(Y, -16.0)]),
+        (Look::ZoomIn, &[(SX, 0.5), (SY, 0.5)]),
+        (Look::ZoomOut, &[(SX, 1.5), (SY, 1.5)]),
+        (Look::Spin, &[(Opacity, 0.0), (R, -180.0)]),
+        (Look::Drop, &[(Y, -16.0), (Opacity, 0.0)]),
+        (Look::Rise, &[(Y, 16.0), (Opacity, 0.0)]),
+        (Look::Pop, &[(SX, 0.2), (SY, 0.2), (Opacity, 0.0)]),
+        (Look::Tilt, &[(R, -30.0), (Opacity, 0.0)]),
+    ];
+    assert_eq!(table.len(), Look::EDGE.len());
+    let length = frame(60).0;
+    let half_second = 127_008_000_000_i64;
+    for on_clip in [false, true] {
+        for (preset, starts) in table {
+            assert!(Look::EDGE.contains(&preset));
+            for slot in [Slot::In, Slot::Out] {
+                let (mut s, id) = rig(on_clip, 60);
                 let before = s.project().clone();
-                let content = item(&s, ItemId(3)).content.clone();
-                let command = || Command::ApplyTextAnimation {
-                    item: ItemId(3),
-                    preset: mode,
-                };
-                assert!(s.apply(command()).unwrap().changed);
-                let channel = item(&s, ItemId(3))
-                    .animations
-                    .get(&path())
-                    .unwrap()
-                    .channel(None)
-                    .unwrap();
-                assert_eq!(channel.base(), &ParamValue::Scalar(b));
-                assert_eq!(
-                    channel.extrapolation(),
-                    (Extrapolation::Hold, Extrapolation::Hold)
+                let content = item(&s, id).content.clone();
+                assert!(
+                    animate(&mut s, id, slot, Some(preset), None)
+                        .unwrap()
+                        .changed
                 );
-                assert_eq!(
-                    channel.keys(),
-                    expected
-                        .iter()
-                        .map(|(t, v)| Keyframe::new(Tick(*t), ParamValue::Scalar(*v)))
-                        .collect::<Vec<_>>()
+                assert_eq!(s.history_len(), (1, 0));
+                only(
+                    &s,
+                    id,
+                    &starts.iter().map(|(path, _)| *path).collect::<Vec<_>>(),
                 );
-                assert_eq!(item(&s, ItemId(3)).content, content);
-                assert_eq!(item(&s, ItemId(3)).start, frame(100));
-                assert_eq!(item(&s, ItemId(3)).source_range.start(), frame(50));
-                near(
-                    value(&item(&s, ItemId(3)).animations, Tick(d / 2)),
-                    if mode == engine::TextAnimationPreset::FadeOut {
-                        b
+                for (path, start) in starts {
+                    let base = rest(*path);
+                    let outer = match (slot, path) {
+                        (Slot::In, _) => *start,
+                        (_, Opacity) => *start,
+                        (_, SX | SY) => 2.0 - *start,
+                        _ => -*start,
+                    };
+                    let expected = if slot == Slot::In {
+                        vec![(0, outer), (half_second, base)]
                     } else {
-                        b / 2.0
-                    },
+                        vec![(length - half_second, base), (length, outer)]
+                    };
+                    let got = keys_of(&s, id, *path);
+                    assert_eq!(got.len(), 2, "{preset:?} {path:?}");
+                    for ((gt, gv), (et, ev)) in got.into_iter().zip(expected) {
+                        assert_eq!(gt, et, "{preset:?} {slot:?} {path:?}");
+                        near(gv, ev);
+                    }
+                }
+                assert_eq!(item(&s, id).content, content);
+                let held = Some((preset, Tick(half_second)));
+                assert_eq!(
+                    read(&s, id),
+                    engine::ClipAnimations {
+                        enter: if slot == Slot::In { held } else { None },
+                        exit: if slot == Slot::Out { held } else { None },
+                        combo: None,
+                    }
                 );
                 let saved = encode(s.project(), true).unwrap();
                 assert_eq!(decode(&saved).unwrap().project, **s.project());
                 s.undo().unwrap();
                 assert_eq!(s.project(), &before);
                 s.redo().unwrap();
-                s.apply(Command::RenameProject {
-                    name: "Later".into(),
-                })
-                .unwrap();
-                s.undo().unwrap();
-                s.take_change();
-                let snapshot = s.project().clone();
-                let rev = s.revision();
-                let history = s.history_len();
-                assert!(!s.apply(command()).unwrap().changed);
-                assert!(std::sync::Arc::ptr_eq(&snapshot, s.project()));
-                assert_eq!((s.revision(), s.history_len()), (rev, history));
-                assert!(s.take_change().is_none());
-                let keys: Vec<_> = expected
-                    .iter()
-                    .map(|(t, _)| engine::KeyframeRef {
-                        item: ItemId(3),
-                        path: path(),
-                        component: None,
-                        time: Tick(*t),
-                    })
-                    .collect();
-                s.apply(Command::DeleteKeyframes { keys }).unwrap();
-                near(value(&item(&s, ItemId(3)).animations, Tick(d)), b);
+                // An exact repeat changes nothing and records nothing.
+                let revision = s.revision();
+                assert!(
+                    !animate(&mut s, id, slot, Some(preset), None)
+                        .unwrap()
+                        .changed
+                );
+                assert_eq!((s.revision(), s.history_len()), (revision, (1, 0)));
+                // None removes the look in one step and leaves the item as it began.
+                assert!(animate(&mut s, id, slot, None, None).unwrap().changed);
+                assert_eq!(s.history_len(), (2, 0));
+                assert_eq!(item(&s, id).animations, item_in(&before, id).animations);
             }
         }
     }
 }
+
 #[test]
-fn text_slide_and_scale_presets_expand_transform_keys_and_follow_trim_and_match() {
-    use engine::TextAnimationPreset::{FadeInOut, ScaleIn, ScaleOut, SlideIn, SlideOut};
-    let length = 254_016_000_000;
-    let d = 76_204_800_000;
-    let exit = 177_811_200_000;
-    let mut s = title(None, length);
-    assert_eq!(s.project().data().canvas.width, 64);
-    s.wire(
-        "text.apply_animation",
-        json!({"item":3,"preset":"slide_in"}),
-    )
-    .unwrap();
-    let slide = AnimationPath::from(BuiltinPath::TransformPositionX);
-    let channel = item(&s, ItemId(3))
-        .animations
-        .get(&slide)
-        .unwrap()
-        .channel(None)
-        .unwrap();
-    assert_eq!(channel.base(), &ParamValue::Scalar(0.0));
-    assert_eq!(
-        channel.keys(),
-        [
-            Keyframe::new(Tick::ZERO, ParamValue::Scalar(-16.0)),
-            Keyframe::new(Tick(d), ParamValue::Scalar(0.0)),
-        ]
-    );
-    assert!(SlideIn.matches(item(&s, ItemId(3)), s.project().data()));
-    assert!(!SlideOut.matches(item(&s, ItemId(3)), s.project().data()));
-    assert!(!FadeInOut.matches(item(&s, ItemId(3)), s.project().data()));
-    // Trim re-times the ordinary transform keys like any other animation.
-    s.apply(Command::TrimStart {
-        item: ItemId(3),
-        at: frame(102),
-    })
-    .unwrap();
-    let channel = item(&s, ItemId(3))
-        .animations
-        .get(&slide)
-        .unwrap()
-        .channel(None)
-        .unwrap();
-    let expected = -16.0 * (1.0 - 16_951_334_400.0 / 76_204_800_000.0);
-    let ParamValue::Scalar(value) = channel.value_at(Tick::ZERO) else {
-        panic!("slide scalar")
+fn clip_animation_combo_presets_span_the_whole_clip() {
+    use BuiltinPath::{
+        Opacity, TransformPositionX as X, TransformPositionY as Y, TransformRotate as R,
+        TransformScaleX as SX, TransformScaleY as SY,
     };
-    assert!((value - expected).abs() < 1e-8, "{value} != {expected}");
-    // Scale writes both transform scale channels and refuses to overwrite keys.
-    let mut s = title(None, length);
-    s.wire(
-        "text.apply_animation",
-        json!({"item":3,"preset":"scale_out"}),
-    )
-    .unwrap();
-    for path in [
-        AnimationPath::from(BuiltinPath::TransformScaleX),
-        AnimationPath::from(BuiltinPath::TransformScaleY),
-    ] {
-        let channel = item(&s, ItemId(3))
-            .animations
-            .get(&path)
-            .unwrap()
-            .channel(None)
-            .unwrap();
-        assert_eq!(channel.base(), &ParamValue::Scalar(1.0));
-        assert_eq!(
-            channel.keys(),
-            [
-                Keyframe::new(Tick(exit), ParamValue::Scalar(1.0)),
-                Keyframe::new(Tick(length), ParamValue::Scalar(0.5)),
-            ]
-        );
-    }
-    assert!(ScaleOut.matches(item(&s, ItemId(3)), s.project().data()));
-    assert!(!ScaleIn.matches(item(&s, ItemId(3)), s.project().data()));
-    let before = s.project().clone();
-    assert!(
-        s.apply(Command::ApplyTextAnimation {
-            item: ItemId(3),
-            preset: FadeInOut,
-        })
-        .is_err()
-    );
-    assert_eq!(s.project(), &before);
-    let keys: Vec<_> = [exit, length]
-        .into_iter()
-        .flat_map(|time| {
-            [BuiltinPath::TransformScaleX, BuiltinPath::TransformScaleY].map(|path| {
-                engine::KeyframeRef {
-                    item: ItemId(3),
-                    path: AnimationPath::from(path),
-                    component: None,
-                    time: Tick(time),
+    // Channel, key count, value at the last key; the first key is at 0 and the last at the end.
+    let table: [(Look, &[(BuiltinPath, usize, f64)]); 13] = [
+        (Look::Pulse, &[(SX, 3, 1.0), (SY, 3, 1.0)]),
+        (Look::Heartbeat, &[(SX, 8, 1.0), (SY, 8, 1.0)]),
+        (Look::Sway, &[(R, 4, 0.0)]),
+        (Look::Swing, &[(R, 3, -10.0)]),
+        (Look::Float, &[(Y, 3, 0.0)]),
+        (Look::DriftLeft, &[(X, 2, -3.2)]),
+        (Look::DriftRight, &[(X, 2, 3.2)]),
+        (Look::PushIn, &[(SX, 2, 1.15), (SY, 2, 1.15)]),
+        (Look::PullOut, &[(SX, 2, 1.0), (SY, 2, 1.0)]),
+        (Look::Shake, &[(X, 9, 0.0)]),
+        (Look::Flicker, &[(Opacity, 7, 1.0)]),
+        (Look::Breathe, &[(SX, 3, 1.0), (SY, 3, 1.0)]),
+        (Look::Turn, &[(R, 2, 360.0)]),
+    ];
+    assert_eq!(table.len(), Look::COMBO.len());
+    let length = frame(60).0;
+    for on_clip in [false, true] {
+        for (preset, channels) in table {
+            let (mut s, id) = rig(on_clip, 60);
+            let before = s.project().clone();
+            assert!(
+                animate(&mut s, id, Slot::Combo, Some(preset), None)
+                    .unwrap()
+                    .changed
+            );
+            only(
+                &s,
+                id,
+                &channels
+                    .iter()
+                    .map(|(path, _, _)| *path)
+                    .collect::<Vec<_>>(),
+            );
+            for (path, count, last) in channels {
+                let got = keys_of(&s, id, *path);
+                assert_eq!(got.len(), *count, "{preset:?} {path:?}");
+                assert_eq!(got[0].0, 0);
+                assert_eq!(got[got.len() - 1].0, length);
+                assert!(got.windows(2).all(|pair| pair[0].0 < pair[1].0));
+                near(got[got.len() - 1].1, *last);
+            }
+            assert_eq!(
+                read(&s, id),
+                engine::ClipAnimations {
+                    combo: Some(preset),
+                    ..Default::default()
                 }
-            })
-        })
-        .collect();
-    s.apply(Command::DeleteKeyframes { keys }).unwrap();
-    s.apply(Command::ApplyTextAnimation {
-        item: ItemId(3),
-        preset: FadeInOut,
-    })
-    .unwrap();
-    assert!(
-        item(&s, ItemId(3))
-            .animations
-            .get(&project::BuiltinPath::Opacity.into())
-            .is_some()
-    );
+            );
+            let saved = encode(s.project(), true).unwrap();
+            assert_eq!(decode(&saved).unwrap().project, **s.project());
+            s.undo().unwrap();
+            assert_eq!(s.project(), &before);
+            s.redo().unwrap();
+            assert!(
+                animate(&mut s, id, Slot::Combo, None, None)
+                    .unwrap()
+                    .changed
+            );
+            assert_eq!(item(&s, id).animations, item_in(&before, id).animations);
+        }
+    }
+    // Combo excludes In and Out in both directions.
+    let (mut s, id) = rig(true, 60);
+    animate(&mut s, id, Slot::In, Some(Look::Fade), None).unwrap();
+    animate(&mut s, id, Slot::Combo, Some(Look::Pulse), None).unwrap();
+    assert_eq!(read(&s, id).enter, None);
+    assert!(keys_of(&s, id, BuiltinPath::Opacity).is_empty());
+    animate(&mut s, id, Slot::Out, Some(Look::Fade), None).unwrap();
+    assert_eq!(read(&s, id).combo, None);
+    assert!(keys_of(&s, id, BuiltinPath::TransformScaleX).is_empty());
 }
 
 #[test]
-fn text_animation_refusals_and_transactions_preserve_all_state() {
-    use engine::TextAnimationPreset::FadeInOut;
-    let apply = || Command::ApplyTextAnimation {
+fn clip_animation_durations_clamp_to_the_clip_and_the_later_edge_shrinks() {
+    let f = |n: i64| frame(n);
+    let length = f(60);
+    // (In frames, Out frames) requested in that order, then what each ends as.
+    let rows: [((i64, i64), (i64, i64)); 6] = [
+        ((20, 20), (20, 20)),
+        ((40, 40), (40, 20)),
+        ((50, 30), (50, 10)),
+        ((1000, 30), (59, 1)),
+        ((0, 0), (1, 1)),
+        ((0, 7), (1, 7)),
+    ];
+    for on_clip in [false, true] {
+        for ((want_in, want_out), (got_in, got_out)) in rows {
+            let (mut s, id) = rig(on_clip, 60);
+            animate(&mut s, id, Slot::In, Some(Look::Fade), Some(f(want_in))).unwrap();
+            animate(&mut s, id, Slot::Out, Some(Look::Fade), Some(f(want_out))).unwrap();
+            let now = read(&s, id);
+            assert_eq!(
+                now.enter,
+                Some((Look::Fade, f(got_in))),
+                "{want_in} {want_out}"
+            );
+            assert_eq!(
+                now.exit,
+                Some((Look::Fade, f(got_out))),
+                "{want_in} {want_out}"
+            );
+            assert!(f(got_in).0 + f(got_out).0 <= length.0);
+        }
+    }
+    // A later, longer In shrinks the Out already there; Out never grows back by itself.
+    let (mut s, id) = rig(false, 60);
+    animate(&mut s, id, Slot::Out, Some(Look::Fade), Some(f(30))).unwrap();
+    animate(&mut s, id, Slot::In, Some(Look::Fade), Some(f(45))).unwrap();
+    assert_eq!(read(&s, id).exit, Some((Look::Fade, f(15))));
+    animate(&mut s, id, Slot::In, Some(Look::Fade), Some(f(10))).unwrap();
+    assert_eq!(read(&s, id).exit, Some((Look::Fade, f(15))));
+    // Changing only the duration keeps the look; a lone In may span the whole clip.
+    let (mut s, id) = rig(false, 60);
+    animate(&mut s, id, Slot::In, Some(Look::SlideUp), None).unwrap();
+    animate(&mut s, id, Slot::In, Some(Look::SlideUp), Some(f(900))).unwrap();
+    assert_eq!(read(&s, id).enter, Some((Look::SlideUp, length)));
+    // Mixed looks share the opacity channel only where they both use it.
+    let (mut s, id) = rig(false, 60);
+    animate(&mut s, id, Slot::In, Some(Look::Fade), Some(f(10))).unwrap();
+    animate(&mut s, id, Slot::Out, Some(Look::Pop), Some(f(10))).unwrap();
+    assert_eq!(
+        keys_of(&s, id, BuiltinPath::Opacity),
+        [(0, 0.0), (f(10).0, 1.0), (f(50).0, 1.0), (f(60).0, 0.0)]
+    );
+    assert_eq!(keys_of(&s, id, BuiltinPath::TransformScaleX).len(), 2);
+    animate(&mut s, id, Slot::In, None, None).unwrap();
+    assert_eq!(
+        keys_of(&s, id, BuiltinPath::Opacity),
+        [(f(50).0, 1.0), (f(60).0, 0.0)]
+    );
+    assert_eq!(read(&s, id).exit, Some((Look::Pop, f(10))));
+}
+
+#[test]
+fn trimming_a_clip_refits_its_animations_in_one_step() {
+    let f = |n: i64| frame(n);
+    for on_clip in [false, true] {
+        for edge in ["end", "start"] {
+            let (mut s, id) = rig(on_clip, 60);
+            let start = item(&s, id).start;
+            animate(&mut s, id, Slot::In, Some(Look::Fade), Some(f(20))).unwrap();
+            animate(&mut s, id, Slot::Out, Some(Look::Fade), Some(f(20))).unwrap();
+            let animated = s.project().clone();
+            let history = s.history_len().0;
+            let command = if edge == "end" {
+                Command::TrimEnd {
+                    item: id,
+                    at: start.checked_add(f(30)).unwrap(),
+                }
+            } else {
+                Command::TrimStart {
+                    item: id,
+                    at: start.checked_add(f(30)).unwrap(),
+                }
+            };
+            s.apply(command).unwrap();
+            assert_eq!(s.history_len().0, history + 1);
+            assert_eq!(item(&s, id).duration().unwrap(), f(30));
+            // Out shrinks to the 10 frames left after In; the two meet at one resting key.
+            assert_eq!(
+                read(&s, id),
+                engine::ClipAnimations {
+                    enter: Some((Look::Fade, f(20))),
+                    exit: Some((Look::Fade, f(10))),
+                    combo: None,
+                }
+            );
+            assert_eq!(
+                keys_of(&s, id, BuiltinPath::Opacity),
+                [(0, 0.0), (f(20).0, 1.0), (f(30).0, 0.0)]
+            );
+            s.undo().unwrap();
+            assert_eq!(s.project(), &animated);
+            // A trim to a single frame leaves no room for an animation and drops it.
+            s.apply(Command::TrimEnd {
+                item: id,
+                at: start.checked_add(f(1)).unwrap(),
+            })
+            .unwrap();
+            assert_eq!(read(&s, id), engine::ClipAnimations::default());
+            assert!(keys_of(&s, id, BuiltinPath::Opacity).is_empty());
+        }
+    }
+    // A Combo stretches over the new length; keys the user changed by hand are left alone.
+    let (mut s, id) = rig(true, 60);
+    let start = item(&s, id).start;
+    animate(&mut s, id, Slot::Combo, Some(Look::Pulse), None).unwrap();
+    s.apply(Command::TrimEnd {
+        item: id,
+        at: start.checked_add(f(20)).unwrap(),
+    })
+    .unwrap();
+    let scale = keys_of(&s, id, BuiltinPath::TransformScaleX);
+    assert_eq!(
+        scale.iter().map(|k| k.0).collect::<Vec<_>>(),
+        [0, f(10).0, f(20).0]
+    );
+    assert_eq!(read(&s, id).combo, Some(Look::Pulse));
+    let (mut s, id) = rig(true, 60);
+    let start = item(&s, id).start;
+    animate(&mut s, id, Slot::In, Some(Look::Fade), Some(f(20))).unwrap();
+    s.apply(Command::DeleteKeyframes {
+        keys: vec![engine::KeyframeRef {
+            item: id,
+            path: path(),
+            component: None,
+            time: f(20),
+        }],
+    })
+    .unwrap();
+    assert_eq!(read(&s, id), engine::ClipAnimations::default());
+    let edited = keys_of(&s, id, BuiltinPath::Opacity);
+    s.apply(Command::TrimEnd {
+        item: id,
+        at: start.checked_add(f(30)).unwrap(),
+    })
+    .unwrap();
+    assert_eq!(keys_of(&s, id, BuiltinPath::Opacity), edited);
+}
+
+#[test]
+fn clip_animation_refusals_and_transactions_preserve_all_state() {
+    let apply = || Command::SetClipAnimation {
         item: ItemId(3),
-        preset: FadeInOut,
+        slot: Slot::In,
+        preset: Some(Look::Fade),
+        duration: None,
     };
     for (base, length) in [
         (Some(ParamValue::Scalar(-0.1)), 254_016_000_000),
@@ -343,22 +565,66 @@ fn text_animation_refusals_and_transactions_preserve_all_state() {
     }
     let mut s = title(None, 254_016_000_000);
     for params in [
-        json!({"item":3,"preset":"loop"}),
-        json!({"item":3,"preset":"fade_in","extra":0}),
-        json!({"item":9007199254740992_u64,"preset":"fade_in"}),
-        json!({"item":3}),
+        json!({"item":3,"slot":"in","preset":"loop"}),
+        json!({"item":3,"slot":"middle","preset":"fade"}),
+        json!({"item":3,"slot":"in","preset":"fade","extra":0}),
+        json!({"item":9007199254740992_u64,"slot":"in","preset":"fade"}),
+        json!({"item":3,"preset":"fade"}),
+        json!({"item":3,"slot":"in","preset":"fade","duration":"long"}),
     ] {
-        assert!(s.wire("text.apply_animation", params).is_err());
+        assert!(s.wire("clip.set_animation", params).is_err());
     }
+    // Wire form: a duration in ticks, and null removes.
+    s.wire(
+        "clip.set_animation",
+        json!({"item":3,"slot":"out","preset":"slide_left","duration":127008000000_i64}),
+    )
+    .unwrap();
+    assert_eq!(
+        read(&s, ItemId(3)).exit,
+        Some((Look::SlideLeft, Tick(127_008_000_000)))
+    );
+    s.wire(
+        "clip.set_animation",
+        json!({"item":3,"slot":"out","preset":null,"duration":null}),
+    )
+    .unwrap();
+    assert_eq!(read(&s, ItemId(3)), engine::ClipAnimations::default());
+    s.undo().unwrap();
+    s.undo().unwrap();
     for id in [ItemId(999), ItemId(1), ItemId(4)] {
         assert!(
-            s.apply(Command::ApplyTextAnimation {
+            s.apply(Command::SetClipAnimation {
                 item: id,
-                preset: FadeInOut
+                slot: Slot::In,
+                preset: Some(Look::Fade),
+                duration: None,
             })
             .is_err()
         );
     }
+    // A look belongs to its slot; a duration needs an In or Out look.
+    for (slot, preset, duration) in [
+        (Slot::In, Some(Look::Pulse), None),
+        (Slot::Out, Some(Look::Turn), None),
+        (Slot::Combo, Some(Look::Fade), None),
+        (Slot::Combo, Some(Look::Pulse), Some(Tick(1))),
+        (Slot::Combo, None, Some(Tick(1))),
+        (Slot::In, None, Some(Tick(1))),
+    ] {
+        let before = s.project().clone();
+        assert!(matches!(
+            s.apply(Command::SetClipAnimation {
+                item: ItemId(3),
+                slot,
+                preset,
+                duration,
+            }),
+            Err(engine::EditError::Invalid(_))
+        ));
+        assert_eq!(s.project(), &before);
+    }
+    // Keys the animations did not write block a change on their channel only.
     for keys in [
         vec![(-1, 0.5)],
         vec![(254_016_000_001, 0.5)],
@@ -385,10 +651,36 @@ fn text_animation_refusals_and_transactions_preserve_all_state() {
         let history = s.history_len();
         let revision = s.revision();
         assert!(s.apply(apply()).is_err());
+        assert!(
+            !animate(&mut s, ItemId(3), Slot::Out, None, None)
+                .unwrap()
+                .changed,
+            "an empty slot changes nothing"
+        );
         assert_eq!(s.project(), &before);
         assert_eq!((s.history_len(), s.revision()), (history, revision));
+        animate(&mut s, ItemId(3), Slot::In, Some(Look::SlideLeft), None).unwrap();
+        animate(&mut s, ItemId(3), Slot::In, None, None).unwrap();
+        s.undo().unwrap();
+        s.undo().unwrap();
+        s.undo().unwrap();
     }
+    // Hand-edited keys read as no animation and block a new look.
     let mut s = title(None, 254_016_000_000);
+    animate(&mut s, ItemId(3), Slot::In, Some(Look::Fade), None).unwrap();
+    s.apply(Command::DeleteKeyframes {
+        keys: vec![engine::KeyframeRef {
+            item: ItemId(3),
+            path: path(),
+            component: None,
+            time: Tick::ZERO,
+        }],
+    })
+    .unwrap();
+    assert_eq!(read(&s, ItemId(3)), engine::ClipAnimations::default());
+    let before = s.project().clone();
+    assert!(animate(&mut s, ItemId(3), Slot::In, Some(Look::Fade), None).is_err());
+    assert_eq!(s.project(), &before);
     for (command, params) in [
         (
             "keyframes.set_extrapolation",
@@ -399,13 +691,11 @@ fn text_animation_refusals_and_transactions_preserve_all_state() {
             json!({"item":3,"path":"opacity","component":null,"time":0,"side":"out","handle":{"dt":1,"dv":0.1},"tangent":"broken"}),
         ),
     ] {
+        let mut s = title(None, 254_016_000_000);
         s.apply(apply()).unwrap();
         s.wire(command, params).unwrap();
-        let before = s.project().clone();
-        assert!(s.apply(apply()).is_err());
-        assert_eq!(s.project(), &before);
-        s.undo().unwrap();
-        s.undo().unwrap();
+        // Curve edits do not change what the keys say, so the look is still found.
+        assert_eq!(read(&s, ItemId(3)).enter.map(|e| e.0), Some(Look::Fade));
     }
     let mut s = title(None, 254_016_000_000);
     s.set_selection([ItemId(3)].into_iter().collect()).unwrap();
@@ -459,39 +749,12 @@ fn text_animation_refusals_and_transactions_preserve_all_state() {
 }
 
 #[test]
-fn text_animation_keys_keep_ordinary_trim_split_move_and_scale_semantics() {
+fn clip_animation_keys_keep_ordinary_split_move_and_scale_semantics() {
     let mut s = title(Some(ParamValue::Scalar(0.6)), 254_016_000_000);
-    s.wire(
-        "text.apply_animation",
-        json!({"item":3,"preset":"fade_in_out"}),
-    )
-    .unwrap();
+    animate(&mut s, ItemId(3), Slot::In, Some(Look::Fade), None).unwrap();
+    animate(&mut s, ItemId(3), Slot::Out, Some(Look::Fade), None).unwrap();
     let original = item(&s, ItemId(3)).clone();
-    s.apply(Command::TrimStart {
-        item: ItemId(3),
-        at: frame(102),
-    })
-    .unwrap();
-    near(
-        value(&item(&s, ItemId(3)).animations, Tick::ZERO),
-        0.6 * 16_951_334_400.0 / 76_204_800_000.0,
-    );
-    s.apply(Command::TrimEnd {
-        item: ItemId(3),
-        at: frame(125),
-    })
-    .unwrap();
-    assert_eq!(
-        item(&s, ItemId(3))
-            .animations
-            .get(&path())
-            .unwrap()
-            .channel(None)
-            .unwrap()
-            .keys()[3]
-            .time,
-        Tick(237_064_665_600)
-    );
+    near(value(&original.animations, Tick(63_504_000_000)), 0.3);
     let outcome = s
         .apply(Command::SplitAt {
             item: ItemId(3),
@@ -517,10 +780,6 @@ fn text_animation_keys_keep_ordinary_trim_split_move_and_scale_semantics() {
     })
     .unwrap();
     assert_eq!(item(&s, right).animations, curve);
-    near(
-        value(&curve, Tick::ZERO),
-        0.6 * 84_756_672_000.0 / 76_204_800_000.0_f64.max(84_756_672_000.0),
-    );
     s.apply(Command::ScaleKeyframeTime {
         item: right,
         numerator: 2,
@@ -552,7 +811,7 @@ fn text_animation_keys_keep_ordinary_trim_split_move_and_scale_semantics() {
         )
         .is_err()
     );
-    while s.history_len().0 > 1 {
+    while s.history_len().0 > 2 {
         s.undo().unwrap();
     }
     assert_eq!(item(&s, ItemId(3)), &original);

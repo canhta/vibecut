@@ -510,6 +510,42 @@ fn select(harness: &mut Harness<Editor>, item: ItemId) {
     harness.run_steps(3);
 }
 
+/// Type a duration into the shared Animation control's field and commit it with Enter.
+fn type_animation_duration(harness: &mut Harness<Editor>, text: &str) {
+    click(harness, "inspector.animation.duration");
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.event(egui::Event::Text(text.into()));
+    harness.key_press(egui::Key::Enter);
+    harness.run_steps(3);
+}
+
+/// Fade In and Fade Out over 0.3 s in one undo step, for tests that need keyed opacity.
+fn fade_both(editor: &mut Editor, item: ItemId) {
+    let slot = |slot| Command::SetClipAnimation {
+        item,
+        slot,
+        preset: Some(engine::AnimationPreset::Fade),
+        duration: Some(Tick(76_204_800_000)),
+    };
+    editor
+        .session
+        .apply(Command::Batch {
+            commands: vec![
+                slot(engine::AnimationSlot::In),
+                slot(engine::AnimationSlot::Out),
+            ],
+        })
+        .unwrap();
+}
+
+/// Ask the Fade In tile to apply by an AccessKit click, which a refused editor ignores.
+fn try_fade_in(harness: &mut Harness<Editor>) {
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.animation.in.fade")))
+        .click_accesskit();
+    harness.run_steps(2);
+}
+
 /// The mask row lives under the Mask sub-tab of Basic.
 fn open_mask(harness: &mut Harness<Editor>) {
     click(harness, "inspector.tab.mask");
@@ -579,7 +615,7 @@ fn needs_reveal(id: &str) -> bool {
         id,
         "inspector.text_color.picker" | "inspector.background_color" | "inspector.opacity"
     ) || id.starts_with("inspector.text_")
-        || id.starts_with("text.animation.")
+        || id.starts_with("inspector.animation.")
         || id.starts_with("inspector.lut.")
         || id.starts_with("inspector.transform.distribute_")
         || blend_control(id)
@@ -2032,8 +2068,14 @@ fn text_presets_and_animations_click_edit_undo_reopen_and_capture_both_locales()
             h.run_steps(3);
             select(&mut h, f.text);
             let history = h.state().session.history_len().0;
-            click(&mut h, "text.animation.fade_in_out");
-            assert_eq!(h.state().session.history_len().0, history + 1);
+            // Fade In and Fade Out, each applied then set to 0.3 s through the shared control.
+            click(&mut h, "inspector.animation.in.fade");
+            type_animation_duration(&mut h, "0.3");
+            click(&mut h, "inspector.animation.tab.out");
+            click(&mut h, "inspector.animation.out.fade");
+            type_animation_duration(&mut h, "0.3");
+            click(&mut h, "inspector.animation.tab.in");
+            assert_eq!(h.state().session.history_len().0, history + 4);
             let fade = item(&h, f.text).animations;
             assert_eq!(
                 fade.get(&project::BuiltinPath::Opacity.into())
@@ -2083,78 +2125,30 @@ fn text_presets_and_animations_click_edit_undo_reopen_and_capture_both_locales()
                 project::Color([255, 0, 0, 255])
             );
             h.state_mut().activate("edit.redo").unwrap();
-            // Slide and scale write ordinary transform keys through the same rows.
-            let remove = |h: &mut Harness<Editor>, path: project::BuiltinPath| {
-                let times: Vec<_> = item(h, f.text)
+            // Other looks write ordinary keys through the same tiles; None removes the slot.
+            let keys = |h: &Harness<Editor>, path: project::BuiltinPath| {
+                item(h, f.text)
                     .animations
                     .get(&path.into())
-                    .unwrap()
-                    .channel(None)
-                    .unwrap()
-                    .keys()
-                    .iter()
-                    .map(|key| key.time)
-                    .collect();
-                for time in times {
-                    h.state_mut()
-                        .session
-                        .apply(Command::RemoveKeyframe {
-                            item: f.text,
-                            path: path.into(),
-                            component: None,
-                            time,
-                        })
-                        .unwrap();
-                }
+                    .map_or(0, |param| param.channel(None).unwrap().keys().len())
             };
-            remove(&mut h, project::BuiltinPath::Opacity);
-            click(&mut h, "text.animation.family.slide");
-            assert_eq!(
-                item(&h, f.text)
-                    .animations
-                    .get(&project::BuiltinPath::TransformPositionX.into())
-                    .unwrap()
-                    .channel(None)
-                    .unwrap()
-                    .keys()
-                    .len(),
-                2
-            );
-            remove(&mut h, project::BuiltinPath::TransformPositionX);
-            click(&mut h, "text.animation.family.scale");
+            click(&mut h, "inspector.animation.in.slide_left");
+            assert_eq!(keys(&h, project::BuiltinPath::TransformPositionX), 2);
+            assert_eq!(keys(&h, project::BuiltinPath::Opacity), 2);
+            click(&mut h, "inspector.animation.in.zoom_in");
+            assert_eq!(keys(&h, project::BuiltinPath::TransformPositionX), 0);
             for path in [
                 project::BuiltinPath::TransformScaleX,
                 project::BuiltinPath::TransformScaleY,
             ] {
-                assert_eq!(
-                    item(&h, f.text)
-                        .animations
-                        .get(&path.into())
-                        .unwrap()
-                        .channel(None)
-                        .unwrap()
-                        .keys()
-                        .len(),
-                    2
-                );
+                assert_eq!(keys(&h, path), 2);
             }
-            remove(&mut h, project::BuiltinPath::TransformScaleX);
-            remove(&mut h, project::BuiltinPath::TransformScaleY);
-            // Restore the fade used by the preview frames below.
-            click(&mut h, "text.animation.family.fade");
-            remove(&mut h, project::BuiltinPath::Opacity);
-            click(&mut h, "text.animation.fade_in_out");
-            assert_eq!(
-                item(&h, f.text)
-                    .animations
-                    .get(&project::BuiltinPath::Opacity.into())
-                    .unwrap()
-                    .channel(None)
-                    .unwrap()
-                    .keys()
-                    .len(),
-                4
-            );
+            click(&mut h, "inspector.animation.in.none");
+            assert_eq!(keys(&h, project::BuiltinPath::TransformScaleX), 0);
+            // Restore the 0.3 s fade used by the preview frames below.
+            click(&mut h, "inspector.animation.in.fade");
+            type_animation_duration(&mut h, "0.3");
+            assert_eq!(keys(&h, project::BuiltinPath::Opacity), 4);
             h.state_mut()
                 .dispatch(vibecut::AppCommand::Seek(Tick(38_102_400_000)))
                 .unwrap();
@@ -2281,7 +2275,7 @@ fn opacity_drafts_invalidate_before_blur_and_keyed_outside_edits_refuse() {
     ] {
         let mut f = fixture();
         f.editor.select([f.text].into_iter().collect()).unwrap();
-        f.editor.activate("text.animation.fade_in_out").unwrap();
+        fade_both(&mut f.editor, f.text);
         let mut h = build(f.editor);
         h.run_steps(3);
         click(&mut h, "inspector.opacity");
@@ -2374,7 +2368,7 @@ fn opacity_drafts_invalidate_before_blur_and_keyed_outside_edits_refuse() {
     }
     let mut f = fixture();
     f.editor.select([f.text].into_iter().collect()).unwrap();
-    f.editor.activate("text.animation.fade_in_out").unwrap();
+    fade_both(&mut f.editor, f.text);
     let track = f
         .editor
         .session
@@ -2456,13 +2450,12 @@ fn text_fade_preflight_preserves_focused_and_unfocused_caption_and_properties_dr
         let before = h.state().session.project().clone();
         let selection = h.state().selection().clone();
         let history = h.state().session.history_len();
-        assert!(!h.state().action_enabled("text.animation.fade_in"));
-        assert!(h.state_mut().activate("text.animation.fade_in").is_err());
+        try_fade_in(&mut h);
         assert_eq!(h.state().session.project(), &before);
         assert_eq!(h.state().session.history_len(), history);
         assert_eq!(*h.state().selection(), selection);
         assert!(
-            h.get(By::new().predicate(|n| n.author_id() == Some("text.animation.fade_in")))
+            h.get(By::new().predicate(|n| n.author_id() == Some("inspector.animation.in.fade")))
                 .accesskit_node()
                 .is_disabled()
         );
@@ -2474,7 +2467,7 @@ fn text_fade_preflight_preserves_focused_and_unfocused_caption_and_properties_dr
     h.state_mut().preferences.assets_tab = AssetsTab::Media;
     h.run_steps(3);
     let before = h.state().session.project().clone();
-    assert!(h.state_mut().activate("text.animation.fade_in").is_err());
+    try_fade_in(&mut h);
     assert_eq!(h.state().session.project(), &before);
     h.state_mut().set_subtitles(None);
     h.run_steps(2);
@@ -2483,10 +2476,10 @@ fn text_fade_preflight_preserves_focused_and_unfocused_caption_and_properties_dr
     h.event(egui::Event::Text("83".into()));
     h.run_steps(2);
     let before = h.state().session.project().clone();
-    assert!(h.state_mut().activate("text.animation.fade_in").is_err());
+    try_fade_in(&mut h);
     assert_eq!(h.state().session.project(), &before);
     // The inspector caller must see its actual held State, so even an AccessKit click cannot apply.
-    h.get(By::new().predicate(|n| n.author_id() == Some("text.animation.fade_in")))
+    h.get(By::new().predicate(|n| n.author_id() == Some("inspector.animation.in.fade")))
         .click_accesskit();
     h.run_steps(2);
     assert_eq!(h.state().session.project(), &before);
@@ -2497,12 +2490,12 @@ fn text_fade_preflight_preserves_focused_and_unfocused_caption_and_properties_dr
             .select(selected.into_iter().collect())
             .unwrap();
         h.run_steps(2);
-        assert!(!has_widget(&h, "text.animation.fade_in"));
-        assert!(h.state_mut().activate("text.animation.fade_in").is_err());
+        assert!(!has_widget(&h, "inspector.animation.in.fade"));
+        try_fade_in(&mut h);
     }
     select(&mut h, f.text);
     h.state_mut().session.begin_gesture().unwrap();
-    assert!(h.state_mut().activate("text.animation.fade_in").is_err());
+    try_fade_in(&mut h);
     h.state_mut().session.cancel_gesture().unwrap();
     let track = h
         .state()
@@ -2523,11 +2516,11 @@ fn text_fade_preflight_preserves_focused_and_unfocused_caption_and_properties_dr
     .unwrap();
     h.run_steps(2);
     assert!(
-        h.get(By::new().predicate(|n| n.author_id() == Some("text.animation.fade_in")))
+        h.get(By::new().predicate(|n| n.author_id() == Some("inspector.animation.in.fade")))
             .accesskit_node()
             .is_disabled()
     );
-    assert!(h.state_mut().activate("text.animation.fade_in").is_err());
+    try_fade_in(&mut h);
     engine::control::run_wire(
         &mut h.state_mut().session,
         "track.set_locked",
@@ -2548,7 +2541,7 @@ fn text_fade_preflight_preserves_focused_and_unfocused_caption_and_properties_dr
     h.state_mut().session =
         vibecut::services::lifecycle::EditorSession::Persistent(Box::new(saving));
     let before = h.state().session.project().clone();
-    assert!(h.state_mut().activate("text.animation.fade_in").is_err());
+    try_fade_in(&mut h);
     assert_eq!(h.state().session.project(), &before);
     h.state_mut().session.autosave().unwrap().flush().unwrap();
     drop(h);
@@ -2598,8 +2591,7 @@ fn text_fade_preflight_preserves_focused_and_unfocused_caption_and_properties_dr
         let before = h.state().session.project().clone();
         let candidate = h.state().session.preview_project().cloned();
         let history = h.state().session.history_len();
-        assert!(h.state_mut().activate("text.animation.fade_in").is_err());
-        assert!(!h.state().action_enabled("text.animation.fade_in"));
+        try_fade_in(&mut h);
         assert_eq!(h.state().session.project(), &before);
         assert_eq!(h.state().session.preview_project(), candidate.as_ref());
         assert_eq!(h.state().session.history_len(), history);
@@ -2608,7 +2600,7 @@ fn text_fade_preflight_preserves_focused_and_unfocused_caption_and_properties_dr
             "refusal leaves editor open"
         );
         assert!(
-            h.get(By::new().predicate(|n| n.author_id() == Some("text.animation.fade_in")))
+            h.get(By::new().predicate(|n| n.author_id() == Some("inspector.animation.in.fade")))
                 .accesskit_node()
                 .is_disabled()
         );
@@ -2616,13 +2608,74 @@ fn text_fade_preflight_preserves_focused_and_unfocused_caption_and_properties_dr
     h.key_press(egui::Key::Escape);
     h.run_steps(3);
     assert!(!has_widget(&h, "preview.text.edit"));
-    assert!(h.state().action_enabled("text.animation.fade_in"));
     let before = h.state().session.project().clone();
     let history = h.state().session.history_len();
-    h.state_mut().activate("text.animation.fade_in").unwrap();
+    click(&mut h, "inspector.animation.in.fade");
     assert_eq!(h.state().session.history_len(), (history.0 + 1, 0));
     h.state_mut().activate("edit.undo").unwrap();
     assert_eq!(h.state().session.project(), &before);
+}
+
+#[test]
+fn video_animation_tab_applies_in_out_and_combo_changes_duration_and_removes() {
+    let f = fixture();
+    // The reference shots are 1727x1029 logical px; the capture must match for ui-compare.
+    let mut h = crate::gpu::builder()
+        .with_size(egui::vec2(1727.0, 1029.0))
+        .build_ui_state(|ui, e: &mut Editor| e.ui(ui), f.editor);
+    h.run_steps(3);
+    select(&mut h, f.video);
+    click(&mut h, "inspector.tab.animation");
+    let keys = |h: &Harness<Editor>, path: project::BuiltinPath| {
+        item(h, f.video)
+            .animations
+            .get(&path.into())
+            .map_or(0, |param| param.channel(None).unwrap().keys().len())
+    };
+    let read = |h: &Harness<Editor>| {
+        let state = h.state();
+        engine::ClipAnimations::of(&item(h, f.video), &state.session.project().data().canvas)
+    };
+    let history = |h: &Harness<Editor>| h.state().session.history_len().0;
+    let start = history(&h);
+    // In, then Out: one undo step each, written as ordinary keys.
+    click(&mut h, "inspector.animation.in.slide_left");
+    assert_eq!(history(&h), start + 1);
+    assert_eq!(keys(&h, project::BuiltinPath::TransformPositionX), 2);
+    click(&mut h, "inspector.animation.tab.out");
+    click(&mut h, "inspector.animation.out.fade");
+    assert_eq!(history(&h), start + 2);
+    assert_eq!(keys(&h, project::BuiltinPath::Opacity), 2);
+    // The duration field defaults to 0.5 s and one commit changes it in one step.
+    assert_eq!(
+        read(&h).exit,
+        Some((engine::AnimationPreset::Fade, Tick(127_008_000_000)))
+    );
+    type_animation_duration(&mut h, "1");
+    assert_eq!(history(&h), start + 3);
+    assert_eq!(
+        read(&h).exit,
+        Some((engine::AnimationPreset::Fade, Tick(SECOND)))
+    );
+    // Combo replaces both edges.
+    click(&mut h, "inspector.animation.tab.combo");
+    click(&mut h, "inspector.animation.combo.pulse");
+    assert_eq!(history(&h), start + 4);
+    assert_eq!(keys(&h, project::BuiltinPath::TransformPositionX), 0);
+    assert_eq!(keys(&h, project::BuiltinPath::Opacity), 0);
+    assert_eq!(keys(&h, project::BuiltinPath::TransformScaleX), 3);
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target");
+    std::fs::create_dir_all(&root).unwrap();
+    h.render()
+        .unwrap()
+        .save(root.join("p1-152-clip-animation.png"))
+        .unwrap();
+    // None removes it; undo brings it back.
+    click(&mut h, "inspector.animation.combo.none");
+    assert_eq!(history(&h), start + 5);
+    assert_eq!(read(&h), engine::ClipAnimations::default());
+    h.state_mut().activate("edit.undo").unwrap();
+    assert_eq!(read(&h).combo, Some(engine::AnimationPreset::Pulse));
 }
 
 #[test]

@@ -499,8 +499,8 @@ fn cli_text_presets_and_animations_execute_reopen_export_and_control_replay() {
     assert_eq!(reopened.data().text_presets[0].name.as_str(), "Style A");
     exec(
         &file,
-        "text.apply_animation",
-        json!({"item":item.0,"preset":"slide_out"}),
+        "clip.set_animation",
+        json!({"item":item.0,"slot":"out","preset":"slide_left"}),
     );
     let reopened = project::load(&file).unwrap().project;
     let titled = reopened
@@ -525,11 +525,13 @@ fn cli_text_presets_and_animations_execute_reopen_export_and_control_replay() {
             json!({"item":item.0,"path":"transform.positionX","component":null,"time":time.0}),
         );
     }
-    exec(
-        &file,
-        "text.apply_animation",
-        json!({"item":item.0,"preset":"fade_in_out"}),
-    );
+    for slot in ["in", "out"] {
+        exec(
+            &file,
+            "clip.set_animation",
+            json!({"item":item.0,"slot":slot,"preset":"fade","duration":76_204_800_000_i64}),
+        );
+    }
     let saved = project::load(&file).unwrap().project;
     let title = saved
         .data()
@@ -554,8 +556,8 @@ fn cli_text_presets_and_animations_execute_reopen_export_and_control_replay() {
     let refused = cli(&[
         os("exec"),
         file.as_os_str(),
-        os("text.apply_animation"),
-        os(&json!({"item":item.0,"preset":"fade_out"}).to_string()),
+        os("clip.set_animation"),
+        os(&json!({"item":item.0,"slot":"combo","preset":"fade"}).to_string()),
         os("--json"),
     ]);
     assert_eq!(code(&refused), 5);
@@ -602,7 +604,7 @@ fn cli_text_presets_and_animations_execute_reopen_export_and_control_replay() {
     }
     let mut control = super::control::ControlSession::start(&file, &[os("--no-save")]);
     let initial = control.send(json!({"request_id":"inspect","command":"inspect","params":{}}));
-    let request = json!({"request_id":"fade","command":"text.apply_animation","params":{"item":item.0,"preset":"fade_in_out"},"base_rev":initial["rev_after"],"idempotency_key":"fade"});
+    let request = json!({"request_id":"fade","command":"clip.set_animation","params":{"item":item.0,"slot":"in","preset":"fade","duration":76_204_800_000_i64},"base_rev":initial["rev_after"],"idempotency_key":"fade"});
     let applied = control.send(request.clone());
     assert_eq!(applied["exit_code"], 0);
     let undo=control.send(json!({"request_id":"undo","command":"undo","params":{},"base_rev":applied["rev_after"],"idempotency_key":"undo"}));

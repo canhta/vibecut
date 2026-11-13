@@ -851,20 +851,40 @@ fn full_tool_and_command_pages_cover_the_live_registry_without_schema_drift() {
     );
     let fade = entries
         .iter()
-        .find(|e| e["id"] == "text.apply_animation")
+        .find(|e| e["id"] == "clip.set_animation")
         .unwrap();
     assert_eq!(
-        fade["params_schema"]["$defs"]["TextAnimationPreset"]["enum"],
+        fade["params_schema"]["$defs"]["AnimationSlot"]["enum"],
+        json!(["in", "out", "combo"])
+    );
+    assert_eq!(
+        fade["params_schema"]["$defs"]["AnimationPreset"]["enum"],
         json!([
-            "fade_in",
-            "fade_out",
-            "fade_in_out",
-            "slide_in",
-            "slide_out",
-            "slide_in_out",
-            "scale_in",
-            "scale_out",
-            "scale_in_out"
+            "fade",
+            "slide_left",
+            "slide_right",
+            "slide_up",
+            "slide_down",
+            "zoom_in",
+            "zoom_out",
+            "spin",
+            "drop",
+            "rise",
+            "pop",
+            "tilt",
+            "pulse",
+            "heartbeat",
+            "sway",
+            "swing",
+            "float",
+            "drift_left",
+            "drift_right",
+            "push_in",
+            "pull_out",
+            "shake",
+            "flicker",
+            "breathe",
+            "turn"
         ])
     );
     let initial = client.call("inspect", json!({}), None, None);
@@ -873,24 +893,31 @@ fn full_tool_and_command_pages_cover_the_live_registry_without_schema_drift() {
         "animations":{},"content":project::ItemParams::Text(project::TextParams::new("Tiếng Việt\nEnglish"))}}),Some(&initial["rev_after"]),Some("title"));
     let item = inserted["value"]["value"]["outcome"]["placements"][0]["item"].clone();
     assert!(!item.is_null(), "{inserted}");
-    let params = json!({"item":item,"preset":"fade_in_out"});
+    let params = json!({"item":item,"slot":"in","preset":"fade","duration":76_204_800_000_i64});
     let applied = client.call(
-        "text.apply_animation",
+        "clip.set_animation",
         params.clone(),
         Some(&inserted["rev_after"]),
         Some("fade"),
     );
     assert_eq!(applied["value"]["status"], "result", "{applied}");
+    let out = client.call(
+        "clip.set_animation",
+        json!({"item":item,"slot":"out","preset":"fade","duration":76_204_800_000_i64}),
+        Some(&applied["rev_after"]),
+        Some("fade-out"),
+    );
+    assert_eq!(out["value"]["status"], "result", "{out}");
     let removed = client.call(
         "keyframes.remove",
         json!({"item":item,"path":"opacity","component":null,"time":0}),
-        Some(&applied["rev_after"]),
+        Some(&out["rev_after"]),
         Some("remove"),
     );
     assert_eq!(removed["value"]["status"], "result");
     assert_eq!(
         client.call(
-            "text.apply_animation",
+            "clip.set_animation",
             params.clone(),
             Some(&inserted["rev_after"]),
             Some("fade")
@@ -898,7 +925,7 @@ fn full_tool_and_command_pages_cover_the_live_registry_without_schema_drift() {
         applied
     );
     let stale = client.call(
-        "text.apply_animation",
+        "clip.set_animation",
         params,
         Some(&inserted["rev_after"]),
         Some("stale-fade"),

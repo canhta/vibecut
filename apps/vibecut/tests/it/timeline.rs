@@ -3758,7 +3758,20 @@ fn text_fade_keys_open_in_the_ordinary_lane_and_delete_with_undo() {
     let mut e = fixture().editor;
     e.activate("text.insert").unwrap();
     let id = *e.selection().first().unwrap();
-    e.activate("text.animation.fade_in_out").unwrap();
+    let fade = |slot| Command::SetClipAnimation {
+        item: id,
+        slot,
+        preset: Some(engine::AnimationPreset::Fade),
+        duration: Some(time::Tick(76_204_800_000)),
+    };
+    e.session
+        .apply(Command::Batch {
+            commands: vec![
+                fade(engine::AnimationSlot::In),
+                fade(engine::AnimationSlot::Out),
+            ],
+        })
+        .unwrap();
     let mut h = harness(e);
     h.run_steps(3);
     let lanes = widget(&h, &format!("timeline.item.{}.lanes", id.0));

@@ -149,19 +149,22 @@ The item ID comes from inspection. `custom` takes a complete `CueStyle` in `styl
 [generated command reference](commands.md). SRT/VTT text stays
 unchanged; there is no subtitle preset flag or preset field in export settings.
 
-Text animations and saved styles use the ordinary edit path:
+Clip animations and saved text styles use the ordinary edit path:
 
 ```sh
-vibecut-cli exec project.vibecut text.apply_animation '{"item":3,"preset":"slide_in"}'
+vibecut-cli exec project.vibecut clip.set_animation '{"item":3,"slot":"in","preset":"slide_left","duration":127008000000}'
 vibecut-cli exec project.vibecut text.save_preset '{"item":3,"name":"Style 1"}'
 vibecut-cli exec project.vibecut text.apply_preset '{"items":[3],"preset":0}'
 vibecut-cli export project.vibecut --out title.mp4
 ```
 
-Use inspected Text item IDs; animation choices are `fade_in`, `fade_out`, `fade_in_out`,
-`slide_in`, `slide_out`, `slide_in_out`, `scale_in`, `scale_out` and `scale_in_out`.
-`text.save_preset` reports the new preset ID in `created`; `text.apply_preset` takes one
-or more Text item IDs. The [edit owner](../../../crates/engine/src/session/edit/README.md#text-animation)
+Use inspected item IDs. `clip.set_animation` takes a `slot` (`in`, `out` or `combo`), a
+`preset` (null removes the slot) and an optional `duration` in ticks (0.5 s by default;
+In and Out only). In and Out looks are `fade`, `slide_left`, `slide_right`, `slide_up`,
+`slide_down`, `zoom_in`, `zoom_out`, `spin`, `drop`, `rise`, `pop` and `tilt`; Combo looks
+are `pulse`, `heartbeat`, `sway`, `swing`, `float`, `drift_left`, `drift_right`, `push_in`,
+`pull_out`, `shake`, `flicker`, `breathe` and `turn`. `text.save_preset` reports the new preset ID in `created`; `text.apply_preset` takes one
+or more Text item IDs. The [edit owner](../../../crates/engine/src/session/edit/README.md#clip-animation)
 defines curves, duration, bases and conflict rules. CLI control and MCP use these same
 commands.
 

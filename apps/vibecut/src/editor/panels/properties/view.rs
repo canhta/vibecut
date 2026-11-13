@@ -1112,10 +1112,7 @@ impl<'a, 'c> Panel<'a, 'c> {
             Text::TextAnimation,
             true,
             false,
-            |panel, ui| {
-                let enabled = !panel.cx.disabled.contains("text.animation.fade_in");
-                panel.text_animation_controls(ui, item, enabled);
-            },
+            |panel, ui| panel.animation_controls(ui, item),
         );
     }
 
@@ -1364,6 +1361,25 @@ impl<'a, 'c> Panel<'a, 'c> {
             PropertiesTab::Audio if matches!(kind, ElementKind::Audio | ElementKind::Video) => {
                 self.audio_section(ui, item);
             }
+            PropertiesTab::Animation
+                if matches!(
+                    kind,
+                    ElementKind::Video
+                        | ElementKind::Image
+                        | ElementKind::Sticker
+                        | ElementKind::Graphic
+                ) =>
+            {
+                self.panel_section(
+                    ui,
+                    "inspector.section.animation",
+                    "inspector.animation",
+                    Text::TextAnimation,
+                    true,
+                    false,
+                    |panel, ui| panel.animation_controls(ui, item),
+                );
+            }
             PropertiesTab::Speed if matches!(kind, ElementKind::Video | ElementKind::Audio) => {
                 self.panel_section(
                     ui,
@@ -1421,6 +1437,8 @@ fn body_ui(ui: &mut egui::Ui, area: Rect) -> egui::Ui {
     body.spacing_mut().item_spacing = Vec2::ZERO;
     body
 }
+
+mod animation;
 
 mod canvas;
 
