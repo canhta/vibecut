@@ -496,6 +496,7 @@ fn cleanup(id: u32, wet_percent: f32, kind: project::CleanupKind) -> project::Cl
         enabled: true,
         wet_percent,
         kind,
+        preset: None,
     }
 }
 
@@ -905,7 +906,9 @@ impl Voiced {
         speech + 0.02 * uniform(n) + 0.03 * (tau * 45.0 * t).sin() as f32
     }
 }
-impl SourceProvider for Voiced {
+/// A source that is a pure function of the absolute sample, the same on both channels.
+struct Wave(fn(i64) -> f32);
+impl SourceProvider for Wave {
     fn status(
         &mut self,
         _: &media::SourceAsset,
@@ -935,7 +938,7 @@ impl SourceProvider for Voiced {
         let mut out = AudioBlock::new(rate, 2, frames, MemoryKind::Decoded, hooks)?;
         for plane in out.planes_mut() {
             for (n, sample) in plane.iter_mut().enumerate() {
-                *sample = Self::value(start + n as i64);
+                *sample = (self.0)(start + n as i64);
             }
         }
         Ok(out)
@@ -949,15 +952,15 @@ fn voice_enhancement_preset_lifts_speech_over_noise_without_pumping_and_bypass_i
     // speech-off ones, on the eight second fixture above. Pass: the preset raises it by at
     // least 6 dB (the noise reduction stage alone is designed for 12), moves the speech level
     // by less than 3 dB, holds the speech-on gain change across 50 ms windows within 3 dB (no
-    // pumping), peaks below 0.9, and leaves the sample grid aligned (latency is the noise
-    // reduction frame only).
+    // pumping), peaks below 0.9, and leaves the sample grid aligned (latency is the two
+    // spectral frames only, de-reverb and noise reduction).
     let seconds = 8;
     let half = 24_000;
     let mix = |p: &project::Project, partition: &[usize]| {
-        mix_synth(p, &mut Voiced, seconds, partition)
+        mix_synth(p, &mut Wave(Voiced::value), seconds, partition)
     };
     let plain = mix(&fixture_of(8), &[65536]);
-    let preset = project::voice_enhancement_effects().to_vec();
+    let preset = project::voice_enhancement_effects(1).to_vec();
     let enhanced_project = with_cleanup(fixture_of(8), preset.clone());
     let enhanced = mix(&enhanced_project, &[65536]);
     let middle = |k: usize| k * half + half / 4..k * half + 3 * half / 4;
@@ -991,11 +994,11 @@ fn voice_enhancement_preset_lifts_speech_over_noise_without_pumping_and_bypass_i
         - ratios.iter().fold(f32::MAX, |m, r| m.min(*r));
     assert!(spread < 3.0, "gain changes {spread} dB across speech");
     // Preview and export agree for any block partition, and the chain's only delay is the
-    // noise reduction frame, which the mix graph compensates.
+    // de-reverb and noise reduction frames, which the mix graph compensates.
     assert_eq!(enhanced, mix(&enhanced_project, &[1, 7, 1031, 4093]));
     let h = Hooks::default();
     let mixer = AudioMixer::new(&enhanced_project, 2, 0, &h).unwrap();
-    assert_eq!(mixer.cleanup_latency_samples(), 2048);
+    assert_eq!(mixer.cleanup_latency_samples(), 4096);
     // Bypass: every preset effect disabled, or at zero mix, is bit-identical to no chain.
     let off = preset
         .iter()
@@ -1015,4 +1018,122 @@ fn voice_enhancement_preset_lifts_speech_over_noise_without_pumping_and_bypass_i
         })
         .collect();
     assert_eq!(plain, mix(&with_cleanup(fixture_of(8), dry), &[65536]));
+}
+
+fn voiced_stack(n: i64) -> f32 {
+    let t = n as f64 / 48_000.0;
+    (1..=20)
+        .map(|h| 0.08 / h as f64 * (2.0 * std::f64::consts::PI * 140.0 * h as f64 * t).sin())
+        .sum::<f64>() as f32
+}
+fn sibilant_band(n: i64) -> f32 {
+    let t = n as f64 / 48_000.0;
+    let tone = |hz: f64| (2.0 * std::f64::consts::PI * hz * t).sin();
+    (0.05 * (tone(5_500.0) + tone(7_000.0) + tone(8_500.0))) as f32
+}
+/// White noise whose amplitude decays by 60 dB in 0.8 s: a diffuse reverberant tail of that
+/// RT60, starting at full level at sample zero, silent after two seconds.
+fn decaying_tail(n: i64) -> f32 {
+    let t = n as f32 / 48_000.0;
+    if t < 2.0 {
+        0.3 * uniform(n) * 10f32.powf(-3.0 * t / 0.8)
+    } else {
+        0.0
+    }
+}
+fn db_between(a: &[f32], b: &[f32]) -> f32 {
+    20.0 * (rms(a) / rms(b)).log10()
+}
+/// Mixes two seconds of `wave` through `effects` on one audio item.
+fn mix_wave(wave: fn(i64) -> f32, effects: Vec<project::CleanupEffect>) -> Vec<f32> {
+    mix_synth(
+        &with_cleanup(fixture_of(2), effects),
+        &mut Wave(wave),
+        2,
+        &[4096],
+    )
+}
+/// Bypass identity of one effect: disabled or at zero mix it is bit-identical to no chain, and
+/// with the neutral parameters it is the plain mix within 1e-4 (the delay compensated).
+fn assert_bypass_is_identity(
+    wave: fn(i64) -> f32,
+    active: project::CleanupKind,
+    neutral: project::CleanupKind,
+) {
+    let plain = mix_wave(wave, vec![]);
+    let mut off = cleanup(1, 100.0, active.clone());
+    off.enabled = false;
+    assert_eq!(plain, mix_wave(wave, vec![off]));
+    assert_eq!(plain, mix_wave(wave, vec![cleanup(1, 0.0, active)]));
+    let open = mix_wave(wave, vec![cleanup(1, 100.0, neutral.clone())]);
+    let worst = plain
+        .iter()
+        .zip(&open)
+        .map(|(p, o)| (p - o).abs())
+        .fold(0.0, f32::max);
+    assert!(worst < 1e-4, "{neutral:?} neutral error {worst}");
+}
+
+#[test]
+fn deesser_cuts_a_sibilant_band_leaves_the_voiced_stack_and_bypass_is_identity() {
+    // Stated limits at 6 kHz, threshold -12 dB, reduction 8 dB: a steady 5.5, 7 and 8.5 kHz
+    // band falls by at least 4 dB (a shelf at 6 kHz cuts 5.5 kHz by about 3 dB and 8.5 kHz by
+    // about 7 dB), and the 140 Hz harmonic stack to 2.8 kHz moves by less than 1 dB.
+    let deess = |reduction_db: f32| project::CleanupKind::Deess {
+        frequency_hz: 6000.0,
+        threshold_db: -12.0,
+        reduction_db,
+    };
+    let settled = 72_000..96_000;
+    let sibilant = |effects| mix_wave(sibilant_band, effects);
+    let plain = sibilant(vec![]);
+    let cut = sibilant(vec![cleanup(1, 100.0, deess(8.0))]);
+    let band = db_between(&cut[settled.clone()], &plain[settled.clone()]);
+    assert!(band <= -4.0, "sibilant band only fell {band} dB");
+    let voiced = |effects| mix_wave(voiced_stack, effects);
+    let plain = voiced(vec![]);
+    let kept = voiced(vec![cleanup(1, 100.0, deess(8.0))]);
+    let stack = db_between(&kept[settled.clone()], &plain[settled]);
+    assert!(stack.abs() < 1.0, "voiced stack moved {stack} dB");
+    assert_bypass_is_identity(sibilant_band, deess(8.0), deess(0.0));
+    // Zero delay: the stage adds no latency to the chain.
+    let h = Hooks::default();
+    let p = with_cleanup(fixture_of(2), vec![cleanup(1, 100.0, deess(8.0))]);
+    assert_eq!(
+        AudioMixer::new(&p, 2, 0, &h)
+            .unwrap()
+            .cleanup_latency_samples(),
+        0
+    );
+}
+
+#[test]
+fn dereverb_lowers_a_decaying_tail_keeps_the_direct_onset_and_bypass_is_identity() {
+    // Stated limits at amount 100 % and RT60 0.8 s: the energy of a tail that decays by exactly
+    // that RT60 falls by at least 4 dB between 0.5 s and 1.0 s, the first 10 ms (before the
+    // 50 ms late delay applies) stay within 1 dB, and the stage's one-frame delay is paid by
+    // the graph.
+    let dereverb = |amount_percent: f32| project::CleanupKind::Dereverb {
+        amount_percent,
+        rt60_seconds: 0.8,
+    };
+    let plain = mix_wave(decaying_tail, vec![]);
+    let tail = mix_wave(decaying_tail, vec![cleanup(1, 100.0, dereverb(100.0))]);
+    let late = 24_000..48_000;
+    let fall = db_between(&tail[late.clone()], &plain[late]);
+    assert!(fall <= -4.0, "tail energy only fell {fall} dB");
+    let onset = db_between(&tail[..480], &plain[..480]);
+    assert!(onset.abs() < 1.0, "direct onset moved {onset} dB");
+    assert_bypass_is_identity(decaying_tail, dereverb(100.0), dereverb(0.0));
+    let h = Hooks::default();
+    let p = with_cleanup(fixture_of(2), vec![cleanup(1, 100.0, dereverb(100.0))]);
+    assert_eq!(
+        AudioMixer::new(&p, 2, 0, &h)
+            .unwrap()
+            .cleanup_latency_samples(),
+        2048
+    );
+    // Any block partition gives the same samples.
+    let other = mix_synth(&p, &mut Wave(decaying_tail), 2, &[1, 7, 1031, 4093]);
+    assert_eq!(tail, other);
 }

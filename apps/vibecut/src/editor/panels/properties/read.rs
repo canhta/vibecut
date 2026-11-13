@@ -95,7 +95,7 @@ pub(super) fn noise_reduction(
         .effects
         .iter()
         .find(|effect| {
-            !project::is_voice_enhancement_id(effect.id)
+            effect.preset.is_none()
                 && matches!(effect.kind, project::CleanupKind::NoiseReduction { .. })
         })
 }
@@ -108,23 +108,28 @@ pub(super) fn cleanup_effects(
     Some(&cleanup_of(&find(project, item)?.content)?.effects)
 }
 
-/// True while every effect of the voice enhancement preset is in the item's chain and enabled.
+/// The effects the voice enhancement preset added, found by their marker.
+fn voice_enhancement_marked(
+    effects: &[project::CleanupEffect],
+) -> impl Iterator<Item = &project::CleanupEffect> {
+    effects
+        .iter()
+        .filter(|effect| effect.preset == Some(project::CleanupPreset::VoiceEnhancement))
+}
+
+/// True while the item's chain holds every effect of the voice enhancement preset, all enabled.
 pub(super) fn voice_enhancement_on(project: &project::Project, item: ItemId) -> bool {
     let Some(effects) = cleanup_effects(project, item) else {
         return false;
     };
-    project::voice_enhancement_effects().iter().all(|want| {
-        effects
-            .iter()
-            .any(|effect| effect.id == want.id && effect.enabled)
-    })
+    voice_enhancement_marked(effects).count() == project::VOICE_ENHANCEMENT_EFFECTS
+        && voice_enhancement_marked(effects).all(|effect| effect.enabled)
 }
 
-/// The preset's strength: the mix of its noise reduction effect, while the preset is in the chain.
+/// The preset's strength: the mix of its first effect, while the preset is in the chain.
 pub(super) fn voice_enhancement_strength(project: &project::Project, item: ItemId) -> Option<f32> {
-    cleanup_effects(project, item)?
-        .iter()
-        .find(|effect| effect.id == project::VOICE_ENHANCEMENT_FIRST_ID + 1)
+    voice_enhancement_marked(cleanup_effects(project, item)?)
+        .next()
         .map(|effect| effect.wet_percent)
 }
 

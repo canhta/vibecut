@@ -91,13 +91,15 @@ smoothing, full mix) or enables the item's existing one; off disables it and kee
 first noise reduction effect is enabled. A chain already holding eight effects refuses the add through the error line.
 Equaliser bands have no control here: the capture shows no equaliser, so `audio.*_cleanup_effect` is their only
 surface. A Voice enhancement switch ([new], no reference evidence) follows it (`inspector.voice_enhance.toggle`): on adds the
-`project::voice_enhancement_effects` preset (80 Hz high-pass, noise reduction, three-band equaliser, ids from
-`VOICE_ENHANCEMENT_FIRST_ID`) or enables the ones present; off disables them and keeps tuned values. The switch reads on only
-while all three are present and enabled, and the Noise reduction switch ignores the preset's own noise reduction effect. While
-on, a Strength row (`inspector.voice_enhance.strength.{light,medium,full}`) sets every preset effect's dry/wet mix to 40, 70 or
-100 percent. Each click is one batched edit, so one undo step. The preset adds no gain stage: loudness stays with the project
-normalizer, which measures the chain's output, so bypassing the preset never changes what the normalizer applied. The preset's
-individual bands and cutoff have no control (no reference evidence); they are reachable through `audio.*_cleanup_effect`. A Normalize loudness row is not here yet: the loudness controls have not landed.
+`project::voice_enhancement_effects` preset (80 Hz high-pass, de-reverb, noise reduction, de-esser, three-band equaliser) with the
+next free effect ids after the chain's highest, the way every new effect gets one, or enables the marked effects already present;
+off disables them and keeps tuned values. The preset's effects carry `CleanupEffect::preset` = `voice_enhancement`, the only marker:
+the switch reads on only while five marked effects are present and all enabled, and the Noise reduction switch ignores marked
+effects. While on, a Strength row (`inspector.voice_enhance.strength.{light,medium,full}`) sets every marked effect's dry/wet mix
+to 40, 70 or 100 percent. Each click is one batched edit, so one undo step. The preset adds no gain stage: loudness stays with the
+project normalizer, which measures the chain's output, so bypassing the preset never changes what the normalizer applied. The
+preset's individual bands and cutoffs have no control (no reference evidence); they are reachable through
+`audio.*_cleanup_effect`. A Normalize loudness row is not here yet: the loudness controls have not landed.
 
 ## Transition inspector
 
