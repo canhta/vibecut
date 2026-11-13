@@ -2143,6 +2143,58 @@ impl DownloadTransport for CancellingDownload {
     }
 }
 
+struct Hop {
+    status: u16,
+    headers: Vec<(String, String)>,
+    body: Box<dyn Read + Send>,
+}
+fn hop(status: u16, headers: Vec<(&str, String)>, body: Box<dyn Read + Send>) -> Hop {
+    Hop {
+        status,
+        headers: headers
+            .into_iter()
+            .map(|(name, value)| (name.to_owned(), value))
+            .collect(),
+        body,
+    }
+}
+// Serves one scripted reply per GET and records each requested URL; an unscripted
+// request fails the test rather than inventing a reply.
+struct Scripted {
+    hops: Mutex<Vec<Hop>>,
+    urls: Mutex<Vec<String>>,
+}
+impl DownloadTransport for Scripted {
+    fn get(
+        &self,
+        url: &str,
+        _: &[(String, String)],
+    ) -> Result<HttpStreamResponse, transport::Error> {
+        self.urls.lock().unwrap().push(url.to_owned());
+        let mut hops = self.hops.lock().unwrap();
+        assert!(!hops.is_empty(), "unscripted request for {url}");
+        let next = hops.remove(0);
+        Ok(HttpStreamResponse {
+            status: next.status,
+            headers: next.headers,
+            body: next.body,
+        })
+    }
+}
+fn part_files(root: &std::path::Path) -> usize {
+    std::fs::read_dir(root.join("audio"))
+        .unwrap()
+        .filter(|entry| {
+            entry
+                .as_ref()
+                .unwrap()
+                .file_name()
+                .as_encoded_bytes()
+                .starts_with(b".part-")
+        })
+        .count()
+}
+
 fn wav() -> Vec<u8> {
     let samples = 2000u32;
     let data_len = samples * 2;
@@ -2220,6 +2272,169 @@ fn download_is_bounded_cancellable_and_publishes_only_complete_audio() {
         downloads.download("https://cdn.example/missing.mp3", &|| false, &|_, _| {}),
         Err(engine::MusicError::InvalidResponse)
     ));
+
+    // Hostile stream and redirect rows: each one fails with its typed error, makes
+    // exactly the listed requests, and leaves no staged part or cache entry behind.
+    const START: &str = "https://cdn.example/start.mp3";
+    let len = wav().len();
+    let audio = || -> Box<dyn Read + Send> { Box::new(Cursor::new(wav())) };
+    let over_cap = || -> Box<dyn Read + Send> { Box::new(std::io::repeat(0).take((32 << 20) + 1)) };
+    let redirect = |location: String| {
+        hop(
+            302,
+            vec![("location", location)],
+            Box::new(std::io::empty()),
+        )
+    };
+    let ok = |body: Box<dyn Read + Send>| hop(200, vec![("content-length", len.to_string())], body);
+    let five: Vec<Hop> = (1..=5)
+        .map(|n| redirect(format!("/hop/{n}.mp3")))
+        .chain(std::iter::once(ok(audio())))
+        .collect();
+    let six: Vec<Hop> = (1..=6).map(|n| redirect(format!("/hop/{n}.mp3"))).collect();
+    let rows: Vec<(&str, Vec<Hop>, &str, usize)> = vec![
+        ("five redirects then audio", five, "Ok", 6),
+        ("six redirects", six, "InvalidResponse", 6),
+        (
+            "relative https redirect",
+            vec![redirect("/moved/a.mp3".into()), ok(audio())],
+            "Ok",
+            2,
+        ),
+        (
+            "insecure redirect",
+            vec![redirect("http://cdn.example/a.mp3".into())],
+            "InvalidResponse",
+            1,
+        ),
+        (
+            "redirect with userinfo",
+            vec![redirect("https://user:pw@cdn.example/a.mp3".into())],
+            "InvalidResponse",
+            1,
+        ),
+        (
+            "redirect with fragment",
+            vec![redirect("https://cdn.example/a.mp3#x".into())],
+            "InvalidResponse",
+            1,
+        ),
+        (
+            "redirect without location",
+            vec![hop(302, Vec::new(), Box::new(std::io::empty()))],
+            "InvalidResponse",
+            1,
+        ),
+        (
+            "redirect over 8192 bytes",
+            vec![redirect(format!("/{}", "a".repeat(8192)))],
+            "Limit",
+            1,
+        ),
+        (
+            "over-cap stream without declared length",
+            vec![hop(200, Vec::new(), over_cap())],
+            "Limit",
+            1,
+        ),
+        (
+            "declared zero length",
+            vec![hop(200, vec![("content-length", "0".into())], audio())],
+            "Limit",
+            1,
+        ),
+        (
+            "unparsable declared length",
+            vec![hop(200, vec![("content-length", "12x".into())], audio())],
+            "InvalidResponse",
+            1,
+        ),
+        (
+            "empty body",
+            vec![hop(200, Vec::new(), Box::new(std::io::empty()))],
+            "InvalidResponse",
+            1,
+        ),
+        (
+            "body shorter than declared",
+            vec![hop(
+                200,
+                vec![("content-length", (len + 1).to_string())],
+                audio(),
+            )],
+            "InvalidResponse",
+            1,
+        ),
+        (
+            "body longer than declared",
+            vec![hop(
+                200,
+                vec![("content-length", (len - 1).to_string())],
+                audio(),
+            )],
+            "InvalidResponse",
+            1,
+        ),
+    ];
+    for (name, hops, expected, requests) in rows {
+        let root = tempfile::tempdir().unwrap();
+        let library = Arc::new(MusicLibrary::open(root.path()).unwrap());
+        let transport = Arc::new(Scripted {
+            hops: Mutex::new(hops),
+            urls: Mutex::new(Vec::new()),
+        });
+        let downloads = MusicDownloads::new(library.clone(), transport.clone());
+        let outcome = downloads.download(START, &|| false, &|_, _| {});
+        let got = match &outcome {
+            Ok(_) => "Ok".to_owned(),
+            Err(error) => format!("{error:?}"),
+        };
+        assert_eq!(got, expected, "{name}");
+        let urls = transport.urls.lock().unwrap().clone();
+        assert_eq!(urls.len(), requests, "{name}: requests");
+        if name == "relative https redirect" {
+            assert_eq!(urls[1], "https://cdn.example/moved/a.mp3");
+        }
+        assert_eq!(part_files(root.path()), 0, "{name}: staged part left");
+        assert_eq!(
+            library.cache_path(START).exists(),
+            expected == "Ok",
+            "{name}: cache"
+        );
+    }
+
+    // Cancellation rows: before the first request, and observed inside a read.
+    let root = tempfile::tempdir().unwrap();
+    let library = Arc::new(MusicLibrary::open(root.path()).unwrap());
+    let unused = Arc::new(Scripted {
+        hops: Mutex::new(Vec::new()),
+        urls: Mutex::new(Vec::new()),
+    });
+    let downloads = MusicDownloads::new(library.clone(), unused.clone());
+    assert!(matches!(
+        downloads.download(START, &|| true, &|_, _| {}),
+        Err(engine::MusicError::Cancelled)
+    ));
+    assert!(unused.urls.lock().unwrap().is_empty());
+    let cancel = Arc::new(AtomicBool::new(false));
+    let reading = Arc::new(Scripted {
+        hops: Mutex::new(vec![hop(
+            200,
+            Vec::new(),
+            Box::new(CancelReader {
+                bytes: wav(),
+                cancel: cancel.clone(),
+            }),
+        )]),
+        urls: Mutex::new(Vec::new()),
+    });
+    let downloads = MusicDownloads::new(library.clone(), reading);
+    assert!(matches!(
+        downloads.download(START, &|| cancel.load(Ordering::Acquire), &|_, _| {}),
+        Err(engine::MusicError::Cancelled)
+    ));
+    assert_eq!(part_files(root.path()), 0);
+    assert!(!library.cache_path(START).exists());
 }
 
 struct Sink {
