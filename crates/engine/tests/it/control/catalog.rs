@@ -537,6 +537,8 @@ fn deterministic_catalog_and_schema_document_receipts() {
             "chapters.generate",
             "clips.suggest",
             "color.import_lut",
+            "dub.cancel",
+            "dub.generate",
             "fillers.classify",
             "fonts.download",
             "fonts.import",

@@ -219,7 +219,7 @@ fn chapter_harness(text: TextOpener, track: Option<CueTrack>) -> Harness<'static
     e.set_subtitles(Some(panel));
     let mut h = harness(e);
     h.run_steps(3);
-    click(&mut h, "subtitles.chapters");
+    click(&mut h, "captions.section.chapters");
     h
 }
 

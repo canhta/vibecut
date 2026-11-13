@@ -10,7 +10,7 @@ use egui_kittest::{
     kittest::{By, Queryable},
 };
 use engine::{ByteBudget, Session};
-use project::{CaptionParams, ItemId, ItemParams, Project, ProjectId};
+use project::{CaptionParams, ItemId, ItemParams, Project, ProjectId, Track, TrackId, TrackKind};
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 
 /// The assets column width the assets tests use. The short height makes the page scroll.
@@ -56,20 +56,28 @@ fn session() -> Session {
     let mut d = Project::empty(ProjectId(1), "Captions".into())
         .unwrap()
         .into_data();
-    d.scene_mut().timeline.main.items.push(
-        testkit::item::item(
-            ItemId(1),
-            ItemParams::Caption(CaptionParams {
-                emphasis: Default::default(),
-                word_highlight: false,
-                preset: None,
-                overrides: Default::default(),
-                cues: Default::default(),
-            }),
-        )
-        .source(range)
-        .build(),
-    );
+    d.scene_mut().timeline.overlays.push(Track {
+        id: TrackId(1),
+        name: "Captions".into(),
+        kind: TrackKind::Text,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![
+            testkit::item::item(
+                ItemId(1),
+                ItemParams::Caption(CaptionParams {
+                    emphasis: Default::default(),
+                    word_highlight: false,
+                    preset: None,
+                    overrides: Default::default(),
+                    cues: Default::default(),
+                }),
+            )
+            .source(range)
+            .build(),
+        ],
+    });
     Session::new(Project::new(d).unwrap(), 10).unwrap()
 }
 
