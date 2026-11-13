@@ -525,11 +525,10 @@ fn click(harness: &mut egui_kittest::Harness<'_, Editor>, id: &str) {
 }
 
 fn open_shortcuts(harness: &mut egui_kittest::Harness<'_, Editor>) {
-    click(harness, "window.menu");
     click(harness, "shortcuts.open");
     assert!(
         harness.state().inspect().unwrap().shortcuts.is_some(),
-        "header entry must open the dialog"
+        "header button must open the dialog"
     );
 }
 

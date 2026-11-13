@@ -358,7 +358,7 @@ impl Rig {
             project_path: None,
             locale: Locale::En,
             dark: true,
-            save_status: Text::AutoSaved,
+            save_status: crate::editor::context::SaveStatus::Saved { clock: None },
             playhead: Tick::ZERO,
             hover: None,
             ripple: false,

@@ -39,6 +39,14 @@ impl View<'_> {
                 .stroke(egui::Stroke::NONE)
                 .right_text(""),
             );
+            // The two sections are groups, each opening its own rows below.
+            icons::tinted(Icon::CaretDown, 12.0, theme::text(self.cx.preferences.dark)).paint_at(
+                ui,
+                Rect::from_center_size(
+                    egui::pos2(response.rect.right() - 12.0, response.rect.center().y),
+                    Vec2::splat(12.0),
+                ),
+            );
             self.remember(id, &response, None);
             if response.clicked() && !selected {
                 self.state.audio_section = section;

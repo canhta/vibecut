@@ -701,277 +701,277 @@ impl ExportDialog {
                 ui.set_height(dialog_height - frame_margin.sum().y);
                 crate::kit::dialog_title(ui, tr(Text::ExportTitle));
                 ui.add_space(12.0);
-                let reserved = if self.phase() == ExportPhase::Settings {
-                    198.0
-                } else {
-                    258.0
-                };
-                let body_height = (dialog_height - reserved).max(180.0);
-                ui.horizontal_top(|ui| {
-                    ui.spacing_mut().item_spacing.x = 0.0;
-                    let wide = ui.available_width() >= 800.0;
-                    let leading = if wide { 108.0 - frame_margin.left } else { 0.0 };
-                    let gap = if wide { 114.0 } else { 20.0 };
-                    let settings_width = ui.available_width() - leading - 227.0 - gap;
-                    ui.add_space(leading);
-                    ui.allocate_ui_with_layout(
-                        egui::vec2(227.0, body_height),
-                        egui::Layout::top_down(egui::Align::Center),
-                        |ui| {
-                            let (rect, _) = ui.allocate_exact_size(
-                                egui::vec2(
-                                    227.0,
-                                    (227.0 * project.data().canvas.height as f32
-                                        / project.data().canvas.width as f32)
-                                        .min(body_height),
-                                ),
-                                egui::Sense::hover(),
-                            );
-                            ui.painter().rect_filled(rect, 4.0, theme::window(dark));
-                            if let Some(texture) = preview {
-                                let size = texture.size_vec2();
-                                let scale = (rect.width() / size.x).min(rect.height() / size.y);
-                                let image =
-                                    egui::Rect::from_center_size(rect.center(), size * scale);
-                                ui.painter().image(
-                                    texture.id(),
-                                    image,
-                                    egui::Rect::from_min_max(
-                                        egui::Pos2::ZERO,
-                                        egui::pos2(1.0, 1.0),
-                                    ),
-                                    egui::Color32::WHITE,
-                                );
+                // The footer is laid out first from the bottom, so the settings scroll inside
+                // whatever height remains and never run under it.
+                ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+                    ui.horizontal(|ui| {
+                        let duration = options.output.ranges(project).map_or(0.0, |scenes| {
+                            scenes
+                                .iter()
+                                .map(|(_, range)| range.duration().seconds())
+                                .sum()
+                        });
+                        let rate = options.output.bit_rate.unwrap_or(options.quality.value().1) as f64
+                            + if options.include_audio {
+                                192_000.0
                             } else {
-                                let galley = ui.painter().layout(
-                                    tr(if self.empty {
-                                        Text::EmptyPreview
-                                    } else {
-                                        Text::Loading
-                                    })
-                                    .to_owned(),
-                                    egui::FontId::proportional(14.0),
-                                    theme::secondary(dark),
-                                    rect.width() - 24.0,
-                                );
-                                let position = rect.center() - galley.size() * 0.5;
-                                ui.painter()
-                                    .galley(position, galley, theme::secondary(dark));
-                            }
-                        },
-                    );
-                    ui.add_space(gap);
-                    ui.vertical(|ui| {
-                        ui.spacing_mut().item_spacing.x = 8.0;
-                        ui.set_width(settings_width);
-                        ui.set_min_height(body_height);
-                        egui::ScrollArea::vertical()
-                            .id_salt("export.settings")
-                            .max_height(body_height)
-                            .show(ui, |ui| {
-                                ui.add_enabled_ui(!active, |ui| {
-                                    if !self.unavailable.is_empty() {
-                                        ui.colored_label(
-                                            theme::warning(dark),
-                                            tr(Text::ExportBlocked),
-                                        );
-                                        unavailable_details(ui, project, &self.unavailable, locale);
-                                        let r = ui
-                                            .checkbox(&mut self.consent, tr(Text::ExportDegraded));
-                                        result.widgets.push(("export.consent", r));
-                                        ui.add_space(14.0);
+                                0.0
+                            };
+                        ui.label(format!(
+                            "{} | {} {} MB",
+                            i18n::export_duration(locale, duration),
+                            tr(Text::ExportEstimatedSize),
+                            i18n::decimal(locale, duration * rate / 8_000_000.0, 1)
+                        ));
+                        ui.with_layout(
+                            egui::Layout::right_to_left(egui::Align::Center),
+                            |ui| match self.phase() {
+                                ExportPhase::Running => {
+                                    let r = ui
+                                        .add_enabled_ui(!self.cancelling, |ui| {
+                                            crate::kit::dialog_button(
+                                                ui,
+                                                "export.cancel",
+                                                tr(Text::Cancel),
+                                                false,
+                                            )
+                                        })
+                                        .inner;
+                                    if r.clicked() {
+                                        self.cancel();
                                     }
-                                    if let Some((_,_,_,_,warnings)) = &self.word_warnings {
-                                        match warnings {
-                                            Ok(warnings) => {
-                                                let reasons: std::collections::BTreeSet<_> = warnings.warnings.iter().map(|warning| warning.reason).collect();
-                                                for reason in reasons {
-                                                    let key = match reason {
-                                                        captions::WordHighlightReason::MissingTiming => Text::SubWordMissing,
-                                                        captions::WordHighlightReason::SourceChanged => Text::SubWordChanged,
-                                                        captions::WordHighlightReason::SourceNotDisplayed => Text::SubWordLanguage,
-                                                        captions::WordHighlightReason::AmbiguousTiming => Text::SubWordAmbiguous,
-                                                        captions::WordHighlightReason::ShapedBoundary => Text::SubWordShaped,
-                                                    };
-                                                    let response = ui.colored_label(theme::warning(dark),tr(key));
-                                                    result.widgets.push(("export.word_highlight.warning",response));
-                                                }
-                                            }
-                                            Err(error) => { ui.label(tr(Text::SubWordUnavailable)).on_hover_text(error.to_string()); }
-                                        }
-                                    }
-                                    settings::show(
-                                        ui,
-                                        locale,
-                                        options,
-                                        project,
-                                        self.selection_range,
-                                        &mut result,
-                                    );
-                                    ui.add_space(14.0);
-                                });
-                            });
-                    });
-                });
-                ui.add_space(16.0);
-                ui.separator();
-                ui.add_space(12.0);
-                self.empty = options.output.scene == SceneChoice::Active
-                    && project.duration() == time::Tick::ZERO;
-                if self.empty {
-                    ui.colored_label(theme::error_text(dark), tr(Text::ExportEmpty));
-                }
-                match self.phase() {
-                    ExportPhase::Running => {
-                        if let Some(snapshot) = &self.snapshot {
-                            ui.label(tr(if self.cancelling {
-                                Text::ExportCancelling
-                            } else {
-                                Text::ExportProgress
-                            }));
-                            job_progress(ui, "export.progress", snapshot, locale);
-                        }
-                    }
-                    ExportPhase::Failed => {
-                        let label = self
-                            .snapshot
-                            .as_ref()
-                            .and_then(|snapshot| snapshot.error.as_deref())
-                            .map_or(Text::ExportFailure, export_failure);
-                        ui.colored_label(theme::error_text(dark), tr(label));
-                    }
-                    ExportPhase::Ready | ExportPhase::Settings => {
-                        if self.error.is_some() {
-                            ui.colored_label(theme::error_text(dark), tr(Text::ExportFailure));
-                        }
-                    }
-                }
-                ui.add_space(
-                    (ui.available_height() - crate::kit::size::DIALOG_BUTTON_HEIGHT).max(0.0),
-                );
-                ui.horizontal(|ui| {
-                    let duration = options.output.ranges(project).map_or(0.0, |scenes| {
-                        scenes
-                            .iter()
-                            .map(|(_, range)| range.duration().seconds())
-                            .sum()
-                    });
-                    let rate = options.output.bit_rate.unwrap_or(options.quality.value().1) as f64
-                        + if options.include_audio {
-                            192_000.0
-                        } else {
-                            0.0
-                        };
-                    ui.label(format!(
-                        "{} | {} {} MB",
-                        i18n::export_duration(locale, duration),
-                        tr(Text::ExportEstimatedSize),
-                        i18n::decimal(locale, duration * rate / 8_000_000.0, 1)
-                    ));
-                    ui.with_layout(
-                        egui::Layout::right_to_left(egui::Align::Center),
-                        |ui| match self.phase() {
-                            ExportPhase::Running => {
-                                let r = ui
-                                    .add_enabled_ui(!self.cancelling, |ui| {
-                                        crate::kit::dialog_button(
-                                            ui,
-                                            "export.cancel",
-                                            tr(Text::Cancel),
-                                            false,
-                                        )
-                                    })
-                                    .inner;
-                                if r.clicked() {
-                                    self.cancel();
+                                    result.widgets.push(("export.cancel", r));
                                 }
-                                result.widgets.push(("export.cancel", r));
+                                ExportPhase::Failed => {
+                                    let r = crate::kit::dialog_button(
+                                        ui,
+                                        "export.retry",
+                                        tr(Text::ExportRetry),
+                                        false,
+                                    );
+                                    if r.clicked() {
+                                        result.action = Some(DialogAction::Retry);
+                                    }
+                                    result.widgets.push(("export.retry", r));
+                                    let r = crate::kit::dialog_button(
+                                        ui,
+                                        "export.copy",
+                                        tr(Text::ExportCopy),
+                                        false,
+                                    );
+                                    if r.clicked()
+                                        && let Some(text) = &self.diagnostics
+                                    {
+                                        ui.ctx().copy_text(text.clone());
+                                    }
+                                    result.widgets.push(("export.copy", r));
+                                    let r = crate::kit::dialog_button(
+                                        ui,
+                                        "export.close",
+                                        tr(Text::CloseScenes),
+                                        false,
+                                    );
+                                    if r.clicked() {
+                                        self.open = false;
+                                    }
+                                    result.widgets.push(("export.close", r));
+                                }
+                                ExportPhase::Ready => {
+                                    let r = crate::kit::dialog_button(
+                                        ui,
+                                        "export.save",
+                                        tr(Text::Save),
+                                        false,
+                                    );
+                                    if r.clicked() {
+                                        result.action = Some(DialogAction::Save);
+                                    }
+                                    result.widgets.push(("export.save", r));
+                                    let r = crate::kit::dialog_button(
+                                        ui,
+                                        "export.close",
+                                        tr(Text::Cancel),
+                                        false,
+                                    );
+                                    if r.clicked() {
+                                        self.discard_finished();
+                                        self.open = false;
+                                    }
+                                    result.widgets.push(("export.close", r));
+                                }
+                                ExportPhase::Settings => {
+                                    let r = crate::kit::dialog_button(
+                                        ui,
+                                        "export.close",
+                                        tr(Text::Cancel),
+                                        false,
+                                    );
+                                    if r.clicked() {
+                                        self.open = false;
+                                    }
+                                    result.widgets.push(("export.close", r));
+                                    let r = ui
+                                        .add_enabled_ui(settings::valid(options, project), |ui| {
+                                            crate::kit::dialog_button(
+                                                ui,
+                                                "export.run",
+                                                tr(Text::Export),
+                                                true,
+                                            )
+                                        })
+                                        .inner;
+                                    if r.clicked() {
+                                        result.action = Some(DialogAction::Start);
+                                    }
+                                    result.widgets.push(("export.run", r));
+                                }
+                            },
+                        );
+                    });
+                    ui.vertical(|ui| {
+                        self.empty = options.output.scene == SceneChoice::Active
+                            && project.duration() == time::Tick::ZERO;
+                        if self.empty {
+                            ui.colored_label(theme::error_text(dark), tr(Text::ExportEmpty));
+                        }
+                        match self.phase() {
+                            ExportPhase::Running => {
+                                if let Some(snapshot) = &self.snapshot {
+                                    ui.label(tr(if self.cancelling {
+                                        Text::ExportCancelling
+                                    } else {
+                                        Text::ExportProgress
+                                    }));
+                                    job_progress(ui, "export.progress", snapshot, locale);
+                                }
                             }
                             ExportPhase::Failed => {
-                                let r = crate::kit::dialog_button(
-                                    ui,
-                                    "export.retry",
-                                    tr(Text::ExportRetry),
-                                    false,
-                                );
-                                if r.clicked() {
-                                    result.action = Some(DialogAction::Retry);
-                                }
-                                result.widgets.push(("export.retry", r));
-                                let r = crate::kit::dialog_button(
-                                    ui,
-                                    "export.copy",
-                                    tr(Text::ExportCopy),
-                                    false,
-                                );
-                                if r.clicked()
-                                    && let Some(text) = &self.diagnostics
-                                {
-                                    ui.ctx().copy_text(text.clone());
-                                }
-                                result.widgets.push(("export.copy", r));
-                                let r = crate::kit::dialog_button(
-                                    ui,
-                                    "export.close",
-                                    tr(Text::CloseScenes),
-                                    false,
-                                );
-                                if r.clicked() {
-                                    self.open = false;
-                                }
-                                result.widgets.push(("export.close", r));
+                                let label = self
+                                    .snapshot
+                                    .as_ref()
+                                    .and_then(|snapshot| snapshot.error.as_deref())
+                                    .map_or(Text::ExportFailure, export_failure);
+                                ui.colored_label(theme::error_text(dark), tr(label));
                             }
-                            ExportPhase::Ready => {
-                                let r = crate::kit::dialog_button(
-                                    ui,
-                                    "export.save",
-                                    tr(Text::Save),
-                                    false,
-                                );
-                                if r.clicked() {
-                                    result.action = Some(DialogAction::Save);
+                            ExportPhase::Ready | ExportPhase::Settings => {
+                                if self.error.is_some() {
+                                    ui.colored_label(theme::error_text(dark), tr(Text::ExportFailure));
                                 }
-                                result.widgets.push(("export.save", r));
-                                let r = crate::kit::dialog_button(
-                                    ui,
-                                    "export.close",
-                                    tr(Text::Cancel),
-                                    false,
-                                );
-                                if r.clicked() {
-                                    self.discard_finished();
-                                    self.open = false;
-                                }
-                                result.widgets.push(("export.close", r));
                             }
-                            ExportPhase::Settings => {
-                                let r = crate::kit::dialog_button(
-                                    ui,
-                                    "export.close",
-                                    tr(Text::Cancel),
-                                    false,
-                                );
-                                if r.clicked() {
-                                    self.open = false;
-                                }
-                                result.widgets.push(("export.close", r));
-                                let r = ui
-                                    .add_enabled_ui(settings::valid(options, project), |ui| {
-                                        crate::kit::dialog_button(
-                                            ui,
-                                            "export.run",
-                                            tr(Text::Export),
-                                            true,
-                                        )
-                                    })
-                                    .inner;
-                                if r.clicked() {
-                                    result.action = Some(DialogAction::Start);
-                                }
-                                result.widgets.push(("export.run", r));
-                            }
-                        },
-                    );
+                        }
+                    });
+                    ui.add_space(12.0);
+                    ui.separator();
+                    ui.add_space(16.0);
+                    ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                        let body_height = ui.available_height().max(0.0);
+                        ui.horizontal_top(|ui| {
+                            ui.spacing_mut().item_spacing.x = 0.0;
+                            let wide = ui.available_width() >= 800.0;
+                            let leading = if wide { 108.0 - frame_margin.left } else { 0.0 };
+                            let gap = if wide { 114.0 } else { 20.0 };
+                            let settings_width = ui.available_width() - leading - 227.0 - gap;
+                            ui.add_space(leading);
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(227.0, body_height),
+                                egui::Layout::top_down(egui::Align::Center),
+                                |ui| {
+                                    let (rect, _) = ui.allocate_exact_size(
+                                        egui::vec2(
+                                            227.0,
+                                            (227.0 * project.data().canvas.height as f32
+                                                / project.data().canvas.width as f32)
+                                                .min(body_height),
+                                        ),
+                                        egui::Sense::hover(),
+                                    );
+                                    ui.painter().rect_filled(rect, 4.0, theme::window(dark));
+                                    if let Some(texture) = preview {
+                                        let size = texture.size_vec2();
+                                        let scale = (rect.width() / size.x).min(rect.height() / size.y);
+                                        let image =
+                                            egui::Rect::from_center_size(rect.center(), size * scale);
+                                        ui.painter().image(
+                                            texture.id(),
+                                            image,
+                                            egui::Rect::from_min_max(
+                                                egui::Pos2::ZERO,
+                                                egui::pos2(1.0, 1.0),
+                                            ),
+                                            egui::Color32::WHITE,
+                                        );
+                                    } else {
+                                        let galley = ui.painter().layout(
+                                            tr(if self.empty {
+                                                Text::EmptyPreview
+                                            } else {
+                                                Text::Loading
+                                            })
+                                            .to_owned(),
+                                            egui::FontId::proportional(14.0),
+                                            theme::secondary(dark),
+                                            rect.width() - 24.0,
+                                        );
+                                        let position = rect.center() - galley.size() * 0.5;
+                                        ui.painter()
+                                            .galley(position, galley, theme::secondary(dark));
+                                    }
+                                },
+                            );
+                            ui.add_space(gap);
+                            ui.vertical(|ui| {
+                                ui.spacing_mut().item_spacing.x = 8.0;
+                                ui.set_width(settings_width);
+                                ui.set_min_height(body_height);
+                                egui::ScrollArea::vertical()
+                                    .id_salt("export.settings")
+                                    .max_height(body_height)
+                                    .show(ui, |ui| {
+                                        ui.add_enabled_ui(!active, |ui| {
+                                            if !self.unavailable.is_empty() {
+                                                ui.colored_label(
+                                                    theme::warning(dark),
+                                                    tr(Text::ExportBlocked),
+                                                );
+                                                unavailable_details(ui, project, &self.unavailable, locale);
+                                                let r = ui
+                                                    .checkbox(&mut self.consent, tr(Text::ExportDegraded));
+                                                result.widgets.push(("export.consent", r));
+                                                ui.add_space(14.0);
+                                            }
+                                            if let Some((_,_,_,_,warnings)) = &self.word_warnings {
+                                                match warnings {
+                                                    Ok(warnings) => {
+                                                        let reasons: std::collections::BTreeSet<_> = warnings.warnings.iter().map(|warning| warning.reason).collect();
+                                                        for reason in reasons {
+                                                            let key = match reason {
+                                                                captions::WordHighlightReason::MissingTiming => Text::SubWordMissing,
+                                                                captions::WordHighlightReason::SourceChanged => Text::SubWordChanged,
+                                                                captions::WordHighlightReason::SourceNotDisplayed => Text::SubWordLanguage,
+                                                                captions::WordHighlightReason::AmbiguousTiming => Text::SubWordAmbiguous,
+                                                                captions::WordHighlightReason::ShapedBoundary => Text::SubWordShaped,
+                                                            };
+                                                            let response = ui.colored_label(theme::warning(dark),tr(key));
+                                                            result.widgets.push(("export.word_highlight.warning",response));
+                                                        }
+                                                    }
+                                                    Err(error) => { ui.label(tr(Text::SubWordUnavailable)).on_hover_text(error.to_string()); }
+                                                }
+                                            }
+                                            settings::show(
+                                                ui,
+                                                locale,
+                                                options,
+                                                project,
+                                                self.selection_range,
+                                                &mut result,
+                                            );
+                                            ui.add_space(14.0);
+                                        });
+                                    });
+                            });
+                        });
+                    });
                 });
             });
         if modal.should_close() {

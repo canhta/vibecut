@@ -442,20 +442,20 @@ pub(crate) fn badge_button(ui: &mut Ui, id: &str, label: &str) -> Response {
     response
 }
 
-/// Feature tab: icon above label, with the measured strip height and inset.
+/// Feature tab: icon above a 12 px label, the measured strip height and inset. The width
+/// follows the label (12 px of padding, 48 px minimum), so neighbours never overlap.
 pub(crate) fn icon_tab(
     ui: &mut Ui,
     id: &str,
     glyph: Icon,
     label: &str,
     selected: bool,
-    width: Option<f32>,
 ) -> Response {
     let color = ink(ui, selected);
     let mut font = theme::label_font();
-    font.size = theme::type_size::SMALL_LABEL;
+    font.size = theme::type_size::BODY;
     let text = paint(ui).layout_no_wrap(label.to_owned(), font, color);
-    let width = width.unwrap_or_else(|| (text.size().x + space::SM * 2.0).max(size::TAB_MIN));
+    let width = (text.size().x + space::SM * 2.0).max(size::TAB_MIN);
     let response = ui
         .push_id(id, |ui| {
             let (rect, response) =

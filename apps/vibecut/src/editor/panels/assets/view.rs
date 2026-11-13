@@ -75,18 +75,6 @@ pub(in crate::editor) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) 
                                 tab.icon(),
                                 label,
                                 tab == cx.preferences.assets_tab,
-                                if cx.preferences.locale == i18n::Locale::En {
-                                    Some(if tab == AssetsTab::Media {
-                                        theme::size::TAB_MIN
-                                    } else if tab == AssetsTab::Transitions {
-                                        // Wider label pitch in the measured feature strip.
-                                        61.0
-                                    } else {
-                                        theme::size::FEATURE_TAB_PITCH
-                                    })
-                                } else {
-                                    None
-                                },
                             )
                         };
                         view.remember(id, &response, Some(tab.icon()));
@@ -143,44 +131,25 @@ pub(in crate::editor) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) 
                     return;
                 }
                 let label = view.tr(active);
-                let response = ui.add_sized(
-                    [theme::size::SUBNAV_BUTTON, theme::size::CONTROL],
-                    egui::Button::new(
-                        egui::RichText::new(label)
-                            .font(theme::label_font())
-                            .size(theme::type_size::SMALL_LABEL)
-                            .color(if cx.preferences.assets_tab == AssetsTab::Text {
-                                theme::text(cx.preferences.dark)
-                            } else {
-                                theme::accent(cx.preferences.dark)
-                            }),
-                    )
-                    .fill(theme::hover(cx.preferences.dark))
-                    .stroke(egui::Stroke::NONE)
-                    .right_text(""),
-                );
-                if cx.preferences.assets_tab == AssetsTab::Text {
+                if cx.preferences.assets_tab == AssetsTab::Media {
+                    // Import heads a group (caret, neutral); the shown view, Media, is the one
+                    // active row.
+                    let response = view.nav_row(ui, label, false, true);
+                    view.remember("assets.subnav", &response, None);
+                    let label = view.tr(Text::Media);
+                    let response = view.nav_row(ui, label, true, false);
+                    view.remember("assets.subnav.media", &response, None);
+                    return;
+                }
+                let is_text = cx.preferences.assets_tab == AssetsTab::Text;
+                let response = view.nav_row(ui, label, !is_text, false);
+                if is_text {
                     view.remember("text.insert", &response, None);
                     if response.clicked() {
                         view.actions.push(Action::Command("text.insert".into()));
                     }
                 } else {
                     view.remember("assets.subnav", &response, None);
-                }
-                if cx.preferences.assets_tab == AssetsTab::Media {
-                    let response = ui.add_sized(
-                        [theme::size::SUBNAV_BUTTON, theme::size::CONTROL],
-                        egui::Button::new(
-                            egui::RichText::new(view.tr(Text::Media))
-                                .font(theme::label_font())
-                                .size(theme::type_size::SMALL_LABEL)
-                                .color(theme::accent(cx.preferences.dark)),
-                        )
-                        .fill(theme::hover(cx.preferences.dark))
-                        .stroke(egui::Stroke::NONE)
-                        .right_text(""),
-                    );
-                    view.remember("assets.subnav.media", &response, None);
                 }
             },
         );
@@ -372,6 +341,41 @@ impl View<'_> {
             .inner;
         self.remember(id, &response, Some(glyph));
         response.clicked()
+    }
+    /// One 104x24 sub-navigation row on the hover fill: the selected row takes the accent
+    /// label, and a group row carries a caret at the right.
+    fn nav_row(
+        &mut self,
+        ui: &mut egui::Ui,
+        label: &str,
+        selected: bool,
+        group: bool,
+    ) -> egui::Response {
+        let dark = self.cx.preferences.dark;
+        let response = ui.add_sized(
+            [theme::size::SUBNAV_BUTTON, theme::size::CONTROL],
+            egui::Button::new(
+                egui::RichText::new(label)
+                    .font(theme::label_font())
+                    .size(theme::type_size::SMALL_LABEL)
+                    .color(if selected {
+                        theme::accent(dark)
+                    } else {
+                        theme::text(dark)
+                    }),
+            )
+            .fill(theme::hover(dark))
+            .stroke(egui::Stroke::NONE)
+            .right_text(""),
+        );
+        if group {
+            let caret = Rect::from_center_size(
+                egui::pos2(response.rect.right() - 12.0, response.rect.center().y),
+                Vec2::splat(12.0),
+            );
+            icons::tinted(Icon::CaretDown, 12.0, theme::text(dark)).paint_at(ui, caret);
+        }
+        response
     }
     fn search(&mut self, ui: &mut egui::Ui, width: f32) {
         let hint = self.tr(match self.cx.preferences.assets_tab {

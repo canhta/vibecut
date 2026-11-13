@@ -1,7 +1,7 @@
 //! Presents editor window actions without mutating project state.
 
 use super::{Action, State};
-use crate::editor::Context;
+use crate::editor::{Context, context::SaveStatus};
 use crate::i18n;
 use crate::{
     egui::{self, Align2, FontId, Rect, Vec2},
@@ -19,7 +19,7 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
     ui.painter().text(
         egui::pos2(rect.left() + kit::space::LG, rect.center().y),
         Align2::LEFT_CENTER,
-        tr(cx.save_status),
+        save_label(cx.locale, &cx.save_status),
         font.clone(),
         kit::secondary(cx.dark),
     );
@@ -114,6 +114,34 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
         ),
         Vec2::splat(kit::size::CONTROL),
     );
+    let shortcuts_rect = Rect::from_min_size(
+        egui::pos2(
+            feedback_rect.left() - kit::space::MD - kit::size::CONTROL,
+            rect.top() + 6.0,
+        ),
+        Vec2::splat(kit::size::CONTROL),
+    );
+    let mut shortcuts_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .id_salt("shortcuts.open")
+            .max_rect(shortcuts_rect),
+    );
+    let shortcuts = kit::icon_button(
+        &mut shortcuts_ui,
+        "shortcuts.open",
+        Icon::Keyboard,
+        tr(Text::ActionShortcutsOpen),
+        false,
+    );
+    state.painted.push((
+        "shortcuts.open",
+        Some(Icon::Keyboard.name()),
+        shortcuts.clone(),
+    ));
+    if shortcuts.clicked() {
+        actions.push(Action::Activate("shortcuts.open"));
+    }
+
     let mut feedback_ui = ui.new_child(
         egui::UiBuilder::new()
             .id_salt("app.feedback")
@@ -150,7 +178,6 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
     egui::Popup::menu(&menu).show(|ui| {
         for (id, icon, label) in [
             ("project.exit", Icon::ArrowLeft, Text::ExitProject),
-            ("shortcuts.open", Icon::GearSix, Text::Shortcuts),
             ("app.help", Icon::File, Text::Help),
         ] {
             menu_entry(state, cx, ui, &mut actions, id, icon, label, &font, color);
@@ -179,6 +206,19 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
         .painted
         .push(("window.menu", Some(Icon::SlidersHorizontal.name()), menu));
     actions
+}
+
+/// The header's left text: the autosave clock, or the unsaved, pending and failed states.
+fn save_label(locale: i18n::Locale, status: &SaveStatus) -> String {
+    match status {
+        SaveStatus::Failed => i18n::text(locale, Text::SaveFailed).to_owned(),
+        SaveStatus::Saving => i18n::text(locale, Text::SavingProject).to_owned(),
+        SaveStatus::Unsaved => i18n::text(locale, Text::NotSaved).to_owned(),
+        SaveStatus::Saved { clock: None } => i18n::text(locale, Text::AutoSaved).to_owned(),
+        SaveStatus::Saved { clock: Some(clock) } => {
+            format!("{}: {clock}", i18n::text(locale, Text::AutoSaved))
+        }
+    }
 }
 
 /// One header menu row; the shortcut comes from the action registry.
@@ -214,5 +254,32 @@ fn menu_entry(
     if response.clicked() {
         actions.push(Action::Activate(id));
         ui.close();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use i18n::Locale;
+
+    #[test]
+    fn header_names_the_autosave_clock_and_the_unsaved_states() {
+        let saved = |clock: Option<&str>| SaveStatus::Saved {
+            clock: clock.map(str::to_owned),
+        };
+        for (locale, status, expected) in [
+            (Locale::En, saved(Some("09:05:03")), "Auto saved: 09:05:03"),
+            (Locale::En, saved(None), "Auto saved"),
+            (
+                Locale::Vi,
+                saved(Some("23:59:59")),
+                "Đã tự động lưu: 23:59:59",
+            ),
+            (Locale::En, SaveStatus::Saving, "Saving project…"),
+            (Locale::En, SaveStatus::Failed, "Save failed"),
+            (Locale::En, SaveStatus::Unsaved, "Not saved"),
+        ] {
+            assert_eq!(save_label(locale, &status), expected);
+        }
     }
 }

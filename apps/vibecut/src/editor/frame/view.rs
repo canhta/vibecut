@@ -1,6 +1,7 @@
 //! Composes the editor window.
+use crate::editor::context::SaveStatus;
 use crate::editor::{
-    Command, Editor, Id, Rect, Text, Vec2, drag_panel, egui, error_detail, icons, theme,
+    Command, Editor, Id, Rect, Vec2, drag_panel, egui, error_detail, icons, theme,
 };
 
 impl Editor {
@@ -405,23 +406,41 @@ impl Editor {
             self.fail(error.to_string());
         }
     }
-    pub(super) fn save_status(&self) -> Text {
+    pub(super) fn save_status(&self) -> SaveStatus {
         if self.persistence_error.is_some() {
-            Text::SaveFailed
+            SaveStatus::Failed
         } else {
             match &self.session {
-                crate::services::lifecycle::EditorSession::Memory(_) => Text::NotSaved,
+                crate::services::lifecycle::EditorSession::Memory(_) => SaveStatus::Unsaved,
                 crate::services::lifecycle::EditorSession::Persistent(autosave) => {
                     if autosave.saving() || autosave.journaled_revision() < autosave.revision() {
-                        Text::SavingProject
+                        SaveStatus::Saving
                     } else {
-                        Text::AutoSaved
+                        SaveStatus::Saved {
+                            clock: self.autosaved.as_ref().map(|(_, clock)| clock.clone()),
+                        }
                     }
                 }
             }
         }
     }
+    /// Stamp the local time whenever the journal takes a new revision.
+    fn note_autosave(&mut self) {
+        let crate::services::lifecycle::EditorSession::Persistent(autosave) = &self.session else {
+            return;
+        };
+        let journaled = autosave.journaled_revision();
+        if self
+            .autosaved
+            .as_ref()
+            .is_none_or(|(seen, _)| *seen != journaled)
+        {
+            let clock = chrono::Local::now().format("%H:%M:%S").to_string();
+            self.autosaved = Some((journaled, clock));
+        }
+    }
     pub(in crate::editor) fn header(&mut self, ui: &mut egui::Ui) {
+        self.note_autosave();
         let mut frame = std::mem::take(&mut self.frame);
         let cx = self.context();
         let actions = super::show(&mut frame, &cx, ui);
