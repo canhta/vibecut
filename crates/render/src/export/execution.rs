@@ -170,6 +170,8 @@ pub(super) fn copy_plan<'a>(
             matches!(video.codec.as_str(), "h264" | "hevc" | "mpeg4")
         }
         Container::WebM => matches!(video.codec.as_str(), "vp8" | "vp9" | "av1"),
+        // A GIF is always re-encoded from rendered frames.
+        Container::Gif => false,
     };
     if !compatible
         || shape.width != settings.render.width
@@ -249,6 +251,13 @@ pub(super) fn safe_key_cut(
     }
     Ok(start && end && last.is_some_and(|last| last.checked_add(dt) == Some(range.end())))
 }
+/// Offset of output frame `n` from the range start on the export grid.
+pub(super) fn frame_offset(dt: Tick, n: u64) -> Result<Tick> {
+    Ok(Tick(
+        dt.0.checked_mul(n as i64)
+            .ok_or(Error::Invalid("output frame tick"))?,
+    ))
+}
 #[allow(clippy::too_many_arguments)]
 pub(super) fn encoded_export(
     project: &Project,
@@ -322,10 +331,7 @@ pub(super) fn encoded_export(
     for n in 0..count {
         check(hooks)?;
         hooks.progress(Stage::Render, n as f32 / count as f32)?;
-        let offset = Tick(
-            dt.0.checked_mul(n as i64)
-                .ok_or(Error::Invalid("output frame tick"))?,
-        );
+        let offset = frame_offset(dt, n)?;
         if n > 0 {
             first = renderer.render_frame(
                 range

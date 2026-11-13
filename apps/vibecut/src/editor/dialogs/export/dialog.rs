@@ -28,6 +28,8 @@ pub enum ExportFormat {
     M4a,
     /// Audio only: Opus in a WebM container.
     AudioWebm,
+    /// Silent animated GIF.
+    Gif,
 }
 impl ExportFormat {
     pub fn extension(self) -> &'static str {
@@ -36,6 +38,7 @@ impl ExportFormat {
             Self::Mov => "mov",
             Self::Webm | Self::AudioWebm => "webm",
             Self::M4a => "m4a",
+            Self::Gif => "gif",
         }
     }
     pub fn container(self) -> media::Container {
@@ -43,6 +46,7 @@ impl ExportFormat {
             Self::Mp4 | Self::M4a => media::Container::Mp4,
             Self::Mov => media::Container::Mov,
             Self::Webm | Self::AudioWebm => media::Container::WebM,
+            Self::Gif => media::Container::Gif,
         }
     }
     pub fn audio_only(self) -> bool {
@@ -55,6 +59,7 @@ impl ExportFormat {
             Self::Webm => Text::ExportWebm,
             Self::M4a => Text::ExportAudioM4a,
             Self::AudioWebm => Text::ExportAudioWebm,
+            Self::Gif => Text::ExportGif,
         }
     }
 }

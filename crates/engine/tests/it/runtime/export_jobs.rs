@@ -144,6 +144,39 @@ fn scene_export_admission_refuses_invalid_destinations_before_rendering() {
             .is_err()
         );
     }
+    // A GIF outside its palette, rate or duration bounds refuses at submit.
+    let mut gif_settings = settings.clone();
+    gif_settings.container = media::Container::Gif;
+    for hostile in [
+        render::OutputOptions {
+            fps: Some(time::FrameRate::FPS_60),
+            ..Default::default()
+        },
+        render::OutputOptions {
+            gif: media::GifOptions {
+                max_colors: 1,
+                dither: media::GifDither::None,
+            },
+            ..Default::default()
+        },
+    ] {
+        assert!(matches!(
+            engine::submit_scene_exports_with_sources(
+                &mut runner,
+                key(104),
+                project.clone(),
+                hostile,
+                gif_settings.clone(),
+                vec![first.clone()],
+                || panic!("hostile GIF opened a source"),
+            ),
+            Err(RuntimeError::Render(render::Error::Media(
+                media::MediaError::Gif(_)
+            )))
+        ));
+        assert!(runner.snapshots().is_empty());
+        assert_eq!(std::fs::read(&first).unwrap(), b"original");
+    }
     // Both absent and mismatched gains refuse before any worker/source/stage.
     for measured in [
         None,

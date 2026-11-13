@@ -26,11 +26,19 @@ Media Foundation always receives CPU NV12 input, including with its hardware enc
 
 `RgbaConverter::convert_horizontal` accepts a nonempty source-column range and returns CPU RGBA plus its integer source-column origin. NV12/YUV420P at even widths use an aligned integer crop with a 64-pixel chroma-reconstruction halo and 128-pixel alignment. Existing crop metadata or another layout falls back to full conversion. Only the requested interior replaces full-frame conversion; halo-edge pixels carry no resampling contract. PTS, color and alpha convention are kept.
 
+## GIF
+
+Research (FFmpeg `ffmpeg-all` documentation via Context7, build-checked against the vendored recipe): the `gif` encoder takes `PAL8` frames (also RGB8/BGR8/gray), writes a palette per frame or a shared global palette, and its `gifflags` option enables offsetting and transparency diffs; the `gif` muxer stores whole-centisecond delays, loops forever by default (`loop`) and reuses the previous delay for the last frame unless `final_delay` is set. `palettegen`/`paletteuse` are libavfilter filters. The recipe builds libavfilter, but the media crate links only codec, format, software-resampling and software-scaling, so no filter graph exists. Admitted path: media quantizes in Rust and hands the `gif` encoder indexed frames; there is no second palette owner.
+
+`GifEncoder` takes straight RGBA8 (alpha ignored; render composites first) on the constant-rate grid starting at zero, builds a deterministic median-cut palette per frame (5 bits per channel histogram, so colours closer than that merge), and writes it through the encoder. A frame with no more distinct colours than the bound keeps them exactly and is never dithered; otherwise `GifDither::Bayer` adds a fixed 4x4 ordered offset (+-8 levels) and `None` maps to the nearest entry. Palettes are per frame, so `gifflags` is 0: every frame is a full image and no index-diff compression is attempted. FFmpeg always writes 256-entry tables, so the colour bound limits distinct colours, not table size. Timing comes from the muxer: delays are the rounded centisecond differences of frame times (30 fps alternates 3 and 4 cs, 25 fps is 4 cs), the last frame repeats the previous delay and the animation loops forever. No audio, no transparency and no explicit loop count are admitted.
+
+Bounds (typed `GifLimit`, wrapped as `MediaError::Gif`, refused before an encoder opens): 2..=256 colours; 2..=4096 pixels per edge and at most 2^21 pixels per frame (1920x1080 fits); frame rate at most 50 fps (2 cs, the fastest delay viewers honour); at most 60 s and 3000 frames. The encoder also refuses a frame count beyond the bound, a wrong buffer length and any time off the grid. Container `Container::Gif` resolves from the `gif` extension; `export_container_available` reports whether the build has the encoder.
+
 ## Muxing
 
-`Muxer` writes MP4, MOV and WebM over a seekable `MuxSink` (plain File or the project's bounded streaming writer), accepts stream-copy or encoded parameters, rescales timestamps and propagates trailer and fsync errors. Write to a temporary output and promote it only after successful `finish`; render and engine own cancellation, final-file replacement and restart policy. Packet buffers are shared by reference and only metadata is rescaled into the final mux time base. FFmpeg owns codec padding and edit-list creation.
+`Muxer` writes MP4, MOV, WebM and GIF over a seekable `MuxSink` (plain File or the project's bounded streaming writer), accepts stream-copy or encoded parameters, rescales timestamps and propagates trailer and fsync errors. Write to a temporary output and promote it only after successful `finish`; render and engine own cancellation, final-file replacement and restart policy. Packet buffers are shared by reference and only metadata is rescaled into the final mux time base. FFmpeg owns codec padding and edit-list creation.
 
-`Container::from_extension` resolves MP4, MOV and WebM case-insensitively for CLI and control requests; render takes an explicit container setting.
+`Container::from_extension` resolves MP4, MOV, WebM and GIF case-insensitively for CLI and control requests; render takes an explicit container setting.
 
 ## Audio file writer
 

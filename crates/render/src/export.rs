@@ -1,6 +1,7 @@
 //! Runs a staged project export through to publication.
 mod destination;
 mod execution;
+mod gif;
 mod options;
 mod publication;
 pub use options::{OutputOptions, RangeChoice, SceneChoice, VideoCodec};
@@ -13,6 +14,7 @@ pub use destination::validate_output_path;
 use execution::{
     OmittedSources, admission, audio_only_export, copy_export, copy_plan, encoded_export,
 };
+use gif::gif_export;
 use media::{Container, EncodePreference};
 use project::{
     ItemParams, Project,
@@ -38,8 +40,11 @@ pub enum HdrPolicy {
 pub struct ExportSettings {
     pub render: RenderSettings,
     pub fps: FrameRate,
-    /// Output container; MP4/MOV encode H.264 + AAC, WebM encodes VP9 + Opus.
+    /// Output container; MP4/MOV encode H.264 + AAC, WebM encodes VP9 + Opus and
+    /// GIF encodes silent palette video.
     pub container: Container,
+    /// Palette choices used when `container` is GIF.
+    pub gif: media::GifOptions,
     pub bit_rate: usize,
     pub quality: u8,
     pub profile: media::H264Profile,
@@ -68,6 +73,7 @@ impl ExportSettings {
             render: RenderSettings::from_project(project),
             fps: project.data().canvas.fps,
             container: Container::Mp4,
+            gif: media::GifOptions::default(),
             bit_rate: 12_000_000,
             quality: 85,
             profile: media::H264Profile::Automatic,
@@ -130,6 +136,19 @@ pub fn export_with_sources(
             "audio-only export has no video stream to copy",
         ));
     }
+    let is_gif = settings.container == Container::Gif;
+    // A GIF is silent and always rendered: audio never reaches admission, and
+    // stream copy has nothing to copy.
+    let silent;
+    let settings = if is_gif {
+        silent = ExportSettings {
+            include_audio: false,
+            ..settings.clone()
+        };
+        &silent
+    } else {
+        settings
+    };
     if settings.resume {
         return Err(Error::Unsupported(
             "encoded export resume requires independently finalized segments and a validated manifest",
@@ -158,6 +177,7 @@ pub fn export_with_sources(
     if frames > 10_000_000 {
         return Err(Error::Invalid("export frame expansion"));
     }
+    gif::admission(range, settings)?;
     let mut renderer = Renderer::new(project, settings.render.clone())?;
     sources.begin_video(&[]);
     sources.begin_audio(&[]);
@@ -183,7 +203,7 @@ pub fn export_with_sources(
     }
     let omitted: BTreeSet<_> = unavailable.iter().map(|u| u.asset).collect();
     validate_output_path(project, path, hooks)?;
-    let copy = if settings.mode != ExportMode::Encode && !settings.audio_only {
+    let copy = if settings.mode != ExportMode::Encode && !settings.audio_only && !is_gif {
         copy_plan(project, range, settings, hooks)?
             .filter(|plan| !omitted.contains(&plan.asset.id()))
     } else {
@@ -246,6 +266,16 @@ pub fn export_with_sources(
             asset,
             &mut source,
             hooks,
+        )
+    } else if is_gif {
+        gif_export(
+            range,
+            settings,
+            stage.writer()?,
+            &mut renderer,
+            &mut source,
+            hooks,
+            frames as u64,
         )
     } else {
         encoded_export(

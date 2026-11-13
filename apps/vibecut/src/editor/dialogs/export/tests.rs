@@ -318,6 +318,21 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
             .unwrap();
         bench.click("export.format");
         bench.click("export.format.webm");
+        // GIF swaps the bitrate for Colors and Dithering and clears a custom rate.
+        bench.editor_mut().preferences.export.output.bit_rate = Some(100_000);
+        bench.click("export.format");
+        bench.click("export.format.gif");
+        bench.harness_mut().run_steps(2);
+        let gif = bench.editor().preferences.export;
+        assert_eq!((gif.format, gif.output.bit_rate), (ExportFormat::Gif, None));
+        assert_eq!(gif.output.gif, media::GifOptions::default());
+        assert!(enabled(&bench, "export.gif.colors"));
+        assert!(enabled(&bench, "export.gif.dither"));
+        assert!(!enabled(&bench, "export.bitrate.custom"));
+        bench.click("export.format");
+        bench.click("export.format.webm");
+        bench.harness_mut().run_steps(2);
+        assert_eq!(bench.editor().preferences.export.format, ExportFormat::Webm);
         bench.click("export.close");
         open(&mut bench);
         assert_eq!(bench.editor().preferences.export.format, ExportFormat::Webm);

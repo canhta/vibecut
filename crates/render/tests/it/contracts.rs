@@ -129,6 +129,89 @@ fn export_options_refuse_hostile_geometry_rates_versions_and_incompatible_codecs
     ] {
         assert!(options.apply(&mut settings).is_err());
     }
+    // GIF: palette, geometry and rate bounds refuse with the typed limit they break;
+    // codec, profile and bitrate have no meaning there.
+    let mut gif = ExportSettings::from_project(&p);
+    gif.container = media::Container::Gif;
+    OutputOptions {
+        fps: Some(time::FrameRate::FPS_30),
+        ..Default::default()
+    }
+    .apply(&mut gif)
+    .unwrap();
+    assert_eq!(gif.gif, media::GifOptions::default());
+    let colors = |max_colors| media::GifOptions {
+        max_colors,
+        dither: media::GifDither::None,
+    };
+    for (options, limit) in [
+        (
+            OutputOptions {
+                gif: colors(1),
+                ..Default::default()
+            },
+            media::GifLimit::Colors,
+        ),
+        (
+            OutputOptions {
+                gif: colors(257),
+                ..Default::default()
+            },
+            media::GifLimit::Colors,
+        ),
+        (
+            OutputOptions {
+                resolution: Some([4098, 2]),
+                ..Default::default()
+            },
+            media::GifLimit::Dimensions,
+        ),
+        (
+            OutputOptions {
+                resolution: Some([4096, 4096]),
+                ..Default::default()
+            },
+            media::GifLimit::Dimensions,
+        ),
+        (
+            OutputOptions {
+                fps: Some(time::FrameRate::FPS_60),
+                ..Default::default()
+            },
+            media::GifLimit::FrameRate,
+        ),
+    ] {
+        assert!(matches!(
+            options.apply(&mut gif.clone()),
+            Err(Error::Media(media::MediaError::Gif(found))) if found == limit
+        ));
+    }
+    for options in [
+        OutputOptions {
+            codec: VideoCodec::H264,
+            ..Default::default()
+        },
+        OutputOptions {
+            profile: media::H264Profile::Main,
+            ..Default::default()
+        },
+        OutputOptions {
+            bit_rate: Some(100_000),
+            ..Default::default()
+        },
+    ] {
+        assert!(matches!(
+            options.apply(&mut gif.clone()),
+            Err(Error::Unsupported(_))
+        ));
+    }
+    OutputOptions {
+        gif: colors(2),
+        ..Default::default()
+    }
+    .apply(&mut gif)
+    .unwrap();
+    assert_eq!(gif.gif, colors(2));
 }
 
 #[test]
@@ -904,6 +987,7 @@ fn publication_preserves_destination_on_cancel_fail_finalize_and_mux_limit() {
         (media::Container::Mp4, "mp4"),
         (media::Container::Mov, "mov"),
         (media::Container::WebM, "webm"),
+        (media::Container::Gif, "gif"),
     ] {
         // Cancellation before publication leaves no final file and no staged
         // neighbour, for WebM as for MP4/MOV.

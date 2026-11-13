@@ -6,16 +6,18 @@ use std::fs::File;
 use std::io::{Seek, Write};
 use std::path::Path;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Container {
     Mp4,
     Mov,
     WebM,
+    /// Silent animated GIF; carries palette-indexed video only.
+    Gif,
 }
 impl Container {
     /// Resolve the admitted video containers from an ASCII extension.
     pub fn from_extension(extension: &str) -> Option<Self> {
-        [Self::Mp4, Self::Mov, Self::WebM]
+        [Self::Mp4, Self::Mov, Self::WebM, Self::Gif]
             .into_iter()
             .find(|container| container.name().eq_ignore_ascii_case(extension))
     }
@@ -24,6 +26,7 @@ impl Container {
             Self::Mp4 => "mp4",
             Self::Mov => "mov",
             Self::WebM => "webm",
+            Self::Gif => "gif",
         }
     }
 }

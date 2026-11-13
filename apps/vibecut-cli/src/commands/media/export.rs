@@ -57,7 +57,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
 
 fn export_usage() -> CliError {
     CliError::Usage(
-        "usage: vibecut-cli export <project> --out <mp4|mov|webm|m4a> [--settings <JSON>] [--aspect 9:16] [--allow-degraded] [--overwrite]"
+        "usage: vibecut-cli export <project> --out <mp4|mov|webm|m4a|gif> [--settings <JSON>] [--aspect 9:16] [--allow-degraded] [--overwrite]"
             .into(),
     )
 }

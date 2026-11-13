@@ -32,9 +32,10 @@ pub use vision::{
 };
 pub use write::{
     AUDIO_FILE_BLOCK, AudioEncoder, AudioEncoderSettings, AudioFileWriter, Container,
-    EncodePreference, H264Profile, MuxSink, Muxer, VideoEncoder, VideoEncoderSettings,
-    audio_export_container_available,
-    export_container_available, h264_encoder_available,
+    EncodePreference, GIF_MAX_COLORS, GIF_MAX_EDGE, GIF_MAX_FPS, GIF_MAX_FRAMES, GIF_MAX_PIXELS,
+    GIF_MAX_SECONDS, GIF_MIN_COLORS, GifDither, GifEncoder, GifEncoderSettings, GifLimit,
+    GifOptions, H264Profile, MuxSink, Muxer, VideoEncoder, VideoEncoderSettings,
+    audio_export_container_available, export_container_available, h264_encoder_available,
 };
 
 /// Typed failures from the media boundary. Provider paths and media text are not
@@ -56,6 +57,8 @@ pub enum MediaError {
     },
     #[error("media limit exceeded: {0}")]
     TooLarge(&'static str),
+    #[error(transparent)]
+    Gif(#[from] GifLimit),
     #[error("media operation cancelled")]
     Cancelled,
     #[error("{operation}: {source}")]

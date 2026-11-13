@@ -1,6 +1,6 @@
 # render
 
-CPU reference compositor, shared sample-window mixer and bounded MP4/MOV/WebM export.
+CPU reference compositor, shared sample-window mixer and bounded MP4/MOV/WebM/GIF export.
 It consumes immutable project snapshots and renders and mixes one active-scene snapshot at a time. Media owns codecs, conversion and mux, text owns shaping and rasterization, project owns atomic publication, engine owns scheduling and aggregate byte policy. No UI, device or persisted render state.
 
 `ExportSettings::from_project` uses media's platform encoder default (software on Windows). Hardware decoding stays enabled. Requested quality and bitrate are retained. Encoder selection, rate-control fallback and typed errors follow the [media contract](../media/src/write/README.md#encoding).

@@ -836,6 +836,58 @@ pub(super) fn rgba_buffer(width: u32, height: u32, color: ColorInfo) -> Result<f
     Ok(frame)
 }
 
+/// Owned PAL8 frame: one index byte per pixel plus the 256-entry `0xAARRGGBB`
+/// palette FFmpeg keeps in the second data pointer.
+pub(super) fn pal8_frame(
+    width: u32,
+    height: u32,
+    indices: &[u8],
+    palette: &[u32; 256],
+) -> Result<ff::frame::Video> {
+    let columns = width as usize;
+    if columns == 0 || height == 0 || indices.len() != columns.saturating_mul(height as usize) {
+        return Err(MediaError::Invalid("palette frame geometry"));
+    }
+    let mut frame = ff::frame::Video::empty();
+    frame.set_width(width);
+    frame.set_height(height);
+    frame.set_format(ff::format::Pixel::PAL8);
+    // SAFETY: positive bounded dimensions checked by the caller, new uniquely
+    // owned frame. Check allocation before using safe slice helpers.
+    unsafe {
+        if frame.as_ptr().is_null() {
+            return Err(MediaError::TooLarge("palette frame"));
+        }
+        let status = av_frame_get_buffer(frame.as_mut_ptr(), 32);
+        if status < 0 {
+            return Err(error("allocate palette frame")(ff::Error::from(status)));
+        }
+    }
+    let stride = cpu_stride(&frame, 0)?;
+    for (dst, src) in frame
+        .data_mut(0)
+        .chunks_mut(stride)
+        .zip(indices.chunks_exact(columns))
+    {
+        dst.get_mut(..columns)
+            .ok_or(MediaError::Invalid("palette stride"))?
+            .copy_from_slice(src);
+    }
+    // SAFETY: av_frame_get_buffer allocates AVPALETTE_SIZE (1024) bytes behind
+    // data[1] of a PAL8 frame; this frame is exclusively owned and not yet shared.
+    unsafe {
+        let pointer = (*frame.as_ptr()).data[1];
+        if pointer.is_null() {
+            return Err(MediaError::Invalid("missing palette plane"));
+        }
+        let target = std::slice::from_raw_parts_mut(pointer, 256 * 4);
+        for (bytes, color) in target.chunks_exact_mut(4).zip(palette) {
+            bytes.copy_from_slice(&color.to_ne_bytes());
+        }
+    }
+    Ok(frame)
+}
+
 pub(super) fn display_transform_required(parameters: &ff::codec::Parameters) -> Result<bool> {
     // SAFETY: Parameters retains its codec metadata and side-data buffers for this
     // borrow. Validate counts, pointers and the fixed 9*i32 matrix size before

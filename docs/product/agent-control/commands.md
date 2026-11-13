@@ -923,6 +923,10 @@ Effect: `FilePublish`. Fixture: `Timeline`.
     "bit_rate": null,
     "codec": "automatic",
     "fps": null,
+    "gif": {
+      "dither": "bayer",
+      "max_colors": 256
+    },
     "profile": "automatic",
     "range": {
       "end": 8467200000,

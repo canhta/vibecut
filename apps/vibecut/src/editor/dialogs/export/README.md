@@ -22,6 +22,8 @@ audio switch and last directory; source consent and overwrite authorization stay
 transient. Project and undo history never store export state. An empty timeline shows
 a catalog error and refuses start.
 
+Format offers MP4, MOV, WebM and, when the build has the encoder, GIF. Choosing GIF clears the custom bitrate, disables that checkbox and adds Colors (2..=256) and Dithering (none or ordered) rows after the Profile row in the same grid, with the form's usual row pitch. Codec and profile offer Automatic only, Quality is ignored and the audio switch has no effect on a GIF. Export stays disabled with the shared range error when the resolution, rate or range breaks the GIF bounds (`OutputOptions::check_gif`). CapCut's export capture shows no GIF state: the two rows and their order are [proposed], and the row pitch is the measured video-row pitch.
+
 All-scene output is rendered as one staged batch, then saved scene by scene with
 distinct scene-id filenames through the native save workflow. Cancelling a save picker
 keeps the current and remaining finished files; closing the dialog discards them.

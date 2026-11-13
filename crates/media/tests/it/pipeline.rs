@@ -1042,3 +1042,161 @@ fn aligned_horizontal_conversion_matches_full_frame_at_fractional_crop_neighbors
         }
     }
 }
+
+struct GifFile {
+    width: u16,
+    height: u16,
+    delays: Vec<u16>,
+    images: usize,
+    looped: bool,
+    trailer: bool,
+}
+/// Walks the GIF block structure without decoding pixel data.
+fn gif_file(bytes: &[u8]) -> GifFile {
+    assert_eq!(&bytes[..6], b"GIF89a");
+    let mut file = GifFile {
+        width: u16::from_le_bytes([bytes[6], bytes[7]]),
+        height: u16::from_le_bytes([bytes[8], bytes[9]]),
+        delays: Vec::new(),
+        images: 0,
+        looped: false,
+        trailer: false,
+    };
+    let mut at = 13;
+    if bytes[10] & 0x80 != 0 {
+        at += 3 << ((bytes[10] & 7) + 1);
+    }
+    let skip = |mut at: usize| loop {
+        let size = bytes[at] as usize;
+        at += 1;
+        if size == 0 {
+            return at;
+        }
+        at += size;
+    };
+    loop {
+        match bytes[at] {
+            0x3B => {
+                file.trailer = true;
+                return file;
+            }
+            0x21 => {
+                let label = bytes[at + 1];
+                at += 2;
+                if label == 0xF9 {
+                    file.delays
+                        .push(u16::from_le_bytes([bytes[at + 2], bytes[at + 3]]));
+                }
+                if label == 0xFF && bytes[at + 1..].starts_with(b"NETSCAPE2.0") {
+                    file.looped = true;
+                }
+                at = skip(at);
+            }
+            0x2C => {
+                file.images += 1;
+                let flags = bytes[at + 9];
+                at += 10;
+                if flags & 0x80 != 0 {
+                    at += 3 << ((flags & 7) + 1);
+                }
+                at = skip(at + 1);
+            }
+            other => panic!("unexpected GIF block {other:#x}"),
+        }
+    }
+}
+
+#[test]
+fn gif_encoder_keeps_frame_count_timing_loop_and_refuses_hostile_input() {
+    use media::{GifDither, GifEncoder, GifEncoderSettings, GifOptions};
+    use time::FrameRate;
+    let (width, height) = (48u32, 32u32);
+    let frames = |n: u32| -> Vec<u8> {
+        (0..width * height)
+            .flat_map(|p| {
+                let (x, y) = (p % width, p / width);
+                [(x * 5 + n * 7) as u8, (y * 7) as u8, (n * 13) as u8, 255]
+            })
+            .collect()
+    };
+    for (rate, count, expected) in [(FrameRate::FPS_25, 10u32, 4u16), (FrameRate::FPS_30, 30, 0)] {
+        let settings = GifEncoderSettings {
+            width,
+            height,
+            frame_rate: rate,
+            options: GifOptions {
+                max_colors: 16,
+                dither: GifDither::Bayer,
+            },
+        };
+        let mut encoder = GifEncoder::new(settings).unwrap();
+        let path = testkit::fixture::dir("media").join(format!("gif_{}.gif", rate.num()));
+        let mut mux = Muxer::create(&path, Container::Gif).unwrap();
+        let track = mux
+            .add_parameters(&encoder.parameters(), encoder.time_base())
+            .unwrap();
+        for n in 0..count {
+            let pts = rate.tick_of(i64::from(n)).unwrap();
+            for packet in encoder.encode_rgba8(&frames(n), pts).unwrap() {
+                mux.write_packet(track, &packet).unwrap();
+            }
+        }
+        for packet in encoder.flush().unwrap() {
+            mux.write_packet(track, &packet).unwrap();
+        }
+        mux.finish().unwrap();
+        let file = gif_file(&std::fs::read(&path).unwrap());
+        assert_eq!((file.width, file.height), (48, 32));
+        assert_eq!(file.images, count as usize);
+        assert_eq!(file.delays.len(), count as usize);
+        assert!(file.looped && file.trailer);
+        if expected != 0 {
+            assert!(
+                file.delays.iter().all(|&d| d == expected),
+                "{:?}",
+                file.delays
+            );
+        } else {
+            // 30 fps is 3.33 cs: delays alternate 3 and 4 and sum to one second.
+            assert!(
+                file.delays.iter().all(|&d| d == 3 || d == 4),
+                "{:?}",
+                file.delays
+            );
+            let total: u16 = file.delays.iter().sum();
+            assert!((99..=101).contains(&total), "{total}");
+        }
+    }
+
+    let settings = GifEncoderSettings {
+        width,
+        height,
+        frame_rate: FrameRate::FPS_25,
+        options: GifOptions::default(),
+    };
+    let mut encoder = GifEncoder::new(settings).unwrap();
+    assert!(matches!(
+        encoder.encode_rgba8(&frames(0)[1..], Tick::ZERO),
+        Err(media::MediaError::Invalid(_))
+    ));
+    // The first frame sits at zero and later frames follow the grid exactly.
+    assert!(matches!(
+        encoder.encode_rgba8(&frames(0), FrameRate::FPS_25.tick_of(1).unwrap()),
+        Err(media::MediaError::Invalid(_))
+    ));
+    encoder.encode_rgba8(&frames(0), Tick::ZERO).unwrap();
+    assert!(matches!(
+        encoder.encode_rgba8(&frames(1), FrameRate::FPS_25.tick_of(2).unwrap()),
+        Err(media::MediaError::Invalid(_))
+    ));
+    encoder.flush().unwrap();
+    assert!(matches!(
+        encoder.encode_rgba8(&frames(1), FrameRate::FPS_25.tick_of(1).unwrap()),
+        Err(media::MediaError::Invalid(_))
+    ));
+    assert!(media::export_container_available(Container::Gif));
+    assert!(matches!(
+        Container::from_extension("GIF"),
+        Some(Container::Gif)
+    ));
+}

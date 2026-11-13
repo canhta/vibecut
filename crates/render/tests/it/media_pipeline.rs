@@ -1188,6 +1188,97 @@ fn webm_export_matches_the_project_grid_and_plays() {
 }
 
 #[test]
+fn gif_export_matches_the_project_grid_and_refuses_hostile_settings() {
+    if !tools() {
+        return;
+    }
+    let p = solid_project(1, 128, 96, [70, 160, 210, 255]);
+    let mut settings = ExportSettings::from_project(&p);
+    settings.mode = ExportMode::Encode;
+    settings.container = media::Container::Gif;
+    settings.overwrite = project::atomic::Overwrite::Replace;
+    settings.gif = media::GifOptions {
+        max_colors: 2,
+        dither: media::GifDither::None,
+    };
+    let output = root().join("export-oracle.gif");
+    let range = TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap();
+    let receipt = export(&p, range, &settings, &output, &Hooks::default()).unwrap();
+    assert_eq!(receipt.video_frames, 30);
+    assert_eq!(receipt.audio_samples, 0);
+    assert!(!receipt.stream_copied);
+    let info = probe(&output);
+    assert_eq!(info["streams"].as_array().unwrap().len(), 1);
+    let video = &info["streams"][0];
+    assert_eq!(video["codec_name"], "gif");
+    assert_eq!(video["width"].as_u64(), Some(128));
+    assert_eq!(video["height"].as_u64(), Some(96));
+    assert_eq!(testkit::oracle::decoded_frames(&output, "v:0"), 30);
+    testkit::oracle::approx(
+        testkit::oracle::duration(&output),
+        1.0,
+        0.05,
+        "GIF duration",
+    );
+    assert!(testkit::oracle::decodes(&output), "GIF decodes cleanly");
+    // One flat colour is inside the two-colour bound, so it survives exactly.
+    let decoded = rgba(&output);
+    assert_eq!(decoded.len(), 128 * 96 * 4);
+    assert!(decoded.chunks(4).all(|pixel| {
+        pixel[..3]
+            .iter()
+            .zip([70u8, 160, 210])
+            .all(|(a, b)| a.abs_diff(b) <= 1)
+    }));
+
+    // Hostile settings refuse with the typed limit and keep the existing file.
+    std::fs::write(&output, b"previous").unwrap();
+    let with = |edit: &dyn Fn(&mut ExportSettings)| {
+        let mut edited = settings.clone();
+        edit(&mut edited);
+        edited
+    };
+    for (hostile, limit) in [
+        (with(&|s| s.gif.max_colors = 1), media::GifLimit::Colors),
+        (with(&|s| s.gif.max_colors = 300), media::GifLimit::Colors),
+        (
+            with(&|s| s.fps = time::FrameRate::FPS_60),
+            media::GifLimit::FrameRate,
+        ),
+        (
+            with(&|s| s.render.width = 4098),
+            media::GifLimit::Dimensions,
+        ),
+    ] {
+        match export(&p, range, &hostile, &output, &Hooks::default()) {
+            Err(Error::Media(media::MediaError::Gif(found))) => assert_eq!(found, limit),
+            other => panic!("expected {limit:?}, got {other:?}"),
+        }
+        assert_eq!(std::fs::read(&output).unwrap(), b"previous");
+    }
+    let long = solid_project(61, 64, 64, [70, 160, 210, 255]);
+    match export(
+        &long,
+        TimeRange::new(Tick::ZERO, long.duration()).unwrap(),
+        &settings,
+        &output,
+        &Hooks::default(),
+    ) {
+        Err(Error::Media(media::MediaError::Gif(found))) => {
+            assert_eq!(found, media::GifLimit::Duration)
+        }
+        other => panic!("expected the duration bound, got {other:?}"),
+    }
+    let mut copy = settings.clone();
+    copy.mode = ExportMode::StreamCopy;
+    assert!(matches!(
+        export(&p, range, &copy, &output, &Hooks::default()),
+        Err(Error::Unsupported(_))
+    ));
+    assert_eq!(std::fs::read(&output).unwrap(), b"previous");
+}
+
+#[test]
 fn webm_export_is_deterministic_across_runs() {
     if !tools() {
         return;
