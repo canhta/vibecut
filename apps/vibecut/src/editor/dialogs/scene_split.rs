@@ -70,7 +70,12 @@ pub(in crate::editor) struct State {
     phase: Phase,
     media: Option<Arc<Mutex<MediaAccess>>>,
     runner: Option<JobRunner>,
+    source: Option<DetectSource>,
 }
+
+/// Starts the detection job for one asset and returns its id, or `None` when it refuses.
+/// Injected by tests to hold a job open deterministically; the desktop uses `media.detect_scenes`.
+pub(in crate::editor) type DetectSource = Arc<dyn Fn(&mut JobRunner, AssetId) -> Option<JobId>>;
 
 /// What the dialog asks the frame to do after it painted.
 pub(in crate::editor) enum Action {
@@ -88,6 +93,13 @@ impl State {
     /// Inject the media cache the detection job runs on.
     pub(in crate::editor) fn set_media(&mut self, media: Arc<Mutex<MediaAccess>>) {
         self.media = Some(media);
+    }
+
+    /// Replace the detection job's submission. Scripted jobs share the dialog's runner, so
+    /// their gates and the dialog's own polling and cancel are the production path.
+    #[cfg(test)]
+    pub(in crate::editor) fn set_detect_source(&mut self, source: DetectSource) {
+        self.source = Some(source);
     }
 
     pub(in crate::editor) fn is_open(&self) -> bool {
@@ -338,10 +350,6 @@ fn start(state: &mut State, port: &mut Port<'_>) {
         state.phase = Phase::Failed(Text::SceneSplitRefused);
         return;
     };
-    let Some(media) = state.media.clone() else {
-        state.phase = Phase::Failed(Text::SceneSplitRefused);
-        return;
-    };
     if state.runner.is_none() {
         state.runner = job_runner(&port.read.budget);
     }
@@ -349,20 +357,30 @@ fn start(state: &mut State, port: &mut Port<'_>) {
         state.phase = Phase::Failed(Text::SceneSplitRefused);
         return;
     };
-    let command = Command::DetectScenes {
-        asset,
-        settings: DetectionSettings::default(),
+    let job = match &state.source {
+        Some(source) => source(runner, asset),
+        None => match state.media.as_deref() {
+            Some(media) => {
+                let command = Command::DetectScenes {
+                    asset,
+                    settings: DetectionSettings::default(),
+                };
+                match control(port, Some(media), runner, command) {
+                    Ok(Ok(ControlResult::JobAccepted { job, .. })) => Some(job),
+                    _ => None,
+                }
+            }
+            None => None,
+        },
     };
-    match control(port, Some(&*media), runner, command) {
-        Ok(Ok(ControlResult::JobAccepted { job, .. })) => {
-            state.phase = Phase::Detecting {
-                job,
-                progress: 0.0,
-                cancelling: false,
-            };
-        }
-        _ => state.phase = Phase::Failed(Text::SceneSplitRefused),
-    }
+    state.phase = match job {
+        Some(job) => Phase::Detecting {
+            job,
+            progress: 0.0,
+            cancelling: false,
+        },
+        None => Phase::Failed(Text::SceneSplitRefused),
+    };
 }
 
 /// Advance the runner and read the job's state; the result becomes the review.

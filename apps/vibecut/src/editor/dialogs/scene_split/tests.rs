@@ -1,17 +1,22 @@
 //! Drives the scene split dialog alone over the one-area bench, through the real detection job.
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
-use super::{Action, Phase, State, apply, show};
+use super::{Action, DetectSource, Phase, State, apply, show};
 use crate::editor::frame::bench::Bench;
 use crate::editor::{Editor, egui};
+use crate::i18n::{Locale, Text};
 use crate::preferences::Preferences;
 use crate::services::playback::{Files, Playback};
+use egui_kittest::kittest::Queryable;
 use engine::{ByteBudget, Command, CreatedId, NewItem, Placement, Session, control::MediaAccess};
 use media::{AssetId, SourceAsset};
 use project::{ItemId, ItemParams, Project, ProjectId, VideoParams};
 use std::{
     collections::BTreeSet,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 use time::{SourceRange, Tick};
@@ -21,8 +26,6 @@ type Mounted = Bench<State, Action>;
 /// Two solid colours joined by a hard cut at one second, one second each side.
 const CUT: &str =
     "color=c=red:s=64x64:r=10:d=1[a];color=c=blue:s=64x64:r=10:d=1[b];[a][b]concat=n=2:v=1:a=0[v]";
-/// A long, large clip: the job is still running when the test clicks Cancel.
-const LONG: &str = "testsrc2=s=1280x720:r=30:d=20[v]";
 /// One colour throughout: no candidate survives.
 const FLAT: &str = "color=c=gray:s=64x64:r=10:d=2[v]";
 
@@ -204,20 +207,153 @@ fn detect_review_apply_splits_every_reviewed_cut() {
     assert_eq!(clip_count(&bench), 1 + candidates);
 }
 
+/// A scripted detection job whose body is held open by `gate` until it is cancelled. `started`
+/// is set once the body runs, so a test clicks Cancel while the job is provably running.
+/// With `gate` never opened, the only way the job ends is the dialog's cancel.
+fn held(started: Arc<AtomicBool>, gate: Arc<AtomicBool>) -> DetectSource {
+    Arc::new(
+        move |runner: &mut engine::jobs::JobRunner, _asset: AssetId| {
+            let key = gated_key()?;
+            let started = started.clone();
+            let gate = gate.clone();
+            runner
+                .submit::<engine::control::Error>(
+                    engine::jobs::JobSpec {
+                        kind: engine::jobs::JobKind::DetectScenes,
+                        class: engine::jobs::ResourceClass::Cpu,
+                        input: key,
+                        bytes: Default::default(),
+                    },
+                    move |context| {
+                        started.store(true, Ordering::SeqCst);
+                        while !gate.load(Ordering::SeqCst) {
+                            context.check_cancelled()?;
+                            std::thread::yield_now();
+                        }
+                        Ok(Vec::new())
+                    },
+                )
+                .ok()
+                .map(|(job, _)| job)
+        },
+    )
+}
+
+/// A scripted detection job that reports a typed failure as soon as it runs.
+fn failing() -> DetectSource {
+    Arc::new(
+        move |runner: &mut engine::jobs::JobRunner, _asset: AssetId| {
+            let key = gated_key()?;
+            runner
+                .submit::<engine::control::Error>(
+                    engine::jobs::JobSpec {
+                        kind: engine::jobs::JobKind::DetectScenes,
+                        class: engine::jobs::ResourceClass::Cpu,
+                        input: key,
+                        bytes: Default::default(),
+                    },
+                    move |_context| -> Result<Vec<u8>, engine::control::Error> {
+                        Err(engine::control::Error::Runtime(
+                            engine::RuntimeError::CacheCorrupt,
+                        ))
+                    },
+                )
+                .ok()
+                .map(|(job, _)| job)
+        },
+    )
+}
+
+/// The cache key the scripted jobs are admitted under; nothing else reads it.
+fn gated_key() -> Option<engine::cache::CacheKey> {
+    engine::cache::CacheKey::new(engine::cache::KeyInputs {
+        kind: engine::cache::ArtifactKind::SceneDetection,
+        source: [0; 32],
+        provider: "fixture",
+        model: "gate",
+        version: "1",
+        settings: &[],
+        transcript: [0; 32],
+        cues: [0; 32],
+        clip_range: [0; 32],
+        translation: [0; 32],
+    })
+    .ok()
+}
+
 #[test]
 fn cancel_during_detection_leaves_the_timeline_unchanged() {
-    let Some(path) = render("long.mkv", LONG) else {
+    let Some(path) = render("cut.mkv", CUT) else {
+        return;
+    };
+    let cache = tempfile::tempdir().unwrap();
+    let (mut bench, _) = mounted(&path, &cache);
+    let started = Arc::new(AtomicBool::new(false));
+    let gate = Arc::new(AtomicBool::new(false));
+    bench
+        .editor_mut()
+        .dialogs
+        .scene_split
+        .set_detect_source(held(started.clone(), gate.clone()));
+    open(&mut bench);
+    bench.click("scene_split.find");
+    // The job body has run and is parked on the gate, so it cannot finish before Cancel.
+    settle(&mut bench, |_| started.load(Ordering::SeqCst));
+    assert!(matches!(
+        bench.editor().dialogs.scene_split.phase,
+        Phase::Detecting { .. }
+    ));
+    bench.click("scene_split.cancel");
+    settle(&mut bench, |state| matches!(state.phase, Phase::Cancelled));
+    assert!(!gate.load(Ordering::SeqCst));
+    assert_eq!(clip_count(&bench), 1);
+}
+
+#[test]
+fn the_idle_frame_offers_find_and_close_without_a_job() {
+    let Some(path) = render("cut.mkv", CUT) else {
         return;
     };
     let cache = tempfile::tempdir().unwrap();
     let (mut bench, _) = mounted(&path, &cache);
     open(&mut bench);
+    bench.step();
+    assert!(matches!(
+        bench.editor().dialogs.scene_split.phase,
+        Phase::Idle
+    ));
+    assert!(
+        bench
+            .harness_mut()
+            .query_by_label(Text::SceneSplitIdle.text(Locale::En))
+            .is_some()
+    );
+    assert_eq!(clip_count(&bench), 1);
+}
+
+#[test]
+fn a_job_that_reports_failure_shows_the_typed_line_and_keeps_the_timeline() {
+    let Some(path) = render("cut.mkv", CUT) else {
+        return;
+    };
+    let cache = tempfile::tempdir().unwrap();
+    let (mut bench, _) = mounted(&path, &cache);
+    bench
+        .editor_mut()
+        .dialogs
+        .scene_split
+        .set_detect_source(failing());
+    open(&mut bench);
     bench.click("scene_split.find");
     settle(&mut bench, |state| {
-        matches!(state.phase, Phase::Detecting { .. })
+        matches!(state.phase, Phase::Failed(Text::SceneSplitFailed))
     });
-    bench.click("scene_split.cancel");
-    settle(&mut bench, |state| matches!(state.phase, Phase::Cancelled));
+    assert!(
+        bench
+            .harness_mut()
+            .query_by_label(Text::SceneSplitFailed.text(Locale::En))
+            .is_some()
+    );
     assert_eq!(clip_count(&bench), 1);
 }
 
