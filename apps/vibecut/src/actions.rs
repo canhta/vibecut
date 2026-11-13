@@ -181,6 +181,7 @@ pub enum UiAction {
     RetryPreview,
     OpenModels,
     OpenVoiceover,
+    OpenSceneSplit,
     OpenPreferences,
     OpenShortcuts,
     RunExport,

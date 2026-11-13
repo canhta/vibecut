@@ -833,6 +833,14 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         &[],
     ),
     ActionSpec::ui(
+        "timeline.split_scene",
+        Text::ActionTimelineSplitScene,
+        ActionCategory::Edit,
+        "scene split dialog",
+        UiAction::OpenSceneSplit,
+        &[],
+    ),
+    ActionSpec::ui(
         "export.run",
         Text::ActionExportRun,
         ActionCategory::View,

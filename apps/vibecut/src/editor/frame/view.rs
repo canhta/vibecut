@@ -209,6 +209,7 @@ impl Editor {
         }
         self.show_models(ui);
         self.show_voiceover(ui);
+        self.show_scene_split(ui);
         self.show_preferences(ui);
         self.shortcuts_dialog(ui.ctx());
         if self
@@ -281,6 +282,18 @@ impl Editor {
             let mut state = std::mem::take(&mut self.dialogs);
             let cx = self.context();
             let actions = super::super::dialogs::show_voiceover(&mut state, &cx, ui);
+            drop(cx);
+            self.dialogs = state;
+            actions
+        };
+        self.apply_dialogs(actions);
+    }
+    /// Paint the scene split review and route its requests.
+    fn show_scene_split(&mut self, ui: &mut egui::Ui) {
+        let actions = {
+            let mut state = std::mem::take(&mut self.dialogs);
+            let cx = self.context();
+            let actions = super::super::dialogs::show_scene_split(&mut state, &cx, ui);
             drop(cx);
             self.dialogs = state;
             actions

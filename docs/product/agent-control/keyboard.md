@@ -112,6 +112,7 @@
 | `preferences.open` — Settings | View | — | — | preferences dialog |
 | `models.open` — Manage downloads | View | — | — | model manager |
 | `voiceover.open` — Record voice-over | View | — | — | voice-over dialog |
+| `timeline.split_scene` — Split scene | Edit | — | — | scene split dialog |
 | `export.run` — Export | View | — | — | export dialog |
 | `export.retry` — Retry export | View | — | — | export dialog |
 | `export.mark_in` — Set in point | View | I | — | export range |

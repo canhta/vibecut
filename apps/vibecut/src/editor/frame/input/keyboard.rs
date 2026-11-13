@@ -126,6 +126,7 @@ impl Editor {
                 || self.dialogs.export.is_open()
                 || self.dialogs.models.is_open()
                 || self.dialogs.voiceover.is_open()
+                || self.dialogs.scene_split.is_open()
                 || self.dialogs.preferences.open
                 || self.dialogs.preferences.models_open,
             // There is no Editor while a project is loading; the workspace shows
