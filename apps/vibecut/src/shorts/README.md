@@ -41,8 +41,8 @@ root's seam and `with_shot_source` the test seam) and passes the shots to every
 analysis job runs the preview has no evidence (centred Fill) and `tick` asks again once
 the job is terminal; a failed job is reported, never resubmitted. Without a detector,
 model weights or a working analysis the typed reason shows once in the toast and can be
-dismissed. The desktop lends the process media cache but no face detector yet, so it
-reports the detector as unavailable. A short's review crop still replaces the detected
+dismissed. The desktop lends the process media cache and `shorts::installed_faces`, the
+installed local detector (never downloaded here), so absent weights report as missing. A short's review crop still replaces the detected
 speaker crop of its Fill pieces; other layouts ignore it.
 
 Preview and every export share the one transient render-state owner that resolves

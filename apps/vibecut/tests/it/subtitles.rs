@@ -237,7 +237,14 @@ fn caption_bank_name_invalidation_precedes_enter_and_blur() {
                 };
                 h.state_mut().session.apply(cmd).unwrap();
             }
-            "models" => h.state_mut().activate("models.open").unwrap(),
+            "models" => {
+                h.state_mut().set_model_cache(std::sync::Arc::new(
+                    vibecut::services::model_cache::ModelCache::new(
+                        ByteBudget::new(64 << 20).unwrap(),
+                    ),
+                ));
+                h.state_mut().activate("models.open").unwrap()
+            }
             "saving" => {
                 let session = Session::new((**h.state().session.project()).clone(), 20).unwrap();
                 let mut saving = engine::recovery::Autosave::new(

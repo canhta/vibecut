@@ -10,7 +10,7 @@ workspace = true
 
 [dependencies]
 engine.workspace = true
-ai = { workspace = true, default-features = false }
+ai = { workspace = true, default-features = false, features = ["vision"] }
 project.workspace = true
 time.workspace = true
 media.workspace = true

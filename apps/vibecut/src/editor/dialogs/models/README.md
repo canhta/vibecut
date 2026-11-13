@@ -9,7 +9,8 @@ the workspace lends the one app-wide instance to the focused window.
 
 `ModelManager` opens one modal over `ai::foundation::models::catalog` and engine's
 `ModelTransfers`. It shares [engine's default model path](../../../../../../crates/engine/src/runtime/README.md#default-cache-location)
-with the CLI and adds no second downloader, checkpoint or cache. Rows show model id, language scope
+with the CLI and adds no second downloader, checkpoint or cache: the manager opens over the
+app-lent `services::model_cache::ModelCache` and never opens a cache itself. Rows show model id, language scope
 (including language-neutral weights), licence and source links, total and per-file
 size and SHA-256, install state and current job stage and progress.
 
