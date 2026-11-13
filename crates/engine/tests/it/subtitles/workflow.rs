@@ -1605,6 +1605,55 @@ fn registry_generation_applies_range_at_start_as_one_edit_and_refuses_foreign_st
     assert_eq!(s.project(), &before);
     s.redo().unwrap();
     assert_eq!(s.project(), &applied);
+    // `replace` removes the old caption item in the same batch: one edit, one undo step,
+    // and a target that is not a caption item refuses before anything changes.
+    let old = item.id;
+    let replaced_from = s.project().clone();
+    let history = s.history_len();
+    let replacing = caption_submit(
+        &mut s,
+        &mut r,
+        &access,
+        "captions.generate",
+        json!({"asset":1,"source_language":"en"}),
+        "replace-job",
+    );
+    finish(&mut r, replacing);
+    error(
+        caption_command(
+            &mut s,
+            &mut r,
+            &access,
+            "captions.apply",
+            json!({"job":replacing,"replace":999}),
+            "replace-missing",
+        ),
+        ErrorCode::Refused,
+    );
+    assert_eq!(s.project(), &replaced_from);
+    ok(caption_command(
+        &mut s,
+        &mut r,
+        &access,
+        "captions.apply",
+        json!({"job":replacing,"replace":old}),
+        "replace",
+    ));
+    let remaining: Vec<_> = s
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .filter(|i| matches!(i.content, project::ItemParams::Caption(_)))
+        .map(|i| i.id)
+        .collect();
+    assert_eq!(remaining.len(), 1);
+    assert!(!remaining.contains(&old));
+    assert_eq!(s.history_len().0, history.0 + 1);
+    s.undo().unwrap();
+    assert_eq!(s.project(), &replaced_from);
     let job = caption_submit(
         &mut s,
         &mut r,

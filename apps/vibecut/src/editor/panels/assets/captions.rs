@@ -2,6 +2,7 @@
 mod editing;
 mod fillers;
 mod import;
+mod manual;
 mod tab;
 mod transcript;
 mod view;
@@ -39,8 +40,8 @@ enum Task {
         start: Tick,
         /// The language was auto-detected, so its tag is checked against the supported set.
         auto: bool,
-        /// The caption item the run replaces ("Delete current captions"), removed once the
-        /// generated captions apply.
+        /// The caption item the run replaces ("Delete current captions"): `captions.apply`
+        /// removes it in the same batch, so the replacement is one undo step.
         replace: Option<ItemId>,
     },
     Translate {
@@ -140,6 +141,9 @@ pub struct Subtitles {
     anchor: Option<NfcText>,
     page: usize,
     text_focus: Option<egui::Id>,
+    /// The Add captions text field, tracked apart from `text_focus` because the cue list resets
+    /// that one each frame after the page is drawn.
+    manual_focus: Option<egui::Id>,
     drafts: BTreeMap<(NfcText, LanguageTag), String>,
     draft_project: Option<Arc<project::Project>>,
     pub glossary: Vec<ai::GlossaryTerm>,
@@ -148,6 +152,8 @@ pub struct Subtitles {
     identify_fillers: bool,
     /// Auto captions page: the footer checkbox that replaces the current captions on generate.
     delete_current: bool,
+    /// Add captions page: the text the next manual cue carries.
+    manual_text: String,
     problem: Option<Text>,
     error: Option<Arc<dyn engine::Failure + 'static>>,
     missing_model: Option<String>,
@@ -194,12 +200,14 @@ impl Subtitles {
             anchor: None,
             page: 0,
             text_focus: None,
+            manual_focus: None,
             drafts: BTreeMap::new(),
             draft_project: None,
             glossary: Vec::new(),
             force: false,
             identify_fillers: true,
             delete_current: false,
+            manual_text: String::new(),
             problem: None,
             error: None,
             missing_model: None,
@@ -283,6 +291,9 @@ impl Subtitles {
                     .is_some_and(|frame| frame + 1 >= ctx.cumulative_frame_nr()))
             || self
                 .text_focus
+                .is_some_and(|id| ctx.memory(|m| m.focused()) == Some(id))
+            || self
+                .manual_focus
                 .is_some_and(|id| ctx.memory(|m| m.focused()) == Some(id))
     }
     pub(crate) fn modal_open(&self) -> bool {
@@ -535,10 +546,6 @@ impl Subtitles {
                 .is_some_and(|s| terminal(s.state))
         }) {
             let active = self.active.take().ok_or(Error::Invalid("subtitle job"))?;
-            let replace = match &active.task {
-                Task::Generate { replace, .. } => *replace,
-                _ => None,
-            };
             let snapshot = self.runner.snapshot(active.id);
             let state = snapshot.as_ref().map_or(JobState::Failed, |s| s.state);
             let error = snapshot.and_then(|s| s.error);
@@ -575,11 +582,6 @@ impl Subtitles {
                     task => self.apply_registry(session, active.id, task, state, error),
                 };
                 if let Some(created) = created {
-                    if let Some(old) = replace
-                        && session.apply(Command::Delete { items: vec![old] }).is_err()
-                    {
-                        self.problem = Some(Text::SubEditFailed);
-                    }
                     self.item = created
                         .iter()
                         .find_map(|id| {
@@ -662,16 +664,34 @@ impl Subtitles {
             ))?;
         let mut base_rev = None;
         let (command, params) = match task {
-            Task::Generate { start, auto, .. } => {
+            Task::Generate {
+                start,
+                auto,
+                replace,
+            } => {
                 let result = engine::subtitles::decode_captions(bytes)
                     .map_err(engine::control::Error::from)?;
                 // The detected tag is checked against the languages this app's ASR supports.
                 if auto && !SOURCE_LANGUAGES.contains(&result.source_language.as_str()) {
                     return Err(engine::transcript::Error::LowConfidence.into());
                 }
+                // A target the user removed meanwhile is dropped, not refused: the generated
+                // captions still apply.
+                let replace = replace.filter(|old| {
+                    session
+                        .project()
+                        .data()
+                        .scene()
+                        .timeline
+                        .iter()
+                        .flat_map(|track| &track.items)
+                        .any(|item| {
+                            item.id == *old && matches!(item.content, ItemParams::Caption(_))
+                        })
+                });
                 (
                     "captions.apply",
-                    serde_json::json!({"job": id, "start": start}),
+                    serde_json::json!({"job": id, "start": start, "replace": replace}),
                 )
             }
             Task::Translate { revision } => {

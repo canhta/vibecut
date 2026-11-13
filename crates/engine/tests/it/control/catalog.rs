@@ -675,6 +675,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
         [
             "begin_gesture",
             "cancel_gesture",
+            "captions.add_empty",
             "captions.import",
             "color.import_lut",
             "color.register_lut",

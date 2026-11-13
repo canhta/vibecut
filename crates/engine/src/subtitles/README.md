@@ -70,10 +70,13 @@ unrelated commands remain usable. The CLI control and headless MCP roots lend lo
 resources with `DenyUploads`, with no implicit download or client consent parameter.
 
 The complete generated result contains source-timed cues and counts, language, asset/range,
-provider/model and cost. `captions.apply {job, start?}` inserts that retained result as one edit,
+provider/model and cost. `captions.apply {job, start?, replace?}` inserts that retained result as one edit,
 placing the range at `start` (default zero). It requires the original Session and revision,
 retained completed transcription, unchanged source identity and a still-valid asset range.
 A second application under a fresh key is stale; replay of the original key stays idempotent.
+`replace` names a caption item of the active scene that goes in the same batch (deleted first, then the insert), so replacing is one undo step; a target that is not a caption item refuses before anything changes.
+
+`captions.add_empty { asset, start, duration, track?, name? }` is manual entry: the caller-allocated internal asset (no path IO runs inside) and a caption item with no cues over `duration` from `start`, on `track` or a newly allocated text track, as one command and one undo step. A non-internal asset, a negative start and a non-positive duration refuse atomically. Cues are then added through the ordinary item-parameter edit.
 
 `captions.translate {item, cues?, target_language, force?}` snapshots up to 10,000 distinct cues
 (all cues when omitted), preserving manually edited target texts unless forced. Source context

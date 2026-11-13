@@ -316,7 +316,7 @@ impl Subtitles {
                             self.auto_page(ui, options, &mut controls, busy);
                         }
                         CaptionsSection::Add => {
-                            self.add_page(ui, session, &mut controls, locale, busy)
+                            self.add_page(ui, session, options, &mut controls, locale, busy, at)
                         }
                         CaptionsSection::Translate => {
                             self.translate_page(ui, session, options, &mut controls, busy);
@@ -749,16 +749,61 @@ impl Subtitles {
             });
         });
     }
-    /// Add captions: file import. Manual caption entry is not offered here.
+    /// Add captions: manual entry (a new caption item at the playhead, then cues typed into
+    /// it) and file import. Edits to existing cues stay in the cue list below.
+    #[allow(clippy::too_many_arguments)]
     fn add_page(
         &mut self,
         ui: &mut egui::Ui,
         session: &mut Session,
+        options: &Options,
         c: &mut Controls,
         locale: Locale,
         busy: bool,
+        at: Tick,
     ) {
         let enabled = !busy && self.picker.is_none();
+        let r = ui.add_enabled(
+            enabled,
+            egui::Button::new(c.tr(Text::SubManual))
+                .min_size(egui::vec2(0.0, theme::size::CONTROL)),
+        );
+        c.remember("subtitles.manual", &r);
+        if r.clicked() {
+            let result = self
+                .flush_drafts(session)
+                .and_then(|_| self.add_manual(session, at));
+            self.ui_result(result);
+        }
+        ui.add_enabled_ui(enabled && self.item.is_some(), |ui| {
+            let label = ui.label(c.tr(Text::SubManualText));
+            let field = ui
+                .add(
+                    egui::TextEdit::multiline(&mut self.manual_text)
+                        .desired_rows(2)
+                        .char_limit(64 * 1024)
+                        .desired_width(ui.available_width()),
+                )
+                .labelled_by(label.id);
+            self.manual_focus = field.has_focus().then_some(field.id);
+            c.remember("subtitles.manual_text", &field);
+            let add = ui.add_enabled(
+                !self.manual_text.trim().is_empty(),
+                egui::Button::new(c.tr(Text::SubManualCue))
+                    .min_size(egui::vec2(0.0, theme::size::CONTROL)),
+            );
+            c.remember("subtitles.add_cue", &add);
+            if add.clicked() {
+                let text = self.manual_text.clone();
+                let result = self
+                    .flush_drafts(session)
+                    .and_then(|_| self.add_cue(session, options, at, &text));
+                if result.is_ok() {
+                    self.manual_text.clear();
+                }
+                self.ui_result(result);
+            }
+        });
         let r = ui.add_enabled(
             enabled,
             egui::Button::new(c.tr(Text::SubImport))

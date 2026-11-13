@@ -722,7 +722,11 @@ impl Session {
                     shots: diagnostic,
                 })
             }
-            Command::CaptionsApply { job, start } => {
+            Command::CaptionsApply {
+                job,
+                start,
+                replace,
+            } => {
                 let snapshot = runner
                     .snapshot(job)
                     .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
@@ -758,6 +762,32 @@ impl Session {
                 crate::subtitles::validate_source(asset)?;
                 let insert =
                     crate::subtitles::apply_command(result, start.unwrap_or(time::Tick::ZERO))?;
+                // "Delete current captions": the old item goes in the same batch, so the
+                // replacement is one undo step.
+                let insert = match replace {
+                    Some(old) => {
+                        let caption = self
+                            .project()
+                            .data()
+                            .scene()
+                            .timeline
+                            .iter()
+                            .flat_map(|track| &track.items)
+                            .any(|item| {
+                                item.id == old
+                                    && matches!(item.content, project::ItemParams::Caption(_))
+                            });
+                        if !caption {
+                            return Err(EngineError::Edit(crate::EditError::Invalid(
+                                "replace target is not a caption item",
+                            )));
+                        }
+                        Command::Batch {
+                            commands: vec![Command::Delete { items: vec![old] }, insert],
+                        }
+                    }
+                    None => insert,
+                };
                 self.apply_control(insert)
                     .map(|outcome| ControlResult::Edit { outcome })
                     .map_err(EngineError::from)
