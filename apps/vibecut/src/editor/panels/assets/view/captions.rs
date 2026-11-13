@@ -20,6 +20,11 @@ impl View<'_> {
                 Text::SubTranslate,
                 "captions.section.translate",
             ),
+            (
+                CaptionsSection::Chapters,
+                Text::ChaptersTitle,
+                "captions.section.chapters",
+            ),
         ] {
             let selected = self.state.captions_section == section;
             let response = ui.add_sized(

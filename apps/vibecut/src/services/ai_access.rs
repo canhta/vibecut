@@ -36,16 +36,27 @@ pub type Opener = Arc<
     dyn for<'a> Fn(Choice<'a>, Consent) -> engine::control::Result<CaptionAccess> + Send + Sync,
 >;
 
-/// Builds the text-provider access one filler run lends. Its consent is the run's own sheet,
+/// Builds the text-provider access one text run lends. Its consent is the run's own sheet,
 /// handed in by the caller, so no second consent path exists.
-pub type TextOpener =
-    Arc<dyn Fn(&str, &str, Consent) -> engine::providers::Result<TextAccess> + Send + Sync>;
+pub type TextOpener = Arc<
+    dyn Fn(TextTask, &str, &str, Consent) -> engine::providers::Result<TextAccess> + Send + Sync,
+>;
 
-/// The shipped text opener: the configured provider and model through `choose_filler`, with
+/// The text task a lent text access serves; each names its own provider catalog entry.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextTask {
+    Chapters,
+    Fillers,
+}
+
+/// The shipped text opener: the configured provider and model through the task's chooser, with
 /// credentials from the process environment. Nothing falls back to another provider.
 pub fn desktop_text_opener() -> TextOpener {
-    Arc::new(|provider, model, consent| {
-        let provider = engine::providers::choose_filler(provider, Some(model))?;
+    Arc::new(|task, provider, model, consent| {
+        let provider = match task {
+            TextTask::Chapters => engine::providers::choose_chapter(provider, Some(model))?,
+            TextTask::Fillers => engine::providers::choose_filler(provider, Some(model))?,
+        };
         TextAccess::open(
             provider,
             &Credentials::from_env(),
@@ -130,6 +141,30 @@ pub fn run(
     command: &str,
     params: serde_json::Value,
 ) -> engine::control::Result<ControlResult> {
+    execute(session, runner, access, None, base_rev, command, params)
+}
+
+/// Run one text-provider registry command (`chapters.generate`) with the text access the
+/// caller lent for it. The job asks that access's own consent sheet before any upload.
+pub fn run_text(
+    session: &mut Session,
+    runner: &mut JobRunner,
+    text: &TextAccess,
+    command: &str,
+    params: serde_json::Value,
+) -> engine::control::Result<ControlResult> {
+    execute(session, runner, None, Some(text), None, command, params)
+}
+
+fn execute(
+    session: &mut Session,
+    runner: &mut JobRunner,
+    access: Option<&CaptionAccess>,
+    text: Option<&TextAccess>,
+    base_rev: Option<Revision>,
+    command: &str,
+    params: serde_json::Value,
+) -> engine::control::Result<ControlResult> {
     static KEYS: AtomicU64 = AtomicU64::new(0);
     let key = format!("desktop-{}", KEYS.fetch_add(1, Ordering::Relaxed));
     let request = Request {
@@ -152,7 +187,7 @@ pub fn run(
         stickers: None,
         brand: None,
         media: None,
-        chapters: None,
+        chapters: text,
         captions: access,
         vision: None,
     };

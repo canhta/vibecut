@@ -123,6 +123,9 @@ impl State {
         if let Some(model) = panel.requested_model.take() {
             requests.push(Request::OpenModel(model));
         }
+        if std::mem::take(&mut panel.chapters.folder_requested) {
+            requests.push(Request::Lifecycle(EditorAction::ChapterFolder));
+        }
         requests
     }
 }

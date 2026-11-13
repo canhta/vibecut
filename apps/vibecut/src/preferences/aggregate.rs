@@ -458,5 +458,12 @@ impl Preferences {
             .ai_models
             .model(&self.subtitles.text_provider, ai::Operation::SelectEmphasis)
             .into();
+        self.subtitles.chapters_model = self
+            .ai_models
+            .model(
+                &self.subtitles.text_provider,
+                ai::Operation::GenerateChapters,
+            )
+            .into();
     }
 }

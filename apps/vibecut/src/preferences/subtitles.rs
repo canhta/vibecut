@@ -29,6 +29,9 @@ pub struct Options {
     /// Transient snapshot of the SelectEmphasis row for `text_provider`.
     #[serde(skip)]
     pub emphasis_model: String,
+    /// Transient snapshot of the GenerateChapters row for `text_provider`.
+    #[serde(skip)]
+    pub chapters_model: String,
     pub bilingual: bool,
     /// Last spoken-language choice per project; absent means Auto.
     pub project_sources: BTreeMap<project::ProjectId, String>,
@@ -45,6 +48,7 @@ impl Default for Options {
             translation_model: ai::defaults::model("openai", ai::Operation::Translate).into(),
             fillers_model: ai::defaults::model("openai", ai::Operation::ClassifyFillers).into(),
             emphasis_model: ai::defaults::model("openai", ai::Operation::SelectEmphasis).into(),
+            chapters_model: ai::defaults::model("openai", ai::Operation::GenerateChapters).into(),
             bilingual: false,
             project_sources: BTreeMap::new(),
         }
@@ -82,6 +86,10 @@ impl Options {
         engine::providers::choose_emphasis(
             &self.text_provider,
             (!self.emphasis_model.is_empty()).then_some(self.emphasis_model.as_str()),
+        )?;
+        engine::providers::choose_chapter(
+            &self.text_provider,
+            (!self.chapters_model.is_empty()).then_some(self.chapters_model.as_str()),
         )?;
         Ok(())
     }

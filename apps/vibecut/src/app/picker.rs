@@ -19,6 +19,8 @@ pub(super) enum PickerAction {
     ImportMedia,
     ImportLut,
     ExportClips,
+    /// The folder the chapters export writes its sidecar pair into.
+    ChapterFolder,
     /// Replace one clip's source with a file the project already holds.
     ReplaceMedia {
         item: ItemId,
@@ -104,6 +106,10 @@ impl EditorWindow {
             }
             PickerAction::ExportClips => {
                 let dialog = rfd::AsyncFileDialog::new().set_title(self.tr(Text::ClipExportFolder));
+                Box::pin(async move { dialog.pick_folder().await.map(|folder| vec![folder]) })
+            }
+            PickerAction::ChapterFolder => {
+                let dialog = rfd::AsyncFileDialog::new();
                 Box::pin(async move { dialog.pick_folder().await.map(|folder| vec![folder]) })
             }
             PickerAction::KeybindingsImport { .. } => {
@@ -230,6 +236,15 @@ impl EditorWindow {
         if let Some(editor) = &mut self.editor {
             editor.export_clips_cancelled();
         }
+    }
+    /// Hand the chapters page the folder the native picker chose; its export runs on the next
+    /// tick. Tests inject a folder through `Subtitles::export_chapters_to` the same way.
+    pub fn chapter_folder_picked(&mut self, folder: PathBuf) -> Result<()> {
+        let editor = self.editor.as_mut().ok_or(Error::Invalid("no project"))?;
+        if let Some(panel) = editor.subtitles_mut() {
+            panel.export_chapters_to(folder);
+        }
+        Ok(())
     }
     /// Apply the replace picker's file to the clip it was requested for. Tests inject a
     /// path here without opening a native dialog.
@@ -404,6 +419,10 @@ impl EditorWindow {
                     PickerAction::FontUpload => {
                         self.font_import_picked(files.pop().map(|file| file.path().to_owned()))
                     }
+                    PickerAction::ChapterFolder => match files.pop() {
+                        Some(folder) => self.chapter_folder_picked(folder.path().to_owned()),
+                        None => Ok(()),
+                    },
                     PickerAction::ReplaceMedia { item } => match files.pop() {
                         Some(file) => self.replace_picked_file(item, file.path().to_owned()),
                         None => Ok(()),

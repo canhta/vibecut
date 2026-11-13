@@ -292,6 +292,10 @@ impl Subtitles {
             .models
             .model(&options.text_provider, ai::Operation::SelectEmphasis)
             .into();
+        options.chapters_model = self
+            .models
+            .model(&options.text_provider, ai::Operation::GenerateChapters)
+            .into();
         let previous_options = options.clone();
         let mut controls = Controls {
             models: self.models.clone(),
@@ -323,6 +327,9 @@ impl Subtitles {
                         }
                         CaptionsSection::Translate => {
                             self.translate_page(ui, session, options, &mut controls, busy);
+                        }
+                        CaptionsSection::Chapters => {
+                            self.chapters_page(ui, session, &mut controls, locale, options);
                         }
                     }
                     if matches!(
