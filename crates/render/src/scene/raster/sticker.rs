@@ -1,15 +1,13 @@
 //! Sticker pixels: bundled flag SVGs rasterised at the destination pixel size, shapes drawn
 //! through the generated graphic contours, and a placeholder for an asset that cannot be drawn.
 
+use super::sticker_flags::FLAGS;
 use crate::image::{color, over};
 use crate::scene::Placement;
 use crate::scene::draw::draw_graphic;
 use crate::{ExecutionHooks, Image, MemoryKind, Result, check};
-use flags::FLAGS;
 use project::{GraphicParams, Item, ItemParams, StickerParams};
 use time::Tick;
-
-mod flags;
 
 /// Longest side, in pixels, a single sticker raster may have.
 pub const MAX_STICKER_RASTER_SIDE: u32 = 8192;
@@ -177,16 +175,14 @@ pub(in crate::scene) fn draw_sticker(
         let Some(dst_row) = target.pixels.chunks_mut(columns).nth(y) else {
             continue;
         };
-        for (column, pixel) in line.chunks_exact(4).enumerate() {
+        for (column, pixel) in line.as_chunks::<4>().0.iter().enumerate() {
             let Some(dst) = usize::try_from(x0 + column as i64)
                 .ok()
                 .and_then(|x| dst_row.get_mut(x))
             else {
                 continue;
             };
-            let &[red, green, blue, alpha] = pixel else {
-                continue;
-            };
+            let &[red, green, blue, alpha] = pixel;
             if alpha == 0 {
                 continue;
             }

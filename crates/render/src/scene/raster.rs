@@ -1,6 +1,7 @@
 //! Rasters text and bundled stickers for the frame, and caches the text.
 
 pub(super) mod sticker;
+mod sticker_flags;
 
 use crate::{CaptionPosition, Error, ExecutionHooks, Image, MemoryKind, Result, check};
 use project::{TextAlign, TextDecoration};
