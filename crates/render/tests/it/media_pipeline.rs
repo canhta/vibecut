@@ -60,6 +60,7 @@ fn video_project(path: &Path) -> project::Project {
                 volume: 0.0,
                 muted: false,
                 crop: None,
+                cleanup: Default::default(),
             }),
         }],
     });
@@ -294,6 +295,7 @@ fn resampling_split_trim_offset_and_irregular_blocks_are_identical() {
                 volume: -3.0,
                 muted: false,
                 source: Default::default(),
+                cleanup: Default::default(),
             }),
         }];
         if n == 2 {
@@ -314,6 +316,7 @@ fn resampling_split_trim_offset_and_irregular_blocks_are_identical() {
                     volume: -3.0,
                     muted: false,
                     source: Default::default(),
+                    cleanup: Default::default(),
                 }),
             });
         }
@@ -692,6 +695,7 @@ fn missing_audio_only_is_required_only_when_audio_is_requested() {
                 volume: 0.0,
                 muted: false,
                 source: Default::default(),
+                cleanup: Default::default(),
             }),
         }],
     });
@@ -1192,6 +1196,7 @@ fn stereo_policy_keeps_headroom_and_export_limits_overload() {
                 volume: 0.0,
                 muted: false,
                 source: Default::default(),
+                cleanup: Default::default(),
             }),
         }],
     });
@@ -1729,6 +1734,7 @@ fn export_item_mute_and_gain_change_samples() {
                     volume,
                     muted,
                     source: Default::default(),
+                    cleanup: Default::default(),
                 });
             }
             data.scene_mut().timeline.audio[0].muted = video_audio;
@@ -1796,6 +1802,7 @@ fn export_keeps_track_picture_and_audio_flags_independent() {
                 volume: 0.0,
                 muted: false,
                 source: Default::default(),
+                cleanup: Default::default(),
             });
             if let project::ItemParams::Video(params) =
                 &mut data.scene_mut().timeline.main.items[0].content
@@ -1913,6 +1920,7 @@ fn sound_library_attribution_and_licence_are_written_into_export_metadata() {
                         duration_ms: 1000,
                     },
                 },
+                cleanup: Default::default(),
             }),
         }],
     });
@@ -2024,6 +2032,7 @@ fn music_library_attribution_and_licence_url_are_written_into_export_metadata() 
             source: project::AudioSource::Music {
                 music: music.clone(),
             },
+            cleanup: Default::default(),
         }),
     };
     data.scene_mut().timeline.insert_track(project::Track {
@@ -2116,6 +2125,7 @@ fn clip_fades_export_matches_the_preview_mix_across_block_partitions() {
                 volume: 0.0,
                 muted: false,
                 source: Default::default(),
+                cleanup: Default::default(),
             }),
         }],
     });

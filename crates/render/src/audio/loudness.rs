@@ -192,6 +192,7 @@ fn measure_window(
     let mut at = start;
     // Retimed clips stream across consecutive blocks exactly as production does.
     let mut retimers = std::collections::BTreeMap::new();
+    let mut cleanups = std::collections::BTreeMap::new();
     while at < end {
         check(hooks)?;
         let count = (end - at).min(WINDOW as i64) as usize;
@@ -205,6 +206,7 @@ fn measure_window(
             0,
             chain,
             &mut retimers,
+            &mut cleanups,
         )?;
         meter.push(block.planes())?;
         at += count as i64;

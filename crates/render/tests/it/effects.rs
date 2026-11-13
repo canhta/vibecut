@@ -1586,6 +1586,7 @@ fn content_scene(effects: Vec<project::EffectInstance>) -> project::Project {
             source_audio_enabled: false,
             volume: 0.0,
             muted: false,
+            cleanup: Default::default(),
         }),
     });
     Project::new(data).unwrap()

@@ -272,6 +272,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
                     volume: 0.0,
                     muted: false,
                     crop: None,
+                    cleanup: Default::default(),
                 }),
             },
         })
@@ -310,6 +311,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
                 volume: 0.0,
                 muted: false,
                 source: Default::default(),
+                cleanup: Default::default(),
             }),
         },
         Command::InsertItem {
@@ -325,6 +327,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
                     volume: 0.0,
                     muted: false,
                     source: Default::default(),
+                    cleanup: Default::default(),
                 }),
             },
         },
@@ -341,6 +344,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
                     volume: f32::NAN,
                     muted: false,
                     source: Default::default(),
+                    cleanup: Default::default(),
                 }),
             },
         },

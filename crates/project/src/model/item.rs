@@ -22,6 +22,9 @@ pub struct VideoParams {
     pub crop: Option<crate::Crop>,
     #[serde(default)]
     pub fades: crate::Fades,
+    /// Non-destructive cleanup of the item's source audio; the source media is never changed.
+    #[serde(default)]
+    pub cleanup: crate::AudioCleanup,
 }
 /// Remote-library provenance carried with an audio item. URLs are canonical and
 /// bounded; no token, cache path or local absolute path belongs here.
@@ -295,6 +298,9 @@ pub struct AudioParams {
     pub source: AudioSource,
     #[serde(default)]
     pub fades: crate::Fades,
+    /// Non-destructive cleanup of the item's source audio; the source media is never changed.
+    #[serde(default)]
+    pub cleanup: crate::AudioCleanup,
 }
 /// Percentages of the canvas; `(50, 84.5)` reproduces the original lower-third box.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]

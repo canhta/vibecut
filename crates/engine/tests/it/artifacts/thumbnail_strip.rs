@@ -180,6 +180,7 @@ fn item(asset: &SourceAsset, source: SourceRange, start: Tick, speed: f64) -> It
             muted: false,
             crop: None,
             fades: Default::default(),
+            cleanup: Default::default(),
         }),
     }
 }

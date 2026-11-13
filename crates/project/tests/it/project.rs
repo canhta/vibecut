@@ -488,6 +488,7 @@ fn populated(path: PathBuf) -> Project {
                 width: 0.5,
                 height: 0.5,
             }),
+            cleanup: Default::default(),
         }),
         ItemParams::Audio(AudioParams {
             fades: project::Fades {
@@ -505,6 +506,7 @@ fn populated(path: PathBuf) -> Project {
             volume: -6.0,
             muted: true,
             source: Default::default(),
+            cleanup: Default::default(),
         }),
         item(0, 0).content,
         ItemParams::Caption(CaptionParams {
@@ -872,6 +874,7 @@ fn model_trust_boundaries() {
         volume: f32::NAN,
         muted: false,
         source: Default::default(),
+        cleanup: Default::default(),
     });
     cases.push(d);
     let mut d = base.clone();
@@ -895,6 +898,7 @@ fn model_trust_boundaries() {
         volume: 0.0,
         muted: false,
         source: Default::default(),
+        cleanup: Default::default(),
     });
     cases.push(d);
     let mut d = base.clone();
@@ -918,6 +922,7 @@ fn model_trust_boundaries() {
         volume: 0.0,
         muted: false,
         source: Default::default(),
+        cleanup: Default::default(),
     });
     cases.push(d);
     type Corrupt = fn(&mut TextParams);
@@ -1250,6 +1255,7 @@ fn music_candidate(music: LibraryMusic) -> ProjectData {
                 volume: 0.0,
                 muted: false,
                 source: AudioSource::Music { music },
+                cleanup: Default::default(),
             }),
         }],
     });

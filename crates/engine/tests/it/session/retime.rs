@@ -134,6 +134,7 @@ fn video(id: u64, start: i64, source: SourceRange) -> Item {
             volume: 0.0,
             muted: false,
             crop: None,
+            cleanup: Default::default(),
         }),
     }
 }
@@ -145,6 +146,7 @@ fn audio(id: u64, start: i64, source: SourceRange) -> Item {
             volume: 0.0,
             muted: false,
             source: Default::default(),
+            cleanup: Default::default(),
         }),
         ..video(id, start, source)
     }

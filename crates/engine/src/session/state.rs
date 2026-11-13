@@ -523,6 +523,7 @@ impl Session {
                         volume: 0.0,
                         muted: false,
                         source: source.clone(),
+                        cleanup: Default::default(),
                     }),
                 },
             })?;

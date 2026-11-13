@@ -183,6 +183,7 @@ fn prepare_clip(
                 volume: 0.0,
                 muted: false,
                 crop: None,
+                cleanup: Default::default(),
             }),
         });
         next_item = next_item

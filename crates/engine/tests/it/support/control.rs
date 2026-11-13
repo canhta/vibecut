@@ -210,6 +210,7 @@ pub(crate) fn seed() -> Session {
                         volume: 0.0,
                         muted: false,
                         crop: None,
+                        cleanup: Default::default(),
                     }),
                 },
             ],
@@ -481,6 +482,7 @@ pub(crate) fn with_reframe(seed: &Session, path: &Path) -> Session {
                 volume: 0.0,
                 muted: false,
                 crop: None,
+                cleanup: Default::default(),
             }),
         }],
     });
@@ -573,6 +575,7 @@ pub(crate) fn with_thumbnails(seed: &Session, path: &Path) -> Session {
                 volume: 0.0,
                 muted: false,
                 crop: None,
+                cleanup: Default::default(),
             }),
         }],
     });
@@ -750,6 +753,7 @@ pub(crate) fn with_audio(seed: &Session) -> Session {
                 volume: 0.0,
                 muted: false,
                 source: Default::default(),
+                cleanup: Default::default(),
             }),
         }],
     });

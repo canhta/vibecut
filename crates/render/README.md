@@ -11,6 +11,7 @@ It consumes immutable project snapshots and renders and mixes one active-scene s
 | `scene/effects/` | Evaluates effect passes and owns the CPU reference table and imported cubes. | `EffectPass`, `EffectCompositor`, `CpuEffects`, `EffectFrame`, `evaluator`, `evaluate_effect`, `apply_effect`, `content_time`, `lut` | [Effect passes](src/scene/effects/README.md) |
 | `scene/transitions/` | Implements the ported transition kinds over the working frame. | (none) | [Transition kinds](src/scene/transitions/README.md) |
 | `audio/` | Owns every project audio stage from mix to limiter. | `AudioBlock`, `AudioMixer`, `mix_audio`, `measure_loudness` | [Audio clock and headroom](src/audio/README.md) |
+| `audio/cleanup/` | Runs an item's source cleanup chain with filter state carried across contiguous blocks. | `CleanupChain` | [Source cleanup](src/audio/cleanup/README.md) |
 | `export/` | Runs a staged project export through to publication. | `OutputOptions`, `RangeChoice`, `SceneChoice`, `VideoCodec`, `export`, `export_with_sources`, `validate_output_path` | [Export and publication](src/export/README.md) |
 | `image` | Owns the RGBA frame buffer and its bounded allocation. | `Image` | [source](src/image.rs) |
 | `sources` | Provides decoded video and audio samples. | `SourceProvider`, `FileSources` | [Sources, bounds and cancellation](src/sources/README.md) |

@@ -634,6 +634,7 @@ fn full_source_project(
                 volume: 0.0,
                 muted: false,
                 crop: None,
+                cleanup: Default::default(),
             }),
         }],
     };

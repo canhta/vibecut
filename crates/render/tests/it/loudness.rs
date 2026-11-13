@@ -112,6 +112,7 @@ fn project_of(
                     muted: false,
                     source: Default::default(),
                     fades: Default::default(),
+                    cleanup: Default::default(),
                 }),
             })
             .collect(),

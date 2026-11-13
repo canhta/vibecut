@@ -28,6 +28,7 @@ fn media(source_range: time::SourceRange, thousandths: u16, start: i64) -> Item 
             volume: 0.0,
             muted: false,
             crop: None,
+            cleanup: Default::default(),
         }),
     }
 }
@@ -243,6 +244,7 @@ fn persistence_roundtrips_speed_and_pitch_and_refuses_invalid_retime() {
         volume: 0.0,
         muted: false,
         source: Default::default(),
+        cleanup: Default::default(),
     });
     data.scene_mut().timeline.insert_track(Track {
         id: TrackId(9),

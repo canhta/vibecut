@@ -660,6 +660,7 @@ mod tests {
                 volume: 0.0,
                 muted: false,
                 crop: None,
+                cleanup: Default::default(),
             }),
         }
     }

@@ -102,6 +102,7 @@ fn session() -> Session {
                 muted: false,
                 source: Default::default(),
                 fades: Default::default(),
+                cleanup: Default::default(),
             }),
         }],
     });

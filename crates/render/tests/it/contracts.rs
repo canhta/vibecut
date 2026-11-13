@@ -800,6 +800,7 @@ fn preview_audio_mix_obeys_item_gain_and_mute() {
                     volume,
                     muted,
                     source: Default::default(),
+                    cleanup: Default::default(),
                 }),
             }],
         });

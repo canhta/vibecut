@@ -1,6 +1,6 @@
 # Audio clock and headroom
 
-`audio/` owns mix, retime, loudness, limiter and oversampling.
+`audio/` owns mix, cleanup, retime, loudness, limiter and oversampling.
 
 `mix_audio(project, absolute_start_sample, frames, channels, sources, hooks)` is the preview and export owner. Project rate defaults to 48 kHz and admits 8 to 192 kHz. Output is mono or stereo, default stereo. Every source and item tick boundary rounds once to the absolute output sample grid using Nearest. Silence fills gaps and half-open inactive intervals. A block admits at most 65,536 samples per channel and 4,096 audible spans. Stereo stays L/R, mono duplicates at unity, stereo to mono averages L/R. Other source layouts are unsupported.
 
@@ -17,6 +17,16 @@ With `maintain_pitch` off, a streaming resampler reads the position with linear 
 Output depends only on the item, speed and source, so block partitions and seeks give identical audio, and source reads only move forward. The mixer keeps one bounded, leased retimer per active retimed item; the lease covers maximum-block 5x source read-ahead, pull buffers, overlap-add state and output staging, and a budget that cannot hold it refuses before synthesis. WSOLA checks cancellation between grains, including after a source pull. Cancellation discards the mixer cursor so retry replays deterministically.
 
 Stream copy is refused for retimed items. Video frames use the nearest earlier source frame at the mapped source time. Perceptual quality on speech or music is unmeasured.
+
+## Source cleanup
+
+An audio or video item's `cleanup` chain (`project::AudioCleanup`, at most 8 effects) runs on its source samples after retime and before item volume, fades and automation, so preview and export share it. Source media is never changed. Effects run in list order; each keeps `wet_percent` of its processed signal and the rest of its input. A disabled effect or a zero mix is skipped, and an all-bypassed chain is bit-identical to no chain.
+
+Kinds: hum notches at the mains frequency's harmonics (1 to 10, Q 1 to 100, harmonics at or above 0.45 times the sample rate omitted); Butterworth high-pass and low-pass (20 to 20 000 Hz); low shelf at 200 Hz and high shelf at 4 kHz (-24 to +24 dB); ten octave-spaced peaking bands at 31.5 Hz to 16 kHz (-24 to +24 dB); and up to 8 parametric bands (peaking, low or high shelf, notch; 20 to 20 000 Hz, -30 to +30 dB, Q 0.1 to 30). Coefficients are RBJ cookbook designs in f64 transposed direct form II, flushed below 1e-30.
+
+Every section is second order, zero latency and sample-recursive, so the state after a block depends only on the samples before it. A block that continues the previous block of the same item keeps the state; any other start (a seek, or a gap while the item is muted or outside the timeline) restarts it. The mixer clears the chain state with its other per-item state on replay, so preview, export and any block partition produce identical samples. The limiter's delay is unchanged.
+
+Not yet implemented: spectral noise reduction (needs a latency design, since frame delay must be compensated in A/V timing), click removal, and keyframed cleanup parameters (parameters are static per project snapshot).
 
 ## Master chain
 

@@ -622,12 +622,14 @@ fn validate(data: &ProjectData) -> Result<()> {
             }
             if let ItemParams::Video(p) = &item.content {
                 p.fades.validate()?;
+                p.cleanup.validate()?;
             }
             if let ItemParams::Audio(p) = &item.content {
                 if !valid_volume(p.volume) {
                     return Err(Error::Invalid("audio gain"));
                 }
                 p.fades.validate()?;
+                p.cleanup.validate()?;
                 if let AudioSource::Library { sound } = &p.source {
                     sound.validate()?;
                 }

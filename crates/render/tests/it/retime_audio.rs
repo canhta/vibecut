@@ -107,6 +107,7 @@ fn fixture(thousandths: u16, maintain_pitch: bool, output_seconds: f64) -> proje
                 volume: 0.0,
                 muted: false,
                 source: Default::default(),
+                cleanup: Default::default(),
             }),
         }],
     });

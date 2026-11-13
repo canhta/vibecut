@@ -381,6 +381,7 @@ fn audio_controls_are_atomic_undoable_persisted_and_strict() {
                 volume: 0.0,
                 muted: false,
                 source: Default::default(),
+                cleanup: Default::default(),
             }),
         }],
     });

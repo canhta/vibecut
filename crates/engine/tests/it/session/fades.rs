@@ -55,6 +55,7 @@ fn session_len(len: i64) -> Session {
                 volume: 0.0,
                 muted: false,
                 source: Default::default(),
+                cleanup: Default::default(),
             }),
         }],
     });
@@ -597,4 +598,118 @@ fn retime_fade_limits_and_split_use_output_time() {
             );
         }
     }
+}
+
+fn cleanup_of(session: &Session, id: u64) -> project::AudioCleanup {
+    session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .find_map(|i| match &i.content {
+            ItemParams::Audio(AudioParams { cleanup, .. }) if i.id == ItemId(id) => {
+                Some(cleanup.clone())
+            }
+            _ => None,
+        })
+        .unwrap()
+}
+
+fn cleanup_effect(id: u32, kind: project::CleanupKind) -> project::CleanupEffect {
+    project::CleanupEffect {
+        id,
+        enabled: true,
+        wet_percent: 100.0,
+        kind,
+    }
+}
+
+#[test]
+fn cleanup_effects_are_undoable_persisted_and_refuse_hostile_input_atomically() {
+    let mut s = session();
+    let before = s.project().clone();
+    s.apply(Command::AddCleanupEffect {
+        item: ItemId(20),
+        effect: cleanup_effect(1, project::CleanupKind::Bass { boost_db: 3.0 }),
+    })
+    .unwrap();
+    let added = s.project().clone();
+    assert_eq!(cleanup_of(&s, 20).effects.len(), 1);
+    s.undo().unwrap();
+    assert_eq!(&before, s.project());
+    s.redo().unwrap();
+    assert_eq!(&added, s.project());
+    let encoded = project::encode(s.project(), false).unwrap();
+    let loaded = project::decode(&encoded).unwrap().project;
+    assert_eq!(&loaded, s.project().as_ref());
+
+    let refused = [
+        // Duplicate id, gain outside -24..=24 dB, unknown item, unknown effect id.
+        Command::AddCleanupEffect {
+            item: ItemId(20),
+            effect: cleanup_effect(1, project::CleanupKind::Bass { boost_db: 0.0 }),
+        },
+        Command::AddCleanupEffect {
+            item: ItemId(20),
+            effect: cleanup_effect(2, project::CleanupKind::Bass { boost_db: 25.0 }),
+        },
+        Command::AddCleanupEffect {
+            item: ItemId(999),
+            effect: cleanup_effect(3, project::CleanupKind::Bass { boost_db: 1.0 }),
+        },
+        Command::UpdateCleanupEffect {
+            item: ItemId(20),
+            effect: cleanup_effect(9, project::CleanupKind::Bass { boost_db: 1.0 }),
+        },
+        Command::RemoveCleanupEffect {
+            item: ItemId(20),
+            effect: 9,
+        },
+    ];
+    for command in refused {
+        assert!(s.apply(command).is_err());
+        assert_eq!(s.project(), &added);
+    }
+    // Hum harmonics above ten and an unknown field in the JSON control boundary are refused.
+    let hum = project::CleanupKind::Hum {
+        mains: project::MainsFrequency::Hz60,
+        harmonics: 11,
+        q: 30.0,
+    };
+    assert!(
+        s.apply(Command::UpdateCleanupEffect {
+            item: ItemId(20),
+            effect: cleanup_effect(1, hum),
+        })
+        .is_err()
+    );
+    assert!(
+        crate::wire::run(
+            &mut s,
+            "audio.remove_cleanup_effect",
+            json!({"item":20,"effect":1,"extra":1})
+        )
+        .is_err()
+    );
+    assert_eq!(s.project(), &added);
+
+    s.apply(Command::UpdateCleanupEffect {
+        item: ItemId(20),
+        effect: project::CleanupEffect {
+            id: 1,
+            enabled: false,
+            wet_percent: 50.0,
+            kind: project::CleanupKind::Highpass { cutoff_hz: 80.0 },
+        },
+    })
+    .unwrap();
+    assert!(!cleanup_of(&s, 20).effects[0].enabled);
+    s.apply(Command::RemoveCleanupEffect {
+        item: ItemId(20),
+        effect: 1,
+    })
+    .unwrap();
+    assert!(cleanup_of(&s, 20).effects.is_empty());
 }

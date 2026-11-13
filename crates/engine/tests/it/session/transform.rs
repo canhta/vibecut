@@ -101,6 +101,7 @@ fn crop_patch_is_validated_undoable_persisted_and_survives_trim_and_retime() {
             source_audio_enabled: false,
             volume: 0.0,
             muted: false,
+            cleanup: Default::default(),
         }),
     }];
     let mut s = Session::new(Project::new(data).unwrap(), 100).unwrap();

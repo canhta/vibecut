@@ -85,6 +85,7 @@ fn audio_item(id: u64, start: Tick, source: SourceRange, asset: &SourceAsset) ->
             volume: 0.0,
             muted: false,
             source: Default::default(),
+            cleanup: Default::default(),
         }),
     }
 }
@@ -107,6 +108,7 @@ fn video_item(id: u64, start: Tick, source: SourceRange, asset: &SourceAsset) ->
             volume: 0.0,
             muted: false,
             crop: None,
+            cleanup: Default::default(),
         }),
     }
 }
@@ -521,6 +523,7 @@ fn interview_first_300_seconds_lists_candidates_and_their_cost() {
             volume: 0.0,
             muted: false,
             crop: None,
+            cleanup: Default::default(),
         }),
     };
     data.scene_mut().timeline.main.items = vec![item];

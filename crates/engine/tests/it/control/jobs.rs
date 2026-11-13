@@ -1456,6 +1456,7 @@ fn pause_candidates_job_reports_reviewed_spans_through_job_status() {
                 volume: 0.0,
                 muted: false,
                 source: Default::default(),
+                cleanup: Default::default(),
             }),
         }],
     });

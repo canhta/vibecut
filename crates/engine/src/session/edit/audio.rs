@@ -1,6 +1,14 @@
 //! Applies audio commands to a candidate project.
 use super::{EditError, ItemId, ItemParams, ProjectData, Result, Tick, item};
 
+/// Cleanup chain of an audible item.
+pub(super) fn cleanup_mut(content: &mut ItemParams) -> Option<&mut project::AudioCleanup> {
+    match content {
+        ItemParams::Audio(project::AudioParams { cleanup, .. })
+        | ItemParams::Video(project::VideoParams { cleanup, .. }) => Some(cleanup),
+        _ => None,
+    }
+}
 /// Fades of an audible item.
 pub(super) fn fades_mut(content: &mut ItemParams) -> Option<&mut project::Fades> {
     match content {
@@ -83,6 +91,59 @@ pub(super) fn execute_apply_loudness(
         return Err(EditError::Invalid("loudness gains"));
     }
     data.settings.loudness.measured = Some(gains);
+
+    Ok(data)
+}
+pub(super) fn execute_add_cleanup_effect(
+    mut data: ProjectData,
+    id: ItemId,
+    effect: project::CleanupEffect,
+) -> Result<ProjectData> {
+    let target = item(&mut data, id)?;
+    let Some(cleanup) = cleanup_mut(&mut target.content) else {
+        return Err(EditError::Invalid("cleanup needs an audio or video item"));
+    };
+    if cleanup.effects.iter().any(|other| other.id == effect.id) {
+        return Err(EditError::Invalid("cleanup effect id"));
+    }
+    cleanup.effects.push(effect);
+    cleanup.validate()?;
+
+    Ok(data)
+}
+pub(super) fn execute_update_cleanup_effect(
+    mut data: ProjectData,
+    id: ItemId,
+    effect: project::CleanupEffect,
+) -> Result<ProjectData> {
+    let target = item(&mut data, id)?;
+    let Some(cleanup) = cleanup_mut(&mut target.content) else {
+        return Err(EditError::Invalid("cleanup needs an audio or video item"));
+    };
+    let slot = cleanup
+        .effects
+        .iter_mut()
+        .find(|other| other.id == effect.id)
+        .ok_or(EditError::Invalid("cleanup effect"))?;
+    *slot = effect;
+    cleanup.validate()?;
+
+    Ok(data)
+}
+pub(super) fn execute_remove_cleanup_effect(
+    mut data: ProjectData,
+    id: ItemId,
+    effect: u32,
+) -> Result<ProjectData> {
+    let target = item(&mut data, id)?;
+    let Some(cleanup) = cleanup_mut(&mut target.content) else {
+        return Err(EditError::Invalid("cleanup needs an audio or video item"));
+    };
+    let before = cleanup.effects.len();
+    cleanup.effects.retain(|other| other.id != effect);
+    if cleanup.effects.len() == before {
+        return Err(EditError::Invalid("cleanup effect"));
+    }
 
     Ok(data)
 }

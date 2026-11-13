@@ -569,7 +569,10 @@ fn deterministic_catalog_and_schema_document_receipts() {
         (
             Availability::UnlockedItem,
             &[
+                "audio.add_cleanup_effect",
+                "audio.remove_cleanup_effect",
                 "audio.set_fade",
+                "audio.update_cleanup_effect",
                 "clipboard.paste_keyframes",
                 "delete",
                 "keyframes.add",

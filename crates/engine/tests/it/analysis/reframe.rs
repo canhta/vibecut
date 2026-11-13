@@ -247,6 +247,7 @@ fn video_item(id: u64, start: Tick, source: SourceRange) -> Item {
             volume: 0.0,
             muted: false,
             crop: None,
+            cleanup: Default::default(),
         }),
     }
 }
@@ -538,6 +539,7 @@ fn trims_retimes_and_repeated_spans_each_get_their_own_keys_from_one_analysis() 
         volume: 0.0,
         muted: false,
         source: Default::default(),
+        cleanup: Default::default(),
     });
     assert!(emit_reframe(analysis, &audio).is_err());
 }

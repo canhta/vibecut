@@ -333,6 +333,7 @@ pub mod arrange {
                     muted: false,
                     source: Default::default(),
                     fades: Default::default(),
+                    cleanup: Default::default(),
                 }),
                 Animations::default(),
             );

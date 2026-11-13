@@ -118,6 +118,7 @@ fn fixture() -> project::Project {
                 volume: 0.0,
                 muted: false,
                 source: Default::default(),
+                cleanup: Default::default(),
             }),
         }],
     });
@@ -489,4 +490,84 @@ fn clip_fades_compose_with_volume_keyframes_and_the_master_limiter() {
             .zip(&with[..480])
             .all(|(c, w)| c.abs() <= w.abs() + 1e-7)
     );
+}
+
+fn cleaned(effects: Vec<project::CleanupEffect>) -> project::Project {
+    let mut data = fixture().into_data();
+    if let project::ItemParams::Audio(p) = &mut data.scene_mut().timeline.audio[0].items[0].content
+    {
+        p.cleanup = project::AudioCleanup { effects };
+    }
+    project::Project::new(data).unwrap()
+}
+fn cleanup(id: u32, wet_percent: f32, kind: project::CleanupKind) -> project::CleanupEffect {
+    project::CleanupEffect {
+        id,
+        enabled: true,
+        wet_percent,
+        kind,
+    }
+}
+
+#[test]
+fn cleanup_chain_bypass_is_identity_and_filters_do_not_depend_on_blocks() {
+    let plain = mix_all(&fixture(), &[4096]);
+    let highpass = project::CleanupKind::Highpass { cutoff_hz: 1000.0 };
+    // Bypassed: disabled, zero wet, and a zero-gain shelf each leave the source unchanged.
+    let mut disabled = cleanup(1, 100.0, highpass.clone());
+    disabled.enabled = false;
+    let bypassed = cleaned(vec![
+        disabled,
+        cleanup(2, 0.0, highpass.clone()),
+        cleanup(3, 100.0, project::CleanupKind::Bass { boost_db: 0.0 }),
+    ]);
+    assert_eq!(plain, mix_all(&bypassed, &[4096]));
+    // A 1 kHz high-pass removes the constant source after settling and keeps the transient.
+    let filtered = cleaned(vec![
+        cleanup(4, 100.0, highpass),
+        cleanup(
+            5,
+            100.0,
+            project::CleanupKind::ParametricEq {
+                bands: vec![project::EqBand {
+                    kind: project::EqBandKind::Peaking,
+                    enabled: true,
+                    frequency_hz: 3000.0,
+                    gain_db: 6.0,
+                    q: 1.0,
+                }],
+            },
+        ),
+    ]);
+    let whole = mix_all(&filtered, &[4096]);
+    assert!(whole[..10].iter().any(|s| s.abs() > 0.01));
+    assert!(whole[40_000..].iter().all(|s| s.abs() < 1e-4));
+    // Any partition of the same item gives identical samples.
+    for partition in [&[1, 7, 1031, 4093][..], &[5, 23999]] {
+        assert_eq!(whole, mix_all(&filtered, partition));
+    }
+}
+
+#[test]
+fn bass_boost_follows_its_dry_wet_mix_on_the_settled_signal() {
+    // Constant 0.1 source through the limiter's 0.98 passthrough; a +6 dB low shelf has 2.0 DC gain
+    // at full wet and unity at 0 % wet.
+    let dry = 0.1f32 * 0.98;
+    let boost = 10f32.powf(6.0 / 20.0);
+    for (wet_percent, expected) in [
+        (100.0, dry * boost),
+        (50.0, dry * (0.5 + 0.5 * boost)),
+        (0.0, dry),
+    ] {
+        let p = cleaned(vec![cleanup(
+            1,
+            wet_percent,
+            project::CleanupKind::Bass { boost_db: 6.0 },
+        )]);
+        let settled = mix_all(&p, &[4096])[40_000];
+        assert!(
+            (settled - expected).abs() < 1e-3,
+            "wet {wet_percent}: {settled} vs {expected}"
+        );
+    }
 }

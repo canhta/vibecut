@@ -148,6 +148,7 @@ fn item(asset: &SourceAsset, source: SourceRange, start: Tick, speed: f64) -> It
             volume: 0.0,
             muted: false,
             source: Default::default(),
+            cleanup: Default::default(),
         }),
     }
 }

@@ -1,5 +1,6 @@
 //! Mixes project audio into bounded output blocks.
 
+use super::cleanup::CleanupChain;
 use super::retime::{Pitch, Retimer};
 use crate::{
     Error, ExecutionHooks, MemoryKind, Reservation, Result, SourceProvider, check, vector,
@@ -119,6 +120,7 @@ pub struct AudioMixer<'a> {
     fade_ms: u16,
     limiter: super::limiter::Limiter,
     retimers: BTreeMap<project::ItemId, Retimer>,
+    cleanups: BTreeMap<project::ItemId, CleanupChain>,
     next: Option<i64>,
     _lease: Box<dyn Reservation>,
 }
@@ -141,6 +143,7 @@ impl<'a> AudioMixer<'a> {
             fade_ms,
             limiter: super::limiter::Limiter::new(rate, channels),
             retimers: BTreeMap::new(),
+            cleanups: BTreeMap::new(),
             next: None,
             _lease: lease,
         })
@@ -191,6 +194,7 @@ impl<'a> AudioMixer<'a> {
                 );
                 // Retime state replays with the timeline from zero like the limiter.
                 self.retimers.clear();
+                self.cleanups.clear();
                 // Prime delay from zero (or earlier silence for negative windows).
                 let origin = start.min(0);
                 self.next = Some(origin);
@@ -204,6 +208,7 @@ impl<'a> AudioMixer<'a> {
                     self.fade_ms,
                     &Chain::of(self.project),
                     &mut self.retimers,
+                    &mut self.cleanups,
                 )?;
                 self.limiter.process(&mut prime.planes);
                 while self.next.is_some_and(|next| next < start) {
@@ -239,6 +244,7 @@ impl<'a> AudioMixer<'a> {
             self.fade_ms,
             &Chain::of(self.project),
             &mut self.retimers,
+            &mut self.cleanups,
         )?;
         self.limiter.process(&mut out.planes);
         Ok(out)
@@ -256,6 +262,7 @@ pub(crate) fn mix_raw(
     fade_ms: u16,
     chain: &Chain<'_>,
     retimers: &mut BTreeMap<project::ItemId, Retimer>,
+    cleanups: &mut BTreeMap<project::ItemId, CleanupChain>,
 ) -> Result<AudioBlock> {
     check(hooks)?;
     let rate = project.data().settings.audio_sample_rate;
@@ -308,6 +315,7 @@ pub(crate) fn mix_raw(
     let active: Vec<_> = spans.iter().map(|(item, _, _, _, _, _)| item.id).collect();
     sources.begin_audio(&active);
     retimers.retain(|id, _| active.contains(id));
+    cleanups.retain(|id, _| active.contains(id));
     for (item, asset, i0, i1, a, b) in spans {
         check(hooks)?;
         let window = item.retime_window()?;
@@ -328,7 +336,7 @@ pub(crate) fn mix_raw(
             .source_range
             .start()
             .to_units(i64::from(rate), Rounding::Nearest)?;
-        let input = if item.retime.speed.is_unity() {
+        let mut input = if item.retime.speed.is_unity() {
             let source = origin
                 .checked_add(a - output_origin)
                 .ok_or(Error::Invalid("source sample position"))?;
@@ -381,6 +389,12 @@ pub(crate) fn mix_raw(
                 .any(|p| p.iter().any(|s| !s.is_finite()))
         {
             return Err(Error::Invalid("source audio block"));
+        }
+        if let Some(cleanup) = cleanup_of(item) {
+            cleanups
+                .entry(item.id)
+                .or_insert_with(|| CleanupChain::new(cleanup, rate))
+                .process_at(a, &mut input.planes);
         }
         let volume_path = project::AnimationPath::from(project::BuiltinPath::Volume);
         let muted_path = project::AnimationPath::from(project::BuiltinPath::Muted);
@@ -462,6 +476,7 @@ pub(crate) fn mix_raw(
         if b == i1 {
             sources.finish_audio(item.id);
             retimers.remove(&item.id);
+            cleanups.remove(&item.id);
         }
     }
     if chain.master_db != 0.0 {
@@ -474,6 +489,15 @@ pub(crate) fn mix_raw(
         }
     }
     Ok(out)
+}
+
+/// The cleanup chain of an item's source audio; other item kinds have none.
+fn cleanup_of(item: &project::Item) -> Option<&project::AudioCleanup> {
+    match &item.content {
+        ItemParams::Audio(p) => Some(&p.cleanup),
+        ItemParams::Video(p) => Some(&p.cleanup),
+        _ => None,
+    }
 }
 
 /// Conservative source admission: a held mute with no unmute key needs no IO.

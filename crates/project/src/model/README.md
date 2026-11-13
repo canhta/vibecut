@@ -34,7 +34,7 @@ Each item's typed `ItemParams` determines its track kind. Video and audio items 
 
 Missing referenced asset IDs are invalid; missing files are valid and carry media-owned relink state ([media source](../../../media/src/source/README.md)). Source paths are absolute native paths; working-directory changes never reinterpret them.
 
-Audio items carry `AudioParams::source`. The default `upload` references a project asset. `library` records the provider identity, attribution, licence, source page and exact preview URL of the cached bytes, validated (positive provider id, HTTPS URLs, bounded text) and persisted so export can write attribution and licence metadata.
+Audio items carry `AudioParams::source`, and both audio and video items carry an `AudioCleanup` chain for their source audio (`cleanup`: at most 8 typed effects with unique ids, validated by `AudioCleanup::validate`). The chain never changes source media; its kinds and parameter bounds are described in the [render cleanup](../../../render/src/audio/README.md#source-cleanup) section. The default `upload` references a project asset. `library` records the provider identity, attribution, licence, source page and exact preview URL of the cached bytes, validated (positive provider id, HTTPS URLs, bounded text) and persisted so export can write attribution and licence metadata.
 
 ### Music provenance
 

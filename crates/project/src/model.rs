@@ -7,12 +7,17 @@ macro_rules! id {
         pub struct $name(pub u64);
     )+};
 }
+mod audio_cleanup;
 mod item;
 mod project;
 mod scene;
 mod settings;
 mod track;
 
+pub use audio_cleanup::{
+    AudioCleanup, CleanupEffect, CleanupKind, EqBand, EqBandKind, GRAPHIC_EQ_FREQUENCIES_HZ,
+    MAX_CLEANUP_EFFECTS, MAX_EQ_BANDS, MAX_HUM_HARMONICS, MainsFrequency,
+};
 pub use item::{
     AudioParams, AudioSource, CaptionParams, CaptionWordWarning, CaptionWordWarnings,
     GraphicParams, Item, ItemId, ItemParams, LibraryMusic, LibrarySound, MusicLicence,

@@ -170,6 +170,7 @@ pub(crate) fn five_clip_pairs() -> Session {
                     volume: 0.0,
                     muted: false,
                     crop: None,
+                    cleanup: Default::default(),
                 }),
             }
         })
@@ -203,6 +204,7 @@ pub(crate) fn five_clip_pairs() -> Session {
                         volume: 0.0,
                         muted: false,
                         source: Default::default(),
+                        cleanup: Default::default(),
                     }),
                 }
             })

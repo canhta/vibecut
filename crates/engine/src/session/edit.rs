@@ -469,6 +469,15 @@ pub(crate) fn apply(
         } => {
             data = audio::execute_set_fade(data, id, edge, duration, curve)?;
         }
+        EditCommand::AddCleanupEffect { item: id, effect } => {
+            data = audio::execute_add_cleanup_effect(data, id, effect)?;
+        }
+        EditCommand::UpdateCleanupEffect { item: id, effect } => {
+            data = audio::execute_update_cleanup_effect(data, id, effect)?;
+        }
+        EditCommand::RemoveCleanupEffect { item: id, effect } => {
+            data = audio::execute_remove_cleanup_effect(data, id, effect)?;
+        }
         EditCommand::SetLoudness {
             scope,
             target_lufs,

@@ -69,6 +69,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     volume: -6.0,
                     muted: false,
                     source: Default::default(),
+                    cleanup: Default::default(),
                 }),
             }],
         });
