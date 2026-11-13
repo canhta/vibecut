@@ -475,8 +475,8 @@ fn settings_clear_during_an_active_job_reports_busy_end_to_end() {
         // An active job holds the media cache while the clear the button routes arrives. The
         // frame's own display reads lock the cache too, so the job's hold spans the routed
         // request alone, as a worker's short hold does, and ends before the next frame.
-        let clear = By::new()
-            .predicate(|n| n.author_id() == Some("settings.performance.cache.clear"));
+        let clear =
+            By::new().predicate(|n| n.author_id() == Some("settings.performance.cache.clear"));
         assert!(!bench.harness().get(clear).accesskit_node().is_disabled());
         {
             let _job = access.lock().unwrap();

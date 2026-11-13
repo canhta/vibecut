@@ -1058,8 +1058,10 @@ fn caption_style_actions_refuse_drafts_locks_transactions_and_busy_work() {
         .unwrap();
     h.run_steps(3);
     assert_eq!(
-        h.query_all(By::new().predicate(|n| n.author_id() == Some("subtitles.style.look.label_black")))
-            .count(),
+        h.query_all(
+            By::new().predicate(|n| n.author_id() == Some("subtitles.style.look.label_black"))
+        )
+        .count(),
         0
     );
     let animation = h
@@ -1239,9 +1241,11 @@ fn caption_style_actions_refuse_drafts_locks_transactions_and_busy_work() {
     .unwrap();
     h.run_steps(3);
     assert!(
-        h.query_all(By::new().predicate(|n| n.author_id() == Some("subtitles.style.look.label_black")))
-            .next()
-            .is_none()
+        h.query_all(
+            By::new().predicate(|n| n.author_id() == Some("subtitles.style.look.label_black"))
+        )
+        .next()
+        .is_none()
     );
     assert!(!h.state().action_enabled("subtitles.style.box"));
     let gate: Gate = Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));

@@ -14,7 +14,6 @@ pub use animation::{
     SpeedSegment, TangentMode,
 };
 pub use model::*;
-pub use preset::{CaptionLook, CaptionShelf, TextLook, TextShelf};
 pub use persistence::atomic;
 pub use persistence::autosave;
 pub use persistence::bundle;
@@ -23,6 +22,7 @@ pub use persistence::{
     Thumbnail, ViewState, WriterLease, atomic_write, decode, encode, load, media_dir,
     metadata_path, read_metadata,
 };
+pub use preset::{CaptionLook, CaptionShelf, TextLook, TextShelf};
 pub use visual::{
     ANGLE_MAX, BlendMode, CHROMA_KEY_COLOR_DEFAULT, CHROMA_KEY_INTENSITY_DEFAULT, CHROMA_KEY_MAX,
     CHROMA_KEY_MIN, CURVE_GRID, CURVE_MAX_POINTS, CURVE_MIN_POINTS, Crop, DEFAULT_WEIGHT,

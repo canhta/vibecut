@@ -80,9 +80,10 @@ pub(in crate::editor) fn effect_refusal(project: &project::Project, id: ItemId) 
     }
     // An adjustment layer is an effect item on an Effect track; it takes a stack like a clip.
     let adjustment = track.kind == project::TrackKind::Effect
-        && track.items.iter().any(|item| {
-            item.id == id && matches!(item.content, project::ItemParams::Effect(_))
-        });
+        && track
+            .items
+            .iter()
+            .any(|item| item.id == id && matches!(item.content, project::ItemParams::Effect(_)));
     if !adjustment
         && !matches!(
             kind,

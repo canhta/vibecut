@@ -55,7 +55,9 @@ pub(in crate::editor) enum Shortcuts {
 /// The last shortcut transfer's outcome, shown under the General tab.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::editor) enum ShortcutNotice {
-    Imported { unknown: usize },
+    Imported {
+        unknown: usize,
+    },
     Exported,
     /// The file was oversized, malformed or from a newer schema; nothing changed.
     Refused,
