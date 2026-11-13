@@ -17,7 +17,7 @@ pub use crate::session::wire::{
     Response, ResponseValue, Revision, SavedMusicEntry, SavedSoundEntry, Snapshot, SoundEntry,
     SoundPage, SoundSource, StickerCategory, StickerEntry, StickerPage, TranslationsResult,
     bounded_json, contract_schema, parse_frame,
-    reference_markdown, registry_hash,
+    reference_markdown, registry_hash, skill_reference_markdown,
 };
 
 use crate::{

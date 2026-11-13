@@ -1698,3 +1698,72 @@ fn graphic_tools_publish_typed_shapes_keys_masks_effects_undo_and_persistence() 
         );
     }
 }
+
+/// The agent kit's conformance script runs unchanged against the headless adapter; an agent
+/// harness replays the same steps through its own MCP client.
+#[test]
+fn agent_kit_conformance_script_runs_over_headless_mcp() {
+    fn fill(value: &mut Value, out: &str) {
+        match value {
+            Value::String(text) => *text = text.replace("{out}", out),
+            Value::Array(items) => items.iter_mut().for_each(|item| fill(item, out)),
+            Value::Object(map) => map.values_mut().for_each(|item| fill(item, out)),
+            _ => {}
+        }
+    }
+    let script: Value = serde_json::from_str(include_str!(
+        "../../../../packaging/agent-kit/conformance.json"
+    ))
+    .unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let scratch = root.path().join("ungranted");
+    std::fs::create_dir(&scratch).unwrap();
+    let path = fixture(root.path(), "conformance.json");
+    let mut client = Client::start(&["mcp".as_ref(), path.as_os_str(), "--no-save".as_ref()]);
+    let (mut current, mut first) = (Value::Null, Value::Null);
+    for step in script["steps"].as_array().unwrap() {
+        let name = step["name"].as_str().unwrap();
+        let mut params = step["params"].clone();
+        fill(&mut params, scratch.to_str().unwrap());
+        let mut arguments = json!({"request_id":name,"command":step["command"],"params":params});
+        match step.get("base_rev").and_then(Value::as_str) {
+            Some("current") => arguments["base_rev"] = current.clone(),
+            Some("first") => arguments["base_rev"] = first.clone(),
+            _ => {}
+        }
+        if let Some(key) = step.get("idempotency_key") {
+            arguments["idempotency_key"] = key.clone();
+        }
+        let response = client.rpc(
+            2,
+            "tools/call",
+            json!({"name":"command_run","arguments":arguments}),
+        );
+        let expect_error = step.get("is_error").and_then(Value::as_bool) == Some(true);
+        assert_eq!(
+            response.pointer("/result/isError") == Some(&json!(true)),
+            expect_error,
+            "{name}: {response}"
+        );
+        let mut content = response["result"]["structuredContent"].clone();
+        if step.get("await_job").and_then(Value::as_bool) == Some(true) {
+            let job = content.pointer("/value/value/job").unwrap().clone();
+            content = wait_for_media_job(&mut client, &job);
+        }
+        for (pointer, want) in step
+            .get("expect")
+            .and_then(Value::as_object)
+            .into_iter()
+            .flatten()
+        {
+            assert_eq!(content.pointer(pointer), Some(want), "{name}: {pointer}");
+        }
+        if step.get("advance").and_then(Value::as_bool) == Some(true) {
+            current = content["rev_after"].clone();
+            if first.is_null() {
+                first = current.clone();
+            }
+        }
+    }
+    assert!(!scratch.join("export.mp4").exists());
+}

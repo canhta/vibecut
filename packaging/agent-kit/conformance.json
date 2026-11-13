@@ -1,0 +1,80 @@
+{
+  "description": "Headless MCP conformance script for the VibeCut agent kit. Start `vibecut-cli mcp <empty project> --no-save`, initialize, then call the `command_run` tool once per step in order. Each step sends {request_id: name, command, params} plus base_rev and idempotency_key when set. base_rev `current` is the rev_after of the latest step marked advance; `first` is the rev_after of the first such step. `{out}` in a string is a scratch directory that was NOT granted as an output directory. `expect` maps JSON pointers into structuredContent to exact values. A step marked is_error must return isError true; every other step must not. `await_job` polls the `job_status` command with the returned job until snapshot.state is completed (within 15 s), then applies `expect` to that final response.",
+  "project": "empty",
+  "steps": [
+    {
+      "name": "inspect",
+      "command": "inspect",
+      "params": {},
+      "advance": true,
+      "expect": { "/value/status": "result" }
+    },
+    {
+      "name": "rename",
+      "command": "project.rename",
+      "params": { "name": "agent-kit" },
+      "base_rev": "current",
+      "idempotency_key": "rename",
+      "advance": true,
+      "expect": { "/value/status": "result" }
+    },
+    {
+      "name": "stale_revision_is_refused",
+      "command": "project.rename",
+      "params": { "name": "stale" },
+      "base_rev": "first",
+      "idempotency_key": "stale",
+      "expect": { "/value/value": "stale_revision" }
+    },
+    {
+      "name": "inspect_shows_the_edit",
+      "command": "inspect",
+      "params": {},
+      "expect": { "/value/value/project/name": "agent-kit" }
+    },
+    {
+      "name": "undo",
+      "command": "undo",
+      "params": {},
+      "base_rev": "current",
+      "idempotency_key": "undo"
+    },
+    {
+      "name": "inspect_shows_the_undo",
+      "command": "inspect",
+      "params": {},
+      "advance": true,
+      "expect": { "/value/value/project/name": "MCP" }
+    },
+    {
+      "name": "preview_frame",
+      "command": "preview",
+      "params": { "frames": [0] },
+      "base_rev": "current",
+      "idempotency_key": "preview",
+      "await_job": true,
+      "expect": { "/value/value/snapshot/output/frames/0/frame": 0 }
+    },
+    {
+      "name": "export_outside_the_output_grant_is_refused",
+      "command": "export",
+      "params": {
+        "overwrite": false,
+        "path": "{out}/export.mp4",
+        "settings": {
+          "bit_rate": null,
+          "codec": "automatic",
+          "fps": null,
+          "profile": "automatic",
+          "range": { "kind": "in_out", "start": 0, "end": 8467200000 },
+          "resolution": null,
+          "scene": { "kind": "active" },
+          "version": 1
+        }
+      },
+      "base_rev": "current",
+      "idempotency_key": "export",
+      "is_error": true
+    }
+  ]
+}

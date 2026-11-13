@@ -723,6 +723,15 @@ fn checked_in_registry_digest_and_command_reference_match_the_registry() {
         control::reference_markdown().unwrap(),
         "regenerate with cargo xtask catalog"
     );
+    assert_eq!(
+        std::fs::read_to_string(
+            root.join("../../packaging/agent-kit/skills/vibecut/references/commands.md")
+        )
+        .unwrap()
+        .replace("\r\n", "\n"),
+        control::skill_reference_markdown(),
+        "regenerate with cargo xtask catalog"
+    );
 }
 
 #[test]
