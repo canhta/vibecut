@@ -148,6 +148,64 @@ async fn response(read: &mut BufReader<tokio::io::ReadHalf<tokio::io::DuplexStre
     serde_json::from_str(&line).unwrap()
 }
 
+fn lent_sticker_search(_: &control::StickerQuery) -> control::Result<control::StickerPage> {
+    Ok(control::StickerPage {
+        total: 1,
+        results: vec![control::StickerEntry {
+            id: "flags:AF".into(),
+            name: "Afghanistan".into(),
+            width: 640,
+            height: 480,
+        }],
+    })
+}
+
+fn lent_sticker_resolve(_: &str) -> control::Result<control::StickerEntry> {
+    Err(EngineError::Edit(engine::EditError::Invalid(
+        "unknown sticker id",
+    )))
+}
+
+#[test]
+fn stickers_search_is_refused_until_the_catalog_is_lent() {
+    let (_handler, mut inbox) =
+        Inbox::new(Grants::default(), ByteBudget::new(64 << 20).unwrap()).unwrap();
+    let mut session = Session::new(
+        project::Project::empty(project::ProjectId(1), "stickers".into()).unwrap(),
+        10,
+    )
+    .unwrap();
+    let revision = session.revision();
+    let request = |key: &str| {
+        json!({
+            "command": "stickers.search",
+            "params": {"query": "afg", "category": "flags", "limit": 5},
+            "base_rev": revision,
+            "idempotency_key": key,
+            "request_id": key,
+        })
+    };
+    let refused = inbox
+        .execute_project(&mut session, request("stickers-unlent"), |_, _| Ok(()))
+        .unwrap();
+    assert_eq!(refused.pointer("/value/status"), Some(&json!("error")));
+
+    inbox.attach_stickers(StickerLend {
+        search: lent_sticker_search,
+        resolve: lent_sticker_resolve,
+    });
+    let found = inbox
+        .execute_project(&mut session, request("stickers-lent"), |_, _| Ok(()))
+        .unwrap();
+    assert_eq!(found.pointer("/value/status"), Some(&json!("result")));
+    assert_eq!(
+        found.pointer("/value/value/kind"),
+        Some(&json!("sticker_search"))
+    );
+    assert_eq!(found.pointer("/value/value/page/total"), Some(&json!(1)));
+    assert_eq!(session.revision(), revision);
+}
+
 #[tokio::test]
 async fn lut_source_import_is_denied_on_real_mcp_wire_before_job_or_io() {
     let root = tempfile::tempdir().unwrap();

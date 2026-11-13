@@ -1712,3 +1712,24 @@ fn exec_freeform_mask_path_round_trips_through_save_and_reload() {
     // Removal keeps the survivors' tangents exactly as the split left them.
     assert_eq!(stored_path, &expected.without(&[2]).unwrap());
 }
+
+#[test]
+fn exec_runs_the_sticker_commands_with_the_bundled_catalog_lent() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("stickers.vibecut");
+    new_project(&path);
+    let found = exec(
+        &path,
+        "stickers.search",
+        json!({"query":"","category":"flags","limit":5}),
+    );
+    assert_eq!(found["kind"], json!("sticker_search"));
+    assert!(found["page"]["total"].as_u64().unwrap() >= 1, "{found}");
+    let inserted = exec(
+        &path,
+        "stickers.insert",
+        json!({"placement":{"mode":"auto"},"sticker":"flags:AF","start":0,"duration":127008000000_i64}),
+    );
+    assert_eq!(inserted["changed"], json!(true), "{inserted}");
+    assert_eq!(inserted["placements"].as_array().map(Vec::len), Some(1));
+}

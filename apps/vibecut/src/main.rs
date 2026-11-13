@@ -99,7 +99,10 @@ impl eframe::App for Native {
                 self.workspace.control_budget(),
                 self.workspace.media(),
             ) {
-                Ok(server) => self.control = Some(server),
+                Ok(mut server) => {
+                    server.inbox.attach_stickers(vibecut::app::sticker_lend());
+                    self.control = Some(server);
+                }
                 Err(_) => tracing::warn!(
                     category = "control_listener_failed",
                     "Control listener unavailable"

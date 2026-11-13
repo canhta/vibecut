@@ -7,10 +7,10 @@ use super::super::{Action, Align2, Color32, Icon, Rect, Text, Vec2, egui, theme}
 use super::View;
 use crate::i18n;
 
-/// Tile edge, the measured Effects card width the Stickers grid reuses until its own is measured.
-const TILE: f32 = 88.0;
-/// Horizontal and vertical gap between tiles, from the same measured grid.
-const GAP: f32 = 15.0;
+/// Tile edge and gaps from the measured Stickers grid (`theme::size::STICKER_*`).
+const TILE: f32 = theme::size::STICKER_TILE;
+const GAP_X: f32 = theme::size::STICKER_GAP_X;
+const GAP_Y: f32 = theme::size::STICKER_GAP_Y;
 
 impl View<'_> {
     pub(super) fn stickers(&mut self, ui: &mut egui::Ui) {
@@ -101,7 +101,7 @@ impl View<'_> {
 
     fn tile_grid(&mut self, ui: &mut egui::Ui, tiles: &[Tile], recent: bool, ready: bool) {
         ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing = Vec2::splat(GAP);
+            ui.spacing_mut().item_spacing = Vec2::new(GAP_X, GAP_Y);
             for tile in tiles {
                 self.tile(ui, tile, recent, ready);
             }

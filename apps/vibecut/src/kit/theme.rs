@@ -304,6 +304,11 @@ pub(crate) mod size {
     pub const EFFECT_CARD: f32 = 88.0;
     pub const EFFECT_THUMB_HEIGHT: f32 = 86.0;
     pub const EFFECT_PITCH: f32 = 116.0;
+    /// Stickers tile edge and gaps, measured on the 221721 Stickers capture (2x, logical = native / 2):
+    /// 170 px native tiles on a 204 px column pitch and a 196 px row pitch.
+    pub const STICKER_TILE: f32 = 85.0;
+    pub const STICKER_GAP_X: f32 = 17.0;
+    pub const STICKER_GAP_Y: f32 = 13.0;
     pub const SHORTCUT_BUTTON: f32 = 72.0;
     pub const TOGGLE_WIDTH: f32 = 36.0;
     pub const TOGGLE_HEIGHT: f32 = 16.0;

@@ -9,6 +9,6 @@ mod viewports;
 mod window;
 mod work;
 
-pub use control::{background, poll_workspace};
+pub use control::{background, poll_workspace, sticker_lend};
 pub use registry::Workspace;
 pub use window::EditorWindow;
