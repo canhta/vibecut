@@ -168,6 +168,36 @@ impl Session {
             Command::BrandList {} => Ok(ControlResult::BrandKit {
                 kit: (brand_access(caller)?.list)()?,
             }),
+            Command::TranscriptSearch { query, limit } => {
+                let limit = limit.map_or(
+                    crate::transcript::search::DEFAULT_HITS,
+                    |limit| usize::try_from(limit).unwrap_or(usize::MAX),
+                );
+                let sources = crate::transcript::search::sources(self.project().data());
+                let media = caller
+                    .media
+                    .ok_or(EngineError::Edit(crate::EditError::Unsupported(
+                        "transcript search cache unavailable",
+                    )))?;
+                let answer = media
+                    .lock()
+                    .map_err(|_| crate::RuntimeError::Poisoned)?
+                    .transcript_search(&sources, query.as_str(), limit)?;
+                Ok(ControlResult::TranscriptSearch {
+                    hits: answer
+                        .hits
+                        .into_iter()
+                        .map(|hit| crate::session::wire::TranscriptHit {
+                            asset: hit.asset,
+                            start: hit.start,
+                            end: hit.end,
+                            snippet: hit.snippet,
+                        })
+                        .collect(),
+                    partial: answer.partial,
+                    stale: answer.stale,
+                })
+            }
             Command::FillerCandidates {
                 language,
                 include_markers,

@@ -1,7 +1,7 @@
 # Transcript
 
 Interface: `transcribe`, `translate_selected`, `translate_track`, `build_session`, `source_session`,
-`wait_for_job`, `Cancellation`, `Error`, `Result`, `Progress`, `translation`.
+`wait_for_job`, `Cancellation`, `Error`, `Result`, `Progress`, `translation`, `search`.
 
 Acquires source-timed cues from the user's chosen providers, shared by
 [subtitles](../subtitles/README.md) and the [shorts crate](../../../shorts/README.md):

@@ -24,7 +24,7 @@ pub(crate) use json::{budget, close_schema, validate_wire};
 pub use ledger::{Cursor, Snapshot};
 pub(crate) use ledger::{Ledger, Receipt};
 pub use limits::*;
-pub use results::{ControlResult, JobOutput, JobView, ProviderView, ResultKind};
+pub use results::{ControlResult, JobOutput, JobView, ProviderView, ResultKind, TranscriptHit};
 pub use views::{
     BrandColorView, BrandEntryState, BrandKitView, BrandMediaView, CaptionsResult, ChangeKind,
     ChapterSidecars, CostView, DetectionResult, EmphasisSuggestion, FillerCandidate, FontEntry,
