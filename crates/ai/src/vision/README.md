@@ -6,6 +6,12 @@
 
 SFace attribution and licence disposition: [SFACE.attribution](../../SFACE.attribution). Weights stay in the user cache, never bundled.
 
+## Person matte
+
+`vision::TractSegmentation::load(dir, threads, hooks)` loads the catalog's pinned `pphumanseg-2023mar` weights ([card, licence, shapes](../foundation/models/README.md)) after size/SHA-256 verification, with one fixed `[1,3,192,192]` plan on the same tract runtime and error categories as the detectors; nothing downloads implicitly. `matte(PersonFrame, hooks)` takes a finite CHW RGB 192x192 frame, 0..=255, which media prepares by stretching the whole frame (`VisionFrame::person_tensor`, bilinear, aspect not kept), normalizes it and returns a `PersonMatte`: the class-1 softmax plane, finite and within 0..=1 (1e-3 softmax slack is clamped, anything else is `VisionShape`). The same weights, runtime and input give the same plane; the fingerprint binds the weights, `PERSON_RECIPE`, runtime and threads for engine's cache key. Debug is redacted.
+
+`PersonMatte::alpha(width, height, feather, hooks)` returns straight 8-bit alpha at frame size: a half-pixel bilinear resample of the plane. Feather 0 is that resample only (exact at 192x192, so "off" is the model's own matte); a feather above 0 first takes two box passes of radius `ceil(feather / 100 * 8)` plane cells with clamped edges. The 0..=100 range, radius scale and box shape are new decisions, not measured parity. Edges are at most 16,384 and area at most 2^26; the result is the only allocation (8.3 MB at 4K) and cancellation is checked every 16 output rows. The matte carries no time: engine owns per-frame scheduling, the cache and the compositor hand-off. Threshold, IoU and accuracy evidence: `tests/it/matte.rs` (synthetic annotated fixtures, recorded floors) and its ignored real-weights run.
+
 ## Local vision detectors
 
 `vision::VisionDetector` is a blocking, object-safe local inference seam. `vision::TractVision::load(VisionPaths, threads, capacity, hooks)` implements it with tract 0.23.9 (default `vision` feature); contracts and decision functions exist without the feature. No engine/media dependency. `TractVision::load_faces(yunet, threads, capacity, hooks)` loads only the pinned YuNet graph for consumers that need face boxes alone (auto reframe); `speaker` and `scene` then refuse with `VisionLoad`, and the fingerprint names exactly the graphs loaded.

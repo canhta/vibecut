@@ -1,8 +1,8 @@
 //! Tract ONNX detector running the pinned vision models.
 use super::{
-    FaceBox, FaceEmbedding, FaceFrame, IdentityFrame, PROMPTS, RECIPE, SceneFrame, SceneResult,
-    SpeakerChunk, VisionDetector, VisionFingerprint, classify_embedding, decisions::decode_faces,
-    finite,
+    FaceBox, FaceEmbedding, FaceFrame, IdentityFrame, MATTE_SIDE, PERSON_RECIPE, PROMPTS,
+    PersonFrame, PersonMatte, RECIPE, SceneFrame, SceneResult, SpeakerChunk, VisionDetector,
+    VisionFingerprint, classify_embedding, decisions::decode_faces, finite,
 };
 use crate::{Error, ExecutionHooks, Stage, contracts::checkpoint, foundation::models};
 use prost::Message;
@@ -29,6 +29,7 @@ pub struct VisionPaths<'a> {
 enum Kind {
     Face,
     Identity,
+    Person,
     Image,
     Text,
     Audio,
@@ -511,6 +512,88 @@ impl TractFaceEmbedding {
         let embedding = FaceEmbedding::new(&output(&values, 0, &[1, 128])?)?;
         checkpoint(hooks, Stage::Vision)?;
         Ok(embedding)
+    }
+}
+/// Integrity-verified, fixed-shape CPU person segmentation adapter: one plan, no
+/// runtime download. The weights are PP-HumanSeg (see the catalog entry
+/// `pphumanseg-2023mar`); the graph runs unmodified.
+pub struct TractSegmentation {
+    plan: Arc<TypedRunnableModel>,
+    fingerprint: VisionFingerprint,
+}
+impl TractSegmentation {
+    pub fn load(dir: &Path, threads: usize, hooks: &dyn ExecutionHooks) -> Result<Self, Error> {
+        use sha2::{Digest, Sha256};
+        checkpoint(hooks, Stage::Vision)?;
+        if !(1..=4).contains(&threads) {
+            return Err(Error::VisionShape);
+        }
+        let executor = if threads == 1 {
+            Executor::SingleThread
+        } else {
+            Executor::MultiThread(Arc::new(
+                rayon::ThreadPoolBuilder::new()
+                    .num_threads(threads)
+                    .thread_name(|i| format!("person-matte-{i}"))
+                    .build()
+                    .map_err(|_| Error::VisionLoad)?,
+            ))
+        };
+        let catalog = models::catalog()?;
+        let file = catalog
+            .iter()
+            .find(|m| m.id == "pphumanseg-2023mar")
+            .and_then(|m| m.files.first())
+            .ok_or(Error::VisionLoad)?;
+        let graph = Graph::load(
+            dir,
+            &file.name,
+            file.size,
+            &file.sha256,
+            Kind::Person,
+            None,
+            hooks,
+        )?;
+        let plan = compile_graph(
+            &graph,
+            &[vec![1, 3, MATTE_SIDE, MATTE_SIDE]],
+            &executor,
+            hooks,
+        )?;
+        let mut hash = Sha256::new();
+        hash.update(file.sha256.as_bytes());
+        hash.update(PERSON_RECIPE.as_bytes());
+        hash.update(RUNTIME.as_bytes());
+        hash.update((threads as u64).to_le_bytes());
+        Ok(Self {
+            plan,
+            fingerprint: VisionFingerprint(hash.finalize().into()),
+        })
+    }
+    pub fn fingerprint(&self) -> VisionFingerprint {
+        self.fingerprint
+    }
+    /// The graph reads `(v / 255 - 0.5) / 0.5` RGB and returns a `[1,2,192,192]`
+    /// softmax over background and person; class 1 is the person probability.
+    /// The same input and weights give the same plane. A running tract call
+    /// drains, and its output is discarded if cancellation was requested.
+    pub fn matte(
+        &mut self,
+        frame: PersonFrame<'_>,
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<PersonMatte, Error> {
+        let side = MATTE_SIDE;
+        let normalized: Vec<f32> = frame.values().iter().map(|v| v / 127.5 - 1.0).collect();
+        let values = run(
+            &self.plan,
+            vec![tensor(&[1, 3, side, side], &normalized)?],
+            hooks,
+        )?;
+        let planes = output(&values, 0, &[1, 2, side, side])?;
+        let person = planes.get(side * side..).ok_or(Error::VisionShape)?;
+        let matte = PersonMatte::new(person.to_vec())?;
+        checkpoint(hooks, Stage::Vision)?;
+        Ok(matte)
     }
 }
 fn compile_graph(

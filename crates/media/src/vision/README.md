@@ -18,6 +18,10 @@ The media half of local vision analysis: exact-time frame decoding, face and sce
 
 `VisionFrame::scene_tensor` prepares CLIP CHW RGB 224x224: resize the shorter edge to 224 with cubic interpolation (a=-0.75), centre crop, then normalize with the pinned CLIP mean/std. Extreme aspect ratios allocate only the output and crop, not an intermediate resized panorama.
 
+## Person tensor
+
+`VisionFrame::person_tensor` prepares the PP-HumanSeg input: CHW RGB 192x192, raw 0..=255 (the adapter normalizes), the whole frame stretched with bilinear interpolation and no aspect-preserving letterbox, so the 192x192 matte maps back to the frame by the inverse stretch. Only the 110,592-value output is allocated.
+
 ## MFCC
 
 `mfcc_range_with_progress` emits 13-coefficient MFCC frames from mono 16 kHz audio with a 25 ms window and 10 ms hop, 26 mel filters, a 512-point FFT, pre-emphasis 0.97, cepstral lifter 22 and `c0` equal to log frame energy. Samples are 16-bit full-scale PCM. The grid is anchored at the start of the source audio stream, so a subrange is the exact suffix of a full-range call, and pre-emphasis uses the sample before the first window.

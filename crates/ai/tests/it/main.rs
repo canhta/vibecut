@@ -12,6 +12,7 @@ mod emphasis;
 mod fillers;
 mod local_gipformer;
 mod local_whisper;
+mod matte;
 mod models;
 mod openai;
 mod openai_speech;

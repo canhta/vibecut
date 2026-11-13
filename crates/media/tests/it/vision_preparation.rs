@@ -1017,6 +1017,39 @@ fn detector_tensors_preserve_channels_letterbox_and_clip_normalization() {
 }
 
 #[test]
+fn person_tensor_stretches_the_whole_frame_to_a_raw_192_square() {
+    // Left half red, right half blue, on a wide non-square frame: the stretch keeps
+    // both halves, and no value is normalized here (the adapter owns that).
+    let (w, h) = (64u32, 18u32);
+    let mut rgba = Vec::new();
+    for _y in 0..h {
+        for x in 0..w {
+            rgba.extend_from_slice(if x < w / 2 {
+                &[255, 0, 0, 255]
+            } else {
+                &[0, 0, 255, 255]
+            });
+        }
+    }
+    let frame = VisionFrame::from_rgba8(Tick::ZERO, w, h, rgba).unwrap();
+    let tensor = frame.person_tensor().unwrap();
+    let plane = 192 * 192;
+    assert_eq!(tensor.len(), 3 * plane);
+    for (x, red, blue) in [
+        (0, 255., 0.),
+        (40, 255., 0.),
+        (150, 0., 255.),
+        (191, 0., 255.),
+    ] {
+        for y in [0, 96, 191] {
+            assert_eq!(tensor[y * 192 + x], red, "red {x},{y}");
+            assert_eq!(tensor[plane + y * 192 + x], 0., "green {x},{y}");
+            assert_eq!(tensor[2 * plane + y * 192 + x], blue, "blue {x},{y}");
+        }
+    }
+}
+
+#[test]
 fn nonuniform_detector_resize_matches_opencv_samples_with_one_level_tolerance() {
     // OpenCV 5.0.0 INTER_LINEAR/INTER_CUBIC; centre-coordinate mapping, a=-0.75.
     let mut rgba = Vec::new();
