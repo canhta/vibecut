@@ -21,7 +21,7 @@ use engine::{
 use media::{AssetId, SourceAsset};
 use project::{
     AnimationPath, BuiltinPath, Item, ItemId, ItemParams, Param, Project, ProjectId, Segment,
-    Track, TrackId, TrackKind, VideoParams,
+    Track, TrackId, TrackKind,
 };
 use std::{
     sync::{
@@ -229,31 +229,6 @@ fn shared() -> Option<&'static (SourceAsset, ReframeAnalysis)> {
         })
         .as_ref()
 }
-fn video_item(id: u64, start: Tick, source: SourceRange) -> Item {
-    Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        masks: Vec::new(),
-        effects: Vec::new(),
-        animations: Default::default(),
-        id: ItemId(id),
-        source_asset: Some(AssetId(1)),
-        source_range: source,
-        start,
-        content: ItemParams::Video(VideoParams {
-            fades: Default::default(),
-            source_audio_enabled: false,
-            volume: 0.0,
-            muted: false,
-            crop: None,
-            fit: Default::default(),
-            cleanup: Default::default(),
-            background: project::ClipBackground::None,
-            reduce_noise: false,
-        }),
-    }
-}
 /// Writes the emitted keys onto the item exactly as the apply step will.
 fn applied(analysis: &ReframeAnalysis, mut item: Item) -> (Item, engine::ReframeKeys) {
     let keys = emit_reframe(analysis, &item).unwrap();
@@ -336,7 +311,14 @@ fn the_moving_subject_stays_in_the_safe_area_without_jitter_and_each_fallback_is
     );
     assert_eq!(analysis.crop_size(), (405. / 1280., 1.));
     // Item over the whole source: evaluate the emitted keys at every output frame.
-    let (item, keys) = applied(analysis, video_item(1, Tick::ZERO, range(0, 16)));
+    let (item, keys) = applied(
+        analysis,
+        testkit::item::video(ItemId(1))
+            .asset(AssetId(1))
+            .source(range(0, 16))
+            .start(Tick::ZERO)
+            .build(),
+    );
     validated(item.clone(), 16);
     let crop_w = 405.;
     let (mut inside, mut total) = (0, 0);
@@ -395,7 +377,14 @@ fn a_cut_resets_the_path_with_a_step_and_the_followed_subject_decides_each_shot(
     let Some((_, analysis)) = shared() else {
         return;
     };
-    let (item, keys) = applied(analysis, video_item(1, Tick::ZERO, range(0, 16)));
+    let (item, keys) = applied(
+        analysis,
+        testkit::item::video(ItemId(1))
+            .asset(AssetId(1))
+            .source(range(0, 16))
+            .start(Tick::ZERO)
+            .build(),
+    );
     let auto = item
         .animations
         .get(&AnimationPath::from(BuiltinPath::CropAuto))
@@ -499,7 +488,14 @@ fn trims_retimes_and_repeated_spans_each_get_their_own_keys_from_one_analysis() 
         return;
     };
     // A trim of the moving shot: the first key is the path at the trim start.
-    let (trimmed, keys) = applied(analysis, video_item(1, t(100), range(2, 4)));
+    let (trimmed, keys) = applied(
+        analysis,
+        testkit::item::video(ItemId(1))
+            .asset(AssetId(1))
+            .source(range(2, 4))
+            .start(t(100))
+            .build(),
+    );
     validated(trimmed.clone(), 16);
     let first = analysis.shots[0]
         .samples
@@ -515,10 +511,21 @@ fn trims_retimes_and_repeated_spans_each_get_their_own_keys_from_one_analysis() 
             .all(|k| k.time >= Tick::ZERO && k.time < t(2))
     );
     // The same span placed elsewhere carries identical item-relative keys.
-    let (again, _) = applied(analysis, video_item(2, t(7), range(2, 4)));
+    let (again, _) = applied(
+        analysis,
+        testkit::item::video(ItemId(2))
+            .asset(AssetId(1))
+            .source(range(2, 4))
+            .start(t(7))
+            .build(),
+    );
     assert_eq!(trimmed.animations, again.animations);
     // Twice as fast: the same source instants land at half the output ticks.
-    let mut fast = video_item(3, Tick::ZERO, range(2, 4));
+    let mut fast = testkit::item::video(ItemId(3))
+        .asset(AssetId(1))
+        .source(range(2, 4))
+        .start(Tick::ZERO)
+        .build();
     fast.retime.speed = time::Speed::from_f64(2.).unwrap();
     let (fast, _) = applied(analysis, fast);
     validated(fast.clone(), 16);
@@ -528,22 +535,37 @@ fn trims_retimes_and_repeated_spans_each_get_their_own_keys_from_one_analysis() 
         assert!((slow_x - fast_x).abs() < 0.002, "{slow_x} vs {fast_x}");
     }
     // An item straddling a cut gets a step at the cut and both shots' keys.
-    let (across, keys) = applied(analysis, video_item(4, Tick::ZERO, range(5, 7)));
+    let (across, keys) = applied(
+        analysis,
+        testkit::item::video(ItemId(4))
+            .asset(AssetId(1))
+            .source(range(5, 7))
+            .start(Tick::ZERO)
+            .build(),
+    );
     validated(across, 16);
     assert_eq!(
         keys.shots.iter().map(|s| s.start).collect::<Vec<_>>(),
         vec![Tick::ZERO, t(1)]
     );
     // Items outside the analysed range or not video are refused.
-    assert!(emit_reframe(analysis, &video_item(5, Tick::ZERO, range(0, 17))).is_err());
-    let mut audio = video_item(6, Tick::ZERO, range(0, 2));
-    audio.content = ItemParams::Audio(project::AudioParams {
-        fades: Default::default(),
-        volume: 0.0,
-        muted: false,
-        source: Default::default(),
-        cleanup: Default::default(),
-    });
+    assert!(
+        emit_reframe(
+            analysis,
+            &testkit::item::video(ItemId(5))
+                .asset(AssetId(1))
+                .source(range(0, 17))
+                .start(Tick::ZERO)
+                .build()
+        )
+        .is_err()
+    );
+    let mut audio = testkit::item::video(ItemId(6))
+        .asset(AssetId(1))
+        .source(range(0, 2))
+        .start(Tick::ZERO)
+        .build();
+    audio.content = ItemParams::Audio(project::AudioParams::default());
     assert!(emit_reframe(analysis, &audio).is_err());
 }
 
@@ -581,7 +603,11 @@ fn range_json(a: i64, b: i64) -> serde_json::Value {
 
 #[test]
 fn keys_drop_by_half_a_pixel_and_a_channel_over_the_limit_is_a_typed_failure() {
-    let mut item = video_item(1, Tick::ZERO, range(0, 1));
+    let mut item = testkit::item::video(ItemId(1))
+        .asset(AssetId(1))
+        .source(range(0, 1))
+        .start(Tick::ZERO)
+        .build();
     // 100 samples shorter than the limit: every zigzag key is needed.
     let small = zigzag(100);
     item.source_range = SourceRange::new(Tick::ZERO, Tick(99 * (SEC / 8) + 1)).unwrap();
@@ -710,7 +736,14 @@ fn square_and_landscape_targets_move_the_right_axis() {
         .unwrap();
         let (analysis, _) = run(&request, Squares::new(Arc::new(AtomicUsize::new(0))));
         assert_eq!(analysis.crop_size(), expected);
-        let (item, keys) = applied(&analysis, video_item(1, Tick::ZERO, range(0, 2)));
+        let (item, keys) = applied(
+            &analysis,
+            testkit::item::video(ItemId(1))
+                .asset(AssetId(1))
+                .source(range(0, 2))
+                .start(Tick::ZERO)
+                .build(),
+        );
         validated(item, 16);
         assert!(keys.crop.valid());
         if target == ReframeTarget::Landscape {

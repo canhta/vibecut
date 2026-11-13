@@ -5,7 +5,6 @@ use engine::{Command, CreatedId, Session};
 use media::AssetId;
 use project::{
     Item, ItemId, ItemParams, OverlayParams, Project, ProjectId, Track, TrackId, TrackKind,
-    VideoParams,
 };
 use serde_json::{Value, json};
 use std::{path::Path, sync::Arc};
@@ -20,32 +19,6 @@ impl Policy for Allow {
 
 fn secs(n: i64) -> i64 {
     n * TICKS_PER_SECOND
-}
-
-fn video(id: u64, start: i64, duration: i64) -> Item {
-    Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        masks: Vec::new(),
-        effects: Vec::new(),
-        animations: Default::default(),
-        id: ItemId(id),
-        source_asset: Some(AssetId(5)),
-        source_range: SourceRange::new(Tick::ZERO, Tick(duration)).unwrap(),
-        start: Tick(start),
-        content: ItemParams::Video(VideoParams {
-            source_audio_enabled: false,
-            volume: 0.0,
-            muted: false,
-            crop: None,
-            fades: Default::default(),
-            cleanup: Default::default(),
-            reduce_noise: false,
-            background: project::ClipBackground::None,
-            fit: Default::default(),
-        }),
-    }
 }
 
 /// A 64x64 still PNG host on video track 1 (items 1 and 2), an overlay on track 2 (item 3).
@@ -67,7 +40,18 @@ fn session(dir: &Path) -> Session {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![video(1, 0, secs(2)), video(2, secs(2), secs(1))],
+        items: vec![
+            testkit::item::video(ItemId(1))
+                .asset(AssetId(5))
+                .source(SourceRange::new(Tick::ZERO, Tick(secs(2))).unwrap())
+                .start(Tick(0))
+                .build(),
+            testkit::item::video(ItemId(2))
+                .asset(AssetId(5))
+                .source(SourceRange::new(Tick::ZERO, Tick(secs(1))).unwrap())
+                .start(Tick(secs(2)))
+                .build(),
+        ],
     });
     data.scene_mut().timeline.insert_track(Track {
         id: TrackId(2),

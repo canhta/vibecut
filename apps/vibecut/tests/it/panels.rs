@@ -400,15 +400,8 @@ fn fixture() -> Fixture {
         Tick(2 * SECOND),
         Some(AssetId(1)),
         ItemParams::Video(project::VideoParams {
-            fades: Default::default(),
             source_audio_enabled: true,
-            volume: 0.0,
-            muted: false,
-            crop: None,
-            fit: Default::default(),
-            cleanup: Default::default(),
-            background: project::ClipBackground::None,
-            reduce_noise: false,
+            ..project::VideoParams::plain()
         }),
     );
     let graphic = insert(
@@ -427,17 +420,7 @@ fn fixture() -> Fixture {
         Tick(3 * SECOND),
         Tick(SECOND),
         Some(AssetId(3)),
-        ItemParams::Video(project::VideoParams {
-            fades: Default::default(),
-            source_audio_enabled: false,
-            volume: 0.0,
-            muted: false,
-            crop: None,
-            fit: Default::default(),
-            cleanup: Default::default(),
-            background: project::ClipBackground::None,
-            reduce_noise: false,
-        }),
+        ItemParams::Video(project::VideoParams::plain()),
     );
     let silent_video = insert(
         &mut session,
@@ -445,17 +428,7 @@ fn fixture() -> Fixture {
         Tick(4 * SECOND),
         Tick(SECOND),
         Some(AssetId(4)),
-        ItemParams::Video(project::VideoParams {
-            fades: Default::default(),
-            source_audio_enabled: false,
-            volume: 0.0,
-            muted: false,
-            crop: None,
-            fit: Default::default(),
-            cleanup: Default::default(),
-            background: project::ClipBackground::None,
-            reduce_noise: false,
-        }),
+        ItemParams::Video(project::VideoParams::plain()),
     );
     let text = insert(
         &mut session,
@@ -476,13 +449,7 @@ fn fixture() -> Fixture {
         Tick::ZERO,
         Tick(2 * SECOND),
         Some(AssetId(2)),
-        ItemParams::Audio(project::AudioParams {
-            fades: Default::default(),
-            volume: 0.0,
-            muted: false,
-            source: Default::default(),
-            cleanup: Default::default(),
-        }),
+        ItemParams::Audio(project::AudioParams::default()),
     );
     let mut playback = Playback::new(
         &session,

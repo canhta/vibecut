@@ -1018,28 +1018,25 @@ fn caption_project() -> Project {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: ItemId(1),
-            source_asset: Some(AssetId(1)),
-            source_range: range(100, 200),
-            start: Tick(1000),
-            content: ItemParams::Caption(CaptionParams {
-                emphasis: Default::default(),
-                word_highlight: false,
-                preset: None,
-                overrides: captions::CaptionOverrides::default(),
-                cues: CueTrack {
-                    styles: Vec::new(),
-                    cues: vec![cue.clone()],
-                },
-            }),
-        }],
+        items: vec![
+            testkit::item::item(
+                ItemId(1),
+                ItemParams::Caption(CaptionParams {
+                    emphasis: Default::default(),
+                    word_highlight: false,
+                    preset: None,
+                    overrides: captions::CaptionOverrides::default(),
+                    cues: CueTrack {
+                        styles: Vec::new(),
+                        cues: vec![cue.clone()],
+                    },
+                }),
+            )
+            .asset(AssetId(1))
+            .source(range(100, 200))
+            .start(Tick(1000))
+            .build(),
+        ],
     });
     Project::new(data).unwrap()
 }

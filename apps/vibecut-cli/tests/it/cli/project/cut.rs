@@ -40,25 +40,12 @@ fn pause_project(project_path: &Path, audio: &Path) {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![project::Item {
-            hidden: false,
-            retime: Default::default(),
-            blend_mode: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: project::ItemId(0),
-            source_asset: Some(media::AssetId(1)),
-            source_range: time::TimeRange::new(time::Tick::ZERO, duration).unwrap(),
-            start: time::Tick::ZERO,
-            content: project::ItemParams::Audio(project::AudioParams {
-                fades: Default::default(),
-                volume: 0.0,
-                muted: false,
-                source: Default::default(),
-                cleanup: Default::default(),
-            }),
-        }],
+        items: vec![
+            testkit::item::audio(project::ItemId(0))
+                .asset(media::AssetId(1))
+                .source(time::TimeRange::new(time::Tick::ZERO, duration).unwrap())
+                .build(),
+        ],
     });
     let project = project::Project::new(data).unwrap();
     fs::write(project_path, project::encode(&project, true).unwrap()).unwrap();

@@ -112,17 +112,7 @@ pub fn freeze(
                 source_asset: Some(asset),
                 source_range: SourceRange::new(Tick::ZERO, duration).map_err(EditError::from)?,
                 start: at,
-                content: ItemParams::Video(VideoParams {
-                    source_audio_enabled: false,
-                    volume: 0.0,
-                    muted: false,
-                    crop: None,
-                    fades: Default::default(),
-                    cleanup: Default::default(),
-                    reduce_noise: false,
-                    background: project::ClipBackground::None,
-                    fit: Default::default(),
-                }),
+                content: ItemParams::Video(VideoParams::plain()),
             },
         })?)
     })

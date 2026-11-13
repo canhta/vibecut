@@ -1,10 +1,11 @@
 # testkit
 
-Dev-only support for tests and examples: synthetic media fixtures, process-private generated-fixture directories and external FFmpeg/FFprobe oracle access. Product code never depends on it; it is admitted only as a `[dev-dependencies]` entry and owns no runtime behaviour. It allows the panic shortcuts the workspace denies product code (`unwrap_used`, `expect_used`, `panic`, `indexing_slicing`).
+Dev-only support for tests and examples: synthetic media fixtures, the timeline-item builder, process-private generated-fixture directories and external FFmpeg/FFprobe oracle access. Product code never depends on it; it is admitted only as a `[dev-dependencies]` entry and owns no runtime behaviour. It allows the panic shortcuts the workspace denies product code (`unwrap_used`, `expect_used`, `panic`, `indexing_slicing`).
 
 | Module | Responsibility | Interface |
 |---|---|---|
 | `source` | Builds synthetic source assets and streams. | `asset`, `stream`, `video`, `audio`, `AssetBuilder`, `StreamBuilder` |
+| `item` | Builds timeline items for engine, render, shorts and app tests; a built item is a plain clip and setters change only what a test is about. | `item`, `video`, `audio`, `ItemBuilder` |
 | `fixture` | Owns process-private generated-fixture directories and atomic publication. | `dir`, `publish` |
 | `oracle` | Discovers and drives external FFmpeg/FFprobe oracles. | `command`, `available`, `require`, `generate`, `ffmpeg`, `probe`, `rgba`, `stream_field`, `decoded_frames`, `duration`, `decodes`, `approx` |
 

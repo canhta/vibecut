@@ -643,29 +643,11 @@ mod tests {
     const ONE_SECOND_PPS: f64 = 69.333_333_333_333_33;
 
     fn clip(source: Tick, start: Tick) -> project::Item {
-        project::Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: project::ItemId(1),
-            source_asset: Some(media::AssetId(1)),
-            source_range: SourceRange::new(Tick::ZERO, source).unwrap(),
-            start,
-            content: project::ItemParams::Video(project::VideoParams {
-                fades: Default::default(),
-                source_audio_enabled: false,
-                volume: 0.0,
-                muted: false,
-                crop: None,
-                fit: Default::default(),
-                cleanup: Default::default(),
-                background: project::ClipBackground::None,
-                reduce_noise: false,
-            }),
-        }
+        testkit::item::video(project::ItemId(1))
+            .asset(media::AssetId(1))
+            .source(SourceRange::new(Tick::ZERO, source).unwrap())
+            .start(start)
+            .build()
     }
 
     #[test]

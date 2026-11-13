@@ -86,23 +86,10 @@ impl State {
                     },
                     content: match kind {
                         TrackKind::Video => ItemParams::Video(project::VideoParams {
-                            fades: Default::default(),
                             source_audio_enabled: true,
-                            volume: 0.0,
-                            muted: false,
-                            crop: None,
-                            fit: Default::default(),
-                            cleanup: Default::default(),
-                            background: project::ClipBackground::None,
-                            reduce_noise: false,
+                            ..project::VideoParams::plain()
                         }),
-                        _ => ItemParams::Audio(project::AudioParams {
-                            fades: Default::default(),
-                            volume: 0.0,
-                            muted: false,
-                            source: Default::default(),
-                            cleanup: Default::default(),
-                        }),
+                        _ => ItemParams::Audio(project::AudioParams::default()),
                     },
                 };
                 let outcome = session.apply(Command::InsertItem {

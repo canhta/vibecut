@@ -48,18 +48,9 @@ fn cue(id: &str, start: i64, end: i64, text: &str, words: &[(i64, i64)]) -> Cue 
     }
 }
 fn caption_item(id: u64, start: i64, source: (i64, i64), cues: Vec<Cue>) -> Item {
-    Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        masks: Vec::new(),
-        effects: Vec::new(),
-        animations: Default::default(),
-        id: ItemId(id),
-        source_asset: Some(AssetId(7)),
-        source_range: range(source.0, source.1),
-        start: Tick(start),
-        content: ItemParams::Caption(CaptionParams {
+    testkit::item::item(
+        ItemId(id),
+        ItemParams::Caption(CaptionParams {
             emphasis: Default::default(),
             word_highlight: false,
             preset: None,
@@ -69,7 +60,11 @@ fn caption_item(id: u64, start: i64, source: (i64, i64), cues: Vec<Cue>) -> Item
                 cues,
             },
         }),
-    }
+    )
+    .asset(AssetId(7))
+    .source(range(source.0, source.1))
+    .start(Tick(start))
+    .build()
 }
 fn track(id: u64, locked: bool, items: Vec<Item>) -> Track {
     Track {

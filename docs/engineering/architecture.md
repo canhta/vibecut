@@ -9,7 +9,7 @@ The core runs headless. Only `apps/*` may depend on UI, GPU, native window or di
 | time | crates/time | Ticks, rational rates, source ranges | - |
 | transport | crates/transport | Bounded HTTPS requests, streaming downloads, redirect and retry-after rules | - |
 | media | crates/media | Safe FFmpeg I/O: probe, demux/mux, decode/encode, hardware acceleration, conversion, speech and vision media preparation | time, testkit |
-| testkit | crates/testkit | Dev-only synthetic media fixture builders, generated-fixture paths and FFmpeg/FFprobe oracle discovery | media, time |
+| testkit | crates/testkit | Dev-only synthetic media fixture builders, the timeline-item builder, generated-fixture paths and FFmpeg/FFprobe oracle discovery | media, project, time |
 | project | crates/project | Scene/timeline/animation model, validation/evaluation, persistence, atomic file writes | time, media, captions, testkit |
 | captions | crates/captions | Transcript and cue model, segmentation, mapping, language profiles, SRT/VTT/ASS import | time |
 | text | crates/text | Unicode shaping and rasterization | - |

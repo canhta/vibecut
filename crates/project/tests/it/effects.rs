@@ -97,19 +97,13 @@ fn project_with_effects(effects: Vec<EffectInstance>) -> project::Result<Project
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![Item {
-            blend_mode: Default::default(),
-            masks: Vec::new(),
-            effects,
-            animations: Default::default(),
-            id: ItemId(1),
-            hidden: false,
-            source_asset: None,
-            source_range: SourceRange::new(Tick(0), Tick(10)).unwrap(),
-            start: Tick(0),
-            retime: Default::default(),
-            content: ItemParams::Text(TextParams::new("id")),
-        }],
+        items: vec![
+            testkit::item::item(ItemId(1), ItemParams::Text(TextParams::new("id")))
+                .source(SourceRange::new(Tick(0), Tick(10)).unwrap())
+                .start(Tick(0))
+                .effects(effects)
+                .build(),
+        ],
     });
     Project::new(data)
 }
@@ -721,21 +715,18 @@ fn instances_round_trip_through_json_with_typed_values() {
         .set(curve_path, Param::new(ParamValue::Scalar(0.5)).unwrap())
         .unwrap();
     let mut candidate = data;
-    candidate.scene_mut().timeline.main.items.push(Item {
-        id: ItemId(1),
-        start: Tick::ZERO,
-        source_range: time::SourceRange::new(Tick::ZERO, Tick(100)).unwrap(),
-        source_asset: None,
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        masks: vec![],
-        effects: vec![graded],
-        animations,
-        content: ItemParams::Overlay(OverlayParams {
-            color: Color([255; 4]),
-        }),
-    });
+    candidate.scene_mut().timeline.main.items.push(
+        testkit::item::item(
+            ItemId(1),
+            ItemParams::Overlay(OverlayParams {
+                color: Color([255; 4]),
+            }),
+        )
+        .source(time::SourceRange::new(Tick::ZERO, Tick(100)).unwrap())
+        .effects(vec![graded])
+        .animations(animations)
+        .build(),
+    );
     assert!(matches!(
         Project::new(candidate),
         Err(Error::Invalid("effect animation type"))
@@ -749,21 +740,18 @@ fn effect_colour_animation_requires_linear_composites() {
         let mut data = super::project::empty().into_data();
         let mut animations = Animations::default();
         animations.set(path, param).unwrap();
-        data.scene_mut().timeline.main.items.push(Item {
-            id: ItemId(1),
-            start: Tick::ZERO,
-            source_range: SourceRange::new(Tick::ZERO, Tick(100)).unwrap(),
-            source_asset: None,
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: vec![],
-            effects: vec![effect],
-            animations,
-            content: ItemParams::Overlay(OverlayParams {
-                color: Color([255; 4]),
-            }),
-        });
+        data.scene_mut().timeline.main.items.push(
+            testkit::item::item(
+                ItemId(1),
+                ItemParams::Overlay(OverlayParams {
+                    color: Color([255; 4]),
+                }),
+            )
+            .source(SourceRange::new(Tick::ZERO, Tick(100)).unwrap())
+            .effects(vec![effect])
+            .animations(animations)
+            .build(),
+        );
         data
     };
     for (kind, key) in [

@@ -597,28 +597,15 @@ fn audible_session() -> (Session, TrackId, TrackId, ItemId) {
         video,
         0,
         ItemParams::Video(project::VideoParams {
-            fades: Default::default(),
             source_audio_enabled: true,
-            volume: 0.0,
-            muted: false,
-            crop: None,
-            fit: Default::default(),
-            cleanup: Default::default(),
-            background: project::ClipBackground::None,
-            reduce_noise: false,
+            ..project::VideoParams::plain()
         }),
     );
     insert(
         &mut s,
         audio,
         0,
-        ItemParams::Audio(project::AudioParams {
-            fades: Default::default(),
-            volume: 0.0,
-            muted: false,
-            source: Default::default(),
-            cleanup: Default::default(),
-        }),
+        ItemParams::Audio(project::AudioParams::default()),
     );
     (s, video, audio, clip)
 }
@@ -2200,21 +2187,15 @@ fn arrange_overlay(id: u64, x: f64, y: f64) -> Item {
             )
             .unwrap();
     }
-    Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        masks: Vec::new(),
-        effects: Vec::new(),
-        animations,
-        id: ItemId(id),
-        source_asset: None,
-        source_range: SourceRange::new(Tick::ZERO, Tick(100)).unwrap(),
-        start: Tick::ZERO,
-        content: ItemParams::Overlay(project::OverlayParams {
+    testkit::item::item(
+        ItemId(id),
+        ItemParams::Overlay(project::OverlayParams {
             color: Color([10, 20, 30, 255]),
         }),
-    }
+    )
+    .source(SourceRange::new(Tick::ZERO, Tick(100)).unwrap())
+    .animations(animations)
+    .build()
 }
 
 fn arrange_session(items: &[(u64, f64, f64)]) -> Session {

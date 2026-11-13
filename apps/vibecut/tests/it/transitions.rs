@@ -5,9 +5,7 @@ use egui_kittest::{
     kittest::{By, Queryable},
 };
 use engine::{ByteBudget, Command, Session};
-use project::{
-    Color, Item, ItemId, ItemParams, OverlayParams, Project, ProjectId, TransitionAlignment,
-};
+use project::{Color, ItemId, ItemParams, OverlayParams, Project, ProjectId, TransitionAlignment};
 use std::sync::Arc;
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
@@ -24,20 +22,16 @@ fn editor(duration: i64) -> Editor {
         .unwrap()
         .into_data();
     data.scene_mut().timeline.main.items = (0..3)
-        .map(|n| Item {
-            hidden: false,
-            id: ItemId(n + 1),
-            source_asset: None,
-            source_range: SourceRange::new(Tick(0), Tick(duration)).unwrap(),
-            start: Tick(n as i64 * duration),
-            content: ItemParams::Overlay(OverlayParams {
-                color: Color([100, 150, 200, 255]),
-            }),
-            retime: Default::default(),
-            animations: Default::default(),
-            effects: vec![],
-            masks: vec![],
-            blend_mode: Default::default(),
+        .map(|n| {
+            testkit::item::item(
+                ItemId(n + 1),
+                ItemParams::Overlay(OverlayParams {
+                    color: Color([100, 150, 200, 255]),
+                }),
+            )
+            .source(SourceRange::new(Tick(0), Tick(duration)).unwrap())
+            .start(Tick(n as i64 * duration))
+            .build()
         })
         .collect();
     let session = Session::new(Project::new(data).unwrap(), 100).unwrap();
@@ -231,17 +225,7 @@ fn invalid_targets_are_disabled_with_reasons_without_history() {
                 data.assets.push(asset);
                 data.scene_mut().timeline.main.items[0].source_asset = Some(media::AssetId(1));
                 data.scene_mut().timeline.main.items[0].content =
-                    ItemParams::Video(project::VideoParams {
-                        source_audio_enabled: false,
-                        volume: 0.0,
-                        muted: false,
-                        fades: Default::default(),
-                        crop: None,
-                        fit: Default::default(),
-                        cleanup: Default::default(),
-                        background: project::ClipBackground::None,
-                        reduce_noise: false,
-                    });
+                    ItemParams::Video(project::VideoParams::plain());
             }
             "overlap" => {
                 let track = data.scene().timeline.main.id;

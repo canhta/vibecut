@@ -102,15 +102,8 @@ pub(super) fn timeline_main_sized(
             range(0, 10)?,
             Some(AssetId(1)),
             ItemParams::Video(VideoParams {
-                fades: Default::default(),
                 source_audio_enabled: true,
-                volume: 0.0,
-                muted: false,
-                crop: None,
-                fit: Default::default(),
-                cleanup: Default::default(),
-                background: project::ClipBackground::None,
-                reduce_noise: false,
+                ..VideoParams::plain()
             }),
         )?;
     }
@@ -437,15 +430,8 @@ pub(super) fn placement(theme: Theme, scale: f32) -> Result<AppHarness, Failure>
         range(0, 6)?,
         Some(AssetId(1)),
         ItemParams::Video(VideoParams {
-            fades: Default::default(),
             source_audio_enabled: true,
-            volume: 0.0,
-            crop: None,
-            muted: false,
-            fit: Default::default(),
-            cleanup: Default::default(),
-            background: project::ClipBackground::None,
-            reduce_noise: false,
+            ..VideoParams::plain()
         }),
     )?;
     insert(
@@ -455,15 +441,8 @@ pub(super) fn placement(theme: Theme, scale: f32) -> Result<AppHarness, Failure>
         range(6, 10)?,
         Some(AssetId(1)),
         ItemParams::Video(VideoParams {
-            fades: Default::default(),
             source_audio_enabled: true,
-            crop: None,
-            volume: 0.0,
-            muted: false,
-            fit: Default::default(),
-            cleanup: Default::default(),
-            background: project::ClipBackground::None,
-            reduce_noise: false,
+            ..VideoParams::plain()
         }),
     )?;
     let audio = track(&mut session, "Audio", TrackKind::Audio)?;
@@ -473,13 +452,7 @@ pub(super) fn placement(theme: Theme, scale: f32) -> Result<AppHarness, Failure>
         Tick::ZERO,
         range(0, 10)?,
         Some(AssetId(2)),
-        ItemParams::Audio(AudioParams {
-            fades: Default::default(),
-            volume: 0.0,
-            muted: false,
-            source: Default::default(),
-            cleanup: Default::default(),
-        }),
+        ItemParams::Audio(AudioParams::default()),
     )?;
     let text = track(&mut session, "Text", TrackKind::Text)?;
     insert(

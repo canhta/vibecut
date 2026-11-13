@@ -5,9 +5,7 @@ use engine::emphasis::{EmphasisJob, EmphasisRequest, decode};
 use engine::jobs::{JobRunner, JobState, RunnerConfig, SystemClock};
 use engine::providers::{ConsentPrompt, TextAccess, UploadRequest};
 use engine::{AnalysisError, ByteBudget};
-use project::{
-    CaptionParams, Item, ItemId, ItemParams, Project, ProjectId, Track, TrackId, TrackKind,
-};
+use project::{CaptionParams, ItemId, ItemParams, Project, ProjectId, Track, TrackId, TrackKind};
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -91,31 +89,27 @@ fn project() -> Arc<Project> {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            id: ItemId(4),
-            animations: Default::default(),
-            source_asset: Some(media::AssetId(0)),
-            source_range: range(0, 300),
-            start: Tick::ZERO,
-            content: ItemParams::Caption(CaptionParams {
-                emphasis: Default::default(),
-                word_highlight: false,
-                preset: None,
-                overrides: captions::CaptionOverrides::default(),
-                cues: captions::CueTrack {
-                    styles: Vec::new(),
-                    cues: vec![
-                        cue("cue-1", 0, 200, TEXT, true),
-                        cue("cue-2", 200, 300, "like", false),
-                    ],
-                },
-            }),
-        }],
+        items: vec![
+            testkit::item::item(
+                ItemId(4),
+                ItemParams::Caption(CaptionParams {
+                    emphasis: Default::default(),
+                    word_highlight: false,
+                    preset: None,
+                    overrides: captions::CaptionOverrides::default(),
+                    cues: captions::CueTrack {
+                        styles: Vec::new(),
+                        cues: vec![
+                            cue("cue-1", 0, 200, TEXT, true),
+                            cue("cue-2", 200, 300, "like", false),
+                        ],
+                    },
+                }),
+            )
+            .asset(media::AssetId(0))
+            .source(range(0, 300))
+            .build(),
+        ],
     });
     Arc::new(Project::new(data).unwrap())
 }

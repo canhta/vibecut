@@ -10,7 +10,7 @@ use engine::{
     scene_detection::*,
 };
 use media::{AssetId, SourceAsset};
-use project::{Item, ItemId, ItemParams, Project, ProjectId, VideoParams};
+use project::{ItemId, Project, ProjectId};
 use std::{
     io::Write,
     process::Stdio,
@@ -158,29 +158,12 @@ fn session(asset: SourceAsset, count: i64) -> Session {
         .unwrap()
         .into_data();
     data.assets.push(asset);
-    data.scene_mut().timeline.main.items.push(Item {
-        hidden: false,
-        id: ItemId(10),
-        source_asset: Some(AssetId(1)),
-        source_range: range(count),
-        start: Tick::ZERO,
-        retime: Default::default(),
-        blend_mode: Default::default(),
-        masks: vec![],
-        effects: vec![],
-        animations: Default::default(),
-        content: ItemParams::Video(VideoParams {
-            source_audio_enabled: false,
-            volume: 0.,
-            muted: false,
-            fades: Default::default(),
-            crop: None,
-            fit: Default::default(),
-            cleanup: Default::default(),
-            background: project::ClipBackground::None,
-            reduce_noise: false,
-        }),
-    });
+    data.scene_mut().timeline.main.items.push(
+        testkit::item::video(ItemId(10))
+            .asset(AssetId(1))
+            .source(range(count))
+            .build(),
+    );
     Session::new(Project::new(data).unwrap(), 10).unwrap()
 }
 #[test]

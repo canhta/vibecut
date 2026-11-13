@@ -2,7 +2,7 @@
 use crate::support::session::{five_clip_pairs, project, range, session};
 use engine::{Command, EditError, Session, control::OutputSpan};
 use media::{AssetId, ContentHash};
-use project::{Item, ItemId, ItemParams, Project, ProjectId, Track, TrackId, TrackKind};
+use project::{ItemId, ItemParams, Project, ProjectId, Track, TrackId, TrackKind};
 use time::Tick;
 
 #[test]
@@ -112,46 +112,42 @@ fn remove_pauses_refuses_invalid_reviewed_spans_atomically() {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: ItemId(90),
-            source_asset: Some(AssetId(7)),
-            source_range: range(0, 1000),
-            start: Tick::ZERO,
-            content: ItemParams::Caption(project::CaptionParams {
-                emphasis: Default::default(),
-                word_highlight: false,
-                preset: None,
-                overrides: captions::CaptionOverrides::default(),
-                cues: captions::CueTrack {
-                    styles: Vec::new(),
-                    cues: vec![captions::Cue {
-                        word_timing: crate::support::session::measured(
-                            &captions::LanguageTag::parse("en").unwrap(),
-                            "Hello",
-                            &[range(10, 20)],
-                        ),
-                        id: "cue-1".into(),
-                        range: range(0, 1000),
-                        source_lang: captions::LanguageTag::parse("en").unwrap(),
-                        texts: std::collections::BTreeMap::from([(
-                            captions::LanguageTag::parse("en").unwrap(),
-                            captions::CueText {
-                                text: "Hello".into(),
-                                edited: false,
-                                translation_ref: None,
-                            },
-                        )]),
-                        style: None,
-                    }],
-                },
-            }),
-        }],
+        items: vec![
+            testkit::item::item(
+                ItemId(90),
+                ItemParams::Caption(project::CaptionParams {
+                    emphasis: Default::default(),
+                    word_highlight: false,
+                    preset: None,
+                    overrides: captions::CaptionOverrides::default(),
+                    cues: captions::CueTrack {
+                        styles: Vec::new(),
+                        cues: vec![captions::Cue {
+                            word_timing: crate::support::session::measured(
+                                &captions::LanguageTag::parse("en").unwrap(),
+                                "Hello",
+                                &[range(10, 20)],
+                            ),
+                            id: "cue-1".into(),
+                            range: range(0, 1000),
+                            source_lang: captions::LanguageTag::parse("en").unwrap(),
+                            texts: std::collections::BTreeMap::from([(
+                                captions::LanguageTag::parse("en").unwrap(),
+                                captions::CueText {
+                                    text: "Hello".into(),
+                                    edited: false,
+                                    translation_ref: None,
+                                },
+                            )]),
+                            style: None,
+                        }],
+                    },
+                }),
+            )
+            .asset(AssetId(7))
+            .source(range(0, 1000))
+            .build(),
+        ],
     });
     let mut words = Session::new(Project::new(data).unwrap(), 10).unwrap();
     let before = project::encode(words.project(), false).unwrap();

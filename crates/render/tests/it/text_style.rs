@@ -28,19 +28,12 @@ fn project_with(
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![project::Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations,
-            id: project::ItemId(1),
-            source_asset: None,
-            source_range: time::SourceRange::new(Tick::ZERO, tick(duration_seconds, 1)).unwrap(),
-            start: Tick::ZERO,
-            content: project::ItemParams::Text(text),
-        }],
+        items: vec![
+            testkit::item::item(project::ItemId(1), project::ItemParams::Text(text))
+                .source(time::SourceRange::new(Tick::ZERO, tick(duration_seconds, 1)).unwrap())
+                .animations(animations)
+                .build(),
+        ],
     });
     project::Project::new(data).unwrap()
 }

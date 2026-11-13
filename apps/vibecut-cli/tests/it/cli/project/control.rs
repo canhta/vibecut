@@ -773,22 +773,17 @@ fn control_sets_every_text_style_key_and_the_snapshot_shows_it() {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![project::Item {
-            hidden: false,
-            retime: Default::default(),
-            blend_mode: Default::default(),
-            masks: Vec::new(),
-            effects: vec![],
-            animations: Default::default(),
-            id: project::ItemId(10),
-            source_asset: None,
-            source_range: TimeRange::new(Tick::ZERO, Tick(time::TICKS_PER_SECOND)).unwrap(),
-            start: Tick::ZERO,
-            content: project::ItemParams::Text(project::TextParams {
-                font_size: 20.0,
-                ..project::TextParams::new("Xin chào")
-            }),
-        }],
+        items: vec![
+            testkit::item::item(
+                project::ItemId(10),
+                project::ItemParams::Text(project::TextParams {
+                    font_size: 20.0,
+                    ..project::TextParams::new("Xin chào")
+                }),
+            )
+            .source(TimeRange::new(Tick::ZERO, Tick(time::TICKS_PER_SECOND)).unwrap())
+            .build(),
+        ],
     });
     fs::write(
         &path,

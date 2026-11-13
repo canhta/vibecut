@@ -114,21 +114,16 @@ pub fn solid_project(seconds: i64, width: u32, height: u32, color: [u8; 4]) -> p
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![project::Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: project::ItemId(0),
-            source_asset: None,
-            source_range: time::SourceRange::new(time::Tick::ZERO, tick(seconds, 1)).unwrap(),
-            start: time::Tick::ZERO,
-            content: project::ItemParams::Overlay(project::OverlayParams {
-                color: project::Color(color),
-            }),
-        }],
+        items: vec![
+            testkit::item::item(
+                project::ItemId(0),
+                project::ItemParams::Overlay(project::OverlayParams {
+                    color: project::Color(color),
+                }),
+            )
+            .source(time::SourceRange::new(time::Tick::ZERO, tick(seconds, 1)).unwrap())
+            .build(),
+        ],
     });
     project::Project::new(data).unwrap()
 }

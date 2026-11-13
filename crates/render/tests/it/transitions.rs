@@ -996,18 +996,14 @@ fn scene(kind: &str) -> Project {
     d.canvas.height = 4;
     d.scene_mut().timeline.main.items = [(10, 0, [255, 0, 0, 255]), (11, 100, [0, 0, 255, 255])]
         .into_iter()
-        .map(|(id, start, c)| Item {
-            hidden: false,
-            retime: Default::default(),
-            id: ItemId(id),
-            source_asset: None,
-            source_range: SourceRange::new(Tick(100), Tick(200)).unwrap(),
-            start: Tick(start),
-            content: ItemParams::Overlay(OverlayParams { color: Color(c) }),
-            animations: Default::default(),
-            effects: vec![],
-            masks: vec![],
-            blend_mode: Default::default(),
+        .map(|(id, start, c)| {
+            testkit::item::item(
+                ItemId(id),
+                ItemParams::Overlay(OverlayParams { color: Color(c) }),
+            )
+            .source(SourceRange::new(Tick(100), Tick(200)).unwrap())
+            .start(Tick(start))
+            .build()
         })
         .collect();
     d.scene_mut().timeline.transitions.push(Transition {
@@ -1339,17 +1335,7 @@ fn transition_consumes_both_video_handles_at_exact_source_ticks() {
     );
     for i in &mut d.scene_mut().timeline.main.items {
         i.source_asset = Some(media::AssetId(1));
-        i.content = ItemParams::Video(VideoParams {
-            source_audio_enabled: false,
-            volume: 0.,
-            muted: false,
-            fades: Default::default(),
-            crop: None,
-            fit: Default::default(),
-            cleanup: Default::default(),
-            background: project::ClipBackground::None,
-            reduce_noise: false,
-        });
+        i.content = ItemParams::Video(VideoParams::plain());
     }
     let p = Project::new(d).unwrap();
     let h = Hooks::default();

@@ -381,13 +381,7 @@ fn insert(desk: &mut Desk<'_>, finished: &Finished, at: Tick) -> Result<(), Prob
         source_asset: Some(asset.id()),
         source_range,
         start: at,
-        content: ItemParams::Audio(project::AudioParams {
-            fades: Default::default(),
-            volume: 0.0,
-            muted: false,
-            source: Default::default(),
-            cleanup: Default::default(),
-        }),
+        content: ItemParams::Audio(project::AudioParams::default()),
     };
     let created = desk
         .editor()

@@ -89,29 +89,19 @@ fn crop_scene_animated(
     data.canvas.height = 64;
     data.canvas.background = project::Color([0, 0, 0, 255]);
     data.assets.push(asset);
-    data.scene_mut().timeline.main.items = vec![project::Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        masks: Vec::new(),
-        effects: Vec::new(),
-        animations,
-        id: project::ItemId(0),
-        source_asset: Some(media::AssetId(1)),
-        source_range: TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
-        start: Tick::ZERO,
-        content: project::ItemParams::Video(project::VideoParams {
-            crop,
-            fades: Default::default(),
-            source_audio_enabled: false,
-            volume: 0.0,
-            muted: false,
-            fit: Default::default(),
-            cleanup: Default::default(),
-            background: project::ClipBackground::None,
-            reduce_noise: false,
-        }),
-    }];
+    data.scene_mut().timeline.main.items = vec![
+        testkit::item::item(
+            project::ItemId(0),
+            project::ItemParams::Video(project::VideoParams {
+                crop: crop,
+                ..project::VideoParams::plain()
+            }),
+        )
+        .asset(media::AssetId(1))
+        .source(TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap())
+        .animations(animations)
+        .build(),
+    ];
     project::Project::new(data).unwrap()
 }
 fn hash(bytes: &[u8]) -> u64 {
@@ -358,17 +348,7 @@ fn scene() -> project::Project {
         (
             0,
             project::TrackKind::Video,
-            project::ItemParams::Video(project::VideoParams {
-                fades: Default::default(),
-                source_audio_enabled: false,
-                volume: 0.0,
-                muted: false,
-                crop: None,
-                fit: Default::default(),
-                cleanup: Default::default(),
-                background: project::ClipBackground::None,
-                reduce_noise: false,
-            }),
+            project::ItemParams::Video(project::VideoParams::plain()),
             Some(media::AssetId(1)),
         ),
         (
@@ -390,19 +370,12 @@ fn scene() -> project::Project {
             muted: false,
             hidden: false,
             locked: false,
-            items: vec![project::Item {
-                hidden: false,
-                blend_mode: Default::default(),
-                retime: Default::default(),
-                masks: Vec::new(),
-                effects: Vec::new(),
-                animations: Default::default(),
-                id: project::ItemId(id),
-                source_asset,
-                source_range: TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
-                start: Tick::ZERO,
-                content,
-            }],
+            items: vec![
+                testkit::item::item(project::ItemId(id), content)
+                    .source_asset(source_asset)
+                    .source(TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap())
+                    .build(),
+            ],
         });
     }
     project::Project::new(d).unwrap()
@@ -727,12 +700,15 @@ fn chroma_key_intensity_keyframes_interpolate_in_preview_and_export() {
             ),
         )
         .unwrap();
-    data.scene_mut().timeline.main.items.push(project::Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        masks: Vec::new(),
-        effects: vec![
+    data.scene_mut().timeline.main.items.push(
+        testkit::item::item(
+            project::ItemId(1),
+            project::ItemParams::Overlay(project::OverlayParams {
+                color: project::Color([120, 204, 102, 255]),
+            }),
+        )
+        .source(TimeRange::new(Tick::ZERO, span).unwrap())
+        .effects(vec![
             project::effect_definition("chroma_key")
                 .unwrap()
                 .instance("chroma_key")
@@ -745,16 +721,10 @@ fn chroma_key_intensity_keyframes_interpolate_in_preview_and_export() {
                 .unwrap()
                 .with("shadow", project::EffectValue::Scalar(0.0))
                 .unwrap(),
-        ],
-        animations,
-        id: project::ItemId(1),
-        source_asset: None,
-        source_range: TimeRange::new(Tick::ZERO, span).unwrap(),
-        start: Tick::ZERO,
-        content: project::ItemParams::Overlay(project::OverlayParams {
-            color: project::Color([120, 204, 102, 255]),
-        }),
-    });
+        ])
+        .animations(animations)
+        .build(),
+    );
     let p = project::Project::new(data).unwrap();
     let h = Hooks::default();
     let mut settings = ExportSettings::from_project(&p);
@@ -827,21 +797,16 @@ fn blur_background_stays_below_lower_timeline_layers() {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![project::Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: project::ItemId(2),
-            source_asset: None,
-            source_range: TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
-            start: Tick::ZERO,
-            content: project::ItemParams::Overlay(project::OverlayParams {
-                color: project::Color([0, 0, 255, 255]),
-            }),
-        }],
+        items: vec![
+            testkit::item::item(
+                project::ItemId(2),
+                project::ItemParams::Overlay(project::OverlayParams {
+                    color: project::Color([0, 0, 255, 255]),
+                }),
+            )
+            .source(TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap())
+            .build(),
+        ],
     });
     let p = project::Project::new(d).unwrap();
     let mut s = RenderSettings::from_project(&p);
@@ -1092,29 +1057,19 @@ fn fit_scene(
     data.canvas.height = canvas[1];
     data.canvas.background = project::Color([0, 0, 0, 255]);
     data.assets.push(asset);
-    data.scene_mut().timeline.main.items = vec![project::Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        masks: Vec::new(),
-        effects: Vec::new(),
-        animations,
-        id: project::ItemId(0),
-        source_asset: Some(media::AssetId(1)),
-        source_range: TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
-        start: Tick::ZERO,
-        content: project::ItemParams::Video(project::VideoParams {
-            crop: None,
-            fit,
-            fades: Default::default(),
-            source_audio_enabled: false,
-            volume: 0.0,
-            muted: false,
-            cleanup: Default::default(),
-            reduce_noise: false,
-            background: project::ClipBackground::None,
-        }),
-    }];
+    data.scene_mut().timeline.main.items = vec![
+        testkit::item::item(
+            project::ItemId(0),
+            project::ItemParams::Video(project::VideoParams {
+                fit: fit,
+                ..project::VideoParams::plain()
+            }),
+        )
+        .asset(media::AssetId(1))
+        .source(TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap())
+        .animations(animations)
+        .build(),
+    ];
     project::Project::new(data).unwrap()
 }
 

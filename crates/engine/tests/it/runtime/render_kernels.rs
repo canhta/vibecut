@@ -265,29 +265,12 @@ fn parallel_draw_matches_sequential_at_chunk_edges_and_half_reductions() {
             muted: false,
             hidden: false,
             locked: false,
-            items: vec![project::Item {
-                hidden: false,
-                blend_mode: Default::default(),
-                retime: Default::default(),
-                masks: Vec::new(),
-                effects: Vec::new(),
-                animations: Default::default(),
-                id: project::ItemId(0),
-                source_asset: Some(media::AssetId(1)),
-                source_range: time::TimeRange::new(time::Tick::ZERO, duration).unwrap(),
-                start: time::Tick::ZERO,
-                content: project::ItemParams::Video(project::VideoParams {
-                    fades: Default::default(),
-                    source_audio_enabled: false,
-                    volume: 0.0,
-                    muted: false,
-                    crop: None,
-                    fit: Default::default(),
-                    cleanup: Default::default(),
-                    background: project::ClipBackground::None,
-                    reduce_noise: false,
-                }),
-            }],
+            items: vec![
+                testkit::item::video(project::ItemId(0))
+                    .asset(media::AssetId(1))
+                    .source(time::TimeRange::new(time::Tick::ZERO, duration).unwrap())
+                    .build(),
+            ],
         });
         let project = project::Project::new(data).unwrap();
         let mut rgba = Vec::new();

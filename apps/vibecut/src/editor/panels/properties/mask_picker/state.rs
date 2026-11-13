@@ -211,25 +211,21 @@ mod tests {
 
     #[test]
     fn the_row_reads_the_first_mask_and_closing_drops_drafts() {
-        let mut item = project::Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: vec![Mask::new("mask1", MaskShape::Heart)],
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: project::ItemId(1),
-            source_asset: None,
-            source_range: time::SourceRange::new(
+        let mut item = testkit::item::item(
+            project::ItemId(1),
+            project::ItemParams::Overlay(project::OverlayParams {
+                color: project::Color([0; 4]),
+            }),
+        )
+        .source(
+            time::SourceRange::new(
                 time::Tick::ZERO,
                 time::FrameRate::FPS_30.tick_of(1).unwrap(),
             )
             .unwrap(),
-            start: time::Tick::ZERO,
-            content: project::ItemParams::Overlay(project::OverlayParams {
-                color: project::Color([0; 4]),
-            }),
-        };
+        )
+        .masks(vec![Mask::new("mask1", MaskShape::Heart)])
+        .build();
         assert_eq!(current(&item).map(|mask| mask.id.as_str()), Some("mask1"));
         item.masks.clear();
         assert!(current(&item).is_none());

@@ -49,15 +49,8 @@ pub fn source_session(
                 source_range: range,
                 start: Tick::ZERO,
                 content: ItemParams::Video(project::VideoParams {
-                    fades: Default::default(),
                     source_audio_enabled: true,
-                    volume: 0.0,
-                    muted: false,
-                    crop: None,
-                    fit: Default::default(),
-                    cleanup: Default::default(),
-                    background: project::ClipBackground::None,
-                    reduce_noise: false,
+                    ..project::VideoParams::plain()
                 }),
             },
         })?;

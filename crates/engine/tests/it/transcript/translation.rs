@@ -14,9 +14,7 @@ use engine::{
     jobs::*,
     translation::{self, TranslationRun, TranslationTarget},
 };
-use project::{
-    CaptionParams, Item, ItemId, ItemParams, Project, ProjectId, Track, TrackId, TrackKind,
-};
+use project::{CaptionParams, ItemId, ItemParams, Project, ProjectId, Track, TrackId, TrackKind};
 use serde_json::json;
 use std::{
     sync::{
@@ -80,28 +78,25 @@ fn session() -> Session {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            id: ItemId(0),
-            source_asset: Some(media::AssetId(1)),
-            source_range: SourceRange::new(Tick(0), Tick(40)).unwrap(),
-            start: Tick(0),
-            animations: Default::default(),
-            content: ItemParams::Caption(CaptionParams {
-                emphasis: Default::default(),
-                word_highlight: false,
-                preset: None,
-                overrides: captions::CaptionOverrides::default(),
-                cues: CueTrack {
-                    styles: Vec::new(),
-                    cues,
-                },
-            }),
-        }],
+        items: vec![
+            testkit::item::item(
+                ItemId(0),
+                ItemParams::Caption(CaptionParams {
+                    emphasis: Default::default(),
+                    word_highlight: false,
+                    preset: None,
+                    overrides: captions::CaptionOverrides::default(),
+                    cues: CueTrack {
+                        styles: Vec::new(),
+                        cues,
+                    },
+                }),
+            )
+            .asset(media::AssetId(1))
+            .source(SourceRange::new(Tick(0), Tick(40)).unwrap())
+            .start(Tick(0))
+            .build(),
+        ],
     });
     Session::new(Project::new(data).unwrap(), 10).unwrap()
 }

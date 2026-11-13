@@ -1442,79 +1442,63 @@ fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
             )
             .build(),
     );
-    let first = project::Item {
-        id: project::ItemId(1),
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        masks: vec![],
-        animations: Default::default(),
-        effects: vec![
-            project::effect_definition("color_grade")
-                .unwrap()
-                .instance("grade")
-                .with("brightness", project::EffectValue::Scalar(30.0))
-                .unwrap(),
-            project::effect_definition("gamma_correction")
-                .unwrap()
-                .instance("gamma")
-                .with("gamma", project::EffectValue::Scalar(7.0))
-                .unwrap(),
-            project::effect_definition("invert")
-                .unwrap()
-                .instance("invert"),
-            project::effect_definition("black_white")
-                .unwrap()
-                .instance("grey"),
-            project::effect_definition("channel_mix")
-                .unwrap()
-                .instance("mix")
-                .with("rg", project::EffectValue::Scalar(50.0))
-                .unwrap(),
-            project::effect_definition("tint")
-                .unwrap()
-                .instance("tint")
-                .with(
-                    "white",
-                    project::EffectValue::Color(project::Color([220, 80, 30, 255])),
-                )
-                .unwrap(),
-            project::effect_definition("posterize")
-                .unwrap()
-                .instance("cpu-only"),
-            project::effect_definition("levels")
-                .unwrap()
-                .instance("levels")
-                .with("in_black", project::EffectValue::Scalar(25.0))
-                .unwrap(),
-            project::effect_definition("strobe")
-                .unwrap()
-                .instance("flash")
-                .with("blend", project::EffectValue::Scalar(35.0))
-                .unwrap(),
-        ],
-        source_asset: None,
-        start: time::Tick::ZERO,
-        source_range: time::SourceRange::new(time::Tick::ZERO, duration).unwrap(),
-        content: project::ItemParams::Overlay(project::OverlayParams {
+    let first = testkit::item::item(
+        project::ItemId(1),
+        project::ItemParams::Overlay(project::OverlayParams {
             color: project::Color([100, 50, 20, 255]),
         }),
-    };
+    )
+    .source(time::SourceRange::new(time::Tick::ZERO, duration).unwrap())
+    .effects(vec![
+        project::effect_definition("color_grade")
+            .unwrap()
+            .instance("grade")
+            .with("brightness", project::EffectValue::Scalar(30.0))
+            .unwrap(),
+        project::effect_definition("gamma_correction")
+            .unwrap()
+            .instance("gamma")
+            .with("gamma", project::EffectValue::Scalar(7.0))
+            .unwrap(),
+        project::effect_definition("invert")
+            .unwrap()
+            .instance("invert"),
+        project::effect_definition("black_white")
+            .unwrap()
+            .instance("grey"),
+        project::effect_definition("channel_mix")
+            .unwrap()
+            .instance("mix")
+            .with("rg", project::EffectValue::Scalar(50.0))
+            .unwrap(),
+        project::effect_definition("tint")
+            .unwrap()
+            .instance("tint")
+            .with(
+                "white",
+                project::EffectValue::Color(project::Color([220, 80, 30, 255])),
+            )
+            .unwrap(),
+        project::effect_definition("posterize")
+            .unwrap()
+            .instance("cpu-only"),
+        project::effect_definition("levels")
+            .unwrap()
+            .instance("levels")
+            .with("in_black", project::EffectValue::Scalar(25.0))
+            .unwrap(),
+        project::effect_definition("strobe")
+            .unwrap()
+            .instance("flash")
+            .with("blend", project::EffectValue::Scalar(35.0))
+            .unwrap(),
+    ])
+    .build();
     let mut second = first.clone();
     second.id = project::ItemId(2);
     second.effects.clear();
     second.source_asset = Some(media::AssetId(1));
-    second.content = project::ItemParams::Video(project::VideoParams {
-        crop: None,
-        fades: Default::default(),
-        source_audio_enabled: false,
-        volume: 0.0,
-        muted: false,
-        fit: Default::default(),
-        cleanup: Default::default(),
-        background: project::ClipBackground::None,
-        reduce_noise: false,
-    });
+    second.content = project::ItemParams::Video(project::VideoParams::plain());
     data.scene_mut().timeline.main.items.push(first);
     data.scene_mut().timeline.insert_track(project::Track {
         id: project::TrackId(2),

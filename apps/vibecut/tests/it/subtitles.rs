@@ -2088,13 +2088,7 @@ fn source_clip(e: &mut Editor) -> project::ItemId {
                 source_asset: Some(media::AssetId(2)),
                 source_range: time::SourceRange::new(Tick::ZERO, duration).unwrap(),
                 start: Tick::ZERO,
-                content: ItemParams::Audio(project::AudioParams {
-                    fades: Default::default(),
-                    volume: 0.0,
-                    muted: false,
-                    source: Default::default(),
-                    cleanup: Default::default(),
-                }),
+                content: ItemParams::Audio(project::AudioParams::default()),
             },
         })
         .unwrap()
