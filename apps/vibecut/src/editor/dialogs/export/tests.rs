@@ -414,7 +414,10 @@ fn export_form_scrolls_the_caption_outputs_above_the_fixed_footer() {
     }
     let after = rect(&bench, "export.captions.srt");
     let footer = rect(&bench, "export.run");
-    assert!(after.top() < before.top(), "the form did not scroll: {before:?} {after:?}");
+    assert!(
+        after.top() < before.top(),
+        "the form did not scroll: {before:?} {after:?}"
+    );
     assert!(
         after.bottom() <= footer.top(),
         "the caption outputs scroll under the footer: {after:?} {footer:?}"
