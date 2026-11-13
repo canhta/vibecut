@@ -2,6 +2,8 @@
 use super::Subtitles;
 use crate::editor::panels::assets::State;
 use crate::editor::{Arc, Error, Port, Request, Result, Tick, egui};
+use crate::services::lifecycle::CaptionOutput;
+use std::path::PathBuf;
 
 impl State {
     /// Initialize the panel without any download or provider construction.
@@ -27,6 +29,7 @@ impl State {
         let mut options = port.read.preferences.subtitles.clone();
         let at = port.read.playhead.unwrap_or(Tick::ZERO);
         let bank_ready = port.read.caption_bank_ready;
+        let section = self.captions_section;
         let (locale, dark) = (port.locale(), port.dark());
         let models = port.read.preferences.ai_models.clone();
         if let Some(subtitles) = &mut self.captions {
@@ -39,6 +42,7 @@ impl State {
                 locale,
                 dark,
                 bank_ready,
+                section,
             );
             for (id, response) in widgets {
                 port.widget(id, None, None, &response);
@@ -55,6 +59,34 @@ impl State {
         }
         if !Arc::ptr_eq(&before, port.session.project()) {
             port.sync();
+        }
+    }
+
+    /// Save the export dialog's caption output to the picked destination. The panel runs the
+    /// same engine export as before; the native save dialog already confirmed any replacement.
+    pub(in crate::editor) fn export_caption_output(
+        &mut self,
+        port: &mut Port<'_>,
+        path: PathBuf,
+        output: CaptionOutput,
+    ) {
+        let budget = port.read.budget;
+        if let Err(e) = self.prepare_captions(budget) {
+            port.fail(e.to_string());
+            return;
+        }
+        let options = port.read.preferences.subtitles.clone();
+        let Some(subtitles) = &mut self.captions else {
+            return;
+        };
+        let result = match output {
+            CaptionOutput::File(format) => {
+                subtitles.export_subtitles(&*port.session, path, format, &options, true)
+            }
+            CaptionOutput::Burned => subtitles.burn_subtitles(&*port.session, path, &options, true),
+        };
+        if let Err(e) = result {
+            port.fail(e.to_string());
         }
     }
 

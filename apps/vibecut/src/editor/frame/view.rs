@@ -200,12 +200,7 @@ impl Editor {
             crate::editor::panels::player::crop::show(player, port, ui.ctx());
         });
         if let Some(subtitles) = &mut self.assets.captions {
-            let widgets = subtitles.dialogs(
-                ui.ctx(),
-                &self.session,
-                &self.preferences.subtitles,
-                self.preferences.locale,
-            );
+            let widgets = subtitles.dialogs(ui.ctx(), self.preferences.locale);
             for (id, response) in widgets {
                 self.remember(id, &response);
             }

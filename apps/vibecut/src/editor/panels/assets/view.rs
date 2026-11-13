@@ -1,6 +1,7 @@
 //! Renders the assets surface from a read-only projection.
 use crate::i18n;
 mod browser;
+mod captions;
 mod deletion;
 mod effects;
 mod feedback;
@@ -98,14 +99,12 @@ pub(in crate::editor) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) 
             });
     });
     let body = Rect::from_min_max(egui::pos2(rect.left(), strip.bottom()), rect.max);
-    if cx.preferences.assets_tab == AssetsTab::Captions {
-        view.actions.push(Action::Captions(body.shrink(12.0)));
-        return view.actions;
-    }
+    // The captions pages are always reachable, so their sub-navigation never collapses.
+    let captions_tab = cx.preferences.assets_tab == AssetsTab::Captions;
     let nav = Rect::from_min_size(
         body.min,
         Vec2::new(
-            if rect.width() < 420.0 {
+            if rect.width() < 420.0 && !captions_tab {
                 0.0
             } else {
                 theme::size::SUBNAV.min(body.width())
@@ -130,6 +129,10 @@ pub(in crate::editor) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) 
             egui::UiBuilder::new().max_rect(nav.shrink2(Vec2::new(8.0, 15.0))),
             |ui| {
                 ui.spacing_mut().item_spacing.y = 8.0;
+                if captions_tab {
+                    view.captions_nav(ui);
+                    return;
+                }
                 if cx.preferences.assets_tab == AssetsTab::Effects {
                     view.effects_nav(ui);
                     return;
@@ -206,6 +209,7 @@ pub(in crate::editor) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) 
                     view.sounds(ui)
                 }
             }
+            AssetsTab::Captions => view.actions.push(Action::Captions(content)),
             AssetsTab::Effects => view.effects(ui),
             AssetsTab::Transitions => view.transitions(ui),
             AssetsTab::Stickers => view.stickers(ui),

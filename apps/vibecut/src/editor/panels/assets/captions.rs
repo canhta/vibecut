@@ -39,6 +39,9 @@ enum Task {
         start: Tick,
         /// The language was auto-detected, so its tag is checked against the supported set.
         auto: bool,
+        /// The caption item the run replaces ("Delete current captions"), removed once the
+        /// generated captions apply.
+        replace: Option<ItemId>,
     },
     Translate {
         /// The revision the selection was read at; the result applies only against it.
@@ -74,16 +77,7 @@ pub struct Inspection {
     /// The refusal reason of the last transcript command, if it was refused.
     pub transcript_refusal: Option<Text>,
 }
-#[derive(Clone, Copy)]
-enum Pick {
-    Import,
-    Srt,
-    Vtt,
-    Txt,
-    Burn,
-}
 struct Picker {
-    kind: Pick,
     future: std::pin::Pin<Box<dyn std::future::Future<Output = Option<rfd::FileHandle>> + Send>>,
     waker: std::task::Waker,
 }
@@ -150,13 +144,16 @@ pub struct Subtitles {
     draft_project: Option<Arc<project::Project>>,
     pub glossary: Vec<ai::GlossaryTerm>,
     force: bool,
+    /// Auto captions page: the filler switch shows the filler cut list below the cues.
+    identify_fillers: bool,
+    /// Auto captions page: the footer checkbox that replaces the current captions on generate.
+    delete_current: bool,
     problem: Option<Text>,
     error: Option<Arc<dyn engine::Failure + 'static>>,
     missing_model: Option<String>,
     completed: Option<usize>,
     pub(crate) notice: Option<usize>,
     picker: Option<Picker>,
-    overwrite: Option<(PathBuf, Pick)>,
     pub(crate) requested_model: Option<String>,
     pub(crate) requested_seek: Option<Tick>,
     project: Option<project::ProjectId>,
@@ -201,13 +198,14 @@ impl Subtitles {
             draft_project: None,
             glossary: Vec::new(),
             force: false,
+            identify_fillers: true,
+            delete_current: false,
             problem: None,
             error: None,
             missing_model: None,
             completed: None,
             notice: None,
             picker: None,
-            overwrite: None,
             requested_model: None,
             requested_seek: None,
             project: None,
@@ -288,10 +286,8 @@ impl Subtitles {
                 .is_some_and(|id| ctx.memory(|m| m.focused()) == Some(id))
     }
     pub(crate) fn modal_open(&self) -> bool {
-        self.overwrite.is_some()
-            || self
-                .consent_events()
-                .is_some_and(|events| events.state.lock().is_ok_and(|s| s.upload.is_some()))
+        self.consent_events()
+            .is_some_and(|events| events.state.lock().is_ok_and(|s| s.upload.is_some()))
     }
     pub(crate) fn invalidate_options(&mut self, options: &Options) {
         if self.active.is_some() && self.active_options.as_ref().is_some_and(|o| o != options) {
@@ -404,6 +400,7 @@ impl Subtitles {
             task: Task::Generate {
                 start,
                 auto: options.source == "auto",
+                replace: self.delete_current.then_some(self.item).flatten(),
             },
             cancel,
             events,
@@ -538,6 +535,10 @@ impl Subtitles {
                 .is_some_and(|s| terminal(s.state))
         }) {
             let active = self.active.take().ok_or(Error::Invalid("subtitle job"))?;
+            let replace = match &active.task {
+                Task::Generate { replace, .. } => *replace,
+                _ => None,
+            };
             let snapshot = self.runner.snapshot(active.id);
             let state = snapshot.as_ref().map_or(JobState::Failed, |s| s.state);
             let error = snapshot.and_then(|s| s.error);
@@ -574,6 +575,11 @@ impl Subtitles {
                     task => self.apply_registry(session, active.id, task, state, error),
                 };
                 if let Some(created) = created {
+                    if let Some(old) = replace
+                        && session.apply(Command::Delete { items: vec![old] }).is_err()
+                    {
+                        self.problem = Some(Text::SubEditFailed);
+                    }
                     self.item = created
                         .iter()
                         .find_map(|id| {
@@ -656,7 +662,7 @@ impl Subtitles {
             ))?;
         let mut base_rev = None;
         let (command, params) = match task {
-            Task::Generate { start, auto } => {
+            Task::Generate { start, auto, .. } => {
                 let result = engine::subtitles::decode_captions(bytes)
                     .map_err(engine::control::Error::from)?;
                 // The detected tag is checked against the languages this app's ASR supports.

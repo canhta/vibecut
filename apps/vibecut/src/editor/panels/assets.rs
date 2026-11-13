@@ -31,6 +31,15 @@ pub(in crate::editor) enum AudioSection {
     Sounds,
 }
 
+/// The Captions tab's three pages, chosen in its sub-navigation.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(in crate::editor) enum CaptionsSection {
+    #[default]
+    Auto,
+    Add,
+    Translate,
+}
+
 use super::super::{
     Align2, Arc, AssetId, AssetRow, BTreeMap, BTreeSet, Color32, Command, ContentHash, CreatedId,
     Error, FontId, Icon, Id, ItemParams, Locale, NewItem, PathBuf, Rect, Result, SourceAsset,

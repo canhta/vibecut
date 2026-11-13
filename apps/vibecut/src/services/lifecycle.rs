@@ -48,6 +48,26 @@ impl EditorSession {
         }
     }
 }
+/// A caption output the export dialog saves natively: one caption file, or the video burned
+/// with the project's captions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CaptionOutput {
+    File(captions::Format),
+    Burned,
+}
+
+impl CaptionOutput {
+    /// The file extension the native save dialog suggests.
+    pub const fn extension(self) -> &'static str {
+        match self {
+            Self::File(captions::Format::Srt) => "srt",
+            Self::File(captions::Format::WebVtt) => "vtt",
+            Self::File(captions::Format::Txt) => "txt",
+            Self::Burned => "mp4",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EditorAction {
     Save,
@@ -61,6 +81,7 @@ pub enum EditorAction {
     ImportLut,
     ExportClips,
     ExportSave,
+    ExportCaption(CaptionOutput),
     SnapshotSave,
     KeybindingsExport,
     KeybindingsImport { replace: bool },
