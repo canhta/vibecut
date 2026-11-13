@@ -29,6 +29,7 @@ Each module's contract is its README.
 | `editor/dialogs/export/` | [Export dialog](src/editor/dialogs/export/README.md) |
 | `editor/dialogs/models/` | [Model manager](src/editor/dialogs/models/README.md) |
 | `editor/dialogs/preferences/` | [AI preferences dialog](src/editor/dialogs/preferences/README.md) |
+| `editor/dialogs/scene_split/` | [Scene split dialog](src/editor/dialogs/scene_split/README.md) |
 | `editor/frame/` | [Editor frame](src/editor/frame/README.md) |
 | `editor/frame/input/` | [Keybindings](src/editor/frame/input/README.md) |
 | `editor/frame/route/` | [Frame route](src/editor/frame/route/README.md) |

@@ -1,4 +1,6 @@
 //! Applies audio commands to a candidate project.
+pub(super) mod dubbing;
+
 use super::{EditError, ItemId, ItemParams, ProjectData, Result, Tick, item};
 
 /// Cleanup chain of an audible item.

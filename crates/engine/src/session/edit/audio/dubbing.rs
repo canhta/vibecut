@@ -1,5 +1,5 @@
 //! Dubbing edits: the duration-fit tiers, the overflow rule and the ducking automation.
-use super::{EditError, ItemId, ItemParams, ProjectData, Result, Tick, item};
+use super::super::{EditError, ItemId, ItemParams, ProjectData, Result, Tick, item};
 use project::{
     AnimationPath, AudioSource, BuiltinPath, Item, Keyframe, NarrationDucking, Param, ParamValue,
 };
@@ -242,14 +242,16 @@ fn write_ducking(
             let Param::Value(channel) = &mut param else {
                 return Err(EditError::Invalid("volume animation"));
             };
-            let local: Vec<Tick> = points
-                .iter()
-                .map(|point| {
-                    point
-                        .checked_sub(origin)
-                        .ok_or(EditError::Invalid("ducking time"))
-                })
-                .collect::<Result<_>>()?;
+            let [
+                Some(fade_in),
+                Some(low_start),
+                Some(low_end),
+                Some(fade_out),
+            ] = points.map(|point| point.checked_sub(origin))
+            else {
+                return Err(EditError::Invalid("ducking time"));
+            };
+            let local = [fade_in, low_start, low_end, fade_out];
             let at = |channel: &project::Channel, time: Tick| -> Result<f64> {
                 scalar(&channel.value_at(time))
             };
@@ -257,17 +259,17 @@ fn write_ducking(
             // where takes overlap, and a quieter user curve is never raised.
             let floor = base - depth;
             let targets = [
-                at(channel, local[0])?,
-                at(channel, local[1])?.min(floor),
-                at(channel, local[2])?.min(floor),
-                at(channel, local[3])?,
+                at(channel, fade_in)?,
+                at(channel, low_start)?.min(floor),
+                at(channel, low_end)?.min(floor),
+                at(channel, fade_out)?,
             ];
             // Keys of another take that fall inside this plateau drop to its floor, so the
             // envelope stays the lowest of both.
             let inside: Vec<Keyframe> = channel
                 .keys()
                 .iter()
-                .filter(|key| key.time > local[1] && key.time < local[2])
+                .filter(|key| key.time > low_start && key.time < low_end)
                 .cloned()
                 .collect();
             for (time, value) in local.iter().zip(targets) {
@@ -343,7 +345,7 @@ fn write_all(data: &mut ProjectData) -> Result<()> {
 }
 
 /// Replace one narration's ducking and rewrite the automation every narration owns.
-pub(super) fn execute_set_ducking(
+pub(in crate::session::edit) fn execute_set_ducking(
     mut data: ProjectData,
     id: ItemId,
     ducking: NarrationDucking,
@@ -399,7 +401,7 @@ fn check_overflow(data: &ProjectData, id: ItemId) -> Result<()> {
 }
 
 /// Change a narration's stretch within the fit limits and move its ducking with it.
-pub(super) fn execute_set_fit(
+pub(in crate::session::edit) fn execute_set_fit(
     mut data: ProjectData,
     id: ItemId,
     speed: time::Speed,
@@ -412,7 +414,7 @@ pub(super) fn execute_set_fit(
     }
     locate(&data, id)?;
     clear_all(&mut data)?;
-    super::retime::set_speed(&mut data, id, speed, true)?;
+    super::super::retime::set_speed(&mut data, id, speed, true)?;
     check_overflow(&data, id)?;
     write_all(&mut data)?;
     Ok(data)

@@ -353,7 +353,7 @@ fn start(state: &mut State, port: &mut Port<'_>) {
         return;
     };
     if state.runner.is_none() {
-        state.runner = job_runner(&port.read.budget);
+        state.runner = job_runner(port.read.budget);
     }
     let Some(runner) = state.runner.as_mut() else {
         state.phase = Phase::Failed(Text::SceneSplitRefused);

@@ -83,9 +83,10 @@ and a provider failure shows its own line. The desktop text opener
 the process credentials; no fallback exists.
 
 `chapters.rs` is the Chapters page, the fourth sub-page (`CaptionsSection::Chapters`). Generate lends a `TextAccess` built for
-`TextTask::Chapters` (`choose_chapter`, the text provider with the `chapters_model` snapshot) through `run_text` and
-runs `chapters.generate` with 10 chapters; the job's own `TaskEvents` sheet gates the upload, so a
-refusal sends nothing and maps to the declined line (the job fails with the permission code). The
+`TextTask::Chapters` (`choose_chapter`, the text provider with the `chapters_model` snapshot) to a
+worker thread that submits the `chapters.generate` job (10 chapters) on its own runner, as the filler
+and emphasis runs do, because the request asks consent synchronously. The panel's `TaskEvents` sheet
+gates the upload, so a refusal sends nothing and maps to the declined line. The
 panel's `busy`, consent sheet and cancel cover the run. Its title and description are drafts:
 export raises `EditorAction::ChapterFolder`, the window's folder picker returns the folder through `export_chapters_to` (applied on the next tick), and the export runs
 `chapters.export_sidecars` with the drafts as the document, so the edited text is what is written.

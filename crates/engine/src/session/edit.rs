@@ -580,10 +580,10 @@ pub(crate) fn apply(
             return Err(EditError::Invalid("narration placement requires a session"));
         }
         EditCommand::DubSetFit { item: id, speed } => {
-            data = dubbing::execute_set_fit(data, id, speed)?;
+            data = audio::dubbing::execute_set_fit(data, id, speed)?;
         }
         EditCommand::DubSetDucking { item: id, ducking } => {
-            data = dubbing::execute_set_ducking(data, id, ducking)?;
+            data = audio::dubbing::execute_set_ducking(data, id, ducking)?;
         }
         EditCommand::StickersInsert {
             placement: _placement,
@@ -1005,7 +1005,6 @@ fn check_timeline(data: &mut ProjectData) -> Result<()> {
 }
 mod audio;
 mod clips;
-mod dubbing;
 mod effects;
 mod masks;
 mod media_edits;
@@ -1018,7 +1017,7 @@ mod tracks;
 mod transitions;
 
 pub(crate) use animation::{DEFAULT_DURATION, sample_animations};
-pub use dubbing::{
+pub use audio::dubbing::{
     DurationFit, Fit, FitInput, OVERFLOW_DENOMINATOR, OVERFLOW_NUMERATOR,
     PROVIDER_SPEED_MAX_THOUSANDTHS, STRETCH_MAX_THOUSANDTHS, STRETCH_MIN_THOUSANDTHS, fit,
 };

@@ -143,26 +143,13 @@ pub fn run(
     command: &str,
     params: serde_json::Value,
 ) -> engine::control::Result<ControlResult> {
-    execute(session, runner, access, None, base_rev, command, params)
-}
-
-/// Run one text-provider registry command (`chapters.generate`) with the text access the
-/// caller lent for it. The job asks that access's own consent sheet before any upload.
-pub fn run_text(
-    session: &mut Session,
-    runner: &mut JobRunner,
-    text: &TextAccess,
-    command: &str,
-    params: serde_json::Value,
-) -> engine::control::Result<ControlResult> {
-    execute(session, runner, None, Some(text), None, command, params)
+    execute(session, runner, access, base_rev, command, params)
 }
 
 fn execute(
     session: &mut Session,
     runner: &mut JobRunner,
     access: Option<&CaptionAccess>,
-    text: Option<&TextAccess>,
     base_rev: Option<Revision>,
     command: &str,
     params: serde_json::Value,
@@ -189,7 +176,7 @@ fn execute(
         stickers: None,
         brand: None,
         media: None,
-        chapters: text,
+        chapters: None,
         captions: access,
         vision: None,
     };

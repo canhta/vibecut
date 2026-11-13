@@ -116,6 +116,8 @@ fn route(editor: &mut Editor, actions: Vec<Action>) {
 fn open(bench: &mut Mounted) {
     let editor = bench.editor_mut();
     editor.dialogs.scene_split.open(&editor.session).unwrap();
+    // A modal's first frame only sizes it; its widgets reach the tree on the next.
+    bench.harness_mut().run_steps(2);
 }
 
 /// Frames until the dialog reaches a state the predicate accepts.

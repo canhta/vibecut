@@ -9,8 +9,9 @@ use egui_kittest::{
     Harness,
     kittest::{By, Queryable},
 };
-use engine::{ByteBudget, Session};
-use project::{CaptionParams, ItemId, ItemParams, Project, ProjectId, Track, TrackId, TrackKind};
+use engine::{ByteBudget, Command, NewItem, Placement, Session};
+use media::AssetId;
+use project::{CaptionParams, ItemParams, Project, ProjectId};
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 
 /// The assets column width the assets tests use. The short height makes the page scroll.
@@ -52,33 +53,44 @@ impl Rig {
 
 /// A project with one caption item, so the Find section is drawn.
 fn session() -> Session {
-    let range = SourceRange::new(Tick::ZERO, Tick(TICKS_PER_SECOND * 5)).unwrap();
-    let mut d = Project::empty(ProjectId(1), "Captions".into())
-        .unwrap()
-        .into_data();
-    d.scene_mut().timeline.overlays.push(Track {
-        id: TrackId(1),
-        name: "Captions".into(),
-        kind: TrackKind::Text,
-        muted: false,
-        hidden: false,
-        locked: false,
-        items: vec![
-            testkit::item::item(
-                ItemId(1),
-                ItemParams::Caption(CaptionParams {
+    let mut session =
+        Session::new(Project::empty(ProjectId(1), "Captions".into()).unwrap(), 10).unwrap();
+    session
+        .apply(Command::AddAsset {
+            asset: media::SourceAsset::try_from(media::AssetData {
+                ephemeral: true,
+                id: AssetId(1),
+                path: std::env::temp_dir().join("caption-footer.srt"),
+                content_hash: media::ContentHash::from_bytes(b"footer"),
+                probe: media::SourceProbe {
+                    format: "srt".into(),
+                    duration: None,
+                    streams: Vec::new(),
+                },
+            })
+            .unwrap(),
+        })
+        .unwrap();
+    session
+        .apply(Command::InsertItem {
+            placement: Placement::Auto,
+            item: NewItem {
+                retime: Default::default(),
+                animations: Default::default(),
+                source_asset: Some(AssetId(1)),
+                source_range: SourceRange::new(Tick::ZERO, Tick(TICKS_PER_SECOND * 5)).unwrap(),
+                start: Tick::ZERO,
+                content: ItemParams::Caption(CaptionParams {
                     emphasis: Default::default(),
                     word_highlight: false,
                     preset: None,
                     overrides: Default::default(),
                     cues: Default::default(),
                 }),
-            )
-            .source(range)
-            .build(),
-        ],
-    });
-    Session::new(Project::new(d).unwrap(), 10).unwrap()
+            },
+        })
+        .unwrap();
+    session
 }
 
 fn rig() -> Rig {

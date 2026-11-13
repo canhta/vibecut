@@ -2,29 +2,30 @@
 //! creator edits, and the sidecar pair written to a chosen folder. Generation is the
 //! `chapters.generate` job and export is `chapters.export_sidecars`; both are registry commands.
 //! The upload sheet is the panel's own `TaskEvents`, shared with every other text upload.
+use super::Subtitles;
 use super::view::{Controls, time_text};
-use super::{Subtitles, terminal};
 use crate::{
     egui,
     i18n::{self, Locale, Text},
     kit::Icon,
     preferences::SubtitleOptions as Options,
     services::{
-        ai_access::{self, Consent, TextTask},
+        ai_access::{self, Consent, TextOpener, TextTask},
         ai_task::TaskEvents,
     },
 };
 use ai::text::chapters::{Chapter, ChapterDocument, MAX_DESCRIPTION_BYTES, MAX_TITLE_BYTES};
 use captions::{LanguageTag, NfcText};
 use engine::{
-    Session,
-    chapters::ChapterRequest,
-    control::{ControlResult, ErrorCode},
-    jobs::{JobId, JobState},
+    AnalysisError, ByteBudget, Session, chapters::ChapterRequest, control::ControlResult,
     transcript::Cancellation,
 };
 use project::ItemParams;
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    path::PathBuf,
+    sync::{Arc, mpsc},
+    time::Duration,
+};
 
 /// Chapters requested per generation. The page offers no other count.
 const CHAPTER_LIMIT: usize = 10;
@@ -48,11 +49,66 @@ pub(super) struct Panel {
     pub(super) export_to: Option<PathBuf>,
 }
 
-/// One chapter generation job and the cancellation and consent its text access shares.
+/// One chapter generation. It runs on its own thread because `ChapterRequest::submit`
+/// requests the human consent synchronously; the sheet is the panel's `TaskEvents`.
 pub(super) struct Run {
-    pub(super) id: JobId,
     pub(super) cancel: Cancellation,
     pub(super) events: Arc<TaskEvents>,
+    receive: mpsc::Receiver<Result<ChapterDocument, Outcome>>,
+}
+
+/// Why a generation loaded no chapters.
+#[derive(Clone, Copy)]
+enum Outcome {
+    Declined,
+    Cancelled,
+    Failed,
+}
+
+/// Everything the generation thread owns.
+struct Input {
+    request: ChapterRequest,
+    budget: ByteBudget,
+    opener: TextOpener,
+    provider: String,
+    model: String,
+    consent: Consent,
+    cancel: Cancellation,
+}
+
+fn outcome(error: AnalysisError) -> Outcome {
+    match error {
+        AnalysisError::Providers(engine::providers::Error::ConsentRequired) => Outcome::Declined,
+        AnalysisError::Runtime(engine::RuntimeError::Cancelled) => Outcome::Cancelled,
+        _ => Outcome::Failed,
+    }
+}
+
+/// Runs one generation to completion on the calling thread (the worker, never the window).
+fn generate(input: Input) -> Result<ChapterDocument, Outcome> {
+    let access = (input.opener)(
+        TextTask::Chapters,
+        &input.provider,
+        &input.model,
+        input.consent,
+    )
+    .map_err(|error| outcome(AnalysisError::from(error)))?;
+    let mut runner = super::job_runner(&input.budget).map_err(|_| Outcome::Failed)?;
+    let job = input
+        .request
+        .submit(&mut runner, &access)
+        .map_err(outcome)?;
+    loop {
+        if input.cancel.cancelled() {
+            let _ = runner.cancel_job(job.id);
+        }
+        runner.tick().map_err(|_| Outcome::Failed)?;
+        match job.finish(&mut runner) {
+            Ok(Some(document)) => return Ok(document),
+            Ok(None) => std::thread::sleep(Duration::from_millis(5)),
+            Err(error) => return Err(outcome(error)),
+        }
+    }
 }
 
 impl Panel {
@@ -202,10 +258,10 @@ impl Subtitles {
             self.chapters.problem = Some(Text::ChaptersNoTranscript);
             return;
         };
-        if ChapterRequest::new(session.project(), language.clone(), CHAPTER_LIMIT).is_err() {
+        let Ok(request) = ChapterRequest::new(session.project(), language, CHAPTER_LIMIT) else {
             self.chapters.problem = Some(Text::ChaptersUnsupported);
             return;
-        }
+        };
         if self.flush_drafts(session).is_err() {
             self.chapters.problem = Some(Text::ChaptersAiFailed);
             return;
@@ -213,33 +269,24 @@ impl Subtitles {
         let cancel = Cancellation::new();
         let events = Arc::new(TaskEvents::new(cancel.clone()));
         let consent: Consent = events.clone();
-        let access = match (self.text)(
-            TextTask::Chapters,
-            &options.text_provider,
-            &options.chapters_model,
+        let input = Input {
+            request,
+            budget: self.budget.clone(),
+            opener: self.text.clone(),
+            provider: options.text_provider.clone(),
+            model: options.chapters_model.clone(),
             consent,
-        ) {
-            Ok(access) => access,
-            Err(_) => {
-                self.chapters.problem = Some(Text::ChaptersAiFailed);
-                return;
-            }
+            cancel: cancel.clone(),
         };
-        let accepted = ai_access::run_text(
-            session,
-            &mut self.runner,
-            &access,
-            "chapters.generate",
-            serde_json::json!({"language": language.as_str(), "max_chapters": CHAPTER_LIMIT}),
-        )
-        .and_then(ai_access::accepted);
-        drop(access);
-        match accepted {
-            Ok((id, _)) => {
-                self.chapters.run = Some(Run { id, cancel, events });
-            }
-            Err(_) => self.chapters.problem = Some(Text::ChaptersAiFailed),
-        }
+        let (send, receive) = mpsc::sync_channel(1);
+        std::thread::spawn(move || {
+            let _ = send.send(generate(input));
+        });
+        self.chapters.run = Some(Run {
+            cancel,
+            events,
+            receive,
+        });
     }
 
     /// The folder the window's picker chose for the export, and the engine path every export
@@ -257,44 +304,25 @@ impl Subtitles {
         }
     }
 
+    /// Apply a finished generation. Called on every tick, so the window never waits for it.
     fn finish_chapter_run(&mut self) {
-        let Some(run) = self.chapters.run.as_ref() else {
+        let Some(run) = &self.chapters.run else {
             return;
         };
-        let (id, cancelled) = (run.id, run.cancel.cancelled());
-        let Some(snapshot) = self.runner.snapshot(id) else {
-            self.chapters.run = None;
-            self.chapters.problem = Some(Text::ChaptersAiFailed);
-            return;
+        let result = match run.receive.try_recv() {
+            Ok(result) => result,
+            Err(mpsc::TryRecvError::Empty) => return,
+            Err(mpsc::TryRecvError::Disconnected) => Err(Outcome::Failed),
         };
-        if !terminal(snapshot.state) {
-            return;
-        }
         self.chapters.run = None;
-        if snapshot.state == JobState::Completed {
-            let decoded = self.runner.output_bytes(id).map(engine::chapters::decode);
-            self.runner.take_output(id);
-            match decoded {
-                Some(Ok(document)) => self.chapters.load(document),
-                _ => self.chapters.problem = Some(Text::ChaptersAiFailed),
-            }
-            return;
+        match result {
+            Ok(document) => self.chapters.load(document),
+            Err(Outcome::Cancelled) => {}
+            // A declined upload sent nothing; any other failure is the provider's, shown in one
+            // line and never retried.
+            Err(Outcome::Declined) => self.chapters.problem = Some(Text::ChaptersDeclined),
+            Err(Outcome::Failed) => self.chapters.problem = Some(Text::ChaptersAiFailed),
         }
-        self.runner.take_output(id);
-        if cancelled || snapshot.state == JobState::Cancelled {
-            return;
-        }
-        // A declined upload fails the job with the permission code; any other failure is the
-        // provider's, shown in one line and never retried.
-        let declined = snapshot
-            .error
-            .as_ref()
-            .is_some_and(|error| matches!(error.code(), ErrorCode::Permission));
-        self.chapters.problem = Some(if declined {
-            Text::ChaptersDeclined
-        } else {
-            Text::ChaptersAiFailed
-        });
     }
 
     /// Write the sidecar pair with the edited title and description through

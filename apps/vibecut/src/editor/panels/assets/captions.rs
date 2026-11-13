@@ -336,7 +336,6 @@ impl Subtitles {
         }
         if let Some(run) = &self.chapters.run {
             run.cancel.cancel();
-            let _ = self.runner.cancel_job(run.id);
         }
     }
     pub fn approve_upload(&mut self, approved: bool) -> Result<()> {
