@@ -7,10 +7,14 @@ use serde::{Deserialize, Serialize};
 pub const GRID_MIN: u8 = 1;
 /// Most rows or columns a grid guide may draw.
 pub const GRID_MAX: u8 = 24;
+/// Largest custom margin, in percent of the canvas. Each axis's two margins must
+/// together stay at or below this value, so the safe area is never empty.
+pub const MARGIN_MAX: u8 = 99;
 
 /// The guide the picker selects. Only the app paints it, so export never sees it.
 /// The platform variants shade the regions that platform's own UI covers; their
-/// fractions and sources are listed in the editor UI doc.
+/// fractions and sources are listed in the editor UI doc. `Custom` shades the
+/// margins the user sets, in percent of the canvas from each edge.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Guide {
@@ -24,6 +28,26 @@ pub enum Guide {
     InstagramReels,
     #[serde(rename = "youtube_shorts")]
     YouTubeShorts,
+    Custom {
+        top: u8,
+        bottom: u8,
+        left: u8,
+        right: u8,
+    },
+}
+
+/// The custom guide for four margins typed as signed draft values (top, bottom,
+/// left, right). `None` when any margin is negative, above `MARGIN_MAX`, or an
+/// axis's two margins cross; the picker shows that as inline validation.
+pub fn custom_from_draft(draft: [i32; 4]) -> Option<Guide> {
+    let [top, bottom, left, right] = draft.map(|margin| u8::try_from(margin).ok());
+    let guide = Guide::Custom {
+        top: top?,
+        bottom: bottom?,
+        left: left?,
+        right: right?,
+    };
+    guide.validate().ok().map(|()| guide)
 }
 
 /// One UI-covered region as fractions of the frame: `[left, top, right, bottom]`.
@@ -60,6 +84,20 @@ impl Guide {
             {
                 Err(Error::Invalid("guide grid"))
             }
+            Self::Custom {
+                top,
+                bottom,
+                left,
+                right,
+            } if top > MARGIN_MAX
+                || bottom > MARGIN_MAX
+                || left > MARGIN_MAX
+                || right > MARGIN_MAX
+                || u16::from(top) + u16::from(bottom) > u16::from(MARGIN_MAX)
+                || u16::from(left) + u16::from(right) > u16::from(MARGIN_MAX) =>
+            {
+                Err(Error::Invalid("guide margins"))
+            }
             _ => Ok(()),
         }
     }
@@ -69,9 +107,11 @@ impl Guide {
     pub fn grid_lines(self) -> (Vec<f32>, Vec<f32>) {
         match self {
             Self::Grid { rows, cols } => (boundaries(cols), boundaries(rows)),
-            Self::None | Self::TikTok | Self::InstagramReels | Self::YouTubeShorts => {
-                (Vec::new(), Vec::new())
-            }
+            Self::None
+            | Self::TikTok
+            | Self::InstagramReels
+            | Self::YouTubeShorts
+            | Self::Custom { .. } => (Vec::new(), Vec::new()),
         }
     }
 
@@ -103,6 +143,20 @@ impl Guide {
                 48.0 / 1080.0,
                 192.0 / 1080.0,
             ),
+            // The user's margins, percent of the canvas from each edge. A zero
+            // margin is an empty band and is dropped.
+            Self::Custom {
+                top,
+                bottom,
+                left,
+                right,
+            } => {
+                let percent = |margin: u8| f32::from(margin) / 100.0;
+                banded(percent(top), percent(bottom), percent(left), percent(right))
+                    .into_iter()
+                    .filter(|[l, t, r, b]| l < r && t < b)
+                    .collect()
+            }
             Self::None | Self::Grid { .. } => Vec::new(),
         }
     }
@@ -290,5 +344,90 @@ mod tests {
             assert_eq!(serde_json::from_value::<Guide>(value).unwrap(), guide);
         }
         assert!(serde_json::from_value::<Guide>(serde_json::json!({"kind": "spotlight"})).is_err());
+    }
+
+    fn custom(top: u8, bottom: u8, left: u8, right: u8) -> Guide {
+        Guide::Custom {
+            top,
+            bottom,
+            left,
+            right,
+        }
+    }
+
+    #[test]
+    fn custom_margins_refuse_crossing_safe_areas_and_accept_the_limit() {
+        assert!(custom(0, 0, 0, 0).validate().is_ok());
+        assert!(custom(50, 49, 0, 99).validate().is_ok());
+        assert!(custom(99, 0, 0, 99).validate().is_ok());
+        assert!(
+            custom(50, 50, 0, 0).validate().is_err(),
+            "top and bottom cross"
+        );
+        assert!(
+            custom(0, 0, 60, 40).validate().is_err(),
+            "left and right cross"
+        );
+        assert!(custom(100, 0, 0, 0).validate().is_err(), "above the limit");
+        assert!(custom(0, 0, 255, 0).validate().is_err());
+        assert_eq!(
+            custom_from_draft([10, 20, 5, 5]),
+            Some(custom(10, 20, 5, 5))
+        );
+        for draft in [[-1, 0, 0, 0], [0, 0, -1, 0], [0, 100, 0, 0], [0, 0, 0, 256]] {
+            assert_eq!(custom_from_draft(draft), None, "{draft:?}");
+        }
+        assert_eq!(custom_from_draft([50, 50, 0, 0]), None, "crossing draft");
+    }
+
+    #[test]
+    fn custom_margins_have_no_grid_lines_and_zero_margins_paint_nothing() {
+        assert_eq!(
+            custom(10, 10, 10, 10).grid_lines(),
+            (Vec::new(), Vec::new())
+        );
+        assert!(custom(0, 0, 0, 0).covered_regions().is_empty());
+        // A single margin paints one full-width or full-height band only.
+        assert_eq!(
+            custom(10, 0, 0, 0).covered_regions(),
+            vec![[0.0, 0.0, 1.0, 0.1]]
+        );
+    }
+
+    #[test]
+    fn custom_regions_cover_the_margins_at_16_by_9_9_by_16_and_1_by_1() {
+        // Margins are fractions of the canvas, so each canvas shape gives the same
+        // proportion; the pixel rectangles below check that at each aspect.
+        let margins = custom(10, 20, 5, 15);
+        let regions = margins.covered_regions();
+        assert_eq!(regions.len(), 4);
+        // Pixel values reach 1920, so the tolerance is a thousandth of a pixel.
+        let near = |a: f32, b: f32| (a - b).abs() < 1e-3;
+        for (width, height) in [(1920.0_f32, 1080.0_f32), (1080.0, 1920.0), (1080.0, 1080.0)] {
+            let px =
+                |[l, t, r, b]: Region| (l * width, t * height, (r - l) * width, (b - t) * height);
+            let [top, bottom, left, right] =
+                [regions[0], regions[1], regions[2], regions[3]].map(px);
+            assert!(
+                near(top.1, 0.0) && near(top.3, 0.10 * height),
+                "{width}x{height} top"
+            );
+            assert!(near(bottom.3, 0.20 * height), "{width}x{height} bottom");
+            assert!(
+                near(left.2, 0.05 * width) && near(left.3, 0.70 * height),
+                "{width}x{height} left"
+            );
+            assert!(near(right.2, 0.15 * width), "{width}x{height} right");
+        }
+        // The four bands are disjoint and cover 44 % of the frame: the top and bottom
+        // bands take 10 % and 20 % of the height across the full width, and the side
+        // bands take 5 % and 15 % of the width over the 70 % of the height between.
+        assert!(near(area(&regions), 0.30 + 0.70 * (0.05 + 0.15)));
+        for (i, a) in regions.iter().enumerate() {
+            for b in &regions[i + 1..] {
+                let overlap = a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+                assert!(!overlap, "custom bands are disjoint");
+            }
+        }
     }
 }

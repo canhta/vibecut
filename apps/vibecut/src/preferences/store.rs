@@ -248,6 +248,10 @@ mod tests {
                 serde_json::json!({"kind": "grid", "rows": 24, "cols": 1}),
             ),
             (
+                "preview_guide",
+                serde_json::json!({"kind": "custom", "top": 10, "bottom": 20, "left": 5, "right": 15}),
+            ),
+            (
                 "preview_overlays",
                 serde_json::json!({"guide": true, "notes": false}),
             ),
@@ -443,6 +447,22 @@ mod tests {
                 serde_json::json!({"kind": "grid", "rows": 3, "cols": 25}),
             ),
             ("preview_guide", serde_json::json!({"kind": "custom"})),
+            (
+                "preview_guide",
+                serde_json::json!({"kind": "custom", "top": 50, "bottom": 50, "left": 0, "right": 0}),
+            ),
+            (
+                "preview_guide",
+                serde_json::json!({"kind": "custom", "top": 0, "bottom": 0, "left": 60, "right": 40}),
+            ),
+            (
+                "preview_guide",
+                serde_json::json!({"kind": "custom", "top": -5, "bottom": 0, "left": 0, "right": 0}),
+            ),
+            (
+                "preview_guide",
+                serde_json::json!({"kind": "custom", "top": 100, "bottom": 0, "left": 0, "right": 0}),
+            ),
             ("preview_guide", serde_json::json!({"kind": "spotlight"})),
             ("preview_overlays", serde_json::json!({"guide": true})),
             (
