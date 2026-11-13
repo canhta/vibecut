@@ -1,8 +1,8 @@
 //! Renders searchable media rows with stable interaction identities.
 use super::{
     Action, Align2, AssetRow, AssetState, AssetsTab, Color32, Filter, FontId, Icon, Id, MediaKind,
-    MediaSortKey, MediaSortOrder, MediaView, Rect, Row, Text, Vec2, View, asset_state_color,
-    display_short_time, egui, icons, theme,
+    MediaSortKey, MediaSortOrder, MediaView, Recorded, Rect, Row, Text, Vec2, View,
+    asset_state_color, display_short_time, egui, icons, theme,
 };
 use crate::i18n;
 use media::AssetId;
@@ -78,7 +78,8 @@ impl View<'_> {
                 matches && row.display.name.to_lowercase().contains(&search)
             })
             .collect();
-        // The strip is one control row plus the grid gap, measured by the toolbar tokens.
+        // Strip height and gap are theme tokens (kit size::CONTROL, space::MD). Its composition is
+        // unmeasured: docs/product/ui/editor.md Gaps.
         let export_height = if self.cx.clip_export.is_some() {
             theme::size::CONTROL + theme::space::MD
         } else {
@@ -125,6 +126,9 @@ impl View<'_> {
                 .id_salt("media.results")
                 .max_rect(results),
             |ui| {
+                if !search.is_empty() && rows.is_empty() && !self.cx.failed && !self.cx.importing {
+                    self.clear_search(ui);
+                }
                 if rows.is_empty() {
                     self.empty(
                         ui,
@@ -145,9 +149,6 @@ impl View<'_> {
                             Text::AssetsNoMatches
                         },
                     );
-                    if !search.is_empty() && !self.cx.failed && !self.cx.importing {
-                        self.clear_search(ui);
-                    }
                 } else {
                     self.grid(ui, &rows);
                 }
@@ -467,25 +468,15 @@ impl View<'_> {
             });
     }
 
-    /// The empty-results clear action: presentation only, the project is untouched.
+    /// Clear-search row placed in flow above the empty state, so no offset is derived from it.
+    /// Its composition is unmeasured: docs/product/ui/editor.md Gaps.
     fn clear_search(&mut self, ui: &mut egui::Ui) {
-        // Sits one gap below the empty state's label, which `View::empty` places at 36% + 32.
-        let area = ui.available_rect_before_wrap();
-        let top =
-            area.top() + area.height() * 0.36 + 32.0 + theme::type_size::BODY + theme::space::MD;
-        let row = Rect::from_min_size(
-            egui::pos2(area.left(), top),
-            Vec2::new(area.width(), theme::size::CONTROL),
-        );
         let response = ui
-            .scope_builder(egui::UiBuilder::new().max_rect(row), |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.button(
-                        egui::RichText::new(self.tr(Text::AssetsClearSearch))
-                            .size(theme::type_size::BODY),
-                    )
-                })
-                .inner
+            .vertical_centered(|ui| {
+                ui.button(
+                    egui::RichText::new(self.tr(Text::AssetsClearSearch))
+                        .size(theme::type_size::BODY),
+                )
             })
             .inner;
         self.remember("media.search.clear", &response, None);
@@ -673,11 +664,18 @@ impl View<'_> {
                     self.tr(Text::ExportClips),
                 ),
             );
+            let tooltip = refusal.map(|text| self.tr(text).to_owned());
             let export = match refusal {
                 Some(text) => export.on_disabled_hover_text(self.tr(text)),
                 None => export,
             };
-            self.remember("media.export_clip", &export, Some(Icon::Export));
+            // The refusal reason rides on the widget record so the reason is inspectable.
+            self.actions.push(Action::Record(Box::new(Recorded {
+                id: "media.export_clip".into(),
+                response: export.clone(),
+                glyph: Some(Icon::Export),
+                tooltip,
+            })));
             if export.clicked() {
                 self.actions.push(Action::ExportClips(targets));
                 ui.close();

@@ -549,7 +549,11 @@ impl Editor {
     /// Accept the native export save picker's result without opening OS UI in tests.
     /// The folder picker chose `directory`: start `export.clips` for the queued assets.
     pub fn export_clips_picked(&mut self, directory: PathBuf) -> Result<()> {
-        self.assets.start_clip_export(&mut self.session, directory)
+        if let Err(error) = self.assets.start_clip_export(&mut self.session, directory) {
+            let message = self.tr(crate::i18n::Text::ClipExportRefused);
+            self.set_toast(message, Some(error.to_string()));
+        }
+        Ok(())
     }
     /// The folder picker was dismissed: the queued assets are not exported.
     pub fn export_clips_cancelled(&mut self) {

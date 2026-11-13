@@ -21,13 +21,13 @@ progress and disables view, sort, import and insert; cancel stays available.
 
 The search box filters rows by case-insensitive name substring. The query is presentation
 state only: it is session-scoped and never enters the project or preferences. No match shows
-the empty state with Clear search, which restores the full list.
+a Clear search row above the empty state, which restores the full list.
 
 Export clips sends the selected assets to one registry `export.clips` job, after a folder
 pick, with overwrite off. The context menu item is enabled only when every targeted asset
 is video and no export runs; otherwise it is disabled with its reason. While the job runs a
 strip above the results shows progress and Cancel (`job_cancel`). The finished, cancelled or
-failed job reports once as a toast; a failure says clips already saved stay in the folder.
+failed job reports once as a toast. A failure says finished clips stay in the folder and that per-clip results are not reported, since the job snapshot carries none. A folder the engine refuses reports as "did not start" with the engine's reason. Layout of the strip and clear row is open in docs/product/ui/editor.md Gaps.
 
 A pending import row is emitted before probe and hash and stays transient until
 validated metadata is added through the engine command. Audio and video follow probing

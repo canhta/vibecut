@@ -751,6 +751,158 @@ fn search_no_matches_clear_restores_every_asset() {
     assert!(Arc::ptr_eq(&before, harness.state().session.project()));
 }
 
+/// Export clips from the Media tab: the menu refuses a non-video target and a busy export with
+/// its reason, a folder pick starts one engine job, and each outcome reports once as a toast.
+#[test]
+fn clip_export_menu_refuses_with_reason_and_reports_each_outcome() {
+    let mut editor = editor();
+    let audio = testkit::source::asset(
+        9,
+        std::env::temp_dir()
+            .join("vibecut-media-library")
+            .join("sound.wav"),
+    )
+    .format("wav")
+    .content_hash(ContentHash::from_bytes(&[9; 8]))
+    .duration(Tick(4 * SECOND))
+    .stream(stream(StreamKind::Audio, Tick(4 * SECOND)))
+    .build();
+    editor
+        .session
+        .apply(Command::AddAsset { asset: audio })
+        .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    let before = harness.state().session.project().clone();
+
+    // A non-video target disables the item and carries its reason.
+    open_menu(&mut harness, "media.asset.9");
+    let (enabled, reason) = export_item(&harness);
+    assert!(!enabled);
+    assert_eq!(reason.as_deref(), Some("Select only video clips to export"));
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+
+    // Two video targets: the menu queues the selection and asks for a folder.
+    click(&mut harness, "media.asset.1");
+    click_modifiers(&mut harness, "media.asset.2", egui::Modifiers::COMMAND);
+    open_menu(&mut harness, "media.asset.2");
+    let (enabled, _) = export_item(&harness);
+    assert!(enabled);
+    click(&mut harness, "media.export_clip");
+    harness.run_steps(2);
+    assert!(matches!(
+        harness.state_mut().take_lifecycle_action(),
+        Some(vibecut::services::lifecycle::EditorAction::ExportClips)
+    ));
+
+    // A folder that does not exist refuses the start; nothing runs.
+    harness
+        .state_mut()
+        .export_clips_picked(dir.path().join("missing"))
+        .unwrap();
+    let refusal = harness.state().inspect().unwrap().import_toast.unwrap();
+    assert!(
+        refusal.starts_with("Clip export did not start"),
+        "{refusal}"
+    );
+
+    // The same selection, a real folder: one job starts.
+    open_menu(&mut harness, "media.asset.2");
+    click(&mut harness, "media.export_clip");
+    harness.run_steps(2);
+    let _ = harness.state_mut().take_lifecycle_action();
+    harness
+        .state_mut()
+        .export_clips_picked(dir.path().to_path_buf())
+        .unwrap();
+
+    // While it runs, the strip is up and the menu item is disabled with the busy reason.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        harness.run_steps(1);
+        if has_widget(&harness, "media.export.cancel") || clip_toast(&harness).is_some() {
+            break;
+        }
+        assert!(Instant::now() < deadline, "export neither ran nor finished");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    if has_widget(&harness, "media.export.cancel") {
+        open_menu(&mut harness, "media.asset.1");
+        let (enabled, reason) = export_item(&harness);
+        if has_widget(&harness, "media.export.cancel") {
+            assert!(!enabled);
+            assert_eq!(reason.as_deref(), Some("An export is already running"));
+        }
+        harness.key_press(egui::Key::Escape);
+        harness.run_steps(2);
+        if has_widget(&harness, "media.export.cancel") {
+            click(&mut harness, "media.export.cancel");
+        }
+    }
+
+    // Cancel or the failing source ends the job; the strip goes and one outcome toast remains.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let toast = loop {
+        harness.run_steps(1);
+        if !has_widget(&harness, "media.export.cancel") {
+            if let Some(toast) = clip_toast(&harness) {
+                break toast;
+            }
+        }
+        assert!(
+            Instant::now() < deadline,
+            "export never reported an outcome"
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    };
+    assert!(
+        toast.starts_with("Clip export cancelled") || toast.starts_with("Clip export failed"),
+        "{toast}"
+    );
+    if toast.starts_with("Clip export failed") {
+        // The snapshot has no per-file results, so the copy says so and names no count.
+        assert!(
+            toast.contains("per-clip results are not reported"),
+            "{toast}"
+        );
+    }
+    assert!(Arc::ptr_eq(&before, harness.state().session.project()));
+}
+
+fn open_menu(harness: &mut Harness<Editor>, id: &str) {
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some(id)))
+        .click_secondary();
+    harness.run_steps(2);
+}
+
+/// Whether the export item is enabled, and the refusal reason it carries.
+fn export_item(harness: &Harness<Editor>) -> (bool, Option<String>) {
+    harness
+        .state()
+        .inspect()
+        .unwrap()
+        .widgets
+        .into_iter()
+        .find(|widget| widget.id == "media.export_clip")
+        .map(|widget| (widget.enabled, widget.tooltip))
+        .expect("export clip item")
+}
+
+/// An outcome toast of the clip export, not the refusal of its start.
+fn clip_toast(harness: &Harness<Editor>) -> Option<String> {
+    harness
+        .state()
+        .inspect()
+        .unwrap()
+        .import_toast
+        .filter(|toast| {
+            toast.starts_with("Clip export") && !toast.starts_with("Clip export did not start")
+        })
+}
+
 /// The captured grid has one thumbnail followed by a single filename line.
 #[test]
 fn grid_card_fits_its_measured_thumbnail_and_filename() {
@@ -763,7 +915,7 @@ fn grid_card_fits_its_measured_thumbnail_and_filename() {
 
 /// Offscreen screenshot evidence; wgpu rendering stays out of CI.
 #[test]
-#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-09-media.png"]
+#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-09-media.png and target/p1-79-media-gaps.png"]
 fn media_library_renders_a_representative_grid() {
     let mut harness = build(editor());
     harness.run_steps(3);
@@ -773,6 +925,14 @@ fn media_library_renders_a_representative_grid() {
     let target = root.join("target");
     std::fs::create_dir_all(&target).unwrap();
     image.save(target.join("p1-09-media.png")).unwrap();
+    // The no-match state with its clear row, from the same fixture.
+    click(&mut harness, "assets.search");
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("assets.search")))
+        .type_text("missing");
+    harness.run_steps(3);
+    let gaps = harness.render().expect("offscreen render");
+    gaps.save(target.join("p1-79-media-gaps.png")).unwrap();
     assert!(image.width() > 0 && image.height() > 0);
 }
 
