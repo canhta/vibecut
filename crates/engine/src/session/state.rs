@@ -74,7 +74,7 @@ pub struct Session {
     limit: usize,
     /// `Some` only in a fork's session: the commands that changed its project, in order; a
     /// `transaction` is one entry holding all its children.
-    recorded: Option<Vec<Vec<super::fork::Logged>>>,
+    pub(super) recorded: Option<Vec<Vec<super::fork::Logged>>>,
     gesture: Option<State>,
     timeline_preview: bool,
     grouping: bool,
