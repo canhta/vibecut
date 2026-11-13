@@ -4,7 +4,7 @@ pub(super) mod sticker;
 mod sticker_flags;
 
 use crate::{CaptionPosition, Error, ExecutionHooks, Image, MemoryKind, Result, check};
-use project::{TextAlign, TextDecoration};
+use project::{TextAlign, TextCase, TextDecoration};
 use std::sync::Arc;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -34,6 +34,7 @@ pub(super) struct TextKey {
     pub(super) background: Option<BoxKey>,
     pub(super) align: TextAlign,
     pub(super) decoration: TextDecoration,
+    pub(super) case: TextCase,
     pub(super) position: CaptionPosition,
     pub(super) max_lines: Option<usize>,
 }
@@ -120,6 +121,7 @@ pub(super) struct TextFace<'a> {
     pub(super) line_height: f32,
     pub(super) align: TextAlign,
     pub(super) decoration: TextDecoration,
+    pub(super) case: TextCase,
     /// Outer stroke width and colour in output pixels.
     pub(super) outline: Option<(f32, [u8; 4])>,
     /// Shadow offsets and blur in output pixels, and its colour.
@@ -152,6 +154,7 @@ impl Default for TextFace<'_> {
             line_height: 0.0,
             align: TextAlign::Center,
             decoration: TextDecoration::None,
+            case: TextCase::AsTyped,
             outline: None,
             shadow: None,
             glow: None,
@@ -281,6 +284,12 @@ pub(super) fn fitted_layout(key: &TextKey, hooks: &dyn ExecutionHooks) -> Result
             TextAlign::Right => text::Align::Right,
         },
         max_lines: key.max_lines,
+        case: match key.case {
+            TextCase::AsTyped => text::Case::AsTyped,
+            TextCase::Upper => text::Case::Upper,
+            TextCase::Lower => text::Case::Lower,
+            TextCase::Title => text::Case::Title,
+        },
         ..Default::default()
     };
     let fits = |layout: &text::Layout| {

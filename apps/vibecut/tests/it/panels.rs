@@ -2958,6 +2958,27 @@ fn text_tab_edits_every_style_field_one_undo_step_each_and_shows_effects() {
         harness.state_mut().session.redo().unwrap();
         harness.run_steps(2);
     }
+    // The Case menu opens on its own and each word is one edit; the stored text keeps what was typed.
+    for (case, word) in [
+        (project::TextCase::Upper, "upper"),
+        (project::TextCase::Lower, "lower"),
+        (project::TextCase::Title, "title"),
+    ] {
+        let before = harness.state().session.project().clone();
+        click(&mut harness, "inspector.text_case");
+        click(&mut harness, &format!("inspector.text_case.{word}"));
+        let params = text_params(&harness, text);
+        assert_eq!(params.case, case, "{word}");
+        assert_eq!(
+            params.content.as_str(),
+            "Hello",
+            "{word} keeps the typed text"
+        );
+        harness.state_mut().session.undo().unwrap();
+        assert_eq!(harness.state().session.project(), &before, "{word} undo");
+        harness.state_mut().session.redo().unwrap();
+        harness.run_steps(2);
+    }
     // Turn the box on with the shared toggle, then every numeric row commits through the field.
     click(&mut harness, "inspector.text_background");
     assert!(text_params(&harness, text).background.is_some());

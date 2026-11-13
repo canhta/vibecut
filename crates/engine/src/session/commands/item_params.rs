@@ -162,6 +162,7 @@ admit_always!(
     project::BlendMode,
     project::FitMode,
     project::TextAlign,
+    project::TextCase,
     project::TextDecoration,
     StrokeAlign,
 );
@@ -290,6 +291,7 @@ text_word!(
     project::BlendMode,
     project::FitMode,
     project::TextAlign,
+    project::TextCase,
     project::TextDecoration,
     StrokeAlign,
 );
@@ -808,6 +810,18 @@ item_params! {
         apply: |t, v, cx| {
             if let Some(p) = text(t) {
                 p.decoration = *v;
+            }
+            Ok(())
+        },
+    },
+    TextCase(project::TextCase) = "text_case" {
+        targets: TEXT,
+        bounds: ParamBounds::Free,
+        unit: ParamUnit::None,
+        path: None,
+        apply: |t, v, cx| {
+            if let Some(p) = text(t) {
+                p.case = *v;
             }
             Ok(())
         },
