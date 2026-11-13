@@ -11,6 +11,7 @@ fn outcome(changed: bool) -> Outcome {
         changed,
         created: Vec::new(),
         placements: Vec::new(),
+        skipped: Vec::new(),
         closed_span: false,
     }
 }

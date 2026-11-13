@@ -50,6 +50,7 @@ impl Panel<'_, '_> {
                 self.detail_row(ui, name);
                 self.transition_duration(ui, &tr);
                 self.transition_alignment(ui, &tr);
+                self.transition_apply_to_all(ui, &tr);
                 ui.add_space(INSET);
                 self.transition_remove(ui, &tr);
             });
@@ -158,6 +159,22 @@ impl Panel<'_, '_> {
                     alignment,
                 });
             }
+        }
+    }
+
+    /// Copies this kind and duration to every other transition, as one undo step.
+    fn transition_apply_to_all(&mut self, ui: &mut egui::Ui, tr: &Transition) {
+        let width = ui.available_width();
+        let response = kit::action_button(
+            ui,
+            "inspector.transition.apply_all",
+            kit::Icon::Copy,
+            self.tr(Text::ApplyToAll),
+            width,
+        );
+        self.remember("inspector.transition.apply_all", &response);
+        if response.clicked() {
+            self.actions.push(Action::ApplyTransitionToAll(tr.id));
         }
     }
 

@@ -770,6 +770,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
         [
             "batch",
             "transition.add",
+            "transition.apply_to_all",
             "transition.move",
             "transition.remove",
             "transition.set_duration",

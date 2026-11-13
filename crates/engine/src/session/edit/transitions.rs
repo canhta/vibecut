@@ -37,6 +37,70 @@ pub(super) fn execute_add_transition(
 
     Ok(data)
 }
+/// Copies the source's kind and duration onto every other transition as one candidate.
+/// Transitions on locked tracks are left alone and listed in `skipped`; any other
+/// refusal (a span with no handles) propagates and the whole edit changes nothing.
+/// A target whose kind changes drops its overrides: they are keyed to the old kind.
+pub(super) fn execute_apply_to_all(
+    mut data: ProjectData,
+    transition: project::TransitionId,
+    skipped: &mut Vec<project::TransitionId>,
+) -> Result<ProjectData> {
+    let n = crate::transitions::find(&data, transition)?;
+    let source = data
+        .scene()
+        .timeline
+        .transitions
+        .get(n)
+        .cloned()
+        .ok_or(EditError::Invalid("missing transition"))?;
+    let targets: Vec<project::TransitionId> = data
+        .scene()
+        .timeline
+        .transitions
+        .iter()
+        .map(|tr| tr.id)
+        .filter(|id| *id != transition)
+        .collect();
+    for id in targets {
+        let n = data
+            .scene()
+            .timeline
+            .transitions
+            .iter()
+            .position(|tr| tr.id == id)
+            .ok_or(EditError::Invalid("missing transition"))?;
+        let mut tr = data
+            .scene()
+            .timeline
+            .transitions
+            .get(n)
+            .cloned()
+            .ok_or(EditError::Invalid("missing transition"))?;
+        match crate::transitions::unlocked(&data.scene().timeline, &tr) {
+            Ok(()) => {}
+            Err(EditError::Locked(_)) => {
+                skipped.push(id);
+                continue;
+            }
+            Err(error) => return Err(error),
+        }
+        let bounds = tr.bounds(&data.scene().timeline, &data)?;
+        if tr.kind != source.kind {
+            tr.kind.clone_from(&source.kind);
+            tr.params = Default::default();
+        }
+        tr.set_duration(source.duration, bounds)?;
+        *data
+            .scene_mut()
+            .timeline
+            .transitions
+            .get_mut(n)
+            .ok_or(EditError::Invalid("missing transition"))? = tr;
+    }
+
+    Ok(data)
+}
 pub(super) fn execute_move_transition(
     mut data: ProjectData,
     transition: project::TransitionId,

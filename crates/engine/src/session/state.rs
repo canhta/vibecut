@@ -559,6 +559,7 @@ impl Session {
             changed,
             created: Vec::new(),
             placements: Vec::new(),
+            skipped: Vec::new(),
             closed_span: false,
         })
     }
@@ -673,6 +674,7 @@ impl Session {
             changed: true,
             created,
             placements,
+            skipped: Vec::new(),
             closed_span: false,
         })
     }
@@ -777,6 +779,7 @@ impl Session {
         let pasted_end = self.pasted_span_end(&command);
         let candidate = self.state.project.data().clone();
         let mut created = Vec::new();
+        let mut skipped = Vec::new();
         let mut next_id = self.state.next_id;
         let mut sources = if self.transaction_active() {
             self.state.trim_sources.clone()
@@ -788,6 +791,7 @@ impl Session {
             candidate,
             command,
             &mut created,
+            &mut skipped,
             &mut next_id,
             &mut sources,
             &mut copied_text_bytes,
@@ -819,6 +823,7 @@ impl Session {
                 changed: false,
                 created: Vec::new(),
                 placements: Vec::new(),
+                skipped,
                 closed_span: false,
             });
         }
@@ -878,6 +883,7 @@ impl Session {
             changed: true,
             created,
             placements,
+            skipped,
             closed_span: ripple || magnet.is_some(),
         })
     }

@@ -387,3 +387,110 @@ fn ripple_preserves_each_transition_offset_through_exactly_one_shift() {
     .unwrap();
     assert_eq!(tr(&s).start, Tick(80));
 }
+
+fn transition_from(s: &Session, from: u64) -> project::Transition {
+    s.project()
+        .data()
+        .scene()
+        .timeline
+        .transitions
+        .iter()
+        .find(|tr| tr.from == ItemId(from))
+        .cloned()
+        .unwrap()
+}
+
+#[test]
+fn apply_to_all_copies_kind_and_duration_skips_locked_tracks_and_refuses_as_one_step() {
+    let mut data = session(false).project().data().clone();
+    data.scene_mut().timeline.overlays.push(project::Track {
+        id: TrackId(2),
+        name: "Overlay".into(),
+        kind: project::TrackKind::Video,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: [20, 21]
+            .into_iter()
+            .enumerate()
+            .map(|(n, id)| {
+                testkit::item::item(
+                    ItemId(id),
+                    ItemParams::Overlay(OverlayParams {
+                        color: Color([0, 255, 0, 255]),
+                    }),
+                )
+                .source(SourceRange::new(Tick(100), Tick(200)).unwrap())
+                .start(Tick(n as i64 * 100))
+                .build()
+            })
+            .collect(),
+    });
+    let mut s = Session::new(Project::new(data).unwrap(), 100).unwrap();
+    for (track, from, to, kind, duration) in [
+        (1, 10, 11, "dip_to_color", 40),
+        (1, 11, 12, "cross_dissolve", 20),
+        (2, 20, 21, "dip_to_color", 40),
+    ] {
+        s.apply(Command::AddTransition {
+            track: TrackId(track),
+            from: ItemId(from),
+            to: ItemId(to),
+            kind: kind.into(),
+            duration: Tick(duration),
+            alignment: TransitionAlignment::Center,
+        })
+        .unwrap();
+    }
+    let target = transition_from(&s, 10);
+    s.apply(Command::SetTransitionParam {
+        transition: target.id,
+        param: "color".into(),
+        value: project::TransitionValue::Color(Color([0, 0, 255, 255])),
+    })
+    .unwrap();
+    let source = transition_from(&s, 11);
+    let locked = transition_from(&s, 20);
+    s.apply(Command::SetTrackLocked {
+        track: TrackId(2),
+        locked: true,
+    })
+    .unwrap();
+
+    let before = s.project().clone();
+    // A locked source is refused by the same lookup every transition edit uses.
+    assert!(
+        s.apply(Command::ApplyTransitionToAll {
+            transition: locked.id
+        })
+        .is_err()
+    );
+    assert!(
+        s.apply(Command::ApplyTransitionToAll {
+            transition: project::TransitionId(999)
+        })
+        .is_err()
+    );
+    assert_eq!(s.project(), &before);
+
+    let outcome = s
+        .apply(Command::ApplyTransitionToAll {
+            transition: source.id,
+        })
+        .unwrap();
+    assert_eq!(outcome.skipped, vec![locked.id]);
+    let applied = s.project().clone();
+    // Kind and duration copy across; the target's overrides belonged to dip-to-colour and are dropped.
+    let copied = transition_from(&s, 10);
+    assert_eq!(
+        (copied.kind.as_str(), copied.duration, copied.start),
+        ("cross_dissolve", Tick(20), Tick(90))
+    );
+    assert!(copied.params.is_empty());
+    assert_eq!(transition_from(&s, 11), source);
+    assert_eq!(transition_from(&s, 20), locked);
+    s.undo().unwrap();
+    assert_eq!(s.project(), &before);
+    s.redo().unwrap();
+    assert_eq!(s.project(), &applied);
+}

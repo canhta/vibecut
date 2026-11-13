@@ -180,6 +180,7 @@ ordered side pieces while keeping the span; explicit trim, move and delete detac
 longer form a contiguous chain reaching the cut. Failed edits publish neither item nor
 transition changes. Transitions are video-only; [project](../../../../project/src/visual/README.md#video-transitions)
 owns the admitted kinds, parameter definitions and the invariant mathematics. `transition.set_param` replaces one parameter in a single undo step and refuses an unknown id, a value of another type or an out-of-range value without publishing.
+`transition.apply_to_all` copies the source's kind and duration to every other transition as one candidate. Each target is clamped to its own handles (the `set_duration` rule); a target with no handles refuses the whole edit. A target whose kind changes drops its parameter overrides. A locked track's transition is left unchanged and listed in `Outcome.skipped`; a locked source refuses.
 
 `captions.save_preset` saves one complete full style. A selected item saves its live preset value with
 its sparse overrides folded in; otherwise the authoritative source cues, including hidden trim

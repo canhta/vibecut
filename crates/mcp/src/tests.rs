@@ -670,6 +670,7 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("audio.clear_loudness", Effect::Edit, true, true),
         ("audio.apply_loudness", Effect::Edit, true, true),
         ("transition.add", Effect::Edit, true, true),
+        ("transition.apply_to_all", Effect::Edit, true, true),
         ("transition.move", Effect::Edit, true, true),
         ("transition.set_duration", Effect::Edit, true, true),
         ("transition.set_param", Effect::Edit, true, true),

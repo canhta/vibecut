@@ -806,6 +806,7 @@ commands! {
     TranscriptDeleteRange, "transcript.delete_range", "Delete transcript words", Edit { word_ids: Vec<WordId> } => Words, serde_json::json!({"word_ids":[{"item":4,"cue":"cue-1","word":0}]}), available = CaptionItem, idle = true, collections = [word_ids];
     TranscriptMergeCues, "transcript.merge_cues", "Merge transcript cues", Edit { cue_ids: Vec<CueId> } => Words, serde_json::json!({"cue_ids":[{"item":4,"cue":"cue-1"},{"item":4,"cue":"cue-2"}]}), available = CaptionItem, idle = true, collections = [cue_ids];
     AddTransition, "transition.add", "Add video transition", Edit { track: TrackId, from: ItemId, to: ItemId, kind: String, duration: Tick, alignment: project::TransitionAlignment } => TransitionCut, serde_json::json!({"track":1,"from":10,"to":11,"kind":"cross_dissolve","duration":20,"alignment":"center"}), transitions = true;
+    ApplyTransitionToAll, "transition.apply_to_all", "Apply video transition to all", Edit { transition: project::TransitionId } => Transition, serde_json::json!({"transition":13}), transitions = true;
     MoveTransition, "transition.move", "Move video transition", Edit { transition: project::TransitionId, start: Tick } => Transition, serde_json::json!({"transition":13,"start":40}), transitions = true;
     RemoveTransition, "transition.remove", "Remove video transition", Edit { transition: project::TransitionId } => Transition, serde_json::json!({"transition":13}), transitions = true;
     SetTransitionDuration, "transition.set_duration", "Resize video transition", Edit { transition: project::TransitionId, duration: Tick } => Transition, serde_json::json!({"transition":13,"duration":20}), transitions = true;
@@ -1025,6 +1026,8 @@ pub struct Outcome {
     pub changed: bool,
     pub created: Vec<CreatedId>,
     pub placements: Vec<ItemPlacement>,
+    /// Transitions `transition.apply_to_all` left unchanged because their track is locked.
+    pub skipped: Vec<project::TransitionId>,
     /// The edit closed the span it vacated: the session ripple or the main-track magnet moved
     /// a later piece to the cut.
     pub closed_span: bool,
