@@ -9,8 +9,8 @@ One coordinator session (Claude Opus) on the main checkout owns the queue, dispa
 | Work | Model |
 |---|---|
 | Decided implementation, UI from recorded evidence, tests, docs, mechanical refactors | Haiku |
-| Cross-layer design, public contracts, concurrency, persistence, security, reviews, combined build | Sonnet |
-| A ticket Sonnet returned with an unresolved design gap | Opus |
+| Cross-layer design, public contracts, concurrency, persistence, security, reviews | Sonnet |
+| Combined build; a ticket Sonnet returned with an unresolved design gap | Opus |
 
 The coordinator decides technical, design and product questions that the reference evidence answers, records them in the ticket and moves on. The maintainer decides credentials, hardware, assets, outward-facing actions and anything that destroys their work.
 
