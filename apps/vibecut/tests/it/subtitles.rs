@@ -40,12 +40,13 @@ fn click(h: &mut Harness<'_, Editor>, id: &str) {
 }
 /// A pointer click holding `modifiers`, for Shift and Ctrl selection.
 fn click_modifiers(h: &mut Harness<'_, Editor>, id: &str, modifiers: egui::Modifiers) {
-    // The rows sit far down the scrolling panel, where a pointer click cannot reach them, so
-    // the click goes through AccessKit with the modifiers held for the frames around it.
-    h.event(egui::Event::ModifiersChanged(modifiers));
+    // The rows can sit below the fold of the scrolling panel: bring the row into view first,
+    // then click it with the pointer so hit-testing decides what the click lands on.
     h.get(By::new().predicate(|n| n.author_id() == Some(id)))
-        .click_accesskit();
-    h.event(egui::Event::ModifiersChanged(egui::Modifiers::default()));
+        .scroll_to_me();
+    h.run_steps(3);
+    h.get(By::new().predicate(|n| n.author_id() == Some(id)))
+        .click_modifiers(modifiers);
     h.run_steps(3);
 }
 fn wait(h: &mut Harness<'_, Editor>, ready: impl Fn(&Editor) -> bool) {
