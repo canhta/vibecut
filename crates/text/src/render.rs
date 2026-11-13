@@ -6,14 +6,10 @@ use skrifa::outline::OutlinePen;
 
 use crate::color::Color;
 use crate::fonts;
-use crate::layout::{Glyph, Layout};
+use crate::layout::{Glyph, Layout, SYNTH_BOLD, SYNTH_ITALIC_SLANT};
 use crate::mask::{self, StrokeKind};
 use crate::raster::{Mask, Path, Xform, fill_into};
 
-/// Synthetic italic slant (tan 12°).
-const SYNTH_ITALIC_SLANT: f32 = 0.2126;
-/// Synthetic bold outline growth as a fraction of the font size.
-const SYNTH_BOLD: f32 = 0.025;
 /// Decoration bar thickness as a fraction of the font size.
 const DECORATION_THICKNESS: f32 = 0.07;
 /// Underline top below the baseline as a fraction of the font size.
