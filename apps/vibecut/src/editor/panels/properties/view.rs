@@ -1623,13 +1623,9 @@ fn user_path(path: &std::path::Path) -> String {
 
 mod appearance;
 
-mod mask;
-
 mod number_edit;
 
-mod remove_background;
-
-mod background;
+mod basic;
 
 mod selection;
 

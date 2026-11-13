@@ -1,10 +1,10 @@
 //! Draws the Remove BG sub-tab: the Chroma key switch and its keyed controls.
-use super::Panel;
+use super::super::Panel;
 use crate::editor::properties::{Action, ColorTarget, Icon, ItemId, Text, egui, read, theme};
 use crate::kit;
 
 impl Panel<'_, '_> {
-    pub(super) fn remove_background_controls(&mut self, ui: &mut egui::Ui, item: ItemId) {
+    pub(in super::super) fn remove_background_controls(&mut self, ui: &mut egui::Ui, item: ItemId) {
         let project = self.cx.session.project();
         let existing =
             read::chroma_key(project, item).map(|effect| (effect.id.clone(), effect.enabled));

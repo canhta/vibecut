@@ -1,5 +1,5 @@
 //! Draws the Basic tab's Mask row and routes its sub-panel.
-use super::Panel;
+use super::super::Panel;
 use crate::editor::properties::{
     Action, ElementKind, ItemId, Rect, Text, egui, mask_picker, read, theme,
 };
@@ -10,7 +10,12 @@ use project::MaskShape;
 impl Panel<'_, '_> {
     /// The Basic tab's Mask row: current shape, or None, with a right chevron.
     /// Video and image items only; a locked track still opens read-only.
-    pub(super) fn mask_row(&mut self, ui: &mut egui::Ui, item: ItemId, kind: ElementKind) {
+    pub(in super::super) fn mask_row(
+        &mut self,
+        ui: &mut egui::Ui,
+        item: ItemId,
+        kind: ElementKind,
+    ) {
         if !matches!(kind, ElementKind::Video | ElementKind::Image) {
             return;
         }
@@ -43,7 +48,7 @@ impl Panel<'_, '_> {
             color,
         );
         ui.painter().text(
-            egui::pos2(row.left() + super::VALUE_COLUMN, row.center().y),
+            egui::pos2(row.left() + super::super::VALUE_COLUMN, row.center().y),
             egui::Align2::LEFT_CENTER,
             value,
             theme::label_font(),
@@ -64,7 +69,7 @@ impl Panel<'_, '_> {
     }
 
     /// Draw the open sub-panel and collect its actions.
-    pub(super) fn mask_dialog(&mut self, ctx: &egui::Context) {
+    pub(in super::super) fn mask_dialog(&mut self, ctx: &egui::Context) {
         if !self.state.mask.is_open() {
             return;
         }

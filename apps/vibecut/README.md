@@ -39,6 +39,7 @@ Each module's contract is its README.
 | `editor/panels/properties/font_picker/` | [Font picker](src/editor/panels/properties/font_picker/README.md) |
 | `editor/panels/properties/mask_picker/` | [Mask picker](src/editor/panels/properties/mask_picker/README.md) |
 | `editor/panels/properties/view/` | [Properties view](src/editor/panels/properties/view/README.md) |
+| `editor/panels/properties/view/basic/` | [Basic sub-tabs](src/editor/panels/properties/view/basic/README.md) |
 | `editor/panels/properties/view/effects/` | [Colour wheels and curves](src/editor/panels/properties/view/effects/README.md) |
 | `editor/panels/properties/workflow/` | [Properties workflow](src/editor/panels/properties/workflow/README.md) |
 | `editor/timeline/` | [Timeline](src/editor/timeline/README.md) |
@@ -58,7 +59,8 @@ Each module's contract is its README.
 | `services/gpu/` | [GPU adapters](src/services/gpu/README.md) |
 | `services/lifecycle.rs` | [Project lifecycle](src/services/lifecycle/README.md) |
 | `services/remote_models/` | [Remote model selection](src/services/remote_models/README.md) |
-| `services/voiceover/` | [Voice-over capture](src/services/voiceover/README.md) |
+| `services/assets/` | [Asset intake services](src/services/assets/README.md) |
+| `services/assets/voiceover/` | [Voice-over capture](src/services/assets/voiceover/README.md) |
 | `shorts.rs` / `shorts/` | [Long video to shorts](src/shorts/README.md) |
 | `shorts/view/` | [Shorts view](src/shorts/view/README.md) |
 

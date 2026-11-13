@@ -1,7 +1,7 @@
 //! Draws the Background sub-tab of a video clip: the kind row (None, Colour,
 //! Blur), then the swatches and Hex row for Colour or the three blur presets for
 //! Blur, then Apply to all. The tab is listed only while the clip leaves canvas open.
-use super::Panel;
+use super::super::Panel;
 use crate::editor::properties::{Action, ColorTarget, Icon, ItemId, Text, egui, read, theme};
 use crate::kit;
 use project::{ClipBackground, Color};
@@ -26,7 +26,7 @@ fn blur_intensity(current: ClipBackground) -> u32 {
 }
 
 impl Panel<'_, '_> {
-    pub(super) fn background_controls(&mut self, ui: &mut egui::Ui, item: ItemId) {
+    pub(in super::super) fn background_controls(&mut self, ui: &mut egui::Ui, item: ItemId) {
         let project = self.cx.session.project();
         let Some(current) = read::clip_background(project, item) else {
             return;
