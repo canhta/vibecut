@@ -1041,26 +1041,45 @@ fn scale_is_uniform_until_toggled_and_steppers_move_one_unit() {
 }
 
 #[test]
-fn color_picker_is_a_popover_left_of_the_properties_panel() {
+fn color_picker_is_a_popover_hanging_under_its_swatch() {
     let fixture = fixture();
     let mut harness = build(fixture.editor);
     harness.run_steps(3);
     select(&mut harness, fixture.graphic);
     click(&mut harness, "inspector.graphic_fill");
-    let panel = harness.state().panels()["inspector"];
-    let picker = harness
-        .state()
-        .inspect()
-        .unwrap()
-        .widgets
-        .into_iter()
-        .find(|widget| widget.id == "color.hex")
-        .expect("picker open")
-        .rect;
+    harness.run_steps(2);
+    let swatch = widget_rect(&harness, "inspector.graphic_fill");
+    let picker = widget_rect(&harness, "color.hex");
     assert!(
-        picker.right() <= panel.left(),
-        "{picker:?} covers {panel:?}"
+        picker.top() >= swatch.bottom(),
+        "{picker:?} is not under {swatch:?}"
     );
+}
+
+#[test]
+fn color_picker_closes_on_escape_and_keeps_the_last_committed_value() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    select(&mut harness, fixture.text);
+    click(&mut harness, "inspector.text_color.picker");
+    harness.run_steps(3);
+    let history = harness.state().session.history_len().0;
+    click(&mut harness, "color.swatch.5");
+    harness.run_steps(2);
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+    assert!(
+        !harness
+            .state()
+            .inspect()
+            .unwrap()
+            .widgets
+            .iter()
+            .any(|widget| widget.id == "color.hex")
+    );
+    assert_eq!(harness.state().session.history_len().0, history + 1);
 }
 
 #[test]
@@ -1179,12 +1198,21 @@ fn picker_hex_hsv_recents_unavailable_and_screenshot() {
         .state_mut()
         .set_eyedropper(vibecut::services::color_picker::NativeEyedropper::unavailable())
         .unwrap();
-    click(&mut harness, "color.eyedropper");
+    harness.run_steps(2);
     assert_eq!(
         harness.state().inspect().unwrap().eyedropper,
         Some(vibecut::services::color_picker::EyedropperState::Unavailable)
     );
-    assert!(has_widget(&harness, "color.eyedropper.status"));
+    // Where sampling is impossible the row is absent, with no unavailable line.
+    assert!(
+        !harness
+            .state()
+            .inspect()
+            .unwrap()
+            .widgets
+            .iter()
+            .any(|widget| widget.id.starts_with("color.eyedropper"))
+    );
     let dir = tempfile::tempdir().unwrap();
     let store = PreferenceStore::new(dir.path().join("prefs.json"));
     store.save(&harness.state().preferences).unwrap();
@@ -1200,7 +1228,7 @@ fn picker_hex_hsv_recents_unavailable_and_screenshot() {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-45-colour.png");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     harness.render().unwrap().save(&path).unwrap();
-    let swatch = vibecut::services::color_picker::palette::solid(5).unwrap();
+    let swatch = vibecut::services::color_picker::palette::recommended(5).unwrap();
     click(&mut harness, "color.swatch.5");
     assert!(matches!(item(&harness,fixture.text).content,ItemParams::Text(p) if p.color==swatch));
     click(&mut harness, "color.recent.1");

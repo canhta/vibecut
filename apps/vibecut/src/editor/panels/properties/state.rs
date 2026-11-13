@@ -95,7 +95,6 @@ pub(in crate::editor) enum Action {
         num: i64,
         den: i64,
     },
-    SetBackground(project::Color),
     /// One clip-background commit over the listed video items, one undo step.
     SetClipBackground {
         items: Vec<ItemId>,

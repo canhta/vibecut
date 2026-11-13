@@ -123,7 +123,6 @@ fn route(state: &mut State, port: &mut Port<'_>, actions: Vec<Action>) {
                 preset,
             } => canvas::set_canvas(port, width, height, preset),
             Action::SetFps { num, den } => canvas::set_canvas_fps(port, num, den),
-            Action::SetBackground(color) => canvas::set_canvas_background(port, color),
             Action::SetClipBackground { items, background } => {
                 background::set_clip_background(port, items, background)
             }

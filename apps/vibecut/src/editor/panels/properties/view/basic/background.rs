@@ -1,5 +1,5 @@
 //! Draws the Background sub-tab of a video clip: the kind row (None, Colour,
-//! Blur), then the swatches and Hex row for Colour or the three blur presets for
+//! Blur), then the colour row for Colour or the three blur presets for
 //! Blur, then Apply to all. The tab is listed only while the clip leaves canvas open.
 use super::super::Panel;
 use crate::editor::properties::{Action, ColorTarget, Icon, ItemId, Text, egui, read, theme};
@@ -43,17 +43,6 @@ impl Panel<'_, '_> {
                         "inspector.clip_background.color",
                         Text::BackgroundColor,
                         ColorTarget::ClipBackground(item),
-                    );
-                    ui.add_space(theme::space::MD);
-                    self.swatch_palette(
-                        ui,
-                        solid_colour(current),
-                        "inspector.clip_background.palette",
-                        "inspector.clip_swatch",
-                        move |color| Action::SetClipBackground {
-                            items: vec![item],
-                            background: ClipBackground::Solid { color },
-                        },
                     );
                 }
                 ClipBackground::Blur { intensity } => self.blur_presets_row(ui, item, intensity),

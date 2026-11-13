@@ -1,4 +1,4 @@
-//! Applies canvas size, frame rate and background commits.
+//! Applies canvas size and frame rate commits.
 use crate::editor::{Port, Result};
 
 pub(super) fn set_canvas(
@@ -16,9 +16,5 @@ pub(super) fn set_canvas(
 }
 pub(super) fn set_canvas_fps(port: &mut Port<'_>, num: i64, den: i64) -> Result<()> {
     port.apply_result(engine::Command::SetFps { num, den })?;
-    Ok(())
-}
-pub(super) fn set_canvas_background(port: &mut Port<'_>, color: project::Color) -> Result<()> {
-    port.apply_result(engine::Command::SetBackground { color })?;
     Ok(())
 }
