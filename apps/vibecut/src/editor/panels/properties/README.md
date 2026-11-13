@@ -174,6 +174,10 @@ an explicit state or localized refusal. Edits go only through `effects.add`,
 `effects.reorder`, `effects.toggle`, `effects.remove`, `effects.update_param` and
 `keyframes.set_param`.
 
+An adjustment layer (an effect item on an Effect track, inserted from the Adjustment tab) takes a stack
+like a visual clip: `effect_refusal` admits it alongside video, image, sticker and graphic items. Effect
+items on any other track keep the unsupported-kind refusal.
+
 ## Adjust basic, HSL and the footer
 
 The Adjust tab opens with Basic, HSL, Curves and Color wheel sub-tabs. Basic lists the reference's twelve controls in measured order: saturation, temperature, hue, brightness, contrast, shine, highlight, shadow, sharpness, vignette, fade and grain. All twelve are registered `color_grade` parameters on -50..=50 with 0 neutral and scalar keyframe admission through `effects.<instance>.params.<id>`; the same ids carry the Effects tab rows. HSL lists eight hue bands (red, orange, yellow, green, cyan, blue, purple, magenta) and edits the selected band's `hsl_<band>_hue`, `_saturation` and `_lightness`; switching bands changes no project data. `effect_scrub_field` and its draft/gesture contract above apply unchanged, and every edit is one `effects.update_param` undo step.

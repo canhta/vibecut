@@ -1,10 +1,58 @@
-//! Applies saved colour-adjustment presets to the selected visual clip.
+//! Inserts adjustment layers at the playhead and applies saved colour-adjustment presets to
+//! the selected visual clip.
 
+use super::super::{
+    BTreeSet, Command, CreatedId, ItemParams, NewItem, SourceRange, TICKS_PER_SECOND, Tick,
+    error_detail,
+};
 use super::State;
 use crate::editor::assets::{Result, Text};
 use crate::editor::{Port, context};
+use crate::i18n;
 
 impl State {
+    /// Insert one adjustment layer at the playhead, five seconds long as text and graphics
+    /// are, and select it. The layer has no picture and filters nothing until an effect is
+    /// added to it. A refused insert changes nothing.
+    pub(in crate::editor) fn insert_adjustment_layer(&mut self, port: &mut Port<'_>) {
+        if !port.read.insertion_available {
+            return;
+        }
+        let result = (|| -> crate::Result<project::ItemId> {
+            let start = port.playhead()?;
+            let outcome = port.session.apply(Command::InsertItem {
+                placement: engine::Placement::Auto,
+                item: NewItem {
+                    retime: Default::default(),
+                    animations: Default::default(),
+                    source_asset: None,
+                    source_range: SourceRange::new(Tick::ZERO, Tick(5 * TICKS_PER_SECOND))?,
+                    start,
+                    content: ItemParams::Effect(project::EffectParams::default()),
+                },
+            })?;
+            outcome
+                .created
+                .into_iter()
+                .find_map(|id| match id {
+                    CreatedId::Item(item) => Some(item),
+                    _ => None,
+                })
+                .ok_or(crate::Error::Invalid("adjustment allocation"))
+        })();
+        match result {
+            Ok(item) => {
+                port.select(BTreeSet::from([item]));
+                port.reset_selection(true);
+            }
+            Err(error) => {
+                self.import_notice = Some(error_detail(&error));
+                let text = i18n::text(port.locale(), Text::InsertFailed);
+                port.toast(text, None);
+            }
+        }
+    }
+
     /// Apply one app-owned preset to the selected video or image item as one
     /// undo step. Locked tracks and non-visual selections refuse with a toast.
     pub(in crate::editor) fn apply_adjustment_preset(&mut self, port: &mut Port<'_>, index: usize) {

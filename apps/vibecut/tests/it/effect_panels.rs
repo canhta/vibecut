@@ -998,6 +998,141 @@ fn effect_plus_adds_to_the_selected_clip_and_needs_a_target() {
     assert_eq!(*harness.state().selection(), [image].into_iter().collect());
 }
 
+/// The centre pixel of the playback frame, once one has rendered.
+fn centre_pixel(harness: &Harness<Editor>) -> Option<egui::Color32> {
+    let pixels = &harness.state().playback.frame()?.image.pixels;
+    pixels.get(pixels.len() / 2).copied()
+}
+
+/// Run the UI until the preview's centre pixel satisfies `done`.
+fn wait_centre(
+    harness: &mut Harness<Editor>,
+    done: impl Fn(egui::Color32) -> bool,
+) -> egui::Color32 {
+    for _ in 0..400 {
+        harness.run_steps(1);
+        if let Some(pixel) = centre_pixel(harness)
+            && done(pixel)
+        {
+            return pixel;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    panic!("the preview centre pixel never reached the expected state")
+}
+
+fn adjustment_layer(harness: &Harness<Editor>) -> Option<ItemId> {
+    harness
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| matches!(item.content, ItemParams::Effect(_)))
+        .map(|item| item.id)
+}
+
+#[test]
+fn adjustment_layer_inserts_at_playhead_takes_an_effect_moves_and_changes_preview() {
+    let mut session =
+        Session::new(Project::empty(ProjectId(428), "Layer".into()).unwrap(), 200).unwrap();
+    let main = session.project().data().scene().timeline.main.id;
+    insert(
+        &mut session,
+        main,
+        Tick::ZERO,
+        Tick(8 * SECOND),
+        None,
+        ItemParams::Overlay(project::OverlayParams {
+            color: Color([255, 0, 0, 255]),
+        }),
+    );
+    let mut playback = Playback::new(
+        &session,
+        ByteBudget::new(64 << 20).unwrap(),
+        Arc::new(Files),
+    )
+    .unwrap();
+    playback.set_device_available(true);
+    let mut editor = Editor::new(session, playback, Preferences::default());
+    editor.set_clock(Arc::new(PreviewClock::default()));
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    let red = egui::Color32::RED;
+    assert_eq!(wait_centre(&mut harness, |p| p == red), red);
+
+    // Insert at the playhead through the Adjustment tab: one undo step, selected, no effect yet.
+    click(&mut harness, "assets.tab.adjustment");
+    let history = harness.state().session.history_len();
+    click(&mut harness, "adjustment.insert");
+    let layer = adjustment_layer(&harness).expect("the adjustment layer");
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    assert_eq!(item(&harness, layer).start, Tick::ZERO);
+    assert_eq!(*harness.state().selection(), [layer].into_iter().collect());
+    assert!(effects(&harness, layer).is_empty());
+    assert_eq!(wait_centre(&mut harness, |p| p == red), red);
+
+    // An effect on the layer changes what the preview shows under its range.
+    click(&mut harness, "assets.tab.effects");
+    click(&mut harness, "effects.add.black_white");
+    assert_eq!(effect_ids(&harness, layer), vec!["black_white".to_owned()]);
+    let grey = wait_centre(&mut harness, |p| p != red);
+    assert_ne!(grey, red);
+    let zoom = harness.state().inspect().unwrap().zoom;
+    let image = harness.render().unwrap();
+    let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
+    std::fs::create_dir_all(&target).unwrap();
+    image.save(target.join("p1-34-effect-layer.png")).unwrap();
+
+    // Dragging the layer's body moves its range one second; the playhead at zero is outside it.
+    let from = widget_rect(&harness, &format!("timeline.item.{}", layer.0)).center();
+    let to = from + egui::vec2(zoom, 0.0);
+    harness.drag_at(from);
+    harness.run_steps(1);
+    harness.hover_at(to);
+    harness.run_steps(2);
+    harness.drop_at(to);
+    harness.run_steps(2);
+    assert_eq!(item(&harness, layer).start, Tick(SECOND));
+    assert_eq!(effect_ids(&harness, layer), vec!["black_white".to_owned()]);
+    assert_eq!(wait_centre(&mut harness, |p| p == red), red);
+
+    // The layer now spans 1s..6s. Inside it the effect shows; the end handle trims it to 3s.
+    let project = harness.state().session.project().clone();
+    harness
+        .state_mut()
+        .playback
+        .seek(Tick(2 * SECOND), false, project)
+        .unwrap();
+    assert_ne!(wait_centre(&mut harness, |p| p != red), red);
+    let history = harness.state().session.history_len();
+    let handle = widget_rect(&harness, &format!("timeline.item.{}.trim_end", layer.0)).center();
+    let to = handle - egui::vec2(3.0 * zoom, 0.0);
+    harness.drag_at(handle);
+    harness.run_steps(1);
+    harness.hover_at(to);
+    harness.run_steps(2);
+    harness.drop_at(to);
+    harness.run_steps(2);
+    assert_eq!(item(&harness, layer).end().unwrap(), Tick(3 * SECOND));
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    // Past the new end (4s, inside the 8s base layer) the preview shows no effect.
+    let project = harness.state().session.project().clone();
+    harness
+        .state_mut()
+        .playback
+        .seek(Tick(4 * SECOND), false, project)
+        .unwrap();
+    assert_eq!(wait_centre(&mut harness, |p| p == red), red);
+    // One undo restores the 6s end.
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert_eq!(item(&harness, layer).end().unwrap(), Tick(6 * SECOND));
+}
+
 #[test]
 fn effect_headers_reorder_toggle_and_remove_through_commands() {
     let fixture = fixture();
