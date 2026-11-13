@@ -3,7 +3,7 @@
 //! Provider, cache, persistence and command behaviour stay in `libraries::music`;
 //! this module only presents them and owns the app's device sink composition.
 
-use crate::services::music::{MusicSession, run_music};
+use crate::services::assets::music::{MusicSession, run_music};
 use crate::{Error, Result};
 use engine::MusicError;
 use engine::{

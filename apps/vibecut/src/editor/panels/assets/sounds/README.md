@@ -10,7 +10,7 @@ author, duration, licence and precomputed attribution.
 
 The Music section never calls the music client or library directly for search, save
 or unsave: each runs the `music.search`, `music.save` or `music.unsave` registry
-command through `services::music::run_music` (an empty session per call and the
+command through `services::assets::music::run_music` (an empty session per call and the
 library's control adapter, as the CLI does). They are outside project history. Preview uses the
 engine play/stop seam and an app-owned cpal sink on the retained preview worker,
 capped at min(EOF, 120 seconds), including ordinary longer tracks. The continuous

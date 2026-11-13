@@ -26,7 +26,7 @@ use transport::{DownloadTransport, HttpRequest, HttpResponse, HttpStreamResponse
 use vibecut::{
     Editor, LibraryProblem, LibraryStore, Music, MusicMode, egui,
     preferences::Preferences,
-    services::music::MusicSession,
+    services::assets::music::MusicSession,
     services::playback::{Files, Playback},
 };
 

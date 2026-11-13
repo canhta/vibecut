@@ -2,7 +2,7 @@
 use crate::{
     editor::{Command, Context, CreatedId, Desk, ItemParams, NewItem, SourceAsset, Tick, egui},
     i18n::{self, Text},
-    services::voiceover::{CpalHost, Failure, Finished, InputHost, Recorder},
+    services::assets::voiceover::{CpalHost, Failure, Finished, InputHost, Recorder},
 };
 use media::AssetId;
 use std::{path::PathBuf, sync::Arc, time::Duration};

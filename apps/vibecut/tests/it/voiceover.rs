@@ -25,8 +25,8 @@ use vibecut::{
     i18n::{Locale, Text},
     preferences::Preferences,
     services::{
+        assets::voiceover::{Failure, InputHost, Opened, QUEUE_BLOCKS, Recorder, Sink, TakeWriter},
         playback::{Files, Playback},
-        voiceover::{Failure, InputHost, Opened, QUEUE_BLOCKS, Recorder, Sink, TakeWriter},
     },
 };
 

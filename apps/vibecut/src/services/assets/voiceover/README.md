@@ -2,7 +2,7 @@
 
 Interface: `InputHost`, `Opened`, `Sink`, `Recorder`, `TakeWriter`, `WriterFactory`, `Finished`, `Failure`, `CpalHost`, `QUEUE_BLOCKS`, `MAX_TAKE_SECONDS`.
 
-One take from an input device to one promoted audio file. The dialog that drives it and the insertion at the playhead live in [`editor/dialogs`](../../editor/dialogs/README.md).
+One take from an input device to one promoted audio file. The dialog that drives it and the insertion at the playhead live in [`editor/dialogs`](../../../editor/dialogs/README.md).
 
 ## Seam
 

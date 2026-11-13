@@ -13,7 +13,7 @@ model sheet after them, preserving modal order, and drains each sheet's requests
 it returns.
 
 `voiceover.open` (the timeline toolbar's mic button) opens the voice-over recorder, a modal
-over the [capture service](../../services/voiceover/README.md). Record opens the chosen or
+over the [capture service](../../services/assets/voiceover/README.md). Record opens the chosen or
 default input, shows a live meter and the elapsed sample time, and Stop inserts the finished
 take through `import.add_asset` and `timeline.insert` in one transaction (one undo step) at
 the playhead of the moment Record was pressed, then selects it. Cancel, Escape, a device

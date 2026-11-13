@@ -1,7 +1,7 @@
 //! Applies the Music section's provider, cache, key and add workflows.
 use super::super::sounds::music::AddIntent;
 use crate::editor::{Editor, Result};
-use crate::services::music::MusicSession;
+use crate::services::assets::music::MusicSession;
 use engine::CreatedId;
 use std::path::PathBuf;
 use time::Tick;

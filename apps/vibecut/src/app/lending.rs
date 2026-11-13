@@ -1,7 +1,8 @@
 //! The one lending point: the process stores and the model service every editor borrows.
 use super::window::EditorWindow;
 use crate::{
-    Editor, Error, editor::LibraryStore, model_manager::ModelManager, services::music::MusicSession,
+    Editor, Error, editor::LibraryStore, model_manager::ModelManager,
+    services::assets::music::MusicSession,
 };
 use engine::{ByteBudget, MusicError, SoundError, control::MediaAccess};
 use libraries::{brand_kit::BrandKit, music::MusicLibrary, sounds::SoundLibrary};

@@ -106,7 +106,7 @@ pub(super) fn assets_scene(theme: Theme, scale: f32, state: &str) -> Result<AppH
         }
         let client = libraries::music::MusicClient::new(None, Arc::new(MusicAuditSource));
         editor.set_music(vibecut::Music::with_client(
-            Arc::new(vibecut::services::music::MusicSession::new(library)),
+            Arc::new(vibecut::services::assets::music::MusicSession::new(library)),
             client,
             engine::ByteBudget::new(128 << 20)?,
         )?);

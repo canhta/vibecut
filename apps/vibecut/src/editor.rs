@@ -648,7 +648,7 @@ impl Editor {
     /// system's default input and the project's media folder.
     pub fn set_voiceover(
         &mut self,
-        host: Arc<dyn crate::services::voiceover::InputHost>,
+        host: Arc<dyn crate::services::assets::voiceover::InputHost>,
         directory: PathBuf,
     ) {
         self.dialogs.voiceover.set(host, directory);
@@ -694,7 +694,7 @@ impl Editor {
             .unwrap_or_default();
         let budget = self.playback.budget().clone();
         let hold = time::Tick(FREEZE_HOLD_TICKS);
-        let held = crate::services::freeze::hold(
+        let held = crate::services::assets::freeze::hold(
             &mut self.session,
             budget,
             item,
