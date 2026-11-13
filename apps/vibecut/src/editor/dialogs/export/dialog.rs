@@ -835,7 +835,7 @@ impl ExportDialog {
                     });
                     // A top-down child of a bottom-up column starts at the column top, so the
                     // status lines get last pass's measured height and re-run once if it changed.
-                    let status_id = ui.id().with("export.status.height");
+                    let status_id = ui.scope_id().with("export.status.height");
                     let status_height =
                         ui.ctx().data(|data| data.get_temp::<f32>(status_id)).unwrap_or(0.0);
                     let status_size = egui::vec2(ui.available_width(), status_height);
