@@ -4,11 +4,11 @@ Interface: `Session`, `JobTarget` (re-exported by `session`). `checkpoint` and `
 
 ## Rollback
 
-Every command entry (`apply`, `apply_merged`, the control adapter's wire entry, control) runs inside one boundary. A refusal, an unwind, or a revision that cannot advance after a successful body all restore the same `Checkpoint`:
+Every command entry (`apply`, the control adapter's wire entry, control) runs inside one boundary. A refusal, an unwind, or a revision that cannot advance after a successful body all restore the same `Checkpoint`:
 
 | Restored | Kept as the command left it |
 |---|---|
-| project, undo and redo, selection, merge key, trim sources, ID counter, pending change | `generation`: lifetimes opened by the refused command stay retired |
+| project, undo and redo, selection, trim sources, ID counter, pending change | `generation`: lifetimes opened by the refused command stay retired |
 | gesture entry and the timeline-preview flag | `protected` paths: set only by `protect_paths` |
 | ripple policy | `identity`, history `limit`: fixed at construction |
 | metadata (view state, scene views) | `grouping`: owned by `transaction` |

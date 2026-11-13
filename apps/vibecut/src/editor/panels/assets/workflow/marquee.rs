@@ -54,17 +54,14 @@ impl State {
         }
         if background.drag_stopped()
             && let Some(marquee) = self.media_marquee.take()
+            && !marquee.moved
         {
-            if !marquee.moved {
-                self.media_selection.clear();
-                self.media_anchor = None;
-            }
-            desk.end_merge();
+            self.media_selection.clear();
+            self.media_anchor = None;
         }
         if background.clicked() {
             self.media_selection.clear();
             self.media_anchor = None;
-            desk.end_merge();
         }
     }
     /// Escape: abandon an open marquee and the selection it was building.

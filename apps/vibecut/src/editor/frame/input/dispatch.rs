@@ -644,7 +644,6 @@ impl Editor {
         {
             self.seek(start)?;
         }
-        self.session.end_merge();
         Ok(())
     }
 }

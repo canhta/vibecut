@@ -439,7 +439,6 @@ impl Editor {
         if select.is_some() {
             self.selection_changed();
         }
-        self.session.end_merge();
         if self.session.transaction_active()
             && let Err(error) = self.session.cancel_gesture()
         {
@@ -499,7 +498,6 @@ impl Editor {
         if select.is_some() {
             self.selection_changed();
         }
-        self.session.end_merge();
         if self.session.transaction_active()
             && let Err(error) = self.session.cancel_gesture()
         {
@@ -649,7 +647,6 @@ impl Editor {
             return;
         }
         if self.assets.cancel_media_marquee() {
-            self.session.end_merge();
             return;
         }
         if self.timeline.cancel_bookmark_drag() {
@@ -717,7 +714,6 @@ impl Editor {
             }
             if self.assets.has_media_selection() {
                 self.assets.clear_media_selection();
-                self.session.end_merge();
             }
         }
     }

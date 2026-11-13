@@ -10,7 +10,6 @@ pub(in crate::editor) fn apply_text_animation(
     snapshot: std::sync::Arc<project::Project>,
 ) -> Result<()> {
     text_target(state, desk, item, &snapshot, "text animation")?;
-    desk.end_merge();
     desk.apply_result(engine::Command::ApplyTextAnimation { item, preset }, false)?;
     Ok(())
 }
@@ -23,7 +22,6 @@ pub(in crate::editor) fn apply_text_preset(
     snapshot: std::sync::Arc<project::Project>,
 ) -> Result<()> {
     text_target(state, desk, item, &snapshot, "text preset")?;
-    desk.end_merge();
     desk.apply_result(
         engine::Command::ApplyTextPreset {
             items: vec![item],
@@ -42,7 +40,6 @@ pub(in crate::editor) fn save_text_preset(
 ) -> Result<()> {
     text_target(state, desk, item, &snapshot, "text preset")?;
     let name = next_preset_name(desk.view().session.project())?;
-    desk.end_merge();
     desk.apply_result(engine::Command::SaveTextPreset { item, name }, false)?;
     Ok(())
 }

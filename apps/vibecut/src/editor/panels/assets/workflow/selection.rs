@@ -139,14 +139,9 @@ impl State {
         }
     }
     /// Replace the media selection; tests and agents use the same state as clicks.
-    pub(in crate::editor) fn select_media(
-        &mut self,
-        desk: &mut Desk<'_>,
-        ids: impl IntoIterator<Item = AssetId>,
-    ) {
+    pub(in crate::editor) fn select_media(&mut self, ids: impl IntoIterator<Item = AssetId>) {
         self.media_selection = ids.into_iter().collect();
         self.media_anchor = self.media_selection.iter().next().copied();
-        desk.end_merge();
     }
     pub(in crate::editor) fn select_asset(
         &mut self,
@@ -162,7 +157,6 @@ impl State {
             modifiers.command || modifiers.ctrl,
             modifiers.shift.then_some(ids.as_slice()),
         );
-        desk.end_merge();
     }
     /// App action `media.reveal`: switch to Media, scroll and highlight for 1.5 s.
     /// It changes presentation state only; the project snapshot is untouched.
@@ -193,7 +187,6 @@ impl State {
             asset,
             until: desk.editor().clock.now() + MEDIA_REVEAL,
         });
-        desk.end_merge();
         Ok(())
     }
     pub(in crate::editor) fn request_media_delete(

@@ -6,7 +6,6 @@ impl State {
     /// Open the engine gesture for the scrub the panel recorded.
     pub(super) fn begin_gesture(&mut self, desk: &mut Desk<'_>) -> Result<()> {
         let result = (|| -> Result<()> {
-            desk.end_merge();
             if desk.view().session.transaction_active() {
                 desk.with_session(|session| Ok(session.cancel_gesture().map(|_| ())?))?;
             }

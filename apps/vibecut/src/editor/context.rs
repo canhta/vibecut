@@ -480,11 +480,6 @@ impl<'a> Desk<'a> {
         self.editor.preferences = preferences;
     }
 
-    /// Close any open merge so the next command is one undo step.
-    pub(in crate::editor) fn end_merge(&mut self) {
-        self.editor.session.end_merge();
-    }
-
     /// Show a draft project at `at` without touching the editable session.
     pub(in crate::editor) fn stage_frame(
         &mut self,

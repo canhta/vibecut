@@ -732,7 +732,7 @@ impl Editor {
     }
     /// Replace the media selection; tests and agents use the same state as clicks.
     pub fn select_media(&mut self, ids: impl IntoIterator<Item = AssetId>) {
-        self.with_assets(|assets, desk| assets.select_media(desk, ids));
+        self.with_assets(|assets, _| assets.select_media(ids));
     }
     /// App action `media.reveal`: switch to Media, scroll and highlight for 1.5 s.
     pub fn reveal_media(&mut self, asset: AssetId) -> Result<()> {

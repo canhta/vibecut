@@ -43,15 +43,11 @@ mixed workflow callbacks usable without introducing upper-owner knowledge here.
 ## Public entry points
 
 `Session::new(project, history_limit)` admits 1..=1000 retained undo steps. `project()` exposes
-an immutable `Arc<Project>`; `apply(Command)` is the typed edit entry, with `apply_merged(command,
-Some(key))` as its keyed form (`apply` is `apply_merged(command, None)`; keyed coalescing is
-reachable only through it). The session has no method taking a command id string: decoding a wire id is
+an immutable `Arc<Project>`; `apply(Command)` is the typed edit entry. The session has no method taking a command id string: decoding a wire id is
 [`control::run_wire`](../control/README.md#string-entry), and in-process control reads use
-`Session::control_command`. `apply_merged` combines consecutive successful changes into
-one undo step for a continuous gesture; call `end_merge()` at gesture end, and at save and
-selection changes. Undo, redo, an explicit boundary or a different key ends merging. Refusal or
-unwind restores the previous merge state, and a no-op with a different key ends merging without
-changing project or history. Keys are 1..=256 UTF-8 bytes. History eviction removes the oldest
+`Session::control_command`. Every changed `apply` is one undo step; a continuous gesture becomes one
+step through `begin_gesture` and `commit_gesture`, and `transaction` groups several commands. Refusal or
+unwind restores the previous state. History eviction removes the oldest
 undo snapshot and never splits a batch. A changed edit clears redo; failures and no-ops preserve
 it. Undo and redo move existing snapshots, preserving exact integer timing and media and caption
 identity.
@@ -123,13 +119,13 @@ different word.
 typed methods. During a gesture `project()` exposes validated preview snapshots, while original
 undo/redo and pending committed changes stay untouched. Commit adds one undo step, evicting at
 most one oldest step; cancel restores the entry snapshot and pending event without adding
-undo/redo. Starting or ending a gesture breaks merge continuity. A no-op gesture preserves redo
+undo/redo. A no-op gesture preserves redo
 and emits no committed-project event; its closed preview lifetime advances the control revision.
 A refused preview command leaves the prior preview and gesture intact.
 
 `transaction(|session| -> Result<T>)` stages several commands with the same history and event
-rules. Success commits one step; error or unwind restores its entry project, undo/redo, merge
-state and deferred event. The history limit is never raised and staged edits do not evict
+rules. Success commits one step; error or unwind restores its entry project, undo/redo
+and deferred event. The history limit is never raised and staged edits do not evict
 history. Nested gestures or groups, and undo/redo inside them, return typed errors. Only engine
 state is transactional; external effects performed by the caller's closure are outside it.
 

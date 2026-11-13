@@ -35,7 +35,6 @@ struct State {
     undo: VecDeque<Snapshot>,
     redo: Vec<Snapshot>,
     selection: Arc<BTreeSet<ItemId>>,
-    merge_key: Option<String>,
     trim_sources: edit::TrimSources,
     next_id: Option<u64>,
     change: Option<Arc<Project>>,
@@ -123,7 +122,6 @@ impl Session {
                 undo: VecDeque::new(),
                 redo: Vec::new(),
                 selection: Arc::new(BTreeSet::new()),
-                merge_key: None,
                 trim_sources: edit::TrimSources::new(),
                 next_id,
                 change: None,
@@ -241,7 +239,6 @@ impl Session {
         self.generation.checked_add(1).ok_or(EditError::Control(
             crate::session::wire::ControlError::Limit,
         ))?;
-        self.end_merge();
         self.invalidate_revision(false)?;
         Ok(())
     }
@@ -324,7 +321,6 @@ impl Session {
         if let Some(id) = selection.iter().find(|id| !existing.contains(id)) {
             return Err(EditError::NoItem(*id));
         }
-        self.end_merge();
         self.state.selection = Arc::new(selection);
         Ok(())
     }
@@ -355,14 +351,6 @@ impl Session {
     }
     pub fn transaction_active(&self) -> bool {
         self.gesture.is_some() || self.grouping
-    }
-    /// End coalescing at gesture, selection or save boundaries. Finish/cancel an explicit
-    /// gesture before saving its preview or changing the selection it edits.
-    pub fn end_merge(&mut self) {
-        self.state.merge_key = None;
-        if !self.transaction_active() {
-            self.state.trim_sources.clear();
-        }
     }
     /// Drain the latest committed project change. One slot coalesces slow consumers;
     /// previews/groups defer notification until commit and cannot drain older events.
@@ -430,9 +418,8 @@ impl Session {
         let project = self.state.project.clone();
         let changed = *project != *before.project;
         self.state.rewind(before);
-        self.end_merge();
         if changed {
-            self.publish(project, None);
+            self.publish(project);
         }
         self.invalidate_revision(changed)?;
         if identity_changed {
@@ -445,18 +432,15 @@ impl Session {
             placements: Vec::new(),
         })
     }
+    /// Refusal or unwind leaves the session as it was. A continuous gesture goes
+    /// through `begin_gesture` and `commit_gesture` to become one undo step.
     pub fn apply(&mut self, command: Command) -> Result<Outcome> {
-        self.apply_merged(command, None)
-    }
-    /// Equal keys coalesce consecutive changed edits. Explicit gestures group all their
-    /// commands regardless of key. Refusal/unwind preserves the previous merge state.
-    pub fn apply_merged(&mut self, command: Command, key: Option<&str>) -> Result<Outcome> {
-        self.boundary(|session| session.commit(command, key, false, session.ripple))
+        self.boundary(|session| session.commit(command, false, session.ripple))
     }
     /// The control adapter's entry: wire admission shares the candidate invariant;
     /// typed in-process editing retains the owner's full integer domain.
     pub(crate) fn apply_control(&mut self, command: Command) -> Result<Outcome> {
-        self.boundary(|session| session.commit(command, None, true, session.ripple))
+        self.boundary(|session| session.commit(command, true, session.ripple))
     }
     /// Run `run` atomically: a refusal or an unwind leaves the session as
     /// [`Checkpoint`] captured it.
@@ -559,7 +543,6 @@ impl Session {
     fn commit(
         &mut self,
         command: Command,
-        key: Option<&str>,
         wire: bool,
         ripple: bool,
     ) -> Result<Outcome> {
@@ -629,11 +612,6 @@ impl Session {
             .ok_or(EditError::Control(
                 crate::session::wire::ControlError::Limit,
             ))?;
-        if key.is_some_and(|k| k.is_empty() || k.len() > 256) {
-            return Err(EditError::Control(
-                crate::session::wire::ControlError::InvalidParams,
-            ));
-        }
         if command.lifecycle().is_some() {
             return Err(EditError::Invalid(
                 "lifecycle command requires its library or persistence owner",
@@ -651,9 +629,7 @@ impl Session {
         let candidate = self.state.project.data().clone();
         let mut created = Vec::new();
         let mut next_id = self.state.next_id;
-        let mut sources = if self.transaction_active()
-            || (key.is_some() && self.state.merge_key.as_deref() == key)
-        {
+        let mut sources = if self.transaction_active() {
             self.state.trim_sources.clone()
         } else {
             edit::TrimSources::new()
@@ -683,10 +659,7 @@ impl Session {
             super::wire::validate_wire(&created)?;
         }
         if next == *self.state.project {
-            if self.state.merge_key.as_deref() != key {
-                self.end_merge();
-            }
-            if self.transaction_active() || key.is_some() {
+            if self.transaction_active() {
                 self.state.trim_sources = sources;
             } else {
                 self.state.trim_sources.clear();
@@ -700,14 +673,13 @@ impl Session {
         let next = Arc::new(next);
         if self.transaction_active() {
             self.state.project = next;
-            self.end_merge();
         } else {
-            self.publish(next, key);
+            self.publish(next);
             if let Some(end) = pasted_end {
                 self.metadata.view.playhead = end;
             }
         }
-        if self.transaction_active() || key.is_some() {
+        if self.transaction_active() {
             self.state.trim_sources = sources;
         } else {
             self.state.trim_sources.clear();
@@ -771,21 +743,18 @@ impl Session {
             .scene_views
             .retain(|id, _| next.scenes.get(*id).is_some());
     }
-    fn publish(&mut self, next: Arc<Project>, key: Option<&str>) {
-        if key.is_none() || self.state.merge_key.as_deref() != key {
-            self.state.undo.push_back(Snapshot {
-                project: self.state.project.clone(),
-                selection: self.state.selection.clone(),
-            });
-            if self.state.undo.len() > self.limit {
-                self.state.undo.pop_front();
-            }
+    fn publish(&mut self, next: Arc<Project>) {
+        self.state.undo.push_back(Snapshot {
+            project: self.state.project.clone(),
+            selection: self.state.selection.clone(),
+        });
+        if self.state.undo.len() > self.limit {
+            self.state.undo.pop_front();
         }
         self.change_scene_view(next.data());
         self.state.project = next;
         self.prune_selection();
         self.state.redo.clear();
-        self.state.merge_key = key.map(str::to_owned);
         self.state.change = Some(self.state.project.clone());
     }
     pub fn undo(&mut self) -> Result<Outcome> {
@@ -858,7 +827,7 @@ mod tests {
                 // Transient snapshot custody must rewind with the revision.
                 s.clipboard = None;
                 // Project, history, IDs, selection and the deferred change.
-                s.commit(add_track(), None, false, false)?;
+                s.commit(add_track(), false, false)?;
                 if matches!(exit, Exit::RevisionExhausted) {
                     // The body changed the project without advancing the
                     // revision; the boundary then cannot advance it either.
@@ -866,11 +835,10 @@ mod tests {
                     return Ok(());
                 }
                 // Metadata, revision and ledger events.
-                s.commit(view(3.0), None, false, false)?;
+                s.commit(view(3.0), false, false)?;
                 // Ripple policy.
                 s.commit(
                     Command::TimelineSetRipple { enabled: true },
-                    None,
                     false,
                     false,
                 )?;
@@ -879,7 +847,6 @@ mod tests {
                     Command::TimelinePreview {
                         commands: vec![add_track()],
                     },
-                    None,
                     false,
                     false,
                 )?;
@@ -918,7 +885,6 @@ mod tests {
             assert_eq!(session.clipboard, clipboard, "{exit:?}");
             assert_eq!(session.history_len(), (state.undo.len(), 0), "{exit:?}");
             assert_eq!(session.state.next_id, state.next_id, "{exit:?}");
-            assert_eq!(session.state.merge_key, state.merge_key, "{exit:?}");
             assert!(
                 Arc::ptr_eq(&state.selection, &session.state.selection),
                 "{exit:?}"

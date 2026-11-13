@@ -123,7 +123,6 @@ impl State {
             Ok(created) => {
                 desk.select(created.into_iter().collect());
                 self.import_notice = None;
-                desk.editor().session.end_merge();
             }
             Err(error) => {
                 tracing::warn!(category = "asset_insert", "insertion failed");
@@ -172,7 +171,6 @@ impl State {
                 desk.select(std::collections::BTreeSet::from([item]));
                 desk.editor().selection_scopes = SelectionScopes::default();
                 desk.editor().properties.clear_drafts();
-                desk.editor().session.end_merge();
             }
             Err(error) => {
                 self.import_notice = Some(error_detail(&error));

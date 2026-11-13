@@ -80,31 +80,24 @@ fn batch_is_atomic_and_uses_one_step_with_eviction_and_branching() {
 fn continuous_gestures_merge_and_ids_do_not_alias_after_undo() {
     let mut s = session();
     let before = s.project().clone();
-    for start in [100, 110, 120] {
-        s.apply_merged(
-            Command::MoveItem {
+    let drag = |s: &mut Session, starts: &[i64]| {
+        s.begin_gesture().unwrap();
+        for &start in starts {
+            s.apply(Command::MoveItem {
                 item: ItemId(10),
                 track: TrackId(2),
                 start: Tick(start),
-            },
-            Some("drag-1"),
-        )
-        .unwrap();
-    }
+            })
+            .unwrap();
+        }
+        s.commit_gesture().unwrap();
+    };
+    drag(&mut s, &[100, 110, 120]);
     assert_eq!(s.history_len(), (1, 0));
     s.undo().unwrap();
     assert!(Arc::ptr_eq(&before, s.project()));
     s.redo().unwrap();
-    s.end_merge();
-    s.apply_merged(
-        Command::MoveItem {
-            item: ItemId(10),
-            track: TrackId(2),
-            start: Tick(130),
-        },
-        Some("drag-1"),
-    )
-    .unwrap();
+    drag(&mut s, &[130]);
     assert_eq!(s.history_len(), (2, 0));
     let first = s
         .apply(Command::InsertItem {
@@ -156,20 +149,21 @@ proptest! {
     }
 }
 #[test]
-fn noops_preserve_redo_and_refusals_preserve_merge_state() {
+fn noops_and_refusals_inside_a_gesture_leave_one_step_and_preserve_redo() {
     let mut s = session();
     let drag = |start| Command::MoveItem {
         item: ItemId(10),
         track: TrackId(2),
         start: Tick(start),
     };
-    s.apply_merged(drag(0), Some("gesture")).unwrap();
+    s.begin_gesture().unwrap();
+    s.apply(drag(0)).unwrap();
     assert!(!s.apply(Command::Delete { items: vec![] }).unwrap().changed);
-    s.apply_merged(drag(10), Some("gesture")).unwrap();
-    assert_eq!(s.history_len(), (2, 0));
+    s.apply(drag(10)).unwrap();
     assert!(crate::wire::run(&mut s, "bad", json!({})).is_err());
-    s.apply_merged(drag(20), Some("gesture")).unwrap();
-    assert_eq!(s.history_len(), (2, 0));
+    s.apply(drag(20)).unwrap();
+    s.commit_gesture().unwrap();
+    assert_eq!(s.history_len(), (1, 0));
     s.undo().unwrap();
     let snapshot = s.project().clone();
     assert!(!s.apply(Command::Delete { items: vec![] }).unwrap().changed);
@@ -211,17 +205,16 @@ fn measure_large_project_gesture() {
     // Each run measures a whole public gesture, including candidate copy and validation.
     for run in 0..3 {
         let start = std::time::Instant::now();
+        s.begin_gesture().unwrap();
         for n in 0..100 {
-            s.apply_merged(
-                Command::MoveItem {
-                    item: ItemId(10009),
-                    track: TrackId(1),
-                    start: Tick(199_980 + (n % 2)),
-                },
-                Some("benchmark"),
-            )
+            s.apply(Command::MoveItem {
+                item: ItemId(10009),
+                track: TrackId(1),
+                start: Tick(199_980 + (n % 2)),
+            })
             .unwrap();
         }
+        s.commit_gesture().unwrap();
         let elapsed = start.elapsed();
         assert_eq!(s.history_len(), (1, 0));
         assert!(Project::new(s.project().data().clone()).is_ok());
@@ -285,14 +278,11 @@ fn explicit_gesture_commits_once_and_cancel_restores_history_redo_and_events() {
     s.take_change();
     s.begin_gesture().unwrap();
     for start in 1..100 {
-        s.apply_merged(
-            Command::MoveItem {
-                item: ItemId(10),
-                track: TrackId(2),
-                start: Tick(start),
-            },
-            Some("same"),
-        )
+        s.apply(Command::MoveItem {
+            item: ItemId(10),
+            track: TrackId(2),
+            start: Tick(start),
+        })
         .unwrap();
     }
     assert_eq!(s.history_len(), (1, 0));
@@ -389,14 +379,11 @@ fn failed_batch_at_every_position_preserves_redo_and_pending_event() {
 fn grouped_failure_and_unwind_restore_every_staged_change_without_eviction() {
     for unwind in [false, true] {
         let mut s = Session::new(project(), 1).unwrap();
-        s.apply_merged(
-            Command::MoveItem {
-                item: ItemId(10),
-                track: TrackId(2),
-                start: Tick(0),
-            },
-            Some("prior"),
-        )
+        s.apply(Command::MoveItem {
+            item: ItemId(10),
+            track: TrackId(2),
+            start: Tick(0),
+        })
         .unwrap();
         s.apply(Command::Delete {
             items: vec![ItemId(11)],
@@ -512,66 +499,4 @@ fn groups_evict_only_one_step_and_noop_gestures_preserve_redo() {
     assert!(s.can_redo());
     assert!(s.take_change().is_none());
     assert!(!Arc::ptr_eq(&initial, s.project()));
-}
-#[test]
-fn group_rollback_restores_merge_key_and_explicit_boundaries_break_it() {
-    for unwind in [false, true] {
-        let mut s = session();
-        s.apply_merged(
-            Command::MoveItem {
-                item: ItemId(10),
-                track: TrackId(2),
-                start: Tick(0),
-            },
-            Some("drag"),
-        )
-        .unwrap();
-        let result: Result<(), engine::EditError> =
-            s.transaction(|group| -> Result<(), EditError> {
-                group.apply(Command::MoveItem {
-                    item: ItemId(10),
-                    track: TrackId(2),
-                    start: Tick(5),
-                })?;
-                if unwind {
-                    panic!("injected group unwind");
-                }
-                Err(EditError::Invalid("refused"))
-            });
-        assert!(result.is_err());
-        s.apply_merged(
-            Command::MoveItem {
-                item: ItemId(10),
-                track: TrackId(2),
-                start: Tick(10),
-            },
-            Some("drag"),
-        )
-        .unwrap();
-        assert_eq!(s.history_len(), (1, 0));
-        // App save/selection transitions call this same engine-owned boundary.
-        s.end_merge();
-        s.apply_merged(
-            Command::MoveItem {
-                item: ItemId(10),
-                track: TrackId(2),
-                start: Tick(20),
-            },
-            Some("drag"),
-        )
-        .unwrap();
-        assert_eq!(s.history_len(), (2, 0));
-        s.undo().unwrap();
-        s.redo().unwrap();
-        s.apply_merged(
-            Command::MoveItem {
-                item: ItemId(10),
-                track: TrackId(2),
-                start: Tick(30),
-            },
-            Some("drag"),
-        )
-        .unwrap();
-        assert_eq!(s.history_len(), (3, 0));
-    }
 }

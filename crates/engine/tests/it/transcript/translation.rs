@@ -593,7 +593,7 @@ fn translate_cue(id: &str, force: bool) -> Command {
 
 #[test]
 fn translation_preserves_partial_and_hidden_cues_across_every_trim_retention_lifetime() {
-    for mode in ["gesture", "group", "batch", "merged"] {
+    for mode in ["gesture", "group", "batch"] {
         for (start, edge, cue_index) in
             [(false, 15, 1), (false, 25, 2), (true, 15, 1), (true, 25, 2)]
         {
@@ -649,12 +649,6 @@ fn translation_preserves_partial_and_hidden_cues_across_every_trim_retention_lif
                         .unwrap(),
                     "batch" => {
                         s.apply(Command::Batch { commands }).unwrap();
-                    }
-                    "merged" => {
-                        for command in commands {
-                            s.apply_merged(command, Some("trim-and-translate")).unwrap();
-                        }
-                        s.end_merge();
                     }
                     _ => panic!("unknown fixture mode"),
                 }

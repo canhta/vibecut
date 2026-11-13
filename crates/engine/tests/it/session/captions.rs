@@ -1089,7 +1089,7 @@ fn caption_drag_inward_and_back_preserves_original_content_and_redo() {
 #[test]
 fn caption_drag_commit_cancel_undo_redo_and_group_paths() {
     for start in [false, true] {
-        for mode in ["gesture", "group", "batch", "merged"] {
+        for mode in ["gesture", "group", "batch"] {
             let mut s = Session::new(caption_project(), 10).unwrap();
             let original = s.project().clone();
             let inward = if start { 1095 } else { 1005 };
@@ -1098,11 +1098,7 @@ fn caption_drag_commit_cancel_undo_redo_and_group_paths() {
             direct.apply(caption_trim(start, outward)).unwrap();
             let drag = |s: &mut Session| -> engine::control::Result<()> {
                 for at in [inward, outward] {
-                    if mode == "merged" {
-                        s.apply_merged(caption_trim(start, at), Some("trim"))?;
-                    } else {
-                        s.apply(caption_trim(start, at))?;
-                    }
+                    s.apply(caption_trim(start, at))?;
                 }
                 Ok(())
             };
@@ -1120,13 +1116,12 @@ fn caption_drag_commit_cancel_undo_redo_and_group_paths() {
                     assert!(s.commit_gesture().unwrap().changed);
                 }
                 "group" => s.transaction(drag).unwrap(),
-                "batch" => {
+                _ => {
                     s.apply(Command::Batch {
                         commands: vec![caption_trim(start, inward), caption_trim(start, outward)],
                     })
                     .unwrap();
                 }
-                _ => drag(&mut s).unwrap(),
             }
             assert_eq!(s.project().data(), direct.project().data());
             assert_eq!(s.history_len(), (1, 0));
@@ -1135,9 +1130,8 @@ fn caption_drag_commit_cancel_undo_redo_and_group_paths() {
             assert_eq!(s.project().data(), original.data());
             s.redo().unwrap();
             assert_eq!(s.project().data(), direct.project().data());
-            // A boundary discards transient source retention: later independent
+            // A committed edit discards transient source retention: later independent
             // edits cannot resurrect content discarded by the committed trim.
-            s.end_merge();
             s.apply(caption_trim(start, if start { 1000 } else { 1100 }))
                 .unwrap();
             let ItemParams::Caption(params) = &get(&s, 1).content else {
@@ -1230,15 +1224,15 @@ proptest! {
     }
 }
 #[test]
-fn merged_caption_roundtrip_and_equal_content_replacement() {
+fn gesture_caption_roundtrip_and_equal_content_replacement() {
     let mut s = Session::new(caption_project(), 10).unwrap();
     let original = s.project().clone();
+    s.begin_gesture().unwrap();
     for at in [1005, 1100] {
-        s.apply_merged(caption_trim(false, at), Some("trim"))
-            .unwrap();
+        s.apply(caption_trim(false, at)).unwrap();
     }
+    s.commit_gesture().unwrap();
     assert_eq!(s.project().data(), original.data());
-    s.end_merge();
     s.begin_gesture().unwrap();
     s.apply(caption_trim(false, 1050)).unwrap();
     let replacement = get(&s, 1).content.clone();

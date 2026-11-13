@@ -43,7 +43,6 @@ impl Session {
                     if !same {
                         self.item_clipboard = Some(Arc::new(payload));
                         self.clipboard = None;
-                        self.end_merge();
                         self.invalidate_revision(false)?;
                     }
                 }
@@ -68,7 +67,6 @@ impl Session {
                     if !same {
                         self.clipboard = Some(Arc::new(payload));
                         self.item_clipboard = None;
-                        self.end_merge();
                         self.invalidate_revision(false)?;
                     }
                 }
@@ -152,7 +150,7 @@ impl Session {
             .ok_or(EditError::Session(crate::session::SessionError::NoGesture))?
             .clone();
         self.state.rewind(before);
-        let outcome = self.commit(batch, None, wire, ripple)?;
+        let outcome = self.commit(batch, wire, ripple)?;
         self.timeline_preview = true;
         Ok(outcome)
     }
@@ -179,7 +177,6 @@ impl Session {
             self.change_scene_view(&data);
             self.state.project = Arc::new(Project::new(data)?);
             self.state.selection = Arc::default();
-            self.end_merge();
             self.state.change = Some(self.state.project.clone());
         }
         Ok(outcome(changed))
@@ -207,7 +204,6 @@ impl Session {
         if self.transaction_active() {
             return Err(SessionError::TransactionActive);
         }
-        self.end_merge();
         self.gesture = Some(self.state.clone());
         Ok(outcome(false))
     }
@@ -229,7 +225,6 @@ impl Session {
         self.timeline_preview = false;
         let changed = *self.state.project != *before.project;
         self.state.rewind(before);
-        self.end_merge();
         self.invalidate_revision(false)?;
         Ok(outcome(changed))
     }
@@ -285,7 +280,6 @@ impl Session {
         } else {
             self.state.redo.push(old);
         }
-        self.end_merge();
         self.state.change = Some(self.state.project.clone());
         Ok(outcome(true))
     }

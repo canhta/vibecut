@@ -141,7 +141,6 @@ impl State {
             desk.toast(text, None);
             return;
         }
-        desk.editor().session.end_merge();
         let result = desk.editor().session.apply(engine::Command::AddTransition {
             track: cut.track,
             from: cut.from,
