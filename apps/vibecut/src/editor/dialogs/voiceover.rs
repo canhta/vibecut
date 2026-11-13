@@ -243,11 +243,10 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ctx: &egui::Context) -> 
                 let seconds =
                     take.recorder.frames() as f64 / f64::from(take.recorder.sample_rate());
                 let time = clock(seconds);
-                let label = ui.label(i18n::format(
-                    cx.locale,
-                    Text::VoiceoverRecording,
-                    &[("time", &time)],
-                ));
+                let status = i18n::format(cx.locale, Text::VoiceoverRecording, &[("time", &time)]);
+                let label = ui.label(&status);
+                // A running status is read by name, not only as a bare value.
+                ctx.accesskit_node_builder(label.id, |node| node.set_label(status));
                 actions.push(Action::Remember("voiceover.time".into(), label));
             }
             if let Some(problem) = state.problem {
