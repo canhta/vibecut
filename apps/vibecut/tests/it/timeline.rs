@@ -2294,11 +2294,33 @@ fn mixed_text_inspector_applies_one_field_and_restores_selected_items() {
         assert_eq!(field.compatible, 2);
         assert_eq!(
             field.value.is_none(),
-            matches!(field.id, "text_content" | "text_size" | "text_color"),
+            matches!(field.id, "text_content" | "text_size"),
             "{} mixed state",
             field.id
         );
     }
+    // One colour control for the selection: the texts' colours differ, so the Fill row shows
+    // a dash and no swatch; equal colours show the swatch again.
+    let has = |harness: &Harness<'_, Editor>, id: &str| {
+        harness
+            .state()
+            .inspect()
+            .unwrap()
+            .widgets
+            .iter()
+            .any(|widget| widget.id.as_str() == id)
+    };
+    assert!(!has(&harness, "inspector.text_color.picker"));
+    assert!(has(&harness, "inspector.text_color.picker.mixed"));
+    for id in [first, second] {
+        harness
+            .state_mut()
+            .set_item_field(id, "text_color", "#FFFFFFFF")
+            .unwrap();
+    }
+    harness.run_steps(3);
+    assert!(has(&harness, "inspector.text_color.picker"));
+    assert!(!has(&harness, "inspector.text_color.picker.mixed"));
     let before = harness.state().session.project().clone();
     let history = harness.state().session.history_len().0;
     harness
@@ -2392,7 +2414,7 @@ fn text_insert_button_fits_the_media_panel_in_both_locales() {
 }
 
 #[test]
-fn text_position_controls_are_reachable_in_a_normal_height_window() {
+fn text_transform_position_is_reachable_in_a_normal_height_window() {
     let fixture = fixture();
     let mut harness = crate::gpu::builder()
         .with_size(egui::vec2(1280.0, 720.0))
@@ -2404,7 +2426,8 @@ fn text_position_controls_are_reachable_in_a_normal_height_window() {
     harness.run_steps(3);
     let panel = harness.state().panels()["inspector"];
     let scroll =
-        (panel.bottom() - widget(&harness, "inspector.text_position_y").bottom() - 8.0).min(0.0);
+        (panel.bottom() - widget(&harness, "inspector.transform.positionY").bottom() - 8.0)
+            .min(0.0);
     harness
         .input_mut()
         .events
@@ -2417,7 +2440,7 @@ fn text_position_controls_are_reachable_in_a_normal_height_window() {
         modifiers: egui::Modifiers::NONE,
     });
     harness.run_steps(20);
-    assert!(panel.contains_rect(widget(&harness, "inspector.text_position_y")));
+    assert!(panel.contains_rect(widget(&harness, "inspector.transform.positionY")));
 }
 
 #[test]
@@ -2452,7 +2475,13 @@ fn text_insert_and_style_controls_use_one_undo_step_per_edit() {
     assert_eq!(text.font.as_str(), "Inter");
     assert_eq!(text.font_size, 48.0);
     assert_eq!(text.background, None);
-    assert_eq!(text.position, project::TextPosition::default());
+    // New text lands in the lower third: Transform Y is 34.5 % of the canvas height below the
+    // centre, and X stays at the centre.
+    let canvas_height = f64::from(harness.state().session.project().data().canvas.height);
+    let offset =
+        |field: project::TransformField| field.value_at(&item_view.animations, Tick::ZERO).unwrap();
+    assert!((offset(project::TransformField::PositionY) - canvas_height * 0.345).abs() < 1e-6);
+    assert_eq!(offset(project::TransformField::PositionX), 0.0);
     let text_track_count = harness
         .state()
         .session
@@ -2496,13 +2525,7 @@ fn text_insert_and_style_controls_use_one_undo_step_per_edit() {
         .get(By::new().predicate(|n| n.author_id() == Some("inspector.text_background")))
         .click();
     harness.run_steps(2);
-    for (field, value) in [
-        ("text_content", "Xin chào"),
-        ("text_color", "#11223344"),
-        ("text_background_color", "#01020380"),
-        ("text_position_x", "25"),
-        ("text_position_y", "30"),
-    ] {
+    for (field, value) in [("text_content", "Xin chào")] {
         let id = format!("inspector.{field}");
         harness
             .get(By::new().predicate(|n| n.author_id() == Some(id.as_str())))
@@ -2514,28 +2537,63 @@ fn text_insert_and_style_controls_use_one_undo_step_per_edit() {
         harness.key_press(egui::Key::Tab);
         harness.run_steps(2);
     }
+    // Colour is the swatch popover's hex entry, one commit; position is the shared Transform
+    // row's X and Y fields, one commit each.
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.text_color.picker")))
+        .click();
+    harness.run_steps(3);
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("color.hex")))
+        .click();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.event(egui::Event::Text("#11223344".into()));
+    harness.key_press(egui::Key::Enter);
+    harness.run_steps(3);
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+    for (id, value) in [
+        ("inspector.transform.positionX", "25"),
+        ("inspector.transform.positionY", "30"),
+    ] {
+        harness
+            .get(By::new().predicate(|n| n.author_id() == Some(id)))
+            .click();
+        harness.run_steps(1);
+        harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+        harness.event(egui::Event::Text(value.into()));
+        harness.key_press(egui::Key::Enter);
+        harness.run_steps(2);
+    }
     assert_eq!(
         harness.state().session.history_len().0,
-        style_history + 7,
+        style_history + 6,
         "each committed field edit is one undo step"
     );
-    let ItemParams::Text(text) = &item(harness.state(), selected[0]).content else {
+    let selected_item = item(harness.state(), selected[0]);
+    let ItemParams::Text(text) = &selected_item.content else {
         panic!("text item")
     };
     assert_eq!(text.content.as_str(), "Xin chào");
     assert_eq!(text.font.as_str(), "Noto Serif");
     assert_eq!(text.font_size, 64.0);
+    assert!(text.background.is_some());
     assert_eq!(text.color, Color([17, 34, 51, 68]));
     assert_eq!(
-        text.background.as_ref().unwrap().color,
-        Color([1, 2, 3, 128])
+        project::TransformField::PositionX
+            .value_at(&selected_item.animations, Tick::ZERO)
+            .unwrap(),
+        25.0
     );
-    assert_eq!(text.position, project::TextPosition { x: 25.0, y: 30.0 });
+    assert_eq!(
+        project::TransformField::PositionY
+            .value_at(&selected_item.animations, Tick::ZERO)
+            .unwrap(),
+        30.0
+    );
     for (field, value) in [
         ("text_font", ""),
         ("text_size", "4097"),
-        ("text_position_x", "101"),
-        ("text_position_y", "NaN"),
         ("text_background", "not-a-colour"),
     ] {
         assert!(
@@ -2548,11 +2606,12 @@ fn text_insert_and_style_controls_use_one_undo_step_per_edit() {
     let decoded = project::decode(&encoded).unwrap();
     assert_eq!(decoded.project, **harness.state().session.project());
 
-    for _ in 0..9 {
+    // Insert, size, then the six style edits above.
+    for _ in 0..8 {
         harness.state_mut().activate("edit.undo").unwrap();
     }
     assert_eq!(harness.state().session.project(), &before);
-    for _ in 0..9 {
+    for _ in 0..8 {
         harness.state_mut().activate("edit.redo").unwrap();
     }
     let ItemParams::Text(text) = &item(harness.state(), selected[0]).content else {

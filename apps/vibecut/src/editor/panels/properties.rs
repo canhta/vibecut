@@ -11,7 +11,7 @@ mod state;
 mod view;
 mod workflow;
 
-pub use color_picker::ColorTarget;
+pub use color_picker::{ColorTarget, TextPart};
 pub use registry::{ElementKind, PropertiesTab};
 pub use shared_field::{SharedField, shared_fields};
 pub(in crate::editor) use state::{Action, Widget, element_kind};

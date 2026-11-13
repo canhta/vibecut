@@ -8,6 +8,23 @@ use super::State;
 use crate::editor::Desk;
 use crate::i18n;
 
+/// New text sits in the lower third: its box centre is this fraction of the canvas height
+/// below the centre (the old 84.5 % lower-third box against a 50 % centre).
+const TEXT_LOWER_THIRD_SHIFT: f64 = 0.345;
+
+/// The Transform of new text: the Y offset to the lower third, in canvas pixels. Transform
+/// (0, 0) is the canvas centre for every kind, text included.
+fn lower_third(canvas_height: u32) -> project::Result<project::Animations> {
+    let mut animations = project::Animations::default();
+    animations.set(
+        project::AnimationPath::from(project::BuiltinPath::TransformPositionY),
+        project::Param::new(project::ParamValue::Scalar(
+            f64::from(canvas_height) * TEXT_LOWER_THIRD_SHIFT,
+        ))?,
+    )?;
+    Ok(animations)
+}
+
 impl State {
     /// Insert selected assets in library order; engine owns track and overlap policy.
     pub(in crate::editor) fn insert_selected_assets(&mut self, desk: &mut Desk<'_>) {
@@ -191,13 +208,20 @@ impl State {
             }
         };
         let content = i18n::text(desk.editor().preferences.locale, Text::TextItem).to_owned();
+        let canvas_height = desk.editor().session.project().data().canvas.height;
+        let Ok(animations) = lower_third(canvas_height) else {
+            tracing::warn!(category = "asset_insert", "text placement unavailable");
+            let text = i18n::text(desk.editor().preferences.locale, Text::TextInsertFailed);
+            desk.toast(text, None);
+            return;
+        };
         let result = desk.editor().session.transaction(|session| {
             let duration = Tick(5 * TICKS_PER_SECOND);
             let outcome = session.apply(Command::InsertItem {
                 placement: engine::Placement::Auto,
                 item: NewItem {
                     retime: Default::default(),
-                    animations: Default::default(),
+                    animations,
                     source_asset: None,
                     source_range: SourceRange::new(Tick::ZERO, duration)?,
                     start: at,

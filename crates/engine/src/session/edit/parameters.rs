@@ -136,14 +136,19 @@ pub(super) fn apply_patch(
                 p.background.get_or_insert_with(Default::default).radius = *v;
             }
         }
-        crate::ItemParamPatch::TextPositionX(v) => {
+        crate::ItemParamPatch::TextStroke(v) => {
             if let ItemParams::Text(p) = &mut target.content {
-                p.position.x = *v;
+                p.stroke = v.clone();
             }
         }
-        crate::ItemParamPatch::TextPositionY(v) => {
+        crate::ItemParamPatch::TextShadow(v) => {
             if let ItemParams::Text(p) = &mut target.content {
-                p.position.y = *v;
+                p.shadow = v.clone();
+            }
+        }
+        crate::ItemParamPatch::TextGlow(v) => {
+            if let ItemParams::Text(p) = &mut target.content {
+                p.glow = *v;
             }
         }
         crate::ItemParamPatch::TextSize(v) => {

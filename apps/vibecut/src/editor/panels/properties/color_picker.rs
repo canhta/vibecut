@@ -11,10 +11,22 @@ pub(super) struct Draft {
     pub(super) picker: Picker,
 }
 
+/// The colour a text item carries: the glyph fill, its background box, outline or shadow.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextPart {
+    Fill,
+    Background,
+    Stroke,
+    Shadow,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ColorTarget {
-    Text(ItemId),
-    Background(ItemId),
+    /// One swatch for every selected text item: equal values show, a mixed set shows none.
+    Texts {
+        items: Vec<ItemId>,
+        part: TextPart,
+    },
     /// A video clip's solid background colour; a non-solid background reads as black.
     ClipBackground(ItemId),
     GraphicFill(ItemId),
@@ -38,20 +50,93 @@ pub enum ColorTarget {
     Bookmark(BookmarkId),
     Canvas,
 }
+fn text_params(project: &project::Project, id: ItemId) -> Option<&project::TextParams> {
+    let item = project
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .find(|i| i.id == id)?;
+    match &item.content {
+        project::ItemParams::Text(params) => Some(params),
+        _ => None,
+    }
+}
+
+/// One text part's colour; an absent outline or shadow reads its default colour.
+fn text_part_colour(project: &project::Project, id: ItemId, part: TextPart) -> Result<Color> {
+    let params = text_params(project, id).ok_or(Error::Invalid("colour target"))?;
+    Ok(match part {
+        TextPart::Fill => params.color,
+        TextPart::Background => params
+            .background
+            .as_ref()
+            .map_or(Color([0; 4]), |background| background.color),
+        TextPart::Stroke => params
+            .stroke
+            .as_ref()
+            .map_or(project::TextStroke::default().color, |stroke| stroke.color),
+        TextPart::Shadow => params
+            .shadow
+            .as_ref()
+            .map_or(project::TextShadow::default().color, |shadow| shadow.color),
+    })
+}
+
+/// The patch that sets one text part on every selected item. Outline and shadow keep the
+/// first item's width, offset and blur, since those have no control of their own yet.
+fn text_part_patch(
+    project: &project::Project,
+    items: &[ItemId],
+    part: TextPart,
+    color: Color,
+) -> engine::ItemParamPatch {
+    let first = items.first().and_then(|id| text_params(project, *id));
+    match part {
+        TextPart::Fill => engine::ItemParamPatch::TextColor(color),
+        TextPart::Background => engine::ItemParamPatch::TextBackgroundColor(color),
+        TextPart::Stroke => {
+            let width = first
+                .and_then(|params| params.stroke.as_ref())
+                .map_or(project::TextStroke::default().width, |stroke| stroke.width);
+            engine::ItemParamPatch::TextStroke(Some(project::TextStroke { color, width }))
+        }
+        TextPart::Shadow => {
+            let base = first
+                .and_then(|params| params.shadow.clone())
+                .unwrap_or_default();
+            engine::ItemParamPatch::TextShadow(Some(project::TextShadow { color, ..base }))
+        }
+    }
+}
+
 impl ColorTarget {
     pub(crate) fn item(&self) -> Option<ItemId> {
         match self {
-            Self::Text(id)
-            | Self::Background(id)
-            | Self::ClipBackground(id)
-            | Self::GraphicFill(id)
-            | Self::GraphicStroke(id) => Some(*id),
+            Self::Texts { items, .. } => items.first().copied(),
+            Self::ClipBackground(id) | Self::GraphicFill(id) | Self::GraphicStroke(id) => {
+                Some(*id)
+            }
             Self::GraphicColor { item, .. }
             | Self::MaskStroke { item, .. }
             | Self::EffectColor { item, .. } => Some(*item),
             Self::Bookmark(_) | Self::Canvas => None,
         }
     }
+    /// Whether a text colour target spans selected texts whose values differ.
+    pub(crate) fn mixed(&self, project: &project::Project) -> bool {
+        let Self::Texts { items, part } = self else {
+            return false;
+        };
+        let mut colours = items
+            .iter()
+            .filter_map(|id| text_part_colour(project, *id, *part).ok());
+        colours
+            .next()
+            .is_some_and(|first| colours.any(|colour| colour != first))
+    }
+
     pub(crate) fn color(&self, project: &project::Project) -> Result<Color> {
         if *self == Self::Canvas {
             return Ok(project.data().canvas.background);
@@ -65,6 +150,18 @@ impl ColorTarget {
                 .find(|candidate| candidate.id == *bookmark)
                 .map(|candidate| candidate.color)
                 .ok_or(Error::Invalid("bookmark colour target"));
+        }
+        if let Self::Texts { items, part } = self {
+            let mut colours = Vec::with_capacity(items.len());
+            for id in items {
+                colours.push(text_part_colour(project, *id, *part)?);
+            }
+            let first = *colours.first().ok_or(Error::Invalid("colour target"))?;
+            return if colours.iter().all(|colour| *colour == first) {
+                Ok(first)
+            } else {
+                Err(Error::Invalid("mixed text colour"))
+            };
         }
         let item = project
             .data()
@@ -87,10 +184,6 @@ impl ColorTarget {
                     *time,
                     if *stroke { outline } else { fill },
                 )?)
-            }
-            (Self::Text(_), project::ItemParams::Text(p)) => Ok(p.color),
-            (Self::Background(_), project::ItemParams::Text(p)) => {
-                Ok(p.background.as_ref().map_or(Color([0; 4]), |b| b.color))
             }
             (Self::ClipBackground(_), project::ItemParams::Video(p)) => Ok(match p.background {
                 project::ClipBackground::Solid { color } => color,
@@ -160,6 +253,12 @@ impl ColorTarget {
                 note: None,
                 color: Some(color),
                 duration: None,
+            });
+        }
+        if let Self::Texts { items, part } = self {
+            return Ok(engine::Command::SetItemParamMany {
+                items: items.clone(),
+                patch: text_part_patch(project, items, *part, color),
             });
         }
         if let Self::MaskStroke { item, mask } = self {
@@ -270,8 +369,6 @@ impl ColorTarget {
         }
         let item = self.item().ok_or(Error::Invalid("colour target"))?;
         let patch = match self {
-            Self::Text(_) => engine::ItemParamPatch::TextColor(color),
-            Self::Background(_) => engine::ItemParamPatch::TextBackgroundColor(color),
             Self::GraphicFill(_) => engine::ItemParamPatch::GraphicFill(color),
             Self::GraphicStroke(_) => engine::ItemParamPatch::GraphicStroke(color),
             _ => return Err(Error::Invalid("colour target")),

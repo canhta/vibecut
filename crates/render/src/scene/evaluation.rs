@@ -20,17 +20,17 @@ const GLOW_MAX: f32 = 64.0;
 
 /// The placement saved in the project, without transient render overrides:
 /// full canvas for video, image, overlay and other placed kinds, the text box
-/// around its saved position, and the centred graphic author square. Captions
+/// centred like them (Transform moves it), and the centred graphic author square. Captions
 /// resolve through their style; audio has no box.
 pub(super) fn saved_placement(canvas: &project::Canvas, item: &Item) -> Option<Placement> {
     Some(match &item.content {
-        ItemParams::Text(params) => {
+        ItemParams::Text(_) => {
             let width = 0.8;
             let height = 0.25;
             Placement {
                 destination: Rect {
-                    x: f64::from(params.position.x) / 100.0 - width / 2.0,
-                    y: f64::from(params.position.y) / 100.0 - height / 2.0,
+                    x: (1. - width) / 2.,
+                    y: (1. - height) / 2.,
                     width,
                     height,
                 },

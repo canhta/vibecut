@@ -203,7 +203,7 @@ pub(super) fn readme_project(source: &Path) -> Result<(Editor, ItemId, ItemId), 
         }),
     )?;
     let text = track(&mut editor.session, "Text", TrackKind::Text)?;
-    insert(
+    let chapter = insert(
         &mut editor.session,
         text,
         Tick(2 * SECOND),
@@ -213,10 +213,15 @@ pub(super) fn readme_project(source: &Path) -> Result<(Editor, ItemId, ItemId), 
             content: "Chapter one".into(),
             font_size: 52.0,
             color: Color([255, 255, 255, 255]),
-            position: project::TextPosition { x: 50.0, y: 70.0 },
             ..Default::default()
         }),
     )?;
+    // The chapter title keeps the 70 % height the readme frame was captured at: 20 % of the
+    // 720 px canvas below the centre, as a Transform Y offset.
+    editor.session.apply(engine::Command::SetItemField {
+        item: chapter,
+        patch: engine::ItemParamPatch::PositionY(720.0 * 0.2),
+    })?;
     let caption_text = |text: &str| CueText {
         text: text.into(),
         edited: false,

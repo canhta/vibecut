@@ -1063,6 +1063,141 @@ impl<'a, 'c> Panel<'a, 'c> {
             });
     }
 
+    /// The Text tab: Font, Format, Style, the Transform section every visual item shares,
+    /// Blending, then Animation. Each section keeps its own collapse state.
+    fn text_tab(&mut self, ui: &mut egui::Ui, item: ItemId) {
+        let fields = shared_fields(self.cx.session.project(), self.cx.selection());
+        let font: Vec<_> = fields
+            .iter()
+            .filter(|field| matches!(field.id, "text_content" | "text_font"))
+            .cloned()
+            .collect();
+        self.panel_section(
+            ui,
+            "inspector.section.text_font",
+            "inspector.text_font",
+            Text::TextFont,
+            true,
+            false,
+            |panel, ui| panel.shared_field_controls(ui, font),
+        );
+        self.panel_section(
+            ui,
+            "inspector.section.text_format",
+            "inspector.text_format",
+            Text::TextFormat,
+            true,
+            false,
+            |panel, ui| panel.text_format_controls(ui, item),
+        );
+        self.panel_section(
+            ui,
+            "inspector.section.text_style",
+            "inspector.text_style",
+            Text::TextStyleSection,
+            true,
+            false,
+            |panel, ui| {
+                panel.text_style_rows(ui);
+                panel.text_style_controls(ui, item);
+            },
+        );
+        self.opacity_row(ui, item);
+        self.transform_section(ui, item);
+        self.blending_section(ui, item, false);
+        self.panel_section(
+            ui,
+            "inspector.section.text_animation",
+            "inspector.text_animation",
+            Text::TextAnimation,
+            true,
+            false,
+            |panel, ui| {
+                let enabled = !panel.cx.disabled.contains("text.animation.fade_in");
+                panel.text_animation_controls(ui, item, enabled);
+            },
+        );
+    }
+
+    /// The Blending section after Transform: the blend mode, and the opacity too where the
+    /// tab has no Opacity row of its own. Its reset restores both.
+    fn blending_section(&mut self, ui: &mut egui::Ui, item: ItemId, with_opacity: bool) {
+        let blend_reset = self.panel_section(
+            ui,
+            "inspector.section.blending",
+            "inspector.blending",
+            Text::Blending,
+            true,
+            true,
+            |panel, ui| {
+                if with_opacity {
+                    panel.blend_section(ui, item);
+                } else {
+                    panel.blend_control(ui, item);
+                }
+            },
+        );
+        if blend_reset {
+            self.state.drafts.clear();
+            self.state.focus = None;
+            self.actions.push(Action::ResetBlend(item));
+        }
+    }
+
+    /// The Transform section every visual item shares: Scale, Position, Rotate, Arrange and
+    /// flips. Text items show it inside their Text tab; the other kinds show it in Transform.
+    fn transform_section(&mut self, ui: &mut egui::Ui, item: ItemId) {
+        let reset = self.panel_section(
+            ui,
+            "inspector.section.transform",
+            "inspector.transform",
+            Text::Transform,
+            true,
+            true,
+            |panel, ui| {
+                use project::TransformField as F;
+                let mut scale = super::transform_scrub(F::ScaleX);
+                if panel.state.uniform_scale {
+                    scale.label = Text::Scale;
+                }
+                panel.slider_row(ui, item, scale);
+                let (row, mut value_ui) = panel.row_value_ui(ui, theme::size::PROPERTY_ROW);
+                panel.row_label(ui, row, panel.tr(Text::UniformScale));
+                let mut uniform = panel.state.uniform_scale;
+                let width = value_ui.available_width();
+                value_ui.add_space((width - theme::size::TOGGLE_WIDTH).max(0.0));
+                let response = kit::toggle(
+                    &mut value_ui,
+                    "inspector.uniform_scale",
+                    &mut uniform,
+                    panel.tr(Text::UniformScale),
+                );
+                panel.remember("inspector.uniform_scale", &response);
+                panel.state.uniform_scale = uniform;
+                if !uniform {
+                    panel.slider_row(ui, item, super::transform_scrub(F::ScaleY));
+                }
+                panel.number_row(
+                    ui,
+                    item,
+                    Text::Position,
+                    &[
+                        (super::transform_scrub(F::PositionX), Some("X")),
+                        (super::transform_scrub(F::PositionY), Some("Y")),
+                    ],
+                );
+                panel.arrange_controls(ui, &[item]);
+                panel.scrub_field(ui, item, super::transform_scrub(F::Rotate));
+                panel.transform_flips(ui, item);
+            },
+        );
+        if reset {
+            self.state.drafts.clear();
+            self.state.focus = None;
+            self.actions.push(Action::ResetTransform(item));
+        }
+    }
+
     fn properties_tab(
         &mut self,
         ui: &mut egui::Ui,
@@ -1079,107 +1214,11 @@ impl<'a, 'c> Panel<'a, 'c> {
                 )
                 .is_some() =>
             {
-                self.panel_section(
-                    ui,
-                    "inspector.section.text",
-                    "inspector.text",
-                    Text::TextItem,
-                    true,
-                    false,
-                    |panel, ui| {
-                        for field in shared_fields(panel.cx.session.project(), panel.cx.selection())
-                        {
-                            match field.id {
-                                "text_size" => panel.scrub_field(ui, item, TEXT_SIZE_SCRUB),
-                                "text_color" => panel.text_color_field(ui, item),
-                                "text_content" | "text_font" | "text_background"
-                                | "text_position_x" | "text_position_y" => {
-                                    panel.shared_field_controls(ui, std::iter::once(field));
-                                }
-                                _ => {}
-                            }
-                        }
-                        panel.color_row(
-                            ui,
-                            "inspector.text_color.picker",
-                            Text::ColorPicker,
-                            ColorTarget::Text(item),
-                        );
-                        panel.color_row(
-                            ui,
-                            "inspector.background_color",
-                            Text::BackgroundColor,
-                            ColorTarget::Background(item),
-                        );
-                        panel.text_style_controls(ui, item);
-                    },
-                );
+                self.text_tab(ui, item);
             }
             PropertiesTab::Transform => {
-                let reset = self.panel_section(
-                    ui,
-                    "inspector.section.transform",
-                    "inspector.transform",
-                    Text::Transform,
-                    true,
-                    true,
-                    |panel, ui| {
-                        use project::TransformField as F;
-                        let mut scale = super::transform_scrub(F::ScaleX);
-                        if panel.state.uniform_scale {
-                            scale.label = Text::Scale;
-                        }
-                        panel.slider_row(ui, item, scale);
-                        let (row, mut value_ui) = panel.row_value_ui(ui, theme::size::PROPERTY_ROW);
-                        panel.row_label(ui, row, panel.tr(Text::UniformScale));
-                        let mut uniform = panel.state.uniform_scale;
-                        let width = value_ui.available_width();
-                        value_ui.add_space((width - theme::size::TOGGLE_WIDTH).max(0.0));
-                        let response = kit::toggle(
-                            &mut value_ui,
-                            "inspector.uniform_scale",
-                            &mut uniform,
-                            panel.tr(Text::UniformScale),
-                        );
-                        panel.remember("inspector.uniform_scale", &response);
-                        panel.state.uniform_scale = uniform;
-                        if !uniform {
-                            panel.slider_row(ui, item, super::transform_scrub(F::ScaleY));
-                        }
-                        panel.number_row(
-                            ui,
-                            item,
-                            Text::Position,
-                            &[
-                                (super::transform_scrub(F::PositionX), Some("X")),
-                                (super::transform_scrub(F::PositionY), Some("Y")),
-                            ],
-                        );
-                        panel.arrange_controls(ui, &[item]);
-                        panel.scrub_field(ui, item, super::transform_scrub(F::Rotate));
-                        panel.transform_flips(ui, item);
-                    },
-                );
-                if reset {
-                    self.state.drafts.clear();
-                    self.state.focus = None;
-                    self.actions.push(Action::ResetTransform(item));
-                }
-                // Blend is a section inside Basic, after Transform.
-                let blend_reset = self.panel_section(
-                    ui,
-                    "inspector.section.blending",
-                    "inspector.blending",
-                    Text::Blending,
-                    true,
-                    true,
-                    |panel, ui| panel.blend_section(ui, item),
-                );
-                if blend_reset {
-                    self.state.drafts.clear();
-                    self.state.focus = None;
-                    self.actions.push(Action::ResetBlend(item));
-                }
+                self.transform_section(ui, item);
+                self.blending_section(ui, item, true);
             }
             PropertiesTab::Graphic => {
                 self.panel_section(
@@ -1208,6 +1247,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                                     pixels_per_step: 2.,
                                     decimals: 0,
                                     suffix: "",
+                                    scale: 1.0,
                                 },
                             );
                             panel.graphic_align(ui, item);
@@ -1229,6 +1269,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                                             pixels_per_step: 2.,
                                             decimals: 0,
                                             suffix: "",
+                                            scale: 1.0,
                                         },
                                     );
                                     panel.scrub_field(
@@ -1243,6 +1284,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                                             pixels_per_step: 2.,
                                             decimals: 0,
                                             suffix: "%",
+                                            scale: 1.0,
                                         },
                                     );
                                 }
@@ -1261,6 +1303,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                                             pixels_per_step: 2.,
                                             decimals: 0,
                                             suffix: "",
+                                            scale: 1.0,
                                         },
                                     );
                                     panel.scrub_field(
@@ -1275,6 +1318,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                                             pixels_per_step: 2.,
                                             decimals: 0,
                                             suffix: "%",
+                                            scale: 1.0,
                                         },
                                     );
                                 }
@@ -1293,6 +1337,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                                             pixels_per_step: 2.,
                                             decimals: 0,
                                             suffix: "%",
+                                            scale: 1.0,
                                         },
                                     );
                                 }

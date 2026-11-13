@@ -1,16 +1,9 @@
 //! Renders appearance controls.
 use super::Panel;
 use crate::editor::properties::{
-    Color32, ColorTarget, Id, ItemId, ItemParams, OPACITY_SCRUB, Rect, Text, Vec2, egui, read,
-    theme,
+    Color32, ColorTarget, Id, ItemId, OPACITY_SCRUB, Rect, Text, Vec2, egui, read, theme,
 };
 use crate::i18n;
-
-use crate::kit;
-
-fn value_ui_width(ui: &egui::Ui) -> f32 {
-    ui.available_width().min(FIELD_COLUMN)
-}
 
 const VALUE_COLUMN: f32 = 120.0;
 pub(super) const FIELD_COLUMN: f32 = 150.0;
@@ -49,6 +42,11 @@ impl Panel<'_, '_> {
     /// outside its keyed range, as before the section moved into Basic.
     pub(super) fn blend_section(&mut self, ui: &mut egui::Ui, item: ItemId) {
         self.blend_control(ui, item);
+        self.opacity_row(ui, item);
+    }
+
+    /// The Opacity slider with its keyframe diamond; keyed outside its range it is disabled.
+    pub(super) fn opacity_row(&mut self, ui: &mut egui::Ui, item: ItemId) {
         let editable = !read::channel_has_keys(self.cx.session.project(), item, "opacity")
             || read::range_of(self.cx.session.project(), item)
                 .is_some_and(|(start, end)| start <= self.cx.playhead && self.cx.playhead < end);
@@ -91,6 +89,34 @@ impl Panel<'_, '_> {
         self.remember("inspector.blendMode", &response);
     }
 
+    /// A colour row whose selected texts differ: the label and a dash, with no swatch to open.
+    fn mixed_color_row(&mut self, ui: &mut egui::Ui, id: &str, label: Text) {
+        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        self.row_label(ui, row, self.tr(label));
+        let dark = self.cx.dark;
+        let (rect, response) = value_ui.allocate_exact_size(
+            Vec2::new(
+                value_ui.available_width().min(FIELD_COLUMN),
+                theme::size::FIELD,
+            ),
+            egui::Sense::hover(),
+        );
+        value_ui
+            .painter()
+            .rect_filled(rect, theme::radius::FIELD, theme::field(dark));
+        value_ui.painter().text(
+            egui::pos2(rect.left() + theme::space::MD, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            self.tr(Text::EmptyValue),
+            theme::label_font(),
+            theme::text(dark),
+        );
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::Role::Label, true, self.tr(Text::EmptyValue))
+        });
+        self.remember(format!("{id}.mixed"), &response);
+    }
+
     /// A colour row: the label left, a swatch with its hex right. Clicking opens
     /// the picker as a popover hanging off the panel's left edge.
     pub(super) fn color_row(
@@ -100,8 +126,13 @@ impl Panel<'_, '_> {
         label: Text,
         target: ColorTarget,
     ) {
-        let Ok(color) = target.color(self.cx.session.project()) else {
-            return;
+        let color = match target.color(self.cx.session.project()) {
+            Ok(color) => color,
+            Err(_) if target.mixed(self.cx.session.project()) => {
+                self.mixed_color_row(ui, id, label);
+                return;
+            }
+            Err(_) => return,
         };
         let [r, g, b, a] = color.0;
         let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
@@ -155,60 +186,6 @@ impl Panel<'_, '_> {
             {
                 Ok(actions) => self.actions.extend(actions),
                 Err(error) => self.fail(error),
-            }
-        }
-    }
-    pub(super) fn text_color_field(&mut self, ui: &mut egui::Ui, item: ItemId) {
-        let Some(value) =
-            read::item(self.cx.session.project(), item).and_then(|item| match &item.content {
-                ItemParams::Text(params) => {
-                    let [r, g, b, a] = params.color.0;
-                    Some(format!("#{r:02X}{g:02X}{b:02X}{a:02X}"))
-                }
-                _ => None,
-            })
-        else {
-            return;
-        };
-        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
-        self.row_label(ui, row, self.tr(Text::TextColor));
-        let draft = self
-            .state
-            .drafts
-            .get("text_color")
-            .cloned()
-            .unwrap_or(value);
-        let mut next = draft;
-        let field_width = value_ui_width(&value_ui);
-        let response = kit::value_field(
-            &mut value_ui,
-            "inspector.text_color",
-            &mut next,
-            field_width,
-            None,
-            self.tr(Text::TextColor),
-        );
-        self.remember("inspector.text_color", &response);
-        if response.has_focus() {
-            self.state.focus = Some("text_color".to_owned());
-        }
-        if response.changed() {
-            self.state
-                .drafts
-                .insert("text_color".to_owned(), next.clone());
-        }
-        let editing = response.has_focus() || self.state.focus.as_deref() == Some("text_color");
-        if editing && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-            self.state.drafts.remove("text_color");
-            self.state.focus = None;
-            response.surrender_focus();
-            return;
-        }
-        let enter = response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-        if enter || response.lost_focus() {
-            self.state.focus = None;
-            if let Some(draft) = self.state.drafts.remove("text_color") {
-                self.set_item_field(item, "text_color", &draft);
             }
         }
     }

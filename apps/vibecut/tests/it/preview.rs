@@ -66,15 +66,23 @@ fn project(fps: FrameRate, width: u32, height: u32, two_items: bool) -> Project 
     Project::new(data).unwrap()
 }
 
-/// One visible text item whose default position is the lower third of the canvas.
+/// One visible text item at the lower third, where insertion puts new text: its Transform Y
+/// is 34.5 % of the 360 px canvas below the centre.
 fn text(id: u64) -> Item {
+    let mut animations = project::Animations::default();
+    animations
+        .set(
+            project::AnimationPath::from(project::BuiltinPath::TransformPositionY),
+            project::Param::new(project::ParamValue::Scalar(0.345 * 360.0)).unwrap(),
+        )
+        .unwrap();
     Item {
         hidden: false,
         blend_mode: Default::default(),
         retime: Default::default(),
         masks: Vec::new(),
         effects: Vec::new(),
-        animations: Default::default(),
+        animations,
         id: ItemId(id),
         source_asset: None,
         source_range: SourceRange::new(Tick::ZERO, Tick(20 * TICKS_PER_SECOND)).unwrap(),
@@ -175,10 +183,10 @@ fn canvas_frame(h: &Harness<Editor>) -> egui::Rect {
     egui::Rect::from_center_size(stage.center(), canvas * scale)
 }
 
-/// Screen point at the text item's default (50 %, 84.5 %) canvas position.
+/// Screen point at the text item's default lower-third position: the 34.5 % Transform offset.
 fn text_point(h: &Harness<Editor>) -> egui::Pos2 {
     let frame = canvas_frame(h);
-    frame.center() + egui::vec2(0.0, (0.845 - 0.5) * frame.height())
+    frame.center() + egui::vec2(0.0, 0.345 * frame.height())
 }
 
 fn double_click(h: &mut Harness<Editor>, at: egui::Pos2) {

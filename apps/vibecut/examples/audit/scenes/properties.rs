@@ -386,10 +386,15 @@ pub(super) fn text_item_locale(
         ("text_content", "VibeCut · Tiếng Việt"),
         ("text_font", "Noto Serif"),
         ("text_background", "#000000A0"),
-        ("text_position_y", "70"),
     ] {
         editor.set_shared_field(field, value)?;
     }
+    // New text's lower-third placement: Transform Y at 34.5 % of the canvas height below centre.
+    let canvas_height = f64::from(editor.session.project().data().canvas.height);
+    editor.session.apply(Command::SetItemField {
+        item,
+        patch: ItemParamPatch::PositionY(canvas_height * 0.345),
+    })?;
     let mut app = harness_sized(App::Editor(Box::new(editor)), scale, [1440.0, 1440.0]);
     wait_for_presented(&mut app)?;
     app.run_steps(2);

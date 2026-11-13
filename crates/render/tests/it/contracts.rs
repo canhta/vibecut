@@ -598,17 +598,24 @@ fn text_item_font_background_and_position_reach_the_compositor() {
         let frames: Vec<_> = [left, right]
             .into_iter()
             .map(|position| {
+                // Text is placed by its Transform, centred; the percentages map
+                // onto the 320x180 canvas as offsets from the centre.
                 let mut data = baseline.clone().into_data();
-                let project::ItemParams::Text(text) =
-                    &mut data.scene_mut().timeline.overlays[0].items[0].content
-                else {
-                    panic!("text item")
-                };
-                if axis == "x" {
-                    text.position.x = position;
+                let item = &mut data.scene_mut().timeline.overlays[0].items[0];
+                let (path, extent) = if axis == "x" {
+                    (project::BuiltinPath::TransformPositionX, 320.0)
                 } else {
-                    text.position.y = position;
-                }
+                    (project::BuiltinPath::TransformPositionY, 180.0)
+                };
+                item.animations
+                    .set(
+                        project::AnimationPath::from(path),
+                        project::Param::new(project::ParamValue::Scalar(
+                            (position / 100.0 - 0.5) * extent,
+                        ))
+                        .unwrap(),
+                    )
+                    .unwrap();
                 let project = project::Project::new(data).unwrap();
                 Renderer::new(&project, RenderSettings::from_project(&project))
                     .unwrap()

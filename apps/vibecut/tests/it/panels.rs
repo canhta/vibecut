@@ -577,7 +577,7 @@ pub(crate) fn reveal(harness: &mut Harness<Editor>, id: &str) {
 fn needs_reveal(id: &str) -> bool {
     matches!(
         id,
-        "inspector.text_color.picker" | "inspector.background_color"
+        "inspector.text_color.picker" | "inspector.background_color" | "inspector.opacity"
     ) || id.starts_with("inspector.text_")
         || id.starts_with("text.animation.")
         || id.starts_with("inspector.lut.")
@@ -1381,6 +1381,33 @@ fn reachable_element_kinds_show_their_reference_tab_sets() {
         want.sort();
         assert_eq!(seen, want, "{item:?}");
     }
+    // The Text tab reads Font, Format, Style, Transform, Animation top to bottom. The hex
+    // colour and bare position fields are gone: each property has one control, and position
+    // is the shared Transform row.
+    select(&mut harness, fixture.text);
+    let sections = [
+        "inspector.section.text_font",
+        "inspector.section.text_format",
+        "inspector.section.text_style",
+        "inspector.section.transform",
+        "inspector.section.text_animation",
+    ];
+    let tops: Vec<f32> = sections
+        .iter()
+        .map(|id| widget_rect(&harness, id).top())
+        .collect();
+    assert!(tops.windows(2).all(|pair| pair[0] < pair[1]), "{tops:?}");
+    for id in [
+        "inspector.text_color",
+        "inspector.text_position_x",
+        "inspector.text_position_y",
+        "inspector.tab.transform",
+    ] {
+        assert!(!has_widget(&harness, id), "{id}");
+    }
+    assert!(has_widget(&harness, "inspector.text_color.picker"));
+    assert!(has_widget(&harness, "inspector.text_font"));
+    assert!(has_widget(&harness, "inspector.transform.positionY"));
     // A video with no audio stream hides its Audio tab.
     select(&mut harness, fixture.silent_video);
     let expected: Vec<_> = ElementKind::Video
@@ -1401,11 +1428,7 @@ fn every_registry_kind_has_its_reference_tab_set() {
     for (kind, expected) in [
         (
             ElementKind::Text,
-            &[
-                PropertiesTab::Text,
-                PropertiesTab::Transform,
-                PropertiesTab::Effects,
-            ][..],
+            &[PropertiesTab::Text, PropertiesTab::Effects][..],
         ),
         (
             ElementKind::Video,
@@ -1459,14 +1482,13 @@ fn active_tab_is_remembered_per_element_kind_across_reselection() {
     let mut harness = build(fixture.editor);
     harness.run_steps(3);
     select(&mut harness, fixture.text);
-    // Text's basic group holds only Transform, so it has no sub-tab bar to click.
-    click(&mut harness, "inspector.group.basic");
+    click(&mut harness, "inspector.tab.effects");
     assert!(!has_widget(&harness, "inspector.text_size"));
     select(&mut harness, fixture.video);
     click(&mut harness, "inspector.tab.mask");
     assert!(has_widget(&harness, "inspector.mask.row"));
     select(&mut harness, fixture.text);
-    // The strip lists the text tab and effects; the basic group has no sub-tab bar.
+    // The strip lists the text tab and effects; each kind reopens the tab it last showed.
     assert_eq!(
         visible_tabs(&harness),
         ["inspector.tab.text", "inspector.tab.effects"],
@@ -1480,7 +1502,7 @@ fn active_tab_is_remembered_per_element_kind_across_reselection() {
             .properties_tabs
             .get("text")
             .map(String::as_str),
-        Some("transform")
+        Some("effects")
     );
     assert_eq!(
         harness
@@ -1927,6 +1949,14 @@ fn opacity_and_audio_gain_scrub_through_their_tabs() {
     harness.run_steps(3);
     select(&mut harness, fixture.video);
     click(&mut harness, "inspector.tab.transform");
+    // Opacity is stored 0–1 and shown 0–100 %: the default full opacity reads 100 %.
+    assert_eq!(
+        harness
+            .get(By::new().predicate(|n| n.author_id() == Some("inspector.opacity")))
+            .value()
+            .as_deref(),
+        Some("100%")
+    );
     let history = harness.state().session.history_len();
     drag(
         &mut harness,
@@ -2147,7 +2177,6 @@ fn text_presets_and_animations_click_edit_undo_reopen_and_capture_both_locales()
             if locale == vibecut::i18n::Locale::En && scale == 1.0 {
                 image.save(root.join("p1-58-text-extras.png")).unwrap();
             }
-            click(&mut h, "inspector.group.basic");
             assert_eq!(
                 h.get(By::new().predicate(|n| n.author_id() == Some("inspector.opacity")))
                     .value()
@@ -2255,7 +2284,6 @@ fn opacity_drafts_invalidate_before_blur_and_keyed_outside_edits_refuse() {
         f.editor.activate("text.animation.fade_in_out").unwrap();
         let mut h = build(f.editor);
         h.run_steps(3);
-        click(&mut h, "inspector.group.basic");
         click(&mut h, "inspector.opacity");
         h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
         h.event(egui::Event::Text("82".into()));
@@ -2293,7 +2321,7 @@ fn opacity_drafts_invalidate_before_blur_and_keyed_outside_edits_refuse() {
                 h.state_mut()
                     .preferences
                     .properties_tabs
-                    .insert("text".into(), "text".into());
+                    .insert("text".into(), "effects".into());
             }
             "snapshot" => {
                 h.state_mut()
@@ -2810,10 +2838,9 @@ fn text_tab_edits_every_style_field_one_undo_step_each_and_shows_effects() {
     let text = fixture.text;
     // Each toggle row is one registered edit, one undo step, and reads back what it wrote.
     type Check = fn(&project::TextParams) -> bool;
-    let toggles: [(&str, Check); 7] = [
-        ("inspector.text_weight.bold", |p| p.weight == 700),
-        ("inspector.text_weight.normal", |p| p.weight == 400),
-        ("inspector.text_italic.italic", |p| p.italic),
+    let toggles: [(&str, Check); 6] = [
+        ("inspector.text_weight", |p| p.weight == 700),
+        ("inspector.text_italic", |p| p.italic),
         ("inspector.text_decoration.underline", |p| {
             p.decoration == TextDecoration::Underline
         }),
@@ -3352,7 +3379,7 @@ fn custom_font_chooser_completion_cannot_import_into_a_changed_picker_target() {
                     .unwrap();
             }
             "close" => click(&mut h, "fonts.close"),
-            "tab" => click(&mut h, "inspector.group.basic"),
+            "tab" => click(&mut h, "inspector.tab.effects"),
             "budget" => {
                 let replacement = Playback::new(
                     &h.state().session,

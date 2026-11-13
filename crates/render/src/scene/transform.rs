@@ -341,17 +341,29 @@ pub mod arrange {
                 ]),
             );
             text.start = Tick(100);
-            text.content = ItemParams::Text({
-                let mut params = TextParams::new("Box");
-                params.position = project::TextPosition { x: 60.0, y: 40.0 };
-                params
-            });
+            text.content = ItemParams::Text(TextParams::new("Box"));
             assert!(
                 close(
                     bounds(&data, &text, Tick::ZERO).unwrap(),
-                    rect(105.0, -5.0, 50.0, 80.0)
+                    rect(85.0, 5.0, 50.0, 80.0)
                 ),
                 "before the item starts, its first transform sample is used"
+            );
+            // Transform (0, 0) is the canvas centre for text as for every kind: the 160 x 25
+            // box is centred on the 200 x 100 canvas.
+            let centred = item(
+                ItemParams::Text(TextParams::new("Box")),
+                transformed(&[
+                    (BuiltinPath::TransformPositionX, 0.0),
+                    (BuiltinPath::TransformPositionY, 0.0),
+                ]),
+            );
+            assert!(
+                close(
+                    bounds(&data, &centred, Tick::ZERO).unwrap(),
+                    rect(20.0, 37.5, 160.0, 25.0)
+                ),
+                "text with a zero Transform sits at the canvas centre"
             );
             let audio = item(
                 ItemParams::Audio(project::AudioParams {
