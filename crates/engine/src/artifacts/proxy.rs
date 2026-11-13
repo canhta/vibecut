@@ -12,8 +12,11 @@ const MODEL: &str = "proxy";
 const VERSION: &str = "1";
 const MAGIC: &[u8; 8] = b"VPROXY01";
 const MANIFEST_BYTES: usize = 32;
-/// Decoded source frame, its CPU copy and the scaler scratch.
-const DECODE_BYTES: u64 = 256 << 20;
+/// Copies of one source frame held at once: the decoded frame, its CPU copy and the
+/// scaler scratch, each counted at RGBA size.
+const FRAME_COPIES: u64 = 3;
+/// Decoder and encoder state beside the frames.
+const CODEC_BYTES: u64 = 32 << 20;
 
 /// Canonical key of a source's proxy: its content hash and the raster edge, so
 /// changed content or a different proxy size misses every older file.
@@ -79,6 +82,25 @@ impl ProxyRequest {
         proxy_key(self.asset.content_hash(), self.max_edge)
     }
 
+    /// Decode memory sized by the source frame, so a job fits the shared runner budget
+    /// unless the source itself is too large for it.
+    fn decode_bytes(&self) -> u64 {
+        let frame = self
+            .asset
+            .probe()
+            .streams
+            .iter()
+            .find_map(|stream| stream.video.as_ref())
+            .map_or(u64::MAX, |video| {
+                u64::from(video.width)
+                    .saturating_mul(u64::from(video.height))
+                    .saturating_mul(4)
+            });
+        frame
+            .saturating_mul(FRAME_COPIES)
+            .saturating_add(CODEC_BYTES)
+    }
+
     /// Enqueue one CPU job unless the cache already holds the proxy, in which
     /// case the job completes without opening the source. The file is staged in
     /// the cache directory and bounded by half the aggregate byte limit.
@@ -105,7 +127,7 @@ impl ProxyRequest {
             class: ResourceClass::Cpu,
             input: key,
             bytes: JobBytes {
-                decoded_frames: DECODE_BYTES,
+                decoded_frames: self.decode_bytes(),
                 result: MANIFEST_BYTES as u64,
                 ..Default::default()
             },
