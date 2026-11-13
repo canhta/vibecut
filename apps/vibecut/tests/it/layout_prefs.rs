@@ -309,18 +309,40 @@ fn details_rows_and_info_section_collapse_and_persist() {
         ));
         harness.run_steps(3);
         click(&mut harness, "inspector.details");
-        assert!(harness.query_by_label("Path").is_none());
+        assert!(harness.query_by_label("Path:").is_none());
         let top = |text: &str| harness.get_by_label(text).rect().top();
         let (name, aspect_row, resolution_row, rate_row) =
             (top("Test"), top(aspect), top(resolution), top(rate));
         assert!(name < aspect_row && aspect_row < resolution_row && resolution_row < rate_row);
-        harness.get_by_label("Aspect ratio");
-        harness.get_by_label("Resolution");
-        harness.get_by_label("Frame rate");
+        harness.get_by_label("Name:");
+        harness.get_by_label("Aspect ratio:");
+        harness.get_by_label("Resolution:");
+        harness.get_by_label("Frame rate:");
         harness.get_by_label("Modify");
     }
 
-    // The Details view as light and dark screenshots of the default canvas.
+    // A saved project shows its path row; the unsaved one above does not.
+    let root = tempfile::tempdir().unwrap();
+    let project = Project::empty(ProjectId(1), "Test".into()).unwrap();
+    let mut saving = engine::recovery::Autosave::new(
+        &root.path().join("recovery"),
+        Session::new(project.clone(), 10).unwrap(),
+        ByteBudget::new(64 << 20).unwrap(),
+        Arc::new(engine::jobs::SystemClock::default()),
+        Default::default(),
+    )
+    .unwrap();
+    let saved_path = root.path().join("title.vibecut");
+    saving.save_as(saved_path.clone()).unwrap();
+    let mut saved = editor_with(project, Preferences::default());
+    saved.session = vibecut::services::lifecycle::EditorSession::Persistent(Box::new(saving));
+    let mut harness = build(saved);
+    harness.run_steps(3);
+    click(&mut harness, "inspector.details");
+    harness.get_by_label("Path:");
+    harness.get_by_label(&saved_path.display().to_string());
+
+    // The light and dark screenshots of the Details view; dark also goes to the ticket name.
     for (dark, name) in [(true, "dark"), (false, "light")] {
         let mut harness = build(editor(Preferences {
             dark,
@@ -328,19 +350,28 @@ fn details_rows_and_info_section_collapse_and_persist() {
         }));
         harness.run_steps(3);
         click(&mut harness, "inspector.details");
-        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target")
-            .join(format!("p1-320-details-{name}.png"));
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        harness.render().unwrap().save(&path).unwrap();
+        let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target");
+        std::fs::create_dir_all(&target).unwrap();
+        let image = harness.render().unwrap();
+        image
+            .save(target.join(format!("p1-320-details-{name}.png")))
+            .unwrap();
+        if dark {
+            image.save(target.join("p1-320-details.png")).unwrap();
+        }
     }
 
-    // Modify opens the Settings tab, where the canvas controls live.
+    // Modify opens the Settings tab and focuses the canvas width.
     let mut harness = build(editor(Preferences::default()));
     harness.run_steps(3);
     click(&mut harness, "inspector.details");
     click(&mut harness, "inspector.details.modify");
     assert!(has_widget(&harness, "inspector.canvas.fps"));
+    assert!(
+        harness
+            .get(By::new().predicate(|node| node.author_id() == Some("inspector.canvas.width")))
+            .is_focused()
+    );
 
     // Info section: collapsed by default, toggles and persists per key.
     let dir = tempfile::tempdir().unwrap();

@@ -797,7 +797,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                 ui.separator();
                 self.detail_pair(ui, self.tr(Text::DetailAspectRatio), aspect);
                 self.detail_pair(ui, self.tr(Text::DetailResolution), &resolution);
-                self.detail_pair(ui, self.tr(Text::FrameRateLabel), &frame_rate);
+                self.detail_pair(ui, self.tr(Text::DetailFrameRate), &frame_rate);
                 self.detail_row(ui, &sample_rate);
                 self.project_info(ui);
                 let response = ui
@@ -807,6 +807,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                     .inner;
                 self.remember("inspector.details.modify", &response);
                 if response.clicked() {
+                    self.state.request_canvas_focus();
                     self.actions.push(Action::Activate("inspector.project"));
                 }
             });

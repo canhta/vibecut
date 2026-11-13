@@ -306,6 +306,11 @@ impl Panel<'_, '_> {
         );
         let response = kit::value_field(&mut value_ui, &id, &mut next, 120.0, None, self.tr(label));
         self.remember(id, &response);
+        // Modify from the Details view lands here: focus the width and bring it into view.
+        if width && self.state.take_canvas_focus() {
+            response.request_focus();
+            response.scroll_to_me(Some(egui::Align::Center));
+        }
         if response.has_focus() {
             self.state.focus = Some(key.to_owned());
         }
