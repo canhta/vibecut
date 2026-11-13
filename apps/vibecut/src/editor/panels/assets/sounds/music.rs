@@ -539,13 +539,7 @@ impl Music {
                 serde_json::json!({"music": engine::control::MusicEntry::from(music)}),
             )
         };
-        let result = run_music(
-            self.session.library(),
-            None,
-            &self.budget,
-            command,
-            params,
-        );
+        let result = run_music(self.session.library(), None, &self.budget, command, params);
         match result {
             Ok(_) => {
                 self.saved_problem = None;

@@ -1,5 +1,8 @@
 use super::*;
-use egui_kittest::{Harness, kittest::Queryable};
+use egui_kittest::{
+    Harness,
+    kittest::{NodeT, Queryable},
+};
 
 /// The semibold label family only exists once the app fonts are installed.
 fn harness<'a, S>(app: impl FnMut(&mut Ui, &mut S) + 'a, state: S) -> Harness<'a, S> {

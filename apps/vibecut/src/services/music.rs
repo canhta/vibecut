@@ -129,9 +129,8 @@ pub fn run_music(
         command: command.into(),
         params,
     };
-    let resolve = remote.map(|client| move || -> libraries::music::Music<MusicClient> {
-        Ok(client.clone())
-    });
+    let resolve =
+        remote.map(|client| move || -> libraries::music::Music<MusicClient> { Ok(client.clone()) });
     let approval = resolve
         .as_ref()
         .map(|resolve| resolve as &dyn Fn() -> libraries::music::Music<MusicClient>);
