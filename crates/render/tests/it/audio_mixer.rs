@@ -79,18 +79,21 @@ impl SourceProvider for Signal {
     }
 }
 fn fixture() -> project::Project {
+    fixture_of(1)
+}
+fn fixture_of(seconds: i64) -> project::Project {
     let mut data = project::Project::empty(project::ProjectId(1), "".into())
         .unwrap()
         .into_data();
     let asset = testkit::source::asset(1, std::env::temp_dir().join("mixer.wav"))
         .format("wav")
-        .duration(tick(1, 1))
+        .duration(tick(seconds, 1))
         .content_hash(media::ContentHash::from_bytes(&[42]))
         .stream(
             testkit::source::audio()
                 .codec("pcm_f32le")
                 .time_base(media::TimeBase::new(1, 48000).unwrap())
-                .duration(tick(1, 1))
+                .duration(tick(seconds, 1))
                 .build(),
         )
         .build();
@@ -106,7 +109,7 @@ fn fixture() -> project::Project {
             hidden: false,
             id: project::ItemId(1),
             source_asset: Some(media::AssetId(1)),
-            source_range: TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+            source_range: TimeRange::new(Tick::ZERO, tick(seconds, 1)).unwrap(),
             start: Tick::ZERO,
             animations: Default::default(),
             effects: vec![],
@@ -569,5 +572,331 @@ fn bass_boost_follows_its_dry_wet_mix_on_the_settled_signal() {
             (settled - expected).abs() < 1e-3,
             "wet {wet_percent}: {settled} vs {expected}"
         );
+    }
+}
+
+/// Deterministic synthetic source: white noise, a tone (optionally in half-second bursts) and
+/// two-sample clicks, all pure functions of the absolute sample.
+struct Synth {
+    noise: f32,
+    tone: f32,
+    hz: f64,
+    bursts: bool,
+    clicks: bool,
+}
+fn uniform(n: i64) -> f32 {
+    let mut x = (n as u64)
+        .wrapping_add(0x9E37_79B9_7F4A_7C15)
+        .wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    x ^= x >> 27;
+    x = x.wrapping_mul(0x94D0_49BB_1331_11EB);
+    x ^= x >> 31;
+    (x >> 40) as f32 / (1u64 << 23) as f32 - 1.0
+}
+impl Synth {
+    fn value(&self, n: i64) -> f32 {
+        let on = !self.bursts || (n / 24_000) % 2 == 1;
+        let tone = if on {
+            self.tone * (2.0 * std::f64::consts::PI * self.hz * n as f64 / 48_000.0).sin() as f32
+        } else {
+            0.0
+        };
+        let mut value = self.noise * uniform(n) + tone;
+        if self.clicks {
+            for k in 0..30 {
+                let at = click_at(k);
+                if n == at {
+                    value += 0.5;
+                } else if n == at + 1 {
+                    value -= 0.3;
+                }
+            }
+        }
+        value
+    }
+}
+fn click_at(k: i64) -> i64 {
+    3000 + k * 3001
+}
+impl SourceProvider for Synth {
+    fn status(
+        &mut self,
+        _: &media::SourceAsset,
+        _: bool,
+        _: &dyn ExecutionHooks,
+    ) -> Result<Option<UnavailableReason>> {
+        Ok(None)
+    }
+    fn video(
+        &mut self,
+        _: &media::SourceAsset,
+        _: project::ItemId,
+        _: Tick,
+        _: &dyn ExecutionHooks,
+    ) -> Result<Option<Image>> {
+        Ok(None)
+    }
+    fn audio(
+        &mut self,
+        _: &media::SourceAsset,
+        _: project::ItemId,
+        start: i64,
+        frames: usize,
+        rate: u32,
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<AudioBlock> {
+        let mut out = AudioBlock::new(rate, 2, frames, MemoryKind::Decoded, hooks)?;
+        for plane in out.planes_mut() {
+            for (n, sample) in plane.iter_mut().enumerate() {
+                *sample = self.value(start + n as i64);
+            }
+        }
+        Ok(out)
+    }
+}
+fn with_cleanup(base: project::Project, effects: Vec<project::CleanupEffect>) -> project::Project {
+    let mut data = base.into_data();
+    if let project::ItemParams::Audio(p) = &mut data.scene_mut().timeline.audio[0].items[0].content
+    {
+        p.cleanup = project::AudioCleanup { effects };
+    }
+    project::Project::new(data).unwrap()
+}
+fn noise_reduction(reduction_db: f32) -> project::CleanupKind {
+    project::CleanupKind::NoiseReduction {
+        reduction_db,
+        threshold_db: 6.0,
+        smoothing_percent: 50.0,
+    }
+}
+fn declick() -> project::CleanupKind {
+    project::CleanupKind::Declick {
+        threshold: 30.0,
+        complexity: 16.0,
+    }
+}
+/// Left plane of `seconds` of the mix, requested in blocks of the `partition` sizes.
+fn mix_synth(
+    p: &project::Project,
+    source: &mut Synth,
+    seconds: usize,
+    partition: &[usize],
+) -> Vec<f32> {
+    let h = Hooks::default();
+    let total = seconds * 48_000;
+    let mut mixer = AudioMixer::new(p, 2, 0, &h).unwrap();
+    let mut out = Vec::new();
+    let (mut at, mut index) = (0usize, 0usize);
+    while at < total {
+        let frames = partition[index % partition.len()].min(total - at);
+        let block = mixer.mix(at as i64, frames, source, &h).unwrap();
+        out.extend_from_slice(&block.planes()[0]);
+        at += frames;
+        index += 1;
+    }
+    out
+}
+fn rms(samples: &[f32]) -> f32 {
+    (samples.iter().map(|x| x * x).sum::<f32>() / samples.len() as f32).sqrt()
+}
+
+#[test]
+fn noise_reduction_cuts_the_noise_floor_keeps_tones_and_stays_on_the_source_samples() {
+    // 1 kHz bursts (0.5 s on, 0.5 s off) over white noise at 0.02, eight seconds.
+    let mut synth = Synth {
+        noise: 0.02,
+        tone: 0.3,
+        hz: 1000.0,
+        bursts: true,
+        clicks: false,
+    };
+    let plain = mix_synth(&fixture_of(8), &mut synth, 8, &[65536]);
+    let reduce =
+        |db: f32| with_cleanup(fixture_of(8), vec![cleanup(1, 100.0, noise_reduction(db))]);
+    // With the gate open the chain is a delayed identity, and the delay is compensated: every
+    // output sample equals the plain mix sample.
+    let open = mix_synth(&reduce(0.0), &mut synth, 8, &[65536]);
+    let worst = plain
+        .iter()
+        .zip(&open)
+        .map(|(p, o)| (p - o).abs())
+        .fold(0.0, f32::max);
+    assert!(worst < 1e-4, "gate-open error {worst}");
+    // 20 dB reduction: the noise-only half seconds fall by more than 10 dB, the tone bursts
+    // stay within 1 dB, and nothing gets louder than the source.
+    let reduced = mix_synth(&reduce(20.0), &mut synth, 8, &[65536]);
+    let half = 24_000;
+    let segment = |k: usize| k * half + half / 4..k * half + 3 * half / 4;
+    let db = |a: &[f32], b: &[f32]| 20.0 * (rms(a) / rms(b)).log10();
+    let (off, on) = (segment(14), segment(15));
+    let floor = db(&reduced[off.clone()], &plain[off]);
+    assert!(floor < -10.0, "noise floor only {floor} dB lower");
+    let tone = db(&reduced[on.clone()], &plain[on]);
+    assert!(tone.abs() < 1.0, "tone changed by {tone} dB");
+    let peak = |s: &[f32]| s.iter().fold(0.0f32, |m, x| m.max(x.abs()));
+    assert!(peak(&reduced) <= peak(&plain) + 1e-3);
+}
+
+#[test]
+fn delayed_cleanup_reports_its_latency_and_lands_within_one_sample_of_the_source() {
+    let h = Hooks::default();
+    let tone = || Synth {
+        noise: 0.0,
+        tone: 0.2,
+        hz: 1000.0,
+        bursts: false,
+        clicks: false,
+    };
+    let plain = mix_synth(&fixture(), &mut tone(), 1, &[4096]);
+    // Reported delay: nothing for filters, one frame for noise reduction, 640 samples for
+    // de-click, their sum for both. The limiter's own latency never includes it.
+    let bass = project::CleanupKind::Bass { boost_db: 3.0 };
+    let cases = [
+        (vec![], 0),
+        (vec![cleanup(1, 100.0, bass)], 0),
+        (vec![cleanup(1, 100.0, noise_reduction(0.0))], 2048),
+        (vec![cleanup(1, 100.0, declick())], 640),
+        (
+            vec![
+                cleanup(1, 100.0, noise_reduction(0.0)),
+                cleanup(2, 100.0, declick()),
+            ],
+            2688,
+        ),
+        // A bypassed delayed effect delays nothing.
+        (vec![cleanup(1, 0.0, noise_reduction(20.0))], 0),
+    ];
+    for (effects, latency) in cases {
+        let p = with_cleanup(fixture(), effects.clone());
+        let mixer = AudioMixer::new(&p, 2, 0, &h).unwrap();
+        assert_eq!(mixer.cleanup_latency_samples(), latency, "{effects:?}");
+        assert_eq!(mixer.latency_samples(), 248);
+        // A one-sample shift of a 1 kHz tone at 0.2 changes it by 0.026, so matching the plain
+        // mix to 1e-3 proves alignment far inside one sample. The first frames are skipped: a
+        // signal that starts from silence is not a stationary tone.
+        let out = mix_synth(&p, &mut tone(), 1, &[4096]);
+        let worst = plain
+            .iter()
+            .zip(&out)
+            .skip(2000)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0, f32::max);
+        if latency > 0 {
+            assert!(worst < 1e-3, "{effects:?}: off by {worst}");
+        }
+    }
+    // An impulse train is the sharpest alignment probe: with the gate open every impulse lands
+    // on the plain mix's sample.
+    let mut impulses = Signal {
+        level: 0.5,
+        impulse: true,
+    };
+    let mut mix_impulses = |p: &project::Project| {
+        let mut mixer = AudioMixer::new(p, 2, 0, &h).unwrap();
+        mixer.mix(0, 48000, &mut impulses, &h).unwrap().planes()[0].clone()
+    };
+    let reference = mix_impulses(&fixture());
+    let delayed = mix_impulses(&with_cleanup(
+        fixture(),
+        vec![cleanup(1, 100.0, noise_reduction(0.0))],
+    ));
+    assert!(reference.iter().any(|s| s.abs() > 0.4));
+    let worst = reference
+        .iter()
+        .zip(&delayed)
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0, f32::max);
+    assert!(worst < 1e-3, "impulse train off by {worst}");
+    // Bypass is bit-identical to no chain.
+    let mut off = cleanup(2, 100.0, declick());
+    off.enabled = false;
+    let bypassed = with_cleanup(fixture(), vec![cleanup(1, 0.0, noise_reduction(20.0)), off]);
+    assert_eq!(plain, mix_synth(&bypassed, &mut tone(), 1, &[4096]));
+}
+
+#[test]
+fn declick_repairs_clicks_and_follows_its_dry_wet_mix() {
+    let seconds = 2;
+    let source = |clicks| Synth {
+        noise: 0.01,
+        tone: 0.15,
+        hz: 440.0,
+        bursts: false,
+        clicks,
+    };
+    let base = fixture_of(2);
+    let clean = mix_synth(&base, &mut source(false), seconds, &[65536]);
+    let dirty = mix_synth(&base, &mut source(true), seconds, &[65536]);
+    let repaired = mix_synth(
+        &with_cleanup(fixture_of(2), vec![cleanup(1, 100.0, declick())]),
+        &mut source(true),
+        seconds,
+        &[65536],
+    );
+    let error = |s: &[f32]| {
+        s.iter()
+            .zip(&clean)
+            .skip(2000)
+            .map(|(a, b)| f64::from(a - b).powi(2))
+            .sum::<f64>()
+            .sqrt()
+    };
+    let (before, after) = (error(&dirty), error(&repaired));
+    assert!(
+        20.0 * (after / before).log10() < -20.0,
+        "click error {before} -> {after}"
+    );
+    // The mix holds a click at half strength, so the dry signal is delayed with the wet one.
+    let half = mix_synth(
+        &with_cleanup(fixture_of(2), vec![cleanup(1, 50.0, declick())]),
+        &mut source(true),
+        seconds,
+        &[65536],
+    );
+    let at = click_at(3) as usize;
+    let deviation = |s: &[f32]| (s[at] - clean[at]).abs();
+    assert!(deviation(&dirty) > 0.45, "click {}", deviation(&dirty));
+    assert!(
+        deviation(&repaired) < 0.03,
+        "repaired {}",
+        deviation(&repaired)
+    );
+    assert!(
+        (deviation(&half) - 0.5 * deviation(&dirty)).abs() < 0.03,
+        "half mix {}",
+        deviation(&half)
+    );
+}
+
+#[test]
+fn delayed_cleanup_is_identical_across_partitions_seeks_and_offline_export() {
+    let seconds = 2;
+    let mut source = Synth {
+        noise: 0.01,
+        tone: 0.15,
+        hz: 440.0,
+        bursts: false,
+        clicks: true,
+    };
+    let p = with_cleanup(
+        fixture_of(2),
+        vec![
+            cleanup(1, 100.0, noise_reduction(12.0)),
+            cleanup(2, 80.0, declick()),
+            cleanup(3, 100.0, project::CleanupKind::Highpass { cutoff_hz: 60.0 }),
+        ],
+    );
+    // Offline export pulls large blocks; realtime pulls whatever the device asks for.
+    let offline = mix_synth(&p, &mut source, seconds, &[65536]);
+    assert!(offline.iter().any(|s| s.abs() > 0.1));
+    for partition in [&[1, 7, 1031, 4093][..], &[5, 23999], &[480]] {
+        assert_eq!(offline, mix_synth(&p, &mut source, seconds, partition));
+    }
+    // A seek replays from the start, so a window equals the same window of the whole mix.
+    let h = Hooks::default();
+    let mut mixer = AudioMixer::new(&p, 2, 0, &h).unwrap();
+    for start in [70_000usize, 491, 0, 1783, 3001] {
+        let block = mixer.mix(start as i64, 111, &mut source, &h).unwrap();
+        assert_eq!(block.planes()[0], offline[start..start + 111], "{start}");
     }
 }

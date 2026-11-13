@@ -153,6 +153,24 @@ impl<'a> AudioMixer<'a> {
         self.limiter.latency()
     }
 
+    /// Delay of the longest cleanup chain of any item, in samples (spectral noise reduction and
+    /// de-click delay their signal). The graph already compensates it by reading that far ahead
+    /// in each such item's source, so it never shifts returned PCM and `latency_samples` does not
+    /// include it. Zero when no item has a delaying effect.
+    pub fn cleanup_latency_samples(&self) -> usize {
+        let rate = self.project.data().settings.audio_sample_rate;
+        self.project
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| track.items.iter())
+            .filter_map(cleanup_of)
+            .map(|cleanup| super::cleanup::latency_samples(cleanup, rate))
+            .max()
+            .unwrap_or(0)
+    }
+
     pub fn mix(
         &mut self,
         start: i64,
@@ -336,85 +354,129 @@ pub(crate) fn mix_raw(
             .source_range
             .start()
             .to_units(i64::from(rate), Rounding::Nearest)?;
-        let mut input = if item.retime.speed.is_unity() && !item.retime.reverse {
-            let source = origin
-                .checked_add(a - output_origin)
-                .ok_or(Error::Invalid("source sample position"))?;
-            sources.audio(asset, item.id, source, (b - a) as usize, rate, hooks)?
-        } else {
-            let length = window
-                .source_range
-                .end()
-                .to_units(i64::from(rate), Rounding::Nearest)?
-                - origin;
-            // A reversed item retimes the window's samples reversed, so the reversal
-            // lands before rate conversion and time stretch: pitch is kept as usual.
-            // At 1x the identity resampler (Follow, ratio 1) is exact.
-            let pitch = if item.retime.maintain_pitch && !item.retime.speed.is_unity() {
-                Pitch::Keep
+        // The item's source samples `[lo, hi)` on the output clock, retimed and validated.
+        let mut read = |lo: i64, hi: i64| -> Result<AudioBlock> {
+            let count = (hi - lo) as usize;
+            let input = if item.retime.speed.is_unity() && !item.retime.reverse {
+                let source = origin
+                    .checked_add(lo - output_origin)
+                    .ok_or(Error::Invalid("source sample position"))?;
+                sources.audio(asset, item.id, source, count, rate, hooks)?
             } else {
-                Pitch::Follow
+                let length = window
+                    .source_range
+                    .end()
+                    .to_units(i64::from(rate), Rounding::Nearest)?
+                    - origin;
+                // A reversed item retimes the window's samples reversed, so the reversal
+                // lands before rate conversion and time stretch: pitch is kept as usual.
+                // At 1x the identity resampler (Follow, ratio 1) is exact.
+                let pitch = if item.retime.maintain_pitch && !item.retime.speed.is_unity() {
+                    Pitch::Keep
+                } else {
+                    Pitch::Follow
+                };
+                let speed = item.retime.speed.ratio();
+                if retimers
+                    .get(&item.id)
+                    .is_none_or(|r| !r.matches(rate, speed, pitch, length))
+                {
+                    retimers.insert(item.id, Retimer::new(rate, speed, pitch, length, hooks)?);
+                }
+                let retimer = retimers
+                    .get_mut(&item.id)
+                    .ok_or(Error::Invalid("retime state"))?;
+                let reverse = item.retime.reverse;
+                let mut pull = |at: i64, count: usize| -> Result<Vec<Vec<f32>>> {
+                    if !reverse {
+                        return Ok(sources
+                            .audio(asset, item.id, origin + at, count, rate, hooks)?
+                            .planes);
+                    }
+                    // Reversed sample `n` is window sample `length - 1 - n`: the block
+                    // `[at, at + count)` is window `[length - at - count, length - at)`, reversed.
+                    let first = length
+                        .checked_sub(at)
+                        .and_then(|t| t.checked_sub(count as i64))
+                        .ok_or(Error::Invalid("reversed source position"))?;
+                    let mut planes = sources
+                        .audio(asset, item.id, origin + first, count, rate, hooks)?
+                        .planes;
+                    for plane in &mut planes {
+                        plane.reverse();
+                    }
+                    Ok(planes)
+                };
+                let planes = retimer.read(lo - output_origin, count, &mut pull, hooks)?;
+                let mut block = AudioBlock::new(
+                    rate,
+                    u16::try_from(planes.len())
+                        .map_err(|_| Error::Invalid("source audio block"))?,
+                    count,
+                    MemoryKind::Decoded,
+                    hooks,
+                )?;
+                for (dst, src) in block.planes.iter_mut().zip(&planes) {
+                    dst.copy_from_slice(src);
+                }
+                block
             };
-            let speed = item.retime.speed.ratio();
-            if retimers
-                .get(&item.id)
-                .is_none_or(|r| !r.matches(rate, speed, pitch, length))
+            if input.rate != rate
+                || input.samples() != count
+                || !matches!(input.planes.len(), 1 | 2)
+                || input
+                    .planes
+                    .iter()
+                    .any(|p| p.iter().any(|s| !s.is_finite()))
             {
-                retimers.insert(item.id, Retimer::new(rate, speed, pitch, length, hooks)?);
+                return Err(Error::Invalid("source audio block"));
             }
-            let retimer = retimers
-                .get_mut(&item.id)
-                .ok_or(Error::Invalid("retime state"))?;
-            let reverse = item.retime.reverse;
-            let mut pull = |at: i64, count: usize| -> Result<Vec<Vec<f32>>> {
-                if !reverse {
-                    return Ok(sources
-                        .audio(asset, item.id, origin + at, count, rate, hooks)?
-                        .planes);
-                }
-                // Reversed sample `n` is window sample `length - 1 - n`: the block
-                // `[at, at + count)` is window `[length - at - count, length - at)`, reversed.
-                let first = length
-                    .checked_sub(at)
-                    .and_then(|t| t.checked_sub(count as i64))
-                    .ok_or(Error::Invalid("reversed source position"))?;
-                let mut planes = sources
-                    .audio(asset, item.id, origin + first, count, rate, hooks)?
-                    .planes;
-                for plane in &mut planes {
-                    plane.reverse();
-                }
-                Ok(planes)
-            };
-            let planes = retimer.read(a - output_origin, (b - a) as usize, &mut pull, hooks)?;
-            let mut block = AudioBlock::new(
-                rate,
-                u16::try_from(planes.len()).map_err(|_| Error::Invalid("source audio block"))?,
-                (b - a) as usize,
-                MemoryKind::Decoded,
-                hooks,
-            )?;
-            for (dst, src) in block.planes.iter_mut().zip(&planes) {
-                dst.copy_from_slice(src);
-            }
-            block
+            Ok(input)
         };
-        if input.rate != rate
-            || input.samples() != (b - a) as usize
-            || !matches!(input.planes.len(), 1 | 2)
-            || input
-                .planes
-                .iter()
-                .any(|p| p.iter().any(|s| !s.is_finite()))
-        {
-            return Err(Error::Invalid("source audio block"));
-        }
-        if let Some(cleanup) = cleanup_of(item) {
-            cleanups
-                .entry(item.id)
-                .or_insert_with(|| CleanupChain::new(cleanup, rate))
-                .process_at(a, &mut input.planes);
-        }
+        // A chain that delays its signal reads `latency` samples ahead of the window, so its
+        // output lands on the requested samples: preview, export and any block partition agree
+        // and the item stays aligned with its picture and every other item.
+        let cleanup_chain = match cleanup_of(item).filter(|cleanup| !cleanup.is_bypassed()) {
+            Some(cleanup) => {
+                if !cleanups.contains_key(&item.id) {
+                    cleanups.insert(item.id, CleanupChain::new(cleanup, rate, hooks)?);
+                }
+                cleanups.get_mut(&item.id)
+            }
+            None => None,
+        };
+        let input = match cleanup_chain {
+            None => read(a, b)?,
+            Some(item_chain) => {
+                let ahead = item_chain.latency() as i64;
+                if !item_chain.continues(a) {
+                    item_chain.restart(a);
+                    if ahead > 0 {
+                        let mut lead =
+                            source_span(item_chain.channels(), &mut read, a, a + ahead, i1)?;
+                        item_chain.push(&mut lead);
+                    }
+                }
+                let next = item_chain.fed();
+                let mut planes =
+                    source_span(item_chain.channels(), &mut read, next, b + ahead, i1)?;
+                item_chain.push(&mut planes);
+                if planes.iter().any(|plane| plane.len() != (b - a) as usize) {
+                    return Err(Error::Invalid("cleanup block"));
+                }
+                let mut block = AudioBlock::new(
+                    rate,
+                    u16::try_from(planes.len()).map_err(|_| Error::Invalid("cleanup block"))?,
+                    (b - a) as usize,
+                    MemoryKind::Decoded,
+                    hooks,
+                )?;
+                for (dst, src) in block.planes.iter_mut().zip(&planes) {
+                    dst.copy_from_slice(src);
+                }
+                block
+            }
+        };
         let volume_path = project::AnimationPath::from(project::BuiltinPath::Volume);
         let muted_path = project::AnimationPath::from(project::BuiltinPath::Muted);
         let (volume, muted, fades) = match &item.content {
@@ -508,6 +570,27 @@ pub(crate) fn mix_raw(
         }
     }
     Ok(out)
+}
+
+/// The item's source samples `[lo, target)`: the real ones up to the item's `end`, then silence.
+fn source_span(
+    channels: usize,
+    read: &mut dyn FnMut(i64, i64) -> Result<AudioBlock>,
+    lo: i64,
+    target: i64,
+    end: i64,
+) -> Result<Vec<Vec<f32>>> {
+    let hi = target.min(end).max(lo);
+    let mut planes = if hi > lo {
+        read(lo, hi)?.planes
+    } else {
+        vec![Vec::new(); channels]
+    };
+    let silence = usize::try_from(target - hi).map_err(|_| Error::Invalid("sample window"))?;
+    for plane in &mut planes {
+        plane.resize(plane.len() + silence, 0.0);
+    }
+    Ok(planes)
 }
 
 /// The cleanup chain of an item's source audio; other item kinds have none.

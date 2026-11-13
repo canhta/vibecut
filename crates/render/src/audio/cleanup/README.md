@@ -1,5 +1,5 @@
 # Source cleanup
 
-`CleanupChain` runs one item's `project::AudioCleanup` over its source samples inside the mix graph. The chain holds one stage per enabled effect with a nonzero mix; each stage keeps its biquad state per channel and continues it across contiguous blocks of the same item. A block that does not start where the previous one ended restarts the state.
+`CleanupChain` runs one item's `project::AudioCleanup` over its source samples inside the mix graph. The chain holds one stage per enabled effect with a nonzero mix. A stage is zero-latency biquad sections (`biquad.rs`, state per channel), spectral noise reduction (`spectral.rs`, with `fft.rs`) or click removal (`declick.rs`); each keeps its state per channel and continues it across contiguous blocks of the same item. The chain's `latency` is the sum of its stages' delays; the mix graph reads that many samples ahead in the source so the output stays on the requested samples, and `restart`, `push`, `continues` and `fed` are the contract it uses. A chain that does not continue the previous block restarts every stage. Delaying stages lease their state and delay lines from the execution hooks when the chain is built.
 
-The RBJ section designs and their zero-latency guarantees are in [audio](../README.md#source-cleanup). `biquad.rs` is private to this folder.
+The designs, sources and compensation are in [audio](../README.md#source-cleanup). `biquad.rs`, `fft.rs`, `spectral.rs` and `declick.rs` are private to this folder.

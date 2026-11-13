@@ -16,7 +16,7 @@ mod track;
 
 pub use audio_cleanup::{
     AudioCleanup, CleanupEffect, CleanupKind, EqBand, EqBandKind, GRAPHIC_EQ_FREQUENCIES_HZ,
-    MAX_CLEANUP_EFFECTS, MAX_EQ_BANDS, MAX_HUM_HARMONICS, MainsFrequency,
+    MAX_CLEANUP_EFFECTS, MAX_EQ_BANDS, MAX_HUM_HARMONICS, MainsFrequency, NOISE_REDUCTION_DEFAULT,
 };
 pub use item::{
     AudioParams, AudioSource, CaptionParams, CaptionWordWarning, CaptionWordWarnings,

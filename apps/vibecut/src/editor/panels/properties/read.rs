@@ -68,6 +68,39 @@ pub(super) fn item_value(project: &project::Project, item: ItemId, field: &str) 
     }
 }
 
+/// The cleanup chain of an audible item; other kinds carry none.
+fn cleanup_of(content: &ItemParams) -> Option<&project::AudioCleanup> {
+    match content {
+        ItemParams::Audio(params) => Some(&params.cleanup),
+        ItemParams::Video(params) => Some(&params.cleanup),
+        _ => None,
+    }
+}
+
+/// The first noise reduction effect of an audible item's cleanup chain, when it has one.
+pub(super) fn noise_reduction(
+    project: &project::Project,
+    item: ItemId,
+) -> Option<&project::CleanupEffect> {
+    cleanup_of(&find(project, item)?.content)?
+        .effects
+        .iter()
+        .find(|effect| matches!(effect.kind, project::CleanupKind::NoiseReduction { .. }))
+}
+
+/// The smallest id above every effect id of an audible item's cleanup chain.
+pub(super) fn next_cleanup_effect_id(project: &project::Project, item: ItemId) -> Option<u32> {
+    let cleanup = cleanup_of(&find(project, item)?.content)?;
+    Some(
+        cleanup
+            .effects
+            .iter()
+            .map(|effect| effect.id)
+            .max()
+            .map_or(1, |id| id + 1),
+    )
+}
+
 /// The fades of an audible item; other kinds carry none.
 fn fades_of(content: &ItemParams) -> Option<&project::Fades> {
     match content {

@@ -1251,6 +1251,103 @@ fn audio_set_fade_shapes_the_exported_tone_envelope() {
 }
 
 #[test]
+fn audio_cleanup_effects_process_the_exported_tone_and_refuse_hostile_input() {
+    if !tools() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let video = dir.path().join("video.mp4");
+    let audio = dir.path().join("tone.wav");
+    let project = dir.path().join("cleanup.vibecut");
+    generate_av(&video, 1);
+    generate_audio(&audio);
+    media_project(&project, &video, Some(&audio));
+    let export = |name: &str| {
+        let out = dir.path().join(name);
+        let exported = cli(&[
+            os("export"),
+            project.as_os_str(),
+            os("--out"),
+            out.as_os_str(),
+            os("--json"),
+        ]);
+        assert_eq!(
+            code(&exported),
+            0,
+            "{}",
+            String::from_utf8_lossy(&exported.stderr)
+        );
+        decoded_mono(&out)
+    };
+    let plain = export("plain.mp4");
+
+    // Out-of-range parameters are refused without touching the saved project.
+    let before = fs::read(&project).unwrap();
+    for kind in [
+        json!({"kind":"noise_reduction","reduction_db":99.0,"threshold_db":6.0,"smoothing_percent":50.0}),
+        json!({"kind":"declick","threshold":30.0,"complexity":0.0}),
+    ] {
+        let params =
+            json!({"item":1,"effect":{"id":1,"enabled":true,"wet_percent":100.0,"kind":kind}})
+                .to_string();
+        let refused = cli(&[
+            os("exec"),
+            project.as_os_str(),
+            os("audio.add_cleanup_effect"),
+            OsStr::new(&params),
+            os("--json"),
+        ]);
+        assert_ne!(code(&refused), 0);
+        assert_eq!(fs::read(&project).unwrap(), before);
+    }
+
+    exec(
+        &project,
+        "audio.add_cleanup_effect",
+        json!({"item":1,"effect":{"id":1,"enabled":true,"wet_percent":100.0,
+            "kind":{"kind":"declick","threshold":30.0,"complexity":16.0}}}),
+    );
+    exec(
+        &project,
+        "audio.add_cleanup_effect",
+        json!({"item":1,"effect":{"id":2,"enabled":true,"wet_percent":100.0,
+            "kind":{"kind":"noise_reduction","reduction_db":12.0,"threshold_db":6.0,"smoothing_percent":50.0}}}),
+    );
+    let loaded = project::load(&project).unwrap().project;
+    let item = loaded
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| item.id == project::ItemId(1))
+        .unwrap();
+    let project::ItemParams::Audio(params) = &item.content else {
+        panic!("audio item")
+    };
+    assert_eq!(params.cleanup.effects.len(), 2);
+
+    // The export keeps its length: the chain's delay is compensated, not added.
+    let cleaned = export("cleaned.mp4");
+    assert!(
+        cleaned.len().abs_diff(plain.len()) < 2048,
+        "{} vs {}",
+        cleaned.len(),
+        plain.len()
+    );
+    // Noise reduction leaves the gate open for the first sub-window, then treats the steady tone
+    // as the noise floor and attenuates it: the head is unchanged and the body is much quieter.
+    let rms = |pcm: &[f32], from: f64, to: f64| {
+        let window = &pcm[(from * 48_000.0) as usize..(to * 48_000.0) as usize];
+        (window.iter().map(|x| x * x).sum::<f32>() / window.len() as f32).sqrt()
+    };
+    let head = rms(&cleaned, 0.05, 0.15) / rms(&plain, 0.05, 0.15);
+    assert!((0.7..1.3).contains(&head), "head ratio {head}");
+    let body = rms(&cleaned, 0.6, 0.9) / rms(&plain, 0.6, 0.9);
+    assert!(body < 0.6, "body ratio {body}");
+}
+
+#[test]
 fn cli_retimes_linked_clips_and_the_export_follows_speed_and_pitch() {
     if !tools() {
         return;

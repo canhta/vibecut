@@ -956,6 +956,7 @@ catalog! {
     Metadata { key: "metadata", en: "Info", vi: "Thông tin" },
     ModifiedDate { key: "modified_date", en: "Modified {date}", vi: "Đã sửa {date}" },
     NoSharedFields { key: "no_shared_fields", en: "Nothing in common to edit", vi: "Không có gì chung để sửa" },
+    NoiseReduction { key: "noise_reduction", en: "Noise reduction", vi: "Giảm tiếng ồn" },
     SampleRate { key: "sample_rate", en: "{rate} Hz", vi: "{rate} Hz" },
     Selection { key: "selection", en: "Selection", vi: "Lựa chọn" },
     SlantItalic { key: "slant_italic", en: "Italic", vi: "Nghiêng" },

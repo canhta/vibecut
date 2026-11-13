@@ -105,6 +105,9 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
                 edge,
                 seconds,
             } => audio::set_fade(desk, item, edge, seconds),
+            Action::SetNoiseReduction { item, enabled } => {
+                audio::set_noise_reduction(desk, item, enabled)
+            }
             Action::SetReverse { item, reverse } => speed::set_reverse(desk, item, reverse),
             Action::SetTransitionDuration {
                 transition,
