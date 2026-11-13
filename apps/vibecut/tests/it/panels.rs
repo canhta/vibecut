@@ -621,6 +621,8 @@ fn needs_reveal(id: &str) -> bool {
         id,
         "inspector.text_color.picker" | "inspector.background_color" | "inspector.opacity"
     ) || id.starts_with("inspector.text_")
+        // A section header scrolled under the fixed tab strip would take the tab's click.
+        || id.starts_with("inspector.section.")
         || id.starts_with("inspector.animation.")
         || id.starts_with("inspector.lut.")
         || id.starts_with("inspector.transform.distribute_")
@@ -2552,8 +2554,13 @@ fn text_fade_preflight_preserves_focused_and_unfocused_caption_and_properties_dr
             .select(selected.into_iter().collect())
             .unwrap();
         h.run_steps(2);
+        // No Fade In control is drawn for these selections, so there is nothing to apply;
+        // the text.animation.* actions the old check activated are gone.
         assert!(!has_widget(&h, "inspector.animation.in.fade"));
-        try_fade_in(&mut h);
+        assert!(
+            h.query(By::new().predicate(|n| n.author_id() == Some("inspector.animation.in.fade")))
+                .is_none()
+        );
     }
     select(&mut h, f.text);
     h.state_mut().session.begin_gesture().unwrap();
@@ -2600,6 +2607,14 @@ fn text_fade_preflight_preserves_focused_and_unfocused_caption_and_properties_dr
     )
     .unwrap();
     saving.save_to(root.path().join("title.vibecut")).unwrap();
+    // The save runs on a worker; let it be acknowledged before editor frames run, or the
+    // frames' session changes make its completion stale.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while saving.saved_path().is_none() {
+        assert!(std::time::Instant::now() < deadline, "save never completed");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        saving.tick().unwrap();
+    }
     h.state_mut().session =
         vibecut::services::lifecycle::EditorSession::Persistent(Box::new(saving));
     let before = h.state().session.project().clone();
@@ -3032,9 +3047,12 @@ fn text_tab_edits_every_style_field_one_undo_step_each_and_shows_effects() {
     );
     enter(&mut harness, "inspector.text_background_padding_x", "20");
 
-    // Text exposes the shared Effects tab beside Transform and Blending.
+    // Text exposes the shared Effects tab; Transform and Blending are sections of the
+    // Text tab itself (editor.md: Font, Format, Style, Transform, Blending, Animation).
     assert!(has_widget(&harness, "inspector.tab.effects"));
-    assert!(has_widget(&harness, "inspector.group.basic"));
+    assert!(!has_widget(&harness, "inspector.group.basic"));
+    reveal(&mut harness, "inspector.section.transform");
+    reveal(&mut harness, "inspector.section.blending");
     let image = harness.render().expect("offscreen render");
     let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
     std::fs::create_dir_all(&target).unwrap();
