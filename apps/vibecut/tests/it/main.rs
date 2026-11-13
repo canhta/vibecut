@@ -23,6 +23,7 @@ mod sounds_ui;
 mod timeline_ui;
 mod tracks_ui;
 mod transitions;
+mod voiceover;
 
 mod mcp_control;
 mod media_probe_ui;

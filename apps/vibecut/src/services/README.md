@@ -1,6 +1,6 @@
 # Services
 
-Interface: `playback`, `preview`, `crop`, `color_picker`, `ai_access`, `ai_task`, `remote_models`, `progress`, `text_clipboard`, `lifecycle`, `gpu`.
+Interface: `playback`, `preview`, `crop`, `color_picker`, `ai_access`, `ai_task`, `remote_models`, `progress`, `text_clipboard`, `lifecycle`, `voiceover`, `gpu`.
 
 What more than one window needs and no window owns. Imports point here from the windows,
 areas, frame and composition root; a services module never names a window, an area or
@@ -18,6 +18,7 @@ areas, frame and composition root; a services module never names a window, an ar
 | `text_clipboard` | Read-only native text access with injected reader composition; viewport custody belongs to [input](../input/README.md). |
 | `progress` | `job_progress`: the stage line and progress bar every job surface draws from an engine snapshot. |
 | `lifecycle` | [Project lifecycle](lifecycle/README.md): `EditorSession`, the editor's memory or autosave-backed engine session. |
+| `voiceover` | [Voice-over capture](voiceover/README.md): the `InputHost` microphone seam, its cpal host, the bounded queue and encoder worker, and atomic take promotion. |
 | `gpu` | [GPU adapters](gpu/README.md): `GpuEffects`, the wgpu implementation of render's effect interface, and `Capture`, bounded fresh-frame screenshots. |
 
 ## Playback and limits

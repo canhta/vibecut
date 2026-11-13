@@ -754,6 +754,34 @@ fn speech_pcm_constructor_and_short_final_aac_frame() {
 }
 
 #[test]
+fn audio_file_writer_streams_blocks_into_one_decodable_file() {
+    let path = testkit::fixture::dir("media").join("audio-file-writer.m4a");
+    std::fs::create_dir_all(testkit::fixture::dir("media")).unwrap();
+    let mut writer = media::AudioFileWriter::create(&path, 48_000, 1).unwrap();
+    assert!(
+        writer.write(&[vec![0.0], vec![0.0]]).is_err(),
+        "channel count"
+    );
+    assert!(writer.write(&[vec![f32::NAN]]).is_err(), "non-finite PCM");
+    for count in [4800, 1, 9600, media::AUDIO_FILE_BLOCK] {
+        writer.write(&[vec![0.1; count]]).unwrap();
+    }
+    let total = 4800 + 1 + 9600 + media::AUDIO_FILE_BLOCK as u64;
+    assert_eq!(writer.samples(), total);
+    assert_eq!(writer.finish().unwrap(), total);
+    assert!(media::PacketReader::open(&path).is_ok());
+    if testkit::oracle::require("audio file writer") {
+        testkit::oracle::approx(
+            testkit::oracle::duration(&path),
+            total as f64 / 48_000.0,
+            2.0 / 48_000.0,
+            "sample count is the duration",
+        );
+        assert!(testkit::oracle::decodes(&path));
+    }
+}
+
+#[test]
 fn cross_container_codec_tags() {
     let Some(path) = testkit::oracle::generate(
         &testkit::fixture::dir("media"),

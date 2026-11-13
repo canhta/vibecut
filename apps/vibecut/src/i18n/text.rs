@@ -1388,6 +1388,26 @@ catalog! {
     GraphPresets { key: "graph_presets", en: "Presets", vi: "Có sẵn" },
     GraphSavePreset { key: "graph_save_preset", en: "Save preset", vi: "Lưu cài đặt" },
     GraphSaved { key: "graph_saved", en: "Saved", vi: "Đã lưu" },
+
+    // Voice-over recording.
+    ActionVoiceoverOpen { key: "action_voiceover_open", en: "Record voice-over", vi: "Ghi âm lời bình" },
+    VoiceoverAdded { key: "voiceover_added", en: "Voice-over added", vi: "Đã thêm lời bình" },
+    VoiceoverClose { key: "voiceover_close", en: "Close", vi: "Đóng" },
+    VoiceoverDefaultInput { key: "voiceover_default_input", en: "Default input", vi: "Thiết bị mặc định" },
+    VoiceoverDevice { key: "voiceover_device", en: "Microphone", vi: "Micrô" },
+    VoiceoverEmpty { key: "voiceover_empty", en: "Nothing was recorded.", vi: "Chưa ghi được âm thanh nào." },
+    VoiceoverEncode { key: "voiceover_encode", en: "The audio of this take could not be processed.", vi: "Không xử lý được âm thanh của bản thu này." },
+    VoiceoverInsertFailed { key: "voiceover_insert_failed", en: "The take was recorded but could not be added to the timeline.", vi: "Đã ghi xong nhưng không thêm được vào dòng thời gian." },
+    VoiceoverLevel { key: "voiceover_level", en: "Input level", vi: "Mức âm vào" },
+    VoiceoverNoDevice { key: "voiceover_no_device", en: "No microphone was found. Connect one and try again.", vi: "Không tìm thấy micrô. Hãy kết nối micrô rồi thử lại." },
+    VoiceoverOverrun { key: "voiceover_overrun", en: "Recording could not keep up, so the take was discarded. Close other apps and try again.", vi: "Việc ghi không theo kịp nên bản thu đã bị bỏ. Hãy đóng bớt ứng dụng khác rồi thử lại." },
+    VoiceoverPermission { key: "voiceover_permission", en: "Microphone access was denied. Allow VibeCut to use the microphone in your system privacy settings, then try again.", vi: "Quyền dùng micrô bị từ chối. Hãy cho phép VibeCut dùng micrô trong cài đặt quyền riêng tư của hệ thống rồi thử lại." },
+    VoiceoverRecord { key: "voiceover_record", en: "Record", vi: "Ghi âm" },
+    VoiceoverRecording { key: "voiceover_recording", en: "Recording {time}", vi: "Đang ghi {time}" },
+    VoiceoverStop { key: "voiceover_stop", en: "Stop", vi: "Dừng" },
+    VoiceoverStorage { key: "voiceover_storage", en: "The take could not be saved. Check free disk space and folder access.", vi: "Không lưu được bản thu. Hãy kiểm tra dung lượng trống và quyền truy cập thư mục." },
+    VoiceoverUnavailable { key: "voiceover_unavailable", en: "The microphone stopped working or is in use by another app. The take was discarded.", vi: "Micrô ngừng hoạt động hoặc đang được ứng dụng khác dùng. Bản thu đã bị bỏ." },
+    VoiceoverUnsupported { key: "voiceover_unsupported", en: "This microphone does not offer a format VibeCut can record.", vi: "Micrô này không có định dạng mà VibeCut ghi được." },
 }
 
 /// The message for `key` in `locale`.

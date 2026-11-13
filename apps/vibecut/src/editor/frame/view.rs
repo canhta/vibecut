@@ -207,6 +207,7 @@ impl Editor {
             }
         }
         self.show_models(ui);
+        self.show_voiceover(ui);
         self.show_preferences(ui);
         self.shortcuts_dialog(ui.ctx());
         if self
@@ -274,6 +275,18 @@ impl Editor {
         let mut state = std::mem::take(&mut self.dialogs);
         let actions = super::super::dialogs::show_preferences(&mut state, &self.context(), ui);
         self.dialogs = state;
+        super::super::dialogs::apply(&mut self.desk(), actions);
+    }
+    /// Paint the voice-over recorder and route its requests.
+    fn show_voiceover(&mut self, ui: &mut egui::Ui) {
+        let actions = {
+            let mut state = std::mem::take(&mut self.dialogs);
+            let cx = self.context();
+            let actions = super::super::dialogs::show_voiceover(&mut state, &cx, ui);
+            drop(cx);
+            self.dialogs = state;
+            actions
+        };
         super::super::dialogs::apply(&mut self.desk(), actions);
     }
     /// Paint the model manager and route its requests.

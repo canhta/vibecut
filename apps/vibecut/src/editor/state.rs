@@ -168,7 +168,8 @@ pub struct Inspection {
     pub media_delete_pending: Vec<AssetId>,
     pub sounds: Option<super::assets::sounds::SoundsView>,
     pub music: Option<super::assets::music::MusicView>,
-    pub export: Option<crate::export::ExportInspection>,
+    pub voiceover: super::dialogs::voiceover::VoiceoverView,
+    pub export:Option<crate::export::ExportInspection>,
     pub export_options: crate::export::ExportOptions,
     /// Working crop while its dialog is open; the project keeps its own copy.
     pub crop: Option<super::panels::player::crop::CropInspection>,

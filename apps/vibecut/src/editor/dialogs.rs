@@ -2,15 +2,17 @@
 pub mod export;
 pub(crate) mod models;
 mod preferences;
+pub(crate) mod voiceover;
 
 use crate::editor::{Context, Desk, egui};
 
-/// Both editor dialogs and the state the frame lends them.
+/// Every editor dialog and the state the frame lends them.
 #[derive(Default)]
 pub(in crate::editor) struct State {
     pub(in crate::editor) export: export::State,
     pub(in crate::editor) models: models::State,
     pub(in crate::editor) preferences: preferences::State,
+    pub(in crate::editor) voiceover: voiceover::State,
 }
 
 /// What the frame must do after a dialog painted.
@@ -18,6 +20,7 @@ pub(in crate::editor) enum Action {
     Export(export::Action),
     Models(models::Action),
     Preferences(preferences::Action),
+    Voiceover(voiceover::Action),
 }
 
 /// Paint both dialogs for a bench that mounts them alone.
@@ -64,8 +67,21 @@ pub(in crate::editor) fn apply(desk: &mut Desk<'_>, actions: Vec<Action>) {
             Action::Export(action) => export::apply(desk, action),
             Action::Models(action) => models::apply(desk, action),
             Action::Preferences(action) => preferences::apply(desk, action),
+            Action::Voiceover(action) => voiceover::apply(desk, action),
         }
     }
+}
+
+/// Paint the voice-over recorder.
+pub(in crate::editor) fn show_voiceover(
+    state: &mut State,
+    cx: &Context<'_>,
+    ui: &mut egui::Ui,
+) -> Vec<Action> {
+    voiceover::show(&mut state.voiceover, cx, ui.ctx())
+        .into_iter()
+        .map(Action::Voiceover)
+        .collect()
 }
 
 /// Paint the user-owned remote model settings.

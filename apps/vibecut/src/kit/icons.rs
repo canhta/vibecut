@@ -58,6 +58,7 @@ pub(crate) enum Icon {
     MagnifyingGlass,
     MagnifyingGlassMinus,
     MagnifyingGlassPlus,
+    Microphone,
     MusicNotes,
     Pause,
     PencilSimple,
@@ -129,6 +130,7 @@ impl Icon {
         Self::MagnifyingGlass,
         Self::MagnifyingGlassMinus,
         Self::MagnifyingGlassPlus,
+        Self::Microphone,
         Self::MusicNotes,
         Self::Pause,
         Self::PencilSimple,
@@ -199,6 +201,7 @@ impl Icon {
             Self::MagnifyingGlass => "magnifying-glass",
             Self::MagnifyingGlassMinus => "magnifying-glass-minus",
             Self::MagnifyingGlassPlus => "magnifying-glass-plus",
+            Self::Microphone => "microphone",
             Self::MusicNotes => "music-notes",
             Self::Pause => "pause",
             Self::PencilSimple => "pencil-simple",
@@ -407,6 +410,10 @@ const ICONS: &[(&str, &[u8])] = &[
     (
         "magnifying-glass-plus",
         include_bytes!("../../../../assets/icons/phosphor/regular/magnifying-glass-plus.svg"),
+    ),
+    (
+        "microphone",
+        include_bytes!("../../../../assets/icons/phosphor/regular/microphone.svg"),
     ),
     (
         "music-notes",

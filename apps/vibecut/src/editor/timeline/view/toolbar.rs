@@ -190,6 +190,19 @@ impl State {
         }
         let scene = Rect::from_min_size(egui::pos2(right - CELL - 1.0, top), Vec2::splat(CELL));
 
+        let mic = Rect::from_min_size(
+            egui::pos2(scene.left() - GAP - CELL, top),
+            Vec2::splat(CELL),
+        );
+        self.toolbar_button(
+            cx,
+            ui,
+            mic,
+            "voiceover.open",
+            Icon::Microphone,
+            Text::ActionVoiceoverOpen,
+            None,
+        );
         let name = cx.staged_project().data().scene().name.as_str().to_owned();
         self.toolbar_scene(cx, ui, scene, &name);
         let magnet = cx.staged_project().data().scene().timeline.magnet;

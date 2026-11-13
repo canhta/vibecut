@@ -451,6 +451,7 @@ impl Editor {
                 .as_ref()
                 .map(|s| s.inspect(&self.session)),
             models: self.dialogs.models.inspect(),
+            voiceover: self.dialogs.voiceover.view(),
             keybinding_issues: self.frame.keybinding_issues.clone(),
             color_preview: self.properties.color_preview(),
             eyedropper: self.properties.eyedropper(),
@@ -578,6 +579,16 @@ impl Editor {
     /// The export dialog state, for automation reads.
     pub fn export_state(&self) -> Option<&dialogs::export::ExportDialog> {
         self.dialogs.export.dialog()
+    }
+    /// Injection boundary for tests: the input host and the project-owned directory
+    /// the voice-over dialog records into. Without it the dialog uses the operating
+    /// system's default input and the project's media folder.
+    pub fn set_voiceover(
+        &mut self,
+        host: Arc<dyn crate::services::voiceover::InputHost>,
+        directory: PathBuf,
+    ) {
+        self.dialogs.voiceover.set(host, directory);
     }
     /// Instantiate the one shared model cache on first use; it never fetches then.
     pub fn open_models(&mut self) -> Result<()> {

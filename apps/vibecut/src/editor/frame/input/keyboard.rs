@@ -111,11 +111,12 @@ impl Editor {
                 || self.frame.shortcuts_open
                 || self.dialogs.export.is_open()
                 || self.dialogs.models.is_open()
+                || self.dialogs.voiceover.is_open()
                 || self.dialogs.preferences.open,
             // There is no Editor while a project is loading; the workspace shows
             // its own progress surface and dispatches no actions.
             project_loading: false,
-            recording: self.frame.recording_active,
+            recording: self.frame.recording_active || self.dialogs.voiceover.recording(),
             text_input: self
                 .assets
                 .captions

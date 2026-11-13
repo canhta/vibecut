@@ -59,6 +59,7 @@ SHA-256 of each embedded file:
 | `magnifying-glass-minus.svg` | `a8478832f12a7a5a231e1ffb1b987fe45f9e1508570b98046e7ff51db7eb1043` |
 | `magnifying-glass.svg` | `f9fa2561978a9a3291e8ae0ebfcb651104f5069fade8f84871627bca68889cde` |
 | `magnifying-glass-plus.svg` | `c61e00fdb994983b59cab26905a7ed45342d7319115d29f50050e26d1f210cb1` |
+| `microphone.svg` | `b49dabfaf603e82594cef0c5e5784c747f4c098b7723d2973c92965745ca93a9` |
 | `music-notes.svg` | `b991d76e24e781b864f9ad8b7aa14e516d4fd851871a979928917e20d492eca0` |
 | `pause.svg` | `7a9a8fe311234262b85c6e332f77db4ba9a59b6ca4292c41d327977cf61a2fc9` |
 | `pencil-simple.svg` | `999530da442f44d8cf0054364373d16150f3e082c2ac294a4988a9c3a4295c28` |

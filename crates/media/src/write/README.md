@@ -31,3 +31,7 @@ Media Foundation always receives CPU NV12 input, including with its hardware enc
 `Muxer` writes MP4, MOV and WebM over a seekable `MuxSink` (plain File or the project's bounded streaming writer), accepts stream-copy or encoded parameters, rescales timestamps and propagates trailer and fsync errors. Write to a temporary output and promote it only after successful `finish`; render and engine own cancellation, final-file replacement and restart policy. Packet buffers are shared by reference and only metadata is rescaled into the final mux time base. FFmpeg owns codec padding and edit-list creation.
 
 `Container::from_extension` resolves MP4, MOV and WebM case-insensitively for CLI and control requests; render takes an explicit container setting.
+
+## Audio file writer
+
+`AudioFileWriter` streams planar f32 blocks (one plane per channel, up to `AUDIO_FILE_BLOCK` samples) through the AAC encoder into an MP4 audio file at the caller's path. Presentation time is the running sample count, so the duration is exactly the samples written, never a clock. A wrong channel count or non-finite sample is a typed refusal before encoding. The caller writes to a temporary path and promotes it only after `finish` returns; dropping the writer leaves an unfinished file the caller deletes.
