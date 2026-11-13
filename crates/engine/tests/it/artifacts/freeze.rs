@@ -223,13 +223,14 @@ fn freeze_holds_the_frame_between_split_halves_and_ripples_later_items() {
 fn freeze_still_pixels_equal_the_render_frame_at_the_playhead_and_is_named_by_hash() {
     let root = tempfile::tempdir().unwrap();
     let mut s = session(root.path());
-    let rendered_before = engine::snapshot::image(s.project(), Tick(secs(1)))
-        .unwrap()
-        .png;
+    // Half a second in, the black overlay covers the host, so the composite is a new picture
+    // and not the host file's own bytes (an identical frame would reuse the host asset).
+    let at = secs(1) / 2;
+    let rendered_before = engine::snapshot::image(s.project(), Tick(at)).unwrap().png;
     let response = send(
         &mut s,
         "timeline.freeze_frame",
-        freeze_params(1, secs(1), secs(3), root.path()),
+        freeze_params(1, at, secs(3), root.path()),
         "freeze-pixels",
     );
     let ResponseValue::Result(ControlResult::Edit { outcome }) = response.value else {

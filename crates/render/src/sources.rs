@@ -306,7 +306,10 @@ impl VideoCursor {
             .as_ref()
             .and_then(|f| f.pts().ok().flatten())
             .and_then(|t| t.checked_add(self.step)));
-        if self.eof && (self.current.is_none() || boundary.is_some_and(|end| at > end)) {
+        // A still image (or an animation past its last frame) holds its final picture for
+        // as long as the item runs; only a video stream that ended early is unavailable.
+        let holds = self.asset.is_image() && self.current.is_some();
+        if self.eof && !holds && (self.current.is_none() || boundary.is_some_and(|end| at > end)) {
             let end = at
                 .checked_add(Tick(1))
                 .ok_or(Error::Invalid("unavailable source range"))?;
@@ -338,7 +341,13 @@ impl VideoCursor {
         } else {
             (self.converter.convert(frame)?, 0)
         };
-        let color = rgba.color().resolved_sdr();
+        // An untagged still image is sRGB by the PNG, JPEG and WebP conventions, not the
+        // BT.709 video default; otherwise a frame exported to PNG would not read back equal.
+        let mut color = rgba.color();
+        if self.asset.is_image() && color.transfer == 2 {
+            color.transfer = 13;
+        }
+        let color = color.resolved_sdr();
         let stride = rgba.stride(0)?;
         Ok(Some(Image::from_rgba8_strided_at(
             rgba.width(),
