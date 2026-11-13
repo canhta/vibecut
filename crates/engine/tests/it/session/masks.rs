@@ -530,3 +530,81 @@ fn mask_point_clipboard_rides_the_item_payload_and_pastes_in_one_undo_step() {
         s.project().as_ref()
     );
 }
+
+#[test]
+fn mask_point_cut_copies_then_removes_the_anchors_in_one_undo_step() {
+    use engine::{CutTarget, ItemPasteSource};
+    let mut s = session();
+    let seed = MaskPath::ellipse();
+    s.apply(Command::AddMask {
+        item: ItemId(2),
+        mask: Mask::new("p", MaskShape::Path { path: seed.clone() }),
+    })
+    .unwrap();
+    let target = |points: Vec<usize>| CutTarget::MaskPoints {
+        item: ItemId(2),
+        mask: "p".into(),
+        points,
+    };
+    let cut = |points: Vec<usize>| Command::CutSelection {
+        target: target(points),
+    };
+
+    // An empty selection is a no-op; a stale index refuses and stores nothing.
+    let before = s.project().clone();
+    let history = s.history_len();
+    assert!(!s.can_cut(&target(vec![])));
+    assert!(!s.apply(cut(vec![])).unwrap().changed);
+    assert!(!s.can_cut(&target(vec![9])));
+    assert!(s.apply(cut(vec![9])).is_err());
+    assert_eq!(s.project(), &before);
+    assert_eq!(s.history_len(), history);
+    assert!(!s.clipboard_has_entry());
+
+    // A cut that would leave fewer than three anchors refuses after the capture and
+    // leaves the slot empty: the payload is stored only once the removal commits.
+    assert!(s.apply(cut(vec![0, 1])).is_err());
+    assert_eq!(s.project(), &before);
+    assert!(!s.clipboard_has_entry());
+
+    // Cut stores the anchor and removes it in one undo step.
+    assert!(s.can_cut(&target(vec![1])));
+    assert!(s.apply(cut(vec![1])).unwrap().changed);
+    let mut expected = seed.clone();
+    expected.vertices.remove(1);
+    assert_eq!(path_of(&s, ItemId(2), "p"), expected);
+    assert_eq!(s.history_len().0, history.0 + 1);
+    assert_eq!(s.mask_point_clipboard_len(), 1);
+    s.apply(Command::Undo {}).unwrap();
+    assert_eq!(s.project(), &before);
+    assert_eq!(
+        s.mask_point_clipboard_len(),
+        1,
+        "undo keeps the cut payload"
+    );
+    s.apply(Command::Redo {}).unwrap();
+
+    // Paste after the cut puts the anchor back with its tangents.
+    s.apply(Command::PasteMaskPoints {
+        item: ItemId(2),
+        mask: "p".into(),
+        after: 0,
+        source: ItemPasteSource::Stored,
+    })
+    .unwrap();
+    assert_eq!(path_of(&s, ItemId(2), "p"), seed);
+
+    // A locked track refuses the cut and leaves project, history and clipboard alone.
+    s.apply(Command::SetTrackLocked {
+        track: TrackId(1),
+        locked: true,
+    })
+    .unwrap();
+    let locked = s.project().clone();
+    let history = s.history_len();
+    assert!(!s.can_cut(&target(vec![2])));
+    assert!(s.apply(cut(vec![2])).is_err());
+    assert_eq!(s.project(), &locked);
+    assert_eq!(s.history_len(), history);
+    assert_eq!(s.mask_point_clipboard_len(), 1);
+}

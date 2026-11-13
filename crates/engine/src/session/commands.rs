@@ -731,7 +731,8 @@ fn required_option<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
 ) -> std::result::Result<Option<T>, D::Error> {
     Option::<T>::deserialize(d)
 }
-/// What `clipboard.cut` copies and then removes: one item set or one keyframe set.
+/// What `clipboard.cut` copies and then removes: one item set, one keyframe set, or
+/// the anchors of one path mask.
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CutTarget {
@@ -742,6 +743,12 @@ pub enum CutTarget {
     Keyframes {
         #[schemars(length(max = 4096))]
         keys: Vec<KeyframeRef>,
+    },
+    MaskPoints {
+        item: ItemId,
+        mask: String,
+        #[schemars(length(max = 4096))]
+        points: Vec<usize>,
     },
 }
 
@@ -783,8 +790,8 @@ commands! {
     SetClipAnimation, "clip.set_animation", "Set clip animation", Edit { item: ItemId, slot: AnimationSlot, preset: Option<AnimationPreset>, duration: Option<Tick> } => Text, serde_json::json!({"item":3,"slot":"in","preset":"fade","duration":127008000000_i64}), available = UnlockedItem, grant = Agent;
     CopyItems, "clipboard.copy", "Copy selected items", SessionControl { #[schemars(length(max = 1024))] items: Vec<ItemId> } => Timeline, serde_json::json!({"items":[1]}), available = NoTransaction, grant = Agent;
     CopyKeyframes, "clipboard.copy_keyframes", "Copy selected keyframes", SessionControl { #[schemars(length(max = 4096))] keys: Vec<KeyframeRef> } => Timeline, serde_json::json!({"keys":[{"item":1,"path":"opacity","component":null,"time":0}]}), available = NoTransaction, grant = Agent;
-    CutSelection, "clipboard.cut", "Cut selected items or keyframes", SessionControl { target: CutTarget } => Timeline, serde_json::json!({"target":{"kind":"items","items":[1]}}), available = UnlockedItem, grant = Agent;
     CopyMaskPoints, "clipboard.copy_mask_points", "Copy mask points", SessionControl { item: ItemId, mask: String, points: Vec<usize> } => MaskPath, serde_json::json!({"item":1,"mask":"mask1","points":[0,1]}), available = NoTransaction, grant = Agent;
+    CutSelection, "clipboard.cut", "Cut selected items, keyframes or mask points", SessionControl { target: CutTarget } => Timeline, serde_json::json!({"target":{"kind":"items","items":[1]}}), available = UnlockedItem, grant = Agent;
     PasteItems, "clipboard.paste", "Paste items", Edit { at: Tick, source: ItemPasteSource } => Timeline, serde_json::json!({"at":0,"source":{"kind":"payload","payload":{"version":1,"span":1000,"items":[{"trackKind":"video","trackIndex":0,"item":{"blendMode":"normal","masks":[],"effects":[],"animations":{},"id":0,"hidden":false,"source_asset":null,"source_range":{"start":0,"end":1000},"start":0,"retime":{"speed":1.0,"maintain_pitch":true,"reverse":false},"content":{"kind":"overlay","params":{"color":[255,0,0,255]}}}}]}}}), available = NoTransaction, grant = Agent;
     PasteKeyframes, "clipboard.paste_keyframes", "Paste keyframes", Edit { item: ItemId, at: Tick, source: KeyframePasteSource } => Timeline, serde_json::json!({"item":1,"at":12,"source":{"kind":"payload","payload":{"version":1,"origin":0,"params":[{"path":"opacity","param":{"kind":"value","channels":{"value":{"kind":"scalar","value":0.7},"keys":[{"time":0,"value":{"kind":"scalar","value":0.25},"segment":"linear","tangent":"flat","incoming":null,"outgoing":null}],"before":"hold","after":"hold"}}}]}}}), available = UnlockedItem, grant = Agent;
     PasteMaskPoints, "clipboard.paste_mask_points", "Paste mask points", Edit { item: ItemId, mask: String, after: usize, source: ItemPasteSource } => MaskPath, serde_json::json!({"item":1,"mask":"mask1","after":0,"source":{"kind":"payload","payload":{"version":1,"items":[],"span":0,"maskPoints":[{"p":[0.5,0.5],"t_in":[0.0,0.0],"t_out":[0.0,0.0]}]}}}), available = VisualItem;

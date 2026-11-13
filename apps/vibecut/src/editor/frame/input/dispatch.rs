@@ -58,8 +58,8 @@ impl Editor {
             })
             .collect()
     }
-    /// The engine cut target for the active scope. Mask points have no clipboard
-    /// payload yet, so they have no cut target.
+    /// The engine cut target for the active scope; mask points cut the one mask the
+    /// point scope holds.
     pub(in crate::editor) fn cut_target(&self) -> Option<engine::CutTarget> {
         use crate::editor::selection::SelectionScope;
         match self.selection_scopes.active(self.session.selection()) {
@@ -69,7 +69,10 @@ impl Editor {
             SelectionScope::Items => Some(engine::CutTarget::Items {
                 items: self.session.selection().iter().copied().collect(),
             }),
-            SelectionScope::MaskPoints | SelectionScope::Transition | SelectionScope::None => None,
+            SelectionScope::MaskPoints => self
+                .mask_point_group()
+                .map(|(item, mask, points)| engine::CutTarget::MaskPoints { item, mask, points }),
+            SelectionScope::Transition | SelectionScope::None => None,
         }
     }
     fn clipboard_available(&self, copy: bool) -> bool {

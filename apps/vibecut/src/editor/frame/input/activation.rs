@@ -143,6 +143,10 @@ impl Editor {
                         crate::editor::selection::SelectionScope::Keyframes => {
                             self.selection_scopes.keyframes.clear();
                         }
+                        // The cut anchors are gone; the item stays selected.
+                        crate::editor::selection::SelectionScope::MaskPoints => {
+                            self.selection_scopes.mask_points.clear();
+                        }
                         _ => self.session.set_selection(Default::default())?,
                     }
                 }

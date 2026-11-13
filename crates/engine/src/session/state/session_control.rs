@@ -159,6 +159,24 @@ impl Session {
                 self.clipboard = Some(Arc::new(payload));
                 self.item_clipboard = None;
             }
+            CutTarget::MaskPoints { item, mask, points } => {
+                let Some(payload) = crate::session::clipboard::ItemClipboard::capture_mask_points(
+                    self.project().data(),
+                    item,
+                    &mask,
+                    &points,
+                )?
+                else {
+                    return Ok(outcome(false));
+                };
+                self.transaction(|session| {
+                    session.apply(Command::RemoveMaskPoint { item, mask, points })
+                })?;
+                // The removal advanced the revision; the store advances it again only
+                // when the entry changed.
+                self.store_item_clipboard(payload)?;
+                return Ok(outcome(true));
+            }
         }
         self.invalidate_revision(false)?;
         Ok(outcome(true))

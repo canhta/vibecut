@@ -213,12 +213,13 @@ paste sources, consumed by `clipboard.copy`, `clipboard.copy_keyframes`,
 copy of either kind; a successful copy of one clears the other. Copy of an empty or
 already-identical scope preserves the store.
 
-`clipboard.cut` takes one `CutTarget` (items or keyframes). It captures the same payload as
-Copy, then runs the matching delete (the item delete follows the session ripple setting;
-keyframes use `keyframes.delete_selection`) in one transaction, so it is one undo step. The payload is stored
+`clipboard.cut` takes one `CutTarget` (items, keyframes or the anchors of one path mask).
+It captures the same payload as Copy, then runs the matching delete (the item delete
+follows the session ripple setting; keyframes use `keyframes.delete_selection`, mask points
+`masks.remove_point`) in one transaction, so it is one undo step. The payload is stored
 only after that delete commits: a locked, stale or empty target refuses or no-ops and leaves
-the previous slot untouched. Mask-point cut is not an engine target; its payload belongs to
-the mask owner.
+the previous slot untouched. Mask-point cut is described under
+[Mask-point clipboard](#mask-point-clipboard).
 
 ### Keyframe clipboard
 
@@ -283,12 +284,12 @@ their tangents unchanged, as one undo step. It refuses an item snapshot, an open
 path, an index past the last anchor, a locked item, and a result over 4096 anchors. Item
 Paste refuses a mask-point snapshot and the reverse. Stored-empty Paste is a no-op.
 
-Mask-point cut (the hook for `clipboard.cut`): add `CutTarget::MaskPoints { item, mask,
-points }` and one arm in `Session::cut` that captures with
-`ItemClipboard::capture_mask_points`, applies `Command::RemoveMaskPoint` inside the same
-`transaction`, then stores the payload through `Session::store_item_clipboard`, the way the
-items arm stores its payload only after the delete commits. `Session::can_cut` gains the
-matching `Session::can_copy_mask_points` arm.
+Mask-point cut is `clipboard.cut` with `CutTarget::MaskPoints { item, mask, points }`:
+`Session::cut` captures with `ItemClipboard::capture_mask_points`, applies
+`Command::RemoveMaskPoint` inside the same `transaction`, then stores the payload through
+`Session::store_item_clipboard`, so like the items arm the payload is stored only after the
+removal commits. `Session::can_cut` admits it through `Session::can_copy_mask_points` on an
+unlocked track.
 
 ### Custody and transports
 

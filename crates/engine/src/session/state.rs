@@ -230,7 +230,7 @@ impl Session {
             && super::KeyframeClipboard::can_capture(self.project().data(), keys)
     }
     /// Current admission for the desktop Cut action: a non-empty copyable target whose
-    /// items or keyframes all sit on unlocked tracks, with no open transaction.
+    /// items, keyframes or mask points all sit on unlocked tracks, with no open transaction.
     pub fn can_cut(&self, target: &super::CutTarget) -> bool {
         if self.transaction_active() {
             return false;
@@ -252,6 +252,9 @@ impl Session {
                 !keys.is_empty()
                     && keys.iter().all(|key| unlocked(key.item))
                     && super::KeyframeClipboard::can_capture(data, keys)
+            }
+            super::CutTarget::MaskPoints { item, mask, points } => {
+                unlocked(*item) && self.can_copy_mask_points(*item, mask, points)
             }
         }
     }

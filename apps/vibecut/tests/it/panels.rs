@@ -5355,3 +5355,35 @@ fn mask_points_copy_and_paste_through_the_session_clipboard_and_chain() {
     harness.state_mut().session.apply(Command::Undo {}).unwrap();
     assert_eq!(path_of(&harness, video), pasted);
 }
+
+#[test]
+fn ctrl_x_cuts_mask_points_in_one_undo_step_and_keeps_the_item_selected() {
+    let (mut harness, video) = freeform_harness();
+    let seed = path_of(&harness, video);
+    point_target(
+        &mut harness,
+        "preview.mask.point.1",
+        egui::Modifiers::default(),
+    );
+    assert_eq!(point_scope(&harness), vec![1]);
+    let history = harness.state().session.history_len().0;
+
+    // Cut stores the anchor, removes it as one undo step and clears only the point scope.
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::X);
+    harness.run_steps(2);
+    let mut expected = seed.clone();
+    expected.vertices.remove(1);
+    assert_eq!(path_of(&harness, video), expected);
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    assert_eq!(harness.state().session.mask_point_clipboard_len(), 1);
+    assert!(point_scope(&harness).is_empty());
+    assert!(
+        harness.state().session.selection().contains(&video),
+        "the item stays selected"
+    );
+
+    // Undo restores the anchor; the cut payload stays in the clipboard.
+    harness.state_mut().session.apply(Command::Undo {}).unwrap();
+    assert_eq!(path_of(&harness, video), seed);
+    assert_eq!(harness.state().session.mask_point_clipboard_len(), 1);
+}
