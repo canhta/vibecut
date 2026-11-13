@@ -24,6 +24,8 @@ pub(super) enum StickerTab {
     All,
     Flags,
     Shapes,
+    /// Starred flags and shapes, from the catalogue favourites.
+    Favorites,
 }
 
 impl StickerTab {
@@ -32,6 +34,7 @@ impl StickerTab {
             Self::All => "all",
             Self::Flags => "flags",
             Self::Shapes => "shapes",
+            Self::Favorites => "favorites",
         }
     }
 }
@@ -76,12 +79,14 @@ pub(super) struct StickerRows {
     pub(super) expanded: bool,
 }
 
-/// Rows for one query, tab and expansion. `saved` is the persisted recent list.
+/// Rows for one query, tab and expansion. `saved` is the persisted recent list and
+/// `favorites` the starred sticker ids.
 pub(super) fn rows(
     query: &str,
     tab: StickerTab,
     expanded: bool,
     saved: &[String],
+    favorites: &[String],
     locale: Locale,
 ) -> StickerRows {
     let limit = if expanded {
@@ -90,6 +95,19 @@ pub(super) fn rows(
         PREVIEW_RESULTS
     };
     let needle = query.trim().to_lowercase();
+    if tab == StickerTab::Favorites {
+        // Starred ids resolve like recents; a stale id drops out here.
+        let results: Vec<Tile> = known_recents(favorites, locale)
+            .into_iter()
+            .filter(|tile| needle.is_empty() || tile.name.to_lowercase().contains(&needle))
+            .collect();
+        return StickerRows {
+            recent: Vec::new(),
+            total: results.len(),
+            results,
+            expanded,
+        };
+    }
     let shapes: Vec<Tile> = if tab == StickerTab::Flags {
         Vec::new()
     } else {
@@ -125,6 +143,7 @@ pub(super) fn rows(
                 StickerTab::All => true,
                 StickerTab::Flags => !tile.shape,
                 StickerTab::Shapes => tile.shape,
+                StickerTab::Favorites => false,
             })
             .collect()
     } else {

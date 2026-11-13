@@ -19,6 +19,21 @@ pub(super) use number_edit::transform_scrub;
 use super::{Action, State};
 use crate::editor::{Port, Result};
 
+/// Star or unstar one animation look through the shared catalogue favourites; the
+/// preference is validated before the write and never enters project history.
+fn toggle_animation_favorite(
+    port: &mut Port<'_>,
+    preset: engine::AnimationPreset,
+    favorite: bool,
+) -> Result<()> {
+    let next = port
+        .view()
+        .preferences
+        .catalog_favorites
+        .with("animations", preset.word(), favorite)?;
+    port.store_preference_result("catalog_favorites", serde_json::to_value(&next)?)
+}
+
 /// Execute the requests `show` returned, in order. Failures surface through
 /// the editor's error line; later requests still run.
 pub(in crate::editor) fn apply(state: &mut State, port: &mut Port<'_>, actions: Vec<Action>) {
@@ -74,6 +89,9 @@ fn route(state: &mut State, port: &mut Port<'_>, actions: Vec<Action>) {
                 snapshot,
             } => {
                 commands::set_clip_animation(state, port, item, (slot, preset, duration), snapshot)
+            }
+            Action::ToggleAnimationFavorite { preset, favorite } => {
+                toggle_animation_favorite(port, preset, favorite)
             }
             Action::ApplyTextPreset {
                 item,

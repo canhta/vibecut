@@ -25,6 +25,21 @@ impl Editor {
         }
         Ok(())
     }
+    /// Star or unstar one catalogue id (`catalog.favorite.set`). Favourites are app
+    /// presentation memory: written without an app-history entry, never project JSON.
+    pub fn set_favorite(&mut self, family: &str, id: &str, favorite: bool) -> Result<()> {
+        let next = self
+            .preferences
+            .catalog_favorites
+            .with(family, id, favorite)?;
+        self.preferences
+            .set("catalog_favorites", serde_json::to_value(&next)?)?;
+        Ok(())
+    }
+    /// The starred ids of one catalogue family, oldest star first (`catalog.favorite.list`).
+    pub fn catalog_favorites(&self, family: &str) -> Vec<String> {
+        self.preferences.catalog_favorites.list(family).to_vec()
+    }
     /// Hand the ripple preference to the session, which alone decides how an edit
     /// treats the gap it leaves. A gesture in flight keeps its policy; the next
     /// frame retries.

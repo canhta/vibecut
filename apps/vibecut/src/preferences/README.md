@@ -55,7 +55,7 @@ and project-command paths; the bank never enters project JSON or project history
 
 `sticker_recents` is the Stickers tab's recent ids (flag sticker ids and shape command ids), newest first and deduplicated, at most `MAX_RECENT_STICKERS` (50). It is written without a history entry and never enters project JSON.
 
-`catalog_favorites` is `CatalogFavorites`: starred catalogue ids keyed by family (`effects`, `transitions`, `filters`, `animations`, `stickers`, `sounds`), oldest star first, at most 256 ids of at most 64 bytes in all. Unknown families, empty or duplicate ids and an overflowing document are refused. Starring writes through the preference store without a history entry and never enters project JSON. Version 14 added it, with no migration.
+`catalog_favorites` is `CatalogFavorites`: starred catalogue ids keyed by family (`effects`, `transitions`, `filters`, `animations`, `stickers`, `sounds`), oldest star first, at most 256 ids of at most 64 bytes in all. Unknown families, empty or duplicate ids and an overflowing document are refused. Starring writes through the preference store without a history entry and never enters project JSON. Version 14 added it, with no migration. `catalog.favorite.set` (`AppCommand::SetFavorite`) stars or unstars one id; `catalog.favorite.list` is the typed read `Editor::catalog_favorites(family)`. Both rows are parameterized, so the registry refuses them as plain activations and they are not bindable.
 
 `default_fps` is one of the project frame rates the settings dialog offers (24, 25, 30,
 60, 120; default 30). `hardware_acceleration` is `auto`, `on` or `off`. `cache_limit_bytes`

@@ -139,6 +139,7 @@ pub(in crate::editor) fn prepare(
             state.sticker_tab,
             state.sticker_expanded,
             &cx.preferences.sticker_recents,
+            cx.preferences.catalog_favorites.list("stickers"),
             cx.preferences.locale,
         )
     });

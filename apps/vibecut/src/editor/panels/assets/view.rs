@@ -254,8 +254,69 @@ impl View<'_> {
             );
             return;
         }
-        for (index, preset) in presets.iter().enumerate() {
+        let favorites = self.state.adjustment_favorites;
+        ui.horizontal(|ui| {
+            for (only_favorites, label) in [
+                (false, Text::AssetsAll),
+                (true, Text::AssetsFavorites),
+            ] {
+                let selected = favorites == only_favorites;
+                let response = ui.selectable_label(
+                    selected,
+                    egui::RichText::new(self.tr(label))
+                        .font(theme::label_font())
+                        .size(theme::type_size::SMALL_LABEL),
+                );
+                self.remember(
+                    format!("assets.adjustment.category.{}", if only_favorites { "favorites" } else { "all" }),
+                    &response,
+                    None,
+                );
+                if response.clicked() {
+                    self.state.adjustment_favorites = only_favorites;
+                }
+            }
+        });
+        // Preset names are unique, so a name is the catalogue id a star keeps.
+        let listed: Vec<(usize, &crate::preferences::AdjustmentPreset)> = presets
+            .iter()
+            .enumerate()
+            .filter(|(_, preset)| {
+                !favorites || self.cx.preferences.catalog_favorites.contains("filters", &preset.name)
+            })
+            .collect();
+        if listed.is_empty() {
+            self.empty(
+                ui,
+                Icon::SlidersHorizontal,
+                Text::AssetsFavoritesEmpty,
+                crate::kit::Tone::Quiet,
+            );
+            return;
+        }
+        for (index, preset) in listed {
             ui.horizontal(|ui| {
+                let starred = self
+                    .cx
+                    .preferences
+                    .catalog_favorites
+                    .contains("filters", &preset.name);
+                let label = self.tr(if starred {
+                    Text::AssetsFavoriteRemove
+                } else {
+                    Text::AssetsFavoriteAdd
+                });
+                let star = ui
+                    .add(egui::Button::new(if starred { "★" } else { "☆" }).frame(false))
+                    .on_hover_text(label);
+                self.remember(format!("assets.adjustment.{index}.favorite"), &star, None);
+                if star.clicked() {
+                    self.actions.push(Action::ToggleFavorite {
+                        family: "filters",
+                        id: preset.name.clone(),
+                        favorite: !starred,
+                    });
+                }
                 ui.label(
                     egui::RichText::new(&preset.name)
                         .font(theme::label_font())

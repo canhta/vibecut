@@ -1450,6 +1450,8 @@ catalog! {
     ActionUiKeybindingsReset { key: "action_ui_keybindings_reset", en: "Restore shortcuts", vi: "Khôi phục phím tắt" },
     ActionUiKeybindingsSet { key: "action_ui_keybindings_set", en: "Change a shortcut", vi: "Đổi phím tắt" },
     ActionUiPrefsSet { key: "action_ui_prefs_set", en: "Change a setting", vi: "Đổi cài đặt" },
+    ActionCatalogFavoriteSet { key: "action_catalog_favorite_set", en: "Star or unstar a catalogue item", vi: "Gắn hoặc bỏ sao mục trong thư viện" },
+    ActionCatalogFavoriteList { key: "action_catalog_favorite_list", en: "List starred catalogue items", vi: "Liệt kê mục đã gắn sao" },
     ActionWindowHome { key: "action_window_home", en: "Go to Home", vi: "Về Trang chủ" },
     FontClose { key: "font_close", en: "Close", vi: "Đóng" },
     FontDownload { key: "font_download", en: "Download", vi: "Tải xuống" },

@@ -37,6 +37,11 @@ pub(in crate::editor) enum Action {
         preset: project::TextPresetId,
         snapshot: Arc<project::Project>,
     },
+    /// Star or unstar one animation look (`animations` family); a preference write without history.
+    ToggleAnimationFavorite {
+        preset: engine::AnimationPreset,
+        favorite: bool,
+    },
     SaveTextPreset {
         item: ItemId,
         snapshot: Arc<project::Project>,
