@@ -41,6 +41,20 @@ pub(crate) enum Action {
         item: ItemId,
         content: String,
     },
+    /// Stage the master volume and mute while the volume slider is dragged.
+    MasterPreview {
+        volume: f32,
+        muted: bool,
+    },
+    /// Close the master volume drag; `commit` publishes one undo step.
+    MasterEnd {
+        commit: bool,
+    },
+    /// One master volume or mute change, published as its own undo step.
+    MasterSet {
+        volume: f32,
+        muted: bool,
+    },
     /// Close the inline text session; `commit` publishes one undo step.
     TextEnd {
         commit: bool,

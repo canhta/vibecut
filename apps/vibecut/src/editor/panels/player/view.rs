@@ -201,6 +201,8 @@ fn control(id: &str, playing: bool) -> Option<(kit::Icon, Text)> {
             (kit::Icon::CornersOut, Text::Fullscreen)
         }
         "preview.zoom.fit" => (kit::Icon::ArrowClockwise, Text::ZoomFit),
+        "playback.loop" => (kit::Icon::Repeat, Text::ActionPlaybackLoop),
+        "preview.volume.mute" => (kit::Icon::SpeakerHigh, Text::AudioMuted),
         "preview.zoom.in" => (kit::Icon::MagnifyingGlassPlus, Text::ZoomIn),
         "preview.zoom.out" => (kit::Icon::MagnifyingGlassMinus, Text::ZoomOut),
         "preview.scenes" => (kit::Icon::FilmStrip, Text::Scenes),
@@ -435,6 +437,107 @@ fn footer_controls(
         }
         remember(cx, actions, "transport.play", r);
     });
+    // [new] Master volume and loop sit left of Ratio. CapCut's footer has no such row,
+    // so it reuses the existing control, slider and spacing tokens only.
+    let half = kit::size::CONTROL / 2.0;
+    let ratio_left = footer.right()
+        - kit::space::XS
+        - kit::size::PLAYER_RATIO_X
+        - kit::size::PLAYER_RATIO_WIDTH / 2.0;
+    let loop_x = ratio_left - kit::space::XS - half;
+    let mute_x = loop_x - kit::size::CONTROL - kit::space::XS;
+    let slider_left = mute_x - half - kit::space::XS - kit::size::ZOOM_SLIDER;
+    let play_right = footer.center().x + half;
+    if slider_left > play_right + kit::space::MD {
+        let current = cx.session.preview_project().unwrap_or(cx.session.project());
+        let settings = &current.data().settings;
+        let (volume, muted) = (settings.master_volume, settings.master_muted);
+        let loop_rect =
+            Rect::from_center_size(egui::pos2(loop_x, y), Vec2::splat(kit::size::CONTROL));
+        at(ui, loop_rect, "player.loop", |ui| {
+            let r = ui
+                .add_enabled_ui(!empty, |ui| {
+                    kit::icon_button(
+                        ui,
+                        "playback.loop",
+                        kit::Icon::Repeat,
+                        cx.tr(Text::ActionPlaybackLoop),
+                        cx.preferences.playback_loop,
+                    )
+                })
+                .inner;
+            if r.clicked() {
+                actions.push(Action::Command("playback.loop".into()));
+            }
+            remember(cx, actions, "playback.loop", r);
+        });
+        let mute_rect =
+            Rect::from_center_size(egui::pos2(mute_x, y), Vec2::splat(kit::size::CONTROL));
+        at(ui, mute_rect, "player.mute", |ui| {
+            let r = ui
+                .add_enabled_ui(!empty, |ui| {
+                    kit::icon_button(
+                        ui,
+                        "preview.volume.mute",
+                        if muted {
+                            kit::Icon::SpeakerSlash
+                        } else {
+                            kit::Icon::SpeakerHigh
+                        },
+                        cx.tr(if muted {
+                            Text::AudioUnmuted
+                        } else {
+                            Text::AudioMuted
+                        }),
+                        muted,
+                    )
+                })
+                .inner;
+            if r.clicked() {
+                actions.push(Action::MasterSet {
+                    volume,
+                    muted: !muted,
+                });
+            }
+            remember(cx, actions, "preview.volume.mute", r);
+        });
+        let slider_rect = Rect::from_center_size(
+            egui::pos2(slider_left + kit::size::ZOOM_SLIDER / 2.0, y),
+            Vec2::new(kit::size::ZOOM_SLIDER, kit::size::CONTROL),
+        );
+        at(ui, slider_rect, "player.volume", |ui| {
+            let range = f64::from(*project::VOLUME_DB_RANGE.start())
+                ..=f64::from(*project::VOLUME_DB_RANGE.end());
+            let (r, value) = ui
+                .add_enabled_ui(!empty, |ui| {
+                    kit::rail_slider(
+                        ui,
+                        "preview.volume",
+                        f64::from(volume),
+                        range,
+                        kit::size::ZOOM_SLIDER,
+                    )
+                })
+                .inner;
+            // The engine stores master volume on a hundredth-dB grid.
+            let next = ((value * 100.0).round() / 100.0) as f32;
+            if (r.drag_started() || r.dragged()) && next != volume {
+                actions.push(Action::MasterPreview {
+                    volume: next,
+                    muted,
+                });
+            }
+            if r.drag_stopped() {
+                actions.push(Action::MasterEnd { commit: true });
+            } else if r.clicked() && next != volume {
+                actions.push(Action::MasterSet {
+                    volume: next,
+                    muted,
+                });
+            }
+            remember(cx, actions, "preview.volume", r);
+        });
+    }
     let right = footer.right() - kit::space::XS;
     let full = Rect::from_center_size(
         egui::pos2(right - kit::size::CONTROL / 2.0, y),

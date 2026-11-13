@@ -154,6 +154,7 @@ mod tests {
         assert!(Preferences::default().snapping);
         assert!(!Preferences::default().ripple);
         assert!(Preferences::default().preview_axis);
+        assert!(!Preferences::default().playback_loop);
         assert_eq!(Preferences::system().locale, Locale::from_system());
     }
 
@@ -196,6 +197,7 @@ mod tests {
             ("snapping", serde_json::json!(false)),
             ("ripple", serde_json::json!(true)),
             ("preview_axis", serde_json::json!(false)),
+            ("playback_loop", serde_json::json!(true)),
             ("panels", serde_json::json!([0.30, 0.20, 0.35])),
             ("sections", serde_json::json!({"inspector.canvas": false})),
             ("assets_tab", serde_json::json!("captions")),

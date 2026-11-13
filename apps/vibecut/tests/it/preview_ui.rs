@@ -2204,3 +2204,31 @@ fn preview_inline_text_edit_renders_screenshot() {
     image.save(target.join("p1-25-text-edit.png")).unwrap();
     assert!(image.width() > 0 && image.height() > 0);
 }
+
+#[test]
+fn master_mute_is_one_undo_step_per_click_and_loop_is_app_state_only() {
+    let mut h = build(editor(
+        project(FrameRate::FPS_30, 800, 450, false),
+        Preferences::default(),
+    ));
+    let muted = |h: &Harness<Editor>| h.state().session.project().data().settings.master_muted;
+    assert!(!muted(&h));
+    let before = history(&h);
+
+    click(&mut h, "preview.volume.mute");
+    assert!(muted(&h));
+    assert_eq!(history(&h), before + 1);
+    click(&mut h, "preview.volume.mute");
+    assert!(!muted(&h));
+    assert_eq!(history(&h), before + 2);
+
+    // Loop is app transport state: it writes preferences and the playback range, not the project.
+    let bytes = json(h.state().session.project());
+    assert_eq!(h.state().playback.loop_range().unwrap(), None);
+    click(&mut h, "playback.loop");
+    assert!(h.state().preferences.playback_loop);
+    let range = h.state().playback.loop_range().unwrap();
+    assert_eq!(range.map(|(start, _)| start), Some(Tick::ZERO));
+    assert_eq!(history(&h), before + 2);
+    assert_eq!(json(h.state().session.project()), bytes);
+}

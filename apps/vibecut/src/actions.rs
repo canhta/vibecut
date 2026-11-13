@@ -153,6 +153,7 @@ pub enum UiAction {
     Redo,
     Snap,
     Ripple,
+    Loop,
     PreviewAxis,
     ZoomIn,
     ZoomOut,

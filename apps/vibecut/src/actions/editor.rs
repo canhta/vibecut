@@ -478,6 +478,14 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         &[],
     ),
     ActionSpec::ui(
+        "playback.loop",
+        Text::ActionPlaybackLoop,
+        ActionCategory::Playback,
+        "playback transport",
+        UiAction::Loop,
+        &[],
+    ),
+    ActionSpec::ui(
         "timeline.select_all",
         Text::ActionTimelineSelectAll,
         ActionCategory::Selection,
