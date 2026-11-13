@@ -252,6 +252,8 @@ Stickers: `stickers search [--category all|flags] [--limit N] [query]` runs `sti
 
 Rectangle, ellipse, polygon and star items use `timeline.insert` with `content.kind=graphic`, a closed `definitionId` and explicit appearance. Edit fallbacks with `timeline.set_item_param` graphic patches, or ordinary `keyframes.*` paths for authoritative appearance. The long-lived `control` session accepts `preview.snapshot {time,path}` to publish PNG; one-shot `exec` refuses it. `export` encodes video through the same compositor. These commands are also available through the framed MCP adapter.
 
+A video or image item's fit mode is `timeline.set_item_param` with field `fit` and value `fit`, `fill` (the default), `stretch`, `none` (source pixel size) or `manual`; any other value is refused. `export` places the clip under the mode against the current canvas, so `project.set_canvas` re-fits it; `manual` first records the computed fit into the scale and refuses when the scale is keyed or would leave 0.01..=10.
+
 ## Clipboard
 
 A long-lived `control` session supports `clipboard.copy`, `clipboard.copy_keyframes`, `clipboard.cut`,

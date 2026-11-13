@@ -502,6 +502,7 @@ fn proxied_editor(source: &std::path::Path) -> Editor {
                 cleanup: Default::default(),
                 reduce_noise: false,
                 background: project::ClipBackground::None,
+                fit: Default::default(),
             }),
         }],
     });

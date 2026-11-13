@@ -175,6 +175,7 @@ fn session(asset: SourceAsset, count: i64) -> Session {
             muted: false,
             fades: Default::default(),
             crop: None,
+            fit: Default::default(),
             cleanup: Default::default(),
             background: project::ClipBackground::None,
             reduce_noise: false,

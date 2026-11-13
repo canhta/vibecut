@@ -1,7 +1,7 @@
 # Localization
 
 Interface: `Text`, `text`, `Locale`, `format`, `format_count`, `number`, `decimal`,
-`date`, `signed`, `parse_decimal`, `Plural`, `blend_label`, `export_duration`,
+`date`, `signed`, `parse_decimal`, `Plural`, `blend_label`, `fit_label`, `export_duration`,
 `export_range`, `effect_label`.
 
 One catalog owns every user-visible string. `Text` is the key set with English and

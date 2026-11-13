@@ -210,6 +210,7 @@ fn video_project(asset: &SourceAsset) -> project::Project {
                 cleanup: Default::default(),
                 reduce_noise: false,
                 background: project::ClipBackground::None,
+                fit: Default::default(),
             }),
         }],
     });

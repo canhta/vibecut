@@ -1880,6 +1880,7 @@ fn clipboard_translates_output_local_bezier_snapshot_with_one_undo() {
         muted: false,
         crop: None,
         fades: Default::default(),
+        fit: Default::default(),
         cleanup: Default::default(),
         background: project::ClipBackground::None,
         reduce_noise: false,

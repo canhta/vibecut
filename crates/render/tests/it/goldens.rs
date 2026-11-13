@@ -106,6 +106,7 @@ fn crop_scene_animated(
             source_audio_enabled: false,
             volume: 0.0,
             muted: false,
+            fit: Default::default(),
             cleanup: Default::default(),
             background: project::ClipBackground::None,
             reduce_noise: false,
@@ -363,6 +364,7 @@ fn scene() -> project::Project {
                 volume: 0.0,
                 muted: false,
                 crop: None,
+                fit: Default::default(),
                 cleanup: Default::default(),
                 background: project::ClipBackground::None,
                 reduce_noise: false,
@@ -981,4 +983,349 @@ fn separable_sampling_preserves_fractional_crops_and_transparent_borders() {
         });
         assert_eq!(hash, expected, "{width}x{height} {fit:?}");
     }
+}
+
+/// Source frames cut into four colour bands along the longer axis: red, green,
+/// blue and yellow in order, so a probe names the source region it shows.
+struct Bands;
+impl SourceProvider for Bands {
+    fn status(
+        &mut self,
+        _: &media::SourceAsset,
+        _: bool,
+        _: &dyn ExecutionHooks,
+    ) -> Result<Option<UnavailableReason>> {
+        Ok(None)
+    }
+    fn video(
+        &mut self,
+        asset: &media::SourceAsset,
+        _: project::ItemId,
+        _: Tick,
+        h: &dyn ExecutionHooks,
+    ) -> Result<Option<Image>> {
+        let shape = asset
+            .probe()
+            .streams
+            .iter()
+            .find_map(|stream| stream.video.as_ref())
+            .unwrap();
+        let (width, height) = (shape.width as usize, shape.height as usize);
+        let mut bytes = Vec::new();
+        for y in 0..height {
+            for x in 0..width {
+                let band = if width >= height {
+                    x * 4 / width
+                } else {
+                    y * 4 / height
+                };
+                bytes.extend_from_slice(&BAND_COLORS[band]);
+            }
+        }
+        Ok(Some(Image::from_rgba8(
+            shape.width,
+            shape.height,
+            &bytes,
+            false,
+            13,
+            h,
+        )?))
+    }
+    fn audio(
+        &mut self,
+        _: &media::SourceAsset,
+        _: project::ItemId,
+        _: i64,
+        n: usize,
+        rate: u32,
+        h: &dyn ExecutionHooks,
+    ) -> Result<AudioBlock> {
+        AudioBlock::new(rate, 2, n, MemoryKind::Decoded, h)
+    }
+}
+const BAND_COLORS: [[u8; 4]; 4] = [
+    [255, 0, 0, 255],
+    [0, 255, 0, 255],
+    [0, 0, 255, 255],
+    [255, 255, 0, 255],
+];
+const RED: [u8; 3] = [255, 0, 0];
+const GREEN: [u8; 3] = [0, 255, 0];
+const BLUE: [u8; 3] = [0, 0, 255];
+const YELLOW: [u8; 3] = [255, 255, 0];
+const BLACK: [u8; 3] = [0, 0, 0];
+
+fn fit_scene(
+    canvas: [u32; 2],
+    source: [u32; 2],
+    fit: project::FitMode,
+    transform: &[(&str, f64)],
+) -> project::Project {
+    let mut animations = project::Animations::default();
+    for (path, value) in transform {
+        animations
+            .set(
+                project::AnimationPath::new(*path).unwrap(),
+                project::Param::new(project::ParamValue::Scalar(*value)).unwrap(),
+            )
+            .unwrap();
+    }
+    let asset = testkit::source::asset(1, std::env::temp_dir().join("render-fit-source"))
+        .format("synthetic")
+        .duration(tick(1, 1))
+        .stream(
+            testkit::source::video()
+                .codec("rgba")
+                .time_base(media::TimeBase::new(1, 30).unwrap())
+                .duration(tick(1, 1))
+                .start(Tick::ZERO)
+                .frame_count(30)
+                .variable_frame_rate(false)
+                .size(source[0], source[1])
+                .build(),
+        )
+        .build();
+    let mut data = project::Project::empty(project::ProjectId(0), "".into())
+        .unwrap()
+        .into_data();
+    data.canvas.width = canvas[0];
+    data.canvas.height = canvas[1];
+    data.canvas.background = project::Color([0, 0, 0, 255]);
+    data.assets.push(asset);
+    data.scene_mut().timeline.main.items = vec![project::Item {
+        hidden: false,
+        blend_mode: Default::default(),
+        retime: Default::default(),
+        masks: Vec::new(),
+        effects: Vec::new(),
+        animations,
+        id: project::ItemId(0),
+        source_asset: Some(media::AssetId(1)),
+        source_range: TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+        start: Tick::ZERO,
+        content: project::ItemParams::Video(project::VideoParams {
+            crop: None,
+            fit,
+            fades: Default::default(),
+            source_audio_enabled: false,
+            volume: 0.0,
+            muted: false,
+            cleanup: Default::default(),
+            reduce_noise: false,
+            background: project::ClipBackground::None,
+        }),
+    }];
+    project::Project::new(data).unwrap()
+}
+
+/// Renders frame zero (export and preview agree) and returns a pixel probe.
+fn fit_probe(p: &project::Project) -> impl Fn(usize, usize) -> [u8; 3] {
+    let h = Hooks::default();
+    let mut renderer = Renderer::new(p, RenderSettings::from_project(p)).unwrap();
+    let frame = renderer.render_frame(Tick::ZERO, &mut Bands, &h).unwrap();
+    let preview = renderer.preview_frame(Tick::ZERO, &mut Bands, &h).unwrap();
+    assert_eq!(frame.pixels(), preview.pixels(), "preview matches export");
+    let width = p.data().canvas.width as usize;
+    let bytes = frame.rgba8(1, &h).unwrap().bytes;
+    move |x, y| {
+        let at = (y * width + x) * 4;
+        [bytes[at], bytes[at + 1], bytes[at + 2]]
+    }
+}
+
+fn near(actual: [u8; 3], expected: [u8; 3], case: &str) {
+    assert!(
+        actual.iter().zip(expected).all(|(a, e)| a.abs_diff(e) <= 3),
+        "{case}: {actual:?} is not {expected:?}"
+    );
+}
+
+#[test]
+fn item_fit_modes_render_portrait_and_landscape_sources_and_refit_on_canvas_change() {
+    use project::FitMode as M;
+    // (case, canvas, source, mode, probes)
+    type Probes = Vec<((usize, usize), [u8; 3])>;
+    let cases: Vec<(&str, [u32; 2], [u32; 2], M, Probes)> = vec![
+        // A 2:1 landscape source in a square canvas.
+        (
+            "landscape fit",
+            [64, 64],
+            [16, 8],
+            M::Fit,
+            vec![
+                ((8, 32), RED),
+                ((24, 32), GREEN),
+                ((40, 32), BLUE),
+                ((56, 32), YELLOW),
+                ((8, 8), BLACK),
+                ((8, 56), BLACK),
+            ],
+        ),
+        (
+            "landscape fill",
+            [64, 64],
+            [16, 8],
+            M::Fill,
+            vec![
+                ((8, 8), GREEN),
+                ((56, 8), BLUE),
+                ((8, 56), GREEN),
+                ((56, 56), BLUE),
+            ],
+        ),
+        (
+            "landscape stretch",
+            [64, 64],
+            [16, 8],
+            M::Stretch,
+            vec![
+                ((8, 8), RED),
+                ((24, 8), GREEN),
+                ((40, 56), BLUE),
+                ((56, 8), YELLOW),
+            ],
+        ),
+        (
+            "landscape none",
+            [64, 64],
+            [16, 8],
+            M::None,
+            vec![
+                ((26, 32), RED),
+                ((30, 32), GREEN),
+                ((34, 32), BLUE),
+                ((38, 32), YELLOW),
+                ((8, 32), BLACK),
+                ((32, 8), BLACK),
+            ],
+        ),
+        (
+            "landscape manual",
+            [64, 64],
+            [16, 8],
+            M::Manual,
+            vec![((8, 8), RED), ((56, 56), YELLOW)],
+        ),
+        // A 1:2 portrait source in a 2:1 landscape canvas.
+        (
+            "portrait fit",
+            [64, 32],
+            [8, 16],
+            M::Fit,
+            vec![
+                ((32, 4), RED),
+                ((32, 12), GREEN),
+                ((32, 20), BLUE),
+                ((32, 28), YELLOW),
+                ((8, 16), BLACK),
+                ((56, 16), BLACK),
+            ],
+        ),
+        (
+            "portrait fill",
+            [64, 32],
+            [8, 16],
+            M::Fill,
+            vec![
+                ((8, 4), GREEN),
+                ((56, 4), GREEN),
+                ((8, 28), BLUE),
+                ((56, 28), BLUE),
+            ],
+        ),
+        (
+            "portrait stretch",
+            [64, 32],
+            [8, 16],
+            M::Stretch,
+            vec![
+                ((8, 4), RED),
+                ((56, 12), GREEN),
+                ((8, 20), BLUE),
+                ((56, 28), YELLOW),
+            ],
+        ),
+        (
+            "portrait none",
+            [64, 32],
+            [8, 16],
+            M::None,
+            vec![
+                ((32, 10), RED),
+                ((32, 14), GREEN),
+                ((32, 18), BLUE),
+                ((32, 22), YELLOW),
+                ((8, 16), BLACK),
+                ((32, 2), BLACK),
+            ],
+        ),
+    ];
+    for (case, canvas, source, mode, probes) in cases {
+        let p = fit_scene(canvas, source, mode, &[]);
+        let probe = fit_probe(&p);
+        for ((x, y), expected) in probes {
+            near(probe(x, y), expected, &format!("{case} at {x},{y}"));
+        }
+    }
+
+    // The policy is read at render time, so one project re-fits when its canvas
+    // changes: the letterbox of the square canvas disappears in a 2:1 canvas.
+    let square = fit_scene([64, 64], [16, 8], M::Fit, &[]);
+    near(fit_probe(&square)(16, 2), BLACK, "square canvas letterbox");
+    let mut data = square.into_data();
+    data.canvas.width = 128;
+    data.canvas.height = 64;
+    let wide = project::Project::new(data).unwrap();
+    let probe = fit_probe(&wide);
+    near(probe(16, 2), RED, "wide canvas fills the top row");
+    near(probe(48, 32), GREEN, "wide canvas second band");
+    near(probe(112, 61), YELLOW, "wide canvas last band");
+}
+
+#[test]
+fn item_fit_boxes_feed_arrangement_bounds_and_rotate_with_the_transform() {
+    use project::FitMode as M;
+    let item = |p: &project::Project| p.data().scene().timeline.main.items[0].clone();
+    // The shared placement box: the same rectangle arrangement and coverage read.
+    for (mode, expected) in [
+        (M::Fit, (0.0, 16.0, 64.0, 32.0)),
+        (M::Fill, (0.0, 0.0, 64.0, 64.0)),
+        (M::Stretch, (0.0, 0.0, 64.0, 64.0)),
+        (M::None, (24.0, 28.0, 16.0, 8.0)),
+        (M::Manual, (0.0, 0.0, 64.0, 64.0)),
+    ] {
+        let p = fit_scene([64, 64], [16, 8], mode, &[]);
+        let bounds = arrange::bounds(p.data(), &item(&p), Tick::ZERO).unwrap();
+        let actual = (bounds.x, bounds.y, bounds.width, bounds.height);
+        assert!(
+            [actual.0 - expected.0, actual.1 - expected.1]
+                .iter()
+                .chain(&[actual.2 - expected.2, actual.3 - expected.3])
+                .all(|d| d.abs() < 1e-9),
+            "{mode:?}: {actual:?}"
+        );
+    }
+
+    // A quarter turn rotates the fitted box, not the canvas: the 64x32 band
+    // becomes a 32x64 column, and the bands run top to bottom.
+    let turned = fit_scene([64, 64], [16, 8], M::Fit, &[("transform.rotate", 90.0)]);
+    let bounds = arrange::bounds(turned.data(), &item(&turned), Tick::ZERO).unwrap();
+    assert!(
+        (bounds.x - 16.0).abs() < 1e-9
+            && bounds.y.abs() < 1e-9
+            && (bounds.width - 32.0).abs() < 1e-9
+            && (bounds.height - 64.0).abs() < 1e-9,
+        "{bounds:?}"
+    );
+    let probe = fit_probe(&turned);
+    for (y, expected) in [(8, RED), (24, GREEN), (40, BLUE), (56, YELLOW)] {
+        near(probe(32, y), expected, &format!("rotated band at y {y}"));
+    }
+    near(probe(8, 32), BLACK, "outside the rotated column, left");
+    near(probe(56, 32), BLACK, "outside the rotated column, right");
+
+    // Fill covers the canvas under a quarter turn too.
+    let filled = fit_scene([64, 64], [16, 8], M::Fill, &[("transform.rotate", 90.0)]);
+    let bounds = arrange::bounds(filled.data(), &item(&filled), Tick::ZERO).unwrap();
+    assert!(bounds.x.abs() < 1e-9 && bounds.y.abs() < 1e-9 && (bounds.width - 64.0).abs() < 1e-9);
 }

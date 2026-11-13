@@ -171,8 +171,21 @@ pub(super) fn set_keyframe_at(
 
 /// Reset every authored transform channel, reflections included, as one atomic
 /// batch. A keyed reflection axis refuses the batch before any channel changes.
+/// A Manual fit returns to Fill, since its recorded scale is part of the reset.
 pub(super) fn reset_transform(desk: &mut Desk<'_>, item: ItemId) -> Result<()> {
-    let mut commands = Vec::with_capacity(project::TransformField::ALL.len() + 2);
+    let manual = read::item(desk.view().session.project(), item).is_some_and(|item| {
+        matches!(
+            &item.content,
+            project::ItemParams::Video(params) if params.fit == project::FitMode::Manual
+        )
+    });
+    let mut commands = Vec::with_capacity(project::TransformField::ALL.len() + 3);
+    if manual {
+        commands.push(engine::Command::SetItemField {
+            item,
+            patch: ItemParamPatch::Fit(project::FitMode::Fill),
+        });
+    }
     for field in project::TransformField::ALL {
         commands.push(engine::Command::SetItemField {
             item,
@@ -301,6 +314,10 @@ fn item_patch(field: &str, value: &str) -> Result<ItemParamPatch> {
         });
     }
     Ok(match field {
+        "fit" => ItemParamPatch::Fit(
+            serde_json::from_value(serde_json::json!(value))
+                .map_err(|_| Error::Invalid("fit mode"))?,
+        ),
         "blendMode" => ItemParamPatch::BlendMode(
             serde_json::from_value(serde_json::json!(value))
                 .map_err(|_| Error::Invalid("blend mode"))?,

@@ -602,6 +602,7 @@ fn audible_session() -> (Session, TrackId, TrackId, ItemId) {
             volume: 0.0,
             muted: false,
             crop: None,
+            fit: Default::default(),
             cleanup: Default::default(),
             background: project::ClipBackground::None,
             reduce_noise: false,

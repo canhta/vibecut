@@ -29,6 +29,8 @@ one undo step and the retained selection. Both toggles are disabled while their 
 carries keys; Reset writes the five numeric channels and both reflections as one
 atomic batch and refuses entirely if an axis is keyed.
 
+A video or image item's Transform section starts with a Fit mode row: a dropdown (`inspector.fit`, options `inspector.fit.<id>`) over Fit, Fill, Stretch, Original size and Manual that sends `timeline.set_item_param` field `fit`, one undo step per choice. The row is [new]; the reference shows no clip fit mode. The scale rows keep their meaning under every mode: 100% is the fitted size. Choosing Manual records the fit into the scale rows first, and Reset returns a Manual item to Fill. Text, sticker, graphic, audio and multi-selection show no Fit row.
+
 The same section's Arrange row carries six canvas alignments and two even-spacing
 actions. They activate the registered `timeline.align_*` / `timeline.distribute_*`
 actions, so keyboard, panel, CLI and agent paths share one command family. Align works

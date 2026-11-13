@@ -1510,6 +1510,7 @@ fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
         source_audio_enabled: false,
         volume: 0.0,
         muted: false,
+        fit: Default::default(),
         cleanup: Default::default(),
         background: project::ClipBackground::None,
         reduce_noise: false,

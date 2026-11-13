@@ -29,6 +29,7 @@ fn media(source_range: time::SourceRange, thousandths: u16, start: i64) -> Item 
             volume: 0.0,
             muted: false,
             crop: None,
+            fit: Default::default(),
             cleanup: Default::default(),
             background: project::ClipBackground::None,
             reduce_noise: false,

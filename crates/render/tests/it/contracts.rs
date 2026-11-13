@@ -2094,6 +2094,7 @@ fn split_project(
             cleanup: Default::default(),
             background,
             reduce_noise: false,
+            fit: Default::default(),
         }),
     });
     Project::new(data).unwrap()

@@ -1153,6 +1153,7 @@ impl<'a, 'c> Panel<'a, 'c> {
             true,
             |panel, ui| {
                 use project::TransformField as F;
+                panel.fit_control(ui, item);
                 let mut scale = super::transform_scrub(F::ScaleX);
                 if panel.state.uniform_scale {
                     scale.label = Text::Scale;

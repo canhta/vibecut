@@ -2,13 +2,101 @@
 use super::{
     BTreeSet, EditError, Item, ItemId, ItemParams, ProjectData, Result, TrimSources, item,
 };
+use std::collections::BTreeMap;
 use time::Tick;
+
+/// Canvas and source pixel sizes a fit change needs to record the computed fit
+/// into a transform; read once before the candidate is borrowed for writing.
+pub(super) struct FitSizes {
+    canvas: [f64; 2],
+    sources: BTreeMap<ItemId, [f64; 2]>,
+}
+impl FitSizes {
+    fn new(data: &ProjectData, patch: &crate::ItemParamPatch, ids: &[ItemId]) -> Self {
+        let mut sources = BTreeMap::new();
+        if matches!(patch, crate::ItemParamPatch::Fit(_)) {
+            for track in data.scene().timeline.iter() {
+                for item in track.items.iter().filter(|item| ids.contains(&item.id)) {
+                    if let Some(size) = project::cropped_source_size(&data.assets, item) {
+                        sources.insert(item.id, size);
+                    }
+                }
+            }
+        }
+        Self {
+            canvas: [f64::from(data.canvas.width), f64::from(data.canvas.height)],
+            sources,
+        }
+    }
+}
+
+/// Switches a video item to the Manual fit, first multiplying the computed fit
+/// extent into its static scale so the picture does not move; a canvas resize
+/// then no longer re-fits it. A keyed or out-of-range scale refuses; other
+/// kinds and an item already Manual are left alone. A source of unknown size
+/// has extent 1, as the renderer assumes.
+fn enter_manual(target: &mut Item, sizes: &FitSizes) -> Result<()> {
+    let ItemParams::Video(params) = &target.content else {
+        return Ok(());
+    };
+    if params.fit == project::FitMode::Manual {
+        return Ok(());
+    }
+    let extent = sizes
+        .sources
+        .get(&target.id)
+        .and_then(|source| params.fit.extent(sizes.canvas, *source))
+        .unwrap_or([1.0, 1.0]);
+    let mut recorded = Vec::new();
+    for (field, factor) in [
+        (project::TransformField::ScaleX, extent[0]),
+        (project::TransformField::ScaleY, extent[1]),
+    ] {
+        let path = project::AnimationPath::from(field.builtin());
+        let base = match target.animations.get(&path) {
+            None => field.default_value(),
+            Some(project::Param::Value(channel)) if channel.keys().is_empty() => {
+                match channel.base() {
+                    project::ParamValue::Scalar(base) => *base,
+                    _ => return Err(EditError::Invalid("transform scale")),
+                }
+            }
+            Some(_) => return Err(EditError::Invalid("animated scale cannot record the fit")),
+        };
+        let scaled = base * factor;
+        if field.clamp(scaled)? != scaled {
+            return Err(EditError::Invalid("transform bounds"));
+        }
+        if (factor - 1.0).abs() > f64::EPSILON {
+            recorded.push((path, scaled));
+        }
+    }
+    for (path, scaled) in recorded {
+        target.animations.set(
+            path,
+            project::Param::new(project::ParamValue::Scalar(scaled))?,
+        )?;
+    }
+    if let ItemParams::Video(params) = &mut target.content {
+        params.fit = project::FitMode::Manual;
+    }
+    Ok(())
+}
 
 pub(super) fn apply_patch(
     target: &mut Item,
     patch: &crate::ItemParamPatch,
     copied_text_bytes: &mut usize,
+    sizes: &FitSizes,
 ) -> Result<()> {
+    if let crate::ItemParamPatch::Fit(mode) = patch {
+        if *mode == project::FitMode::Manual {
+            enter_manual(target, sizes)?;
+        } else if let ItemParams::Video(params) = &mut target.content {
+            params.fit = *mode;
+        }
+        return Ok(());
+    }
     if let Some((field, value)) = patch.transform() {
         target.animations.set(
             project::AnimationPath::from(field.builtin()),
@@ -270,11 +358,12 @@ pub(super) fn execute_set_item_field(
     copied_text_bytes: &mut usize,
 ) -> Result<ProjectData> {
     patch.validate()?;
+    let sizes = FitSizes::new(&data, &patch, &[id]);
     let target = item(&mut data, id)?;
     if !patch.compatible(&target.content) {
         return Err(EditError::Invalid("incompatible item parameter"));
     }
-    apply_patch(target, &patch, copied_text_bytes)?;
+    apply_patch(target, &patch, copied_text_bytes, &sizes)?;
 
     Ok(data)
 }
@@ -292,6 +381,7 @@ pub(super) fn execute_set_item_param_many(
     if remaining.len() != items.len() {
         return Err(EditError::Invalid("duplicate item selection"));
     }
+    let sizes = FitSizes::new(&data, &patch, &items);
     // Walk the candidate once: large selections must not rescan the timeline per ID.
     for track in data.scene_mut().timeline.iter_mut() {
         for target in &mut track.items {
@@ -301,7 +391,7 @@ pub(super) fn execute_set_item_param_many(
             if track.locked {
                 return Err(EditError::Locked(track.id));
             }
-            apply_patch(target, &patch, copied_text_bytes)?;
+            apply_patch(target, &patch, copied_text_bytes, &sizes)?;
         }
     }
     if let Some(id) = remaining.into_iter().next() {

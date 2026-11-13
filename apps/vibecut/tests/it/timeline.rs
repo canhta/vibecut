@@ -113,6 +113,7 @@ pub(crate) fn fixture() -> Fixture {
             volume: 0.0,
             muted: false,
             crop: None,
+            fit: Default::default(),
             cleanup: Default::default(),
             background: project::ClipBackground::None,
             reduce_noise: false,
@@ -130,6 +131,7 @@ pub(crate) fn fixture() -> Fixture {
             volume: 0.0,
             muted: false,
             crop: None,
+            fit: Default::default(),
             cleanup: Default::default(),
             background: project::ClipBackground::None,
             reduce_noise: false,
@@ -350,6 +352,63 @@ fn blend_dropdown_and_opacity_field_dispatch_real_edits() {
     harness.state_mut().activate("edit.undo").unwrap();
     harness.run_steps(2);
     assert!(!noise(&harness));
+}
+
+#[test]
+fn fit_dropdown_sets_each_mode_with_undo_and_a_screenshot() {
+    fn fit_of(editor: &Editor, id: ItemId) -> project::FitMode {
+        match &item(editor, id).content {
+            project::ItemParams::Video(params) => params.fit,
+            other => panic!("not a video item: {other:?}"),
+        }
+    }
+    let fixture = fixture();
+    let id = fixture.video_a;
+    let mut harness = harness(fixture.editor);
+    harness.run_steps(3);
+    harness
+        .get(
+            By::new()
+                .predicate(|n| n.author_id() == Some(format!("timeline.item.{}", id.0).as_str())),
+        )
+        .click();
+    harness.run_steps(2);
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.group.basic")))
+        .click();
+    harness.run_steps(2);
+    assert_eq!(fit_of(harness.state(), id), project::FitMode::Fill);
+    for mode in [
+        project::FitMode::Fit,
+        project::FitMode::Stretch,
+        project::FitMode::None,
+        project::FitMode::Manual,
+    ] {
+        let history = harness.state().session.history_len().0;
+        harness
+            .get(By::new().predicate(|n| n.author_id() == Some("inspector.fit")))
+            .click();
+        harness.run_steps(2);
+        let option = format!("inspector.fit.{}", mode.id());
+        harness
+            .get(By::new().predicate(|n| n.author_id() == Some(option.as_str())))
+            .click();
+        harness.run_steps(2);
+        assert_eq!(fit_of(harness.state(), id), mode, "{mode:?}");
+        assert_eq!(harness.state().session.history_len().0, history + 1);
+        if mode == project::FitMode::Fit {
+            let path =
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-71-fit.png");
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            harness.render().unwrap().save(&path).unwrap();
+        }
+    }
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert_eq!(fit_of(harness.state(), id), project::FitMode::None);
+    harness.state_mut().activate("edit.redo").unwrap();
+    harness.run_steps(2);
+    assert_eq!(fit_of(harness.state(), id), project::FitMode::Manual);
 }
 
 pub(crate) fn widget(harness: &Harness<'_, Editor>, id: &str) -> egui::Rect {
@@ -3550,6 +3609,7 @@ fn clip_details_remain_visible_after_scrolling_deep_into_a_long_clip() {
             volume: 0.0,
             muted: false,
             crop: None,
+            fit: Default::default(),
             cleanup: Default::default(),
             background: project::ClipBackground::None,
             reduce_noise: false,

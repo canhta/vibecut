@@ -33,6 +33,7 @@ pub use visual::{
     TransitionParamKind, TransitionParams, TransitionValue, effect_definition, effect_definitions,
     packed_color, transition_definition, valid_letter_spacing, valid_line_height, valid_weight,
 };
+pub use visual::{FitBox, FitMode, cropped_source_size, fit_box};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
