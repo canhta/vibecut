@@ -10,6 +10,7 @@ mod face;
 mod frame;
 mod limits;
 mod mfcc;
+mod person;
 mod scene;
 
 pub use face::{FACE_CROP_SIZE, FaceBox, FaceCrop, FaceTensor};

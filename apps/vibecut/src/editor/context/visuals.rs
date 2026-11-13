@@ -97,6 +97,10 @@ pub(crate) trait VisualQuery {
         visible: time::TimeRange,
         columns: usize,
     ) -> WaveState;
+    /// Whether the asset's source file is still on disk, as the engine's media
+    /// status reports it. A missing source keeps its asset record (the relink
+    /// state) and asks for no strip or waveform.
+    fn availability(&self, asset: &media::SourceAsset) -> media::AssetAvailability;
     /// Drain the generation commands the last paint asked for.
     fn take_requests(&self) -> Vec<VisualRequest>;
 }

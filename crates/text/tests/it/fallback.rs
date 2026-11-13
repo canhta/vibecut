@@ -12,6 +12,7 @@ fn options(family: &'static str) -> LayoutOptions<'static> {
         fallbacks: &[],
         line_break: text::LineBreak::Unicode,
         letter_spacing: 0.0,
+        case: text::Case::AsTyped,
     }
 }
 

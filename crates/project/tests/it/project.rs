@@ -401,6 +401,7 @@ fn item(id: u64, start: i64) -> Item {
             color: Color([255; 4]),
             align: project::TextAlign::Left,
             decoration: project::TextDecoration::Underline,
+            case: project::TextCase::Title,
             stroke: Some(project::TextStroke {
                 color: Color([200, 10, 20, 255]),
                 width: 3.0,

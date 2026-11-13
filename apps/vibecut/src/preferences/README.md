@@ -36,9 +36,16 @@ from this map. Downloaded local weight choices remain in their local owner. Keys
 fetched lists and price acknowledgements are never serialized. A document whose version is not
 `PREFERENCES_VERSION` is refused through the version refusal; there is no migration.
 
-`preview_guide` and `preview_overlays` store the preview guide choice (none, or a grid with
-rows and columns 1–24, validated on load and set) and the per-overlay visibility. Both are presentation only;
-an edit is one `ui.prefs.set` step in app history. Version 11 introduced them with no
+The text-task provider is one persisted choice, `subtitles.text_provider`, shared by
+translation and `fillers.classify`. The models are not shared: each task takes its own
+`AiPreferences` row for that provider, the Translate row into the transient
+`subtitles.translation_model` and the ClassifyFillers row into `subtitles.fillers_model`.
+Version 13 replaced the translation-only `translation` and `translation_model` fields with
+these; there is no migration.
+
+`preview_guide` and `preview_overlays` store the preview guide choice (none, a grid with
+rows and columns 1–24, validated on load and set, or one of the platform guides TikTok, Instagram Reels and YouTube Shorts) and the per-overlay visibility. Both are presentation only;
+an edit is one `ui.prefs.set` step in app history. Version 11 introduced them and version 12 added the platform guides, with no
 migration: older documents are dropped.
 
 `adjustment_presets` is the bounded app-owned bank of named colour grades (at most 32,

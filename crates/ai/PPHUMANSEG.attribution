@@ -1,0 +1,8 @@
+asset: user-downloaded human_segmentation_pphumanseg_2023mar.onnx (not bundled)
+title: PP-HumanSeg person segmentation weights
+author: PaddlePaddle Authors (PaddleHub PP-HumanSeg); ONNX conversion by OpenCV Zoo contributors
+source: https://github.com/opencv/opencv_zoo/tree/48b10fa505aeb51fbd127fc60a5c660040e823b7/models/human_segmentation_pphumanseg
+license: Apache-2.0
+license-file: https://raw.githubusercontent.com/opencv/opencv_zoo/48b10fa505aeb51fbd127fc60a5c660040e823b7/models/human_segmentation_pphumanseg/LICENSE
+added: p2-ai/01
+notes: The model directory README states that all files in it are Apache-2.0; no separate weight licence or training-data statement exists upstream, and none is inferred. Exact file identity is owned by the ai model catalog; downloads remain explicit and hash verified.

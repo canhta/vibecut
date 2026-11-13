@@ -553,6 +553,83 @@ fn edge_and_relief_thumbnail_jobs_fallback_cache_hit_and_independent_pixels() {
 }
 
 #[test]
+fn animation_previews_are_deterministic_distinct_per_look_and_cached() {
+    use engine::animation_previews::{
+        AnimationPreviews, MAX_PREVIEWS, PREVIEW_EDGE, PREVIEW_FRAMES, preview_bytes,
+    };
+    use engine::{AnimationPreset, AnimationSlot};
+    let edge = PREVIEW_EDGE as usize * 4;
+    let width = edge * PREVIEW_FRAMES as usize;
+    let rows = [
+        (AnimationSlot::In, &AnimationPreset::EDGE[..]),
+        (AnimationSlot::Out, &AnimationPreset::EDGE[..]),
+        (AnimationSlot::Combo, &AnimationPreset::COMBO[..]),
+    ];
+    let mut every = Vec::new();
+    for (slot, looks) in rows {
+        for look in looks {
+            let strip = preview_bytes(slot, *look).unwrap();
+            assert_eq!(strip.len(), width * PREVIEW_EDGE as usize);
+            assert_eq!(
+                strip,
+                preview_bytes(slot, *look).unwrap(),
+                "{slot:?} {look:?}"
+            );
+            // Cut each frame out of the strip's rows; a look must move.
+            let frames: Vec<Vec<u8>> = (0..PREVIEW_FRAMES as usize)
+                .map(|n| {
+                    strip
+                        .chunks(width)
+                        .flat_map(|row| row[n * edge..(n + 1) * edge].to_vec())
+                        .collect()
+                })
+                .collect();
+            assert!(
+                frames.iter().any(|frame| *frame != frames[0]),
+                "{slot:?} {look:?} must move"
+            );
+            every.push(strip);
+        }
+    }
+    assert!(every.len() <= MAX_PREVIEWS);
+    for (index, strip) in every.iter().enumerate() {
+        assert!(
+            every[index + 1..].iter().all(|other| other != strip),
+            "look {index} repeats another look's bytes"
+        );
+    }
+    // A fade In starts fully transparent.
+    let fade = preview_bytes(AnimationSlot::In, AnimationPreset::Fade).unwrap();
+    assert!(
+        fade.chunks(width)
+            .all(|row| row[..edge].chunks(4).all(|pixel| pixel[3] == 0))
+    );
+
+    let budget = engine::ByteBudget::new(16 << 20).unwrap();
+    let cache = AnimationPreviews::new(budget.clone());
+    let mut runner = thumbnail_runner(&budget, Arc::new(SystemClock::default()));
+    for repeat in 0..2 {
+        let (id, _) = cache
+            .submit(&mut runner, AnimationSlot::Combo, AnimationPreset::Pulse)
+            .unwrap();
+        assert_eq!(pump(&mut runner, id).state, JobState::Completed);
+        assert_eq!(
+            runner.take_output(id).unwrap().bytes(),
+            preview_bytes(AnimationSlot::Combo, AnimationPreset::Pulse).unwrap()
+        );
+        assert_eq!(cache.renders(), 1, "repeat {repeat} is a cache hit");
+    }
+    // A Combo look in an edge slot fails the job; it never publishes bytes.
+    let (id, _) = cache
+        .submit(&mut runner, AnimationSlot::In, AnimationPreset::Pulse)
+        .unwrap();
+    assert_eq!(pump(&mut runner, id).state, JobState::Failed);
+    drop(cache);
+    drop(runner);
+    assert_eq!(budget.snapshot().unwrap().used, 0);
+}
+
+#[test]
 fn timed_thumbnails_bind_phase_animation_identity_and_source_without_wrong_cache_hits() {
     use engine::effect_thumbnails::EffectThumbnails;
     let budget = engine::ByteBudget::new(16 << 20).unwrap();

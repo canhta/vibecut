@@ -941,6 +941,32 @@ fn a_pending_analysis_refreshes_the_preview_to_a_split_layout_when_its_job_finis
 }
 
 #[test]
+fn a_lent_detector_without_installed_weights_reports_the_face_data_missing() {
+    let root = tempfile::tempdir().unwrap();
+    let media =
+        engine::control::MediaAccess::open_in(root.path(), ByteBudget::new(64 << 20).unwrap())
+            .unwrap();
+    // The loader every composition root lends refuses a missing bundle with this typed error.
+    let missing = engine::control::VisionAccess::new(|| {
+        Err(engine::control::Error::Providers(
+            engine::providers::Error::ModelMissing("yunet-2026may"),
+        ))
+    });
+    let mut app = fixture::app();
+    app.lend_analysis(Some(Arc::new(Mutex::new(media))), Some(Arc::new(missing)));
+    app.generate().unwrap();
+    wait(&mut app);
+    let mut h = harness(app, 1.0);
+    h.run_steps(3);
+    let said = |text| {
+        h.query_by_label(vibecut::i18n::text(Locale::En, text))
+            .is_some()
+    };
+    assert!(said(vibecut::i18n::Text::ShortsShotsModels));
+    assert!(!said(vibecut::i18n::Text::ShortsShotsUnavailable));
+}
+
+#[test]
 fn an_unavailable_detector_is_reported_once_and_can_be_dismissed() {
     let mut app = fixture::app();
     app.lend_analysis(None, None);

@@ -1,10 +1,15 @@
 //! The one lending point: the process stores and the model service every editor borrows.
 use super::window::EditorWindow;
 use crate::{
-    Editor, Error, editor::LibraryStore, model_manager::ModelManager,
-    services::assets::music::MusicSession,
+    Editor, Error,
+    editor::LibraryStore,
+    model_manager::ModelManager,
+    services::{assets::music::MusicSession, model_cache::ModelCache},
 };
-use engine::{ByteBudget, MusicError, SoundError, control::MediaAccess};
+use engine::{
+    ByteBudget, MusicError, SoundError,
+    control::{MediaAccess, VisionAccess},
+};
 use libraries::{brand_kit::BrandKit, music::MusicLibrary, sounds::SoundLibrary};
 use std::{
     path::{Path, PathBuf},
@@ -26,6 +31,11 @@ pub(super) struct Lending {
     media: Option<Arc<Mutex<MediaAccess>>>,
     /// The user's brand kits. No editor or control consumer reads it yet.
     brand: Option<Arc<BrandKit>>,
+    /// The installed local face detector behind the shorts review's shot layouts. It reads the
+    /// shared verified model cache on each load and never downloads.
+    vision: Arc<VisionAccess>,
+    /// The one models cache the model manager and the face detector both read.
+    model_cache: Arc<ModelCache>,
     /// The model service follows the focused editor: it is lent for a frame and
     /// taken back, so downloads outlive any one project window.
     models: Option<ModelManager>,
@@ -48,6 +58,7 @@ impl Lending {
         let media = MediaAccess::open_in(&root.with_file_name("media"), budget.clone())
             .ok()
             .map(|access| Arc::new(Mutex::new(access)));
+        let model_cache = Arc::new(ModelCache::new(budget.clone()));
         let brand = BrandKit::open(&root.with_file_name("brand_kits"))
             .ok()
             .map(Arc::new);
@@ -57,11 +68,16 @@ impl Lending {
             music: open_music(root),
             media,
             brand,
+            vision: Arc::new(::shorts::installed_faces(model_cache.lookup())),
+            model_cache,
             models: None,
         }
     }
     pub(super) fn media(&self) -> Option<Arc<Mutex<MediaAccess>>> {
         self.media.clone()
+    }
+    pub(super) fn vision(&self) -> Arc<VisionAccess> {
+        self.vision.clone()
     }
     pub(super) fn brand(&self) -> Option<Arc<BrandKit>> {
         self.brand.clone()
@@ -70,6 +86,7 @@ impl Lending {
     pub(super) fn lend_stores(&self, editor: &mut Editor) {
         self.lend_sounds(editor);
         self.lend_music(editor);
+        editor.set_model_cache(self.model_cache.clone());
         if let Some(media) = &self.media {
             editor.set_media(media.clone());
         }

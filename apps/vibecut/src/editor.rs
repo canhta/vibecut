@@ -659,13 +659,18 @@ impl Editor {
     }
     /// Instantiate the one shared model cache on first use; it never fetches then.
     pub fn open_models(&mut self) -> Result<()> {
-        let budget = self.playback.budget().clone();
-        self.dialogs.models.open(budget)
+        self.dialogs.models.open()
     }
     /// Open the manager on a specific missing model, as `/09` does.
     pub fn open_model(&mut self, id: &str) -> Result<()> {
-        let budget = self.playback.budget().clone();
-        self.dialogs.models.open_model(budget, id)
+        self.dialogs.models.open_model(id)
+    }
+    /// Lend the process models cache the model manager opens over.
+    pub fn set_model_cache(
+        &mut self,
+        cache: std::sync::Arc<crate::services::model_cache::ModelCache>,
+    ) {
+        self.dialogs.models.set_cache(cache);
     }
     /// Inject cache/transport/IO ownership for composition and tests.
     pub fn set_model_manager(&mut self, models: dialogs::models::model_manager::ModelManager) {

@@ -55,6 +55,7 @@ pub use analysis::{
     emit_reframe,
 };
 mod artifacts;
+pub use artifacts::animation_previews;
 pub use artifacts::chapter_sidecars;
 pub(crate) use artifacts::control_preview;
 pub use artifacts::effect_thumbnails;

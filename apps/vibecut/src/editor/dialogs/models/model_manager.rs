@@ -121,20 +121,27 @@ impl Drop for ModelManager {
     }
 }
 impl ModelManager {
-    /// Open the single shared cache and the pinned ai catalog. No files are fetched.
-    pub fn open_default(budget: ByteBudget) -> Result<Self> {
-        let (transfers, _) = ModelTransfers::open_default(
-            budget.clone(),
-            128,
-            Arc::new(transport::UreqTransport::new()),
-        )?;
-        Self::with_transfers(budget, ai::foundation::models::catalog()?, transfers)
+    /// Present the pinned ai catalog over the process's one shared cache. No files are fetched.
+    pub fn open_shared(cache: &crate::services::model_cache::ModelCache) -> Result<Self> {
+        Self::with_shared(
+            cache.budget().clone(),
+            ai::foundation::models::catalog()?,
+            cache.transfers()?,
+        )
     }
     /// Injection boundary for tests and composition: the caller owns cache/transport/IO.
     pub fn with_transfers(
         budget: ByteBudget,
         models: Vec<Model>,
         transfers: ModelTransfers,
+    ) -> Result<Self> {
+        Self::with_shared(budget, models, Arc::new(transfers))
+    }
+    /// The same over a handle other consumers of the models cache also hold.
+    pub fn with_shared(
+        budget: ByteBudget,
+        models: Vec<Model>,
+        transfers: Arc<ModelTransfers>,
     ) -> Result<Self> {
         let mut ids = BTreeSet::new();
         for model in &models {
@@ -176,7 +183,7 @@ impl ModelManager {
             check_rx: None,
             check_cancel,
             check_worker: None,
-            transfers: Arc::new(transfers),
+            transfers,
             runner,
             job: None,
             accepted: BTreeSet::new(),

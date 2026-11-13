@@ -329,13 +329,30 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         overwrite,
         allow_degraded,
     };
-    let report = execute(&plan, &access, cli_runner_sized(budget, 32)?)?;
+    // Layout evidence is optional: without a usable media cache the export reports
+    // `no face detector` and keeps the centred crop. Weights are never downloaded here.
+    let media = engine::control::MediaAccess::open(budget.clone())
+        .ok()
+        .map(Mutex::new);
+    let vision = crate::session::vision_access(budget.clone(), access.cache().ok().cloned());
+    let shots = Shots {
+        media: media.as_ref(),
+        vision: &vision,
+    };
+    let report = execute(&plan, &access, shots, cli_runner_sized(budget, 32)?)?;
     Ok(Output::new(
         clips_json(&plan, &report)?,
         clips_human(&report),
         false,
         0,
     ))
+}
+
+/// The process resources behind the per-shot layouts of an export.
+#[derive(Clone, Copy)]
+struct Shots<'a> {
+    media: Option<&'a Mutex<engine::control::MediaAccess>>,
+    vision: &'a engine::control::VisionAccess,
 }
 
 /// Everything the registry commands need, fixed before any job starts.
@@ -371,7 +388,12 @@ struct Report {
 
 /// The workflow as registry commands: `clips.suggest`, then for an export the caption item
 /// the cues become, optional `captions.translate` with `retranslate`, and `clips.export`.
-fn execute(plan: &Plan, access: &CaptionAccess, mut runner: JobRunner) -> Result<Report, CliError> {
+fn execute(
+    plan: &Plan,
+    access: &CaptionAccess,
+    shots: Shots<'_>,
+    mut runner: JobRunner,
+) -> Result<Report, CliError> {
     let asset = SourceAsset::import(AssetId(1), plan.input.clone())?;
     let duration = asset
         .probe()
@@ -472,10 +494,40 @@ fn execute(plan: &Plan, access: &CaptionAccess, mut runner: JobRunner) -> Result
             true,
         )?;
     }
+    // Run the shot analysis to completion first, so the export lays its shorts out from the
+    // cached result instead of answering `pending` and keeping the centred crop.
+    let pieces: Vec<time::SourceRange> = selected
+        .iter()
+        .filter_map(|index| report.result.clips.get(*index))
+        .flat_map(|clip| clip.segments.iter().map(|piece| piece.range))
+        .collect();
+    for _ in 0..2 {
+        let (_, reason) = engine::control::resolve_clip_shots(
+            &mut runner,
+            &asset,
+            &pieces,
+            &report.result.cues,
+            shots.media,
+            Some(shots.vision),
+        )?;
+        let Some(engine::control::ClipShotsDiagnostic::Pending { job }) = reason else {
+            break;
+        };
+        // A failed analysis never fails the export: the next lookup reports it and the
+        // export keeps the centred crop.
+        if wait_for_job(&mut runner, job).is_err() {
+            break;
+        }
+    }
+    let export_lent = Lent {
+        media: shots.media,
+        vision: Some(shots.vision),
+        ..lent
+    };
     let accepted = run_command(
         &mut captions,
         &mut runner,
-        lent,
+        export_lent,
         "clips.export",
         json!({
             "job": suggested.id,

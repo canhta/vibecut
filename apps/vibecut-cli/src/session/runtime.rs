@@ -73,48 +73,42 @@ pub(crate) fn caption_access(budget: ByteBudget) -> engine::subtitles::CaptionAc
     open().unwrap_or_else(engine::subtitles::CaptionAccess::unavailable)
 }
 
-/// The local YuNet detector behind `reframe.generate`. Model files are read from
-/// the shared verified cache and never downloaded here: a missing bundle returns
-/// the typed setup refusal that names `model download yunet-2026may`. A root that
-/// already holds the models cache (through `CaptionAccess::cache`) passes it as
-/// `shared`, because that root is opened once per process; otherwise each load
-/// opens the cache for the duration of the lookup.
+/// The local face detector lent to `reframe.generate` and clip-export layouts. A root that
+/// already holds the models cache (through `CaptionAccess::cache`) passes it as `shared`;
+/// otherwise the process opens the models cache once here. Either way every load reads
+/// through that one cache, and no weights are downloaded.
 pub(crate) fn vision_access(
     budget: ByteBudget,
     shared: Option<Arc<std::sync::Mutex<engine::cache::ArtifactCache>>>,
 ) -> engine::control::VisionAccess {
-    engine::control::VisionAccess::new(move || {
-        let model = engine::models::catalog_model("yunet-2026may")?;
-        let hooks = VisionHooks;
-        let lease = match &shared {
-            Some(cache) => cache
-                .lock()
-                .map_err(|_| engine::RuntimeError::Poisoned)?
-                .model(&model, &hooks)?,
-            None => {
-                let (transfers, _) =
-                    engine::models::ModelTransfers::open_native(budget.clone(), 128)?;
-                transfers.installed(&model, &hooks)?
-            }
+    use ai::foundation::models::Model;
+    use engine::cache::ModelLease;
+    let lookup: shorts::ModelLookup = match shared {
+        Some(cache) => Arc::new(
+            move |model: &Model,
+                  hooks: &dyn ai::ExecutionHooks|
+                  -> engine::control::Result<Option<ModelLease>> {
+                Ok(cache
+                    .lock()
+                    .map_err(|_| engine::RuntimeError::Poisoned)?
+                    .model(model, hooks)?)
+            },
+        ),
+        None => {
+            let opened = engine::models::ModelTransfers::open_native(budget, 128)
+                .ok()
+                .map(|(transfers, _)| transfers);
+            Arc::new(
+                move |model: &Model,
+                      hooks: &dyn ai::ExecutionHooks|
+                      -> engine::control::Result<Option<ModelLease>> {
+                    match &opened {
+                        Some(transfers) => Ok(transfers.installed(model, hooks)?),
+                        None => Err(engine::RuntimeError::CacheBusy.into()),
+                    }
+                },
+            )
         }
-        .ok_or_else(|| {
-            engine::control::Error::Providers(engine::providers::Error::ModelMissing(
-                "yunet-2026may",
-            ))
-        })?;
-        let vision = ai::vision::TractVision::load_faces(lease.directory(), 2, 3, &hooks)?;
-        let fingerprint = *vision.fingerprint()?.as_bytes();
-        Ok((
-            Box::new(vision) as Box<dyn ai::vision::VisionDetector>,
-            fingerprint,
-        ))
-    })
-}
-
-struct VisionHooks;
-impl ai::ExecutionHooks for VisionHooks {
-    fn cancelled(&self) -> bool {
-        false
-    }
-    fn stage(&self, _: ai::Stage) {}
+    };
+    shorts::installed_faces(lookup)
 }

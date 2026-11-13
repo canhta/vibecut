@@ -9,11 +9,35 @@ pub const GRID_MIN: u8 = 1;
 pub const GRID_MAX: u8 = 24;
 
 /// The guide the picker selects. Only the app paints it, so export never sees it.
+/// The platform variants shade the regions that platform's own UI covers; their
+/// fractions and sources are listed in the editor UI doc.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Guide {
     None,
-    Grid { rows: u8, cols: u8 },
+    Grid {
+        rows: u8,
+        cols: u8,
+    },
+    #[serde(rename = "tiktok")]
+    TikTok,
+    InstagramReels,
+    #[serde(rename = "youtube_shorts")]
+    YouTubeShorts,
+}
+
+/// One UI-covered region as fractions of the frame: `[left, top, right, bottom]`.
+pub type Region = [f32; 4];
+
+/// Covered bands of a 9:16 frame: full-width top and bottom bands and the left
+/// and right columns between them.
+fn banded(top: f32, bottom: f32, left: f32, right: f32) -> Vec<Region> {
+    vec![
+        [0.0, 0.0, 1.0, top],
+        [0.0, 1.0 - bottom, 1.0, 1.0],
+        [0.0, top, left, 1.0 - bottom],
+        [1.0 - right, top, 1.0, 1.0 - bottom],
+    ]
 }
 
 impl Default for Guide {
@@ -45,7 +69,41 @@ impl Guide {
     pub fn grid_lines(self) -> (Vec<f32>, Vec<f32>) {
         match self {
             Self::Grid { rows, cols } => (boundaries(cols), boundaries(rows)),
-            Self::None => (Vec::new(), Vec::new()),
+            Self::None | Self::TikTok | Self::InstagramReels | Self::YouTubeShorts => {
+                (Vec::new(), Vec::new())
+            }
+        }
+    }
+
+    /// The regions the platform's UI covers, disjoint, as fractions of the frame.
+    /// Empty for None and Grid.
+    pub fn covered_regions(self) -> Vec<Region> {
+        match self {
+            // TikTok In-Feed safe-zone file, 720x1280: 80 px sides, 160 px top, 440 px
+            // bottom, plus a 120 px wide rail on the right reaching 720 px up from the
+            // bottom, inside the safe area.
+            Self::TikTok => {
+                let mut regions =
+                    banded(160.0 / 1280.0, 440.0 / 1280.0, 80.0 / 720.0, 80.0 / 720.0);
+                regions.push([
+                    520.0 / 720.0,
+                    560.0 / 1280.0,
+                    640.0 / 720.0,
+                    1.0 - 440.0 / 1280.0,
+                ]);
+                regions
+            }
+            // Meta Reels ad guidance: 14% top, 35% bottom, 6% on each side.
+            Self::InstagramReels => banded(0.14, 0.35, 0.06, 0.06),
+            // Google vertical video template, 1080x1920: safe rectangle x 48..888,
+            // y 288..1248.
+            Self::YouTubeShorts => banded(
+                288.0 / 1920.0,
+                672.0 / 1920.0,
+                48.0 / 1080.0,
+                192.0 / 1080.0,
+            ),
+            Self::None | Self::Grid { .. } => Vec::new(),
         }
     }
 }
@@ -171,5 +229,66 @@ mod tests {
         assert!(Guide::Grid { rows: 5, cols: 2 }.same_choice(Guide::default()));
         assert!(!Guide::Grid { rows: 5, cols: 2 }.same_choice(Guide::None));
         assert_eq!(Guide::None.grid_lines(), (Vec::new(), Vec::new()));
+        assert!(Guide::TikTok.same_choice(Guide::TikTok));
+        assert!(!Guide::TikTok.same_choice(Guide::InstagramReels));
+        for guide in PLATFORM_GUIDES {
+            assert_eq!(guide.grid_lines(), (Vec::new(), Vec::new()));
+            assert!(guide.validate().is_ok());
+        }
+    }
+
+    const PLATFORM_GUIDES: [Guide; 3] =
+        [Guide::TikTok, Guide::InstagramReels, Guide::YouTubeShorts];
+
+    fn area(regions: &[Region]) -> f32 {
+        regions.iter().map(|r| (r[2] - r[0]) * (r[3] - r[1])).sum()
+    }
+
+    #[test]
+    fn platform_regions_match_the_measured_margins_and_never_overlap() {
+        assert!(Guide::None.covered_regions().is_empty());
+        assert!(Guide::default().covered_regions().is_empty());
+        let near = |a: f32, b: f32| (a - b).abs() < 1e-5;
+        // Safe area of each platform: the frame minus the covered area.
+        let tiktok = Guide::TikTok.covered_regions();
+        assert!(near(tiktok[0][3], 0.125), "top 160/1280");
+        assert!(near(tiktok[1][1], 0.65625), "bottom 440/1280");
+        assert!(near(tiktok[2][2], 1.0 / 9.0), "side 80/720");
+        assert!(near(tiktok[4][0], 520.0 / 720.0) && near(tiktok[4][1], 0.4375));
+        let reels = Guide::InstagramReels.covered_regions();
+        assert!(near(reels[0][3], 0.14) && near(reels[1][1], 0.65) && near(reels[2][2], 0.06));
+        let shorts = Guide::YouTubeShorts.covered_regions();
+        assert!(near(shorts[0][3], 0.15) && near(shorts[1][1], 0.65));
+        assert!(near(shorts[2][2], 48.0 / 1080.0) && near(shorts[3][0], 0.8));
+        for guide in PLATFORM_GUIDES {
+            let regions = guide.covered_regions();
+            for (i, a) in regions.iter().enumerate() {
+                assert!(a[0] < a[2] && a[1] < a[3], "{guide:?} region is non-empty");
+                for b in &regions[i + 1..] {
+                    let eps = 1e-4;
+                    let overlap = a[0] + eps < b[2]
+                        && b[0] + eps < a[2]
+                        && a[1] + eps < b[3]
+                        && b[1] + eps < a[3];
+                    assert!(!overlap, "{guide:?} regions are disjoint");
+                }
+            }
+            let covered = area(&regions);
+            assert!(covered > 0.3 && covered < 0.7, "{guide:?} covers {covered}");
+        }
+    }
+
+    #[test]
+    fn platform_guides_serialize_under_stable_kinds_and_refuse_unknown_ones() {
+        for (guide, kind) in [
+            (Guide::TikTok, "tiktok"),
+            (Guide::InstagramReels, "instagram_reels"),
+            (Guide::YouTubeShorts, "youtube_shorts"),
+        ] {
+            let value = serde_json::json!(guide);
+            assert_eq!(value, serde_json::json!({ "kind": kind }));
+            assert_eq!(serde_json::from_value::<Guide>(value).unwrap(), guide);
+        }
+        assert!(serde_json::from_value::<Guide>(serde_json::json!({"kind": "spotlight"})).is_err());
     }
 }

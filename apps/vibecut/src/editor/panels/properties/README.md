@@ -49,7 +49,7 @@ The multi-selection inspector shows audio gain and mute plus text content, font,
 colour and background for compatible items, a dash for mixed values and the
 compatible/selected count. A single element uses per-type tabs. The Text tab is one tab of
 sections in order: Font (content, font), Format (one row: size with its drag grip, bold,
-italic, underline, alignment; then line decoration, letter and line spacing), Style (fill
+italic, underline, alignment, then the Case menu; then line decoration, letter and line spacing), Style (fill
 swatch, background box, outline and shadow each as a toggle with a swatch, glow switch,
 saved styles, background geometry), Opacity, the shared Transform section (Scale, Position
 X/Y, Rotate, Arrange, flips; the same component as video items), Blending (blend mode) and
@@ -199,7 +199,11 @@ is one `clip.set_animation` request carrying the project snapshot it was drawn f
 look change keeps the slot's duration. The
 [engine edit contract](../../../../../../crates/engine/src/session/edit/README.md#clip-animation)
 owns the looks, the clamp, the In/Out overlap rule, Combo exclusivity and the trim re-fit.
-Tiles and field are disabled, and a captured request refused, on a locked track, with
+Each look tile shows its preview (`view/animation/previews.rs`): a strip the engine's
+[animation-preview job](../../../../../../crates/engine/src/artifacts/README.md#animation-previews)
+renders once per slot and look and the panel keeps as one texture, so a draw only picks a
+frame; the name sits beneath the 58 px tile and a hovered tile loops the strip. The None
+tile is empty. Tiles and field are disabled, and a captured request refused, on a locked track, with
 an open draft, transaction, save, inline or caption edit, like the other item edits.
 
 The Style section's Preset row lists the project's saved text styles

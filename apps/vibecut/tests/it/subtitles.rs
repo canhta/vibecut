@@ -237,7 +237,14 @@ fn caption_bank_name_invalidation_precedes_enter_and_blur() {
                 };
                 h.state_mut().session.apply(cmd).unwrap();
             }
-            "models" => h.state_mut().activate("models.open").unwrap(),
+            "models" => {
+                h.state_mut().set_model_cache(std::sync::Arc::new(
+                    vibecut::services::model_cache::ModelCache::new(
+                        ByteBudget::new(64 << 20).unwrap(),
+                    ),
+                ));
+                h.state_mut().activate("models.open").unwrap()
+            }
             "saving" => {
                 let session = Session::new((**h.state().session.project()).clone(), 20).unwrap();
                 let mut saving = engine::recovery::Autosave::new(
@@ -1816,7 +1823,7 @@ fn consent_denial_provider_change_cancel_and_stale_results_never_apply() {
         );
         match action {
             "deny" => click(&mut h, "subtitles.consent.deny"),
-            "change" => h.state_mut().preferences.subtitles.translation = "anthropic".into(),
+            "change" => h.state_mut().preferences.subtitles.text_provider = "anthropic".into(),
             "cancel" => h.state_mut().subtitles_mut().unwrap().cancel(),
             "provider-failure" => click(&mut h, "subtitles.consent.approve"),
             _ => {

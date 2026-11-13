@@ -546,6 +546,30 @@ pub enum TextDecoration {
     Underline,
     LineThrough,
 }
+/// Letter case the text layout draws. The stored content keeps what was typed.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum TextCase {
+    #[default]
+    AsTyped,
+    Upper,
+    Lower,
+    /// The first letter of each word upper case; the rest as typed.
+    Title,
+}
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TextParams {
@@ -561,6 +585,8 @@ pub struct TextParams {
     pub align: TextAlign,
     #[serde(default)]
     pub decoration: TextDecoration,
+    /// Letter case the layout draws; `content` itself is never changed by it.
+    pub case: TextCase,
     /// Extra advance after every grapheme cluster, in project canvas pixels (scaled with
     /// the output like the font size); negative tightens.
     pub letter_spacing: f32,
@@ -592,6 +618,7 @@ impl TextParams {
             italic: false,
             align: TextAlign::default(),
             decoration: TextDecoration::default(),
+            case: TextCase::default(),
             letter_spacing: 0.0,
             line_height: 0.0,
             color: Color([255; 4]),

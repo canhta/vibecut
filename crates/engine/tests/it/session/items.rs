@@ -1027,6 +1027,7 @@ fn text_style_patches_update_one_field_and_validate() {
         ItemParamPatch::TextBackgroundCornerRadius(20.0),
         ItemParamPatch::TextAlign(project::TextAlign::Right),
         ItemParamPatch::TextDecoration(project::TextDecoration::LineThrough),
+        ItemParamPatch::TextCase(project::TextCase::Upper),
         ItemParamPatch::TextStroke(Some(project::TextStroke {
             color: Color([9, 8, 7, 255]),
             width: 4.0,
@@ -1084,10 +1085,12 @@ fn text_style_patches_update_one_field_and_validate() {
             project::TextDecoration::LineThrough
         )
     );
+    assert_eq!(p.case, project::TextCase::Upper);
     // The patched style serialises with the stable field names the file format and CLI use.
     let json = serde_json::to_value(&get(&s, item.0).content).unwrap();
     assert_eq!(json["params"]["align"], "right");
     assert_eq!(json["params"]["decoration"], "line_through");
+    assert_eq!(json["params"]["case"], "upper");
     assert_eq!(json["params"]["background"]["offset_x"], -30.5);
     assert_eq!(p.stroke.as_ref().unwrap().width, 4.0);
     assert_eq!(p.shadow.as_ref().unwrap().blur, 2.0);

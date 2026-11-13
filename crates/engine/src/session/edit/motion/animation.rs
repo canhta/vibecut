@@ -3,8 +3,8 @@ use super::super::{ItemId, ProjectData, Result, Tick, item};
 use crate::session::EditError;
 use crate::{AnimationPreset as P, AnimationSlot, ClipAnimations};
 use project::{
-    BuiltinPath, Canvas, Channel, Extrapolation::Hold, Item, Keyframe, Param, ParamValue::Scalar,
-    TransformField,
+    Animations, BuiltinPath, Canvas, Channel, Extrapolation::Hold, Item, Keyframe, Param,
+    ParamValue::Scalar, TransformField,
 };
 use std::collections::BTreeSet;
 use time::Rounding;
@@ -409,6 +409,50 @@ fn write(target: &mut Item, old: &Plan, new: &Plan, bases: &[f64; 6]) -> Result<
         }
     }
     Ok(())
+}
+
+/// The keys one look writes onto a bare sample item that rests at every default and lasts
+/// `length` on `canvas`, as an ordinary key set a preview evaluates. Same expansion, same
+/// clamps as `clip.set_animation`; nothing is stored.
+pub(crate) fn sample_animations(
+    slot: AnimationSlot,
+    preset: P,
+    duration: Tick,
+    length: Tick,
+    canvas: &Canvas,
+) -> Result<Animations> {
+    let anim = match slot {
+        AnimationSlot::In => ClipAnimations {
+            enter: Some((preset, duration)),
+            ..ClipAnimations::default()
+        },
+        AnimationSlot::Out => ClipAnimations {
+            exit: Some((preset, duration)),
+            ..ClipAnimations::default()
+        },
+        AnimationSlot::Combo => ClipAnimations {
+            combo: Some(preset),
+            ..ClipAnimations::default()
+        },
+    };
+    if anim
+        .enter
+        .is_some_and(|(_, held)| held <= Tick::ZERO || held > length)
+        || anim
+            .exit
+            .is_some_and(|(_, held)| held <= Tick::ZERO || held > length)
+    {
+        return Err(EditError::Invalid("clip animation duration"));
+    }
+    let bases: [f64; 6] = std::array::from_fn(default_of);
+    let planned = plan(&anim, &bases, length, canvas)?;
+    let mut out = Animations::default();
+    for ((path, keys), base) in OWNED.into_iter().zip(&planned.0).zip(bases) {
+        if let Some(keys) = keys {
+            out.set(path.into(), param(base, keys)?)?;
+        }
+    }
+    Ok(out)
 }
 
 impl ClipAnimations {

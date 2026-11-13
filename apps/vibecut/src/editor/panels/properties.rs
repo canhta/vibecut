@@ -90,6 +90,8 @@ pub(in crate::editor) struct State {
     adjust_tab: AdjustTab,
     /// Animation sub-tab (In, Out or Combo) shown by the shared Animation control.
     animation_slot: engine::AnimationSlot,
+    /// The Animation tiles' preview jobs and strips; built when the tab first draws.
+    animation_previews: Option<view::AnimationPreviews>,
     hsl_band: usize,
     opacity_edit: Option<(Arc<project::Project>, ItemId, Tick)>,
     reorder: Option<gesture::EffectReorder>,
@@ -208,6 +210,7 @@ impl Default for State {
             curve_channel: 0,
             adjust_tab: AdjustTab::default(),
             animation_slot: engine::AnimationSlot::In,
+            animation_previews: None,
             hsl_band: 0,
             opacity_edit: None,
             reorder: None,

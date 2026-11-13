@@ -55,7 +55,24 @@ impl State {
         let painter = ui.painter().with_clip_rect(visible);
         painter.rect_filled(visible, theme::radius::PANEL, fill);
         let inner = full.shrink(1.0);
+        // A source file gone from disk keeps its asset record: the clip draws the
+        // missing state in place of strip and waveform and asks for neither.
+        // Caption clips only name their source; Replace media serves Video and Audio.
+        let missing = matches!(item.kind, TrackKind::Video | TrackKind::Audio)
+            && item
+                .source_asset
+                .and_then(|id| {
+                    cx.staged_project()
+                        .data()
+                        .assets
+                        .iter()
+                        .find(|asset| asset.id() == id)
+                })
+                .is_some_and(|asset| {
+                    cx.visuals.availability(asset) == media::AssetAvailability::Missing
+                });
         match item.kind {
+            _ if missing => self.paint_missing_media(cx, ui, &painter, item, inner, dark),
             TrackKind::Video if item.overlay.is_none() => {
                 // Top band, filmstrip, waveform: 17 + 39 + 16 px inside the border.
                 let strip_top = inner.top() + theme::size::CLIP_BAND;
@@ -995,6 +1012,46 @@ impl State {
             WaveState::Unsupported => tr(cx, Text::VisualUnsupported).to_owned(),
         };
         self.remember_visual(ui, item, "waveform", wave, label);
+    }
+
+    /// The relink state: the strip and waveform bands drop to the field fill with
+    /// the warning marker, and the band hover names Replace media as the way back.
+    /// Values reuse the failed-visual marker; the reference's own missing-media
+    /// clip is not captured, so its colours and glyph stay open.
+    fn paint_missing_media(
+        &mut self,
+        cx: &Context<'_>,
+        ui: &egui::Ui,
+        painter: &egui::Painter,
+        item: &ItemView,
+        inner: Rect,
+        dark: bool,
+    ) {
+        let label = tr(cx, Text::MediaMissing).to_owned();
+        let bands = match (item.kind, item.overlay) {
+            (TrackKind::Video, None) => {
+                let strip_top = inner.top() + theme::size::CLIP_BAND;
+                let strip = Rect::from_min_size(
+                    egui::pos2(inner.left(), strip_top),
+                    Vec2::new(
+                        inner.width(),
+                        theme::size::CLIP_FILMSTRIP.min(inner.height()),
+                    ),
+                );
+                let wave = Rect::from_min_max(
+                    egui::pos2(inner.left(), strip.bottom()),
+                    inner.right_bottom(),
+                );
+                vec![("filmstrip", strip), ("waveform", wave)]
+            }
+            (TrackKind::Audio, _) => vec![("waveform", inner)],
+            _ => vec![("missing", inner)],
+        };
+        for (band, rect) in bands {
+            painter.rect_filled(rect, 0.0, theme::field(dark));
+            paint_marker(painter, rect, dark);
+            self.remember_visual(ui, item, band, rect, label.clone());
+        }
     }
 
     /// Publish one visual band's state for automation and its hover name.

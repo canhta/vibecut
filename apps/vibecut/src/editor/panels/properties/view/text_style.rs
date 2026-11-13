@@ -184,6 +184,39 @@ impl Panel<'_, '_> {
                 self.set_item_field(item, "text_align", word);
             }
         }
+        self.case_control(&mut cells, item, params.case);
+    }
+
+    /// The Case control after the alignment cells: an `Aa` menu that picks how the layout
+    /// draws the words. Each pick is one `text_case` edit; the stored words stay as typed.
+    fn case_control(&mut self, ui: &mut egui::Ui, item: ItemId, case: project::TextCase) {
+        use project::TextCase;
+        let options = [
+            (TextCase::AsTyped, "as_typed", Text::CaseAsTyped),
+            (TextCase::Upper, "upper", Text::CaseUpper),
+            (TextCase::Lower, "lower", Text::CaseLower),
+            (TextCase::Title, "title", Text::CaseTitle),
+        ];
+        let mut chosen = None;
+        let combo =
+            egui::ComboBox::from_id_salt(Id::unique(format!("inspector.text_case.{}", item.0)))
+                .selected_text(self.tr(Text::TextCaseGlyph))
+                .width(44.0)
+                .show_ui(ui, |ui| {
+                    for (value, word, label) in options {
+                        let response = ui.selectable_label(case == value, self.tr(label));
+                        self.remember(format!("inspector.text_case.{word}"), &response);
+                        if response.clicked() {
+                            chosen = Some(word);
+                            ui.close();
+                        }
+                    }
+                });
+        let response = combo.response.on_hover_text(self.tr(Text::TextCase));
+        self.remember("inspector.text_case", &response);
+        if let Some(word) = chosen {
+            self.set_item_field(item, "text_case", word);
+        }
     }
 
     /// A two-state glyph button (B, I, U); returns whether it was clicked.

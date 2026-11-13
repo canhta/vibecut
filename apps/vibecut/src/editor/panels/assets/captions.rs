@@ -489,7 +489,7 @@ impl Subtitles {
     }
     pub fn translate(&mut self, session: &mut Session, options: &Options) -> Result<()> {
         engine::providers::choose_translation(
-            &options.translation,
+            &options.text_provider,
             Some(&options.translation_model),
         )?;
         let item = self.item.ok_or(Error::Invalid("select captions"))?;
@@ -499,7 +499,7 @@ impl Subtitles {
         let (cancel, events) = self.begin(session)?;
         let access = (self.access)(
             Choice::Translate {
-                provider: &options.translation,
+                provider: &options.text_provider,
                 model: &options.translation_model,
             },
             events.clone(),

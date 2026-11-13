@@ -2722,6 +2722,83 @@ fn video_animation_tab_applies_in_out_and_combo_changes_duration_and_removes() {
     assert_eq!(read(&h).combo, Some(engine::AnimationPreset::Pulse));
 }
 
+/// 419: tiles are 58 px squares carrying a rendered preview, the name beneath, rows 82 px
+/// apart (capture 221759); the strips come from the engine job, never from per-frame UI work.
+#[test]
+fn animation_tiles_show_previews_with_names_beneath_at_the_measured_pitch() {
+    let f = fixture();
+    let mut h = crate::gpu::builder()
+        .with_size(egui::vec2(1727.0, 1029.0))
+        .build_ui_state(|ui, e: &mut Editor| e.ui(ui), f.editor);
+    h.run_steps(3);
+    select(&mut h, f.video);
+    click(&mut h, "inspector.tab.animation");
+    let none = widget_rect(&h, "inspector.animation.in.none");
+    let fade = widget_rect(&h, "inspector.animation.in.fade");
+    let zoom = widget_rect(&h, "inspector.animation.in.zoom_in");
+    assert_eq!(none.size(), egui::vec2(58.0, 58.0));
+    assert_eq!(fade.size(), egui::vec2(58.0, 58.0));
+    assert!(
+        (zoom.top() - none.top() - 82.0).abs() < 0.5,
+        "row pitch {} != 82",
+        zoom.top() - none.top()
+    );
+    assert!(
+        (fade.left() - none.left() - 73.0).abs() < 0.5,
+        "column pitch {} != 73",
+        fade.left() - none.left()
+    );
+    // Preview pixels of a look are lighter than the dark tile fill; the None tile stays empty.
+    let lit = |image: &image::RgbaImage, rect: egui::Rect| {
+        let mut count = 0;
+        for y in rect.top() as u32 + 4..rect.bottom() as u32 - 4 {
+            for x in rect.left() as u32 + 4..rect.right() as u32 - 4 {
+                if image.get_pixel(x, y).0[..3]
+                    .iter()
+                    .all(|channel| *channel > 50)
+                {
+                    count += 1;
+                }
+            }
+        }
+        count
+    };
+    let mut image = h.render().unwrap();
+    for _ in 0..40 {
+        if lit(&image, fade) > 20 {
+            break;
+        }
+        for _ in 0..10 {
+            h.run_steps(1);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        image = h.render().unwrap();
+    }
+    assert!(lit(&image, fade) > 20, "fade tile never showed its preview");
+    assert!(lit(&image, zoom) > 20, "zoom tile never showed its preview");
+    assert_eq!(lit(&image, none), 0);
+    // Out and Combo previews arrive the same way.
+    click(&mut h, "inspector.animation.tab.combo");
+    let pulse = widget_rect(&h, "inspector.animation.combo.pulse");
+    for _ in 0..40 {
+        for _ in 0..10 {
+            h.run_steps(1);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        image = h.render().unwrap();
+        if lit(&image, pulse) > 20 {
+            break;
+        }
+    }
+    assert!(
+        lit(&image, pulse) > 20,
+        "pulse tile never showed its preview"
+    );
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target");
+    std::fs::create_dir_all(&root).unwrap();
+    image.save(root.join("p1-419-animation-tiles.png")).unwrap();
+}
+
 #[test]
 fn speed_tab_scrubs_resets_and_toggles_pitch_through_one_command() {
     let fixture = fixture();
@@ -2955,6 +3032,27 @@ fn text_tab_edits_every_style_field_one_undo_step_each_and_shows_effects() {
         assert!(holds(&text_params(&harness, text)), "{id}");
         harness.state_mut().session.undo().unwrap();
         assert_eq!(harness.state().session.project(), &before, "{id} undo");
+        harness.state_mut().session.redo().unwrap();
+        harness.run_steps(2);
+    }
+    // The Case menu opens on its own and each word is one edit; the stored text keeps what was typed.
+    for (case, word) in [
+        (project::TextCase::Upper, "upper"),
+        (project::TextCase::Lower, "lower"),
+        (project::TextCase::Title, "title"),
+    ] {
+        let before = harness.state().session.project().clone();
+        click(&mut harness, "inspector.text_case");
+        click(&mut harness, &format!("inspector.text_case.{word}"));
+        let params = text_params(&harness, text);
+        assert_eq!(params.case, case, "{word}");
+        assert_eq!(
+            params.content.as_str(),
+            "Hello",
+            "{word} keeps the typed text"
+        );
+        harness.state_mut().session.undo().unwrap();
+        assert_eq!(harness.state().session.project(), &before, "{word} undo");
         harness.state_mut().session.redo().unwrap();
         harness.run_steps(2);
     }

@@ -603,6 +603,7 @@ impl<'a> Renderer<'a> {
                             line_height: p.line_height,
                             align: p.align,
                             decoration: p.decoration,
+                            case: p.case,
                             outline,
                             shadow,
                             glow,
@@ -1043,6 +1044,7 @@ impl<'a> Renderer<'a> {
             background: background.map(TextBox::key),
             align: face.align,
             decoration: face.decoration,
+            case: face.case,
             position: caption.map_or(CaptionPosition::Top, |s| s.position),
             max_lines: caption.map(|s| s.max_lines),
         })

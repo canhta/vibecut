@@ -932,6 +932,7 @@ mod text;
 mod tracks;
 mod transitions;
 
+pub(crate) use animation::{DEFAULT_DURATION, sample_animations};
 use motion::{animation, keyframes};
 pub use project_edits::DEFAULT_BOOKMARK_COLOR;
 

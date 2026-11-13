@@ -8,10 +8,10 @@ use crate::{
     },
     kit,
 };
-use project::{ItemId, TextAlign, TextBackground, TextParams};
+use project::{ItemId, TextAlign, TextBackground, TextCase, TextParams};
 use render::viewport::{ItemGeometry, Viewport};
 use std::ops::Range;
-use text::{Align as LayoutAlign, LayoutOptions};
+use text::{Align as LayoutAlign, Case, LayoutOptions};
 
 /// One inline text session: the opening content, the live buffer and the box it
 /// was opened over. The box follows the staged text while it grows; an empty
@@ -39,6 +39,7 @@ struct Face {
     letter_spacing: f32,
     line_height: f32,
     align: LayoutAlign,
+    case: Case,
 }
 
 impl Face {
@@ -53,6 +54,12 @@ impl Face {
                 TextAlign::Left => LayoutAlign::Left,
                 TextAlign::Center => LayoutAlign::Center,
                 TextAlign::Right => LayoutAlign::Right,
+            },
+            case: match params.case {
+                TextCase::AsTyped => Case::AsTyped,
+                TextCase::Upper => Case::Upper,
+                TextCase::Lower => Case::Lower,
+                TextCase::Title => Case::Title,
             },
         }
     }
@@ -110,6 +117,7 @@ impl Edit {
             align: self.face.align,
             line_height: self.face.line_height,
             letter_spacing: self.face.letter_spacing,
+            case: self.face.case,
             ..Default::default()
         })
     }

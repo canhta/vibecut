@@ -4,9 +4,12 @@
 //! baseline sits at the first line's ascent. Text is laid out left to right; bidirectional
 //! reordering is not part of this crate's contract.
 mod breaks;
+mod case;
 mod paragraph;
 
 use crate::fonts::{self, FaceId};
+pub use case::Case;
+use case::apply_case;
 pub use paragraph::canonical_text;
 use paragraph::{ParagraphContext, append_paragraph, content_bounds};
 use std::ops::Range;
@@ -53,6 +56,8 @@ pub struct LayoutOptions<'a> {
     /// Extra advance in pixels after every grapheme cluster, including the last one of a
     /// line; negative values tighten. Finite and at most 4096 pixels in magnitude.
     pub letter_spacing: f32,
+    /// Letter case applied to the source before shaping.
+    pub case: Case,
 }
 
 impl Default for LayoutOptions<'_> {
@@ -68,6 +73,7 @@ impl Default for LayoutOptions<'_> {
             fallbacks: &[],
             line_break: LineBreak::Unicode,
             letter_spacing: 0.0,
+            case: Case::AsTyped,
         }
     }
 }
@@ -115,8 +121,11 @@ pub struct Bounds {
 /// The shaped and positioned result.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Layout {
-    /// NFC-normalized source text. Cluster offsets and line ranges refer to this string.
+    /// Case-applied, NFC-normalized source text. Cluster offsets and line ranges refer to
+    /// this string.
     pub text: String,
+    /// The case this layout was built with; `caret` and `index` apply it to their source.
+    case: Case,
     pub glyphs: Vec<Glyph>,
     pub lines: Vec<Line>,
     pub bounds: Bounds,
@@ -203,12 +212,14 @@ impl Layout {
         covered.into_iter().all(|value| value)
     }
 
-    /// Caret at a character index in `source`, the string this layout was built from.
+    /// Caret at a character index in `source`, the string this layout was built from as
+    /// passed to [`layout`] (before its case is applied).
     ///
     /// Indices past the end clamp to the text end. A position inside a grapheme moves to
     /// the next cluster boundary, as a text caret cannot sit inside a cluster. An index at
     /// a line break stays on the line before it, and one at a line start sits on that line.
     pub fn caret(&self, source: &str, index: usize) -> Caret {
+        let source = apply_case(source, self.case);
         let byte = source
             .char_indices()
             .nth(index)
@@ -248,7 +259,7 @@ impl Layout {
     ///
     /// The point is clamped to the nearest line box by y, then to the nearest caret
     /// x (cluster boundary or line end) within that line. It returns a character
-    /// offset in `source`, not a byte offset.
+    /// offset in `source` (the text as passed to [`layout`]), not a byte offset.
     pub fn index(&self, source: &str, point: [f32; 2]) -> usize {
         let Some(line) = self.nearest_line(point[1]) else {
             return 0;
@@ -275,7 +286,7 @@ impl Layout {
                 distance = next;
             }
         }
-        source_index(source, best.1)
+        source_index(&apply_case(source, self.case), best.1)
     }
 
     fn nearest_line(&self, y: f32) -> Option<&Line> {
@@ -395,7 +406,7 @@ pub fn layout(text: &str, options: &LayoutOptions<'_>) -> Result<Layout, TextErr
         });
     }
 
-    let normalized = canonical_text(text);
+    let normalized = canonical_text(&apply_case(text, options.case));
     if normalized.len() > MAX_TEXT_BYTES {
         return Err(TextError::TextTooLarge {
             limit: MAX_TEXT_BYTES,
@@ -406,6 +417,7 @@ pub fn layout(text: &str, options: &LayoutOptions<'_>) -> Result<Layout, TextErr
     let fallback_chain = fonts::fallback_chain(options.fallbacks, options.style);
     let mut layout = Layout {
         text: normalized,
+        case: options.case,
         glyphs: Vec::new(),
         lines: Vec::new(),
         bounds: Bounds::default(),
@@ -838,6 +850,31 @@ mod tests {
         let caret = laid_out.caret(source, 1);
         let y = (caret.top + caret.bottom) / 2.0;
         assert_eq!(laid_out.index(source, [caret.x, y]), 2);
+    }
+
+    #[test]
+    fn case_draws_the_cased_text_and_maps_carets_through_the_typed_source() {
+        let typed = "ab ß";
+        let upper = layout(
+            typed,
+            &LayoutOptions {
+                case: Case::Upper,
+                ..options(1000.0)
+            },
+        )
+        .unwrap();
+        assert_eq!(upper.text, "AB ß");
+        let plain = layout(typed, &options(1000.0)).unwrap();
+        assert_eq!(plain.text, typed);
+        let end = upper.caret(typed, typed.chars().count());
+        assert_eq!(end.line, 0);
+        assert!(end.x > upper.caret(typed, 0).x);
+        let baseline = upper.lines[0].baseline - 1.0;
+        assert_eq!(
+            upper.index(typed, [1000.0, baseline]),
+            typed.chars().count()
+        );
+        assert_eq!(upper.index(typed, [0.0, baseline]), 0);
     }
 
     #[test]

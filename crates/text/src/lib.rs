@@ -26,7 +26,7 @@ pub use fonts::{
     is_available, register, resolve, style_name,
 };
 pub use layout::{
-    Align, Bounds, Caret, Glyph, Layout, LayoutOptions, Line, LineBreak, TextError,
+    Align, Bounds, Caret, Case, Glyph, Layout, LayoutOptions, Line, LineBreak, TextError,
     canonical_boundaries, canonical_text, layout, word_range,
 };
 pub use mask::{StrokeKind, coverage_signed_distance, coverage_signed_distance_bytes};

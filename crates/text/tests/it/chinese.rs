@@ -22,6 +22,7 @@ fn options() -> LayoutOptions<'static> {
         fallbacks: &["VibeCut Sans CJK"],
         line_break: LineBreak::Unicode,
         letter_spacing: 0.0,
+        case: text::Case::AsTyped,
     }
 }
 
@@ -117,6 +118,7 @@ fn simplified_and_traditional_chinese_wrap_and_render() -> Result<(), Box<dyn Er
     let grapheme_options = LayoutOptions {
         line_break: LineBreak::Grapheme,
         letter_spacing: 0.0,
+        case: text::Case::AsTyped,
         ..options()
     };
     let grapheme = layout(SIMPLIFIED, &grapheme_options)?;

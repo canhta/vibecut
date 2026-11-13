@@ -94,9 +94,19 @@ Geometry is in the [measured frame](#measured-frame). Empty, loading, unavailabl
 
 ### Preview guides and notes
 
-[new] No reference capture shows a guide picker or a notes overlay; the reference source's guide picker is unreachable and its bookmark notes have a web-only layout. The picker sits in the player menu and offers None or Grid (rows and columns 1–24, default 3×3), with a show switch. Notes show each active bookmark's text top-left over the frame, behind a context-menu switch (default on). Guides are hidden by default; both choices persist and are undoable preference edits, and a grid-size drag is one undo step. Export never shows guides or notes.
+[new] No reference capture shows a guide picker or a notes overlay; the reference source's guide picker is unreachable and its bookmark notes have a web-only layout. The picker sits in the player menu and offers None, Grid (rows and columns 1–24, default 3×3) and one row per platform (TikTok, Instagram Reels, YouTube Shorts), with a show switch. A platform row shades the regions that platform's own UI covers, as translucent fills over the displayed frame (the Viewport plane); it draws no lines. Notes show each active bookmark's text top-left over the frame, behind a context-menu switch (default on). Guides are hidden by default; both choices persist and are undoable preference edits, and a grid-size drag is one undo step. Export never shows guides or notes.
 
-Open: the geometry and styling of the guide picker and notes (layout, spacing, width). Platform safe-area guides (TikTok, Reels, Shorts, Spotlight) are a separate ticket, to be built once their geometry is measured.
+Platform safe-area geometry is measured from each platform's own published creator or advertiser material, accessed 2026-11-13. These are the platforms' ad-creative safe zones; none publishes a separate organic-post figure. Fractions are of the frame; the painted regions are the complement of the safe area.
+
+| Platform | Source | Frame | Covered | Fractions |
+|---|---|---|---|---|
+| TikTok | TikTok Ads Help, "TikTok Auction In-Feed Ads" (https://ads.tiktok.com/help/article/video-ads-specifications?lang=en), "In-Feed-Standard Version LTR" safe-zone file, `In-Feed/Feed.png` | 720×1280 | 80 px each side, 160 px top, 440 px bottom, and a 120 px wide rail on the right of the safe area from 720 px above the bottom up to the bottom band | sides 1/9 (0.1111), top 0.125, bottom 0.34375; rail x 0.7222–0.8889, y 0.4375–0.65625 |
+| Instagram Reels | Meta Ads Guide, "Awareness Image Ad Specs on Instagram Reels" (https://www.facebook.com/business/ads-guide/update/image/instagram-reels), "roughly 14% of the top, 35% of the bottom, and 6% on each side" | 1440×2560 | top, bottom and sides | top 0.14, bottom 0.35, sides 0.06 |
+| YouTube Shorts | Google Ads Help, "About video ad specs" (https://support.google.com/google-ads/answer/13547298?hl=en), vertical safe-zone template https://services.google.com/fh/files/misc/youtubesafezoneoverlay_vertical_final.png; the safe rectangle measured from the template's transparent pixels is x 48–887, y 288–1247 | 1080×1920 | top, bottom, left and a wider right column | top 0.15 (288/1920), bottom 0.35 (672/1920), left 0.0444 (48/1080), right 0.1778 (192/1080) |
+
+Spotlight stays out: Snapchat's safe-zone help page renders only through script and its text could not be read; every pixel figure found for Spotlight came from third-party sites, so no primary source was verified. The Reels figure is for image ads on Reels; Meta's Stories guidance differs (14% top, 20% bottom). Google publishes the template for YouTube vertical video ads and says Shorts inventory is covered; no separate organic-Shorts figure exists. The TikTok file varies with caption length and the Anchor format; only the standard In-Feed file is used.
+
+Open: the geometry and styling of the guide picker and notes (layout, spacing, width), the shade colour and opacity of platform regions, and the Spotlight guide until a primary source exists.
 
 ## Effects
 
@@ -122,7 +132,7 @@ Neither the web editor capture (`.spikes/web-editors/capcut-web/screens/14-edito
 
 The Transform tab has five scrub rows with an inline reset arrow: position X and Y, independent scale X and Y, and rotation. The reset and value-row pattern is in `.spikes/ui-reference/06-properties/notes.md`.
 
-The selected Text tab groups its controls as Font, Format, Style, Transform, Blending and Animation sections, in that order, with the same Transform section as video items. The grouping is [new]: no desktop shot of a selected text item is captured, and the web capture (`.spikes/web-editors/capcut-web/screens/06-editor-text-properties.md`) gives the function order only. Rows use the 39 px property rows and 22 px fields above. The Format row holds size, bold, italic, underline and the three alignment cells, with icon cells from the existing set and B, I, U as glyphs; its spacing is [new]. Stroke, shadow and glow are rows with a toggle and swatch (glow a switch); the outline and shadow width, offset and blur have no control yet because the reference shows only their popover. Opacity shows 0–100 % through the shared scrub's display scale; a text colour that differs across the selection shows a dash, as the reference does. Text is centred like every placed kind, and new text carries a Transform Y of 34.5 % of the canvas height, the lower third. Not yet matched to the reference: the Font control keeps the catalog popover (search, download, import), so it is a field that opens a popover rather than a dropdown; Case has no model field; the outline and shadow width, offset and blur have no control. Behaviour: [Properties](../../../apps/vibecut/src/editor/panels/properties/README.md).
+The selected Text tab groups its controls as Font, Format, Style, Transform, Blending and Animation sections, in that order, with the same Transform section as video items. The grouping is [new]: no desktop shot of a selected text item is captured, and the web capture (`.spikes/web-editors/capcut-web/screens/06-editor-text-properties.md`) gives the function order only. Rows use the 39 px property rows and 22 px fields above. The Format row holds size, bold, italic, underline, the three alignment cells and a Case cell after them, with icon cells from the existing set and B, I, U, Aa as glyphs; its spacing is [new]. The Case cell is an Aa control opening a menu of as typed, UPPER, lower and Title; the reference shows the Aa cell but its menu was not captured, so the menu's labels, layout and spacing are [new] and their Vietnamese wording is unmeasured. Stroke, shadow and glow are rows with a toggle and swatch (glow a switch); the outline and shadow width, offset and blur have no control yet because the reference shows only their popover. Opacity shows 0–100 % through the shared scrub's display scale; a text colour that differs across the selection shows a dash, as the reference does. Text is centred like every placed kind, and new text carries a Transform Y of 34.5 % of the canvas height, the lower third. Not yet matched to the reference: the Font control keeps the catalog popover (search, download, import), so it is a field that opens a popover rather than a dropdown; the Case menu's options are open until its popover is captured; the outline and shadow width, offset and blur have no control. Behaviour: [Properties](../../../apps/vibecut/src/editor/panels/properties/README.md).
 
 Video Basic geometry (221703, measured on the 3680 px original and given in half-scale points like the other editor shots; the sub-tab bar spans x 1301.5–1762.5):
 
@@ -212,9 +222,14 @@ original and scaled by 1727/3680 to the 1727×1029 logical frame, like the other
 
 Ours follows the grid exactly (six columns, 58 px square tiles, 15 px gutter) and the
 three-cell bar and the property row for Duration. Remaining differences and causes:
-- Tiles carry the look's name inside the tile instead of a thumbnail with the name beneath, so
-  our row pitch is 58 + 15 = 73 px, not 82 px. Cause: previews need their own render job; open,
-  to be ticketed by the coordinator.
+- Tiles show a rendered preview of the look with its name beneath (12 px line, then a 12 px gap
+  to the next row, so the row pitch is the measured 82 px). The preview is a one-second,
+  twelve-frame strip of a neutral square moved by the look's own keys, rendered once by the
+  engine's animation-preview job and cached ([artifacts](../../../crates/engine/src/artifacts/README.md)).
+  A resting tile shows one frame a third of the way into the motion; a hovered tile loops the
+  strip. Open: the reference capture is a still, so whether its tiles play on hover, the sample
+  picture, the None tile's glyph, the name's font size and the gap between tile and name are
+  unmeasured; ours are [new]. Previews use the default 0.5 s duration, not the clip's.
 - Our bar is the shared 24 px control height, about 3 px taller than the 21 px measured here;
   cause: one shared kit control (the 221643 sub-tab bar measures 24).
 - No search field and no category chips. Cause: they filter and group a catalogue of hundreds
@@ -242,6 +257,7 @@ The docs named no place for a word-level transcript, so it is a section of the C
 
 - Multi-track timeline geometry: only one video track is captured, so audio, text, sticker and effect track heights, clip colours and vertical stacking are unmeasured.
 - Menus, context menus, the keyframe lane, selected text and caption properties, and error, offline and import-failure states are not captured.
+- The clip whose source file is missing (relink state) is not captured: the web pass had no project media to move away. The timeline draws the existing 12 px warning marker on the field fill in the strip and waveform bands of that clip, and the clip menu's Replace media is the relink action. The clip colours, glyph and any hover copy are [proposed], not measured.
 - Shortcut search, rebinding capture, conflict state and preset management are not captured.
 - Media tab export: the clear-search row placement, the export progress strip (token height and gap from `kit::size::CONTROL` and `kit::space::MD`) and the export refusal and outcome toast copy are new compositions without a captured reference; their placement against CapCut is unverified.
 
@@ -266,7 +282,10 @@ No comparable captured menu reference exists; product/native parity remains unve
 
 ## AI preferences
 
-Window / Settings opens the AI model rows, grouped by provider and feature. The
+Window / Settings opens the AI model rows, grouped by provider and feature. A
+`Text tasks provider` combo above the groups picks the one provider that translation and
+the filler cut's `Find with AI` both use. Each task keeps its own model row under that
+provider's group: Translation and Filler classification. The
 shipped default comes first; Refresh adds models for the selected key, followed by
 recent choices and a custom-ID field with Apply. Without a key or offline, default
 and custom remain usable. Refresh alone requests the remote list. Pending, empty,
