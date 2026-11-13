@@ -1,5 +1,5 @@
 //! Executes persistent session lifecycle operations.
-use super::{Autosave, Duration, Error, PathBuf, Result, Session};
+use super::{Autosave, Duration, Error, PathBuf, Result, Session, clear};
 use crate::Lifecycle;
 impl Autosave {
     /// Reserve the destination, then queue journal/project publication off-thread.
@@ -103,6 +103,18 @@ impl Autosave {
     pub fn save(&mut self) -> Result<()> {
         let path = self.saved_path.clone().ok_or(Error::SaveAsRequired)?;
         self.save_as(path)
+    }
+}
+
+impl Autosave {
+    /// Close this session after its work was published elsewhere (a Save As copy
+    /// the window has reopened). Settles any in-flight job so it cannot rewrite the
+    /// journal, then removes the journal and snapshots so the abandoned session is
+    /// not offered for recovery. The project file this session may have been saved
+    /// to is never touched.
+    pub fn retire(mut self) -> Result<()> {
+        self.flush()?;
+        clear(&self.directory)
     }
 }
 

@@ -47,7 +47,7 @@ fn project_new_and_info_round_trip_unicode_space_path() {
         project.as_os_str(),
         copy.as_os_str(),
     ]);
-    assert_ne!(code(&again), 0);
+    assert_eq!(code(&again), 5);
 
     // A bundle round-trips through export and import; the destinations are new.
     let bundle = dir.path().join("gói dự án.vibecutbundle");
@@ -86,7 +86,7 @@ fn project_new_and_info_round_trip_unicode_space_path() {
         project.as_os_str(),
         bundle.as_os_str(),
     ]);
-    assert_ne!(code(&repeat), 0);
+    assert_eq!(code(&repeat), 5);
 }
 
 #[test]

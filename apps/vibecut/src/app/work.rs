@@ -12,13 +12,17 @@ use crate::{
 use engine::{
     ByteBudget, Command, Session,
     cache::{ArtifactKind, CacheKey, KeyInputs},
-    control::Error as EngineError,
-    jobs::{JobBytes, JobId, JobKind, JobSpec, JobState, ResourceClass, SystemClock},
+    control::{Caller, Error as EngineError, Policy},
+    jobs::{
+        JobBytes, JobId, JobKind, JobRunner, JobSpec, JobState, ResourceClass, RunnerConfig,
+        SystemClock,
+    },
     recovery::{self, Autosave, Candidate, Discovery, Schedule},
 };
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex, mpsc},
+    time::Duration,
 };
 
 pub(super) type EditorSlot = Arc<Mutex<Option<Box<Editor>>>>;
@@ -229,10 +233,13 @@ impl EditorWindow {
                             self.saved_as = Some((from, to));
                         }
                     }
-                    if let Some(editor) = &self.editor
-                        && let EditorSession::Persistent(autosave) = &editor.session
-                    {
-                        self.path = autosave.saved_path().map(ToOwned::to_owned);
+                    if let Some(editor) = &mut self.editor {
+                        if save_as_from.is_some() {
+                            editor.playback.set_device_available(self.device_available);
+                        }
+                        if let EditorSession::Persistent(autosave) = &editor.session {
+                            self.path = autosave.saved_path().map(ToOwned::to_owned);
+                        }
                     }
                     self.retry_save = None;
                     if leave || close {
@@ -346,17 +353,45 @@ fn run(
                     .ok_or(Error::Unsupported("nonpersistent editor"))?;
                 autosave.flush()?;
                 if !journal_only {
-                    if let Some(path) = path {
-                        autosave.save_as(path)?;
+                    if let Some(path) = &path {
+                        // Save As is `project.save_as`: publish a copy, then continue
+                        // on that copy and close this session cleanly.
+                        let reopened = save_as_copy(
+                            autosave,
+                            path,
+                            root,
+                            budget.child(512 << 20)?,
+                            persistence.clone(),
+                            preferences.clone(),
+                        )?;
+                        if let Some(old) = active.editor.replace(reopened) {
+                            retire(*old);
+                        }
                     } else {
                         autosave.apply(Command::SaveProject {})?;
                     }
+                    let editor = active
+                        .editor
+                        .as_mut()
+                        .ok_or(Error::Invalid("missing editor"))?;
+                    let autosave = editor
+                        .session
+                        .autosave()
+                        .ok_or(Error::Unsupported("nonpersistent editor"))?;
                     autosave.flush()?;
                     if autosave.saving() || autosave.is_dirty() {
                         return Err(EngineError::Session(engine::SessionError::StaleResult).into());
                     }
                 }
                 if leave || close {
+                    let editor = active
+                        .editor
+                        .as_mut()
+                        .ok_or(Error::Invalid("missing editor"))?;
+                    let autosave = editor
+                        .session
+                        .autosave()
+                        .ok_or(Error::Unsupported("nonpersistent editor"))?;
                     autosave.apply(Command::ThumbnailProject {})?;
                 }
                 Ok(())
@@ -371,6 +406,21 @@ fn run(
             });
         }
     };
+    Ok(Completed::Opened(open_editor(
+        autosave,
+        budget,
+        preferences,
+        root,
+    )?))
+}
+
+/// An editor over an opened or recovered session, restored to its saved playhead.
+fn open_editor(
+    autosave: Autosave,
+    budget: ByteBudget,
+    preferences: Preferences,
+    root: &Path,
+) -> Result<Box<Editor>> {
     let view = autosave.session().metadata().view;
     let mut playback = Playback::new(autosave.session(), budget, Arc::new(Files))?;
     playback.seek(
@@ -380,7 +430,78 @@ fn run(
     )?;
     let mut editor = Editor::persisted(autosave, playback, preferences);
     editor.set_thumbnail_root(root.parent().unwrap_or(root).join("thumbnails"));
-    Ok(Completed::Opened(Box::new(editor)))
+    Ok(Box::new(editor))
+}
+
+/// The desktop owns the destination the native picker returned.
+struct Trusted;
+impl Policy for Trusted {
+    fn authorize(&self, _: &Command, _: &project::Project) -> engine::control::Result<()> {
+        Ok(())
+    }
+}
+
+/// Save As: run `project.save_as` on the session, then open the copy it wrote.
+/// History and playback restart on the copy; the original project file is untouched.
+fn save_as_copy(
+    autosave: &mut Autosave,
+    path: &Path,
+    root: &Path,
+    budget: ByteBudget,
+    persistence: ByteBudget,
+    preferences: Preferences,
+) -> Result<Box<Editor>> {
+    let mut runner = JobRunner::new(
+        RunnerConfig {
+            concurrency: [1, 1, 1],
+            queue: 1,
+            retained: 1,
+            network_attempts: 1,
+            backoff: Duration::from_secs(1),
+            progress_interval: Duration::from_millis(20),
+        },
+        persistence.clone(),
+        Arc::new(SystemClock::default()),
+    )?;
+    let published = autosave.session_mut().control_command(
+        Command::SaveProjectAs {
+            path: path.to_owned(),
+        },
+        Caller {
+            principal: "vibecut-desktop",
+            external: false,
+            policy: &Trusted,
+            fonts: None,
+            sounds: None,
+            music: None,
+            stickers: None,
+            brand: None,
+            media: None,
+            chapters: None,
+            captions: None,
+            vision: None,
+        },
+        &mut runner,
+    );
+    runner.shutdown();
+    published?;
+    let opened = Autosave::open(
+        root,
+        path,
+        100,
+        persistence,
+        Arc::new(SystemClock::default()),
+        Schedule::default(),
+    )?;
+    open_editor(opened, budget, preferences, root)
+}
+
+/// Close the editor a Save As replaced and drop its recovery journal. A failed
+/// cleanup leaves a recovery candidate for the next start, never a lost save.
+fn retire(old: Editor) {
+    if let EditorSession::Persistent(autosave) = old.session {
+        let _ = (*autosave).retire();
+    }
 }
 
 #[cfg(test)]

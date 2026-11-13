@@ -53,6 +53,8 @@ transfers those capabilities to and from its worker without holding a state mute
 Worker error or unwind retains the capabilities until the failed Autosave is dropped; Drop joins
 and cancels workers before releasing their leases.
 
+`Autosave::save_as` is the Save pipeline (first path adoption and every re-save); the desktop's Save As is the registry command `project.save_as`, after which the window reopens on the copy and `retire()` closes the old session: it settles in-flight work and removes that session's journal and snapshots so it is not offered for recovery.
+
 `Candidate::recover()` returns never-saved work for `Autosave::new`; `save()` then returns
 SaveAsRequired. `save_as(path)` acquires the destination before queuing journal publication and
 project saving on the worker, and keeps both source and destination leases until acknowledgement.

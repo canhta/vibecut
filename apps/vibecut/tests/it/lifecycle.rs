@@ -714,24 +714,26 @@ fn project_windows_keep_independent_edits_undo_and_playback_and_reopen_focuses_o
     assert_eq!(app.viewport(first), Some(original_viewport));
     assert_eq!(app.windows.len(), 2);
     assert!(!app.windows.contains_key(&original_id));
-    assert!(std::sync::Arc::ptr_eq(
+    // Save As is `project.save_as` followed by reopening the window on the copy:
+    // the window and viewport carry over, history and playback restart.
+    assert!(!std::sync::Arc::ptr_eq(
         &first_port,
         &app.editor_mut(first).unwrap().playback.audio_port()
     ));
+    assert!(!app.editor_mut(first).unwrap().action_enabled("edit.undo"));
     assert_eq!(std::fs::read(&paths[0]).unwrap(), original_bytes);
     assert_eq!(project::load(&copy).unwrap().project.data().id, first);
-    app.editor_mut(first)
-        .unwrap()
-        .activate("edit.undo")
-        .unwrap();
     assert_eq!(
-        app.editor_mut(first).unwrap().session.project().data().id,
-        first
+        app.editor_mut(first)
+            .unwrap()
+            .session
+            .project()
+            .data()
+            .name
+            .as_str(),
+        "first edit",
+        "the copy carries the issuing project's unsaved edits"
     );
-    app.editor_mut(first)
-        .unwrap()
-        .activate("edit.redo")
-        .unwrap();
     app.open(copy.clone()).unwrap();
     assert_eq!(app.focused_project(), Some(first));
     app.open(paths[0].clone()).unwrap();

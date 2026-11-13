@@ -21,9 +21,12 @@ attach, and imports every window. A window never names it; each window module (`
 Home, Editor and Shorts are independent native viewports. `Workspace::windows` registers
 project windows by ProjectId; each owns its editor, history, playback, lease, picker,
 pending persistence operation and close flow. Reopening a canonical path focuses the
-existing window. Save As rekeys the same window to the acknowledged destination's fresh
-ProjectId, keeping its viewport, playback and history; opening the source afterwards
-makes a separate window, and reopening the destination focuses the issuing window. Home
+existing window. Save As runs the registry command `project.save_as` (a copy under a fresh
+ProjectId at a path that does not exist), reopens the same window on that copy and retires
+the original session with its recovery journal. The window keeps its viewport and lane
+memory; history and playback restart on the copy, and a destination that already exists is
+refused. Opening the source afterwards makes a separate window, and reopening the
+destination focuses the issuing window. Home
 hosts catalog and startup recovery prompts; each accepted recovery becomes a project
 window. Closing Home hides it until Window > Home; the event loop exits after the last
 window closes.
