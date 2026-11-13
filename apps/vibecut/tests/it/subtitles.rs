@@ -2840,14 +2840,34 @@ fn filler_cut_list_removes_only_checked_candidates_as_one_undo_step() {
 
     click(&mut h, "subtitles.fillers.apply");
     assert_eq!(h.state().session.history_len().0, history + 1);
+    // A cut removes measured words from the timeline and never rewrites cue text, so the
+    // removal shows in the transcript read model: exactly cue-0's first word is gone.
+    let words: Vec<(String, String)> = h
+        .state()
+        .session
+        .transcript()
+        .unwrap()
+        .cues
+        .iter()
+        .flat_map(|cue| {
+            cue.words.iter().map(move |word| {
+                (
+                    cue.id.as_str().to_owned(),
+                    word.text.as_ref().unwrap().as_str().to_owned(),
+                )
+            })
+        })
+        .collect();
+    let expected = [
+        ("cue-0", "chào"),
+        ("cue-1", "chào"),
+        ("cue-1", "ừm"),
+        ("cue-2", "ừm"),
+        ("cue-2", "bạn"),
+    ]
+    .map(|(cue, word)| (cue.to_owned(), word.to_owned()));
+    assert_eq!(words, expected, "the checked filled pause is removed");
     let cues = scene_cues(h.state());
-    assert!(
-        !cues[0]
-            .texts
-            .values()
-            .any(|text| text.text.as_str().contains("ừm")),
-        "the checked filled pause is removed"
-    );
     assert_eq!(
         cues[1].texts.values().next().unwrap().text.as_str(),
         "chào ừm",
@@ -2938,7 +2958,7 @@ impl ai::text::fillers::FillerClassifier for ScriptedFillers {
     fn capabilities(&self, _: &ai::Scope) -> ai::Capabilities {
         ai::Capabilities {
             model: self.config.model().clone(),
-            mode: "context-window".into(),
+            mode: ai::text::fillers::MODE.into(),
             operation: ai::Operation::ClassifyFillers,
             languages: ["vi", "en", "zh", "zh-Hans", "zh-Hant"].map(lang).to_vec(),
             target_languages: Vec::new(),
