@@ -353,6 +353,12 @@ pub fn suggest_clips(
         for drop in validated.dropped {
             observe(&mut observations, drop.proposal, None, drop.reason)?;
         }
+        // A running count for a live view; ranking and the count limit still apply below.
+        let produced = observations
+            .values()
+            .filter(|observation| observation.segments.is_some())
+            .count();
+        hooks.produced(u32::try_from(produced).unwrap_or(u32::MAX));
     }
     crate::contracts::checkpoint(hooks, Stage::SuggestClips)?;
     let mut all = Vec::new();

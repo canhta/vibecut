@@ -14,6 +14,7 @@ attach, and imports every window. A window never names it; each window module (`
 | `chrome` | The window placeholders and prompts: loading, recovery, error, close. |
 | `picker` | Native file pickers a window requests, polled without blocking and delivered to its editor. |
 | `work` | Background lifecycle jobs (discover, open, create, recover, persist), their worker and their polling. |
+| `runs` | The shorts window's run store over the library the Home catalog worker holds (`home::Catalog`). |
 | `lending` | The one lending point for process stores and the model service. |
 | `geometry` | Window size and position memory inside the bounded preference document. |
 | `control` | `poll_workspace` and `background`: the control attach. |

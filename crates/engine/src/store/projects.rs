@@ -70,6 +70,8 @@ const TRASH_RECORD: &str = "trash.json";
 const DAY_MS: u64 = 24 * 60 * 60 * 1000;
 /// Whole days an entry may stay in Trash before the next catalog open purges it.
 pub const RETENTION_DAYS: u64 = 30;
+/// Runs of the shorts window kept; saving one more removes the least recently saved.
+pub const MAX_RUNS: usize = 24;
 
 /// Listing is derived from the project and its one metadata sidecar, never an index copy.
 #[derive(Clone, serde::Serialize)]
@@ -85,6 +87,16 @@ pub struct ProjectEntry {
     /// Unix milliseconds of the Trash move; `None` for active entries and for
     /// trashed entries whose record is missing, which are never purged by age.
     pub trashed_unix_ms: Option<u64>,
+    /// Set only for a run of the shorts window; such entries are listed by
+    /// [`ProjectLibrary::list_runs`] and never by `list` or `list_trash`.
+    pub shorts: Option<ShortsCard>,
+}
+
+/// What the shorts entry screen shows of one run without reading its clips.
+#[derive(Clone, serde::Serialize)]
+pub struct ShortsCard {
+    pub source_name: NfcText,
+    pub clips: usize,
 }
 
 impl ProjectEntry {
@@ -263,6 +275,15 @@ impl ProjectLibrary {
     /// At most 1024 managed entries; corrupt entries return typed errors rather than
     /// silently hiding user projects. Busy projects may be listed read-only.
     pub fn list(&self) -> Result<Vec<ProjectEntry>> {
+        self.scan(false)
+    }
+    /// The runs of the shorts window, which are ordinary managed projects that carry a
+    /// shorts run. They share the root, the lease and the limits of the editor projects but
+    /// are never listed with them. Same error contract as `list`.
+    pub fn list_runs(&self) -> Result<Vec<ProjectEntry>> {
+        self.scan(true)
+    }
+    fn scan(&self, runs: bool) -> Result<Vec<ProjectEntry>> {
         self._lease.validate()?;
         let mut entries = Vec::new();
         let mut retained_bytes = 0usize;
@@ -285,6 +306,9 @@ impl ProjectLibrary {
                 continue;
             }
             let (entry, bytes) = self.read_entry(&entry.path(), name, None)?;
+            if entry.shorts.is_some() != runs {
+                continue;
+            }
             retained_bytes =
                 retained_bytes
                     .checked_add(bytes)
@@ -300,6 +324,82 @@ impl ProjectLibrary {
         }
         entries.sort_by_key(|entry| entry.id.0);
         Ok(entries)
+    }
+    /// Keep a finished run of the shorts window as a managed project. The project must carry
+    /// its `shorts_run` and keeps referring to the source file in place: unlike an editor
+    /// project, a run never copies media, because its source can be hours of video and the run
+    /// only needs to find it again. A source that has moved is reported when the run reopens.
+    /// `poster` is the first short's frame, shown on the entry screen. The oldest runs beyond
+    /// [`MAX_RUNS`] are removed. Calls block and belong off the UI thread.
+    pub fn save_run(&mut self, project: &Project, poster: Thumbnail) -> Result<ProjectId> {
+        self._lease.validate()?;
+        if project.data().shorts_run.is_none() {
+            return Err(Error::Edit(crate::EditError::Invalid("shorts run")));
+        }
+        let id = project.data().id;
+        let destination = self.directory(id);
+        if destination.try_exists()? {
+            return Err(Error::Edit(crate::EditError::Invalid(
+                "project already exists",
+            )));
+        }
+        let stage = self.unique("stage")?;
+        private_directory(&stage, false)?;
+        let mut guard = DirectoryGuard(Some(stage.clone()));
+        private_directory(&stage.join("media"), false)?;
+        let metadata = Metadata {
+            thumbnail: poster,
+            ..Metadata::default()
+        };
+        let mut writer = WriterLease::acquire(&stage.join(PROJECT))?;
+        writer.save(project)?;
+        writer.save_metadata(&metadata)?;
+        drop(writer);
+        self._lease.validate()?;
+        fs::rename(&stage, &destination)?;
+        guard.0 = None;
+        self.clear_history();
+        let mut runs = self.list_runs()?;
+        runs.sort_by_key(|entry| std::cmp::Reverse(entry.modified_unix_ms));
+        for old in runs.into_iter().skip(MAX_RUNS) {
+            self.remove_run(old.id)?;
+        }
+        Ok(id)
+    }
+    /// Read one run for reopening. Only a project that carries a shorts run is returned.
+    pub fn load_run(&self, id: ProjectId) -> Result<Project> {
+        self._lease.validate()?;
+        let directory = self.directory(id);
+        if !fs::symlink_metadata(&directory)?.file_type().is_dir() {
+            return Err(Error::Edit(crate::EditError::Invalid("library entry")));
+        }
+        let path = directory.join(PROJECT);
+        if !fs::symlink_metadata(&path)?.file_type().is_file() {
+            return Err(Error::Edit(crate::EditError::Invalid("library project")));
+        }
+        let project = project::load(&path)?.project;
+        if project.data().id != id {
+            return Err(Error::Edit(crate::EditError::Invalid("library identity")));
+        }
+        if project.data().shorts_run.is_none() {
+            return Err(Error::Edit(crate::EditError::Invalid("shorts run")));
+        }
+        Ok(project)
+    }
+    /// Remove one run permanently. Only a project that carries a shorts run is accepted, so the
+    /// entry screen can never delete an editor project. Exported files are never touched: a run
+    /// owns the project directory and nothing else.
+    pub fn remove_run(&mut self, id: ProjectId) -> Result<()> {
+        self._lease.validate()?;
+        let lease = self.lease(id)?;
+        let is_run = lease.load()?.project.data().shorts_run.is_some();
+        drop(lease);
+        if !is_run {
+            return Err(Error::Edit(crate::EditError::Invalid("shorts run")));
+        }
+        self.execute(id, Command::DeleteProject {})?;
+        self.execute(id, Command::PurgeProject {})?;
+        Ok(())
     }
     /// Trashed entries derive from their own complete directory and the store's
     /// move record; the project ID orders the listing for a stable view.
@@ -330,6 +430,9 @@ impl ProjectLibrary {
             }
             let trashed_unix_ms = read_trash_record(&entry.path());
             let (entry, bytes) = self.read_entry(&entry.path(), name, trashed_unix_ms)?;
+            if entry.shorts.is_some() {
+                continue;
+            }
             retained_bytes =
                 retained_bytes
                     .checked_add(bytes)
@@ -385,6 +488,10 @@ impl ProjectLibrary {
                 thumbnail: metadata.thumbnail,
                 path,
                 trashed_unix_ms,
+                shorts: project.data().shorts_run.as_ref().map(|run| ShortsCard {
+                    source_name: run.source_name.clone(),
+                    clips: run.clips.len(),
+                }),
             },
             bytes,
         ))

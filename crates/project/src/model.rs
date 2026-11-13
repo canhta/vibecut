@@ -12,6 +12,7 @@ mod item;
 mod project;
 mod scene;
 mod settings;
+mod shorts_run;
 mod track;
 
 pub use audio_cleanup::{
@@ -33,5 +34,9 @@ pub use scene::{Bookmark, BookmarkId, Scene, SceneId, SceneScope, Scenes};
 pub use settings::{
     AspectPreset, Canvas, CanvasSize, Color, Loudness, LoudnessGains, LoudnessScope,
     LoudnessTarget, Settings,
+};
+pub use shorts_run::{
+    MAX_RUN_CLIPS, MAX_RUN_ENERGY, MAX_RUN_PIECES, ShortsClip, ShortsEnergy, ShortsPiece,
+    ShortsRequest, ShortsRole, ShortsRun, ShortsSegment, ShortsSource,
 };
 pub use track::{Timeline, Track, TrackId, TrackKind};

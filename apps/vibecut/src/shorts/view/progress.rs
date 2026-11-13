@@ -18,6 +18,8 @@ pub(super) const COLUMNS: usize = 4;
 pub(super) const TITLE_Y: f32 = 34.0;
 const BAR_TOP: f32 = 68.0;
 const BAR: [f32; 2] = [868.0, 16.0];
+/// Ours, unmeasured: the reference has no cancel control on this page.
+const CANCEL: [f32; 2] = [96.0, 32.0];
 pub(super) const CARDS_TOP: f32 = 101.0;
 pub(super) const ROW_PITCH: f32 = 687.0;
 const TEXT_LINES: [(f32, f32, f32); 3] =
@@ -34,24 +36,31 @@ pub(super) fn show(state: &mut State, ui: &mut egui::Ui, rect: Rect) {
     let faint = kit::field(dark);
 
     let back = Rect::from_center_size(pos2(left + 17.0, rect.top() + TITLE_Y), vec2(32.0, 32.0));
+    // The arrow returns to the entry and the run goes on; Cancel is its own button.
     if widgets::icon_tap(
         ui,
-        "shorts.cancel",
+        "shorts.back",
         back,
         Icon::ArrowLeft,
-        state.tr(Text::Cancel),
-        !cancelling,
+        state.tr(Text::ShortsBack),
+        true,
         false,
     )
     .clicked()
     {
-        state.cancel();
+        state.leave_run();
     }
     let title_x = left + 44.0;
     let count = i18n::format(
         state.preferences.locale,
         Text::ShortsCountLabel,
-        &[("count", "0")],
+        &[(
+            "count",
+            &i18n::number(
+                state.preferences.locale,
+                u64::from(state.generation_count().unwrap_or(0)),
+            ),
+        )],
     );
     let accent = painter.text(
         pos2(title_x, rect.top() + TITLE_Y),
@@ -74,6 +83,25 @@ pub(super) fn show(state: &mut State, ui: &mut egui::Ui, rect: Rect) {
         vec2(BAR[0].min(width), BAR[1]),
     );
     painter.rect_filled(bar, corner(4.0), skeleton);
+    // Not in the reference: the arrow no longer cancels, so Cancel sits beside the bar.
+    let cancel = Rect::from_center_size(
+        pos2(bar.right() + 12.0 + CANCEL[0] / 2.0, bar.center().y),
+        vec2(CANCEL[0], CANCEL[1]),
+    );
+    if widgets::button(
+        ui,
+        "shorts.cancel",
+        cancel,
+        None,
+        Some(state.tr(Text::Cancel)),
+        state.tr(Text::Cancel),
+        Look::Field,
+        !cancelling,
+    )
+    .clicked()
+    {
+        state.cancel();
+    }
     let fraction = state.generation_progress().unwrap_or(0.0);
     if fraction > 0.0 {
         let fill = Rect::from_min_size(bar.min, vec2(bar.width() * fraction, bar.height()));

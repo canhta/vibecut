@@ -105,6 +105,8 @@ pub struct ProjectData {
     pub settings: Settings,
     pub caption_presets: Vec<SavedCaptionPreset>,
     pub text_presets: Vec<SavedTextPreset>,
+    /// Set only on a run of the shorts window; editor projects carry none.
+    pub shorts_run: Option<super::shorts_run::ShortsRun>,
 }
 impl ProjectData {
     /// Candidates with an invalid current ID read main; validation still refuses them.
@@ -152,6 +154,7 @@ impl Project {
             settings: Settings::default(),
             caption_presets: Vec::new(),
             text_presets: Vec::new(),
+            shorts_run: None,
         })
     }
     pub fn data(&self) -> &ProjectData {
@@ -349,6 +352,9 @@ fn validate(data: &ProjectData) -> Result<()> {
         if assets.insert(asset.id(), asset).is_some() {
             return Err(Error::Invalid("duplicate asset ID"));
         }
+    }
+    if let Some(run) = &data.shorts_run {
+        run.validate(|id| assets.contains_key(&id))?;
     }
     if data.scenes.get(data.current_scene_id).is_none() {
         return Err(Error::Invalid("current scene not found"));

@@ -245,6 +245,10 @@ pub(crate) fn submit_suggest(
                         reason,
                     }),
                 }
+                // Each snapped short counts as it arrives; a refusal leaves the count where it was.
+                hooks
+                    .produced(u32::try_from(clips.len()).unwrap_or(u32::MAX))
+                    .ok();
             }
             hooks.check_cancelled()?;
             let result = ClipsResult {

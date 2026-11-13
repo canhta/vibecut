@@ -1,7 +1,7 @@
 # Long video to shorts
 
 Interface: `State`, `show`, `Action`, `Context`, `WINDOW`, `ClipCandidate`, `Decision`,
-`GenerationRequest`, `Importer`, `desktop_importer`, `Review`, `ReviewSource`, `TaskEvents`.
+`GenerationRequest`, `Importer`, `RunEntry`, `RunStore`, `desktop_importer`, `Review`, `ReviewSource`, `TaskEvents`.
 
 The Home `home.shorts` card opens a separate native viewport. `show` draws the whole
 window and returns the `Action` values the composition root must carry out; `State` owns
@@ -56,6 +56,22 @@ window plays the selected short from its own prepared snapshot through
 `services::playback`, `services::preview` and `services::progress`. Review crops are
 transient; persisted crop channels and later editor crop edits belong to the crop
 controls.
+
+Runs: a finished suggestion is kept as a managed project through the lent `RunStore` (the
+composition root lends the process library from the Home catalog worker; the window never
+opens a library). The project is the source project (asset and source cues) with its
+`shorts_run`; see the [store](../../../../crates/engine/src/store/README.md#shorts-runs). The entry's
+`Recent` row lists runs with the first short's poster, the short count and the source name; a
+click reopens the results without ASR or ranking (a source that moved or changed reports
+`ShortsSourceUnavailable`), the remove control forgets the run and never deletes exported
+files. While a run works the back arrow returns to the entry (`away`) and the run continues; the
+row shows it first and a click returns to its page, Cancel is its own button, and the count in
+the header follows `JobSnapshot::produced` (clips.suggest reports each candidate as it is
+produced; the retained result stays authoritative). Reopened runs keep no accept/reject or
+crop decisions: those are transient review state.
+
+When the shot analysis answers that the model cache is busy (a download running), `tick` asks
+again every 2 s, at most 90 times, and drops the notice once the answer clears; nothing waits.
 
 Geometry: [Long video to shorts window](../../../../docs/product/ui/shorts.md).
 

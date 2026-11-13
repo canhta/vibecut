@@ -166,6 +166,7 @@ pub(super) fn show(state: &mut State, ui: &mut egui::Ui, rect: Rect) {
             state.pick(ui.ctx(), super::super::state::Pick::Video);
         }
     }
+    super::recent::show(state, ui, rect, card.left(), card.width());
 }
 
 /// Three portrait cards stacked and turned, the hero's own illustration.

@@ -410,6 +410,7 @@ fn prepare_clip(
         settings: source.data().settings.clone(),
         caption_presets: source.data().caption_presets.clone(),
         text_presets: source.data().text_presets.clone(),
+        shorts_run: None,
     })
     .map_err(Error::engine)?;
     let mut settings = render::ExportSettings::from_project(&project);

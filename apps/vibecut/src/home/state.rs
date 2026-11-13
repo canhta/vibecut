@@ -4,7 +4,7 @@
 //! the state never loads or edits project JSON and holds no second project
 //! index. Presentation lives in `view`.
 
-use super::workflow::{Event, Request, catalog_worker, next_id};
+use super::workflow::{Catalog, Event, Request, catalog_worker, next_id};
 use crate::{
     egui,
     home::{ProjectsPreferences, ProjectsSortKey},
@@ -48,6 +48,8 @@ pub struct State {
     pub(super) request: Option<Sender<Request>>,
     pub(super) events: Receiver<Event>,
     pub(super) worker: Option<JoinHandle<()>>,
+    /// The open library, lent to the shorts window; empty while the worker has none.
+    pub(super) catalog: Catalog,
     pub(super) entries: Vec<ProjectEntry>,
     pub(super) trash: Vec<ProjectEntry>,
     /// Trash mode replaces the Projects grid; `trash_loaded` keeps a first
@@ -81,6 +83,7 @@ impl State {
             request: None,
             events,
             worker: None,
+            catalog: Catalog::default(),
             entries: Vec::new(),
             trash: Vec::new(),
             trash_mode: false,
@@ -111,13 +114,14 @@ impl State {
         let (sender, events) = mpsc::channel();
         let root = self.root.clone();
         let budget = self.budget.clone();
+        let catalog = self.catalog.clone();
         self.request = Some(request);
         self.events = events;
         self.ready = false;
         self.worker = Some(std::thread::spawn(move || {
             let failure = sender.clone();
             if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                catalog_worker(root, budget, requests, sender);
+                catalog_worker(root, budget, requests, sender, catalog);
             }))
             .is_err()
             {
@@ -152,6 +156,11 @@ impl State {
         self.events = events;
         self.ready = false;
         move || assert!(send.send(Event::Ready(Ok(Vec::new()))).is_ok())
+    }
+
+    /// The managed library the catalog worker holds, for the composition root to lend.
+    pub fn catalog(&self) -> Catalog {
+        self.catalog.clone()
     }
 
     pub fn entries(&self) -> &[ProjectEntry] {
