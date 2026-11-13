@@ -96,6 +96,11 @@ path = "crates/shorts"
 name = "contract"
 groups = ["error"]
 
+# Layouts are pure planning over shot evidence; batch export composes them.
+[[crate.layer]]
+name = "planning"
+groups = ["layout"]
+
 [[crate.layer]]
 name = "operations"
 groups = ["boundaries", "batch_export"]
@@ -115,6 +120,10 @@ group = "boundaries"
 [[crate.module]]
 name = "batch_export"
 group = "batch_export"
+
+[[crate.module]]
+name = "layout"
+group = "layout"
 
 [[crate.module]]
 name = "suggestion"

@@ -881,8 +881,8 @@ pub(super) fn pal8_frame(
             return Err(MediaError::Invalid("missing palette plane"));
         }
         let target = std::slice::from_raw_parts_mut(pointer, 256 * 4);
-        for (bytes, color) in target.chunks_exact_mut(4).zip(palette) {
-            bytes.copy_from_slice(&color.to_ne_bytes());
+        for (bytes, color) in target.as_chunks_mut::<4>().0.iter_mut().zip(palette) {
+            *bytes = color.to_ne_bytes();
         }
     }
     Ok(frame)

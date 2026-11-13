@@ -32,6 +32,7 @@ pub struct VideoParams {
     #[serde(default)]
     pub background: ClipBackground,
     /// Per-item switch for the edge-preserving noise-reduction pass; off leaves the picture untouched.
+    #[serde(default)]
     pub reduce_noise: bool,
 }
 /// What fills the canvas behind a visual clip. Exclusive: one kind per clip.

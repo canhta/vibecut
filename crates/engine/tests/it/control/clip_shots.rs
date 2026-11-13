@@ -6,7 +6,7 @@
     reason = "public-interface conformance assertions"
 )]
 use crate::support::control::{
-    Allow, caller, finish, media_access, ok, request, runner, seed, vision_access, with_video,
+    Allow, caller, finish, media_access, ok, request, runner_with_budget, seed, vision_access, with_video,
     write_video,
 };
 use engine::control::{self, ClipShotsDiagnostic, ControlResult};
@@ -109,7 +109,8 @@ fn exports(
     let video = root.path().join("shots.mkv");
     write_video(&video);
     let mut s = with_video(&seed(), &video);
-    let mut r = runner();
+    // The shot-analysis job reserves 608 MiB, more than the default runner holds.
+    let mut r = runner_with_budget(3 << 30);
     let media = Mutex::new(media_access(root.path()));
     let (cache, _) = engine::cache::ArtifactCache::open(
         &root.path().join("captions-cache"),

@@ -24,6 +24,7 @@
       "params": { "name": "stale" },
       "base_rev": "first",
       "idempotency_key": "stale",
+      "is_error": true,
       "expect": { "/value/value": "stale_revision" }
     },
     {
