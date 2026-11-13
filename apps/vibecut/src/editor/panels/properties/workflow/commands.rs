@@ -178,6 +178,27 @@ pub(super) fn reset_transform(desk: &mut Desk<'_>, item: ItemId) -> Result<()> {
     Ok(())
 }
 
+/// Reset the Blend section's channels (blend mode and opacity) to their engine
+/// defaults as one atomic batch, one undo step.
+pub(super) fn reset_blend(desk: &mut Desk<'_>, item: ItemId) -> Result<()> {
+    desk.apply_result(
+        engine::Command::Batch {
+            commands: vec![
+                engine::Command::SetItemParamMany {
+                    items: vec![item],
+                    patch: ItemParamPatch::BlendMode(project::BlendMode::Normal),
+                },
+                engine::Command::SetItemParamMany {
+                    items: vec![item],
+                    patch: ItemParamPatch::Opacity(1.0),
+                },
+            ],
+        },
+        false,
+    )?;
+    Ok(())
+}
+
 /// One element's committed field edit, through the singular registered command.
 pub(in crate::editor) fn set_item_field(
     desk: &mut Desk<'_>,

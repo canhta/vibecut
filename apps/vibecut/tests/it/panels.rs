@@ -548,8 +548,7 @@ fn click(harness: &mut Harness<Editor>, id: &str) {
             }
         }
     }
-    if matches!(id, "inspector.tab.transform" | "inspector.tab.blending")
-        && !has_widget(harness, id)
+    if matches!(id, "inspector.tab.transform" | "inspector.tab.mask") && !has_widget(harness, id)
     {
         click(harness, "inspector.group.basic");
     }
@@ -678,6 +677,20 @@ fn transform_fields_clamp_reset_scrub_cancel_and_persist() {
             .value_at(&item(&harness, fixture.video).animations, Tick::ZERO)
             .unwrap(),
         0.0
+    );
+    // Blend sits under Basic: its section reset restores blend mode and opacity as one undo step.
+    enter(&mut harness, "inspector.opacity", "0.4");
+    let before = harness.state().session.history_len();
+    let before_reset = harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.opacity")))
+        .value();
+    click(&mut harness, "inspector.section.blending.reset");
+    assert_eq!(harness.state().session.history_len(), before + 1);
+    assert_ne!(
+        harness
+            .get(By::new().predicate(|n| n.author_id() == Some("inspector.opacity")))
+            .value(),
+        before_reset
     );
     enter(&mut harness, "inspector.transform.scaleX", "-4");
     assert_eq!(
@@ -1288,13 +1301,21 @@ fn reachable_element_kinds_show_their_reference_tab_sets() {
         if let Some(field) = active_field {
             assert!(has_widget(&harness, field), "{item:?} default tab content");
         }
-        // Transform and blending share one group tab with sub-tabs.
+        // Basic holds Transform (with Blend), Remove BG and Mask under one group tab.
         if has_widget(&harness, "inspector.group.basic") {
             click(&mut harness, "inspector.group.basic");
         }
         let mut seen = visible_tabs(&harness);
         seen.sort();
-        let mut want = names(expected);
+        // A basic group holding only Transform shows no sub-tab bar, so no transform tab.
+        let shown: Vec<PropertiesTab> = expected
+            .iter()
+            .copied()
+            .filter(|tab| {
+                *tab != PropertiesTab::Transform || has_widget(&harness, "inspector.tab.transform")
+            })
+            .collect();
+        let mut want = names(&shown);
         want.sort();
         assert_eq!(seen, want, "{item:?}");
     }
@@ -1321,7 +1342,6 @@ fn every_registry_kind_has_its_reference_tab_set() {
             &[
                 PropertiesTab::Text,
                 PropertiesTab::Transform,
-                PropertiesTab::Blending,
                 PropertiesTab::Effects,
             ][..],
         ),
@@ -1329,11 +1349,11 @@ fn every_registry_kind_has_its_reference_tab_set() {
             ElementKind::Video,
             &[
                 PropertiesTab::Transform,
+                PropertiesTab::RemoveBackground,
+                PropertiesTab::Mask,
                 PropertiesTab::Audio,
                 PropertiesTab::Speed,
-                PropertiesTab::Blending,
                 PropertiesTab::Adjust,
-                PropertiesTab::RemoveBackground,
                 PropertiesTab::Effects,
             ][..],
         ),
@@ -1341,26 +1361,21 @@ fn every_registry_kind_has_its_reference_tab_set() {
             ElementKind::Image,
             &[
                 PropertiesTab::Transform,
-                PropertiesTab::Blending,
-                PropertiesTab::Adjust,
                 PropertiesTab::RemoveBackground,
+                PropertiesTab::Mask,
+                PropertiesTab::Adjust,
                 PropertiesTab::Effects,
             ][..],
         ),
         (
             ElementKind::Sticker,
-            &[
-                PropertiesTab::Transform,
-                PropertiesTab::Blending,
-                PropertiesTab::Effects,
-            ][..],
+            &[PropertiesTab::Transform, PropertiesTab::Effects][..],
         ),
         (
             ElementKind::Graphic,
             &[
                 PropertiesTab::Graphic,
                 PropertiesTab::Transform,
-                PropertiesTab::Blending,
                 PropertiesTab::Effects,
             ][..],
         ),
@@ -1381,21 +1396,17 @@ fn active_tab_is_remembered_per_element_kind_across_reselection() {
     let mut harness = build(fixture.editor);
     harness.run_steps(3);
     select(&mut harness, fixture.text);
-    click(&mut harness, "inspector.tab.transform");
+    // Text's basic group holds only Transform, so it has no sub-tab bar to click.
+    click(&mut harness, "inspector.group.basic");
     assert!(!has_widget(&harness, "inspector.text_size"));
     select(&mut harness, fixture.video);
-    click(&mut harness, "inspector.tab.blending");
-    assert!(has_widget(&harness, "inspector.opacity"));
+    click(&mut harness, "inspector.tab.mask");
+    assert!(has_widget(&harness, "inspector.mask.row"));
     select(&mut harness, fixture.text);
-    // The strip lists the text tab, the basic group (its transform sub-tab is active) and effects.
+    // The strip lists the text tab and effects; the basic group has no sub-tab bar.
     assert_eq!(
         visible_tabs(&harness),
-        [
-            "inspector.tab.text",
-            "inspector.tab.effects",
-            "inspector.tab.transform",
-            "inspector.tab.blending"
-        ],
+        ["inspector.tab.text", "inspector.tab.effects"],
         "text keeps its own tab, not the video's"
     );
     assert!(!has_widget(&harness, "inspector.text_size"));
@@ -1415,7 +1426,7 @@ fn active_tab_is_remembered_per_element_kind_across_reselection() {
             .properties_tabs
             .get("video")
             .map(String::as_str),
-        Some("blending")
+        Some("mask")
     );
 }
 
@@ -1850,7 +1861,7 @@ fn opacity_and_audio_gain_scrub_through_their_tabs() {
     let mut harness = build(fixture.editor);
     harness.run_steps(3);
     select(&mut harness, fixture.video);
-    click(&mut harness, "inspector.tab.blending");
+    click(&mut harness, "inspector.tab.transform");
     let history = harness.state().session.history_len();
     drag(
         &mut harness,
@@ -2051,7 +2062,7 @@ fn text_presets_and_animations_click_edit_undo_reopen_and_capture_both_locales()
             if locale == vibecut::i18n::Locale::En && scale == 1.0 {
                 image.save(root.join("p1-58-text-extras.png")).unwrap();
             }
-            click(&mut h, "inspector.tab.blending");
+            click(&mut h, "inspector.group.basic");
             assert_eq!(
                 h.get(By::new().predicate(|n| n.author_id() == Some("inspector.opacity")))
                     .value()
@@ -2155,7 +2166,7 @@ fn opacity_drafts_invalidate_before_blur_and_keyed_outside_edits_refuse() {
         f.editor.activate("text.animation.fade_in_out").unwrap();
         let mut h = build(f.editor);
         h.run_steps(3);
-        click(&mut h, "inspector.tab.blending");
+        click(&mut h, "inspector.group.basic");
         click(&mut h, "inspector.opacity");
         h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
         h.event(egui::Event::Text("82".into()));
@@ -2783,7 +2794,7 @@ fn panel_tabs_render_a_representative_editor() {
     let mut harness = build(fixture.editor);
     harness.run_steps(3);
     select(&mut harness, fixture.video);
-    click(&mut harness, "inspector.tab.blending");
+    click(&mut harness, "inspector.tab.transform");
     click(&mut harness, "assets.tab.effects");
     let image = harness.render().expect("offscreen render");
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -3226,7 +3237,7 @@ fn custom_font_chooser_completion_cannot_import_into_a_changed_picker_target() {
                     .unwrap();
             }
             "close" => click(&mut h, "fonts.close"),
-            "tab" => click(&mut h, "inspector.tab.blending"),
+            "tab" => click(&mut h, "inspector.group.basic"),
             "budget" => {
                 let replacement = Playback::new(
                     &h.state().session,

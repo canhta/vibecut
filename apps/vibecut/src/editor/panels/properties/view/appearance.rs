@@ -1,7 +1,8 @@
 //! Renders appearance controls.
 use super::Panel;
 use crate::editor::properties::{
-    Color32, ColorTarget, Id, ItemId, ItemParams, Rect, Text, Vec2, egui, read, theme,
+    Color32, ColorTarget, Id, ItemId, ItemParams, OPACITY_SCRUB, Rect, Text, Vec2, egui, read,
+    theme,
 };
 use crate::i18n;
 
@@ -42,6 +43,16 @@ impl Panel<'_, '_> {
             galley,
             color,
         );
+    }
+
+    /// The Blend section body: blend mode, then opacity. Opacity stays read-only
+    /// outside its keyed range, as before the section moved into Basic.
+    pub(super) fn blend_section(&mut self, ui: &mut egui::Ui, item: ItemId) {
+        self.blend_control(ui, item);
+        let editable = !read::channel_has_keys(self.cx.session.project(), item, "opacity")
+            || read::range_of(self.cx.session.project(), item)
+                .is_some_and(|(start, end)| start <= self.cx.playhead && self.cx.playhead < end);
+        ui.add_enabled_ui(editable, |ui| self.slider_row(ui, item, OPACITY_SCRUB));
     }
 
     pub(super) fn blend_control(&mut self, ui: &mut egui::Ui, item: ItemId) {

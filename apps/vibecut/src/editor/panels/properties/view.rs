@@ -11,7 +11,7 @@ use crate::kit;
 mod dialog;
 
 use super::{
-    AUDIO_GAIN_SCRUB, ElementKind, ItemId, OPACITY_SCRUB, PropertiesTab, ScrubSpec, SelectionScope,
+    AUDIO_GAIN_SCRUB, ElementKind, ItemId, PropertiesTab, ScrubSpec, SelectionScope,
     TEXT_SIZE_SCRUB, shared_fields,
 };
 
@@ -30,13 +30,21 @@ const VALUE_COLUMN: f32 = 120.0;
 fn is_basic(tab: PropertiesTab) -> bool {
     matches!(
         tab,
-        PropertiesTab::Transform | PropertiesTab::Blending | PropertiesTab::RemoveBackground
+        PropertiesTab::Transform | PropertiesTab::RemoveBackground | PropertiesTab::Mask
     )
 }
 
-/// The basic sub-tabs that also carry the clip's Mask row.
+/// The Mask sub-tab carries the clip's Mask row.
 fn shows_mask_row(tab: PropertiesTab) -> bool {
-    matches!(tab, PropertiesTab::Transform | PropertiesTab::Blending)
+    tab == PropertiesTab::Mask
+}
+
+/// The reference names the Transform sub-tab `Basic`; it holds Transform and Blend.
+fn sub_tab_label(tab: PropertiesTab) -> Text {
+    match tab {
+        PropertiesTab::Transform => Text::Basic,
+        other => other.label(),
+    }
 }
 
 /// Content inset from the panel edge, measured.
@@ -89,7 +97,7 @@ pub(in crate::editor) fn show(
                 .get(kind.id())
                 .map(String::as_str)
                 .unwrap_or(kind.default_tab().id())
-                == if graphic_edit { "graphic" } else { "blending" }
+                == if graphic_edit { "graphic" } else { "transform" }
         });
         if !std::sync::Arc::ptr_eq(snapshot, panel.cx.session.project())
             || single(panel.cx.selection) != Some(*item)
@@ -924,7 +932,10 @@ impl<'a, 'c> Panel<'a, 'c> {
                 .iter()
                 .map(|tab| format!("inspector.tab.{}", tab.id()))
                 .collect();
-            let sub_labels: Vec<&str> = basic.iter().map(|tab| self.tr(tab.label())).collect();
+            let sub_labels: Vec<&str> = basic
+                .iter()
+                .map(|tab| self.tr(sub_tab_label(*tab)))
+                .collect();
             let at = basic.iter().position(|tab| *tab == active).unwrap_or(0);
             let cells = kit::segmented(&mut body, &sub_ids, &sub_labels, at);
             for ((id, response), tab) in sub_ids.iter().zip(&cells).zip(&basic) {
@@ -1068,6 +1079,21 @@ impl<'a, 'c> Panel<'a, 'c> {
                     self.state.drafts.clear();
                     self.state.focus = None;
                     self.actions.push(Action::ResetTransform(item));
+                }
+                // Blend is a section inside Basic, after Transform.
+                let blend_reset = self.panel_section(
+                    ui,
+                    "inspector.section.blending",
+                    "inspector.blending",
+                    Text::Blending,
+                    true,
+                    true,
+                    |panel, ui| panel.blend_section(ui, item),
+                );
+                if blend_reset {
+                    self.state.drafts.clear();
+                    self.state.focus = None;
+                    self.actions.push(Action::ResetBlend(item));
                 }
             }
             PropertiesTab::Graphic => {
@@ -1233,27 +1259,6 @@ impl<'a, 'c> Panel<'a, 'c> {
                     true,
                     false,
                     |panel, ui| panel.speed_controls(ui, item),
-                );
-            }
-            PropertiesTab::Blending => {
-                self.panel_section(
-                    ui,
-                    "inspector.section.blending",
-                    "inspector.blending",
-                    Text::Blending,
-                    true,
-                    false,
-                    |panel, ui| {
-                        panel.blend_control(ui, item);
-                        let editable =
-                            !read::channel_has_keys(panel.cx.session.project(), item, "opacity")
-                                || read::range_of(panel.cx.session.project(), item).is_some_and(
-                                    |(start, end)| {
-                                        start <= panel.cx.playhead && panel.cx.playhead < end
-                                    },
-                                );
-                        ui.add_enabled_ui(editable, |ui| panel.slider_row(ui, item, OPACITY_SCRUB));
-                    },
                 );
             }
             PropertiesTab::Adjust if matches!(kind, ElementKind::Video | ElementKind::Image) => {

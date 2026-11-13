@@ -77,6 +77,8 @@ pub(in crate::editor) enum Action {
     },
     SetBackground(project::Color),
     ResetTransform(ItemId),
+    /// The Blend section's defaults (blend mode and opacity) as one undo step.
+    ResetBlend(ItemId),
     /// Add a key at the playhead on every listed channel that lacks one, or
     /// remove them all when each already has one: one diamond, one undo step.
     ToggleKeyframe {

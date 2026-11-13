@@ -287,10 +287,6 @@ fn blend_dropdown_and_opacity_field_dispatch_real_edits() {
         .click();
     harness.run_steps(2);
     harness
-        .get(By::new().predicate(|n| n.author_id() == Some("inspector.tab.blending")))
-        .click();
-    harness.run_steps(2);
-    harness
         .get(By::new().predicate(|n| n.author_id() == Some("inspector.blendMode")))
         .click();
     harness.run_steps(2);
@@ -3556,10 +3552,6 @@ fn property_diamond_toggles_a_keyframe_at_the_playhead() {
         .click();
     harness.run_steps(2);
     harness
-        .get(By::new().predicate(|n| n.author_id() == Some("inspector.tab.blending")))
-        .click();
-    harness.run_steps(2);
-    harness
         .state_mut()
         .dispatch(AppCommand::Seek(Tick(2 * SECOND)))
         .unwrap();
@@ -5566,9 +5558,6 @@ fn clipboard_direct_actions_preserve_focused_property_drafts_and_text_paste_stay
     h.run_steps(3);
     click_item(&mut h, id);
     h.get(By::new().predicate(|n| n.author_id() == Some("inspector.group.basic")))
-        .click();
-    h.run_steps(2);
-    h.get(By::new().predicate(|n| n.author_id() == Some("inspector.tab.blending")))
         .click();
     h.run_steps(2);
     h.get(By::new().predicate(|n| n.author_id() == Some("inspector.opacity")))

@@ -208,7 +208,7 @@ mod tests {
             .preferences
             .set(
                 "properties_tabs",
-                serde_json::json!({"graphic": "blending"}),
+                serde_json::json!({"graphic": "transform"}),
             )
             .unwrap();
         (editor, item)

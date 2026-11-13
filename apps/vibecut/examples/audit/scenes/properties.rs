@@ -185,7 +185,7 @@ pub(super) fn inspector_blend_locale(
     let mut prefs = preferences(theme, locale);
     prefs.set(
         "properties_tabs",
-        serde_json::json!({"graphic": "blending"}),
+        serde_json::json!({"graphic": "transform"}),
     )?;
     prefs.set("assets_tab", serde_json::json!("effects"))?;
     let mut editor = Editor::new(session, playback, prefs);
@@ -303,7 +303,7 @@ pub(super) fn inspector_video(theme: Theme, scale: f32) -> Result<AppHarness, Fa
 }
 
 pub(super) fn inspector_video_blend(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
-    inspector_video_tab(theme, scale, "blending")
+    inspector_video_tab(theme, scale, "transform")
 }
 
 pub(super) fn inspector_project(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {

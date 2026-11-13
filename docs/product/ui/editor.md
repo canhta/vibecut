@@ -110,7 +110,7 @@ The shared colour window has hex plus labelled HSV and alpha entries and sliders
 
 ## Remove background
 
-Video and image items carry a `Remove BG` cell in their Basic sub-tab bar (desktop shot 221751 places it second of Basic, Remove BG, Mask, Retouch; our bar is Transform, Blending, Remove BG because Mask is a row in that group). The cell holds the panel from the web capture's Smart tools ▸ Remove background (`screens/18`), with the key colour, reset, `Intensity` (0–100, default 40) and `Shadow` (0–100, default 0). Row heights and the value column follow the property rows above; the three-cell bar keeps the measured 24 px control height and 4 px radius. [new] for the panel composition; the reveal order, toggle, eyedropper, reset and slider set are the web capture's measured controls. Reveal order and undo steps: [properties](../../../apps/vibecut/src/editor/panels/properties/README.md#remove-bg-sub-tab).
+Video and image items carry a `Remove BG` cell in their Basic sub-tab bar (desktop shot 221751 places it second of Basic, Remove BG, Mask, Retouch; our bar is Basic, Remove BG, Mask, with Retouch out of scope and Blend a section under Basic). The cell holds the panel from the web capture's Smart tools ▸ Remove background (`screens/18`), with the key colour, reset, `Intensity` (0–100, default 40) and `Shadow` (0–100, default 0). Row heights and the value column follow the property rows above; the three-cell bar keeps the measured 24 px control height and 4 px radius. [new] for the panel composition; the reveal order, toggle, eyedropper, reset and slider set are the web capture's measured controls. Reveal order and undo steps: [properties](../../../apps/vibecut/src/editor/panels/properties/README.md#remove-bg-sub-tab).
 
 ## Font picker
 

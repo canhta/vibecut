@@ -17,7 +17,7 @@ the complete preference candidate before ending coalescing or publishing the pro
 edit and adopts it only after that edit succeeds, without a preference undo step.
 
 
-Animatable rows (Transform scale, position and rotation, Blending opacity, Audio
+Animatable rows (Transform scale, position and rotation, Blend opacity, Audio
 volume) carry a diamond toggle right of the label that adds or removes a key at the
 playhead through `keyframes.toggle_at`. It is disabled when the playhead is outside
 the item and filled when a key exists.
@@ -40,7 +40,7 @@ elsewhere. The multi-selection inspector shows the same row under its shared fie
 The multi-selection inspector shows audio gain and mute plus text content, font, size,
 colour, background and position for compatible items, a dash for mixed values and the
 compatible/selected count. A single element uses per-type tabs: Text (content, font,
-background, position, size scrub, colour), Blending (blend menu, opacity scrub), Audio
+background, position, size scrub, colour), Basic's Blend section (blend menu, opacity scrub), Audio
 (gain scrub, mute), and Speed for video and audio. Speed is a 0.01–5x scrub with a
 reset and, for items with audio, a `Change pitch` checkbox that is on while pitch
 follows speed (`maintain_pitch` off). Speed edits use `timeline.set_speed`, one undo
@@ -125,6 +125,11 @@ Keyed edits outside the half-open item range refuse; unkeyed bases remain editab
 Typed drafts and scrubs belong to their project snapshot, item and playhead; time,
 selection, lock, tab or snapshot changes cancel them before blur. Removing the final
 key exposes the retained base.
+
+The Blend section sits under Basic after Transform, with its own reset arrow. Reset
+restores blend mode Normal and opacity 1.0 (the engine's base) as one batch, one undo
+step; it is `ResetBlend` in the workflow. Blend has no enable checkbox yet: the project
+model has no blend-enabled field, so none is invented here.
 
 The single-Text tab offers Fade, Slide and Scale effects, each with In, Out and Both
 directions in segmented rows (`text.animation.fade_in`, `text.animation.slide_out`,
