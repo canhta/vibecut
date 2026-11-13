@@ -1412,3 +1412,29 @@ fn native_cache_child() {
     }
     assert!(!base.join("VibeCut/models").exists());
 }
+
+#[test]
+fn built_in_text_and_caption_looks_use_only_curated_families_with_vietnamese_coverage() {
+    // Bebas Neue is the one curated family without Vietnamese coverage, so no look uses it.
+    let curated: Vec<String> = curated_google_families()
+        .into_iter()
+        .map(|family| family.family)
+        .filter(|family| family != "Bebas Neue")
+        .collect();
+    for preset in project::text_presets() {
+        let font = preset.style().font.as_str();
+        assert!(
+            curated.iter().any(|family| family == font),
+            "{} uses {font}",
+            preset.name()
+        );
+    }
+    for preset in project::caption_presets() {
+        let font = preset.style().font.as_str();
+        assert!(
+            curated.iter().any(|family| family == font),
+            "{} uses {font}",
+            preset.name()
+        );
+    }
+}
