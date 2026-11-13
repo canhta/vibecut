@@ -4,7 +4,7 @@ use super::{AdjustmentPreset, EasingPreferences, FontPickerPreferences, WindowGe
 use crate::{
     ElementKind, PropertiesTab,
     editor::AssetsTab,
-    editor::{MediaSort, MediaView},
+    editor::{Guide, MediaSort, MediaView, OverlayVisibility},
     home::ProjectsPreferences,
     i18n::Locale,
     input::KeybindingPreferences,
@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 /// Bumped when the local preference document changes incompatibly.
-pub const PREFERENCES_VERSION: u32 = 10;
+pub const PREFERENCES_VERSION: u32 = 11;
 /// Room for every provider/feature choice and its bounded recent IDs.
 pub const MAX_PREFERENCES_BYTES: u64 = 32 * 1024;
 /// Total open-lane entries across every project; keeps the document bounded.
@@ -59,6 +59,8 @@ pub const PREFERENCE_KEYS: &[&str] = &[
     "font_picker",
     "adjustment_presets",
     "easing",
+    "preview_guide",
+    "preview_overlays",
 ];
 
 /// A splitter drag that keeps every region non-empty and inside its limits.
@@ -152,6 +154,10 @@ pub struct Preferences {
     pub adjustment_presets: Vec<AdjustmentPreset>,
     /// Graph editor tab and saved easing curves; user data, never project state.
     pub easing: EasingPreferences,
+    /// The preview guide the picker selected; drawn by the app, never exported.
+    pub preview_guide: Guide,
+    /// Visibility of each preview overlay; presentation only.
+    pub preview_overlays: OverlayVisibility,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -183,6 +189,8 @@ impl Default for Preferences {
             font_picker: FontPickerPreferences::default(),
             adjustment_presets: Vec::new(),
             easing: EasingPreferences::default(),
+            preview_guide: Guide::default(),
+            preview_overlays: OverlayVisibility::default(),
         }
     }
 }
@@ -238,6 +246,7 @@ impl Preferences {
         self.font_picker.validate()?;
         super::adjustment::validate_adjustment_presets(&self.adjustment_presets)?;
         self.easing.validate()?;
+        self.preview_guide.validate()?;
         if serde_json::to_vec(self)?.len() as u64 > MAX_PREFERENCES_BYTES {
             return Err(Error::Invalid("preference size"));
         }
@@ -332,6 +341,8 @@ impl Preferences {
             "font_picker" => Ok(serde_json::to_value(&self.font_picker)?),
             "adjustment_presets" => Ok(serde_json::to_value(&self.adjustment_presets)?),
             "easing" => Ok(serde_json::to_value(&self.easing)?),
+            "preview_guide" => Ok(serde_json::to_value(self.preview_guide)?),
+            "preview_overlays" => Ok(serde_json::to_value(self.preview_overlays)?),
             _ => Err(Error::Unsupported("preference key")),
         }
     }
@@ -371,6 +382,8 @@ impl Preferences {
             "font_picker" => self.font_picker = serde_json::from_value(value)?,
             "adjustment_presets" => self.adjustment_presets = serde_json::from_value(value)?,
             "easing" => self.easing = serde_json::from_value(value)?,
+            "preview_guide" => self.preview_guide = serde_json::from_value(value)?,
+            "preview_overlays" => self.preview_overlays = serde_json::from_value(value)?,
             _ => return Err(Error::Unsupported("preference key")),
         }
         Ok(())

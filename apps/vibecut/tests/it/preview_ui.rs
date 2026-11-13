@@ -19,7 +19,7 @@ use std::{
 };
 use time::{FrameRate, SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
-    AppCommand, Editor, PreviewZoom, egui,
+    AppCommand, Editor, Guide, PreviewZoom, egui,
     i18n::{Locale, Text},
     preferences::{PreferenceStore, Preferences},
     services::playback::{Files, Playback},
@@ -934,6 +934,99 @@ fn zoom_and_fit_and_snapshot_directory_round_trip_through_the_store() {
         h.state().inspect().unwrap().snapshot_saved,
         Some(out.clone())
     );
+}
+
+#[test]
+fn guide_picker_grid_size_and_notes_switch_are_undoable_preferences_and_leave_the_project_alone() {
+    let mut data = project(FrameRate::FPS_30, 640, 360, false).into_data();
+    data.scene_mut().bookmarks.push(project::Bookmark {
+        id: project::BookmarkId(1),
+        start: Tick::ZERO,
+        duration: Tick::ZERO,
+        note: "Hook".into(),
+        color: project::Color([255, 255, 0, 255]),
+    });
+    let project = Project::new(data).unwrap();
+    let mut h = build(editor(project, Preferences::default()));
+    let committed = h.state().session.project().clone();
+    assert_eq!(h.state().preferences.preview_guide, Guide::default());
+    assert!(!h.state().preferences.preview_overlays.guide);
+    assert!(h.query_all(By::new().label("Hook")).next().is_some());
+
+    // The canvas context menu switches notes off; the note leaves the frame.
+    h.get(By::new().predicate(|node| node.author_id() == Some("preview.canvas")))
+        .click_secondary();
+    h.run_steps(3);
+    click(&mut h, "preview.menu.notes");
+    h.key_press(egui::Key::Escape);
+    h.run_steps(3);
+    assert!(!h.state().preferences.preview_overlays.notes);
+    assert!(h.query_all(By::new().label("Hook")).next().is_none());
+
+    // The header menu picks a guide and edits its grid size.
+    for (id, guide) in [
+        ("preview.guide.tiktok", Guide::Tiktok),
+        ("preview.guide.reels", Guide::Reels),
+        ("preview.guide.shorts", Guide::Shorts),
+        ("preview.guide.spotlight", Guide::Spotlight),
+    ] {
+        click(&mut h, id);
+        assert_eq!(h.state().preferences.preview_guide, guide);
+    }
+    click(&mut h, "preview.guide.grid");
+    assert_eq!(
+        h.state().preferences.preview_guide,
+        Guide::Grid { rows: 3, cols: 3 }
+    );
+    h.get(By::new().predicate(|node| node.author_id() == Some("preview.guide.rows")))
+        .click();
+    h.run_steps(2);
+    h.get(By::new().predicate(|node| node.author_id() == Some("preview.guide.rows")))
+        .type_text("5");
+    h.key_press(egui::Key::Enter);
+    h.run_steps(3);
+    assert_eq!(
+        h.state().preferences.preview_guide,
+        Guide::Grid { rows: 5, cols: 3 }
+    );
+    click(&mut h, "preview.guide.show");
+    assert!(h.state().preferences.preview_overlays.guide);
+    h.key_press(egui::Key::Escape);
+    h.run_steps(3);
+
+    // Each preference edit is one app-history step; none touches the project.
+    assert!(!h.state().session.can_undo());
+    assert!(Arc::ptr_eq(&committed, h.state().session.project()));
+    click(&mut h, "edit.undo");
+    assert!(!h.state().preferences.preview_overlays.guide);
+    click(&mut h, "edit.undo");
+    assert_eq!(
+        h.state().preferences.preview_guide,
+        Guide::Grid { rows: 3, cols: 3 }
+    );
+    click(&mut h, "edit.redo");
+    click(&mut h, "edit.redo");
+    assert_eq!(
+        h.state().preferences.preview_guide,
+        Guide::Grid { rows: 5, cols: 3 }
+    );
+    assert!(h.state().preferences.preview_overlays.guide);
+    assert!(Arc::ptr_eq(&committed, h.state().session.project()));
+
+    // Notes back on, guide visible: the frame shows both.
+    h.get(By::new().predicate(|node| node.author_id() == Some("preview.canvas")))
+        .click_secondary();
+    h.run_steps(3);
+    click(&mut h, "preview.menu.notes");
+    h.key_press(egui::Key::Escape);
+    h.run_steps(3);
+    assert!(h.query_all(By::new().label("Hook")).next().is_some());
+    let screenshot =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-26-guides.png");
+    if let Some(parent) = screenshot.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
+    h.render().unwrap().save(&screenshot).unwrap();
 }
 
 #[test]

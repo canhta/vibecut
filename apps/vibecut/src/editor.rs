@@ -26,7 +26,9 @@ pub use assets::{
     MediaKind, MediaSort, MediaSortKey, MediaSortOrder, MediaView, ThumbnailOutcome,
     ThumbnailSource,
 };
-pub use panels::player::{PREVIEW_SNAP_PIXELS, PreviewAxis, PreviewGuide, TextCaret};
+pub use panels::player::{
+    Guide, OverlayVisibility, PREVIEW_SNAP_PIXELS, PreviewAxis, PreviewGuide, TextCaret,
+};
 pub use state::{
     AssetInspection, Editor, Inspection, ShortcutRow, ShortcutTab, ShortcutsInspection,
 };

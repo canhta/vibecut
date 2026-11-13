@@ -1,5 +1,9 @@
 //! Renders the player panel from read-only editor context.
-use super::{Action, Context, State, state::TimecodeEdit};
+use super::{
+    Action, Context, State,
+    overlay::{GRID_MAX, GRID_MIN, Guide, Overlay, OverlayVisibility, PLANES},
+    state::TimecodeEdit,
+};
 use crate::{
     actions::{BookmarkDirection, bookmark_target},
     egui::{self, Align2, FontId, Rect, Sense, Vec2},
@@ -114,6 +118,8 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
                 "transport.forward",
                 None,
             );
+            ui.separator();
+            guide_menu(ui, cx, &mut actions);
         });
         remember(cx, &mut actions, "preview.menu", response);
     });
@@ -277,6 +283,148 @@ fn menu(
     }
     remember(cx, actions, id, r);
 }
+/// The guide picker, its grid size and the guide switch in the player menu.
+fn guide_menu(ui: &mut egui::Ui, cx: &Context<'_>, actions: &mut Vec<Action>) {
+    let visibility = cx.preferences.preview_overlays;
+    let mut guide = visibility.guide;
+    let response = ui.checkbox(&mut guide, cx.tr(Text::PreviewGuideShow));
+    if response.changed() {
+        actions.push(Action::SetPreference {
+            key: "preview_overlays",
+            value: serde_json::json!(OverlayVisibility {
+                guide,
+                ..visibility
+            }),
+        });
+    }
+    remember(cx, actions, "preview.guide.show", response);
+    let current = cx.preferences.preview_guide;
+    for (id, choice, text) in [
+        ("preview.guide.grid", Guide::default(), Text::GuideGrid),
+        ("preview.guide.tiktok", Guide::Tiktok, Text::GuideTiktok),
+        ("preview.guide.reels", Guide::Reels, Text::GuideReels),
+        ("preview.guide.shorts", Guide::Shorts, Text::GuideShorts),
+        (
+            "preview.guide.spotlight",
+            Guide::Spotlight,
+            Text::GuideSpotlight,
+        ),
+    ] {
+        let selected = current.same_choice(choice);
+        let response = ui.selectable_label(selected, cx.tr(text));
+        if response.clicked() && !selected {
+            actions.push(Action::SetPreference {
+                key: "preview_guide",
+                value: serde_json::json!(choice),
+            });
+        }
+        remember(cx, actions, id, response);
+    }
+    if let Guide::Grid { rows, cols } = current {
+        let (mut rows_edit, mut cols_edit) = (rows, cols);
+        let (rows_response, cols_response) = ui
+            .horizontal(|ui| {
+                ui.label(cx.tr(Text::GuideRows));
+                let rows_response =
+                    ui.add(egui::DragValue::new(&mut rows_edit).range(GRID_MIN..=GRID_MAX));
+                ui.label(cx.tr(Text::GuideCols));
+                let cols_response =
+                    ui.add(egui::DragValue::new(&mut cols_edit).range(GRID_MIN..=GRID_MAX));
+                (rows_response, cols_response)
+            })
+            .inner;
+        if rows_response.changed() || cols_response.changed() {
+            actions.push(Action::SetPreference {
+                key: "preview_guide",
+                value: serde_json::json!(Guide::Grid {
+                    rows: rows_edit,
+                    cols: cols_edit,
+                }),
+            });
+        }
+        remember(cx, actions, "preview.guide.rows", rows_response);
+        remember(cx, actions, "preview.guide.cols", cols_response);
+    }
+}
+
+/// Paints the visible overlays plane by plane over the frame image, so the
+/// transform handles drawn afterwards stay above all of them.
+fn overlays(cx: &Context<'_>, ui: &mut egui::Ui, stage: Rect, displayed: Rect) {
+    for plane in PLANES {
+        for overlay in [Overlay::Guide, Overlay::Notes] {
+            if overlay.plane() != plane || !cx.preferences.preview_overlays.shows(overlay) {
+                continue;
+            }
+            match overlay {
+                Overlay::Guide => guide(cx, ui, stage, displayed),
+                Overlay::Notes => notes(cx, ui, displayed),
+            }
+        }
+    }
+}
+
+/// Draws the selected guide over the displayed frame, clipped to the stage.
+fn guide(cx: &Context<'_>, ui: &egui::Ui, stage: Rect, displayed: Rect) {
+    let painter = ui.painter().with_clip_rect(stage);
+    let stroke = egui::Stroke::new(kit::space::HAIRLINE, kit::text(cx.dark).gamma_multiply(0.5));
+    let guide = cx.preferences.preview_guide;
+    let (vertical, horizontal) = guide.grid_lines();
+    for fraction in vertical {
+        painter.vline(
+            displayed.left() + displayed.width() * fraction,
+            displayed.y_range(),
+            stroke,
+        );
+    }
+    for fraction in horizontal {
+        painter.hline(
+            displayed.x_range(),
+            displayed.top() + displayed.height() * fraction,
+            stroke,
+        );
+    }
+    if let Some([left, top, right, bottom]) = guide.safe_area() {
+        let point = |x: f32, y: f32| {
+            egui::pos2(
+                displayed.left() + displayed.width() * x,
+                displayed.top() + displayed.height() * y,
+            )
+        };
+        painter.rect_stroke(
+            Rect::from_min_max(point(left, top), point(right, bottom)),
+            0.0,
+            stroke,
+            egui::StrokeKind::Inside,
+        );
+    }
+}
+
+/// Lists the bookmark notes active at the playhead, top-left over the frame.
+/// A bookmark is active from its start through its end, inclusive; empty
+/// notes are skipped.
+fn notes(cx: &Context<'_>, ui: &mut egui::Ui, displayed: Rect) {
+    let at = cx.playhead;
+    let scene = cx.staged_project().data().scene();
+    let width = (displayed.width() - kit::space::MD * 2.0).max(0.0);
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(Rect::from_min_size(
+                displayed.left_top() + Vec2::splat(kit::space::MD),
+                Vec2::new(width, displayed.height()),
+            ))
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+    );
+    child.set_clip_rect(displayed);
+    for bookmark in &scene.bookmarks {
+        let note = bookmark.note.as_str().trim();
+        let end = bookmark.start.saturating_add(bookmark.duration);
+        if note.is_empty() || at < bookmark.start || at > end {
+            continue;
+        }
+        child.label(egui::RichText::new(note).color(kit::text(cx.dark)));
+    }
+}
+
 fn canvas_size(cx: &Context<'_>) -> [u32; 2] {
     let c = &cx.session.project().data().canvas;
     [c.width, c.height]
@@ -704,6 +852,20 @@ fn canvas(
                     cx.shortcut(id),
                 );
             }
+            ui.separator();
+            let visibility = cx.preferences.preview_overlays;
+            let mut notes = visibility.notes;
+            let response = ui.checkbox(&mut notes, cx.tr(Text::PreviewNotes));
+            if response.changed() {
+                actions.push(Action::SetPreference {
+                    key: "preview_overlays",
+                    value: serde_json::json!(OverlayVisibility {
+                        notes,
+                        ..visibility
+                    }),
+                });
+            }
+            remember(cx, actions, "preview.menu.notes", response);
         });
     }
     remember(cx, actions, "preview.canvas", r.clone());
@@ -742,6 +904,7 @@ fn canvas(
             Rect::from_center_size(stage.center(), Vec2::splat(kit::icon::DENSE)),
         );
     }
+    overlays(cx, ui, stage, displayed);
     if state.key_color_pick.is_some() {
         if r.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
