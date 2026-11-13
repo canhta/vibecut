@@ -301,6 +301,43 @@ fn scene_batch_cancel_after_first_finalization_preserves_every_destination_and_p
     assert_eq!(budget.snapshot().unwrap().used, 0);
 }
 #[test]
+fn clip_export_modes_render_the_clip_span_and_probe_to_its_duration() {
+    for (mode, file) in [
+        (engine::ClipExportMode::Clip, "clip.mp4"),
+        (engine::ClipExportMode::Duration, "duration.mp4"),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(file);
+        let budget = ByteBudget::new(2 << 30).unwrap();
+        let mut runner = runner(&budget, Arc::new(SystemClock::default()));
+        let (id, _) = engine::submit_clip_export(
+            &mut runner,
+            key(7),
+            project(),
+            project::ItemId(0),
+            mode,
+            false,
+            path.clone(),
+        )
+        .unwrap();
+        let result = complete(&mut runner, id);
+        assert_eq!(
+            result.state,
+            JobState::Completed,
+            "{mode:?}: {:?}",
+            result.error
+        );
+        // The fixture clip spans 0..1 s; the probed file must match that range.
+        let duration = media::probe(&path).unwrap().duration.unwrap();
+        let tolerance = time::TICKS_PER_SECOND / 10;
+        assert!(
+            (duration.0 - time::TICKS_PER_SECOND).abs() <= tolerance,
+            "{mode:?}: probed {duration:?}"
+        );
+    }
+}
+
+#[test]
 fn export_job_accounts_bytes_reclaims_cache_and_preserves_live_pin() {
     let dir = tempfile::tempdir().unwrap();
     let cache_dir = tempfile::tempdir().unwrap();

@@ -802,6 +802,28 @@ impl Session {
                     paths,
                 })
             }
+            Command::ExportClip {
+                clip_id,
+                mode,
+                path,
+                overwrite,
+            } => {
+                let (job, _) = crate::submit_clip_export(
+                    runner,
+                    crate::control_preview::control_key(fingerprint)?,
+                    self.project().clone(),
+                    clip_id,
+                    mode,
+                    overwrite,
+                    path.clone(),
+                )?;
+                Ok(ControlResult::JobAccepted {
+                    word_highlight_warnings: project::CaptionWordWarnings::default(),
+                    job,
+                    revision: self.revision(),
+                    paths: vec![path],
+                })
+            }
             Command::ExportClips {
                 asset_ids,
                 dir,

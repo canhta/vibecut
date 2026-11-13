@@ -81,6 +81,9 @@ impl EditorWindow {
                     EditorAction::ExportCaption(output) => {
                         self.pick(ui.ctx(), PickerAction::ExportCaption(output))
                     }
+                    EditorAction::ClipDownload { item, mode } => {
+                        self.pick(ui.ctx(), PickerAction::ClipDownload { item, mode })
+                    }
                     EditorAction::KeybindingsExport => {
                         self.pick(ui.ctx(), PickerAction::KeybindingsExport)
                     }

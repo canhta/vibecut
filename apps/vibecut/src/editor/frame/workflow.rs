@@ -56,6 +56,7 @@ impl Editor {
             assets.restore_asset_state(port);
         });
         self.poll_fonts();
+        self.poll_clip_download();
         self.with_properties(|properties, port| {
             if let Err(error) = properties.poll_lut(port) {
                 properties.abort_lut();

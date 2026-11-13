@@ -394,6 +394,9 @@ impl Command {
             Self::Export {
                 path, overwrite, ..
             }
+            | Self::ExportClip {
+                path, overwrite, ..
+            }
             | Self::ExportSubtitles {
                 path, overwrite, ..
             }
@@ -630,6 +633,14 @@ pub enum CutTarget {
     },
 }
 
+/// The range `export.clip` renders: the clip alone, or every track over the clip's span.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ClipExportMode {
+    Clip,
+    Duration,
+}
+
 commands! {
     AddCleanupEffect, "audio.add_cleanup_effect", "Add audio cleanup effect", Edit { item: ItemId, effect: project::CleanupEffect } => Audio, serde_json::json!({"item":5,"effect":{"id":1,"enabled":true,"wet_percent":100.0,"kind":{"kind":"hum","mains":"hz50","harmonics":5,"q":30.0}}}), available = UnlockedItem;
     ApplyLoudness, "audio.apply_loudness", "Apply measured loudness gains", Edit { gains: project::LoudnessGains } => Timeline, serde_json::json!({"gains":{"key":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"clip":[],"master_db":0.0}});
@@ -686,6 +697,7 @@ commands! {
     ToggleEffect, "effects.toggle", "Enable effect", Edit { item: ItemId, effect: String, enabled: bool } => Timeline, serde_json::json!({"item":1,"effect":"blur1","enabled":false}), available = VisualItem;
     UpdateEffectParam, "effects.update_param", "Update effect parameter", Edit { item: ItemId, effect: String, key: String, value: project::EffectParamUpdate } => Timeline, serde_json::json!({"item":1,"effect":"blur1","key":"intensity","value":30.0}), available = VisualItem;
     Export, "export", "Export video", FilePublish { settings: render::OutputOptions, path: std::path::PathBuf, overwrite: bool } => Timeline, serde_json::json!({"settings":render::OutputOptions{range:render::RangeChoice::InOut{start:time::Tick::ZERO,end:time::Tick(8467200000_i64)},..render::OutputOptions::default()},"path":"$output/export.mp4","overwrite":false}), idle = true, curated = true, returns = [JobAccepted];
+    ExportClip, "export.clip", "Download clip", FilePublish { clip_id: ItemId, mode: ClipExportMode, path: std::path::PathBuf, overwrite: bool } => Timeline, serde_json::json!({"clip_id":1,"mode":"clip","path":"$output/clip.mp4","overwrite":false}), idle = true, returns = [JobAccepted];
     ExportClips, "export.clips", "Export clips", FilePublish { #[schemars(length(max = 256))] asset_ids: Vec<media::AssetId>, dir: std::path::PathBuf, overwrite: bool } => Video, serde_json::json!({"asset_ids":[97],"dir":"$output","overwrite":false}), available = Assets, idle = true, returns = [JobAccepted];
     ExportSubtitles, "export_subtitles", "Export subtitle file", FilePublish { track: TrackId, format: captions::Format, languages: Vec<captions::LanguageTag>, path: std::path::PathBuf, overwrite: bool } => Timeline, serde_json::json!({"track":4,"format":"srt","languages":["en"],"path":"$output/subtitles.srt","overwrite":false}), available = CaptionItem, idle = true, collections = [languages], returns = [JobAccepted];
     FillersClassify, "fillers.classify", "Classify fillers with the lent provider", JobControl { language: captions::LanguageTag, include_markers: bool } => Words, serde_json::json!({"language":"en","include_markers":false}), available = CaptionItem, idle = true, grant = Agent, returns = [JobAccepted];

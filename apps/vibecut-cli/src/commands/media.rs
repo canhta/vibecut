@@ -15,6 +15,8 @@ mod waveform;
 pub(super) use waveform::run as waveform;
 mod export_clips;
 pub(super) use export_clips::run as export_clips;
+mod export_clip;
+pub(super) use export_clip::run as export_clip;
 
 use crate::args::{CliError, utf8};
 use crate::output::Output;
@@ -35,6 +37,7 @@ pub(crate) fn generate(context: &Context, args: Vec<OsString>) -> Result<Output,
         "waveform" => waveform(context, rest),
         "thumbnails" => thumbnails(context, rest),
         "export-clips" => export_clips(context, rest),
+        "export-clip" => export_clip(context, rest),
         "--help" | "-h" | "help" => Ok(Output::new(
             json!({"usage": help_text()}),
             help_text().to_owned(),
@@ -51,5 +54,6 @@ fn help_text() -> &'static str {
     "usage: vibecut-cli media waveform <project> --asset <id>\n       \
      vibecut-cli media thumbnails <project> --item <id> --pixels-per-second <zoom> \
      [--start <tick> --end <tick>]\n       \
-     vibecut-cli media export-clips <project> --asset <id> [--asset <id>...] --dir <dir> [--overwrite]"
+     vibecut-cli media export-clips <project> --asset <id> [--asset <id>...] --dir <dir> [--overwrite]\n       \
+     vibecut-cli media export-clip <project> --clip <id> --mode <clip|duration> --out <path> [--overwrite]"
 }

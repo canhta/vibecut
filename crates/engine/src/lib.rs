@@ -6,7 +6,7 @@ pub(crate) use session::transitions;
 pub use session::wire::{Failure, JobFailurePolicy};
 pub use session::{
     AnimationPreset, AnimationSlot, AttributeGroup, Availability, CaptionPreset, CaptionStyleApply,
-    ChapterSidecars, ClipAnimations, CollectionLimit, Command, CommandKind, CommandSpec, CreatedId,
+    ChapterSidecars, ClipAnimations, ClipExportMode, CollectionLimit, Command, CommandKind, CommandSpec, CreatedId,
     CueId, CutTarget, DEFAULT_BOOKMARK_COLOR, Effect, EmphasisMode, Example, Fixture, GrantClass,
     ITEM_PARAMS, ItemClipboard, ItemParam, ItemParamPatch, ItemPasteSource, ItemPlacement,
     KeyframeClipboard, KeyframePasteSource, KeyframeRef, Lifecycle, Move, NewItem, Outcome,
@@ -24,9 +24,10 @@ pub use runtime::jobs;
 pub(crate) use runtime::publication;
 pub use runtime::transfer;
 pub use runtime::{
-    AssetExport, plan_asset_exports, submit_asset_exports, submit_asset_exports_with_sources,
-    submit_export, submit_export_publication, submit_export_with_sources,
-    submit_scene_exports_with_sources, subtitle_file,
+    AssetExport, clip_export_range, plan_asset_exports, submit_asset_exports,
+    submit_asset_exports_with_sources, submit_clip_export, submit_export,
+    submit_export_publication, submit_export_with_sources, submit_scene_exports_with_sources,
+    subtitle_file,
 };
 pub use runtime::{
     BudgetSnapshot, ByteBudget, ByteBudgetHooks, ByteLease, ByteOwner, Error as RuntimeError,

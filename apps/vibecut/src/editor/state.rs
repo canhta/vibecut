@@ -297,4 +297,8 @@ pub struct Editor {
     pub(super) copy_snapshot_requested: bool,
     /// Cross-area requests the frame drains after the area that raised them.
     pub(super) requests: Vec<super::Request>,
+    /// Runner for `export.clip` downloads, created by the first download.
+    pub(super) clip_downloads: Option<engine::jobs::JobRunner>,
+    /// The download job the runner is waiting on.
+    pub(super) clip_job: Option<engine::jobs::JobId>,
 }
