@@ -103,7 +103,12 @@ fn items(project: &Project) -> BTreeMap<ItemId, (TrackId, &Item)> {
         .scene()
         .timeline
         .iter()
-        .flat_map(|track| track.items.iter().map(move |item| (item.id, (track.id, item))))
+        .flat_map(|track| {
+            track
+                .items
+                .iter()
+                .map(move |item| (item.id, (track.id, item)))
+        })
         .collect()
 }
 
@@ -112,8 +117,16 @@ impl ChangeSummary {
     pub fn between(before: &Project, after: &Project) -> Self {
         let (old, new) = (items(before), items(after));
         let mut summary = Self {
-            added: new.keys().filter(|id| !old.contains_key(*id)).copied().collect(),
-            removed: old.keys().filter(|id| !new.contains_key(*id)).copied().collect(),
+            added: new
+                .keys()
+                .filter(|id| !old.contains_key(*id))
+                .copied()
+                .collect(),
+            removed: old
+                .keys()
+                .filter(|id| !new.contains_key(*id))
+                .copied()
+                .collect(),
             moved: Vec::new(),
             trimmed: Vec::new(),
             retimed: Vec::new(),

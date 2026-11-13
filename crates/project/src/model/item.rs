@@ -38,8 +38,12 @@ pub struct VideoParams {
 pub enum ClipBackground {
     #[default]
     None,
-    Solid { color: Color },
-    Blur { intensity: u32 },
+    Solid {
+        color: Color,
+    },
+    Blur {
+        intensity: u32,
+    },
 }
 impl ClipBackground {
     /// Intensity a clip starts at when Blur is chosen; a preset replaces it.

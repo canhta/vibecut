@@ -23,8 +23,7 @@ pub use item::{
     ClipBackground, GraphicParams, Item, ItemId, ItemParams, LibraryMusic, LibrarySound,
     MusicLicence, OverlayParams, StickerParams, TextAlign, TextBackground, TextDecoration,
     TextParams, TextPosition, TextShadow, TextStroke, TextStyle, VOLUME_DB_RANGE, VideoParams,
-    WordSpan,
-    valid_volume,
+    WordSpan, valid_volume,
 };
 pub use project::{
     CaptionPresetId, MAX_CAPTION_PRESETS, MAX_TEXT_PRESETS, Project, ProjectData, ProjectId,

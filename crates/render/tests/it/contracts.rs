@@ -1921,12 +1921,7 @@ impl SourceProvider for SplitClip {
             })
             .collect();
         Ok(Some(Image::from_rgba8(
-            SPLIT_SIDE,
-            SPLIT_SIDE,
-            &bytes,
-            false,
-            13,
-            hooks,
+            SPLIT_SIDE, SPLIT_SIDE, &bytes, false, 13, hooks,
         )?))
     }
     fn audio(
