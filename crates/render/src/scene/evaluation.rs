@@ -334,10 +334,14 @@ impl<'a> Renderer<'a> {
                 } else {
                     None
                 };
-                let _plan = if item.effects.iter().any(|effect| effect.enabled) {
+                // Noise reduction is a per-item switch whose pass runs before every
+                // colour effect, on this item's own layer.
+                let reduce_noise =
+                    matches!(&item.content, ItemParams::Video(p) if p.reduce_noise);
+                let _plan = if reduce_noise || item.effects.iter().any(|effect| effect.enabled) {
                     Some(hooks.reserve(
                         MemoryKind::Compositor,
-                        item.effects.len() as u64
+                        (item.effects.len() as u64 + u64::from(reduce_noise))
                             * 512
                             * (std::mem::size_of::<crate::effects::EffectPass>() as u64 + 49 * 4),
                     )?)
@@ -346,21 +350,20 @@ impl<'a> Renderer<'a> {
                 };
                 // One pass list per effect instance, so a sample op's `input` is the
                 // image that instance started with, not the whole item's.
-                let runs = item
-                    .effects
-                    .iter()
-                    .filter(|effect| effect.enabled)
-                    .map(|effect| {
-                        crate::effects::evaluate_effect(
-                            &item.animations,
-                            effect,
-                            local,
-                            geometry.ok_or(Error::Invalid("effect spatial geometry"))?,
-                            !preview,
-                            &lut_resources,
-                        )
-                    })
-                    .collect::<Result<Vec<_>>>()?;
+                let mut runs = Vec::new();
+                if reduce_noise {
+                    runs.push(crate::effects::reduce_noise_passes());
+                }
+                for effect in item.effects.iter().filter(|effect| effect.enabled) {
+                    runs.push(crate::effects::evaluate_effect(
+                        &item.animations,
+                        effect,
+                        local,
+                        geometry.ok_or(Error::Invalid("effect spatial geometry"))?,
+                        !preview,
+                        &lut_resources,
+                    )?);
+                }
                 let has_passes = runs.iter().any(|run| !run.is_empty());
                 let graphic = matches!(
                     item.content,

@@ -61,6 +61,11 @@ pub(super) fn apply_patch(
                 p.crop = *crop;
             }
         }
+        crate::ItemParamPatch::ReduceNoise(on) => {
+            if let ItemParams::Video(p) = &mut target.content {
+                p.reduce_noise = *on;
+            }
+        }
         crate::ItemParamPatch::TextContent(v) => {
             if let ItemParams::Text(p) = &mut target.content {
                 p.content = v.clone();

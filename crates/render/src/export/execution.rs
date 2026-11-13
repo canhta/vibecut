@@ -126,9 +126,13 @@ pub(super) fn copy_plan<'a>(
     {
         return Ok(None);
     }
-    let ItemParams::Video(_) = &item.content else {
+    // Noise reduction changes pixels, so a switched-on item cannot be copied through.
+    let ItemParams::Video(params) = &item.content else {
         return Ok(None);
     };
+    if params.reduce_noise {
+        return Ok(None);
+    }
     let asset = project
         .data()
         .assets

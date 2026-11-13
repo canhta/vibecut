@@ -1095,6 +1095,30 @@ impl<'a, 'c> Panel<'a, 'c> {
                     self.state.focus = None;
                     self.actions.push(Action::ResetBlend(item));
                 }
+                // The reference lists the switch among Basic's toggles; video items only.
+                if let Some(project::ItemParams::Video(params)) =
+                    read::item(self.cx.session.project(), item).map(|item| &item.content)
+                {
+                    let mut on = params.reduce_noise;
+                    let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+                    self.row_label(ui, row, self.tr(Text::ReduceImageNoise));
+                    let width = value_ui.available_width();
+                    value_ui.add_space((width - theme::size::TOGGLE_WIDTH).max(0.0));
+                    let response = kit::toggle(
+                        &mut value_ui,
+                        "inspector.reduce_noise",
+                        &mut on,
+                        self.tr(Text::ReduceImageNoise),
+                    );
+                    self.remember("inspector.reduce_noise", &response);
+                    if response.clicked() {
+                        self.set_item_field(
+                            item,
+                            "reduce_noise",
+                            if on { "true" } else { "false" },
+                        );
+                    }
+                }
             }
             PropertiesTab::Graphic => {
                 self.panel_section(

@@ -248,6 +248,7 @@ fn video_item(id: u64, start: Tick, source: SourceRange) -> Item {
             muted: false,
             crop: None,
             cleanup: Default::default(),
+            reduce_noise: false,
         }),
     }
 }

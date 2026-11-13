@@ -68,6 +68,7 @@ fn project(empty: bool, source: bool) -> Project {
                     muted: false,
                     crop: None,
                     cleanup: Default::default(),
+                    reduce_noise: false,
                 })
             } else {
                 ItemParams::Overlay(project::OverlayParams {

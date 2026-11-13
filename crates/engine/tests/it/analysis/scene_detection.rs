@@ -176,6 +176,7 @@ fn session(asset: SourceAsset, count: i64) -> Session {
             fades: Default::default(),
             crop: None,
             cleanup: Default::default(),
+            reduce_noise: false,
         }),
     });
     Session::new(Project::new(data).unwrap(), 10).unwrap()

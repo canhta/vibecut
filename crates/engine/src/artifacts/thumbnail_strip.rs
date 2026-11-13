@@ -661,6 +661,7 @@ mod tests {
                 muted: false,
                 crop: None,
                 cleanup: Default::default(),
+                reduce_noise: false,
             }),
         }
     }

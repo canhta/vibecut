@@ -334,6 +334,7 @@ fn item_patch(field: &str, value: &str) -> Result<ItemParamPatch> {
                 .map_err(|_| Error::Invalid("text weight"))?,
         ),
         "text_italic" => ItemParamPatch::TextItalic(parse_flag(value, "text style")?),
+        "reduce_noise" => ItemParamPatch::ReduceNoise(parse_flag(value, "reduce noise")?),
         "text_align" => ItemParamPatch::TextAlign(parse_word(value, "text alignment")?),
         "text_decoration" => ItemParamPatch::TextDecoration(parse_word(value, "text decoration")?),
         "text_letter_spacing" => ItemParamPatch::TextLetterSpacing(parse_number(value)?),

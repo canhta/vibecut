@@ -747,6 +747,7 @@ mod tests {
                 fades: Default::default(),
                 crop: None,
                 cleanup: Default::default(),
+                reduce_noise: false,
             });
         }
         for (speed, cut, expected) in [

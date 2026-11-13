@@ -410,6 +410,7 @@ catalog! {
     PositionX { key: "position_x", en: "Position X", vi: "Vị trí X" },
     PositionY { key: "position_y", en: "Position Y", vi: "Vị trí Y" },
     RecentColors { key: "recent_colors", en: "Recent colours", vi: "Màu gần đây" },
+    ReduceImageNoise { key: "reduce_image_noise", en: "Reduce image noise", vi: "Giảm nhiễu hình ảnh" },
     ResetValue { key: "reset_value", en: "Reset value", vi: "Đặt lại giá trị" },
     Rotate { key: "rotate", en: "Rotate", vi: "Xoay" },
     Scale { key: "scale", en: "Scale", vi: "Tỷ lệ" },

@@ -405,6 +405,7 @@ fn fixture() -> Fixture {
             muted: false,
             crop: None,
             cleanup: Default::default(),
+            reduce_noise: false,
         }),
     );
     let graphic = insert(
@@ -430,6 +431,7 @@ fn fixture() -> Fixture {
             muted: false,
             crop: None,
             cleanup: Default::default(),
+            reduce_noise: false,
         }),
     );
     let silent_video = insert(
@@ -445,6 +447,7 @@ fn fixture() -> Fixture {
             muted: false,
             crop: None,
             cleanup: Default::default(),
+            reduce_noise: false,
         }),
     );
     let text = insert(

@@ -184,6 +184,7 @@ fn prepare_clip(
                 muted: false,
                 crop: None,
                 cleanup: Default::default(),
+                reduce_noise: false,
             }),
         });
         next_item = next_item

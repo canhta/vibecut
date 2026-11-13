@@ -25,6 +25,8 @@ pub struct VideoParams {
     /// Non-destructive cleanup of the item's source audio; the source media is never changed.
     #[serde(default)]
     pub cleanup: crate::AudioCleanup,
+    /// Per-item switch for the edge-preserving noise-reduction pass; off leaves the picture untouched.
+    pub reduce_noise: bool,
 }
 /// Remote-library provenance carried with an audio item. URLs are canonical and
 /// bounded; no token, cache path or local absolute path belongs here.
