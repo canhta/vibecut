@@ -772,11 +772,13 @@ fn preview_audio_mix_obeys_item_gain_and_mute() {
                 .build(),
         )
         .build();
-    let base = |volume, muted| {
+    let base = |volume, muted, master: f32, master_muted: bool| {
         let mut data = project::Project::empty(project::ProjectId(0), "".into())
             .unwrap()
             .into_data();
         data.assets.push(source.clone());
+        data.settings.master_volume = master;
+        data.settings.master_muted = master_muted;
         data.scene_mut().timeline.insert_track(project::Track {
             id: project::TrackId(1),
             name: "Audio".into(),
@@ -807,17 +809,21 @@ fn preview_audio_mix_obeys_item_gain_and_mute() {
         project::Project::new(data).unwrap()
     };
     let hooks = Hooks::default();
-    for (volume, muted, expected) in [
-        (-3.0, false, 10f32.powf(-3.0 / 20.0) * 0.98),
-        (-6.0, false, 10f32.powf(-6.0 / 20.0) * 0.98),
-        (0.0, true, 0.0),
-        (-6.0, true, 0.0),
+    // Master volume is the export's master chain (dB, summed with the item gain); master
+    // mute silences every item, as export's source admission assumes.
+    for (volume, muted, master, master_muted, expected) in [
+        (-3.0, false, 0.0, false, 10f32.powf(-3.0 / 20.0) * 0.98),
+        (-6.0, false, 0.0, false, 10f32.powf(-6.0 / 20.0) * 0.98),
+        (0.0, true, 0.0, false, 0.0),
+        (-6.0, true, 0.0, false, 0.0),
+        (-3.0, false, -6.0, false, 10f32.powf(-9.0 / 20.0) * 0.98),
+        (-3.0, false, 0.0, true, 0.0),
     ] {
-        let project = base(volume, muted);
+        let project = base(volume, muted, master, master_muted);
         let block = mix_audio(&project, 0, 480, 2, &mut ConstantAudio, &hooks).unwrap();
         assert!(
             (block.peak() - expected).abs() < 1e-6,
-            "{volume}dB muted={muted}"
+            "{volume}dB muted={muted} master={master}dB master_muted={master_muted}"
         );
         assert!(
             block

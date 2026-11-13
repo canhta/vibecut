@@ -734,6 +734,64 @@ fn wrap_units(at: i64, from: i64, to: i64) -> i64 {
         from + (at - from).rem_euclid(to - from)
     }
 }
+
+/// The loop range the transport holds. `in_out` is the export in/out marker pair; an
+/// unset, inverted or empty pair falls back to the whole timeline. Disabled or an empty
+/// timeline gives `None`.
+pub fn loop_window(
+    enabled: bool,
+    in_out: Option<(Tick, Tick)>,
+    duration: Tick,
+) -> Option<(Tick, Tick)> {
+    if !enabled {
+        return None;
+    }
+    if let Some((start, end)) = in_out {
+        let start = start.clamp(Tick::ZERO, duration);
+        let end = end.clamp(Tick::ZERO, duration);
+        if start < end {
+            return Some((start, end));
+        }
+    }
+    (duration > Tick::ZERO).then_some((Tick::ZERO, duration))
+}
+
+/// One output block of `frames` samples: `head` samples from `start`, then, when the loop
+/// wraps inside the block, `rest` = (loop start, frames) continues it.
+#[derive(Debug, PartialEq, Eq)]
+struct BlockPlan {
+    start: i64,
+    head: usize,
+    rest: Option<(i64, usize)>,
+}
+
+fn plan_block(first: i64, bounds: Option<(i64, i64)>, frames: usize) -> BlockPlan {
+    let Some((from, to)) = bounds else {
+        return BlockPlan {
+            start: first,
+            head: frames,
+            rest: None,
+        };
+    };
+    let start = wrap_units(first, from, to);
+    let head = (to - start).clamp(1, frames as i64) as usize;
+    BlockPlan {
+        start,
+        head,
+        rest: (head < frames).then_some((from, frames - head)),
+    }
+}
+
+impl BlockPlan {
+    /// The timeline sample each output slot reads, in order.
+    fn indices(&self) -> Vec<i64> {
+        let mut out: Vec<i64> = (0..self.head as i64).map(|n| self.start + n).collect();
+        if let Some((from, frames)) = self.rest {
+            out.extend((0..frames as i64).map(|n| from + n));
+        }
+        out
+    }
+}
 fn read_request(request: &Mutex<Request>) -> Result<Request> {
     Ok(request.lock().map_err(|_| Error::Poisoned)?.clone())
 }
@@ -800,20 +858,14 @@ fn audio_loop(
             None => r.at(cursor)?.to_units(rate, Rounding::Nearest)?,
         };
         // A looping block stops at the loop end; its remainder comes from the loop start.
-        let (start, head, loop_start) = match bounds {
-            Some((from, to)) => {
-                let start = wrap_units(first, from, to);
-                let head = (to - start).clamp(1, BLOCK as i64) as usize;
-                (start, head, Some(from))
+        let plan = plan_block(first, bounds, BLOCK);
+        let head = plan.head;
+        let block = mixer.mix(plan.start, head, sources.as_mut(), &audio_hooks)?;
+        let rest = match plan.rest {
+            Some((from, frames)) => {
+                Some(mixer.mix(from, frames, sources.as_mut(), &audio_hooks)?)
             }
-            None => (first, BLOCK, None),
-        };
-        let block = mixer.mix(start, head, sources.as_mut(), &audio_hooks)?;
-        let rest = match loop_start {
-            Some(from) if head < BLOCK => {
-                Some(mixer.mix(from, BLOCK - head, sources.as_mut(), &audio_hooks)?)
-            }
-            _ => None,
+            None => None,
         };
         if port.epoch.load(Ordering::Acquire) == epoch {
             for n in 0..BLOCK {
@@ -850,7 +902,7 @@ fn audio_loop(
             }
         }
         cursor = cursor.saturating_add(BLOCK as u64);
-        carried = bounds.map(|_| start.saturating_add(BLOCK as i64));
+        carried = bounds.map(|_| plan.start.saturating_add(BLOCK as i64));
     }
     Ok(())
 }
@@ -927,7 +979,8 @@ fn video_loop(
 
 #[cfg(test)]
 mod tests {
-    use super::wrap_units;
+    use super::{loop_window, plan_block, wrap_units};
+    use time::Tick;
 
     #[test]
     fn loop_wrap_rows() {
@@ -939,6 +992,10 @@ mod tests {
             (25, 0, 10, 5),
             (12, 4, 10, 6),
             (3, 4, 10, 3),
+            // An in/out range wraps at its out point back to its in point.
+            (10, 4, 10, 4),
+            (13, 4, 10, 7),
+            // An empty range never wraps.
             (7, 5, 5, 7),
         ];
         for (at, from, to, expected) in rows {
@@ -947,6 +1004,53 @@ mod tests {
                 expected,
                 "at {at} in {from}..{to}"
             );
+        }
+    }
+
+    #[test]
+    fn loop_window_rows() {
+        // (enabled, in/out ticks, duration, expected window)
+        let rows: [(bool, Option<(i64, i64)>, i64, Option<(i64, i64)>); 9] = [
+            (false, Some((10, 50)), 100, None),
+            (true, None, 100, Some((0, 100))),
+            (true, Some((10, 50)), 100, Some((10, 50))),
+            (true, Some((-5, 30)), 100, Some((0, 30))),
+            (true, Some((40, 200)), 100, Some((40, 100))),
+            (true, Some((50, 50)), 100, Some((0, 100))),
+            (true, Some((60, 20)), 100, Some((0, 100))),
+            (true, None, 0, None),
+            (true, Some((0, 0)), 0, None),
+        ];
+        for (enabled, in_out, duration, expected) in rows {
+            let in_out = in_out.map(|(a, b)| (Tick(a), Tick(b)));
+            let expected = expected.map(|(a, b)| (Tick(a), Tick(b)));
+            assert_eq!(
+                loop_window(enabled, in_out, Tick(duration)),
+                expected,
+                "enabled {enabled} in/out {in_out:?} duration {duration}"
+            );
+        }
+    }
+
+    #[test]
+    fn loop_block_split_rows() {
+        // (first sample, loop bounds, block frames, timeline sample per output slot)
+        let rows: [(i64, Option<(i64, i64)>, usize, Vec<i64>); 6] = [
+            (2, None, 4, vec![2, 3, 4, 5]),
+            (2, Some((0, 10)), 4, vec![2, 3, 4, 5]),
+            // The block crosses the loop end: the slots after 9 read the loop start, 0 and 1.
+            (8, Some((0, 10)), 4, vec![8, 9, 0, 1]),
+            (10, Some((0, 10)), 4, vec![0, 1, 2, 3]),
+            (9, Some((4, 10)), 4, vec![9, 4, 5, 6]),
+            (25, Some((0, 10)), 4, vec![5, 6, 7, 8]),
+        ];
+        for (first, bounds, frames, expected) in rows {
+            let plan = plan_block(first, bounds, frames);
+            assert_eq!(plan.indices(), expected, "first {first} bounds {bounds:?}");
+            // Continuity: the slot after the loop end reads the loop start sample.
+            if let Some((from, _)) = plan.rest {
+                assert_eq!(expected.get(plan.head).copied(), Some(from));
+            }
         }
     }
 }

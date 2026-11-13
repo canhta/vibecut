@@ -2231,4 +2231,9 @@ fn master_mute_is_one_undo_step_per_click_and_loop_is_app_state_only() {
     assert_eq!(range.map(|(start, _)| start), Some(Tick::ZERO));
     assert_eq!(history(&h), before + 2);
     assert_eq!(json(h.state().session.project()), bytes);
+
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-57-playback.png");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    h.render().unwrap().save(&path).unwrap();
 }
