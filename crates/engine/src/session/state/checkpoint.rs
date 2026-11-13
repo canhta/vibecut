@@ -10,7 +10,8 @@ use std::{collections::VecDeque, sync::Arc};
 /// `protected` (set only by `protect_paths`, never by a command), `identity`
 /// and `limit` (fixed at construction), `generation` (monotonic: lifetimes a
 /// refused command opened stay retired) and `grouping` (`transaction` sets and
-/// clears it around its own closure).
+/// clears it around its own closure), `recorded` (a fork's command log, appended only after
+/// a boundary succeeded and truncated by `transaction` when its group fails).
 ///
 /// A boundary restores item IDs with the rest of `state`: a refused command
 /// returned no outcome, so nothing observed the IDs it allocated. Gestures and
@@ -42,6 +43,7 @@ impl Checkpoint {
             ledger,
             state,
             limit: _,
+            recorded: _,
             gesture,
             timeline_preview,
             grouping: _,
@@ -84,6 +86,7 @@ impl Checkpoint {
             ledger,
             state,
             limit: _,
+            recorded: _,
             gesture,
             timeline_preview,
             grouping: _,

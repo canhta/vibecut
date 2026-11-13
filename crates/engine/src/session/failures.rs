@@ -19,13 +19,15 @@ pub enum SessionError {
     ControlIdentity,
     #[error("job result is stale")]
     StaleResult,
+    #[error("fork replay did not reproduce the fork")]
+    ForkDiverged,
 }
 impl Failure for SessionError {
     fn code(&self) -> ErrorCode {
         match self {
             Self::TransactionActive | Self::NoGesture => ErrorCode::TransactionActive,
             Self::NoHistory | Self::IdExhausted => ErrorCode::Refused,
-            Self::Panicked => ErrorCode::Failed,
+            Self::Panicked | Self::ForkDiverged => ErrorCode::Failed,
             Self::StaleResult => ErrorCode::StaleResult,
             Self::ControlIdentity => ErrorCode::Refused,
         }

@@ -34,6 +34,15 @@ authorization of the whole command tree and the lent access objects, and skips w
 transport needs: request ids, registry hash, base revision, idempotency receipts and response
 events. A refusal returns its typed cause.
 
+## Forks
+
+A [`Fork`](../session/README.md#forks) is a run target: `Fork::control_request` and
+`Fork::control_command` are the live session's entries over the fork's session, with the same
+admission, `Policy`, lent access objects, receipts and events. A request names the fork's
+`session_id` and revision (`build_request(fork.session(), ..)`); one addressed to the parent
+refuses `SessionGone`. The fork's runner and jobs are the caller's; the log records only the edits.
+Applying is `Session::apply_fork`, which takes no `Caller`.
+
 ## Control admission, revisions and receipts
 
 `control::{Request, Caller, Policy, Response}` is the transport-neutral boundary; the envelopes,

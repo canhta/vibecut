@@ -1,6 +1,6 @@
 # Session
 
-Interface: `Session`, `Command`, `CommandKind`, `registry`, `JobTarget`, `transcript`, `CueId`,
+Interface: `Session`, `Fork`, `ChangeSummary`, `Command`, `CommandKind`, `registry`, `JobTarget`, `transcript`, `CueId`,
 `WordId`, `EditError`, `AssetUsage`, `wire`.
 
 `SessionError::StaleResult` owns stale job-target refusal: the original static diagnostic,
@@ -86,6 +86,41 @@ operation rolls back. The edit allocator returns the kernel's `SessionError::IdE
 composition. Its last u64 ID is returned once, then the absent next ID refuses without
 mutation. This is separate from Runtime job-ID exhaustion and generation/wire limits. Reloading a project starts a new
 Session and identity lifetime.
+
+## Forks
+
+`Session::fork()` returns a `Fork`: an isolated session with its own identity (so receipts and
+job targets never cross), the parent's project, ID counter, ripple policy, clipboards and view
+state, no history, no jobs and an empty command log. It refuses `TransactionActive` while a
+gesture, preview or group is open. Nothing a fork does reaches its parent.
+
+Every command that changed the fork's project is logged once, as the caller applied it and with the
+entry it ran through (typed or wire). The log holds what the kernel applied, so a job-result
+command (`captions.apply`, `reframe.apply`) appears as the edit it resolved to and replays without
+the job. A refused command, a no-op and the children a command applies to itself are not logged.
+A `Fork::transaction` group is logged as one unit and a failed one drops its children. A fork refuses every `SessionControl` command
+(undo, redo, gestures, previews, scene and view changes, ripple, clipboard copy): they belong to the
+parent. `Fork::commands`, `is_empty` and `summary` read the log; commands run through
+[control](../control/README.md#forks).
+
+`Session::apply_fork(fork)` replays the log inside one `transaction`, one undo step and one change
+event. It refuses `StaleRevision` unless the session is at the fork's `base_revision`, which also
+rules out a successor session of the same project. That is the intended guarantee that a fork
+cannot outlive `project.delete`: the revision embeds the session identity, and reopening a deleted
+and restored project makes a new session. An empty log is a no-op: no undo entry, no event, no new revision. A failing
+child, or a replay that does not end at the fork's project (`SessionError::ForkDiverged`),
+restores project, history and pending change; the revision still advances as for any rolled-back
+group, so job targets captured meanwhile go stale. Replay clears trim cue sources between
+entries because the fork ran each on its own, and keeps them inside a group. The live playhead
+does not follow a fork's paste. The kernel does not cap the log: the agent's per-turn step limit
+bounds it. `apply_fork` does not run the control `Policy`:
+each command was authorized on the fork, at the same revision.
+
+`ChangeSummary` (`Fork::summary`, or `ChangeSummary::between` for any two projects) lists, for the
+active scene, the item ids added, removed, moved (start or track), trimmed (source range),
+retimed, parameter-changed (content, effects, masks, animations, blend mode, visibility, source
+asset) and caption-changed (caption content), with the scene duration before and after. An item can
+be in several lists. The app and the model read this one value.
 
 ## Transcript read model
 
