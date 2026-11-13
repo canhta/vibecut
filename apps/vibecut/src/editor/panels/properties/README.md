@@ -41,7 +41,7 @@ The multi-selection inspector shows audio gain and mute plus text content, font,
 colour, background and position for compatible items, a dash for mixed values and the
 compatible/selected count. A single element uses per-type tabs: Text (content, font,
 background, position, size scrub, colour), Basic's Blend section (blend menu, opacity scrub), Audio
-(gain scrub, mute), and Speed for video and audio. Speed is a 0.01–5x scrub with a
+(see below), and Speed for video and audio. Speed is a 0.01–5x scrub with a
 reset and, for items with audio, a `Change pitch` checkbox that is on while pitch
 follows speed (`maintain_pitch` off). Speed edits use `timeline.set_speed`, one undo
 step per commit; trim bounds extend by the retimed output length. Caption generation
@@ -55,6 +55,20 @@ field cancels the preview. Invalid or non-finite input refuses without change. D
 sensitivity: opacity 0.01 per 4 px, audio gain 0.01 dB per 4 px, text size 1 px per
 2 px, speed 0.01 per 2 px. Enter or blur commits a typed shared-field patch through the
 engine registry in one undo step. Focused text editing owns keyboard input.
+
+## Audio tab
+
+Audio follows the Video tab for a video with source audio, and is the default tab of an
+audio clip. Its section has three slider rows with fields: Volume (`audio_gain`, -60 to
++20 dB, 0 neutral, keyframeable through the Volume diamond), then Fade in and Fade out
+(`audio_fade_in` / `audio_fade_out`, 0 to 10 s, capped at the clip less the other
+fade's window). Fade edits are `audio.set_fade` with the edge's current curve, one undo
+step per commit; a drag is one gesture. The engine clamps a fade to the same room, so
+a typed value above it lands on the cap. Every row is disabled on a locked track. Mute
+is not on this tab: it is the track header and the clip menu. The engine's volume floor
+is -60 dB, so the reference's -60.1 dB silent point is not reachable here until
+`project::valid_volume` changes. Noise reduction and Normalize loudness rows are not
+here yet: their engine work (spectral noise reduction, the loudness controls) has not landed.
 
 ## Transition inspector
 

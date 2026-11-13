@@ -1900,6 +1900,26 @@ fn opacity_and_audio_gain_scrub_through_their_tabs() {
         panic!("audio")
     };
     assert_eq!(params.volume, 0.04);
+
+    // The Audio tab is volume and two fades: sliders with fields, no mute checkbox.
+    for id in [
+        "inspector.audio_gain.slider",
+        "inspector.audio_fade_in.slider",
+        "inspector.audio_fade_out.slider",
+    ] {
+        assert!(has_widget(&harness, id), "{id}");
+    }
+    assert!(!has_widget(&harness, "inspector.audio_muted"));
+    // Each fade is one audio.set_fade step; the second clamps to the 2 s clip less the first.
+    let history = harness.state().session.history_len();
+    enter(&mut harness, "inspector.audio_fade_in", "1");
+    enter(&mut harness, "inspector.audio_fade_out", "99");
+    assert_eq!(harness.state().session.history_len().0, history.0 + 2);
+    let ItemParams::Audio(params) = &item(&harness, fixture.audio).content else {
+        panic!("audio")
+    };
+    assert_eq!(params.fades.fade_in.duration, Tick(SECOND));
+    assert_eq!(params.fades.fade_out.duration, Tick(SECOND));
 }
 
 #[test]

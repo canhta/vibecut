@@ -55,6 +55,12 @@ pub(in crate::editor) enum Action {
         speed: f64,
         maintain_pitch: bool,
     },
+    /// One fade edge's duration in seconds, through `audio.set_fade`.
+    SetFade {
+        item: ItemId,
+        edge: project::FadeEdge,
+        seconds: f64,
+    },
     /// The selected transition's duration, through `transition.set_duration`.
     SetTransitionDuration {
         transition: project::TransitionId,

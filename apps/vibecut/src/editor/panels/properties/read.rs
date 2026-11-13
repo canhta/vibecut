@@ -59,9 +59,64 @@ pub(super) fn item_value(project: &project::Project, item: ItemId, field: &str) 
         }
         ("audio_gain", ItemParams::Audio(params)) => Some(f64::from(params.volume)),
         ("audio_gain", ItemParams::Video(params)) => Some(f64::from(params.volume)),
+        (field, content) if fade_edge(field).is_some() => {
+            let edge = fade_edge(field)?;
+            Some(fade_on(fades_of(content)?, edge).duration.seconds())
+        }
         ("speed", ItemParams::Audio(_) | ItemParams::Video(_)) => Some(item.retime.speed.as_f64()),
         _ => None,
     }
+}
+
+/// The fades of an audible item; other kinds carry none.
+fn fades_of(content: &ItemParams) -> Option<&project::Fades> {
+    match content {
+        ItemParams::Audio(params) => Some(&params.fades),
+        ItemParams::Video(params) => Some(&params.fades),
+        _ => None,
+    }
+}
+
+fn fade_on(fades: &project::Fades, edge: project::FadeEdge) -> project::Fade {
+    match edge {
+        project::FadeEdge::In => fades.fade_in,
+        project::FadeEdge::Out => fades.fade_out,
+    }
+}
+
+/// The fade edge a property field names (`audio_fade_in` / `audio_fade_out`).
+pub(super) fn fade_edge(field: &str) -> Option<project::FadeEdge> {
+    match field {
+        "audio_fade_in" => Some(project::FadeEdge::In),
+        "audio_fade_out" => Some(project::FadeEdge::Out),
+        _ => None,
+    }
+}
+
+/// One fade edge of the item, as stored.
+pub(super) fn fade_of(
+    project: &project::Project,
+    item: ItemId,
+    edge: project::FadeEdge,
+) -> Option<project::Fade> {
+    Some(fade_on(fades_of(&find(project, item)?.content)?, edge))
+}
+
+/// The longest duration one edge may take in seconds: the clip less the other
+/// edge's audible window. `audio.set_fade` clamps to the same room.
+pub(super) fn fade_room_seconds(
+    project: &project::Project,
+    item: ItemId,
+    edge: project::FadeEdge,
+) -> Option<f64> {
+    let found = find(project, item)?;
+    let fades = fades_of(&found.content)?;
+    let other = match edge {
+        project::FadeEdge::In => fades.fade_out,
+        project::FadeEdge::Out => fades.fade_in,
+    };
+    let clip = found.duration().ok()?.seconds();
+    Some((clip - other.window().seconds()).max(0.0))
 }
 
 /// The field's model value at an item-relative time, for keyframe toggles.
