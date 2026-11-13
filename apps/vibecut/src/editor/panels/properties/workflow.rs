@@ -116,6 +116,7 @@ fn route(state: &mut State, port: &mut Port<'_>, actions: Vec<Action>) {
                 transition,
                 alignment,
             } => transition::set_alignment(port, transition, alignment),
+            Action::ApplyTransitionToAll(transition) => transition::apply_to_all(port, transition),
             Action::RemoveTransition(transition) => transition::remove(port, transition),
             Action::SetCanvas {
                 width,

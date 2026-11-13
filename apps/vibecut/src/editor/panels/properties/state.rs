@@ -85,6 +85,9 @@ pub(in crate::editor) enum Action {
         transition: project::TransitionId,
         alignment: project::TransitionAlignment,
     },
+    /// Copy the selected transition's kind and duration to every other transition, through
+    /// `transition.apply_to_all`.
+    ApplyTransitionToAll(project::TransitionId),
     RemoveTransition(project::TransitionId),
     SetCanvas {
         width: u32,

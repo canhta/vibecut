@@ -102,7 +102,11 @@ clamps to the handles of both neighbouring clips and refuses with none. Alignmen
 command of its own: it is `transition.move` to the span position the alignment names,
 batched with a `transition.set_duration` shrink when the span is longer than the handle it
 must grow into, so one click is one undo step; a span moved by hand shows none selected.
-Remove is `transition.remove`.
+`Apply to all` (under the alignment control, above Remove; its placement is not measured in
+the capture) sends `transition.apply_to_all` with the selected transition: every other
+transition takes its kind and duration as one undo step, clamped to its own handles, and
+drops overrides when its kind changes. Transitions on locked tracks are left unchanged and a
+toast reports it; the engine's `skipped` list carries the ids. Remove is `transition.remove`.
 
 ## Background sub-tab
 

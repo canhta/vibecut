@@ -250,10 +250,12 @@ use clips::set_range;
 
 use tracks::placement_track;
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn apply(
     mut data: ProjectData,
     command: Command,
     created: &mut Vec<CreatedId>,
+    skipped: &mut Vec<project::TransitionId>,
     next: &mut Option<u64>,
     sources: &mut TrimSources,
     copied_text_bytes: &mut usize,
@@ -377,6 +379,9 @@ pub(crate) fn apply(
             data = transitions::execute_add_transition(
                 data, track, from, to, kind, duration, alignment, created, next,
             )?;
+        }
+        EditCommand::ApplyTransitionToAll { transition } => {
+            data = transitions::execute_apply_to_all(data, transition, skipped)?;
         }
         EditCommand::MoveTransition { transition, start } => {
             data = transitions::execute_move_transition(data, transition, start)?;
@@ -884,6 +889,7 @@ pub(crate) fn apply(
                     data,
                     command,
                     created,
+                    skipped,
                     next,
                     sources,
                     copied_text_bytes,

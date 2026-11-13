@@ -33,6 +33,17 @@ pub(super) fn set_alignment(
     Ok(())
 }
 
+/// Copy this transition's kind and duration to every other transition as one undo step.
+/// The engine leaves transitions on locked tracks alone; a toast says so when it did.
+pub(super) fn apply_to_all(port: &mut Port<'_>, transition: TransitionId) -> Result<()> {
+    let outcome = port.apply_result(Command::ApplyTransitionToAll { transition })?;
+    if !outcome.skipped.is_empty() {
+        let text = port.tr(crate::i18n::Text::TransitionSkippedLocked);
+        port.toast(text, None);
+    }
+    Ok(())
+}
+
 pub(super) fn remove(port: &mut Port<'_>, transition: TransitionId) -> Result<()> {
     port.apply_result(Command::RemoveTransition { transition })?;
     if port.view().transition == Some(transition) {

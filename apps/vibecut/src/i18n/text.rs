@@ -539,6 +539,7 @@ catalog! {
     TransitionShelfOverlay { key: "transition_shelf_overlay", en: "Overlay", vi: "Lớp phủ" },
     TransitionShelfSlides { key: "transition_shelf_slides", en: "Slides", vi: "Trượt" },
     TransitionShelfWipes { key: "transition_shelf_wipes", en: "Wipes", vi: "Gạt mở" },
+    TransitionSkippedLocked { key: "transition_skipped_locked", en: "Transitions on locked tracks were not changed", vi: "Các chuyển cảnh trên track đã khóa không được thay đổi" },
     TransitionSlices { key: "transition_slices", en: "Slices", vi: "Lát cắt" },
     TransitionSlide { key: "transition_slide", en: "Slide", vi: "Trượt" },
     TransitionSoftEdge { key: "transition_soft_edge", en: "Soft Edge", vi: "Viền mềm" },

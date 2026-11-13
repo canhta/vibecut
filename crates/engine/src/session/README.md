@@ -87,7 +87,7 @@ JSON integer admission is limited to ±(2^53−1), including nested values. Proj
 decimal-string encoding at its owner, including project persistence; other IDs and Tick remain
 numbers.
 
-`apply` returns `Outcome { changed, created }`. `created` lists engine-allocated typed track,
+`apply` returns `Outcome { changed, created, skipped }`, where `skipped` lists the transitions a batch-wide edit left unchanged on locked tracks. `created` lists engine-allocated typed track,
 item and bookmark IDs in execution order, including batch children. IDs share one checked
 increasing counter initialized above all loaded IDs and are not reused after delete, undo,
 branching, cancelled previews or rolled-back groups within a Session. A failed command or batch

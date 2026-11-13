@@ -414,6 +414,7 @@ impl Session {
                     changed: false,
                     created: Vec::new(),
                     placements: Vec::new(),
+                    skipped: Vec::new(),
                     closed_span: false,
                 },
             }),
