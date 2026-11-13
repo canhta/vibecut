@@ -1,6 +1,7 @@
 # Editor player
 
-Interface: `State`, `show`, `Action`, `PreviewAxis`, `PreviewGuide`, `TextCaret`, `crop`.
+Interface: `State`, `show`, `Action`, `PreviewAxis`, `PreviewGuide`, `TextCaret`, `Guide`,
+`OverlayVisibility`, `crop`.
 
 Owns the preview panel: its chrome, transport toolbar, timecode field, zoom controls,
 transform handles, inline text and the crop dialog. Transport, preview frames and the crop
@@ -68,3 +69,24 @@ The toolbar Crop modal edits a transient `project::Crop` through the shared `cro
 control, locked to the selected ratio (Custom resizes freely, Original keeps the source
 shape), and writes it with one `timeline.set_item_param` patch on Apply, so closing never
 mutates the project.
+
+## Guides and overlays
+
+`overlay` holds the model: the `Guide` choice (none, or a grid with rows and columns in 1–24),
+per-overlay `OverlayVisibility` and the paint planes. Planes paint
+back to front: `Scene` (the frame image, painted first), `Viewport` (the guide, fixed over the
+displayed frame) and `Hud` (bookmark notes, screen-anchored top-left). The transform handles
+are drawn after all three.
+
+The header menu holds the guide picker (None or Grid), the grid size fields and the guide
+switch; the canvas context menu holds the notes switch. Each choice is one `preview_guide` or
+`preview_overlays` preference edit recorded in the app's preference history, so it is undoable
+and never touches the project. Grid sizes follow the properties scrub rule: a drag or typed
+edit drafts the sizes in `State::grid_draft` (shown, not stored), and one `preview_guide` edit
+publishes the final value when the drag releases or the field loses focus. A drag across
+several values is one undo step; a drag that ends where it started records nothing. Notes show each bookmark whose span covers the playhead, start and end inclusive;
+a bookmark with an empty note shows nothing. Guides and notes are painted only here, so export
+never sees them.
+
+Platform safe-area guides are not in this module; they wait for measured geometry in their own
+ticket. Every value in this section is [new]; no capture exists for the picker or for notes.

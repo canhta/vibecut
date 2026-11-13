@@ -1,6 +1,7 @@
 //! Owns preview presentation state behind the player panel interface.
 pub mod crop;
 mod mask_path;
+mod overlay;
 mod snap;
 mod state;
 mod text;
@@ -9,6 +10,7 @@ mod view;
 mod workflow;
 
 use crate::{editor::Context, egui};
+pub use overlay::{Guide, OverlayVisibility};
 use project::ItemId;
 pub use snap::PREVIEW_SNAP_PIXELS;
 pub(crate) use state::{KeyPick, State};
@@ -92,6 +94,11 @@ pub(crate) enum Action {
     },
     /// A pixel of the rendered preview frame for the armed chroma-key eyedropper.
     PickKeyColor(project::Color),
+    /// One preview preference edit, recorded in the app's preference history.
+    SetPreference {
+        key: &'static str,
+        value: serde_json::Value,
+    },
     Remember {
         id: String,
         icon: Option<&'static str>,

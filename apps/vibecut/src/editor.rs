@@ -25,7 +25,9 @@ pub use assets::{
     AssetState, AssetsTab, ImportEvent, ImportProbe, ImportQueue, MAX_IMPORT_FILES, MediaSort,
     MediaSortKey, MediaSortOrder, MediaView, ThumbnailSource,
 };
-pub use panels::player::{PREVIEW_SNAP_PIXELS, PreviewAxis, PreviewGuide, TextCaret};
+pub use panels::player::{
+    Guide, OverlayVisibility, PREVIEW_SNAP_PIXELS, PreviewAxis, PreviewGuide, TextCaret,
+};
 pub use state::{
     AssetInspection, Editor, Inspection, ShortcutRow, ShortcutTab, ShortcutsInspection,
 };

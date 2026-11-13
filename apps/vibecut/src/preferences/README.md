@@ -36,6 +36,11 @@ from this map. Downloaded local weight choices remain in their local owner. Keys
 fetched lists and price acknowledgements are never serialized. A document whose version is not
 `PREFERENCES_VERSION` is refused through the version refusal; there is no migration.
 
+`preview_guide` and `preview_overlays` store the preview guide choice (none, or a grid with
+rows and columns 1–24, validated on load and set) and the per-overlay visibility. Both are presentation only;
+an edit is one `ui.prefs.set` step in app history. Version 11 introduced them with no
+migration: older documents are dropped.
+
 `adjustment_presets` is the bounded app-owned bank of named colour grades (at most 32,
 64-byte unique names, exactly the current `color_grade` parameter set with each value
 checked against its definition). Saving, applying and deleting a preset are preference

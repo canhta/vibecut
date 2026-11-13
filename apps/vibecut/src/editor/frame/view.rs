@@ -386,6 +386,9 @@ impl Editor {
                         self.desk().fail(error.to_string());
                     }
                 }
+                Action::SetPreference { key, value } => {
+                    self.desk().set_preference(key, value);
+                }
             }
         }
         if std::mem::take(&mut self.copy_snapshot_requested)

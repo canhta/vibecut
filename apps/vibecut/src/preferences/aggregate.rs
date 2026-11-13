@@ -8,7 +8,7 @@ use super::{AdjustmentPreset, EasingPreferences, FontPickerPreferences, WindowGe
 use crate::{
     ElementKind, PropertiesTab,
     editor::AssetsTab,
-    editor::{MediaSort, MediaView},
+    editor::{Guide, MediaSort, MediaView, OverlayVisibility},
     home::ProjectsPreferences,
     i18n::Locale,
     input::KeybindingPreferences,
@@ -68,6 +68,8 @@ pub const PREFERENCE_KEYS: &[&str] = &[
     "default_fps",
     "hardware_acceleration",
     "cache_limit_bytes",
+    "preview_guide",
+    "preview_overlays",
 ];
 
 /// A splitter drag that keeps every region non-empty and inside its limits.
@@ -171,6 +173,10 @@ pub struct Preferences {
     pub hardware_acceleration: HardwareAcceleration,
     /// Aggregate byte budget for frames, compositor, export and cache; applies after the next start.
     pub cache_limit_bytes: u64,
+    /// The preview guide the picker selected; drawn by the app, never exported.
+    pub preview_guide: Guide,
+    /// Visibility of each preview overlay; presentation only.
+    pub preview_overlays: OverlayVisibility,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -207,6 +213,8 @@ impl Default for Preferences {
             default_fps: DEFAULT_PROJECT_FPS,
             hardware_acceleration: HardwareAcceleration::default(),
             cache_limit_bytes: DEFAULT_CACHE_LIMIT,
+            preview_guide: Guide::default(),
+            preview_overlays: OverlayVisibility::default(),
         }
     }
 }
@@ -267,6 +275,7 @@ impl Preferences {
         self.easing.validate()?;
         validate_project_fps(self.default_fps)?;
         validate_cache_limit(self.cache_limit_bytes)?;
+        self.preview_guide.validate()?;
         if serde_json::to_vec(self)?.len() as u64 > MAX_PREFERENCES_BYTES {
             return Err(Error::Invalid("preference size"));
         }
@@ -366,6 +375,8 @@ impl Preferences {
             "default_fps" => Ok(serde_json::json!(self.default_fps)),
             "hardware_acceleration" => Ok(serde_json::to_value(self.hardware_acceleration)?),
             "cache_limit_bytes" => Ok(serde_json::json!(self.cache_limit_bytes)),
+            "preview_guide" => Ok(serde_json::to_value(self.preview_guide)?),
+            "preview_overlays" => Ok(serde_json::to_value(self.preview_overlays)?),
             _ => Err(Error::Unsupported("preference key")),
         }
     }
@@ -412,6 +423,8 @@ impl Preferences {
                 self.hardware_acceleration = serde_json::from_value(value)?;
             }
             "cache_limit_bytes" => self.cache_limit_bytes = serde_json::from_value(value)?,
+            "preview_guide" => self.preview_guide = serde_json::from_value(value)?,
+            "preview_overlays" => self.preview_overlays = serde_json::from_value(value)?,
             _ => return Err(Error::Unsupported("preference key")),
         }
         Ok(())

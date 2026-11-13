@@ -132,7 +132,7 @@ impl PreferenceStore {
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
-    use crate::editor::AssetsTab;
+    use crate::editor::{AssetsTab, Guide};
     use crate::i18n::Locale;
     use crate::preferences::{EasingTab, FontTab, SavedEasing};
     use crate::preferences::{
@@ -155,6 +155,9 @@ mod tests {
         assert!(!Preferences::default().ripple);
         assert!(Preferences::default().preview_axis);
         assert!(!Preferences::default().playback_loop);
+        assert_eq!(Preferences::default().preview_guide, Guide::default());
+        assert!(Preferences::default().preview_overlays.notes);
+        assert!(!Preferences::default().preview_overlays.guide);
         assert_eq!(Preferences::system().locale, Locale::from_system());
     }
 
@@ -243,6 +246,14 @@ mod tests {
                     "tab": "saved",
                     "saved": [{"name": "Custom 1", "curve": [0.1, 0.2, 0.3, 1.4]}]
                 }),
+            ),
+            (
+                "preview_guide",
+                serde_json::json!({"kind": "grid", "rows": 24, "cols": 1}),
+            ),
+            (
+                "preview_overlays",
+                serde_json::json!({"guide": true, "notes": false}),
             ),
             (
                 "export",
@@ -419,6 +430,32 @@ mod tests {
         ] {
             assert!(preferences.set(key, value).is_err(), "{key}");
             assert_eq!(preferences, before, "{key} must fail atomically");
+        }
+    }
+
+    #[test]
+    fn guide_preferences_refuse_out_of_range_and_unknown_values_atomically() {
+        let mut preferences = Preferences::default();
+        let before = preferences.clone();
+        for (key, value) in [
+            (
+                "preview_guide",
+                serde_json::json!({"kind": "grid", "rows": 0, "cols": 3}),
+            ),
+            (
+                "preview_guide",
+                serde_json::json!({"kind": "grid", "rows": 3, "cols": 25}),
+            ),
+            ("preview_guide", serde_json::json!({"kind": "custom"})),
+            ("preview_guide", serde_json::json!({"kind": "tiktok"})),
+            ("preview_overlays", serde_json::json!({"guide": true})),
+            (
+                "preview_overlays",
+                serde_json::json!({"guide": true, "notes": true, "hud": false}),
+            ),
+        ] {
+            assert!(preferences.set(key, value).is_err(), "{key} must refuse");
+            assert_eq!(preferences, before);
         }
     }
 
