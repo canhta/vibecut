@@ -96,6 +96,7 @@ impl Panel<'_, '_> {
             FootageStatus::ModelMissing(id) => {
                 let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
                 self.row_label(ui, row, self.tr(Text::FootageDataMissing));
+                value_ui.spacing_mut().item_spacing.x = theme::space::MD;
                 let models = value_ui.button(self.tr(Text::ModelDownload));
                 self.remember(format!("{prefix}.models"), &models);
                 if models.clicked() {

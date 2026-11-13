@@ -2881,6 +2881,14 @@ fn auto_removal_enables_tunes_and_disables_with_one_undo_step_each() {
     assert!(has_widget(&harness, "inspector.auto_removal.models"));
     assert!(has_widget(&harness, "inspector.auto_removal.analyze"));
     assert!(!has_widget(&harness, "inspector.auto_removal.progress"));
+    // The two buttons sit one panel button gap (theme::space::MD, 8 px) apart, not touching.
+    let models_rect = widget_rect(&harness, "inspector.auto_removal.models");
+    let analyze_rect = widget_rect(&harness, "inspector.auto_removal.analyze");
+    let gap = analyze_rect.left() - models_rect.right();
+    assert!(
+        (gap - 8.0).abs() < 0.5,
+        "Download and Analyze gap is {gap} px, expected 8 px"
+    );
 
     // Tune: a typed feather is one undo step and needs no new analysis.
     type_value(&mut harness, "inspector.background_removal_feather", "40");
