@@ -6,7 +6,7 @@ use crate::{
     preferences::Preferences,
     services::{
         lifecycle::{EditorSession, fresh},
-        playback::{Files, Playback},
+        playback::{Playback, Proxied, Sources},
     },
 };
 use engine::{
@@ -258,6 +258,11 @@ impl EditorWindow {
         }
     }
 }
+/// Preview reads proxies when the project's choice is on; export never does.
+fn preview_sources() -> Arc<dyn Sources> {
+    Arc::new(Proxied(engine::proxies::ProxyIndex::default()))
+}
+
 fn session(root: &std::path::Path, session: Session, budget: ByteBudget) -> Result<Autosave> {
     Ok(Autosave::new(
         root,
@@ -300,7 +305,7 @@ fn run(
         )?,
         Work::Short(short, settings) => {
             let autosave = session(root, *short, persistence.clone())?;
-            let mut playback = Playback::new(autosave.session(), budget, Arc::new(Files))?;
+            let mut playback = Playback::new(autosave.session(), budget, preview_sources())?;
             playback.set_render_settings(settings)?;
             return Ok(Completed::Opened(Box::new(Editor::persisted(
                 autosave,
@@ -428,7 +433,7 @@ fn open_editor(
     root: &Path,
 ) -> Result<Box<Editor>> {
     let view = autosave.session().metadata().view;
-    let mut playback = Playback::new(autosave.session(), budget, Arc::new(Files))?;
+    let mut playback = Playback::new(autosave.session(), budget, preview_sources())?;
     playback.seek(
         view.playhead.min(autosave.session().project().duration()),
         false,
@@ -569,7 +574,7 @@ mod tests {
                 let playback = Playback::new(
                     &session,
                     ByteBudget::new(64 << 20).unwrap(),
-                    Arc::new(Files),
+                    Arc::new(crate::services::playback::Files),
                 )
                 .unwrap();
                 let slot = Arc::new(Mutex::new(Some(Box::new(Editor::new(

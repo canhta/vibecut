@@ -34,6 +34,31 @@ recovery decoder. It never caches machine capabilities.
 packed pixels, the egui CPU image, upload staging and the GPU texture, plus the retained probe
 metadata allocation. App owners keep that handle while any texture is retained.
 
+## Preview proxies
+
+`proxies::proxy_key(content, max_edge)` binds a proxy to the source content hash and raster edge
+(`ArtifactKind::Proxy`), so changed content or a different size misses every older file.
+`ProxyRequest::new(asset, max_edge)` admits a video source with a frame rate (stills and audio-only
+sources are `Unsupported`); `submit` enqueues one CPU `GenerateProxy` job that stages
+`media::write_proxy` output in the proxy cache directory, bounded by half the aggregate byte limit,
+and reports only a 32-byte manifest. A warm cache completes without opening the source.
+`ProxyJob::finish` publishes the staged file through `ArtifactCache::publish_file` and charges its
+physical length to the shared budget; cancellation, failure and refusal remove the staged file.
+The proxy store is a third `MediaAccess` store beside waveforms and thumbnails (`generate_proxy`,
+`finish_proxy`, `cancel_proxy`, `adopt_proxy`); it is a desktop intention, not a registered command,
+and never touches a project.
+
+`ProxyIndex` is the shared, cheap-to-clone preview state: the project's on/off choice and the proxy
+file offered for each source content hash. `ProxySources` wraps render's `FileSources` and reads
+video from the offered proxy while the choice is on; the compositor scales the smaller raster, and
+a source window is never applied to it. Availability checks, every audio read and export stay on
+the source: only the desktop's preview factory constructs `ProxySources`, and the export dialog and
+every headless entry keep `FileSources`. A proxy file that vanished or changed length drops its
+entry and records `ProxyFallback::Missing`; that read and later ones use the source until the proxy is
+adopted again after regeneration. The proxy path is never stored in a project, its history or its
+metadata; the per-project choice is `Metadata::proxy_preview`, set by `Session::set_proxy_preview`
+outside history.
+
 ## Thumbnail strips
 
 `thumbnail_strip::tile_interval(strip_height_px, pixels_per_second)` returns the output ticks

@@ -36,14 +36,29 @@ pub enum Transport {
     End,
 }
 
-/// Render's source seam is injected; production uses the same FileSources as export.
+/// Render's source seam is injected; export uses `Files`, the same FileSources
+/// a headless export reads. Only preview ever receives `Proxied`.
 pub trait Sources: Send + Sync + 'static {
     fn create(&self) -> Box<dyn render::SourceProvider>;
+    /// The proxy choice and files this factory resolves, if it resolves any.
+    fn proxies(&self) -> Option<&engine::proxies::ProxyIndex> {
+        None
+    }
 }
 pub struct Files;
 impl Sources for Files {
     fn create(&self) -> Box<dyn render::SourceProvider> {
         Box::new(render::FileSources::default())
+    }
+}
+/// Preview sources that read cached proxies while the project's choice is on.
+pub struct Proxied(pub engine::proxies::ProxyIndex);
+impl Sources for Proxied {
+    fn create(&self) -> Box<dyn render::SourceProvider> {
+        Box::new(engine::proxies::ProxySources::new(self.0.clone()))
+    }
+    fn proxies(&self) -> Option<&engine::proxies::ProxyIndex> {
+        Some(&self.0)
     }
 }
 struct Slot {
@@ -285,6 +300,9 @@ impl Playback {
             .unwrap_or(true)
     }
     pub fn new(session: &Session, budget: ByteBudget, sources: Arc<dyn Sources>) -> Result<Self> {
+        if let Some(index) = sources.proxies() {
+            index.set_enabled(session.metadata().proxy_preview);
+        }
         let port = Arc::new(AudioPort::new(&budget)?);
         let request = Arc::new(Mutex::new(Request {
             render_state: Arc::new(RenderState::default()),
@@ -483,6 +501,10 @@ impl Playback {
     }
     pub fn budget(&self) -> &ByteBudget {
         &self.budget
+    }
+    /// The proxies preview reads; `None` for sources that never resolve any.
+    pub fn proxies(&self) -> Option<&engine::proxies::ProxyIndex> {
+        self.sources.proxies()
     }
     pub fn position(&self) -> Result<Tick> {
         self.request

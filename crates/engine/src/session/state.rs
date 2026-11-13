@@ -266,6 +266,22 @@ impl Session {
         self.metadata = metadata;
         Ok(())
     }
+    /// Choose whether preview reads cached proxies. Presentation state beside the
+    /// view: outside history, the project file and the command catalogue, and
+    /// refused while a transaction is open. Export never reads it.
+    pub fn set_proxy_preview(&mut self, enabled: bool) -> Result<bool> {
+        if self.transaction_active() {
+            return Err(EditError::Session(
+                crate::session::SessionError::TransactionActive,
+            ));
+        }
+        let changed = self.metadata.proxy_preview != enabled;
+        self.metadata.proxy_preview = enabled;
+        if changed {
+            self.invalidate_revision(false)?;
+        }
+        Ok(changed)
+    }
     /// Capture before submitting processing. Old results are rejected even after
     /// edit + undo returns to equal content, or another Session opens the project.
     pub fn job_target(&self) -> JobTarget {

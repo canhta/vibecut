@@ -1,6 +1,6 @@
 # write
 
-Frame encoding and container writing for one export.
+Frame encoding and container writing for an export or a preview proxy.
 
 ## Encoding
 
@@ -43,3 +43,7 @@ Bounds (typed `GifLimit`, wrapped as `MediaError::Gif`, refused before an encode
 ## Audio file writer
 
 `AudioFileWriter` streams planar f32 blocks (one plane per channel, up to `AUDIO_FILE_BLOCK` samples) through the AAC encoder into an MP4 audio file at the caller's path. Presentation time is the running sample count, so the duration is exactly the samples written, never a clock. A wrong channel count or non-finite sample is a typed refusal before encoding. The caller writes to a temporary path and promotes it only after `finish` returns; dropping the writer leaves an unfinished file the caller deletes.
+
+## Proxies
+
+`write_proxy(source, output, limits, cancel, progress)` reads the first video stream through `VideoReader` and writes constant-rate H.264 with `VideoEncoderSettings::intra_only` (a GOP of one, so every picture is a keyframe) in an MP4 with no audio track; preview audio keeps reading the source. The raster is `proxy_size`: the source aspect fitted to `limits.max_edge`, even, never enlarged; the app asks for `PROXY_MAX_EDGE` (960), an engineering default that is not a measured reference value. Frames sit on the source's own rate grid at their source timestamps: a source frame is repeated on every grid instant before its successor and a faster source is thinned, so the proxy frame at a time is the source frame at that time. Source frames are copied to CPU before they wait for the next one. The output is refused with `TooLarge` past `limits.max_bytes` or two million frames, and cancellation, HDR, high bit depth and an unknown frame rate return their typed errors. The caller owns the temporary path, promotion and cleanup after an error. The frame-tolerance bound is recorded in `tests/it/pipeline.rs` (`PROXY_FRAME_TOLERANCE`) and is an engineering bound until a first run is recorded.

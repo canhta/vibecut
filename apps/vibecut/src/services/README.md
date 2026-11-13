@@ -8,7 +8,7 @@ areas, frame and composition root; a services module never names a window, an ar
 
 | Module | Holds |
 |---|---|
-| `playback` | Engine-scheduled frames, the device clock and the one transport mapping. The app runs no second scheduler. The audio callback only copies samples, zero-fills underruns and reports callback-to-playback latency; every DSP and mix decision belongs to render. Video follows the latency-corrected audio clock and skips past frames under load. |
+| `playback` | Engine-scheduled frames, the device clock and the one transport mapping. The app runs no second scheduler. The audio callback only copies samples, zero-fills underruns and reports callback-to-playback latency; every DSP and mix decision belongs to render. Video follows the latency-corrected audio clock and skips past frames under load. Preview is built on `Proxied` sources (cached proxies while the project's choice is on); export reads `Files`. |
 | `preview` | `View` (fit flag, explicit scale, pan offset, 0.25–16x), `FrameTexture` (one upload per preview generation and tick, retaining its frame) and the snapshot boundary (`preview.snapshot`, clipboard copy). The player panel and the shorts window present their own chrome over the same state. |
 | `crop` | The source-normalized crop model: `portrait` and `control` (edge and corner drag, ratio lock, 5% minimum edge, 1% and 10% arrow steps). The editor's crop dialog lives in the player panel. |
 | `color_picker` | [Target-free colour controls and native screen sampler](color_picker/README.md). Callers own project targets, publication and history. |

@@ -55,6 +55,20 @@ outstanding reader bytes and disk charges alive through their leases; closed, un
 directories are reaccounted on next open. OS and allocator overhead and unopened cache directories
 are outside this accounting.
 
+## File artifacts
+
+A file artifact is a payload that is the file itself, for a consumer that opens it by path (preview
+proxies). `stage_path(key)` names an atomic-writer staging file in the cache directory; the producer
+writes the complete file there and `publish_file(key, staged)` charges its physical length to the
+shared budget (refusing zero length or more than half the aggregate limit with `ArtifactTooLarge`),
+renames it to `<key hex>.mp4` and registers it with the same LRU, pin and eviction state as envelope
+entries. Staged bytes are unaccounted until publication, so the producer bounds them. `file(key)`
+returns the path after checking it is still a regular file of the recorded length; a missing or
+altered file retires the entry and its charge and returns `CacheCorrupt`. `get` on a file artifact is
+`Unsupported`. Reopen registers `.mp4` entries by length without a digest; maintenance measures them
+by length and `clear` removes them like any other entry. They carry no envelope, so their bytes are
+exactly the file size.
+
 ## ASR checkpoints
 
 Independently complete ASR chunks commit as checkpoints, so a restart executes only the missing

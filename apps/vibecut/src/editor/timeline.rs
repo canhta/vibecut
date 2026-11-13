@@ -8,6 +8,7 @@ mod action;
 mod audio;
 mod graph;
 mod layout;
+mod proxies;
 mod snapping;
 mod state;
 mod view;

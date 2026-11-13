@@ -56,6 +56,7 @@ mod artifacts;
 pub use artifacts::chapter_sidecars;
 pub(crate) use artifacts::control_preview;
 pub use artifacts::effect_thumbnails;
+pub use artifacts::proxies;
 pub use artifacts::snapshot;
 pub use artifacts::thumbnail_strip;
 pub use artifacts::thumbnails;

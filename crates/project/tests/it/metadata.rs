@@ -48,10 +48,12 @@ fn optional_metadata_roundtrips_without_changing_project_bytes() {
             ..Default::default()
         },
     );
+    metadata.proxy_preview = true;
     lease.save_metadata(&metadata).unwrap();
     drop(lease);
     let lease = WriterLease::acquire(&path).unwrap();
     assert_eq!(lease.metadata(), metadata);
+    assert!(lease.metadata().proxy_preview);
     assert_eq!(std::fs::read(&path).unwrap(), bytes);
     for value in [b"{".as_slice(), b"{}", &[b' '; 65537]] {
         std::fs::write(root.path().join("Tiếng Việt.vibecut.meta.json"), value).unwrap();

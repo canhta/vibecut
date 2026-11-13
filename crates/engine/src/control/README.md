@@ -203,7 +203,8 @@ duplicate unchanged terminal events. Dropping a cursor never cancels work.
 Refusal responses, receipts, events and job views consume the error owner's `Failure::code`.
 They keep only the safe category; typed in-process causes and static messages remain intact.
 
-`MediaAccess::cache_maintenance` forwards snapshots of exactly its two stores, refusing more
+`MediaAccess::cache_maintenance` forwards snapshots of exactly its stores (waveforms and scene
+analysis, thumbnails and, when attached, preview proxies), refusing more
 than 256 ordinary entries in total. It neither opens other roots nor adds a control command;
 the desktop releases the access mutex before running maintenance IO.
 

@@ -278,6 +278,7 @@ pub enum JobKind {
     GenerateWaveform,
     AnalyzePauses,
     GenerateClipThumbnails,
+    GenerateProxy,
     MeasureLoudness,
     Preview,
     EffectThumbnail,

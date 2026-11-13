@@ -7,8 +7,8 @@
 )]
 
 use media::{
-    AudioDecoder, Container, DecodePreference, Muxer, PacketReader, StreamKind, VideoDecoder,
-    VideoEncoder, VideoEncoderSettings,
+    AudioDecoder, Container, DecodePreference, Muxer, PacketReader, ProxyLimits, RgbaConverter,
+    StreamKind, VideoDecoder, VideoEncoder, VideoEncoderSettings, VideoReader,
 };
 use time::Tick;
 
@@ -1199,4 +1199,110 @@ fn gif_encoder_keeps_frame_count_timing_loop_and_refuses_hostile_input() {
         Container::from_extension("GIF"),
         Some(Container::Gif)
     ));
+}
+
+/// Recorded bound: mean absolute RGB difference per channel (of 255) between a
+/// source frame and its proxy frame, both reduced to 32 px. An engineering bound
+/// set before the first measurement; tighten it from the first recorded run.
+const PROXY_FRAME_TOLERANCE: f64 = 12.0;
+
+fn reduced_frames(path: &std::path::Path) -> Vec<(Tick, Vec<u8>)> {
+    let mut reader = VideoReader::open(path).unwrap();
+    let mut converter = RgbaConverter::new().unwrap();
+    let mut frames = Vec::new();
+    while let Some(frame) = reader.next_frame().unwrap() {
+        let pts = frame.pts().unwrap().unwrap();
+        let small = converter.convert_scaled(&frame, 32, 24).unwrap();
+        let stride = small.stride(0).unwrap();
+        let plane = small.plane(0).unwrap();
+        let mut rgb = Vec::new();
+        for row in 0..24 {
+            for pixel in plane[row * stride..row * stride + 128].chunks(4) {
+                rgb.extend_from_slice(&pixel[..3]);
+            }
+        }
+        frames.push((pts, rgb));
+    }
+    frames
+}
+
+#[test]
+fn proxy_is_small_intra_only_and_matches_source_frames_within_tolerance() {
+    let Some(path) = source() else {
+        return;
+    };
+    let output = testkit::fixture::dir("media").join("ffmpeg_proxy.mp4");
+    let limits = ProxyLimits {
+        max_edge: 64,
+        max_bytes: 8 << 20,
+    };
+    let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let report = media::write_proxy(&path, &output, limits, cancel, |_| {}).unwrap();
+    assert_eq!((report.width, report.height), (64, 48));
+    assert_eq!(testkit::oracle::stream_field(&output, "v:0", "width"), "64");
+    assert_eq!(
+        testkit::oracle::decoded_frames(&output, "v:0"),
+        testkit::oracle::decoded_frames(&path, "v:0"),
+        "the proxy keeps the source's frame grid"
+    );
+    let packets = testkit::oracle::command("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "packet=flags",
+            "-of",
+            "csv=p=0",
+        ])
+        .arg(&output)
+        .output()
+        .unwrap();
+    let flags = String::from_utf8(packets.stdout).unwrap();
+    assert!(
+        flags.lines().all(|flag| flag.starts_with('K')),
+        "every proxy picture is a keyframe: {flags}"
+    );
+    let (source_frames, proxy_frames) = (reduced_frames(&path), reduced_frames(&output));
+    assert_eq!(source_frames.len(), proxy_frames.len());
+    for ((source_at, source), (proxy_at, proxy)) in source_frames.iter().zip(&proxy_frames) {
+        assert!(
+            (source_at.0 - proxy_at.0).abs() <= 1,
+            "{source_at:?} {proxy_at:?}"
+        );
+        let difference = source
+            .iter()
+            .zip(proxy)
+            .map(|(a, b)| f64::from(a.abs_diff(*b)))
+            .sum::<f64>()
+            / source.len() as f64;
+        assert!(
+            difference <= PROXY_FRAME_TOLERANCE,
+            "frame at {source_at:?} differs by {difference}"
+        );
+    }
+}
+
+#[test]
+fn proxy_refuses_an_output_past_the_byte_limit_and_cancellation() {
+    let Some(path) = source() else {
+        return;
+    };
+    let output = testkit::fixture::dir("media").join("ffmpeg_proxy_refused.mp4");
+    let idle = || std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let small = ProxyLimits {
+        max_edge: 64,
+        max_bytes: 16,
+    };
+    assert!(matches!(
+        media::write_proxy(&path, &output, small, idle(), |_| {}),
+        Err(media::MediaError::TooLarge("proxy bytes"))
+    ));
+    let cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let limits = ProxyLimits {
+        max_edge: 64,
+        max_bytes: 8 << 20,
+    };
+    assert!(media::write_proxy(&path, &output, limits, cancelled, |_| {}).is_err());
 }

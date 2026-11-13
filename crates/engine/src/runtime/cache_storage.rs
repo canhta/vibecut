@@ -37,6 +37,7 @@ pub enum ArtifactKind {
     SoundAudio,
     FontDownload,
     Loudness,
+    Proxy,
 }
 /// Canonical semantic inputs, in addition to source content and adapter identity.
 /// Hash normalized owner serialization, never Debug/display strings or file paths.
@@ -90,6 +91,7 @@ impl CacheKey {
             ArtifactKind::SoundAudio => b"sound-audio",
             ArtifactKind::FontDownload => b"font-download",
             ArtifactKind::Loudness => b"loudness",
+            ArtifactKind::Proxy => b"proxy",
         };
         let mut hash = blake3::Hasher::new();
         hash.update(b"vibecut-artifact-v1");
@@ -118,6 +120,11 @@ impl CacheKey {
     }
 }
 const HEADER: usize = 72;
+/// File artifacts are named `<key hex>.mp4`; envelope entries have no suffix.
+const PLAIN_SUFFIX: &str = ".mp4";
+fn plain_name(key: CacheKey) -> String {
+    format!("{}{PLAIN_SUFFIX}", key.filename())
+}
 const EVICTING: usize = usize::MAX;
 const REMOVED: usize = usize::MAX - 1;
 /// An engine-owned persistent artifact registered weakly with the aggregate
@@ -125,6 +132,9 @@ const REMOVED: usize = usize::MAX - 1;
 pub(crate) struct StoredArtifact {
     path: PathBuf,
     native: bool,
+    /// The payload is the file itself, with no envelope: a preview proxy that
+    /// FFmpeg opens by path. Its integrity is the recorded length.
+    plain: bool,
     charge: Mutex<Option<ByteLease>>,
     len: u64,
     pins: AtomicUsize,
@@ -370,21 +380,27 @@ impl ArtifactCache {
                 fs::remove_file(file.path())?;
                 continue;
             }
-            let Ok(hash) = blake3::Hash::from_hex(&name) else {
+            let plain = name.ends_with(PLAIN_SUFFIX);
+            let stem = name.strip_suffix(PLAIN_SUFFIX).unwrap_or(&name);
+            let Ok(hash) = blake3::Hash::from_hex(stem) else {
                 corrupt = corrupt.saturating_add(1);
                 continue;
             };
             let key = CacheKey(*hash.as_bytes());
             let len = file.metadata()?.len();
             let mut header = [0u8; HEADER];
-            if name != key.filename()
-                || len < HEADER as u64
-                || fs::File::open(file.path())?
-                    .read_exact(&mut header)
-                    .is_err()
-                || header.get(..8) != Some(b"VCACHE01")
-                || header.get(8..40) != Some(key.0.as_slice())
-            {
+            let malformed = if plain {
+                stem != key.filename() || len == 0
+            } else {
+                name != key.filename()
+                    || len < HEADER as u64
+                    || fs::File::open(file.path())?
+                        .read_exact(&mut header)
+                        .is_err()
+                    || header.get(..8) != Some(b"VCACHE01")
+                    || header.get(8..40) != Some(key.0.as_slice())
+            };
+            if malformed {
                 corrupt = corrupt.saturating_add(1);
                 fs::remove_file(file.path())?;
                 continue;
@@ -401,7 +417,7 @@ impl ArtifactCache {
                 }
                 Err(e) => return Err(e),
             };
-            cache.insert(key, charge, len)?;
+            cache.insert(key, charge, len, plain)?;
         }
         Ok((cache, corrupt))
     }
@@ -417,11 +433,16 @@ impl ArtifactCache {
     fn prune(&mut self) {
         self.entries.retain(|_, entry| !entry.removed());
     }
-    fn insert(&mut self, key: CacheKey, charge: ByteLease, len: u64) -> Result<()> {
+    fn insert(&mut self, key: CacheKey, charge: ByteLease, len: u64, plain: bool) -> Result<()> {
         self.prune();
         let artifact = Arc::new(StoredArtifact {
-            path: self.path(key),
+            path: if plain {
+                self.root.join(plain_name(key))
+            } else {
+                self.path(key)
+            },
             native: false,
+            plain,
             charge: Mutex::new(Some(charge)),
             len,
             pins: AtomicUsize::new(0),
@@ -487,7 +508,82 @@ impl ArtifactCache {
         envelope.extend_from_slice(bytes);
         project::atomic_write(&self.path(key), &envelope)
             .map_err(|error| RuntimeError::Edit(error.into()))?;
-        self.insert(key, disk, len)
+        self.insert(key, disk, len, false)
+    }
+    /// Where a producer writes a complete file before `publish_file`. Staging
+    /// names are atomic-writer debris, so a crash leaves nothing to account.
+    pub fn stage_path(&self, key: CacheKey) -> PathBuf {
+        self.root.join(format!(".vibecut-stage-{}", key.filename()))
+    }
+    /// Adopt a complete staged file as the file artifact for `key`, charging its
+    /// physical length to the shared budget. The staged bytes are unaccounted
+    /// until this call, so producers bound them themselves. The staged file is
+    /// removed on every refusal. A pinned key cannot be replaced.
+    pub fn publish_file(&mut self, key: CacheKey, staged: &Path) -> Result<()> {
+        let result = self.publish_file_inner(key, staged);
+        if result.is_err() {
+            let _ = fs::remove_file(staged);
+        }
+        result
+    }
+    fn publish_file_inner(&mut self, key: CacheKey, staged: &Path) -> Result<()> {
+        self.check_root()?;
+        if staged != self.stage_path(key).as_path() {
+            return Err(RuntimeError::CacheCorrupt);
+        }
+        let meta = fs::symlink_metadata(staged)?;
+        if !meta.file_type().is_file() {
+            return Err(RuntimeError::CacheCorrupt);
+        }
+        let len = meta.len();
+        if len == 0 || len > self.budget.snapshot()?.limit / 2 {
+            return Err(RuntimeError::ArtifactTooLarge);
+        }
+        self.prune();
+        if let Some(entry) = self.entries.get(&key) {
+            if entry.pinned() {
+                return Err(RuntimeError::BudgetFull);
+            }
+            self.remove(key)?;
+        }
+        while self.entries.len() >= self.max_entries {
+            self.evict_one()?;
+        }
+        let disk = self.budget.reserve(ByteOwner::PersistentCache, len)?;
+        fs::rename(staged, self.root.join(plain_name(key)))?;
+        self.insert(key, disk, len, true)
+    }
+    /// The file of a file artifact, after checking it is still the regular file
+    /// of the recorded length. A missing or altered file retires the entry and
+    /// returns `CacheCorrupt`, so the caller can fall back and regenerate.
+    pub fn file(&mut self, key: CacheKey) -> Result<Option<PathBuf>> {
+        self.check_root()?;
+        self.prune();
+        let Some(entry) = self.entries.get(&key) else {
+            return Ok(None);
+        };
+        if !entry.plain {
+            return Err(RuntimeError::Edit(crate::EditError::Unsupported(
+                "envelope artifact has no file",
+            )));
+        }
+        let (path, expected) = (entry.path.clone(), entry.len);
+        let intact = match fs::symlink_metadata(&path) {
+            Ok(meta) => meta.file_type().is_file() && meta.len() == expected,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+            Err(error) => return Err(error.into()),
+        };
+        if !intact {
+            match self.remove(key) {
+                Ok(()) | Err(RuntimeError::BudgetFull) => {}
+                Err(error) => return Err(error),
+            }
+            return Err(RuntimeError::CacheCorrupt);
+        }
+        if let Some(entry) = self.entries.get(&key) {
+            entry.stamp.store(self.budget.stamp(), Ordering::Relaxed);
+        }
+        Ok(Some(path))
     }
     /// Corrupt/missing entries are never hits. Removal of corrupt files waits
     /// for any earlier reader pins; callers receive CacheCorrupt on each failed read.
@@ -500,6 +596,11 @@ impl ArtifactCache {
         if entry.native {
             return Err(RuntimeError::Edit(crate::EditError::Unsupported(
                 "native bundle requires model lease",
+            )));
+        }
+        if entry.plain {
+            return Err(RuntimeError::Edit(crate::EditError::Unsupported(
+                "file artifact requires its path",
             )));
         }
         let Some(pin) = entry.pin()? else {
@@ -745,6 +846,9 @@ impl CacheMaintenance {
                 };
                 if !meta.file_type().is_file() || meta.len() != entry.len {
                     return Err(corrupt());
+                }
+                if entry.plain {
+                    return Ok(Some(meta.len()));
                 }
                 let mut header = [0; HEADER];
                 let mut file = fs::File::open(&entry.path)?;

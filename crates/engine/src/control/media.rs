@@ -2,6 +2,7 @@
 use super::{Error as EngineError, Result};
 use crate::{
     analysis::{AnalysisSettings, ReframeJob, ReframeRequest, ReframeTarget},
+    artifacts::proxies::{ProxyIndex, ProxyJob, ProxyReady, ProxyRequest},
     artifacts::thumbnail_strip::{
         self, ThumbnailStripJob, ThumbnailStripRequest, ThumbnailStripState,
     },
@@ -19,6 +20,8 @@ use time::{SourceRange, Tick, TimeRange};
 
 /// Entries each cache may retain; the CLI and desktop composition roots agree.
 const MAX_CACHE_ENTRIES: usize = 128;
+/// Proxy files the file cache may retain; a source's proxy is large.
+const MAX_PROXY_ENTRIES: usize = 64;
 
 /// A submitted reframe analysis and the item it was generated for, so
 /// `reframe.apply { job }` knows which item the job names.
@@ -67,6 +70,10 @@ pub struct MediaAccess {
     artifacts: ArtifactCache,
     luts: crate::store::luts::LutStore,
     thumbnails: ThumbnailCache,
+    /// Preview proxies as plain files in the same byte budget. Absent for a
+    /// caller that composed its own stores.
+    proxies: Option<ArtifactCache>,
+    proxy_jobs: BTreeMap<JobId, ProxyJob>,
     waveforms: BTreeMap<JobId, WaveformJob>,
     strips: BTreeMap<JobId, ThumbnailStripJob>,
     scenes: BTreeMap<JobId, DetectionJob>,
@@ -74,13 +81,17 @@ pub struct MediaAccess {
 }
 
 impl MediaAccess {
-    /// The process waveform/scene-analysis and timeline-thumbnail stores only,
-    /// at most 256 registered entries total. No source/model/library roots.
-    pub fn cache_maintenance(&self) -> Result<[crate::cache::CacheMaintenance; 2]> {
-        let snapshots = [
+    /// The process waveform/scene-analysis, timeline-thumbnail and preview-proxy
+    /// stores only, at most 256 registered entries total. No source/model/library
+    /// roots.
+    pub fn cache_maintenance(&self) -> Result<Vec<crate::cache::CacheMaintenance>> {
+        let mut snapshots = vec![
             self.artifacts.maintenance()?,
             self.thumbnails.maintenance()?,
         ];
+        if let Some(proxies) = &self.proxies {
+            snapshots.push(proxies.maintenance()?);
+        }
         if snapshots
             .iter()
             .map(crate::cache::CacheMaintenance::entry_count)
@@ -103,6 +114,8 @@ impl MediaAccess {
             artifacts,
             luts,
             thumbnails,
+            proxies: None,
+            proxy_jobs: BTreeMap::new(),
             waveforms: BTreeMap::new(),
             strips: BTreeMap::new(),
             scenes: BTreeMap::new(),
@@ -123,9 +136,93 @@ impl MediaAccess {
     pub fn open_in(root: &std::path::Path, budget: crate::ByteBudget) -> Result<Self> {
         let artifacts =
             ArtifactCache::open(&root.join("waveform"), budget.clone(), MAX_CACHE_ENTRIES)?.0;
+        let proxies =
+            ArtifactCache::open(&root.join("proxies"), budget.clone(), MAX_PROXY_ENTRIES)?.0;
         let thumbnails = ThumbnailCache::open(&root.join("thumbnails"), budget, MAX_CACHE_ENTRIES)?;
         let luts = crate::store::luts::LutStore::open(&root.join("luts"))?;
-        Ok(Self::new(artifacts, thumbnails, luts))
+        Ok(Self::new(artifacts, thumbnails, luts).with_proxies(proxies))
+    }
+
+    /// Attach the preview-proxy file cache; `open_in` does this for the process.
+    pub fn with_proxies(mut self, proxies: ArtifactCache) -> Self {
+        self.proxies = Some(proxies);
+        self
+    }
+
+    fn proxy_store(&mut self) -> crate::artifacts::Result<&mut ArtifactCache> {
+        self.proxies.as_mut().ok_or(crate::artifacts::Error::Edit(
+            crate::session::EditError::Unsupported("proxy cache unavailable"),
+        ))
+    }
+
+    /// Submit a preview proxy for one video source. A proxy already cached
+    /// completes without opening the source, and a proxy already being
+    /// generated for the same content returns that job. This is a desktop
+    /// intention, not an editing command: it never touches a project.
+    pub fn generate_proxy(
+        &mut self,
+        runner: &mut JobRunner,
+        asset: SourceAsset,
+    ) -> crate::artifacts::Result<JobId> {
+        self.retain(runner);
+        let request = ProxyRequest::new(asset, media::PROXY_MAX_EDGE)?;
+        let key = request.key()?;
+        if let Some((id, _)) = self.proxy_jobs.iter().find(|(_, job)| job.key() == key) {
+            return Ok(*id);
+        }
+        let cache = self.proxy_store()?;
+        let job = request.submit(runner, cache)?;
+        let id = job.id;
+        self.proxy_jobs.insert(id, job);
+        Ok(id)
+    }
+
+    /// Ask one proxy job to stop. It publishes nothing and removes its staged file.
+    pub fn cancel_proxy(&self, job: JobId) {
+        if let Some(handle) = self.proxy_jobs.get(&job) {
+            handle.cancel.cancel();
+        }
+    }
+
+    /// Publish a finished proxy job. `None` while it is still pending; the job
+    /// is released once it reaches a terminal state, whose typed failure or
+    /// cancellation is returned.
+    pub fn finish_proxy(
+        &mut self,
+        runner: &mut JobRunner,
+        job: JobId,
+    ) -> crate::artifacts::Result<Option<ProxyReady>> {
+        let Some(handle) = self.proxy_jobs.get(&job) else {
+            return Ok(None);
+        };
+        let cache = self.proxies.as_mut().ok_or(crate::artifacts::Error::Edit(
+            crate::session::EditError::Unsupported("proxy cache unavailable"),
+        ))?;
+        let result = handle.finish(runner, cache);
+        if !matches!(result, Ok(None)) {
+            self.proxy_jobs.remove(&job);
+        }
+        result
+    }
+
+    /// Offer an already cached proxy of `asset` to preview. `Ok(false)` when
+    /// none is cached; a cache file that vanished is `CacheCorrupt` and its
+    /// entry is retired, so the caller keeps playing the source.
+    pub fn adopt_proxy(
+        &mut self,
+        asset: &SourceAsset,
+        index: &ProxyIndex,
+    ) -> crate::artifacts::Result<bool> {
+        let key =
+            crate::artifacts::proxies::proxy_key(asset.content_hash(), media::PROXY_MAX_EDGE)?;
+        let cache = self.proxy_store()?;
+        let Some(path) = cache.file(key)? else {
+            index.forget(asset.content_hash());
+            return Ok(false);
+        };
+        let bytes = std::fs::metadata(&path)?.len();
+        index.adopt(asset, path, bytes)?;
+        Ok(true)
     }
 
     pub(crate) fn lut_store(&self) -> crate::store::luts::LutStore {
@@ -299,6 +396,9 @@ impl MediaAccess {
 
     /// Drop a cancelled or failed job without publishing it.
     pub(crate) fn forget(&mut self, job: JobId) {
+        if let Some(handle) = self.proxy_jobs.remove(&job) {
+            handle.discard();
+        }
         self.waveforms.remove(&job);
         self.strips.remove(&job);
         self.scenes.remove(&job);
@@ -306,6 +406,13 @@ impl MediaAccess {
     }
 
     fn retain(&mut self, runner: &JobRunner) {
+        self.proxy_jobs.retain(|id, handle| {
+            let held = runner.snapshot(*id).is_some();
+            if !held {
+                handle.discard();
+            }
+            held
+        });
         self.waveforms
             .retain(|id, _| runner.snapshot(*id).is_some());
         self.strips.retain(|id, _| runner.snapshot(*id).is_some());

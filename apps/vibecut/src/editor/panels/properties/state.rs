@@ -44,6 +44,7 @@ pub(in crate::editor) enum Action {
     /// Switch the Project/Details strip through the action registry.
     Activate(&'static str),
     Cache(crate::editor::context::CacheAction),
+    Proxy(crate::editor::context::ProxyAction),
     SetField {
         item: ItemId,
         field: String,

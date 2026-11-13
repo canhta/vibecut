@@ -71,6 +71,8 @@ pub struct VideoEncoderSettings {
     pub webm: bool,
     /// FFmpeg input-conversion workers, 1..=8; caller owns scheduling/accounting.
     pub conversion_threads: u8,
+    /// Every picture is a keyframe (GOP of one), for scrub-friendly stand-ins.
+    pub intra_only: bool,
 }
 impl VideoEncoderSettings {
     /// 85/100 quality and 12 Mb/s minimum for a 1080p canvas at 30 fps. Callers
@@ -86,6 +88,7 @@ impl VideoEncoderSettings {
             color,
             webm: false,
             conversion_threads: 1,
+            intra_only: false,
         }
     }
 }
@@ -286,7 +289,7 @@ impl VideoEncoder {
                 encoder.set_time_base(time_base.rational());
                 encoder.set_frame_rate(Some((time_base.denominator(), time_base.numerator())));
                 encoder.set_bit_rate(settings.bit_rate);
-                encoder.set_gop(60);
+                encoder.set_gop(if settings.intra_only { 1 } else { 60 });
                 encoder.set_max_b_frames(0);
                 // Avoid automatic thread counts (and retained frame queues)
                 // growing with host CPU count. This is independent of scaler workers.

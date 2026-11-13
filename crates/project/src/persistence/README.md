@@ -52,9 +52,9 @@ Unix compares device/inode from the retained descriptor and current name. Window
 
 ## Optional project metadata
 
-`WriterLease::metadata` reads `<canonical project filename>.meta.json`, bounded to 512 KiB, metadata schema version 3. Missing, unreadable, corrupt, oversized or unsupported metadata defaults without blocking the project. The sidecar is outside the project envelope and does not change its schema.
+`WriterLease::metadata` reads `<canonical project filename>.meta.json`, bounded to 512 KiB, metadata schema version 4. Missing, unreadable, corrupt, oversized or unsupported metadata defaults without blocking the project. The sidecar is outside the project envelope and does not change its schema.
 
-`Metadata` holds created and modified Unix milliseconds, the current `ViewState` and up to 256 scene-ID-keyed views (positive zoom at most 1000, horizontal scroll 0–1e9 logical pixels, nonnegative integer-tick playhead). Nonfinite values are refused. Thumbnail is Missing, Unavailable or Ready with 1..=128-pixel dimensions and exactly width × height × 4 sRGB RGBA bytes (at most 64 KiB). Invalid dimensions, byte counts and oversized sidecars default on read and refuse on write. No image decoder runs on metadata. No project index is stored here.
+`Metadata` holds created and modified Unix milliseconds, the per-project `proxy_preview` choice (preview reads cached proxies; presentation only, so the project file never names a proxy and export reads sources), the current `ViewState` and up to 256 scene-ID-keyed views (positive zoom at most 1000, horizontal scroll 0–1e9 logical pixels, nonnegative integer-tick playhead). Nonfinite values are refused. Thumbnail is Missing, Unavailable or Ready with 1..=128-pixel dimensions and exactly width × height × 4 sRGB RGBA bytes (at most 64 KiB). Invalid dimensions, byte counts and oversized sidecars default on read and refuse on write. No image decoder runs on metadata. No project index is stored here.
 
 `read_metadata(path)` supports bounded read-only catalog display; mutations go through the WriterLease. `WriterLease::validate` checks the baseline and stable lock identity without requiring a project file to exist.
 

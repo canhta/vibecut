@@ -68,6 +68,10 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
                 desk.request(crate::editor::context::Request::Cache(action));
                 Ok(())
             }
+            Action::Proxy(action) => {
+                desk.request(crate::editor::context::Request::Proxy(action));
+                Ok(())
+            }
             Action::SetClipAnimation {
                 item,
                 slot,

@@ -241,6 +241,7 @@ impl ArtifactCache {
         let entry = Arc::new(StoredArtifact {
             path: self.path(key),
             native: true,
+            plain: false,
             charge: Mutex::new(Some(charge)),
             len,
             pins: AtomicUsize::new(0),
