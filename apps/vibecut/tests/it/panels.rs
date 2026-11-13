@@ -2974,37 +2974,40 @@ fn animation_tiles_show_previews_with_names_beneath_at_the_measured_pitch() {
         }
         count
     };
-    let mut image = h.render().unwrap();
-    for _ in 0..40 {
-        if lit(&image, fade) > 20 {
-            break;
+    // Every look tile of the open tab carries preview pixels: wait until each is lit (the
+    // jobs run off-thread), never just the first, then assert all of them.
+    let tiles_lit = |h: &mut Harness<Editor>, slot: &str, looks: &[engine::AnimationPreset]| {
+        let rects: Vec<(&str, egui::Rect)> = looks
+            .iter()
+            .map(|look| {
+                let id = format!("inspector.animation.{slot}.{}", look.word());
+                (look.word(), widget_rect(h, &id))
+            })
+            .collect();
+        let mut image = h.render().unwrap();
+        for _ in 0..200 {
+            if rects.iter().all(|(_, rect)| lit(&image, *rect) > 20) {
+                break;
+            }
+            for _ in 0..10 {
+                h.run_steps(1);
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            image = h.render().unwrap();
         }
-        for _ in 0..10 {
-            h.run_steps(1);
-            std::thread::sleep(std::time::Duration::from_millis(5));
+        for (word, rect) in &rects {
+            assert!(lit(&image, *rect) > 20, "{slot} tile {word} has no preview");
         }
-        image = h.render().unwrap();
-    }
-    assert!(lit(&image, fade) > 20, "fade tile never showed its preview");
-    assert!(lit(&image, zoom) > 20, "zoom tile never showed its preview");
-    assert_eq!(lit(&image, none), 0);
+        image
+    };
+    use engine::AnimationPreset as Preset;
+    tiles_lit(&mut h, "in", &Preset::EDGE);
+    assert_eq!(lit(&h.render().unwrap(), none), 0);
     // Out and Combo previews arrive the same way.
+    click(&mut h, "inspector.animation.tab.out");
+    tiles_lit(&mut h, "out", &Preset::EDGE);
     click(&mut h, "inspector.animation.tab.combo");
-    let pulse = widget_rect(&h, "inspector.animation.combo.pulse");
-    for _ in 0..40 {
-        for _ in 0..10 {
-            h.run_steps(1);
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
-        image = h.render().unwrap();
-        if lit(&image, pulse) > 20 {
-            break;
-        }
-    }
-    assert!(
-        lit(&image, pulse) > 20,
-        "pulse tile never showed its preview"
-    );
+    let image = tiles_lit(&mut h, "combo", &Preset::COMBO);
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target");
     std::fs::create_dir_all(&root).unwrap();
     image.save(root.join("p1-419-animation-tiles.png")).unwrap();

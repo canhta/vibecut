@@ -8,6 +8,7 @@ use std::{collections::BTreeMap, sync::Arc, time::Duration};
 const BUDGET: u64 = 16 << 20;
 /// Every look of every slot fits the runner at once: 12 In, 12 Out and 13 Combo.
 const QUEUE: usize = 48;
+/// Strips rasterise on the CPU in parallel so a tab fills within a few frames.
 
 enum Entry {
     Pending(JobId),
@@ -28,7 +29,7 @@ impl Previews {
         let budget = ByteBudget::new(BUDGET).ok()?;
         let runner = JobRunner::new(
             RunnerConfig {
-                concurrency: [1, 1, 1],
+                concurrency: [4, 1, 1],
                 queue: QUEUE,
                 retained: QUEUE,
                 network_attempts: 1,
