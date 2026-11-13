@@ -5,10 +5,10 @@
 1. Read the ticket, [domain docs](../agents/domain.md) and each affected owner. Retain unchanged context already read; reopen changed sections and census current-main callers before changing a public contract.
 2. Look up API, crate, codec and provider facts (Context7, then official docs, then upstream source) and cite them in the report. Never guess a fact; ask the coordinator when one blocks you.
 3. References are read-only in the main checkout's `.spikes/repos/`. UI follows [UI design](../product/ui/index.md).
-4. Change code through its existing owner and update the owning doc in the same commit. Include enumerated mechanical public callers atomically with their contract; [orchestration](../agents/orchestration.md#routing) owns assignment scope and independent merge boundaries.
+4. Change code through its existing owner and update the owning doc in the same commit. Include enumerated mechanical public callers atomically with their contract; [orchestration](../agents/orchestration.md#dispatch) owns assignment scope and independent merge boundaries.
 5. Run [verification](verification.md).
 
-Commits: Conventional Commits subject, `git commit -s`. Branches: [orchestration](../agents/orchestration.md#placement-and-builds).
+Commits: Conventional Commits subject, `git commit -s`. Branches: [orchestration](../agents/orchestration.md#dispatch).
 
 Append commits and push normally once history is published. Preserve unfinished WIP refs when extracting a working correction onto a clean main-based integration branch; its independent merge does not accept the whole WIP.
 

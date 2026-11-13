@@ -23,7 +23,7 @@
 | Build and provisioning detail | [xtask](../xtask/README.md) | workflows.md beyond its summary and link |
 | README media provenance, regeneration and component licences | [README media](assets/readme/README.md) | root README slots beyond the two filled |
 | Why the README demo uses Big Buck Bunny | [ADR 0007](adr/0007-big-buck-bunny-documentation.md) | asset README |
-| Hosts, Orca, relay, agent track record, ticket state | `.scratch/` and the private workspace | any tracked file |
+| Host, worker tooling, ticket state | `.scratch/` and the private workspace | any tracked file |
 
 Owner docs state current contracts only, in short sentences. Change a fact at its owner and link to it elsewhere. No history, test inventories or restated code; rationale belongs in ADRs.
 

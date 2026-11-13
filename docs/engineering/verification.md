@@ -2,19 +2,16 @@
 
 ## Checks
 
-Commit only green, with the smallest check that covers the change. Compile through `cargo xtask build -- <command>` ([builds](../agents/orchestration.md#placement-and-builds)); run `cargo xtask ffmpeg` once per machine first.
+Run the smallest check that covers the change; Rust from agent workers is checked in the combined build. Compile through `cargo xtask build -- <command>` ([build slots](../../xtask/README.md#build-slots)); run `cargo xtask ffmpeg` once per machine first.
 
 | Change | Check |
 |---|---|
 | Markdown, tickets, assets | `cargo xtask docs` |
 | UI strings | `cargo xtask i18n` |
 | `JsonSchema` metadata, including Rust doc comments on derived input types | `cargo xtask catalog`, then the existing `control::catalog::checked_in_registry_digest_and_command_reference_match_the_registry` test |
-| Rust, while iterating | Focused named behaviour tests in the affected crate; use a narrow compile check only when needed to diagnose compilation |
-| Rust, handoff | Once on final source, `cargo test -p <crate>` for each behaviour-edited crate, plus `cargo xtask checks`. Enumerated mechanical contract callers get the narrow compile check needed for atomic correctness; coordinator owns the final public-signature gate. No workspace build, Clippy sweep or `cargo xtask ci`, unless the maintainer asks for one |
-| Media, render, hot path | The above plus the ticket benchmark against its baseline (speed and VMAF/SSIM, loudness, pixel diff or tick drift) |
-| Fix round, merge conflict | Focused reproduction and affected edited-crate final suite for changed source; retain unaffected receipts |
-| Rebase without conflict | Nothing is rerun; merge |
-| Merge of a change to a public type or signature | `cargo xtask build -- cargo check --workspace --all-targets` once on the rebased branch, by the coordinator |
+| Rust, agent worker | No builds or tests. Code is compile-clean by reading and updates every caller of a changed signature in the same commit; the coordinator merges the reviewed branch unbuilt |
+| Rust, after a batch of merges | One combined build on `main`: `cargo check --workspace --all-targets`, `cargo xtask catalog`, `cargo test` for every crate the batch touched, `cargo xtask checks`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check`. Failures are fixed at their root on `main` |
+| Media, render, hot path | The combined build also runs the ticket benchmark against its baseline (speed and VMAF/SSIM, loudness, pixel diff or tick drift) |
 | Platform-specific code (OS `cfg`, FFI, file-system, build scripts) | A receipt from each affected OS with a build host; list others as unverified |
 | `main`, every merge | Hosted CI runs the full workspace and reports there. Agents do not watch it; the maintainer asks for a fix when a run is red |
 

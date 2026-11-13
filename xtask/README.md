@@ -19,7 +19,7 @@ Run from a checkout with `cargo xtask <command>`. The Cargo alias builds the lau
 
 ## Build slots
 
-These limits govern product targets and running compiler commands. [Orchestration](../docs/agents/orchestration.md#placement-and-builds) owns worker scheduling: independent source work can start in an isolated checkout before a product target is available, with checks waiting for build admission. The reported target capacity and compiler-slot ceiling are not agent, source-task or checkout ceilings.
+These limits govern product targets and running compiler commands; [orchestration](../docs/agents/orchestration.md#dispatch) owns worker scheduling. The reported target capacity and compiler-slot ceiling are not agent, task or checkout ceilings.
 
 The per-user cache is `.cache/vibecut` beneath `HOME` (`USERPROFILE` on Windows). Each checkout has `target/wt-<first 32 hex digits of SHA-256 of its canonical absolute root>`, independent of admission slot number. The short name stays within Windows native build path limits; an existing target with a different or unreadable owner is refused. Workspace outputs, incremental sessions and Cargo fingerprints survive builds in other checkouts; admission never touches source timestamps or removes workspace artifacts. Cargo alone detects edits within that checkout. A per-checkout OS lock serializes commands using the same target before they enter the admission queue; it follows the same descendant lifetime as the slot lock.
 
