@@ -20,6 +20,41 @@ pub const QUEUE_BLOCKS: usize = 64;
 pub const MAX_TAKE_SECONDS: u64 = 2 * 60 * 60;
 const POLL: Duration = Duration::from_millis(20);
 
+/// Where the worker sends mono samples. The default encodes AAC through media;
+/// a test injects a writer it can gate to fill the queue by construction.
+pub trait TakeWriter: Send {
+    fn write(&mut self, mono: &[f32]) -> Result<(), Failure>;
+    fn finish(self: Box<Self>) -> Result<(), Failure>;
+}
+
+/// Builds the writer on the worker thread from the `.part` path and the sample rate.
+pub type WriterFactory = Box<dyn FnOnce(&Path, u32) -> Result<Box<dyn TakeWriter>, Failure> + Send>;
+
+struct Aac(AudioFileWriter);
+
+impl TakeWriter for Aac {
+    fn write(&mut self, mono: &[f32]) -> Result<(), Failure> {
+        for plane in mono.chunks(AUDIO_FILE_BLOCK) {
+            self.0
+                .write(&[plane.to_vec()])
+                .map_err(|error| classify(&error))?;
+        }
+        Ok(())
+    }
+    fn finish(self: Box<Self>) -> Result<(), Failure> {
+        self.0
+            .finish()
+            .map(|_| ())
+            .map_err(|error| classify(&error))
+    }
+}
+
+fn aac(path: &Path, sample_rate: u32) -> Result<Box<dyn TakeWriter>, Failure> {
+    AudioFileWriter::create(path, sample_rate, 1)
+        .map(|writer| Box::new(Aac(writer)) as Box<dyn TakeWriter>)
+        .map_err(|error| classify(&error))
+}
+
 /// A promoted take: the file exists only because encoding finished.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Finished {
@@ -47,6 +82,16 @@ impl Recorder {
         device: Option<&str>,
         directory: &Path,
     ) -> Result<Self, Failure> {
+        Self::start_with(host, device, directory, Box::new(aac))
+    }
+
+    /// [`Recorder::start`] with an injected take writer.
+    pub fn start_with(
+        host: &dyn InputHost,
+        device: Option<&str>,
+        directory: &Path,
+        make: WriterFactory,
+    ) -> Result<Self, Failure> {
         fs::create_dir_all(directory).map_err(|_| Failure::Storage)?;
         let path = free_path(directory)?;
         let part = part_path(&path);
@@ -66,7 +111,17 @@ impl Recorder {
             let part = part.clone();
             std::thread::Builder::new()
                 .name("voiceover-encoder".into())
-                .spawn(move || work(&queue, &shared, &part, sample_rate, channels, &ready_tx))
+                .spawn(move || {
+                    work(
+                        &queue,
+                        &shared,
+                        &part,
+                        sample_rate,
+                        channels,
+                        make,
+                        &ready_tx,
+                    )
+                })
                 .map_err(|_| Failure::Storage)?
         };
         let mut recorder = Self {
@@ -195,15 +250,15 @@ fn work(
     part: &Path,
     sample_rate: u32,
     channels: u16,
+    make: WriterFactory,
     ready: &SyncSender<Result<(), Failure>>,
 ) -> Result<u64, Failure> {
-    let mut writer = match AudioFileWriter::create(part, sample_rate, 1) {
+    let mut writer = match make(part, sample_rate) {
         Ok(writer) => {
             let _ = ready.send(Ok(()));
             writer
         }
-        Err(error) => {
-            let failure = classify(&error);
+        Err(failure) => {
             let _ = ready.send(Err(failure));
             return Err(failure);
         }
@@ -219,11 +274,11 @@ fn work(
             return Err(failure);
         }
         match queue.recv_timeout(POLL) {
-            Ok(block) => encode(&mut writer, shared, &block, channels, cap, &mut mono)?,
+            Ok(block) => encode(writer.as_mut(), shared, &block, channels, cap, &mut mono)?,
             Err(RecvTimeoutError::Timeout) => {
                 if shared.stop.load(Ordering::Acquire) {
                     while let Ok(block) = queue.try_recv() {
-                        encode(&mut writer, shared, &block, channels, cap, &mut mono)?;
+                        encode(writer.as_mut(), shared, &block, channels, cap, &mut mono)?;
                     }
                     break;
                 }
@@ -238,13 +293,13 @@ fn work(
         // Nothing to finish; the caller reports an empty take and removes the file.
         return Ok(0);
     }
-    writer.finish().map_err(|error| classify(&error))?;
+    writer.finish()?;
     Ok(shared.frames.load(Ordering::Acquire))
 }
 
 /// Downmix one interleaved block to mono and append it, up to the take cap.
 fn encode(
-    writer: &mut AudioFileWriter,
+    writer: &mut dyn TakeWriter,
     shared: &Shared,
     block: &[f32],
     channels: usize,
@@ -265,13 +320,7 @@ fn encode(
         (sum / channels as f32).clamp(-1.0, 1.0)
     }));
     mono.truncate(usize::try_from(cap - done).unwrap_or(usize::MAX));
-    for plane in mono.chunks(AUDIO_FILE_BLOCK) {
-        writer
-            .write(&[plane.to_vec()])
-            .map_err(|error| classify(&error))?;
-        shared
-            .frames
-            .fetch_add(plane.len() as u64, Ordering::AcqRel);
-    }
+    writer.write(mono)?;
+    shared.frames.fetch_add(mono.len() as u64, Ordering::AcqRel);
     Ok(())
 }

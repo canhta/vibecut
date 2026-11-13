@@ -8,7 +8,7 @@ mod device;
 mod take;
 
 pub use device::CpalHost;
-pub use take::{Finished, MAX_TAKE_SECONDS, QUEUE_BLOCKS, Recorder};
+pub use take::{Finished, MAX_TAKE_SECONDS, QUEUE_BLOCKS, Recorder, TakeWriter, WriterFactory};
 
 use std::sync::{
     Arc, Mutex, PoisonError,
@@ -121,23 +121,51 @@ impl Sink {
     }
 
     /// Hand one interleaved callback buffer of `channels` channels to the worker.
-    /// Splits fall on whole frames so the worker never sees a torn frame.
-    pub fn push(&self, interleaved: &[f32], channels: u16) {
+    pub fn push(&self, samples: &[f32], channels: u16) {
+        self.push_as(samples, channels, |sample| sample);
+    }
+
+    /// Signed 16-bit input, scaled to -1.0..1.0.
+    pub fn push_i16(&self, samples: &[i16], channels: u16) {
+        self.push_as(samples, channels, |sample| f32::from(sample) / 32_768.0);
+    }
+
+    /// Unsigned 16-bit input (offset binary), scaled to -1.0..1.0.
+    pub fn push_u16(&self, samples: &[u16], channels: u16) {
+        self.push_as(samples, channels, |sample| {
+            (f32::from(sample) - 32_768.0) / 32_768.0
+        });
+    }
+
+    /// Signed 32-bit input, scaled to -1.0..1.0.
+    pub fn push_i32(&self, samples: &[i32], channels: u16) {
+        self.push_as(samples, channels, |sample| sample as f32 / 2_147_483_648.0);
+    }
+
+    /// Convert straight into the queued block, so each callback allocates only that
+    /// block. Splits fall on whole frames so the worker never sees a torn frame.
+    fn push_as<T: Copy>(&self, samples: &[T], channels: u16, convert: impl Fn(T) -> f32) {
         let channels = usize::from(channels);
         if channels == 0 {
             return;
         }
-        let peak = interleaved
-            .iter()
-            .fold(0.0_f32, |peak, sample| peak.max(sample.abs()));
-        let peak = if peak.is_finite() { peak } else { 1.0 };
-        self.shared.peak.fetch_max(peak.to_bits(), Ordering::AcqRel);
         let step = (MAX_BLOCK_SAMPLES / channels).max(1) * channels;
-        for block in interleaved.chunks(step) {
-            if let Err(TrySendError::Full(_)) = self.blocks.try_send(block.to_vec()) {
+        let mut peak = 0.0_f32;
+        for chunk in samples.chunks(step) {
+            let block: Vec<f32> = chunk
+                .iter()
+                .map(|sample| {
+                    let value = convert(*sample);
+                    peak = peak.max(value.abs());
+                    value
+                })
+                .collect();
+            if let Err(TrySendError::Full(_)) = self.blocks.try_send(block) {
                 self.shared.overrun.store(true, Ordering::Release);
             }
         }
+        let peak = if peak.is_finite() { peak } else { 1.0 };
+        self.shared.peak.fetch_max(peak.to_bits(), Ordering::AcqRel);
     }
 
     /// Report that the device failed (the stream's error callback).

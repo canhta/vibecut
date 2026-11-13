@@ -190,10 +190,11 @@ impl State {
         }
         let scene = Rect::from_min_size(egui::pos2(right - CELL - 1.0, top), Vec2::splat(CELL));
 
-        let mic = Rect::from_min_size(
-            egui::pos2(scene.left() - GAP - CELL, top),
-            Vec2::splat(CELL),
-        );
+        // The measured right group starts with the mic (221643); the scene
+        // button moves one slot along.
+        let mic = scene;
+        let scene =
+            Rect::from_min_size(egui::pos2(mic.left() - GAP - CELL, top), Vec2::splat(CELL));
         self.toolbar_button(
             cx,
             ui,

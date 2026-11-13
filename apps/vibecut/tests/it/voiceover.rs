@@ -15,7 +15,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
-        atomic::{AtomicU16, AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicU8, AtomicU16, AtomicU32, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -26,7 +26,7 @@ use vibecut::{
     preferences::Preferences,
     services::{
         playback::{Files, Playback},
-        voiceover::{Failure, InputHost, Opened, QUEUE_BLOCKS, Recorder, Sink},
+        voiceover::{Failure, InputHost, Opened, QUEUE_BLOCKS, Recorder, Sink, TakeWriter},
     },
 };
 
@@ -38,6 +38,8 @@ struct Script {
     opened: Mutex<Vec<Option<String>>>,
     rate: AtomicU32,
     channels: AtomicU16,
+    /// 0 f32, 1 i16, 2 u16, 3 i32: what the scripted device delivers.
+    encoding: AtomicU8,
 }
 
 /// Dropping it ends the capture, as dropping a native stream does.
@@ -75,6 +77,7 @@ impl Script {
             opened: Mutex::new(Vec::new()),
             rate: AtomicU32::new(48_000),
             channels: AtomicU16::new(1),
+            encoding: AtomicU8::new(0),
         })
     }
     fn format(&self, rate: u32, channels: u16) {
@@ -93,7 +96,29 @@ impl Script {
             .collect();
         match self.sink.lock().unwrap().as_ref() {
             Some(sink) => {
-                sink.push(&samples, channels as u16);
+                let channels = channels as u16;
+                match self.encoding.load(Ordering::SeqCst) {
+                    0 => sink.push(&samples, channels),
+                    1 => {
+                        let data: Vec<i16> =
+                            samples.iter().map(|s| (s * 32_767.0) as i16).collect();
+                        sink.push_i16(&data, channels);
+                    }
+                    2 => {
+                        let data: Vec<u16> = samples
+                            .iter()
+                            .map(|s| (s * 32_767.0 + 32_768.0) as u16)
+                            .collect();
+                        sink.push_u16(&data, channels);
+                    }
+                    _ => {
+                        let data: Vec<i32> = samples
+                            .iter()
+                            .map(|s| (s * 2_147_483_000.0) as i32)
+                            .collect();
+                        sink.push_i32(&data, channels);
+                    }
+                }
                 true
             }
             None => false,
@@ -214,11 +239,13 @@ fn a_take_is_promoted_and_inserted_at_the_playhead_as_one_undo_step() {
     for _ in 0..15 {
         assert!(script.tone(4800, 0.5));
     }
+    // The meter reads the peak on the next frame, before it decays.
+    harness.run_steps(1);
+    assert!(view(&harness).level > 0.5, "-6 dBFS reads above half scale");
     wait(&mut harness, "1.5 s encoded", |editor| {
         let view = editor.inspect().unwrap().voiceover;
         view.recording && view.seconds >= 1.5 - 1e-9
     });
-    assert!(view(&harness).level > 0.5, "-6 dBFS reads above half scale");
     assert_eq!(
         files(&media),
         ["voiceover-1.m4a.part"],
@@ -372,25 +399,94 @@ fn cancel_and_every_failure_leave_no_file_and_no_item() {
     assert!(audio_items(state).is_empty());
 }
 
+/// An encoder that holds the worker inside `write` until the test lets go.
+struct Gated {
+    entered: Arc<AtomicBool>,
+    gate: std::sync::mpsc::Receiver<()>,
+}
+impl TakeWriter for Gated {
+    fn write(&mut self, _mono: &[f32]) -> Result<(), Failure> {
+        self.entered.store(true, Ordering::SeqCst);
+        let _ = self.gate.recv();
+        Ok(())
+    }
+    fn finish(self: Box<Self>) -> Result<(), Failure> {
+        Ok(())
+    }
+}
+
 #[test]
-fn a_producer_that_outruns_the_encoder_fails_with_bounded_memory_and_joins_the_worker() {
+fn a_full_queue_fails_with_an_overrun_by_construction_and_cancel_joins_the_worker() {
     let root = tempfile::tempdir().unwrap();
     let script = Script::new();
-    let recorder = Recorder::start(script.as_ref(), None, root.path()).unwrap();
-    // 16384-sample blocks arrive far faster than AAC encodes them; the queue holds
-    // QUEUE_BLOCKS of them at most, so the surplus is a typed overrun, never growth.
-    let mut sent = 0;
-    while recorder.failure().is_none() && sent < QUEUE_BLOCKS * 200 {
-        assert!(script.tone(16_384, 0.5));
-        sent += 1;
+    let (release, gate) = std::sync::mpsc::channel();
+    let entered = Arc::new(AtomicBool::new(false));
+    let writer = Gated {
+        entered: entered.clone(),
+        gate,
+    };
+    let recorder = Recorder::start_with(
+        script.as_ref(),
+        None,
+        root.path(),
+        Box::new(move |_, _| Ok(Box::new(writer) as Box<dyn TakeWriter>)),
+    )
+    .unwrap();
+    // The worker takes the first block and stops inside the gated writer.
+    assert!(script.tone(1024, 0.5));
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !entered.load(Ordering::SeqCst) {
+        assert!(Instant::now() < deadline, "worker never took the block");
+        std::thread::sleep(Duration::from_millis(1));
     }
+    // Exactly QUEUE_BLOCKS more fit; the queue is bounded, so nothing is dropped yet.
+    for _ in 0..QUEUE_BLOCKS {
+        assert!(script.tone(1024, 0.5));
+    }
+    assert_eq!(recorder.failure(), None);
+    // One block over the bound is a typed overrun, not growth.
+    assert!(script.tone(1024, 0.5));
     assert_eq!(recorder.failure(), Some(Failure::Overrun));
-    assert!(sent < QUEUE_BLOCKS * 200, "the burst hit the queue bound");
+    drop(release);
     recorder.cancel();
     assert!(!script.capturing(), "cancel releases the device");
     assert!(
         files(root.path()).is_empty(),
         "cancel joined the worker and removed the file"
+    );
+}
+
+#[test]
+fn integer_only_devices_record_the_same_take() {
+    let root = tempfile::tempdir().unwrap();
+    let media = root.path().join("media");
+    let script = Script::new();
+    let mut harness = build(editor(&script, &media));
+    harness.run_steps(2);
+    // i16, u16 and i32 input convert to f32 in the callback: the meter reads the
+    // same -6 dBFS and the take has the same length as an f32 device would give.
+    for (encoding, count) in [(1, 1), (2, 2), (3, 3)] {
+        script.encoding.store(encoding, Ordering::SeqCst);
+        click(&mut harness, "voiceover.open");
+        click(&mut harness, "voiceover.record");
+        assert!(view(&harness).recording, "{:?}", view(&harness));
+        assert!(script.tone(24_000, 0.5));
+        harness.run_steps(1);
+        let level = view(&harness).level;
+        assert!((level - 0.85).abs() < 0.02, "encoding {encoding}: {level}");
+        click(&mut harness, "voiceover.stop");
+        wait(&mut harness, "take inserted", |editor| {
+            audio_items(editor).len() == count
+        });
+        let (_, length) = *audio_items(harness.state()).last().unwrap();
+        assert!(
+            (length - TICKS_PER_SECOND / 2).abs() <= AAC_FRAME_TICKS,
+            "encoding {encoding}: {length} ticks"
+        );
+    }
+    assert_eq!(
+        files(&media),
+        ["voiceover-1.m4a", "voiceover-2.m4a", "voiceover-3.m4a"]
     );
 }
 

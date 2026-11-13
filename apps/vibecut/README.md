@@ -58,6 +58,7 @@ Each module's contract is its README.
 | `services/gpu/` | [GPU adapters](src/services/gpu/README.md) |
 | `services/lifecycle.rs` | [Project lifecycle](src/services/lifecycle/README.md) |
 | `services/remote_models/` | [Remote model selection](src/services/remote_models/README.md) |
+| `services/voiceover/` | [Voice-over capture](src/services/voiceover/README.md) |
 | `shorts.rs` / `shorts/` | [Long video to shorts](src/shorts/README.md) |
 | `shorts/view/` | [Shorts view](src/shorts/view/README.md) |
 

@@ -120,22 +120,57 @@ fn build(wanted: Option<&str>, sink: Sink) -> Result<(cpal::Stream, u32, u16), F
     let supported = device
         .supported_input_configs()
         .map_err(|error| open_failure(&error))?
-        .filter(|config| config.sample_format() == cpal::SampleFormat::F32)
-        .find_map(|config| config.try_with_sample_rate(cpal::SAMPLE_RATE_48K))
+        .filter(|config| FORMATS.contains(&config.sample_format()))
+        .filter_map(|config| config.try_with_sample_rate(cpal::SAMPLE_RATE_48K))
+        .min_by_key(|config| FORMATS.iter().position(|f| *f == config.sample_format()))
         .or_else(|| {
             device
                 .default_input_config()
                 .ok()
-                .filter(|config| config.sample_format() == cpal::SampleFormat::F32)
+                .filter(|config| FORMATS.contains(&config.sample_format()))
         })
         .ok_or(Failure::Unsupported)?;
     let channels = supported.channels();
     let sample_rate = supported.sample_rate();
+    let config = supported.config();
+    let stream = match supported.sample_format() {
+        cpal::SampleFormat::F32 => stream(&device, config, sink, move |sink, data: &[f32]| {
+            sink.push(data, channels)
+        }),
+        cpal::SampleFormat::I16 => stream(&device, config, sink, move |sink, data: &[i16]| {
+            sink.push_i16(data, channels)
+        }),
+        cpal::SampleFormat::U16 => stream(&device, config, sink, move |sink, data: &[u16]| {
+            sink.push_u16(data, channels)
+        }),
+        cpal::SampleFormat::I32 => stream(&device, config, sink, move |sink, data: &[i32]| {
+            sink.push_i32(data, channels)
+        }),
+        _ => Err(Failure::Unsupported),
+    }?;
+    stream.play().map_err(|error| open_failure(&error))?;
+    Ok((stream, sample_rate, channels))
+}
+
+/// Sample formats read, best first; each converts to f32 inside the callback.
+const FORMATS: [cpal::SampleFormat; 4] = [
+    cpal::SampleFormat::F32,
+    cpal::SampleFormat::I16,
+    cpal::SampleFormat::I32,
+    cpal::SampleFormat::U16,
+];
+
+fn stream<T: cpal::SizedSample + Send + 'static>(
+    device: &cpal::Device,
+    config: cpal::StreamConfig,
+    sink: Sink,
+    mut push: impl FnMut(&Sink, &[T]) + Send + 'static,
+) -> Result<cpal::Stream, Failure> {
     let failing = sink.clone();
-    let stream = device
+    device
         .build_input_stream(
-            supported.config(),
-            move |data: &[f32], _| sink.push(data, channels),
+            config,
+            move |data: &[T], _| push(&sink, data),
             move |error: cpal::Error| {
                 if let Some(failure) = stream_failure(&error) {
                     failing.fail(failure);
@@ -143,9 +178,7 @@ fn build(wanted: Option<&str>, sink: Sink) -> Result<(cpal::Stream, u32, u16), F
             },
             Some(OPEN_TIMEOUT),
         )
-        .map_err(|error| open_failure(&error))?;
-    stream.play().map_err(|error| open_failure(&error))?;
-    Ok((stream, sample_rate, channels))
+        .map_err(|error| open_failure(&error))
 }
 
 /// Stops the capture thread (which drops the stream) when dropped.

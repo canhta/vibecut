@@ -2,10 +2,7 @@
 use crate::{
     editor::{Command, Context, CreatedId, Desk, ItemParams, NewItem, SourceAsset, Tick, egui},
     i18n::{self, Text},
-    services::{
-        lifecycle::EditorSession,
-        voiceover::{CpalHost, Failure, Finished, InputHost, Recorder},
-    },
+    services::voiceover::{CpalHost, Failure, Finished, InputHost, Recorder},
 };
 use media::AssetId;
 use std::{path::PathBuf, sync::Arc, time::Duration};
@@ -308,19 +305,6 @@ pub(super) fn apply(desk: &mut Desk<'_>, action: Action) {
     }
 }
 
-/// Where takes are written: the project's media folder, or a temporary one for a
-/// project that has not been saved.
-fn media_directory(session: &EditorSession) -> PathBuf {
-    if let EditorSession::Persistent(autosave) = session
-        && let Some(path) = autosave.saved_path()
-    {
-        let mut media = path.as_os_str().to_os_string();
-        media.push(".media");
-        return PathBuf::from(media);
-    }
-    std::env::temp_dir().join("vibecut-voiceover-media")
-}
-
 fn start(desk: &mut Desk<'_>) {
     let editor = desk.editor();
     if editor.dialogs.voiceover.take.is_some() {
@@ -332,7 +316,7 @@ fn start(desk: &mut Desk<'_>) {
         .voiceover
         .directory
         .clone()
-        .unwrap_or_else(|| media_directory(&editor.session));
+        .unwrap_or_else(|| editor.session.media_directory());
     let state = &mut editor.dialogs.voiceover;
     let host = state.host();
     state.problem = None;

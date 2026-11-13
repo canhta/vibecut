@@ -29,6 +29,19 @@ impl DerefMut for EditorSession {
     }
 }
 impl EditorSession {
+    /// The one project-owned media folder (`<project>.media`) that library sounds,
+    /// music and voice-over takes are written to; a project that has not been saved
+    /// uses a temporary folder.
+    pub fn media_directory(&self) -> std::path::PathBuf {
+        if let Self::Persistent(autosave) = self
+            && let Some(path) = autosave.saved_path()
+        {
+            let mut media = path.as_os_str().to_os_string();
+            media.push(".media");
+            return media.into();
+        }
+        std::env::temp_dir().join("vibecut-media")
+    }
     pub fn autosave(&mut self) -> Option<&mut Autosave> {
         match self {
             Self::Persistent(s) => Some(s),
