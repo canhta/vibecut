@@ -698,7 +698,8 @@ fn deterministic_catalog_and_schema_document_receipts() {
             "export",
             "export.clips",
             "export_subtitles",
-            "preview.snapshot"
+            "preview.snapshot",
+            "timeline.freeze_frame",
         ]
     );
     assert_eq!(ids(&|s| s.grant.is_none()), Vec::<&str>::new());
