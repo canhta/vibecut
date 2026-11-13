@@ -1325,6 +1325,35 @@ fn ctrl_v_without_files_on_the_os_clipboard_leaves_the_media_library_alone() {
 }
 
 #[test]
+fn ctrl_v_with_files_while_a_text_field_is_focused_pastes_text_and_imports_nothing() {
+    let mut editor = editor();
+    editor.set_import_probe(Arc::new(FreshProbe)).unwrap();
+    editor.set_os_clipboard_files(|| vec![PathBuf::from("focused-clip.mp4")]);
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    click(&mut harness, "assets.search");
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("assets.search")))
+        .type_text("alpha");
+    harness.run_steps(3);
+    assert!(has_widget(&harness, "media.asset.2"));
+    assert!(!has_widget(&harness, "media.asset.1"));
+
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::V);
+    harness.run_steps(3);
+    assert!(!harness.state().importing());
+    assert_eq!(harness.state().session.project().data().assets.len(), 3);
+    assert!(placed(harness.state().session.project()).is_empty());
+
+    // The paste reached the focused field: "alphazz" matches no asset.
+    harness.event(egui::Event::Paste("zz".into()));
+    harness.run_steps(3);
+    for id in 1..=3 {
+        assert!(!has_widget(&harness, &format!("media.asset.{id}")), "asset {id}");
+    }
+}
+
+#[test]
 fn inserted_media_round_trips_through_save_and_load_after_insert_and_after_undo() {
     let mut harness = build(editor());
     harness.run_steps(3);

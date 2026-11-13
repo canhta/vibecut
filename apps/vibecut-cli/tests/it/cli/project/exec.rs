@@ -1051,6 +1051,63 @@ fn exec_import_and_insert_share_persisted_media_policy() {
     assert_eq!(inserted.data().scene().timeline.main.items.len(), 1);
 }
 
+/// The drop path's typed placement (a track and a start) inserts a generated clip on that
+/// track at that start; the saved project reads back the same item.
+#[test]
+fn timeline_insert_of_a_generated_clip_on_a_track_at_a_start_lands_there() {
+    if !tools() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let video = dir.path().join("clip.mp4");
+    let path = dir.path().join("insert.vibecut");
+    generate_av(&video, 1);
+    media_project(&path, &video, None);
+    let duration = media::SourceAsset::import(media::AssetId(1), video.clone())
+        .unwrap()
+        .probe()
+        .duration
+        .unwrap();
+    let track = add_track(&path, "Overlay")["created"][0]["track"]
+        .as_u64()
+        .unwrap();
+    let start = Tick(time::TICKS_PER_SECOND / 2);
+    let content = serde_json::to_value(project::ItemParams::Video(project::VideoParams {
+        source_audio_enabled: true,
+        ..project::VideoParams::plain()
+    }))
+    .unwrap();
+    let inserted = exec(
+        &path,
+        "timeline.insert",
+        json!({
+            "placement": {"mode": "track", "track": track},
+            "item": {
+                "source_asset": 1,
+                "source_range": {"start": 0, "end": duration},
+                "start": start,
+                "animations": {},
+                "content": content,
+            }
+        }),
+    );
+    let placed = &inserted["placements"][0];
+    assert_eq!(placed["track"].as_u64(), Some(track));
+    let item_id = placed["item"].as_u64().unwrap();
+
+    let loaded = project::load(&path).unwrap().project;
+    let lane = loaded
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .find(|lane| lane.id.0 == track)
+        .unwrap();
+    let item = lane.items.iter().find(|item| item.id.0 == item_id).unwrap();
+    assert_eq!(item.source_asset, Some(media::AssetId(1)));
+    assert_eq!(item.start, start);
+}
+
 #[test]
 fn cli_sets_canvas_sizes_through_the_registry_and_exports_them() {
     let dir = tempfile::tempdir().unwrap();
