@@ -21,7 +21,7 @@ its encoded remap floors only the input span, retaining equal/reversed bounds.
 Strobe takes encoded RGB and original-picture fraction, decodes the colour once
 and mixes in linear light. Both read only current input and preserve alpha.
 Strobe time gating stays entirely in the existing effect evaluator, including
-idle no-pass phases. Remaining pixel entries stay on the render CPU path.
+idle no-pass phases. Reduce noise is a Sample entry reading only the current run (5x5 bilateral, uniforms `[spatial sigma, range sigma]`). Remaining pixel entries stay on the render CPU path.
 All supplied input geometry is validated before allocation, including unused inputs.
 Unused read-only bindings follow the current ping-pong buffer; the writable output
 and any required auxiliary snapshot remain distinct. Blur does no colour or alpha conversion.

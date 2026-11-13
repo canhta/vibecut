@@ -144,7 +144,7 @@ no pass.
 
 The pass is a bilateral filter over a 5x5 window in output pixels. A tap's weight is a spatial gaussian (sigma 1.2) times a range gaussian (sigma 0.1) of its straight sRGB-encoded colour and alpha distance to the centre, so taps across an edge weigh almost nothing. Taps outside the image are skipped and the weights renormalise; the centre weighs one, so the result is a convex combination of premultiplied pixels. The two sigmas are the pass uniforms. There is one strength: the reference shows only a toggle (screen 14, `Reduce image noise` beside Stabilize and Remove flicker; no levels observed), so no level exists. The sigma values are new decisions, not measured parity. An export that would stream-copy a single untouched video item is refused when the switch is on.
 
-The pass has no native pipeline yet; the run splitter leaves it to the CPU. A shader port is the follow-up if the measured cost breaks real-time preview. The ignored `measure_reduce_noise` probe prints the CPU frame time at 1080p and 4K; the numbers stay unmeasured until the combined build runs it.
+The pass has a native entry: `reduce_noise` in the desktop `effects.wgsl` mirrors the CPU sample (5x5 window, same weights, skipped border taps) and reads the current image only, so the run splitter keeps it on the device. Its GPU parity row (tolerance 1e-4, shipped and two off-default sigma pairs) lives in the desktop `gpu_matches_cpu_working_pixels_at_both_scales`. The ignored `measure_reduce_noise` probe prints the CPU frame time and the ignored desktop `reduce_noise_native_frame_time_1080p_and_4k` prints the GPU frame time at 1080p and 4K; both stay unmeasured until the combined build runs them.
 
 ## Whole-image entries (265)
 
