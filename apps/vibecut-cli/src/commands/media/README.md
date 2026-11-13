@@ -6,4 +6,6 @@
 
 `media waveform <project> --asset <id>` and `media thumbnails <project> --item <id> --pixels-per-second <zoom> [--start <tick> --end <tick>]` warm the engine's `media.generate_waveform` and `media.generate_clip_thumbnails` jobs and print the cached summary layout or the cached source positions. They load the project under its writer lease, never edit it and open only the `waveform` and `thumbnails` caches under the default VibeCut cache root.
 
+`export-clip <project> --clip <id> --mode <clip|duration> --out <path> [--overwrite]` takes the engine's `clip_export_range` for the clip's span, submits `submit_clip_export` and waits for the job; it never edits the project.
+
 `export-clips <project> --asset <id> [--asset <id>...] --dir <dir> [--overwrite]` plans one full-source export per asset with the engine's `plan_asset_exports`, submits them as one `submit_asset_exports` job and waits for it. It reads the project and writes only the named files; the output rules are in the [CLI contract](../../../../../docs/product/agent-control/cli.md).

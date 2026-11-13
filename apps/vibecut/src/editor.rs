@@ -56,7 +56,7 @@ use crate::{
 };
 use engine::{
     Command, CreatedId, ItemParamPatch, NewItem, Session,
-    jobs::{Clock, SystemClock},
+    jobs::{Clock, JobId, JobRunner, JobState, RunnerConfig, SystemClock},
 };
 use media::{AssetId, ContentHash, SourceAsset, StreamKind, UnsupportedReason};
 use project::{BookmarkId, ItemId, ItemParams, TrackId, TrackKind};
@@ -322,6 +322,8 @@ impl Editor {
             dialogs: dialogs::State::default(),
             copy_snapshot_requested: false,
             requests: Vec::new(),
+            clip_downloads: None,
+            clip_job: None,
         }
     }
     /// Panel rectangles from the last painted frame, for automation reads.
@@ -604,6 +606,75 @@ impl Editor {
             self.set_toast(message, Some(error.to_string()));
         }
         Ok(())
+    }
+    /// Start `export.clip` for the destination the save dialog picked. The job runs on
+    /// the editor's own runner; `poll_clip_download` announces its end.
+    pub fn clip_download_picked(
+        &mut self,
+        item: ItemId,
+        mode: engine::ClipExportMode,
+        path: PathBuf,
+    ) -> Result<()> {
+        if let Err(error) = self.start_clip_download(item, mode, path) {
+            let message = self.tr(Text::ClipDownloadFailed);
+            self.set_toast(message, Some(error.to_string()));
+        }
+        Ok(())
+    }
+    fn start_clip_download(
+        &mut self,
+        item: ItemId,
+        mode: engine::ClipExportMode,
+        path: PathBuf,
+    ) -> Result<()> {
+        let budget = self.playback.budget().clone();
+        let runner = match &mut self.clip_downloads {
+            Some(runner) => runner,
+            slot @ None => slot.insert(JobRunner::new(
+                RunnerConfig {
+                    concurrency: [1, 1, 1],
+                    queue: 1,
+                    retained: 1,
+                    network_attempts: 1,
+                    backoff: Duration::from_secs(1),
+                    progress_interval: Duration::from_millis(20),
+                },
+                budget,
+                Arc::new(SystemClock::default()),
+            )?),
+        };
+        // The native dialog already asked about replacing an existing file.
+        let result = crate::services::ai_access::run(
+            &mut self.session,
+            runner,
+            None,
+            None,
+            "export.clip",
+            serde_json::json!({"clip_id": item, "mode": mode, "path": path, "overwrite": true}),
+        )?;
+        let (job, _) = crate::services::ai_access::accepted(result)?;
+        self.clip_job = Some(job);
+        Ok(())
+    }
+    /// Tick the download runner and announce the running `export.clip` job once it ends.
+    pub(in crate::editor) fn poll_clip_download(&mut self) {
+        let (Some(runner), Some(job)) = (self.clip_downloads.as_mut(), self.clip_job) else {
+            return;
+        };
+        let state = match runner.tick() {
+            Ok(()) => runner
+                .snapshot(job)
+                .map_or(JobState::Failed, |snapshot| snapshot.state),
+            Err(_) => JobState::Failed,
+        };
+        let key = match state {
+            JobState::Completed => Text::ClipDownloaded,
+            JobState::Failed | JobState::Cancelled => Text::ClipDownloadFailed,
+            _ => return,
+        };
+        self.clip_job = None;
+        let message = self.tr(key);
+        self.set_toast(message, None);
     }
     /// The folder picker was dismissed: the queued assets are not exported.
     pub fn export_clips_cancelled(&mut self) {

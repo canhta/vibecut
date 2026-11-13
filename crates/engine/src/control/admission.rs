@@ -188,6 +188,7 @@ impl Session {
         }
         let fingerprint = control_fingerprint(request)?;
         if let Command::Export { path, .. }
+        | Command::ExportClip { path, .. }
         | Command::ExportSubtitles { path, .. }
         | Command::BurnSubtitles { path, .. }
         | Command::Snapshot { path, .. }

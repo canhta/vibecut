@@ -438,6 +438,57 @@ fn export_allow_degraded_is_explicit_consent() {
 }
 
 #[test]
+fn export_clip_writes_each_mode_over_the_clip_span_with_probe() {
+    if !tools() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("source.mp4");
+    let project_path = dir.path().join("clip.vibecut");
+    generate_av(&source, 1);
+    media_project(&project_path, &source, None);
+    for mode in ["clip", "duration"] {
+        let out = dir.path().join(format!("{mode}.mp4"));
+        let output = cli(&[
+            os("media"),
+            os("export-clip"),
+            project_path.as_os_str(),
+            os("--clip"),
+            os("0"),
+            os("--mode"),
+            os(mode),
+            os("--out"),
+            out.as_os_str(),
+        ]);
+        assert_eq!(
+            code(&output),
+            0,
+            "{mode}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        // The clip spans 0..1 s: each mode writes a file of that duration.
+        let probe = tool_command("ffprobe")
+            .args([
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "csv=p=0",
+            ])
+            .arg(&out)
+            .output()
+            .unwrap();
+        assert!(probe.status.success(), "{mode}");
+        let seconds: f64 = String::from_utf8_lossy(&probe.stdout)
+            .trim()
+            .parse()
+            .unwrap();
+        assert!((seconds - 1.0).abs() < 0.1, "{mode}: {seconds}");
+    }
+}
+
+#[test]
 fn export_clips_writes_each_full_source_once_with_deterministic_names() {
     if !tools() {
         return;

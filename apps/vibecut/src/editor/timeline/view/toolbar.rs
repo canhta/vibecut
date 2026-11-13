@@ -4,7 +4,7 @@
 //! 12 px between buttons, 1×16 dividers with 8 px either side (221643 y 574-606).
 
 use crate::editor::timeline::{
-    Action, Context, Icon, Rect, State, Text, TimelineLayout, Tool, Vec2, egui, icons,
+    Action, Context, Icon, Rect, State, Text, Tick, TimelineLayout, Tool, Vec2, egui, icons,
     slider_to_zoom, theme,
     view::{Ink, tr},
     zoom_to_slider,
@@ -43,6 +43,24 @@ pub(in crate::editor) const TOOLBAR_ACTIONS: [&str; 20] = [
     "timeline.zoom_out",
     "timeline.zoom_in",
 ];
+
+/// The selected clip's id and span when exactly one clip is selected.
+fn single_selected_span(cx: &Context<'_>) -> Option<(project::ItemId, Tick, Tick)> {
+    let selection = cx.selection();
+    if selection.len() != 1 {
+        return None;
+    }
+    let id = selection.iter().copied().next()?;
+    let item = cx
+        .staged_project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| item.id == id)?;
+    Some((id, item.start, item.end().ok()?))
+}
 
 /// Left-to-right cursor over the toolbar row.
 struct Cursor {
@@ -169,6 +187,10 @@ impl State {
             let rect = left.cell(CELL);
             self.toolbar_button(cx, ui, rect, id, icon, label, None);
         }
+        // [proposed] placement: the download glyph is not in the measured strip, so it
+        // sits after Flip vertical and before the graph until a capture measures the slot.
+        let download = left.cell(CELL + TOOL_CARET);
+        self.toolbar_download(cx, ui, download);
         let graph = left.cell(CELL);
         self.toolbar_graph(cx, ui, graph);
 
@@ -337,6 +359,65 @@ impl State {
             return false;
         }
         clicked
+    }
+
+    /// The download button: the clip glyph with a caret. Its menu lists the two downloads
+    /// of the selected clip and is disabled unless exactly one clip is selected.
+    fn toolbar_download(&mut self, cx: &Context<'_>, ui: &mut egui::Ui, rect: Rect) {
+        let ink = Ink::of(cx);
+        let clip = single_selected_span(cx);
+        let enabled = clip.is_some();
+        let label = tr(cx, Text::DownloadClip);
+        let glyph = Rect::from_min_size(rect.min, Vec2::splat(CELL));
+        let caret = Rect::from_min_size(
+            egui::pos2(rect.left() + CELL, rect.top()),
+            Vec2::new(TOOL_CARET, CELL),
+        );
+        let button = ui
+            .scope_builder(egui::UiBuilder::new().max_rect(glyph), |ui| {
+                ui.add_enabled_ui(enabled, |ui| {
+                    crate::kit::icon_button(
+                        ui,
+                        "timeline.download_clip",
+                        Icon::DownloadSimple,
+                        label,
+                        false,
+                    )
+                })
+                .inner
+            })
+            .inner;
+        let caret_hit = ui.interact(
+            caret,
+            ui.scope_id().with("timeline.download_clip.caret"),
+            egui::Sense::click(),
+        );
+        let response = button.union(caret_hit);
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, label));
+        self.remember_icon(
+            "timeline.download_clip",
+            Some(Icon::DownloadSimple.name()),
+            &response,
+        );
+        icons::tinted(Icon::CaretDown, TOOL_CARET, ink.text()).paint_at(
+            ui,
+            Rect::from_center_size(caret.center(), Vec2::splat(TOOL_CARET)),
+        );
+        let Some((item, start, end)) = clip else {
+            return;
+        };
+        egui::Popup::menu(&response).show(|ui| {
+            for (mode, text) in super::clips::download_entries(cx, start, end) {
+                let entry = egui::Button::image_and_text(
+                    icons::tinted(Icon::DownloadSimple, 16.0, ink.text()),
+                    text,
+                );
+                if ui.add(entry).clicked() {
+                    self.push(Action::DownloadClip { item, mode });
+                    ui.close();
+                }
+            }
+        });
     }
 
     /// The pointer-tool button: the active tool's glyph with a caret. Its menu lists

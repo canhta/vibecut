@@ -222,6 +222,11 @@ scheduler, byte accounting, typed result and publication fence.
 `Session::execute_export(runner, key, Command)` submits one already-admitted export command;
 callers never decode JSON at this layer.
 
+`submit_clip_export` is `export.clip`: one export job over the clip's span from
+`clip_export_range`. `Duration` renders the whole project over that span. `Clip` renders a
+snapshot whose timeline holds only the clip (other items emptied, transitions cleared), so
+its pixels and audio are the clip's own. The session is never edited.
+
 ## Render kernel execution
 
 `JobContext` supplies render's scheduling hook: up to eight workers, capped by available

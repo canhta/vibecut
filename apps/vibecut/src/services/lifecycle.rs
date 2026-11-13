@@ -63,7 +63,14 @@ pub enum EditorAction {
     ExportSave,
     SnapshotSave,
     KeybindingsExport,
-    KeybindingsImport { replace: bool },
+    KeybindingsImport {
+        replace: bool,
+    },
+    /// Save one timeline clip's download (`export.clip`) to the destination the dialog picks.
+    ClipDownload {
+        item: project::ItemId,
+        mode: engine::ClipExportMode,
+    },
 }
 
 /// Project-owned documentation and issue entry points; no hosted feedback service.

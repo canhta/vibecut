@@ -389,6 +389,23 @@ impl State {
                 ui.close();
             }
         }
+        // Download clip: the clip's own span, with its two downloads in a submenu.
+        let ink = Ink::of(cx);
+        ui.menu_button(tr(cx, Text::DownloadClip), |ui| {
+            for (mode, label) in download_entries(cx, item.start, item.end) {
+                let entry = egui::Button::image_and_text(
+                    icons::tinted(Icon::DownloadSimple, 16.0, ink.text()),
+                    label,
+                );
+                if ui.add(entry).clicked() {
+                    self.push(Action::DownloadClip {
+                        item: item.id,
+                        mode,
+                    });
+                    ui.close();
+                }
+            }
+        });
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -416,6 +433,32 @@ impl State {
 
 /// Gap between a lane's edge and its clip: a 76 px video lane holds the 74 px clip.
 const CLIP_INSET: f32 = 1.0;
+
+/// The two download entries for a clip span, labelled with the span's `mm:ss` start and end.
+pub(super) fn download_entries(
+    cx: &Context<'_>,
+    start: Tick,
+    end: Tick,
+) -> [(engine::ClipExportMode, String); 2] {
+    let (start, end) = (span_clock(start), span_clock(end));
+    let values = [("start", start.as_str()), ("end", end.as_str())];
+    [
+        (
+            engine::ClipExportMode::Clip,
+            i18n::format(cx.locale, Text::DownloadSelectedClip, &values),
+        ),
+        (
+            engine::ClipExportMode::Duration,
+            i18n::format(cx.locale, Text::DownloadClipDuration, &values),
+        ),
+    ]
+}
+
+/// `mm:ss` of a timeline time, the clock the download entries show.
+fn span_clock(at: Tick) -> String {
+    let seconds = at.0.max(0) / time::TICKS_PER_SECOND;
+    format!("{:02}:{:02}", seconds / 60, seconds % 60)
+}
 
 impl State {
     /// A 16 px chevron on the clip toggles its keyframe lanes.

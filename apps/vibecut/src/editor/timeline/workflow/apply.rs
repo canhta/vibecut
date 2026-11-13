@@ -17,6 +17,9 @@ pub(in crate::editor) fn apply(
             Action::Activate(id) => port.request(Request::Action(id)),
             Action::Command(command) => command_on_selection(port, *command),
             Action::ReplaceMedia(item) => port.request(Request::ReplaceMedia(item)),
+            Action::DownloadClip { item, mode } => port.request(Request::Lifecycle(
+                crate::services::lifecycle::EditorAction::ClipDownload { item, mode },
+            )),
             Action::Generate(request) => {
                 if let Err(error) = state.generate(&mut *port.session, request, port.read.budget) {
                     port.fail(error.to_string());

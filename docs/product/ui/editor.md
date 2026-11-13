@@ -236,6 +236,17 @@ to [Properties](../../../apps/vibecut/src/editor/panels/properties/README.md).
 
 The docs named no place for a word-level transcript, so it is a section of the Captions tab [proposed], below the cue tools and cue list and above the bank and style editors. Placement choice: a section, not a tab or a window, because it reads the same caption items the cue list edits. It has no heading of its own. Its first row holds two icon-only controls with tooltips, Delete words (trash) and Merge (the cue-merge glyph), at the existing 28 px icon-button size with 16 px icons. Below them, each cue is a selectable time chip followed by its words as selectable text, with the caption list's paging controls past 50 cues. Selected words and cues use the selectable-label state. Protected (edited) cues carry the existing Edited marker and their words the warning colour; a locked track shows a lock icon on its cues. The empty state is the subtitles icon and `No words`. A refused command shows one error-coloured sentence above the controls and keeps the selection. No new measurement exists for any of this, so reference parity is unverified. Behaviour: [captions owner](../../../apps/vibecut/src/editor/panels/assets/captions/README.md).
 
+## Clip download
+
+Download clip (CapCut web flow `.spikes/web-editors/capcut-web/flows/09-clip-toolbar-tooltips.md`) is `decided` as two export jobs over the selected clip's own timeline span `[start, end)`. The span is observed: the menu shows `00:05 - 01:20` for the selected clip. What each item writes is not observed, because neither item was clicked; the reading below is the decision, not a capture.
+
+- `Download selected clip (start - end)` is mode `clip`: the file holds only that clip. Other items are not rendered and transitions are dropped; the clip's own effects, audio and fit apply as in an ordinary export.
+- `Download all content from selected duration (start - end)` is mode `duration`: the file holds every track over the same span.
+
+Both are `export.clip` jobs ([engine owner](../../../crates/engine/src/runtime/README.md)). Each writes a new file chosen in the native save dialog (MP4, MOV or WebM by extension), reuses the export job and default settings, and changes no project state. The span is the clip's own range, not the `export.in_out` markers, so the markers do not move. Format, effect baking and the dialog stay `unverified` against CapCut until a live check with the maintainer.
+
+Entries sit in the clip context menu as a `Download clip` submenu, and in the timeline toolbar as a glyph with a caret after Flip vertical. The toolbar menu is enabled only for exactly one selected clip. The toolbar slot is `[proposed]`: the strip is measured, but this glyph's position in it is not, so a capture must measure it before the slot is treated as settled.
+
 ## Gaps
 
 - Multi-track timeline geometry: only one video track is captured, so audio, text, sticker and effect track heights, clip colours and vertical stacking are unmeasured.

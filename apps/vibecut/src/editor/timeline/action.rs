@@ -67,6 +67,11 @@ pub(in crate::editor) enum Action {
     Command(Box<engine::Command>),
     /// Open the native media picker to replace one clip's source; the window owns the dialog.
     ReplaceMedia(ItemId),
+    /// Download one clip (`export.clip`); the window owns the save dialog.
+    DownloadClip {
+        item: ItemId,
+        mode: engine::ClipExportMode,
+    },
     /// Submit one registered media generation job for a pending clip visual.
     Generate(VisualRequest),
     /// Rename a scene; the frame reports a refusal back through

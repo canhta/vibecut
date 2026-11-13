@@ -177,6 +177,65 @@ pub fn submit_export_with_sources(
     )
 }
 
+/// `export.clip`: one export job over the clip's own timeline span. `Clip` renders only
+/// that clip (see `clip_only`); `Duration` renders every track over the same span. The
+/// session is never edited; the output is a completed file like any export.
+pub fn submit_clip_export(
+    runner: &mut JobRunner,
+    input: CacheKey,
+    project: Arc<project::Project>,
+    clip: project::ItemId,
+    mode: crate::session::ClipExportMode,
+    overwrite: bool,
+    path: PathBuf,
+) -> Result<(JobId, CancelToken)> {
+    let span = clip_export_range(&project, clip)?;
+    let rendered = match mode {
+        crate::session::ClipExportMode::Clip => Arc::new(clip_only(&project, clip)?),
+        crate::session::ClipExportMode::Duration => project,
+    };
+    let mut settings = render::ExportSettings::from_project(&rendered);
+    render::OutputOptions::default().apply(&mut settings)?;
+    settings.container = render::OutputOptions::container_for_path(&path, false)?;
+    settings.overwrite = if overwrite {
+        project::atomic::Overwrite::Replace
+    } else {
+        project::atomic::Overwrite::Refuse
+    };
+    submit_export_with_sources(runner, input, rendered, span, settings, path, || {
+        Box::new(render::FileSources::default())
+    })
+}
+
+/// The clip's own timeline span, the range an `export.clip` job renders.
+pub fn clip_export_range(
+    project: &project::Project,
+    clip: project::ItemId,
+) -> Result<time::TimeRange> {
+    let item = project
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| item.id == clip)
+        .ok_or(RuntimeError::Edit(crate::EditError::Invalid("export clip")))?;
+    time::TimeRange::new(item.start, item.end()?)
+        .map_err(|_| RuntimeError::Edit(crate::EditError::Invalid("export clip range")))
+}
+
+/// The project with `clip` as its only item: every other item is removed and the
+/// transitions are dropped, so the render holds the clip's own pixels and audio.
+fn clip_only(project: &project::Project, clip: project::ItemId) -> Result<project::Project> {
+    let mut data = project.clone().into_data();
+    let timeline = &mut data.scene_mut().timeline;
+    timeline.transitions.clear();
+    for track in timeline.iter_mut() {
+        track.items.retain(|item| item.id == clip);
+    }
+    Ok(project::Project::new(data)?)
+}
+
 /// One cancellable job finalizes every scene privately before publication.
 /// Rendering failure/cancellation preserves all destinations; publication is
 /// per-file atomic, so a later publication failure can leave earlier files.

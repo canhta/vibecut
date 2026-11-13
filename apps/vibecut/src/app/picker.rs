@@ -23,6 +23,11 @@ pub(super) enum PickerAction {
     },
     ExportSave,
     SnapshotSave,
+    /// Destination of one timeline clip's download.
+    ClipDownload {
+        item: ItemId,
+        mode: engine::ClipExportMode,
+    },
     KeybindingsImport {
         replace: bool,
     },
@@ -131,6 +136,20 @@ impl EditorWindow {
                 }
                 Box::pin(async move { dialog.save_file().await.map(|file| vec![file]) })
             }
+            PickerAction::ClipDownload { .. } => {
+                let editor = self.editor.as_ref().ok_or(Error::Invalid("no project"))?;
+                let dialog = rfd::AsyncFileDialog::new()
+                    .set_title(i18n::text(editor.preferences.locale, Text::DownloadClip))
+                    .add_filter(
+                        i18n::text(editor.preferences.locale, Text::ExportFormat),
+                        &["mp4", "mov", "webm"],
+                    )
+                    .set_file_name(format!(
+                        "{}.mp4",
+                        i18n::text(editor.preferences.locale, Text::ClipDownloadFileName)
+                    ));
+                Box::pin(async move { dialog.save_file().await.map(|file| vec![file]) })
+            }
         };
         self.picker = Some(Picker {
             future,
@@ -222,6 +241,18 @@ impl EditorWindow {
             editor.snapshot_save_cancelled();
         }
     }
+    /// Start the `export.clip` download the native save picker chose.
+    pub fn clip_download_picked(
+        &mut self,
+        item: ItemId,
+        mode: engine::ClipExportMode,
+        path: PathBuf,
+    ) -> Result<()> {
+        self.editor
+            .as_mut()
+            .ok_or(Error::Invalid("no project"))?
+            .clip_download_picked(item, mode, path)
+    }
     /// Apply a shortcut file chosen in the native picker, merging or replacing it.
     pub fn keybindings_import_picked(&mut self, path: PathBuf, replace: bool) -> Result<()> {
         self.editor
@@ -284,6 +315,10 @@ impl EditorWindow {
                             self.snapshot_save_cancelled();
                             Ok(())
                         }
+                    },
+                    PickerAction::ClipDownload { item, mode } => match files.pop() {
+                        Some(file) => self.clip_download_picked(item, mode, file.path().to_owned()),
+                        None => Ok(()),
                     },
                     PickerAction::ExportClips => match files.pop() {
                         Some(folder) => self.export_clips_picked(folder.path().to_owned()),
