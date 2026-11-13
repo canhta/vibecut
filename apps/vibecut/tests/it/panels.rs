@@ -2242,8 +2242,8 @@ fn silent_block(
 
 fn loudness_sources(
     source: LoudnessSource,
-) -> std::sync::Arc<dyn Fn() -> Box<dyn render::SourceProvider> + Send + Sync> {
-    std::sync::Arc::new(move || Box::new(source.clone()) as Box<dyn render::SourceProvider>)
+) -> impl Fn() -> Box<dyn render::SourceProvider> + Send + Sync + 'static {
+    move || Box::new(source.clone()) as Box<dyn render::SourceProvider>
 }
 
 fn loudness_of(harness: &Harness<Editor>) -> project::Loudness {
@@ -2284,6 +2284,7 @@ fn loudness_held_measurement_shows_progress_and_cancel_keeps_gains_and_target() 
     let open = std::sync::Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
     harness
         .state_mut()
+        .session
         .set_loudness_sources(loudness_sources(LoudnessSource::Hold {
             entered,
             open: open.clone(),
@@ -2323,6 +2324,7 @@ fn loudness_failed_measurement_shows_the_reason_and_applies_nothing() {
     let target = loudness_of(&harness).clip;
     harness
         .state_mut()
+        .session
         .set_loudness_sources(loudness_sources(LoudnessSource::Fail));
     let history = harness.state().session.history_len().0;
 
@@ -2355,6 +2357,7 @@ fn loudness_silent_material_applies_identity_gains_and_undo_reverts_only_them() 
     assert_eq!(target.master, target.clip);
     harness
         .state_mut()
+        .session
         .set_loudness_sources(loudness_sources(LoudnessSource::Silent));
     let history = harness.state().session.history_len().0;
 

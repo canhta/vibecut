@@ -32,14 +32,7 @@ pub(in crate::editor) struct LoudnessWorkflow {
     failure: Option<Failed>,
     /// The target typed last, kept while no scope is on so a later switch uses it.
     typed: Option<LoudnessTarget>,
-    /// The media a measurement reads; `None` reads the project's own files.
-    sources: Option<SourceFactory>,
 }
-
-/// Builds the source provider one measurement reads. Tests replace the project's media with
-/// a provider that is silent, fails, or holds the job on a gate.
-pub(in crate::editor) type SourceFactory =
-    std::sync::Arc<dyn Fn() -> Box<dyn render::SourceProvider> + Send + Sync>;
 
 struct Capture {
     session: String,
@@ -167,11 +160,6 @@ impl State {
         self.loudness.attach(budget);
     }
 
-    /// Replace the media the measurements read; the next Apply uses it.
-    pub(in crate::editor) fn set_loudness_sources(&mut self, sources: SourceFactory) {
-        self.loudness.sources = Some(sources);
-    }
-
     /// One scope's switch. On sets the shown target on that scope; off clears it. One undo step.
     pub(in crate::editor) fn set_loudness_scope(
         &mut self,
@@ -244,18 +232,13 @@ impl State {
         if port.view().session.transaction_active() {
             return Err(Error::Invalid("finish the open edit before measuring"));
         }
-        // The same engine job `audio.measure_loudness` queues, submitted with this editor's
-        // source factory so tests can hold, fail or silence the measurement.
-        let project = port.view().session.project().clone();
-        let factory = self.loudness.sources.clone();
-        let sources = move || -> Box<dyn render::SourceProvider> {
-            match &factory {
-                Some(make) => (**make)(),
-                None => Box::new(render::FileSources::default()),
-            }
+        let accepted = port.with_session(|session| {
+            self.loudness
+                .control(session, engine::Command::MeasureLoudness {})
+        })?;
+        let ControlResult::JobAccepted { job, .. } = accepted else {
+            return Err(Error::Invalid("loudness job"));
         };
-        let job = engine::loudness::submit_loudness(self.loudness.runner()?, project, sources)
-            .map_err(|_| Error::Invalid("loudness job"))?;
         let view = port.view();
         self.loudness.capture = Some(Capture {
             session: view.session.session_id().into(),

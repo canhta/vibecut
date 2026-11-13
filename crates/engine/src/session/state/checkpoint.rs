@@ -48,6 +48,7 @@ impl Checkpoint {
             timeline_preview,
             grouping: _,
             asset_export_sources: _,
+            loudness_sources: _,
             ripple,
         } = session;
         Self {
@@ -92,6 +93,7 @@ impl Checkpoint {
             timeline_preview,
             grouping: _,
             asset_export_sources: _,
+            loudness_sources: _,
             ripple,
         } = session;
         *clipboard = self.clipboard;
