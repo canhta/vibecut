@@ -1,6 +1,7 @@
 //! Source-timed transcripts, multilingual cues and forgiving subtitle interchange.
 mod emphasis;
 mod filler;
+mod find;
 mod interchange;
 mod language;
 mod mapping;
@@ -13,6 +14,7 @@ pub use emphasis::{
     validate_selection,
 };
 pub use filler::{FillerCandidate, FillerKind, FillerLexicon, detect_fillers};
+pub use find::{CueOutcome, CuePlan, FindOptions, FindPlan, find_plan, find_replace};
 pub use interchange::ass;
 pub use interchange::ass::{AssCue, AssImport, AssWarning, AssWarningKind, parse_ass};
 pub use interchange::{Export, Format, Import, export, parse};

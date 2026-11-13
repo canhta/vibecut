@@ -3496,3 +3496,125 @@ fn verified_english_cue(
         style: None,
     }
 }
+
+/// Types into one automation id after its accessibility click focuses it.
+fn type_into(h: &mut Harness<'_, Editor>, id: &str, text: &str) {
+    click(h, id);
+    h.get(By::new().predicate(|n| n.author_id() == Some(id)))
+        .type_text(text);
+    h.run_steps(3);
+}
+
+/// The plan of the last preview, while its inputs and scope are still the current ones.
+fn previewed(h: &mut Harness<'_, Editor>) -> Option<captions::FindPlan> {
+    with_panel(h.state_mut(), |panel, _, _| panel.find_plan().cloned())
+}
+
+fn source_texts(e: &Editor) -> Vec<String> {
+    track(e)
+        .cues
+        .iter()
+        .map(|cue| cue.texts[&cue.source_lang].text.as_str().to_owned())
+        .collect()
+}
+
+#[test]
+fn find_replace_previews_then_writes_one_undo_step_and_skips_edited_cues() {
+    let mut h = harness(editor("en"), 1.0);
+    h.run_steps(3);
+    with_panel(h.state_mut(), |panel, session, _| {
+        panel
+            .edit_text(session, &"cue-1".into(), lang("en"), "Hello edited")
+            .unwrap()
+    });
+    h.run_steps(3);
+    let before = track(h.state());
+    type_into(&mut h, "subtitles.find.query", "Hello");
+    type_into(&mut h, "subtitles.find.replacement", "Hi");
+    click(&mut h, "subtitles.find.preview");
+    let plan = previewed(&mut h).unwrap();
+    assert_eq!(plan.matches, 3);
+    assert_eq!(plan.replaced_matches(), 2);
+    assert_eq!(
+        plan.cues_with(|o| matches!(o, captions::CueOutcome::Protected)),
+        1
+    );
+    let undo_before = h.state().session.history_len().0;
+    click(&mut h, "subtitles.find.replace");
+    assert_eq!(h.state().session.history_len().0, undo_before + 1);
+    assert_eq!(
+        source_texts(h.state()),
+        vec!["Hi friend", "Hello edited", "Hi friend"]
+    );
+    let after = track(h.state());
+    for (a, b) in before.cues.iter().zip(&after.cues) {
+        assert_eq!(a.range, b.range, "find-replace never moves a cue");
+    }
+    assert!(previewed(&mut h).is_none(), "a written preview is consumed");
+    h.state_mut().session.undo().unwrap();
+    h.run_steps(3);
+    assert_eq!(track(h.state()), before);
+}
+
+#[test]
+fn find_replace_scope_follows_the_multi_selection_and_a_change_stales_the_preview() {
+    let mut h = harness(editor("en"), 1.0);
+    h.run_steps(3);
+    type_into(&mut h, "subtitles.find.query", "Hello");
+    type_into(&mut h, "subtitles.find.replacement", "Hi");
+    click(&mut h, "subtitles.find.preview");
+    assert_eq!(previewed(&mut h).unwrap().matches, 3);
+    with_panel(h.state_mut(), |panel, session, _| {
+        panel.select_cue(session, 0, false, false).unwrap();
+        panel.select_cue(session, 1, true, false).unwrap();
+    });
+    h.run_steps(3);
+    assert!(
+        previewed(&mut h).is_none(),
+        "a changed selection is a changed scope"
+    );
+    let untouched = track(h.state());
+    let refused = with_panel(h.state_mut(), |panel, session, _| {
+        panel.find_replace(session).is_err()
+    });
+    assert!(refused, "replace without a current preview is refused");
+    assert_eq!(track(h.state()), untouched);
+    click(&mut h, "subtitles.find.preview");
+    let plan = previewed(&mut h).unwrap();
+    assert_eq!(plan.cues.len(), 2);
+    assert_eq!(plan.matches, 2);
+}
+
+#[test]
+fn find_replace_matches_vietnamese_text_and_keeps_its_diacritics() {
+    let mut h = harness(editor("vi"), 1.0);
+    h.run_steps(3);
+    type_into(&mut h, "subtitles.find.query", "bạn");
+    type_into(&mut h, "subtitles.find.replacement", "bè");
+    click(&mut h, "subtitles.find.preview");
+    assert_eq!(previewed(&mut h).unwrap().matches, 3);
+    click(&mut h, "subtitles.find.replace");
+    assert_eq!(
+        source_texts(h.state()),
+        vec!["Chào bè", "Chào bè", "Chào bè"]
+    );
+}
+
+/// Offscreen screenshot evidence; wgpu rendering stays out of CI.
+#[test]
+#[ignore = "renders through wgpu; run with --ignored to refresh target/p2-ai-09-bulk-captions.png"]
+fn find_replace_section_renders_its_preview() {
+    let mut h = harness(editor("en"), 1.0);
+    h.run_steps(3);
+    type_into(&mut h, "subtitles.find.query", "Hello");
+    type_into(&mut h, "subtitles.find.replacement", "Hi");
+    click(&mut h, "subtitles.find.preview");
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let target = root.join("target");
+    std::fs::create_dir_all(&target).unwrap();
+    let image = h.render().expect("offscreen render");
+    image
+        .save(target.join("p2-ai-09-bulk-captions.png"))
+        .unwrap();
+    assert!(image.width() > 0 && image.height() > 0);
+}

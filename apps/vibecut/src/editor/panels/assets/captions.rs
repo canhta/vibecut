@@ -1,6 +1,7 @@
 //! Captions panel: presentation and bounded staging through existing engine owners.
 mod editing;
 mod fillers;
+mod find;
 mod import;
 mod manual;
 mod tab;
@@ -165,6 +166,7 @@ pub struct Subtitles {
     project: Option<project::ProjectId>,
     retry_source: Option<ItemId>,
     fillers: fillers::Cuts,
+    find: find::Find,
     transcript: transcript::Pane,
 }
 impl Drop for Subtitles {
@@ -219,6 +221,7 @@ impl Subtitles {
             project: None,
             retry_source: None,
             fillers: fillers::Cuts::default(),
+            find: Default::default(),
             transcript: Default::default(),
         })
     }
