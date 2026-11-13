@@ -223,7 +223,8 @@ fn clip_animation_edge_presets_expand_keys_for_text_and_clips_and_undo_as_one_st
     };
     // Canvas 64x64: a slide travels 16 px. Values are where an In look starts; the Out look
     // ends at the mirror (offsets negate, scale factors reflect around 1, opacity stays 0).
-    let table: [(Look, &[(BuiltinPath, f64)]); 12] = [
+    // Shake is the one edge look whose keys are a waveform, not two keys: see the shake test.
+    let table: [(Look, &[(BuiltinPath, f64)]); 13] = [
         (Look::Fade, &[(Opacity, 0.0)]),
         (Look::SlideLeft, &[(X, 16.0)]),
         (Look::SlideRight, &[(X, -16.0)]),
@@ -235,9 +236,10 @@ fn clip_animation_edge_presets_expand_keys_for_text_and_clips_and_undo_as_one_st
         (Look::Drop, &[(Y, -16.0), (Opacity, 0.0)]),
         (Look::Rise, &[(Y, 16.0), (Opacity, 0.0)]),
         (Look::Pop, &[(SX, 0.2), (SY, 0.2), (Opacity, 0.0)]),
-        (Look::Tilt, &[(R, -30.0), (Opacity, 0.0)]),
+        (Look::Stretch, &[(SX, 0.5), (SY, 1.5), (Opacity, 0.0)]),
+        (Look::Swing, &[(Opacity, 0.0), (R, -20.0)]),
     ];
-    assert_eq!(table.len(), Look::EDGE.len());
+    assert_eq!(table.len() + 1, Look::EDGE.len());
     let length = frame(60).0;
     let half_second = 127_008_000_000_i64;
     for on_clip in [false, true] {
@@ -318,19 +320,16 @@ fn clip_animation_combo_presets_span_the_whole_clip() {
     };
     // Channel, key count, value at the last key; the first key is at 0 and the last at the end.
     type Row<'a> = (Look, &'a [(BuiltinPath, usize, f64)]);
-    let table: [Row<'_>; 13] = [
+    let table: [Row<'_>; 10] = [
         (Look::Pulse, &[(SX, 3, 1.0), (SY, 3, 1.0)]),
         (Look::Heartbeat, &[(SX, 8, 1.0), (SY, 8, 1.0)]),
         (Look::Sway, &[(R, 4, 0.0)]),
-        (Look::Swing, &[(R, 3, -10.0)]),
         (Look::Float, &[(Y, 3, 0.0)]),
         (Look::DriftLeft, &[(X, 2, -3.2)]),
         (Look::DriftRight, &[(X, 2, 3.2)]),
         (Look::PushIn, &[(SX, 2, 1.15), (SY, 2, 1.15)]),
         (Look::PullOut, &[(SX, 2, 1.0), (SY, 2, 1.0)]),
-        (Look::Shake, &[(X, 9, 0.0)]),
         (Look::Flicker, &[(Opacity, 7, 1.0)]),
-        (Look::Breathe, &[(SX, 3, 1.0), (SY, 3, 1.0)]),
         (Look::Turn, &[(R, 2, 360.0)]),
     ];
     assert_eq!(table.len(), Look::COMBO.len());
@@ -389,6 +388,41 @@ fn clip_animation_combo_presets_span_the_whole_clip() {
     animate(&mut s, id, Slot::Out, Some(Look::Fade), None).unwrap();
     assert_eq!(read(&s, id).combo, None);
     assert!(keys_of(&s, id, BuiltinPath::TransformScaleX).is_empty());
+}
+
+#[test]
+fn clip_animation_shake_edges_expand_the_waveform_into_their_duration_on_x() {
+    // Canvas 64 px wide: the shake waveform swings 0.012 of the width, so 0.768 px. Nine keys
+    // on X, spaced by the waveform's permille times the edge duration; the rest sits at both ends.
+    let length = frame(60).0;
+    let half_second = 127_008_000_000_i64;
+    let (mut s, id) = rig(false, 60);
+    assert!(
+        animate(&mut s, id, Slot::In, Some(Look::Shake), None)
+            .unwrap()
+            .changed
+    );
+    only(&s, id, &[BuiltinPath::TransformPositionX]);
+    let got = keys_of(&s, id, BuiltinPath::TransformPositionX);
+    assert_eq!(got.len(), 9);
+    assert_eq!(got[0].0, 0);
+    assert_eq!(got[1].0, half_second * 125 / 1000);
+    near(got[1].1, 0.768);
+    near(got[2].1, -0.768);
+    assert_eq!(got[8].0, half_second);
+    near(got[8].1, 0.0);
+    // Out: the same waveform, ending on the clip's last frame.
+    let (mut s, id) = rig(false, 60);
+    assert!(
+        animate(&mut s, id, Slot::Out, Some(Look::Shake), None)
+            .unwrap()
+            .changed
+    );
+    let got = keys_of(&s, id, BuiltinPath::TransformPositionX);
+    assert_eq!(got.len(), 9);
+    assert_eq!(got[0].0, length - half_second);
+    assert_eq!(got[8].0, length);
+    near(got[8].1, 0.0);
 }
 
 #[test]

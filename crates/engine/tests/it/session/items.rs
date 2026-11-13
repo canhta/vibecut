@@ -679,6 +679,46 @@ fn simultaneous_moves_can_swap_but_never_leave_overlap_or_touch_locked_tracks() 
     }
 }
 #[test]
+fn built_in_text_looks_apply_to_selected_items_keeping_content_in_one_step() {
+    use project::{TextLook, TextStyle};
+    let mut data = project().into_data();
+    let track = data.scene_mut().timeline.overlays.first_mut().unwrap();
+    track.kind = TrackKind::Text;
+    for item in track.items.iter_mut() {
+        item.content = ItemParams::Text(project::TextParams {
+            content: format!("item {}", item.id.0).into(),
+            ..Default::default()
+        });
+    }
+    let mut s = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    let before = s.project().clone();
+    let outcome = s
+        .apply(Command::ApplyTextPreset {
+            items: vec![ItemId(10), ItemId(11)],
+            preset: engine::TextPresetApply::Look {
+                look: TextLook::LabelBlack,
+            },
+        })
+        .unwrap();
+    assert!(outcome.changed);
+    assert_eq!(s.history_len(), (1, 0));
+    for id in [10, 11] {
+        let ItemParams::Text(params) = &get(&s, id).content else {
+            panic!("text")
+        };
+        assert_eq!(TextStyle::from_params(params), TextLook::LabelBlack.style());
+        assert_eq!(params.content.as_str(), format!("item {id}"));
+    }
+    s.undo().unwrap();
+    assert_eq!(s.project(), &before);
+    // The look id is a closed wire name: an unknown one is refused before any edit.
+    assert!(
+        serde_json::from_str::<engine::TextPresetApply>(r#"{"kind":"look","look":"no_such"}"#)
+            .is_err()
+    );
+}
+
+#[test]
 fn text_presets_save_apply_all_selected_items_undo_redo_and_reopen() {
     use engine::ItemParamPatch;
     use project::{SavedTextPreset, TextStyle};
@@ -765,7 +805,7 @@ fn text_presets_save_apply_all_selected_items_undo_redo_and_reopen() {
     let outcome = s
         .apply(Command::ApplyTextPreset {
             items: vec![ItemId(10), ItemId(11)],
-            preset,
+            preset: engine::TextPresetApply::Saved { preset },
         })
         .unwrap();
     assert!(outcome.changed);
@@ -790,23 +830,25 @@ fn text_presets_save_apply_all_selected_items_undo_redo_and_reopen() {
     for command in [
         Command::ApplyTextPreset {
             items: Vec::new(),
-            preset,
+            preset: engine::TextPresetApply::Saved { preset },
         },
         Command::ApplyTextPreset {
             items: vec![ItemId(10), ItemId(10)],
-            preset,
+            preset: engine::TextPresetApply::Saved { preset },
         },
         Command::ApplyTextPreset {
             items: vec![ItemId(999)],
-            preset,
+            preset: engine::TextPresetApply::Saved { preset },
         },
         Command::ApplyTextPreset {
             items: vec![ItemId(10)],
-            preset: project::TextPresetId(999),
+            preset: engine::TextPresetApply::Saved {
+                preset: project::TextPresetId(999),
+            },
         },
         Command::ApplyTextPreset {
             items: vec![ItemId(1)],
-            preset,
+            preset: engine::TextPresetApply::Saved { preset },
         },
         Command::SaveTextPreset {
             item: ItemId(10),
@@ -840,7 +882,7 @@ fn text_presets_save_apply_all_selected_items_undo_redo_and_reopen() {
     assert!(matches!(
         s.apply(Command::ApplyTextPreset {
             items: vec![ItemId(10)],
-            preset,
+            preset: engine::TextPresetApply::Saved { preset },
         }),
         Err(EditError::Locked(_))
     ));

@@ -5,14 +5,14 @@ mod session;
 pub(crate) use session::transitions;
 pub use session::wire::{Failure, JobFailurePolicy};
 pub use session::{
-    AnimationPreset, AnimationSlot, AttributeGroup, Availability, CaptionPreset, CaptionStyleApply,
-    ChapterSidecars, ClipAnimations, ClipExportMode, CollectionLimit, Command, CommandKind,
-    CommandSpec, CreatedId, CueId, CutTarget, DEFAULT_BOOKMARK_COLOR, Effect, EmphasisMode,
-    Example, Fixture, GrantClass, ITEM_PARAMS, ItemClipboard, ItemParam, ItemParamPatch,
-    ItemPasteSource, ItemPlacement, KeyframeClipboard, KeyframePasteSource, KeyframeRef, Lifecycle,
-    Move, NewItem, Outcome, ParamBounds, ParamParseError, ParamTarget, ParamUnit, Placement,
-    TrackPlacement, TranscriptCue, TranscriptView, TranscriptWord, TrimEdge, WordId,
-    declaration_order_error, item_param, lifecycle, registry,
+    AnimationPreset, AnimationShelf, AnimationSlot, AttributeGroup, Availability,
+    CaptionStyleApply, ChapterSidecars, ClipAnimations, ClipExportMode, CollectionLimit, Command,
+    CommandKind, CommandSpec, CreatedId, CueId, CutTarget, DEFAULT_BOOKMARK_COLOR, Effect,
+    EmphasisMode, Example, Fixture, GrantClass, ITEM_PARAMS, ItemClipboard, ItemParam,
+    ItemParamPatch, ItemPasteSource, ItemPlacement, KeyframeClipboard, KeyframePasteSource,
+    KeyframeRef, Lifecycle, Move, NewItem, Outcome, ParamBounds, ParamParseError, ParamTarget,
+    ParamUnit, Placement, TextPresetApply, TrackPlacement, TranscriptCue, TranscriptView,
+    TranscriptWord, TrimEdge, WordId, declaration_order_error, item_param, lifecycle, registry,
 };
 pub use session::{
     AssetUsage, BrandKitError, ChangeSummary, EditError, FontError, Fork, JobTarget, MusicError,

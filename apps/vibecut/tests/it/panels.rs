@@ -2311,6 +2311,47 @@ fn opacity_and_audio_gain_scrub_through_their_tabs() {
 }
 
 #[test]
+fn text_look_tiles_apply_one_look_per_shelf_as_one_undo_step_keeping_content() {
+    use project::TextLook;
+    let mut f = fixture();
+    f.editor
+        .session
+        .apply(Command::Delete {
+            items: vec![f.video, f.silent_video, f.image, f.graphic, f.audio],
+        })
+        .unwrap();
+    f.editor.prepare_subtitles().unwrap();
+    f.editor
+        .set_item_field(f.text, "text_content", "Tiếng Việt\nEnglish")
+        .unwrap();
+    let mut h = crate::gpu::builder()
+        .with_size(egui::vec2(1440.0, 1000.0))
+        .build_ui_state(|ui, e: &mut Editor| e.ui(ui), f.editor);
+    h.run_steps(3);
+    select(&mut h, f.text);
+    let content = text_params(&h, f.text).content.clone();
+    // One look from each of the five shelves: Plain, Outline, Shadow, Glow, Label.
+    for (word, look) in [
+        ("clean_white", TextLook::CleanWhite),
+        ("outline_black", TextLook::OutlineBlack),
+        ("soft_shadow", TextLook::SoftShadow),
+        ("neon_cyan", TextLook::NeonCyan),
+        ("label_black", TextLook::LabelBlack),
+    ] {
+        let history = h.state().session.history_len().0;
+        click(&mut h, &format!("inspector.text_look.{word}"));
+        assert_eq!(h.state().session.history_len().0, history + 1, "{word}");
+        let params = text_params(&h, f.text);
+        assert_eq!(
+            project::TextStyle::from_params(&params),
+            look.style(),
+            "{word}"
+        );
+        assert_eq!(params.content, content, "{word}");
+    }
+}
+
+#[test]
 fn text_presets_and_animations_click_edit_undo_reopen_and_capture_both_locales() {
     for locale in [vibecut::i18n::Locale::En, vibecut::i18n::Locale::Vi] {
         for scale in [1.0, 2.0] {

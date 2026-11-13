@@ -41,7 +41,8 @@ struct Plan([Option<Keys>; 6]);
 struct Look {
     x: f64,
     y: f64,
-    scale: f64,
+    scale_x: f64,
+    scale_y: f64,
     rotate: f64,
     fade: bool,
 }
@@ -49,8 +50,20 @@ const fn look(x: f64, y: f64, scale: f64, rotate: f64, fade: bool) -> Look {
     Look {
         x,
         y,
-        scale,
+        scale_x: scale,
+        scale_y: scale,
         rotate,
+        fade,
+    }
+}
+/// A look that squashes or stretches the two axes by different factors.
+const fn stretch(scale_x: f64, scale_y: f64, fade: bool) -> Look {
+    Look {
+        x: 0.0,
+        y: 0.0,
+        scale_x,
+        scale_y,
+        rotate: 0.0,
         fade,
     }
 }
@@ -90,9 +103,59 @@ fn edge_look(preset: P) -> Option<Look> {
         P::Drop => look(0.0, TRAVEL, 0.0, 0.0, true),
         P::Rise => look(0.0, -TRAVEL, 0.0, 0.0, true),
         P::Pop => look(0.0, 0.0, 0.8, 0.0, true),
-        P::Tilt => look(0.0, 0.0, 0.0, 30.0, true),
+        // Narrow and tall as it arrives, settling to the resting proportions.
+        P::Stretch => stretch(0.5, -0.5, true),
+        P::Swing => look(0.0, 0.0, 0.0, 20.0, true),
         _ => return None,
     })
+}
+
+/// Shake in or out: the shake waveform compressed into the edge's duration, on X only.
+fn shake_keys(
+    index: usize,
+    base: f64,
+    canvas: &Canvas,
+    length: Tick,
+    duration: Tick,
+    entering: bool,
+) -> Result<Option<Keys>> {
+    if index != POSITION_X {
+        return Ok(None);
+    }
+    let start = if entering {
+        Tick::ZERO
+    } else {
+        length
+            .checked_sub(duration)
+            .ok_or(EditError::Invalid("time overflow"))?
+    };
+    let mut keys = Vec::with_capacity(SHAKE.len());
+    for w in SHAKE {
+        let time = start + duration.checked_scale(w.at, 1000, Rounding::Nearest)?;
+        let mut value = base + w.x * f64::from(canvas.width);
+        if let Some(field) = transform_field(index) {
+            value = field.clamp(value)?;
+        }
+        keys.push((time, value));
+    }
+    Ok(Some(keys))
+}
+
+/// The keys one In or Out look writes on one channel.
+fn edge_parts(
+    preset: P,
+    index: usize,
+    base: f64,
+    canvas: &Canvas,
+    length: Tick,
+    duration: Tick,
+    entering: bool,
+) -> Result<Option<Keys>> {
+    if preset == P::Shake {
+        return shake_keys(index, base, canvas, length, duration, entering);
+    }
+    let look = edge_look(preset).ok_or(EditError::Invalid("not an In or Out look"))?;
+    edge_keys(look, index, base, canvas, length, duration, entering)
 }
 
 const PULSE: &[Waypoint] = &[
@@ -115,11 +178,6 @@ const SWAY: &[Waypoint] = &[
     at(250, 0.0, 0.0, 0.0, 4.0, 1.0),
     at(750, 0.0, 0.0, 0.0, -4.0, 1.0),
     at(1000, 0.0, 0.0, 0.0, 0.0, 1.0),
-];
-const SWING: &[Waypoint] = &[
-    at(0, 0.0, 0.0, 0.0, -10.0, 1.0),
-    at(500, 0.0, 0.0, 0.0, 10.0, 1.0),
-    at(1000, 0.0, 0.0, 0.0, -10.0, 1.0),
 ];
 const FLOAT: &[Waypoint] = &[
     at(0, 0.0, 0.0, 0.0, 0.0, 1.0),
@@ -162,11 +220,6 @@ const FLICKER: &[Waypoint] = &[
     at(850, 0.0, 0.0, 0.0, 0.0, 0.6),
     at(1000, 0.0, 0.0, 0.0, 0.0, 1.0),
 ];
-const BREATHE: &[Waypoint] = &[
-    at(0, 0.0, 0.0, 0.0, 0.0, 1.0),
-    at(500, 0.0, 0.0, -0.08, 0.0, 1.0),
-    at(1000, 0.0, 0.0, 0.0, 0.0, 1.0),
-];
 const TURN: &[Waypoint] = &[
     at(0, 0.0, 0.0, 0.0, 0.0, 1.0),
     at(1000, 0.0, 0.0, 0.0, 360.0, 1.0),
@@ -177,15 +230,12 @@ fn combo_table(preset: P) -> Option<&'static [Waypoint]> {
         P::Pulse => PULSE,
         P::Heartbeat => HEARTBEAT,
         P::Sway => SWAY,
-        P::Swing => SWING,
         P::Float => FLOAT,
         P::DriftLeft => DRIFT_LEFT,
         P::DriftRight => DRIFT_RIGHT,
         P::PushIn => PUSH_IN,
         P::PullOut => PULL_OUT,
-        P::Shake => SHAKE,
         P::Flicker => FLICKER,
-        P::Breathe => BREATHE,
         P::Turn => TURN,
         _ => return None,
     })
@@ -262,7 +312,8 @@ fn edge_keys(
         OPACITY => look.fade.then_some(0.0),
         POSITION_X => (look.x != 0.0).then(|| base + sign * look.x * f64::from(canvas.width)),
         POSITION_Y => (look.y != 0.0).then(|| base + sign * look.y * f64::from(canvas.height)),
-        SCALE_X | SCALE_Y => (look.scale != 0.0).then_some(base * (1.0 + sign * look.scale)),
+        SCALE_X => (look.scale_x != 0.0).then_some(base * (1.0 + sign * look.scale_x)),
+        SCALE_Y => (look.scale_y != 0.0).then_some(base * (1.0 + sign * look.scale_y)),
         _ => (look.rotate != 0.0).then_some(base + sign * look.rotate),
     };
     let Some(mut outer) = outer else {
@@ -340,15 +391,13 @@ fn plan(anim: &ClipAnimations, bases: &[f64; 6], length: Tick, canvas: &Canvas) 
     for ((index, base), slot) in bases.iter().copied().enumerate().zip(out.0.iter_mut()) {
         let mut parts: Vec<Keys> = Vec::new();
         if let Some((preset, duration)) = anim.enter {
-            let look = edge_look(preset).ok_or(EditError::Invalid("not an In or Out look"))?;
-            parts.extend(edge_keys(
-                look, index, base, canvas, length, duration, true,
+            parts.extend(edge_parts(
+                preset, index, base, canvas, length, duration, true,
             )?);
         }
         if let Some((preset, duration)) = anim.exit {
-            let look = edge_look(preset).ok_or(EditError::Invalid("not an In or Out look"))?;
-            parts.extend(edge_keys(
-                look, index, base, canvas, length, duration, false,
+            parts.extend(edge_parts(
+                preset, index, base, canvas, length, duration, false,
             )?);
         }
         if let Some(preset) = anim.combo {

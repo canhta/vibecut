@@ -879,19 +879,18 @@ fn full_tool_and_command_pages_cover_the_live_registry_without_schema_drift() {
             "drop",
             "rise",
             "pop",
-            "tilt",
+            "stretch",
+            "swing",
+            "shake",
             "pulse",
             "heartbeat",
             "sway",
-            "swing",
             "float",
             "drift_left",
             "drift_right",
             "push_in",
             "pull_out",
-            "shake",
             "flicker",
-            "breathe",
             "turn"
         ])
     );

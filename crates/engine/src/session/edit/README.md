@@ -113,13 +113,16 @@ higher engine workflows delegate through `engine::control::Error::Edit`. Command
 ordinary item-relative keys on one unlocked active-scene Text, Video, Image, Overlay,
 Graphic or Sticker item ([`motion/animation.rs`](motion/animation.rs)). `slot` is `in` (the first edge),
 `out` (the last edge) or `combo` (the whole clip); `preset` null removes the slot. Looks are
-named for creators, not source parity. The twelve In/Out looks are Fade, Slide left, right,
+named for creators, not source parity. The fourteen In/Out looks are Fade, Slide left, right,
 up and down (a quarter of the canvas width or height; the name is the direction the picture
 travels), Zoom in and out (half the scale), Spin (180 degrees with a fade), Drop and Rise
-(a slide with a fade), Pop (a 0.2 scale with a fade) and Tilt (30 degrees with a fade). Out
-plays the same motion towards the edge. The thirteen Combo looks are Pulse, Heartbeat, Sway,
-Swing, Float, Drift left and right, Push in, Pull out, Shake, Flicker, Breathe and Turn, each
-a table of waypoints in permille of the clip. They write only `opacity`, `transform.position`,
+(a slide with a fade), Pop (a 0.2 scale with a fade), Stretch (narrow and tall as it arrives,
+with a fade), Swing (20 degrees with a fade) and Shake (a shake waveform compressed into the
+edge, on X only). Out plays the same motion towards the edge. The ten
+Combo looks are Pulse, Heartbeat, Sway, Float, Drift left and right, Push in, Pull out,
+Flicker and Turn, each a table of waypoints in permille of the clip. Blur In is not yet a
+look: it needs a blur channel the owned set lacks. The panel groups the looks into the shelves
+Basic, Vibrate and Zoom (`AnimationPreset::shelf`). They write only `opacity`, `transform.position`,
 `transform.scale` and `transform.rotate` (the owned channels); positions are canvas pixels,
 Y grows downward and rotation is clockwise. Scalar bases come from the item's existing
 channels or their documented defaults and are kept; linear keys have no handles and Hold

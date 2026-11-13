@@ -5,7 +5,7 @@ use crate::editor::properties::{
 };
 use crate::kit;
 use engine::animation_previews::PREVIEW_FRAMES;
-use engine::{AnimationPreset as Look, AnimationSlot as Slot};
+use engine::{AnimationPreset as Look, AnimationShelf, AnimationSlot as Slot};
 use time::{Rounding, Tick};
 
 mod previews;
@@ -14,13 +14,13 @@ pub(in crate::editor) use previews::Previews;
 /// Automation marker the frame sets while the element cannot take an edit.
 pub(super) const DISABLED: &str = "animation.edit";
 /// Measured grid (capture 221759, logical px): six columns of 58 px square tiles, 15 px apart.
-const COLUMNS: usize = 6;
-const TILE: f32 = 58.0;
-const GUTTER: f32 = 15.0;
+pub(super) const COLUMNS: usize = 6;
+pub(super) const TILE: f32 = 58.0;
+pub(super) const GUTTER: f32 = 15.0;
 /// Name under a tile (capture 221759: a 12 px line), and the gap that brings the row pitch
 /// to the measured 82 px (58 + 12 + 12).
-const NAME_HEIGHT: f32 = 12.0;
-const ROW_GAP: f32 = 12.0;
+pub(super) const NAME_HEIGHT: f32 = 12.0;
+pub(super) const ROW_GAP: f32 = 12.0;
 /// The frame a resting tile shows, a third of the way into its motion: In and Combo near
 /// the start, Out near the end, where the picture is still moving.
 const fn rest_frame(slot: Slot) -> u32 {
@@ -57,7 +57,7 @@ fn look_text(look: Look) -> Text {
         Look::Drop => Text::AnimationDrop,
         Look::Rise => Text::AnimationRise,
         Look::Pop => Text::AnimationPop,
-        Look::Tilt => Text::AnimationTilt,
+        Look::Stretch => Text::AnimationStretch,
         Look::Pulse => Text::AnimationPulse,
         Look::Heartbeat => Text::AnimationHeartbeat,
         Look::Sway => Text::AnimationSway,
@@ -69,10 +69,16 @@ fn look_text(look: Look) -> Text {
         Look::PullOut => Text::AnimationPullOut,
         Look::Shake => Text::AnimationShake,
         Look::Flicker => Text::AnimationFlicker,
-        Look::Breathe => Text::AnimationBreathe,
         Look::Turn => Text::AnimationTurn,
     }
 }
+
+/// The shelves in panel order, with the words they are drawn under.
+const SHELVES: [(AnimationShelf, Text); 3] = [
+    (AnimationShelf::Basic, Text::AnimationShelfBasic),
+    (AnimationShelf::Vibrate, Text::AnimationShelfVibrate),
+    (AnimationShelf::Zoom, Text::AnimationShelfZoom),
+];
 
 impl Panel<'_, '_> {
     /// In, Out and Combo sub-tabs, the looks of the open one (None first) and, for In and Out,
@@ -149,8 +155,9 @@ impl Panel<'_, '_> {
         ui.add_space(theme::space::XS);
     }
 
-    /// The None tile and one tile per look, six to a row. Returns the clicked entry:
-    /// `Some(None)` removes the slot. The Favorites shelf shows only starred looks.
+    /// The None tile, then one group per shelf of the looks this slot offers, six tiles to a
+    /// row. Returns the clicked entry: `Some(None)` removes the slot. The Favorites shelf
+    /// shows only starred looks and no None tile.
     fn animation_tiles(
         &mut self,
         ui: &mut egui::Ui,
@@ -158,11 +165,16 @@ impl Panel<'_, '_> {
         held: Option<Look>,
     ) -> Option<Option<Look>> {
         let favorites = self.state.animation_favorites;
-        let mut entries: Vec<Option<Look>> = if favorites { Vec::new() } else { vec![None] };
-        entries.extend(
-            Look::for_slot(slot)
+        let mut groups: Vec<(Option<Text>, Vec<Option<Look>>)> = if favorites {
+            Vec::new()
+        } else {
+            vec![(None, vec![None])]
+        };
+        for (shelf, text) in SHELVES {
+            let looks: Vec<Option<Look>> = Look::for_slot(slot)
                 .iter()
                 .copied()
+                .filter(|look| look.shelf() == shelf)
                 .filter(|look| {
                     !favorites
                         || self
@@ -171,9 +183,13 @@ impl Panel<'_, '_> {
                             .catalog_favorites
                             .contains("animations", look.word())
                 })
-                .map(Some),
-        );
-        if entries.is_empty() {
+                .map(Some)
+                .collect();
+            if !looks.is_empty() {
+                groups.push((Some(text), looks));
+            }
+        }
+        if groups.is_empty() {
             ui.label(
                 egui::RichText::new(self.tr(Text::AssetsFavoritesEmpty))
                     .font(theme::label_font())
@@ -195,16 +211,27 @@ impl Panel<'_, '_> {
             ctx.request_repaint_after(std::time::Duration::from_millis(16));
         }
         let mut chosen = None;
-        for row in entries.chunks(COLUMNS) {
-            ui.horizontal_top(|ui| {
-                ui.spacing_mut().item_spacing.x = GUTTER;
-                for entry in row {
-                    if let Some(clicked) = self.animation_tile(ui, slot, *entry, held) {
-                        chosen = Some(clicked);
+        for (heading, entries) in &groups {
+            if let Some(text) = heading {
+                let label = self.tr(*text);
+                ui.add(egui::Label::new(
+                    egui::RichText::new(label)
+                        .font(theme::label_font())
+                        .size(theme::type_size::SMALL_LABEL)
+                        .color(self.text_color()),
+                ));
+            }
+            for row in entries.chunks(COLUMNS) {
+                ui.horizontal_top(|ui| {
+                    ui.spacing_mut().item_spacing.x = GUTTER;
+                    for entry in row {
+                        if let Some(clicked) = self.animation_tile(ui, slot, *entry, held) {
+                            chosen = Some(clicked);
+                        }
                     }
-                }
-            });
-            ui.add_space(ROW_GAP);
+                });
+                ui.add_space(ROW_GAP);
+            }
         }
         chosen
     }

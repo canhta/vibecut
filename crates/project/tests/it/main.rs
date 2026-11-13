@@ -4,6 +4,7 @@ mod animation;
 mod bundle;
 mod effects;
 mod metadata;
+mod presets;
 mod project;
 mod retime;
 mod scenes;

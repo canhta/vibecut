@@ -241,8 +241,8 @@ three-cell bar and the property row for Duration. Remaining differences and caus
 - Our bar is the shared 24 px control height, about 3 px taller than the 21 px measured here;
   cause: one shared kit control (the 221643 sub-tab bar measures 24).
 - No search field and no category chips. Cause: they filter and group a catalogue of hundreds
-  of animations (Trending, Basic, Light, Glitch, Mask, 3D) plus favourites; our twelve In/Out
-  and thirteen Combo looks do not map onto those categories and need no search. Open: add them
+  of animations (Trending, Basic, Light, Glitch, Mask, 3D) plus favourites; our fourteen In/Out
+  and ten Combo looks do not map onto those categories and need no search. Open: add them
   with a larger catalogue.
 - Names and motions of the looks are new, not source parity. Travel and drift amounts are [new].
 - In and Out each keep their own duration, as the ticket asks; the web capture shows one shared

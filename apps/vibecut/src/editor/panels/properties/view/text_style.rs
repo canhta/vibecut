@@ -1,12 +1,14 @@
 //! Text style rows of the Text tab: weight, slant, line, alignment, spacing and the
 //! background box geometry. Every edit goes through the registered item field.
 use super::Panel;
+use super::animation::{COLUMNS, GUTTER, NAME_HEIGHT, ROW_GAP, TILE};
 use super::number_edit::Layout;
 use crate::editor::properties::{
     ColorTarget, Id, ItemId, ScrubSpec, TEXT_SIZE_SCRUB, Text, TextPart, egui, read, shared_fields,
     theme,
 };
 use crate::kit;
+use project::{TextLook, TextShelf};
 
 const fn spec(field: &'static str, label: Text, decimals: usize) -> ScrubSpec {
     ScrubSpec::of(
@@ -412,6 +414,7 @@ impl Panel<'_, '_> {
         };
         let enabled = !self.cx.disabled.contains("animation.edit");
         self.text_preset_controls(ui, item, &params, enabled);
+        self.text_look_tiles(ui, item, enabled);
         // The box rows exist only while the box does, like the colour fields they sit beside.
         if params.background.is_some() {
             self.number_row(
@@ -441,6 +444,99 @@ impl Panel<'_, '_> {
             );
             self.scrub_field(ui, item, SHADOW_BLUR);
         }
+    }
+
+    /// The built-in text looks in shelves, six tiles to a row on the animation tab's grid.
+    /// Choosing one applies it to this item as one undo step.
+    fn text_look_tiles(&mut self, ui: &mut egui::Ui, item: ItemId, enabled: bool) {
+        const SHELVES: [(TextShelf, Text); 5] = [
+            (TextShelf::Plain, Text::LookShelfPlain),
+            (TextShelf::Outline, Text::LookShelfOutline),
+            (TextShelf::Shadow, Text::LookShelfShadow),
+            (TextShelf::Glow, Text::LookShelfGlow),
+            (TextShelf::Label, Text::LookShelfLabel),
+        ];
+        let snapshot = self.cx.session.project().clone();
+        let mut chosen = None;
+        for (shelf, heading) in SHELVES {
+            let label = self.tr(heading);
+            ui.add(egui::Label::new(
+                egui::RichText::new(label)
+                    .font(theme::label_font())
+                    .size(theme::type_size::SMALL_LABEL)
+                    .color(self.text_color()),
+            ));
+            let looks: Vec<TextLook> = TextLook::ALL
+                .into_iter()
+                .filter(|look| look.shelf() == shelf)
+                .collect();
+            for row in looks.chunks(COLUMNS) {
+                ui.horizontal_top(|ui| {
+                    ui.spacing_mut().item_spacing.x = GUTTER;
+                    for look in row {
+                        if let Some(clicked) = self.text_look_tile(ui, *look, enabled) {
+                            chosen = Some(clicked);
+                        }
+                    }
+                });
+                ui.add_space(ROW_GAP);
+            }
+        }
+        if let Some(look) = chosen {
+            self.actions
+                .push(crate::editor::properties::Action::ApplyTextPreset {
+                    item,
+                    preset: engine::TextPresetApply::Look { look },
+                    snapshot,
+                });
+        }
+    }
+
+    /// One look: a sample glyph in its fill with the name beneath. Returns the look when clicked.
+    fn text_look_tile(
+        &mut self,
+        ui: &mut egui::Ui,
+        look: TextLook,
+        enabled: bool,
+    ) -> Option<TextLook> {
+        let dark = self.cx.dark;
+        let mut clicked = None;
+        ui.vertical(|ui| {
+            ui.set_width(TILE);
+            ui.spacing_mut().item_spacing.y = 0.0;
+            let (rect, response) =
+                ui.allocate_exact_size(egui::Vec2::splat(TILE), egui::Sense::click());
+            let radius = theme::radius::UPLOAD;
+            ui.painter().rect_filled(rect, radius, theme::field(dark));
+            let [red, green, blue, alpha] = look.style().color.0;
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "Aa",
+                theme::label_font(),
+                egui::Color32::from_rgba_unmultiplied(red, green, blue, alpha),
+            );
+            let response = response.on_hover_text(look.name());
+            response.widget_info(|| {
+                egui::WidgetInfo::labeled(egui::Role::Button, enabled, look.name())
+            });
+            let word = look.name().to_lowercase().replace(' ', "_");
+            self.remember(format!("inspector.text_look.{word}"), &response);
+            ui.add_sized(
+                [TILE, NAME_HEIGHT],
+                egui::Label::new(
+                    egui::RichText::new(look.name())
+                        .font(theme::label_font())
+                        .size(theme::type_size::SMALL_LABEL)
+                        .color(self.text_color()),
+                )
+                .truncate(),
+            );
+            if enabled && response.clicked() {
+                clicked = Some(look);
+            }
+        });
+        clicked
     }
 
     /// The saved style bank: choose one to copy onto this item, or save its look.
@@ -508,7 +604,7 @@ impl Panel<'_, '_> {
             self.actions
                 .push(crate::editor::properties::Action::ApplyTextPreset {
                     item,
-                    preset,
+                    preset: engine::TextPresetApply::Saved { preset },
                     snapshot: snapshot.clone(),
                 });
         }

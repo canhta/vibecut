@@ -27,8 +27,8 @@ pub enum AnimationSlot {
     Combo,
 }
 
-/// Built-in animation looks, named for creators. The first twelve serve In and Out (Out
-/// plays the same motion towards the edge); the last thirteen are Combo looks that span the
+/// Built-in animation looks, named for creators. The first fourteen serve In and Out (Out
+/// plays the same motion towards the edge); the last ten are Combo looks that span the
 /// whole clip. A look expands once into ordinary editable keys and keeps no identity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -44,24 +44,30 @@ pub enum AnimationPreset {
     Drop,
     Rise,
     Pop,
-    Tilt,
+    Stretch,
+    Swing,
+    Shake,
     Pulse,
     Heartbeat,
     Sway,
-    Swing,
     Float,
     DriftLeft,
     DriftRight,
     PushIn,
     PullOut,
-    Shake,
     Flicker,
-    Breathe,
     Turn,
+}
+/// The panel's shelves for the animation tab, in reference order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AnimationShelf {
+    Basic,
+    Vibrate,
+    Zoom,
 }
 impl AnimationPreset {
     /// The looks the In and Out slots offer, in panel order.
-    pub const EDGE: [Self; 12] = [
+    pub const EDGE: [Self; 14] = [
         Self::Fade,
         Self::SlideLeft,
         Self::SlideRight,
@@ -73,24 +79,49 @@ impl AnimationPreset {
         Self::Drop,
         Self::Rise,
         Self::Pop,
-        Self::Tilt,
+        Self::Stretch,
+        Self::Swing,
+        Self::Shake,
     ];
     /// The looks the Combo slot offers, in panel order.
-    pub const COMBO: [Self; 13] = [
+    pub const COMBO: [Self; 10] = [
         Self::Pulse,
         Self::Heartbeat,
         Self::Sway,
-        Self::Swing,
         Self::Float,
         Self::DriftLeft,
         Self::DriftRight,
         Self::PushIn,
         Self::PullOut,
-        Self::Shake,
         Self::Flicker,
-        Self::Breathe,
         Self::Turn,
     ];
+    /// The shelf the animation tab groups this look under.
+    pub const fn shelf(self) -> AnimationShelf {
+        match self {
+            Self::Fade
+            | Self::SlideLeft
+            | Self::SlideRight
+            | Self::SlideUp
+            | Self::SlideDown
+            | Self::Spin
+            | Self::Drop
+            | Self::Rise
+            | Self::Swing
+            | Self::Sway
+            | Self::Float
+            | Self::DriftLeft
+            | Self::DriftRight
+            | Self::Turn => AnimationShelf::Basic,
+            Self::Shake | Self::Pulse | Self::Heartbeat | Self::Flicker => AnimationShelf::Vibrate,
+            Self::ZoomIn
+            | Self::ZoomOut
+            | Self::Pop
+            | Self::Stretch
+            | Self::PushIn
+            | Self::PullOut => AnimationShelf::Zoom,
+        }
+    }
     /// The looks one slot offers.
     pub fn for_slot(slot: AnimationSlot) -> &'static [Self] {
         match slot {
@@ -112,19 +143,18 @@ impl AnimationPreset {
             Self::Drop => "drop",
             Self::Rise => "rise",
             Self::Pop => "pop",
-            Self::Tilt => "tilt",
+            Self::Stretch => "stretch",
+            Self::Swing => "swing",
+            Self::Shake => "shake",
             Self::Pulse => "pulse",
             Self::Heartbeat => "heartbeat",
             Self::Sway => "sway",
-            Self::Swing => "swing",
             Self::Float => "float",
             Self::DriftLeft => "drift_left",
             Self::DriftRight => "drift_right",
             Self::PushIn => "push_in",
             Self::PullOut => "pull_out",
-            Self::Shake => "shake",
             Self::Flicker => "flicker",
-            Self::Breathe => "breathe",
             Self::Turn => "turn",
         }
     }
@@ -139,45 +169,6 @@ pub struct ClipAnimations {
     pub combo: Option<AnimationPreset>,
 }
 
-/// Built-in looks, applied as values rather than a persisted preset identity.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum CaptionPreset {
-    Outline,
-    Box,
-}
-impl CaptionPreset {
-    /// Whether the complete saved style equals this look, including unused colours.
-    pub fn matches(self, style: &captions::CueStyle) -> bool {
-        *style == self.style()
-    }
-    fn style(self) -> captions::CueStyle {
-        captions::CueStyle {
-            font_family: "Inter".into(),
-            font_size_ratio: 48.0 / 1080.0,
-            primary_color: [255; 4],
-            outline_color: [0, 0, 0, 255],
-            background_color: if self == Self::Box {
-                [0, 0, 0, 255]
-            } else {
-                [0; 4]
-            },
-            border_style: if self == Self::Box { 3 } else { 1 },
-            alignment: captions::CueAlignment {
-                numpad: 2,
-                horizontal: captions::HorizontalAlignment::Center,
-                vertical: captions::VerticalAlignment::Bottom,
-            },
-            margin_left_ratio: 0.05,
-            margin_right_ratio: 0.05,
-            margin_vertical_ratio: 0.05,
-            bold: true,
-            italic: false,
-            underline: false,
-            strikeout: false,
-        }
-    }
-}
 /// How `captions.select_emphasis` chooses keywords. Lexicon is deterministic and local.
 #[derive(
     Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
@@ -187,6 +178,15 @@ pub enum EmphasisMode {
     #[default]
     Lexicon,
 }
+/// Where a text style is copied from: a saved bank entry, or a built-in look by id. Either way
+/// the style is copied onto each item's text parameters in one step, keeping its content.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum TextPresetApply {
+    Saved { preset: project::TextPresetId },
+    Look { look: project::TextLook },
+}
+
 /// One whole-item style choice: a built-in or imported value materializes into
 /// cue styles, while a saved preset stays a live project reference with a
 /// sparse patch.
@@ -194,7 +194,7 @@ pub enum EmphasisMode {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CaptionStyleApply {
     Preset {
-        preset: CaptionPreset,
+        preset: project::CaptionLook,
     },
     Custom {
         style: captions::CueStyle,
@@ -209,7 +209,7 @@ impl CaptionStyleApply {
     /// The materialized cue value for a built-in or imported choice.
     pub(super) fn materialized(&self) -> Option<captions::CueStyle> {
         match self {
-            Self::Preset { preset } => Some(preset.style()),
+            Self::Preset { preset } => Some(preset.cue_style()),
             Self::Custom { style } => Some(style.clone()),
             Self::Saved { .. } => None,
         }
@@ -662,7 +662,7 @@ commands! {
     BurnSubtitles, "burn_subtitles","Burn subtitles into MP4", FilePublish { range: time::TimeRange, languages: Vec<captions::LanguageTag>, style: render::CaptionStyle, portrait: bool, path: std::path::PathBuf, overwrite: bool } => Timeline, serde_json::json!({"range":{"start":0,"end":8467200000_i64},"languages":["en"],"style":{"font":"Inter","font_style":"SemiBold","size":48.0,"color":[255,255,255,255],"outline":null,"background":null,"position":"bottom","safe_area_percent":5.0,"max_lines":2,"word_highlight_color":[255,215,0]},"portrait":false,"path":"$output/burn.mp4","overwrite":false}), available = CaptionItem, idle = true, collections = [languages], returns = [JobAccepted];
     CancelGesture, "cancel_gesture", "Cancel gesture", SessionControl {} => Gesture, serde_json::json!({}), available = GestureActive, grant = Human;
     CaptionsApply, "captions.apply", "Apply generated captions", Edit { job: super::wire::JobId, #[serde(default)] start: Option<Tick> } => Captions, serde_json::json!({"job":0}), idle = true;
-    ApplyCaptionStyle, "captions.apply_style", "Apply caption style", Edit { item: ItemId, style: CaptionStyleApply } => Timeline, serde_json::json!({"item":4,"style":{"kind":"preset","preset":"outline"}}), available = CaptionItem, idle = true, grant = Agent;
+    ApplyCaptionStyle, "captions.apply_style", "Apply caption style", Edit { item: ItemId, style: CaptionStyleApply } => Timeline, serde_json::json!({"item":4,"style":{"kind":"preset","preset":"outline_bottom"}}), available = CaptionItem, idle = true, grant = Agent;
     DeleteCaptionPreset, "captions.delete_preset", "Delete caption preset", Edit { preset: project::CaptionPresetId } => CaptionPresetBank, serde_json::json!({"preset":100}), idle = true, grant = Agent;
     CaptionsGenerate, "captions.generate", "Generate captions", JobControl { asset: media::AssetId, #[serde(default)] range: Option<SourceRange>, #[serde(default)] source_language: Option<captions::LanguageTag> } => Waveform, serde_json::json!({"asset":97,"source_language":"en"}), idle = true, grant = Agent, returns = [JobAccepted];
     ImportCaptions, "captions.import", "Import ASS captions", Edit { asset: SourceAsset, language: captions::LanguageTag, start: Tick, #[serde(default)] track: Option<TrackId>, #[serde(default)] name: Option<NfcText>, styles: Vec<captions::CueStyle>, cues: Vec<captions::AssCue> } => Timeline, serde_json::json!({"asset":{"ephemeral":true,"id":99,"path":"$output/captions.ass","content_hash":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"probe":{"format":"ass","duration":254016000000_i64,"streams":[]}},"language":"en","start":0,"track":null,"name":"Captions","styles":[{"font_family":"Arial","font_size_ratio":0.0555,"primary_color":[255,255,255,255],"outline_color":[0,0,0,255],"background_color":[0,0,0,0],"border_style":1,"alignment":{"numpad":2,"horizontal":"center","vertical":"bottom"},"margin_left_ratio":0.0,"margin_right_ratio":0.0,"margin_vertical_ratio":0.0,"bold":true,"italic":false,"underline":false,"strikeout":false}],"cues":[{"range":{"start":0,"end":254016000000_i64},"text":"Hello","style":0}]}), grant = Human, collections = [styles, cues];
@@ -776,7 +776,7 @@ commands! {
     SplitAt, "split_at", "Split item", Edit { item: ItemId, at: Tick } => Timeline, serde_json::json!({"item":1,"at":8467200000_i64}), available = UnlockedItem;
     StickersInsert, "stickers.insert", "Insert sticker", Edit { #[serde(default)] placement: Placement, sticker: String, start: Tick, duration: Tick } => Timeline, serde_json::json!({"placement":{"mode":"auto"},"sticker":"flags:vn","start":0,"duration":127008000000_i64});
     StickersSearch, "stickers.search", "Search stickers", Read { #[serde(default)] query: String, #[serde(default)] category: super::wire::StickerCategory, #[serde(default)] limit: Option<u32> } => Timeline, serde_json::json!({"query":"asia","category":"flags","limit":20}), returns = [StickerSearch];
-    ApplyTextPreset, "text.apply_preset", "Apply saved text preset", Edit { items: Vec<ItemId>, preset: project::TextPresetId } => TextPresetBank, serde_json::json!({"items":[3],"preset":100}), available = UnlockedItem, grant = Agent, collections = [items];
+    ApplyTextPreset, "text.apply_preset", "Apply text preset", Edit { items: Vec<ItemId>, preset: TextPresetApply } => TextPresetBank, serde_json::json!({"items":[3],"preset":{"kind":"look","look":"clean_white"}}), available = UnlockedItem, grant = Agent, collections = [items];
     SaveTextPreset, "text.save_preset", "Save text preset", Edit { item: ItemId, name: NfcText } => TextPresetBank, serde_json::json!({"item":3,"name":"Style 1"}), available = UnlockedItem, grant = Agent;
     AddTrack, "timeline.add_track", "Add track", Edit { name: NfcText, kind: TrackKind, #[serde(default)] placement: TrackPlacement } => Timeline, serde_json::json!({"name":"Added","kind":"video"});
     AlignItems, "timeline.align_items", "Align items", Edit { items: Vec<ItemId>, alignment: project::ItemAlignment, at: Tick } => Timeline, serde_json::json!({"items":[1],"alignment":"left","at":0}), available = UnlockedItem, collections = [items];

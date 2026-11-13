@@ -226,7 +226,7 @@ fn caption_bank_name_invalidation_precedes_enter_and_blur() {
                     .apply(Command::ApplyCaptionStyle {
                         item,
                         style: engine::CaptionStyleApply::Preset {
-                            preset: engine::CaptionPreset::Outline,
+                            preset: project::CaptionLook::OutlineBottom,
                         },
                     })
                     .unwrap();
@@ -381,7 +381,7 @@ fn caption_bank_preflight_preserves_properties_edits_and_pickers() {
             .apply(Command::ApplyCaptionStyle {
                 item: caption,
                 style: engine::CaptionStyleApply::Preset {
-                    preset: engine::CaptionPreset::Box,
+                    preset: project::CaptionLook::LabelBlack,
                 },
             })
             .unwrap();

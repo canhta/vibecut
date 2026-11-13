@@ -3,6 +3,7 @@
 mod animation;
 mod model;
 mod persistence;
+mod preset;
 mod visual;
 
 pub use animation::{
@@ -13,6 +14,7 @@ pub use animation::{
     SpeedSegment, TangentMode,
 };
 pub use model::*;
+pub use preset::{CaptionLook, CaptionShelf, TextLook, TextShelf};
 pub use persistence::atomic;
 pub use persistence::autosave;
 pub use persistence::bundle;

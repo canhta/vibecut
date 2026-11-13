@@ -951,16 +951,17 @@ impl Subtitles {
             .any(|cue| params.cues.style_of(cue) != first)
         {
             c.tr(Text::SubStyleMixed).to_owned()
-        } else if first.is_some_and(|style| engine::CaptionPreset::Outline.matches(style)) {
-            c.tr(Text::SubStyleOutline).to_owned()
-        } else if first.is_some_and(|style| engine::CaptionPreset::Box.matches(style)) {
-            c.tr(Text::SubStyleBox).to_owned()
+        } else if let Some(look) = project::CaptionLook::ALL
+            .into_iter()
+            .find(|look| first.is_some_and(|style| look.matches(style)))
+        {
+            look.name().to_owned()
         } else {
             c.tr(Text::SubStyleCustom).to_owned()
         };
         let snapshot = session.project().clone();
         let enabled = self.style_available(session);
-        let mut chosen = None;
+        let mut chosen: Option<String> = None;
         let mut saved = None;
         let mut overrides_open = false;
         ui.add_enabled_ui(enabled, |ui| {
@@ -977,15 +978,28 @@ impl Subtitles {
                 ))
                 .selected_text(label.clone())
                 .show_ui(ui, |ui| {
-                    for (id, text) in [
-                        ("subtitles.style.outline", Text::SubStyleOutline),
-                        ("subtitles.style.box", Text::SubStyleBox),
-                    ] {
-                        let response = ui.selectable_label(label == c.tr(text), c.tr(text));
-                        c.remember(id, &response);
-                        if response.clicked() {
-                            chosen = Some(id);
-                            ui.close();
+                    const SHELVES: [(project::CaptionShelf, Text); 4] = [
+                        (project::CaptionShelf::Plain, Text::LookShelfPlain),
+                        (project::CaptionShelf::Outline, Text::LookShelfOutline),
+                        (project::CaptionShelf::Label, Text::LookShelfLabel),
+                        (project::CaptionShelf::Karaoke, Text::LookShelfKaraoke),
+                    ];
+                    for (shelf, heading) in SHELVES {
+                        ui.label(egui::RichText::new(c.tr(heading)).size(theme::type_size::BODY));
+                        for look in project::CaptionLook::ALL
+                            .into_iter()
+                            .filter(|look| look.shelf() == shelf)
+                        {
+                            let id = format!(
+                                "subtitles.style.look.{}",
+                                look.name().to_lowercase().replace(' ', "_")
+                            );
+                            let response = ui.selectable_label(label == look.name(), look.name());
+                            c.remember(id.clone(), &response);
+                            if response.clicked() {
+                                chosen = Some(id);
+                                ui.close();
+                            }
                         }
                     }
                     if !snapshot.data().caption_presets.is_empty() {
@@ -1043,7 +1057,7 @@ impl Subtitles {
             .on_hover_text(c.tr(Text::SubWordHint));
         c.remember("subtitles.style.word_highlight", &response);
         if response.changed() {
-            chosen = Some("subtitles.style.word_highlight");
+            chosen = Some("subtitles.style.word_highlight".to_owned());
         }
         let languages = snapshot
             .data()
@@ -1155,7 +1169,7 @@ impl Subtitles {
             && self.item == Some(item)
             && Arc::ptr_eq(&snapshot, session.project())
         {
-            let result = self.activate(session, options, None, at, id);
+            let result = self.activate(session, options, None, at, &id);
             self.ui_result(result);
         }
         if let Some(preset) = saved
