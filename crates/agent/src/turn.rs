@@ -152,12 +152,14 @@ fn drive(
         if !reply.needs_results() {
             return Ok(());
         }
-        if steps >= limits.max_steps {
-            return Err(EndReason::StepLimit);
-        }
         let results = run_calls(tools, &reply, cancel, events)?;
         if cancel.is_cancelled() {
             return Err(EndReason::Cancelled);
+        }
+        // The limit counts model requests: the calls of the last allowed request still run,
+        // and the turn ends before their results would need one more.
+        if steps >= limits.max_steps {
+            return Err(EndReason::StepLimit);
         }
         steps += 1;
         reply = conversation
