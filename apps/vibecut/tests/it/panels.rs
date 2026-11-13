@@ -642,6 +642,14 @@ fn widget_rect(harness: &Harness<Editor>, id: &str) -> egui::Rect {
         .rect
 }
 
+/// The accessibility toggled state of one control: a selected tab reads as `True`.
+fn toggled(harness: &Harness<Editor>, id: &str) -> Option<egui::accesskit::Toggled> {
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some(id)))
+        .accesskit_node()
+        .toggled()
+}
+
 fn item(harness: &Harness<Editor>, id: ItemId) -> project::Item {
     harness
         .state()
@@ -5675,13 +5683,46 @@ fn speed_curve_tab_applies_presets_edits_a_stretch_and_refuses_invalid_curves() 
     // Constant mode is the default; the Curve entry opens the editor without a project change.
     assert!(has_widget(&harness, "inspector.speed.scrub"));
     assert!(has_widget(&harness, "inspector.speed.tab.curve"));
+    assert_eq!(
+        toggled(&harness, "inspector.speed.tab.standard"),
+        Some(egui::accesskit::Toggled::True)
+    );
+    assert_eq!(
+        toggled(&harness, "inspector.speed.tab.curve"),
+        Some(egui::accesskit::Toggled::False)
+    );
     click(&mut harness, "inspector.speed.tab.curve");
     harness.run_steps(2);
+    assert_eq!(
+        toggled(&harness, "inspector.speed.tab.standard"),
+        Some(egui::accesskit::Toggled::False)
+    );
+    assert_eq!(
+        toggled(&harness, "inspector.speed.tab.curve"),
+        Some(egui::accesskit::Toggled::True)
+    );
     assert!(!has_widget(&harness, "inspector.speed.scrub"));
     assert!(has_widget(
         &harness,
         "inspector.speed.preset.slow_in_fast_out"
     ));
+    // The four preset buttons share one width and line up in columns across the two rows.
+    let presets = [
+        "slow_in_fast_out",
+        "fast_in_slow_out",
+        "slow_middle",
+        "fast_middle",
+    ]
+    .map(|word| widget_rect(&harness, &format!("inspector.speed.preset.{word}")));
+    for rect in &presets {
+        assert!(
+            (rect.width() - presets[0].width()).abs() < 0.01,
+            "preset widths differ: {presets:?}"
+        );
+    }
+    assert!((presets[0].left() - presets[2].left()).abs() < 0.01);
+    assert!((presets[1].left() - presets[3].left()).abs() < 0.01);
+    assert!(presets[1].left() > presets[0].right());
     assert_eq!(
         item(&harness, fixture.video).retime,
         project::Retime::default()

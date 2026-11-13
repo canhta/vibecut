@@ -725,7 +725,7 @@ pub(crate) fn text_tabs(
 }
 
 /// A full-width segmented bar: equal cells on a field-coloured track, the
-/// active cell raised. Each cell keeps its own automation ID.
+/// active cell raised with its label in the accent. Each cell keeps its own automation ID.
 pub(crate) fn segmented(
     ui: &mut Ui,
     ids: &[String],
@@ -759,7 +759,7 @@ pub(crate) fn segmented(
             Align2::CENTER_CENTER,
             *label,
             theme::label_font(),
-            ink(ui, false),
+            ink(ui, active),
         );
         response.widget_info(|| {
             egui::WidgetInfo::selected(egui::Role::Tab, ui.is_enabled(), active, *label)
