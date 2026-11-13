@@ -575,13 +575,13 @@ pub(crate) fn reveal(harness: &mut Harness<Editor>, id: &str) {
         harness.hover_at(viewport.center());
         harness.event(egui::Event::MouseWheel {
             unit: egui::MouseWheelUnit::Point,
-            // Wheel by the distance still to go plus a margin, at least one notch.
+            // Wheel by the distance still to go, at least one notch.
             delta: egui::vec2(
                 0.0,
                 if target.top() < top {
-                    (top - target.top() + 24.0).max(120.0)
+                    (top - target.top()).max(120.0)
                 } else {
-                    -(target.bottom() - viewport.bottom() + 24.0).max(120.0)
+                    -(target.bottom() - viewport.bottom()).max(120.0)
                 },
             ),
             phase: egui::TouchPhase::Move,
