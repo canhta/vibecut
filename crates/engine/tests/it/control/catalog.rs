@@ -397,6 +397,21 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
             )
             .unwrap();
         let value = ok(result);
+        // The declaration covers what dispatch returned, and the narrowed output
+        // schema still names that variant.
+        assert!(
+            spec.results.contains(&value.kind()),
+            "{} returned {:?}, declared {:?}",
+            spec.id,
+            value.kind(),
+            spec.results
+        );
+        assert!(
+            output_tags(&spec.output_schema).contains(&value.kind().tag()),
+            "{} output schema omits {:?}",
+            spec.id,
+            value.kind()
+        );
         if let ControlResult::JobAccepted { job, .. } = value {
             finish(&mut r, job);
             let snap = r.snapshot(job).unwrap();
@@ -483,9 +498,16 @@ fn deterministic_catalog_and_schema_document_receipts() {
             .unwrap()
             .len()
     );
-    // The shared output schema is carried once, so commands grow the catalog by
-    // their params only: keep it under half a response for headroom.
+    // Each command carries its own narrowed output schema, so the catalog grows by
+    // params and output together: keep it under half a response for headroom, with
+    // the output schemas themselves a small part of it.
     assert!(first.len() < control::MAX_RESPONSE_BYTES / 2);
+    let outputs: usize = registry()
+        .iter()
+        .map(|spec| serde_json::to_vec(&spec.output_schema).unwrap().len())
+        .sum();
+    println!("output_schema_bytes={outputs}");
+    assert!(outputs < 2 << 20, "output schemas {outputs} bytes");
     let mut job_control: Vec<_> = registry()
         .iter()
         .filter(|s| s.effect == Effect::JobControl)
@@ -544,21 +566,6 @@ fn deterministic_catalog_and_schema_document_receipts() {
                 "transcript.delete_range",
                 "transcript.merge_cues",
             ][..],
-        ),
-        (
-            Availability::NoTransaction,
-            &[
-                "begin_gesture",
-                "captions.delete_preset",
-                "captions.rename_preset",
-                "clipboard.copy",
-                "clipboard.copy_keyframes",
-                "clipboard.copy_mask_points",
-                "clipboard.paste",
-                "clipboard.read",
-                "color.import_lut",
-                "timeline.set_ripple",
-            ],
         ),
         (
             Availability::GestureActive,
@@ -700,6 +707,72 @@ fn deterministic_catalog_and_schema_document_receipts() {
             "export_subtitles",
             "preview.snapshot",
             "timeline.freeze_frame",
+        ]
+    );
+    // Refused while a gesture or transaction is open: one declared flag replaces the
+    // hand checks of the dispatcher, so a new publisher or job command must state it.
+    assert_eq!(
+        ids(&|s| s.idle),
+        [
+            "audio.measure_loudness",
+            "begin_gesture",
+            "burn_subtitles",
+            "captions.apply",
+            "captions.apply_style",
+            "captions.delete_preset",
+            "captions.generate",
+            "captions.rename_preset",
+            "captions.save_preset",
+            "captions.select_emphasis",
+            "captions.set_emphasis",
+            "captions.set_word_highlight",
+            "captions.suggest_emphasis",
+            "captions.translate",
+            "chapters.export_sidecars",
+            "chapters.generate",
+            "clipboard.copy",
+            "clipboard.copy_keyframes",
+            "clipboard.copy_mask_points",
+            "clipboard.paste",
+            "clipboard.read",
+            "clips.export",
+            "clips.suggest",
+            "color.import_lut",
+            "export",
+            "export.clips",
+            "export_subtitles",
+            "fillers.classify",
+            "inspect",
+            "media.detect_scenes",
+            "media.generate_clip_thumbnails",
+            "media.generate_waveform",
+            "preview.snapshot",
+            "project.export_bundle",
+            "project.save",
+            "project.save_as",
+            "redo",
+            "reframe.apply",
+            "reframe.generate",
+            "timeline.filler_candidates",
+            "timeline.freeze_frame",
+            "timeline.pause_candidates",
+            "timeline.remove_fillers",
+            "timeline.set_ripple",
+            "transcript.delete_range",
+            "transcript.merge_cues",
+            "undo",
+        ]
+    );
+    assert_eq!(
+        ids(&|s| engine::CommandKind::from_id(s.id)
+            .is_some_and(engine::CommandKind::owns_transitions)),
+        [
+            "batch",
+            "transition.add",
+            "transition.move",
+            "transition.remove",
+            "transition.set_duration",
+            "transition.set_param",
         ]
     );
     assert_eq!(ids(&|s| s.grant.is_none()), Vec::<&str>::new());
@@ -901,10 +974,190 @@ fn catalog_and_frame_serialization_obey_the_literal_sixteen_mib_boundary() {
     ));
 }
 
-/// The `catalog` command's answer: the shared output schema once, then every entry.
+/// The `kind` tags an output schema admits: its own, or each variant of its `oneOf`.
+fn output_tags(schema: &Value) -> Vec<&str> {
+    match schema.get("oneOf").and_then(Value::as_array) {
+        Some(variants) => variants
+            .iter()
+            .filter_map(|v| v.pointer("/properties/kind/const").and_then(Value::as_str))
+            .collect(),
+        None => schema
+            .pointer("/properties/kind/const")
+            .and_then(Value::as_str)
+            .into_iter()
+            .collect(),
+    }
+}
+
+/// Whether a top-level params property is a JSON array (possibly nullable) whose schema
+/// states no `maxItems`; fixed-size arrays such as colours state one.
+fn unbounded_array(property: &Value, defs: &Value) -> bool {
+    let named = |schema: &Value| {
+        let array = match schema.get("type") {
+            Some(Value::String(t)) => t == "array",
+            Some(Value::Array(types)) => types.iter().any(|t| t == "array"),
+            _ => false,
+        };
+        array && schema.get("maxItems").is_none()
+    };
+    if named(property) {
+        return true;
+    }
+    if let Some(target) = property
+        .get("$ref")
+        .and_then(Value::as_str)
+        .and_then(|r| r.strip_prefix("#/$defs/"))
+    {
+        return defs.get(target).is_some_and(named);
+    }
+    ["anyOf", "oneOf", "allOf"].iter().any(|key| {
+        property
+            .get(key)
+            .and_then(Value::as_array)
+            .is_some_and(|options| options.iter().any(|o| unbounded_array(o, defs)))
+    })
+}
+
+#[test]
+fn every_collection_parameter_declares_its_limit_and_every_result_its_schema() {
+    for spec in registry() {
+        let properties = spec
+            .params_schema
+            .get("properties")
+            .and_then(Value::as_object);
+        let defs = spec.params_schema.get("$defs").unwrap_or(&Value::Null);
+        for (name, property) in properties.into_iter().flatten() {
+            if unbounded_array(property, defs) {
+                assert!(
+                    spec.collections.iter().any(|limit| limit.field == name),
+                    "{} takes the collection `{name}` without a declared limit",
+                    spec.id
+                );
+            }
+        }
+        for limit in &spec.collections {
+            assert!(
+                properties.is_some_and(|p| p.contains_key(limit.field)),
+                "{} limits `{}`, which it does not take",
+                spec.id,
+                limit.field
+            );
+            let batch = limit.field == "commands";
+            assert_eq!(
+                limit.max,
+                if batch {
+                    control::MAX_BATCH_COMMANDS
+                } else {
+                    control::MAX_COLLECTION
+                },
+                "{} `{}`",
+                spec.id,
+                limit.field
+            );
+        }
+        assert!(!spec.results.is_empty(), "{}", spec.id);
+        let mut declared: Vec<_> = spec.results.iter().map(|kind| kind.tag()).collect();
+        let mut narrowed = output_tags(&spec.output_schema);
+        declared.sort_unstable();
+        narrowed.sort_unstable();
+        assert_eq!(declared, narrowed, "{} output schema", spec.id);
+        assert_eq!(
+            spec.output_schema["$schema"],
+            "https://json-schema.org/draft/2020-12/schema"
+        );
+        jsonschema::options()
+            .offline()
+            .build(&spec.output_schema)
+            .unwrap_or_else(|e| panic!("{} output schema: {e}", spec.id));
+    }
+    // Narrowing drops what a command cannot return: an edit never carries the project.
+    let edit = registry().iter().find(|s| s.id == "delete").unwrap();
+    assert!(edit.output_schema["$defs"].get("ProjectData").is_none());
+    let inspect = registry().iter().find(|s| s.id == "inspect").unwrap();
+    assert!(inspect.output_schema["$defs"].get("ProjectData").is_some());
+}
+
+#[test]
+fn unavailable_commands_are_refused_before_dispatch_on_every_transport() {
+    // The UI reads `enabled`; the app's own calls and the MCP and CLI adapters meet the
+    // same admission rule in the engine, as internal and external callers.
+    use engine::SessionError;
+    let cases: [(&str, Value, fn(&SessionError) -> bool); 2] = [
+        ("undo", json!({}), |e| matches!(e, SessionError::NoHistory)),
+        ("media.remove", json!({"assets":[1]}), |e| {
+            matches!(e, SessionError::Unavailable)
+        }),
+    ];
+    let mut r = runner();
+    for external in [false, true] {
+        for (id, params, expected) in &cases {
+            let mut s = crate::support::control::session();
+            let spec = registry().iter().find(|s| s.id == *id).unwrap();
+            assert!(!spec.enabled(&s), "{id}");
+            let before = s.revision();
+            let mut access = caller(&Allow);
+            access.external = external;
+            let req = request(&s, id, params.clone(), "unavailable");
+            let refusal = s.control_typed(req, access, &mut r).unwrap_err();
+            assert!(
+                matches!(&refusal, engine::control::Error::Session(e) if expected(e)),
+                "{id} external={external}: {refusal:?}"
+            );
+            assert_eq!(s.revision(), before);
+        }
+    }
+    // An open gesture refuses an idle command the same way, with no hand check.
+    let mut s = seed();
+    s.begin_gesture().unwrap();
+    for id in ["inspect", "clipboard.read", "preview.snapshot"] {
+        let spec = registry().iter().find(|s| s.id == id).unwrap();
+        assert!(!spec.enabled(&s), "{id}");
+        let req = request(&s, id, spec.example.params.clone(), "open-gesture");
+        let refusal = s.control_typed(req, caller(&Allow), &mut r).unwrap_err();
+        assert!(
+            matches!(
+                refusal,
+                engine::control::Error::Session(SessionError::TransactionActive)
+            ),
+            "{id}"
+        );
+    }
+}
+
+#[test]
+fn a_collection_over_its_declared_limit_is_refused_before_dispatch() {
+    // `preview` is a job command, so only the admission step can bound `frames`.
+    let mut s = seed();
+    let mut r = runner();
+    let frames = vec![0_i64; control::MAX_COLLECTION + 1];
+    let refusal = s
+        .control_command(Command::Preview { frames }, caller(&Allow), &mut r)
+        .unwrap_err();
+    assert!(
+        matches!(
+            refusal,
+            engine::control::Error::Control(engine::control::ControlError::Limit)
+        ),
+        "{refusal:?}"
+    );
+    // An edit meets the same declared limit in `check_budget`, whatever its transport.
+    let items: Vec<project::ItemId> = (0..=control::MAX_COLLECTION as u64)
+        .map(project::ItemId)
+        .collect();
+    assert!(matches!(
+        s.apply(Command::SetItemsHidden {
+            items,
+            hidden: true
+        }),
+        Err(engine::EditError::Control(
+            engine::control::ControlError::Limit
+        ))
+    ));
+}
+
+/// The `catalog` command's answer: every entry with its own params and output schemas.
 fn catalog_response() -> serde_json::Value {
     serde_json::to_value(ControlResult::Catalog {
-        output_schema: control::output_schema().clone(),
         entries: registry().to_vec(),
     })
     .unwrap()

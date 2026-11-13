@@ -56,13 +56,19 @@ identity.
 examples from the same declaration as `Command`. Leaf shapes come from the owning types; fixed
 objects are closed recursively, including empty params and nested batches. Each standalone
 parameter schema keeps only its transitively referenced definitions so the catalog stays within
-the response byte budget. Every command answers with one `ControlResult`, so
-`control::output_schema()` is its single output schema: the `catalog` command, `commands --json`
-and MCP `command_list` carry it once beside the entries, and the registry digest covers it.
+the response byte budget. Each declaration names the `ControlResult` variants its dispatch may
+return (`returns = [..]`, `Edit` when omitted); the entry's `output_schema` is the union
+`control::output_schema()` narrowed to those variants and the definitions they reach, the way
+`params_schema` is narrowed, and the registry digest covers it. No response repeats the union.
 Domain constructors still validate invariants.
 
-Each declaration also carries per-command facts outside the wire catalog and its digest: an
-`Availability` rule (default `Always`), a `GrantClass` (`Agent`, `Output` for the
+Each declaration also carries per-command facts: an `Availability` rule (default `Always`),
+`idle = true` for the commands refused while a gesture or transaction is open, the
+`collections = [..]` and `batch = ..` parameters bounded at `MAX_COLLECTION` and
+`MAX_BATCH_COMMANDS` elements (exposed per entry as `collections` and enforced by one
+admission step on the control transports and in `check_budget`; a schema `maxItems` bound
+replaces the declaration), `transitions = true` for the commands that keep video transitions
+consistent themselves, and, outside the wire catalog and its digest, a `GrantClass` (`Agent`, `Output` for the
 file-publishing commands, `Human`; required for session and job control), the `curated` MCP
 flag and the `Lifecycle` route of the library and persistence commands (including
 project save-as, bundle export and bundle import). `lifecycle(id)` is

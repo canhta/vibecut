@@ -14,10 +14,10 @@ pub use crate::session::wire::{
     MAX_SAFE_INTEGER, MAX_TEXT_BYTES, MusicEntry, MusicPage, MusicSource, OutputSpan,
     PREVIEW_QUALITY, PauseCandidates, Payload, PreviewFrame, PreviewResult, ProviderView,
     RECEIPT_RESERVATION, ReframeReason, ReframeReport, ReframeShotReport, ReframeTarget, Request,
-    Response, ResponseValue, Revision, SavedMusicEntry, SavedSoundEntry, Snapshot, SoundEntry,
-    SoundPage, SoundSource, StickerCategory, StickerEntry, StickerPage, TranslationsResult,
-    bounded_json, contract_schema, output_schema, parse_frame, reference_markdown, registry_hash,
-    skill_reference_markdown,
+    Response, ResponseValue, ResultKind, Revision, SavedMusicEntry, SavedSoundEntry, Snapshot,
+    SoundEntry, SoundPage, SoundSource, StickerCategory, StickerEntry, StickerPage,
+    TranslationsResult, bounded_json, contract_schema, output_schema, parse_frame,
+    reference_markdown, registry_hash, skill_reference_markdown,
 };
 
 use crate::{

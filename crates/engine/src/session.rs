@@ -14,7 +14,7 @@ pub use wire::ChapterSidecars;
 pub(crate) use wire::budget;
 mod command_facts;
 mod commands;
-pub use command_facts::{Availability, GrantClass, Lifecycle};
+pub use command_facts::{Availability, CollectionLimit, GrantClass, Lifecycle};
 use commands::EditCommand;
 pub use commands::{
     AnimationPreset, AnimationSlot, CaptionPreset, CaptionStyleApply, ClipAnimations, Command,

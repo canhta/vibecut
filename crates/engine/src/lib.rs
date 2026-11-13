@@ -6,8 +6,8 @@ pub(crate) use session::transitions;
 pub use session::wire::{Failure, JobFailurePolicy};
 pub use session::{
     AnimationPreset, AnimationSlot, Availability, CaptionPreset, CaptionStyleApply,
-    ChapterSidecars, ClipAnimations, Command, CommandKind, CommandSpec, CreatedId, CueId,
-    CutTarget, DEFAULT_BOOKMARK_COLOR, Effect, EmphasisMode, Example, Fixture, GrantClass,
+    ChapterSidecars, ClipAnimations, CollectionLimit, Command, CommandKind, CommandSpec, CreatedId,
+    CueId, CutTarget, DEFAULT_BOOKMARK_COLOR, Effect, EmphasisMode, Example, Fixture, GrantClass,
     ItemClipboard, ItemParamPatch, ItemPasteSource, ItemPlacement, KeyframeClipboard,
     KeyframePasteSource, KeyframeRef, Lifecycle, Move, NewItem, Outcome, Placement, TrackPlacement,
     TranscriptCue, TranscriptView, TranscriptWord, TrimEdge, WordId, declaration_order_error,

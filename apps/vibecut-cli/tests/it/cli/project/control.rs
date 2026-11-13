@@ -97,12 +97,30 @@ fn control_session_tracks_revisions_receipts_and_saves_on_exit() {
     assert_eq!(inspect["value"]["value"]["kind"], "inspection");
     let rev = inspect["rev_after"].as_str().unwrap().to_owned();
 
+    // Nothing to undo: the admission step refuses before dispatch, as it does for the UI.
+    let undo = control.send(control_request(
+        "ru",
+        "undo",
+        json!({}),
+        Some(&rev),
+        Some("undo-empty"),
+    ));
+    assert_eq!(response_error(&undo), "refused");
+    assert_eq!(undo["rev_after"], rev);
+
     let catalog = control.send(control_request("rc", "catalog", json!({}), None, None));
     assert_eq!(catalog["exit_code"], 0);
     assert_eq!(catalog["value"]["value"]["kind"], "catalog");
+    assert!(catalog["value"]["value"].get("output_schema").is_none());
+    let entry = catalog["value"]["value"]["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["id"] == "timeline.add_track")
+        .unwrap();
     assert_eq!(
-        catalog["value"]["value"]["output_schema"],
-        *engine::control::output_schema()
+        entry["output_schema"]["properties"]["kind"]["const"],
+        "edit"
     );
     assert!(
         catalog["value"]["value"]["entries"]

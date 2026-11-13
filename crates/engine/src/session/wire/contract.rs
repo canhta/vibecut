@@ -56,8 +56,8 @@ pub fn contract_schema() -> Value {
     json!({"request":request,"response":response,"event":event})
 }
 
-/// The schema of the `ControlResult` every command answers with. A catalog
-/// carries it once beside its entries instead of once per command.
+/// The schema of the whole `ControlResult` union. No response carries it: each
+/// registry entry narrows it to the variants its command declares.
 pub fn output_schema() -> &'static Value {
     static SCHEMA: OnceLock<Value> = OnceLock::new();
     SCHEMA.get_or_init(|| {
@@ -78,7 +78,7 @@ pub fn registry_hash() -> &'static str {
         hasher.update(b"vibecut-control-v1\0");
         // The generated registry contains no dynamic availability/state/timestamps.
         if let Ok(bytes) =
-            serde_json::to_vec(&json!({"registry":registry(), "output_schema":output_schema(), "api_version":API_VERSION,
+            serde_json::to_vec(&json!({"registry":registry(), "api_version":API_VERSION,
             "limits":LIMITS,"envelopes":contract_schema()}))
         {
             hasher.update(&bytes);
