@@ -3404,3 +3404,319 @@ fn verified_english_cue(
         style: None,
     }
 }
+
+/// The keyword chips of the selected cue, in word order.
+fn emphasis_chips(h: &Harness<'_, Editor>) -> Vec<String> {
+    h.query_all(By::new().predicate(|n| {
+        n.author_id()
+            .is_some_and(|id| id.starts_with("subtitles.emphasis.word."))
+    }))
+    .filter_map(|n| n.accesskit_node().author_id().map(str::to_owned))
+    .collect()
+}
+
+/// The stored keyword word ids of one cue, or `None` when the cue has no entry.
+fn stored_emphasis(e: &Editor, cue: &str) -> Option<Vec<u32>> {
+    let key: captions::NfcText = cue.into();
+    e.session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find_map(|item| match &item.content {
+            ItemParams::Caption(params) => params.emphasis.get(&key).cloned(),
+            _ => None,
+        })
+}
+
+/// Presses a control of the keyword section, scrolling it into view first.
+fn press(h: &mut Harness<'_, Editor>, id: &str) {
+    click_modifiers(h, id, egui::Modifiers::default());
+}
+
+#[test]
+fn emphasis_choose_pick_clear_and_preview_are_one_undo_step_each() {
+    let mut h = harness(editor_with_cues("vi", filler_cues()), 1.0);
+    h.run_steps(3);
+    click(&mut h, "subtitles.emphasis");
+    with_panel(h.state_mut(), |panel, session, _| {
+        panel.select_cue(session, 0, false, false).unwrap();
+    });
+    h.run_steps(3);
+    assert_eq!(emphasis_chips(&h).len(), 2, "only timed words are offered");
+
+    let cue0 = scene_cues(h.state())[0].clone();
+    let lexicon = captions::EmphasisLexicon::builtin(&lang("vi")).unwrap();
+    let expected = captions::select_lexicon(&cue0, Some(&lexicon)).unwrap();
+    let history = h.state().session.history_len().0;
+    press(&mut h, "subtitles.emphasis.choose");
+    if !expected.is_empty() {
+        assert_eq!(h.state().session.history_len().0, history + 1);
+    }
+    assert_eq!(
+        stored_emphasis(h.state(), "cue-0").unwrap_or_default(),
+        expected,
+        "the lexicon choice is the engine's own selection"
+    );
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/p1-ai-04-keyword-emphasis.png");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    h.render().unwrap().save(&path).unwrap();
+
+    press(&mut h, "subtitles.emphasis.clear");
+    assert_eq!(stored_emphasis(h.state(), "cue-0"), None);
+
+    let before_pick = h.state().session.project().clone();
+    let history = h.state().session.history_len().0;
+    press(&mut h, "subtitles.emphasis.word.1");
+    assert_eq!(stored_emphasis(h.state(), "cue-0"), Some(vec![1]));
+    assert_eq!(
+        h.state().session.history_len().0,
+        history + 1,
+        "one pick, one step"
+    );
+
+    let history = h.state().session.history_len().0;
+    press(&mut h, "subtitles.emphasis.preview");
+    assert_eq!(
+        h.state().session.history_len().0,
+        history,
+        "preview moves the playhead and changes nothing"
+    );
+
+    h.state_mut().session.undo().unwrap();
+    h.run_steps(3);
+    assert_eq!(h.state().session.project(), &before_pick);
+}
+
+#[test]
+fn emphasis_untimed_cue_warns_and_changes_nothing() {
+    let mut h = harness(editor("vi"), 1.0);
+    h.run_steps(3);
+    click(&mut h, "subtitles.emphasis");
+    with_panel(h.state_mut(), |panel, session, _| {
+        panel.select_cue(session, 0, false, false).unwrap();
+    });
+    h.run_steps(3);
+    h.get_by_label("Word timings needed");
+    assert!(
+        emphasis_chips(&h).is_empty(),
+        "no word is offered without timing"
+    );
+    let before = h.state().session.project().clone();
+    let history = h.state().session.history_len().0;
+    press(&mut h, "subtitles.emphasis.choose");
+    assert_eq!(h.state().session.project(), &before);
+    assert_eq!(h.state().session.history_len().0, history);
+}
+
+#[test]
+fn emphasis_selection_goes_stale_when_the_source_text_changes() {
+    let mut h = harness(editor_with_cues("vi", filler_cues()), 1.0);
+    h.run_steps(3);
+    click(&mut h, "subtitles.emphasis");
+    with_panel(h.state_mut(), |panel, session, _| {
+        panel.select_cue(session, 0, false, false).unwrap();
+    });
+    h.run_steps(3);
+    press(&mut h, "subtitles.emphasis.word.1");
+    assert_eq!(stored_emphasis(h.state(), "cue-0"), Some(vec![1]));
+
+    with_panel(h.state_mut(), |panel, session, _| {
+        panel
+            .edit_text(session, &"cue-0".into(), lang("vi"), "Xin chào")
+            .unwrap()
+    });
+    h.run_steps(3);
+    h.get_by_label("Keywords need choosing again.");
+    assert!(
+        emphasis_chips(&h).is_empty(),
+        "the old word ids are not offered"
+    );
+
+    press(&mut h, "subtitles.emphasis.clear");
+    assert_eq!(stored_emphasis(h.state(), "cue-0"), None);
+}
+
+/// A keyword suggester that never reaches the network: it picks every word spelled "chào",
+/// or fails, and counts the calls it receives.
+struct ScriptedEmphasis {
+    config: ai::ProviderConfig,
+    fail: bool,
+    calls: Arc<AtomicUsize>,
+}
+impl ai::text::emphasis::EmphasisSelector for ScriptedEmphasis {
+    fn config(&self) -> &ai::ProviderConfig {
+        &self.config
+    }
+    fn capabilities(&self, _: &ai::Scope) -> ai::Capabilities {
+        ai::Capabilities {
+            model: self.config.model().clone(),
+            mode: ai::text::emphasis::MODE.into(),
+            operation: ai::Operation::SelectEmphasis,
+            languages: ["vi", "en", "zh", "zh-Hans", "zh-Hant"].map(lang).to_vec(),
+            target_languages: Vec::new(),
+            timing: BTreeSet::new(),
+            diarization: ai::Support::Unsupported,
+            live_audio_input: ai::Support::Unsupported,
+            file_result_stream: ai::Support::Unsupported,
+            max_upload_bytes: None,
+            max_duration_micros: None,
+            evidence: ai::Evidence::FixtureVerified,
+            revision: "fixture".into(),
+        }
+    }
+    fn estimate(&self, _: &ai::Scope) -> ai::CostEstimate {
+        ai::CostEstimate::Free
+    }
+    fn select(
+        &self,
+        input: &ai::text::emphasis::EmphasisInput,
+        _: &ai::Request<'_>,
+        _: &dyn ai::ExecutionHooks,
+    ) -> Result<ai::text::emphasis::EmphasisProposal, ai::Error> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        if self.fail {
+            return Err(ai::Error::Server);
+        }
+        Ok(ai::text::emphasis::EmphasisProposal {
+            selections: input
+                .segments
+                .iter()
+                .map(|segment| ai::text::emphasis::EmphasisSelection {
+                    segment: segment.id.clone(),
+                    positions: segment
+                        .words
+                        .iter()
+                        .filter(|word| word.text.as_str() == "chào")
+                        .map(|word| word.position)
+                        .collect(),
+                })
+                .collect(),
+        })
+    }
+}
+
+/// The lent text access of the keyword runs: the scripted suggester behind that run's sheet.
+fn emphasis_text_opener(fail: bool, calls: Arc<AtomicUsize>) -> TextOpener {
+    Arc::new(move |provider, model, consent| {
+        let config = ai::ProviderConfig::new(
+            provider.into(),
+            model.into(),
+            "fixture-v1".into(),
+            ai::Location::Remote {
+                backend: "fixture".into(),
+                base_url: "https://provider.example".into(),
+                auth_ref: "fixture".into(),
+            },
+        )?;
+        Ok(engine::providers::TextAccess::new(
+            Arc::new(NoChapters(config.clone())),
+            Arc::new(ScriptedFillers {
+                config: config.clone(),
+                fail: false,
+                calls: Arc::new(AtomicUsize::new(0)),
+            }),
+            Box::new(SharedConsent(consent)),
+        )
+        .with_emphasis(Arc::new(ScriptedEmphasis {
+            config,
+            fail,
+            calls: calls.clone(),
+        })))
+    })
+}
+
+/// Opens the keyword section on the timed fixture with cue-0 and cue-1 selected and the
+/// scripted suggester injected.
+fn ai_emphasis_harness(fail: bool, calls: Arc<AtomicUsize>) -> Harness<'static, Editor> {
+    let mut e = editor_with_cues("vi", filler_cues());
+    let panel = Subtitles::with_access(e.playback.budget().clone(), generate_opener(false, None))
+        .unwrap()
+        .with_text_access(emphasis_text_opener(fail, calls));
+    e.set_subtitles(Some(panel));
+    let mut h = harness(e, 1.0);
+    h.run_steps(3);
+    click(&mut h, "subtitles.emphasis");
+    with_panel(h.state_mut(), |panel, session, _| {
+        panel.select_cue(session, 0, false, false).unwrap();
+        panel.select_cue(session, 1, true, false).unwrap();
+    });
+    h.run_steps(3);
+    h
+}
+
+#[test]
+fn emphasis_ai_waits_for_approval_then_applies_suggestions_as_one_undo_step() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut h = ai_emphasis_harness(false, calls.clone());
+    let before = h.state().session.project().clone();
+    press(&mut h, "subtitles.emphasis.ai");
+    wait(&mut h, approval_sheet_open);
+    h.get_by_label("Approve the upload to continue.");
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        0,
+        "nothing is sent before approval"
+    );
+    assert_eq!(h.state().session.project(), &before);
+
+    click(&mut h, "subtitles.consent.approve");
+    wait(&mut h, subtitles_idle);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        stored_emphasis(h.state(), "cue-0"),
+        None,
+        "suggestions wait for apply"
+    );
+
+    let history = h.state().session.history_len().0;
+    press(&mut h, "subtitles.emphasis.apply");
+    assert_eq!(
+        h.state().session.history_len().0,
+        history + 1,
+        "one batch, one undo step"
+    );
+    assert_eq!(stored_emphasis(h.state(), "cue-0"), Some(vec![1]));
+    assert_eq!(stored_emphasis(h.state(), "cue-1"), Some(vec![0]));
+
+    h.state_mut().session.undo().unwrap();
+    h.run_steps(3);
+    assert_eq!(h.state().session.project(), &before);
+}
+
+#[test]
+fn emphasis_ai_reports_a_declined_upload_and_sends_nothing() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut h = ai_emphasis_harness(false, calls.clone());
+    let before = h.state().session.project().clone();
+    press(&mut h, "subtitles.emphasis.ai");
+    wait(&mut h, approval_sheet_open);
+    click(&mut h, "subtitles.consent.deny");
+    wait(&mut h, subtitles_idle);
+    h.get_by_label("Upload not approved. Nothing was sent.");
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(h.state().session.project(), &before);
+}
+
+#[test]
+fn emphasis_ai_reports_a_provider_failure_after_approval() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut h = ai_emphasis_harness(true, calls.clone());
+    let before = h.state().session.project().clone();
+    press(&mut h, "subtitles.emphasis.ai");
+    wait(&mut h, approval_sheet_open);
+    click(&mut h, "subtitles.consent.approve");
+    wait(&mut h, subtitles_idle);
+    h.get_by_label("Couldn't suggest keywords. Try again.");
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert!(
+        h.query_all(By::new().predicate(|n| n.author_id() == Some("subtitles.emphasis.apply")))
+            .next()
+            .is_none(),
+        "a failed run offers nothing to apply"
+    );
+    assert_eq!(h.state().session.project(), &before);
+}

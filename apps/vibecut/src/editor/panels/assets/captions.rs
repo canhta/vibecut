@@ -1,5 +1,6 @@
 //! Captions panel: presentation and bounded staging through existing engine owners.
 mod editing;
+mod emphasis;
 mod fillers;
 mod import;
 mod tab;
@@ -163,6 +164,8 @@ pub struct Subtitles {
     retry_source: Option<ItemId>,
     fillers: fillers::Cuts,
     transcript: transcript::Pane,
+    emphasis: emphasis::Panel,
+    suggest: Option<emphasis::Suggest>,
 }
 impl Drop for Subtitles {
     fn drop(&mut self) {
@@ -214,6 +217,8 @@ impl Subtitles {
             retry_source: None,
             fillers: fillers::Cuts::default(),
             transcript: Default::default(),
+            emphasis: Default::default(),
+            suggest: None,
         })
     }
     /// Tests inject the text-provider opener for the filler cut list.
@@ -222,14 +227,19 @@ impl Subtitles {
         self
     }
     pub fn busy(&self) -> bool {
-        self.active.is_some() || self.export.is_some() || self.classify.is_some()
+        self.active.is_some()
+            || self.export.is_some()
+            || self.classify.is_some()
+            || self.suggest.is_some()
     }
-    /// The run whose consent sheet is open: the active job, or the filler classification.
+    /// The run whose consent sheet is open: the active job, the filler classification or the
+    /// keyword suggestion.
     fn consent_events(&self) -> Option<&Arc<TaskEvents>> {
         self.active
             .as_ref()
             .map(|active| &active.events)
             .or_else(|| self.classify.as_ref().map(|run| &run.events))
+            .or_else(|| self.suggest.as_ref().map(|run| &run.events))
     }
     pub fn inspect(&self, session: &Session) -> Inspection {
         let state = self
@@ -312,6 +322,9 @@ impl Subtitles {
             token.cancel();
         }
         if let Some(run) = &self.classify {
+            run.cancel.cancel();
+        }
+        if let Some(run) = &self.suggest {
             run.cancel.cancel();
         }
     }
@@ -531,6 +544,7 @@ impl Subtitles {
     pub fn tick(&mut self, session: &mut Session) -> Result<bool> {
         self.runner.tick()?;
         self.poll_classify();
+        self.poll_suggest();
         let mut changed = false;
         if self.active.as_ref().is_some_and(|a| {
             self.runner

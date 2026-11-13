@@ -682,6 +682,7 @@ impl Subtitles {
                         );
                     },
                 );
+                self.emphasis_ui(ui, session, &mut controls, options);
                 self.fillers_ui(ui, session, &mut controls, locale, options);
             });
         self.bank_ui(ui, session, at, &mut controls);
