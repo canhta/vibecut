@@ -49,7 +49,7 @@ The multi-selection inspector shows audio gain and mute plus text content, font,
 colour and background for compatible items, a dash for mixed values and the
 compatible/selected count. A single element uses per-type tabs. The Text tab is one tab of
 sections in order: Font (content, font), Format (one row: size with its drag grip, bold,
-italic, underline, alignment; then line decoration, letter and line spacing), Style (fill
+italic, underline, alignment, then the Case menu; then line decoration, letter and line spacing), Style (fill
 swatch, background box, outline and shadow each as a toggle with a swatch, glow switch,
 saved styles, background geometry), Opacity, the shared Transform section (Scale, Position
 X/Y, Rotate, Arrange, flips; the same component as video items), Blending (blend mode) and
