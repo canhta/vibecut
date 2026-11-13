@@ -1695,8 +1695,8 @@ catalog! {
     FillersWorking { key: "fillers_working", en: "Finding fillers…", vi: "Đang tìm từ đệm…" },
     // Keyword emphasis section in the Captions tab.
     EmphasisAi { key: "emphasis_ai", en: "Suggest with AI", vi: "Gợi ý bằng AI" },
-    EmphasisApply { key: "emphasis_apply", en: "Apply suggestions", vi: "Áp dụng gợi ý" },
     EmphasisAiFailed { key: "emphasis_ai_failed", en: "Couldn't suggest keywords. Try again.", vi: "Không gợi ý được từ khóa. Hãy thử lại." },
+    EmphasisApply { key: "emphasis_apply", en: "Apply suggestions", vi: "Áp dụng gợi ý" },
     EmphasisAwaitingApproval { key: "emphasis_awaiting_approval", en: "Approve the upload to continue.", vi: "Duyệt việc tải lên để tiếp tục." },
     EmphasisChoose { key: "emphasis_choose", en: "Choose keywords", vi: "Chọn từ khóa" },
     EmphasisClear { key: "emphasis_clear", en: "Clear keywords", vi: "Xóa từ khóa" },

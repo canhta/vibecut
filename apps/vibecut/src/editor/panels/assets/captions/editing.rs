@@ -518,7 +518,9 @@ impl Subtitles {
         if self.busy() || session.transaction_active() {
             return Err(Error::Invalid("caption edit busy"));
         }
-        let (word_highlight, preset, overrides) = {
+        // Stored emphasis is kept: a selection whose words no longer validate shows as stale
+        // and is never drawn, so an edit loses no other cue's keywords.
+        let (word_highlight, preset, overrides, emphasis) = {
             let params = &self
                 .caption(session)
                 .ok_or(Error::Invalid("caption item"))?
@@ -527,12 +529,13 @@ impl Subtitles {
                 params.word_highlight,
                 params.preset,
                 params.overrides.clone(),
+                params.emphasis.clone(),
             )
         };
         session.apply(Command::SetItemParam {
             item: self.item.ok_or(Error::Invalid("caption item"))?,
             content: ItemParams::Caption(project::CaptionParams {
-                emphasis: Default::default(),
+                emphasis,
                 word_highlight,
                 preset,
                 overrides,

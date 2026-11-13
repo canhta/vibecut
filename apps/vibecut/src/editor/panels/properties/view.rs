@@ -1622,8 +1622,6 @@ mod effects;
 
 mod text_style;
 
-mod keywords;
-
 /// The path as the creator typed it: a saved path is canonical, and on Windows that adds the
 /// verbatim `\\?\` prefix, which the Details row leaves out.
 fn user_path(path: &std::path::Path) -> String {
