@@ -2,8 +2,8 @@
 use super::effects::preview_instance;
 use super::stickers;
 use super::{
-    AssetRow, AssetState, AssetsTab, BTreeMap, EffectRow, Icon, MediaKind, Model, Row, State, Text,
-    asset_row, egui, file_name,
+    AssetRow, AssetState, AssetsTab, BTreeMap, EffectRow, Icon, MediaKind, MediaSection, Model,
+    Row, SceneRow, State, Text, asset_row, egui, file_name,
 };
 use crate::editor::Context;
 
@@ -143,6 +143,22 @@ pub(in crate::editor) fn prepare(
             cx.preferences.locale,
         )
     });
+    let scenes = if preferences.assets_tab == AssetsTab::Media
+        && state.media_section == MediaSection::Timeline
+    {
+        let data = cx.session.project().data();
+        data.scenes
+            .iter()
+            .map(|scene| SceneRow {
+                id: scene.id,
+                name: scene.name.as_str().to_owned(),
+                main: scene.is_main,
+                active: scene.id == data.current_scene_id,
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
     state.model = Model {
         preferences,
         rows,
@@ -152,6 +168,7 @@ pub(in crate::editor) fn prepare(
         transition_drag_enabled,
         insertion_ready,
         stickers,
+        scenes,
         importing: state.importing(),
         selection: state.media_selection.clone(),
         clip_export: state.clip_export_status(),

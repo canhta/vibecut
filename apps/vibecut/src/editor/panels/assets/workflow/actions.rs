@@ -102,6 +102,7 @@ impl State {
                 }
                 Action::InsertSticker(id) => self.insert_sticker(port, &id),
                 Action::InsertShape(id) => port.request(Request::InsertShape(id)),
+                Action::SwitchScene(scene) => port.request(Request::SwitchScene(scene)),
                 Action::ClearStickerRecents => self.clear_sticker_recents(port),
                 Action::ToggleFavorite {
                     family,

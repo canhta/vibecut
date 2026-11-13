@@ -31,6 +31,24 @@ pub(in crate::editor) enum AudioSection {
     Sounds,
 }
 
+/// The Media tab's two pages, chosen in its sub-navigation: the asset browser or the
+/// project's scene list.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(in crate::editor) enum MediaSection {
+    #[default]
+    Media,
+    Timeline,
+}
+
+/// One scene row on the Media sub-navigation's Timeline page.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::editor) struct SceneRow {
+    pub(in crate::editor) id: project::SceneId,
+    pub(in crate::editor) name: String,
+    pub(in crate::editor) main: bool,
+    pub(in crate::editor) active: bool,
+}
+
 /// The Captions tab's three pages, chosen in its sub-navigation.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(in crate::editor) enum CaptionsSection {
@@ -61,6 +79,8 @@ struct Model {
     insertion_ready: bool,
     /// Stickers tab rows; present only while that tab is shown.
     stickers: Option<stickers::StickerRows>,
+    /// Media Timeline page rows, in project order; empty on the other pages.
+    scenes: Vec<SceneRow>,
     importing: bool,
     selection: BTreeSet<AssetId>,
     clip_export: Option<media_panel::clips::ClipStatus>,
@@ -162,6 +182,8 @@ pub(in crate::editor) enum Action {
     /// Apply or delete one app-owned adjustment preset.
     ApplyAdjustment(usize),
     DeleteAdjustment(usize),
+    /// Switch the open scene from the Media Timeline page.
+    SwitchScene(project::SceneId),
     /// Insert one bundled flag at the playhead and record it as recent.
     InsertSticker(String),
     /// Insert one shape through its `graphic.insert.*` command and record it as recent.

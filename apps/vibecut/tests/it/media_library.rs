@@ -583,6 +583,106 @@ fn feature_tabs_never_touch_and_the_media_sub_navigation_lists_two_rows() {
     }
 }
 
+/// Adds one scene after the main scene and returns the project's scenes as (id, is_main).
+fn timeline_fixture(harness: &mut Harness<Editor>) -> Vec<(project::SceneId, bool)> {
+    harness
+        .state_mut()
+        .session
+        .apply(Command::CreateScene {
+            name: "Opening".into(),
+        })
+        .unwrap();
+    harness.run_steps(2);
+    harness
+        .state()
+        .session
+        .project()
+        .data()
+        .scenes
+        .iter()
+        .map(|scene| (scene.id, scene.is_main))
+        .collect()
+}
+
+#[test]
+fn media_timeline_entry_lists_the_scenes_and_a_click_switches_scene() {
+    let mut harness = build(editor());
+    harness.run_steps(3);
+    let scenes = timeline_fixture(&mut harness);
+    assert_eq!(scenes.len(), 2);
+    // Import heads the group; Media and Timeline are its two pages, in that order.
+    let import = widget_rect(&harness, "assets.subnav");
+    let media = widget_rect(&harness, "assets.subnav.media");
+    let timeline = widget_rect(&harness, "assets.subnav.timeline");
+    assert!(import.bottom() <= media.top());
+    assert!(media.bottom() <= timeline.top());
+
+    click(&mut harness, "assets.subnav.timeline");
+    let row_ids: Vec<String> = scenes
+        .iter()
+        .map(|(id, _)| format!("assets.timeline.scene.{}", id.0))
+        .collect();
+    let rows: Vec<egui::Rect> = row_ids.iter().map(|id| widget_rect(&harness, id)).collect();
+    for pair in rows.windows(2) {
+        assert!(
+            pair[0].bottom() <= pair[1].top(),
+            "rows follow project order: {pair:?}"
+        );
+    }
+    let listed = harness
+        .state()
+        .inspect()
+        .unwrap()
+        .widgets
+        .iter()
+        .filter(|widget| widget.id.starts_with("assets.timeline.scene."))
+        .count();
+    assert_eq!(
+        listed,
+        scenes.len(),
+        "the list matches the project's scenes"
+    );
+    let marked = harness
+        .query_all(
+            By::new().predicate(|node| node.label().is_some_and(|label| label.ends_with("(Main)"))),
+        )
+        .count();
+    assert_eq!(marked, 1, "only the main scene carries the marker");
+
+    let (opening, _) = *scenes.iter().find(|(_, main)| !main).unwrap();
+    click(
+        &mut harness,
+        &format!("assets.timeline.scene.{}", opening.0),
+    );
+    assert_eq!(
+        harness.state().session.project().data().current_scene_id,
+        opening,
+        "a click switches scene"
+    );
+
+    // Media is the other page: the scene list leaves with it.
+    click(&mut harness, "assets.subnav.media");
+    assert!(!has_widget(&harness, &row_ids[0]));
+}
+
+/// Offscreen screenshot evidence; wgpu rendering stays out of CI.
+#[test]
+#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-330-media-timeline.png"]
+fn media_timeline_page_renders_the_scene_list() {
+    let mut harness = build(editor());
+    harness.run_steps(3);
+    timeline_fixture(&mut harness);
+    click(&mut harness, "assets.subnav.timeline");
+    let image = harness.render().expect("offscreen render");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let target = root.join("target");
+    std::fs::create_dir_all(&target).unwrap();
+    image
+        .save(target.join("p1-330-media-timeline.png"))
+        .unwrap();
+    assert!(image.width() > 0 && image.height() > 0);
+}
+
 #[test]
 fn reveal_switches_tab_scrolls_and_expires_without_touching_project_json() {
     let assets: Vec<(u64, String)> = (1..=30)

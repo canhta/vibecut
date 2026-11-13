@@ -33,6 +33,10 @@ A card or its plus applies to two adjacent selected video clips, or to the cut u
 Media rows, import feedback and marquee selection: [assets workflow](workflow/README.md).
 Sounds rows: [sounds](sounds/README.md).
 
+## Media sub-navigation
+
+Import heads the Media group; Media and Timeline are its two pages, with one active row. Timeline lists the project's scenes in project order, the main scene marked and the open scene selected. A click switches scene through `Request::SwitchScene`, the scene row's switch without its select mode. The page shows while the sub-navigation is visible, as Music does. Create and rename stay in the scene sheet until the reference shows them here. Scene commands and the sheet: [timeline scene switcher](../../timeline/README.md#scene-switcher).
+
 ## Stickers
 
 The Stickers tab searches with the search field and the All, Flags and Shapes tabs, with a result count and See all. All lists the four shape cards (Rectangle, Ellipse, Polygon, Star) and then the bundled flags. Flags is the flag catalog in [libraries](../../../../../../crates/libraries/src/sticker_library/README.md); Shapes is the four graphic cards. Each shape card inserts through its `graphic.insert.*` command, and each flag through `libraries::stickers::insert_sticker`, the edit `stickers.insert` applies: one undo step at the playhead, five seconds long, the item selected afterwards. The preview shows the first 24 results; See all widens the page to the catalog's default limit of 100. Flag thumbnails come from `render::rasterize_sticker`; shape thumbnails come from the production compositor. Each thumbnail is one texture per id and pixel scale, held by the tab for the session.

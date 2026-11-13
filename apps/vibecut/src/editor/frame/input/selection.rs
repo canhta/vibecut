@@ -184,6 +184,15 @@ impl Editor {
             .keyframes
             .retain(|target| selected.contains(&target.item) && keyframe_exists(session, target));
     }
+    /// Open `scene`: the scene row's switch, shared by the scene sheet and the Media
+    /// Timeline page. Gestures end and the item selection clears first.
+    pub(in crate::editor) fn switch_scene(&mut self, scene: project::SceneId) -> Result<()> {
+        self.cancel_interaction();
+        self.session.apply(engine::Command::SwitchScene { scene })?;
+        self.session.set_selection(Default::default())?;
+        self.selection_scopes = SelectionScopes::default();
+        Ok(())
+    }
     pub(in crate::editor) fn clear_scene_selection(&mut self) {
         self.timeline.scenes.clear_selection();
         self.selection_scopes = SelectionScopes::default();
