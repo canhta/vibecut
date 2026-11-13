@@ -11,6 +11,9 @@ use time::Tick;
 pub(in crate::session) struct Logged {
     pub(in crate::session) command: Command,
     pub(in crate::session) wire: bool,
+    /// The fork's ID counter when the command started. A failed transaction keeps the IDs
+    /// its children took, so replay resumes from this counter to allocate the same IDs.
+    pub(in crate::session) next_id: Option<u64>,
 }
 
 /// A copy of a [`Session`] taken at one revision. Commands run on the fork never touch the

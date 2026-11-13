@@ -58,7 +58,13 @@ impl Session {
                 // The fork ran each entry on its own: trims never carried cue sources from
                 // one entry to the next, but a grouped entry shared them among its children.
                 live.state.trim_sources.clear();
-                for Logged { command, wire } in group {
+                for Logged {
+                    command,
+                    wire,
+                    next_id,
+                } in group
+                {
+                    live.state.next_id = next_id;
                     let applied = live.boundary(|s| s.commit(command, wire, s.ripple))?;
                     outcome.created.extend(applied.created);
                     outcome.placements.extend(applied.placements);
@@ -74,11 +80,21 @@ impl Session {
     }
 
     /// Log `command` when this session is a fork and the command changed the project.
-    pub(super) fn record(&mut self, command: Option<Command>, wire: bool, outcome: &Outcome) {
+    pub(super) fn record(
+        &mut self,
+        command: Option<Command>,
+        wire: bool,
+        next_id: Option<u64>,
+        outcome: &Outcome,
+    ) {
         if outcome.changed
             && let (Some(log), Some(command)) = (&mut self.recorded, command)
         {
-            log.push(vec![Logged { command, wire }]);
+            log.push(vec![Logged {
+                command,
+                wire,
+                next_id,
+            }]);
         }
     }
 }
@@ -104,6 +120,7 @@ mod tests {
         .unwrap()
     }
     fn forge(fork: &mut Fork, command: Command) {
+        let next_id = fork.session().state.next_id;
         fork.session_mut()
             .recorded
             .as_mut()
@@ -111,6 +128,7 @@ mod tests {
             .push(vec![Logged {
                 command,
                 wire: false,
+                next_id,
             }]);
     }
 

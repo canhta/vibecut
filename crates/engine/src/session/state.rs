@@ -476,8 +476,9 @@ impl Session {
     /// children a command applies to itself through [`Session::staged`].
     fn apply_recorded(&mut self, command: Command, wire: bool) -> Result<Outcome> {
         let logged = self.recorded.is_some().then(|| command.clone());
+        let next_id = self.state.next_id;
         let outcome = self.staged(command, wire)?;
-        self.record(logged, wire, &outcome);
+        self.record(logged, wire, next_id, &outcome);
         Ok(outcome)
     }
     /// One command at its own boundary, unrecorded.

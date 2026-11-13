@@ -111,7 +111,9 @@ and restored project makes a new session. An empty log is a no-op: no undo entry
 child, or a replay that does not end at the fork's project (`SessionError::ForkDiverged`),
 restores project, history and pending change; the revision still advances as for any rolled-back
 group, so job targets captured meanwhile go stale. Replay clears trim cue sources between
-entries because the fork ran each on its own, and keeps them inside a group. The live playhead
+entries because the fork ran each on its own, and keeps them inside a group. Each logged command
+carries the fork's ID counter at its start and replay resumes from it, so IDs a failed fork
+transaction retired stay retired on the live session too. The live playhead
 does not follow a fork's paste. The kernel does not cap the log: the agent's per-turn step limit
 bounds it. `apply_fork` does not run the control `Policy`:
 each command was authorized on the fork, at the same revision.
