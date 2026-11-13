@@ -245,6 +245,8 @@ pub(in crate::editor) struct State {
     pub(in crate::editor::timeline) keyframe_rects: Vec<(KeyframeSelection, Rect)>,
     pub(in crate::editor::timeline) outbox: Vec<Action>,
     pub(in crate::editor::timeline) widgets: Vec<Remembered>,
+    /// A clip whose Replace media request waits for the window's native picker.
+    replace_request: Option<ItemId>,
     /// Cache-only clip visuals and the generation jobs they request.
     media: Media,
 }
@@ -287,11 +289,24 @@ impl State {
             keyframe_rects: Vec::new(),
             outbox: Vec::new(),
             widgets: Vec::new(),
+            replace_request: None,
             media: Media::default(),
         }
     }
     pub(in crate::editor) fn zoom(&self) -> f32 {
         self.zoom
+    }
+    /// Remember a clip's Replace media request until the window opens the picker.
+    pub(in crate::editor) fn request_replace(&mut self, item: ItemId) {
+        self.replace_request = Some(item);
+    }
+    /// The clip waiting for the picker, if any.
+    pub(in crate::editor) fn replace_request(&self) -> Option<ItemId> {
+        self.replace_request
+    }
+    /// Hand the waiting request to the window, which owns the native dialog.
+    pub(in crate::editor) fn take_replace_request(&mut self) -> Option<ItemId> {
+        self.replace_request.take()
     }
     /// Switch the pointer tool; an open drag keeps its own state until it ends.
     pub(in crate::editor) fn set_tool(&mut self, tool: Tool) {

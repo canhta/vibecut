@@ -342,7 +342,12 @@ impl Editor {
                 }
                 Action::MasterEnd { commit } => self.end_preview_transform(commit),
                 Action::MasterSet { volume, muted } => {
-                    self.track_command(Command::SetMaster { volume, muted });
+                    self.with_timeline(|_, port| {
+                        crate::editor::timeline::command_on_selection(
+                            port,
+                            Command::SetMaster { volume, muted },
+                        );
+                    });
                 }
                 Action::TextBegin { item } => self.begin_text_edit(item),
                 Action::TextPreview { item, content } => self.preview_text(item, &content),

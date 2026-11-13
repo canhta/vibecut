@@ -36,8 +36,8 @@ impl Editor {
             key_color_pick: self.player.key_color_pick.clone(),
         }
     }
-    /// Run `paint` with the timeline state and its context, then route what it returns.
-    fn with_timeline(
+    /// Run `paint` with the timeline state and its context, then apply what it returns.
+    fn paint_timeline(
         &mut self,
         paint: impl FnOnce(&mut timeline::State, &Context<'_>) -> Vec<timeline::Action>,
     ) {
@@ -69,21 +69,17 @@ impl Editor {
         let actions = paint(&mut state, &cx);
         drop(cx);
         state.restore_media(media);
-        let widgets = state.take_widgets();
         self.timeline = state;
-        for widget in widgets {
-            self.remember_with_icon(widget.id.clone(), widget.icon, &widget.response);
-            if let (Some(tooltip), Some(state)) =
-                (widget.tooltip, self.frame.widgets.get_mut(&widget.id))
-            {
-                state.tooltip = Some(tooltip);
+        self.with_timeline(|state, port| {
+            for widget in state.take_widgets() {
+                port.widget(widget.id, widget.icon, widget.tooltip, &widget.response);
             }
-        }
-        self.route_timeline(actions);
+        });
+        self.apply_timeline(actions);
     }
     /// Paint the timeline panel and apply its requests.
     pub(super) fn timeline_panel(&mut self, ui: &mut egui::Ui) {
-        self.with_timeline(|state, cx| timeline::show(state, cx, ui));
+        self.paint_timeline(|state, cx| timeline::show(state, cx, ui));
         self.sync_hover();
         if let Err(error) = self.sync_loop() {
             self.desk().fail(error.to_string());
@@ -94,73 +90,51 @@ impl Editor {
     }
     /// Paint the scene sheet and apply its requests.
     pub(super) fn timeline_scenes(&mut self, ctx: &egui::Context) {
-        self.with_timeline(|state, cx| timeline::show_scenes(state, cx, ctx));
+        self.paint_timeline(|state, cx| timeline::show_scenes(state, cx, ctx));
     }
-    fn route_timeline(&mut self, actions: Vec<timeline::Action>) {
-        use timeline::Action;
-        for action in actions {
-            match action {
-                Action::Activate(id) => self.action(&id),
-                Action::Command(command) => self.track_command(*command),
-                Action::ReplaceMedia(item) => self.request_replace_media(item),
-                Action::Generate(request) => {
-                    let budget = self.playback.budget().clone();
-                    if let Err(error) = self.timeline.generate(&mut self.session, request, &budget)
-                    {
-                        self.desk().fail(error.to_string());
-                    }
-                }
-                Action::RenameScene { scene, name } => {
-                    let command = Command::RenameScene {
-                        scene,
-                        name: name.clone().into(),
-                    };
-                    if self.desk().apply_result(command).is_err() {
-                        self.timeline.keep_scene_rename(scene, name);
-                    }
-                }
-                Action::Seek(at) => self.seek_to(at),
-                Action::Select { item, modifiers } => self.select_item(item, modifiers),
-                Action::SelectTransition(transition) => self.select_transition(transition),
-                Action::Marquee(items) => {
-                    self.selection_scopes.transition = None;
-                    self.write_selection(items);
-                }
-                Action::SettleSelection => self.selection_changed(),
-                Action::SelectKeyframe {
-                    keyframe,
-                    modifiers,
-                } => self.select_keyframe(keyframe, modifiers),
-                Action::MarqueeKeyframes(keyframes) => {
-                    self.selection_scopes.keyframes = keyframes;
-                }
-                Action::SettleKeyframes => {}
-                Action::ClearKeyframes => self.selection_scopes.keyframes.clear(),
-                Action::SetLaneOpen { item, open } => self.set_lane_open(item, open),
-                Action::DeleteKeyframes(keyframes) => self.delete_keyframes(&keyframes),
-                Action::ClearSelection => {
-                    self.replace_selection(Default::default());
-                }
-                Action::BeginGesture { select } => self.begin_drag_gesture(select),
-                Action::Preview(command) => self.preview_gesture(*command),
-                Action::EndGesture => self.end_drag_gesture(),
-                Action::DiscardGesture => self.discard_gesture(),
-                Action::SetEasingTab(tab) => {
-                    let mut easing = self.preferences.easing.clone();
-                    easing.tab = tab;
-                    self.desk()
-                        .set_preference("easing", serde_json::json!(easing));
-                }
-                Action::SaveEasing(curve) => self.save_easing(curve),
-                Action::BeginPreview { select } => self.begin_timeline_preview(select),
-                Action::PreviewGesture(gesture) => self.preview_timeline(*gesture),
-                Action::EndPreview => self.end_timeline_preview(),
-                Action::CancelInteraction => self.cancel_interaction(),
-                Action::Fail(message) => {
-                    self.timeline.refuse(message.clone());
-                    self.desk().fail(message);
-                }
+    /// Apply the actions the timeline returned. The area applies what it can through its
+    /// port; the actions that write the frame's selection scopes come back here, one at a
+    /// time, with everything after them.
+    pub(in crate::editor) fn apply_timeline(&mut self, mut actions: Vec<timeline::Action>) {
+        while !actions.is_empty() {
+            let mut rest = self.with_timeline(|state, port| timeline::apply(state, port, actions));
+            if rest.is_empty() {
+                return;
             }
+            let head = rest.remove(0);
+            self.route_selection(head);
+            actions = rest;
+        }
+    }
+    /// The timeline actions that read or write the selection scopes, the inspector's open
+    /// scrub or the gesture openers, which the frame owns.
+    fn route_selection(&mut self, action: timeline::Action) {
+        use timeline::Action;
+        match action {
+            Action::Select { item, modifiers } => self.select_item(item, modifiers),
+            Action::SelectTransition(transition) => self.select_transition(transition),
+            Action::Marquee(items) => {
+                self.selection_scopes.transition = None;
+                self.write_selection(items);
+            }
+            Action::SettleSelection => self.selection_changed(),
+            Action::SelectKeyframe {
+                keyframe,
+                modifiers,
+            } => self.select_keyframe(keyframe, modifiers),
+            Action::MarqueeKeyframes(keyframes) => {
+                self.selection_scopes.keyframes = keyframes;
+            }
+            Action::ClearKeyframes => self.selection_scopes.keyframes.clear(),
+            Action::DeleteKeyframes(keyframes) => self.delete_keyframes(&keyframes),
+            Action::ClearSelection => {
+                self.replace_selection(Default::default());
+            }
+            Action::BeginGesture { select } => self.begin_drag_gesture(select),
+            Action::BeginPreview { select } => self.begin_timeline_preview(select),
+            Action::CancelInteraction => self.cancel_interaction(),
+            // The area applies every other action itself.
+            _ => {}
         }
     }
     /// A keyframe click scopes the selection without dropping the item context.
@@ -180,40 +154,6 @@ impl Editor {
         }
         self.write_selection(std::collections::BTreeSet::from([keyframe.item]));
         self.properties.clear_drafts();
-    }
-    /// Persist one item's expanded lane choice for the owning project only.
-    fn set_lane_open(&mut self, item: ItemId, open: bool) {
-        self.timeline.set_lane(item, open);
-        let project = self.session.project().data().id;
-        let mut lanes = self.preferences.timeline_lanes.clone();
-        let items: std::collections::BTreeSet<u64> = self
-            .timeline
-            .expanded_lanes()
-            .into_iter()
-            .map(|id| id.0)
-            .collect();
-        if items.is_empty() {
-            lanes.remove(&project);
-        } else {
-            lanes.insert(project, items);
-        }
-        self.desk()
-            .set_preference("timeline_lanes", serde_json::json!(lanes));
-    }
-    /// Append `curve` to the saved easing presets under the next free name.
-    fn save_easing(&mut self, curve: [f64; 4]) {
-        let mut easing = self.preferences.easing.clone();
-        if easing.saved.len() >= crate::preferences::MAX_SAVED_EASINGS
-            || easing.saved.iter().any(|saved| saved.curve == curve)
-        {
-            return;
-        }
-        let name = easing.next_name();
-        easing
-            .saved
-            .push(crate::preferences::SavedEasing { name, curve });
-        self.desk()
-            .set_preference("easing", serde_json::json!(easing));
     }
     /// Delete every selected keyframe as one undo step.
     pub(in crate::editor) fn delete_keyframes(
@@ -481,40 +421,6 @@ impl Editor {
             self.timeline.abandon_gesture();
         }
     }
-    fn preview_gesture(&mut self, command: Command) {
-        // A refused or cancelled gesture must not turn its previews into edits.
-        if !self.session.gesture_active() {
-            return;
-        }
-        // Absolute pointer targets are rebuilt from the shared preview baseline,
-        // so reversing a drag also reverses every ripple shift.
-        let command = match command {
-            command @ (Command::MoveItems { .. }
-            | Command::TrimStart { .. }
-            | Command::TrimEnd { .. }) => Command::TimelinePreview {
-                commands: vec![command],
-            },
-            command => command,
-        };
-        let previous = self
-            .session
-            .preview_project()
-            .unwrap_or(self.session.project())
-            .clone();
-        let result = self.desk().run_command(command);
-        match result {
-            Ok(_) => {
-                let current = self
-                    .session
-                    .preview_project()
-                    .unwrap_or(self.session.project());
-                if previous.as_ref() != current.as_ref() {
-                    self.desk().sync();
-                }
-            }
-            Err(error) => self.desk().fail(error.to_string()),
-        }
-    }
     /// Arm the group contract: only the selection is applied before the first
     /// staged command, so `timeline.preview` can open its own gesture.
     fn begin_timeline_preview(&mut self, select: Option<ItemId>) {
@@ -536,112 +442,13 @@ impl Editor {
         }
         self.timeline.arm_preview();
     }
-    /// Stage one `timeline.move_items`/`timeline.trim`; each call replaces the
-    /// whole candidate from the gesture entry snapshot.
-    fn preview_timeline(&mut self, gesture: timeline::Gesture) {
-        if !self.timeline.preview_armed() {
-            return;
-        }
-        let command = gesture.command();
-        let staged = Command::TimelinePreview {
-            commands: vec![command.clone()],
-        };
-        let previous = self
-            .session
-            .preview_project()
-            .unwrap_or(self.session.project())
-            .clone();
-        let result = self.desk().run_command(staged);
-        match result {
-            Ok(_) => {
-                // `project()` stays committed; the player follows the staged
-                // candidate (including a reversal back to the entry state) so a
-                // trim shows its frame live.
-                self.timeline
-                    .mark_preview(command.kind(), gesture.is_noop());
-                let current = self
-                    .session
-                    .preview_project()
-                    .unwrap_or(self.session.project());
-                if previous.as_ref() != current.as_ref() {
-                    self.desk().sync();
-                }
-            }
-            Err(error) => {
-                // The engine refused the whole candidate: drop the gesture and
-                // show its reason instead of leaving a stale preview.
-                self.timeline.abandon_gesture();
-                self.timeline.refuse(error.to_string());
-                self.discard_staged_preview();
-            }
-        }
-    }
-    /// Publish the staged candidate as one undo step.
-    fn end_timeline_preview(&mut self) {
-        if self.timeline.preview_command().is_some() {
-            // A reversal can leave every member at its entry position while
-            // item order shifted; discard it so no undo step is published.
-            if self.timeline.preview_noop() {
-                self.discard_staged_preview();
-            } else {
-                match self.session.apply(Command::TimelineCommitPreview {}) {
-                    Ok(outcome) if outcome.changed => self.desk().sync(),
-                    Ok(_) => {}
-                    Err(error) => {
-                        // A refused publication must not leave the gesture open.
-                        self.desk().fail(error.to_string());
-                        let _ = self.session.apply(Command::TimelineDiscardPreview {});
-                    }
-                }
-                self.timeline.clear_preview();
-            }
-        } else {
-            self.timeline.clear_preview();
-        }
-        self.prune_selection();
-    }
-    /// Restore the entry project without a history entry.
-    fn discard_staged_preview(&mut self) {
-        if self.session.gesture_active()
-            && let Err(error) = self.session.apply(Command::TimelineDiscardPreview {})
-        {
-            self.desk().fail(error.to_string());
-        }
-        self.timeline.clear_preview();
-    }
     /// Escape on a timeline drag: discard the staged candidate.
     fn discard_timeline_preview(&mut self) {
-        if self.timeline.preview_command().is_some() {
-            self.discard_staged_preview();
-        } else {
-            self.timeline.clear_preview();
-            if self.session.gesture_active()
-                && let Err(error) = self.session.cancel_gesture()
-            {
-                self.desk().fail(error.to_string());
-            }
-        }
-    }
-    /// Publish the open gesture as one undo step.
-    fn end_drag_gesture(&mut self) {
-        if self.session.gesture_active() {
-            match self.session.commit_gesture() {
-                Ok(outcome) if outcome.changed => self.desk().sync(),
-                Ok(_) => {}
-                Err(error) => self.desk().fail(error.to_string()),
-            }
-        }
-        self.prune_selection();
+        self.with_timeline(timeline::discard_timeline_preview);
     }
     /// Discard the open gesture and show the project it started from.
     pub(super) fn discard_gesture(&mut self) {
-        if self.session.gesture_active() {
-            match self.session.cancel_gesture() {
-                // Closing a preview lifetime fences even a net-zero drag.
-                Ok(_) => self.desk().sync(),
-                Err(error) => self.desk().fail(error.to_string()),
-            }
-        }
+        self.with_timeline(|_, port| timeline::discard_gesture(port));
     }
     /// Escape: abandon the innermost pointer interaction in progress.
     pub(in crate::editor) fn cancel_interaction(&mut self) {
@@ -745,20 +552,6 @@ impl Editor {
         let duration = self.session.project().duration();
         self.timeline.zoom_step(zoom_in, duration, playhead);
     }
-    /// Run a typed engine command on the current selection (track edits).
-    pub(in crate::editor) fn track_command(&mut self, command: Command) {
-        let before = self.session.project().clone();
-        let result = self.desk().run_command(command);
-        match result {
-            Ok(_) => {
-                self.prune_selection();
-                if !std::sync::Arc::ptr_eq(&before, self.session.project()) {
-                    self.desk().sync();
-                }
-            }
-            Err(error) => self.desk().fail(error.to_string()),
-        }
-    }
     /// Apply one proxy intention. The on/off choice is session presentation
     /// state: it reaches preview through the shared index on the next frame
     /// request and never edits the project, its history or export.
@@ -815,6 +608,8 @@ impl Editor {
                         );
                     }
                     Request::ArmKeyColor(pick) => self.player.key_color_pick = pick,
+                    Request::ReplaceMedia(item) => self.timeline.request_replace(item),
+                    Request::PruneSelection => self.prune_selection(),
                     Request::InsertShape(id) => {
                         if self.action_enabled(&id) {
                             self.action(&id);

@@ -1,7 +1,7 @@
 # Timeline gestures and zoom
 
 Interface: the `State` gesture methods for item drag, bookmark drag, keyframe retime,
-volume and fade drags.
+volume and fade drags, and `apply` with the gesture publish and discard steps in `apply.rs`.
 
 The ruler is adaptive and frame-snapped; [its view](../view/ruler/README.md) owns tick
 selection and labels.

@@ -284,6 +284,10 @@ pub(crate) enum Request {
     InsertShape(String),
     /// Arm or leave the chroma-key eyedropper the player samples next.
     ArmKeyColor(Option<crate::editor::KeyPick>),
+    /// Ask the window to open the native media picker for one clip's replacement.
+    ReplaceMedia(project::ItemId),
+    /// Edits changed the project: drop the nested selection scopes it left dangling.
+    PruneSelection,
 }
 
 /// The shared editor context. One area receives it for one frame; its edit

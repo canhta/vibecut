@@ -32,8 +32,7 @@ impl Editor {
         );
         crate::editor::properties::apply(&mut self.desk(), actions);
         if self.timeline.graph_popover_open() {
-            self.timeline.escape_graph();
-            self.discard_gesture();
+            self.with_timeline(crate::editor::timeline::release_graph);
         }
         self.desk().select(items)
     }
@@ -141,7 +140,7 @@ impl Editor {
         };
         let result = self
             .desk()
-            .apply_result(engine::Command::RemoveTransition { transition }, false);
+            .apply_result(engine::Command::RemoveTransition { transition });
         match result {
             Ok(_) => {
                 self.selection_scopes.transition = None;
