@@ -539,10 +539,15 @@ impl State {
             egui::pos2(visible.right(), (line_bottom + 6.0).min(visible.bottom())),
         )
         .intersect(visible);
+        // Split mode shows the line but takes no drag, so the clip's click cuts.
         let response = ui.interact(
             band,
             Id::unique(("timeline.volume", item.id.0)),
-            egui::Sense::drag(),
+            if self.tool == Tool::Split {
+                egui::Sense::hover()
+            } else {
+                egui::Sense::drag()
+            },
         );
         self.remember(format!("timeline.volume.{}", item.id.0), &response);
         if response.drag_started() && self.volume_drag.is_none() {
@@ -672,10 +677,15 @@ impl State {
                 continue;
             }
             let id = fade_edge_id(edge);
+            // Split mode keeps the handle visible but takes no click or drag.
             let response = ui.interact(
                 Rect::from_center_size(center, Vec2::splat(FADE_HANDLE_HIT)),
                 Id::unique(("timeline.item.fade", item.id.0, id)),
-                egui::Sense::click_and_drag(),
+                if self.tool == Tool::Split {
+                    egui::Sense::hover()
+                } else {
+                    egui::Sense::click_and_drag()
+                },
             );
             let label = tr(
                 cx,

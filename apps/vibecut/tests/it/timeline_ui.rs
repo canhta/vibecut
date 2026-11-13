@@ -4780,6 +4780,7 @@ fn clip_action_keys_and_context_menu_apply_each_command_with_undo() {
 fn split_all_split_mode_and_select_by_playhead_reach_the_engine() {
     let fixture = audible_editor();
     let video_a = fixture.video_a;
+    let audio = audio_item(&fixture.editor);
     let mut h = harness(fixture.editor);
     h.run_steps(3);
     h.state_mut()
@@ -4816,6 +4817,53 @@ fn split_all_split_mode_and_select_by_playhead_reach_the_engine() {
     h.key_press(egui::Key::B);
     h.run_steps(2);
     assert_eq!(tool_icon(&h), Some("scissors"), "B selects Split mode");
+
+    // Split mode takes no marquee, volume-line or fade-handle drags: each drag leaves the
+    // selection and the project untouched. Empty space is the first point of the track
+    // area that no clip, handle or volume band covers.
+    h.state_mut().activate("timeline.deselect_all").unwrap();
+    h.run_steps(2);
+    let project_before = h.state().session.project().clone();
+    let widgets = h.state().inspect().unwrap().widgets;
+    let rect_of = |id: &str| {
+        widgets
+            .iter()
+            .find(|widget| widget.id == id)
+            .unwrap_or_else(|| panic!("missing widget {id}"))
+            .rect
+    };
+    let body = rect_of("timeline.marquee");
+    let covered: Vec<egui::Rect> = widgets
+        .iter()
+        .filter(|widget| widget.id.starts_with("timeline.item."))
+        .map(|widget| widget.rect)
+        .collect();
+    let empty = (0..)
+        .map(|step| egui::pos2(body.left() + 2.0 + step as f32 * 4.0, body.top() + 4.0))
+        .take_while(|pos| pos.x < body.right())
+        .find(|pos| !covered.iter().any(|rect| rect.contains(*pos)))
+        .expect("an empty point in the track area");
+    let video_center = rect_of(&format!("timeline.item.{}", video_a.0)).center();
+    drag(&mut h, empty, video_center);
+    assert!(
+        h.state().session.selection().is_empty(),
+        "Split mode takes no marquee drag"
+    );
+    assert!(Arc::ptr_eq(h.state().session.project(), &project_before));
+    let volume = rect_of(&format!("timeline.volume.{}", audio.0)).center();
+    drag(&mut h, volume, volume + egui::vec2(0.0, -20.0));
+    assert!(
+        Arc::ptr_eq(h.state().session.project(), &project_before),
+        "Split mode takes no volume-line drag"
+    );
+    let fade = rect_of(&format!("timeline.item.{}.fade_in", audio.0)).center();
+    drag(&mut h, fade, fade + egui::vec2(30.0, 0.0));
+    assert!(
+        Arc::ptr_eq(h.state().session.project(), &project_before),
+        "Split mode takes no fade-handle drag"
+    );
+    assert!(h.state().session.selection().is_empty());
+
     click_item(&mut h, video_a);
     assert_eq!(count(h.state()), before + 1, "a Split-mode click cuts the clip");
     undo(&mut h);
