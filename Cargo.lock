@@ -6545,6 +6545,7 @@ dependencies = [
  "ai",
  "arboard",
  "captions",
+ "chrono",
  "cpal",
  "eframe",
  "egui_extras",

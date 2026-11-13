@@ -169,6 +169,11 @@ fn frame_keeps_chrome_compact_and_window_actions_in_the_menu() {
         assert!(
             (widget(&harness, "project.rename").rect.center().x - header.center().x).abs() < 0.5
         );
+        // The keyboard-shortcuts button is a header control beside Feedback, never in the menu.
+        let shortcuts = widget(&harness, "shortcuts.open");
+        assert!(shortcuts.enabled);
+        assert!(shortcuts.rect.right() <= widget(&harness, "app.feedback").rect.left());
+        assert!(shortcuts.rect.left() > widget(&harness, "project.rename").rect.right());
         let panels = &harness.state().panels();
         assert_eq!(panels["media"].left() - header.left(), 9.0);
         assert_eq!(panels["media"].top(), header.bottom());
@@ -184,7 +189,6 @@ fn frame_keeps_chrome_compact_and_window_actions_in_the_menu() {
             "layout.reset",
             "appearance.locale",
             "appearance.theme",
-            "shortcuts.open",
         ] {
             assert!(
                 !harness
@@ -206,7 +210,6 @@ fn frame_keeps_chrome_compact_and_window_actions_in_the_menu() {
             "layout.reset",
             "appearance.locale",
             "appearance.theme",
-            "shortcuts.open",
         ] {
             assert!(widget(&harness, id).enabled, "{id} stays reachable");
         }

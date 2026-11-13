@@ -285,6 +285,8 @@ pub struct Editor {
     pub(super) player: super::panels::player::State,
     pub(super) timeline: super::timeline::State,
     pub(super) error: Option<String>,
+    /// Journal revision last seen by the header and the local `HH:MM:SS` it was first seen.
+    pub(super) autosaved: Option<(u64, String)>,
     pub(crate) persistence_error: Option<std::sync::Arc<engine::recovery::Error>>,
     pub(super) configured: bool,
     pub(crate) lifecycle_action: Option<crate::services::lifecycle::EditorAction>,

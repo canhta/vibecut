@@ -4728,7 +4728,6 @@ fn context_and_header_menus_expose_registered_items_and_reasons() {
     h.run_steps(2);
     for id in [
         "project.exit",
-        "shortcuts.open",
         "app.help",
         "window.home",
         "project.save",
@@ -4745,6 +4744,7 @@ fn context_and_header_menus_expose_registered_items_and_reasons() {
     }
     close_menu(&mut h);
     assert!(menu_enabled(&h, "app.feedback"));
+    assert!(menu_enabled(&h, "shortcuts.open"));
     let freeze = h
         .state()
         .inspect()

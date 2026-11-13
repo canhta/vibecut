@@ -10,6 +10,19 @@ use crate::{
 };
 
 pub(in crate::editor) use port::{Note, Port, Read};
+
+/// The persistence state the header shows.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum SaveStatus {
+    /// The last save failed.
+    Failed,
+    /// A save is pending or in flight.
+    Saving,
+    /// A memory session that nothing writes to disk.
+    Unsaved,
+    /// Autosaved; `clock` is the local `HH:MM:SS` the journal last took a change.
+    Saved { clock: Option<String> },
+}
 pub(crate) use visuals::VisualQuery;
 
 /// Human-only desktop cache intentions, outside editing/agent commands.
@@ -97,7 +110,8 @@ pub(crate) struct Context<'a> {
         &'a std::collections::BTreeSet<crate::editor::selection::MaskPointSelection>,
     /// The selected timeline transition the inspector edits instead of items.
     pub(crate) transition: Option<project::TransitionId>,
-    pub(crate) save_status: Text,
+    /// What the header says about persistence.
+    pub(crate) save_status: SaveStatus,
     /// Playback position of the shared transport.
     pub(crate) playhead: time::Tick,
     /// Preview-axis pointer time; `None` follows the playhead.

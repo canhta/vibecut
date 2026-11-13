@@ -545,6 +545,45 @@ fn delete_confirmation_refuses_in_use_media_then_removes_unused_media_with_undo(
 }
 
 #[test]
+fn feature_tabs_never_touch_and_the_media_sub_navigation_lists_two_rows() {
+    for locale in [vibecut::i18n::Locale::En, vibecut::i18n::Locale::Vi] {
+        let editor = editor_with(
+            Preferences {
+                locale,
+                ..Preferences::default()
+            },
+            &[(1, "alpha.mp4")],
+        );
+        // Wide enough for the 120 px sub-navigation column.
+        let mut harness = crate::gpu::builder()
+            .with_size(egui::vec2(1727.0, 1029.0))
+            .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
+        harness.run_steps(3);
+        let tabs = [
+            "media",
+            "sounds",
+            "text",
+            "stickers",
+            "effects",
+            "transitions",
+            "captions",
+            "adjustment",
+        ]
+        .map(|tab| widget_rect(&harness, &format!("assets.tab.{tab}")));
+        for pair in tabs.windows(2) {
+            assert!(
+                pair[0].right() <= pair[1].left(),
+                "{locale:?}: tab cells overlap: {pair:?}"
+            );
+        }
+        // Import heads the group and Media is the shown view: two separate rows.
+        let import = widget_rect(&harness, "assets.subnav");
+        let media = widget_rect(&harness, "assets.subnav.media");
+        assert!(import.bottom() <= media.top(), "{locale:?}");
+    }
+}
+
+#[test]
 fn reveal_switches_tab_scrolls_and_expires_without_touching_project_json() {
     let assets: Vec<(u64, String)> = (1..=30)
         .map(|id| (id, format!("asset-{id:02}.mp4")))

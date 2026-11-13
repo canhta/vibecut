@@ -44,6 +44,7 @@ captions.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sys-locale = "0.3.2"
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 thiserror.workspace = true
 transport.workspace = true
 tracing = { workspace = true, default-features = false, features = ["std"] }

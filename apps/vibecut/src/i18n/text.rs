@@ -1131,7 +1131,6 @@ catalog! {
     ZoomOut { key: "zoom_out", en: "Zoom −", vi: "Thu nhỏ" },
 
     // Shortcuts dialog.
-    Shortcuts { key: "shortcuts", en: "Shortcuts", vi: "Phím tắt" },
     ShortcutsCancel { key: "shortcuts_cancel", en: "Cancel", vi: "Hủy" },
     ShortcutsClose { key: "shortcuts_close", en: "Close", vi: "Đóng" },
     ShortcutsErrorConflict { key: "shortcuts_error_conflict", en: "{chord} is used by {action}", vi: "{chord} đang dùng cho {action}" },

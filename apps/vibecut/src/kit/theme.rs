@@ -283,7 +283,6 @@ pub(crate) mod size {
     pub const SUBNAV: f32 = 120.0;
     pub const SUBNAV_BUTTON: f32 = 104.0;
     pub const TAB_MIN: f32 = 48.0;
-    pub const FEATURE_TAB_PITCH: f32 = 49.0;
     pub const SEGMENT_WIDTH: f32 = 115.0;
     pub const STEPPER: f32 = 16.0;
     pub const VALUE: f32 = 54.0;

@@ -65,10 +65,10 @@ pub(super) fn show(
                         bottom: 3,
                     })
                     .show(ui, |ui| {
-                        ui.add_sized(
-                            [identity_width - 8.0, 14.0],
-                            egui::Label::new(value).truncate().halign(egui::Align::Min),
-                        );
+                        // A top-down frame is left-aligned; `add_sized` would centre the text.
+                        ui.set_width(identity_width - 8.0);
+                        ui.set_min_height(14.0);
+                        ui.add(egui::Label::new(value).truncate());
                     });
                 ui.end_row();
             }

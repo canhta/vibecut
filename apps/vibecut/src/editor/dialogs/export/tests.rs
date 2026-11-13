@@ -396,6 +396,39 @@ fn export_progress_then_save_writes_toast_and_closes_without_an_extra_screen() {
     assert!(toast.contains("My Project.mp4"), "{toast}");
 }
 
+fn rect(bench: &DialogBench, id: &str) -> egui::Rect {
+    bench
+        .editor()
+        .inspect()
+        .unwrap()
+        .widgets
+        .iter()
+        .find(|w| w.id == id)
+        .unwrap_or_else(|| panic!("missing widget {id}"))
+        .rect
+}
+
+#[test]
+fn export_footer_stays_fixed_below_the_form_at_every_window_height() {
+    for height in [800.0, 600.0, 460.0] {
+        let mut bench = bench(editor(false, false));
+        bench.harness_mut().set_size(egui::vec2(1280.0, height));
+        open(&mut bench);
+        bench.harness_mut().run_steps(2);
+        let footer = rect(&bench, "export.run");
+        assert!(
+            footer.bottom() <= height,
+            "{height}: the footer button leaves the window: {footer:?}"
+        );
+        assert_eq!(footer.top(), rect(&bench, "export.close").top(), "{height}");
+        // The first form row sits above the footer; the rest scroll inside the dialog.
+        assert!(
+            rect(&bench, "export.resolution").bottom() <= footer.top(),
+            "{height}: the form starts under the footer"
+        );
+    }
+}
+
 #[test]
 fn export_failure_panel_copies_only_diagnostics_and_retry_keeps_settings() {
     let dir = tempfile::tempdir().unwrap();

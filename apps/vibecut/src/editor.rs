@@ -313,6 +313,7 @@ impl Editor {
                 state
             },
             error: font_error,
+            autosaved: None,
             persistence_error: None,
             configured: false,
             lifecycle_action: None,
