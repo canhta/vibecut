@@ -739,27 +739,6 @@ fn recent_stickers_cap_order_dedupe_and_clear() {
     assert!(recents.ids().is_empty());
 }
 
-#[test]
-fn recent_stickers_persist_round_trip_and_refuse_malformed_files() {
-    use libraries::stickers::Recents;
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("stickers").join("recents.json");
-    assert!(
-        Recents::load(&path).unwrap().ids().is_empty(),
-        "a missing file is empty"
-    );
-
-    let mut recents = Recents::default();
-    recents.record("shapes:star");
-    recents.record("flags:US");
-    recents.save(&path).unwrap();
-    assert_eq!(Recents::load(&path).unwrap(), recents);
-
-    std::fs::write(&path, "{not a list").unwrap();
-    let error = Recents::load(&path).unwrap_err();
-    assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
-}
-
 // Sticker commands through the real catalog: browse and search pages, `stickers.insert` with
 // undo, redo and a project round trip, and the refusals for an unknown id or a missing catalog.
 fn control_stickers(

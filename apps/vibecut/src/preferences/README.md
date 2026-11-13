@@ -40,3 +40,5 @@ fetched lists and price acknowledgements are never serialized. A document whose 
 64-byte unique names, exactly the current `color_grade` parameter set with each value
 checked against its definition). Saving, applying and deleting a preset are preference
 and project-command paths; the bank never enters project JSON or project history.
+
+`sticker_recents` is the Stickers tab's recent sticker ids, newest first and deduplicated, at most `MAX_RECENT_STICKERS` (50). It is written without a history entry and never enters project JSON.

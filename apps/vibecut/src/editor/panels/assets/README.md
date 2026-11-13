@@ -31,9 +31,13 @@ A card or its plus applies to two adjacent selected video clips, or to the cut u
 Media rows, import feedback and marquee selection: [assets workflow](workflow/README.md).
 Sounds rows: [sounds](sounds/README.md).
 
-## Shapes
+## Stickers
 
-The persisted Stickers tab exposes only locally generated Rectangle, Ellipse, Polygon and Star cards, using their real silhouettes and existing kit controls. `graphic.insert.rectangle`, `.ellipse`, `.polygon` and `.star` insert five seconds at the playhead through ordinary engine placement and select the returned item. The prepared readiness projection, direct activation and preflush admission share the same predicate, including drafts, transactions and modal work. No unavailable shape variants or network source exist.
+The Stickers tab searches the bundled catalog in [libraries](../../../../../../crates/libraries/src/sticker_library/README.md) with the search field, the All, Flags and Shapes category tabs, a result count and See all. The preview shows the first 24 results; See all widens the page to the catalog's default limit of 100. Flags thumbnails come from `render::rasterize_sticker`; shape thumbnails draw the same graphic definition a shape sticker draws, through the production compositor. Each thumbnail is one texture per id and pixel scale, held by the tab for the session.
+
+Recent lists up to 50 sticker ids, newest first and deduplicated, from `Preferences::sticker_recents`. It stays outside projects, shows only while the search is empty, follows the category tab, and Clear empties the saved list. Add inserts through `libraries::stickers::insert_sticker`, the edit `stickers.insert` applies: one undo step at the playhead, five seconds long, the item selected afterwards. The shared insertion predicate gates it, so drafts, transactions and modal work refuse the insert. Sticker tiles and Recent tiles use separate action ids (`stickers.insert.<id>`, `stickers.recent.insert.<id>`).
+
+The Shapes category is sticker shapes, not the former Rectangle, Ellipse, Polygon and Star graphic cards; those four commands stay registered but have no tile on this tab. The tile grid reuses the measured Effects card pitch (88 px cards, 15 px gaps) until a Stickers grid is measured. Sticker-specific geometry, the preview count of 24 and the five-second default length are open.
 
 ## Music section
 

@@ -3939,6 +3939,27 @@ fn font_picker_screenshot_is_available() {
     assert!(path.exists());
 }
 
+/// A five-second rectangle graphic at the start, the item the graphic shelf tests edit.
+fn graphic_rectangle(session: &mut Session) -> ItemId {
+    let outcome = session
+        .apply(Command::InsertItem {
+            placement: Placement::Auto,
+            item: NewItem {
+                retime: Default::default(),
+                animations: Default::default(),
+                source_asset: None,
+                source_range: SourceRange::new(Tick::ZERO, Tick(5 * SECOND)).unwrap(),
+                start: Tick::ZERO,
+                content: ItemParams::Graphic(project::GraphicParams::rectangle()),
+            },
+        })
+        .unwrap();
+    match outcome.created.first().copied() {
+        Some(CreatedId::Item(id)) => id,
+        _ => panic!("graphic"),
+    }
+}
+
 #[test]
 fn graphic_shelf_keyed_rgba_numeric_drafts_history_and_captures() {
     for locale in [vibecut::i18n::Locale::En, vibecut::i18n::Locale::Vi] {
@@ -3951,13 +3972,13 @@ fn graphic_shelf_keyed_rgba_numeric_drafts_history_and_captures() {
                 .apply(Command::Delete { items: ids })
                 .unwrap();
             f.editor.preferences.assets_tab = AssetsTab::Stickers;
+            let id = graphic_rectangle(&mut f.editor.session);
             let mut h = crate::gpu::builder()
                 .with_size(egui::vec2(1440., 1000.))
                 .with_pixels_per_point(scale)
                 .build_ui_state(|ui, e: &mut Editor| e.ui(ui), f.editor);
             h.run_steps(3);
-            click(&mut h, "graphic.insert.rectangle");
-            let id = *h.state().selection().iter().next().unwrap();
+            select(&mut h, id);
             assert!(matches!(
                 item(&h, id).content,
                 ItemParams::Graphic(project::GraphicParams::Rectangle { .. })
@@ -4438,6 +4459,118 @@ fn graphic_scalar_label_drags_cancel_when_their_context_becomes_stale() {
             }
         }
     }
+}
+
+/// Replaces the Stickers search draft with `text`, as a person selecting the field and typing.
+fn set_sticker_search(harness: &mut Harness<Editor>, text: &str) {
+    click(harness, "assets.search");
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.key_press(egui::Key::Backspace);
+    if !text.is_empty() {
+        harness.event(egui::Event::Text(text.into()));
+    }
+    harness.run_steps(2);
+}
+
+fn item_count(harness: &Harness<Editor>) -> usize {
+    harness
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .map(|track| track.items.len())
+        .sum()
+}
+
+fn sticker_of(harness: &Harness<Editor>, id: ItemId) -> (String, u32, u32) {
+    match item(harness, id).content {
+        ItemParams::Sticker(params) => (params.sticker, params.width, params.height),
+        other => panic!("sticker expected, found {other:?}"),
+    }
+}
+
+#[test]
+fn stickers_panel_searches_switches_inserts_and_keeps_recents_in_preferences() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = PreferenceStore::new(dir.path().join("preferences.json"));
+    let mut f = fixture();
+    f.editor.preferences.assets_tab = AssetsTab::Stickers;
+    let mut h = build(f.editor);
+    h.run_steps(3);
+    for id in [
+        "assets.search",
+        "stickers.category.all",
+        "stickers.category.flags",
+        "stickers.category.shapes",
+        "stickers.see_all",
+    ] {
+        assert!(has_widget(&h, id), "{id}");
+    }
+    assert!(!has_widget(&h, "stickers.recent.clear"));
+
+    // A region keyword filters flags by region: "asia" keeps Afghanistan (AF, South Asia) and drops Andorra (AD).
+    click(&mut h, "stickers.category.flags");
+    set_sticker_search(&mut h, "asia");
+    assert!(has_widget(&h, "stickers.insert.flags-AF"));
+    assert!(!has_widget(&h, "stickers.insert.flags-AD"));
+    click(&mut h, "stickers.insert.flags-AF");
+    let flag = *h.state().selection().iter().next().unwrap();
+    assert_eq!(sticker_of(&h, flag), ("flags:AF".into(), 640, 480));
+    assert_eq!(item(&h, flag).duration().unwrap(), Tick(5 * SECOND));
+
+    // The "asia" query matches no shape, so the Shapes category shows no result until the query clears.
+    click(&mut h, "stickers.category.shapes");
+    assert!(!has_widget(&h, "stickers.insert.shapes-star"));
+    set_sticker_search(&mut h, "");
+    click(&mut h, "stickers.insert.shapes-star");
+    let shape = *h.state().selection().iter().next().unwrap();
+    assert_eq!(sticker_of(&h, shape), ("shapes:star".into(), 512, 512));
+
+    // Recent follows the category: Shapes lists only the shape, All lists both, newest first.
+    assert!(has_widget(&h, "stickers.recent.clear"));
+    assert!(has_widget(&h, "stickers.recent.insert.shapes-star"));
+    assert!(!has_widget(&h, "stickers.recent.insert.flags-AF"));
+    click(&mut h, "stickers.category.all");
+    assert!(has_widget(&h, "stickers.recent.insert.flags-AF"));
+    assert_eq!(
+        h.state().preferences.sticker_recents,
+        ["shapes:star", "flags:AF"]
+    );
+
+    // Re-inserting moves an id to the front without duplicating it.
+    click(&mut h, "stickers.recent.insert.flags-AF");
+    assert_eq!(
+        h.state().preferences.sticker_recents,
+        ["flags:AF", "shapes:star"]
+    );
+
+    // Recents survive a restart through the app preferences.
+    store.save(&h.state().preferences).unwrap();
+    let restored = store.load_with_warning().0;
+    assert_eq!(restored.sticker_recents, ["flags:AF", "shapes:star"]);
+
+    // See all widens the result page; Clear empties the saved list and nothing else.
+    click(&mut h, "stickers.see_all");
+    assert!(!has_widget(&h, "stickers.see_all"));
+    let placed = item_count(&h);
+    click(&mut h, "stickers.recent.clear");
+    assert!(h.state().preferences.sticker_recents.is_empty());
+    assert!(!has_widget(&h, "stickers.recent.clear"));
+    assert_eq!(item_count(&h), placed);
+
+    // Vietnamese labels reach the same panel.
+    h.state_mut().preferences.locale = vibecut::i18n::Locale::Vi;
+    h.run_steps(3);
+    assert!(has_widget(&h, "stickers.category.flags"));
+
+    let image = h.render().expect("offscreen render");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-30-stickers.png");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    image.save(&path).unwrap();
+    assert!(path.exists());
 }
 
 fn pointer_drag(harness: &mut Harness<Editor>, from: egui::Pos2, to: egui::Pos2) {

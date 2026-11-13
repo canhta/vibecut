@@ -121,7 +121,7 @@ impl Editor {
         }
     }
 
-    pub(in crate::editor) fn graphic_insertion_available(&self) -> bool {
+    pub(in crate::editor) fn insertion_available(&self) -> bool {
         self.properties.input_ready(&self.session)
             && !self.player.transform.text_edit_open()
             && self
@@ -382,7 +382,7 @@ impl Editor {
             ActionTarget::Ui {
                 action: UiAction::InsertGraphic(_),
                 ..
-            } => self.graphic_insertion_available(),
+            } => self.insertion_available(),
             ActionTarget::Ui {
                 action: UiAction::Copy,
                 ..

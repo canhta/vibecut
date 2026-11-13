@@ -58,6 +58,7 @@ pub const PREFERENCE_KEYS: &[&str] = &[
     "timeline_lanes",
     "font_picker",
     "adjustment_presets",
+    "sticker_recents",
     "easing",
 ];
 
@@ -150,6 +151,8 @@ pub struct Preferences {
     pub font_picker: FontPickerPreferences,
     /// Named colour-adjustment presets stored with the app.
     pub adjustment_presets: Vec<AdjustmentPreset>,
+    /// Recently inserted sticker ids, newest first and deduplicated; presentation memory, never project data.
+    pub sticker_recents: Vec<String>,
     /// Graph editor tab and saved easing curves; user data, never project state.
     pub easing: EasingPreferences,
 }
@@ -182,6 +185,7 @@ impl Default for Preferences {
             timeline_lanes: BTreeMap::new(),
             font_picker: FontPickerPreferences::default(),
             adjustment_presets: Vec::new(),
+            sticker_recents: Vec::new(),
             easing: EasingPreferences::default(),
         }
     }
@@ -237,6 +241,9 @@ impl Preferences {
         }
         self.font_picker.validate()?;
         super::adjustment::validate_adjustment_presets(&self.adjustment_presets)?;
+        if self.sticker_recents.len() > libraries::stickers::MAX_RECENT_STICKERS {
+            return Err(Error::Invalid("sticker recents"));
+        }
         self.easing.validate()?;
         if serde_json::to_vec(self)?.len() as u64 > MAX_PREFERENCES_BYTES {
             return Err(Error::Invalid("preference size"));
@@ -331,6 +338,7 @@ impl Preferences {
             "timeline_lanes" => Ok(serde_json::to_value(&self.timeline_lanes)?),
             "font_picker" => Ok(serde_json::to_value(&self.font_picker)?),
             "adjustment_presets" => Ok(serde_json::to_value(&self.adjustment_presets)?),
+            "sticker_recents" => Ok(serde_json::to_value(&self.sticker_recents)?),
             "easing" => Ok(serde_json::to_value(&self.easing)?),
             _ => Err(Error::Unsupported("preference key")),
         }
@@ -370,6 +378,7 @@ impl Preferences {
             "timeline_lanes" => self.timeline_lanes = serde_json::from_value(value)?,
             "font_picker" => self.font_picker = serde_json::from_value(value)?,
             "adjustment_presets" => self.adjustment_presets = serde_json::from_value(value)?,
+            "sticker_recents" => self.sticker_recents = serde_json::from_value(value)?,
             "easing" => self.easing = serde_json::from_value(value)?,
             _ => return Err(Error::Unsupported("preference key")),
         }

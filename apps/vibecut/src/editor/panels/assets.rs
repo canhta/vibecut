@@ -7,6 +7,7 @@ pub mod music;
 mod projection;
 pub mod sounds;
 mod state;
+mod stickers;
 mod tabs;
 mod transition;
 mod view;
@@ -49,8 +50,9 @@ struct Model {
     effects: Vec<EffectRow>,
     transition_refusal: Option<Text>,
     transition_drag_enabled: bool,
-    graphic_insertion_ready: bool,
-    graphic_previews: [Option<egui::TextureHandle>; 4],
+    insertion_ready: bool,
+    /// Stickers tab rows; present only while that tab is shown.
+    stickers: Option<stickers::StickerRows>,
     importing: bool,
     selection: BTreeSet<AssetId>,
     reveal: Option<AssetId>,
@@ -145,4 +147,7 @@ pub(in crate::editor) enum Action {
     /// Apply or delete one app-owned adjustment preset.
     ApplyAdjustment(usize),
     DeleteAdjustment(usize),
+    /// Insert one bundled sticker at the playhead and record it as recent.
+    InsertSticker(String),
+    ClearStickerRecents,
 }

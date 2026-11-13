@@ -105,6 +105,12 @@ impl Editor {
                         self.desk().fail(error.to_string());
                     }
                 }
+                assets::Action::InsertSticker(id) => {
+                    self.with_assets(|assets, desk| assets.insert_sticker(desk, &id));
+                }
+                assets::Action::ClearStickerRecents => {
+                    self.with_assets(|assets, desk| assets.clear_sticker_recents(desk));
+                }
             }
         }
     }
