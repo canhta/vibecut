@@ -355,6 +355,7 @@ impl Rig {
         let mask_points = scopes.mask_points;
         let cx = Context {
             session: &self.session,
+            project_path: None,
             locale: Locale::En,
             dark: true,
             save_status: Text::AutoSaved,

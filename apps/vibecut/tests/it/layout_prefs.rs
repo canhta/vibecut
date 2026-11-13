@@ -4,11 +4,12 @@ use egui_kittest::{
     kittest::{By, Queryable},
 };
 use engine::{ByteBudget, Session};
-use project::{Project, ProjectId};
+use project::{AspectPreset, CanvasSize, Project, ProjectId};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+use time::FrameRate;
 use vibecut::{
     Editor, egui,
     preferences::{DEFAULT_PANELS, PreferenceStore, Preferences},
@@ -16,7 +17,14 @@ use vibecut::{
 };
 
 fn editor(preferences: Preferences) -> Editor {
-    let session = Session::new(Project::empty(ProjectId(1), "Test".into()).unwrap(), 10).unwrap();
+    editor_with(
+        Project::empty(ProjectId(1), "Test".into()).unwrap(),
+        preferences,
+    )
+}
+
+fn editor_with(project: Project, preferences: Preferences) -> Editor {
+    let session = Session::new(project, 10).unwrap();
     let mut playback = Playback::new(
         &session,
         ByteBudget::new(64 << 20).unwrap(),
@@ -245,44 +253,141 @@ fn splitter_drags_clamp_boundaries_and_restore_after_restart() {
 }
 
 #[test]
-fn property_sections_collapse_expand_and_persist_per_key() {
+fn details_rows_and_info_section_collapse_and_persist() {
+    // Aspect ratio, resolution and frame rate for each canvas state. An unsaved
+    // project shows no Path row.
+    let rows = [
+        (
+            Some(AspectPreset::Landscape),
+            None,
+            (1920, 1080),
+            FrameRate::FPS_30,
+            "16:9",
+            "1,920 × 1,080",
+            "30.00fps",
+        ),
+        (
+            None,
+            None,
+            (1000, 1000),
+            FrameRate::FPS_29_97,
+            "Custom",
+            "1,000 × 1,000",
+            "29.97fps",
+        ),
+        (
+            Some(AspectPreset::Original),
+            Some((1080, 1920)),
+            (1080, 1920),
+            FrameRate::FPS_30,
+            "Original",
+            "Adapted",
+            "30.00fps",
+        ),
+        (
+            Some(AspectPreset::Landscape),
+            Some((1920, 1080)),
+            (1920, 1080),
+            FrameRate::FPS_24,
+            "Original",
+            "1,920 × 1,080",
+            "24.00fps",
+        ),
+    ];
+    for (preset, original, (width, height), fps, aspect, resolution, rate) in rows {
+        let mut data = Project::empty(ProjectId(1), "Test".into())
+            .unwrap()
+            .into_data();
+        data.canvas.preset = preset;
+        data.canvas.width = width;
+        data.canvas.height = height;
+        data.canvas.fps = fps;
+        data.original_canvas_size = original.map(|(width, height)| CanvasSize { width, height });
+        let mut harness = build(editor_with(
+            Project::new(data).unwrap(),
+            Preferences::default(),
+        ));
+        harness.run_steps(3);
+        click(&mut harness, "inspector.details");
+        assert!(harness.query_by_label("Path").is_none());
+        let top = |text: &str| harness.get_by_label(text).rect().top();
+        let (name, aspect_row, resolution_row, rate_row) =
+            (top("Test"), top(aspect), top(resolution), top(rate));
+        assert!(name < aspect_row && aspect_row < resolution_row && resolution_row < rate_row);
+        harness.get_by_label("Aspect ratio");
+        harness.get_by_label("Resolution");
+        harness.get_by_label("Frame rate");
+        harness.get_by_label("Modify");
+    }
+
+    // The Details view as light and dark screenshots of the default canvas.
+    for (dark, name) in [(true, "dark"), (false, "light")] {
+        let mut harness = build(editor(Preferences {
+            dark,
+            ..Default::default()
+        }));
+        harness.run_steps(3);
+        click(&mut harness, "inspector.details");
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!("p1-320-details-{name}.png"));
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        harness.render().unwrap().save(&path).unwrap();
+    }
+
+    // Modify opens the Settings tab, where the canvas controls live.
+    let mut harness = build(editor(Preferences::default()));
+    harness.run_steps(3);
+    click(&mut harness, "inspector.details");
+    click(&mut harness, "inspector.details.modify");
+    assert!(has_widget(&harness, "inspector.canvas.fps"));
+
+    // Info section: collapsed by default, toggles and persists per key.
     let dir = tempfile::tempdir().unwrap();
     let store = PreferenceStore::new(dir.path().join("preferences.json"));
     let mut harness = build(editor(Preferences::default()));
     harness.run_steps(3);
     click(&mut harness, "inspector.details");
     assert!(
+        !harness
+            .state()
+            .preferences
+            .section_open("inspector.metadata", false)
+    );
+    click(&mut harness, "inspector.section.metadata");
+    assert!(
         harness
             .state()
             .preferences
-            .section_open("inspector.canvas", true)
+            .section_open("inspector.metadata", false)
     );
-    click(&mut harness, "inspector.section.canvas");
+    click(&mut harness, "inspector.section.metadata");
     assert!(
         !harness
             .state()
             .preferences
-            .section_open("inspector.canvas", true)
+            .section_open("inspector.metadata", false)
     );
-    click(&mut harness, "inspector.section.canvas");
+    click(&mut harness, "inspector.section.metadata");
     assert!(
         harness
             .state()
             .preferences
-            .section_open("inspector.canvas", false)
-    );
-    click(&mut harness, "inspector.section.canvas");
-    click(&mut harness, "edit.undo");
-    assert!(
-        harness
-            .state()
-            .preferences
-            .section_open("inspector.canvas", false)
+            .section_open("inspector.metadata", false)
     );
     store.save(&harness.state().preferences).unwrap();
     let restored = store.load_with_warning().0;
-    assert!(restored.section_open("inspector.canvas", false));
-    assert!(!restored.section_open("inspector.metadata", false));
+    assert!(restored.section_open("inspector.metadata", false));
+}
+
+fn has_widget(harness: &Harness<Editor>, id: &str) -> bool {
+    harness
+        .state()
+        .inspect()
+        .unwrap()
+        .widgets
+        .iter()
+        .any(|widget| widget.id == id)
 }
 
 #[test]
