@@ -16,10 +16,10 @@ locale- and layout-independent `author_id` through AccessKit.
 
 Each panel receives its full slot including its header strip; the frame supplies only
 outer insets and draggable gutters. One write context is lent to one area for one
-frame: its edit entry pushes the selection, applies the command, reports the failure
+frame: its edit entry applies the command, reports the failure
 and resyncs the preview once per committed change, and cross-area intentions are
 queued and drained by the frame after that area returns. A read-only context carries
-session, selection, locale and theme into areas; both live in the shared context
+session (which owns the item selection), locale and theme into areas; both live in the shared context
 below every area.
 
 The assets (Captions tab included), properties and timeline areas and the player are folder

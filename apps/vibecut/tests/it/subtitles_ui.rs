@@ -393,7 +393,7 @@ fn caption_bank_preflight_preserves_properties_edits_and_pickers() {
                 }
             })
             .unwrap();
-        e.selection = [text].into();
+        e.select([text].into()).unwrap();
         if control == "reorder" {
             for id in ["blur1", "blur2"] {
                 e.session
@@ -2107,7 +2107,7 @@ fn generate_explicit_choices_insert_once_and_missing_models_offer_setup_without_
     ) {
         let mut e = editor("vi");
         let source = source_clip(&mut e);
-        e.selection.insert(source);
+        e.select([source].into()).unwrap();
         e.preferences.subtitles.transcription = option.id.into();
         e.preferences.subtitles.transcription_model = option.models[0].clone();
         e.set_subtitles(Some(
@@ -2158,7 +2158,7 @@ fn generate_explicit_choices_insert_once_and_missing_models_offer_setup_without_
     }
     let mut e = editor("vi");
     let source = source_clip(&mut e);
-    e.selection.insert(source);
+    e.select([source].into()).unwrap();
     e.set_subtitles(Some(
         Subtitles::with_access(e.playback.budget().clone(), generate_opener(true, None)).unwrap(),
     ));
@@ -2189,7 +2189,7 @@ fn caption_language_auto_retry_covers_no_speech_low_confidence_and_silent_clips(
     ] {
         let mut e = editor("vi");
         let clip = source_clip(&mut e);
-        e.selection.insert(clip);
+        e.select([clip].into()).unwrap();
         e.preferences.subtitles.source = source.into();
         e.set_subtitles(Some(
             Subtitles::with_access(

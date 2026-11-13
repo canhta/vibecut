@@ -149,7 +149,6 @@ groups = [
     "shorts",
     "assets",
     "properties",
-    "timeline",
 ]
 
 [[crate.layer]]
@@ -205,14 +204,6 @@ name = "effects"
 group = "assets"
 
 [[crate.module]]
-name = "selection"
-group = "editor"
-
-[[crate.module]]
-name = "snapping"
-group = "timeline"
-
-[[crate.module]]
 name = "home"
 group = "home"
 
@@ -247,6 +238,10 @@ group = "context"
 
 [[crate.folder.module]]
 name = "timing"
+group = "context"
+
+[[crate.folder.module]]
+name = "selection"
 group = "context"
 
 [[crate.folder.module]]

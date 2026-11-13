@@ -185,7 +185,7 @@ impl State {
             .choose_font(locale);
         self.font_import = Some(font_picker::PendingImport {
             snapshot: desk.editor().session.project().clone(),
-            selection: desk.view().selection.clone(),
+            selection: desk.view().selection().clone(),
             at: desk.view().playhead,
             lifetime: self.font_picker.lifetime,
             choice: Some(choice),
@@ -213,7 +213,7 @@ impl State {
         let valid = self.font_picker.open
             && self.font_picker.lifetime == pending.lifetime
             && std::sync::Arc::ptr_eq(&pending.snapshot, desk.editor().session.project())
-            && pending.selection == *desk.view().selection
+            && pending.selection == *desk.view().selection()
             && pending.at == desk.view().playhead
             && !desk.editor().session.transaction_active()
             && desk.editor().session.preview_project().is_none();

@@ -22,8 +22,8 @@ pub(in crate::editor) use workflow::{
 };
 
 use crate::editor::{
-    Arc, BTreeSet, BUTTON_ICON, Color32, Context, Error, Icon, Id, ItemId, ItemParams, Rect,
-    Result, SelectionScope, StreamKind, Text, Tick, TrackKind, Vec2, egui, icons, theme,
+    Arc, BTreeSet, Color32, Context, Error, Icon, Id, ItemId, ItemParams, Rect, Result,
+    SelectionScope, StreamKind, Text, Tick, TrackKind, Vec2, egui, icons, theme,
 };
 use gesture::{
     AUDIO_GAIN_SCRUB, EffectReorder, GraphDrag, OPACITY_SCRUB, SPEED_SCRUB, ScrubDrag, ScrubSpec,

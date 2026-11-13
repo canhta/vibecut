@@ -155,7 +155,7 @@ impl State {
         modifiers: egui::Modifiers,
     ) {
         let ids = self.media_order(desk.view().session, desk.view().preferences);
-        crate::selection::click(
+        crate::editor::selection::click(
             &mut self.media_selection,
             &mut self.media_anchor,
             id,

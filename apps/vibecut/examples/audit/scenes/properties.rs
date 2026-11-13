@@ -32,7 +32,7 @@ use vibecut::workspace::Workspace;
 
 pub(super) fn inspector_speed(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     let (mut editor, item) = media_editor(theme, Locale::En)?;
-    editor.selection = [item].into_iter().collect();
+    editor.select([item].into_iter().collect()).unwrap();
     editor.session.apply(Command::SetSpeed {
         items: vec![item],
         speed: time::Speed::from_f64(1.5)?,
@@ -65,7 +65,7 @@ pub(super) fn inspector_audio_locale(
         .and_then(|track| track.items.first())
         .ok_or("audio item")?
         .id;
-    editor.selection = [audio].into_iter().collect();
+    editor.select([audio].into_iter().collect()).unwrap();
     editor.set_shared_field("audio_gain", "-3")?;
     let mut app = app_editor(editor, scale);
     wait_for_presented(&mut app)?;
@@ -131,7 +131,9 @@ pub(super) fn inspector_mixed_locale(
             color: Color([35, 45, 65, 255]),
         }),
     )?;
-    editor.selection = [first, second, background].into_iter().collect();
+    editor
+        .select([first, second, background].into_iter().collect())
+        .unwrap();
     // Setup edits use Session directly, so refresh the preview snapshot before
     // accepting a frame from the populated-editor fixture.
     let project = editor.session.project().clone();
@@ -189,7 +191,7 @@ pub(super) fn inspector_blend_locale(
     )?;
     prefs.set("assets_tab", serde_json::json!("effects"))?;
     let mut editor = Editor::new(session, playback, prefs);
-    editor.selection.insert(item);
+    editor.select([item].into()).unwrap();
     wait_for_frame(&mut editor)?;
     let mut app = app_editor(editor, scale);
     wait_for_presented(&mut app)?;
@@ -271,7 +273,7 @@ pub(super) fn inspector_video_tab(
     } else {
         tab
     };
-    editor.selection = [item].into_iter().collect();
+    editor.select([item].into_iter().collect()).unwrap();
     editor
         .preferences
         .set("properties_tabs", serde_json::json!({"video": tab}))?;
@@ -329,7 +331,7 @@ pub(super) fn inspector_text(theme: Theme, scale: f32) -> Result<AppHarness, Fai
         .ok_or("text item")?
         .id;
     capture_columns(&mut editor)?;
-    editor.selection = [item].into_iter().collect();
+    editor.select([item].into_iter().collect()).unwrap();
     let mut app = harness_sized(App::Editor(Box::new(editor)), scale, CAPTURE_WINDOW);
     wait_for_presented(&mut app)?;
     app.run_steps(3);
@@ -354,7 +356,7 @@ pub(super) fn inspector_color(theme: Theme, scale: f32) -> Result<AppHarness, Fa
             .preferences
             .set("properties_tabs", serde_json::json!({"graphic":"graphic"}))?;
         let item = editor
-            .selection
+            .selection()
             .first()
             .copied()
             .ok_or("colour audit item")?;
@@ -381,7 +383,7 @@ pub(super) fn text_item_locale(
         .find(|item| matches!(item.content, ItemParams::Text(_)))
         .ok_or("text item")?
         .id;
-    editor.selection = [item].into_iter().collect();
+    editor.select([item].into_iter().collect()).unwrap();
     for (field, value) in [
         ("text_content", "VibeCut · Tiếng Việt"),
         ("text_font", "Noto Serif"),

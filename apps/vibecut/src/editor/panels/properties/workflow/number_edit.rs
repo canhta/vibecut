@@ -10,7 +10,6 @@ impl State {
             if desk.view().session.transaction_active() {
                 desk.with_session(|session| Ok(session.cancel_gesture().map(|_| ())?))?;
             }
-            desk.push_selection()?;
             desk.with_session(|session| Ok(session.begin_gesture().map(|_| ())?))?;
             Ok(())
         })();

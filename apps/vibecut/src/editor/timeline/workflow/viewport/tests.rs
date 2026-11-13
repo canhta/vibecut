@@ -1,6 +1,6 @@
 //! Verifies timeline scale behaviour.
 use super::*;
-use crate::editor::{DEFAULT_ZOOM, ZOOM_STEP};
+use crate::editor::timeline::{DEFAULT_ZOOM, ZOOM_STEP};
 
 fn close(left: f32, right: f32) -> bool {
     (left - right).abs() <= 0.01_f32.max(right.abs() * 1e-5)

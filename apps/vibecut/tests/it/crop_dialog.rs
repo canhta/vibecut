@@ -209,7 +209,10 @@ fn build(editor: Editor) -> Harness<'static, Editor> {
 }
 
 fn select(harness: &mut Harness<Editor>, items: &[ItemId]) {
-    harness.state_mut().selection = items.iter().copied().collect();
+    harness
+        .state_mut()
+        .select(items.iter().copied().collect())
+        .unwrap();
     harness.run_steps(3);
 }
 

@@ -4,8 +4,8 @@ mod wheel;
 
 use super::Panel;
 use crate::editor::properties::{
-    Action, BUTTON_ICON, ColorTarget, EffectReorder, Error, Icon, Id, ItemId, Rect, ScrubTarget,
-    Text, Tick, Vec2, effect_scrub_spec, egui, icons, read, theme,
+    Action, ColorTarget, EffectReorder, Error, Icon, Id, ItemId, Rect, ScrubTarget, Text, Tick,
+    Vec2, effect_scrub_spec, egui, icons, read, theme,
 };
 
 /// Three colour wheels share one row in the measured 460 px panel.
@@ -875,11 +875,15 @@ impl Panel<'_, '_> {
                                 self.control_fill(),
                             );
                         }
-                        icons::tinted(Icon::ArrowsInLineHorizontal, BUTTON_ICON, self.secondary())
-                            .paint_at(
-                                ui,
-                                Rect::from_center_size(rect.center(), Vec2::splat(BUTTON_ICON)),
-                            );
+                        icons::tinted(
+                            Icon::ArrowsInLineHorizontal,
+                            theme::icon::DENSE,
+                            self.secondary(),
+                        )
+                        .paint_at(
+                            ui,
+                            Rect::from_center_size(rect.center(), Vec2::splat(theme::icon::DENSE)),
+                        );
                         let handle = handle.on_hover_text(self.tr(Text::EffectReorder));
                         self.remember_with_icon(
                             handle_id,
@@ -1319,9 +1323,9 @@ impl Panel<'_, '_> {
                 ui.painter()
                     .rect_filled(rect, theme::radius::CONTROL, self.control_fill());
             }
-            icons::tinted(Icon::ArrowsHorizontal, BUTTON_ICON, self.secondary()).paint_at(
+            icons::tinted(Icon::ArrowsHorizontal, theme::icon::DENSE, self.secondary()).paint_at(
                 ui,
-                Rect::from_center_size(rect.center(), Vec2::splat(BUTTON_ICON)),
+                Rect::from_center_size(rect.center(), Vec2::splat(theme::icon::DENSE)),
             );
             let handle = handle.on_hover_text(self.tr(Text::DragToAdjust));
             self.remember_with_icon(

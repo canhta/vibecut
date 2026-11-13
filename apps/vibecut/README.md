@@ -35,6 +35,7 @@ Each module's contract is its README.
 | `editor/frame/input/` | [Keybindings](src/editor/frame/input/README.md) |
 | `editor/frame/route/` | [Frame route](src/editor/frame/route/README.md) |
 | `editor/panels/` | [Editor panels](src/editor/panels/README.md) |
+| `editor/selection.rs` | [Selection](src/editor/selection/README.md) |
 | `editor/panels/player/` | [Editor player](src/editor/panels/player/README.md) |
 | `editor/panels/properties/` | [Properties](src/editor/panels/properties/README.md) |
 | `editor/panels/properties/font_picker/` | [Font picker](src/editor/panels/properties/font_picker/README.md) |
@@ -56,13 +57,11 @@ Each module's contract is its README.
 | `kit/widgets/` | [Kit widgets](src/kit/widgets/README.md) |
 | `lifecycle.rs` | [Project lifecycle](src/lifecycle/README.md) |
 | `preferences.rs` / `preferences/` | [Preferences](src/preferences/README.md) |
-| `selection.rs` | [Selection](src/selection/README.md) |
 | `services.rs` / `services/` | [Services](src/services/README.md) |
 | `services/color_picker/` | [Colour picker](src/services/color_picker/README.md) |
 | `services/remote_models/` | [Remote model selection](src/services/remote_models/README.md) |
 | `shorts.rs` / `shorts/` | [Long video to shorts](src/shorts/README.md) |
 | `shorts/view/` | [Shorts view](src/shorts/view/README.md) |
-| `snapping.rs` | [Snapping](src/snapping/README.md) |
 | `workspace.rs` | [Windows and budgets](src/workspace/README.md) |
 
 ## Checks

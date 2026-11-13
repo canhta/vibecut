@@ -1,6 +1,11 @@
 # Timeline
 
-Interface: `State`, `show`, `show_scenes`, `Action`, `Gesture`, `DropZone`, `Media`.
+Interface: `State`, `show`, `show_scenes`, `Action`, `Gesture`, `DropZone`.
+
+The area owns its layout constants (toolbar, ruler, label and scrollbar sizes, zoom
+bounds and padding, edge auto-scroll, ruler spacing, clip label length) in `timeline.rs`,
+its snapping in `snapping.rs` and the persisted-view conversions on `State`
+(`adopt_stored_view`, `stored_view`, `zoom_step`); the frame reads none of them.
 
 Each item has a 16 px chevron opening its keyframe lanes. The open set is presentation
 state stored as `timeline_lanes` in the preference document, keyed by owning project so
@@ -117,7 +122,7 @@ frame to run `media.generate_waveform`/`media.generate_clip_thumbnails`; other f
 unsupported bands show a warning marker, and bars past 0 dBFS get a
 warning tip. A cancelled regeneration publishes nothing, so the previous ready cache keeps
 drawing. The workspace owns the one process `MediaAccess` and lends it here and to the MCP
-inbox; `visuals.rs` owns this editor's in-flight jobs and uploaded strip textures, and the
+inbox; `State` owns the media service (`set_media`, `generate`, `tick_media`, `request_cache`, `cache_ui`; the context lends its `visuals` to every area), and `visuals.rs` its in-flight jobs and uploaded strip textures. The
 panel never decodes media or builds a cache key.
 
 ## Scene switcher

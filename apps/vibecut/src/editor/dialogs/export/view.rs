@@ -15,7 +15,7 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ctx: &egui::Context) -> 
         .timeline
         .iter()
         .flat_map(|track| &track.items)
-        .filter(|item| cx.selection.contains(&item.id))
+        .filter(|item| cx.selection().contains(&item.id))
         .collect();
     dialog.selection_range = items
         .iter()

@@ -29,7 +29,7 @@ impl State {
         if !visible.is_positive() {
             return;
         }
-        let selected = cx.selection.contains(&item.id);
+        let selected = cx.selection().contains(&item.id);
         let response = ui.interact(
             visible,
             Id::unique(("timeline.item", item.id.0)),
@@ -222,8 +222,8 @@ impl State {
     fn item_menu(&mut self, cx: &Context<'_>, ui: &mut egui::Ui, item: &ItemView) {
         let paste = format!("timeline.item.{}.paste", item.id.0);
         let enabled = !cx.disabled.contains("edit.paste")
-            && cx.selection.len() == 1
-            && cx.selection.contains(&item.id);
+            && cx.selection().len() == 1
+            && cx.selection().contains(&item.id);
         if self.menu_action(
             cx,
             ui,

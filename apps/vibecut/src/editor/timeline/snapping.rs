@@ -1,34 +1,25 @@
-//! Snapping candidate ranking and the screen-pixel thresholds.
+//! Timeline snapping: candidate building, ranking and the screen-pixel threshold.
 //!
-//! The app owns this policy; engine commands receive only the resulting tick
+//! The timeline owns this policy; engine commands receive only the resulting tick
 //! position. Candidates are ranked by the smallest pixel distance, then by the
 //! stable source order below. That order is deliberately independent of scene
-//! iteration order so a tie cannot change between frames or project reloads.
-//! The preview canvas uses the same ranking rule and preference with its own
-//! measured threshold.
-use project::{BookmarkId, ItemId};
-use time::{Rounding, TICKS_PER_SECOND, Tick};
+//! iteration order so a tie cannot change between frames or project reloads. The
+//! preview canvas ranks with the same [`closest`] rule and its own measured
+//! threshold.
+use crate::editor::context::closest;
+use crate::editor::timeline::{
+    BTreeSet, BookmarkId, Context, DragOrigin, ItemId, Rounding, State, Tick,
+};
+use time::TICKS_PER_SECOND;
 
 /// The reference timeline threshold in logical screen pixels.
-pub const SNAP_PIXELS: f32 = 10.0;
-
-/// Preview transform threshold in logical screen pixels, measured in the
-/// reference editor on 2026-11-10 at its 100 % canvas zoom: an item 5 px from a
-/// guide still snapped and 6 px did not.
-pub const PREVIEW_SNAP_PIXELS: f64 = 5.0;
-
-/// Preview rotation snaps to quarter turns within this many degrees. The
-/// implementation reference measures the same 90/5 pair
-/// (`apps/web/src/preview/preview-snap.ts`: `ROTATION_SNAP_STEP_DEGREES`,
-/// `ROTATION_SNAP_THRESHOLD_DEGREES`).
-pub const ROTATE_SNAP_STEP: f64 = 90.0;
-pub const ROTATE_SNAP_DEGREES: f64 = 5.0;
+const SNAP_PIXELS: f32 = 10.0;
 
 /// Stable identity for a snap target. Variant order is the documented tie-break:
 /// playhead, bookmarks, item edges, then item keyframes; equal variants compare
 /// their owner IDs and keyframe time.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum SnapSource {
+enum SnapSource {
     Playhead,
     BookmarkStart(BookmarkId),
     BookmarkEnd(BookmarkId),
@@ -38,29 +29,29 @@ pub enum SnapSource {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct SnapCandidate {
-    pub at: Tick,
-    pub source: SnapSource,
+struct SnapCandidate {
+    at: Tick,
+    source: SnapSource,
 }
 
 impl SnapCandidate {
-    pub const fn new(at: Tick, source: SnapSource) -> Self {
+    const fn new(at: Tick, source: SnapSource) -> Self {
         Self { at, source }
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct SnapMatch {
-    pub at: Tick,
-    pub source: SnapSource,
+struct SnapMatch {
+    at: Tick,
+    source: SnapSource,
     /// Absolute distance in logical pixels at the zoom used for this query.
-    pub pixels: f64,
+    pixels: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct SnapOutcome {
-    pub at: Tick,
-    pub target: Option<SnapMatch>,
+struct SnapOutcome {
+    at: Tick,
+    target: Option<SnapMatch>,
 }
 
 impl SnapOutcome {
@@ -73,7 +64,7 @@ impl SnapOutcome {
 ///
 /// Hostile or non-positive zoom cannot form a useful threshold and returns zero,
 /// so only an exact candidate can match.
-pub fn threshold_ticks(zoom: f32) -> Tick {
+fn threshold_ticks(zoom: f32) -> Tick {
     if !zoom.is_finite() || zoom <= 0.0 {
         return Tick::ZERO;
     }
@@ -83,7 +74,7 @@ pub fn threshold_ticks(zoom: f32) -> Tick {
 
 /// Snap one raw position. Disabled or bypassed snapping returns the raw tick with
 /// no indicator target.
-pub fn snap_point(
+fn snap_point(
     raw: Tick,
     candidates: &[SnapCandidate],
     enabled: bool,
@@ -104,7 +95,7 @@ pub fn snap_point(
 
 /// Snap a move delta using every selected item edge. The globally closest edge
 /// wins, so a multi-selection stays rigid while one of its edges meets a target.
-pub fn snap_delta(
+fn snap_delta(
     raw: Tick,
     edges: &[Tick],
     candidates: &[SnapCandidate],
@@ -146,24 +137,6 @@ pub fn snap_delta(
     }
 }
 
-/// The shared ranking rule: the smallest pixel distance wins and equal
-/// distances break by the stable source order. Callers keep their own
-/// threshold in the coordinate space they measure.
-pub fn closest<T: Copy, S: Copy + Ord>(
-    candidates: impl IntoIterator<Item = (T, S, f64)>,
-) -> Option<(T, S, f64)> {
-    let mut best: Option<(T, S, f64)> = None;
-    for (at, source, pixels) in candidates {
-        let better = best.is_none_or(|(_, best_source, best_pixels)| {
-            pixels < best_pixels || (pixels == best_pixels && source < best_source)
-        });
-        if better {
-            best = Some((at, source, pixels));
-        }
-    }
-    best
-}
-
 fn nearest(raw: Tick, candidates: &[SnapCandidate], zoom: f32) -> Option<SnapMatch> {
     if !zoom.is_finite() || zoom <= 0.0 {
         return None;
@@ -178,6 +151,133 @@ fn nearest(raw: Tick, candidates: &[SnapCandidate], zoom: f32) -> Option<SnapMat
         Some((candidate.at, candidate.source, pixels))
     }))
     .map(|(at, source, pixels)| SnapMatch { at, source, pixels })
+}
+
+impl State {
+    /// Build the one ranked candidate set. Selected items and the bookmark being
+    /// dragged are excluded so a gesture cannot snap to itself.
+    fn snap_candidates(
+        &self,
+        cx: &Context<'_>,
+        exclude_items: &BTreeSet<ItemId>,
+        exclude_bookmark: Option<BookmarkId>,
+    ) -> Vec<SnapCandidate> {
+        let project = cx.session.project();
+        let data = project.data();
+        let mut points = vec![SnapCandidate::new(cx.playhead, SnapSource::Playhead)];
+        for bookmark in &data.scene().bookmarks {
+            if Some(bookmark.id) == exclude_bookmark {
+                continue;
+            }
+            points.push(SnapCandidate::new(
+                bookmark.start,
+                SnapSource::BookmarkStart(bookmark.id),
+            ));
+            if let Some(end) = bookmark.start.checked_add(bookmark.duration) {
+                points.push(SnapCandidate::new(
+                    end,
+                    SnapSource::BookmarkEnd(bookmark.id),
+                ));
+            }
+        }
+        for item in data
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| track.items.iter())
+        {
+            if exclude_items.contains(&item.id) {
+                continue;
+            }
+            points.push(SnapCandidate::new(
+                item.start,
+                SnapSource::ItemStart(item.id),
+            ));
+            if let Ok(end) = item.end() {
+                points.push(SnapCandidate::new(end, SnapSource::ItemEnd(item.id)));
+            }
+            for (_, param) in item.animations.iter() {
+                let mut push = |key: &project::Keyframe| {
+                    let Some(at) = item.start.checked_add(key.time) else {
+                        return;
+                    };
+                    if at < Tick::ZERO {
+                        return;
+                    }
+                    points.push(SnapCandidate::new(
+                        at,
+                        SnapSource::Keyframe {
+                            item: item.id,
+                            time: key.time,
+                        },
+                    ));
+                };
+                match param {
+                    project::Param::Value(channel) => {
+                        for key in channel.keys() {
+                            push(key);
+                        }
+                    }
+                    project::Param::Color(channels) => {
+                        for channel in channels.iter() {
+                            for key in channel.keys() {
+                                push(key);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        points.sort_by(|a, b| a.at.cmp(&b.at).then(a.source.cmp(&b.source)));
+        points.dedup();
+        points
+    }
+    pub(in crate::editor::timeline) fn snap_delta(
+        &self,
+        cx: &Context<'_>,
+        raw: Tick,
+        origins: &[DragOrigin],
+        bypass: bool,
+    ) -> (Tick, Option<Tick>) {
+        let exclude: BTreeSet<ItemId> = origins.iter().map(|origin| origin.item).collect();
+        let candidates = self.snap_candidates(cx, &exclude, None);
+        let edges: Vec<Tick> = origins
+            .iter()
+            .flat_map(|origin| [origin.start, origin.end])
+            .collect();
+        let outcome = snap_delta(
+            raw,
+            &edges,
+            &candidates,
+            cx.preferences.snapping,
+            bypass,
+            self.zoom,
+        );
+        (outcome.at, outcome.target.map(|target| target.at))
+    }
+    pub(in crate::editor::timeline) fn snap_tick(
+        &self,
+        cx: &Context<'_>,
+        raw: Tick,
+        exclude: &BTreeSet<ItemId>,
+        exclude_bookmark: Option<BookmarkId>,
+        bypass: bool,
+    ) -> (Tick, Option<Tick>) {
+        let candidates = self.snap_candidates(cx, exclude, exclude_bookmark);
+        let outcome = snap_point(raw, &candidates, cx.preferences.snapping, bypass, self.zoom);
+        (outcome.at, outcome.target.map(|target| target.at))
+    }
+}
+
+/// Round a pointer time to the nearest frame of the canvas rate.
+pub(in crate::editor::timeline) fn frame_snap(cx: &Context<'_>, at: Tick) -> Tick {
+    cx.session
+        .project()
+        .data()
+        .canvas
+        .fps
+        .snap_nearest(at)
+        .unwrap_or(at)
 }
 
 #[cfg(test)]
@@ -302,11 +402,8 @@ mod tests {
     }
 
     #[test]
-    fn preview_thresholds_are_the_measured_pixel_and_degree_values() {
-        assert_eq!(PREVIEW_SNAP_PIXELS, 5.0);
-        assert_eq!(ROTATE_SNAP_STEP, 90.0);
-        assert_eq!(ROTATE_SNAP_DEGREES, 5.0);
-        assert_eq!(SNAP_PIXELS, 10.0, "the timeline threshold is unchanged");
+    fn timeline_threshold_is_the_reference_ten_pixels() {
+        assert_eq!(SNAP_PIXELS, 10.0);
     }
 
     proptest! {

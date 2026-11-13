@@ -1,6 +1,6 @@
 //! Verifies timeline scale behaviour.
 use super::*;
-use crate::editor::DEFAULT_ZOOM;
+use crate::editor::timeline::DEFAULT_ZOOM;
 use time::TICKS_PER_SECOND;
 
 #[test]

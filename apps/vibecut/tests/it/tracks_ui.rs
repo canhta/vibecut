@@ -563,7 +563,7 @@ fn rename_cancellation_restores_shortcuts_after_track_exit() {
 #[test]
 fn lock_refuses_structural_edits_and_add_track_uses_the_active_kind() {
     let (mut editor, text_track, item) = track_editor();
-    editor.selection.insert(item);
+    editor.select([item].into()).unwrap();
     editor
         .playback
         .seek(
@@ -642,7 +642,7 @@ fn lock_refuses_structural_edits_and_add_track_uses_the_active_kind() {
         .unwrap();
     assert_eq!(added_above[active_index - 1].kind, TrackKind::Text);
 
-    h.state_mut().selection.clear();
+    h.state_mut().select(Default::default()).unwrap();
     let old_ids: Vec<_> = h
         .state()
         .session

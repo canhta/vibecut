@@ -31,7 +31,7 @@ impl State {
         {
             let rect = Rect::from_two_pos(marquee.origin, pointer).intersect(content);
             let mut selected =
-                crate::selection::intersections(rect.min, rect.max, rects.iter().copied());
+                crate::editor::selection::intersections(rect.min, rect.max, rects.iter().copied());
             if marquee.additive {
                 selected.extend(&marquee.before);
             }

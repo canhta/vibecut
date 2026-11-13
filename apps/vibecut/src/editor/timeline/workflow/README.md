@@ -1,7 +1,7 @@
 # Timeline gestures and zoom
 
 Interface: the `State` gesture methods for item drag, bookmark drag, keyframe retime,
-volume and fade drags, plus `frame_snap`.
+volume and fade drags.
 
 The ruler is adaptive and frame-snapped; [its view](../view/ruler/README.md) owns tick
 selection and labels.
@@ -31,8 +31,10 @@ outlines the landing row or draws an insertion line for a created track; a refus
 the engine's reason above the scrollbar; a main-track item at the origin is pinned with an
 accent edge and cannot move left.
 
-Snapping is a persisted preference (on by default) behind the magnet control. It converts
-10 logical pixels to ticks at the current zoom and ranks item start/end, playhead, bookmark
-and keyframe targets by pixel distance, then stable source order. The indicator shows only
-while a candidate is active. Move, trim and bookmark drag honour the toggle; Shift bypasses
-it.
+Snapping is a persisted preference (on by default) behind the magnet control. The
+timeline's `snapping.rs` owns it: it converts 10 logical pixels to ticks at the current
+zoom and ranks item start/end, playhead, bookmark and keyframe targets by pixel distance,
+then stable source order, with `frame_snap` for pointer times. The preview canvas ranks
+with the same `closest` rule from the [editor context](../../context/README.md) and its
+own measured 5 px threshold. The indicator shows only while a candidate is active. Move,
+trim and bookmark drag honour the toggle; Shift bypasses it.

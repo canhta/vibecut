@@ -26,7 +26,7 @@ pub use assets::{
     MediaKind, MediaSort, MediaSortKey, MediaSortOrder, MediaView, ThumbnailOutcome,
     ThumbnailSource,
 };
-pub use panels::player::{PreviewAxis, PreviewGuide, TextCaret};
+pub use panels::player::{PREVIEW_SNAP_PIXELS, PreviewAxis, PreviewGuide, TextCaret};
 pub use state::{
     AssetInspection, Editor, Inspection, ShortcutRow, ShortcutTab, ShortcutsInspection,
 };
@@ -39,8 +39,9 @@ pub use widgets::WidgetState;
 mod timing;
 use timing::{display_short_time, display_time};
 
-use crate::selection::{KeyframeSelection, SelectionScope, SelectionScopes};
-use crate::snapping::{SnapCandidate, SnapSource, snap_point};
+mod selection;
+pub use selection::{KeyframeSelection, MaskPointSelection, SelectionScope, SelectionScopes};
+
 use crate::{
     Error, Result,
     actions::{
@@ -68,31 +69,6 @@ use std::{
     time::Duration,
 };
 use time::{FrameRate, Rounding, SourceRange, TICKS_PER_SECOND, Tick};
-
-const TOOLBAR_HEIGHT: f32 = theme::size::TOOLBAR;
-const BUTTON_ICON: f32 = theme::icon::DENSE;
-const ICON_BUTTON: f32 = theme::size::CONTROL;
-const RULER_HEIGHT: f32 = theme::size::RULER;
-const LABEL_WIDTH: f32 = theme::size::TRACK_LABEL;
-const SCROLLBAR: f32 = theme::size::SCROLLBAR;
-const TRACK_GAP: f32 = theme::space::SM;
-/// Fixed reference scale for persisted view state: 1× is 40 logical px/s.
-const DEFAULT_ZOOM: f32 = 40.0;
-/// The timeline slider tops out at 100× the reference scale.
-const MAX_ZOOM: f32 = DEFAULT_ZOOM * 100.0;
-/// A positive floor for hostile/empty content; the fit minimum is dynamic.
-const MIN_ZOOM_FLOOR: f32 = 0.000_001;
-const ZOOM_STEP: f32 = 1.7;
-const ZOOM_ANCHOR_THRESHOLD: f32 = 0.15;
-const PADDING_MAX_RATIO: f32 = 0.75;
-const PADDING_MIN_RATIO: f32 = 0.15;
-const PADDING_MIN_AT_ZOOM_PERCENT: f32 = 0.2;
-const EDGE_AUTO_SCROLL_ZONE: f32 = 100.0;
-const EDGE_AUTO_SCROLL_MAX_STEP: f32 = 15.0;
-const HORIZONTAL_WHEEL_STEP: f32 = 40.0;
-const RULER_LABEL_SPACING: f32 = 160.0;
-const RULER_TICK_SPACING: f32 = 18.0;
-const LABEL_CHARS: usize = 120;
 
 impl Editor {
     pub(crate) fn theme(ctx: &egui::Context, dark: bool) {
@@ -179,7 +155,7 @@ impl Editor {
     ) {
         self.properties
             .attach_luts(media.clone(), self.playback.budget().clone());
-        self.media.set_access(media);
+        self.timeline.set_media(media);
     }
 
     /// Attach the native effect adapter to playback and thumbnail jobs, sharing
@@ -277,14 +253,9 @@ impl Editor {
             .err()
             .map(|_| i18n::text(preferences.locale, Text::FontsLoadFailed).to_owned());
         let view = session.metadata().view;
-        let zoom = (f64::from(DEFAULT_ZOOM) * view.zoom)
-            .clamp(f64::from(MIN_ZOOM_FLOOR), f64::from(MAX_ZOOM)) as f32;
-        let scroll = (view.scroll / f64::from(zoom)) as f32;
-        let selection = session.selection().clone();
         let preferences_fit = preferences.preview_fit;
         let preferences_zoom = preferences.preview_zoom;
         let project = session.project().data().id;
-        let media = timeline::Media::new(playback.budget().clone());
         let timeline_lanes: Vec<ItemId> = preferences
             .timeline_lanes
             .get(&project)
@@ -303,17 +274,16 @@ impl Editor {
             playback,
             preferences,
             overlay_open: false,
-            selection,
             selection_scopes: SelectionScopes::default(),
             properties: properties::State::default(),
             frame,
             player,
             timeline: {
-                let mut state = timeline::State::new(zoom, scroll);
+                let mut state = timeline::State::default();
+                state.adopt_stored_view(view.zoom, view.scroll);
                 state.restore_lanes(timeline_lanes);
                 state
             },
-            media,
             error: font_error,
             persistence_error: None,
             configured: false,
@@ -353,8 +323,8 @@ impl Editor {
             view: "editor",
             playing: self.playback.playing(),
             position: self.playback.position()?,
-            selection: self.selection.iter().copied().collect(),
-            selection_scope: self.selection_scopes.active(&self.selection),
+            selection: self.session.selection().iter().copied().collect(),
+            selection_scope: self.selection_scopes.active(self.session.selection()),
             expanded_lanes: self.timeline.expanded_lanes(),
             zoom: self.timeline.zoom(),
             scroll: self.timeline.scroll(),

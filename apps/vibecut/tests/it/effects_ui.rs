@@ -464,7 +464,10 @@ fn build(editor: Editor) -> Harness<'static, Editor> {
 }
 
 fn select(harness: &mut Harness<Editor>, item: ItemId) {
-    harness.state_mut().selection = [item].into_iter().collect();
+    harness
+        .state_mut()
+        .select([item].into_iter().collect())
+        .unwrap();
     harness.run_steps(3);
 }
 
@@ -916,7 +919,7 @@ fn effect_tile_drop_adds_to_a_clip_and_refuses_audio_with_a_reason() {
     harness.run_steps(3);
     assert_eq!(effect_ids(&harness, video), vec!["blur".to_owned()]);
     assert_eq!(harness.state().session.history_len().0, history.0 + 1);
-    assert_eq!(harness.state().selection, [video].into_iter().collect());
+    assert_eq!(*harness.state().selection(), [video].into_iter().collect());
 
     harness.state_mut().activate("edit.undo").unwrap();
     harness.run_steps(2);
@@ -994,7 +997,10 @@ fn effect_plus_adds_to_the_selected_clip_and_needs_a_target() {
         .unwrap_or_default();
     assert!(toast.contains("Select a clip first"), "{toast}");
 
-    harness.state_mut().selection = [video, image].into_iter().collect();
+    harness
+        .state_mut()
+        .select([video, image].into_iter().collect())
+        .unwrap();
     harness.run_steps(3);
     click(&mut harness, "effects.add.blur");
     assert!(effects(&harness, video).is_empty());
@@ -1006,7 +1012,7 @@ fn effect_plus_adds_to_the_selected_clip_and_needs_a_target() {
     click(&mut harness, "effects.add.blur");
     assert_eq!(effect_ids(&harness, image), vec!["blur".to_owned()]);
     assert_eq!(harness.state().session.history_len().0, history.0 + 1);
-    assert_eq!(harness.state().selection, [image].into_iter().collect());
+    assert_eq!(*harness.state().selection(), [image].into_iter().collect());
 }
 
 #[test]
@@ -3497,7 +3503,7 @@ fn effect_rgb_picker_cancels_stale_gestures_and_disables_keyed_edits_outside() {
         match reason {
             "escape" => h.key_press(egui::Key::Escape),
             "selection" => {
-                h.state_mut().selection = [image].into_iter().collect();
+                h.state_mut().select([image].into_iter().collect()).unwrap();
             }
             "remove" => {
                 h.state_mut()

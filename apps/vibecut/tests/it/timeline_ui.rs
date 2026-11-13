@@ -1150,7 +1150,9 @@ fn multi_select_move_snaps_one_edge_and_keeps_group_spacing() {
     let video_b = fixture.video_b;
     let text = text_item_id(&fixture.editor);
     let mut editor = fixture.editor;
-    editor.selection = [video_b, text].into_iter().collect();
+    editor
+        .select([video_b, text].into_iter().collect())
+        .unwrap();
     let mut harness = harness(editor);
     harness.run_steps(3);
     let zoom = harness.state().inspect().unwrap().zoom;
@@ -1792,7 +1794,7 @@ fn delete_invalidates_preview_and_clamps_playhead() {
         assert!(std::time::Instant::now() < deadline);
         std::thread::sleep(std::time::Duration::from_millis(2));
     }
-    editor.selection.insert(item_id);
+    editor.select([item_id].into()).unwrap();
     editor.activate("timeline.delete").unwrap();
     assert_eq!(editor.session.project().duration(), Tick::ZERO);
     assert_eq!(
@@ -1831,7 +1833,9 @@ fn group_move_preserves_spacing_at_timeline_zero() {
             items: vec![fixture.video_a],
         })
         .unwrap();
-    editor.selection = [fixture.video_b, text].into_iter().collect();
+    editor
+        .select([fixture.video_b, text].into_iter().collect())
+        .unwrap();
     let id = fixture.video_b;
     let mut harness = harness(editor);
     harness.run_steps(3);
@@ -1902,7 +1906,7 @@ fn split_respects_selection_outside_playhead() {
     let fixture = fixture();
     let text = text_item_id(&fixture.editor);
     let mut editor = fixture.editor;
-    editor.selection.insert(text);
+    editor.select([text].into()).unwrap();
     editor
         .playback
         .seek(Tick(7 * SECOND), false, editor.session.project().clone())
@@ -1949,7 +1953,7 @@ fn edits_while_playing_restart_preview_and_pause_at_the_new_end() {
         editor.tick();
     }
     assert!(editor.playback.position().unwrap() > Tick::ZERO);
-    editor.selection.insert(item_id);
+    editor.select([item_id].into()).unwrap();
     editor.activate("timeline.delete").unwrap();
     assert_eq!(editor.session.project().duration(), Tick::ZERO);
     assert!(editor.playback.frame().is_none());
@@ -2025,7 +2029,7 @@ fn lifecycle_view_state_restores_and_tracks_timeline_navigation() {
 #[test]
 fn rename_field_suppresses_timeline_edit_shortcuts() {
     let mut fixture = fixture();
-    fixture.editor.selection.insert(fixture.video_a);
+    fixture.editor.select([fixture.video_a].into()).unwrap();
     fixture
         .editor
         .playback
@@ -2111,7 +2115,7 @@ fn engine_view_command_is_not_overwritten_by_the_next_editor_action() {
 
 #[test]
 fn marquee_reversal_and_escape_scopes_leave_project_unchanged() {
-    use vibecut::selection::SelectionScope;
+    use vibecut::SelectionScope;
     let fixture = fixture();
     let a = fixture.video_a;
     let b = fixture.video_b;
@@ -2128,35 +2132,37 @@ fn marquee_reversal_and_escape_scopes_leave_project_unchanged() {
     harness.run_steps(1);
     harness.hover_at(ar.left_top() - egui::vec2(1.0, 1.0));
     harness.run_steps(2);
-    assert_eq!(harness.state().selection, [a, b].into_iter().collect());
+    assert_eq!(*harness.state().selection(), [a, b].into_iter().collect());
     harness.hover_at(egui::pos2(br.left() + 5.0, ar.top() - 1.0));
     harness.run_steps(2);
-    assert_eq!(harness.state().selection, [b].into_iter().collect());
+    assert_eq!(*harness.state().selection(), [b].into_iter().collect());
     harness.drop_at(ar.left_top() - egui::vec2(1.0, 1.0));
     harness.run_steps(2);
-    assert_eq!(harness.state().selection, [a, b].into_iter().collect());
+    assert_eq!(*harness.state().selection(), [a, b].into_iter().collect());
     harness.drag_at(origin);
     harness.run_steps(1);
     harness.hover_at(egui::pos2(br.left() + 5.0, ar.top() - 1.0));
     harness.run_steps(2);
-    assert_eq!(harness.state().selection, [b].into_iter().collect());
+    assert_eq!(*harness.state().selection(), [b].into_iter().collect());
     harness.key_press(egui::Key::Escape);
     harness.run_steps(2);
-    assert_eq!(harness.state().selection, [a, b].into_iter().collect());
+    assert_eq!(*harness.state().selection(), [a, b].into_iter().collect());
     harness.drop_at(origin);
     harness.run_steps(2);
-    harness.state_mut().selection_scopes.mask_points.insert(
-        vibecut::selection::MaskPointSelection {
+    harness
+        .state_mut()
+        .selection_scopes
+        .mask_points
+        .insert(vibecut::MaskPointSelection {
             item: a,
             mask: "mask1".into(),
             point: 0,
-        },
-    );
+        });
     harness
         .state_mut()
         .selection_scopes
         .keyframes
-        .insert(vibecut::selection::KeyframeSelection {
+        .insert(vibecut::KeyframeSelection {
             item: a,
             path: project::AnimationPath::new("opacity").unwrap(),
             component: None,
@@ -2171,13 +2177,13 @@ fn marquee_reversal_and_escape_scopes_leave_project_unchanged() {
         harness.key_press(egui::Key::Escape);
         harness.run_steps(2);
     }
-    assert!(harness.state().selection.is_empty());
+    assert!(harness.state().selection().is_empty());
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
     harness.run_steps(2);
-    assert_eq!(harness.state().selection.len(), count(harness.state()));
+    assert_eq!(harness.state().selection().len(), count(harness.state()));
     harness.key_press(egui::Key::Escape);
     harness.run_steps(2);
-    assert!(harness.state().selection.is_empty());
+    assert!(harness.state().selection().is_empty());
     assert_eq!(
         serde_json::to_vec(harness.state().session.project().data()).unwrap(),
         bytes
@@ -2236,7 +2242,10 @@ fn mixed_text_background_is_reported_as_indeterminate() {
             patch: engine::ItemParamPatch::TextBackground(Some(Default::default())),
         })
         .unwrap();
-    fixture.editor.selection = [first, second].into_iter().collect();
+    fixture
+        .editor
+        .select([first, second].into_iter().collect())
+        .unwrap();
     let mut harness = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 1600.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), fixture.editor);
@@ -2271,7 +2280,7 @@ fn mixed_text_inspector_applies_one_field_and_restores_selected_items() {
     }
     let fields = vibecut::shared_fields(
         harness.state().session.project(),
-        &harness.state().selection,
+        harness.state().selection(),
     );
     assert_eq!(fields.len(), 9);
     for field in &fields {
@@ -2306,12 +2315,12 @@ fn mixed_text_inspector_applies_one_field_and_restores_selected_items() {
     harness.state_mut().activate("edit.undo").unwrap();
     assert_eq!(harness.state().session.project(), &before);
     assert_eq!(
-        harness.state().selection,
+        *harness.state().selection(),
         [first, second].into_iter().collect()
     );
     harness.state_mut().activate("edit.redo").unwrap();
     assert_eq!(
-        harness.state().selection,
+        *harness.state().selection(),
         [first, second].into_iter().collect()
     );
     for invalid in ["NaN", "0", "4097", "-1"] {
@@ -2573,7 +2582,10 @@ fn mixed_audio_mute_shows_indeterminate_and_undo_restores_each_item() {
         }),
     );
     let video = fixture.video_a;
-    fixture.editor.selection = [first, second, video].into_iter().collect();
+    fixture
+        .editor
+        .select([first, second, video].into_iter().collect())
+        .unwrap();
     let mut harness = harness(fixture.editor);
     harness.run_steps(3);
     let before = harness.state().session.project().clone();
@@ -2760,7 +2772,7 @@ fn compatible_audio_gain_inspector_edits_video_and_preserves_mute() {
     harness.key_press(egui::Key::Enter);
     harness.run_steps(3);
     assert_eq!(
-        harness.state().selection,
+        *harness.state().selection(),
         [video, audio].into_iter().collect()
     );
     let ItemParams::Video(video_params) = &item(harness.state(), video).content else {
@@ -2879,7 +2891,9 @@ fn group_drag_stages_only_the_moved_clips_and_commits_one_step() {
     let text = text_item_id(&fixture.editor);
     let audio = audio_item(&fixture.editor);
     let mut editor = fixture.editor;
-    editor.selection = [video_b, text].into_iter().collect();
+    editor
+        .select([video_b, text].into_iter().collect())
+        .unwrap();
     let committed = editor.session.project().clone();
     let bytes = serde_json::to_vec(committed.data()).unwrap();
     let history = editor.session.history_len();
@@ -2944,7 +2958,9 @@ fn escape_mid_drag_discards_the_staged_candidate() {
     let video_b = fixture.video_b;
     let text = text_item_id(&fixture.editor);
     let mut editor = fixture.editor;
-    editor.selection = [video_b, text].into_iter().collect();
+    editor
+        .select([video_b, text].into_iter().collect())
+        .unwrap();
     let committed = editor.session.project().clone();
     let bytes = serde_json::to_vec(committed.data()).unwrap();
     let history = editor.session.history_len();
@@ -3013,7 +3029,7 @@ fn returning_a_group_to_the_press_point_commits_no_history() {
     .unwrap();
     playback.set_device_available(true);
     let mut editor = Editor::new(session, playback, Preferences::default());
-    editor.selection.insert(first);
+    editor.select([first].into()).unwrap();
     let before = serde_json::to_vec(editor.session.project().data()).unwrap();
     let history = editor.session.history_len();
     let mut h = harness(editor);
@@ -3049,7 +3065,9 @@ fn group_trim_previews_every_selected_edge_and_commits_one_step() {
     let video_a = fixture.video_a;
     let text = text_item_id(&fixture.editor);
     let mut editor = fixture.editor;
-    editor.selection = [video_a, text].into_iter().collect();
+    editor
+        .select([video_a, text].into_iter().collect())
+        .unwrap();
     let committed = editor.session.project().clone();
     let history = editor.session.history_len();
     let mut h = harness(editor);
@@ -3102,7 +3120,9 @@ fn a_refused_group_move_shows_the_reason_and_discards_the_preview() {
             locked: true,
         })
         .unwrap();
-    editor.selection = [video_b, text].into_iter().collect();
+    editor
+        .select([video_b, text].into_iter().collect())
+        .unwrap();
     let before = editor.session.project().clone();
     let history = editor.session.history_len();
     let mut h = harness(editor);
@@ -3157,7 +3177,7 @@ fn a_main_track_item_at_the_origin_is_pinned_and_cannot_move_left() {
     .unwrap();
     playback.set_device_available(true);
     let mut editor = Editor::new(session, playback, Preferences::default());
-    editor.selection.insert(item_id);
+    editor.select([item_id].into()).unwrap();
     let history = editor.session.history_len();
     let mut h = harness(editor);
     h.run_steps(3);
@@ -3651,7 +3671,7 @@ fn property_diamond_toggles_a_keyframe_at_the_playhead() {
 fn text_fade_keys_open_in_the_ordinary_lane_and_delete_with_undo() {
     let mut e = fixture().editor;
     e.activate("text.insert").unwrap();
-    let id = *e.selection.first().unwrap();
+    let id = *e.selection().first().unwrap();
     e.activate("text.animation.fade_in_out").unwrap();
     let mut h = harness(e);
     h.run_steps(3);
@@ -3848,7 +3868,7 @@ fn lane_marquee_selects_keys_and_delete_removes_them_atomically() {
     );
     assert_eq!(
         harness.state().inspect().unwrap().selection_scope,
-        vibecut::selection::SelectionScope::Keyframes
+        vibecut::SelectionScope::Keyframes
     );
     let history = harness.state().session.history_len().0;
     harness.key_press(egui::Key::Delete);
@@ -3982,14 +4002,16 @@ fn graph_popover_stages_curves_and_commits_or_cancels_in_one_undo_step() {
             .0
     };
     let select = |harness: &mut Harness<'_, Editor>| {
-        harness.state_mut().selection_scopes.keyframes.insert(
-            vibecut::selection::KeyframeSelection {
+        harness
+            .state_mut()
+            .selection_scopes
+            .keyframes
+            .insert(vibecut::KeyframeSelection {
                 item: id,
                 path: project::AnimationPath::new("opacity").unwrap(),
                 component: None,
                 time: Tick(2 * SECOND),
-            },
-        );
+            });
         harness.run_steps(3);
     };
     let bytes = |harness: &Harness<'_, Editor>| {
@@ -4197,7 +4219,10 @@ fn ripple_toolbar_delete_trim_split_and_cross_track_move_share_the_policy() {
             .playback
             .seek(Tick(3 * SECOND), false, snapshot)
             .unwrap();
-        harness.state_mut().selection = [a].into_iter().collect();
+        harness
+            .state_mut()
+            .select([a].into_iter().collect())
+            .unwrap();
         let before_split = count(harness.state());
         harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::B);
         harness.run_steps(2);
@@ -4237,7 +4262,10 @@ fn ripple_toolbar_delete_trim_split_and_cross_track_move_share_the_policy() {
         assert_eq!(item(harness.state(), b).start, Tick(6 * SECOND));
         harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
         harness.run_steps(2);
-        harness.state_mut().selection = [a].into_iter().collect();
+        harness
+            .state_mut()
+            .select([a].into_iter().collect())
+            .unwrap();
         harness.key_press(egui::Key::Delete);
         harness.run_steps(2);
         assert!(item_opt(harness.state(), a).is_none());
@@ -5498,8 +5526,8 @@ fn clipboard_keys_menus_zero_key_target_refusal_undo_and_bilingual_captures() {
             h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::V);
             h.run_steps(2);
             assert_eq!(h.state().session.history_len().0, item_history + 1);
-            assert_eq!(h.state().selection.len(), 1);
-            let pasted = *h.state().selection.iter().next().unwrap();
+            assert_eq!(h.state().selection().len(), 1);
+            let pasted = *h.state().selection().iter().next().unwrap();
             assert_eq!(item(h.state(), pasted).start, end);
             assert_eq!(item(h.state(), pasted).content, source_item.content);
             assert_eq!(
@@ -5658,7 +5686,7 @@ fn clipboard_oversized_held_text_selection_disables_copy_and_keyboard_refuses_wi
     h.state_mut()
         .selection_scopes
         .keyframes
-        .insert(vibecut::selection::KeyframeSelection {
+        .insert(vibecut::KeyframeSelection {
             item: id,
             path,
             component: None,
@@ -5670,7 +5698,7 @@ fn clipboard_oversized_held_text_selection_disables_copy_and_keyboard_refuses_wi
     let history = h.state().session.history_len();
     assert_eq!(
         h.state().inspect().unwrap().selection_scope,
-        vibecut::selection::SelectionScope::Keyframes
+        vibecut::SelectionScope::Keyframes
     );
     assert!(!h.state().action_enabled("edit.copy"));
     assert!(h.state_mut().activate("edit.copy").is_err());

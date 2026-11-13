@@ -28,11 +28,11 @@ impl State {
         };
         // Grabbing an unselected clip selects it alone first; a selected clip
         // drags or resizes the whole selection.
-        let select = (!cx.selection.contains(&item)).then_some(item);
+        let select = (!cx.selection().contains(&item)).then_some(item);
         let selection: BTreeSet<ItemId> = if select.is_some() {
             BTreeSet::from([item])
         } else {
-            cx.selection.clone()
+            cx.selection().clone()
         };
         let mut origins = Vec::new();
         let mut source_range = None;

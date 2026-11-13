@@ -1,25 +1,64 @@
 //! Maintains editor selection scope.
 
-use crate::editor::{BTreeSet, Editor, ItemId, SelectionScopes, Tick, egui};
+use crate::editor::{BTreeSet, Editor, Error, ItemId, Result, SelectionScopes, Tick, egui};
 
 impl Editor {
-    pub(in crate::editor) fn select_single(&mut self, item: ItemId) {
-        self.selection.clear();
-        self.selection.insert(item);
+    /// The selected items; the engine session is their only owner.
+    pub fn selection(&self) -> &BTreeSet<ItemId> {
+        self.session.selection()
+    }
+    /// Replace the item selection from outside a pointer interaction (agents,
+    /// tests): the same write a click makes, with the open gestures the change
+    /// invalidates ended first.
+    pub fn select(&mut self, items: BTreeSet<ItemId>) -> Result<()> {
+        if self.write_selection(items) {
+            Ok(())
+        } else {
+            Err(Error::Invalid("selection"))
+        }
+    }
+    /// The one item-selection write. The session refuses a change while a
+    /// gesture is open, so the gestures this change invalidates end first: the
+    /// inspector's scrub, wheel, curve and picker (as its per-frame
+    /// reconciliation would) and the timeline's graph popover. Any other open
+    /// gesture refuses the write and the error line says why.
+    pub(in crate::editor) fn write_selection(&mut self, items: BTreeSet<ItemId>) -> bool {
+        if self.session.selection() == &items {
+            return true;
+        }
+        let actions = self.properties.reconcile(
+            self.session.project(),
+            crate::editor::context::single(&items),
+        );
+        crate::editor::properties::apply(&mut self.desk(), actions);
+        if self.timeline.graph_popover_open() {
+            self.timeline.escape_graph();
+            self.discard_gesture();
+        }
+        self.desk().select(items)
+    }
+    /// Replace the item selection: end the open scrub, drop every nested scope
+    /// and stale draft, then write once.
+    pub(in crate::editor) fn replace_selection(&mut self, items: BTreeSet<ItemId>) -> bool {
         self.selection_changed();
+        self.write_selection(items)
+    }
+    pub(in crate::editor) fn select_single(&mut self, item: ItemId) {
+        self.replace_selection(BTreeSet::from([item]));
     }
     pub(in crate::editor) fn select_item(&mut self, item: ItemId, modifiers: egui::Modifiers) {
-        crate::selection::click(
-            &mut self.selection,
+        let mut items = self.session.selection().clone();
+        crate::editor::selection::click(
+            &mut items,
             &mut None,
             item,
             modifiers.command || modifiers.ctrl || modifiers.shift,
             None,
         );
-        self.selection_changed();
+        self.replace_selection(items);
     }
     pub(in crate::editor) fn select_all(&mut self) {
-        self.selection = self
+        let items = self
             .session
             .project()
             .data()
@@ -28,27 +67,24 @@ impl Editor {
             .iter()
             .flat_map(|track| track.items.iter().map(|item| item.id))
             .collect();
-        self.selection_changed();
+        self.replace_selection(items);
     }
+    /// The selection changed: end the open scrub and drop every nested scope.
     pub(in crate::editor) fn selection_changed(&mut self) {
         self.finish_scrub(false);
         self.player.key_color_pick = None;
         self.selection_scopes = SelectionScopes::default();
         self.properties.clear_drafts();
-        self.desk().select();
     }
     /// A timeline transition replaces the item selection, so the inspector edits it.
     pub(in crate::editor) fn select_transition(&mut self, transition: project::TransitionId) {
         if !self.transition_exists(transition) {
             return;
         }
-        self.finish_scrub(false);
-        self.player.key_color_pick = None;
-        self.selection.clear();
-        self.selection_scopes = SelectionScopes::default();
-        self.selection_scopes.transition = Some(transition);
-        self.properties.clear_drafts();
-        self.desk().select();
+        self.selection_changed();
+        if self.write_selection(BTreeSet::new()) {
+            self.selection_scopes.transition = Some(transition);
+        }
     }
     fn transition_exists(&self, transition: project::TransitionId) -> bool {
         self.session
@@ -87,21 +123,14 @@ impl Editor {
             Err(error) => self.desk().fail(error.to_string()),
         }
     }
+    /// The session prunes vanished items from the selection itself; the nested
+    /// scopes follow it here.
     pub(in crate::editor) fn prune_selection(&mut self) {
         self.forget_missing_transition();
-        let existing: BTreeSet<ItemId> = self
-            .session
-            .project()
-            .data()
-            .scene()
-            .timeline
-            .iter()
-            .flat_map(|track| track.items.iter().map(|item| item.id))
-            .collect();
-        self.selection.retain(|id| existing.contains(id));
         let session = &self.session;
+        let selected = session.selection();
         self.selection_scopes.mask_points.retain(|target| {
-            self.selection.contains(&target.item)
+            selected.contains(&target.item)
                 && session
                     .project()
                     .data()
@@ -121,18 +150,17 @@ impl Editor {
                         })
                     })
         });
-        let selected = self.selection.clone();
-        let session = &self.session;
         self.selection_scopes
             .keyframes
             .retain(|target| selected.contains(&target.item) && keyframe_exists(session, target));
     }
     pub(in crate::editor) fn clear_scene_selection(&mut self) {
         self.timeline.scenes.clear_selection();
-        self.selection.clear();
         self.selection_scopes = SelectionScopes::default();
+        self.write_selection(BTreeSet::new());
     }
     pub(in crate::editor) fn selection_by_end(&self, descending: bool) -> Vec<ItemId> {
+        let selected = self.session.selection();
         let mut items: Vec<(Tick, ItemId)> = self
             .session
             .project()
@@ -141,7 +169,7 @@ impl Editor {
             .timeline
             .iter()
             .flat_map(|track| track.items.iter())
-            .filter(|item| self.selection.contains(&item.id))
+            .filter(|item| selected.contains(&item.id))
             .map(|item| (item.start, item.id))
             .collect();
         items.sort_by(|a, b| {
@@ -157,7 +185,7 @@ impl Editor {
 
 fn keyframe_exists(
     session: &engine::Session,
-    target: &crate::selection::KeyframeSelection,
+    target: &crate::editor::selection::KeyframeSelection,
 ) -> bool {
     let Some(param) = session
         .project()

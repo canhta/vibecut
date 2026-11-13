@@ -6,9 +6,9 @@
 
 use super::{Action, Context};
 use crate::{
+    editor::selection::MaskPointSelection,
     egui::{self, CursorIcon, Pos2, Sense, Vec2},
     kit,
-    selection::MaskPointSelection,
 };
 use project::{ItemId, MaskPath, MaskShape};
 use render::viewport::{MaskGeometry, Viewport};
@@ -113,7 +113,7 @@ pub(super) fn show(
     at: Tick,
     actions: &mut Vec<Action>,
 ) -> bool {
-    let Some(target) = crate::editor::context::single(cx.selection)
+    let Some(target) = crate::editor::context::single(cx.selection())
         .and_then(|item| target(cx.staged_project(), &renderer(cx)?, item, at))
     else {
         state.drag = None;
@@ -539,7 +539,7 @@ pub(super) fn remember(
     at: Tick,
     actions: &mut Vec<Action>,
 ) {
-    let Some(target) = crate::editor::context::single(cx.selection)
+    let Some(target) = crate::editor::context::single(cx.selection())
         .and_then(|item| target(cx.staged_project(), &renderer(cx)?, item, at))
     else {
         return;

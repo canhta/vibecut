@@ -810,7 +810,10 @@ fn export_output_panel_persists_scene_range_refuses_empty_and_never_edits_projec
     bench.click("export.range");
     assert!(!enabled(&bench, "export.range.selected"));
     bench.click("export.range.full");
-    bench.editor_mut().selection.insert(project::ItemId(1));
+    bench
+        .editor_mut()
+        .select([project::ItemId(1)].into())
+        .unwrap();
     bench.click("export.range");
     bench.click("export.range.selected");
     assert!(matches!(

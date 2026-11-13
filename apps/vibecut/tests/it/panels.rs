@@ -78,7 +78,7 @@ fn lut_picker_applies_real_job_and_discards_stale_completion() {
         .preferences
         .properties_tabs
         .insert("image".into(), "adjust".into());
-    editor.selection = [video].into_iter().collect();
+    editor.select([video].into_iter().collect()).unwrap();
     editor
         .playback
         .seek(Tick::ZERO, false, editor.session.project().clone())
@@ -292,7 +292,7 @@ fn lut_picker_applies_real_job_and_discards_stale_completion() {
     h.run_steps(2);
     click(&mut h, "inspector.lut.import");
     h.state_mut().take_lifecycle_action();
-    h.state_mut().selection = [image].into_iter().collect();
+    h.state_mut().select([image].into_iter().collect()).unwrap();
     assert!(h.state_mut().lut_picked_file(Some(source)).is_err());
     assert_eq!(h.state().session.project(), &applied);
 }
@@ -502,7 +502,10 @@ fn build(editor: Editor) -> Harness<'static, Editor> {
 }
 
 fn select(harness: &mut Harness<Editor>, item: ItemId) {
-    harness.state_mut().selection = [item].into_iter().collect();
+    harness
+        .state_mut()
+        .select([item].into_iter().collect())
+        .unwrap();
     harness.run_steps(3);
 }
 
@@ -552,8 +555,7 @@ fn click(harness: &mut Harness<Editor>, id: &str) {
             }
         }
     }
-    if matches!(id, "inspector.tab.transform" | "inspector.tab.mask") && !has_widget(harness, id)
-    {
+    if matches!(id, "inspector.tab.transform" | "inspector.tab.mask") && !has_widget(harness, id) {
         click(harness, "inspector.group.basic");
     }
     harness
@@ -716,7 +718,7 @@ fn transform_fields_clamp_reset_scrub_cancel_and_persist() {
     assert_eq!(
         harness
             .state()
-            .selection
+            .selection()
             .iter()
             .copied()
             .collect::<Vec<_>>(),
@@ -885,7 +887,10 @@ fn transform_fields_clamp_reset_scrub_cancel_and_persist() {
                 .unwrap();
         }
     }
-    harness.state_mut().selection = spread.into_iter().collect();
+    harness
+        .state_mut()
+        .select(spread.into_iter().collect())
+        .unwrap();
     harness.run_steps(3);
     assert!(
         harness
@@ -1140,7 +1145,10 @@ fn shared_picker_edits_background_graphic_and_canvas_through_commands() {
     ] {
         harness.key_press(egui::Key::Escape);
         harness.run_steps(2);
-        harness.state_mut().selection = selection.into_iter().collect();
+        harness
+            .state_mut()
+            .select(selection.into_iter().collect())
+            .unwrap();
         harness.run_steps(3);
         if button == "inspector.background_color" {
             harness
@@ -1776,10 +1784,10 @@ fn hiding_a_scrub_field_rolls_back_and_closes_gesture() {
                 assert!(!harness.state().session.gesture_active());
                 assert_eq!(
                     harness.state().session.selection(),
-                    &harness.state().selection
+                    harness.state().selection()
                 );
             }
-            "empty" => harness.state_mut().selection.clear(),
+            "empty" => harness.state_mut().select(Default::default()).unwrap(),
             "details" => harness.state_mut().activate("inspector.details").unwrap(),
             "tab" => harness
                 .state_mut()
@@ -2166,7 +2174,7 @@ fn opacity_drafts_invalidate_before_blur_and_keyed_outside_edits_refuse() {
         "time", "target", "lock", "tab", "snapshot", "undo", "remove", "scene", "project",
     ] {
         let mut f = fixture();
-        f.editor.selection = [f.text].into_iter().collect();
+        f.editor.select([f.text].into_iter().collect()).unwrap();
         f.editor.activate("text.animation.fade_in_out").unwrap();
         let mut h = build(f.editor);
         h.run_steps(3);
@@ -2191,7 +2199,10 @@ fn opacity_drafts_invalidate_before_blur_and_keyed_outside_edits_refuse() {
                 .state_mut()
                 .dispatch(vibecut::AppCommand::Seek(Tick(SECOND)))
                 .unwrap(),
-            "target" => h.state_mut().selection = [f.video].into_iter().collect(),
+            "target" => h
+                .state_mut()
+                .select([f.video].into_iter().collect())
+                .unwrap(),
             "lock" => {
                 h.state_mut()
                     .session
@@ -2257,7 +2268,7 @@ fn opacity_drafts_invalidate_before_blur_and_keyed_outside_edits_refuse() {
         assert_eq!(h.state().session.history_len(), history, "{change}");
     }
     let mut f = fixture();
-    f.editor.selection = [f.text].into_iter().collect();
+    f.editor.select([f.text].into_iter().collect()).unwrap();
     f.editor.activate("text.animation.fade_in_out").unwrap();
     let track = f
         .editor
@@ -2338,13 +2349,13 @@ fn text_fade_preflight_preserves_focused_and_unfocused_caption_and_properties_dr
             h.run_steps(2);
         }
         let before = h.state().session.project().clone();
-        let selection = h.state().selection.clone();
+        let selection = h.state().selection().clone();
         let history = h.state().session.history_len();
         assert!(!h.state().action_enabled("text.animation.fade_in"));
         assert!(h.state_mut().activate("text.animation.fade_in").is_err());
         assert_eq!(h.state().session.project(), &before);
         assert_eq!(h.state().session.history_len(), history);
-        assert_eq!(h.state().selection, selection);
+        assert_eq!(*h.state().selection(), selection);
         assert!(
             h.get(By::new().predicate(|n| n.author_id() == Some("text.animation.fade_in")))
                 .accesskit_node()
@@ -2377,7 +2388,9 @@ fn text_fade_preflight_preserves_focused_and_unfocused_caption_and_properties_dr
     h.key_press(egui::Key::Escape);
     h.run_steps(3);
     for selected in [vec![f.video], vec![f.text, f.video]] {
-        h.state_mut().selection = selected.into_iter().collect();
+        h.state_mut()
+            .select(selected.into_iter().collect())
+            .unwrap();
         h.run_steps(2);
         assert!(!has_widget(&h, "text.animation.fade_in"));
         assert!(h.state_mut().activate("text.animation.fade_in").is_err());
@@ -3946,7 +3959,7 @@ fn graphic_shelf_keyed_rgba_numeric_drafts_history_and_captures() {
                 .build_ui_state(|ui, e: &mut Editor| e.ui(ui), f.editor);
             h.run_steps(3);
             click(&mut h, "graphic.insert.rectangle");
-            let id = *h.state().selection.iter().next().unwrap();
+            let id = *h.state().selection().iter().next().unwrap();
             assert!(matches!(
                 item(&h, id).content,
                 ItemParams::Graphic(project::GraphicParams::Rectangle { .. })
@@ -4175,7 +4188,7 @@ fn graphic_shelf_keyed_rgba_numeric_drafts_history_and_captures() {
             assert!(h.state().inspect().unwrap().color_preview.is_none());
             assert_eq!(h.state().session.project(), &before);
             click(&mut h, "graphic.insert.ellipse");
-            let ellipse = *h.state().selection.iter().next().unwrap();
+            let ellipse = *h.state().selection().iter().next().unwrap();
             h.run_steps(3);
             assert!(matches!(
                 item(&h, ellipse).content,
@@ -4203,7 +4216,7 @@ fn graphic_shelf_keyed_rgba_numeric_drafts_history_and_captures() {
                 ),
             ] {
                 click(&mut h, action);
-                let shape = *h.state().selection.iter().next().unwrap();
+                let shape = *h.state().selection().iter().next().unwrap();
                 h.run_steps(3);
                 assert!(matches!(
                     item(&h, shape).content,
@@ -4394,7 +4407,7 @@ fn graphic_scalar_label_drags_cancel_when_their_context_becomes_stale() {
                         .state_mut()
                         .dispatch(vibecut::AppCommand::Seek(at.checked_add(Tick(1)).unwrap()))
                         .unwrap(),
-                    "selection" => h.state_mut().selection = [other].into_iter().collect(),
+                    "selection" => h.state_mut().select([other].into_iter().collect()).unwrap(),
                     "tab" => h
                         .state_mut()
                         .preferences
@@ -4506,7 +4519,7 @@ fn freeform_mask_path_tile_edits_points_and_publishes_one_step_per_drag() {
     );
     assert_eq!(
         harness.state().inspect().unwrap().selection_scope,
-        vibecut::selection::SelectionScope::MaskPoints
+        vibecut::SelectionScope::MaskPoints
     );
     point_target(&mut harness, "preview.mask.point.2", egui::Modifiers::SHIFT);
     assert_eq!(harness.state().selection_scopes.mask_points.len(), 2);
@@ -4547,7 +4560,7 @@ fn freeform_mask_path_tile_edits_points_and_publishes_one_step_per_drag() {
     harness.key_press(egui::Key::Escape);
     harness.run_steps(2);
     assert!(harness.state().selection_scopes.mask_points.is_empty());
-    assert_eq!(harness.state().selection, [video].into_iter().collect());
+    assert_eq!(*harness.state().selection(), [video].into_iter().collect());
     assert!(
         mask_of(&harness, video).is_some(),
         "Escape never removes the mask"
@@ -4597,7 +4610,7 @@ fn freeform_mask_path_tile_edits_points_and_publishes_one_step_per_drag() {
     assert!(has_widget(&harness, "preview.mask.point.4"));
     assert_eq!(
         harness.state().inspect().unwrap().selection_scope,
-        vibecut::selection::SelectionScope::MaskPoints
+        vibecut::SelectionScope::MaskPoints
     );
     assert_eq!(
         harness

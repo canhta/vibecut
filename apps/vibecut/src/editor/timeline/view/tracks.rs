@@ -296,7 +296,7 @@ impl State {
         {
             self.marquee = Some((
                 origin,
-                cx.selection.clone(),
+                cx.selection().clone(),
                 modifiers.command || modifiers.ctrl || modifiers.shift,
             ));
         }
@@ -304,8 +304,11 @@ impl State {
             && let Some(pointer) = ui.input(|i| i.pointer.interact_pos())
         {
             let rect = Rect::from_two_pos(*origin, pointer).intersect(layout.body);
-            let mut selected: BTreeSet<ItemId> =
-                crate::selection::intersections(rect.min, rect.max, item_rects.iter().copied());
+            let mut selected: BTreeSet<ItemId> = crate::editor::selection::intersections(
+                rect.min,
+                rect.max,
+                item_rects.iter().copied(),
+            );
             if *additive {
                 selected.extend(before);
             }

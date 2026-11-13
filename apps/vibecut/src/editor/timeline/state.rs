@@ -3,7 +3,7 @@
 use crate::editor::timeline::graph::GraphPopover;
 use crate::editor::timeline::{
     Action, BTreeSet, BookmarkId, Context, DEFAULT_ZOOM, ItemId, KeyframeSelection, MAX_ZOOM,
-    MIN_ZOOM_FLOOR, Rect, Rounding, SourceRange, Tick, TrackId, egui,
+    MIN_ZOOM_FLOOR, Media, Rect, Rounding, SourceRange, Tick, TrackId, ZOOM_STEP, egui,
     workflow::{anchored_scroll, fit_zoom},
 };
 use crate::services::color_picker::Picker;
@@ -234,6 +234,8 @@ pub(in crate::editor) struct State {
     pub(in crate::editor::timeline) keyframe_rects: Vec<(KeyframeSelection, Rect)>,
     pub(in crate::editor::timeline) outbox: Vec<Action>,
     pub(in crate::editor::timeline) widgets: Vec<Remembered>,
+    /// Cache-only clip visuals and the generation jobs they request.
+    media: Media,
 }
 impl Default for State {
     fn default() -> Self {
@@ -273,6 +275,7 @@ impl State {
             keyframe_rects: Vec::new(),
             outbox: Vec::new(),
             widgets: Vec::new(),
+            media: Media::default(),
         }
     }
     pub(in crate::editor) fn zoom(&self) -> f32 {
@@ -372,6 +375,63 @@ impl State {
         self.zoom = zoom;
         self.scroll = scroll;
     }
+    /// Adopt the workspace's one media cache instance for clip visuals and
+    /// their generation jobs.
+    pub(in crate::editor) fn set_media(
+        &mut self,
+        access: std::sync::Arc<std::sync::Mutex<engine::control::MediaAccess>>,
+    ) {
+        self.media.set_access(access);
+    }
+    /// Submit one generation command the painted clips requested.
+    pub(in crate::editor) fn generate(
+        &mut self,
+        session: &mut engine::Session,
+        request: crate::editor::context::visuals::VisualRequest,
+        budget: &engine::ByteBudget,
+    ) -> crate::Result<()> {
+        self.media.generate(session, request, budget)
+    }
+    /// Advance the generation jobs and the cache maintenance worker.
+    pub(in crate::editor) fn tick_media(
+        &mut self,
+        session: &mut engine::Session,
+    ) -> crate::Result<()> {
+        self.media.tick(session)
+    }
+    pub(in crate::editor) fn request_cache(&mut self, action: crate::editor::context::CacheAction) {
+        self.media.request_cache(action);
+    }
+    pub(in crate::editor) fn cache_ui(&self) -> crate::editor::context::CacheUi {
+        self.media.cache_ui()
+    }
+    /// The display queries the context lends to every area.
+    pub(in crate::editor) fn visuals(&self) -> &dyn crate::editor::context::VisualQuery {
+        &self.media
+    }
+    /// Lend the media service out for one paint: the context borrows it while
+    /// the painted state is borrowed mutably.
+    pub(in crate::editor) fn take_media(&mut self) -> Media {
+        std::mem::take(&mut self.media)
+    }
+    pub(in crate::editor) fn restore_media(&mut self, media: Media) {
+        self.media = media;
+    }
+    /// Adopt the project's stored view: zoom as a multiple of the reference
+    /// scale, scroll in pixels.
+    pub(in crate::editor) fn adopt_stored_view(&mut self, zoom: f64, scroll: f64) {
+        let zoom = (f64::from(DEFAULT_ZOOM) * zoom)
+            .clamp(f64::from(MIN_ZOOM_FLOOR), f64::from(MAX_ZOOM)) as f32;
+        self.restore_view(zoom, (scroll / f64::from(zoom)) as f32);
+    }
+    /// The `(zoom, scroll)` pair the project stores: zoom as a multiple of the
+    /// reference scale, scroll in pixels.
+    pub(in crate::editor) fn stored_view(&self) -> (f64, f64) {
+        (
+            f64::from(self.zoom) / f64::from(DEFAULT_ZOOM),
+            (f64::from(self.scroll) * f64::from(self.zoom)).clamp(0.0, 1e9),
+        )
+    }
     /// Adopt the persisted set of items whose keyframe lanes stay open.
     pub(in crate::editor) fn restore_lanes(&mut self, lanes: impl IntoIterator<Item = ItemId>) {
         self.expanded = lanes.into_iter().collect();
@@ -392,7 +452,17 @@ impl State {
     pub(in crate::editor) fn min_zoom(&self, duration: Tick) -> f32 {
         fit_zoom(self.viewport, duration.seconds())
     }
-    pub(in crate::editor) fn zoom_by(&mut self, factor: f32, duration: Tick, playhead: Tick) {
+    /// One toolbar or shortcut step: ×1.7 in, ÷1.7 out.
+    pub(in crate::editor) fn zoom_step(&mut self, zoom_in: bool, duration: Tick, playhead: Tick) {
+        let factor = if zoom_in { ZOOM_STEP } else { 1.0 / ZOOM_STEP };
+        self.zoom_by(factor, duration, playhead);
+    }
+    pub(in crate::editor::timeline) fn zoom_by(
+        &mut self,
+        factor: f32,
+        duration: Tick,
+        playhead: Tick,
+    ) {
         let target = (self.zoom * factor).clamp(MIN_ZOOM_FLOOR, MAX_ZOOM);
         self.apply_zoom(target, duration, playhead);
     }

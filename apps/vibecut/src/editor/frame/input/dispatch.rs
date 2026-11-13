@@ -84,8 +84,8 @@ impl Editor {
         {
             return false;
         }
-        use crate::selection::SelectionScope;
-        let scope = self.selection_scopes.active(&self.selection);
+        use crate::editor::selection::SelectionScope;
+        let scope = self.selection_scopes.active(self.session.selection());
         if copy {
             match scope {
                 SelectionScope::Keyframes => {
@@ -93,7 +93,7 @@ impl Editor {
                 }
                 SelectionScope::Items => self
                     .session
-                    .can_copy_items(&self.selection.iter().copied().collect::<Vec<_>>()),
+                    .can_copy_items(&self.session.selection().iter().copied().collect::<Vec<_>>()),
                 SelectionScope::MaskPoints | SelectionScope::Transition | SelectionScope::None => {
                     false
                 }
@@ -103,13 +103,15 @@ impl Editor {
                 return false;
             };
             match scope {
-                SelectionScope::Keyframes => crate::editor::context::single(&self.selection)
-                    .is_some_and(|item| self.session.can_paste_keyframes(item, at)),
+                SelectionScope::Keyframes => {
+                    crate::editor::context::single(self.session.selection())
+                        .is_some_and(|item| self.session.can_paste_keyframes(item, at))
+                }
                 // One clipboard entry is live at a time: copied keyframes paste onto
                 // the single selected item, copied items paste on their track.
                 SelectionScope::Items => {
                     self.session.can_paste_items(at)
-                        || crate::editor::context::single(&self.selection)
+                        || crate::editor::context::single(self.session.selection())
                             .is_some_and(|item| self.session.can_paste_keyframes(item, at))
                 }
                 SelectionScope::MaskPoints | SelectionScope::Transition | SelectionScope::None => {
@@ -140,7 +142,7 @@ impl Editor {
         state: &crate::editor::properties::State,
     ) -> bool {
         state
-            .animation_target(&self.session, &self.selection)
+            .animation_target(&self.session, self.session.selection())
             .is_some()
             && !self.player.transform.text_edit_open()
             && self
@@ -171,7 +173,8 @@ impl Editor {
                 !locked
                     && item.start < at
                     && item.end().is_ok_and(|end| at < end)
-                    && (self.selection.is_empty() || self.selection.contains(&item.id))
+                    && (self.session.selection().is_empty()
+                        || self.session.selection().contains(&item.id))
             })
             .map(|(_, item)| item.id)
             .collect()
@@ -188,7 +191,7 @@ impl Editor {
                 let locked = track.locked;
                 track.items.iter().map(move |item| (locked, item))
             })
-            .filter(|(_, item)| self.selection.contains(&item.id))
+            .filter(|(_, item)| self.session.selection().contains(&item.id))
             .collect()
     }
 
@@ -420,11 +423,11 @@ impl Editor {
                         EngineAction::ExtractAudio => !self.extract_targets().is_empty(),
                         EngineAction::RecoverAudio => !self.recover_targets().is_empty(),
                         EngineAction::Delete | EngineAction::RippleDelete => {
-                            !self.selection.is_empty()
+                            !self.session.selection().is_empty()
                                 || matches!(
-                                    self.selection_scopes.active(&self.selection),
-                                    crate::selection::SelectionScope::Keyframes
-                                        | crate::selection::SelectionScope::Transition
+                                    self.selection_scopes.active(self.session.selection()),
+                                    crate::editor::selection::SelectionScope::Keyframes
+                                        | crate::editor::selection::SelectionScope::Transition
                                 )
                         }
                         EngineAction::DeleteScenes => !self.timeline.scenes.selected().is_empty(),
@@ -515,14 +518,14 @@ impl Editor {
                         .collect()
                 } else {
                     vec![Command::Delete {
-                        items: self.selection.iter().copied().collect(),
+                        items: self.session.selection().iter().copied().collect(),
                     }]
                 }
             }
             EngineAction::InsertMedia => Vec::new(),
             EngineAction::AddTrack => vec![crate::editor::timeline::add_track_command(
                 &self.session,
-                &self.selection,
+                self.session.selection(),
                 self.preferences.locale,
             )],
             EngineAction::ToggleBookmark => vec![Command::ToggleBookmark {
@@ -595,9 +598,12 @@ impl Editor {
             .collect();
         match route {
             EngineAction::Split | EngineAction::SplitLeft | EngineAction::Duplicate => {
-                self.selection = created_items.iter().copied().collect();
+                self.session
+                    .set_selection(created_items.iter().copied().collect())?;
             }
-            EngineAction::Delete | EngineAction::RippleDelete => self.selection.clear(),
+            EngineAction::Delete | EngineAction::RippleDelete => {
+                self.session.set_selection(Default::default())?;
+            }
             EngineAction::CreateScene => {
                 if let Some(CreatedId::Scene(scene)) = created.first().copied() {
                     self.cancel_interaction();

@@ -186,8 +186,8 @@ impl State {
                 ),
             ] {
                 let enabled = !cx.disabled.contains(action)
-                    && cx.selection.len() == 1
-                    && cx.selection.contains(&item.id);
+                    && cx.selection().len() == 1
+                    && cx.selection().contains(&item.id);
                 let response = ui.add_enabled(
                     enabled,
                     egui::Button::image_and_text(

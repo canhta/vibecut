@@ -32,7 +32,6 @@ pub(in crate::editor) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
             ui,
             &mut editor.session,
             &mut options,
-            &editor.selection,
             at,
             editor.preferences.locale,
             editor.preferences.dark,

@@ -21,7 +21,7 @@ fn default_split_chord_mutates_history_and_undo_redo_restore_it() {
     let fixture = fixture();
     let id = fixture.video_a;
     let mut editor = fixture.editor;
-    editor.selection.insert(id);
+    editor.select([id].into()).unwrap();
     editor
         .playback
         .seek(Tick(3 * SECOND), false, editor.session.project().clone())
@@ -107,7 +107,7 @@ fn escape_cancels_the_drag_before_deselecting() {
     let fixture = fixture();
     let id = fixture.video_b;
     let mut editor = fixture.editor;
-    editor.selection.insert(id);
+    editor.select([id].into()).unwrap();
     let before = editor.session.project().clone();
     let mut harness = harness(editor);
     harness.run_steps(3);
@@ -119,13 +119,13 @@ fn escape_cancels_the_drag_before_deselecting() {
 
     harness.key_press(egui::Key::Escape);
     harness.run_steps(2);
-    assert_eq!(harness.state().selection, [id].into_iter().collect());
+    assert_eq!(*harness.state().selection(), [id].into_iter().collect());
     assert!(!harness.state().session.gesture_active());
     assert_eq!(harness.state().session.project(), &before);
 
     harness.key_press(egui::Key::Escape);
     harness.run_steps(2);
-    assert!(harness.state().selection.is_empty());
+    assert!(harness.state().selection().is_empty());
     harness.drop_at(from);
     harness.run_steps(2);
 }
@@ -277,7 +277,7 @@ fn bookmark_jump_dispatch_shares_the_playhead_without_project_or_history_change(
         })
         .unwrap();
     let selection: std::collections::BTreeSet<_> = [id].into_iter().collect();
-    editor.selection = selection.clone();
+    editor.select(selection.clone()).unwrap();
     let project = serde_json::to_vec(editor.session.project().as_ref()).unwrap();
     let can_undo = editor.session.can_undo();
     assert!(editor.action_enabled("playback.jump_bookmark.next"));
@@ -319,7 +319,7 @@ fn bookmark_jump_dispatch_shares_the_playhead_without_project_or_history_change(
         .unwrap();
     assert_eq!(editor.playback.position().unwrap(), Tick(3 * SECOND));
 
-    assert_eq!(editor.selection, selection);
+    assert_eq!(*editor.selection(), selection);
     assert_eq!(editor.session.can_undo(), can_undo);
     assert_eq!(
         serde_json::to_vec(editor.session.project().as_ref()).unwrap(),
@@ -425,7 +425,7 @@ fn registered_delete_target_is_executed_by_keys_buttons_and_direct_activation() 
             let fixture = fixture();
             let item = fixture.video_a;
             let mut editor = fixture.editor;
-            editor.selection.insert(item);
+            editor.select([item].into()).unwrap();
             editor.preferences.ripple = ripple;
             let actions::ActionTarget::Engine(route) =
                 actions::action("timeline.delete").unwrap().target
@@ -457,7 +457,7 @@ fn registered_delete_target_is_executed_by_keys_buttons_and_direct_activation() 
                 expected.project(),
                 "{entry}, ripple={ripple}"
             );
-            assert!(h.state().selection.is_empty());
+            assert!(h.state().selection().is_empty());
         }
     }
 }
@@ -468,7 +468,7 @@ fn disabled_engine_and_app_selection_states_refuse_every_action_entry() {
         let fixture = fixture();
         let mut editor = fixture.editor;
         if locked {
-            editor.selection.insert(fixture.video_a);
+            editor.select([fixture.video_a].into()).unwrap();
             let tracks: Vec<_> = editor
                 .session
                 .project()

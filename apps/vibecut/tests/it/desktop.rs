@@ -477,7 +477,7 @@ fn transport_widget_identity_survives_preview_frame_arrival_and_empty_transition
             .next()
             .expect("fixture item")
     };
-    harness.state_mut().selection.insert(item);
+    harness.state_mut().select([item].into()).unwrap();
     harness.state_mut().activate("timeline.delete").unwrap();
     harness.run_steps(2);
     assert_eq!(

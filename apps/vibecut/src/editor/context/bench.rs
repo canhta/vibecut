@@ -203,7 +203,7 @@ mod tests {
         )
         .unwrap();
         let mut editor = Editor::new(session, playback, Preferences::default());
-        editor.selection = BTreeSet::from([item]);
+        editor.select(BTreeSet::from([item])).unwrap();
         editor
             .preferences
             .set(
@@ -388,26 +388,5 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn refused_header_activation_keeps_details_then_accepts_a_retry() {
-        let (mut editor, _) = audio_editor();
-        editor.activate("inspector.details").unwrap();
-        let mut bench = bench(editor);
-        let before = bench.editor().session.project().clone();
-        let history = bench.editor().session.history_len();
-        // An agent can leave a stale selected ID before the next panel input.
-        bench.editor_mut().selection = BTreeSet::from([ItemId(u64::MAX)]);
-        bench.click("inspector.project");
-        assert!(bench.editor().properties.details());
-        assert!(bench.editor().error.is_some());
-        assert_eq!(bench.editor().session.project(), &before);
-        assert_eq!(bench.editor().session.history_len(), history);
-        bench.editor_mut().selection.clear();
-        bench.click("inspector.project");
-        assert!(!bench.editor().properties.details());
-        bench.click("inspector.details");
-        assert!(bench.editor().properties.details());
     }
 }

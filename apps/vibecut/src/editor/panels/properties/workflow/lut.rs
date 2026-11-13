@@ -177,7 +177,7 @@ impl State {
             capture.session == view.session.session_id()
                 && capture.revision == view.session.revision()
                 && Arc::ptr_eq(&capture.snapshot, view.session.project())
-                && crate::editor::context::single(view.selection) == Some(capture.item)
+                && crate::editor::context::single(view.selection()) == Some(capture.item)
                 && !self.details
                 && !view.session.transaction_active()
                 && !read::item_locked(view.session.project(), capture.item)

@@ -149,8 +149,7 @@ impl State {
             .find(|id| matches!(id, CreatedId::Item(_)))
             .copied()
         {
-            desk.editor().selection.clear();
-            desk.editor().selection.insert(item);
+            desk.select(std::collections::BTreeSet::from([item]));
             desk.editor().selection_scopes = Default::default();
         }
         desk.sync();

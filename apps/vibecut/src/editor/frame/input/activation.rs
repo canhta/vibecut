@@ -2,7 +2,7 @@
 
 use crate::editor::{
     ActionTarget, Arc, AssetId, Editor, Error, ItemId, Locale, MediaView, Preferences, Result,
-    SelectionScopes, Text, UiAction, ZOOM_STEP, actions, media_panel,
+    SelectionScopes, Text, UiAction, actions, media_panel,
 };
 use crate::services::playback::Transport;
 use crate::services::preview;
@@ -65,12 +65,10 @@ impl Editor {
             let (spec, _) = actions::resolve(id).ok_or(Error::Unsupported("widget action"))?;
             return Err(Error::ActionDisabled(spec.id));
         }
-        self.desk().push_selection()?;
         self.remember_view()?;
         let before = self.session.project().clone();
         let result = execute(self)?;
         if id.is_none() {
-            self.selection = self.session.selection().clone();
             self.prune_selection();
         }
         self.prune_media_selection();
@@ -92,19 +90,19 @@ impl Editor {
         let duration = self.session.project().duration();
         // A transition has no ripple: both delete chords remove just it.
         if matches!(id, "timeline.delete" | "timeline.ripple_delete")
-            && self.selection_scopes.active(&self.selection)
-                == crate::selection::SelectionScope::Transition
+            && self.selection_scopes.active(self.session.selection())
+                == crate::editor::selection::SelectionScope::Transition
         {
             self.delete_selected_transition();
             return Ok(());
         }
         if id == "timeline.delete" {
-            match self.selection_scopes.active(&self.selection) {
-                crate::selection::SelectionScope::MaskPoints => {
+            match self.selection_scopes.active(self.session.selection()) {
+                crate::editor::selection::SelectionScope::MaskPoints => {
                     self.delete_mask_points();
                     return Ok(());
                 }
-                crate::selection::SelectionScope::Keyframes => {
+                crate::editor::selection::SelectionScope::Keyframes => {
                     let keyframes = self.selection_scopes.keyframes.clone();
                     self.delete_keyframes(&keyframes);
                     return Ok(());
@@ -116,33 +114,34 @@ impl Editor {
             ActionTarget::Engine(route) => self.execute_engine_action(route)?,
             ActionTarget::Pending { ticket, .. } => return Err(Error::NotAvailable(ticket)),
             ActionTarget::Ui { action, .. } => match action {
-                UiAction::Copy => match self.selection_scopes.active(&self.selection) {
-                    crate::selection::SelectionScope::Keyframes => {
+                UiAction::Copy => match self.selection_scopes.active(self.session.selection()) {
+                    crate::editor::selection::SelectionScope::Keyframes => {
                         let keys = self.clipboard_keys();
                         self.session
                             .apply(engine::Command::CopyKeyframes { keys })?;
                     }
-                    crate::selection::SelectionScope::Items => {
-                        let items = self.selection.iter().copied().collect();
+                    crate::editor::selection::SelectionScope::Items => {
+                        let items = self.session.selection().iter().copied().collect();
                         self.session.apply(engine::Command::CopyItems { items })?;
                     }
-                    crate::selection::SelectionScope::MaskPoints
-                    | crate::selection::SelectionScope::Transition
-                    | crate::selection::SelectionScope::None => {
+                    crate::editor::selection::SelectionScope::MaskPoints
+                    | crate::editor::selection::SelectionScope::Transition
+                    | crate::editor::selection::SelectionScope::None => {
                         return Err(Error::Invalid("clipboard scope"));
                     }
                 },
                 UiAction::Paste => {
-                    let scope = self.selection_scopes.active(&self.selection);
+                    let scope = self.selection_scopes.active(self.session.selection());
                     let mut pasted_items = false;
                     let outcome = match scope {
-                        crate::selection::SelectionScope::Items
+                        crate::editor::selection::SelectionScope::Items
                             if !self.session.can_paste_items(at)
-                                && crate::editor::context::single(&self.selection).is_some_and(
-                                    |item| self.session.can_paste_keyframes(item, at),
-                                ) =>
+                                && crate::editor::context::single(self.session.selection())
+                                    .is_some_and(|item| {
+                                        self.session.can_paste_keyframes(item, at)
+                                    }) =>
                         {
-                            let item = crate::editor::context::single(&self.selection)
+                            let item = crate::editor::context::single(self.session.selection())
                                 .ok_or(Error::Invalid("clipboard target"))?;
                             self.session.apply(engine::Command::PasteKeyframes {
                                 item,
@@ -150,8 +149,8 @@ impl Editor {
                                 source: engine::KeyframePasteSource::Stored,
                             })?
                         }
-                        crate::selection::SelectionScope::Keyframes => {
-                            let item = crate::editor::context::single(&self.selection)
+                        crate::editor::selection::SelectionScope::Keyframes => {
+                            let item = crate::editor::context::single(self.session.selection())
                                 .ok_or(Error::Invalid("clipboard target"))?;
                             self.session.apply(engine::Command::PasteKeyframes {
                                 item,
@@ -159,30 +158,32 @@ impl Editor {
                                 source: engine::KeyframePasteSource::Stored,
                             })?
                         }
-                        crate::selection::SelectionScope::Items => {
+                        crate::editor::selection::SelectionScope::Items => {
                             pasted_items = true;
                             self.session.apply(engine::Command::PasteItems {
                                 at,
                                 source: engine::ItemPasteSource::Stored,
                             })?
                         }
-                        crate::selection::SelectionScope::MaskPoints
-                        | crate::selection::SelectionScope::Transition
-                        | crate::selection::SelectionScope::None => {
+                        crate::editor::selection::SelectionScope::MaskPoints
+                        | crate::editor::selection::SelectionScope::Transition
+                        | crate::editor::selection::SelectionScope::None => {
                             return Err(Error::Invalid("clipboard scope"));
                         }
                     };
                     if outcome.changed {
                         self.selection_scopes = SelectionScopes::default();
                         if pasted_items {
-                            self.selection = outcome
-                                .created
-                                .iter()
-                                .filter_map(|id| match id {
-                                    engine::CreatedId::Item(item) => Some(*item),
-                                    _ => None,
-                                })
-                                .collect();
+                            self.session.set_selection(
+                                outcome
+                                    .created
+                                    .iter()
+                                    .filter_map(|id| match id {
+                                        engine::CreatedId::Item(item) => Some(*item),
+                                        _ => None,
+                                    })
+                                    .collect(),
+                            )?;
                         }
                     }
                 }
@@ -212,7 +213,7 @@ impl Editor {
                 UiAction::InsertText => self.insert_text(),
                 UiAction::InsertGraphic(shape) => self.insert_graphic(shape),
                 UiAction::ApplyTextAnimation(preset) => {
-                    let item = crate::editor::context::single(&self.selection)
+                    let item = crate::editor::context::single(self.session.selection())
                         .ok_or(Error::Invalid("text animation selection"))?;
                     let snapshot = self.session.project().clone();
                     let mut state = std::mem::take(&mut self.properties);
@@ -229,14 +230,9 @@ impl Editor {
                 UiAction::Subtitles | UiAction::SubtitleCue => {
                     self.prepare_subtitles()?;
                     let mut options = self.preferences.subtitles.clone();
+                    let selected = self.session.selection().iter().next().copied();
                     if let Some(panel) = &mut self.assets.captions {
-                        panel.activate(
-                            &mut self.session,
-                            &mut options,
-                            self.selection.iter().next().copied(),
-                            at,
-                            id,
-                        )?;
+                        panel.activate(&mut self.session, &mut options, selected, at, id)?;
                         crate::editor::assets::captions::queue_requests(self);
                     }
                     if options != self.preferences.subtitles {
@@ -280,7 +276,7 @@ impl Editor {
                     } else {
                         self.cancel_interaction();
                         self.session.apply(engine::Command::SwitchScene { scene })?;
-                        self.selection.clear();
+                        self.session.set_selection(Default::default())?;
                         self.selection_scopes = SelectionScopes::default();
                     }
                 }
@@ -395,12 +391,11 @@ impl Editor {
                         })?;
                         // A selected transition survives history while it still exists.
                         let transition = self.selection_scopes.transition;
-                        self.selection = self.session.selection().clone();
                         self.selection_scopes = SelectionScopes::default();
                         self.selection_scopes.transition = transition;
                         self.forget_missing_transition();
                         if self.selection_scopes.transition.is_some() {
-                            self.selection.clear();
+                            self.session.set_selection(Default::default())?;
                         }
                         self.properties.clear_drafts();
                     } else {
@@ -409,8 +404,7 @@ impl Editor {
                 }
                 UiAction::SelectAll => self.select_all(),
                 UiAction::DeselectAll => {
-                    self.selection.clear();
-                    self.selection_scopes = SelectionScopes::default();
+                    self.replace_selection(Default::default());
                 }
                 UiAction::Escape => self.cancel_interaction(),
                 UiAction::Snap => {
@@ -425,8 +419,8 @@ impl Editor {
                     let after = !self.preferences.preview_axis;
                     self.set_preference("preview_axis", serde_json::json!(after))?;
                 }
-                UiAction::ZoomIn => self.zoom_timeline(ZOOM_STEP),
-                UiAction::ZoomOut => self.zoom_timeline(1.0 / ZOOM_STEP),
+                UiAction::ZoomIn => self.zoom_timeline(true),
+                UiAction::ZoomOut => self.zoom_timeline(false),
                 UiAction::Theme => {
                     let after = !self.preferences.dark;
                     self.set_preference("dark", serde_json::json!(after))?;

@@ -100,7 +100,7 @@ pub(in crate::editor) fn show(
                 == if graphic_edit { "graphic" } else { "transform" }
         });
         if !std::sync::Arc::ptr_eq(snapshot, panel.cx.session.project())
-            || single(panel.cx.selection) != Some(*item)
+            || single(panel.cx.selection()) != Some(*item)
             || *at != panel.cx.playhead
             || read::item_locked(panel.cx.session.project(), *item)
             || !visible
@@ -117,7 +117,7 @@ pub(in crate::editor) fn show(
                 .iter()
                 .any(|e| id.starts_with(&format!("effects.{}.param.", e.id)))
         });
-        if single(panel.cx.selection) != Some(item)
+        if single(panel.cx.selection()) != Some(item)
             || time != panel.cx.playhead
             || !exists
             || read::item_locked(panel.cx.session.project(), item)
@@ -130,7 +130,7 @@ pub(in crate::editor) fn show(
     }
     let stale_graphic_picker = panel.state.picker.as_ref().is_some_and(|draft| {
         if let ColorTarget::GraphicColor { item, time, .. } = draft.target {
-            single(panel.cx.selection) != Some(item)
+            single(panel.cx.selection()) != Some(item)
                 || read::item_locked(panel.cx.session.project(), item)
                 || read::item(panel.cx.session.project(), item)
                     .is_none_or(|i| panel.cx.playhead.saturating_sub(i.start) != time)
@@ -189,7 +189,7 @@ impl<'a, 'c> Panel<'a, 'c> {
             self.transition_panel(ui, area, transition);
             return;
         }
-        if !self.state.details && self.cx.selection.len() == 1 {
+        if !self.state.details && self.cx.selection().len() == 1 {
             self.properties(ui, area);
             return;
         }
@@ -209,7 +209,7 @@ impl<'a, 'c> Panel<'a, 'c> {
         let mut body = body_ui(ui, area);
         if self.state.details {
             self.project_details(&mut body);
-        } else if self.cx.selection.is_empty() {
+        } else if self.cx.selection().is_empty() {
             self.settings(&mut body);
         } else {
             egui::ScrollArea::vertical()
@@ -845,17 +845,17 @@ impl<'a, 'c> Panel<'a, 'c> {
 
     /// One selected element: its type's tab set, remembered per element type.
     fn properties(&mut self, ui: &mut egui::Ui, area: Rect) {
-        let Some(item) = single(self.cx.selection) else {
+        let Some(item) = single(self.cx.selection()) else {
             return;
         };
         let Some((kind, has_audio)) = element_kind(self.cx.session.project(), item) else {
             return;
         };
-        if self.state.selection != *self.cx.selection {
+        if self.state.selection != *self.cx.selection() {
             self.state.drafts.clear();
             self.state.focus = None;
             self.state.font_picker.close();
-            self.state.selection = self.cx.selection.clone();
+            self.state.selection = self.cx.selection().clone();
         }
         let tabs: Vec<PropertiesTab> = kind
             .tabs()
@@ -1003,7 +1003,8 @@ impl<'a, 'c> Panel<'a, 'c> {
                     true,
                     false,
                     |panel, ui| {
-                        for field in shared_fields(panel.cx.session.project(), panel.cx.selection) {
+                        for field in shared_fields(panel.cx.session.project(), panel.cx.selection())
+                        {
                             match field.id {
                                 "text_size" => panel.scrub_field(ui, item, TEXT_SIZE_SCRUB),
                                 "text_color" => panel.text_color_field(ui, item),
@@ -1241,7 +1242,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                     |panel, ui| {
                         panel.scrub_field(ui, item, AUDIO_GAIN_SCRUB);
                         if let Some(field) =
-                            shared_fields(panel.cx.session.project(), panel.cx.selection)
+                            shared_fields(panel.cx.session.project(), panel.cx.selection())
                                 .into_iter()
                                 .find(|field| field.id == "audio_muted")
                         {

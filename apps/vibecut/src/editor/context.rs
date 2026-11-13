@@ -52,16 +52,17 @@ pub(crate) struct Context<'a> {
     pub(crate) playback: &'a Playback,
     pub(crate) keybindings: &'a actions::KeybindingPreferences,
     pub(crate) session: &'a engine::Session,
-    pub(crate) selection: &'a std::collections::BTreeSet<project::ItemId>,
     pub(crate) locale: Locale,
     pub(crate) dark: bool,
     pub(crate) preferences: &'a crate::preferences::Preferences,
     /// What the selection currently scopes: items, mask points or keyframes.
-    pub(crate) scope: crate::selection::SelectionScope,
+    pub(crate) scope: crate::editor::selection::SelectionScope,
     /// The selected keyframes, flat across items and channels.
-    pub(crate) keyframes: &'a std::collections::BTreeSet<crate::selection::KeyframeSelection>,
+    pub(crate) keyframes:
+        &'a std::collections::BTreeSet<crate::editor::selection::KeyframeSelection>,
     /// The selected mask points; the app owns this one canonical set.
-    pub(crate) mask_points: &'a std::collections::BTreeSet<crate::selection::MaskPointSelection>,
+    pub(crate) mask_points:
+        &'a std::collections::BTreeSet<crate::editor::selection::MaskPointSelection>,
     /// The selected timeline transition the inspector edits instead of items.
     pub(crate) transition: Option<project::TransitionId>,
     pub(crate) save_status: Text,
@@ -83,6 +84,10 @@ pub(crate) struct Context<'a> {
     pub(crate) key_color_pick: Option<crate::editor::KeyPick>,
 }
 impl Context<'_> {
+    /// The selected items; the engine session is their only owner.
+    pub(crate) fn selection(&self) -> &std::collections::BTreeSet<project::ItemId> {
+        self.session.selection()
+    }
     /// Tooltip text from the action's first effective persisted chord.
     pub(crate) fn shortcut(&self, action: &str) -> Option<String> {
         shortcut_text(&self.preferences.keybindings, action)
@@ -107,9 +112,14 @@ impl Context<'_> {
 pub(in crate::editor) struct View<'a> {
     pub(in crate::editor) budget: &'a engine::ByteBudget,
     pub(in crate::editor) session: &'a engine::Session,
-    pub(in crate::editor) selection: &'a std::collections::BTreeSet<project::ItemId>,
     pub(in crate::editor) preferences: &'a crate::preferences::Preferences,
     pub(in crate::editor) playhead: time::Tick,
+}
+impl View<'_> {
+    /// The selected items; the engine session is their only owner.
+    pub(in crate::editor) fn selection(&self) -> &std::collections::BTreeSet<project::ItemId> {
+        self.session.selection()
+    }
 }
 
 /// Tooltip text from an action's first effective chord.
@@ -144,6 +154,24 @@ pub(in crate::editor) fn single(
         return None;
     }
     selection.iter().next().copied()
+}
+
+/// The snapping rank the timeline and the preview canvas share: the smallest
+/// pixel distance wins and equal distances break by the stable source order.
+/// Each caller keeps its own threshold in the coordinate space it measures.
+pub(in crate::editor) fn closest<T: Copy, S: Copy + Ord>(
+    candidates: impl IntoIterator<Item = (T, S, f64)>,
+) -> Option<(T, S, f64)> {
+    let mut best: Option<(T, S, f64)> = None;
+    for (at, source, pixels) in candidates {
+        let better = best.is_none_or(|(_, best_source, best_pixels)| {
+            pixels < best_pixels || (pixels == best_pixels && source < best_source)
+        });
+        if better {
+            best = Some((at, source, pixels));
+        }
+    }
+    best
 }
 
 /// Decoded thumbnails shared by every area, uploaded to the GPU on first use.
@@ -203,8 +231,8 @@ pub(crate) enum Request {
 }
 
 /// The shared editor context. One area receives it for one frame; its edit
-/// entry pushes the selection, applies the command, reports the failure and
-/// resyncs the preview once per committed change.
+/// entry applies the command, reports the failure and resyncs the preview once
+/// per committed change.
 pub(crate) struct Desk<'a> {
     editor: &'a mut crate::editor::Editor,
 }
@@ -259,9 +287,14 @@ impl<'a> Desk<'a> {
         self.editor.sync_preview();
     }
 
-    /// Push the editor's selection into the engine copy.
-    pub(in crate::editor) fn select(&mut self) -> bool {
-        match self.push_selection() {
+    /// The one selection write. The engine session owns the set; it refuses a
+    /// change while a gesture is open or when an item is gone, and the refusal
+    /// shows on the error line with the selection left as it was.
+    pub(in crate::editor) fn select(
+        &mut self,
+        items: std::collections::BTreeSet<project::ItemId>,
+    ) -> bool {
+        match self.editor.session.set_selection(items) {
             Ok(()) => true,
             Err(error) => {
                 self.fail(error.to_string());
@@ -270,23 +303,12 @@ impl<'a> Desk<'a> {
         }
     }
 
-    /// Push the selection for callers that own the failure path.
-    pub(in crate::editor) fn push_selection(
-        &mut self,
-    ) -> std::result::Result<(), engine::EditError> {
-        self.editor
-            .session
-            .set_selection(self.editor.selection.clone())
-    }
-
-    /// Push the selection and apply one typed command without reporting or
-    /// resyncing.
+    /// Apply one typed command without reporting or resyncing.
     pub(in crate::editor) fn run_command(
         &mut self,
         command: engine::Command,
         ripple: bool,
     ) -> std::result::Result<engine::Outcome, engine::EditError> {
-        self.push_selection()?;
         self.editor.session.apply(ripple_policy(command, ripple))
     }
 
@@ -300,9 +322,6 @@ impl<'a> Desk<'a> {
         &mut self,
         run: impl FnOnce(&mut engine::Session) -> engine::control::Result<T>,
     ) -> crate::Result<T> {
-        if !self.select() {
-            return Err(crate::Error::Invalid("selection"));
-        }
         let result = self.editor.session.transaction(run);
         match result {
             Ok(value) => {
@@ -337,9 +356,6 @@ impl<'a> Desk<'a> {
         command: engine::Command,
         ripple: bool,
     ) -> crate::Result<engine::Outcome> {
-        if !self.select() {
-            return Err(crate::Error::Invalid("selection"));
-        }
         let before = self.editor.session.project().clone();
         match self.editor.session.apply(ripple_policy(command, ripple)) {
             Ok(outcome) => {
@@ -408,7 +424,6 @@ impl<'a> Desk<'a> {
         View {
             budget: self.editor.playback.budget(),
             session: &self.editor.session,
-            selection: &self.editor.selection,
             preferences: &self.editor.preferences,
             playhead: self.editor.playback.position().unwrap_or(time::Tick::ZERO),
         }

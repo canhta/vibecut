@@ -176,7 +176,6 @@ impl VisualQuery for FakeVisuals {
 struct Rig {
     session: Session,
     playback: crate::services::playback::Playback,
-    selection: BTreeSet<ItemId>,
     disabled: BTreeSet<&'static str>,
     preferences: crate::preferences::Preferences,
     visuals: FakeVisuals,
@@ -244,7 +243,6 @@ impl Rig {
         Self {
             session,
             playback,
-            selection: BTreeSet::new(),
             disabled: BTreeSet::new(),
             preferences: crate::preferences::Preferences::default(),
             visuals: FakeVisuals::default(),
@@ -331,7 +329,6 @@ impl Rig {
         Self {
             session,
             playback,
-            selection: BTreeSet::new(),
             disabled: BTreeSet::new(),
             preferences: crate::preferences::Preferences::default(),
             visuals: FakeVisuals::default(),
@@ -353,12 +350,11 @@ impl Rig {
         }
         crate::kit::install_theme(ui.ctx(), true);
         crate::kit::install_editor_density(ui.ctx());
-        let scopes = crate::selection::SelectionScopes::default();
+        let scopes = crate::editor::selection::SelectionScopes::default();
         let keyframes = scopes.keyframes;
         let mask_points = scopes.mask_points;
         let cx = Context {
             session: &self.session,
-            selection: &self.selection,
             locale: Locale::En,
             dark: true,
             save_status: Text::AutoSaved,
@@ -369,7 +365,7 @@ impl Rig {
             playback: &self.playback,
             preview: None,
             keybindings: &self.preferences.keybindings,
-            scope: crate::selection::SelectionScope::None,
+            scope: crate::editor::selection::SelectionScope::None,
             keyframes: &keyframes,
             mask_points: &mask_points,
             transition: None,
@@ -667,7 +663,7 @@ fn desktop_media_access_serves_mcp_generation_and_the_timeline_display() {
         .cloned()
         .unwrap();
     let visible = time::TimeRange::new(Tick::ZERO, Tick(TICKS_PER_SECOND)).unwrap();
-    let mut media = Media::new(budget.clone());
+    let mut media = Media::default();
     media.set_access(shared.clone());
     let state = media.waveform(&asset, &item, visible, 16);
     assert!(
@@ -703,7 +699,7 @@ fn desktop_media_access_serves_mcp_generation_and_the_timeline_display() {
         ))
     ));
     for request in requests {
-        media.generate(&mut session, request).unwrap();
+        media.generate(&mut session, request, &budget).unwrap();
     }
     let deadline = Instant::now() + Duration::from_secs(20);
     loop {
@@ -1142,9 +1138,11 @@ fn clip_drag_returns_one_preview_gesture_and_never_edits_the_session() {
     for (selected, moves) in [(vec![], 1), (vec![0], 1), (vec![0, 1], 2)] {
         let mut rig = Rig::new();
         let ids = [rig.first, rig.second];
-        rig.selection = selected.iter().map(|index| ids[*index]).collect();
+        rig.session
+            .set_selection(selected.iter().map(|index| ids[*index]).collect())
+            .unwrap();
         let project = rig.session.project().clone();
-        let grabbed_selected = rig.selection.contains(&rig.first);
+        let grabbed_selected = rig.session.selection().contains(&rig.first);
         let mut harness = harness(rig);
         harness.state_mut().take();
         let body = harness.state().rect(&format!("timeline.item.{}", ids[0].0));
@@ -1459,7 +1457,7 @@ fn timeline_cache_settings_pins_busy_and_unavailable_keep_typed_reports() {
         loop {
             h.run_steps(2);
             if !matches!(
-                h.state().media.cache_ui().phase,
+                h.state().timeline.cache_ui().phase,
                 CachePhase::Inspecting | CachePhase::Clearing | CachePhase::Cancelling
             ) {
                 break;
@@ -1474,7 +1472,7 @@ fn timeline_cache_settings_pins_busy_and_unavailable_keep_typed_reports() {
         .click();
     harness.run_steps(2);
     wait(&mut harness);
-    let report = harness.state().media.cache_ui().report.unwrap();
+    let report = harness.state().timeline.cache_ui().report.unwrap();
     assert_eq!(
         (report.in_use, report.in_use_bytes, report.removed_bytes),
         (1, 100, 0)
@@ -1510,16 +1508,22 @@ fn timeline_cache_settings_pins_busy_and_unavailable_keep_typed_reports() {
     let guard = shared.lock().unwrap();
     harness
         .state_mut()
-        .media
+        .timeline
         .request_cache(CacheAction::Refresh);
     assert!(matches!(
-        harness.state().media.cache_ui().cause.as_deref(),
+        harness.state().timeline.cache_ui().cause.as_deref(),
         Some(engine::control::Error::Runtime(
             engine::RuntimeError::CacheBusy
         ))
     ));
     assert_eq!(
-        harness.state().media.cache_ui().report.unwrap().disk_bytes,
+        harness
+            .state()
+            .timeline
+            .cache_ui()
+            .report
+            .unwrap()
+            .disk_bytes,
         100,
         "busy admission retains last measured size"
     );
@@ -1532,22 +1536,31 @@ fn timeline_cache_settings_pins_busy_and_unavailable_keep_typed_reports() {
         "Settings must retain the specific busy copy for the composed runtime cause"
     );
     drop(pinned);
-    harness.state_mut().media.request_cache(CacheAction::Retry);
+    harness
+        .state_mut()
+        .timeline
+        .request_cache(CacheAction::Retry);
     wait(&mut harness);
-    assert_eq!(harness.state().media.cache_ui().report.unwrap().in_use, 0);
-    harness.state_mut().media.request_cache(CacheAction::Clear);
+    assert_eq!(
+        harness.state().timeline.cache_ui().report.unwrap().in_use,
+        0
+    );
+    harness
+        .state_mut()
+        .timeline
+        .request_cache(CacheAction::Clear);
     wait(&mut harness);
     assert_eq!(
         harness
             .state()
-            .media
+            .timeline
             .cache_ui()
             .report
             .unwrap()
             .removed_bytes,
         100
     );
-    let mut detached = Media::new(budget);
+    let mut detached = Media::default();
     detached.request_cache(CacheAction::Refresh);
     assert!(matches!(
         detached.cache_ui().cause.as_deref(),
@@ -1615,7 +1628,7 @@ fn corrupt_thumbnail_recovery_waits_for_gesture_commit_or_cancel_before_spending
                 .unwrap()
                 .clone()
         };
-        let mut media = Media::new(budget);
+        let mut media = Media::default();
         media.set_access(shared);
         let ctx = egui::Context::default();
         let pps = 69.333_333_333_333_33; // existing one-second thumbnail grid
@@ -1644,7 +1657,7 @@ fn corrupt_thumbnail_recovery_waits_for_gesture_commit_or_cancel_before_spending
             let requests = media.take_requests();
             assert_eq!(requests.len(), 1);
             media
-                .generate(&mut session, requests.into_iter().next().unwrap())
+                .generate(&mut session, requests.into_iter().next().unwrap(), &budget)
                 .unwrap();
             media.tick(&mut session).unwrap();
             assert_eq!(
@@ -1679,7 +1692,7 @@ fn corrupt_thumbnail_recovery_waits_for_gesture_commit_or_cancel_before_spending
             "gesture deferral must not spend the recovery attempt"
         );
         media
-            .generate(&mut session, requests.into_iter().next().unwrap())
+            .generate(&mut session, requests.into_iter().next().unwrap(), &budget)
             .unwrap();
         // Admission owns the key until publication, including a persistent
         // corrupt payload that the job has not replaced yet.

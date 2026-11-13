@@ -11,10 +11,8 @@ pub mod input;
 mod kit;
 pub mod lifecycle;
 pub mod preferences;
-pub mod selection;
 pub mod services;
 pub mod shorts;
-pub mod snapping;
 pub mod workspace;
 pub use editor::dialogs::export;
 pub use editor::dialogs::models::model_manager;
@@ -24,9 +22,10 @@ pub use editor::properties::{ElementKind, PropertiesTab, SharedField, shared_fie
 pub use editor::{
     AppCommand, AssetInspection, AssetState, AssetsTab, Client, CropAspect, CropInspection, Editor,
     EffectPreviewStatus, EffectPreviews, ImportEvent, ImportFailure, ImportProbe, ImportQueue,
-    Inspection, MAX_IMPORT_FILES, MediaKind, MediaSort, MediaSortKey, MediaSortOrder, MediaView,
-    Music, MusicMode, MusicProblem, MusicView, PREVIEW_SCALE, PREVIEW_SIZE, PreviewAxis,
-    PreviewGuide, PreviewZoom, SETTLE_BUDGET, ShortcutRow, ShortcutTab, ShortcutsInspection,
+    Inspection, KeyframeSelection, MAX_IMPORT_FILES, MaskPointSelection, MediaKind, MediaSort,
+    MediaSortKey, MediaSortOrder, MediaView, Music, MusicMode, MusicProblem, MusicView,
+    PREVIEW_SCALE, PREVIEW_SIZE, PREVIEW_SNAP_PIXELS, PreviewAxis, PreviewGuide, PreviewZoom,
+    SETTLE_BUDGET, SelectionScope, SelectionScopes, ShortcutRow, ShortcutTab, ShortcutsInspection,
     Sounds, SoundsMode, SoundsProblem, SoundsView, Subtitles, SubtitlesInspection, TextCaret,
     ThumbnailOutcome, ThumbnailSource, WidgetState,
 };

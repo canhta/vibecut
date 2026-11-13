@@ -1,8 +1,6 @@
 //! Applies player transport, timecode and view requests the frame routes.
 
-use crate::editor::{
-    AppCommand, DEFAULT_ZOOM, Editor, Error, MAX_ZOOM, MIN_ZOOM_FLOOR, Result, Text, Tick, Vec2,
-};
+use crate::editor::{AppCommand, Editor, Error, Result, Text, Tick, Vec2};
 use crate::services::preview;
 
 impl Editor {
@@ -140,11 +138,7 @@ impl Editor {
         let stored = self.session.metadata().view;
         // Other adapters can issue the engine view command between frontend actions.
         if stored != self.player.last_view {
-            let zoom = (f64::from(DEFAULT_ZOOM) * stored.zoom)
-                .clamp(f64::from(MIN_ZOOM_FLOOR), f64::from(MAX_ZOOM))
-                as f32;
-            self.timeline
-                .restore_view(zoom, (stored.scroll / f64::from(zoom)) as f32);
+            self.timeline.adopt_stored_view(stored.zoom, stored.scroll);
             self.playback.seek(
                 stored
                     .playhead
@@ -154,10 +148,10 @@ impl Editor {
             )?;
             self.player.last_view = stored;
         }
+        let (zoom, scroll) = self.timeline.stored_view();
         let view = project::ViewState {
-            zoom: f64::from(self.timeline.zoom()) / f64::from(DEFAULT_ZOOM),
-            scroll: (f64::from(self.timeline.scroll()) * f64::from(self.timeline.zoom()))
-                .clamp(0.0, 1e9),
+            zoom,
+            scroll,
             playhead: self.playback.position()?,
         };
         if self.session.metadata().view != view {

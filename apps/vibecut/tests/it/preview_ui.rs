@@ -604,7 +604,7 @@ fn json(project: &Project) -> Vec<u8> {
 }
 
 fn select(h: &mut Harness<Editor>, item: ItemId) {
-    h.state_mut().selection.insert(item);
+    h.state_mut().select([item].into()).unwrap();
     h.run_steps(3);
 }
 
@@ -673,7 +673,7 @@ fn box_centre(h: &Harness<Editor>) -> ([f64; 2], render::Rect, render::viewport:
 /// threshold away from every canvas target on both axes.
 fn free_spot(bounds: render::Rect, viewport: &render::viewport::Viewport) -> [f64; 2] {
     let threshold = viewport
-        .canvas_distance(vibecut::snapping::PREVIEW_SNAP_PIXELS)
+        .canvas_distance(vibecut::PREVIEW_SNAP_PIXELS)
         .unwrap();
     let clear = |value: f64, half: f64, size: f64| {
         [value - half, value, value + half].iter().all(|edge| {
@@ -1064,8 +1064,7 @@ fn snapshot_ignores_multi_selection_and_never_mutates_project_json() {
         project(FrameRate::FPS_30, 64, 48, true),
         Preferences::default(),
     ));
-    h.state_mut().selection.insert(ItemId(1));
-    h.state_mut().selection.insert(ItemId(2));
+    h.state_mut().select([ItemId(1), ItemId(2)].into()).unwrap();
     let before = json(h.state().session.project());
     let out = dir.path().join("multi.png");
     h.state_mut().snapshot_picked_file(out.clone()).unwrap();
@@ -1208,7 +1207,7 @@ fn edit_after_timecode_seek_resyncs_playback_and_clamps_at_the_new_end() {
         h.state().inspect().unwrap().position,
         Tick(4 * TICKS_PER_SECOND)
     );
-    h.state_mut().selection.insert(ItemId(1));
+    h.state_mut().select([ItemId(1)].into()).unwrap();
     h.state_mut().activate("timeline.delete").unwrap();
     h.run_steps(2);
     let inspect = h.state().inspect().unwrap();
@@ -1358,7 +1357,7 @@ fn preview_transform_handles_render_screenshot() {
         project(FrameRate::FPS_30, 1280, 720, false),
         Preferences::default(),
     ));
-    h.state_mut().selection.insert(ItemId(1));
+    h.state_mut().select([ItemId(1)].into()).unwrap();
     h.run_steps(2);
     let corner = widget(&h, "preview.transform.bottom-right").rect.center();
     drag_from(&mut h, corner, egui::vec2(-90.0, -52.0));
@@ -1400,7 +1399,7 @@ fn preview_canvas_click_selects_the_item_without_an_edit() {
     h.get(By::new().predicate(|node| node.author_id() == Some("preview.canvas")))
         .click();
     h.run_steps(3);
-    assert!(h.state().selection.contains(&ItemId(1)));
+    assert!(h.state().selection().contains(&ItemId(1)));
     assert_eq!(history(&h), 0);
     assert_eq!(json(h.state().session.project()), before);
 }
@@ -1559,7 +1558,7 @@ fn preview_transform_refuses_hidden_and_locked_items_and_clamps_minimum_scale() 
         h.get(By::new().predicate(|node| node.author_id() == Some("preview.canvas")))
             .click();
         h.run_steps(3);
-        assert!(h.state().selection.is_empty());
+        assert!(h.state().selection().is_empty());
         assert_eq!(history(&h), 0);
         assert_eq!(json(h.state().session.project()), before);
         assert!(
@@ -1957,7 +1956,7 @@ fn preview_inline_text_edit_refuses_locked_and_hidden_items() {
             !text_edit_open(&h),
             "a locked or hidden item exposes no inline editor"
         );
-        assert!(h.state().selection.is_empty());
+        assert!(h.state().selection().is_empty());
         assert_eq!(history(&h), 0);
         assert_eq!(json(h.state().session.project()), before);
     }

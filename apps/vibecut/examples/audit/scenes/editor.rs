@@ -336,7 +336,9 @@ pub(super) fn editor_transitions(theme: Theme, scale: f32) -> Result<AppHarness,
         .find(|item| item.id != first && item.source_asset.is_some())
         .map(|item| item.id)
         .ok_or("second video item")?;
-    editor.selection = [first, second].into_iter().collect();
+    editor
+        .select([first, second].into_iter().collect())
+        .unwrap();
     // The transition panel is measured against the 1727x1029 desktop capture.
     let mut app = harness_sized(App::Editor(Box::new(editor)), scale, [1727.0, 1029.0]);
     wait_for_presented(&mut app)?;

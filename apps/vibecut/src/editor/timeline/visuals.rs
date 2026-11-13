@@ -58,7 +58,6 @@ type StripTextures = BTreeMap<(AssetId, Tick, [u8; 32]), egui::TextureHandle>;
 
 /// Production display queries plus the jobs they request.
 pub(in crate::editor) struct Media {
-    budget: engine::ByteBudget,
     /// The one process cache instance the workspace lends to this editor and
     /// the MCP inbox; `None` until the composition root attaches it.
     access: Option<Arc<Mutex<engine::control::MediaAccess>>>,
@@ -79,10 +78,9 @@ pub(in crate::editor) struct Media {
     cache_operation: CacheOperation,
 }
 
-impl Media {
-    pub(in crate::editor) fn new(budget: engine::ByteBudget) -> Self {
+impl Default for Media {
+    fn default() -> Self {
         Self {
-            budget,
             access: None,
             runner: None,
             jobs: BTreeMap::new(),
@@ -97,7 +95,9 @@ impl Media {
             cache_operation: CacheOperation::Inspect,
         }
     }
+}
 
+impl Media {
     /// Adopt the workspace's one media cache instance.
     pub(in crate::editor) fn set_access(
         &mut self,
@@ -276,6 +276,7 @@ impl Media {
         &mut self,
         session: &mut engine::Session,
         request: VisualRequest,
+        budget: &engine::ByteBudget,
     ) -> crate::Result<()> {
         let key = request.key();
         if session.transaction_active() {
@@ -283,7 +284,7 @@ impl Media {
             self.pending.borrow_mut().remove(&key);
             return Ok(());
         }
-        let result = match self.control(session, request.command()) {
+        let result = match self.control(session, request.command(), budget) {
             Ok(result) => result,
             Err(error) => {
                 self.pending.borrow_mut().remove(&key);
@@ -310,6 +311,7 @@ impl Media {
         &mut self,
         session: &mut engine::Session,
         command: engine::Command,
+        budget: &engine::ByteBudget,
     ) -> crate::Result<engine::control::Result<engine::control::ControlResult>> {
         let Some(access) = &self.access else {
             return Err(crate::Error::Invalid("media cache unavailable"));
@@ -324,7 +326,7 @@ impl Media {
                     backoff: std::time::Duration::from_millis(100),
                     progress_interval: std::time::Duration::from_millis(50),
                 },
-                self.budget.clone(),
+                budget.clone(),
                 std::sync::Arc::new(engine::jobs::SystemClock::default()),
             )?;
             self.runner = Some(runner);
@@ -554,8 +556,7 @@ impl Drop for Media {
 fn cache_worker_cancel_and_drop_join_and_panics_stay_typed() {
     use std::sync::mpsc;
     use std::time::{Duration, Instant};
-    let budget = engine::ByteBudget::new(8192).unwrap();
-    let mut media = Media::new(budget.clone());
+    let mut media = Media::default();
     let (ready, started) = mpsc::sync_channel(1);
     let (release, gate) = mpsc::sync_channel(1);
     media.cache_worker = Some(

@@ -22,7 +22,7 @@ impl State {
     }
 
     pub(in crate::editor) fn add_effect_from_selection(&mut self, desk: &mut Desk<'_>, kind: &str) {
-        let selected = single(desk.view().selection);
+        let selected = single(desk.view().selection());
         match selected {
             Some(item) => desk.editor().add_effect_to_item(item, kind),
             None => {

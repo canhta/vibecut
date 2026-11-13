@@ -7,7 +7,7 @@ impl Editor {
     /// Apply one app-owned preset to the selected video or image item as one
     /// undo step. Locked tracks and non-visual selections refuse with a toast.
     pub(in crate::editor) fn apply_adjustment_preset(&mut self, index: usize) {
-        let Some(item) = context::single(&self.selection) else {
+        let Some(item) = context::single(self.session.selection()) else {
             let text = self.tr(Text::EffectSelectClip).to_owned();
             self.set_toast(&text, None);
             return;

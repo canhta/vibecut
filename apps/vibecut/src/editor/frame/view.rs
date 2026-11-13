@@ -8,19 +8,16 @@ impl Editor {
         // Agents can change selection or the project between pointer events.
         let actions = self.properties.reconcile(
             self.session.project(),
-            crate::editor::context::single(&self.selection),
+            crate::editor::context::single(self.session.selection()),
         );
         crate::editor::properties::apply(&mut self.desk(), actions);
         self.drain_requests();
         // The eyedropper belongs to one selected clip's panel.
         if self.player.key_color_pick.as_ref().is_some_and(|pick| {
-            crate::editor::context::single(&self.selection) != Some(pick.item)
+            crate::editor::context::single(self.session.selection()) != Some(pick.item)
                 || self.properties.details()
         }) {
             self.player.key_color_pick = None;
-        }
-        if !self.session.transaction_active() {
-            self.desk().select();
         }
         if !self.configured {
             Self::fonts(ui.ctx());
@@ -319,8 +316,7 @@ impl Editor {
                 Action::Command(command) => self.action(&command),
                 Action::Select(item) => self.select_single(item),
                 Action::ClearSelection => {
-                    self.selection.clear();
-                    self.selection_changed();
+                    self.replace_selection(Default::default());
                 }
                 Action::TransformPreview { item, values } => {
                     self.preview_transform(item, &values);

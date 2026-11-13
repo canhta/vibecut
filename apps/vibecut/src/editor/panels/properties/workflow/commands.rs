@@ -56,7 +56,7 @@ fn text_target(
     what: &'static str,
 ) -> Result<()> {
     if !desk.editor().text_animation_available(state)
-        || state.animation_target(desk.view().session, desk.view().selection) != Some(item)
+        || state.animation_target(desk.view().session, desk.view().selection()) != Some(item)
         || !std::sync::Arc::ptr_eq(snapshot, desk.view().session.project())
     {
         return Err(Error::Invalid(match what {
@@ -84,12 +84,12 @@ pub(in crate::editor) fn set_shared_field(
     value: &str,
 ) -> Result<()> {
     if field == "opacity"
-        && let Some(item) = crate::editor::context::single(desk.view().selection)
+        && let Some(item) = crate::editor::context::single(desk.view().selection())
     {
         return set_item_field(desk, item, field, value);
     }
     let patch = item_patch(field, value)?;
-    let items = desk.view().selection.iter().copied().collect();
+    let items = desk.view().selection().iter().copied().collect();
     desk.apply_result(engine::Command::SetItemParamMany { items, patch }, false)?;
     Ok(())
 }

@@ -10,6 +10,7 @@ mod workflow;
 
 use crate::{editor::Context, egui};
 use project::ItemId;
+pub use snap::PREVIEW_SNAP_PIXELS;
 pub(crate) use state::{KeyPick, State};
 pub use state::{PreviewAxis, PreviewGuide, TextCaret};
 pub(in crate::editor) use workflow::format_timecode;
@@ -46,7 +47,7 @@ pub(crate) enum Action {
     },
     /// Select one mask point, toggling it when `toggle`.
     MaskPointSelect {
-        target: crate::selection::MaskPointSelection,
+        target: crate::editor::selection::MaskPointSelection,
         toggle: bool,
     },
     /// Leave the mask-point scope without changing the item selection.

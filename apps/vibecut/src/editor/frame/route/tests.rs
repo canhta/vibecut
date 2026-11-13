@@ -138,7 +138,7 @@ fn a_gesture_publishes_one_undo_step_from_many_previews() {
     ]);
     assert!(editor.session.gesture_active());
     assert_eq!(
-        editor.selection,
+        *editor.selection(),
         BTreeSet::from([first]),
         "the grab selects"
     );
@@ -198,7 +198,7 @@ fn a_refused_track_drop_rolls_the_whole_gesture_back() {
 }
 
 #[test]
-fn selection_requests_update_the_selection_and_the_session_copy() {
+fn selection_requests_update_the_session_selection() {
     let Rig {
         mut editor,
         first,
@@ -209,16 +209,14 @@ fn selection_requests_update_the_selection_and_the_session_copy() {
         item: first,
         modifiers: egui::Modifiers::NONE,
     }]);
-    assert_eq!(editor.selection, BTreeSet::from([first]));
     assert_eq!(editor.session.selection(), &BTreeSet::from([first]));
     editor.route_timeline(vec![
         timeline::Action::Marquee(BTreeSet::from([first, second])),
         timeline::Action::SettleSelection,
     ]);
-    assert_eq!(editor.selection, BTreeSet::from([first, second]));
-    assert_eq!(editor.session.selection(), &editor.selection);
+    assert_eq!(editor.session.selection(), &BTreeSet::from([first, second]));
     editor.route_timeline(vec![timeline::Action::ClearSelection]);
-    assert!(editor.selection.is_empty() && editor.session.selection().is_empty());
+    assert!(editor.session.selection().is_empty());
 }
 
 #[test]

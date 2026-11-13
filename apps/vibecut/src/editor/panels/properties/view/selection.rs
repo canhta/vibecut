@@ -7,14 +7,14 @@ use crate::editor::properties::{Id, SelectionScope, Text, egui, shared_fields, t
 
 impl Panel<'_, '_> {
     pub(super) fn shared_inspector(&mut self, ui: &mut egui::Ui) {
-        if self.state.selection != *self.cx.selection {
+        if self.state.selection != *self.cx.selection() {
             self.state.drafts.clear();
             self.state.font_picker.close();
-            self.state.selection = self.cx.selection.clone();
+            self.state.selection = self.cx.selection().clone();
         }
         ui.label(i18n::format_count(
             self.cx.locale,
-            self.cx.selection.len() as u64,
+            self.cx.selection().len() as u64,
             Text::SelectedCountOne,
             Text::SelectedCountOther,
         ));
@@ -27,12 +27,12 @@ impl Panel<'_, '_> {
             }
             _ => {}
         }
-        let fields = shared_fields(self.cx.session.project(), self.cx.selection);
+        let fields = shared_fields(self.cx.session.project(), self.cx.selection());
         if fields.is_empty() {
             ui.label(self.tr(Text::NoSharedFields));
         }
         self.shared_field_controls(ui, fields);
-        let items = self.cx.selection.iter().copied().collect::<Vec<_>>();
+        let items = self.cx.selection().iter().copied().collect::<Vec<_>>();
         self.arrange_controls(ui, &items);
     }
     pub(super) fn shared_field_controls(
@@ -232,16 +232,16 @@ impl Panel<'_, '_> {
         if response.changed() {
             self.set_shared_field("audio_muted", &muted.to_string());
         }
-        if self.cx.selection.len() > 1 {
+        if self.cx.selection().len() > 1 {
             self.compatible_count(ui, field.compatible);
         }
     }
     pub(super) fn compatible_count(&self, ui: &mut egui::Ui, compatible: usize) {
-        if self.cx.selection.len() < 2 {
+        if self.cx.selection().len() < 2 {
             return;
         }
         let compatible = i18n::number(self.cx.locale, compatible as u64);
-        let total = i18n::number(self.cx.locale, self.cx.selection.len() as u64);
+        let total = i18n::number(self.cx.locale, self.cx.selection().len() as u64);
         ui.label(
             egui::RichText::new(i18n::format(
                 self.cx.locale,

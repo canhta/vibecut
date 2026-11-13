@@ -55,7 +55,7 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
                         let view = desk.view();
                         bound_item == item
                             && *at == view.playhead
-                            && crate::editor::context::single(view.selection) == Some(*item)
+                            && crate::editor::context::single(view.selection()) == Some(*item)
                             && std::sync::Arc::ptr_eq(snapshot, view.session.project())
                     })
             }

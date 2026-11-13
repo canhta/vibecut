@@ -383,8 +383,8 @@ pub(super) fn show(
     let Ok(renderer) = render::Renderer::new(project, settings) else {
         return;
     };
-    let selected = if cx.selection.len() == 1 {
-        cx.selection.iter().next().copied()
+    let selected = if cx.selection().len() == 1 {
+        cx.selection().iter().next().copied()
     } else {
         None
     };

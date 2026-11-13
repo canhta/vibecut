@@ -2,9 +2,9 @@
 
 use super::panels::player::{PreviewGuide, TextCaret};
 use super::{
-    Arc, AssetId, BTreeMap, BTreeSet, Clock, Duration, Icon, ItemId, KeybindingIssue, MediaSort,
-    MediaView, PathBuf, Playback, Preferences, SelectionScope, SelectionScopes, Text, Tick,
-    WidgetState, actions, egui, theme,
+    Arc, AssetId, BTreeMap, Clock, Duration, Icon, ItemId, KeybindingIssue, MediaSort, MediaView,
+    PathBuf, Playback, Preferences, SelectionScope, SelectionScopes, Text, Tick, WidgetState,
+    actions, egui, theme,
 };
 use crate::services::color_picker::EyedropperState;
 
@@ -276,14 +276,11 @@ pub struct Editor {
     pub preferences: Preferences,
     /// Workspace-owned dialogs take keyboard priority over the editor's sheets.
     pub(crate) overlay_open: bool,
-    pub selection: BTreeSet<ItemId>,
     pub selection_scopes: SelectionScopes,
     pub(super) properties: super::properties::State,
     pub(super) frame: super::frame::State,
     pub(super) player: super::panels::player::State,
     pub(super) timeline: super::timeline::State,
-    /// Cache-only clip visuals and the generation jobs they request.
-    pub(super) media: super::timeline::Media,
     pub(super) error: Option<String>,
     pub(crate) persistence_error: Option<std::sync::Arc<engine::recovery::Error>>,
     pub(super) configured: bool,

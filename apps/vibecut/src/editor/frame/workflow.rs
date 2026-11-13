@@ -59,7 +59,7 @@ impl Editor {
         }
         properties.set_lut_failure(self.playback.error());
         self.properties = properties;
-        if let Err(error) = self.media.tick(&mut self.session) {
+        if let Err(error) = self.timeline.tick_media(&mut self.session) {
             self.desk().fail(error.to_string());
         }
         self.truncate_toast();

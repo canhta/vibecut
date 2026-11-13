@@ -121,7 +121,7 @@ impl State {
         });
         match result {
             Ok(created) => {
-                desk.editor().selection = created.into_iter().collect();
+                desk.select(created.into_iter().collect());
                 self.import_notice = None;
                 desk.editor().session.end_merge();
             }
@@ -169,7 +169,7 @@ impl State {
         })();
         match result {
             Ok(item) => {
-                desk.editor().selection = [item].into_iter().collect();
+                desk.select(std::collections::BTreeSet::from([item]));
                 desk.editor().selection_scopes = SelectionScopes::default();
                 desk.editor().properties.clear_drafts();
                 desk.editor().session.end_merge();
@@ -218,7 +218,7 @@ impl State {
         });
         match result {
             Ok(item) => {
-                desk.editor().selection = [item].into_iter().collect();
+                desk.select(std::collections::BTreeSet::from([item]));
                 desk.editor().selection_scopes = SelectionScopes::default();
                 desk.editor().properties.clear_drafts();
             }

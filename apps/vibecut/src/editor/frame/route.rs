@@ -6,7 +6,6 @@ impl Editor {
     pub(in crate::editor) fn context(&self) -> Context<'_> {
         Context {
             session: &self.session,
-            selection: &self.selection,
             locale: self.preferences.locale,
             dark: self.preferences.dark,
             save_status: self.save_status(),
@@ -17,15 +16,15 @@ impl Editor {
             playback: &self.playback,
             preview: self.player.texture.handle(),
             keybindings: &self.preferences.keybindings,
-            scope: self.selection_scopes.active(&self.selection),
+            scope: self.selection_scopes.active(self.session.selection()),
             keyframes: &self.selection_scopes.keyframes,
             mask_points: &self.selection_scopes.mask_points,
             transition: self.selection_scopes.transition.filter(|_| {
-                self.selection_scopes.active(&self.selection)
-                    == crate::selection::SelectionScope::Transition
+                self.selection_scopes.active(self.session.selection())
+                    == crate::editor::selection::SelectionScope::Transition
             }),
-            visuals: &self.media,
-            cache: self.media.cache_ui(),
+            visuals: self.timeline.visuals(),
+            cache: self.timeline.cache_ui(),
             disabled: std::collections::BTreeSet::new(),
             effect_targets: None,
             key_color_pick: self.player.key_color_pick.clone(),
@@ -43,7 +42,10 @@ impl Editor {
             .filter(|id| crate::actions::action(id).is_some() && !self.action_enabled(id))
             .collect();
         let mut state = std::mem::take(&mut self.timeline);
+        let media = state.take_media();
         let mut cx = self.context();
+        cx.visuals = &media;
+        cx.cache = media.cache_ui();
         cx.disabled = disabled;
         cx.effect_targets = self.assets.effect_drag.is_some().then(|| {
             self.session
@@ -60,6 +62,7 @@ impl Editor {
         });
         let actions = paint(&mut state, &cx);
         drop(cx);
+        state.restore_media(media);
         let widgets = state.take_widgets();
         self.timeline = state;
         for widget in widgets {
@@ -91,7 +94,9 @@ impl Editor {
                 Action::Activate(id) => self.action(&id),
                 Action::Command(command) => self.track_command(*command),
                 Action::Generate(request) => {
-                    if let Err(error) = self.media.generate(&mut self.session, request) {
+                    let budget = self.playback.budget().clone();
+                    if let Err(error) = self.timeline.generate(&mut self.session, request, &budget)
+                    {
                         self.desk().fail(error.to_string());
                     }
                 }
@@ -109,7 +114,7 @@ impl Editor {
                 Action::SelectTransition(transition) => self.select_transition(transition),
                 Action::Marquee(items) => {
                     self.selection_scopes.transition = None;
-                    self.selection = items;
+                    self.write_selection(items);
                 }
                 Action::SettleSelection => self.selection_changed(),
                 Action::SelectKeyframe {
@@ -124,8 +129,7 @@ impl Editor {
                 Action::SetLaneOpen { item, open } => self.set_lane_open(item, open),
                 Action::DeleteKeyframes(keyframes) => self.delete_keyframes(&keyframes),
                 Action::ClearSelection => {
-                    self.selection.clear();
-                    self.selection_changed();
+                    self.replace_selection(Default::default());
                 }
                 Action::BeginGesture { select } => self.begin_drag_gesture(select),
                 Action::Preview(command) => self.preview_gesture(*command),
@@ -152,7 +156,7 @@ impl Editor {
     /// A keyframe click scopes the selection without dropping the item context.
     fn select_keyframe(
         &mut self,
-        keyframe: crate::selection::KeyframeSelection,
+        keyframe: crate::editor::selection::KeyframeSelection,
         modifiers: egui::Modifiers,
     ) {
         let toggle = modifiers.command || modifiers.ctrl || modifiers.shift;
@@ -164,10 +168,8 @@ impl Editor {
             self.selection_scopes.keyframes.clear();
             self.selection_scopes.keyframes.insert(keyframe.clone());
         }
-        self.selection.clear();
-        self.selection.insert(keyframe.item);
+        self.write_selection(std::collections::BTreeSet::from([keyframe.item]));
         self.properties.clear_drafts();
-        self.desk().select();
     }
     /// Persist one item's expanded lane choice for the owning project only.
     fn set_lane_open(&mut self, item: ItemId, open: bool) {
@@ -206,7 +208,7 @@ impl Editor {
     /// Delete every selected keyframe as one undo step.
     pub(in crate::editor) fn delete_keyframes(
         &mut self,
-        keyframes: &std::collections::BTreeSet<crate::selection::KeyframeSelection>,
+        keyframes: &std::collections::BTreeSet<crate::editor::selection::KeyframeSelection>,
     ) {
         if keyframes.is_empty() {
             return;
@@ -292,7 +294,7 @@ impl Editor {
     /// Select one mask point without leaving the item selection.
     pub(in crate::editor) fn select_mask_point(
         &mut self,
-        target: crate::selection::MaskPointSelection,
+        target: crate::editor::selection::MaskPointSelection,
         toggle: bool,
     ) {
         if toggle {
@@ -303,12 +305,11 @@ impl Editor {
             self.selection_scopes.mask_points.clear();
             self.selection_scopes.mask_points.insert(target.clone());
         }
-        if self.selection.len() != 1 || !self.selection.contains(&target.item) {
-            self.selection.clear();
-            self.selection.insert(target.item);
+        let selected = self.session.selection();
+        if selected.len() != 1 || !selected.contains(&target.item) {
+            self.write_selection(std::collections::BTreeSet::from([target.item]));
         }
         self.properties.clear_drafts();
-        self.desk().select();
     }
     /// Replace the point scope with the anchors a marquee covered (Shift adds
     /// to it). The point scope only ever holds one mask of one item.
@@ -348,7 +349,6 @@ impl Editor {
             return;
         }
         self.selection_scopes.mask_points.clear();
-        self.desk().select();
     }
     /// Stage one absolute mask path from a completed gesture origin.
     pub(in crate::editor) fn preview_mask_path(
@@ -385,14 +385,13 @@ impl Editor {
         match self.desk().apply_result(command, false) {
             Ok(outcome) if outcome.changed => {
                 self.selection_scopes.mask_points.clear();
-                self.selection_scopes
-                    .mask_points
-                    .insert(crate::selection::MaskPointSelection {
+                self.selection_scopes.mask_points.insert(
+                    crate::editor::selection::MaskPointSelection {
                         item,
                         mask: mask.to_owned(),
                         point: segment + 1,
-                    });
-                self.desk().select();
+                    },
+                );
             }
             Ok(_) => {}
             Err(_) => {}
@@ -438,8 +437,8 @@ impl Editor {
         if self.timeline.preview_armed() {
             self.discard_timeline_preview();
         }
-        if let Some(item) = select {
-            self.select_single(item);
+        if select.is_some() {
+            self.selection_changed();
         }
         self.session.end_merge();
         if self.session.transaction_active()
@@ -449,7 +448,9 @@ impl Editor {
             self.timeline.abandon_gesture();
             return;
         }
-        if !self.desk().select() {
+        if let Some(item) = select
+            && !self.write_selection(std::collections::BTreeSet::from([item]))
+        {
             self.timeline.abandon_gesture();
             return;
         }
@@ -496,8 +497,8 @@ impl Editor {
     /// Arm the group contract: only the selection is applied before the first
     /// staged command, so `timeline.preview` can open its own gesture.
     fn begin_timeline_preview(&mut self, select: Option<ItemId>) {
-        if let Some(item) = select {
-            self.select_single(item);
+        if select.is_some() {
+            self.selection_changed();
         }
         self.session.end_merge();
         if self.session.transaction_active()
@@ -507,7 +508,9 @@ impl Editor {
             self.timeline.abandon_gesture();
             return;
         }
-        if !self.desk().select() {
+        if let Some(item) = select
+            && !self.write_selection(std::collections::BTreeSet::from([item]))
+        {
             self.timeline.abandon_gesture();
             return;
         }
@@ -705,11 +708,14 @@ impl Editor {
         if self.timeline.cancel_drag() {
             self.discard_timeline_preview();
         } else if let Some(before) = self.timeline.cancel_marquee() {
-            self.selection = before;
-            self.selection_changed();
+            self.replace_selection(before);
         } else {
-            self.selection_scopes.clear_specific(&mut self.selection);
-            self.desk().select();
+            if self
+                .selection_scopes
+                .clear_specific(self.session.selection())
+            {
+                self.write_selection(Default::default());
+            }
             if self.assets.has_media_selection() {
                 self.assets.clear_media_selection();
                 self.session.end_merge();
@@ -717,10 +723,10 @@ impl Editor {
         }
     }
     /// Step the timeline zoom, keeping the playhead anchored.
-    pub(in crate::editor) fn zoom_timeline(&mut self, factor: f32) {
+    pub(in crate::editor) fn zoom_timeline(&mut self, zoom_in: bool) {
         let playhead = self.playback.position().unwrap_or(Tick::ZERO);
         let duration = self.session.project().duration();
-        self.timeline.zoom_by(factor, duration, playhead);
+        self.timeline.zoom_step(zoom_in, duration, playhead);
     }
     /// Run a typed engine command on the current selection (track edits).
     pub(in crate::editor) fn track_command(&mut self, command: Command) {
@@ -746,7 +752,7 @@ impl Editor {
         while !self.requests.is_empty() {
             for request in std::mem::take(&mut self.requests) {
                 match request {
-                    Request::Cache(action) => self.media.request_cache(action),
+                    Request::Cache(action) => self.timeline.request_cache(action),
                     Request::ImportLut => {
                         self.lifecycle_action = Some(crate::lifecycle::EditorAction::ImportLut);
                     }

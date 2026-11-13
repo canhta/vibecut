@@ -90,7 +90,7 @@ impl State {
         item: &ItemView,
         x: f32,
     ) -> Option<Tick> {
-        let at = super::frame_snap(cx, self.tick_at(x, layout.body.left()));
+        let at = crate::editor::timeline::frame_snap(cx, self.tick_at(x, layout.body.left()));
         at.checked_sub(item.start)
             .filter(|time| *time >= Tick::ZERO && *time <= item.end - item.start)
     }

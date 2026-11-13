@@ -11,10 +11,9 @@ use project::{
 use std::sync::Arc;
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
-    AssetsTab, Editor, egui,
+    AssetsTab, Editor, SelectionScope, egui,
     i18n::Locale,
     preferences::Preferences,
-    selection::SelectionScope,
     services::playback::{Files, Playback},
 };
 
@@ -79,7 +78,9 @@ fn open(h: &mut Harness<Editor>) {
     click(h, "assets.tab.transitions");
 }
 fn select_pair(h: &mut Harness<Editor>) {
-    h.state_mut().selection = [ItemId(1), ItemId(2)].into_iter().collect();
+    h.state_mut()
+        .select([ItemId(1), ItemId(2)].into_iter().collect())
+        .unwrap();
     h.run_steps(3);
 }
 fn transition(h: &Harness<Editor>) -> project::Transition {
@@ -265,7 +266,9 @@ fn invalid_targets_are_disabled_with_reasons_without_history() {
         open(&mut h);
         select_pair(&mut h);
         if state == "unrelated" {
-            h.state_mut().selection = [ItemId(1), ItemId(3)].into_iter().collect();
+            h.state_mut()
+                .select([ItemId(1), ItemId(3)].into_iter().collect())
+                .unwrap();
             h.run_steps(2);
         }
         if state == "busy" {
@@ -319,7 +322,9 @@ fn coincident_cuts_require_selection_and_exact_playhead_boundaries() {
         (2 * SECOND, vec![ItemId(1), ItemId(2), ItemId(3)], false),
         (2 * SECOND, vec![ItemId(11)], true),
     ] {
-        h.state_mut().selection = selected.into_iter().collect();
+        h.state_mut()
+            .select(selected.into_iter().collect())
+            .unwrap();
         let project = h.state().session.project().clone();
         h.state_mut()
             .playback
@@ -585,7 +590,7 @@ fn selected_transition_edits_in_the_inspector_one_undo_step_each() {
     // Pointer click replaces the item selection and shows the inspector.
     click(&mut h, &marker);
     assert_eq!(h.state().selection_scopes.transition, Some(id));
-    assert!(h.state().selection.is_empty());
+    assert!(h.state().selection().is_empty());
     assert_eq!(scope(&h), SelectionScope::Transition);
     widget(&h, "inspector.tab.transition");
     let target = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target");

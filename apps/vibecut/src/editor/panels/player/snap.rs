@@ -2,18 +2,30 @@
 //!
 //! The candidate set is spatial: the canvas centre and edges plus the visible
 //! box edges of every other item at the playhead. Ranking, the screen-pixel
-//! threshold and the disabled/bypass identity come from the shared snapping
-//! policy in [`crate::snapping`], the one the timeline also uses.
+//! threshold and the disabled/bypass identity follow the timeline's rule: the
+//! shared [`closest`] rank with this module's own measured thresholds.
 
-use crate::{
-    editor::panels::player::state::{PreviewAxis, PreviewGuide},
-    snapping::{PREVIEW_SNAP_PIXELS, ROTATE_SNAP_DEGREES, ROTATE_SNAP_STEP, closest},
+use crate::editor::{
+    context::closest,
+    panels::player::state::{PreviewAxis, PreviewGuide},
 };
 use project::ItemId;
 use render::{
     Rect,
     viewport::{ItemGeometry, Viewport},
 };
+
+/// Preview transform threshold in logical screen pixels, measured in the
+/// reference editor on 2026-11-10 at its 100 % canvas zoom: an item 5 px from a
+/// guide still snapped and 6 px did not.
+pub const PREVIEW_SNAP_PIXELS: f64 = 5.0;
+
+/// Preview rotation snaps to quarter turns within this many degrees. The
+/// implementation reference measures the same 90/5 pair
+/// (`apps/web/src/preview/preview-snap.ts`: `ROTATE_SNAP_STEP_DEGREES`,
+/// `ROTATE_SNAP_THRESHOLD_DEGREES`).
+const ROTATE_SNAP_STEP: f64 = 90.0;
+const ROTATE_SNAP_DEGREES: f64 = 5.0;
 
 /// Stable identity for a canvas snap target; the variant order breaks equal
 /// distances so a tie cannot change between frames.
@@ -424,5 +436,12 @@ mod tests {
         ];
         assert!((centre[0] - (bounds.x + bounds.width / 2.0)).abs() < 1e-6);
         assert!((centre[1] - (bounds.y + bounds.height / 2.0)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn preview_thresholds_are_the_measured_pixel_and_degree_values() {
+        assert_eq!(PREVIEW_SNAP_PIXELS, 5.0);
+        assert_eq!(ROTATE_SNAP_STEP, 90.0);
+        assert_eq!(ROTATE_SNAP_DEGREES, 5.0);
     }
 }

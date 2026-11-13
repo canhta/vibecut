@@ -446,7 +446,7 @@ impl Workspace {
                     e.session.session_id(),
                     e.session.project().data().id,
                     e.session.project().data().current_scene_id,
-                    &e.selection,
+                    e.selection(),
                 ))
             })
             .unwrap_or_else(|| egui::Id::unique(("loading", id)));
@@ -2173,7 +2173,7 @@ mod tests {
             .preferences
             .properties_tabs
             .insert("image".into(), "adjust".into());
-        editor.selection = [project::ItemId(2)].into_iter().collect();
+        editor.select([project::ItemId(2)].into()).unwrap();
         let mut workspace =
             Workspace::new(root.path().join("recovery"), Preferences::default(), None).unwrap();
         let id = workspace.register_editor(Box::new(editor));

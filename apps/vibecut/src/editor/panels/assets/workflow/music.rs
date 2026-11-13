@@ -193,8 +193,7 @@ impl Editor {
             .find(|id| matches!(id, CreatedId::Item(_)))
             .copied()
         {
-            self.selection.clear();
-            self.selection.insert(item);
+            self.desk().select(std::collections::BTreeSet::from([item]));
             self.selection_scopes = Default::default();
         }
         self.desk().sync();

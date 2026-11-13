@@ -99,7 +99,7 @@ pub(in crate::editor::panels::assets) fn selected_cut(
     editor: &Editor,
     cuts: &[Cut],
 ) -> Option<Cut> {
-    let selected = &editor.selection;
+    let selected = editor.session.selection();
     if selected.len() == 2 {
         cuts.iter()
             .copied()

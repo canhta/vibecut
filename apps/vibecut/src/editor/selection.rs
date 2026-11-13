@@ -1,4 +1,4 @@
-//! Transient nested selection scopes over items, keyframes or mask points.
+//! Presents the selection scopes nested inside the session's item selection: items, keyframes or mask points.
 use crate::egui::{Pos2, Rect};
 use project::{AnimationPath, ColorComponent, ItemId, TransitionId};
 use std::collections::BTreeSet;
@@ -73,14 +73,17 @@ impl SelectionScopes {
             SelectionScope::None
         }
     }
-    pub fn clear_specific(&mut self, items: &mut BTreeSet<ItemId>) {
+    /// Pop the most specific scope. Returns true when that scope is the item
+    /// selection itself, which the caller clears through the session.
+    pub fn clear_specific(&mut self, items: &BTreeSet<ItemId>) -> bool {
         match self.active(items) {
             SelectionScope::MaskPoints => self.mask_points.clear(),
             SelectionScope::Keyframes => self.keyframes.clear(),
-            SelectionScope::Items => items.clear(),
+            SelectionScope::Items => return true,
             SelectionScope::Transition => self.transition = None,
             SelectionScope::None => {}
         }
+        false
     }
 }
 
@@ -175,7 +178,9 @@ mod tests {
             SelectionScope::None,
         ] {
             assert_eq!(scopes.active(&items), expected);
-            scopes.clear_specific(&mut items);
+            if scopes.clear_specific(&items) {
+                items.clear();
+            }
         }
     }
     #[test]

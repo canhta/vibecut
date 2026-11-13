@@ -14,7 +14,7 @@ use captions::LanguageTag;
 use engine::providers::{CatalogOperation, Cost, provider_options_for};
 use engine::transcript::Stage;
 use engine::{Command, Session};
-use project::{ItemId, ItemParams};
+use project::ItemParams;
 use std::{collections::BTreeSet, path::PathBuf, sync::Arc, time::Duration};
 use time::{TICKS_PER_SECOND, Tick};
 
@@ -274,7 +274,6 @@ impl Subtitles {
         ui: &mut egui::Ui,
         session: &mut Session,
         options: &mut Options,
-        selection: &BTreeSet<ItemId>,
         at: Tick,
         locale: Locale,
         dark: bool,
@@ -357,7 +356,8 @@ impl Subtitles {
                                 &options.source,
                             );
                             ui.label(controls.tr(Text::SubSelectMedia));
-                            let source = selection
+                            let source = session
+                                .selection()
                                 .iter()
                                 .find(|id| {
                                     session
