@@ -1,8 +1,8 @@
 //! Renders searchable media rows with stable interaction identities.
 use super::{
     Action, Align2, AssetRow, AssetState, AssetsTab, Color32, Filter, FontId, Icon, Id, MediaKind,
-    MediaSortKey, MediaSortOrder, MediaView, Rect, Row, Text, Vec2, View, asset_state_color,
-    egui, icons, theme,
+    MediaSortKey, MediaSortOrder, MediaView, Rect, Row, Text, Vec2, View, asset_state_color, egui,
+    icons, theme,
 };
 use crate::i18n;
 
