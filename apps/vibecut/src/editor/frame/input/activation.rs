@@ -556,6 +556,8 @@ impl Editor {
                 UiAction::Seek
                 | UiAction::SetPreviewZoom
                 | UiAction::SetPreference
+                | UiAction::SetFavorite
+                | UiAction::ListFavorites
                 | UiAction::SetKeybinding
                 | UiAction::ResetKeybindings => {
                     return Err(Error::Unsupported("action requires parameters"));

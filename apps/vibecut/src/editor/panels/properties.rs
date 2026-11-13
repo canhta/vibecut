@@ -124,6 +124,8 @@ pub(in crate::editor) struct State {
     animation_slot: engine::AnimationSlot,
     /// The Animation tiles' preview jobs and strips; built when the tab first draws.
     animation_previews: Option<view::AnimationPreviews>,
+    /// Favorites shelf open: the tile grid shows only the starred looks of the open slot.
+    animation_favorites: bool,
     hsl_band: usize,
     opacity_edit: Option<(Arc<project::Project>, ItemId, Tick)>,
     reorder: Option<gesture::EffectReorder>,
@@ -243,6 +245,7 @@ impl Default for State {
             speed_curve_view: false,
             animation_slot: engine::AnimationSlot::In,
             animation_previews: None,
+            animation_favorites: false,
             hsl_band: 0,
             opacity_edit: None,
             reorder: None,

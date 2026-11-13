@@ -5,6 +5,7 @@
 mod adjustment;
 mod aggregate;
 mod easing;
+mod favorites;
 mod font_picker;
 mod geometry;
 mod performance;
@@ -22,6 +23,9 @@ pub use aggregate::{
     TIMELINE_MIN, drag_panel, validate_panels,
 };
 pub use easing::{EasingPreferences, EasingTab, MAX_SAVED_EASINGS, SavedEasing};
+pub use favorites::{
+    CATALOG_FAMILIES, CatalogFavorites, MAX_CATALOG_FAVORITE_ID_BYTES, MAX_CATALOG_FAVORITES,
+};
 pub use font_picker::{FontPickerPreferences, FontTab};
 pub use geometry::WindowGeometry;
 pub use performance::{

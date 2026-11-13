@@ -102,6 +102,15 @@ impl State {
                 Action::InsertSticker(id) => self.insert_sticker(port, &id),
                 Action::InsertShape(id) => port.request(Request::InsertShape(id)),
                 Action::ClearStickerRecents => self.clear_sticker_recents(port),
+                Action::ToggleFavorite {
+                    family,
+                    id,
+                    favorite,
+                } => {
+                    if let Err(error) = self.toggle_favorite(port, family, &id, favorite) {
+                        port.fail(error.to_string());
+                    }
+                }
             }
         }
     }

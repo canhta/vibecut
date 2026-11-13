@@ -202,6 +202,10 @@ pub enum UiAction {
     JumpBookmark(BookmarkDirection),
     SetPreviewZoom,
     SetPreference,
+    /// `catalog.favorite.set`: star or unstar one catalogue id.
+    SetFavorite,
+    /// `catalog.favorite.list`: read the starred ids of one catalogue family.
+    ListFavorites,
     SetKeybinding,
     ResetKeybindings,
     ImportKeybindings,
@@ -344,6 +348,8 @@ impl ActionSpec {
                     | UiAction::Seek
                     | UiAction::SetPreviewZoom
                     | UiAction::SetPreference
+                    | UiAction::SetFavorite
+                    | UiAction::ListFavorites
                     | UiAction::SetKeybinding
                     | UiAction::ResetKeybindings
                     | UiAction::ImportKeybindings

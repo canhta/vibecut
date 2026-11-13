@@ -165,6 +165,22 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         &[],
     ),
     ActionSpec::ui(
+        "catalog.favorite.set",
+        Text::ActionCatalogFavoriteSet,
+        ActionCategory::View,
+        "catalog favourites",
+        UiAction::SetFavorite,
+        &[],
+    ),
+    ActionSpec::ui(
+        "catalog.favorite.list",
+        Text::ActionCatalogFavoriteList,
+        ActionCategory::View,
+        "catalog favourites",
+        UiAction::ListFavorites,
+        &[],
+    ),
+    ActionSpec::ui(
         "ui.keybindings.set",
         Text::ActionUiKeybindingsSet,
         ActionCategory::View,

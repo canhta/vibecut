@@ -23,6 +23,12 @@ pub enum AppCommand {
     SetKeybinding { action: String, chords: Vec<String> },
     /// `ui.keybindings.reset`: reset one action's chords, or every override.
     ResetKeybindings { action: Option<String> },
+    /// `catalog.favorite.set`: star or unstar one catalogue id in its family.
+    SetFavorite {
+        family: String,
+        id: String,
+        favorite: bool,
+    },
     /// `media.reveal`: reveal one library asset.
     RevealMedia(AssetId),
 }
@@ -405,6 +411,11 @@ impl Editor {
                 Some(action) => self.reset_keybinding(&action),
                 None => self.reset_keybindings(),
             },
+            AppCommand::SetFavorite {
+                family,
+                id,
+                favorite,
+            } => self.set_favorite(&family, &id, favorite),
             AppCommand::RevealMedia(asset) => self.activate(&format!("media.reveal.{}", asset.0)),
         }
     }

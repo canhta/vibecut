@@ -147,6 +147,8 @@
 | `playback.seek` — Seek to time | Playback | — | — | playback transport |
 | `preview.set_zoom` — Set preview zoom | View | — | — | preview view |
 | `ui.prefs.set` — Change a setting | View | — | — | preference store |
+| `catalog.favorite.set` — Star or unstar a catalogue item | View | — | — | catalog favourites |
+| `catalog.favorite.list` — List starred catalogue items | View | — | — | catalog favourites |
 | `ui.keybindings.set` — Change a shortcut | View | — | — | shortcut dialog |
 | `ui.keybindings.reset` — Restore shortcuts | View | — | — | shortcut dialog |
 | `ui.keybindings.import` — Import shortcuts | View | — | — | shortcut dialog |

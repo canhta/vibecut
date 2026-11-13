@@ -4,7 +4,9 @@ use super::performance::{
     DEFAULT_CACHE_LIMIT, DEFAULT_PROJECT_FPS, HardwareAcceleration, validate_cache_limit,
     validate_project_fps,
 };
-use super::{AdjustmentPreset, EasingPreferences, FontPickerPreferences, WindowGeometry};
+use super::{
+    AdjustmentPreset, CatalogFavorites, EasingPreferences, FontPickerPreferences, WindowGeometry,
+};
 use crate::{
     ElementKind, PropertiesTab,
     editor::AssetsTab,
@@ -19,7 +21,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 /// Bumped when the local preference document changes incompatibly.
-pub const PREFERENCES_VERSION: u32 = 14;
+pub const PREFERENCES_VERSION: u32 = 15;
 /// Room for every provider/feature choice and its bounded recent IDs.
 pub const MAX_PREFERENCES_BYTES: u64 = 32 * 1024;
 /// Total open-lane entries across every project; keeps the document bounded.
@@ -63,6 +65,7 @@ pub const PREFERENCE_KEYS: &[&str] = &[
     "font_picker",
     "adjustment_presets",
     "sticker_recents",
+    "catalog_favorites",
     "easing",
     "default_fps",
     "hardware_acceleration",
@@ -163,6 +166,8 @@ pub struct Preferences {
     pub adjustment_presets: Vec<AdjustmentPreset>,
     /// Recently inserted sticker ids, newest first and deduplicated; presentation memory, never project data.
     pub sticker_recents: Vec<String>,
+    /// Starred catalogue ids per family (effects, transitions, ...); presentation memory, never project data.
+    pub catalog_favorites: CatalogFavorites,
     /// Graph editor tab and saved easing curves; user data, never project state.
     pub easing: EasingPreferences,
     /// Frame rate new projects start with; one of `PROJECT_FPS`.
@@ -206,6 +211,7 @@ impl Default for Preferences {
             font_picker: FontPickerPreferences::default(),
             adjustment_presets: Vec::new(),
             sticker_recents: Vec::new(),
+            catalog_favorites: CatalogFavorites::default(),
             easing: EasingPreferences::default(),
             default_fps: DEFAULT_PROJECT_FPS,
             hardware_acceleration: HardwareAcceleration::default(),
@@ -266,6 +272,7 @@ impl Preferences {
         if self.sticker_recents.len() > libraries::stickers::MAX_RECENT_STICKERS {
             return Err(Error::Invalid("sticker recents"));
         }
+        self.catalog_favorites.validate()?;
         self.easing.validate()?;
         validate_project_fps(self.default_fps)?;
         validate_cache_limit(self.cache_limit_bytes)?;
@@ -364,6 +371,7 @@ impl Preferences {
             "font_picker" => Ok(serde_json::to_value(&self.font_picker)?),
             "adjustment_presets" => Ok(serde_json::to_value(&self.adjustment_presets)?),
             "sticker_recents" => Ok(serde_json::to_value(&self.sticker_recents)?),
+            "catalog_favorites" => Ok(serde_json::to_value(&self.catalog_favorites)?),
             "easing" => Ok(serde_json::to_value(&self.easing)?),
             "default_fps" => Ok(serde_json::json!(self.default_fps)),
             "hardware_acceleration" => Ok(serde_json::to_value(self.hardware_acceleration)?),
@@ -409,6 +417,7 @@ impl Preferences {
             "font_picker" => self.font_picker = serde_json::from_value(value)?,
             "adjustment_presets" => self.adjustment_presets = serde_json::from_value(value)?,
             "sticker_recents" => self.sticker_recents = serde_json::from_value(value)?,
+            "catalog_favorites" => self.catalog_favorites = serde_json::from_value(value)?,
             "easing" => self.easing = serde_json::from_value(value)?,
             "default_fps" => self.default_fps = serde_json::from_value(value)?,
             "hardware_acceleration" => {

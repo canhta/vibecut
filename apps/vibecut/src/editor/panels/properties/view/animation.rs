@@ -95,6 +95,7 @@ impl Panel<'_, '_> {
                 Slot::Out => current.exit,
                 Slot::Combo => current.combo.map(|look| (look, Tick::ZERO)),
             };
+            self.animation_shelf(ui);
             let chosen = self.animation_tiles(ui, slot, held.map(|(look, _)| look));
             if let Some(preset) = chosen {
                 self.actions.push(Action::SetClipAnimation {
@@ -137,16 +138,50 @@ impl Panel<'_, '_> {
         self.state.animation_slot
     }
 
+    /// The Favorites shelf: a toggle above the grid that filters it to the starred looks.
+    fn animation_shelf(&mut self, ui: &mut egui::Ui) {
+        let selected = self.state.animation_favorites;
+        let response = ui.selectable_label(selected, self.tr(Text::AssetsFavorites));
+        self.remember("inspector.animation.favorites".to_owned(), &response);
+        if response.clicked() {
+            self.state.animation_favorites = !selected;
+        }
+        ui.add_space(theme::space::XS);
+    }
+
     /// The None tile and one tile per look, six to a row. Returns the clicked entry:
-    /// `Some(None)` removes the slot.
+    /// `Some(None)` removes the slot. The Favorites shelf shows only starred looks.
     fn animation_tiles(
         &mut self,
         ui: &mut egui::Ui,
         slot: Slot,
         held: Option<Look>,
     ) -> Option<Option<Look>> {
-        let mut entries: Vec<Option<Look>> = vec![None];
-        entries.extend(Look::for_slot(slot).iter().copied().map(Some));
+        let favorites = self.state.animation_favorites;
+        let mut entries: Vec<Option<Look>> = if favorites { Vec::new() } else { vec![None] };
+        entries.extend(
+            Look::for_slot(slot)
+                .iter()
+                .copied()
+                .filter(|look| {
+                    !favorites
+                        || self
+                            .cx
+                            .preferences
+                            .catalog_favorites
+                            .contains("animations", look.word())
+                })
+                .map(Some),
+        );
+        if entries.is_empty() {
+            ui.label(
+                egui::RichText::new(self.tr(Text::AssetsFavoritesEmpty))
+                    .font(theme::label_font())
+                    .size(theme::type_size::SMALL_LABEL)
+                    .color(self.text_color()),
+            );
+            return None;
+        }
         if self.state.animation_previews.is_none() {
             self.state.animation_previews = Previews::new();
         }
@@ -236,6 +271,46 @@ impl Panel<'_, '_> {
                 format!("inspector.animation.{}.{word}", slot_word(slot)),
                 &response,
             );
+            if let Some(look) = entry {
+                let starred = self
+                    .cx
+                    .preferences
+                    .catalog_favorites
+                    .contains("animations", look.word());
+                let star = egui::Rect::from_min_size(
+                    rect.right_top() - egui::vec2(24.0, 0.0),
+                    egui::Vec2::splat(24.0),
+                );
+                let star_label = self.tr(if starred {
+                    Text::AssetsFavoriteRemove
+                } else {
+                    Text::AssetsFavoriteAdd
+                });
+                let star_response = ui
+                    .interact(
+                        star,
+                        egui::Id::new(("inspector.animation.favorite", look.word())),
+                        egui::Sense::click(),
+                    )
+                    .on_hover_text(star_label);
+                self.remember(
+                    format!("inspector.animation.favorite.{}", look.word()),
+                    &star_response,
+                );
+                ui.painter().text(
+                    star.center(),
+                    egui::Align2::CENTER_CENTER,
+                    if starred { "★" } else { "☆" },
+                    theme::label_font(),
+                    self.text_color(),
+                );
+                if star_response.clicked() {
+                    self.actions.push(Action::ToggleAnimationFavorite {
+                        preset: look,
+                        favorite: !starred,
+                    });
+                }
+            }
             // The name line is exactly NAME_HEIGHT; an 11 px label's natural row is taller,
             // so it sits in a child that does not grow the tile and stretch the pitch.
             let (name, _) =

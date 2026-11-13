@@ -8,11 +8,16 @@ use crate::i18n;
 
 impl View<'_> {
     pub(super) fn sounds_nav(&mut self, ui: &mut egui::Ui) {
+        // `None` is the Favorites entry; it lists starred sounds without changing the library mode.
         for (mode, label) in [
-            (SoundsMode::Discover, Text::SoundsDiscover),
-            (SoundsMode::Saved, Text::SoundsSaved),
+            (None, Text::AssetsFavorites),
+            (Some(SoundsMode::Discover), Text::SoundsDiscover),
+            (Some(SoundsMode::Saved), Text::SoundsSaved),
         ] {
-            let selected = self.state.sounds_mode == mode;
+            let selected = match mode {
+                None => self.state.sounds_favorites,
+                Some(mode) => !self.state.sounds_favorites && self.state.sounds_mode == mode,
+            };
             let response = ui.add_sized(
                 [theme::size::SUBNAV_BUTTON, theme::size::CONTROL],
                 egui::Button::new(
@@ -33,12 +38,45 @@ impl View<'_> {
                 .stroke(egui::Stroke::NONE)
                 .right_text(""),
             );
-            self.remember(format!("sounds.tab.{}", mode.id()), &response, None);
+            self.remember(
+                format!("sounds.tab.{}", mode.map_or("favorites", SoundsMode::id)),
+                &response,
+                None,
+            );
             if response.clicked() && !selected {
-                self.state.sounds_mode = mode;
-                self.actions.push(Action::SoundsMode(mode));
+                match mode {
+                    None => self.state.sounds_favorites = true,
+                    Some(mode) => {
+                        self.state.sounds_favorites = false;
+                        self.state.sounds_mode = mode;
+                        self.actions.push(Action::SoundsMode(mode));
+                    }
+                }
             }
         }
+    }
+
+    /// Starred sounds in star order, resolved from the saved library first and then the
+    /// current results. A starred id found in neither is not listed.
+    fn favorite_sounds(
+        &self,
+        view: &SoundsView,
+    ) -> Vec<libraries::sounds::SoundResult> {
+        self.cx
+            .preferences
+            .catalog_favorites
+            .list("sounds")
+            .iter()
+            .filter_map(|id| {
+                let id: u64 = id.parse().ok()?;
+                view.saved
+                    .iter()
+                    .map(|saved| &saved.sound)
+                    .chain(view.results.iter())
+                    .find(|sound| sound.id == id)
+                    .cloned()
+            })
+            .collect()
     }
 
     pub(super) fn sounds(&mut self, ui: &mut egui::Ui) {
@@ -165,12 +203,19 @@ impl View<'_> {
             });
         }
 
-        let list = view.results.clone();
+        let favorites = self.state.sounds_favorites;
+        let list = if favorites {
+            self.favorite_sounds(&view)
+        } else {
+            view.results.clone()
+        };
         if list.is_empty() && !view.searching {
             self.empty(
                 ui,
                 Icon::MusicNotes,
-                if view.mode == SoundsMode::Saved {
+                if favorites {
+                    Text::AssetsFavoritesEmpty
+                } else if view.mode == SoundsMode::Saved {
                     Text::SoundsNoSaved
                 } else {
                     Text::SoundsNoResults
@@ -202,7 +247,8 @@ impl View<'_> {
                 for sound in &list {
                     self.sound_row(ui, sound, &view);
                 }
-                if view.mode == SoundsMode::Discover
+                if !favorites
+                    && view.mode == SoundsMode::Discover
                     && view.has_next
                     && self.icon(ui, "sounds.more", Icon::Plus, Text::SoundsLoadMore, true)
                 {
@@ -263,7 +309,8 @@ impl View<'_> {
             ui,
             Rect::from_center_size(thumb.center(), Vec2::splat(20.0)),
         );
-        let buttons = 24.0 * 3.0 + 8.0;
+        // Three buttons, the star slot and the gaps between them.
+        let buttons = 24.0 * 3.0 + 8.0 + 28.0;
         let text_width = (rect.width() - 8.0 - 32.0 - 8.0 - buttons - 8.0).max(24.0);
         let clip = Rect::from_min_size(
             egui::pos2(thumb.right() + 8.0, rect.top() + 3.0),
@@ -313,6 +360,39 @@ impl View<'_> {
             ui.painter().rect_filled(filled, 0.0, theme::accent(dark));
         }
         let start = rect.right() - 8.0 - 24.0 * 3.0 - 8.0;
+        let star = Rect::from_min_size(
+            egui::pos2(start - 28.0, rect.center().y - 12.0),
+            Vec2::splat(24.0),
+        );
+        let key = sound.id.to_string();
+        let starred = self.cx.preferences.catalog_favorites.contains("sounds", &key);
+        let star_label = self.tr(if starred {
+            Text::AssetsFavoriteRemove
+        } else {
+            Text::AssetsFavoriteAdd
+        });
+        let star_response = ui
+            .interact(
+                star,
+                Id::new(("sounds.favorite", sound.id)),
+                egui::Sense::click(),
+            )
+            .on_hover_text(star_label);
+        self.remember(format!("sounds.favorite.{}", sound.id), &star_response, None);
+        ui.painter().text(
+            star.center(),
+            Align2::CENTER_CENTER,
+            if starred { "★" } else { "☆" },
+            FontId::proportional(theme::type_size::BODY),
+            theme::text(dark),
+        );
+        if star_response.clicked() {
+            self.actions.push(Action::ToggleFavorite {
+                family: "sounds",
+                id: key,
+                favorite: !starred,
+            });
+        }
         let previewing = view.previewing == Some(sound.id);
         let preview =
             Rect::from_min_size(egui::pos2(start, rect.center().y - 12.0), Vec2::splat(24.0));

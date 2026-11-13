@@ -43,10 +43,16 @@ pub(in crate::editor) struct State {
     pub(super) searches: BTreeMap<super::AssetsTab, String>,
     pub(super) filter: Filter,
     pub(super) effect_shelf: Option<project::EffectShelf>,
+    /// Effects tab: the Favorites sub-navigation entry replaces the shelf filter.
+    pub(super) effect_favorites: bool,
     /// Effects tab: the tile preview owner and the drag in flight.
     pub(in crate::editor) effect_previews: Option<super::effects::EffectPreviews>,
     pub(in crate::editor) effect_drag: Option<String>,
     pub(super) transition_family: Option<&'static str>,
+    /// Transitions tab: the Favorites sub-navigation entry replaces the family filter.
+    pub(super) transition_favorites: bool,
+    /// Adjustment tab: list only the starred presets.
+    pub(super) adjustment_favorites: bool,
     pub(super) transition_previews: BTreeMap<&'static str, super::transition::Preview>,
     pub(in crate::editor) transition_drag: Option<(&'static str, std::sync::Arc<project::Project>)>,
     /// Sounds tab: the presentation owner and the add target directory.
@@ -61,6 +67,8 @@ pub(in crate::editor) struct State {
     pub(in crate::editor) music: Option<super::sounds::music::Music>,
     pub(in crate::editor) music_media_dir: Option<PathBuf>,
     pub(super) sounds_mode: super::sounds::SoundsMode,
+    /// Sounds tab: the Favorites sub-navigation entry replaces the Discover and Saved lists.
+    pub(super) sounds_favorites: bool,
     pub(super) sounds_commercial: bool,
     pub(in crate::editor) audio_section: super::AudioSection,
     pub(super) music_mode: super::sounds::music::MusicMode,
@@ -113,9 +121,12 @@ impl Default for State {
             searches: BTreeMap::new(),
             filter: Filter::default(),
             effect_shelf: None,
+            effect_favorites: false,
             effect_previews: None,
             effect_drag: None,
             transition_family: None,
+            transition_favorites: false,
+            adjustment_favorites: false,
             transition_previews: BTreeMap::new(),
             transition_drag: None,
             sounds: None,
@@ -126,6 +137,7 @@ impl Default for State {
             music: None,
             music_media_dir: None,
             sounds_mode: super::sounds::SoundsMode::Discover,
+            sounds_favorites: false,
             sounds_commercial: true,
             audio_section: super::AudioSection::Sounds,
             music_mode: super::sounds::music::MusicMode::Browse,

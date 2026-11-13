@@ -27,6 +27,7 @@ impl View<'_> {
                 (StickerTab::All, Text::AssetsAll),
                 (StickerTab::Flags, Text::StickerFlags),
                 (StickerTab::Shapes, Text::GraphicShapes),
+                (StickerTab::Favorites, Text::AssetsFavorites),
             ] {
                 let selected = self.state.sticker_tab == tab;
                 let response = ui.selectable_label(
@@ -88,8 +89,13 @@ impl View<'_> {
                     ui.add_space(theme::space::SM);
                 }
                 if rows.results.is_empty() {
+                    let empty = if self.state.sticker_tab == StickerTab::Favorites {
+                        Text::AssetsFavoritesEmpty
+                    } else {
+                        Text::StickerNoResults
+                    };
                     ui.label(
-                        egui::RichText::new(self.tr(Text::StickerNoResults))
+                        egui::RichText::new(self.tr(empty))
                             .font(theme::label_font())
                             .color(theme::secondary(cx.preferences.dark)),
                     );
@@ -134,6 +140,47 @@ impl View<'_> {
                         theme::text(dark),
                     );
                 }
+            }
+            let starred = self
+                .cx
+                .preferences
+                .catalog_favorites
+                .contains("stickers", &tile.id);
+            let star = Rect::from_min_size(
+                frame.right_top() - Vec2::new(24.0, 0.0),
+                Vec2::splat(24.0),
+            );
+            let label = self.tr(if starred {
+                Text::AssetsFavoriteRemove
+            } else {
+                Text::AssetsFavoriteAdd
+            });
+            let response = ui
+                .interact(
+                    star,
+                    egui::Id::new(("stickers.favorite", recent, tile.id.as_str())),
+                    egui::Sense::click(),
+                )
+                .on_hover_text(label);
+            let key = if recent {
+                format!("stickers.recent.favorite.{}", slug(&tile.id))
+            } else {
+                format!("stickers.favorite.{}", slug(&tile.id))
+            };
+            self.remember(key, &response, None);
+            ui.painter().text(
+                star.center(),
+                Align2::CENTER_CENTER,
+                if starred { "★" } else { "☆" },
+                theme::label_font(),
+                theme::text(dark),
+            );
+            if response.clicked() {
+                self.actions.push(Action::ToggleFavorite {
+                    family: "stickers",
+                    id: tile.id.clone(),
+                    favorite: !starred,
+                });
             }
             ui.add(
                 egui::Label::new(

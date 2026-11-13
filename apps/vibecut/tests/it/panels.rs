@@ -5750,3 +5750,91 @@ fn speed_curve_tab_renders_the_ramp_editor() {
     image.save(target.join("p1-64-ramps.png")).unwrap();
     assert!(image.width() > 0 && image.height() > 0);
 }
+
+/// One row per catalogue tab: star an item, list it under Favorites, unstar it from
+/// the Favorites list, and show the empty state once nothing is starred.
+struct FavoriteRow {
+    tab: AssetsTab,
+    /// Sub-navigation entry that lists the favourites.
+    favorites_nav: &'static str,
+    star: &'static str,
+    /// A widget that exists only while the item is listed.
+    listed: &'static str,
+    family: &'static str,
+    item: &'static str,
+    /// Optional search that brings the item into the visible results.
+    search: Option<&'static str>,
+}
+
+#[test]
+fn catalogue_tabs_star_list_unstar_and_show_the_empty_state() {
+    let rows = [
+        FavoriteRow {
+            tab: AssetsTab::Effects,
+            favorites_nav: "effects.category.favorites",
+            star: "effects.favorite.blur",
+            listed: "effects.tile.blur",
+            family: "effects",
+            item: "blur",
+            search: None,
+        },
+        FavoriteRow {
+            tab: AssetsTab::Transitions,
+            favorites_nav: "transitions.category.favorites",
+            star: "transitions.favorite.cross_dissolve",
+            listed: "transitions.tile.cross_dissolve",
+            family: "transitions",
+            item: "cross_dissolve",
+            search: None,
+        },
+        FavoriteRow {
+            tab: AssetsTab::Stickers,
+            favorites_nav: "stickers.category.favorites",
+            star: "stickers.favorite.flags-AF",
+            listed: "stickers.insert.flags-AF",
+            family: "stickers",
+            item: "flags:AF",
+            search: Some("asia"),
+        },
+        FavoriteRow {
+            tab: AssetsTab::Adjustment,
+            favorites_nav: "assets.adjustment.category.favorites",
+            star: "assets.adjustment.0.favorite",
+            listed: "assets.adjustment.0.apply",
+            family: "filters",
+            item: "Warm",
+            search: None,
+        },
+    ];
+    for row in rows {
+        let mut f = fixture();
+        f.editor.preferences.assets_tab = row.tab;
+        if row.tab == AssetsTab::Adjustment {
+            f.editor.preferences.adjustment_presets = vec![vibecut::preferences::AdjustmentPreset {
+                name: row.item.to_owned(),
+                params: BTreeMap::new(),
+            }];
+        }
+        let mut h = build(f.editor);
+        h.run_steps(3);
+        if let Some(query) = row.search {
+            set_sticker_search(&mut h, query);
+        }
+        // Not starred yet: the star is offered and the item is not in the favourites.
+        assert!(has_widget(&h, row.star), "{}", row.star);
+        assert!(!h.state().preferences.catalog_favorites.contains(row.family, row.item));
+        click(&mut h, row.star);
+        assert!(h.state().preferences.catalog_favorites.contains(row.family, row.item));
+        assert_eq!(h.state().preferences.catalog_favorites.list(row.family), [row.item]);
+
+        // Listed under Favorites of the same tab.
+        click(&mut h, row.favorites_nav);
+        assert!(has_widget(&h, row.listed), "{}", row.listed);
+
+        // Unstar from the Favorites list removes it and shows the empty state.
+        click(&mut h, row.star);
+        assert!(!h.state().preferences.catalog_favorites.contains(row.family, row.item));
+        assert!(!has_widget(&h, row.listed), "{}", row.listed);
+        assert!(!has_widget(&h, row.star), "{}", row.star);
+    }
+}

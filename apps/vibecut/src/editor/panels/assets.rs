@@ -165,4 +165,10 @@ pub(in crate::editor) enum Action {
     /// Insert one shape through its `graphic.insert.*` command and record it as recent.
     InsertShape(String),
     ClearStickerRecents,
+    /// Star or unstar one catalogue tile by its id within the family.
+    ToggleFavorite {
+        family: &'static str,
+        id: String,
+        favorite: bool,
+    },
 }
