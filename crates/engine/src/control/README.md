@@ -177,7 +177,11 @@ completed job whose bytes were evicted refuses `job_not_retained`.
   path. A file output is a `FilePublish` command whose every path the trusted `Policy` authorizes.
 - **Process caches.** `MediaAccess` also serves `media.detect_scenes`: it submits against the
   lent artifact cache and publishes the entry when `job_status` first sees the job completed.
-  Loudness measurement takes no cache.
+  Loudness measurement takes no cache. `footage.analyze {item, kind}` is the same shape: one CPU
+  `AnalyzeFootage` job over the item's source that edits nothing, published into the lent cache
+  when `job_status` first sees it completed ([footage correction](../analysis/correction/README.md)).
+  `export` and `preview` read the stored corrections of the switched-on items from that cache and
+  hand them to render; `export` refuses with `CorrectionMissing` naming any item that has none.
 
 ## Asset-library commands
 

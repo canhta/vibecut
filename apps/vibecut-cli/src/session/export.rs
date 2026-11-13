@@ -120,6 +120,7 @@ fn export_configured(
         .ok_or(CliError::Rejected("no scenes"))?
         .1;
     let mut settings = export_settings(&project, aspect, allow_degraded, overwrite);
+    attach_corrections(context, &project, &mut settings)?;
     settings.container = render::OutputOptions::container_for_path(&output, options.audio_only)?;
     options.apply(&mut settings)?;
     let key = export_job_key(&project, range, &settings)?;
@@ -201,6 +202,30 @@ pub(crate) fn export_job_key(
         clip_range,
         translation: [0; 32],
     })?)
+}
+
+/// Read the stored footage corrections of `project` into `settings` from the process media
+/// cache. A project with no stabilized clip opens no cache; a clip whose analysis is absent stays
+/// uncorrected and the export job refuses, naming it.
+pub(crate) fn attach_corrections(
+    context: &Context,
+    project: &Project,
+    settings: &mut render::ExportSettings,
+) -> Result<(), CliError> {
+    let stabilized = project
+        .data()
+        .scenes
+        .iter()
+        .flat_map(|scene| scene.timeline.iter())
+        .flat_map(|track| &track.items)
+        .any(
+            |item| matches!(&item.content, project::ItemParams::Video(p) if p.stabilize.is_some()),
+        );
+    if stabilized {
+        let mut media = engine::control::MediaAccess::open(context.budget()?)?;
+        settings.render.stabilization = media.footage_corrections(project).tracks;
+    }
+    Ok(())
 }
 
 pub(crate) fn export_settings(

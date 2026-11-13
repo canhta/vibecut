@@ -34,10 +34,48 @@ pub struct VideoParams {
     /// Per-item switch for the edge-preserving noise-reduction pass; off leaves the picture untouched.
     #[serde(default)]
     pub reduce_noise: bool,
+    /// Footage stabilization: absent is off, a level switches it on. The corrective motion is
+    /// derived data computed once per source and looked up at render, never stored here.
+    #[serde(default)]
+    pub stabilize: Option<StabilizeLevel>,
+}
+/// How strongly stabilization smooths the camera path; the reference names exactly these three.
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum StabilizeLevel {
+    /// Follows most of the hand motion; the smallest crop.
+    Flexible,
+    /// The reference default.
+    #[default]
+    Normal,
+    /// Holds the frame steadiest; the largest crop.
+    Stable,
+}
+impl StabilizeLevel {
+    pub const ALL: [Self; 3] = [Self::Flexible, Self::Normal, Self::Stable];
+    /// Width of the Gaussian that smooths the measured camera path, in seconds.
+    /// 4, 12 and 36 frames at 30 fps from the footage clean-up measurements; the reference gives no numbers.
+    pub const fn sigma_seconds(self) -> f64 {
+        match self {
+            Self::Flexible => 0.13,
+            Self::Normal => 0.4,
+            Self::Stable => 1.2,
+        }
+    }
+    /// Stable id used by the wire value and the properties row.
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Flexible => "flexible",
+            Self::Normal => "normal",
+            Self::Stable => "stable",
+        }
+    }
 }
 impl VideoParams {
     /// A plain clip: its own audio off, unity volume, not muted, the full frame, default
-    /// fit, no fades, no cleanup, no background and no noise reduction. `Default` would
+    /// fit, no fades, no cleanup, no background, no noise reduction and no stabilization. `Default` would
     /// need a neutral `source_audio_enabled`, which has none: a clip with its audio on and
     /// one without are both ordinary, so sites that want audio set it as a field update.
     pub fn plain() -> Self {
@@ -51,6 +89,7 @@ impl VideoParams {
             cleanup: crate::AudioCleanup::default(),
             background: ClipBackground::None,
             reduce_noise: false,
+            stabilize: None,
         }
     }
 }

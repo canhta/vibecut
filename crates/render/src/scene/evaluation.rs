@@ -107,12 +107,41 @@ impl<'a> Renderer<'a> {
             cache_clock: 0,
             opacity_path: AnimationPath::from(BuiltinPath::Opacity),
             sticker_errors: Vec::new(),
+            stabilizers: BTreeMap::new(),
         })
     }
     /// Stickers whose asset was missing or invalid in the frames rendered so far; each paints a
     /// placeholder instead of failing the frame.
     pub fn sticker_errors(&self) -> &[super::StickerError] {
         &self.sticker_errors
+    }
+    /// The warp table of a stabilized video item: its analysed track at the item's level over the
+    /// item's own source range. `None` when the item is not stabilized or has no analysis, in
+    /// which case it renders uncorrected.
+    fn stabilizer_for(&mut self, item: &Item) -> Option<Arc<super::stabilize::Stabilizer>> {
+        let ItemParams::Video(params) = &item.content else {
+            return None;
+        };
+        let level = params.stabilize?;
+        let track = self.settings.stabilization.get(&item.id)?;
+        if let Some(cached) = self.stabilizers.get(&item.id)
+            && Arc::ptr_eq(&cached.track, track)
+            && cached.level == level
+            && cached.range == item.source_range
+        {
+            return Some(cached.stabilizer.clone());
+        }
+        let stabilizer = Arc::new(track.stabilizer(level, item.source_range));
+        self.stabilizers.insert(
+            item.id,
+            super::stabilize::Cached {
+                track: track.clone(),
+                level,
+                range: item.source_range,
+                stabilizer: stabilizer.clone(),
+            },
+        );
+        Some(stabilizer)
     }
     pub fn text_cache_stats(&self) -> RasterCacheStats {
         self.cache_stats
@@ -283,10 +312,12 @@ impl<'a> Renderer<'a> {
                 }
                 let content = content_local(item, local, out.width, out.height)?;
                 let placement = item_crop(item, Placement::default(), local)?;
+                let stabilizer = self.stabilizer_for(item);
                 if let Some(image) = self.video_image(
                     item,
                     source_time(item, content_tick(item, content)?)?,
                     placement,
+                    stabilizer.as_deref(),
                     sources,
                     hooks,
                     preview,
@@ -320,7 +351,16 @@ impl<'a> Renderer<'a> {
                     if prepared.as_ref().is_some_and(|(id, _)| *id == item.id) {
                         prepared.take().map(|(_, image)| image)
                     } else {
-                        self.video_image(item, source_at, placement, sources, hooks, preview)?
+                        let stabilizer = self.stabilizer_for(item);
+                        self.video_image(
+                            item,
+                            source_at,
+                            placement,
+                            stabilizer.as_deref(),
+                            sources,
+                            hooks,
+                            preview,
+                        )?
                     }
                 } else {
                     None
@@ -803,6 +843,7 @@ impl<'a> Renderer<'a> {
         item: &Item,
         at: Tick,
         placement: Placement,
+        stabilizer: Option<&super::stabilize::Stabilizer>,
         sources: &mut dyn SourceProvider,
         hooks: &dyn ExecutionHooks,
         preview: bool,
@@ -825,7 +866,8 @@ impl<'a> Renderer<'a> {
                 reason,
             }]));
         }
-        let window = if self.settings.background_blur.is_none() {
+        // A steadied frame samples across the whole picture, so it is never decoded as a window.
+        let window = if self.settings.background_blur.is_none() && stabilizer.is_none() {
             asset
                 .probe()
                 .streams
@@ -845,7 +887,16 @@ impl<'a> Renderer<'a> {
         } else {
             None
         };
-        sources.video_window(asset, item.id, at, window, hooks)
+        let frame = sources.video_window(asset, item.id, at, window, hooks)?;
+        // Stabilization warps the decoded frame before crop, fit, effects and transform, so every
+        // later stage sees the steadied picture; preview and export take this one path.
+        match (frame, stabilizer.and_then(|stabilizer| stabilizer.warp(at))) {
+            (Some(image), Some(warp)) => Ok(Some(match warp.apply(&image, hooks)? {
+                Some(steady) => steady,
+                None => image,
+            })),
+            (frame, _) => Ok(frame),
+        }
     }
     #[allow(clippy::too_many_arguments)]
     fn text(

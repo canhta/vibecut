@@ -12,7 +12,9 @@ mod runtime;
 pub(crate) use control::{control, save_control_state};
 #[cfg(test)]
 use export::export_project_with;
-pub(crate) use export::{Aspect, export_job_key, export_project, export_settings};
+pub(crate) use export::{
+    Aspect, attach_corrections, export_job_key, export_project, export_settings,
+};
 pub(crate) use job::{run_job, run_job_with};
 pub(crate) use leased::{Edit, History, WritePolicy, run_leased};
 pub(crate) use libraries::{

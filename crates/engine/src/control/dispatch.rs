@@ -69,6 +69,21 @@ fn music_access<'a>(caller: &Caller<'a>) -> crate::session::Result<&'a super::Mu
 }
 
 impl Session {
+    /// The stored footage corrections of this project's switched-on items, read from the lent
+    /// cache; empty without one, so those items render uncorrected and export refuses to start.
+    fn footage_tracks(
+        &self,
+        media: Option<&std::sync::Mutex<super::MediaAccess>>,
+    ) -> Result<render::stabilize::Tracks> {
+        let Some(media) = media else {
+            return Ok(Default::default());
+        };
+        Ok(media
+            .lock()
+            .map_err(|_| crate::RuntimeError::Poisoned)?
+            .footage_corrections(self.project())
+            .tracks)
+    }
     /// The one admission step every transport passes before dispatch: the command's
     /// declared availability (including the open-transaction rule) and its declared
     /// collection limits. A refusal is typed; nothing has run.
@@ -295,6 +310,7 @@ impl Session {
                         | JobKind::GenerateClipThumbnails
                         | JobKind::DetectScenes
                         | JobKind::AnalyzeReframe
+                        | JobKind::AnalyzeFootage
                         | JobKind::AnalyzeShots
                 ) && let Some(media) = caller.media
                 {
@@ -721,7 +737,13 @@ impl Session {
                 Ok(ControlResult::CancelRequested { job })
             }
             Command::Preview { frames } => {
-                Ok(crate::control_preview::preview(self, frames, runner)?)
+                let stabilization = self.footage_tracks(caller.media)?;
+                Ok(crate::control_preview::preview(
+                    self,
+                    frames,
+                    runner,
+                    stabilization,
+                )?)
             }
             Command::FreezeFrame {
                 item,
@@ -763,6 +785,7 @@ impl Session {
                 overwrite,
             } => {
                 let mut settings = render::ExportSettings::from_project(self.project());
+                settings.render.stabilization = self.footage_tracks(caller.media)?;
                 settings.container =
                     render::OutputOptions::container_for_path(&path, options.audio_only)?;
                 let paths = options.paths(self.project(), &path)?;
@@ -869,6 +892,48 @@ impl Session {
                     job,
                     revision: self.revision(),
                     paths: vec![path],
+                })
+            }
+            Command::AnalyzeFootage { item, kind } => {
+                let data = self.project().data();
+                let clip = data
+                    .scene()
+                    .timeline
+                    .iter()
+                    .flat_map(|track| &track.items)
+                    .find(|candidate| candidate.id == item)
+                    .ok_or(EngineError::Edit(crate::EditError::NoItem(item)))?;
+                if !matches!(clip.content, project::ItemParams::Video(_)) {
+                    return Err(EngineError::Edit(crate::EditError::Invalid(
+                        "footage analysis needs a video item",
+                    )));
+                }
+                let asset_id =
+                    clip.source_asset
+                        .ok_or(EngineError::Edit(crate::EditError::Invalid(
+                            "footage item has no source",
+                        )))?;
+                let asset = data
+                    .assets
+                    .iter()
+                    .find(|candidate| candidate.id() == asset_id)
+                    .cloned()
+                    .ok_or(EngineError::Edit(crate::EditError::NoAsset(asset_id)))?;
+                let media =
+                    caller
+                        .media
+                        .ok_or(EngineError::Edit(crate::EditError::Unsupported(
+                            "media generation cache unavailable",
+                        )))?;
+                let job = media
+                    .lock()
+                    .map_err(|_| crate::RuntimeError::Poisoned)?
+                    .analyze_footage(runner, asset, kind)?;
+                Ok(ControlResult::JobAccepted {
+                    word_highlight_warnings: project::CaptionWordWarnings::default(),
+                    job,
+                    revision: self.revision(),
+                    paths: Vec::new(),
                 })
             }
             Command::ReframeGenerate { item, target } => {

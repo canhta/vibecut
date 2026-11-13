@@ -11,6 +11,7 @@ mod loudness;
 mod masks;
 mod media_pipeline;
 mod output_alias;
+mod stabilize;
 mod support;
 mod text_style;
 mod transform;

@@ -1,5 +1,5 @@
 //! Applies captured LUT import results to the selected clip.
-use super::super::{State, read};
+use super::super::super::{State, read};
 use crate::editor::{Error, ItemId, Port, Result};
 use engine::{
     Session,
@@ -24,7 +24,7 @@ struct Capture {
     expected: Option<project::LutId>,
     job: Option<JobId>,
 }
-struct Human;
+pub(super) struct Human;
 impl engine::control::Policy for Human {
     fn authorize(&self, _: &engine::Command, _: &project::Project) -> engine::control::Result<()> {
         Ok(())

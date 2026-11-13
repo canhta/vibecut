@@ -1376,6 +1376,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                         );
                     }
                 }
+                self.stabilize_rows(ui, item);
             }
             PropertiesTab::Graphic => {
                 self.panel_section(
@@ -1602,6 +1603,8 @@ mod appearance;
 mod number_edit;
 
 mod basic;
+
+mod footage;
 
 mod selection;
 

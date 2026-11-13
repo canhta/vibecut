@@ -159,9 +159,19 @@ impl AudioPort {
 /// One transient render-state owner shared by editor preview and export.
 /// Each consumer freezes settings against the same immutable project snapshot;
 /// removed items are filtered without losing their placements for undo/redo.
+/// The second field holds the stored footage corrections of the switched-on clips: they follow
+/// the project, not a placement gesture, so a new transient settings value never drops them.
 #[derive(Default)]
-pub struct RenderState(Mutex<Option<Arc<render::RenderSettings>>>);
+pub struct RenderState(
+    Mutex<Option<Arc<render::RenderSettings>>>,
+    Mutex<render::stabilize::Tracks>,
+);
 impl RenderState {
+    /// Replace the corrections preview and export render with.
+    pub(crate) fn set_corrections(&self, tracks: render::stabilize::Tracks) -> Result<()> {
+        *self.1.lock().map_err(|_| Error::Poisoned)? = tracks;
+        Ok(())
+    }
     pub(crate) fn settings(&self, project: &project::Project) -> Result<render::RenderSettings> {
         let retained = self.0.lock().map_err(|_| Error::Poisoned)?.clone();
         let mut settings = retained
@@ -176,6 +186,7 @@ impl RenderState {
                 .iter()
                 .any(|track| track.items.iter().any(|item| item.id == *id))
         });
+        settings.stabilization = self.1.lock().map_err(|_| Error::Poisoned)?.clone();
         Ok(settings)
     }
     /// Whether a transient render placement replaces this item's saved box.
@@ -273,8 +284,71 @@ pub struct Playback {
     shown: Option<Arc<Frame>>,
     last_callback: (u64, std::time::Instant),
     device_available: bool,
+    footage: Option<Footage>,
+}
+/// The process media cache the stored footage corrections are read from, and what was last read.
+struct Footage {
+    media: Arc<Mutex<engine::control::MediaAccess>>,
+    /// The switched-on clips with their source hash, and the cache epoch, the last read was for.
+    resolved: Option<(Vec<(project::ItemId, [u8; 32])>, u64)>,
 }
 impl Playback {
+    /// Read the stored footage corrections of the project from `media` at every seek, so preview
+    /// draws a stabilized clip with the same lookup export uses.
+    pub fn set_footage(&mut self, media: Arc<Mutex<engine::control::MediaAccess>>) {
+        self.footage = Some(Footage {
+            media,
+            resolved: None,
+        });
+    }
+    /// Re-resolve the corrections when the switched-on clips or the stored corrections changed.
+    fn refresh_footage(&mut self, project: &Arc<project::Project>) {
+        let Some(footage) = self.footage.as_mut() else {
+            return;
+        };
+        let data = project.data();
+        let key: Vec<(project::ItemId, [u8; 32])> = data
+            .scenes
+            .iter()
+            .flat_map(|scene| scene.timeline.iter())
+            .flat_map(|track| &track.items)
+            .filter(|item| {
+                matches!(&item.content, project::ItemParams::Video(p) if p.stabilize.is_some())
+            })
+            .map(|item| {
+                let hash = item
+                    .source_asset
+                    .and_then(|id| data.assets.iter().find(|asset| asset.id() == id))
+                    .map_or([0; 32], |asset| asset.content_hash().0);
+                (item.id, hash)
+            })
+            .collect();
+        if key.is_empty()
+            && footage
+                .resolved
+                .as_ref()
+                .is_none_or(|(old, _)| old.is_empty())
+        {
+            return;
+        }
+        let Ok(mut media) = footage.media.lock() else {
+            return;
+        };
+        let epoch = media.footage_epoch();
+        if footage
+            .resolved
+            .as_ref()
+            .is_some_and(|(old, seen)| *old == key && *seen == epoch)
+        {
+            return;
+        }
+        let tracks = media.footage_corrections(project).tracks;
+        drop(media);
+        footage.resolved = Some((key, epoch));
+        if let Ok(request) = read_request(&self.request) {
+            let _ = request.render_state.set_corrections(tracks);
+        }
+    }
     /// Attach the desktop device adapter before the first visible preview.
     pub fn set_effects(
         &mut self,
@@ -384,6 +458,7 @@ impl Playback {
             shown: None,
             last_callback: (0, std::time::Instant::now()),
             device_available: false,
+            footage: None,
         };
         playback.submit_workers()?;
         playback.runner.tick()?;
@@ -639,6 +714,7 @@ impl Playback {
         if playing && !matches!(self.workers, Workers::Running) {
             return Err(Error::PreviewUnavailable("preview workers"));
         }
+        self.refresh_footage(&project);
         let mut request = self.request.lock().map_err(|_| Error::Poisoned)?;
         let epoch = request
             .epoch

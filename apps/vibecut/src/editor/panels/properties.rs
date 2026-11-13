@@ -100,7 +100,9 @@ pub(in crate::editor) struct State {
     font_picker: font_picker::State,
     /// Catalog commands for the font picker; opened lazily on first use.
     font_backend: Option<Box<dyn font_picker::Backend>>,
-    lut: workflow::lut::LutWorkflow,
+    lut: workflow::jobs::lut::LutWorkflow,
+    /// Stabilize analysis jobs and which switched-on clips still need one.
+    footage: workflow::jobs::footage::FootageWorkflow,
     font_import: Option<font_picker::PendingImport>,
     /// Mask row's shape and field sub-panel.
     mask: mask_picker::State,
@@ -213,7 +215,8 @@ impl Default for State {
             color_base: None,
             font_picker: font_picker::State::default(),
             font_backend: None,
-            lut: workflow::lut::LutWorkflow::default(),
+            lut: workflow::jobs::lut::LutWorkflow::default(),
+            footage: workflow::jobs::footage::FootageWorkflow::default(),
             font_import: None,
             mask: mask_picker::State::default(),
             chroma_staged: None,

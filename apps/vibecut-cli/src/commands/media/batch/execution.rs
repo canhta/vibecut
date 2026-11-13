@@ -3,7 +3,7 @@ use super::{PreparedBatch, PreparedJob};
 use crate::output::json_path;
 use crate::output::{progress_percent, stage_name};
 use crate::session::Context;
-use crate::session::{export_job_key, export_settings};
+use crate::session::{attach_corrections, export_job_key, export_settings};
 use crate::{CliError, Output};
 use engine::cache::CacheKey;
 use engine::control::Error as EngineError;
@@ -65,7 +65,15 @@ where
             .get(&job.project_target)
             .cloned()
             .ok_or(CliError::Rejected("batch project disappeared"))?;
-        let outcome = run_job(&mut runner, job, project, index, total, &mut submit);
+        let outcome = run_job(
+            context,
+            &mut runner,
+            job,
+            project,
+            index,
+            total,
+            &mut submit,
+        );
         match outcome {
             Ok(()) => {
                 values.push(job_value(job, index, "completed", None)?);
@@ -114,6 +122,7 @@ fn job_value(
 }
 
 fn run_job<F>(
+    context: &Context,
     runner: &mut JobRunner,
     job: &PreparedJob,
     project: Arc<Project>,
@@ -136,7 +145,8 @@ where
         return Err(CliError::Rejected("project timeline is empty"));
     }
     let range = TimeRange::new(Tick::ZERO, duration)?;
-    let settings = export_settings(&project, job.aspect, job.allow_degraded, job.overwrite);
+    let mut settings = export_settings(&project, job.aspect, job.allow_degraded, job.overwrite);
+    attach_corrections(context, &project, &mut settings)?;
     let key = export_job_key(&project, range, &settings)?;
     let (id, _cancel) = submit(runner, key, project, range, settings, job.output.clone())?;
     wait_for_job(runner, id, index, total)

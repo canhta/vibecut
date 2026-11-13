@@ -61,6 +61,9 @@ impl Editor {
                 properties.abort_lut();
                 port.fail(error.to_string());
             }
+            if let Err(error) = properties.poll_footage(port) {
+                port.fail(error.to_string());
+            }
         });
         let failure = self.playback.error();
         self.properties.set_lut_failure(failure);

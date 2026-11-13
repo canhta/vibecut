@@ -156,6 +156,7 @@ pub fn submit_export_with_sources(
     sources: impl Fn() -> Box<dyn render::SourceProvider> + Send + Sync + 'static,
 ) -> Result<(JobId, CancelToken)> {
     super::loudness_admission::admit(&project)?;
+    super::footage_admission::admit(&project, &settings.render)?;
     runner.submit::<RuntimeError>(
         JobSpec {
             kind: JobKind::Export,
@@ -206,7 +207,9 @@ pub fn submit_scene_exports_with_sources(
         )));
     }
     for (id, _) in &scenes {
-        super::loudness_admission::admit(&project.for_scene(*id)?)?;
+        let scene = project.for_scene(*id)?;
+        super::loudness_admission::admit(&scene)?;
+        super::footage_admission::admit(&scene, &settings.render)?;
     }
     let mut settings = settings;
     options.apply(&mut settings)?;

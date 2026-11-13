@@ -42,6 +42,7 @@ mod analysis;
 pub use analysis::chapters;
 pub use analysis::emphasis;
 pub use analysis::fillers;
+pub use analysis::footage;
 pub use analysis::loudness;
 pub use analysis::pause_candidates;
 pub use analysis::scene_detection;

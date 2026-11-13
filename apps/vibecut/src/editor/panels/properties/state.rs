@@ -16,6 +16,14 @@ pub(in crate::editor) struct Widget {
 /// Requests the properties area cannot satisfy alone; the frame routes them
 /// in order after `show` returns.
 pub(in crate::editor) enum Action {
+    /// Start the stabilize analysis of a clip's source (`footage.analyze`).
+    AnalyzeFootage {
+        item: ItemId,
+    },
+    /// Stop the running analysis of a clip.
+    CancelFootage {
+        item: ItemId,
+    },
     ImportLut {
         item: ItemId,
         expected: Option<project::LutId>,
