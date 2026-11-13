@@ -53,12 +53,15 @@ impl View<'_> {
 
     fn music_nav(&mut self, ui: &mut egui::Ui) {
         let saved = self.tr(Text::MusicSaved).to_owned();
-        if self.nav_button(
-            ui,
-            "music.tab.saved",
-            &saved,
-            self.state.music_mode == MusicMode::Saved,
-        ) {
+        // Saved lists the library's tracks; with no library lent there is nothing to list.
+        if self.cx.music.is_some()
+            && self.nav_button(
+                ui,
+                "music.tab.saved",
+                &saved,
+                self.state.music_mode == MusicMode::Saved,
+            )
+        {
             self.state.music_mode = MusicMode::Saved;
             self.actions.push(Action::MusicMode(MusicMode::Saved));
         }
