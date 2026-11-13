@@ -1312,6 +1312,4 @@ mod remove_background;
 
 mod selection;
 
-mod font_dialog;
-
 mod transition;

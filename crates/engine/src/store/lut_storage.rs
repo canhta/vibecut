@@ -244,9 +244,9 @@ impl LutStore {
         context: &JobContext,
     ) -> Result<LutRecord> {
         context.check_cancelled()?;
-        let format = render::lut::LutFormat::from_path(source).ok_or(render::Error::Unsupported(
-            "only 3D cube and 3dl LUTs are supported",
-        ))?;
+        let format = render::lut::LutFormat::from_path(source).ok_or(
+            render::Error::Unsupported("only 3D cube and 3dl LUTs are supported"),
+        )?;
         parents(source)?;
         let metadata = plain(source)?;
         if !metadata.is_file() || metadata.len() > render::lut::MAX_CUBE_SOURCE {

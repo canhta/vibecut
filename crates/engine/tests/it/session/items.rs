@@ -86,7 +86,11 @@ fn split_all_cuts_every_unlocked_item_under_the_playhead_as_one_step() {
     s.undo().unwrap();
     assert!(Arc::ptr_eq(s.project(), &before));
     let out = s.apply(Command::TimelineSplitAll { at: Tick(40) }).unwrap();
-    assert_eq!(out.created.len(), 2, "every unlocked item splits in one step");
+    assert_eq!(
+        out.created.len(),
+        2,
+        "every unlocked item splits in one step"
+    );
     s.undo().unwrap();
     assert!(Arc::ptr_eq(s.project(), &before));
 }

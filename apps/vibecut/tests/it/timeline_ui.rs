@@ -4863,7 +4863,11 @@ fn split_all_split_mode_and_select_by_playhead_reach_the_engine() {
     assert!(h.state().session.selection().is_empty());
 
     click_item(&mut h, video_a);
-    assert_eq!(count(h.state()), before + 1, "a Split-mode click cuts the clip");
+    assert_eq!(
+        count(h.state()),
+        before + 1,
+        "a Split-mode click cuts the clip"
+    );
     undo(&mut h);
     h.key_press(egui::Key::A);
     h.run_steps(2);

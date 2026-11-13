@@ -343,7 +343,7 @@ impl State {
             .inner;
         let caret_hit = ui.interact(
             caret,
-            egui::Id::new("timeline.tool.caret"),
+            ui.scope_id().with("timeline.tool.caret"),
             egui::Sense::click(),
         );
         let response = button.union(caret_hit);

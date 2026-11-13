@@ -314,7 +314,11 @@ impl Cube3d {
                     out_bits = Some(bits);
                     continue;
                 }
-                if first.as_bytes().first().is_some_and(|c| c.is_ascii_alphabetic()) {
+                if first
+                    .as_bytes()
+                    .first()
+                    .is_some_and(|c| c.is_ascii_alphabetic())
+                {
                     return Err(Error::Unsupported("3dl directive"));
                 }
                 let mesh = raw
@@ -326,24 +330,22 @@ impl Cube3d {
                 let (Some(&low), Some(&high)) = (mesh.first(), mesh.last()) else {
                     return Err(invalid(line, R::Size));
                 };
-                if !(2..=65).contains(&n)
-                    || mesh.windows(2).any(|w| matches!(w, [a, b] if b <= a))
+                if !(2..=65).contains(&n) || mesh.windows(2).any(|w| matches!(w, [a, b] if b <= a))
                 {
                     return Err(invalid(line, R::Size));
                 }
                 let uniform = mesh.iter().enumerate().all(|(i, m)| {
-                    let expected = f64::from(low)
-                        + f64::from(high - low) * i as f64 / (n - 1) as f64;
+                    let expected =
+                        f64::from(low) + f64::from(high - low) * i as f64 / (n - 1) as f64;
                     (f64::from(*m) - expected).abs() <= 1.0
                 });
                 if !uniform {
-                    return Err(Error::Unsupported("non-uniform 3dl input mesh needs a shaper"));
+                    return Err(Error::Unsupported(
+                        "non-uniform 3dl input mesh needs a shaper",
+                    ));
                 }
                 let in_max = f64::from(bit_max(high as f32));
-                domain = Some((
-                    [f64::from(low) / in_max; 3],
-                    [f64::from(high) / in_max; 3],
-                ));
+                domain = Some(([f64::from(low) / in_max; 3], [f64::from(high) / in_max; 3]));
                 let count = n * n * n;
                 let reserved = count
                     .checked_mul(std::mem::size_of::<[f32; 3]>())
@@ -591,8 +593,8 @@ impl LutResources {
                     },
                 )?;
                 let path = record.directory.join("canonical.cube");
-                let (cube, hash) =
-                    read_lut(&path, LutFormat::Cube, MAX_CUBE_CANONICAL, hooks).map_err(|error| match error {
+                let (cube, hash) = read_lut(&path, LutFormat::Cube, MAX_CUBE_CANONICAL, hooks)
+                    .map_err(|error| match error {
                         Error::Io(ref io) if io.kind() == std::io::ErrorKind::NotFound => {
                             Error::LutUnavailable {
                                 id: *id,
@@ -896,12 +898,24 @@ mod tests {
             format!("3DMESH\n0 1 1023\n{body}"),
             format!("3DMESH\n{sixty_six}\n{body}"),
             format!("LUT8\n{valid}"),
-            format!("Mesh 10 10\n{}", valid.replace("1023 1023 1023", "1023 1023 1024")),
+            format!(
+                "Mesh 10 10\n{}",
+                valid.replace("1023 1023 1023", "1023 1023 1024")
+            ),
             format!("Mesh 10 9\n{valid}"),
-            format!("3DMESH\n0 1023\n{}", body.replace("1023 1023 1023", "-1 0 0")),
+            format!(
+                "3DMESH\n0 1023\n{}",
+                body.replace("1023 1023 1023", "-1 0 0")
+            ),
             format!("3DMESH\n0 1023\n{body}0 0 0\n"),
-            format!("3DMESH\n0 1023\n{}", body.lines().take(7).collect::<Vec<_>>().join("\n")),
-            format!("3DMESH\n0 1023\n{}", body.replace("1023 1023 1023", "1023 1023")),
+            format!(
+                "3DMESH\n0 1023\n{}",
+                body.lines().take(7).collect::<Vec<_>>().join("\n")
+            ),
+            format!(
+                "3DMESH\n0 1023\n{}",
+                body.replace("1023 1023 1023", "1023 1023")
+            ),
         ] {
             assert!(Cube3d::parse_3dl(source.as_bytes(), &hooks).is_err());
             assert_eq!(hooks.bytes.load(Ordering::SeqCst), 0);

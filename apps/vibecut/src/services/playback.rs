@@ -782,6 +782,7 @@ fn plan_block(first: i64, bounds: Option<(i64, i64)>, frames: usize) -> BlockPla
     }
 }
 
+#[cfg(test)]
 impl BlockPlan {
     /// The timeline sample each output slot reads, in order.
     fn indices(&self) -> Vec<i64> {
@@ -982,6 +983,8 @@ mod tests {
     use super::{loop_window, plan_block, wrap_units};
     use time::Tick;
 
+    type Bounds = Option<(i64, i64)>;
+
     #[test]
     fn loop_wrap_rows() {
         // (position, loop start, loop end, expected)
@@ -1010,7 +1013,7 @@ mod tests {
     #[test]
     fn loop_window_rows() {
         // (enabled, in/out ticks, duration, expected window)
-        let rows: [(bool, Option<(i64, i64)>, i64, Option<(i64, i64)>); 9] = [
+        let rows: [(bool, Bounds, i64, Bounds); 9] = [
             (false, Some((10, 50)), 100, None),
             (true, None, 100, Some((0, 100))),
             (true, Some((10, 50)), 100, Some((10, 50))),
@@ -1035,7 +1038,7 @@ mod tests {
     #[test]
     fn loop_block_split_rows() {
         // (first sample, loop bounds, block frames, timeline sample per output slot)
-        let rows: [(i64, Option<(i64, i64)>, usize, Vec<i64>); 6] = [
+        let rows: [(i64, Bounds, usize, Vec<i64>); 6] = [
             (2, None, 4, vec![2, 3, 4, 5]),
             (2, Some((0, 10)), 4, vec![2, 3, 4, 5]),
             // The block crosses the loop end: the slots after 9 read the loop start, 0 and 1.
