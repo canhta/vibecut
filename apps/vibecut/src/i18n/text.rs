@@ -938,6 +938,7 @@ catalog! {
     SlantNormal { key: "slant_normal", en: "Normal", vi: "Thường" },
     SpeedDuration { key: "speed_duration", en: "Duration", vi: "Thời lượng" },
     SpeedReset { key: "speed_reset", en: "Reset speed", vi: "Đặt lại tốc độ" },
+    SpeedReverse { key: "speed_reverse", en: "Reverse", vi: "Đảo ngược" },
     TextAlign { key: "text_align", en: "Align", vi: "Căn lề" },
     TextBackground { key: "text_background", en: "Background", vi: "Nền" },
     TextColor { key: "text_color", en: "Text colour", vi: "Màu chữ" },

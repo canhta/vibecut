@@ -55,6 +55,11 @@ pub(in crate::editor) enum Action {
         speed: f64,
         maintain_pitch: bool,
     },
+    /// The Speed tab's Reverse switch, through `timeline.set_reverse`.
+    SetReverse {
+        item: ItemId,
+        reverse: bool,
+    },
     /// The selected transition's duration, through `transition.set_duration`.
     SetTransitionDuration {
         transition: project::TransitionId,

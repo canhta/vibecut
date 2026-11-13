@@ -410,3 +410,60 @@ fn retime_large_follow_block_respects_working_set_budget() {
     drop(mixer);
     assert_eq!(h.used.load(std::sync::atomic::Ordering::SeqCst), 0);
 }
+
+/// The same item with every retime reversed: its source is read backwards.
+fn reversed(p: &project::Project) -> project::Project {
+    let mut data = p.data().clone();
+    for item in data
+        .scene_mut()
+        .timeline
+        .iter_mut()
+        .flat_map(|t| &mut t.items)
+    {
+        item.retime.reverse = true;
+    }
+    project::Project::new(data).unwrap()
+}
+
+#[test]
+fn reversed_audio_is_the_reversed_source_and_keeps_pitch() {
+    // At 1x the identity resampler is exact: output sample k is source sample L-1-k.
+    let p = reversed(&fixture(1000, true, 1.0));
+    let mut source = Tone {
+        hertz: TONE,
+        sweep: 0.0,
+        cancel: None,
+        requests: Vec::new(),
+    };
+    let out = render(&p, &mut source, &[65536]);
+    let n = RATE as usize;
+    assert_eq!(out.len(), n);
+    for k in [0usize, 1, 1000, 23_999, n - 1] {
+        let t = (n - 1 - k) as f64 / RATE as f64;
+        let expected = (LEVEL as f64 * (std::f64::consts::TAU * TONE * t).sin()) as f32;
+        assert!(
+            (out[k] - expected).abs() < 1e-3,
+            "sample {k}: {} vs {expected}",
+            out[k]
+        );
+    }
+    // Stretched reversed audio keeps the forward pitch.
+    for speed in [500, 2000] {
+        let p = reversed(&fixture(speed, true, 1.0));
+        let out = render(
+            &p,
+            &mut Tone {
+                hertz: TONE,
+                sweep: 0.0,
+                cancel: None,
+                requests: Vec::new(),
+            },
+            &[65536],
+        );
+        let (hertz, clean) = peak(&out[8192..8192 + 16384]);
+        assert!(
+            (hertz - TONE).abs() <= 6.0 && clean > 25.0,
+            "reversed speed {speed}: peak {hertz} Hz, {clean:.1} dB"
+        );
+    }
+}

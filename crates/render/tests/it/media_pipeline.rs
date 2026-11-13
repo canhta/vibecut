@@ -452,6 +452,35 @@ fn portrait_center_and_manual_crop_and_missing_source_admission() {
         Err(Error::Unavailable(_))
     ));
     assert_eq!(std::fs::read(&output).unwrap(), b"previous");
+    // A reversed item reports the source it reads: its first output quarter reads
+    // the last quarter of its source, not the first.
+    let mut reversed = p.data().clone();
+    let target = reversed
+        .scene_mut()
+        .timeline
+        .iter_mut()
+        .flat_map(|t| &mut t.items)
+        .find(|i| i.id == project::ItemId(0))
+        .unwrap();
+    target.retime.reverse = true;
+    let quarter = tick(1, 4);
+    let last_quarter = TimeRange::new(
+        target.source_range.end() - quarter,
+        target.source_range.end(),
+    )
+    .unwrap();
+    let reversed = project::Project::new(reversed).unwrap();
+    assert!(matches!(
+        export(
+            &reversed,
+            TimeRange::new(Tick::ZERO, quarter).unwrap(),
+            &s,
+            &output,
+            &Hooks::default()
+        ),
+        Err(Error::Unavailable(v)) if v.iter().any(|u| u.item == project::ItemId(0) && u.range == last_quarter)
+    ));
+    assert_eq!(std::fs::read(&output).unwrap(), b"previous");
     s.allow_degraded = true;
     for accepted in [
         vec![],

@@ -215,6 +215,11 @@ pub(super) fn retime_of(project: &project::Project, item: ItemId) -> Option<(f64
     ))
 }
 
+/// Whether a video or audio item plays its source backwards.
+pub(super) fn retime_reversed(project: &project::Project, item: ItemId) -> Option<bool> {
+    Some(find(project, item)?.retime.reverse)
+}
+
 /// The effect scalar at an item-relative time: an animated channel reads its
 /// curve, everything else its persisted value.
 pub(super) fn effect_param_value_at(

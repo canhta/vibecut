@@ -59,30 +59,45 @@ fn overflow() -> Error {
     Error::Invalid("retime time overflow")
 }
 
-/// Visible source range of a reversed piece covering window-output ticks
-/// `[offset, offset + duration)`. The first output tick shows source tick
-/// `we - 1 - floor(offset * speed)`; the piece that reaches the window's output
-/// end keeps the window's start, as a forward piece keeps its end.
-fn reverse_visible(
+/// Visible source range of the output slice `[offset, offset + duration)` of a
+/// window. Forward: output tick `p` shows `ws + floor(p * speed)`. Reversed: it
+/// shows `we - 1 - floor(p * speed)`, so the first output tick shows the last
+/// source tick. A slice reaching the window's output end takes the window's
+/// edge that it starts from in source order (the start when reversed, the end
+/// when forward), so a whole window covers its full source range.
+fn visible_source(
     window: RetimeWindow,
     speed: Speed,
+    reverse: bool,
     offset: Tick,
     duration: Tick,
 ) -> Result<SourceRange> {
+    let ws = window.source_range.start();
     let we = window.source_range.end();
     let total = speed.output_duration(window.source_range.duration())?;
     let end = offset.checked_add(duration).ok_or_else(overflow)?;
-    let upper = we
-        .checked_sub(speed.source_offset(offset, Rounding::Floor)?)
-        .ok_or_else(overflow)?;
-    let lower = if end == total {
-        window.source_range.start()
+    let first = speed.source_offset(offset, Rounding::Floor)?;
+    let (lower, upper) = if reverse {
+        let upper = we.checked_sub(first).ok_or_else(overflow)?;
+        let lower = if end == total {
+            ws
+        } else {
+            let last = end.checked_sub(Tick(1)).ok_or_else(overflow)?;
+            let back = speed.source_offset(last, Rounding::Floor)?;
+            we.checked_sub(Tick(1))
+                .and_then(|t| t.checked_sub(back))
+                .ok_or_else(overflow)?
+        };
+        (lower, upper)
     } else {
-        let last = end.checked_sub(Tick(1)).ok_or_else(overflow)?;
-        let back = speed.source_offset(last, Rounding::Floor)?;
-        we.checked_sub(Tick(1))
-            .and_then(|t| t.checked_sub(back))
-            .ok_or_else(overflow)?
+        let lower = ws.checked_add(first).ok_or_else(overflow)?;
+        let upper = if end == total {
+            we
+        } else {
+            ws.checked_add(speed.source_offset(end, Rounding::Floor)?)
+                .ok_or_else(overflow)?
+        };
+        (lower, upper)
     };
     SourceRange::new(lower, upper).map_err(|_| Error::Invalid("retime continuation window"))
 }
@@ -107,24 +122,20 @@ impl Item {
                 .retime
                 .speed
                 .output_duration(w.source_range.duration())?;
-            let visible_mismatch = if self.retime.reverse {
-                self.source_range != reverse_visible(w, self.retime.speed, w.offset, w.duration)?
-            } else {
-                self.source_time_at(self.start)? != self.source_range.start()
-                    || self.source_range.end()
-                        != if end == total {
-                            w.source_range.end()
-                        } else {
-                            self.source_time_at(self.end()?)?
-                        }
-            };
+            let visible = visible_source(
+                w,
+                self.retime.speed,
+                self.retime.reverse,
+                w.offset,
+                w.duration,
+            )?;
             if w.offset < Tick::ZERO
                 || w.duration <= Tick::ZERO
                 || end > total
                 || w.source_range.start() < Tick::ZERO
                 || self.source_range.start() < w.source_range.start()
                 || self.source_range.end() > w.source_range.end()
-                || visible_mismatch
+                || self.source_range != visible
             {
                 return Err(Error::Invalid("retime continuation window"));
             }
@@ -247,6 +258,40 @@ impl Item {
         ))
     }
 
+    /// Flip the traversal direction in place, keeping the timeline span and duration.
+    ///
+    /// A windowless item keeps its source range (its window is the whole range).
+    /// A windowed piece keeps its window and mirrors its output slice inside it:
+    /// `[o, o + d)` becomes `[T - o - d, T - o)` where `T` is the window's output
+    /// length. The mirrored slice reads the same source span backwards, within
+    /// the floored rounding of the mapping (about `speed` source ticks at the
+    /// far edge), and flipping back restores the original slice exactly.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error on arithmetic overflow or an empty visible range.
+    pub fn set_reversed(&mut self, reverse: bool) -> Result<()> {
+        if self.retime.reverse == reverse {
+            return Ok(());
+        }
+        if let Some(w) = self.retime.window {
+            let total = self
+                .retime
+                .speed
+                .output_duration(w.source_range.duration())?;
+            let offset = total
+                .checked_sub(w.offset)
+                .and_then(|t| t.checked_sub(w.duration))
+                .ok_or_else(overflow)?;
+            let window = RetimeWindow { offset, ..w };
+            self.source_range =
+                visible_source(window, self.retime.speed, reverse, offset, w.duration)?;
+            self.retime.window = Some(window);
+        }
+        self.retime.reverse = reverse;
+        Ok(())
+    }
+
     /// The piece of a reversed item covering timeline ticks `[from, to)`, inside
     /// the item: its visible source range is derived from the retained window.
     fn reverse_cut(&self, from: Tick, to: Tick) -> Result<Cut> {
@@ -258,7 +303,7 @@ impl Item {
         let window = self.retime_window()?;
         let local = window.offset.checked_add(offset).ok_or_else(overflow)?;
         Ok(Cut {
-            source_range: reverse_visible(window, self.retime.speed, local, duration)?,
+            source_range: visible_source(window, self.retime.speed, true, local, duration)?,
             start: from,
             retime: self.slice_retime(offset, duration)?,
         })

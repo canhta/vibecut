@@ -55,8 +55,8 @@ pub(super) fn set_speed(
 }
 
 /// Flip one video/audio item's traversal direction. Its timeline span is kept:
-/// a reversed item plays the same source window backwards. A split or trimmed
-/// piece keeps its retained window, so reversing one is refused for now.
+/// the item plays the same source span backwards, including a split or trimmed
+/// piece, whose retained window is mirrored (see `Item::set_reversed`).
 fn set_reverse(data: &mut ProjectData, id: ItemId, reverse: bool) -> Result<()> {
     let timeline = &mut data.scene_mut().timeline;
     let Some(t) = timeline
@@ -74,12 +74,7 @@ fn set_reverse(data: &mut ProjectData, id: ItemId, reverse: bool) -> Result<()> 
     if !matches!(target.content, ItemParams::Video(_) | ItemParams::Audio(_)) {
         return Err(EditError::Unsupported("reverse on non-media item"));
     }
-    if target.retime.window.is_some() {
-        return Err(EditError::Unsupported(
-            "reverse on a split or trimmed piece",
-        ));
-    }
-    target.retime.reverse = reverse;
+    target.set_reversed(reverse)?;
     Ok(())
 }
 

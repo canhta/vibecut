@@ -424,6 +424,43 @@ fn reversed_clip_plays_its_source_backwards_and_cuts_keep_the_mapping() {
                 );
             }
         }
+        // Frame index rows for 30 fps numbered frames 0..120 at whole-speed rates:
+        // output frame n shows source frame 119 - k*n, so no frame is duplicated or dropped.
+        let frame = second / 30;
+        if let Some(k) = [1i64, 2]
+            .into_iter()
+            .find(|k| i64::from(thousandths) == k * 1000)
+        {
+            for n in 0..120 / k {
+                let source = item.source_time_at(Tick(item.start.0 + n * frame)).unwrap();
+                assert_eq!(source.0 / frame, 119 - k * n, "{thousandths} frame {n}");
+            }
+        }
+        // A forward split piece flips in place: its window is mirrored, its span
+        // and duration stay, and flipping back restores it exactly.
+        let mut forward = item.clone();
+        forward.retime.reverse = false;
+        let (_, right) = forward.split_at(Tick(item.start.0 + length / 3)).unwrap();
+        let piece = Item {
+            source_range: right.source_range,
+            start: right.start,
+            retime: right.retime,
+            ..forward.clone()
+        };
+        let mut flipped = piece.clone();
+        flipped.set_reversed(true).unwrap();
+        assert!(flipped.retime.reverse);
+        assert_eq!(flipped.start, piece.start);
+        assert_eq!(flipped.duration().unwrap(), piece.duration().unwrap());
+        assert_eq!(flipped.end().unwrap(), piece.end().unwrap());
+        // The same source span, within the floored rounding of the mapping.
+        let slack = 2 * i64::from(thousandths.div_ceil(1000)) + 2;
+        assert!((flipped.source_range.start().0 - piece.source_range.start().0).abs() <= slack);
+        assert!((flipped.source_range.end().0 - piece.source_range.end().0).abs() <= slack);
+        flipped.set_reversed(false).unwrap();
+        assert_eq!(flipped.retime, piece.retime, "{thousandths}");
+        assert_eq!(flipped.source_range, piece.source_range, "{thousandths}");
+
         let json = serde_json::to_string(&item.retime).unwrap();
         assert_eq!(serde_json::from_str::<Retime>(&json).unwrap(), item.retime);
     }

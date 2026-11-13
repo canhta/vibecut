@@ -58,6 +58,31 @@ fn reverse_keeps_the_span_undoes_and_refuses_retained_pieces() {
     s.undo().unwrap();
     s.undo().unwrap();
     assert!(!item(&s, 1).retime.reverse);
+    // A split piece reverses in place: its span and duration stay, and undo restores it.
+    let cut = Tick(span.0 / 2);
+    s.apply(Command::SplitAt {
+        item: ItemId(1),
+        at: cut,
+    })
+    .unwrap();
+    let right = s
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .find(|i| i.start == cut)
+        .map(|i| i.id.0)
+        .unwrap();
+    let before = item(&s, right);
+    s.apply(set_reverse(&[right], true)).unwrap();
+    let flipped = item(&s, right);
+    assert!(flipped.retime.reverse);
+    assert_eq!(flipped.start, before.start);
+    assert_eq!(flipped.duration().unwrap(), before.duration().unwrap());
+    s.undo().unwrap();
+    assert_eq!(item(&s, right).retime, before.retime);
     assert!(s.apply(set_reverse(&[1, 1], true)).is_err());
     assert!(s.apply(set_reverse(&[], true)).is_err());
     assert!(s.apply(set_reverse(&[999], true)).is_err());

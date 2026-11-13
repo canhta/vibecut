@@ -98,6 +98,7 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
                 speed,
                 maintain_pitch,
             } => speed::set_speed(desk, item, speed, maintain_pitch),
+            Action::SetReverse { item, reverse } => speed::set_reverse(desk, item, reverse),
             Action::SetTransitionDuration {
                 transition,
                 duration,

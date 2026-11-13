@@ -59,8 +59,23 @@ pub(super) fn admission(
             };
             if let Some(reason) = reason {
                 let window = if overlaps {
-                    let start = item.source_time_at(range.start().max(item.start))?;
-                    let end = item.source_time_at(range.end().min(item.end()?))?.max(
+                    let first = range.start().max(item.start);
+                    let last = range.end().min(item.end()?);
+                    // A reversed span runs from the source of its last output tick up
+                    // to the source of its first (exclusive); a forward one the other way.
+                    let (start, far) = if item.retime.reverse {
+                        let last = last
+                            .checked_sub(Tick(1))
+                            .ok_or(Error::Invalid("diagnostic range"))?;
+                        let far = item
+                            .source_time_at(first)?
+                            .checked_add(Tick(1))
+                            .ok_or(Error::Invalid("diagnostic range"))?;
+                        (item.source_time_at(last)?, far)
+                    } else {
+                        (item.source_time_at(first)?, item.source_time_at(last)?)
+                    };
+                    let end = far.max(
                         start
                             .checked_add(Tick(1))
                             .ok_or(Error::Invalid("diagnostic range"))?,
