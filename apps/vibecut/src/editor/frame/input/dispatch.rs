@@ -141,7 +141,9 @@ impl Editor {
                         self.session.can_paste_mask_points(item, &mask, after)
                     })
                 }
-                SelectionScope::Transition | SelectionScope::None => false,
+                // Cut leaves nothing selected; stored items then paste at the playhead.
+                SelectionScope::None => self.session.can_paste_items(at),
+                SelectionScope::Transition => false,
             }
         }
     }
