@@ -50,7 +50,7 @@
 | `timeline.split_right` — Split and remove right | Edit | W | `timeline.split_right` | — |
 | `timeline.split_all` — Split all | Edit | Ctrl+Shift+B | `timeline.split_all` | — |
 | `timeline.delete` — Delete | Edit | Backspace, Delete | `delete` / `ripple_delete` (ripple enabled) | — |
-| `timeline.freeze` — Freeze frame | Timeline | — | — | freeze frame |
+| `timeline.freeze` — Freeze frame | Timeline | — | `timeline.freeze_frame` | — |
 | `timeline.ripple_delete` — Ripple delete | Edit | Shift+Backspace, Shift+Delete | `ripple_delete` | — |
 | `transport.play` — Play/Pause | Playback | Space | — | playback transport |
 | `transport.pause` — Pause | Playback | K | — | playback transport |

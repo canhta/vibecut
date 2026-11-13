@@ -250,15 +250,15 @@ fn settings_modal_applies_preferences_and_shortcut_transfers_through_the_picker_
         assert_eq!(bench.editor().preferences.cache_limit_bytes, 1024 << 20);
         bench.click("settings.performance.cache.clear");
         // Settings clears through the one cache-maintenance path the timeline owns.
-        assert!(
-            bench
-                .editor()
-                .requests
-                .contains(&crate::editor::context::Request::Cache(
-                    crate::editor::context::CacheAction::Clear
-                )),
+        // The frame drains the request at once, so the timeline's phase shows it; this
+        // bench has no media access, so the refused clear surfaces as a failed phase.
+        let cache = bench.editor().timeline.cache_ui();
+        assert_eq!(
+            cache.phase,
+            crate::editor::context::CachePhase::Failed,
             "Clear cache requests the shared clear"
         );
+        assert!(cache.cause.is_some());
         bench.harness_mut().run_steps(2);
         let name = if matches!(locale, Locale::En) {
             "en"
