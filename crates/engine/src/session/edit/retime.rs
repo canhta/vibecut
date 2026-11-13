@@ -115,3 +115,14 @@ pub(super) fn execute_set_speed(
 
     Ok(data)
 }
+
+/// Give one video/audio item the whole retime of a copied item: speed, pitch handling and
+/// direction, through the same ripple and key-stretch rules as a speed edit.
+pub(super) fn set_retime(
+    data: &mut ProjectData,
+    id: ItemId,
+    retime: project::Retime,
+) -> Result<()> {
+    set_speed(data, id, retime.speed, retime.maintain_pitch)?;
+    set_reverse(data, id, retime.reverse)
+}

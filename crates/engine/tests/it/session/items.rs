@@ -2029,6 +2029,182 @@ fn clipboard_items_round_trip_preserves_content_and_advances_the_playhead() {
 }
 
 #[test]
+fn clipboard_attributes_copy_whole_groups_and_skip_what_the_target_kind_cannot_hold() {
+    use engine::{AttributeGroup, ItemParamPatch};
+    let opacity: AnimationPath = BuiltinPath::Opacity.into();
+    let paste_to = |items: Vec<ItemId>| Command::PasteAttributes {
+        items,
+        source: ItemPasteSource::Stored,
+    };
+    let mut s = session();
+    let source = ItemId(10);
+    s.apply(Command::SetAnimatedParam {
+        item: source,
+        path: opacity.clone(),
+        param: Param::new(ParamValue::Scalar(0.4)).unwrap(),
+    })
+    .unwrap();
+    s.apply(Command::AddKeyframe {
+        item: source,
+        path: opacity.clone(),
+        component: None,
+        key: Keyframe::new(Tick(2), ParamValue::Scalar(0.5)),
+    })
+    .unwrap();
+    s.apply(Command::SetItemField {
+        item: source,
+        patch: ItemParamPatch::BlendMode(project::BlendMode::Multiply),
+    })
+    .unwrap();
+    s.apply(Command::AddEffect {
+        item: source,
+        effect: project::effect_definition("blur")
+            .unwrap()
+            .instance("blur1"),
+    })
+    .unwrap();
+    s.apply(Command::AddMask {
+        item: source,
+        mask: project::Mask::new("mask1", project::MaskShape::Rectangle),
+    })
+    .unwrap();
+
+    // Nothing stored: an exact no-op. Empty and repeated targets refuse.
+    let before = s.project().clone();
+    assert!(!s.apply(paste_to(vec![ItemId(11)])).unwrap().changed);
+    s.apply(Command::CopyItems {
+        items: vec![source],
+    })
+    .unwrap();
+    assert!(s.can_paste_attributes(&[ItemId(11)]));
+    assert!(!s.can_paste_attributes(&[]));
+    assert!(s.attribute_paste_skips(&[ItemId(11)]).is_empty());
+    for items in [vec![], vec![ItemId(11), ItemId(11)], vec![ItemId(999)]] {
+        assert!(s.apply(paste_to(items)).is_err());
+        assert!(Arc::ptr_eq(&before, s.project()));
+    }
+
+    // Every picture group travels as its model value, keys relative to the item start;
+    // the target keeps its own place, source window and content.
+    let history = s.history_len();
+    let out = s.apply(paste_to(vec![ItemId(11)])).unwrap();
+    assert!(out.changed);
+    assert_eq!(s.history_len().0, history.0 + 1, "one undo step");
+    let (from, to) = (get(&s, 10).clone(), get(&s, 11).clone());
+    assert_eq!(to.blend_mode, project::BlendMode::Multiply);
+    assert_eq!(to.effects, from.effects);
+    assert_eq!(to.masks, from.masks);
+    assert_eq!(to.animations.get(&opacity), from.animations.get(&opacity));
+    assert_eq!((to.start, to.source_range), (Tick(60), range(200, 240)));
+    assert_eq!(to.content, from.content);
+    let pasted = s.project().clone();
+    s.undo().unwrap();
+    assert!(Arc::ptr_eq(&before, s.project()));
+    s.redo().unwrap();
+    assert!(Arc::ptr_eq(&pasted, s.project()));
+
+    // A payload source behaves like the stored entry.
+    let mut fresh = session();
+    fresh
+        .apply(Command::PasteAttributes {
+            items: vec![ItemId(11)],
+            source: ItemPasteSource::Payload {
+                payload: payload_clipboard(item_payload(&from, "video", 0)),
+            },
+        })
+        .unwrap();
+    assert_eq!(get(&fresh, 11).effects, from.effects);
+    assert_eq!(get(&fresh, 11).blend_mode, project::BlendMode::Multiply);
+
+    // Attributes come from one item: a two-item entry and a locked target refuse.
+    s.apply(Command::CopyItems {
+        items: vec![ItemId(10), ItemId(11)],
+    })
+    .unwrap();
+    assert!(!s.can_paste_attributes(&[ItemId(11)]));
+    let before = s.project().clone();
+    assert!(s.apply(paste_to(vec![ItemId(11)])).is_err());
+    assert!(Arc::ptr_eq(&before, s.project()));
+    s.apply(Command::CopyItems {
+        items: vec![source],
+    })
+    .unwrap();
+    let track = s.project().data().scene().timeline.overlays[0].id;
+    s.apply(Command::SetTrackLocked {
+        track,
+        locked: true,
+    })
+    .unwrap();
+    let locked = s.project().clone();
+    assert!(!s.can_paste_attributes(&[ItemId(11)]));
+    assert!(s.apply(paste_to(vec![ItemId(11)])).is_err());
+    assert!(Arc::ptr_eq(&locked, s.project()));
+
+    // A video clip onto an audio item: speed, volume and fades are held by both and copy;
+    // the picture groups the audio item cannot hold are skipped and named.
+    let (mut s, _video, audio, clip) = audible_session();
+    let sound = s
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .find(|t| t.id == audio)
+        .and_then(|t| t.items.first())
+        .map(|i| i.id)
+        .unwrap();
+    s.apply(Command::SetSpeed {
+        items: vec![clip],
+        speed: time::Speed::from_f64(2.).unwrap(),
+        maintain_pitch: false,
+    })
+    .unwrap();
+    s.apply(Command::SetFade {
+        item: clip,
+        edge: project::FadeEdge::In,
+        duration: Tick(10),
+        curve: project::FadeCurve::Linear,
+    })
+    .unwrap();
+    s.apply(Command::AddEffect {
+        item: clip,
+        effect: project::effect_definition("blur")
+            .unwrap()
+            .instance("blur1"),
+    })
+    .unwrap();
+    s.apply(Command::CopyItems { items: vec![clip] }).unwrap();
+    assert_eq!(
+        s.attribute_paste_skips(&[sound]),
+        vec![(
+            sound,
+            vec![
+                AttributeGroup::Transform,
+                AttributeGroup::Blend,
+                AttributeGroup::Effects,
+                AttributeGroup::Masks,
+            ]
+        )]
+    );
+    s.apply(paste_to(vec![sound])).unwrap();
+    let (from, to) = (get_id(&s, clip), get_id(&s, sound));
+    assert_eq!(to.retime, from.retime);
+    assert_eq!(to.duration().unwrap(), from.duration().unwrap());
+    assert!(
+        to.effects.is_empty(),
+        "skipped groups leave the target alone"
+    );
+    let (ItemParams::Video(video_params), ItemParams::Audio(audio_params)) =
+        (&from.content, &to.content)
+    else {
+        panic!("kinds");
+    };
+    assert_eq!(audio_params.fades, video_params.fades);
+    assert_eq!(audio_params.volume, video_params.volume);
+    assert_eq!(audio_params.muted, video_params.muted);
+}
+
+#[test]
 fn clipboard_items_paste_offsets_overwrite_and_split_on_the_relative_track() {
     let mut s = session();
     let before = s.project().clone();

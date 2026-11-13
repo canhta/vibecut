@@ -125,6 +125,8 @@ pub enum UiAction {
     RevealMedia,
     InsertText,
     Copy,
+    /// Copy the one selected item as the source of Paste attributes.
+    CopyAttributes,
     Cut,
     Paste,
     Subtitles,
@@ -230,6 +232,8 @@ pub enum EngineAction {
     ToggleBookmark,
     CreateScene,
     DeleteScenes,
+    /// Give the selected items the attribute groups of the copied item.
+    PasteAttributes,
     /// Toggle one reflection axis over the current item selection.
     Flip(project::FlipAxis),
     /// Move the current item selection to one canvas edge or centre.
@@ -259,6 +263,7 @@ impl EngineAction {
             Self::ToggleBookmark => K::ToggleBookmark,
             Self::CreateScene => K::CreateScene,
             Self::DeleteScenes => K::DeleteScenes,
+            Self::PasteAttributes => K::PasteAttributes,
             Self::Flip(_) => K::SetItemsFlipped,
             Self::Align(_) => K::AlignItems,
             Self::Distribute(_) => K::DistributeItems,

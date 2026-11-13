@@ -215,7 +215,8 @@ Named caption preset IDs share the existing allocator and loaded maximum with sc
 `clipboard.rs` owns `KeyframeClipboard`, `ItemClipboard` and their `Stored | Payload`
 paste sources, consumed by `clipboard.copy`, `clipboard.copy_keyframes`,
 `clipboard.copy_mask_points`, `clipboard.read`, `clipboard.cut`, `clipboard.paste`,
-`clipboard.paste_keyframes` and `clipboard.paste_mask_points`. One Session slot holds the most recent
+`clipboard.paste_keyframes`, `clipboard.paste_mask_points` and `timeline.paste_attributes`
+([attribute clipboard](clipboard/README.md)). One Session slot holds the most recent
 copy of either kind; a successful copy of one clears the other. Copy of an empty or
 already-identical scope preserves the store.
 

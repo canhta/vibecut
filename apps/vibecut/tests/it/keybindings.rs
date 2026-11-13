@@ -136,7 +136,13 @@ fn clipboard_actions_refuse_empty_scopes_without_mutating_project_or_history() {
     let project = editor.session.project().clone();
     let revision = editor.session.revision();
     let history = editor.session.history_len();
-    for action in ["edit.copy", "edit.cut", "edit.paste"] {
+    for action in [
+        "edit.copy",
+        "edit.cut",
+        "edit.paste",
+        "edit.copy_attributes",
+        "edit.paste_attributes",
+    ] {
         assert!(
             matches!(editor.activate(action),Err(vibecut::Error::ActionDisabled(id)) if id==action)
         );

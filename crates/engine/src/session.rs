@@ -1,6 +1,8 @@
 //! Owns editable session state through atomic commands.
 mod clipboard;
-pub use clipboard::{ItemClipboard, ItemPasteSource, KeyframeClipboard, KeyframePasteSource};
+pub use clipboard::{
+    AttributeGroup, ItemClipboard, ItemPasteSource, KeyframeClipboard, KeyframePasteSource,
+};
 mod failures;
 mod fork;
 pub use fork::{ChangeSummary, Fork};

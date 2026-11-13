@@ -134,6 +134,12 @@ impl Editor {
                         return Err(Error::Invalid("clipboard scope"));
                     }
                 },
+                UiAction::CopyAttributes => {
+                    let item = crate::editor::context::single(self.session.selection())
+                        .ok_or(Error::Invalid("clipboard target"))?;
+                    self.session
+                        .apply(engine::Command::CopyItems { items: vec![item] })?;
+                }
                 UiAction::Cut => {
                     let scope = self.selection_scopes.active(self.session.selection());
                     let target = self.cut_target().ok_or(Error::Invalid("clipboard scope"))?;

@@ -323,6 +323,21 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         UiAction::Paste,
         &["Ctrl+V"],
     ),
+    ActionSpec::ui(
+        "edit.copy_attributes",
+        Text::ActionEditCopyAttributes,
+        ActionCategory::Edit,
+        "clipboard",
+        UiAction::CopyAttributes,
+        &["Ctrl+Shift+C"],
+    ),
+    ActionSpec::engine(
+        "edit.paste_attributes",
+        Text::ActionEditPasteAttributes,
+        ActionCategory::Edit,
+        EngineAction::PasteAttributes,
+        &["Ctrl+Shift+V"],
+    ),
     ActionSpec::engine(
         "timeline.split",
         Text::ActionTimelineSplit,

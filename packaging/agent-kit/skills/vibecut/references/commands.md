@@ -151,6 +151,7 @@ API version: 6. Registry digest: `5642f6fb9fc2b6e75dace5a9cbea5e9a5b86125f53bd5b
 | `timeline.freeze_frame` | `FilePublish` | Freeze frame |
 | `timeline.insert` | `Edit` | Insert item |
 | `timeline.move_items` | `Edit` | Move timeline group |
+| `timeline.paste_attributes` | `Edit` | Paste attributes |
 | `timeline.pause_candidates` | `JobControl` | List pause candidates |
 | `timeline.preview` | `SessionControl` | Preview timeline edits |
 | `timeline.recover_audio` | `Edit` | Recover source audio |

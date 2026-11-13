@@ -15,6 +15,7 @@ generated path.
 | Folder | Responsibility | Contract |
 |---|---|---|
 | `session/` | Owns editable project state and the wire contract. | [Session](src/session/README.md) |
+| `session/clipboard/` | Pastes the attribute groups of one copied item. | [Attribute clipboard](src/session/clipboard/README.md) |
 | `session/commands/` | Declares each item parameter once and generates its patch, checks and table. | [Command declarations](src/session/commands/README.md) |
 | `session/edit/` | Applies validated editing commands to project candidates. | [Edit commands](src/session/edit/README.md) |
 | `session/edit/motion/` | Edits the keyed channels that animate an item over time. | [Motion edits](src/session/edit/motion/README.md) |

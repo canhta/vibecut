@@ -35,6 +35,8 @@ metadata work; an actual jump uses the existing Seek path.
 typed Session commands: selected item snapshots when Items is the active scope, selected-key
 snapshots when Keyframes is, the selected anchors with their tangents when MaskPoints is
 (`clipboard.copy_mask_points` / `clipboard.paste_mask_points`). `edit.cut` is `clipboard.cut`
-for the same scope. Paste requires one
+for the same scope. `edit.copy_attributes` is `clipboard.copy` of the one selected item and
+`edit.paste_attributes` is `timeline.paste_attributes` over the selection; groups the target
+kind cannot hold are skipped and named in the toast. Paste requires one
 entry in that editor's Session. Eligibility and draft preflight belong to
 [frame input](../editor/frame/input/README.md#clipboard-actions).

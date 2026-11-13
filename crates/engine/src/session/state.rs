@@ -189,6 +189,26 @@ impl Session {
         };
         payload.can_paste(self.project().data(), at)
     }
+    /// Current admission for the desktop Paste attributes action: the stored entry is one
+    /// copied item and every target is an item on an unlocked track.
+    pub fn can_paste_attributes(&self, items: &[ItemId]) -> bool {
+        !self.transaction_active()
+            && self
+                .item_clipboard
+                .as_deref()
+                .is_some_and(|payload| payload.can_paste_attributes(self.project().data(), items))
+    }
+    /// Per target, the attribute groups the copied item holds and that target kind cannot;
+    /// Paste attributes skips them. Empty when nothing is stored or nothing would be skipped.
+    pub fn attribute_paste_skips(
+        &self,
+        items: &[ItemId],
+    ) -> Vec<(ItemId, Vec<super::AttributeGroup>)> {
+        self.item_clipboard
+            .as_deref()
+            .and_then(|payload| payload.attribute_skips(self.project().data(), items).ok())
+            .unwrap_or_default()
+    }
     /// Current committed selection admission for the desktop mask-point Copy action.
     pub fn can_copy_mask_points(&self, item: ItemId, mask: &str, points: &[usize]) -> bool {
         !self.transaction_active()

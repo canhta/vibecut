@@ -45,6 +45,8 @@
 | `edit.copy` — Copy | Edit | Ctrl+C | — | clipboard |
 | `edit.cut` — Cut | Edit | Ctrl+X | — | clipboard |
 | `edit.paste` — Paste | Edit | Ctrl+V | — | clipboard |
+| `edit.copy_attributes` — Copy attributes | Edit | Ctrl+Shift+C | — | clipboard |
+| `edit.paste_attributes` — Paste attributes | Edit | Ctrl+Shift+V | `timeline.paste_attributes` | — |
 | `timeline.split` — Split | Edit | Ctrl+B | `split_at` | — |
 | `timeline.split_left` — Split and remove left | Edit | Q | `timeline.split_left` | — |
 | `timeline.split_right` — Split and remove right | Edit | W | `timeline.split_right` | — |

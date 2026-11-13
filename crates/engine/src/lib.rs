@@ -5,7 +5,7 @@ mod session;
 pub(crate) use session::transitions;
 pub use session::wire::{Failure, JobFailurePolicy};
 pub use session::{
-    AnimationPreset, AnimationSlot, Availability, CaptionPreset, CaptionStyleApply,
+    AnimationPreset, AnimationSlot, AttributeGroup, Availability, CaptionPreset, CaptionStyleApply,
     ChapterSidecars, ClipAnimations, CollectionLimit, Command, CommandKind, CommandSpec, CreatedId,
     CueId, CutTarget, DEFAULT_BOOKMARK_COLOR, Effect, EmphasisMode, Example, Fixture, GrantClass,
     ITEM_PARAMS, ItemClipboard, ItemParam, ItemParamPatch, ItemPasteSource, ItemPlacement,

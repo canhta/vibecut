@@ -6,6 +6,10 @@ use serde::{Deserialize, Serialize, ser::SerializeSeq};
 use std::collections::{BTreeMap, BTreeSet};
 use time::Tick;
 
+mod attributes;
+pub use attributes::AttributeGroup;
+pub(super) use attributes::paste_attributes;
+
 pub const MAX_CLIPBOARD_KEYS: usize = 4096;
 pub const MAX_CLIPBOARD_PATHS: usize = 64;
 pub const MAX_CLIPBOARD_BYTES: usize = 1 << 20;

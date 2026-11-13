@@ -623,6 +623,7 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("move_item", Effect::Edit, true, true),
         ("move_items", Effect::Edit, true, true),
         ("timeline.move_items", Effect::Edit, true, true),
+        ("timeline.paste_attributes", Effect::Edit, true, true),
         ("timeline.trim", Effect::Edit, true, true),
         ("timeline.pause_candidates", Effect::JobControl, true, true),
         ("media.generate_waveform", Effect::JobControl, true, true),

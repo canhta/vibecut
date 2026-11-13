@@ -424,6 +424,15 @@ impl Editor {
                 ..
             } => self.clipboard_available(true),
             ActionTarget::Ui {
+                action: UiAction::CopyAttributes,
+                ..
+            } => {
+                self.clipboard_available(true)
+                    && self.selection_scopes.active(self.session.selection())
+                        == crate::editor::selection::SelectionScope::Items
+                    && crate::editor::context::single(self.session.selection()).is_some()
+            }
+            ActionTarget::Ui {
                 action: UiAction::Cut,
                 ..
             } => {
@@ -480,6 +489,9 @@ impl Editor {
                             !self.importing() && self.assets.has_media_selection()
                         }
                         EngineAction::FreezeFrame => self.freeze_target().is_some(),
+                        EngineAction::PasteAttributes => {
+                            self.session.can_paste_attributes(&self.attribute_targets())
+                        }
                         _ => true,
                     }
             }
@@ -531,9 +543,49 @@ impl Editor {
             .then_some(item)
     }
 
+    /// The status line for a Paste attributes that left groups behind: every skipped group
+    /// once, in group order.
+    fn skipped_attributes_text(&self, skipped: &[(ItemId, Vec<engine::AttributeGroup>)]) -> String {
+        let locale = self.preferences.locale;
+        let groups: std::collections::BTreeSet<engine::AttributeGroup> = skipped
+            .iter()
+            .flat_map(|(_, groups)| groups)
+            .copied()
+            .collect();
+        let names: Vec<String> = groups
+            .into_iter()
+            .map(|group| {
+                let name = match group {
+                    engine::AttributeGroup::Transform => Text::AttributeGroupTransform,
+                    engine::AttributeGroup::Blend => Text::AttributeGroupBlend,
+                    engine::AttributeGroup::Effects => Text::AttributeGroupEffects,
+                    engine::AttributeGroup::Masks => Text::AttributeGroupMasks,
+                    engine::AttributeGroup::Speed => Text::AttributeGroupSpeed,
+                    engine::AttributeGroup::Audio => Text::AttributeGroupAudio,
+                    engine::AttributeGroup::Text => Text::AttributeGroupText,
+                };
+                i18n::format(locale, name, &[])
+            })
+            .collect();
+        i18n::format(
+            locale,
+            Text::AttributesSkipped,
+            &[("groups", &names.join(", "))],
+        )
+    }
+
+    /// The selected items Paste attributes would change.
+    fn attribute_targets(&self) -> Vec<ItemId> {
+        self.session.selection().iter().copied().collect()
+    }
+
     pub(in crate::editor) fn engine_commands(&self, route: EngineAction) -> Result<Vec<Command>> {
         Ok(match route {
             EngineAction::FreezeFrame => Vec::new(),
+            EngineAction::PasteAttributes => vec![Command::PasteAttributes {
+                items: self.attribute_targets(),
+                source: engine::ItemPasteSource::Stored,
+            }],
             EngineAction::Split => {
                 let at = self.playback.position()?;
                 self.split_targets()
@@ -654,8 +706,19 @@ impl Editor {
         if commands.is_empty() {
             return Ok(());
         }
+        // Groups a target kind cannot hold are skipped; the status line names them.
+        let skipped = if route == EngineAction::PasteAttributes {
+            self.session
+                .attribute_paste_skips(&self.attribute_targets())
+        } else {
+            Vec::new()
+        };
         self.sync_gap_policy();
         let outcome = self.session.apply(Command::Batch { commands })?;
+        if !skipped.is_empty() {
+            let text = self.skipped_attributes_text(&skipped);
+            self.set_toast(&text, None);
+        }
         // The kept right piece moves to the cut only when the engine closed the span.
         let closes_span = outcome.closed_span;
         let created = outcome.created;
@@ -696,7 +759,8 @@ impl Editor {
             | EngineAction::ToggleBookmark
             | EngineAction::Flip(_)
             | EngineAction::Align(_)
-            | EngineAction::Distribute(_) => self.prune_selection(),
+            | EngineAction::Distribute(_)
+            | EngineAction::PasteAttributes => self.prune_selection(),
         }
         if route == EngineAction::SplitLeft
             && closes_span
