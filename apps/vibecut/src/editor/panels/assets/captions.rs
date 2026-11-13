@@ -5,6 +5,8 @@ mod find;
 mod import;
 mod manual;
 mod tab;
+#[cfg(test)]
+mod tests;
 mod transcript;
 mod view;
 pub use crate::services::ai_task::TaskEvents;
