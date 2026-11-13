@@ -683,12 +683,12 @@ fn transform_fields_clamp_reset_scrub_cancel_and_persist() {
     );
     // Blend sits under Basic: its section reset restores blend mode and opacity as one undo step.
     enter(&mut harness, "inspector.opacity", "0.4");
-    let before = harness.state().session.history_len();
+    let history = harness.state().session.history_len();
     let before_reset = harness
         .get(By::new().predicate(|n| n.author_id() == Some("inspector.opacity")))
         .value();
     click(&mut harness, "inspector.section.blending.reset");
-    assert_eq!(harness.state().session.history_len(), before + 1);
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
     assert_ne!(
         harness
             .get(By::new().predicate(|n| n.author_id() == Some("inspector.opacity")))
