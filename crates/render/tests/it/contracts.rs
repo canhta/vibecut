@@ -1660,3 +1660,83 @@ fn graphic_effect_mask_transform_and_final_opacity_keep_the_shared_stage_order()
             .pixels()
     );
 }
+
+/// Sticker pixels: a flag SVG rasterises solid at several sizes, shapes reuse the graphic
+/// contours, and an asset that cannot be drawn paints a placeholder and reports a typed error.
+#[test]
+fn stickers_draw_flags_and_shapes_and_report_missing_assets_with_a_placeholder() {
+    use project::{ItemParams, StickerParams, TrackKind};
+    for (w, h) in [(64_u32, 48_u32), (640, 480), (1920, 1440)] {
+        let raster = rasterize_sticker("flags:VN", w, h).unwrap();
+        assert_eq!((raster.width, raster.height), (w, h));
+        let px = |x: u32, y: u32| {
+            let i = ((y * w + x) * 4) as usize;
+            <[u8; 4]>::try_from(&raster.pixels[i..i + 4]).unwrap()
+        };
+        assert_eq!(px(1, 1), [0xda, 0x25, 0x1d, 255], "{w}x{h} red field");
+        assert_eq!(px(w / 2, h / 2), [255, 255, 0, 255], "{w}x{h} yellow star");
+    }
+    assert!(matches!(
+        rasterize_sticker("flags:zz", 8, 8),
+        Err(StickerError::Missing { .. })
+    ));
+    assert!(matches!(
+        rasterize_sticker("shapes:star", 8, 8),
+        Err(StickerError::Missing { .. })
+    ));
+    assert!(matches!(
+        rasterize_sticker("flags:vn", 0, 8),
+        Err(StickerError::Invalid { .. })
+    ));
+
+    // One 128-pixel canvas with a transparent background; returns the pixels and the reported errors.
+    let render = |sticker: &str, size: (u32, u32)| {
+        let hooks = Hooks::default();
+        let mut data = solid_project(1, 128, 128, [0; 4]).into_data();
+        data.canvas.background = project::Color([0; 4]);
+        let track = &mut data.scene_mut().timeline.overlays[0];
+        track.kind = TrackKind::Sticker;
+        track.items[0].content = ItemParams::Sticker(StickerParams::new(sticker, size.0, size.1));
+        let p = project::Project::new(data).unwrap();
+        let mut renderer = Renderer::new(&p, RenderSettings::from_project(&p)).unwrap();
+        let frame = renderer.render_frame(Tick(0), &mut Empty, &hooks).unwrap();
+        let pixels = frame.pixels().to_vec();
+        let errors = renderer.sticker_errors().to_vec();
+        drop(frame);
+        drop(renderer);
+        assert_eq!(hooks.used.load(Ordering::SeqCst), 0);
+        (pixels, errors)
+    };
+    let at = |pixels: &[[f32; 4]], x: usize, y: usize| pixels[y * 128 + x];
+
+    // The 640x480 flag shrinks to a centred 128x96 box.
+    let (flag, errors) = render("flags:VN", (640, 480));
+    assert!(errors.is_empty());
+    let centre = at(&flag, 64, 64);
+    assert!(centre[3] > 0.99 && centre[0] > 0.9 && centre[1] > 0.9 && centre[2] < 0.01);
+    let corner = at(&flag, 3, 19);
+    assert!(corner[3] > 0.99 && corner[0] > 0.5 && corner[1] < 0.05);
+    assert_eq!(at(&flag, 64, 4)[3], 0., "above the flag box");
+
+    // Shapes: the placement is the 512 author square scaled to the canvas.
+    let (circle, errors) = render("shapes:circle", (512, 512));
+    assert!(errors.is_empty());
+    assert!(at(&circle, 64, 64)[3] > 0.99 && at(&circle, 1, 1)[3] < 0.01);
+    let (diamond, _) = render("shapes:diamond", (512, 512));
+    for (x, y, inside) in [(64, 10, true), (10, 64, true), (20, 20, false), (4, 4, false)] {
+        assert_eq!(at(&diamond, x, y)[3] > 0.99, inside, "diamond ({x}, {y})");
+    }
+    let (star, _) = render("shapes:star", (512, 512));
+    assert!(at(&star, 64, 64)[3] > 0.99 && at(&star, 1, 1)[3] < 0.01);
+
+    // A missing asset keeps the frame, paints the placeholder border and names the sticker.
+    let (missing, errors) = render("flags:zz", (640, 480));
+    assert_eq!(
+        errors,
+        [StickerError::Missing {
+            sticker: "flags:zz".into()
+        }]
+    );
+    assert!(at(&missing, 1, 17)[3] > 0.9, "placeholder border");
+    assert_eq!(at(&missing, 64, 4)[3], 0.);
+}

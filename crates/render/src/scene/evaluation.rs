@@ -38,6 +38,24 @@ pub(super) fn saved_placement(canvas: &project::Canvas, item: &Item) -> Option<P
                 ..Default::default()
             }
         }
+        ItemParams::Sticker(params) => {
+            // The intrinsic size, shrunk to fit the canvas and never enlarged, centred.
+            let scale = (f64::from(canvas.width) / f64::from(params.width))
+                .min(f64::from(canvas.height) / f64::from(params.height))
+                .min(1.);
+            let width = f64::from(params.width) * scale / f64::from(canvas.width);
+            let height = f64::from(params.height) * scale / f64::from(canvas.height);
+            Placement {
+                destination: Rect {
+                    x: (1. - width) / 2.,
+                    y: (1. - height) / 2.,
+                    width,
+                    height,
+                },
+                fit: Fit::Stretch,
+                ..Default::default()
+            }
+        }
         ItemParams::Graphic(_) => {
             let side = 512_u32.min(canvas.width).min(canvas.height);
             let width = f64::from(side) / f64::from(canvas.width);
@@ -68,7 +86,13 @@ impl<'a> Renderer<'a> {
             cache_stats: RasterCacheStats::default(),
             cache_clock: 0,
             opacity_path: AnimationPath::from(BuiltinPath::Opacity),
+            sticker_errors: Vec::new(),
         })
+    }
+    /// Stickers whose asset was missing or invalid in the frames rendered so far; each paints a
+    /// placeholder instead of failing the frame.
+    pub fn sticker_errors(&self) -> &[super::StickerError] {
+        &self.sticker_errors
     }
     pub fn text_cache_stats(&self) -> RasterCacheStats {
         self.cache_stats
@@ -338,7 +362,7 @@ impl<'a> Renderer<'a> {
                     })
                     .collect::<Result<Vec<_>>>()?;
                 let has_passes = runs.iter().any(|run| !run.is_empty());
-                let graphic = matches!(item.content, ItemParams::Graphic(_));
+                let graphic = matches!(item.content, ItemParams::Graphic(_) | ItemParams::Sticker(_));
                 let final_opacity =
                     if graphic || masked || blended || has_passes || transform.active() {
                         let opacity = placement.opacity;
@@ -362,6 +386,14 @@ impl<'a> Renderer<'a> {
                     }
                     ItemParams::Graphic(_) => {
                         super::draw::draw_graphic(&mut out, item, local, placement, hooks)?
+                    }
+                    ItemParams::Sticker(p) => {
+                        if let Some(error) =
+                            super::sticker::draw_sticker(&mut out, item, p, local, placement, hooks)?
+                            && !self.sticker_errors.contains(&error)
+                        {
+                            self.sticker_errors.push(error);
+                        }
                     }
                     ItemParams::Overlay(p) => {
                         let c = color(p.color.0);

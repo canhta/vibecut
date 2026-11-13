@@ -18,6 +18,9 @@ text.workspace = true
 serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 rayon = "1.12.0"
+# Sticker SVG rasterisation. Version and features match what egui_extras already resolves, so the
+# lock gains no package; text and raster-image features stay off because bundled flags need neither.
+resvg = { version = "0.45.1", default-features = false }
 
 [dev-dependencies]
 tempfile.workspace = true

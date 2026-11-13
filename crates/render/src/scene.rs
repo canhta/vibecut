@@ -7,6 +7,8 @@ pub mod effects;
 mod evaluation;
 pub mod mask;
 mod raster;
+mod sticker;
+mod sticker_flags;
 pub(crate) mod transform;
 pub use transform::arrange;
 pub mod transition_thumbnail;
@@ -15,6 +17,10 @@ pub mod viewport;
 
 use crate::{Error, Image, Result};
 pub use caption::style_from_cue;
+pub use sticker::{
+    FLAGS_PROVIDER, MAX_STICKER_RASTER_SIDE, SHAPES_PROVIDER, StickerError, StickerRaster,
+    rasterize_sticker,
+};
 pub use captions::{CaptionBackground, CaptionOutline, CaptionPosition, CaptionStyle};
 use project::{AnimationPath, ItemId, Project};
 use raster::{TextEntry, TextKey};
@@ -161,4 +167,6 @@ pub struct Renderer<'a> {
     cache_stats: RasterCacheStats,
     cache_clock: u64,
     opacity_path: AnimationPath,
+    /// Sticker assets the last frames could not draw; each failure is kept once.
+    sticker_errors: Vec<StickerError>,
 }

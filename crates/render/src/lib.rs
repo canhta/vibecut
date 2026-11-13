@@ -15,7 +15,8 @@ use media::AssetId;
 pub use scene::effects::lut;
 pub use scene::{
     CaptionBackground, CaptionOutline, CaptionPosition, CaptionStyle, Fit, Placement,
-    RasterCacheStats, Rect, RenderSettings, Renderer, style_from_cue,
+    FLAGS_PROVIDER, MAX_STICKER_RASTER_SIDE, RasterCacheStats, Rect, RenderSettings, Renderer,
+    SHAPES_PROVIDER, StickerError, StickerRaster, rasterize_sticker, style_from_cue,
 };
 pub use scene::{
     arrange, blend, color, effects, mask, transition_thumbnail, transitions, viewport,
@@ -140,6 +141,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("render media failed")]
     Media(#[from] media::MediaError),
+    #[error("sticker unavailable")]
+    Sticker(#[from] StickerError),
     #[error("render project failed")]
     Project(#[from] project::Error),
     #[error("render time failed")]
