@@ -93,12 +93,14 @@ fn control_with(
         context.budget()?,
         Arc::new(SystemClock::default()),
     )?;
-    // Without a usable media cache the generation commands refuse; edits still run.
-    let media = MediaAccess::open(context.budget()?)
-        .ok()
-        .map(std::sync::Mutex::new);
     let captions = super::caption_access(context.budget()?);
-    let vision = super::vision_access(context.budget()?, captions.cache().ok().cloned());
+    let (vision, segmentation) =
+        super::vision_and_segmentation(context.budget()?, captions.cache().ok().cloned());
+    // Without a usable media cache the generation commands refuse; edits still run.
+    let media = MediaAccess::open(context.budget()?).ok().map(|mut media| {
+        media.set_segmentation(segmentation);
+        std::sync::Mutex::new(media)
+    });
     let policy = ControlPolicy { allow_overwrite };
     let stdin = io::stdin();
     let mut input = stdin.lock();

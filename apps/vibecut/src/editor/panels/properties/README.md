@@ -110,7 +110,18 @@ A video clip's Background cell sits second in the Basic sub-tab bar. It is liste
 
 ## Remove BG sub-tab
 
-Video and image items get a `Remove BG` cell in the Basic sub-tab bar. Switching
+Video and image items get a `Remove BG` cell in the Basic sub-tab bar. It opens with the
+`Auto removal` toggle row (`inspector.auto_removal`) above Chroma key. Switching it on sends one
+`timeline.set_item_param` with field `background_removal` and `on` (feather 0), then
+`footage.analyze {kind: person_matte}` for the clip; switching off sends `off`. While on, a
+`Feather` slider row (`inspector.background_removal_feather`, field
+`background_removal_feather`, 0–100, one undo step per gesture, no new analysis) and the
+analysis status row under `inspector.auto_removal` follow: the same states as Stabilize's, plus
+`Person data missing` with a `Download` button (`inspector.auto_removal.models`) that opens the
+model manager on `pphumanseg-2023mar` and `Analyze` to retry. A clip without a stored matte
+renders unmatted and export refuses to start naming it. Switching
+`Chroma key` on only stages the panel in app state and shows the eyedropper and a
+disabled reset. Switching
 `Chroma key` on only stages the panel in app state and shows the eyedropper and a
 disabled reset. The first eyedropper pick adds the clip's `chroma_key` effect carrying
 that colour and the catalog's Intensity 40 and Shadow 0 in one undo step; the
@@ -161,7 +172,7 @@ A video item's Basic tab ends with the `Reduce image noise` toggle row (`inspect
 
 ## Stabilize
 
-A video item's Basic tab shows the `Stabilize` toggle row (`inspector.stabilize`) under `Reduce image noise`. Switching on sends one `timeline.set_item_param` with field `stabilize` and `normal`, then `footage.analyze` for the clip; switching off sends `off`. While on, a `Level` row (`inspector.stabilize.level.<flexible|normal|stable>`) sets the level through the same field, one undo step each, and needs no analysis. A status row follows: nothing when the stored correction is present; `Needs analysis` with an `Analyze` button (`inspector.stabilize.analyze`) when the clip's source has none; `Analyzing` with a progress bar (`inspector.stabilize.progress`) and a `Cancel` button (`inspector.stabilize.cancel`) while the job runs. The row's state comes from `State::footage_status`, which [workflow/footage.rs](workflow/README.md) refreshes once per frame from the process media cache only when the project snapshot or the cache epoch changed. A clip without a correction renders uncorrected and export refuses to start naming it; a correction that finishes resyncs the preview, which reads the same cache. Layout and the unmeasured parts: [editor design](../../../../../../docs/product/ui/editor.md).
+A video item's Basic tab shows the `Stabilize` toggle row (`inspector.stabilize`) under `Reduce image noise`. Switching on sends one `timeline.set_item_param` with field `stabilize` and `normal`, then `footage.analyze` for the clip; switching off sends `off`. While on, a `Level` row (`inspector.stabilize.level.<flexible|normal|stable>`) sets the level through the same field, one undo step each, and needs no analysis. A status row follows: nothing when the stored correction is present; `Needs analysis` with an `Analyze` button (`inspector.stabilize.analyze`) when the clip's source has none; `Analyzing` with a progress bar (`inspector.stabilize.progress`) and a `Cancel` button (`inspector.stabilize.cancel`) while the job runs. The row's state comes from `State::footage_status(item, kind)`, which [workflow/footage.rs](workflow/README.md) refreshes once per frame from the process media cache only when the project snapshot or the cache epoch changed. A clip without a correction renders uncorrected and export refuses to start naming it; a correction that finishes resyncs the preview, which reads the same cache. Layout and the unmeasured parts: [editor design](../../../../../../docs/product/ui/editor.md).
 
 ## Blend and opacity
 

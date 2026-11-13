@@ -8,10 +8,7 @@ pub use tract::{TractFaceEmbedding, TractSegmentation, TractVision, VisionPaths}
 mod reidentification;
 pub use reidentification::{FaceEmbedding, IdentityFrame};
 mod matte;
-pub use matte::{
-    MATTE_SIDE, MAX_FEATHER, MAX_MATTE_PIXELS, MAX_MATTE_SIDE, PERSON_RECIPE, PersonFrame,
-    PersonMatte,
-};
+pub use matte::{MATTE_SIDE, PERSON_RECIPE, PersonFrame, PersonMatte};
 mod decisions;
 pub use decisions::{aggregate_speakers, classify_embedding};
 

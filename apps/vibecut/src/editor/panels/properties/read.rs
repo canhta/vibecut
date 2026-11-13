@@ -68,6 +68,9 @@ pub(super) fn item_value(project: &project::Project, item: ItemId, field: &str) 
         }
         ("volume", ItemParams::Audio(params)) => Some(f64::from(params.volume)),
         ("volume", ItemParams::Video(params)) => Some(f64::from(params.volume)),
+        ("background_removal_feather", ItemParams::Video(params)) => params
+            .background_removal
+            .map(|removal| f64::from(removal.feather)),
         (field, content) if fade_edge(field).is_some() => {
             let edge = fade_edge(field)?;
             Some(fade_on(fades_of(content)?, edge).duration.seconds())

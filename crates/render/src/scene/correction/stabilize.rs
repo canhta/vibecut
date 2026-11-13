@@ -390,6 +390,15 @@ impl Warp {
             (self.map.b * q[0] + self.map.a * q[1]) / self.zoom + scale * self.map.ty,
         ]
     }
+    /// Where a point of the steadied picture, in pixels of a `width` x `height` frame, reads the
+    /// decoded source frame, in the same units. A person matte measured on the source frame is
+    /// mapped through this so it stays on the subject of a steadied clip.
+    pub fn frame_point(&self, p: [f64; 2], width: u32, height: u32) -> [f64; 2] {
+        let scale = f64::from(width) / f64::from(self.grid[0]);
+        let half = [f64::from(width) / 2.0, f64::from(height) / 2.0];
+        let source = self.source_of([p[0] - half[0], p[1] - half[1]], scale);
+        [source[0] + half[0], source[1] + half[1]]
+    }
     /// The frame steadied: every output pixel sampled where the warp says. `None` when the warp is
     /// the identity, so an unshaken, unzoomed frame costs nothing.
     pub fn apply(&self, image: &Image, hooks: &dyn ExecutionHooks) -> Result<Option<Image>> {

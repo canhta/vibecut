@@ -1,10 +1,12 @@
-//! Runs footage analysis for stabilized clips and tracks which of them still need one.
+//! Runs footage analysis for stabilized and background-removed clips and tracks which of them
+//! still need one.
 use super::super::super::State;
 use super::lut::Human;
 use crate::editor::{Error, ItemId, Port, Result};
 use engine::{
     Session,
     control::{ControlResult, MediaAccess},
+    footage::CorrectionKind,
     jobs::{JobId, JobRunner, JobSnapshot, JobState},
 };
 use std::{
@@ -12,15 +14,20 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-/// What the Stabilize row shows for one switched-on clip.
+/// One clip's correction of one kind.
+type Target = (ItemId, CorrectionKind);
+
+/// What a correction's status row shows for one switched-on clip.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(in crate::editor) enum FootageStatus {
     /// The stored correction is there; nothing to show.
     Ready,
-    /// No stored correction: the clip renders uncorrected and export refuses to start.
+    /// No stored correction: the clip renders without it and export refuses to start.
     NeedsAnalysis,
     /// An analysis job is running, 0..=1.
     Analyzing(f32),
+    /// The analysis needs local weights that are not installed: the model manager's id.
+    ModelMissing(&'static str),
 }
 
 /// The analysis jobs this area started and the last answer about stored corrections.
@@ -29,10 +36,12 @@ pub(in crate::editor) struct FootageWorkflow {
     access: Option<Arc<Mutex<MediaAccess>>>,
     budget: Option<engine::ByteBudget>,
     runner: Option<JobRunner>,
-    running: BTreeMap<ItemId, JobId>,
-    progress: BTreeMap<ItemId, f32>,
-    /// Switched-on clips with no stored correction, as of `checked`.
-    missing: BTreeSet<ItemId>,
+    running: BTreeMap<Target, JobId>,
+    progress: BTreeMap<Target, f32>,
+    /// Switched-on corrections with nothing stored, as of `checked`.
+    missing: BTreeSet<Target>,
+    /// Analyses refused because their model is not installed, with the model's id.
+    models: BTreeMap<Target, &'static str>,
     /// The project snapshot and cache epoch `missing` was read for.
     checked: Option<(Arc<project::Project>, u64)>,
 }
@@ -84,8 +93,19 @@ impl FootageWorkflow {
         )?)
     }
 }
+/// The model a refused analysis needs, when the refusal is the typed missing-model one.
+fn missing_model(error: &Error) -> Option<&'static str> {
+    use engine::providers::Error::ModelMissing;
+    match error {
+        Error::Engine(engine::control::Error::Providers(ModelMissing(id)))
+        | Error::Engine(engine::control::Error::Analysis(engine::AnalysisError::Providers(
+            ModelMissing(id),
+        ))) => Some(id),
+        _ => None,
+    }
+}
 impl State {
-    /// Adopt the process media cache the analysis writes to and the row reads from.
+    /// Adopt the process media cache the analysis writes to and the rows read from.
     pub(in crate::editor) fn attach_footage(
         &mut self,
         access: Arc<Mutex<MediaAccess>>,
@@ -96,54 +116,70 @@ impl State {
         self.footage.checked = None;
     }
 
-    /// What the Stabilize row shows for `item`.
-    pub(in crate::editor) fn footage_status(&self, item: ItemId) -> FootageStatus {
-        if self.footage.running.contains_key(&item) {
-            FootageStatus::Analyzing(self.footage.progress.get(&item).copied().unwrap_or(0.0))
-        } else if self.footage.missing.contains(&item) {
-            FootageStatus::NeedsAnalysis
-        } else {
+    /// What the status row of `kind` shows for `item`.
+    pub(in crate::editor) fn footage_status(
+        &self,
+        item: ItemId,
+        kind: CorrectionKind,
+    ) -> FootageStatus {
+        let target = (item, kind);
+        if self.footage.running.contains_key(&target) {
+            FootageStatus::Analyzing(self.footage.progress.get(&target).copied().unwrap_or(0.0))
+        } else if !self.footage.missing.contains(&target) {
             FootageStatus::Ready
+        } else if let Some(id) = self.footage.models.get(&target) {
+            FootageStatus::ModelMissing(*id)
+        } else {
+            FootageStatus::NeedsAnalysis
         }
     }
 
-    /// Start the stabilize analysis of `item`'s source; a warm cache completes at once.
+    /// Start the `kind` analysis of `item`'s source; a warm cache finishes at once. A refusal for
+    /// a missing model is kept for the row, which then links to the model manager.
     pub(in crate::editor) fn request_footage(
         &mut self,
         port: &mut Port<'_>,
         item: ItemId,
+        kind: CorrectionKind,
     ) -> Result<()> {
-        if self.footage.running.contains_key(&item) {
+        let target = (item, kind);
+        if self.footage.running.contains_key(&target) {
             return Ok(());
         }
+        self.footage.models.remove(&target);
         let result = port.with_session(|session| {
-            self.footage.control(
-                session,
-                engine::Command::AnalyzeFootage {
-                    item,
-                    kind: engine::footage::CorrectionKind::Stabilize,
-                },
-            )
-        })?;
+            self.footage
+                .control(session, engine::Command::AnalyzeFootage { item, kind })
+        });
+        let result = match result {
+            Err(error) => {
+                if let Some(id) = missing_model(&error) {
+                    self.footage.models.insert(target, id);
+                }
+                return Err(error);
+            }
+            Ok(result) => result,
+        };
         let ControlResult::JobAccepted { job, .. } = result else {
             return Err(Error::Invalid("footage analysis result"));
         };
-        self.footage.running.insert(item, job);
-        self.footage.progress.insert(item, 0.0);
+        self.footage.running.insert(target, job);
+        self.footage.progress.insert(target, 0.0);
         Ok(())
     }
 
-    /// Stop the running analysis of `item`; the job ends cancelled and publishes nothing.
-    pub(in crate::editor) fn cancel_footage(&mut self, item: ItemId) {
-        if let (Some(job), Some(runner)) =
-            (self.footage.running.get(&item), &mut self.footage.runner)
-        {
+    /// Stop the running analysis; the job ends cancelled and publishes nothing.
+    pub(in crate::editor) fn cancel_footage(&mut self, item: ItemId, kind: CorrectionKind) {
+        if let (Some(job), Some(runner)) = (
+            self.footage.running.get(&(item, kind)),
+            &mut self.footage.runner,
+        ) {
             let _ = runner.cancel_job(*job);
         }
     }
 
-    /// Advance the analysis jobs, publish the finished ones and refresh which clips still need
-    /// one. The frame ticks this once per frame.
+    /// Advance the analysis jobs, publish the finished ones and refresh which corrections still
+    /// need one. The frame ticks this once per frame.
     pub(in crate::editor) fn poll_footage(&mut self, port: &mut Port<'_>) -> Result<()> {
         let Some(access) = self.footage.access.clone() else {
             return Ok(());
@@ -152,25 +188,27 @@ impl State {
             runner.tick()?;
             runner.drain_events();
         }
-        let snapshots: Vec<(ItemId, JobSnapshot)> = match &self.footage.runner {
+        let snapshots: Vec<(Target, JobSnapshot)> = match &self.footage.runner {
             Some(runner) => self
                 .footage
                 .running
                 .iter()
-                .filter_map(|(item, job)| runner.snapshot(*job).map(|snapshot| (*item, snapshot)))
+                .filter_map(|(target, job)| {
+                    runner.snapshot(*job).map(|snapshot| (*target, snapshot))
+                })
                 .collect(),
             None => Vec::new(),
         };
         self.footage
             .running
-            .retain(|item, _| snapshots.iter().any(|(seen, _)| seen == item));
+            .retain(|target, _| snapshots.iter().any(|(seen, _)| seen == target));
         let mut finished = false;
-        for (item, snapshot) in snapshots {
+        for (target, snapshot) in snapshots {
             if !matches!(
                 snapshot.state,
                 JobState::Completed | JobState::Failed | JobState::Cancelled
             ) {
-                self.footage.progress.insert(item, snapshot.progress);
+                self.footage.progress.insert(target, snapshot.progress);
                 continue;
             }
             // `job_status` publishes a completed correction and forgets a failed one.
@@ -179,8 +217,8 @@ impl State {
                 self.footage
                     .control(session, engine::Command::JobStatus { job })
             });
-            self.footage.running.remove(&item);
-            self.footage.progress.remove(&item);
+            self.footage.running.remove(&target);
+            self.footage.progress.remove(&target);
             self.footage.checked = None;
             finished = true;
             if let Err(error) = outcome {
@@ -209,6 +247,10 @@ impl State {
                 .map_err(|_| Error::Invalid("media cache poisoned"))?
                 .footage_corrections(&project);
             self.footage.missing = resolution.missing.into_iter().collect();
+            let missing = &self.footage.missing;
+            self.footage
+                .models
+                .retain(|target, _| missing.contains(target));
             self.footage.checked = Some((project, epoch));
         }
         if finished {

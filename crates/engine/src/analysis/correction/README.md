@@ -1,35 +1,46 @@
 # Footage correction
 
-Interface: `CorrectionRequest`, `CorrectionJob`, `resolve`, `Resolution`, `CorrectionKind`.
+Interface: `CorrectionRequest`, `CorrectionJob`, `Correction`, `resolve`, `Resolution`,
+`CorrectionKind`, `Segmenter`, `PERSON_MODEL`, `SEGMENTATION_THREADS`.
 
 A correction is derived data per source frame, computed once by an engine job and kept in the
 artifact cache. It is not project data and not keyframes: it is dense and reproducible. The item
-carries only the switch and its level (`VideoParams.stabilize`); render looks the correction up
-and applies it inside the item's own picture ([render](../../../../render/src/scene/README.md#stabilization)).
-Flicker removal is the second kind and reuses this contract: a kind is added by a recipe and a
-render application, not by a new store.
+carries only the switch and its setting (`VideoParams.stabilize` with its level,
+`VideoParams.background_removal` with its feather); render looks the correction up and applies it
+inside the item's own picture ([render](../../../../render/src/scene/correction/README.md)). Two
+kinds exist, stabilize and the person matte; a kind is added by a recipe and a render
+application, not by a new store.
 
 ## Contract
 
 - `CorrectionRequest::new(asset, kind)` admits a source with a video stream of known duration and
   a frame of at most 16 Mi pixels that holds at least one analysis block (56 grid pixels square).
   The cache key (`ArtifactKind::FootageCorrection`) binds the source content hash, the kind, the
-  whole-source range and the versioned recipe. Trim, split, retime, level and item position never
-  enter it, so none needs a new analysis; a source replaced by another file has another hash and
-  so a new key. A source of more than 262,144 frames (2.4 hours at 30 fps) refuses with `Limit`.
-- `submit` queues one local CPU `AnalyzeFootage` job (`footage.analyze {item, kind}`) that decodes
-  the whole video once in slices of at most 300 s and reports `Analyzing` progress. A warm entry
-  completes without opening the source. `CorrectionJob::finish` validates the retained bytes and
-  publishes the cache entry; the control dispatcher calls it where `job_status` first sees the job
-  complete. A cancelled or failed job publishes nothing. The command edits no project.
-- `cached` returns the stored track. A corrupt or undecodable entry counts as absent, so the next
-  analysis replaces it.
-- `resolve(project, cache)` reads the cache only, for every switched-on video item of every scene,
-  and never decodes media. `Resolution.tracks` is ready for `RenderSettings.stabilization`;
-  `Resolution.missing` lists switched-on items without a stored correction. Those items render
-  uncorrected, the properties row shows `Needs analysis` with a button, and export refuses to
-  start naming them ([admission](../../runtime/README.md)). Items over one source share one decoded
-  track.
+  whole-source range and the versioned recipe; the person matte's key also binds the pinned
+  weights' SHA-256, `ai::vision::PERSON_RECIPE`, `render::matte::RECIPE` and the fixed
+  `SEGMENTATION_THREADS` (2). Trim, split, retime, level, feather and item position never enter
+  it, so none needs a new analysis; a source replaced by another file has another hash and so a
+  new key. A stabilize source of more than 262,144 frames (2.4 hours at 30 fps) refuses with
+  `Limit`; a person matte of more than 65,536 frames (36 minutes at 30 fps) or 128 MiB fails the
+  job.
+- `submit(runner, cache, segmenter)` queues one local CPU `AnalyzeFootage` job
+  (`footage.analyze {item, kind}`) that decodes the whole video once in slices of at most 300 s
+  and reports `Analyzing` progress. A warm entry completes without opening the source or loading a
+  model. A cold person matte needs the lent `Segmenter` and refuses with the typed
+  `ModelMissing("pphumanseg-2023mar")` without one; `MediaAccess` loads it from the root's
+  `SegmentationAccess` only when the entry is cold. `CorrectionJob::finish` validates the retained
+  bytes and publishes the cache entry; the control dispatcher calls it where `job_status` first
+  sees the job complete. A cancelled or failed job publishes nothing. The command edits no
+  project.
+- `cached` returns the stored `Correction`. A corrupt or undecodable entry counts as absent, so
+  the next analysis replaces it.
+- `resolve(project, cache)` reads the cache only, for every switched-on correction of every video
+  item of every scene, and never decodes media. `Resolution.tracks` and `Resolution.mattes` go to
+  render through `Resolution::attach` (`RenderSettings.stabilization` and `.person_mattes`);
+  `Resolution.missing` lists each switched-on `(item, kind)` without a stored correction. Those
+  items render without that correction, the properties row shows `Needs analysis` with a button,
+  and export refuses to start naming them ([admission](../../runtime/README.md)). Items over one
+  source share one decoded correction.
 
 ## Stabilize
 
@@ -57,3 +68,18 @@ re-anchoring and is not built).
 Levels map to the Gaussian width of the smoothing: Flexible 0.13 s, Normal 0.4 s, Stable 1.2 s
 (4, 12 and 36 frames at 30 fps from the study's measurements). The reference names the three levels and
 shows no numbers, so the widths are our choices, not parity.
+
+## Person matte
+
+`person.rs` decodes every frame once, prepares the 192x192 person tensor
+(`media::VisionFrame::person_tensor`), runs the lent segmenter (the pinned PP-HumanSeg weights on
+the admitted tract runtime, [card, licence and shapes](../../../../ai/src/foundation/models/README.md))
+and stores its plane quantized to one byte per cell, PackBits-compressed per frame
+(`render::matte::MatteBuilder`). Memory is one decoded frame (at most 16 Mi pixels, so 4K fits),
+one 110,592-value tensor and the compressed planes so far; cancellation is checked per frame and
+inside inference. The same pinned weights, thread count and source give byte-equal output, so two
+uncached runs retain the same bytes. The model is never downloaded here: the composition roots lend
+`control::SegmentationAccess` over their one verified models cache (`shorts::installed_person_matte`),
+and the model manager owns download, consent and integrity. The feather is applied at render, so
+changing it costs no analysis. Model accuracy evidence: the matte IoU fixtures in render's
+`tests/it/matte.rs` and the segmentation layer's ignored real-weights run.

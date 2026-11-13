@@ -201,6 +201,11 @@ impl Admit for Option<project::StabilizeLevel> {
         true
     }
 }
+impl Admit for Option<project::BackgroundRemoval> {
+    fn admits(&self, _: &ParamBounds) -> bool {
+        self.is_none_or(project::BackgroundRemoval::valid)
+    }
+}
 impl Admit for Option<TextBackground> {
     fn admits(&self, _: &ParamBounds) -> bool {
         self.as_ref().is_none_or(TextBackground::valid)
@@ -357,6 +362,23 @@ impl ParamText for Option<project::StabilizeLevel> {
         serde_json::from_value(serde_json::Value::String(text.to_owned()))
             .ok()
             .map(Some)
+    }
+}
+/// `none` or `off` switches background removal off, `on` switches it on with the model's own
+/// edge, and a number switches it on with that edge feather.
+impl ParamText for Option<project::BackgroundRemoval> {
+    fn from_text(text: &str, _: &ParamBounds) -> Option<Self> {
+        let text = text.trim();
+        if text.eq_ignore_ascii_case("none") || text.eq_ignore_ascii_case("off") {
+            return Some(None);
+        }
+        if text.eq_ignore_ascii_case("on") {
+            return Some(Some(project::BackgroundRemoval::default()));
+        }
+        let removal = project::BackgroundRemoval {
+            feather: text.parse().ok()?,
+        };
+        removal.valid().then_some(Some(removal))
     }
 }
 /// A crop is placed by dragging, not typed, so no text reads as one.
@@ -951,6 +973,43 @@ item_params! {
                 p.stabilize = *v;
             }
             Ok(())
+        },
+    },
+    /// Person background removal of a video item: a value switches it on with that edge
+    /// feather, `None` off. The person matte is not stored here; render looks it up by source.
+    BackgroundRemoval(Option<project::BackgroundRemoval>) = "background_removal" {
+        targets: VIDEO,
+        bounds: ParamBounds::Shape,
+        unit: ParamUnit::None,
+        path: None,
+        apply: |t, v, cx| {
+            if let ItemParams::Video(p) = &mut t.content {
+                p.background_removal = *v;
+            }
+            Ok(())
+        },
+    },
+    /// The edge feather of a video item whose background removal is on; refused while it is off.
+    BackgroundRemovalFeather(f32) = "background_removal_feather" {
+        targets: VIDEO,
+        bounds: ParamBounds::Range {
+            min: 0.0,
+            max: project::BackgroundRemoval::MAX_FEATHER as f64,
+            clamp: true,
+        },
+        unit: ParamUnit::None,
+        path: None,
+        apply: |t, v, cx| {
+            match &mut t.content {
+                ItemParams::Video(project::VideoParams {
+                    background_removal: Some(removal),
+                    ..
+                }) => {
+                    removal.feather = *v;
+                    Ok(())
+                }
+                _ => Err(EditError::Invalid("background removal is off")),
+            }
         },
     },
     /// How a video or image item's cropped source is placed on the canvas.

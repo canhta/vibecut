@@ -10,7 +10,7 @@ Leased control lifetime, shared export admission, runtime settings.
 from the same verified font store before control rendering and export. Opening a
 project never downloads or changes its authored family key.
 
-`runtime::vision_access` (over `shorts::installed_faces`) lends the local YuNet face detector behind `reframe.generate`.
+`runtime::vision_access` (over `shorts::installed_faces`) lends the local YuNet face detector behind `reframe.generate`; `runtime::vision_and_segmentation` also returns the person segmenter (`shorts::installed_person_matte`) over the same lookup, which the control session lends to its `MediaAccess` for `footage.analyze {kind: person_matte}`.
 It reads the pinned `yunet-2026may` bundle from the shared verified model cache and never
 downloads; a missing bundle becomes the typed setup refusal naming `model download`.
 The one-shot and control adapters and the headless MCP inbox lend the same access object,

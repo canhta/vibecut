@@ -481,6 +481,7 @@ fn populated(path: PathBuf) -> Project {
             fit: FitMode::Stretch,
             reduce_noise: true,
             stabilize: Some(project::StabilizeLevel::Stable),
+            background_removal: Some(project::BackgroundRemoval { feather: 25.0 }),
             ..VideoParams::plain()
         }),
         ItemParams::Audio(AudioParams {
@@ -849,6 +850,21 @@ fn model_trust_boundaries() {
     let mut d = base.clone();
     d.scene_mut().bookmarks.first_mut().unwrap().duration = Tick(-1);
     cases.push(d);
+    for feather in [-1.0, 100.5, f32::NAN] {
+        let mut d = base.clone();
+        let video = d
+            .scene_mut()
+            .timeline
+            .iter_mut()
+            .flat_map(|track| &mut track.items)
+            .find_map(|item| match &mut item.content {
+                ItemParams::Video(params) => Some(params),
+                _ => None,
+            })
+            .unwrap();
+        video.background_removal = Some(project::BackgroundRemoval { feather });
+        cases.push(d);
+    }
     let mut d = base.clone();
     d.scene_mut()
         .timeline

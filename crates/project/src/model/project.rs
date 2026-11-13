@@ -631,7 +631,8 @@ fn validate(data: &ProjectData) -> Result<()> {
             if let ItemParams::Video(p) = &item.content
                 && (!valid_volume(p.volume)
                     || p.crop.as_ref().is_some_and(|crop| !crop.valid())
-                    || !p.background.valid())
+                    || !p.background.valid()
+                    || p.background_removal.is_some_and(|removal| !removal.valid()))
             {
                 return Err(Error::Invalid("video parameters"));
             }

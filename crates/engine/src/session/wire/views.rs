@@ -468,11 +468,15 @@ pub struct DetectionResult {
 }
 
 /// A correction computed once per source and applied at render, never stored in the project.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum CorrectionKind {
     /// Per-frame camera motion that `stabilize` smooths away.
     Stabilize,
+    /// Per-frame person probability that `background_removal` keeps.
+    PersonMatte,
 }
 
 /// Output aspect of a constant auto-reframe crop window.

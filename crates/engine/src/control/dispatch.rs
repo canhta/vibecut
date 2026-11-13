@@ -71,18 +71,17 @@ fn music_access<'a>(caller: &Caller<'a>) -> crate::session::Result<&'a super::Mu
 impl Session {
     /// The stored footage corrections of this project's switched-on items, read from the lent
     /// cache; empty without one, so those items render uncorrected and export refuses to start.
-    fn footage_tracks(
+    fn footage_corrections(
         &self,
         media: Option<&std::sync::Mutex<super::MediaAccess>>,
-    ) -> Result<render::stabilize::Tracks> {
+    ) -> Result<crate::footage::Resolution> {
         let Some(media) = media else {
             return Ok(Default::default());
         };
         Ok(media
             .lock()
             .map_err(|_| crate::RuntimeError::Poisoned)?
-            .footage_corrections(self.project())
-            .tracks)
+            .footage_corrections(self.project()))
     }
     /// The one admission step every transport passes before dispatch: the command's
     /// declared availability (including the open-transaction rule) and its declared
@@ -737,12 +736,12 @@ impl Session {
                 Ok(ControlResult::CancelRequested { job })
             }
             Command::Preview { frames } => {
-                let stabilization = self.footage_tracks(caller.media)?;
+                let corrections = self.footage_corrections(caller.media)?;
                 Ok(crate::control_preview::preview(
                     self,
                     frames,
                     runner,
-                    stabilization,
+                    corrections,
                 )?)
             }
             Command::FreezeFrame {
@@ -785,7 +784,8 @@ impl Session {
                 overwrite,
             } => {
                 let mut settings = render::ExportSettings::from_project(self.project());
-                settings.render.stabilization = self.footage_tracks(caller.media)?;
+                self.footage_corrections(caller.media)?
+                    .attach(&mut settings.render);
                 settings.container =
                     render::OutputOptions::container_for_path(&path, options.audio_only)?;
                 let paths = options.paths(self.project(), &path)?;

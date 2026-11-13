@@ -126,7 +126,7 @@ impl Editor {
     }
     /// Adopt the workspace's one media cache instance for timeline display
     /// reads and generation. The same instance is lent to the MCP inbox.
-    pub(crate) fn set_media(
+    pub fn set_media(
         &mut self,
         media: std::sync::Arc<std::sync::Mutex<engine::control::MediaAccess>>,
     ) {

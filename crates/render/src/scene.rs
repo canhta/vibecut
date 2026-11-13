@@ -2,12 +2,13 @@
 pub mod blend;
 mod caption;
 pub mod color;
+mod correction;
 mod draw;
 pub mod effects;
 mod evaluation;
 pub mod mask;
 mod raster;
-pub mod stabilize;
+pub use correction::{matte, stabilize};
 pub(crate) mod transform;
 pub use transform::arrange;
 pub mod transitions;
@@ -98,6 +99,9 @@ pub struct RenderSettings {
     /// The analysed camera track of each stabilized video item, resolved by the caller from the
     /// engine's correction cache. An item with the switch on and no entry renders uncorrected.
     pub stabilization: stabilize::Tracks,
+    /// The stored person matte of each video item with background removal on, resolved by the
+    /// caller the same way. An item with the switch on and no entry renders unmatted.
+    pub person_mattes: matte::Mattes,
 }
 impl RenderSettings {
     pub fn from_project(project: &Project) -> Self {
@@ -112,6 +116,7 @@ impl RenderSettings {
             caption_languages: Vec::new(),
             caption_style: CaptionStyle::default(),
             stabilization: BTreeMap::new(),
+            person_mattes: BTreeMap::new(),
         }
     }
     pub fn portrait(project: &Project) -> Self {
@@ -126,6 +131,7 @@ impl RenderSettings {
         if self.background_blur.is_some_and(|r| r > 64)
             || self.placements.len() > 100000
             || self.stabilization.len() > 100000
+            || self.person_mattes.len() > 100000
             || self.text_cache_bytes > 256 << 20
             || self.text_cache_entries > 64
             || self.caption_languages.len() > 2

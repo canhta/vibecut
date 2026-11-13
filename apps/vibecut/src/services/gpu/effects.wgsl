@@ -388,3 +388,30 @@ fn reduce_noise(@builtin(global_invocation_id) id: vec3<u32>) {
     let a = clamp(out.a, 0.0, 1.0);
     dst[id.y * p.width + id.x] = clamp(out, vec4<f32>(0.0), vec4<f32>(a));
 }
+
+// Mirrors render matte::sample; weights = the affine map [a, b, c, d, e, f] from the
+// pixel centre to the 192x192 matte plane's cell coordinate (u = a px + b py + c,
+// v = d px + e py + f). The plane rides in the instance input: cell i is texel i's
+// alpha. Bilinear with edge cells clamped; the layer is scaled by the coverage.
+@compute @workgroup_size(8, 8)
+fn person_matte(@builtin(global_invocation_id) id: vec3<u32>) {
+    if id.x >= p.width || id.y >= p.height { return; }
+    let px = f32(id.x) + 0.5;
+    let py = f32(id.y) + 0.5;
+    let u = weights[0] * px + weights[1] * py + weights[2];
+    let v = weights[3] * px + weights[4] * py + weights[5];
+    let u0 = floor(u);
+    let v0 = floor(v);
+    let fx = u - u0;
+    let fy = v - v0;
+    let left = u32(clamp(u0, 0.0, 191.0));
+    let right = u32(clamp(u0 + 1.0, 0.0, 191.0));
+    let top = u32(clamp(v0, 0.0, 191.0));
+    let bottom = u32(clamp(v0 + 1.0, 0.0, 191.0));
+    let upper = inst[top * 192u + left].a * (1.0 - fx) + inst[top * 192u + right].a * fx;
+    let lower = inst[bottom * 192u + left].a * (1.0 - fx) + inst[bottom * 192u + right].a * fx;
+    let m = clamp(upper * (1.0 - fy) + lower * fy, 0.0, 1.0);
+    let out = src[id.y * p.width + id.x] * m;
+    let a = clamp(out.a, 0.0, 1.0);
+    dst[id.y * p.width + id.x] = clamp(out, vec4<f32>(0.0), vec4<f32>(a));
+}

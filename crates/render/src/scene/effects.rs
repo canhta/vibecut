@@ -1203,7 +1203,6 @@ impl SampleInputs<'_> {
         texel(self.current, x, y)
     }
     /// Exact texel of the instance's input image; transparent outside it.
-    #[allow(dead_code, reason = "first used by the 264 and 265 ops")]
     pub fn texel_input(&self, x: u32, y: u32) -> [f32; 4] {
         texel(self.input, x, y)
     }
@@ -1562,6 +1561,15 @@ static OPS: &[EffectOp] = &[
             len: 2,
             valid: denoise::valid_reduce_noise,
             apply: denoise::reduce_noise_sample,
+        }),
+    },
+    EffectOp {
+        entry_point: super::matte::ENTRY,
+        wgsl: Wgsl::Reads(ReadImage::Instance),
+        kernel: Kernel::Sample(SampleOp {
+            len: 6,
+            valid: super::matte::valid,
+            apply: super::matte::sample,
         }),
     },
     EffectOp {

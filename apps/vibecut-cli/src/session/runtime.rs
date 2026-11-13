@@ -81,9 +81,34 @@ pub(crate) fn vision_access(
     budget: ByteBudget,
     shared: Option<Arc<std::sync::Mutex<engine::cache::ArtifactCache>>>,
 ) -> engine::control::VisionAccess {
+    shorts::installed_faces(model_lookup(budget, shared))
+}
+
+/// The face detector of [`vision_access`] and the local person segmenter lent to
+/// `footage.analyze {kind: person_matte}`, both reading through one models-cache lookup; no
+/// weights are downloaded.
+pub(crate) fn vision_and_segmentation(
+    budget: ByteBudget,
+    shared: Option<Arc<std::sync::Mutex<engine::cache::ArtifactCache>>>,
+) -> (
+    engine::control::VisionAccess,
+    engine::control::SegmentationAccess,
+) {
+    let lookup = model_lookup(budget, shared);
+    (
+        shorts::installed_faces(lookup.clone()),
+        shorts::installed_person_matte(lookup),
+    )
+}
+
+/// The verified models-cache lookup over `shared`, or over the cache this process opens once.
+fn model_lookup(
+    budget: ByteBudget,
+    shared: Option<Arc<std::sync::Mutex<engine::cache::ArtifactCache>>>,
+) -> shorts::ModelLookup {
     use ai::foundation::models::Model;
     use engine::cache::ModelLease;
-    let lookup: shorts::ModelLookup = match shared {
+    match shared {
         Some(cache) => Arc::new(
             move |model: &Model,
                   hooks: &dyn ai::ExecutionHooks|
@@ -109,6 +134,5 @@ pub(crate) fn vision_access(
                 },
             )
         }
-    };
-    shorts::installed_faces(lookup)
+    }
 }

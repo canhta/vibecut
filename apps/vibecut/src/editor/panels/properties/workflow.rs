@@ -127,9 +127,13 @@ fn route(state: &mut State, port: &mut Port<'_>, actions: Vec<Action>) {
             Action::SetClipBackground { items, background } => {
                 background::set_clip_background(port, items, background)
             }
-            Action::AnalyzeFootage { item } => state.request_footage(port, item),
-            Action::CancelFootage { item } => {
-                state.cancel_footage(item);
+            Action::AnalyzeFootage { item, kind } => state.request_footage(port, item, kind),
+            Action::CancelFootage { item, kind } => {
+                state.cancel_footage(item, kind);
+                Ok(())
+            }
+            Action::OpenModel(id) => {
+                port.request(crate::editor::context::Request::OpenModel(id));
                 Ok(())
             }
             Action::ResetTransform(item) => commands::reset_transform(port, item),

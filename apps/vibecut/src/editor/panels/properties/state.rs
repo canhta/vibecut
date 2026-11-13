@@ -16,14 +16,18 @@ pub(in crate::editor) struct Widget {
 /// Requests the properties area cannot satisfy alone; the frame routes them
 /// in order after `show` returns.
 pub(in crate::editor) enum Action {
-    /// Start the stabilize analysis of a clip's source (`footage.analyze`).
+    /// Start one footage analysis of a clip's source (`footage.analyze`).
     AnalyzeFootage {
         item: ItemId,
+        kind: engine::footage::CorrectionKind,
     },
     /// Stop the running analysis of a clip.
     CancelFootage {
         item: ItemId,
+        kind: engine::footage::CorrectionKind,
     },
+    /// Show a model in the model manager: the link a missing-model row offers.
+    OpenModel(String),
     ImportLut {
         item: ItemId,
         expected: Option<project::LutId>,

@@ -11,7 +11,7 @@ Use `ClipJobs` (the registry's `clips.suggest` and `clips.export`, lent through 
 | `boundaries.rs` | Snaps ordered source edges to safe frames. | [Boundary adjustment](src/boundaries/README.md) |
 | `suggestion/` | Produces source-snapped clip candidates. | [Suggestion workflow](src/suggestion/README.md) |
 | `layout/` | Chooses each shot's layout and composes it from crop, fit and transform params. | [Short layouts](src/layout/README.md) |
-| `vision.rs` | Loads the installed local face detector for the composition roots to lend as `VisionAccess`; never downloads. | `installed_faces`, `ModelLookup` |
+| `vision.rs` | Loads the installed local face detector and person segmenter for the composition roots to lend as `VisionAccess` and `SegmentationAccess`; never downloads. | `installed_faces`, `installed_person_matte`, `ModelLookup` |
 | `batch_export/` | Exports accepted shorts through bounded jobs. | [Batch export](src/batch_export/README.md) |
 
 Verification and the labelled acceptance path are owned by [verification](../../docs/engineering/verification.md#checks) and [clip-eval](../clip-eval/README.md).

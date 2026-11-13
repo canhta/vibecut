@@ -1,10 +1,64 @@
-//! Draws the Remove BG sub-tab: the Chroma key switch and its keyed controls.
+//! Draws the Remove BG sub-tab: the Auto removal switch with its feather and analysis state, then
+//! the Chroma key switch and its keyed controls.
 use super::super::Panel;
-use crate::editor::properties::{Action, ColorTarget, Icon, ItemId, Text, egui, read, theme};
+use crate::editor::properties::{
+    Action, ColorTarget, Icon, ItemId, ScrubSpec, Text, egui, read, theme,
+};
 use crate::kit;
+use engine::footage::CorrectionKind;
 
 impl Panel<'_, '_> {
+    /// The Auto removal switch row, then, while it is on, the edge feather slider and the
+    /// analysis state. Turning the switch on keeps the model's own edge and starts the person
+    /// matte analysis; a warm cache finishes at once.
+    fn auto_removal_rows(&mut self, ui: &mut egui::Ui, item: ItemId) {
+        let Some(project::ItemParams::Video(params)) =
+            read::item(self.cx.session.project(), item).map(|item| &item.content)
+        else {
+            return;
+        };
+        let mut on = params.background_removal.is_some();
+        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        self.row_label(ui, row, self.tr(Text::AutoRemoval));
+        let width = value_ui.available_width();
+        value_ui.add_space((width - theme::size::TOGGLE_WIDTH).max(0.0));
+        let response = kit::toggle(
+            &mut value_ui,
+            "inspector.auto_removal",
+            &mut on,
+            self.tr(Text::AutoRemoval),
+        );
+        self.remember("inspector.auto_removal", &response);
+        if response.clicked() {
+            if on {
+                self.set_item_field(item, "background_removal", "on");
+                self.actions.push(Action::AnalyzeFootage {
+                    item,
+                    kind: CorrectionKind::PersonMatte,
+                });
+            } else {
+                self.set_item_field(item, "background_removal", "off");
+            }
+        }
+        if !on {
+            return;
+        }
+        self.slider_row(
+            ui,
+            item,
+            ScrubSpec::of("background_removal_feather", Text::EdgeFeather, 1., 2., 0),
+        );
+        self.correction_status(
+            ui,
+            item,
+            CorrectionKind::PersonMatte,
+            "inspector.auto_removal",
+        );
+        ui.add_space(theme::space::MD);
+    }
+
     pub(in super::super) fn remove_background_controls(&mut self, ui: &mut egui::Ui, item: ItemId) {
+        self.auto_removal_rows(ui, item);
         let project = self.cx.session.project();
         let existing =
             read::chroma_key(project, item).map(|effect| (effect.id.clone(), effect.enabled));

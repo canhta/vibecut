@@ -2818,6 +2818,121 @@ fn remove_background_first_pick_refuses_a_locked_track() {
     );
 }
 
+fn removal(harness: &Harness<Editor>, id: ItemId) -> Option<project::BackgroundRemoval> {
+    harness
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| item.id == id)
+        .and_then(|item| match &item.content {
+            ItemParams::Video(params) => params.background_removal,
+            _ => None,
+        })
+}
+
+/// The fixture editor over a fresh process media cache without a person segmenter, as a
+/// workspace whose matte weights are not installed.
+fn removal_editor(root: &std::path::Path) -> (Editor, ItemId) {
+    let fixture = fixture();
+    let mut editor = fixture.editor;
+    let media =
+        engine::control::MediaAccess::open_in(root, ByteBudget::new(64 << 20).unwrap()).unwrap();
+    editor.set_media(Arc::new(std::sync::Mutex::new(media)));
+    (editor, fixture.video)
+}
+
+#[test]
+fn auto_removal_enables_tunes_and_disables_with_one_undo_step_each() {
+    let root = tempfile::tempdir().unwrap();
+    let (editor, video) = removal_editor(root.path());
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    open_remove_background(&mut harness, video);
+    // The reference lists Auto removal above Chroma key; off shows the switch alone.
+    assert!(has_widget(&harness, "inspector.auto_removal"));
+    assert!(has_widget(&harness, "inspector.chroma_key.toggle"));
+    assert!(
+        widget_rect(&harness, "inspector.auto_removal").top()
+            < widget_rect(&harness, "inspector.chroma_key.toggle").top()
+    );
+    assert!(!has_widget(
+        &harness,
+        "inspector.background_removal_feather"
+    ));
+    assert_eq!(removal(&harness, video), None);
+
+    // Enable: one click switches it on with the model's own edge and starts the analysis.
+    let history = harness.state().session.history_len();
+    click(&mut harness, "inspector.auto_removal");
+    harness.run_steps(3);
+    assert_eq!(
+        removal(&harness, video),
+        Some(project::BackgroundRemoval { feather: 0.0 })
+    );
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    assert!(has_widget(&harness, "inspector.background_removal_feather"));
+    // No weights are installed: the row links to the model manager and keeps a retry; the clip
+    // renders unmatted meanwhile.
+    assert!(has_widget(&harness, "inspector.auto_removal.models"));
+    assert!(has_widget(&harness, "inspector.auto_removal.analyze"));
+    assert!(!has_widget(&harness, "inspector.auto_removal.progress"));
+
+    // Tune: a typed feather is one undo step and needs no new analysis.
+    type_value(&mut harness, "inspector.background_removal_feather", "40");
+    assert_eq!(
+        removal(&harness, video),
+        Some(project::BackgroundRemoval { feather: 40.0 })
+    );
+    assert_eq!(harness.state().session.history_len().0, history.0 + 2);
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert_eq!(
+        removal(&harness, video),
+        Some(project::BackgroundRemoval { feather: 0.0 })
+    );
+
+    // Disable: off removes the switch's rows, one undo step.
+    click(&mut harness, "inspector.auto_removal");
+    harness.run_steps(3);
+    assert_eq!(removal(&harness, video), None);
+    assert!(!has_widget(
+        &harness,
+        "inspector.background_removal_feather"
+    ));
+    assert!(!has_widget(&harness, "inspector.auto_removal.models"));
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(3);
+    assert_eq!(
+        removal(&harness, video),
+        Some(project::BackgroundRemoval { feather: 0.0 })
+    );
+}
+
+/// Offscreen screenshot evidence; wgpu rendering stays out of CI.
+#[test]
+#[ignore = "renders through wgpu; run with --ignored to refresh target/p2-ai-01-bg-removal.png"]
+fn remove_background_panel_renders_the_auto_removal_controls() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let target = root.join("target");
+    std::fs::create_dir_all(&target).unwrap();
+    let media = tempfile::tempdir().unwrap();
+    let (editor, video) = removal_editor(media.path());
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    open_remove_background(&mut harness, video);
+    click(&mut harness, "inspector.auto_removal");
+    harness.run_steps(3);
+    type_value(&mut harness, "inspector.background_removal_feather", "25");
+    let image = harness.render().expect("offscreen render");
+    image.save(target.join("p2-ai-01-bg-removal.png")).unwrap();
+    assert!(image.width() > 0 && image.height() > 0);
+}
+
 /// Offscreen screenshot evidence; wgpu rendering stays out of CI.
 #[test]
 #[ignore = "renders through wgpu; run with --ignored to refresh target/p1-180-chroma.png"]

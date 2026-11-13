@@ -38,6 +38,25 @@ pub struct VideoParams {
     /// derived data computed once per source and looked up at render, never stored here.
     #[serde(default)]
     pub stabilize: Option<StabilizeLevel>,
+    /// Person background removal: absent is off. The person matte is derived data computed once
+    /// per source and looked up at render, never stored here; only the edge feather is item content.
+    #[serde(default)]
+    pub background_removal: Option<BackgroundRemoval>,
+}
+/// The item's side of person background removal: how far the matte edge is softened.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BackgroundRemoval {
+    /// Edge feather, `0..=MAX_FEATHER`; 0 keeps the model's own edge.
+    pub feather: f32,
+}
+impl BackgroundRemoval {
+    /// Largest edge feather: a 0..=100 slider. The scale is our choice; the reference shows none.
+    pub const MAX_FEATHER: f32 = 100.0;
+    /// Whether the feather is finite and within range.
+    pub fn valid(self) -> bool {
+        self.feather.is_finite() && (0.0..=Self::MAX_FEATHER).contains(&self.feather)
+    }
 }
 /// How strongly stabilization smooths the camera path; the reference names exactly these three.
 #[derive(
@@ -75,7 +94,8 @@ impl StabilizeLevel {
 }
 impl VideoParams {
     /// A plain clip: its own audio off, unity volume, not muted, the full frame, default
-    /// fit, no fades, no cleanup, no background, no noise reduction and no stabilization. `Default` would
+    /// fit, no fades, no cleanup, no background, no noise reduction, no stabilization and no
+    /// background removal. `Default` would
     /// need a neutral `source_audio_enabled`, which has none: a clip with its audio on and
     /// one without are both ordinary, so sites that want audio set it as a field update.
     pub fn plain() -> Self {
@@ -90,6 +110,7 @@ impl VideoParams {
             background: ClipBackground::None,
             reduce_noise: false,
             stabilize: None,
+            background_removal: None,
         }
     }
 }

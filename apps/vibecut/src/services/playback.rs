@@ -164,12 +164,12 @@ impl AudioPort {
 #[derive(Default)]
 pub struct RenderState(
     Mutex<Option<Arc<render::RenderSettings>>>,
-    Mutex<render::stabilize::Tracks>,
+    Mutex<engine::footage::Resolution>,
 );
 impl RenderState {
     /// Replace the corrections preview and export render with.
-    pub(crate) fn set_corrections(&self, tracks: render::stabilize::Tracks) -> Result<()> {
-        *self.1.lock().map_err(|_| Error::Poisoned)? = tracks;
+    pub(crate) fn set_corrections(&self, corrections: engine::footage::Resolution) -> Result<()> {
+        *self.1.lock().map_err(|_| Error::Poisoned)? = corrections;
         Ok(())
     }
     pub(crate) fn settings(&self, project: &project::Project) -> Result<render::RenderSettings> {
@@ -186,7 +186,11 @@ impl RenderState {
                 .iter()
                 .any(|track| track.items.iter().any(|item| item.id == *id))
         });
-        settings.stabilization = self.1.lock().map_err(|_| Error::Poisoned)?.clone();
+        self.1
+            .lock()
+            .map_err(|_| Error::Poisoned)?
+            .clone()
+            .attach(&mut settings);
         Ok(settings)
     }
     /// Whether a transient render placement replaces this item's saved box.
@@ -289,9 +293,12 @@ pub struct Playback {
 /// The process media cache the stored footage corrections are read from, and what was last read.
 struct Footage {
     media: Arc<Mutex<engine::control::MediaAccess>>,
-    /// The switched-on clips with their source hash, and the cache epoch, the last read was for.
-    resolved: Option<(Vec<(project::ItemId, [u8; 32])>, u64)>,
+    /// The switched-on clips with their source hash and which corrections are on, and the cache
+    /// epoch, the last read was for.
+    resolved: Option<(Vec<Switched>, u64)>,
 }
+/// One clip with a footage correction on: its source hash and its stabilize and matte switches.
+type Switched = (project::ItemId, [u8; 32], [bool; 2]);
 impl Playback {
     /// Read the stored footage corrections of the project from `media` at every seek, so preview
     /// draws a stabilized clip with the same lookup export uses.
@@ -307,20 +314,24 @@ impl Playback {
             return;
         };
         let data = project.data();
-        let key: Vec<(project::ItemId, [u8; 32])> = data
+        let key: Vec<Switched> = data
             .scenes
             .iter()
             .flat_map(|scene| scene.timeline.iter())
             .flat_map(|track| &track.items)
-            .filter(|item| {
-                matches!(&item.content, project::ItemParams::Video(p) if p.stabilize.is_some())
-            })
-            .map(|item| {
+            .filter_map(|item| {
+                let project::ItemParams::Video(p) = &item.content else {
+                    return None;
+                };
+                let switches = [p.stabilize.is_some(), p.background_removal.is_some()];
+                if switches == [false; 2] {
+                    return None;
+                }
                 let hash = item
                     .source_asset
                     .and_then(|id| data.assets.iter().find(|asset| asset.id() == id))
                     .map_or([0; 32], |asset| asset.content_hash().0);
-                (item.id, hash)
+                Some((item.id, hash, switches))
             })
             .collect();
         if key.is_empty()
@@ -342,11 +353,11 @@ impl Playback {
         {
             return;
         }
-        let tracks = media.footage_corrections(project).tracks;
+        let corrections = media.footage_corrections(project);
         drop(media);
         footage.resolved = Some((key, epoch));
         if let Ok(request) = read_request(&self.request) {
-            let _ = request.render_state.set_corrections(tracks);
+            let _ = request.render_state.set_corrections(corrections);
         }
     }
     /// Attach the desktop device adapter before the first visible preview.
