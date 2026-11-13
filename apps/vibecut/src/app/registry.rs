@@ -263,12 +263,19 @@ impl Workspace {
         if let Some(editor) = self.home.editor.take() {
             self.register_editor(editor);
         }
+        // A library Retry in any window reopens the store once and, on success,
+        // lends it to every open editor.
+        let mut editors: Vec<&mut Editor> = self
+            .windows
+            .values_mut()
+            .filter_map(|window| window.editor.as_deref_mut())
+            .collect();
+        self.lending.reopen_requested(&mut editors);
         for window in self.windows.values_mut() {
             // Background workflow completions can request the model service
             // before the next UI pass. They must reuse the app owner too.
             if let Some(editor) = &mut window.editor {
                 self.lending.lend_models(editor);
-                self.lending.reopen_requested(editor);
             }
             window.tick();
             if let Some((from, to)) = window.saved_as.take() {
@@ -498,6 +505,66 @@ mod tests {
             assert!(workspace.error().is_none(), "{:?}", workspace.error());
             assert!(workspace.home.pending.is_none());
             assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        }
+    }
+    #[test]
+    fn a_library_retry_in_one_window_lends_the_reopened_store_to_every_open_editor() {
+        use crate::editor::{LibraryProblem, LibraryStore};
+        let root = tempfile::tempdir().unwrap();
+        let recovery = root.path().join("recovery");
+        // Another writer holds the Sounds lease, so the process open fails as busy.
+        let held =
+            libraries::sounds::SoundLibrary::open(&recovery.with_file_name("sounds")).unwrap();
+        let mut workspace = Workspace::new(recovery, Preferences::default(), None).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while workspace.busy() {
+            workspace.tick();
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let editor = |id: u64| {
+            let session = engine::Session::new(
+                project::Project::empty(project::ProjectId(id), "Library".into()).unwrap(),
+                30,
+            )
+            .unwrap();
+            let playback =
+                Playback::new(&session, workspace.home.budget.clone(), Arc::new(Files)).unwrap();
+            Box::new(Editor::new(session, playback, Preferences::default()))
+        };
+        let (first, second) = (editor(71), editor(72));
+        let ids = [
+            workspace.register_editor(first),
+            workspace.register_editor(second),
+        ];
+        let problem = |workspace: &Workspace, id| {
+            workspace.windows[&id]
+                .editor
+                .as_ref()
+                .unwrap()
+                .sound_open_problem()
+        };
+        for id in ids {
+            assert_eq!(problem(&workspace, id), Some(LibraryProblem::Busy));
+        }
+
+        // Retry in the first window only; the store opens once and every editor gets it.
+        drop(held);
+        workspace
+            .windows
+            .get_mut(&ids[0])
+            .unwrap()
+            .editor
+            .as_mut()
+            .unwrap()
+            .request_library_reopen(LibraryStore::Sounds);
+        workspace.tick();
+        for id in ids {
+            assert_eq!(
+                problem(&workspace, id),
+                None,
+                "{id:?} borrows the reopened store"
+            );
         }
     }
     #[derive(Default)]

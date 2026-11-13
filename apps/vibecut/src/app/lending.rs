@@ -89,22 +89,37 @@ impl Lending {
             Err(error) => editor.set_music_open_error(error),
         }
     }
-    /// Serve the stores a section asked to open again. A store that opened before
-    /// is lent as it stands; one that failed is opened again here, by its only owner.
-    pub(super) fn reopen_requested(&mut self, editor: &mut Editor) {
-        for store in editor.take_library_reopens() {
-            match store {
-                LibraryStore::Sounds => {
-                    if self.sounds.is_err() {
-                        self.sounds = open_sounds(&self.root);
-                    }
-                    self.lend_sounds(editor);
+    /// Serve the stores any open editor asked to open again. A store that opened
+    /// before is lent as it stands to the editors that asked; one that failed is
+    /// opened again here, by its only owner, once per request batch. A store that
+    /// opens now is lent to every open editor, since each showed the same failure.
+    pub(super) fn reopen_requested(&mut self, editors: &mut [&mut Editor]) {
+        let asked: Vec<Vec<LibraryStore>> = editors
+            .iter_mut()
+            .map(|editor| editor.take_library_reopens())
+            .collect();
+        let wanted = |store| asked.iter().any(|stores| stores.contains(&store));
+        let mut reopened = Vec::new();
+        if wanted(LibraryStore::Sounds) && self.sounds.is_err() {
+            self.sounds = open_sounds(&self.root);
+            if self.sounds.is_ok() {
+                reopened.push(LibraryStore::Sounds);
+            }
+        }
+        if wanted(LibraryStore::Music) && self.music.is_err() {
+            self.music = open_music(&self.root);
+            if self.music.is_ok() {
+                reopened.push(LibraryStore::Music);
+            }
+        }
+        for (editor, asked) in editors.iter_mut().zip(&asked) {
+            for store in [LibraryStore::Sounds, LibraryStore::Music] {
+                if !reopened.contains(&store) && !asked.contains(&store) {
+                    continue;
                 }
-                LibraryStore::Music => {
-                    if self.music.is_err() {
-                        self.music = open_music(&self.root);
-                    }
-                    self.lend_music(editor);
+                match store {
+                    LibraryStore::Sounds => self.lend_sounds(editor),
+                    LibraryStore::Music => self.lend_music(editor),
                 }
             }
         }

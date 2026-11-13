@@ -45,7 +45,8 @@ when a shared download owner refuses an add; it leaves the project and pending a
 
 A library that fails to open (busy writer lease, damaged file, or IO) shows its reason
 and a Retry row in the Sounds and Music sections. The typed error stays with the lending
-point in `app/lending.rs`, which is the only owner that reopens the store on Retry.
+point in `app/lending.rs`, which is the only owner that reopens the store on Retry. A
+store that reopens is lent to every open editor, not only the one that asked.
 The panel changes project JSON only through the add command.
 
 ## Music section
