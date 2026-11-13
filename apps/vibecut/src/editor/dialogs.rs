@@ -3,6 +3,7 @@ pub mod export;
 pub(crate) mod models;
 mod preferences;
 pub(in crate::editor) use preferences::{export_shortcuts, import_shortcuts};
+pub(in crate::editor) mod scene_split;
 pub(crate) mod voiceover;
 
 use crate::editor::{Context, Port, egui};
@@ -14,6 +15,7 @@ pub(in crate::editor) struct State {
     pub(in crate::editor) models: models::State,
     pub(in crate::editor) preferences: preferences::State,
     pub(in crate::editor) voiceover: voiceover::State,
+    pub(in crate::editor) scene_split: scene_split::State,
 }
 
 /// What the frame must do after a dialog painted.
@@ -22,6 +24,7 @@ pub(in crate::editor) enum Action {
     Models(models::Action),
     Preferences(preferences::Action),
     Voiceover(voiceover::Action),
+    SceneSplit(scene_split::Action),
 }
 
 /// Paint both dialogs for a bench that mounts them alone.
@@ -68,6 +71,7 @@ pub(in crate::editor) fn apply(state: &mut State, port: &mut Port<'_>, action: A
         Action::Models(action) => models::apply(port, action),
         Action::Preferences(action) => preferences::apply(port, action),
         Action::Voiceover(action) => voiceover::apply(&mut state.voiceover, port, action),
+        Action::SceneSplit(action) => scene_split::apply(&mut state.scene_split, port, action),
     }
 }
 
@@ -80,6 +84,18 @@ pub(in crate::editor) fn show_voiceover(
     voiceover::show(&mut state.voiceover, cx, ui.ctx())
         .into_iter()
         .map(Action::Voiceover)
+        .collect()
+}
+
+/// Paint the scene split review and route its requests.
+pub(in crate::editor) fn show_scene_split(
+    state: &mut State,
+    cx: &Context<'_>,
+    ui: &mut egui::Ui,
+) -> Vec<Action> {
+    scene_split::show(&mut state.scene_split, cx, ui)
+        .into_iter()
+        .map(Action::SceneSplit)
         .collect()
 }
 

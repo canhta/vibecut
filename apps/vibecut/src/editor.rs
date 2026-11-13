@@ -132,6 +132,7 @@ impl Editor {
     ) {
         self.properties
             .attach_luts(media.clone(), self.playback.budget().clone());
+        self.dialogs.scene_split.set_media(media.clone());
         self.timeline.set_media(media);
         self.timeline.set_proxies(self.playback.proxies().cloned());
     }

@@ -510,6 +510,12 @@ impl Editor {
                 UiAction::OpenPreferences => self.dialogs.preferences.open = true,
                 UiAction::OpenModels => self.open_models()?,
                 UiAction::OpenVoiceover => self.dialogs.voiceover.open(),
+                UiAction::OpenSceneSplit => {
+                    if let Err(text) = self.dialogs.scene_split.open(&self.session) {
+                        self.error =
+                            Some(crate::i18n::text(self.preferences.locale, text).to_owned());
+                    }
+                }
                 UiAction::OpenShortcuts => self.open_shortcuts(),
                 UiAction::RetryPreview => {
                     self.playback.clear()?;

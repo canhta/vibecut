@@ -23,6 +23,13 @@ failure or a refused insertion leaves no file and no item and shows a typed line
 take also blocks global key dispatch. Tests inject the input host and the media folder with
 `Editor::set_voiceover`.
 
+`timeline.split_scene` (the video clip menu's Split scene) opens the scene split review for the single
+selected video clip. Find runs the engine's `media.detect_scenes` job through control admission and
+polls `job_status` each frame from the dialog's own runner; Cancel sends `job_cancel`. The review lists
+each candidate with a checkbox (all checked by default); Split at N applies the checked indexes through
+`scene_detection::apply_reviewed`, one undo step, and the dialog never edits the project. States: idle,
+detecting, review, no cuts, cancelled, failed, applying. The media cache is injected by `Editor::set_media`.
+
 `preferences.open` in the Window menu opens Settings / AI models. Each remote
 provider/feature row puts its shipped default first, then explicitly refreshed IDs,
 recent IDs and Custom. Apply validates a custom ID before one preference-history

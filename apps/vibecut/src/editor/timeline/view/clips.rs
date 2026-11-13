@@ -337,6 +337,22 @@ impl State {
             self.push(Action::Activate("timeline.delete".to_owned()));
             ui.close();
         }
+        if item.kind == TrackKind::Video {
+            let scenes = format!("timeline.item.{}.split_scene", item.id.0);
+            let single = cx.selection().len() == 1 && cx.selection().contains(&item.id);
+            if self.menu_action(
+                cx,
+                ui,
+                scenes,
+                "timeline.split_scene",
+                Text::ActionTimelineSplitScene,
+                Icon::MagnifyingGlass,
+                editable && single,
+            ) {
+                self.push(Action::Activate("timeline.split_scene".to_owned()));
+                ui.close();
+            }
+        }
         if item.kind != TrackKind::Audio {
             let (label, icon) = if item.hidden {
                 (Text::ShowItem, Icon::Eye)
