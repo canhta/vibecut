@@ -60,7 +60,10 @@ and each commit is one `set_item_param_many` edit. Video and image items keep Tr
 Blending under Basic, then Audio (see below) and Speed. Speed is a 0.01–5x scrub with a
 reset and, for items with audio, a `Change pitch` checkbox that is on while pitch
 follows speed (`maintain_pitch` off). A `Reverse` switch (video and audio) uses `timeline.set_reverse`, one undo step, and keeps the span. Speed edits use `timeline.set_speed`, one undo
-step per commit; trim bounds extend by the retimed output length. Caption generation
+step per commit; trim bounds extend by the retimed output length. A `Standard` / `Curve` bar
+tops the tab: Curve shows four ramp presets (`timeline.apply_speed_preset`) and, for a curved
+item, one speed field per stretch (`timeline.set_speed_curve`, whole curve per commit, one undo
+step, speeds outside 0.01-5x refuse); `Standard` on a curved item resets to a constant 1x. Caption generation
 refuses a retimed source item. The text button inserts a five-second title at the
 playhead in one undo step.
 

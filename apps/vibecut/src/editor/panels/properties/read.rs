@@ -480,3 +480,11 @@ pub(super) fn chroma_key_color(
         .value("key_color")?
         .color()
 }
+
+/// The item's speed curve as editable stretches; `None` for a constant rate.
+pub(super) fn speed_segments(
+    project: &project::Project,
+    item: ItemId,
+) -> Option<Vec<project::SpeedSegment>> {
+    Some(find(project, item)?.retime.curve?.segments())
+}

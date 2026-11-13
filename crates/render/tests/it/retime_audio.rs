@@ -96,6 +96,7 @@ fn fixture(thousandths: u16, maintain_pitch: bool, output_seconds: f64) -> proje
                     speed,
                     maintain_pitch,
                     reverse: false,
+                    curve: None,
                 })
                 .build(),
         ],
@@ -454,5 +455,148 @@ fn reversed_audio_is_the_reversed_source_and_keeps_pitch() {
             (hertz - TONE).abs() <= 6.0 && clean > 25.0,
             "reversed speed {speed}: peak {hertz} Hz, {clean:.1} dB"
         );
+    }
+}
+
+/// One audio item over 4 s of a long tone that plays its first half at 2x and its
+/// second half at 0.5x: 1 s then 4 s of output.
+fn ramp_fixture(maintain_pitch: bool) -> project::Project {
+    let source_ticks = 4 * time::TICKS_PER_SECOND;
+    let segments =
+        [(500u16, 2000u16), (500, 500)].map(|(span, thousandths)| project::SpeedSegment {
+            span,
+            speed: Speed::from_thousandths(thousandths).unwrap(),
+        });
+    let curve = project::SpeedCurve::from_segments(Tick(source_ticks), &segments).unwrap();
+    let long = tick(60 * RATE, RATE);
+    let mut data = project::Project::empty(project::ProjectId(1), "".into())
+        .unwrap()
+        .into_data();
+    data.assets.push(
+        testkit::source::asset(1, std::env::temp_dir().join("ramp.wav"))
+            .format("wav")
+            .duration(long)
+            .content_hash(media::ContentHash::from_bytes(&[8]))
+            .stream(
+                testkit::source::audio()
+                    .codec("pcm_f32le")
+                    .time_base(media::TimeBase::new(1, 48000).unwrap())
+                    .duration(long)
+                    .build(),
+            )
+            .build(),
+    );
+    data.scene_mut().timeline.insert_track(project::Track {
+        id: project::TrackId(1),
+        name: "".into(),
+        kind: project::TrackKind::Audio,
+        hidden: false,
+        muted: false,
+        locked: false,
+        items: vec![
+            testkit::item::audio(project::ItemId(1))
+                .asset(media::AssetId(1))
+                .source(TimeRange::new(Tick::ZERO, Tick(source_ticks)).unwrap())
+                .retime(project::Retime {
+                    window: None,
+                    speed: Speed::UNITY,
+                    maintain_pitch,
+                    reverse: false,
+                    curve: Some(curve),
+                })
+                .build(),
+        ],
+    });
+    project::Project::new(data).unwrap()
+}
+
+fn tone() -> Tone {
+    Tone {
+        hertz: TONE,
+        sweep: 0.0,
+        cancel: None,
+        requests: Vec::new(),
+    }
+}
+
+#[test]
+fn ramped_clip_keeps_pitch_when_enabled_and_follows_each_stretch_when_not() {
+    // (maintain pitch, expected Hz in the 2x stretch, expected Hz in the 0.5x stretch)
+    for (maintain, fast, slow) in [(true, 1000.0, 1000.0), (false, 2000.0, 500.0)] {
+        let p = ramp_fixture(maintain);
+        let out = render(&p, &mut tone(), &[65536]);
+        assert_eq!(
+            out.len(),
+            5 * RATE as usize,
+            "the curve's exact output length"
+        );
+        for (label, from, expected) in [
+            ("2x stretch", 8192, fast),
+            ("0.5x stretch", RATE as usize + 8192 + 24000, slow),
+        ] {
+            let (hertz, clean) = peak(&out[from..from + 16384]);
+            assert!(
+                (hertz - expected).abs() <= 6.0,
+                "maintain {maintain} {label}: peak {hertz} Hz, expected {expected}"
+            );
+            assert!(
+                clean > 20.0,
+                "maintain {maintain} {label}: tone only {clean:.1} dB above the rest"
+            );
+        }
+        // Edges of the clip keep unity gain.
+        let head = out[..240].iter().map(|v| v.abs()).fold(0.0, f32::max);
+        let tail = out[out.len() - 240..]
+            .iter()
+            .map(|v| v.abs())
+            .fold(0.0, f32::max);
+        assert!(
+            head > 0.3 && tail > 0.3,
+            "maintain {maintain}: head {head} tail {tail}"
+        );
+    }
+}
+
+#[test]
+fn ramped_clip_has_no_discontinuity_at_the_key_and_ignores_block_boundaries() {
+    for maintain in [true, false] {
+        let p = ramp_fixture(maintain);
+        let whole = render(&p, &mut tone(), &[65536]);
+        let mut cut = tone();
+        let pieces = render(&p, &mut cut, &[1, 960, 13, 4096, 1023, 7777]);
+        assert_eq!(
+            whole, pieces,
+            "maintain {maintain}: block partition changed the audio"
+        );
+        // The fastest local tone is 2 kHz when pitch follows speed, else 1 kHz; a click
+        // at the keyframe (1 s) would step far beyond its slope.
+        let hertz = if maintain { TONE } else { 2.0 * TONE };
+        let slope = f64::from(LEVEL) * std::f64::consts::TAU * hertz / RATE as f64;
+        let key = RATE as usize;
+        let worst = whole
+            .windows(2)
+            .enumerate()
+            .skip(512)
+            .take(whole.len() - 1024)
+            .map(|(i, w)| (i, f64::from((w[1] - w[0]).abs())))
+            .fold(
+                (0, 0.0),
+                |best, (i, step)| if step > best.1 { (i, step) } else { best },
+            );
+        assert!(
+            worst.1 <= slope * 2.0 + 1e-3,
+            "maintain {maintain}: step {:.5} at sample {} (key at {key}) vs slope {slope:.5}",
+            worst.1,
+            worst.0
+        );
+        // Source reads only move forward, so a file cursor never restarts.
+        let mut next = 0;
+        for (start, frames) in &cut.requests {
+            assert!(
+                *start >= next,
+                "maintain {maintain}: read went back to {start} < {next}"
+            );
+            next = start + *frames as i64;
+        }
     }
 }

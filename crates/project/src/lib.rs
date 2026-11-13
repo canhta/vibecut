@@ -8,8 +8,9 @@ mod visual;
 pub use animation::{
     AnimationPath, Animations, BuiltinPath, Channel, ColorComponent, CurveHandle, Cut, EasingCurve,
     EasingPreset, Extrapolation, Fade, FadeCurve, FadeEdge, FadeSpans, Fades, HandleSide, Keyframe,
-    MAX_ANIMATION_PATHS, MAX_CHANNEL_KEYS, MAX_PROJECT_KEYS, Param, ParamValue, Retime,
-    RetimeWindow, Segment, TangentMode,
+    MAX_ANIMATION_PATHS, MAX_CHANNEL_KEYS, MAX_PROJECT_KEYS, MAX_SPEED_KEYS, Param, ParamValue,
+    Retime, RetimeWindow, SPEED_SPAN_TOTAL, Segment, SpeedCurve, SpeedKey, SpeedPreset,
+    SpeedSegment, TangentMode,
 };
 pub use model::*;
 pub use persistence::atomic;

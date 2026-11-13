@@ -4,7 +4,7 @@
 //! duration starts with [`Speed::output_duration`] (floor). A split retains that
 //! mapping and slices its output window, including fractional source-tick phase.
 
-use crate::{Error, Item, Result};
+use crate::{Error, Item, Result, SpeedCurve};
 use serde::{Deserialize, Serialize};
 use time::{Rounding, SourceRange, Speed, Tick};
 
@@ -24,6 +24,11 @@ pub struct Retime {
     /// edits establish a new window; splitting only advances its output offset.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub window: Option<RetimeWindow>,
+    /// Piecewise-linear speed curve over the window's source span. When set it
+    /// replaces `speed` (kept at 1x), the item is never reversed, and the
+    /// window's source duration equals the curve's source span.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub curve: Option<SpeedCurve>,
 }
 
 /// Original source processing window and a half-open output slice of it.
@@ -43,6 +48,89 @@ impl Default for Retime {
             maintain_pitch: true,
             reverse: false,
             window: None,
+            curve: None,
+        }
+    }
+}
+
+impl Retime {
+    /// Output ticks that `source` ticks of the window play for: the constant
+    /// rate's floor, or the curve's total (its source span is validated equal).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the result does not fit `i64`.
+    pub fn output_duration(&self, source: Tick) -> Result<Tick> {
+        match &self.curve {
+            Some(curve) => Ok(curve.total_output()),
+            None => Ok(self.speed.output_duration(source)?),
+        }
+    }
+
+    /// Output ticks of the window before a piece whose visible source is `visible`:
+    /// the retained offset for a curve (its real head), else the constant rate's
+    /// output for the source before `visible`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error on arithmetic overflow.
+    pub fn output_before(&self, visible: SourceRange) -> Result<Tick> {
+        match &self.curve {
+            Some(_) => Ok(self.window.map_or(Tick::ZERO, |w| w.offset)),
+            None => self.output_duration(visible.start()),
+        }
+    }
+
+    /// Output ticks a piece can still play after its
+    /// end: the unplayed tail of a curve, else the constant rate's output for
+    /// `available` source ticks past the visible end.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error on arithmetic overflow.
+    pub fn output_after(&self, available: Tick) -> Result<Tick> {
+        match (&self.curve, self.window) {
+            (Some(curve), Some(w)) => curve
+                .total_output()
+                .checked_sub(w.offset)
+                .and_then(|t| t.checked_sub(w.duration))
+                .ok_or_else(overflow),
+            (Some(_), None) => Ok(Tick::ZERO),
+            (None, _) => self.output_duration(available),
+        }
+    }
+
+    /// Output ticks from the start of a piece's visible source to the end of the
+    /// asset's `asset_duration` (a curve: to the end of the curve).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error on arithmetic overflow.
+    pub fn output_from_start(&self, visible: SourceRange, asset_duration: Tick) -> Result<Tick> {
+        match &self.curve {
+            Some(curve) => curve
+                .total_output()
+                .checked_sub(self.window.map_or(Tick::ZERO, |w| w.offset))
+                .ok_or_else(overflow),
+            None => self.output_duration(
+                asset_duration
+                    .checked_sub(visible.start())
+                    .ok_or_else(overflow)?,
+            ),
+        }
+    }
+
+    fn source_offset(&self, local: Tick, rounding: Rounding) -> Result<Tick> {
+        match &self.curve {
+            Some(curve) => curve.source_offset(local, rounding),
+            None => Ok(self.speed.source_offset(local, rounding)?),
+        }
+    }
+
+    fn output_offset(&self, source: Tick, rounding: Rounding) -> Result<Tick> {
+        match &self.curve {
+            Some(curve) => curve.output_offset(source, rounding),
+            None => Ok(self.speed.output_offset(source, rounding)?),
         }
     }
 }
@@ -67,23 +155,23 @@ fn overflow() -> Error {
 /// when forward), so a whole window covers its full source range.
 fn visible_source(
     window: RetimeWindow,
-    speed: Speed,
+    retime: &Retime,
     reverse: bool,
     offset: Tick,
     duration: Tick,
 ) -> Result<SourceRange> {
     let ws = window.source_range.start();
     let we = window.source_range.end();
-    let total = speed.output_duration(window.source_range.duration())?;
+    let total = retime.output_duration(window.source_range.duration())?;
     let end = offset.checked_add(duration).ok_or_else(overflow)?;
-    let first = speed.source_offset(offset, Rounding::Floor)?;
+    let first = retime.source_offset(offset, Rounding::Floor)?;
     let (lower, upper) = if reverse {
         let upper = we.checked_sub(first).ok_or_else(overflow)?;
         let lower = if end == total {
             ws
         } else {
             let last = end.checked_sub(Tick(1)).ok_or_else(overflow)?;
-            let back = speed.source_offset(last, Rounding::Floor)?;
+            let back = retime.source_offset(last, Rounding::Floor)?;
             we.checked_sub(Tick(1))
                 .and_then(|t| t.checked_sub(back))
                 .ok_or_else(overflow)?
@@ -94,7 +182,7 @@ fn visible_source(
         let upper = if end == total {
             we
         } else {
-            ws.checked_add(speed.source_offset(end, Rounding::Floor)?)
+            ws.checked_add(retime.source_offset(end, Rounding::Floor)?)
                 .ok_or_else(overflow)?
         };
         (lower, upper)
@@ -108,27 +196,28 @@ impl Item {
         Ok(self.retime.window.unwrap_or(RetimeWindow {
             source_range: self.source_range,
             offset: Tick::ZERO,
-            duration: self
-                .retime
-                .speed
-                .output_duration(self.source_range.duration())?,
+            duration: self.retime.output_duration(self.source_range.duration())?,
         }))
     }
 
     pub(crate) fn validate_retime_window(&self) -> Result<()> {
+        if let Some(curve) = &self.retime.curve {
+            let base = self
+                .retime
+                .window
+                .map_or(self.source_range, |w| w.source_range);
+            if self.retime.reverse
+                || !self.retime.speed.is_unity()
+                || base.duration() != curve.total_source()
+            {
+                return Err(Error::Invalid("speed curve"));
+            }
+        }
         if let Some(w) = self.retime.window {
             let end = w.offset.checked_add(w.duration).ok_or_else(overflow)?;
-            let total = self
-                .retime
-                .speed
-                .output_duration(w.source_range.duration())?;
-            let visible = visible_source(
-                w,
-                self.retime.speed,
-                self.retime.reverse,
-                w.offset,
-                w.duration,
-            )?;
+            let total = self.retime.output_duration(w.source_range.duration())?;
+            let visible =
+                visible_source(w, &self.retime, self.retime.reverse, w.offset, w.duration)?;
             if w.offset < Tick::ZERO
                 || w.duration <= Tick::ZERO
                 || end > total
@@ -151,10 +240,7 @@ impl Item {
         if let Some(w) = self.retime.window {
             return Ok(w.duration);
         }
-        Ok(self
-            .retime
-            .speed
-            .output_duration(self.source_range.duration())?)
+        self.retime.output_duration(self.source_range.duration())
     }
 
     /// Source tick shown at timeline tick `at`, floored through the retained
@@ -167,7 +253,7 @@ impl Item {
         let local = at.checked_sub(self.start).ok_or_else(overflow)?;
         let window = self.retime_window()?;
         let local = local.checked_add(window.offset).ok_or_else(overflow)?;
-        let offset = self.retime.speed.source_offset(local, Rounding::Floor)?;
+        let offset = self.retime.source_offset(local, Rounding::Floor)?;
         if self.retime.reverse {
             return window
                 .source_range
@@ -199,7 +285,7 @@ impl Item {
                 .checked_sub(Tick(1))
                 .and_then(|last| last.checked_sub(source))
                 .ok_or_else(overflow)?;
-            let local = self.retime.speed.output_offset(back, Rounding::Ceil)?;
+            let local = self.retime.output_offset(back, Rounding::Ceil)?;
             return local
                 .checked_sub(window.offset)
                 .and_then(|t| self.start.checked_add(t))
@@ -208,7 +294,7 @@ impl Item {
         let offset = source
             .checked_sub(window.source_range.start())
             .ok_or_else(overflow)?;
-        let local = self.retime.speed.output_offset(offset, Rounding::Ceil)?;
+        let local = self.retime.output_offset(offset, Rounding::Ceil)?;
         local
             .checked_sub(window.offset)
             .and_then(|t| self.start.checked_add(t))
@@ -274,18 +360,17 @@ impl Item {
         if self.retime.reverse == reverse {
             return Ok(());
         }
+        if self.retime.curve.is_some() {
+            return Err(Error::Invalid("reverse on a speed curve"));
+        }
         if let Some(w) = self.retime.window {
-            let total = self
-                .retime
-                .speed
-                .output_duration(w.source_range.duration())?;
+            let total = self.retime.output_duration(w.source_range.duration())?;
             let offset = total
                 .checked_sub(w.offset)
                 .and_then(|t| t.checked_sub(w.duration))
                 .ok_or_else(overflow)?;
             let window = RetimeWindow { offset, ..w };
-            self.source_range =
-                visible_source(window, self.retime.speed, reverse, offset, w.duration)?;
+            self.source_range = visible_source(window, &self.retime, reverse, offset, w.duration)?;
             self.retime.window = Some(window);
         }
         self.retime.reverse = reverse;
@@ -303,7 +388,7 @@ impl Item {
         let window = self.retime_window()?;
         let local = window.offset.checked_add(offset).ok_or_else(overflow)?;
         Ok(Cut {
-            source_range: visible_source(window, self.retime.speed, true, local, duration)?,
+            source_range: visible_source(window, &self.retime, true, local, duration)?,
             start: from,
             retime: self.slice_retime(offset, duration)?,
         })
@@ -347,7 +432,10 @@ impl Item {
             }
             return Err(Error::Invalid("reverse trim must stay inside the item"));
         }
-        if self.retime.window.is_some() && at > self.start && at < self.end()? {
+        if (self.retime.window.is_some() || self.retime.curve.is_some())
+            && at > self.start
+            && at < self.end()?
+        {
             let offset = at.checked_sub(self.start).ok_or_else(overflow)?;
             let duration = self.end()?.checked_sub(at).ok_or_else(overflow)?;
             return Ok(Cut {
@@ -355,6 +443,9 @@ impl Item {
                 source_range: SourceRange::new(self.source_time_at(at)?, self.source_range.end())?,
                 retime: self.slice_retime(offset, duration)?,
             });
+        }
+        if self.retime.curve.is_some() {
+            return Err(Error::Invalid("speed curve trim must stay inside the item"));
         }
         let end = self.end()?;
         let target = end.checked_sub(at).ok_or_else(overflow)?;
@@ -404,7 +495,10 @@ impl Item {
             }
             return Err(Error::Invalid("reverse trim must stay inside the item"));
         }
-        if self.retime.window.is_some() && at > self.start && at < self.end()? {
+        if (self.retime.window.is_some() || self.retime.curve.is_some())
+            && at > self.start
+            && at < self.end()?
+        {
             let duration = at.checked_sub(self.start).ok_or_else(overflow)?;
             return Ok(Cut {
                 start: self.start,
@@ -414,6 +508,9 @@ impl Item {
                 )?,
                 retime: self.slice_retime(Tick::ZERO, duration)?,
             });
+        }
+        if self.retime.curve.is_some() {
+            return Err(Error::Invalid("speed curve trim must stay inside the item"));
         }
         let target = at.checked_sub(self.start).ok_or_else(overflow)?;
         if target <= Tick::ZERO {

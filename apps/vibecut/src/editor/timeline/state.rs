@@ -22,7 +22,7 @@ pub(in crate::editor::timeline) struct DragOrigin {
     pub(in crate::editor::timeline) end: Tick,
     /// Source window and rate: trim bounds read the member's own headroom.
     pub(in crate::editor::timeline) source_range: SourceRange,
-    pub(in crate::editor::timeline) speed: time::Speed,
+    pub(in crate::editor::timeline) retime: project::Retime,
 }
 #[derive(Clone, Debug)]
 pub(in crate::editor::timeline) struct DragState {
@@ -33,7 +33,7 @@ pub(in crate::editor::timeline) struct DragState {
     pub(in crate::editor::timeline) delta: Tick,
     pub(in crate::editor::timeline) origins: Vec<DragOrigin>,
     pub(in crate::editor::timeline) source_range: SourceRange,
-    pub(in crate::editor::timeline) speed: time::Speed,
+    pub(in crate::editor::timeline) retime: project::Retime,
 }
 
 /// Where a clip drop would land: an existing row or a new track between rows.

@@ -99,6 +99,16 @@ fn route(state: &mut State, port: &mut Port<'_>, actions: Vec<Action>) {
                 speed,
                 maintain_pitch,
             } => speed::set_speed(port, item, speed, maintain_pitch),
+            Action::SetSpeedCurve {
+                item,
+                segments,
+                maintain_pitch,
+            } => speed::set_speed_curve(port, item, &segments, maintain_pitch),
+            Action::ApplySpeedPreset {
+                item,
+                preset,
+                maintain_pitch,
+            } => speed::apply_speed_preset(port, item, preset, maintain_pitch),
             Action::SetFade {
                 item,
                 edge,

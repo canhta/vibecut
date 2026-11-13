@@ -283,7 +283,8 @@ fn set_speed_adjusts_duration_stretches_keys_and_undoes() {
                 window: None,
                 speed: speed(value),
                 maintain_pitch: true,
-                reverse: false
+                reverse: false,
+                curve: None,
             }
         );
         let keys: Vec<_> = after
@@ -996,4 +997,204 @@ fn retimed_fades_and_audio_replay_survive_repeated_cuts_history_and_persistence(
             }
         }
     }
+}
+
+fn preset(items: &[u64], preset: project::SpeedPreset, maintain_pitch: bool) -> Command {
+    Command::ApplySpeedPreset {
+        items: items.iter().map(|id| ItemId(*id)).collect(),
+        preset,
+        maintain_pitch,
+    }
+}
+
+fn curve(items: &[u64], table: &[(u16, f64)], maintain_pitch: bool) -> Command {
+    Command::SetSpeedCurve {
+        items: items.iter().map(|id| ItemId(*id)).collect(),
+        segments: table
+            .iter()
+            .map(|&(span, value)| project::SpeedSegment {
+                span,
+                speed: speed(value),
+            })
+            .collect(),
+        maintain_pitch,
+    }
+}
+
+#[test]
+fn speed_presets_and_curves_apply_stretch_keys_undo_and_survive_a_split() {
+    let mut clip = testkit::item::video(ItemId(1))
+        .asset(media::AssetId(1))
+        .source(range(10 * SECOND, 30 * SECOND))
+        .build();
+    clip.animations = opacity_keys(&[5 * SECOND]);
+    let mut s = session(
+        vec![clip],
+        vec![
+            testkit::item::audio(ItemId(2))
+                .asset(media::AssetId(1))
+                .source(range(10 * SECOND, 30 * SECOND))
+                .build(),
+        ],
+        false,
+    );
+    let before = s.project().clone();
+    s.apply(preset(&[1, 2], project::SpeedPreset::SlowInFastOut, true))
+        .unwrap();
+    // 5 s source stretches at 0.5x, 0.8x, 1.25x and 2x play for 10 + 6.25 + 4 + 2.5 s.
+    let total = Tick(22 * SECOND + 3 * SECOND / 4);
+    for id in [1, 2] {
+        let ramped = item(&s, id);
+        assert_eq!(ramped.duration().unwrap(), total);
+        assert_eq!(ramped.source_range, range(10 * SECOND, 30 * SECOND));
+        assert_eq!(ramped.retime.speed, Speed::UNITY);
+        assert!(ramped.retime.curve.is_some() && ramped.retime.maintain_pitch);
+    }
+    // The opacity key sat a quarter of the way along 20 s of source at 1x and follows the clip.
+    let keys = |i: &Item| -> Vec<Tick> {
+        i.animations
+            .get(&AnimationPath::new("opacity").unwrap())
+            .unwrap()
+            .channel(None)
+            .unwrap()
+            .keys()
+            .iter()
+            .map(|k| k.time)
+            .collect()
+    };
+    assert_eq!(keys(&item(&s, 1)), vec![Tick(total.0 / 4)]);
+    // One undo step restores both items; redo reproduces the ramp.
+    s.undo().unwrap();
+    assert_eq!(*s.project(), before);
+    s.redo().unwrap();
+    let ramped = item(&s, 1);
+    let curve_after_redo = ramped.retime.curve.unwrap();
+
+    // Editing the stretches replaces the curve in one step: 0..50% at 1x, 50..100% at 4x.
+    s.apply(curve(&[1], &[(500, 1.0), (500, 4.0)], false))
+        .unwrap();
+    let edited = item(&s, 1);
+    assert_eq!(
+        edited.duration().unwrap(),
+        Tick(10 * SECOND + 10 * SECOND / 4)
+    );
+    assert!(!edited.retime.maintain_pitch);
+    s.undo().unwrap();
+    assert_eq!(item(&s, 1).retime.curve, Some(curve_after_redo));
+
+    // A split keeps a curve on both halves that reproduces the original mapping.
+    let at = Tick(total.0 / 3);
+    s.apply(Command::SplitAt {
+        item: ItemId(1),
+        at,
+    })
+    .unwrap();
+    let pieces: Vec<Item> = s
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .main
+        .items
+        .iter()
+        .cloned()
+        .collect();
+    assert_eq!(pieces.len(), 2);
+    let (left, right) = (pieces.first().unwrap(), pieces.last().unwrap());
+    assert_eq!(
+        left.duration().unwrap().0 + right.duration().unwrap().0,
+        total.0
+    );
+    assert!(left.retime.curve.is_some() && right.retime.curve.is_some());
+    for t in [0, at.0 - 1, at.0, at.0 + 1, total.0 - 1] {
+        let piece = if Tick(t) < at { left } else { right };
+        assert_eq!(
+            piece.source_time_at(Tick(t)).unwrap(),
+            ramped.source_time_at(Tick(t)).unwrap(),
+            "tick {t}"
+        );
+    }
+    s.undo().unwrap();
+
+    // A constant speed replaces the curve; undo brings the curve back.
+    s.apply(set_speed(&[1], 2.0, true)).unwrap();
+    let constant = item(&s, 1);
+    assert_eq!(constant.retime.curve, None);
+    assert_eq!(constant.duration().unwrap(), Tick(10 * SECOND));
+    assert_eq!(keys(&constant), vec![Tick(10 * SECOND / 4)]);
+    s.undo().unwrap();
+    assert_eq!(item(&s, 1).retime.curve, Some(curve_after_redo));
+}
+
+#[test]
+fn invalid_speed_curves_are_refused_without_changing_the_project() {
+    let mut s = session(
+        vec![
+            testkit::item::video(ItemId(1))
+                .asset(media::AssetId(1))
+                .source(range(0, 4 * SECOND))
+                .build(),
+        ],
+        vec![],
+        false,
+    );
+    let before = s.project().clone();
+    let history = s.history_len();
+    let bad = [
+        // Spans must sum to 1000.
+        curve(&[1], &[(500, 1.0), (400, 2.0)], true),
+        curve(&[1], &[(600, 1.0), (500, 2.0)], true),
+        // At least one and at most seven stretches.
+        curve(&[1], &[], true),
+        curve(&[1], &[(125, 1.0); 8], true),
+        // A stretch without a source tick.
+        curve(&[1], &[(0, 1.0), (1000, 1.0)], true),
+        // Selection errors.
+        curve(&[], &[(1000, 2.0)], true),
+        curve(&[1, 1], &[(1000, 2.0)], true),
+        curve(&[999], &[(1000, 2.0)], true),
+        preset(&[999], project::SpeedPreset::FastMiddle, true),
+    ];
+    for command in bad {
+        assert!(s.apply(command).is_err());
+        assert_eq!(*s.project(), before);
+        assert_eq!(s.history_len(), history);
+    }
+    // Speeds outside 0.01-5x cannot be expressed on the wire.
+    for value in [0.0, 0.009, 5.001, -1.0, 6.0] {
+        assert!(
+            serde_json::from_value::<Command>(serde_json::json!({
+                "command": "timeline.set_speed_curve",
+                "params": {"items": [1], "segments": [{"span": 1000, "speed": value}], "maintain_pitch": true}
+            }))
+            .is_err(),
+            "{value}"
+        );
+    }
+    assert!(
+        serde_json::from_value::<Command>(serde_json::json!({
+            "command": "timeline.apply_speed_preset",
+            "params": {"items": [1], "preset": "unknown_ramp", "maintain_pitch": true}
+        }))
+        .is_err()
+    );
+    // A reversed clip refuses a curve, and a curved clip refuses to reverse.
+    s.apply(set_reverse(&[1], true)).unwrap();
+    assert!(
+        s.apply(preset(&[1], project::SpeedPreset::SlowMiddle, true))
+            .is_err()
+    );
+    s.undo().unwrap();
+    s.apply(preset(&[1], project::SpeedPreset::SlowMiddle, true))
+        .unwrap();
+    assert!(s.apply(set_reverse(&[1], true)).is_err());
+    // Extending a curved clip's edge past its curve refuses.
+    assert!(
+        s.apply(Command::TimelineTrim {
+            items: vec![ItemId(1)],
+            edge: TrimEdge::End,
+            delta: Tick(SECOND),
+        })
+        .is_err()
+    );
 }

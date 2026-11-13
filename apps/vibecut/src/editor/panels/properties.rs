@@ -118,6 +118,8 @@ pub(in crate::editor) struct State {
     curve_channel: usize,
     /// Selected Adjust sub-tab and HSL band.
     adjust_tab: AdjustTab,
+    /// The Speed tab shows its Curve view (also shown whenever the item has a curve).
+    speed_curve_view: bool,
     /// Animation sub-tab (In, Out or Combo) shown by the shared Animation control.
     animation_slot: engine::AnimationSlot,
     /// The Animation tiles' preview jobs and strips; built when the tab first draws.
@@ -239,6 +241,7 @@ impl Default for State {
             graph_changed: false,
             curve_channel: 0,
             adjust_tab: AdjustTab::default(),
+            speed_curve_view: false,
             animation_slot: engine::AnimationSlot::In,
             animation_previews: None,
             hsl_band: 0,
