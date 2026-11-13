@@ -261,7 +261,7 @@ fn persistence_roundtrips_speed_and_pitch_and_refuses_invalid_retime() {
     let bytes = encode(&project, false).unwrap();
     let text = String::from_utf8(bytes.clone()).unwrap();
     assert!(
-        text.contains(r#""retime":{"speed":0.5,"maintain_pitch":true}"#),
+        text.contains(r#""retime":{"speed":0.5,"maintain_pitch":true,"reverse":false}"#),
         "{text}"
     );
     assert_eq!(decode(&bytes).unwrap().project, project);

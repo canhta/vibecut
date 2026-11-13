@@ -437,18 +437,18 @@ fn footer_controls(
         }
         remember(cx, actions, "transport.play", r);
     });
-    // [new] Master volume and loop sit left of Ratio. CapCut's footer has no such row,
+    // [new] Master volume and loop sit left of Quality. CapCut's footer has no such row,
     // so it reuses the existing control, slider and spacing tokens only.
     let half = kit::size::CONTROL / 2.0;
-    let ratio_left = footer.right()
+    let quality_left = footer.right()
         - kit::space::XS
-        - kit::size::PLAYER_RATIO_X
+        - kit::size::PLAYER_QUALITY_X
         - kit::size::PLAYER_RATIO_WIDTH / 2.0;
-    let loop_x = ratio_left - kit::space::XS - half;
+    let loop_x = quality_left - kit::space::XS - half;
     let mute_x = loop_x - kit::size::CONTROL - kit::space::XS;
     let slider_left = mute_x - half - kit::space::XS - kit::size::ZOOM_SLIDER;
     let play_right = footer.center().x + half;
-    if slider_left > play_right + kit::space::MD {
+    if mute_x - half > play_right + kit::space::MD {
         let current = cx.session.preview_project().unwrap_or(cx.session.project());
         let settings = &current.data().settings;
         let (volume, muted) = (settings.master_volume, settings.master_muted);
@@ -501,42 +501,45 @@ fn footer_controls(
             }
             remember(cx, actions, "preview.volume.mute", r);
         });
-        let slider_rect = Rect::from_center_size(
-            egui::pos2(slider_left + kit::size::ZOOM_SLIDER / 2.0, y),
-            Vec2::new(kit::size::ZOOM_SLIDER, kit::size::CONTROL),
-        );
-        at(ui, slider_rect, "player.volume", |ui| {
-            let range = f64::from(*project::VOLUME_DB_RANGE.start())
-                ..=f64::from(*project::VOLUME_DB_RANGE.end());
-            let (r, value) = ui
-                .add_enabled_ui(!empty, |ui| {
-                    kit::rail_slider(
-                        ui,
-                        "preview.volume",
-                        f64::from(volume),
-                        range,
-                        kit::size::ZOOM_SLIDER,
-                    )
-                })
-                .inner;
-            // The engine stores master volume on a hundredth-dB grid.
-            let next = ((value * 100.0).round() / 100.0) as f32;
-            if (r.drag_started() || r.dragged()) && next != volume {
-                actions.push(Action::MasterPreview {
-                    volume: next,
-                    muted,
-                });
-            }
-            if r.drag_stopped() {
-                actions.push(Action::MasterEnd { commit: true });
-            } else if r.clicked() && next != volume {
-                actions.push(Action::MasterSet {
-                    volume: next,
-                    muted,
-                });
-            }
-            remember(cx, actions, "preview.volume", r);
-        });
+        // The slider needs the most room: it drops first when the footer is narrow.
+        if slider_left > play_right + kit::space::MD {
+            let slider_rect = Rect::from_center_size(
+                egui::pos2(slider_left + kit::size::ZOOM_SLIDER / 2.0, y),
+                Vec2::new(kit::size::ZOOM_SLIDER, kit::size::CONTROL),
+            );
+            at(ui, slider_rect, "player.volume", |ui| {
+                let range = f64::from(*project::VOLUME_DB_RANGE.start())
+                    ..=f64::from(*project::VOLUME_DB_RANGE.end());
+                let (r, value) = ui
+                    .add_enabled_ui(!empty, |ui| {
+                        kit::rail_slider(
+                            ui,
+                            "preview.volume",
+                            f64::from(volume),
+                            range,
+                            kit::size::ZOOM_SLIDER,
+                        )
+                    })
+                    .inner;
+                // The engine stores master volume on a hundredth-dB grid.
+                let next = ((value * 100.0).round() / 100.0) as f32;
+                if (r.drag_started() || r.dragged()) && next != volume {
+                    actions.push(Action::MasterPreview {
+                        volume: next,
+                        muted,
+                    });
+                }
+                if r.drag_stopped() {
+                    actions.push(Action::MasterEnd { commit: true });
+                } else if r.clicked() && next != volume {
+                    actions.push(Action::MasterSet {
+                        volume: next,
+                        muted,
+                    });
+                }
+                remember(cx, actions, "preview.volume", r);
+            });
+        }
     }
     let right = footer.right() - kit::space::XS;
     let full = Rect::from_center_size(

@@ -66,6 +66,7 @@
 | `transport.end` — Go to end | Navigation | End | — | playback transport |
 | `playback.jump_bookmark.next` — Next bookmark | Playback | — | — | playback transport |
 | `playback.jump_bookmark.previous` — Previous bookmark | Playback | — | — | playback transport |
+| `playback.loop` — Loop playback | Playback | — | — | playback transport |
 | `timeline.select_all` — Select all | Selection | Ctrl+A | — | timeline selection |
 | `timeline.deselect_all` — Deselect all | Selection | — | — | timeline selection |
 | `timeline.duplicate` — Duplicate | Selection | Ctrl+D | `timeline.duplicate` | — |

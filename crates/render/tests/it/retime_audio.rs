@@ -427,7 +427,8 @@ fn reversed(p: &project::Project) -> project::Project {
 
 #[test]
 fn reversed_audio_is_the_reversed_source_and_keeps_pitch() {
-    // At 1x the identity resampler is exact: output sample k is source sample L-1-k.
+    // At 1x the identity resampler is exact: output sample k is source sample L-1-k,
+    // scaled by the master limiter's constant 0.98 post gain.
     let p = reversed(&fixture(1000, true, 1.0));
     let mut source = Tone {
         hertz: TONE,
@@ -440,7 +441,7 @@ fn reversed_audio_is_the_reversed_source_and_keeps_pitch() {
     assert_eq!(out.len(), n);
     for k in [0usize, 1, 1000, 23_999, n - 1] {
         let t = (n - 1 - k) as f64 / RATE as f64;
-        let expected = (LEVEL as f64 * (std::f64::consts::TAU * TONE * t).sin()) as f32;
+        let expected = (LEVEL as f64 * (std::f64::consts::TAU * TONE * t).sin() * 0.98) as f32;
         assert!(
             (out[k] - expected).abs() < 1e-3,
             "sample {k}: {} vs {expected}",

@@ -390,6 +390,14 @@ impl Cube3d {
         for sample in &mut samples {
             *sample = sample.map(|v| v / out_max);
         }
+        // The file lists blue fastest; the canonical table is red fastest.
+        for green in 0..n {
+            for red in 0..n {
+                for blue in (red + 1)..n {
+                    samples.swap((red * n + green) * n + blue, (blue * n + green) * n + red);
+                }
+            }
+        }
         let (min, max) = domain.ok_or_else(|| invalid(0, R::Header))?;
         Self::assemble(
             n,
