@@ -1565,7 +1565,12 @@ impl<'a, 'c> Panel<'a, 'c> {
             {
                 self.remove_background_controls(ui, item);
             }
-            PropertiesTab::Effects if kind == ElementKind::Effect => {
+            // A filter clip shows its look; an adjustment layer takes an effect stack below.
+            PropertiesTab::Effects
+                if kind == ElementKind::Effect
+                    && read::item(self.cx.session.project(), item)
+                        .is_some_and(project::is_filter_clip) =>
+            {
                 self.filter_section(ui, item);
             }
             PropertiesTab::Effects

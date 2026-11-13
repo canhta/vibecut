@@ -377,6 +377,7 @@ impl Rig {
             media_drag: None,
             key_color_pick: None,
             colour_sampling: false,
+            keywords: None,
         };
         if self.sheet {
             self.returned
