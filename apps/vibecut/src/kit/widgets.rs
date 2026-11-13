@@ -198,6 +198,10 @@ fn keyframe_cell(ui: &mut Ui, id: &str, area: Rect, enabled: bool) -> Response {
     let sense = if enabled {
         Sense::click()
     } else {
+        // A press on a disabled arrow must not fall through to the toggle a few pixels
+        // away (egui hands a click on a non-clicking widget to the closest clickable one).
+        // This backstop takes the press; it is not focusable, so it has no AccessKit node.
+        ui.interact(area, ui.make_persistent_id((id, "backstop")), Sense::CLICK);
         Sense::hover()
     };
     let response = ui.interact(area, ui.make_persistent_id(id), sense);
