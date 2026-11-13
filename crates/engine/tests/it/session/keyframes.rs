@@ -792,7 +792,7 @@ fn clip_animation_keys_keep_ordinary_split_move_and_scale_semantics() {
             value(&curve, Tick(t)),
         );
     }
-    for (numerator, denominator) in [(i64::MAX, 1), (1, 254_016_000_000)] {
+    for (numerator, denominator) in [(i64::MAX, 1), (1, i64::MAX)] {
         let before = s.project().clone();
         assert!(
             s.apply(Command::ScaleKeyframeTime {

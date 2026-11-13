@@ -1497,6 +1497,7 @@ fn every_registry_kind_has_its_reference_tab_set() {
                 PropertiesTab::RemoveBackground,
                 PropertiesTab::Mask,
                 PropertiesTab::Audio,
+                PropertiesTab::Animation,
                 PropertiesTab::Speed,
                 PropertiesTab::Adjust,
                 PropertiesTab::Effects,
@@ -1508,19 +1509,25 @@ fn every_registry_kind_has_its_reference_tab_set() {
                 PropertiesTab::Transform,
                 PropertiesTab::RemoveBackground,
                 PropertiesTab::Mask,
+                PropertiesTab::Animation,
                 PropertiesTab::Adjust,
                 PropertiesTab::Effects,
             ][..],
         ),
         (
             ElementKind::Sticker,
-            &[PropertiesTab::Transform, PropertiesTab::Effects][..],
+            &[
+                PropertiesTab::Transform,
+                PropertiesTab::Animation,
+                PropertiesTab::Effects,
+            ][..],
         ),
         (
             ElementKind::Graphic,
             &[
                 PropertiesTab::Graphic,
                 PropertiesTab::Transform,
+                PropertiesTab::Animation,
                 PropertiesTab::Effects,
             ][..],
         ),
@@ -1926,7 +1933,7 @@ fn hiding_a_scrub_field_rolls_back_and_closes_gesture() {
             "tab" => harness
                 .state_mut()
                 .preferences
-                .set("properties_tabs", serde_json::json!({"text": "transform"}))
+                .set("properties_tabs", serde_json::json!({"text": "effects"}))
                 .unwrap(),
             _ => panic!("unknown visibility boundary {change}"),
         }

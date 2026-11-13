@@ -1,12 +1,10 @@
 //! Draws the Animation control every visual element shares.
 use super::Panel;
-use crate::editor::properties::{Action, ItemId, Text, egui, read, theme};
+use crate::editor::properties::{ANIMATION_DRAFT as DRAFT, Action, ItemId, Text, egui, read, theme};
 use crate::kit;
 use engine::{AnimationPreset as Look, AnimationSlot as Slot};
 use time::{Rounding, Tick};
 
-/// Draft key of the duration field.
-const DRAFT: &str = "animation_duration";
 /// Automation marker the frame sets while the element cannot take an edit.
 pub(super) const DISABLED: &str = "animation.edit";
 /// Measured grid (capture 221759, logical px): six columns of 58 px square tiles, 15 px apart.
