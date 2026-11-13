@@ -1,9 +1,12 @@
 //! Turns shaped text runs into positioned lines.
 
 use super::breaks::{grapheme_boundaries, line_ranges, range_width, trim_end};
-use super::{Align, Bounds, Glyph, Layout, LayoutOptions, Line, TextError};
+use super::{
+    Align, Bounds, Glyph, Layout, LayoutOptions, Line, SYNTH_BOLD, SYNTH_ITALIC_SLANT, TextError,
+};
 use crate::fonts::{self, FaceId, Resolved};
 use harfrust::{Buffer, Direction, Feature, ShapeOptions, ShaperFont, Tag, shape};
+use skrifa::GlyphId;
 use std::collections::VecDeque;
 use std::ops::Range;
 use unicode_normalization::UnicodeNormalization;
@@ -213,10 +216,11 @@ pub(super) fn append_paragraph(
             }
         }
 
+        let ink_width = ink_extent(line_glyphs, content_end, options.size, content_width);
         let shift = match options.align {
             Align::Left => 0.0,
-            Align::Center => (options.max_width - content_width).max(0.0) / 2.0,
-            Align::Right => (options.max_width - content_width).max(0.0),
+            Align::Center => (options.max_width - ink_width).max(0.0) / 2.0,
+            Align::Right => (options.max_width - ink_width).max(0.0),
         };
         let (ascent, descent) = line_metrics(line_glyphs, context.primary, options.size);
         if !ascent.is_finite() || !descent.is_finite() {
@@ -263,6 +267,7 @@ pub(super) fn append_paragraph(
             baseline: context.baseline,
             x: shift,
             width: content_width,
+            ink_width,
             ascent,
             descent,
             glyphs: glyph_start..layout.glyphs.len(),
@@ -436,6 +441,42 @@ fn line_metrics(glyphs: &[ShapedGlyph], primary: Resolved, size: f32) -> (f32, f
     (ascent, descent)
 }
 
+/// Right edge of a line's painted ink from the line start, never less than its advance width.
+fn ink_extent(glyphs: &[ShapedGlyph], content_end: usize, size: f32, width: f32) -> f32 {
+    let mut pen = 0.0f32;
+    let mut right = width;
+    for glyph in glyphs.iter().filter(|glyph| glyph.cluster < content_end) {
+        right = right.max(pen + glyph.offset_x + ink_right(glyph, size));
+        pen += glyph.advance;
+    }
+    right
+}
+
+/// Right edge of one glyph's ink relative to its pen origin, from the font's bounding box with
+/// the renderer's synthetic slant and bold growth. The slant is taken at the box top, so the
+/// box corner bounds the sheared ink.
+fn ink_right(glyph: &ShapedGlyph, size: f32) -> f32 {
+    let face = fonts::face(glyph.face);
+    let Some(font) = face.font_ref() else {
+        return 0.0;
+    };
+    let Some(extents) = font.glyph_metrics().extents(GlyphId::new(glyph.id)) else {
+        return 0.0;
+    };
+    let top = extents.y_bearing.max(0.0);
+    let slant = if glyph.synth_italic {
+        SYNTH_ITALIC_SLANT * top
+    } else {
+        0.0
+    };
+    let grow = if glyph.synth_bold {
+        size * SYNTH_BOLD
+    } else {
+        0.0
+    };
+    (extents.x_bearing + extents.width + slant) * face.scale(size) + grow
+}
+
 /// Canonical line separators become LF, then the text is normalized to NFC.
 pub fn canonical_text(text: &str) -> String {
     let mut canonical = String::with_capacity(text.len());
@@ -467,7 +508,7 @@ pub(super) fn content_bounds(lines: &[Line]) -> Bounds {
     for line in lines {
         bounds.x0 = bounds.x0.min(line.x);
         bounds.y0 = bounds.y0.min(line.baseline - line.ascent);
-        bounds.x1 = bounds.x1.max(line.x + line.width);
+        bounds.x1 = bounds.x1.max(line.x + line.ink_width);
         bounds.y1 = bounds.y1.max(line.baseline + line.descent);
     }
     if !bounds.x0.is_finite() || !bounds.x1.is_finite() {

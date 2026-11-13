@@ -16,6 +16,11 @@ use std::ops::Range;
 use unicode_normalization::UnicodeNormalization;
 use unicode_segmentation::UnicodeSegmentation;
 
+/// Synthetic italic slant (tan 12°), applied by the renderer and measured here for ink extents.
+pub(crate) const SYNTH_ITALIC_SLANT: f32 = 0.2126;
+/// Synthetic bold outline growth as a fraction of the font size.
+pub(crate) const SYNTH_BOLD: f32 = 0.025;
+
 /// Horizontal alignment within the requested maximum width.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Align {
@@ -103,6 +108,9 @@ pub struct Line {
     pub x: f32,
     /// Width of the visible content, excluding trailing whitespace.
     pub width: f32,
+    /// Distance from `x` to the right edge of the painted ink. Exceeds `width` when a glyph's ink
+    /// leans past its advance, as a synthetic italic slant does; alignment and bounds use it.
+    pub ink_width: f32,
     pub ascent: f32,
     pub descent: f32,
     /// Range of [`Layout::glyphs`].
@@ -454,6 +462,7 @@ pub fn layout(text: &str, options: &LayoutOptions<'_>) -> Result<Layout, TextErr
             baseline: metrics.ascent,
             x: 0.0,
             width: 0.0,
+            ink_width: 0.0,
             ascent: metrics.ascent,
             descent: metrics.descent,
             glyphs: 0..0,
@@ -533,6 +542,26 @@ mod tests {
                     "{align:?} {line:?}"
                 );
             }
+        }
+        // Bold italic is synthetic here, so its last glyph's ink leans past the advance; the
+        // aligned ink must still end inside the box and bounds must cover it.
+        for align in [Align::Left, Align::Center, Align::Right] {
+            let italic = layout(
+                "Hello",
+                &LayoutOptions {
+                    family: "Inter",
+                    style: &crate::fonts::style_name(700, true),
+                    align,
+                    ..options(400.0)
+                },
+            )
+            .expect("layout");
+            for line in &italic.lines {
+                assert!(line.ink_width > line.width, "{align:?} {line:?}");
+                assert!(line.x + line.ink_width <= 400.01, "{align:?} {line:?}");
+            }
+            assert!(italic.bounds.x1 <= 400.01, "{align:?} {:?}", italic.bounds);
+            assert!(italic.bounds.x1 >= italic.lines[0].x + italic.lines[0].width);
         }
     }
 

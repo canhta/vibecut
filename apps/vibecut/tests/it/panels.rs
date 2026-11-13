@@ -3436,6 +3436,8 @@ fn text_tab_edits_every_style_field_one_undo_step_each_and_shows_effects() {
     assert!(!has_widget(&harness, "inspector.group.basic"));
     reveal(&mut harness, "inspector.section.transform");
     reveal(&mut harness, "inspector.section.blending");
+    // Format sits above Transform: scroll it into the shot so Case is visible.
+    reveal(&mut harness, "inspector.text_case");
     let image = harness.render().expect("offscreen render");
     let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
     std::fs::create_dir_all(&target).unwrap();
