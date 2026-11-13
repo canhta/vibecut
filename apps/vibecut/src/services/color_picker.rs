@@ -177,21 +177,24 @@ impl Picker {
         ui.painter()
             .rect_filled(band, 4.0, Color32::from_rgba_unmultiplied(r, g, b, a));
 
-        ui.label(i18n::text(locale, Text::RecentColors));
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing.x = SWATCH_GAP;
-            for (index, color) in recent.iter().enumerate() {
-                let response = swatch_tile(ui, *color);
-                if response.clicked() {
-                    self.set(*color);
-                    event.preview = true;
-                    event.commit = true;
+        // No recents: no caption and no row, so no blank gap.
+        if !recent.is_empty() {
+            ui.label(i18n::text(locale, Text::RecentColors));
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing.x = SWATCH_GAP;
+                for (index, color) in recent.iter().enumerate() {
+                    let response = swatch_tile(ui, *color);
+                    if response.clicked() {
+                        self.set(*color);
+                        event.preview = true;
+                        event.commit = true;
+                    }
+                    event
+                        .widgets
+                        .push((format!("color.recent.{index}"), response));
                 }
-                event
-                    .widgets
-                    .push((format!("color.recent.{index}"), response));
-            }
-        });
+            });
+        }
         // Armed, the next click on the player picks its frame pixel; Escape leaves the mode.
         let response = ui.add(egui::Button::image_and_text(
             crate::kit::tinted(crate::kit::Icon::Eye, 16.0, ui.visuals().text_color()),

@@ -4,7 +4,7 @@ Interface: `Picker`, `PickerEvent`, `palette`.
 
 The target-free controls serve the properties and marker colour popovers, drawn as an
 area under the field or marker that opened them. Callers provide an initial colour,
-the anchor and the project's recent colours, and own the draft's lifetime. Recents, the
+the anchor and the project's recent colours, and own the draft's lifetime. Recents (absent, caption and row, while the project has none), the
 eyedropper row, the 7x3 recommended swatches, and the hex and HSVA entries with their
 sliders return preview, commit and cancel events without applying a project edit. A
 press outside the popover cancels, as Escape does. An opaque presentation option hides

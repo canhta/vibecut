@@ -1145,6 +1145,76 @@ fn color_picker_closes_on_escape_and_keeps_the_last_committed_value() {
     assert_eq!(harness.state().session.history_len().0, history + 1);
 }
 
+/// The preview's centre pixel once the player shows a current frame that satisfies `done`.
+fn preview_centre(harness: &mut Harness<Editor>, done: impl Fn([u8; 3]) -> bool) -> [u8; 3] {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    loop {
+        harness.run_steps(1);
+        let state = harness.state();
+        if let Some(frame) = state
+            .playback
+            .frame()
+            .filter(|frame| frame.generation == state.playback.generation())
+        {
+            let [width, height] = frame.image.size;
+            let [r, g, b, _] = frame.image.pixels[height / 2 * width + width / 2].to_array();
+            if done([r, g, b]) {
+                return [r, g, b];
+            }
+        }
+        assert!(std::time::Instant::now() < deadline, "preview frame");
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+}
+
+#[test]
+fn colour_popover_draft_reaches_the_player_pixel_and_empty_recents_leave_no_row() {
+    let fixture = fixture();
+    let mut fixture_editor = fixture.editor;
+    fixture_editor
+        .session
+        .apply(Command::Delete {
+            items: vec![
+                fixture.video,
+                fixture.silent_video,
+                fixture.image,
+                fixture.audio,
+                fixture.text,
+            ],
+        })
+        .unwrap();
+    let at = Tick(2 * SECOND + SECOND / 2);
+    fixture_editor
+        .playback
+        .seek(at, false, fixture_editor.session.project().clone())
+        .unwrap();
+    let mut harness = build(fixture_editor);
+    harness.run_steps(3);
+    let close = |a: [u8; 3], b: [u8; 3]| a.iter().zip(b).all(|(x, y)| x.abs_diff(y) <= 3);
+    let committed = [10, 20, 30];
+    preview_centre(&mut harness, |pixel| close(pixel, committed));
+    select(&mut harness, fixture.graphic);
+    click(&mut harness, "inspector.graphic_fill");
+    harness.run_steps(3);
+    assert!(
+        !has_widget(&harness, "color.recent.0"),
+        "a project without recents shows no Recents row"
+    );
+    let slider = widget_rect(&harness, "color.v.slider");
+    harness.hover_at(slider.center());
+    harness.drag_at(slider.center());
+    harness.run_steps(2);
+    harness.hover_at(slider.right_center() - egui::vec2(15.0, 0.0));
+    harness.run_steps(2);
+    let draft = harness.state().inspect().unwrap().color_preview.unwrap();
+    assert_ne!(draft, Color([10, 20, 30, 255]));
+    let shown = preview_centre(&mut harness, |pixel| !close(pixel, committed));
+    assert!(
+        close(shown, [draft.0[0], draft.0[1], draft.0[2]]),
+        "the player shows the live draft: {shown:?} vs {draft:?}"
+    );
+}
+
 #[test]
 fn color_drag_isolated_until_release_one_undo_and_escape_cancels() {
     let fixture = fixture();

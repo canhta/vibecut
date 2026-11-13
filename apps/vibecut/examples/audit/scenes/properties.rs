@@ -156,6 +156,17 @@ pub(super) fn inspector_blend_locale(
     scale: f32,
     locale: Locale,
 ) -> Result<AppHarness, Failure> {
+    overlay_scene(theme, scale, locale, project::BlendMode::Multiply, 0.5)
+}
+
+/// One maroon overlay over a light-blue canvas, selected in the Properties panel.
+fn overlay_scene(
+    theme: Theme,
+    scale: f32,
+    locale: Locale,
+    blend: project::BlendMode,
+    opacity: f64,
+) -> Result<AppHarness, Failure> {
     let mut data = Project::empty(ProjectId(44), "Blend".into())?.into_data();
     data.canvas.width = 64;
     data.canvas.height = 64;
@@ -174,11 +185,11 @@ pub(super) fn inspector_blend_locale(
     )?;
     session.apply(Command::SetItemField {
         item,
-        patch: ItemParamPatch::BlendMode(project::BlendMode::Multiply),
+        patch: ItemParamPatch::BlendMode(blend),
     })?;
     session.apply(Command::SetItemField {
         item,
-        patch: ItemParamPatch::Opacity(0.5),
+        patch: ItemParamPatch::Opacity(opacity),
     })?;
     let mut playback = Playback::new(&session, ByteBudget::new(64 << 20)?, Arc::new(Files))?;
     playback.set_device_available(true);
@@ -380,7 +391,9 @@ pub(super) fn inspector_transform(theme: Theme, scale: f32) -> Result<AppHarness
     Ok(app)
 }
 pub(super) fn inspector_color(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
-    let mut app = inspector_blend(theme, scale)?;
+    // Normal blend at full opacity: the player shows the overlay's own colour, so the
+    // popover's draft reads in the preview (Multiply over the blue canvas hid it).
+    let mut app = overlay_scene(theme, scale, Locale::En, project::BlendMode::Normal, 1.0)?;
     if let App::Editor(editor) = &mut app.state_mut().app {
         editor
             .preferences
