@@ -9,7 +9,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
-use time::{Tick, TimeRange};
+use time::{FrameRate, Tick, TimeRange};
 fn generate(path: &Path, args: &[&str]) {
     let mut all: Vec<&OsStr> = args.iter().map(OsStr::new).collect();
     all.push(path.as_os_str());
@@ -148,6 +148,141 @@ fn pcm(path: &Path, filter: Option<&str>) -> Vec<f32> {
         .map(|b| f32::from_le_bytes(*b))
         .collect()
 }
+/// Thirty-two lossless frames at 30 fps in eight-frame GOPs. Frame `n` carries
+/// `n` in five 12-pixel luma columns (column block `k` is white when bit `k` is
+/// set), so a rendered frame names its own source index.
+fn numbered_fixture() -> Option<std::path::PathBuf> {
+    testkit::oracle::generate(
+        &root(),
+        "numbered frame fixture",
+        "numbered-32-30fps.mp4",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=64x64:r=30",
+            "-frames:v",
+            "32",
+            "-vf",
+            "format=gray,geq=lum='if(lt(X,60),255*mod(floor(N/pow(2,floor(X/12))),2),0)'",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "0",
+            "-g",
+            "8",
+            "-pix_fmt",
+            "yuv420p",
+        ],
+    )
+}
+
+fn numbered_tick(frame: i64) -> Tick {
+    FrameRate::new(30, 1).unwrap().tick_of(frame).unwrap()
+}
+
+/// `video_project(path)` with its one video item edited by `edit`. The source
+/// window is exactly 32 frames, so its end is not a container rounding.
+fn numbered_project(path: &Path, edit: impl FnOnce(&mut project::Item)) -> project::Project {
+    let mut data = video_project(path).data().clone();
+    let item = data
+        .scene_mut()
+        .timeline
+        .iter_mut()
+        .flat_map(|t| &mut t.items)
+        .find(|i| i.id == project::ItemId(0))
+        .unwrap();
+    item.source_range = TimeRange::new(Tick::ZERO, numbered_tick(32)).unwrap();
+    edit(item);
+    project::Project::new(data).unwrap()
+}
+
+/// The source index shown at each timeline tick, decoded from the rendered frame.
+fn shown_indices(project: &project::Project, ticks: &[Tick]) -> Vec<i64> {
+    let mut renderer = Renderer::new(project, RenderSettings::from_project(project)).unwrap();
+    let mut sources = FileSources::default();
+    let hooks = Hooks::default();
+    ticks
+        .iter()
+        .map(|at| {
+            let image = renderer.render_frame(*at, &mut sources, &hooks).unwrap();
+            (0..5u32).fold(0i64, |index, bit| {
+                let x = bit * 12 + 6;
+                let white = image.pixels()[(32 * image.width() + x) as usize][0] > 0.5;
+                index | (i64::from(white) << bit)
+            })
+        })
+        .collect()
+}
+
+#[test]
+fn reversed_numbered_frames_show_each_source_index_once_in_order() {
+    if !tools() {
+        return;
+    }
+    let Some(path) = numbered_fixture() else {
+        return;
+    };
+    let ticks = |frames: std::ops::Range<i64>| frames.map(numbered_tick).collect::<Vec<_>>();
+    let forward = numbered_project(&path, |_| {});
+    assert_eq!(
+        shown_indices(&forward, &ticks(0..32)),
+        (0..32).collect::<Vec<i64>>(),
+        "forward control"
+    );
+
+    // Whole clip: output frame n shows source frame 31 - n, and the out point
+    // (last output tick) shows source frame 0 once.
+    let whole = numbered_project(&path, |item| item.retime.reverse = true);
+    assert_eq!(
+        shown_indices(&whole, &ticks(0..32)),
+        (0..32).rev().collect::<Vec<i64>>(),
+        "reversed clip"
+    );
+    let out = numbered_tick(32).checked_sub(Tick(1)).unwrap();
+    assert_eq!(shown_indices(&whole, &[out]), vec![0], "out point");
+
+    // Split at frame 13: the left piece shows 31..=19 and the right piece 18..=0.
+    // The pieces meet at the cut, so no source frame is shown twice or skipped.
+    let at = numbered_tick(13);
+    let left = numbered_project(&path, |item| {
+        item.retime.reverse = true;
+        let (cut, _) = item.split_at(at).unwrap();
+        item.source_range = cut.source_range;
+        item.start = cut.start;
+        item.retime = cut.retime;
+    });
+    let right = numbered_project(&path, |item| {
+        item.retime.reverse = true;
+        let (_, cut) = item.split_at(at).unwrap();
+        item.source_range = cut.source_range;
+        item.start = cut.start;
+        item.retime = cut.retime;
+    });
+    assert_eq!(
+        shown_indices(&left, &ticks(0..13)),
+        (0..13).map(|n| 31 - n).collect::<Vec<i64>>(),
+        "left piece"
+    );
+    assert_eq!(
+        shown_indices(&left, &[numbered_tick(13).checked_sub(Tick(1)).unwrap()]),
+        vec![19],
+        "left piece's last tick"
+    );
+    assert_eq!(
+        shown_indices(&right, &ticks(13..32)),
+        (0..19).map(|n| 18 - n).collect::<Vec<i64>>(),
+        "right piece"
+    );
+    assert_eq!(
+        shown_indices(&right, &[out]),
+        vec![0],
+        "right piece out point"
+    );
+}
+
 #[test]
 fn exact_non_keyframe_cut_preserves_pcm_sync_and_frame_bounds() {
     if !tools() {
