@@ -3,13 +3,8 @@
 //! `cargo xtask ui-audit` renders named scenes through the real
 //! [`vibecut::Editor`] and [`vibecut::app::Workspace`] widget paths at 1x
 //! and 2x, plus an `index.html` that places each render beside its matching
-//! `.spikes/ui-reference/` image when one exists.
+//! reference image from the local reference set when one exists.
 //! This is an audit tool, not a test: it never runs in `cargo xtask ci`.
-#[path = "../tests/it/support/shorts.rs"]
-mod shorts_fixture;
-#[path = "../tests/it/support/subtitles.rs"]
-mod subtitles_fixture;
-
 mod audit;
 
 use audit::Failure;

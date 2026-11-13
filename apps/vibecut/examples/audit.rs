@@ -1,8 +1,8 @@
 //! Private implementation of the offscreen UI audit example.
 //!
-//! The composition root in `ui_audit.rs` keeps the CLI entry, the two existing
-//! test-fixture module paths and the example tests. This module owns the
-//! dispatch into scene builders, README capture/publication and the gallery.
+//! The composition root in `ui_audit.rs` keeps the CLI entry and the example
+//! tests. This module owns the dispatch into scene builders, README
+//! capture/publication and the gallery.
 #![allow(
     clippy::indexing_slicing,
     reason = "an offline audit capture indexes its own manifest and fixed-size frame buffers; a panic aborts the tool, never a person's project"

@@ -6,7 +6,7 @@ use super::super::fixture::{
     empty_session, insert, media_editor, source_asset, source_stream, wait_for_frame,
     wait_for_presented,
 };
-use crate::subtitles_fixture;
+use super::super::fixture::subtitles as subtitles_fixture;
 use egui_kittest::kittest::{By, Queryable};
 use engine::ByteBudget;
 use engine::Command;

@@ -3733,7 +3733,7 @@ fn expanded_lane_shows_diamonds_and_drag_retimes_one_undo_step() {
     other.id = ProjectId(13);
     other.name = "Other".into();
     let mut other_harness =
-        crate::timeline_ui::harness(editor_for(Project::new(other).unwrap(), loaded));
+        crate::timeline::harness(editor_for(Project::new(other).unwrap(), loaded));
     other_harness.run_steps(3);
     assert!(
         other_harness

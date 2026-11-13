@@ -1,4 +1,6 @@
 //! Provides shared deterministic media fixtures, session builders, sources, probes.
+pub(super) mod shorts;
+pub(super) mod subtitles;
 use super::Failure;
 use super::application::{App, AppHarness, SECOND, Theme, harness, preferences};
 use engine::ByteBudget;
