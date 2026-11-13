@@ -382,7 +382,6 @@ fn caption_editor() -> vibecut::Editor {
                                 },
                             )]
                             .into(),
-                            word_ranges: Vec::new(),
                             style: None,
                         }],
                     },

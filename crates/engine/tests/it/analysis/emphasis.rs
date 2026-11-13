@@ -62,7 +62,6 @@ fn cue(id: &str, start: i64, end: i64, text: &str, verified: bool) -> captions::
         )]
         .into_iter()
         .collect(),
-        word_ranges: Vec::new(),
         style: None,
     }
 }

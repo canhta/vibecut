@@ -2037,7 +2037,7 @@ fn many_cues(count: i64) -> engine::Session {
             cue.id = format!("cue-{n}").into();
             cue.range =
                 time::SourceRange::new(time::Tick(n * 1000), time::Tick((n + 1) * 1000)).unwrap();
-            cue.word_ranges.clear();
+            cue.word_timing = captions::CueWordTiming::Unverified;
             if n == 0 {
                 cue.texts.insert(
                     lang("vi"),

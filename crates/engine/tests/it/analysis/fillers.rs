@@ -14,11 +14,16 @@ use std::sync::{
 use time::{SourceRange, Tick};
 
 fn cue(id: &str, start: i64, end: i64, text: &str, words: &[(i64, i64)]) -> captions::Cue {
+    let language = captions::LanguageTag::parse("en").unwrap();
+    let ranges: Vec<_> = words
+        .iter()
+        .map(|(start, end)| SourceRange::new(Tick(*start), Tick(*end)).unwrap())
+        .collect();
     captions::Cue {
-        word_timing: captions::CueWordTiming::Unverified,
+        word_timing: crate::support::session::measured(&language, text, &ranges),
         id: id.into(),
         range: SourceRange::new(Tick(start), Tick(end)).unwrap(),
-        source_lang: captions::LanguageTag::parse("en").unwrap(),
+        source_lang: language,
         texts: [(
             captions::LanguageTag::parse("en").unwrap(),
             captions::CueText {
@@ -29,10 +34,6 @@ fn cue(id: &str, start: i64, end: i64, text: &str, words: &[(i64, i64)]) -> capt
         )]
         .into_iter()
         .collect(),
-        word_ranges: words
-            .iter()
-            .map(|(start, end)| SourceRange::new(Tick(*start), Tick(*end)).unwrap())
-            .collect(),
         style: None,
     }
 }

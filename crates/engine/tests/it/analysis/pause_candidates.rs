@@ -134,7 +134,7 @@ fn caption_item(audio: &SourceAsset, word: SourceRange) -> Item {
             cues: captions::CueTrack {
                 styles: Vec::new(),
                 cues: vec![captions::Cue {
-                    word_timing: captions::CueWordTiming::Unverified,
+                    word_timing: crate::support::session::measured(&language, "Hello", &[word]),
                     id: "cue-1".into(),
                     range: range(0, 12),
                     source_lang: language.clone(),
@@ -148,7 +148,6 @@ fn caption_item(audio: &SourceAsset, word: SourceRange) -> Item {
                     )]
                     .into_iter()
                     .collect(),
-                    word_ranges: vec![word],
                     style: None,
                 }],
             },

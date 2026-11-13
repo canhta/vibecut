@@ -214,6 +214,41 @@ pub(crate) fn five_clip_pairs() -> Session {
 }
 // --- Transcript word cuts -------------------------------------------------
 
+/// Word-by-word measured proof of `text`: one native record per range, with bytes
+/// on the space-separated words (surplus ranges cover the whole text). No ranges
+/// leaves the cue unverified.
+pub(crate) fn measured(
+    language: &captions::LanguageTag,
+    text: &str,
+    words: &[SourceRange],
+) -> captions::CueWordTiming {
+    if words.is_empty() {
+        return captions::CueWordTiming::Unverified;
+    }
+    let mut at = 0;
+    let mut spans = Vec::new();
+    for word in text.split(' ') {
+        if !word.is_empty() {
+            spans.push(at..at + word.len());
+        }
+        at += word.len() + 1;
+    }
+    captions::CueWordTiming::Words {
+        language: language.clone(),
+        text: text.into(),
+        records: words
+            .iter()
+            .enumerate()
+            .map(|(index, range)| captions::VerifiedCueWord {
+                bytes: spans.get(index).cloned().unwrap_or(0..text.len()),
+                source_range: *range,
+                projection: captions::WordProjection::Visible(*range),
+                provenance: captions::TimingProvenance::Native,
+            })
+            .collect(),
+    }
+}
+
 pub(crate) fn word_cue(
     id: &str,
     start: i64,
@@ -226,8 +261,9 @@ pub(crate) fn word_cue(
         .get(..words.len())
         .unwrap_or_default()
         .join(" ");
+    let ranges: Vec<_> = words.iter().map(|&(a, b)| range(a, b)).collect();
     captions::Cue {
-        word_timing: captions::CueWordTiming::Unverified,
+        word_timing: measured(&language, &text, &ranges),
         id: id.into(),
         range: range(start, end),
         source_lang: language.clone(),
@@ -239,7 +275,6 @@ pub(crate) fn word_cue(
                 translation_ref: None,
             },
         )]),
-        word_ranges: words.iter().map(|&(a, b)| range(a, b)).collect(),
         style: None,
     }
 }

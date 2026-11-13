@@ -121,7 +121,6 @@ pub fn source_at(offset: i64) -> ReviewSource {
                         translation_ref: None,
                     },
                 )]),
-                word_ranges: Vec::new(),
                 style: None,
             })
             .collect(),

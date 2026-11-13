@@ -62,7 +62,6 @@ fn scene(texts: &[(&str, &str)]) -> project::Project {
                                 )
                             })
                             .collect(),
-                        word_ranges: Vec::new(),
                         style: None,
                     }],
                 },

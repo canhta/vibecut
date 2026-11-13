@@ -39,7 +39,6 @@ pub fn cues(source: &str) -> CueTrack {
                         translation_ref: None,
                     },
                 )]),
-                word_ranges: Vec::new(),
                 style: None,
             })
             .collect(),

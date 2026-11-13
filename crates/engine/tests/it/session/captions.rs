@@ -491,7 +491,7 @@ fn caption_bank_reads_hidden_trim_sources_and_applies_copies_before_split() {
     assert_eq!(saved_cues(&s).styles, old.cues.styles);
     for (new, old) in saved_cues(&s).cues.iter().zip(&old.cues.cues) {
         assert_eq!(new.texts, old.texts);
-        assert_eq!(new.word_ranges, old.word_ranges);
+        assert_eq!(new.word_timing, old.word_timing);
         assert_eq!(new.range, old.range);
         assert_eq!(new.id, old.id);
     }
@@ -643,12 +643,10 @@ fn style_source_project() -> Project {
     other.primary_color = [20, 60, 240, 255];
     p.cues.styles = vec![ass_style(), other];
     p.cues.cues[0].range = range(110, 150);
-    p.cues.cues[0].word_ranges = vec![range(110, 130), range(130, 150)];
     p.cues.cues[0].style = Some(captions::CueStyleId(0));
     let mut second = p.cues.cues[0].clone();
     second.id = "source/1".into();
     second.range = range(150, 190);
-    second.word_ranges = vec![range(150, 170), range(170, 190)];
     second.style = Some(captions::CueStyleId(1));
     p.cues.cues.push(second);
     let mut other = item.clone();
@@ -1011,7 +1009,6 @@ fn caption_project() -> Project {
                 translation_ref: Some("ref".into()),
             },
         )]),
-        word_ranges: Vec::new(),
         style: None,
     };
     data.scene_mut().timeline.insert_track(Track {

@@ -1,6 +1,6 @@
 # Segmentation
 
-Generated cues keep measured source word ranges in `Cue::word_ranges` when every contributing unit has native word or span timing. Estimated or proportional units leave the list empty, so callers can tell measured timing from a layout estimate.
+Generated cues carry a `CueWordTiming::Words` proof when every contributing unit is a native or forced word. Estimated, proportional or span-only units leave the cue `Unverified`, so callers can tell measured timing from a layout estimate; `Cue::word_ranges` derives the measured ranges from the proof.
 
 `segment/units` derives indivisible speech units from words, spans or plain text. `segment/layout` fits them into the configured lines. `segment/assembly` turns them into positioned cues. `segment/validate` rejects transcripts outside the contract.
 

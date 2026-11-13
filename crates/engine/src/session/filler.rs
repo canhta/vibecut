@@ -89,8 +89,8 @@ fn item_candidates(
             else {
                 continue;
             };
-            let selected: Vec<&WordSpan> = cue
-                .word_ranges
+            let cue_ranges = cue.word_ranges();
+            let selected: Vec<&WordSpan> = cue_ranges
                 .iter()
                 .enumerate()
                 .filter(|(_, word)| {
@@ -111,7 +111,7 @@ fn item_candidates(
                     crate::session::wire::ControlError::Limit,
                 ));
             }
-            let Some(range) = cue.word_ranges.get(first.index) else {
+            let Some(range) = cue_ranges.get(first.index) else {
                 continue;
             };
             occurrences.push(FillerOccurrence {
@@ -155,7 +155,7 @@ pub(crate) fn visible_words(data: &ProjectData) -> Result<BTreeMap<NfcText, (Wor
                 continue;
             };
             let words = cue.words();
-            if words.is_empty() || words.len() != cue.word_ranges.len() {
+            if words.is_empty() {
                 continue;
             }
             for (index, word) in words.iter().enumerate() {

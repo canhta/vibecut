@@ -257,10 +257,6 @@ pub struct Cue {
     pub range: SourceRange,
     pub source_lang: LanguageTag,
     pub texts: BTreeMap<LanguageTag, CueText>,
-    /// Native ASR word timing inside this cue, in source order. Empty for
-    /// imported or estimated cues; never invented from proportional text.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub word_ranges: Vec<SourceRange>,
     /// Shared saved style, imported or explicitly applied; absent uses presentation defaults.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub style: Option<CueStyleId>,
@@ -288,20 +284,38 @@ impl Cue {
             .map(|(_, text)| text)
     }
 
+    /// Native source timing of each measured word, in source order: the retained
+    /// `source_range` of every [`CueWordTiming::Words`] record. Empty unless the
+    /// proof covers the cue's current source text, so edited, translated or
+    /// imported cues never carry invented word timing.
+    pub fn word_ranges(&self) -> Vec<SourceRange> {
+        let CueWordTiming::Words { text, records, .. } = &self.word_timing else {
+            return Vec::new();
+        };
+        if self
+            .source_text()
+            .is_none_or(|source| source.text.as_str() != text.as_str())
+        {
+            return Vec::new();
+        }
+        records.iter().map(|word| word.source_range).collect()
+    }
+
     /// Measured words of the cue: source text tokens paired index-for-index with
-    /// `word_ranges`. Empty when the cue has no source text or the token count
-    /// disagrees, so estimated text never becomes a fake word alignment.
+    /// [`Cue::word_ranges`]. Empty when the cue has no source text or the token
+    /// count disagrees, so estimated text never becomes a fake word alignment.
     pub fn words(&self) -> Vec<CueWord> {
         let Some(text) = self.source_text() else {
             return Vec::new();
         };
+        let ranges = self.word_ranges();
         let tokens: Vec<&str> = word_tokens(text.text.as_str()).collect();
-        if tokens.len() != self.word_ranges.len() {
+        if tokens.len() != ranges.len() {
             return Vec::new();
         }
         tokens
             .into_iter()
-            .zip(self.word_ranges.iter().copied())
+            .zip(ranges)
             .map(|(token, range)| CueWord {
                 text: token.into(),
                 range,

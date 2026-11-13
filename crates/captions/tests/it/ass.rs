@@ -417,7 +417,6 @@ fn cue_track_shares_one_bounded_style_table() {
         range: SourceRange::new(Tick::ZERO, Tick(1)).unwrap(),
         source_lang: LanguageTag::parse("en").unwrap(),
         texts: std::collections::BTreeMap::new(),
-        word_ranges: Vec::new(),
         style: Some(id),
     });
     assert_eq!(track.style_of(&track.cues[0]), Some(&style));

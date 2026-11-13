@@ -961,7 +961,7 @@ impl Item {
         };
         let mut spans = Vec::new();
         for cue in &params.cues.cues {
-            for (index, word) in cue.word_ranges.iter().enumerate() {
+            for (index, word) in cue.word_ranges().iter().enumerate() {
                 let start = word
                     .start()
                     .max(self.source_range.start())

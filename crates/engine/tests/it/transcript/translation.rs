@@ -70,7 +70,6 @@ fn session() -> Session {
                 ),
             ]
             .into(),
-            word_ranges: Vec::new(),
             style: None,
         })
         .collect();

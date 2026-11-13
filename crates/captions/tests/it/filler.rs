@@ -27,13 +27,42 @@ fn words(count: usize) -> Vec<SourceRange> {
         })
         .collect()
 }
+/// One native record per range; bytes follow the space-separated words, surplus
+/// ranges cover the whole text. No ranges leaves the cue unverified.
+fn measured(tag: &str, text: &str, words: &[SourceRange]) -> captions::CueWordTiming {
+    if words.is_empty() {
+        return captions::CueWordTiming::Unverified;
+    }
+    let mut at = 0;
+    let mut spans = Vec::new();
+    for word in text.split(' ') {
+        if !word.is_empty() {
+            spans.push(at..at + word.len());
+        }
+        at += word.len() + 1;
+    }
+    captions::CueWordTiming::Words {
+        language: lang(tag),
+        text: text.into(),
+        records: words
+            .iter()
+            .enumerate()
+            .map(|(index, range)| captions::VerifiedCueWord {
+                bytes: spans.get(index).cloned().unwrap_or(0..text.len()),
+                source_range: *range,
+                projection: captions::WordProjection::Visible(*range),
+                provenance: captions::TimingProvenance::Native,
+            })
+            .collect(),
+    }
+}
 fn cue(id: &str, tag: &str, text: &str, words: Vec<SourceRange>, edited: bool) -> Cue {
     let start = words.first().map_or(Tick::ZERO, |range| range.start());
     let end = words
         .last()
         .map_or(Tick(TICKS_PER_SECOND), |range| range.end());
     Cue {
-        word_timing: captions::CueWordTiming::Unverified,
+        word_timing: measured(tag, text, &words),
         id: id.into(),
         range: SourceRange::new(start, end).unwrap(),
         source_lang: lang(tag),
@@ -45,7 +74,6 @@ fn cue(id: &str, tag: &str, text: &str, words: Vec<SourceRange>, edited: bool) -
                 translation_ref: None,
             },
         )]),
-        word_ranges: words,
         style: None,
     }
 }
@@ -463,7 +491,7 @@ fn interview_excerpt_matches_the_manual_filler_read() {
     let track = CueTrack {
         styles: Vec::new(),
         cues: vec![Cue {
-            word_timing: captions::CueWordTiming::Unverified,
+            word_timing: measured("vi", &asr.text, &words),
             id: "interview-09".into(),
             range: SourceRange::new(words.first().unwrap().start(), words.last().unwrap().end())
                 .unwrap(),
@@ -476,7 +504,6 @@ fn interview_excerpt_matches_the_manual_filler_read() {
                     translation_ref: None,
                 },
             )]),
-            word_ranges: words,
             style: None,
         }],
     };

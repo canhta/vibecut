@@ -460,7 +460,6 @@ pub(super) fn import_captions(
                     translation_ref: None,
                 },
             )]),
-            word_ranges: Vec::new(),
             style: Some(cue.style),
         });
     }
@@ -812,14 +811,12 @@ fn merge_adjacent(cues: &mut captions::CueTrack, cue_ids: &[crate::CueId]) -> Re
     if selected.iter().any(|cue| cue.source_lang != source_lang) {
         return Err(EditError::Invalid("merge cue source language"));
     }
-    let mut word_ranges = Vec::new();
-    if selected.iter().any(|cue| !cue.word_ranges.is_empty()) {
-        for cue in &selected {
-            if cue.word_ranges.is_empty() || cue.word_ranges.len() != cue.words().len() {
-                return Err(EditError::Invalid("merge cue word timings"));
-            }
-            word_ranges.extend_from_slice(&cue.word_ranges);
-        }
+    let timed = selected
+        .iter()
+        .filter(|cue| !cue.word_ranges().is_empty())
+        .count();
+    if timed != 0 && timed != selected.len() {
+        return Err(EditError::Invalid("merge cue word timings"));
     }
     let mut texts = std::collections::BTreeMap::new();
     let languages: std::collections::BTreeSet<_> = selected
@@ -872,7 +869,6 @@ fn merge_adjacent(cues: &mut captions::CueTrack, cue_ids: &[crate::CueId]) -> Re
         range,
         source_lang,
         texts,
-        word_ranges,
         style: first.style,
     };
     drop(selected);

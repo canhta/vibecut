@@ -264,7 +264,7 @@ fn filler_candidates_read_stable_output_occurrences_and_gate_markers() {
     {
         if let ItemParams::Caption(params) = &mut item.content {
             for cue in &mut params.cues.cues {
-                cue.word_ranges.clear();
+                cue.word_timing = captions::CueWordTiming::Unverified;
             }
         }
     }
@@ -388,7 +388,9 @@ fn interview_filler_candidates_match_the_manual_read() {
                 cues: captions::CueTrack {
                     styles: Vec::new(),
                     cues: vec![captions::Cue {
-                        word_timing: captions::CueWordTiming::Unverified,
+                        word_timing: crate::support::session::measured(
+                            &language, &asr.text, &words,
+                        ),
                         id: "interview-09".into(),
                         range,
                         source_lang: language.clone(),
@@ -400,7 +402,6 @@ fn interview_filler_candidates_match_the_manual_read() {
                                 translation_ref: None,
                             },
                         )]),
-                        word_ranges: words,
                         style: None,
                     }],
                 },

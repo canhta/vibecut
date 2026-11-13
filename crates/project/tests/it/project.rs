@@ -473,7 +473,6 @@ fn populated(path: PathBuf) -> Project {
                 translation_ref: Some("translation-1".into()),
             },
         )]),
-        word_ranges: Vec::new(),
         style: None,
     };
     let contents = [

@@ -532,7 +532,6 @@ fn emphasis_selects_a_verified_subset_and_stale_ids_resolve_to_nothing() {
                 },
             )]
             .into(),
-            word_ranges: Vec::new(),
             style: None,
         }
     };

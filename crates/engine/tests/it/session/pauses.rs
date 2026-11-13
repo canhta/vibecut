@@ -131,12 +131,22 @@ fn remove_pauses_refuses_invalid_reviewed_spans_atomically() {
                 cues: captions::CueTrack {
                     styles: Vec::new(),
                     cues: vec![captions::Cue {
-                        word_timing: captions::CueWordTiming::Unverified,
+                        word_timing: crate::support::session::measured(
+                            &captions::LanguageTag::parse("en").unwrap(),
+                            "Hello",
+                            &[range(10, 20)],
+                        ),
                         id: "cue-1".into(),
                         range: range(0, 1000),
                         source_lang: captions::LanguageTag::parse("en").unwrap(),
-                        texts: std::collections::BTreeMap::new(),
-                        word_ranges: vec![range(10, 20)],
+                        texts: std::collections::BTreeMap::from([(
+                            captions::LanguageTag::parse("en").unwrap(),
+                            captions::CueText {
+                                text: "Hello".into(),
+                                edited: false,
+                                translation_ref: None,
+                            },
+                        )]),
                         style: None,
                     }],
                 },

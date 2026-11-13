@@ -537,7 +537,6 @@ fn caption_project() -> project::Project {
         range,
         source_lang: LanguageTag::parse("vi").unwrap(),
         texts,
-        word_ranges: Vec::new(),
         style: None,
     };
     // Two retained occurrences with an output gap; source is never opened for interchange.

@@ -149,7 +149,7 @@ impl FillerLexicon {
 /// Detect whole-word filler candidates in source order. Each cue whose source
 /// language shares the lexicon's primary subtag contributes its source text
 /// (`Cue::source_text`), tokenized with UAX #29 and paired index-for-index with
-/// `Cue::word_ranges`; a cue whose counts disagree has no measured word timing
+/// `Cue::word_ranges()`; a cue whose counts disagree has no measured word timing
 /// and contributes nothing. Only `FilledPause` entries match unless
 /// `include_markers` is set, when `DiscourseMarker` entries also match. The
 /// longest eligible phrase wins. Contiguous filled pauses merge into one
@@ -175,7 +175,8 @@ pub fn detect_fillers(
             .checked_add(tokens.len())
             .filter(|count| *count <= MAX_TRACK_TOKENS)
             .ok_or(Error::Invalid("filler word limit"))?;
-        if tokens.is_empty() || tokens.len() != cue.word_ranges.len() {
+        let ranges = cue.word_ranges();
+        if tokens.is_empty() || tokens.len() != ranges.len() {
             continue;
         }
         let mut run: Option<(usize, usize, FillerKind)> = None;
@@ -191,17 +192,17 @@ pub fn detect_fillers(
                         Some((start, end, kind))
                     }
                     _ => {
-                        flush(&mut output, cue, text, run.take())?;
+                        flush(&mut output, cue, &ranges, text, run.take())?;
                         Some((index, end, kind))
                     }
                 };
                 index = end;
             } else {
-                flush(&mut output, cue, text, run.take())?;
+                flush(&mut output, cue, &ranges, text, run.take())?;
                 index += 1;
             }
         }
-        flush(&mut output, cue, text, run)?;
+        flush(&mut output, cue, &ranges, text, run)?;
     }
     Ok(output)
 }
@@ -228,18 +229,17 @@ fn match_phrase(
 fn flush(
     output: &mut Vec<FillerCandidate>,
     cue: &Cue,
+    ranges: &[SourceRange],
     text: &CueText,
     run: Option<(usize, usize, FillerKind)>,
 ) -> Result<(), Error> {
     let Some((start, end, kind)) = run else {
         return Ok(());
     };
-    let first = cue
-        .word_ranges
+    let first = ranges
         .get(start)
         .ok_or(Error::Invalid("filler word span"))?;
-    let last = cue
-        .word_ranges
+    let last = ranges
         .get(
             end.checked_sub(1)
                 .ok_or(Error::Invalid("filler word span"))?,

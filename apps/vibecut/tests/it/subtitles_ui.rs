@@ -2298,7 +2298,19 @@ fn cue_caret_split_line_break_and_neighbour_merge_follow_word_boundaries() {
         time::SourceRange::new(Tick(TICKS_PER_SECOND * 2), Tick(TICKS_PER_SECOND * 5 / 2)).unwrap();
     let cue = &mut cues.cues[0];
     cue.texts.get_mut(&lang("vi")).unwrap().text = "one two".into();
-    cue.word_ranges = vec![first, second];
+    cue.word_timing = captions::CueWordTiming::Words {
+        language: lang("vi"),
+        text: "one two".into(),
+        records: [(0..3, first), (4..7, second)]
+            .into_iter()
+            .map(|(bytes, range)| captions::VerifiedCueWord {
+                bytes,
+                source_range: range,
+                projection: captions::WordProjection::Visible(range),
+                provenance: captions::TimingProvenance::Native,
+            })
+            .collect(),
+    };
     let item = panel(h.state()).item.unwrap();
     h.state_mut()
         .session
@@ -2320,8 +2332,8 @@ fn cue_caret_split_line_break_and_neighbour_merge_follow_word_boundaries() {
     });
     assert_eq!(at, first.end());
     let after = track(h.state());
-    assert_eq!(after.cues[0].word_ranges, vec![first]);
-    assert_eq!(after.cues[1].word_ranges, vec![second]);
+    assert_eq!(after.cues[0].range.end(), first.end());
+    assert_eq!(after.cues[1].range.start(), first.end());
     // Enter in the real field splits at the caret; Shift+Enter only breaks lines.
     let mut h = harness(editor("vi"), 1.0);
     h.run_steps(3);

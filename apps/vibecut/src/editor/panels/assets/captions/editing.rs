@@ -599,7 +599,7 @@ impl Subtitles {
         }
         // Native word timings win when the cue carries them; otherwise the
         // playhead stays the user-chosen cut.
-        let at = snap_word_time(start, end, at, &left.word_ranges);
+        let at = snap_word_time(start, end, at, &left.word_ranges());
         let mut right = left.clone();
         let keys: Vec<_> = left.texts.keys().cloned().collect();
         for language in keys {
@@ -627,9 +627,6 @@ impl Subtitles {
             target.text = b.into();
             target.edited = true;
         }
-        let (left_words, right_words) = split_word_ranges(&left.word_ranges, at);
-        left.word_ranges = left_words;
-        right.word_ranges = right_words;
         left.range = SourceRange::new(start, at)?;
         right.range = SourceRange::new(at, end)?;
         self.finish_split(session, cues, index, right)
@@ -663,6 +660,8 @@ impl Subtitles {
             .cues
             .get_mut(index)
             .ok_or(Error::Invalid("cue index"))?;
+        // Measured before the draft replaces the stored text the proof covers.
+        let words = source.word_ranges();
         let reference = source
             .texts
             .get(&language)
@@ -679,7 +678,7 @@ impl Subtitles {
         let start = source.range.start();
         let end = source.range.end();
         let exact_at = (language == source.source_lang)
-            .then(|| exact_word_time(text, caret, &source.word_ranges, start, end))
+            .then(|| exact_word_time(text, caret, &words, start, end))
             .flatten();
         let mut right = source.clone();
         let keys: Vec<_> = source.texts.keys().cloned().collect();
@@ -722,19 +721,11 @@ impl Subtitles {
         let at = start
             .checked_add(Tick(delta))
             .ok_or(Error::Invalid("cue time overflow"))?;
-        let words = cues
-            .cues
-            .get(index)
-            .map(|c| c.word_ranges.clone())
-            .unwrap_or_default();
         let at = exact_at.unwrap_or_else(|| snap_word_time(start, end, at, &words));
         let source = cues
             .cues
             .get_mut(index)
             .ok_or(Error::Invalid("cue index"))?;
-        let (left_words, right_words) = split_word_ranges(&source.word_ranges, at);
-        source.word_ranges = left_words;
-        right.word_ranges = right_words;
         source.range = SourceRange::new(start, at)?;
         right.range = SourceRange::new(at, end)?;
         self.finish_split(session, cues, index, right)?;
@@ -836,10 +827,6 @@ impl Subtitles {
         let mut merged = selected.first().ok_or(Error::Invalid("cue range"))?.clone();
         merged.word_timing =
             captions::CueWordTiming::joined(&selected.iter().collect::<Vec<_>>(), "\n")?;
-        merged.word_ranges = selected
-            .iter()
-            .flat_map(|c| c.word_ranges.iter().copied())
-            .collect();
         if selected
             .iter()
             .any(|c| c.source_lang != merged.source_lang || c.texts.keys().ne(merged.texts.keys()))
@@ -959,12 +946,6 @@ fn snap_word_time(start: Tick, end: Tick, at: Tick, words: &[SourceRange]) -> Ti
         .filter(|tick| *tick > start && *tick < end)
         .min_by_key(|tick| tick.0.abs_diff(at.0))
         .unwrap_or(at)
-}
-
-/// Words ending at or before the cut stay left; later words move right.
-fn split_word_ranges(words: &[SourceRange], at: Tick) -> (Vec<SourceRange>, Vec<SourceRange>) {
-    let (left, right) = words.split_at(words.partition_point(|word| word.end() <= at));
-    (left.to_vec(), right.to_vec())
 }
 
 /// Split raw text at a grapheme boundary, dropping only surrounding whitespace.

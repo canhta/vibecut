@@ -265,7 +265,6 @@ pub(crate) fn seed() -> Session {
                             )]
                             .into_iter()
                             .collect(),
-                            word_ranges: Vec::new(),
                             style: None,
                         }],
                     },
@@ -642,11 +641,16 @@ pub(crate) fn with_words(seed: &Session) -> Session {
             let end = cue.range.end();
             cue.range = SourceRange::new(Tick::ZERO, Tick(500)).unwrap();
             cue.texts.values_mut().next().unwrap().text = "Um brave".into();
-            cue.word_ranges = (0..2)
+            let ranges: Vec<_> = (0..2)
                 .map(|index| SourceRange::new(Tick(index * 100), Tick(index * 100 + 100)).unwrap())
                 .collect();
+            cue.word_timing = crate::support::session::measured(&language, "Um brave", &ranges);
             params.cues.cues.push(captions::Cue {
-                word_timing: captions::CueWordTiming::Unverified,
+                word_timing: crate::support::session::measured(
+                    &language,
+                    "like",
+                    &[SourceRange::new(Tick(500), Tick(600)).unwrap()],
+                ),
                 id: "cue-2".into(),
                 range: SourceRange::new(Tick(500), end).unwrap(),
                 source_lang: language.clone(),
@@ -660,7 +664,6 @@ pub(crate) fn with_words(seed: &Session) -> Session {
                 )]
                 .into_iter()
                 .collect(),
-                word_ranges: vec![SourceRange::new(Tick(500), Tick(600)).unwrap()],
                 style: None,
             });
         }

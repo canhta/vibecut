@@ -231,7 +231,6 @@ pub(super) fn readme_project(source: &Path) -> Result<(Editor, ItemId, ItemId), 
         ]
         .into_iter()
         .collect(),
-        word_ranges: Vec::new(),
         style: None,
     };
     let captions = track(&mut editor.session, "Captions", TrackKind::Text)?;

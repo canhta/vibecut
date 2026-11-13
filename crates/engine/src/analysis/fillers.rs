@@ -84,7 +84,7 @@ impl FillerRequest {
                     continue;
                 }
                 let cue_words = cue.words();
-                if cue_words.len() != cue.word_ranges.len() {
+                if cue_words.is_empty() {
                     continue;
                 }
                 let mut input_words = Vec::new();

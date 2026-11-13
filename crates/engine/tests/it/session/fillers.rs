@@ -20,8 +20,9 @@ fn english_cue(
     edited: bool,
 ) -> captions::Cue {
     let language = captions::LanguageTag::parse("en").unwrap();
+    let ranges: Vec<_> = words.iter().map(|&(a, b)| range(a, b)).collect();
     captions::Cue {
-        word_timing: captions::CueWordTiming::Unverified,
+        word_timing: crate::support::session::measured(&language, text, &ranges),
         id: id.into(),
         range: range(start, end),
         source_lang: language.clone(),
@@ -33,7 +34,6 @@ fn english_cue(
                 translation_ref: None,
             },
         )]),
-        word_ranges: words.iter().map(|&(a, b)| range(a, b)).collect(),
         style: None,
     }
 }

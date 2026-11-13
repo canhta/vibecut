@@ -41,13 +41,17 @@ fn word_project(path: &Path, edited: bool) -> i64 {
                         "edited": edited,
                         "translation_ref": null
                     }},
-                    "word_timing": {"kind": "unverified"},
-                    "word_ranges": [
-                        {"start": 50, "end": 150},
-                        {"start": 150, "end": 250},
-                        {"start": 550, "end": 650},
-                        {"start": 800, "end": 900}
-                    ]
+                    "word_timing": {
+                        "kind": "words",
+                        "language": "vi",
+                        "text": "Một hai ba bốn",
+                        "records": [
+                            {"bytes": {"start": 0, "end": 5}, "source_range": {"start": 50, "end": 150}, "projection": {"kind": "visible", "range": {"start": 50, "end": 150}}, "provenance": "native"},
+                            {"bytes": {"start": 6, "end": 9}, "source_range": {"start": 150, "end": 250}, "projection": {"kind": "visible", "range": {"start": 150, "end": 250}}, "provenance": "native"},
+                            {"bytes": {"start": 10, "end": 12}, "source_range": {"start": 550, "end": 650}, "projection": {"kind": "visible", "range": {"start": 550, "end": 650}}, "provenance": "native"},
+                            {"bytes": {"start": 13, "end": 18}, "source_range": {"start": 800, "end": 900}, "projection": {"kind": "visible", "range": {"start": 800, "end": 900}}, "provenance": "native"}
+                        ]
+                    }
                 }]}}}
             }
         }),

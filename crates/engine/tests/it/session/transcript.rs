@@ -37,13 +37,13 @@ fn cue(id: &str, start: i64, end: i64, text: &str, words: &[(i64, i64)]) -> Cue 
             translation_ref: Some("translation/1".into()),
         },
     );
+    let ranges: Vec<_> = words.iter().map(|&(a, b)| range(a, b)).collect();
     Cue {
-        word_timing: captions::CueWordTiming::Unverified,
+        word_timing: crate::support::session::measured(&source, text, &ranges),
         id: id.into(),
         range: range(start, end),
         source_lang: source,
         texts,
-        word_ranges: words.iter().map(|&(a, b)| range(a, b)).collect(),
         style: None,
     }
 }
@@ -234,8 +234,9 @@ fn merge_cue(
     edited: bool,
 ) -> captions::Cue {
     let language = captions::LanguageTag::parse("vi").unwrap();
+    let ranges: Vec<_> = words.iter().map(|&(a, b)| range(a, b)).collect();
     captions::Cue {
-        word_timing: captions::CueWordTiming::Unverified,
+        word_timing: crate::support::session::measured(&language, text, &ranges),
         id: id.into(),
         range: range(start, end),
         source_lang: language.clone(),
@@ -247,7 +248,6 @@ fn merge_cue(
                 translation_ref: None,
             },
         )]),
-        word_ranges: words.iter().map(|&(a, b)| range(a, b)).collect(),
         style: None,
     }
 }
@@ -978,7 +978,7 @@ fn transcript_merge_refuses_non_adjacent_cross_track_cross_item_and_protected_at
     for track in data.scene_mut().timeline.iter_mut() {
         for item in &mut track.items {
             if let ItemParams::Caption(params) = &mut item.content {
-                params.cues.cues[2].word_ranges.clear();
+                params.cues.cues[2].word_timing = captions::CueWordTiming::Unverified;
             }
         }
     }

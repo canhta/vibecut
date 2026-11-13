@@ -215,10 +215,10 @@ fn timed_words_choose_sentence_then_clause_and_pause() {
         Tick(TICKS_PER_SECOND)
     );
     for cue in &output.cues {
-        assert!(!cue.cue.word_ranges.is_empty());
+        assert!(!cue.cue.word_ranges().is_empty());
         assert!(
             cue.cue
-                .word_ranges
+                .word_ranges()
                 .iter()
                 .all(|word| word.start() >= cue.cue.range.start()
                     && word.end() <= cue.cue.range.end())
@@ -234,7 +234,6 @@ fn translations_are_proportional_estimates_and_keep_flags() {
         range: range(100, 160),
         source_lang: lang("en"),
         texts: BTreeMap::new(),
-        word_ranges: Vec::new(),
         style: None,
     };
     let translated = CueText {

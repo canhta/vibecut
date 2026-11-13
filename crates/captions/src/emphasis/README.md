@@ -4,7 +4,7 @@
 
 ## Input contract
 
-A cue is eligible only when its `word_timing` is `Words`, has records, and its `text` equals the cue's current source text (`Cue::source_text`). Anything else refuses with `Error::NoWordTiming`; nothing is estimated from text or from `word_ranges`. Translations are never read.
+A cue is eligible only when its `word_timing` is `Words`, has records, and its `text` equals the cue's current source text (`Cue::source_text`). Anything else refuses with `Error::NoWordTiming`; nothing is estimated from text. Translations are never read.
 
 ## Selection
 

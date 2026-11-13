@@ -19,7 +19,7 @@ pub struct CueId {
 }
 
 /// Stable address of one measured word: its item, retained cue and index in the
-/// cue's `word_ranges`. Text is never part of an address.
+/// cue's `word_ranges()`. Text is never part of an address.
 #[derive(
     Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, schemars::JsonSchema,
 )]

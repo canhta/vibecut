@@ -264,7 +264,6 @@ mod tests {
                             },
                         ),
                     ]),
-                    word_ranges: Vec::new(),
                     style: None,
                 })
                 .collect(),
