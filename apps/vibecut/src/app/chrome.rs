@@ -81,6 +81,10 @@ impl EditorWindow {
                     EditorAction::ExportCaption(output) => {
                         self.pick(ui.ctx(), PickerAction::ExportCaption(output))
                     }
+                    EditorAction::ImportSubtitles { at } => {
+                        self.pick(ui.ctx(), PickerAction::ImportSubtitles { at })
+                    }
+                    EditorAction::FontUpload => self.pick(ui.ctx(), PickerAction::FontUpload),
                     EditorAction::KeybindingsExport => {
                         self.pick(ui.ctx(), PickerAction::KeybindingsExport)
                     }

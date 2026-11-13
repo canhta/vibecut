@@ -29,10 +29,12 @@ available family.
 
 Design: [font picker](../../../../../../../docs/product/ui/editor.md#font-picker).
 
-Import uses the injected asynchronous `Backend::choose_font` seam (native adapter: TTF,
-OTF and WOFF2 filter) and the same registry/store as CLI. The tooltip states usage-rights
-acknowledgement before selection. Importing has Cancel and a localized failure state;
-completion refreshes the list without choosing a family or adding history. The chooser
-and job belong to the project snapshot, item selection, playhead and picker lifetime;
-change, close, tab hiding, transaction or gesture cancels them before applying completion.
+Import raises `EditorAction::FontUpload`; the window's native picker (TTF, OTF and WOFF2
+filter) returns the file through `Editor::font_import_picked`, which imports it through the
+same registry/store as CLI. The tooltip states usage-rights acknowledgement before
+selection. Importing has Cancel and a localized failure state; completion refreshes the
+list without choosing a family or adding history. The pending import and its job belong to
+the project snapshot, item selection, playhead and picker lifetime; change, close, tab
+hiding, transaction or gesture cancels them, and a pick that completes after such a change
+imports nothing.
 A selected family still uses the existing one-command field edit and undo/redo.

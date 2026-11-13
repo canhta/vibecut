@@ -624,6 +624,15 @@ impl Editor {
         self.with_assets(|assets, port| assets.export_caption_output(port, path, output));
         Ok(())
     }
+    /// Parse the SRT/VTT file the Add captions picker chose, at the playhead it was asked from.
+    pub fn subtitles_import_picked(&mut self, path: PathBuf, at: Tick) -> Result<()> {
+        self.with_assets(|assets, port| assets.import_subtitle_picked(port, path, at));
+        Ok(())
+    }
+    /// Complete the font picker's file; `None` drops the pending import.
+    pub fn font_import_picked(&mut self, path: Option<PathBuf>) -> Result<()> {
+        self.with_properties(|state, port| state.font_import_picked(port, path))
+    }
     /// Cancelling the native save dialog keeps the finished job for a later save.
     pub fn export_save_cancelled(&mut self) {
         self.dialogs.export.save_cancelled();

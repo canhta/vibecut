@@ -3314,9 +3314,6 @@ impl FakeFonts {
     }
 }
 impl Backend for FakeFonts {
-    fn choose_font(&mut self, _: vibecut::i18n::Locale) -> vibecut::font_picker::FontChoice {
-        Box::pin(std::future::ready(None))
-    }
     fn import(&mut self, _: &mut Session, _: std::path::PathBuf) -> vibecut::Result<JobId> {
         panic!("a cancelled picker never submits an import")
     }
@@ -3448,12 +3445,10 @@ fn custom_font_import_uses_the_store_picker_history_and_reopen_in_both_locales()
             let text = fixture.text;
             let mut editor = fixture.editor;
             editor.preferences.locale = locale;
-            let input = source.clone();
             editor.set_font_backend(Box::new(
                 vibecut::font_picker::EngineBackend::with_store(
                     store.clone(),
                     editor.playback.budget().clone(),
-                    move |_| Box::pin(std::future::ready(Some(input.clone()))),
                 )
                 .unwrap(),
             ));
@@ -3466,6 +3461,10 @@ fn custom_font_import_uses_the_store_picker_history_and_reopen_in_both_locales()
             open_font_picker(&mut h);
             let snapshot = h.state().session.project().clone();
             click(&mut h, "fonts.upload");
+            // The window's native picker answers the request; tests inject its file here.
+            h.state_mut()
+                .font_import_picked(Some(source.clone()))
+                .unwrap();
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
             while !font_picker(&h).entries.iter().any(|entry| {
                 entry.family == "VibeCut Fixture Sans" && entry.origin == FontOrigin::Custom
@@ -3545,7 +3544,6 @@ fn custom_font_import_uses_the_store_picker_history_and_reopen_in_both_locales()
                 vibecut::font_picker::EngineBackend::with_store(
                     store,
                     editor.playback.budget().clone(),
-                    |_| Box::pin(std::future::ready(None)),
                 )
                 .unwrap(),
             ));
@@ -3598,8 +3596,7 @@ fn custom_font_native_reopen_child() {
 }
 
 #[test]
-fn custom_font_chooser_completion_cannot_import_into_a_changed_picker_target() {
-    use std::sync::atomic::{AtomicBool, Ordering};
+fn custom_font_pick_completion_cannot_import_into_a_changed_picker_target() {
     for change in [
         "selection",
         "project",
@@ -3634,23 +3631,10 @@ fn custom_font_chooser_completion_cannot_import_into_a_changed_picker_target() {
         let text = fixture.text;
         let video = fixture.video;
         let mut editor = fixture.editor;
-        let ready = Arc::new(AtomicBool::new(false));
-        let signal = ready.clone();
         editor.set_font_backend(Box::new(
             vibecut::font_picker::EngineBackend::with_store(
                 store,
                 editor.playback.budget().clone(),
-                move |_| {
-                    let signal = signal.clone();
-                    let source = source.clone();
-                    Box::pin(std::future::poll_fn(move |_| {
-                        if signal.load(Ordering::Acquire) {
-                            std::task::Poll::Ready(Some(source.clone()))
-                        } else {
-                            std::task::Poll::Pending
-                        }
-                    }))
-                },
             )
             .unwrap(),
         ));
@@ -3689,7 +3673,10 @@ fn custom_font_chooser_completion_cannot_import_into_a_changed_picker_target() {
             _ => panic!("unknown case"),
         }
         let snapshot = h.state().session.project().clone();
-        ready.store(true, Ordering::Release);
+        // The native pick completes after the change; the owner must refuse it.
+        h.state_mut()
+            .font_import_picked(Some(source.clone()))
+            .unwrap();
         h.run_steps(5);
         assert!(
             !root.exists(),
@@ -3734,12 +3721,8 @@ fn custom_font_import_refuses_tiny_editor_budget_before_reading_source() {
     let mut editor = fixture.editor;
     let previous = editor.playback.budget().clone();
     editor.set_font_backend(Box::new(
-        vibecut::font_picker::EngineBackend::with_store(
-            store,
-            editor.playback.budget().clone(),
-            |_| Box::pin(std::future::ready(Some(PathBuf::from("injected.ttf")))),
-        )
-        .unwrap(),
+        vibecut::font_picker::EngineBackend::with_store(store, editor.playback.budget().clone())
+            .unwrap(),
     ));
     let mut h = build(editor);
     select(&mut h, text);
@@ -3756,6 +3739,9 @@ fn custom_font_import_refuses_tiny_editor_budget_before_reading_source() {
     assert_eq!(budget.snapshot().unwrap().limit, 64 << 20);
     let snapshot = h.state().session.project().clone();
     click(&mut h, "fonts.upload");
+    h.state_mut()
+        .font_import_picked(Some(PathBuf::from("injected.ttf")))
+        .unwrap();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
     while !has_widget(&h, "fonts.import.failed") {
         h.run_steps(1);
@@ -3882,10 +3868,7 @@ fn custom_font_import_shares_parent_pressure_and_releases_each_terminal_lease() 
         .iter()
         .zip(&children)
         .map(|(store, budget)| {
-            vibecut::font_picker::EngineBackend::with_store(store.clone(), budget.clone(), |_| {
-                Box::pin(std::future::ready(None))
-            })
-            .unwrap()
+            vibecut::font_picker::EngineBackend::with_store(store.clone(), budget.clone()).unwrap()
         })
         .collect();
     let mut sessions = [fixture().editor.session, fixture().editor.session];
@@ -4018,11 +4001,6 @@ fn custom_font_import_cancel_and_failure_keep_the_authored_family() {
             vibecut::font_picker::EngineBackend::with_store(
                 store,
                 editor.playback.budget().clone(),
-                move |_| match outcome {
-                    "chooser_cancel" => Box::pin(std::future::ready(None)),
-                    "cancel" => Box::pin(std::future::pending()),
-                    _ => Box::pin(std::future::ready(Some(source.clone()))),
-                },
             )
             .unwrap(),
         ));
@@ -4032,6 +4010,15 @@ fn custom_font_import_cancel_and_failure_keep_the_authored_family() {
         let snapshot = h.state().session.project().clone();
         let history = h.state().session.history_len();
         click(&mut h, "fonts.upload");
+        // The native pick answers once: a dismissal, a file, or no answer until cancelled.
+        match outcome {
+            "chooser_cancel" => h.state_mut().font_import_picked(None).unwrap(),
+            "failure" => h
+                .state_mut()
+                .font_import_picked(Some(source.clone()))
+                .unwrap(),
+            _ => {}
+        }
         if outcome == "cancel" {
             assert!(has_widget(&h, "fonts.import.cancel"));
             click(&mut h, "fonts.import.cancel");

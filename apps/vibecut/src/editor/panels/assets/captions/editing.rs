@@ -283,7 +283,7 @@ impl Subtitles {
         }
         Ok(changed)
     }
-    /// Stable action dispatch shared with agents. Native file results enter import_file.
+    /// Stable action dispatch shared with agents. Native file results enter import_picked.
     pub fn activate(
         &mut self,
         session: &mut Session,

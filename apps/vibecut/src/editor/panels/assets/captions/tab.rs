@@ -2,7 +2,7 @@
 use super::Subtitles;
 use crate::editor::panels::assets::State;
 use crate::editor::{Arc, Error, Port, Request, Result, Tick, egui};
-use crate::services::lifecycle::CaptionOutput;
+use crate::services::lifecycle::{CaptionOutput, EditorAction};
 use std::path::PathBuf;
 
 impl State {
@@ -62,6 +62,24 @@ impl State {
         }
     }
 
+    /// Parse the SRT/VTT file the window's picker chose, at the playhead the import asked from.
+    pub(in crate::editor) fn import_subtitle_picked(
+        &mut self,
+        port: &mut Port<'_>,
+        path: PathBuf,
+        at: Tick,
+    ) {
+        let budget = port.read.budget;
+        if let Err(e) = self.prepare_captions(budget) {
+            port.fail(e.to_string());
+            return;
+        }
+        let options = port.read.preferences.subtitles.clone();
+        if let Some(subtitles) = &mut self.captions {
+            subtitles.import_picked(&*port.session, path, &options.source, at);
+        }
+    }
+
     /// Save the export dialog's caption output to the picked destination. The panel runs the
     /// same engine export as before; the native save dialog already confirmed any replacement.
     pub(in crate::editor) fn export_caption_output(
@@ -96,6 +114,9 @@ impl State {
             return Vec::new();
         };
         let mut requests = Vec::new();
+        if let Some(at) = panel.requested_import.take() {
+            requests.push(Request::Lifecycle(EditorAction::ImportSubtitles { at }));
+        }
         if let Some(at) = panel.requested_seek.take() {
             requests.push(Request::Seek(at));
         }

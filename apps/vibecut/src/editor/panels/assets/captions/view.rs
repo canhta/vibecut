@@ -1,5 +1,5 @@
 //! Paints the captions panel and its dialogs from the staged cue, style and job state.
-use super::{Options, Picker, Repaint, Subtitles, key};
+use super::{Options, Subtitles, key};
 use crate::editor::panels::assets::CaptionsSection;
 use crate::i18n;
 use crate::{
@@ -294,7 +294,6 @@ impl Subtitles {
             locale,
             widgets: Vec::new(),
         };
-        self.poll_picker(session, options, at);
         let busy = self.busy();
         let footer = section == CaptionsSection::Auto;
         let scroll_height = if footer {
@@ -315,9 +314,7 @@ impl Subtitles {
                         CaptionsSection::Auto => {
                             self.auto_page(ui, options, &mut controls, busy);
                         }
-                        CaptionsSection::Add => {
-                            self.add_page(ui, session, &mut controls, locale, busy)
-                        }
+                        CaptionsSection::Add => self.add_page(ui, session, &mut controls, busy, at),
                         CaptionsSection::Translate => {
                             self.translate_page(ui, session, options, &mut controls, busy);
                         }
@@ -749,18 +746,17 @@ impl Subtitles {
         ui: &mut egui::Ui,
         session: &mut Session,
         c: &mut Controls,
-        locale: Locale,
         busy: bool,
+        at: Tick,
     ) {
-        let enabled = !busy && self.picker.is_none();
         let r = ui.add_enabled(
-            enabled,
+            !busy,
             egui::Button::new(c.tr(Text::SubImport))
                 .min_size(egui::vec2(0.0, theme::size::CONTROL)),
         );
         c.remember("subtitles.import", &r);
         if r.clicked() {
-            self.prepare_import(ui.ctx(), session, locale);
+            self.prepare_import(session, at);
         }
     }
     /// Translate: target language, translator, the replace-edited choice, the translate
@@ -1790,37 +1786,23 @@ impl Subtitles {
             self.ui_result(result);
         }
     }
-    /// The import button opens the SRT/VTT picker after the drafts are flushed.
-    fn prepare_import(&mut self, ctx: &egui::Context, session: &mut Session, locale: Locale) {
+    /// The import button flushes the drafts, then asks the window for the SRT/VTT picker.
+    fn prepare_import(&mut self, session: &mut Session, at: Tick) {
         match self.flush_drafts(session) {
-            Ok(_) => self.pick(ctx, locale),
+            Ok(_) => self.requested_import = Some(at),
             Err(_) => self.problem = Some(Text::SubEditFailed),
         }
     }
-    fn pick(&mut self, ctx: &egui::Context, locale: Locale) {
-        let dialog = rfd::AsyncFileDialog::new()
-            .add_filter(i18n::text(locale, Text::SubImport), &["srt", "vtt"]);
-        let future: std::pin::Pin<
-            Box<dyn std::future::Future<Output = Option<rfd::FileHandle>> + Send>,
-        > = Box::pin(dialog.pick_file());
-        self.picker = Some(Picker {
-            future,
-            waker: std::task::Waker::from(Arc::new(Repaint(ctx.clone()))),
-        });
-    }
-    fn poll_picker(&mut self, session: &Session, options: &Options, at: Tick) {
-        let Some(picker) = self.picker.as_mut() else {
-            return;
-        };
-        let mut context = std::task::Context::from_waker(&picker.waker);
-        if let std::task::Poll::Ready(file) = picker.future.as_mut().poll(&mut context) {
-            self.picker = None;
-            if let Some(file) = file {
-                let path = file.path().to_owned();
-                let result = self.import_file(session, path, &options.source, at);
-                self.ui_result(result);
-            }
-        }
+    /// Parse the SRT/VTT file the window's picker chose at `at`; a refusal shows on the panel.
+    pub(super) fn import_picked(
+        &mut self,
+        session: &Session,
+        path: PathBuf,
+        source: &str,
+        at: Tick,
+    ) {
+        let result = self.import_file(session, path, source, at);
+        self.ui_result(result);
     }
     /// Native picker injection uses the same engine export admission as the panel.
     pub fn export_subtitles(

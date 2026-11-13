@@ -7,6 +7,7 @@ use crate::{
 };
 use project::ItemId;
 use std::{path::PathBuf, sync::Arc};
+use time::Tick;
 
 #[derive(Clone, Copy)]
 pub(super) enum PickerAction {
@@ -30,6 +31,12 @@ pub(super) enum PickerAction {
         replace: bool,
     },
     KeybindingsExport,
+    /// A caption file the Add captions page imports, parsed at the playhead it was asked from.
+    ImportSubtitles {
+        at: Tick,
+    },
+    /// A custom font file for the font picker's Import action.
+    FontUpload,
 }
 pub(super) struct Picker {
     pub(super) future:
@@ -115,6 +122,18 @@ impl EditorWindow {
             PickerAction::ImportLut => {
                 let dialog =
                     rfd::AsyncFileDialog::new().add_filter(self.tr(Text::Lut), &["cube", "3dl"]);
+                Box::pin(async move { dialog.pick_file().await.map(|file| vec![file]) })
+            }
+            PickerAction::ImportSubtitles { .. } => {
+                let dialog = rfd::AsyncFileDialog::new()
+                    .add_filter(self.tr(Text::SubImport), &["srt", "vtt"]);
+                Box::pin(async move { dialog.pick_file().await.map(|file| vec![file]) })
+            }
+            PickerAction::FontUpload => {
+                let title = self.tr(Text::FontUpload);
+                let dialog = rfd::AsyncFileDialog::new()
+                    .set_title(title)
+                    .add_filter(title, &["ttf", "otf", "woff2"]);
                 Box::pin(async move { dialog.pick_file().await.map(|file| vec![file]) })
             }
             PickerAction::ImportMedia => {
@@ -251,6 +270,20 @@ impl EditorWindow {
             .ok_or(Error::Invalid("no project"))?
             .keybindings_export_picked(path)
     }
+    /// Parse the SRT/VTT file the picker chose through the captions panel.
+    pub fn subtitles_import_picked(&mut self, path: PathBuf, at: Tick) -> Result<()> {
+        self.editor
+            .as_mut()
+            .ok_or(Error::Invalid("no project"))?
+            .subtitles_import_picked(path, at)
+    }
+    /// Complete the font picker's file; `None` is a dismissed or refused pick.
+    pub fn font_import_picked(&mut self, path: Option<PathBuf>) -> Result<()> {
+        self.editor
+            .as_mut()
+            .ok_or(Error::Invalid("no project"))?
+            .font_import_picked(path)
+    }
     pub(super) fn poll_picker(&mut self) {
         let Some(mut picker) = self.picker.take() else {
             return;
@@ -264,6 +297,11 @@ impl EditorWindow {
             std::task::Poll::Ready(None) => {
                 if matches!(picker.action, PickerAction::ImportLut)
                     && let Err(error) = self.lut_picked_file(None)
+                {
+                    self.error = Some(error);
+                }
+                if matches!(picker.action, PickerAction::FontUpload)
+                    && let Err(error) = self.font_import_picked(None)
                 {
                     self.error = Some(error);
                 }
@@ -324,6 +362,13 @@ impl EditorWindow {
                     PickerAction::ImportLut => {
                         self.lut_picked_file(files.pop().map(|file| file.path().to_owned()))
                     }
+                    PickerAction::ImportSubtitles { at } => match files.pop() {
+                        Some(file) => self.subtitles_import_picked(file.path().to_owned(), at),
+                        None => Ok(()),
+                    },
+                    PickerAction::FontUpload => {
+                        self.font_import_picked(files.pop().map(|file| file.path().to_owned()))
+                    }
                     PickerAction::ReplaceMedia { item } => match files.pop() {
                         Some(file) => self.replace_picked_file(item, file.path().to_owned()),
                         None => Ok(()),
@@ -358,6 +403,34 @@ mod tests {
         },
     };
     use engine::ByteBudget;
+    /// Source check: `rfd` is named only by this module, so every native dialog is a
+    /// `PickerAction` the window owns.
+    #[test]
+    fn native_dialogs_are_requested_only_through_this_picker() {
+        fn visit(directory: &std::path::Path, root: &std::path::Path, found: &mut Vec<String>) {
+            for entry in std::fs::read_dir(directory).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    visit(&path, root, found);
+                } else if path.extension().and_then(|ext| ext.to_str()) == Some("rs")
+                    && std::fs::read_to_string(&path).unwrap().contains("rfd::")
+                {
+                    let relative = path.strip_prefix(root).unwrap();
+                    found.push(relative.to_string_lossy().replace('\\', "/"));
+                }
+            }
+        }
+        // shorts/state.rs keeps its panel-local dialog until ticket 226's rewrite lands;
+        // drop that entry in the same change as the rewrite.
+        const ALLOWED: [&str; 2] = ["app/picker.rs", "shorts/state.rs"];
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut found = Vec::new();
+        visit(&root, &root, &mut found);
+        assert!(
+            found.iter().all(|path| ALLOWED.contains(&path.as_str())),
+            "rfd outside app/picker.rs: {found:?}"
+        );
+    }
     #[test]
     fn cancelled_lut_picker_releases_capture_without_project_edit() {
         use egui_kittest::kittest::{By, NodeT, Queryable};
