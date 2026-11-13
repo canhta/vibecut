@@ -472,7 +472,7 @@ fn cli_text_presets_and_animations_execute_reopen_export_and_control_replay() {
     let applied = exec(
         &file,
         "text.apply_preset",
-        json!({"items":[item.0],"preset":preset}),
+        json!({"items":[item.0],"preset":{"kind":"saved","preset":preset}}),
     );
     assert_eq!(applied["changed"], true);
     let reopened = project::load(&file).unwrap().project;

@@ -657,8 +657,39 @@ fn style_source_project() -> Project {
 }
 
 #[test]
+fn every_caption_look_applies_as_one_undo_step_with_its_cue_value() {
+    use project::CaptionLook;
+    for look in CaptionLook::ALL {
+        let mut s = Session::new(style_source_project(), 20).unwrap();
+        s.set_selection([ItemId(1)].into()).unwrap();
+        let before = s.project().clone();
+        let id = serde_json::to_value(look).unwrap();
+        s.wire(
+            "captions.apply_style",
+            json!({"item":1,"style":{"kind":"preset","preset":id}}),
+        )
+        .unwrap();
+        assert_eq!(s.history_len(), (1, 0), "{}", look.name());
+        let ItemParams::Caption(params) =
+            &s.project().data().scene().timeline.overlays[0].items[0].content
+        else {
+            panic!("caption")
+        };
+        assert_eq!(
+            params.cues.styles,
+            vec![look.cue_style()],
+            "{}",
+            look.name()
+        );
+        s.undo().unwrap();
+        assert_eq!(s.project(), &before, "{}", look.name());
+    }
+}
+
+#[test]
 fn caption_style_values_noop_history_and_saved_file_use_real_commands() {
-    use engine::{CaptionPreset, CaptionStyleApply};
+    use engine::CaptionStyleApply;
+    use project::CaptionLook;
     for boxed in [false, true] {
         let mut s = Session::new(style_source_project(), 20).unwrap();
         s.set_selection([ItemId(1)].into()).unwrap();
@@ -671,16 +702,21 @@ fn caption_style_values_noop_history_and_saved_file_use_real_commands() {
             })
         };
         let text_file = files(saved_cues(&s));
-        let expected = preset_style(boxed);
+        let look = if boxed {
+            CaptionLook::LabelBlack
+        } else {
+            CaptionLook::OutlineBottom
+        };
+        let expected = look.cue_style();
         let outcome = if boxed {
             s.wire(
                 "captions.apply_style",
-                json!({"item":1,"style":{"kind":"preset","preset":"box"}}),
+                json!({"item":1,"style":{"kind":"preset","preset":"label_black"}}),
             )
             .unwrap()
         } else {
             s.apply(apply_style(CaptionStyleApply::Preset {
-                preset: CaptionPreset::Outline,
+                preset: CaptionLook::OutlineBottom,
             }))
             .unwrap()
         };

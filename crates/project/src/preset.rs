@@ -1,6 +1,6 @@
-//! Built-in text and caption looks: shelves, our own names and the style values they copy.
+//! Built-in text and caption looks: closed ids with their shelves, names and style values.
 mod caption;
 mod text;
 
-pub use caption::{BuiltinCaptionPreset, CaptionShelf, caption_presets};
-pub use text::{BuiltinTextPreset, TextShelf, text_presets};
+pub use caption::{CaptionLook, CaptionShelf};
+pub use text::{TextLook, TextShelf};

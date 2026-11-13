@@ -13,10 +13,7 @@ pub use animation::{
     RetimeWindow, Segment, TangentMode,
 };
 pub use model::*;
-pub use preset::{
-    BuiltinCaptionPreset, BuiltinTextPreset, CaptionShelf, TextShelf, caption_presets,
-    text_presets,
-};
+pub use preset::{CaptionLook, CaptionShelf, TextLook, TextShelf};
 pub use persistence::atomic;
 pub use persistence::autosave;
 pub use persistence::bundle;

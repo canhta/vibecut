@@ -318,11 +318,25 @@ impl Subtitles {
                     item: self.item.ok_or(Error::Invalid("caption item"))?,
                     style: engine::CaptionStyleApply::Preset {
                         preset: if id == "subtitles.style.box" {
-                            engine::CaptionPreset::Box
+                            project::CaptionLook::LabelBlack
                         } else {
-                            engine::CaptionPreset::Outline
+                            project::CaptionLook::OutlineBottom
                         },
                     },
+                })?;
+                self.refresh(session);
+            }
+            _ if id.starts_with("subtitles.style.look.") => {
+                if !self.style_available(session) {
+                    return Err(Error::Invalid("caption style unavailable"));
+                }
+                let word = id.trim_start_matches("subtitles.style.look.");
+                let preset: project::CaptionLook =
+                    serde_json::from_value(serde_json::Value::String(word.to_owned()))
+                        .map_err(|_| Error::Invalid("caption look"))?;
+                session.apply(Command::ApplyCaptionStyle {
+                    item: self.item.ok_or(Error::Invalid("caption item"))?,
+                    style: engine::CaptionStyleApply::Preset { preset },
                 })?;
                 self.refresh(session);
             }

@@ -1421,20 +1421,22 @@ fn built_in_text_and_caption_looks_use_only_curated_families_with_vietnamese_cov
         .map(|family| family.family)
         .filter(|family| family != "Bebas Neue")
         .collect();
-    for preset in project::text_presets() {
-        let font = preset.style().font.as_str();
+    for look in project::TextLook::ALL {
+        let style = look.style();
+        let font = style.font.as_str();
         assert!(
             curated.iter().any(|family| family == font),
             "{} uses {font}",
-            preset.name()
+            look.name()
         );
     }
-    for preset in project::caption_presets() {
-        let font = preset.style().font.as_str();
+    for look in project::CaptionLook::ALL {
+        let style = look.style();
+        let font = style.font.as_str();
         assert!(
             curated.iter().any(|family| family == font),
             "{} uses {font}",
-            preset.name()
+            look.name()
         );
     }
 }

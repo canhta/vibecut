@@ -30,7 +30,7 @@ pub(in crate::editor) fn apply_text_preset(
     state: &mut super::State,
     port: &mut Port<'_>,
     item: ItemId,
-    preset: project::TextPresetId,
+    preset: engine::TextPresetApply,
     snapshot: std::sync::Arc<project::Project>,
 ) -> Result<()> {
     text_target(state, port, item, &snapshot, "text preset")?;

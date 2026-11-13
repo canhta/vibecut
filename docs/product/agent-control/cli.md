@@ -142,7 +142,7 @@ A project is the `.vibecut` file owned by the project crate: [project contract](
 Saved caption looks use the ordinary edit and export paths:
 
 ```sh
-vibecut-cli exec project.vibecut captions.apply_style '{"item":4,"style":{"kind":"preset","preset":"box"}}'
+vibecut-cli exec project.vibecut captions.apply_style '{"item":4,"style":{"kind":"preset","preset":"label_black"}}'
 vibecut-cli export project.vibecut --out captions.mp4
 ```
 
@@ -155,17 +155,18 @@ Clip animations and saved text styles use the ordinary edit path:
 ```sh
 vibecut-cli exec project.vibecut clip.set_animation '{"item":3,"slot":"in","preset":"slide_left","duration":127008000000}'
 vibecut-cli exec project.vibecut text.save_preset '{"item":3,"name":"Style 1"}'
-vibecut-cli exec project.vibecut text.apply_preset '{"items":[3],"preset":0}'
+vibecut-cli exec project.vibecut text.apply_preset '{"items":[3],"preset":{"kind":"look","look":"clean_white"}}'
 vibecut-cli export project.vibecut --out title.mp4
 ```
 
 Use inspected item IDs. `clip.set_animation` takes a `slot` (`in`, `out` or `combo`), a
 `preset` (null removes the slot) and an optional `duration` in ticks (0.5 s by default;
 In and Out only). In and Out looks are `fade`, `slide_left`, `slide_right`, `slide_up`,
-`slide_down`, `zoom_in`, `zoom_out`, `spin`, `drop`, `rise`, `pop` and `tilt`; Combo looks
-are `pulse`, `heartbeat`, `sway`, `swing`, `float`, `drift_left`, `drift_right`, `push_in`,
-`pull_out`, `shake`, `flicker`, `breathe` and `turn`. `text.save_preset` reports the new preset ID in `created`; `text.apply_preset` takes one
-or more Text item IDs. The [edit owner](../../../crates/engine/src/session/edit/README.md#clip-animation)
+`slide_down`, `zoom_in`, `zoom_out`, `spin`, `drop`, `rise`, `pop`, `stretch`, `swing` and
+`shake`; Combo looks are `pulse`, `heartbeat`, `sway`, `float`, `drift_left`, `drift_right`,
+`push_in`, `pull_out`, `flicker` and `turn`. `text.save_preset` reports the new preset ID in
+`created`; `text.apply_preset` takes one or more Text item IDs and either a saved preset
+(`{"kind":"saved","preset":ID}`) or a built-in text look (`{"kind":"look","look":"clean_white"}`). The [edit owner](../../../crates/engine/src/session/edit/README.md#clip-animation)
 defines curves, duration, bases and conflict rules. CLI control and MCP use these same
 commands.
 

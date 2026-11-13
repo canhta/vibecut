@@ -317,7 +317,7 @@ fn check_text_preset_name(
 pub(super) fn apply_text_preset(
     mut data: ProjectData,
     items: Vec<ItemId>,
-    preset: project::TextPresetId,
+    preset: crate::TextPresetApply,
 ) -> Result<ProjectData> {
     if items.is_empty() {
         return Err(EditError::Invalid("empty text preset selection"));
@@ -326,12 +326,15 @@ pub(super) fn apply_text_preset(
     if remaining.len() != items.len() {
         return Err(EditError::Invalid("duplicate text preset selection"));
     }
-    let style = data
-        .text_presets
-        .iter()
-        .find(|value| value.id == preset)
-        .map(|value| value.style.clone())
-        .ok_or(EditError::Invalid("text preset not found"))?;
+    let style = match preset {
+        crate::TextPresetApply::Saved { preset } => data
+            .text_presets
+            .iter()
+            .find(|value| value.id == preset)
+            .map(|value| value.style.clone())
+            .ok_or(EditError::Invalid("text preset not found"))?,
+        crate::TextPresetApply::Look { look } => look.style(),
+    };
     for track in data.scene_mut().timeline.iter_mut() {
         let matched = track
             .items

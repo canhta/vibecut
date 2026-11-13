@@ -34,7 +34,7 @@ pub(in crate::editor) enum Action {
     },
     ApplyTextPreset {
         item: ItemId,
-        preset: project::TextPresetId,
+        preset: engine::TextPresetApply,
         snapshot: Arc<project::Project>,
     },
     SaveTextPreset {

@@ -5,12 +5,13 @@ mod session;
 pub(crate) use session::transitions;
 pub use session::wire::{Failure, JobFailurePolicy};
 pub use session::{
-    AnimationPreset, AnimationSlot, Availability, CaptionPreset, CaptionStyleApply,
+    AnimationPreset, AnimationShelf, AnimationSlot, Availability, CaptionStyleApply,
     ChapterSidecars, ClipAnimations, CollectionLimit, Command, CommandKind, CommandSpec, CreatedId,
     CueId, CutTarget, DEFAULT_BOOKMARK_COLOR, Effect, EmphasisMode, Example, Fixture, GrantClass,
     ITEM_PARAMS, ItemClipboard, ItemParam, ItemParamPatch, ItemPasteSource, ItemPlacement,
     KeyframeClipboard, KeyframePasteSource, KeyframeRef, Lifecycle, Move, NewItem, Outcome,
-    ParamBounds, ParamParseError, ParamTarget, ParamUnit, Placement, TrackPlacement, TranscriptCue,
+    ParamBounds, ParamParseError, ParamTarget, ParamUnit, Placement, TextPresetApply,
+    TrackPlacement, TranscriptCue,
     TranscriptView, TranscriptWord, TrimEdge, WordId, declaration_order_error, item_param,
     lifecycle, registry,
 };
