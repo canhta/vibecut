@@ -62,7 +62,7 @@ fn lut_import_applies_one_undo_and_reopens_shared_pixels() {
     assert_eq!(s.project(), &before);
     assert_eq!(s.history_len(), history);
     assert_eq!(
-        std::fs::read(record.directory.join("original.cube")).unwrap(),
+        std::fs::read(record.directory.join("original")).unwrap(),
         lut_cube().as_bytes()
     );
     assert!(
@@ -191,6 +191,15 @@ fn lut_deduplicates_preserves_first_provenance_and_repairs_matching_content() {
     .unwrap();
     let second = lut_result(&mut s, &mut r, &media, &source, None, "lut-dedup");
     assert_eq!(first, second);
+    // The same table as a 10-bit .3dl (blue fastest) resolves to the same resource.
+    let dl = dir.path().join("look.3dl");
+    std::fs::write(
+        &dl,
+        "3DMESH\n0 1023\n0 0 0\n0 1023 0\n1023 0 0\n1023 1023 0\n0 0 1023\n0 1023 1023\n1023 0 1023\n1023 1023 1023\n",
+    )
+    .unwrap();
+    let third = lut_result(&mut s, &mut r, &media, &dl, None, "lut-3dl");
+    assert_eq!(third, first);
     for (index, metadata) in [
         json!({"name":"conflicting"}),
         json!({"licence":"different"}),
@@ -213,7 +222,7 @@ fn lut_deduplicates_preserves_first_provenance_and_repairs_matching_content() {
         assert_eq!(r.snapshot(job).unwrap().state, JobState::Failed);
         assert!(r.output_bytes(job).is_none());
         assert_eq!(
-            std::fs::read(first.directory.join("original.cube")).unwrap(),
+            std::fs::read(first.directory.join("original")).unwrap(),
             lut_cube().as_bytes()
         );
     }
@@ -252,7 +261,7 @@ fn lut_deduplicates_preserves_first_provenance_and_repairs_matching_content() {
     assert!(
         render::lut::LutResources::resolve(s.project(), std::iter::once(effect), &hooks).is_ok()
     );
-    for (index, missing) in ["canonical.cube", "original.cube"].into_iter().enumerate() {
+    for (index, missing) in ["canonical.cube", "original"].into_iter().enumerate() {
         std::fs::remove_file(first.directory.join(missing)).unwrap();
         let repaired = lut_result(
             &mut s,
@@ -705,7 +714,7 @@ fn lut_managed_duplicate_history_and_trash_keep_verified_copied_resources() {
     assert_eq!(copied.id, record.id);
     let canonical = std::fs::read(copied.directory.join("canonical.cube")).unwrap();
     assert_eq!(
-        std::fs::read(copied.directory.join("original.cube")).unwrap(),
+        std::fs::read(copied.directory.join("original")).unwrap(),
         lut_cube().as_bytes()
     );
     library.undo().unwrap();

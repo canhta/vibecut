@@ -70,7 +70,7 @@ impl EditorWindow {
                 Box::pin(async move { dialog.save_file().await.map(|file| vec![file]) })
             }
             PickerAction::ImportLut => {
-                let dialog = rfd::AsyncFileDialog::new().add_filter(self.tr(Text::Lut), &["cube"]);
+                let dialog = rfd::AsyncFileDialog::new().add_filter(self.tr(Text::Lut), &["cube", "3dl"]);
                 Box::pin(async move { dialog.pick_file().await.map(|file| vec![file]) })
             }
             PickerAction::ImportMedia => {
