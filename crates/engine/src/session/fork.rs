@@ -35,6 +35,15 @@ impl Fork {
     pub(crate) fn session_mut(&mut self) -> &mut Session {
         &mut self.session
     }
+    /// [`Session::transaction`] on the fork, for in-process workflows that group edits. The
+    /// group is logged as one unit and replays as one, keeping the trim sources its children
+    /// share; a failed group leaves no entry.
+    pub fn transaction<T, E: From<super::EditError>>(
+        &mut self,
+        run: impl FnOnce(&mut Session) -> std::result::Result<T, E>,
+    ) -> std::result::Result<T, E> {
+        self.session.transaction(run)
+    }
     /// The parent's revision when the fork was taken; the only revision it applies to.
     pub fn base_revision(&self) -> &Revision {
         &self.base_revision
@@ -49,6 +58,7 @@ impl Fork {
         self.session
             .recorded
             .iter()
+            .flatten()
             .flatten()
             .map(|logged| &logged.command)
     }

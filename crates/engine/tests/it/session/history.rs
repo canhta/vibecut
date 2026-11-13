@@ -572,7 +572,7 @@ fn a_fork_applies_back_as_one_undo_step_and_only_to_the_revision_it_was_taken_at
 }
 
 #[test]
-fn a_fork_applies_nowhere_but_its_own_revision_and_never_while_a_group_is_open() {
+fn a_fork_cannot_outlive_its_session_identity_in_the_revision_and_never_forks_in_a_group() {
     use crate::support::control::{Allow, caller, runner};
     fn forked(live: &Session, r: &mut engine::jobs::JobRunner) -> engine::Fork {
         let mut fork = live.fork().unwrap();
@@ -621,4 +621,122 @@ fn a_fork_applies_nowhere_but_its_own_revision_and_never_while_a_group_is_open()
         live.transaction(|s| Ok::<_, EditError>(s.fork().is_err()))
             .unwrap()
     );
+}
+
+#[test]
+fn a_failing_fork_transaction_drops_the_children_it_logged_and_a_good_one_applies_whole() {
+    let mut live = Session::new(project(), 4).unwrap();
+    let mut fork = live.fork().unwrap();
+    let failed = fork.transaction(|s| {
+        s.apply(bookmark())?;
+        s.apply(Command::Delete {
+            items: vec![ItemId(99)],
+        })?;
+        Ok::<_, EditError>(())
+    });
+    assert!(failed.is_err());
+    assert!(fork.is_empty());
+    assert_eq!(fork.commands().count(), 0);
+    assert_eq!(fork.session().project(), fork.base_project());
+
+    fork.transaction(|s| {
+        s.apply(bookmark())?;
+        s.apply(Command::BookmarkAdd {
+            start: Tick(2),
+            duration: Tick(0),
+            note: "".into(),
+            color: Color([0; 4]),
+        })?;
+        Ok::<_, EditError>(())
+    })
+    .unwrap();
+    assert_eq!(fork.commands().count(), 2);
+    let forked = fork.session().project().clone();
+    live.apply_fork(fork).unwrap();
+    assert_eq!(live.project(), &forked);
+    assert_eq!(live.history_len(), (1, 0));
+}
+
+#[test]
+fn change_summary_rows_fill_one_category_each_and_an_item_can_be_in_two_lists() {
+    use crate::support::control::seed;
+    let half = Tick(time::TICKS_PER_SECOND / 2);
+    let tenth = Tick(time::TICKS_PER_SECOND / 10);
+    let trim = |item: u64| Command::TrimEnd {
+        item: ItemId(item),
+        at: half,
+    };
+    // Added, moved, trimmed, retimed, parameters, captions.
+    let rows: Vec<(&str, Vec<Command>, [Vec<u64>; 6])> = vec![
+        (
+            "trim",
+            vec![trim(1)],
+            [vec![], vec![], vec![1], vec![], vec![], vec![]],
+        ),
+        (
+            "retime",
+            vec![Command::SetSpeed {
+                items: vec![ItemId(5)],
+                speed: time::Speed::from_f64(2.0).unwrap(),
+                maintain_pitch: true,
+            }],
+            [vec![], vec![], vec![], vec![5], vec![], vec![]],
+        ),
+        (
+            "parameters",
+            vec![Command::SetItemField {
+                item: ItemId(5),
+                patch: engine::ItemParamPatch::Opacity(0.5),
+            }],
+            [vec![], vec![], vec![], vec![], vec![5], vec![]],
+        ),
+        (
+            "captions and trim",
+            vec![trim(4)],
+            [vec![], vec![], vec![4], vec![], vec![], vec![4]],
+        ),
+        (
+            "moved, trimmed and captions",
+            vec![
+                trim(4),
+                Command::MoveItem {
+                    item: ItemId(4),
+                    track: TrackId(4),
+                    start: tenth,
+                },
+            ],
+            [vec![], vec![4], vec![4], vec![], vec![], vec![4]],
+        ),
+    ];
+    let ids = |list: &[ItemId]| list.iter().map(|id| id.0).collect::<Vec<_>>();
+    for (name, commands, [added, moved, trimmed, retimed, params, captions]) in rows {
+        let mut s = seed();
+        let before = s.project().clone();
+        s.apply(Command::Batch { commands }).unwrap();
+        let got = engine::ChangeSummary::between(&before, s.project());
+        assert_eq!(ids(&got.added), added, "{name}");
+        assert_eq!(ids(&got.moved), moved, "{name}");
+        assert_eq!(ids(&got.trimmed), trimmed, "{name}");
+        assert_eq!(ids(&got.retimed), retimed, "{name}");
+        assert_eq!(ids(&got.params_changed), params, "{name}");
+        assert_eq!(ids(&got.captions_changed), captions, "{name}");
+        assert!(got.removed.is_empty(), "{name}");
+        assert!(!got.is_empty(), "{name}");
+    }
+    let mut s = seed();
+    let before = s.project().clone();
+    let created = s
+        .apply(Command::InsertItem {
+            placement: engine::Placement::Track { track: TrackId(3) },
+            item: new_item(0, 10),
+        })
+        .unwrap()
+        .placements
+        .first()
+        .unwrap()
+        .item;
+    let got = engine::ChangeSummary::between(&before, s.project());
+    assert_eq!(got.added, vec![created]);
+    assert!(got.moved.is_empty() && got.trimmed.is_empty() && got.params_changed.is_empty());
+    assert!(engine::ChangeSummary::between(&before, &before).is_empty());
 }

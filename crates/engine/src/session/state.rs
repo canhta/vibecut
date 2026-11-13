@@ -72,8 +72,9 @@ pub struct Session {
     pub(crate) ledger: super::wire::Ledger,
     state: State,
     limit: usize,
-    /// `Some` only in a fork's session: the commands that changed its project, in order.
-    recorded: Option<Vec<super::fork::Logged>>,
+    /// `Some` only in a fork's session: the commands that changed its project, in order; a
+    /// `transaction` is one entry holding all its children.
+    recorded: Option<Vec<Vec<super::fork::Logged>>>,
     gesture: Option<State>,
     timeline_preview: bool,
     grouping: bool,
@@ -399,6 +400,13 @@ impl Session {
         self.grouping = false;
         match result {
             Ok(Ok(value)) => {
+                // The children replay together, keeping the cue sources they shared.
+                if let Some(log) = &mut self.recorded
+                    && log.len() > logged
+                {
+                    let group: Vec<_> = log.drain(logged..).flatten().collect();
+                    log.push(group);
+                }
                 self.squash(before)?;
                 Ok(value)
             }

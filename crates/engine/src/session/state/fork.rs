@@ -54,13 +54,15 @@ impl Session {
         }
         let target = forked.state.project;
         self.transaction(|live| {
-            for Logged { command, wire } in log {
-                // The fork ran each command on its own: trims never carried cue sources
-                // from one command to the next.
+            for group in log {
+                // The fork ran each entry on its own: trims never carried cue sources from
+                // one entry to the next, but a grouped entry shared them among its children.
                 live.state.trim_sources.clear();
-                let applied = live.boundary(|s| s.commit(command, wire, s.ripple))?;
-                outcome.created.extend(applied.created);
-                outcome.placements.extend(applied.placements);
+                for Logged { command, wire } in group {
+                    let applied = live.boundary(|s| s.commit(command, wire, s.ripple))?;
+                    outcome.created.extend(applied.created);
+                    outcome.placements.extend(applied.placements);
+                }
             }
             if *live.state.project != *target {
                 return Err(EditError::Session(SessionError::ForkDiverged));
@@ -76,7 +78,7 @@ impl Session {
         if outcome.changed
             && let (Some(log), Some(command)) = (&mut self.recorded, command)
         {
-            log.push(Logged { command, wire });
+            log.push(vec![Logged { command, wire }]);
         }
     }
 }
@@ -106,11 +108,14 @@ mod tests {
             .recorded
             .as_mut()
             .unwrap()
-            .push(Logged { command, wire: false });
+            .push(vec![Logged {
+                command,
+                wire: false,
+            }]);
     }
 
-    /// Only the fork's own session fills the log, so the two ways a replay can go wrong are
-    /// forged here: a child the live project refuses, and a replay that lands elsewhere.
+    /// Forged inline because a fork's own session can never log an entry its parent refuses:
+    /// a child the live project refuses, and a replay that lands elsewhere.
     #[test]
     fn a_failing_child_or_a_diverging_replay_restores_everything() {
         for forged in [

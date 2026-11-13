@@ -1087,6 +1087,28 @@ fn caption_drag_inward_and_back_preserves_original_content_and_redo() {
     }
 }
 #[test]
+fn a_grouped_caption_drag_on_a_fork_replays_as_one_group_and_keeps_the_original_cue() {
+    for start in [false, true] {
+        let (inward, outward) = if start { (1095, 1020) } else { (1005, 1080) };
+        let mut direct = Session::new(caption_project(), 10).unwrap();
+        direct.apply(caption_trim(start, outward)).unwrap();
+        let mut live = Session::new(caption_project(), 10).unwrap();
+        let mut fork = live.fork().unwrap();
+        // The inward drag drops the cue; only shared trim sources bring it back.
+        fork.transaction(|s| {
+            for at in [inward, outward] {
+                s.apply(caption_trim(start, at))?;
+            }
+            Ok::<_, engine::EditError>(())
+        })
+        .unwrap();
+        assert_eq!(fork.session().project().data(), direct.project().data());
+        live.apply_fork(fork).unwrap();
+        assert_eq!(live.project().data(), direct.project().data());
+        assert_eq!(live.history_len(), (1, 0));
+    }
+}
+#[test]
 fn caption_drag_commit_cancel_undo_redo_and_group_paths() {
     for start in [false, true] {
         for mode in ["gesture", "group", "batch"] {
