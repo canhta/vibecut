@@ -1001,6 +1001,13 @@ pub(crate) fn fake_sticker_resolve(
     })
 }
 /// Synthetic capability for registry dispatch; real-catalog coverage lives in `libraries`.
+fn fake_brand_list() -> engine::control::Result<Option<engine::control::BrandKitView>> {
+    Ok(None)
+}
+/// A brand kit lend with no active kit, so `brand.list` answers without a store.
+pub(crate) fn brand_access() -> engine::control::BrandAccess<'static> {
+    engine::control::BrandAccess::new(&fake_brand_list)
+}
 pub(crate) fn sticker_access() -> engine::control::StickerAccess<'static> {
     engine::control::StickerAccess::new(&fake_sticker_search, &fake_sticker_resolve)
 }

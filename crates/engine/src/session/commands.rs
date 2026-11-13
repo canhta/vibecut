@@ -398,6 +398,8 @@ pub enum Fixture {
     MaskPath,
     /// Timeline plus one audible clip, item 5.
     Audio,
+    /// The `Audio` fixture with cleanup effect 1 (hum removal) already on item 5.
+    CleanupEffect,
     /// Timeline whose item 5 is a video with an audible source asset.
     SourceAudio,
     /// Timeline plus one mono audio asset, id 97, with a real local file.
@@ -620,11 +622,11 @@ commands! {
     ApplyLoudness, "audio.apply_loudness", "Apply measured loudness gains", Edit { gains: project::LoudnessGains } => Timeline, serde_json::json!({"gains":{"key":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"clip":[],"master_db":0.0}});
     ClearLoudness, "audio.clear_loudness", "Clear loudness target", Edit { scope: project::LoudnessScope } => Timeline, serde_json::json!({"scope":"master"});
     MeasureLoudness, "audio.measure_loudness", "Measure loudness", JobControl {} => Loudness, serde_json::json!({}), grant = Agent;
-    RemoveCleanupEffect, "audio.remove_cleanup_effect", "Remove audio cleanup effect", Edit { item: ItemId, effect: u32 } => Audio, serde_json::json!({"item":5,"effect":1}), available = UnlockedItem;
+    RemoveCleanupEffect, "audio.remove_cleanup_effect", "Remove audio cleanup effect", Edit { item: ItemId, effect: u32 } => CleanupEffect, serde_json::json!({"item":5,"effect":1}), available = UnlockedItem;
     SetFade, "audio.set_fade", "Set audio fade", Edit { item: ItemId, edge: project::FadeEdge, duration: Tick, curve: project::FadeCurve } => Audio, serde_json::json!({"item":5,"edge":"in","duration":0,"curve":"equal_power"}), available = UnlockedItem;
     SetLoudness, "audio.set_loudness", "Set loudness target", Edit { scope: project::LoudnessScope, target_lufs: f32, true_peak_db: f32 } => Timeline, serde_json::json!({"scope":"master","target_lufs":-14.0,"true_peak_db":-1.0});
     SetMaster, "audio.set_master", "Set master audio", Edit { volume: f32, muted: bool } => Timeline, serde_json::json!({"volume":0.0,"muted":false});
-    UpdateCleanupEffect, "audio.update_cleanup_effect", "Update audio cleanup effect", Edit { item: ItemId, effect: project::CleanupEffect } => Audio, serde_json::json!({"item":5,"effect":{"id":1,"enabled":false,"wet_percent":50.0,"kind":{"kind":"bass","boost_db":3.0}}}), available = UnlockedItem;
+    UpdateCleanupEffect, "audio.update_cleanup_effect", "Update audio cleanup effect", Edit { item: ItemId, effect: project::CleanupEffect } => CleanupEffect, serde_json::json!({"item":5,"effect":{"id":1,"enabled":false,"wet_percent":50.0,"kind":{"kind":"bass","boost_db":3.0}}}), available = UnlockedItem;
     Batch, "batch", "Batch edit", Edit { commands: Vec<Command> } => Timeline, serde_json::json!({"commands":[{"command":"timeline.add_track","params":{"name":"Batch","kind":"video"}}]}), curated = true;
     BeginGesture, "begin_gesture", "Begin gesture", SessionControl {} => Timeline, serde_json::json!({}), available = NoTransaction, grant = Human;
     BookmarkAdd, "bookmark.add", "Add bookmark", Edit { start: Tick, duration: Tick, note: NfcText, color: Color } => Timeline, serde_json::json!({"start":0,"duration":0,"note":"Mark","color":[255,255,0,255]});

@@ -6,6 +6,7 @@
     reason = "public-interface conformance assertions"
 )]
 use crate::support::control::Allow;
+use crate::support::control::brand_access;
 use crate::support::control::caller;
 use crate::support::control::error;
 use crate::support::control::finish;
@@ -210,6 +211,18 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
             Fixture::TransitionCut => s = crate::session::transition_session(false),
             Fixture::Transition => s = crate::session::transition_session(true),
             Fixture::Audio => s = with_audio(&s),
+            Fixture::CleanupEffect => {
+                s = with_audio(&s);
+                s.apply(Command::AddCleanupEffect {
+                    item: project::ItemId(5),
+                    effect: serde_json::from_value(json!({
+                        "id": 1, "enabled": true, "wet_percent": 100.0,
+                        "kind": {"kind": "hum", "mains": "hz50", "harmonics": 5, "q": 30.0}
+                    }))
+                    .unwrap(),
+                })
+                .unwrap();
+            }
             Fixture::SourceAudio => s = with_source_audio(&s),
             Fixture::Waveform => s = with_waveform(&s, &wav),
             Fixture::Thumbnails => s = with_thumbnails(&s, &png),
@@ -360,6 +373,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
         let sounds = sound_access();
         let music = music_access();
         let stickers = sticker_access();
+        let brand = brand_access();
         let result = s
             .control_request(
                 req,
@@ -371,7 +385,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
                     sounds: Some(&sounds),
                     music: Some(&music),
                     stickers: Some(&stickers),
-                    brand: None,
+                    brand: Some(&brand),
                     media: Some(&media),
                     chapters: Some(&chapters),
                     captions: Some(&captions),
