@@ -151,11 +151,14 @@ pub(in crate::editor) fn show(
             );
         let visible = element_kind(panel.cx.session.project(), *item).is_some_and(|(kind, _)| {
             // The tab that draws the field: graphic parameters on Graphic, a text item's
-            // Opacity row inside its Text tab, every other Opacity row on Transform.
+            // Opacity row inside its Text tab, a filter clip's Intensity (its opacity) on
+            // Effects, every other Opacity row on Transform.
             let owner = if graphic_edit {
                 PropertiesTab::Graphic
             } else if kind == ElementKind::Text {
                 PropertiesTab::Text
+            } else if kind == ElementKind::Effect {
+                PropertiesTab::Effects
             } else {
                 PropertiesTab::Transform
             };
@@ -1616,8 +1619,6 @@ mod canvas;
 mod playback;
 
 mod effects;
-
-mod filter;
 
 mod text_style;
 

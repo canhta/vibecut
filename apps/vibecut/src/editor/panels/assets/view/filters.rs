@@ -125,13 +125,19 @@ impl View<'_> {
             Id::unique(("filters.tile", row.id)),
             egui::Sense::click(),
         );
-        self.remember(format!("filters.tile.{}", row.id), &response, None);
         let status = match row.status {
             Some(EffectPreviewStatus::Ready) => "ready",
             Some(EffectPreviewStatus::Pending) => "pending",
             _ => "failed",
         };
+<<<<<<< HEAD
         self.remember(format!("filters.tile.{}.{status}", row.id), &response, None);
+=======
+        // The status id is recorded first: the last remember names the accessibility node, and
+        // the tile's own id is the one agents and tests click.
+        self.remember(format!("filters.tile.{}.{status}", row.id), &response, None);
+        self.remember(format!("filters.tile.{}", row.id), &response, None);
+>>>>>>> origin/main
         let response = response.on_hover_text(self.tr(Text::FilterAdd));
         if response.clicked() {
             self.actions.push(Action::AddFilter(row.id));
