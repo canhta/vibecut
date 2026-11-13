@@ -249,9 +249,68 @@ pub(in crate::editor) fn set_item_field(
         })?;
         return Ok(());
     }
+    if let Some(patch) = text_effect_patch(port.view().session.project(), item, field, value)? {
+        port.apply_result(engine::Command::SetItemField { item, patch })?;
+        return Ok(());
+    }
     let patch = item_patch(field, value)?;
     port.apply_result(engine::Command::SetItemField { item, patch })?;
     Ok(())
+}
+
+/// Outline width and shadow offset or blur. The engine's `text_stroke` and `text_shadow`
+/// patches carry the whole value, so the edit copies the item's current outline or shadow,
+/// replaces its one field and keeps the rest; an unset outline or shadow starts from its
+/// defaults, as a first Background edit does.
+fn text_effect_patch(
+    project: &project::Project,
+    item: ItemId,
+    field: &str,
+    value: &str,
+) -> Result<Option<ItemParamPatch>> {
+    if !matches!(
+        field,
+        "text_stroke_width" | "text_shadow_offset_x" | "text_shadow_offset_y" | "text_shadow_blur"
+    ) {
+        return Ok(None);
+    }
+    let number = value
+        .trim()
+        .parse::<f32>()
+        .ok()
+        .filter(|number| number.is_finite())
+        .ok_or(Error::Invalid("field value"))?;
+    let Some(project::ItemParams::Text(params)) =
+        read::item(project, item).map(|found| &found.content)
+    else {
+        return Err(Error::Invalid("text item"));
+    };
+    Ok(Some(match field {
+        "text_stroke_width" => {
+            let stroke = params.stroke.clone().unwrap_or_default();
+            ItemParamPatch::TextStroke(Some(project::TextStroke {
+                width: number,
+                ..stroke
+            }))
+        }
+        _ => {
+            let shadow = params.shadow.clone().unwrap_or_default();
+            ItemParamPatch::TextShadow(Some(match field {
+                "text_shadow_offset_x" => project::TextShadow {
+                    offset_x: number,
+                    ..shadow
+                },
+                "text_shadow_offset_y" => project::TextShadow {
+                    offset_y: number,
+                    ..shadow
+                },
+                _ => project::TextShadow {
+                    blur: number,
+                    ..shadow
+                },
+            }))
+        }
+    }))
 }
 
 /// Admitted range of a field that edits through its curve while it is keyed: opacity and
