@@ -724,8 +724,20 @@ pub(crate) fn text_tabs(
     out
 }
 
+/// The fill of one segment cell: the measured selected fill, the hover token while only
+/// hovered, or none so the field-coloured track shows through.
+fn segment_fill(dark: bool, active: bool, hovered: bool) -> Option<egui::Color32> {
+    if active {
+        Some(theme::segment_active(dark))
+    } else if hovered {
+        Some(theme::hover(dark))
+    } else {
+        None
+    }
+}
+
 /// A full-width segmented bar: equal cells on a field-coloured track, the
-/// active cell raised. Each cell keeps its own automation ID.
+/// selected cell filled and outlined as measured. Each cell keeps its own automation ID.
 pub(crate) fn segmented(
     ui: &mut Ui,
     ids: &[String],
@@ -751,8 +763,16 @@ pub(crate) fn segmented(
             })
             .inner;
         let active = index == selected;
-        if active || response.hovered() {
-            paint(ui).rect_filled(rect, radius::CONTROL, theme::hover(dark));
+        if let Some(fill) = segment_fill(dark, active, response.hovered()) {
+            paint(ui).rect_filled(rect, radius::CONTROL, fill);
+        }
+        if active && let Some(outline) = theme::segment_outline(dark) {
+            paint(ui).rect_stroke(
+                rect,
+                radius::CONTROL,
+                Stroke::new(space::HAIRLINE, outline),
+                egui::StrokeKind::Inside,
+            );
         }
         paint(ui).text(
             rect.center(),

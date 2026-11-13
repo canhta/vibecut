@@ -156,3 +156,17 @@ fn keyframe_cluster_reports_each_cell_and_disables_empty_sides() {
     harness.run();
     assert_eq!(*harness.state(), [0, 1, 1], "an empty side never fires");
 }
+
+#[test]
+fn selected_segment_fill_differs_from_the_unselected_cell() {
+    for dark in [true, false] {
+        let selected = segment_fill(dark, true, false);
+        assert!(selected.is_some(), "dark={dark}");
+        assert_ne!(selected, segment_fill(dark, false, false), "dark={dark}");
+    }
+    assert_eq!(
+        segment_fill(true, true, false),
+        Some(egui::Color32::from_rgb(0x3B, 0x3B, 0x3B))
+    );
+    assert_eq!(segment_fill(true, false, false), None);
+}

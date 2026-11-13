@@ -260,14 +260,18 @@ impl Panel<'_, '_> {
         maintain_pitch: bool,
         has_audio: bool,
     ) {
+        // Two equal cells per row, measured from the full width once so every cell
+        // in the grid shares one width and the columns line up across rows.
+        let gap = theme::space::XS;
+        let cell = (ui.available_width() - gap) / 2.0;
         for pair in project::SpeedPreset::ALL.chunks(2) {
             ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = gap;
                 for preset in pair {
                     let (word, label) = preset_entry(*preset);
                     let selected = segments.as_deref() == Some(preset.segments().as_slice());
-                    let width = (ui.available_width() - theme::space::XS) / 2.0;
                     let response = ui.add_sized(
-                        [width, theme::size::CONTROL],
+                        [cell, theme::size::CONTROL],
                         egui::Button::new(self.tr(label)).selected(selected),
                     );
                     self.remember(format!("inspector.speed.preset.{word}"), &response);

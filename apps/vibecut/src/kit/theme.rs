@@ -18,6 +18,9 @@ const FIELD_DARK: Color32 = Color32::from_rgb(0x23, 0x26, 0x2A);
 const FIELD_LIGHT: Color32 = Color32::from_rgb(0xED, 0xED, 0xED);
 const HOVER_DARK: Color32 = Color32::from_rgb(0x2A, 0x2D, 0x32);
 const HOVER_LIGHT: Color32 = Color32::from_rgb(0xE4, 0xE4, 0xE4);
+/// Measured selected sub-tab cell (221643 Properties): fill and 1 px outline.
+const SEGMENT_ACTIVE_DARK: Color32 = Color32::from_rgb(0x3B, 0x3B, 0x3B);
+const SEGMENT_OUTLINE_DARK: Color32 = Color32::from_rgb(0x33, 0x33, 0x33);
 const TEXT_DARK: Color32 = Color32::from_rgb(0xFF, 0xFF, 0xFF);
 const TEXT_LIGHT: Color32 = Color32::from_rgb(0x13, 0x15, 0x17);
 const SECONDARY_DARK: Color32 = Color32::from_rgb(0x89, 0x8A, 0x8B);
@@ -76,6 +79,23 @@ pub(crate) const fn field(dark: bool) -> Color32 {
 }
 pub(crate) const fn hover(dark: bool) -> Color32 {
     if dark { HOVER_DARK } else { HOVER_LIGHT }
+}
+/// The selected cell of a segmented sub-tab bar. Dark is the measured fill; light has no
+/// measured counterpart, so it keeps the hover token.
+pub(crate) const fn segment_active(dark: bool) -> Color32 {
+    if dark {
+        SEGMENT_ACTIVE_DARK
+    } else {
+        HOVER_LIGHT
+    }
+}
+/// The 1 px outline of the selected segment. Light has no measured outline.
+pub(crate) const fn segment_outline(dark: bool) -> Option<Color32> {
+    if dark {
+        Some(SEGMENT_OUTLINE_DARK)
+    } else {
+        None
+    }
 }
 pub(crate) const fn text(dark: bool) -> Color32 {
     if dark { TEXT_DARK } else { TEXT_LIGHT }
@@ -172,6 +192,12 @@ mod tests {
             (field(true), rgb(0x23, 0x26, 0x2A)),
             (field(false), rgb(0xED, 0xED, 0xED)),
             (hover(true), rgb(0x2A, 0x2D, 0x32)),
+            (segment_active(true), rgb(0x3B, 0x3B, 0x3B)),
+            (segment_active(false), rgb(0xE4, 0xE4, 0xE4)),
+            (
+                segment_outline(true).unwrap_or_default(),
+                rgb(0x33, 0x33, 0x33),
+            ),
             (text(true), rgb(0xFF, 0xFF, 0xFF)),
             (text(false), rgb(0x13, 0x15, 0x17)),
             (secondary(true), rgb(0x89, 0x8A, 0x8B)),
