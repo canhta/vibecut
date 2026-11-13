@@ -42,6 +42,11 @@ impl CacheRoot {
         self.root.join("fonts")
     }
 
+    /// Downloaded sticker collections: `<base>/VibeCut/stickers`.
+    pub fn stickers(&self) -> PathBuf {
+        self.root.join("stickers")
+    }
+
     /// Waveform artifacts: `<base>/VibeCut/models/waveform`.
     pub fn waveform(&self) -> PathBuf {
         self.models().join("waveform")

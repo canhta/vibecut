@@ -2171,6 +2171,21 @@ fn sound_library_attribution_and_licence_are_written_into_export_metadata() {
             .build(),
         ],
     });
+    data.scene_mut().timeline.insert_track(project::Track {
+        id: project::TrackId(3),
+        name: "Stickers".into(),
+        kind: project::TrackKind::Sticker,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![
+            testkit::item::item(
+                project::ItemId(2),
+                project::ItemParams::Sticker(project::StickerParams::new("flags:VN", 640, 480)),
+            )
+            .build(),
+        ],
+    });
     let p = project::Project::new(data).unwrap();
     let mut settings = ExportSettings::from_project(&p);
     settings.overwrite = project::atomic::Overwrite::Replace;
@@ -2189,6 +2204,7 @@ fn sound_library_attribution_and_licence_are_written_into_export_metadata() {
         .expect("licence comment tag");
     assert!(comment.contains("Whoosh by Freesound user (Attribution)"));
     assert!(comment.contains("https://freesound.org/s/42/"));
+    assert!(comment.contains("flag-icons by Panayiotis Lipiridis (MIT)"));
     let published = std::fs::read(&output).unwrap();
     for limit in ["bytes", "records"] {
         let mut data = p.data().clone();

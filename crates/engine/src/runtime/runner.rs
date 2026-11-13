@@ -436,6 +436,7 @@ impl JobRunner {
                         | JobKind::DownloadModel
                         | JobKind::SoundDownload
                         | JobKind::DownloadFont
+                        | JobKind::DownloadSticker
                 )
                 && pending.snapshot.attempts < self.config.network_attempts;
             // A retry must occupy one bounded pending slot. If that slot filled

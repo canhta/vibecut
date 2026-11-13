@@ -1235,6 +1235,12 @@ fn owner_failures_classify_publication_receipts_and_events() {
             false
         ),
         row!(E::Font(F::Catalog), Refused, false),
+        row!(E::Sticker(engine::StickerError::Integrity), Refused, false),
+        row!(
+            E::Sticker(engine::StickerError::UnsafeSvg("script")),
+            Refused,
+            false
+        ),
         row!(E::Sounds(S::NoCredentials), Setup, false),
         row!(E::Sounds(S::Auth), Auth, false),
         row!(E::Sounds(S::Quota), Quota, false),

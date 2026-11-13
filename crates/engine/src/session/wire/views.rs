@@ -292,6 +292,7 @@ pub enum JobKind {
     DownloadModel,
     SoundDownload,
     DownloadFont,
+    DownloadSticker,
 }
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
