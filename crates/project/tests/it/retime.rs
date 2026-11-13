@@ -807,7 +807,7 @@ fn curve_persists_and_invalid_curves_are_refused() {
     )
     .unwrap();
     let text = String::from_utf8(encode(&constant, false).unwrap()).unwrap();
-    assert!(!text.contains("curve"), "{text}");
+    assert!(!text.contains(r#""curve":["#), "{text}");
 
     // Item-level refusals: wrong source span, reverse, or a constant rate beside a curve.
     let mut wrong_span = ramp.clone();

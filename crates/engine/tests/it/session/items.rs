@@ -2205,6 +2205,25 @@ fn clipboard_attributes_copy_whole_groups_and_skip_what_the_target_kind_cannot_h
     assert_eq!(audio_params.fades, video_params.fades);
     assert_eq!(audio_params.volume, video_params.volume);
     assert_eq!(audio_params.muted, video_params.muted);
+
+    // A speed curve travels as its stretches, rebuilt over the target's own source span.
+    s.apply(Command::ApplySpeedPreset {
+        items: vec![clip],
+        preset: project::SpeedPreset::SlowMiddle,
+        maintain_pitch: true,
+    })
+    .unwrap();
+    s.apply(Command::CopyItems { items: vec![clip] }).unwrap();
+    s.apply(paste_to(vec![sound])).unwrap();
+    let (from, to) = (get_id(&s, clip), get_id(&s, sound));
+    let curve = to
+        .retime
+        .curve
+        .expect("the pasted retime carries the curve");
+    assert_eq!(curve.segments(), from.retime.curve.unwrap().segments());
+    assert_eq!(curve.total_source(), to.source_range.duration());
+    assert_eq!(to.duration().unwrap(), curve.total_output());
+    assert!(to.retime.maintain_pitch);
 }
 
 #[test]

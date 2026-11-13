@@ -292,7 +292,11 @@ fn validate(data: &ProjectData) -> Result<()> {
         return Err(Error::TooLarge("recent colours"));
     }
     for (index, color) in data.recent_colors.iter().enumerate() {
-        if data.recent_colors[..index].contains(color) {
+        if data
+            .recent_colors
+            .get(..index)
+            .is_some_and(|earlier| earlier.contains(color))
+        {
             return Err(Error::Invalid("recent colour"));
         }
     }

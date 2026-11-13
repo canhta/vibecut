@@ -627,7 +627,7 @@ fn neighbours(keys: Keys<'_>, group: &[&'static str]) -> (Option<Tick>, Option<T
 
 /// The row-end keyframe cluster of one group of mask fields. Its diamond keys every
 /// field of the group at the playhead, or removes them when all are keyed. Previous and
-/// next seeks are not wired in this popover, so both arrows stay disabled.
+/// next seek to the group's nearest key on that side.
 fn cluster(
     ui: &mut egui::Ui,
     tr: impl Fn(Text) -> &'static str + Copy,
@@ -729,7 +729,8 @@ fn row(
         theme::label_font(),
         theme::text(dark),
     );
-    let spec_width = specs.len() as f32 * (FIELD_WIDTH + theme::size::STEPPER);
+    // Each field and its stepper sit `XXS` apart inside the field's own row.
+    let spec_width = specs.len() as f32 * (FIELD_WIDTH + theme::space::XXS + theme::size::STEPPER);
     let gap = (specs.len().saturating_sub(1)) as f32 * (theme::space::XXS + 3.0);
     let reserve = keys.map_or(0.0, |_| theme::size::KEYFRAME_CLUSTER + theme::space::XXS);
     let mut value_ui = ui.new_child(
