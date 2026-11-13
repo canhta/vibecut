@@ -94,7 +94,7 @@ smoothing, full mix) or enables the item's existing one; off disables it and kee
 first noise reduction effect is enabled. A chain already holding eight effects refuses the add through the error line.
 Equaliser bands have no control here: the capture shows no equaliser, so `audio.*_cleanup_effect` is their only
 surface. A Voice enhancement switch ([new], no reference evidence) follows it (`inspector.voice_enhance.toggle`): on adds the
-`project::voice_enhancement_effects` preset (80 Hz high-pass, de-reverb, noise reduction, de-esser, three-band equaliser) with the
+`project::voice_enhancement_effects` preset (80 Hz high-pass, de-reverb, noise reduction, de-esser, two-band equaliser) with the
 next free effect ids after the chain's highest, the way every new effect gets one, or enables the marked effects already present;
 off disables them and keeps tuned values. The preset's effects carry `CleanupEffect::preset` = `voice_enhancement`, the only marker:
 the switch reads on only while five marked effects are present and all enabled, and the Noise reduction switch ignores marked
