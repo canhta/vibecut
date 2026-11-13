@@ -154,6 +154,12 @@ pub enum UiAction {
     Snap,
     Ripple,
     PreviewAxis,
+    /// Timeline pointer mode: Select clicks and drags clips, Split cuts them.
+    SelectTool,
+    SplitTool,
+    /// Select every item that starts before / ends after the playhead.
+    SelectLeftward,
+    SelectRightward,
     ZoomIn,
     ZoomOut,
     OpenScenes,
@@ -203,6 +209,7 @@ pub enum EngineAction {
     Split,
     SplitLeft,
     SplitRight,
+    SplitAll,
     Duplicate,
     Delete,
     RippleDelete,
@@ -229,6 +236,7 @@ impl EngineAction {
             Self::Split => K::SplitAt,
             Self::SplitLeft => K::TimelineSplitLeft,
             Self::SplitRight => K::TimelineSplitRight,
+            Self::SplitAll => K::TimelineSplitAll,
             Self::Duplicate => K::DuplicateItems,
             Self::Delete if ripple => K::RippleDelete,
             Self::Delete => K::Delete,

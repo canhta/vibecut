@@ -3,8 +3,8 @@
 use crate::editor::context::visuals::{StripState, StripTile, WaveBar, WaveState};
 use crate::editor::timeline::{
     Action, Align2, Color32, Context, DragMode, FontId, Icon, Id, ItemParams, ItemView,
-    LABEL_CHARS, Locale, MIN_ZOOM_FLOOR, Rect, State, Text, Tick, TimelineLayout, TrackKind, Vec2,
-    audio, display_label, egui, icons, theme,
+    LABEL_CHARS, Locale, MIN_ZOOM_FLOOR, Rect, State, Text, Tick, TimelineLayout, Tool, TrackKind,
+    Vec2, audio, display_label, egui, icons, theme,
     view::{Ink, tr},
     visuals::{self},
 };
@@ -30,10 +30,12 @@ impl State {
             return;
         }
         let selected = cx.selection().contains(&item.id);
+        // Split mode cuts on a click, so the clip takes no drags.
+        let split = self.tool == Tool::Split;
         let response = ui.interact(
             visible,
             Id::unique(("timeline.item", item.id.0)),
-            if item.locked {
+            if item.locked || split {
                 egui::Sense::click()
             } else {
                 egui::Sense::click_and_drag()
@@ -151,7 +153,7 @@ impl State {
         if item.kind == TrackKind::Audio {
             self.paint_volume_line(cx, ui, item, inner, ink, layout);
         }
-        if !item.locked && visible.width() > 16.0 {
+        if !item.locked && !split && visible.width() > 16.0 {
             let width = 8.0_f32.min(visible.width() / 3.0);
             let left = Rect::from_min_max(
                 visible.left_top(),
@@ -191,7 +193,21 @@ impl State {
         if item.kind == TrackKind::Audio {
             self.paint_fades(cx, ui, layout, item, inner, visible, ink, modifiers);
         }
-        if response.clicked() {
+        if split {
+            // A click cuts at the snapped pointer time when it falls inside the clip;
+            // a locked clip or an edge refuses by doing nothing.
+            if response.clicked()
+                && !item.locked
+                && let Some(at) = self.split_cut(cx, ui, layout)
+                && item.start < at
+                && at < item.end
+            {
+                self.push(Action::Command(Box::new(engine::Command::SplitAt {
+                    item: item.id,
+                    at,
+                })));
+            }
+        } else if response.clicked() {
             self.push(Action::Select {
                 item: item.id,
                 modifiers,

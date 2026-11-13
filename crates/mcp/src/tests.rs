@@ -560,6 +560,7 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("trim_end", Effect::Edit, true, true),
         ("delete", Effect::Edit, true, true),
         ("ripple_delete", Effect::Edit, true, true),
+        ("timeline.split_all", Effect::Edit, true, true),
         ("timeline.split_left", Effect::Edit, true, true),
         ("timeline.split_right", Effect::Edit, true, true),
         ("timeline.duplicate", Effect::Edit, true, true),

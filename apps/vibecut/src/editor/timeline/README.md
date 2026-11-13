@@ -46,6 +46,19 @@ applies to every selected key. Presets and the saved list live in `preferences.e
 (see [preferences](../../preferences/README.md)); Save preset appends the working curve as
 the next free `Custom N` through the preference store, and the tab choice persists.
 
+## Select and split modes
+
+The pointer button at the start of the toolbar's left group shows the active tool and opens a menu
+with Select (`A`) and Split mode (`B`). The mode is presentation state, starts in Select and is
+never saved. In Split mode a click on an unlocked clip sends `split_at` at the frame-snapped pointer
+time, one undo step; a locked clip, or a time at its edge, changes nothing. Clips take no drags in
+Split mode, the pointer shows a crosshair and a guide runs from the ruler through the lanes at the
+cut time. Volume lines and fade handles keep their own drags in both modes.
+
+`[` and `]` select every unlocked item that starts before, or ends after, the playhead; an empty
+result leaves the selection as it was. `Ctrl+Shift+B` runs `timeline.split_all`, the engine edit
+described in [edit commands](../../../../../crates/engine/src/session/edit/README.md).
+
 ## Preview axis
 
 The toolbar toggle (right of the ripple switch, shortcut `S`, persisted as `preview_axis`,

@@ -1672,6 +1672,7 @@ fn every_editor_button_reports_its_embedded_icon() {
         ("preview.retry", "arrow-clockwise"),
         ("edit.undo", "arrow-counter-clockwise"),
         ("edit.redo", "arrow-clockwise"),
+        ("timeline.tool", "cursor"),
         ("timeline.split", "scissors"),
         ("timeline.delete", "trash"),
         ("timeline.snap", "magnet"),
@@ -4773,6 +4774,97 @@ fn clip_action_keys_and_context_menu_apply_each_command_with_undo() {
     std::fs::create_dir_all(target.parent().unwrap()).unwrap();
     image.save(&target).unwrap();
     eprintln!("clip actions screenshot: {}", target.display());
+}
+
+#[test]
+fn split_all_split_mode_and_select_by_playhead_reach_the_engine() {
+    let fixture = audible_editor();
+    let video_a = fixture.video_a;
+    let mut h = harness(fixture.editor);
+    h.run_steps(3);
+    h.state_mut()
+        .dispatch(AppCommand::Seek(Tick(2 * SECOND)))
+        .unwrap();
+    h.run_steps(2);
+    let undo = |h: &mut Harness<'_, Editor>| {
+        h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+        h.run_steps(2);
+    };
+    let tool_icon = |h: &Harness<'_, Editor>| {
+        h.state()
+            .inspect()
+            .unwrap()
+            .widgets
+            .iter()
+            .find(|widget| widget.id == "timeline.tool")
+            .and_then(|widget| widget.icon)
+    };
+    let before = count(h.state());
+
+    // Ctrl+Shift+B cuts the video and audio clips under the playhead in one step.
+    h.key_press_modifiers(
+        egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT),
+        egui::Key::B,
+    );
+    h.run_steps(2);
+    assert_eq!(count(h.state()), before + 2, "split all cuts both clips");
+    undo(&mut h);
+    assert_eq!(count(h.state()), before, "split all is one undo step");
+
+    // B switches the pointer to Split: the button shows the scissors and a click cuts the
+    // clip at the pointer. A switches back to Select, where the same click selects.
+    h.key_press(egui::Key::B);
+    h.run_steps(2);
+    assert_eq!(tool_icon(&h), Some("scissors"), "B selects Split mode");
+    click_item(&mut h, video_a);
+    assert_eq!(count(h.state()), before + 1, "a Split-mode click cuts the clip");
+    undo(&mut h);
+    h.key_press(egui::Key::A);
+    h.run_steps(2);
+    assert_eq!(tool_icon(&h), Some("cursor"), "A selects Select mode");
+    click_item(&mut h, video_a);
+    assert_eq!(count(h.state()), before, "Select-mode clicks do not cut");
+    assert_eq!(
+        h.state().inspect().unwrap().selection,
+        vec![video_a],
+        "Select-mode clicks select"
+    );
+
+    // [ and ] select every unlocked item that starts before or ends after the playhead.
+    let expected = |h: &Harness<'_, Editor>, before: bool| -> std::collections::BTreeSet<ItemId> {
+        h.state()
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .filter(|track| !track.locked)
+            .flat_map(|track| &track.items)
+            .filter(|item| {
+                if before {
+                    item.start < Tick(2 * SECOND)
+                } else {
+                    item.end().is_ok_and(|end| end > Tick(2 * SECOND))
+                }
+            })
+            .map(|item| item.id)
+            .collect()
+    };
+    h.key_press(egui::Key::OpenBracket);
+    h.run_steps(2);
+    assert_eq!(
+        h.state().session.selection(),
+        &expected(&h, true),
+        "[ selects items starting before the playhead"
+    );
+    h.key_press(egui::Key::CloseBracket);
+    h.run_steps(2);
+    assert_eq!(
+        h.state().session.selection(),
+        &expected(&h, false),
+        "] selects items ending after the playhead"
+    );
 }
 
 fn fades(editor: &Editor, id: ItemId) -> project::Fades {

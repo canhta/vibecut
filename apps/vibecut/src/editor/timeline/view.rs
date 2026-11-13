@@ -91,6 +91,7 @@ pub(in crate::editor) fn show(
     state.paint_playhead(cx, ui, &layout);
     state.playhead_interaction(cx, ui, &layout);
     state.paint_hover(cx, ui, &layout);
+    state.paint_split_cut(cx, ui, &layout);
     state.scrollbars(cx, ui, &layout, duration, &rows);
     state.paint_refusal(cx, ui, &layout);
     if empty_items && !rows.is_empty() {

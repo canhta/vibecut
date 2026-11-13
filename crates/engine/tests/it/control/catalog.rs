@@ -609,6 +609,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
                 "timeline.set_hidden",
                 "timeline.set_item_param",
                 "timeline.set_muted",
+                "timeline.split_all",
                 "timeline.split_left",
                 "timeline.split_right",
                 "timeline.trim",
