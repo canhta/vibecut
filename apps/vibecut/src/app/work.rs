@@ -440,6 +440,7 @@ fn open_editor(
     )?;
     let mut editor = Editor::persisted(autosave, playback, preferences);
     editor.set_thumbnail_root(root.parent().unwrap_or(root).join("thumbnails"));
+    editor.use_native_file_clipboard();
     Ok(Box::new(editor))
 }
 

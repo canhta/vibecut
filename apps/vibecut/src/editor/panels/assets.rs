@@ -118,6 +118,8 @@ pub(in crate::editor) enum Action {
     },
     Captions(Rect),
     EffectDrag(&'static str),
+    /// A press on asset cards turned into a drag of these assets.
+    MediaDrag(Vec<AssetId>),
     AddEffect(&'static str),
     RetryEffect(&'static str),
     TransitionDrag(&'static str),

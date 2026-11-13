@@ -4,6 +4,7 @@ pub mod ai_task;
 pub mod assets;
 pub mod color_picker;
 pub mod crop;
+pub mod file_clipboard;
 pub mod gpu;
 pub mod lifecycle;
 pub mod model_cache;

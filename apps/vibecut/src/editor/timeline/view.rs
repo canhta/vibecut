@@ -79,6 +79,7 @@ pub(in crate::editor) fn show(
     state.paint_tracks(cx, ui, &layout, &views.rows, &views.items);
     state.paint_transitions(cx, ui, &layout, &views.rows);
     state.advance_drag(cx, ui, &layout, &views.rows);
+    state.advance_media_drag(cx, ui, &layout, &views.rows);
     let modifiers = ui.ctx().input(|input| input.modifiers);
     state.paint_lanes(cx, ui, &layout, &views.items, modifiers);
     state.advance_keyframe_drag(cx, ui, &layout);

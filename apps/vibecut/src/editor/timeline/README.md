@@ -129,7 +129,11 @@ main-track magnet control. All edits are registered engine commands and refresh 
 snapshot; paste comes from the clipboard owner.
 
 Media insertion reuses an unlocked compatible track only when the playhead range fits,
-otherwise creates a secondary track at the top of its group. Solid colour is generated
+otherwise creates a secondary track at the top of its group. A Media-panel drag released over
+the lanes inserts through the same `timeline.insert` with the placement the drop resolved: a
+row takes `Track` (kind must match, locked rows refuse), a gap takes `Above`/`Below`, and
+space below the last row takes `Below` that row, so it creates a track. The drag is carried by
+`Context::media_drag` and the frame's `Action::InsertMedia`; the hint reuses `DropZone`. Solid colour is generated
 Video content, distinct from Sticker tracks. Lock protects item structure and properties,
 masks, effects and keyframes; selection, playback and track metadata stay usable. Dragging
 a header reorders within its overlay or audio section; main stays fixed; Escape cancels.

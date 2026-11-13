@@ -266,7 +266,7 @@ impl State {
     }
     /// Resolve the row under the pointer and whether it lands on a track or
     /// between lanes. Insertions allocate one destination per source track.
-    fn drop_destination(
+    pub(in crate::editor::timeline) fn drop_destination(
         &self,
         pointer: egui::Pos2,
         layout: &TimelineLayout,

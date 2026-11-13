@@ -63,7 +63,8 @@ pub(in crate::editor) fn apply(
             | Action::ClearSelection
             | Action::BeginGesture { .. }
             | Action::BeginPreview { .. }
-            | Action::CancelInteraction) => {
+            | Action::CancelInteraction
+            | Action::InsertMedia { .. }) => {
                 let mut rest = vec![frame];
                 rest.extend(actions);
                 return rest;

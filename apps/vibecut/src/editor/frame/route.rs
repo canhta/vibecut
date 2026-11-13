@@ -33,6 +33,7 @@ impl Editor {
             cache: self.timeline.cache_ui(),
             disabled: std::collections::BTreeSet::new(),
             effect_targets: None,
+            media_drag: self.assets.media_drag.clone(),
             key_color_pick: self.player.key_color_pick.clone(),
         }
     }
@@ -133,9 +134,24 @@ impl Editor {
             Action::BeginGesture { select } => self.begin_drag_gesture(select),
             Action::BeginPreview { select } => self.begin_timeline_preview(select),
             Action::CancelInteraction => self.cancel_interaction(),
+            Action::InsertMedia {
+                assets,
+                at,
+                placement,
+            } => self.drop_media(&assets, at, placement),
             // The area applies every other action itself.
             _ => {}
         }
+    }
+    /// A Media drag released over the lanes: the drag ends and its assets insert there.
+    fn drop_media(
+        &mut self,
+        assets: &[crate::editor::AssetId],
+        at: Tick,
+        placement: engine::Placement,
+    ) {
+        self.assets.media_drag = None;
+        self.with_assets(|state, port| state.insert_dropped(port, assets, at, placement));
     }
     /// A keyframe click scopes the selection without dropping the item context.
     fn select_keyframe(

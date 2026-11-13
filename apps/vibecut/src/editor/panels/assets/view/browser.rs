@@ -507,7 +507,7 @@ impl View<'_> {
         let response = ui.interact(
             rect,
             Id::unique(("media.asset", row.id.0)),
-            egui::Sense::click(),
+            egui::Sense::click_and_drag(),
         );
         self.remember(
             format!("media.asset.{}", row.id.0),
@@ -520,6 +520,15 @@ impl View<'_> {
         if response.clicked() {
             self.actions
                 .push(Action::Select(row.id, ui.input(|input| input.modifiers)));
+        }
+        if response.drag_started() && !self.cx.importing {
+            // A drag carries the whole selection when this card is part of it.
+            let ids = if self.cx.selection.contains(&row.id) {
+                self.cx.selection.iter().copied().collect()
+            } else {
+                vec![row.id]
+            };
+            self.actions.push(Action::MediaDrag(ids));
         }
         if response.secondary_clicked() && !self.cx.selection.contains(&row.id) {
             self.actions

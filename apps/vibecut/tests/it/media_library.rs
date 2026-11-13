@@ -1133,3 +1133,225 @@ fn local_audio_row_adds_its_source_through_the_existing_insert_command() {
     assert_eq!(items[0].source_asset, Some(AssetId(4)));
     assert!(matches!(items[0].content, ItemParams::Audio(_)));
 }
+
+/// One timeline item as the three Media insert paths leave it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Placed {
+    track: project::TrackId,
+    item: project::ItemId,
+    asset: Option<AssetId>,
+    start: Tick,
+}
+
+fn placed(project: &Project) -> Vec<Placed> {
+    project
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| {
+            track.items.iter().map(move |item| Placed {
+                track: track.id,
+                item: item.id,
+                asset: item.source_asset,
+                start: item.start,
+            })
+        })
+        .collect()
+}
+
+fn main_track(harness: &Harness<Editor>) -> project::TrackId {
+    harness
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .main
+        .id
+}
+
+/// A point in the lanes 80 px right of a track header, on that track's row.
+fn lane_point(harness: &Harness<Editor>, track: project::TrackId) -> egui::Pos2 {
+    let header = widget_rect(harness, &format!("track.{}.header", track.0));
+    egui::pos2(header.right() + 80.0, header.center().y)
+}
+
+/// Press on an asset card, drag it onto `target` and release there.
+fn drag_asset_to(harness: &mut Harness<Editor>, asset: AssetId, target: egui::Pos2) {
+    let card = widget_rect(harness, &format!("media.asset.{}", asset.0)).center();
+    harness.hover_at(card);
+    harness.drag_at(card);
+    harness.run_steps(1);
+    harness.hover_at(target);
+    harness.run_steps(1);
+    harness.drop_at(target);
+    harness.run_steps(2);
+}
+
+/// Imports whatever path it is handed as a fresh video asset, as a real probe would.
+struct FreshProbe;
+impl ImportProbe for FreshProbe {
+    fn import(
+        &self,
+        id: AssetId,
+        path: PathBuf,
+        _cancelled: Arc<AtomicBool>,
+    ) -> media::Result<ImportedSource> {
+        let name = path
+            .file_name()
+            .map_or_else(|| "pasted.mp4".to_owned(), |name| name.to_string_lossy().into_owned());
+        Ok(imported(source_asset(id.0, &name, Some(Tick(4 * SECOND)))))
+    }
+}
+
+fn await_imports(harness: &mut Harness<Editor>) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        harness.run_steps(1);
+        let ready = harness
+            .state()
+            .inspect()
+            .unwrap()
+            .assets
+            .iter()
+            .all(|asset| asset.state == "ready");
+        if !harness.state().importing() && ready {
+            break;
+        }
+        assert!(Instant::now() < deadline, "import never finished");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
+#[test]
+fn plus_inserts_the_selected_asset_at_the_playhead_and_undo_redo_keep_it() {
+    let mut harness = build(editor());
+    harness.run_steps(3);
+    click(&mut harness, "media.asset.2");
+    click(&mut harness, "media.insert");
+    let inserted = placed(harness.state().session.project());
+    assert_eq!(inserted.len(), 1);
+    assert_eq!(inserted[0].asset, Some(AssetId(2)));
+    assert_eq!(inserted[0].track, main_track(&harness));
+    assert_eq!(inserted[0].start, Tick::ZERO);
+
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert!(placed(harness.state().session.project()).is_empty());
+    harness.state_mut().activate("edit.redo").unwrap();
+    harness.run_steps(2);
+    assert_eq!(placed(harness.state().session.project()), inserted);
+}
+
+#[test]
+fn dragging_an_asset_onto_a_track_inserts_it_there_and_undo_redo_restore_it_exactly() {
+    let mut harness = build(editor());
+    harness.run_steps(3);
+    let main = main_track(&harness);
+    let target = lane_point(&harness, main);
+    drag_asset_to(&mut harness, AssetId(2), target);
+    let inserted = placed(harness.state().session.project());
+    assert_eq!(inserted.len(), 1);
+    assert_eq!((inserted[0].track, inserted[0].asset), (main, Some(AssetId(2))));
+
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert!(placed(harness.state().session.project()).is_empty());
+    harness.state_mut().activate("edit.redo").unwrap();
+    harness.run_steps(2);
+    assert_eq!(placed(harness.state().session.project()), inserted);
+}
+
+#[test]
+fn dropping_an_asset_on_empty_space_below_the_tracks_creates_a_compatible_track() {
+    let mut harness = build(editor());
+    harness.run_steps(3);
+    let main = main_track(&harness);
+    let tracks_before = harness
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .count();
+    let header = widget_rect(&harness, &format!("track.{}.header", main.0));
+    let empty = egui::pos2(header.right() + 80.0, header.bottom() + 120.0);
+    drag_asset_to(&mut harness, AssetId(3), empty);
+
+    let project = harness.state().session.project();
+    assert_eq!(
+        project.data().scene().timeline.iter().count(),
+        tracks_before + 1
+    );
+    let created = placed(project);
+    assert_eq!(created.len(), 1);
+    assert_ne!(created[0].track, main);
+    assert_eq!(created[0].asset, Some(AssetId(3)));
+}
+
+#[test]
+fn ctrl_v_with_files_on_the_os_clipboard_imports_them_and_inserts_at_the_playhead() {
+    let mut editor = editor();
+    editor.set_import_probe(Arc::new(FreshProbe)).unwrap();
+    editor.set_os_clipboard_files(|| vec![PathBuf::from("pasted-clip.mp4")]);
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::V);
+    await_imports(&mut harness);
+
+    let pasted = placed(harness.state().session.project());
+    assert_eq!(pasted.len(), 1);
+    assert_eq!(pasted[0].track, main_track(&harness));
+    assert_eq!(pasted[0].start, Tick::ZERO);
+    assert_eq!(harness.state().session.project().data().assets.len(), 4);
+
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert!(placed(harness.state().session.project()).is_empty());
+}
+
+#[test]
+fn ctrl_v_without_files_on_the_os_clipboard_leaves_the_media_library_alone() {
+    let mut harness = build(editor());
+    harness.run_steps(3);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::V);
+    harness.run_steps(3);
+    assert_eq!(harness.state().session.project().data().assets.len(), 3);
+    assert!(!harness.state().importing());
+}
+
+#[test]
+fn inserted_media_round_trips_through_save_and_load_after_insert_and_after_undo() {
+    let mut harness = build(editor());
+    harness.run_steps(3);
+    let target = lane_point(&harness, main_track(&harness));
+    drag_asset_to(&mut harness, AssetId(1), target);
+    let inserted = placed(harness.state().session.project());
+    assert_eq!(inserted.len(), 1);
+
+    let bytes = project::encode(harness.state().session.project(), false).unwrap();
+    let loaded = project::decode(&bytes).unwrap();
+    assert_eq!(placed(&loaded.project), inserted);
+
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    let bytes = project::encode(harness.state().session.project(), false).unwrap();
+    let loaded = project::decode(&bytes).unwrap();
+    assert!(placed(&loaded.project).is_empty());
+}
+
+#[test]
+fn media_drag_and_plus_screenshot_for_the_combined_build() {
+    let mut harness = build(editor());
+    harness.run_steps(3);
+    let target = lane_point(&harness, main_track(&harness));
+    drag_asset_to(&mut harness, AssetId(2), target);
+    click(&mut harness, "media.asset.3");
+    click(&mut harness, "media.insert");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-11-dnd.png");
+    harness.render().unwrap().save(&path).unwrap();
+}

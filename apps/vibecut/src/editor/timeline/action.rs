@@ -1,7 +1,7 @@
 //! Names the requests the timeline panel hands back to the frame.
 
 use crate::editor::context::visuals::VisualRequest;
-use crate::editor::timeline::{BTreeSet, ItemId, KeyframeSelection, Tick, egui};
+use crate::editor::timeline::{AssetId, BTreeSet, ItemId, KeyframeSelection, Tick, egui};
 
 /// One timeline gesture command from the group move/trim contract.
 ///
@@ -65,6 +65,13 @@ pub(in crate::editor) enum Action {
     /// Run one typed engine command on the current selection; the frame prunes
     /// the selection and restarts the preview when the project changed.
     Command(Box<engine::Command>),
+    /// A Media-panel drag released over the lanes: insert these assets at `at` with the
+    /// placement the drop resolved. The frame applies it (`timeline.insert`).
+    InsertMedia {
+        assets: Vec<AssetId>,
+        at: Tick,
+        placement: engine::Placement,
+    },
     /// Open the native media picker to replace one clip's source; the window owns the dialog.
     ReplaceMedia(ItemId),
     /// Submit one registered media generation job for a pending clip visual.

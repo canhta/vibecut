@@ -3,6 +3,7 @@ mod apply;
 mod fades;
 mod interaction;
 mod item_drag;
+mod media_drag;
 mod viewport;
 mod volume;
 

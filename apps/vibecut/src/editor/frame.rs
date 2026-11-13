@@ -42,6 +42,8 @@ pub(super) struct State {
     /// A host-set capture flag; global keys wait. A running voice-over take counts
     /// too, read from its dialog by `dispatch_context`.
     pub(super) recording_active: bool,
+    /// Whether a text field held keyboard focus this frame; Paste then stays in the field.
+    pub(super) text_focused: bool,
     pub(super) shortcuts_open: bool,
     pub(super) shortcut_tab: ShortcutTab,
     pub(super) shortcut_recording: Option<&'static str>,
@@ -70,6 +72,7 @@ impl State {
             keymap_source: preferences.keybindings.clone(),
             keymap,
             recording_active: false,
+            text_focused: false,
             shortcuts_open: false,
             shortcut_tab: ShortcutTab::Timeline,
             shortcut_recording: None,
