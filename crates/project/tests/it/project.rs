@@ -487,6 +487,7 @@ fn populated(path: PathBuf) -> Project {
                 width: 0.5,
                 height: 0.5,
             }),
+            fit: FitMode::Stretch,
             cleanup: Default::default(),
         }),
         ItemParams::Audio(AudioParams {
@@ -2092,4 +2093,170 @@ fn freeform_path_round_trips_through_the_writer_without_flattening() {
     let file = dir.path().join("mask.vibecut");
     save_fixture(&file, &project).unwrap();
     assert_eq!(load(&file).unwrap().project, project);
+}
+
+fn close(actual: [f64; 2], expected: [f64; 2]) -> bool {
+    actual
+        .iter()
+        .zip(expected)
+        .all(|(a, e)| (a - e).abs() < 1e-9)
+}
+
+#[test]
+fn fit_modes_place_portrait_and_landscape_sources_and_reject_unknown_names() {
+    let landscape = [1920.0, 1080.0];
+    let portrait = [1080.0, 1920.0];
+    // (mode, canvas, source px, extent, whether the renderer crops)
+    let rows: [(FitMode, [f64; 2], [f64; 2], [f64; 2], bool); 9] = [
+        // Portrait into landscape: Fit letterboxes at the canvas height.
+        (
+            FitMode::Fit,
+            landscape,
+            [1080.0, 1920.0],
+            [0.31640625, 1.0],
+            false,
+        ),
+        // Portrait into landscape: Fill covers the width and overflows the height.
+        (
+            FitMode::Fill,
+            landscape,
+            [1080.0, 1920.0],
+            [1.0, 3.160493827160494],
+            true,
+        ),
+        // Landscape into portrait, the mirror case.
+        (
+            FitMode::Fit,
+            portrait,
+            [1920.0, 1080.0],
+            [1.0, 0.31640625],
+            false,
+        ),
+        (
+            FitMode::Fill,
+            portrait,
+            [1920.0, 1080.0],
+            [3.160493827160494, 1.0],
+            true,
+        ),
+        // Stretch and Manual ignore the source aspect.
+        (
+            FitMode::Stretch,
+            landscape,
+            [1080.0, 1920.0],
+            [1.0, 1.0],
+            false,
+        ),
+        (
+            FitMode::Manual,
+            portrait,
+            [1920.0, 1080.0],
+            [1.0, 1.0],
+            false,
+        ),
+        // None keeps the pixel size, smaller or larger than the canvas.
+        (
+            FitMode::None,
+            landscape,
+            [640.0, 360.0],
+            [1.0 / 3.0, 1.0 / 3.0],
+            false,
+        ),
+        (
+            FitMode::None,
+            landscape,
+            [3840.0, 2160.0],
+            [2.0, 2.0],
+            false,
+        ),
+        // A source of the canvas aspect fits exactly.
+        (FitMode::Fit, landscape, [1280.0, 720.0], [1.0, 1.0], false),
+    ];
+    for (mode, canvas, source, extent, cover) in rows {
+        assert!(
+            close(mode.extent(canvas, source).unwrap(), extent),
+            "{mode:?}"
+        );
+        let placed = mode.place(canvas, source).unwrap();
+        assert_eq!(placed.cover, cover, "{mode:?}");
+        if matches!(mode, FitMode::Fit | FitMode::None) {
+            // A centred box of the extent.
+            assert!(close([placed.width, placed.height], extent), "{mode:?}");
+            let centred = [(1.0 - extent[0]) / 2.0, (1.0 - extent[1]) / 2.0];
+            assert!(close([placed.x, placed.y], centred), "{mode:?}");
+        } else {
+            assert_eq!(
+                (placed.x, placed.y, placed.width, placed.height),
+                (0.0, 0.0, 1.0, 1.0),
+                "{mode:?}"
+            );
+        }
+    }
+    for source in [[0.0, 10.0], [10.0, -1.0], [f64::NAN, 10.0]] {
+        assert!(FitMode::Fit.place(landscape, source).is_none());
+    }
+    assert!(FitMode::Fit.place([0.0, 1080.0], [10.0, 10.0]).is_none());
+
+    // The persisted spelling is the id, and every other name is refused.
+    for mode in FitMode::ALL {
+        let value = serde_json::to_value(mode).unwrap();
+        assert_eq!(value, serde_json::json!(mode.id()));
+        assert_eq!(serde_json::from_value::<FitMode>(value).unwrap(), mode);
+    }
+    for name in ["zoom", "Fit", "", "contain", "cover"] {
+        assert!(serde_json::from_value::<FitMode>(serde_json::json!(name)).is_err());
+    }
+}
+
+#[test]
+fn fit_box_reads_the_asset_stream_and_the_crop_and_ignores_other_items() {
+    let asset = testkit::source::asset(3, std::env::temp_dir().join("fit-box-source"))
+        .format("mp4")
+        .duration(Tick(1000))
+        .stream(
+            testkit::source::video()
+                .time_base(TimeBase::new(1, 30000).unwrap())
+                .duration(Tick(1000))
+                .start(Tick(0))
+                .frame_rate(FrameRate::FPS_29_97)
+                .size(1280, 720)
+                .build(),
+        )
+        .build();
+    let mut data = empty().into_data();
+    data.canvas.width = 1000;
+    data.canvas.height = 1000;
+    let mut video = item(1, 0);
+    video.source_asset = Some(AssetId(3));
+    video.content = ItemParams::Video(VideoParams {
+        fades: Default::default(),
+        source_audio_enabled: true,
+        volume: 0.0,
+        muted: false,
+        crop: None,
+        fit: FitMode::Fit,
+        cleanup: Default::default(),
+    });
+    let assets = [asset];
+    // 16:9 inside a square canvas: a 1000 x 562.5 box centred vertically.
+    let fitted = fit_box(&data.canvas, &assets, &video).unwrap();
+    assert!(close([fitted.width, fitted.height], [1.0, 0.5625]));
+    assert!(close([fitted.x, fitted.y], [0.0, 0.21875]));
+    assert!(!fitted.cover);
+    // A crop to the left half changes the aspect the fit uses (640 x 720).
+    if let ItemParams::Video(params) = &mut video.content {
+        params.crop = Some(Crop {
+            x: 0.0,
+            y: 0.0,
+            width: 0.5,
+            height: 1.0,
+        });
+    }
+    let cropped = fit_box(&data.canvas, &assets, &video).unwrap();
+    assert!(close([cropped.width, cropped.height], [8.0 / 9.0, 1.0]));
+    // An unknown source fills the canvas as Fill does; other items have no box.
+    video.source_asset = Some(AssetId(99));
+    let unknown = fit_box(&data.canvas, &assets, &video).unwrap();
+    assert!(unknown.cover && (unknown.width, unknown.height) == (1.0, 1.0));
+    assert!(fit_box(&data.canvas, &assets, &item(2, 0)).is_none());
 }

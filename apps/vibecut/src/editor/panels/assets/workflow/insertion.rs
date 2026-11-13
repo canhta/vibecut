@@ -74,6 +74,7 @@ impl State {
                             volume: 0.0,
                             muted: false,
                             crop: None,
+                            fit: Default::default(),
                             cleanup: Default::default(),
                         }),
                         _ => ItemParams::Audio(project::AudioParams {

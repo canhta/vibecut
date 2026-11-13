@@ -746,6 +746,7 @@ mod tests {
                 muted: false,
                 fades: Default::default(),
                 crop: None,
+                fit: Default::default(),
                 cleanup: Default::default(),
             });
         }

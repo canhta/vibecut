@@ -298,6 +298,7 @@ impl Rig {
                 muted: false,
                 crop: None,
                 fades: Default::default(),
+                fit: Default::default(),
                 cleanup: Default::default(),
             })
         };
@@ -459,6 +460,7 @@ fn new_media_item(asset: AssetId, kind: TrackKind) -> NewItem {
             muted: false,
             crop: None,
             fades: Default::default(),
+            fit: Default::default(),
             cleanup: Default::default(),
         })
     };

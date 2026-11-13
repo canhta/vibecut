@@ -20,6 +20,9 @@ pub struct VideoParams {
     /// Source-normalized region shown in place of the whole frame; absent keeps the full frame.
     #[serde(default)]
     pub crop: Option<crate::Crop>,
+    /// How the cropped source is placed on the canvas, evaluated at render time.
+    #[serde(default)]
+    pub fit: crate::FitMode,
     #[serde(default)]
     pub fades: crate::Fades,
     /// Non-destructive cleanup of the item's source audio; the source media is never changed.

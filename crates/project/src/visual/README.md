@@ -26,6 +26,10 @@ Opacity is owned by the scalar `opacity` animation channel. A missing channel me
 
 `Crop` is one rectangle in normalized source coordinates: `x`/`y` are the top-left corner and `width`/`height` the size, as fractions of the source frame. Every field is finite, width and height are positive, and the rectangle stays inside `0..=1`; the default is the full frame. Video and image items carry `VideoParams.crop`; absent means the full frame. Render sampling and the shorts batch path consume this one type, so it survives trim, retime, split, undo/redo and persistence as item content.
 
+## Fit mode
+
+`FitMode` (`fit`, `fill`, `stretch`, `none`, `manual`) is `VideoParams.fit` and decides how a video or image item's cropped source meets the canvas; `fill` is the creation default. `FitMode::extent` and `FitMode::place` are the one computation of the placement: Fit scales the source inside the canvas keeping aspect, Fill covers the canvas and crops, Stretch maps the source onto the whole canvas, None keeps the source pixel size centred, and Manual is a Stretch base that only the item's transform places. `fit_box` reads the asset's first video stream and the crop for it; without a known source size the item fills the canvas. Render evaluates the policy per frame from the current canvas, so it is never stored in the transform. Audio, text, caption and generated items have no fit mode and refuse the `fit` item patch.
+
 ## Masks
 
 `Item.masks` is an ordered vector of at most 1,024 `Mask` values. IDs are unique within the item and follow the animation-path identifier grammar. Audio items refuse masks. Empty or whitespace-only text masks are inactive but keep their data. Modes are None/Add/Subtract/Intersect/Lighten/Darken/Difference; render owns coverage math.

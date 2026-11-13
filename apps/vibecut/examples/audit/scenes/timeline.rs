@@ -107,6 +107,7 @@ pub(super) fn timeline_main_sized(
                 volume: 0.0,
                 muted: false,
                 crop: None,
+                fit: Default::default(),
                 cleanup: Default::default(),
             }),
         )?;
@@ -439,6 +440,7 @@ pub(super) fn placement(theme: Theme, scale: f32) -> Result<AppHarness, Failure>
             volume: 0.0,
             crop: None,
             muted: false,
+            fit: Default::default(),
             cleanup: Default::default(),
         }),
     )?;
@@ -454,6 +456,7 @@ pub(super) fn placement(theme: Theme, scale: f32) -> Result<AppHarness, Failure>
             crop: None,
             volume: 0.0,
             muted: false,
+            fit: Default::default(),
             cleanup: Default::default(),
         }),
     )?;

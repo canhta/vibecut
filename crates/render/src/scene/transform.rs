@@ -148,8 +148,9 @@ pub mod arrange {
     ///
     /// The transform is sampled at `clamp(at - start, 0, duration)` so a selection
     /// of items that do not overlap in time still shares one clock. The box is the
-    /// canonical placement saved in the project: full canvas for video, image and
-    /// overlay items, the text box around its saved position, and the centred
+    /// canonical placement saved in the project: the fit-mode box of a video or image
+    /// item (`project::fit_box`), the full canvas for overlay items, the text box
+    /// around its saved position, and the centred
     /// graphic author square. Transient render placements are not consulted, and
     /// alpha, glyph, effect and mask coverage never tighten the box.
     ///
@@ -165,7 +166,7 @@ pub mod arrange {
             item.duration()
                 .map_err(|_| Error::Invalid("item duration"))?,
         );
-        let placement = super::super::evaluation::saved_placement(&data.canvas, item)
+        let placement = super::super::evaluation::saved_placement(data, item)
             .ok_or(Error::Unsupported("arrangement on unsupported item"))?;
         let destination = placement.destination;
         if [

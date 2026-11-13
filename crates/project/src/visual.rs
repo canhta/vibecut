@@ -15,7 +15,7 @@ mod transition_params;
 mod typography;
 
 pub use blend::BlendMode;
-pub use crop::Crop;
+pub use crop::{Crop, FitBox, FitMode, cropped_source_size, fit_box};
 pub use curve::{CURVE_GRID, CURVE_MAX_POINTS, CURVE_MIN_POINTS, ToneCurve};
 pub use effects::{
     ANGLE_MAX, CHROMA_KEY_COLOR_DEFAULT, CHROMA_KEY_INTENSITY_DEFAULT, CHROMA_KEY_MAX,

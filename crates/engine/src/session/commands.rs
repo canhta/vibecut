@@ -199,6 +199,8 @@ pub enum ItemParamPatch {
     #[serde(rename = "transform.rotate")]
     Rotate(f64),
     Crop(Option<project::Crop>),
+    /// How a video or image item's cropped source is placed on the canvas.
+    Fit(project::FitMode),
     GraphicFill(Color),
     GraphicStroke(Color),
     GraphicStrokeWidth(f64),
@@ -229,7 +231,7 @@ impl ItemParamPatch {
             (
                 Self::AudioGain(_) | Self::AudioMuted(_),
                 ItemParams::Audio(_) | ItemParams::Video(_)
-            ) | (Self::Crop(_), ItemParams::Video(_))
+            ) | (Self::Crop(_) | Self::Fit(_), ItemParams::Video(_))
                 | (
                     Self::TextContent(_)
                         | Self::TextFont(_)
@@ -298,6 +300,7 @@ impl ItemParamPatch {
             Self::AudioGain(v) => project::valid_volume(*v),
             Self::AudioMuted(_) => true,
             Self::Crop(crop) => crop.as_ref().is_none_or(|crop| crop.valid()),
+            Self::Fit(_) => true,
             Self::TextContent(v) => v.as_str().len() <= 1 << 20,
             Self::TextFont(v) => !v.as_str().trim().is_empty() && v.as_str().len() <= 256,
             Self::TextWeight(v) => project::valid_weight(*v),

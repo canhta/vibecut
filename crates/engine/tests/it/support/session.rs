@@ -170,6 +170,7 @@ pub(crate) fn five_clip_pairs() -> Session {
                     volume: 0.0,
                     muted: false,
                     crop: None,
+                    fit: Default::default(),
                     cleanup: Default::default(),
                 }),
             }

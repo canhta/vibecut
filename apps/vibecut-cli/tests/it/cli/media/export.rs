@@ -507,3 +507,89 @@ fn export_clips_writes_each_full_source_once_with_deterministic_names() {
     // A repeated asset is refused before any render starts.
     assert_ne!(code(&export(&["1", "1"], true)), 0);
 }
+
+#[test]
+fn export_places_the_clip_under_each_fit_mode() {
+    if !tools() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("red.mp4");
+    let project = dir.path().join("fit.vibecut");
+    // A one-second solid red 4:3 source on a black square canvas.
+    crate::media_fixture::ffmpeg(&[
+        os("-f"),
+        os("lavfi"),
+        os("-i"),
+        os("color=c=red:size=128x96:rate=30:duration=1"),
+        os("-c:v"),
+        os("libx264"),
+        os("-pix_fmt"),
+        os("yuv420p"),
+        os("-color_primaries"),
+        os("bt709"),
+        os("-color_trc"),
+        os("bt709"),
+        os("-colorspace"),
+        os("bt709"),
+        source.as_os_str(),
+    ]);
+    media_project(&project, &source, None);
+    let exec = crate::cli::fixtures::exec;
+    exec(
+        &project,
+        "project.set_canvas",
+        serde_json::json!({"width":192,"height":192}),
+    );
+    // Probes: A is above the Fit letterbox (y 24..168) and above the Original
+    // box (y 48..144), B lies between them, C is left of the Original box.
+    let pixel = |frame: &[u8], x: usize, y: usize| {
+        let at = (y * 192 + x) * 3;
+        (frame[at], frame[at + 1], frame[at + 2])
+    };
+    let red = |(r, g, b): (u8, u8, u8)| r > 150 && g < 80 && b < 80;
+    let black = |(r, g, b): (u8, u8, u8)| r < 60 && g < 60 && b < 60;
+    // (mode, fields to set in order, [A, B, C] expected red)
+    let rows: [(&str, &[&str], [bool; 3]); 5] = [
+        ("fit", &["fit"], [false, true, true]),
+        ("fill", &["fill"], [true, true, true]),
+        ("stretch", &["stretch"], [true, true, true]),
+        ("none", &["none"], [false, false, false]),
+        // Manual after Fit records the fit, so the picture is unchanged.
+        ("manual", &["fit", "manual"], [false, true, true]),
+    ];
+    for (name, modes, expected) in rows {
+        for mode in modes {
+            exec(
+                &project,
+                "timeline.set_item_param",
+                serde_json::json!({"item":0,"patch":{"field":"fit","value":mode}}),
+            );
+        }
+        let output_path = dir.path().join(format!("{name}.mp4"));
+        let output = cli(&[
+            os("export"),
+            project.as_os_str(),
+            os("--out"),
+            output_path.as_os_str(),
+            os("--json"),
+        ]);
+        assert_eq!(
+            code(&output),
+            0,
+            "{name}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let frame = &decoded_rgb(&output_path, 192, 192, &[0])[0];
+        for (probe, (x, y)) in [(96, 8), (96, 36), (8, 96)].into_iter().enumerate() {
+            let value = pixel(frame, x, y);
+            if expected[probe] {
+                assert!(red(value), "{name} probe {probe}: {value:?}");
+            } else {
+                assert!(black(value), "{name} probe {probe}: {value:?}");
+            }
+        }
+        // The middle of the canvas is the clip under every mode.
+        assert!(red(pixel(frame, 96, 96)), "{name} centre");
+    }
+}

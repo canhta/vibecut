@@ -229,6 +229,7 @@ fn insert_video(editor: &mut Editor, asset: AssetId) -> project::ItemId {
                     volume: 0.0,
                     muted: false,
                     crop: None,
+                    fit: Default::default(),
                     cleanup: Default::default(),
                 }),
             },

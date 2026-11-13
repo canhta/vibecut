@@ -274,6 +274,7 @@ pub(super) fn media_editor(theme: Theme, locale: Locale) -> Result<(Editor, Item
             volume: 0.0,
             muted: false,
             crop: None,
+            fit: Default::default(),
             cleanup: Default::default(),
         }),
     )?;
@@ -289,6 +290,7 @@ pub(super) fn media_editor(theme: Theme, locale: Locale) -> Result<(Editor, Item
             volume: 0.0,
             crop: None,
             muted: false,
+            fit: Default::default(),
             cleanup: Default::default(),
         }),
     )?;

@@ -581,6 +581,17 @@ pub fn blend_label(mode: project::BlendMode) -> Text {
     }
 }
 
+/// The label of one clip fit mode.
+pub fn fit_label(mode: project::FitMode) -> Text {
+    match mode {
+        project::FitMode::Fit => Text::FitModeFit,
+        project::FitMode::Fill => Text::FitModeFill,
+        project::FitMode::Stretch => Text::FitModeStretch,
+        project::FitMode::None => Text::FitModeOriginal,
+        project::FitMode::Manual => Text::FitModeManual,
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {

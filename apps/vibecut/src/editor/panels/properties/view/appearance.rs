@@ -91,6 +91,46 @@ impl Panel<'_, '_> {
         self.remember("inspector.blendMode", &response);
     }
 
+    /// The Fit mode row of a video or image item: how its cropped source meets
+    /// the canvas. The reference exposes no such row, so it is [new].
+    pub(super) fn fit_control(&mut self, ui: &mut egui::Ui, item: ItemId) {
+        let Some(current) =
+            read::item(self.cx.session.project(), item).and_then(|item| match &item.content {
+                ItemParams::Video(params) => Some(params.fit),
+                _ => None,
+            })
+        else {
+            return;
+        };
+        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        self.row_label(ui, row, self.tr(Text::FitMode));
+        let label = self.tr(i18n::fit_label(current));
+        let response = value_ui
+            .scope(|ui| {
+                ui.spacing_mut().interact_size.y = theme::size::FIELD;
+                egui::ComboBox::from_id_salt(Id::unique("inspector.fit"))
+                    .selected_text(label)
+                    .width(ui.available_width().min(FIELD_COLUMN))
+                    .show_ui(ui, |ui| {
+                        for mode in project::FitMode::ALL {
+                            let response = ui
+                                .selectable_label(current == mode, self.tr(i18n::fit_label(mode)));
+                            self.remember(format!("inspector.fit.{}", mode.id()), &response);
+                            if response.clicked() {
+                                self.set_item_field(item, "fit", mode.id());
+                                ui.close();
+                            }
+                        }
+                    })
+                    .response
+            })
+            .inner;
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::Role::ComboBox, true, self.tr(Text::FitMode))
+        });
+        self.remember("inspector.fit", &response);
+    }
+
     /// A colour row: the label left, a swatch with its hex right. Clicking opens
     /// the picker as a popover hanging off the panel's left edge.
     pub(super) fn color_row(

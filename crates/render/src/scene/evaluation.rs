@@ -21,8 +21,11 @@ const GLOW_MAX: f32 = 64.0;
 /// The placement saved in the project, without transient render overrides:
 /// full canvas for video, image, overlay and other placed kinds, the text box
 /// around its saved position, and the centred graphic author square. Captions
-/// resolve through their style; audio has no box.
-pub(super) fn saved_placement(canvas: &project::Canvas, item: &Item) -> Option<Placement> {
+/// resolve through their style; audio has no box. A video or image item takes
+/// the box of its fit mode from `project::fit_box`, the one placement
+/// computation shared with coverage and arrangement.
+pub(super) fn saved_placement(data: &project::ProjectData, item: &Item) -> Option<Placement> {
+    let canvas = &data.canvas;
     Some(match &item.content {
         ItemParams::Text(params) => {
             let width = 0.8;
@@ -71,7 +74,24 @@ pub(super) fn saved_placement(canvas: &project::Canvas, item: &Item) -> Option<P
                 ..Default::default()
             }
         }
-        ItemParams::Video(_) | ItemParams::Overlay(_) => Placement::default(),
+        ItemParams::Video(_) => {
+            let fitted = project::fit_box(canvas, &data.assets, item)?;
+            Placement {
+                destination: Rect {
+                    x: fitted.x,
+                    y: fitted.y,
+                    width: fitted.width,
+                    height: fitted.height,
+                },
+                fit: if fitted.cover {
+                    Fit::Cover
+                } else {
+                    Fit::Stretch
+                },
+                ..Default::default()
+            }
+        }
+        ItemParams::Overlay(_) => Placement::default(),
         ItemParams::Audio(_) | ItemParams::Caption(_) => return None,
     })
 }
@@ -147,7 +167,7 @@ impl<'a> Renderer<'a> {
                         .unwrap_or_else(|| self.settings.caption_style.clone());
                     super::caption::cue_placement(&style, None)
                 } else {
-                    saved_placement(&self.project.data().canvas, item).unwrap_or_default()
+                    saved_placement(self.project.data(), item).unwrap_or_default()
                 }
             });
         item_crop(item, placement, local)

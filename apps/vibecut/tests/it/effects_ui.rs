@@ -396,6 +396,7 @@ fn fixture() -> Fixture {
             volume: 0.0,
             muted: false,
             crop: None,
+            fit: Default::default(),
             cleanup: Default::default(),
         }),
     );
@@ -411,6 +412,7 @@ fn fixture() -> Fixture {
             volume: 0.0,
             muted: false,
             crop: None,
+            fit: Default::default(),
             cleanup: Default::default(),
         }),
     );
@@ -2631,6 +2633,7 @@ fn chroma_frame_fixture() -> (Editor, ItemId) {
             volume: 0.0,
             muted: false,
             crop: None,
+            fit: Default::default(),
             cleanup: Default::default(),
         }),
     );

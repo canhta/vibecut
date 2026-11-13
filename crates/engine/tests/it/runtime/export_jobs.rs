@@ -786,6 +786,7 @@ fn registered_burn_job_exports_and_typed_missing_media_preserves_previous_output
         volume: 0.0,
         muted: false,
         crop: None,
+        fit: Default::default(),
         cleanup: Default::default(),
     });
     session = engine::Session::new(project::Project::new(data).unwrap(), 10).unwrap();
