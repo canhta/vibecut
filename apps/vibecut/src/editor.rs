@@ -9,7 +9,7 @@ pub(crate) mod panels;
 pub(crate) use panels::assets;
 pub(crate) use panels::assets::media_panel;
 pub(crate) use panels::player::KeyPick;
-pub use panels::player::crop::{Aspect as CropAspect, Inspection as CropInspection};
+pub use panels::player::crop::{CropAspect, CropInspection};
 pub use panels::properties;
 mod timeline;
 mod widgets;

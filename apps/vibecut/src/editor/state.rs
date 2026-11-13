@@ -171,7 +171,7 @@ pub struct Inspection {
     pub export: Option<crate::export::ExportInspection>,
     pub export_options: crate::export::ExportOptions,
     /// Working crop while its dialog is open; the project keeps its own copy.
-    pub crop: Option<super::panels::player::crop::Inspection>,
+    pub crop: Option<super::panels::player::crop::CropInspection>,
     pub models: Option<crate::model_manager::ModelInspection>,
     pub subtitles: Option<super::assets::captions::Inspection>,
     /// Unknown actions, invalid chords and conflicts from the persisted map.

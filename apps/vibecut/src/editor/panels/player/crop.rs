@@ -13,7 +13,7 @@ use project::ItemId;
 
 /// Aspect shapes the dialog offers, in the reference order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Aspect {
+pub enum CropAspect {
     Custom,
     Original,
     NineSixteen,
@@ -24,7 +24,7 @@ pub enum Aspect {
     TwoOne,
 }
 
-impl Aspect {
+impl CropAspect {
     const ALL: [Self; 8] = [
         Self::Custom,
         Self::Original,
@@ -128,9 +128,9 @@ impl Aspect {
 /// Read-only dialog state for automation; the project itself stays untouched
 /// until Apply.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Inspection {
+pub struct CropInspection {
     pub item: ItemId,
-    pub aspect: Aspect,
+    pub aspect: CropAspect,
     pub crop: project::Crop,
 }
 
@@ -180,7 +180,7 @@ pub(crate) struct Dialog {
     item: ItemId,
     original: Option<project::Crop>,
     crop: project::Crop,
-    aspect: Aspect,
+    aspect: CropAspect,
 }
 
 impl Dialog {
@@ -191,12 +191,12 @@ impl Dialog {
             item: target.item,
             original: target.original,
             crop,
-            aspect: Aspect::of(crop, target.aspect),
+            aspect: CropAspect::of(crop, target.aspect),
         }
     }
 
-    pub(crate) fn inspect(&self) -> Inspection {
-        Inspection {
+    pub(crate) fn inspect(&self) -> CropInspection {
+        CropInspection {
             item: self.item,
             aspect: self.aspect,
             crop: self.crop,
@@ -333,7 +333,7 @@ impl Dialog {
                             .height(300.0)
                             .selected_text(tr(self.aspect.label()))
                             .show_ui(ui, |ui| {
-                                for aspect in Aspect::ALL {
+                                for aspect in CropAspect::ALL {
                                     let response = ui.selectable_label(
                                         self.aspect == aspect,
                                         tr(aspect.label()),
@@ -392,7 +392,7 @@ impl Dialog {
                             ui.add_sized([90.0, 34.0], egui::Button::new(tr(Text::CropReset)));
                         if reset.clicked() {
                             self.crop = project::Crop::default();
-                            self.aspect = Aspect::Original;
+                            self.aspect = CropAspect::Original;
                         }
                         output.widgets.push(("crop.reset", reset));
                     });
