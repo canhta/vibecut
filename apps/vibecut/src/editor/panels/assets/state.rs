@@ -48,6 +48,14 @@ pub(in crate::editor) struct State {
     /// Effects tab: the tile preview owner and the drag in flight.
     pub(in crate::editor) effect_previews: Option<super::effects::EffectPreviews>,
     pub(in crate::editor) effect_drag: Option<String>,
+    /// Media panel: the asset drag in flight, resolved by the timeline's lanes.
+    pub(in crate::editor) media_drag: Option<crate::editor::context::MediaDrag>,
+    /// The OS clipboard's file list, read on paste; tests inject a fixture reader.
+    pub(in crate::editor) os_files: crate::services::file_clipboard::FileClipboard,
+    /// A paste import in flight: the playhead its probed files insert at.
+    pub(in crate::editor) paste_at: Option<super::Tick>,
+    /// Assets the current import batch added, in probe order.
+    pub(in crate::editor) import_added: Vec<super::AssetId>,
     pub(super) transition_family: Option<&'static str>,
     /// Transitions tab: the Favorites sub-navigation entry replaces the family filter.
     pub(super) transition_favorites: bool,
@@ -124,6 +132,10 @@ impl Default for State {
             effect_favorites: false,
             effect_previews: None,
             effect_drag: None,
+            media_drag: None,
+            os_files: Default::default(),
+            paste_at: None,
+            import_added: Vec::new(),
             transition_family: None,
             transition_favorites: false,
             adjustment_favorites: false,

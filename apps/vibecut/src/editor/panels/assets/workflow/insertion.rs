@@ -1,9 +1,14 @@
 //! Inserts chosen assets into the timeline.
+//!
+//! The Media-panel "+", a Media drag released over the lanes and a paste of OS files all
+//! resolve to `insert_assets`: one `timeline.insert` per asset in one transaction.
 
 use super::super::{
-    AssetId, AssetState, BTreeSet, Command, CreatedId, ItemParams, NewItem, SourceAsset,
-    SourceRange, TICKS_PER_SECOND, Text, Tick, TrackKind, asset_kind, error_detail,
+    AssetId, AssetState, BTreeSet, Command, CreatedId, ItemParams, NewItem, PathBuf, Result,
+    SourceAsset, SourceRange, TICKS_PER_SECOND, Text, Tick, TrackKind, asset_kind, egui,
+    error_detail,
 };
+use crate::editor::context::MediaDrag;
 use super::State;
 use crate::editor::Port;
 use crate::i18n;
@@ -26,46 +31,49 @@ fn lower_third(canvas_height: u32) -> project::Result<project::Animations> {
 }
 
 impl State {
-    /// Insert selected assets in library order; engine owns track and overlap policy.
-    pub(in crate::editor) fn insert_selected_assets(&mut self, port: &mut Port<'_>) {
-        let selected: Vec<SourceAsset> = port
-            .session
-            .project()
-            .data()
-            .assets
-            .iter()
-            .filter(|asset| !asset.ephemeral())
-            .filter(|asset| self.media_selection.contains(&asset.id()))
-            .cloned()
-            .collect();
-        if selected.is_empty() {
-            return;
-        }
-        let at = match port.playhead() {
-            Ok(at) => at,
-            Err(_error) => {
-                tracing::warn!(category = "asset_position", "insertion unavailable");
-                let text = i18n::text(port.locale(), Text::InsertFailed);
-                port.toast(text, None);
-                return;
-            }
-        };
-        let unsupported: BTreeSet<AssetId> = selected
+    /// Insert assets in library order, one `timeline.insert` each, all in one transaction so
+    /// one undo step reverts the batch. The engine owns track allocation and overlap policy.
+    /// A secondary placement lands the first asset on the track it creates and stacks the
+    /// rest on that track.
+    pub(in crate::editor) fn insert_assets(
+        &mut self,
+        port: &mut Port<'_>,
+        assets: &[SourceAsset],
+        at: Tick,
+        placement: engine::Placement,
+    ) -> std::result::Result<Vec<project::ItemId>, engine::control::Error> {
+        let unsupported: BTreeSet<AssetId> = assets
             .iter()
             .filter(|asset| self.asset_states.get(&asset.id()) != Some(&AssetState::Ready))
             .map(SourceAsset::id)
             .collect();
-        let result = port.session.transaction(|session| {
+        port.session.transaction(|session| {
             let mut created = Vec::new();
             let mut video_at = at;
             let mut audio_at = at;
-            for asset in &selected {
+            let mut target = placement;
+            for asset in assets {
                 if unsupported.contains(&asset.id()) {
                     return Err(engine::control::Error::Edit(
                         engine::EditError::Unsupported("media codec is unsupported in this build"),
                     ));
                 }
                 let kind = asset_kind(asset)?;
+                if let engine::Placement::Track { track } = target {
+                    let owner = session
+                        .project()
+                        .data()
+                        .scene()
+                        .timeline
+                        .iter()
+                        .find(|candidate| candidate.id == track)
+                        .map(|candidate| candidate.kind);
+                    if owner != Some(kind) {
+                        return Err(engine::control::Error::Edit(
+                            engine::EditError::Unsupported("track does not accept this media"),
+                        ));
+                    }
+                }
                 let duration = asset
                     .probe()
                     .duration
@@ -92,7 +100,7 @@ impl State {
                     },
                 };
                 let outcome = session.apply(Command::InsertItem {
-                    placement: engine::Placement::Auto,
+                    placement: target,
                     item,
                 })?;
                 let placed = outcome
@@ -101,6 +109,14 @@ impl State {
                     .ok_or(engine::control::Error::Edit(engine::EditError::Invalid(
                         "item placement",
                     )))?;
+                if matches!(
+                    target,
+                    engine::Placement::Above { .. } | engine::Placement::Below { .. }
+                ) {
+                    target = engine::Placement::Track {
+                        track: placed.track,
+                    };
+                }
                 let end = session
                     .project()
                     .data()
@@ -124,7 +140,15 @@ impl State {
                 }));
             }
             Ok(created)
-        });
+        })
+    }
+
+    /// Report an insert result: select what it created, or say it failed.
+    fn finish_insert(
+        &mut self,
+        port: &mut Port<'_>,
+        result: std::result::Result<Vec<project::ItemId>, engine::control::Error>,
+    ) {
         match result {
             Ok(created) => {
                 port.select(created.into_iter().collect());
@@ -132,13 +156,123 @@ impl State {
             }
             Err(error) => {
                 tracing::warn!(category = "asset_insert", "insertion failed");
-                let detail = error_detail(&error);
-                self.import_notice = Some(detail.clone());
+                self.import_notice = Some(error_detail(&error));
                 let text = i18n::text(port.locale(), Text::InsertFailed);
                 port.toast(text, None);
             }
         }
     }
+
+    /// The Media "+" (`media.insert`): the selected assets at the playhead, auto-placed.
+    pub(in crate::editor) fn insert_selected_assets(&mut self, port: &mut Port<'_>) {
+        let selected: Vec<SourceAsset> = port
+            .session
+            .project()
+            .data()
+            .assets
+            .iter()
+            .filter(|asset| !asset.ephemeral())
+            .filter(|asset| self.media_selection.contains(&asset.id()))
+            .cloned()
+            .collect();
+        if selected.is_empty() {
+            return;
+        }
+        let at = match port.playhead() {
+            Ok(at) => at,
+            Err(_error) => {
+                tracing::warn!(category = "asset_position", "insertion unavailable");
+                let text = i18n::text(port.locale(), Text::InsertFailed);
+                port.toast(text, None);
+                return;
+            }
+        };
+        let result = self.insert_assets(port, &selected, at, engine::Placement::Auto);
+        self.finish_insert(port, result);
+    }
+
+    /// Record the Media drag that a pointer press on an asset card starts.
+    pub(in crate::editor) fn begin_media_drag(&mut self, port: &mut Port<'_>, ids: Vec<AssetId>) {
+        let kind = ids.first().and_then(|first| {
+            port.session
+                .project()
+                .data()
+                .assets
+                .iter()
+                .find(|asset| asset.id() == *first)
+                .and_then(|asset| asset_kind(asset).ok())
+        });
+        self.media_drag = kind.map(|kind| MediaDrag { assets: ids, kind });
+    }
+
+    /// The pointer let go with no timeline landing: the drag ends without an insert.
+    pub(in crate::editor) fn finish_media_drag(&mut self, ctx: &egui::Context) {
+        if self.media_drag.is_some() && ctx.input(|input| !input.pointer.primary_down()) {
+            self.media_drag = None;
+        }
+    }
+
+    /// A Media drag released over the lanes: insert the dragged assets with the placement the
+    /// timeline resolved for the drop, at the drop time.
+    pub(in crate::editor) fn insert_dropped(
+        &mut self,
+        port: &mut Port<'_>,
+        ids: &[AssetId],
+        at: Tick,
+        placement: engine::Placement,
+    ) {
+        let assets: Vec<SourceAsset> = port
+            .session
+            .project()
+            .data()
+            .assets
+            .iter()
+            .filter(|asset| !asset.ephemeral() && ids.contains(&asset.id()))
+            .cloned()
+            .collect();
+        if assets.is_empty() {
+            return;
+        }
+        let result = self.insert_assets(port, &assets, at, placement);
+        self.finish_insert(port, result);
+    }
+
+    /// Paste with files on the OS clipboard: import them; the probed ones insert at the
+    /// playhead when the batch finishes (see `finish_import`).
+    pub(in crate::editor) fn paste_files(
+        &mut self,
+        port: &mut Port<'_>,
+        paths: Vec<PathBuf>,
+        at: Tick,
+    ) -> Result<()> {
+        self.start_import(port, paths)?;
+        self.paste_at = Some(at);
+        Ok(())
+    }
+
+    /// The batch a paste started has finished probing: insert what is ready at its playhead.
+    pub(in crate::editor) fn insert_pasted(&mut self, port: &mut Port<'_>, at: Tick) {
+        let ids = std::mem::take(&mut self.import_added);
+        let assets: Vec<SourceAsset> = port
+            .session
+            .project()
+            .data()
+            .assets
+            .iter()
+            .filter(|asset| {
+                !asset.ephemeral()
+                    && ids.contains(&asset.id())
+                    && self.asset_states.get(&asset.id()) == Some(&AssetState::Ready)
+            })
+            .cloned()
+            .collect();
+        if assets.is_empty() {
+            return;
+        }
+        let result = self.insert_assets(port, &assets, at, engine::Placement::Auto);
+        self.finish_insert(port, result);
+    }
+
     pub(in crate::editor) fn insert_graphic(
         &mut self,
         port: &mut Port<'_>,

@@ -56,6 +56,7 @@ impl Editor {
         if missing_fade || interrupted_fade {
             self.discard_gesture();
         }
+        self.frame.text_focused = ui.ctx().text_edit_focused();
         if !self.dialogs.export.is_open()
             && !self
                 .assets
@@ -225,6 +226,7 @@ impl Editor {
             self.properties.cancel_reorder();
         }
         self.with_assets(|assets, port| assets.finish_effect_drag(port, ui.ctx()));
+        self.assets.finish_media_drag(ui.ctx());
         self.with_assets(|assets, port| assets.finish_transition_drag(port, ui.ctx()));
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(

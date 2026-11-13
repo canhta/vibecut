@@ -17,6 +17,17 @@ impl Editor {
             self.commit_text_edit();
         }
         let (spec, argument) = actions::resolve(id).ok_or(Error::Unsupported("widget action"))?;
+        // Files on the OS clipboard win over the in-app clipboard and insert at the
+        // playhead; a focused text field keeps its own paste.
+        if id == "edit.paste" && !self.frame.text_focused {
+            let paths = self.assets.os_files.read();
+            if !paths.is_empty() {
+                return self.activate_with(None, |editor| {
+                    let at = editor.playback.position()?;
+                    editor.with_assets(|assets, port| assets.paste_files(port, paths, at))
+                });
+            }
+        }
         // A disabled style action must not flush an unrelated caption draft.
         if (id.starts_with("subtitles.style.")
             || id.starts_with("graphic.insert.")

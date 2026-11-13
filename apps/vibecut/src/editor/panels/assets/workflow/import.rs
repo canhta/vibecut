@@ -68,6 +68,8 @@ impl State {
         self.import_failures.clear();
         self.import_notice = None;
         self.import_error = None;
+        self.import_added.clear();
+        self.paste_at = None;
         port.clear_toast();
         let result = self.start_import_paths(port, paths, first);
         if result.is_err() {
@@ -194,6 +196,7 @@ impl State {
                             self.asset_states.insert(id, state);
                             if self.restoring_asset.is_none() {
                                 self.import_imported += 1;
+                                self.import_added.push(id);
                             }
                         }
                         Err(error) => {
@@ -277,6 +280,9 @@ impl State {
             if *state == AssetState::Probing {
                 *state = AssetState::Ready;
             }
+        }
+        if let Some(at) = self.paste_at.take() {
+            self.insert_pasted(port, at);
         }
         let failed_count = self.import_failures.len();
         let unfinished_count = self.import_total.saturating_sub(self.import_completed);

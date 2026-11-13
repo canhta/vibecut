@@ -65,6 +65,7 @@ impl State {
                     }
                 }
                 Action::EffectDrag(kind) => self.effect_drag = Some(kind.to_owned()),
+                Action::MediaDrag(ids) => self.begin_media_drag(port, ids),
                 Action::AddEffect(kind) => self.add_effect_from_selection(port, kind),
                 Action::TransitionDrag(kind) => self.begin_transition_drag(port, kind),
                 Action::AddTransition(kind) => self.add_transition_from_selection(port, kind),

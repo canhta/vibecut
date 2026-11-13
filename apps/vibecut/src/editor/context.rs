@@ -25,6 +25,13 @@ pub(crate) enum SaveStatus {
 }
 pub(crate) use visuals::VisualQuery;
 
+/// A Media-panel drag in flight: the dragged assets and the track kind they insert as.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct MediaDrag {
+    pub(crate) assets: Vec<media::AssetId>,
+    pub(crate) kind: project::TrackKind,
+}
+
 /// Human-only desktop cache intentions, outside editing/agent commands.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CacheAction {
@@ -126,6 +133,8 @@ pub(crate) struct Context<'a> {
     pub(crate) disabled: std::collections::BTreeSet<&'static str>,
     /// While an effect is being dragged: the clips that accept it.
     pub(crate) effect_targets: Option<std::collections::BTreeSet<project::ItemId>>,
+    /// While a Media-panel asset is being dragged: the assets and the track kind they need.
+    pub(crate) media_drag: Option<MediaDrag>,
     /// Armed chroma-key eyedropper; the player samples its next click.
     pub(crate) key_color_pick: Option<crate::editor::KeyPick>,
     /// The colour popover's eyedropper is armed; the player samples its next click.
