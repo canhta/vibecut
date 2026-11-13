@@ -814,6 +814,13 @@ impl<'a, 'c> Panel<'a, 'c> {
                 self.remember("inspector.details.modify", &response);
                 if response.clicked() {
                     self.state.request_canvas_focus();
+                    // A collapsed canvas section would never draw the width that takes the focus.
+                    if !self.cx.preferences.section_open(canvas::SECTION_KEY, true) {
+                        self.actions.push(Action::SetSection {
+                            key: canvas::SECTION_KEY,
+                            open: true,
+                        });
+                    }
                     self.actions.push(Action::Activate("inspector.project"));
                 }
             });

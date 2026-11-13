@@ -361,17 +361,34 @@ fn details_rows_and_info_section_collapse_and_persist() {
         }
     }
 
-    // Modify opens the Settings tab and focuses the canvas width.
-    let mut harness = build(editor(Preferences::default()));
-    harness.run_steps(3);
-    click(&mut harness, "inspector.details");
-    click(&mut harness, "inspector.details.modify");
-    assert!(has_widget(&harness, "inspector.canvas.fps"));
-    assert!(
-        harness
-            .get(By::new().predicate(|node| node.author_id() == Some("inspector.canvas.width")))
-            .is_focused()
-    );
+    // Modify opens the Settings tab and focuses the canvas width, expanding a collapsed
+    // canvas section first.
+    for canvas_open in [true, false] {
+        let mut preferences = Preferences::default();
+        if !canvas_open {
+            preferences
+                .sections
+                .insert("inspector.canvas".into(), false);
+        }
+        let mut harness = build(editor(preferences));
+        harness.run_steps(3);
+        click(&mut harness, "inspector.details");
+        click(&mut harness, "inspector.details.modify");
+        assert!(
+            harness
+                .state()
+                .preferences
+                .section_open("inspector.canvas", true),
+            "canvas section open after Modify (was open: {canvas_open})"
+        );
+        assert!(has_widget(&harness, "inspector.canvas.fps"));
+        assert!(
+            harness
+                .get(By::new().predicate(|node| node.author_id() == Some("inspector.canvas.width")))
+                .is_focused(),
+            "canvas width focused (section was open: {canvas_open})"
+        );
+    }
 
     // Info section: collapsed by default, toggles and persists per key.
     let dir = tempfile::tempdir().unwrap();

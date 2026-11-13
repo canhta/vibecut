@@ -21,6 +21,8 @@ const RATES: [time::FrameRate; 5] = [
 const SWATCHES_PER_ROW: usize = 12;
 const SWATCH_SIZE: f32 = 20.0;
 const SWATCH_ROW: f32 = 24.0;
+/// Preference key of the Settings canvas section, which Modify opens.
+pub(super) const SECTION_KEY: &str = "inspector.canvas";
 
 impl Panel<'_, '_> {
     pub(super) fn settings(&mut self, ui: &mut egui::Ui) {
@@ -32,7 +34,7 @@ impl Panel<'_, '_> {
         self.panel_section(
             ui,
             "inspector.section.canvas",
-            "inspector.canvas",
+            SECTION_KEY,
             Text::Project,
             true,
             false,
