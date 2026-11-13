@@ -3497,9 +3497,12 @@ fn verified_english_cue(
     }
 }
 
-/// Types into one automation id after its accessibility click focuses it.
+/// Types into one automation id after an accessibility focus request; an accessibility click
+/// does not focus a text field.
 fn type_into(h: &mut Harness<'_, Editor>, id: &str, text: &str) {
-    click(h, id);
+    h.get(By::new().predicate(|n| n.author_id() == Some(id)))
+        .focus();
+    h.run_steps(2);
     h.get(By::new().predicate(|n| n.author_id() == Some(id)))
         .type_text(text);
     h.run_steps(3);

@@ -45,6 +45,11 @@ impl Subtitles {
             },
         })
         .map_err(|_| Error::Invalid("manual caption asset"))?;
+        let end = at
+            .checked_add(duration)
+            .ok_or(Error::Invalid("caption item end"))?;
+        // The selected item's track takes the new item only where it is free; otherwise the
+        // engine allocates a text track, so the item still starts at the playhead.
         let track = self.item.and_then(|item| {
             session
                 .project()
@@ -53,6 +58,11 @@ impl Subtitles {
                 .timeline
                 .iter()
                 .find(|track| track.items.iter().any(|i| i.id == item))
+                .filter(|track| {
+                    track.items.iter().all(|i| {
+                        i.start >= end || i.end().is_ok_and(|item_end| item_end <= at)
+                    })
+                })
                 .map(|track| track.id)
         });
         let outcome = session.apply(Command::CaptionsAddEmpty {

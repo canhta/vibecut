@@ -25,26 +25,32 @@ impl StickerSource for StickerStore {
 /// and the inserted sticker read on the dark panel. A root that names its own colour keeps it.
 /// Only the lent bytes change; the cached file keeps its verified bytes.
 fn with_default_colour(bytes: Vec<u8>) -> Vec<u8> {
-    let Some(at) = default_colour_offset(&bytes) else {
+    let Some((at, attribute)) = default_colour_insert(&bytes) else {
         return bytes;
     };
     let (head, tail) = bytes.split_at(at);
-    let mut coloured = Vec::with_capacity(bytes.len() + 16);
+    let mut coloured = Vec::with_capacity(bytes.len() + attribute.len());
     coloured.extend_from_slice(head);
-    coloured.extend_from_slice(b" color=\"#FFFFFF\"");
+    coloured.extend_from_slice(attribute);
     coloured.extend_from_slice(tail);
     coloured
 }
 
-/// The byte offset just after `<svg` of the root, when the root names no colour and is a plain
-/// `svg` element. `None` leaves the bytes unchanged.
-fn default_colour_offset(bytes: &[u8]) -> Option<usize> {
+/// Where the white root colour goes and its bytes, when the root names no colour and is a plain
+/// `svg` element: before the root's first attribute, after its namespace declarations, or just
+/// after `<svg` when it has no attribute. `None` leaves the bytes unchanged.
+fn default_colour_insert(bytes: &[u8]) -> Option<(usize, &'static [u8])> {
     let text = std::str::from_utf8(bytes).ok()?;
     let document = roxmltree::Document::parse(text).ok()?;
     let root = document.root_element();
     let start = root.range().start;
-    (root.attribute("color").is_none() && text.get(start..start + 4) == Some("<svg"))
-        .then_some(start + 4)
+    if root.attribute("color").is_some() || text.get(start..start + 4) != Some("<svg") {
+        return None;
+    }
+    Some(match root.attributes().next() {
+        Some(first) => (first.range().start, b"color=\"#FFFFFF\" "),
+        None => (start + 4, b" color=\"#FFFFFF\""),
+    })
 }
 
 /// The per-user store over the curated collections, opened once per process and lent to the
