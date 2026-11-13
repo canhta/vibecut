@@ -776,8 +776,8 @@ impl Editor {
                 self.desk().fail(error.to_string());
                 return;
             }
-            if let Some(index) = self.playback.proxies() {
-                index.set_enabled(on);
+            if let Err(error) = self.playback.set_proxy_preview(on) {
+                self.desk().fail(error.to_string());
             }
             self.desk().sync();
         }

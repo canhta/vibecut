@@ -506,6 +506,20 @@ impl Playback {
     pub fn proxies(&self) -> Option<&engine::proxies::ProxyIndex> {
         self.sources.proxies()
     }
+    /// Turn proxy preview on or off. The shown frame was read from the other source
+    /// choice, so the current frame is requested again: a cleared proxy then falls
+    /// back to the source with its typed reason instead of waiting for the next seek.
+    pub fn set_proxy_preview(&mut self, on: bool) -> Result<()> {
+        let Some(index) = self.sources.proxies() else {
+            return Ok(());
+        };
+        if index.enabled() == on {
+            return Ok(());
+        }
+        index.set_enabled(on);
+        let request = read_request(&self.request)?;
+        self.seek(self.position()?, request.playing, request.project)
+    }
     pub fn position(&self) -> Result<Tick> {
         self.request
             .lock()
