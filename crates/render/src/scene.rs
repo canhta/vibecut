@@ -17,15 +17,15 @@ pub mod viewport;
 
 use crate::{Error, Image, Result};
 pub use caption::style_from_cue;
-pub use sticker::{
-    FLAGS_PROVIDER, MAX_STICKER_RASTER_SIDE, SHAPES_PROVIDER, StickerError, StickerRaster,
-    rasterize_sticker,
-};
 pub use captions::{CaptionBackground, CaptionOutline, CaptionPosition, CaptionStyle};
 use project::{AnimationPath, ItemId, Project};
 use raster::{TextEntry, TextKey};
 use std::collections::BTreeMap;
 use std::sync::Arc;
+pub use sticker::{
+    FLAGS_PROVIDER, MAX_STICKER_RASTER_SIDE, SHAPES_PROVIDER, StickerError, StickerRaster,
+    rasterize_sticker, sticker_shape_graphic,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rect {

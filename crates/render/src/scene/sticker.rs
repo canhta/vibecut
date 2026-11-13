@@ -7,6 +7,8 @@ use super::sticker_flags::FLAGS;
 use crate::image::{color, over};
 use crate::{ExecutionHooks, Image, MemoryKind, Result, check};
 use project::{GraphicParams, Item, ItemParams, StickerParams};
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex, OnceLock};
 use time::Tick;
 
 /// Longest side, in pixels, a single sticker raster may have.
@@ -43,7 +45,8 @@ pub struct StickerRaster {
     pub pixels: Vec<u8>,
 }
 
-fn flag_svg(sticker: &str) -> Option<&'static [u8]> {
+/// The bundled flag named by a `flags:<code>` id: its table code and SVG bytes.
+fn flag_svg(sticker: &str) -> Option<(&'static str, &'static [u8])> {
     let (provider, value) = sticker.split_once(':')?;
     if provider != FLAGS_PROVIDER {
         return None;
@@ -52,7 +55,24 @@ fn flag_svg(sticker: &str) -> Option<&'static [u8]> {
     let index = FLAGS
         .binary_search_by(|(code, _)| (*code).cmp(value.as_str()))
         .ok()?;
-    FLAGS.get(index).map(|(_, bytes)| *bytes)
+    FLAGS.get(index).copied()
+}
+
+/// The parsed tree of one bundled flag. Each flag parses once per process; a frame only scales
+/// and paints the cached tree.
+fn flag_tree(code: &'static str, bytes: &'static [u8]) -> Option<Arc<resvg::usvg::Tree>> {
+    static TREES: OnceLock<Mutex<BTreeMap<&'static str, Arc<resvg::usvg::Tree>>>> = OnceLock::new();
+    let trees = TREES.get_or_init(Mutex::default);
+    let mut trees = trees
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(tree) = trees.get(code) {
+        return Some(Arc::clone(tree));
+    }
+    let tree =
+        Arc::new(resvg::usvg::Tree::from_data(bytes, &resvg::usvg::Options::default()).ok()?);
+    trees.insert(code, Arc::clone(&tree));
+    Some(tree)
 }
 
 /// Rasterises a bundled SVG sticker to exactly `width` x `height` pixels. The vector tree is scaled
@@ -74,14 +94,13 @@ pub fn rasterize_sticker(
     let invalid = || StickerError::Invalid {
         sticker: sticker.to_owned(),
     };
-    let bytes = flag_svg(sticker).ok_or_else(missing)?;
+    let (code, bytes) = flag_svg(sticker).ok_or_else(missing)?;
     if !(1..=MAX_STICKER_RASTER_SIDE).contains(&width)
         || !(1..=MAX_STICKER_RASTER_SIDE).contains(&height)
     {
         return Err(invalid());
     }
-    let tree = resvg::usvg::Tree::from_data(bytes, &resvg::usvg::Options::default())
-        .map_err(|_| invalid())?;
+    let tree = flag_tree(code, bytes).ok_or_else(invalid)?;
     let size = tree.size();
     if !(size.width() > 0. && size.height() > 0.) {
         return Err(invalid());
@@ -100,8 +119,8 @@ pub fn rasterize_sticker(
 }
 
 /// Graphic definition a `shapes:<value>` sticker draws: a square is a rectangle with equal axes,
-/// a diamond a four-sided polygon with a vertex up.
-fn shape_graphic(value: &str) -> Option<GraphicParams> {
+/// a diamond a four-sided polygon with a vertex up. `None` for a value that is not a shape.
+pub fn sticker_shape_graphic(value: &str) -> Option<GraphicParams> {
     let polygon = |count: f64| {
         let mut graphic = GraphicParams::polygon();
         if let GraphicParams::Polygon { sides, .. } = &mut graphic {
@@ -141,7 +160,7 @@ pub(super) fn draw_sticker(
     let x0 = (r.x * width + (dw - f64::from(pw)) / 2.).round() as i64;
     let y0 = (r.y * height + (dh - f64::from(ph)) / 2.).round() as i64;
     if params.provider() == SHAPES_PROVIDER {
-        let Some(graphic) = shape_graphic(params.value()) else {
+        let Some(graphic) = sticker_shape_graphic(params.value()) else {
             paint_placeholder(target, [x0, y0], [pw, ph], placement.opacity, hooks)?;
             return Ok(Some(StickerError::Missing {
                 sticker: params.sticker.clone(),
