@@ -78,6 +78,9 @@ impl EditorWindow {
                     EditorAction::ImportMedia => self.pick(ui.ctx(), PickerAction::ImportMedia),
                     EditorAction::ImportLut => self.pick(ui.ctx(), PickerAction::ImportLut),
                     EditorAction::ExportClips => self.pick(ui.ctx(), PickerAction::ExportClips),
+                    EditorAction::ExportCaption(output) => {
+                        self.pick(ui.ctx(), PickerAction::ExportCaption(output))
+                    }
                     EditorAction::KeybindingsExport => {
                         self.pick(ui.ctx(), PickerAction::KeybindingsExport)
                     }

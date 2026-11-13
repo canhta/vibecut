@@ -3,6 +3,7 @@ use super::window::EditorWindow;
 use crate::{
     Error, Result, egui,
     i18n::{self, Text},
+    services::lifecycle::CaptionOutput,
 };
 use project::ItemId;
 use std::{path::PathBuf, sync::Arc};
@@ -22,6 +23,8 @@ pub(super) enum PickerAction {
         item: ItemId,
     },
     ExportSave,
+    /// A caption file or the burned MP4, saved from the export dialog's caption section.
+    ExportCaption(CaptionOutput),
     SnapshotSave,
     KeybindingsImport {
         replace: bool,
@@ -80,6 +83,11 @@ impl EditorWindow {
                 if let Some(directory) = directory {
                     dialog = dialog.set_directory(directory);
                 }
+                Box::pin(async move { dialog.save_file().await.map(|file| vec![file]) })
+            }
+            PickerAction::ExportCaption(output) => {
+                let file_name = format!("{}.{}", self.tr(Text::SubFileBase), output.extension());
+                let dialog = rfd::AsyncFileDialog::new().set_file_name(file_name);
                 Box::pin(async move { dialog.save_file().await.map(|file| vec![file]) })
             }
             PickerAction::ExportClips => {
@@ -212,6 +220,13 @@ impl EditorWindow {
             .ok_or(Error::Invalid("no project"))?
             .snapshot_picked_file(path)
     }
+    /// Save the chosen caption output to the picked destination through the captions panel.
+    pub fn caption_output_picked(&mut self, path: PathBuf, output: CaptionOutput) -> Result<()> {
+        self.editor
+            .as_mut()
+            .ok_or(Error::Invalid("no project"))?
+            .caption_output_picked(path, output)
+    }
     /// Cancelling the native snapshot dialog issues no command.
     pub fn snapshot_save_cancelled(&mut self) {
         self.picker = self
@@ -284,6 +299,10 @@ impl EditorWindow {
                             self.snapshot_save_cancelled();
                             Ok(())
                         }
+                    },
+                    PickerAction::ExportCaption(output) => match files.pop() {
+                        Some(file) => self.caption_output_picked(file.path().to_owned(), output),
+                        None => Ok(()),
                     },
                     PickerAction::ExportClips => match files.pop() {
                         Some(folder) => self.export_clips_picked(folder.path().to_owned()),

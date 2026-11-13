@@ -30,6 +30,7 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ctx: &egui::Context) -> 
         Some(DialogAction::Start) => actions.push(Action::Start(options)),
         Some(DialogAction::Retry) => actions.push(Action::Retry),
         Some(DialogAction::Save) => actions.push(Action::Save),
+        Some(DialogAction::Caption(output)) => actions.push(Action::Caption(output)),
         None => {}
     }
     if dialog.take_save_request(project, preferred).is_some() {
@@ -70,6 +71,9 @@ pub(super) fn apply(state: &mut State, port: &mut Port<'_>, action: Action) {
             }
         }
         Action::Save => port.request(Request::Lifecycle(EditorAction::ExportSave)),
+        Action::Caption(output) => {
+            port.request(Request::Lifecycle(EditorAction::ExportCaption(output)));
+        }
         Action::Options(options) => {
             port.set_preference("export", serde_json::json!(options));
         }

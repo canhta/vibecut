@@ -31,6 +31,12 @@ fn harness(editor: Editor, scale: f32) -> Harness<'static, Editor> {
         .with_pixels_per_point(scale)
         .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor)
 }
+/// Whether a widget with this automation id is on screen now.
+fn has(h: &Harness<'_, Editor>, id: &str) -> bool {
+    h.query_all(By::new().predicate(|n| n.author_id() == Some(id)))
+        .next()
+        .is_some()
+}
 fn click(h: &mut Harness<'_, Editor>, id: &str) {
     h.query_all(By::new().predicate(|n| n.author_id() == Some(id)))
         .next()
@@ -1864,7 +1870,6 @@ fn capabilities_locale_and_choices_persist_without_loading_models() {
     let mut h = harness(editor("vi"), 2.0);
     h.run_steps(3);
     assert_eq!(Options::default().source, "auto");
-    click(&mut h, "subtitles.generate.settings");
     click(&mut h, "subtitles.source");
     assert_eq!(
         h.query_all(By::new().predicate(|n| n.author_id() == Some("subtitles.source.auto")))
@@ -1926,6 +1931,15 @@ fn capabilities_locale_and_choices_persist_without_loading_models() {
         "en",
         "the spoken-language choice persists per project"
     );
+    assert!(has(&h, "subtitles.generate") && has(&h, "subtitles.identify_fillers"));
+    assert!(!has(&h, "subtitles.translate") && !has(&h, "subtitles.import"));
+    click(&mut h, "captions.section.translate");
+    assert!(has(&h, "subtitles.translate") && has(&h, "subtitles.force"));
+    assert!(!has(&h, "subtitles.generate"));
+    click(&mut h, "captions.section.add");
+    assert!(has(&h, "subtitles.import") && !has(&h, "subtitles.translate"));
+    click(&mut h, "captions.section.auto");
+    assert!(has(&h, "subtitles.generate") && has(&h, "subtitles.delete_current"));
     h.state_mut().preferences.locale = Locale::Vi;
     h.run_steps(3);
     assert_eq!(h.state().preferences.subtitles.transcription, "whisper.cpp");
@@ -2128,7 +2142,6 @@ fn generate_explicit_choices_insert_once_and_missing_models_offer_setup_without_
         ));
         let mut h = harness(e, 1.0);
         h.run_steps(3);
-        click(&mut h, "subtitles.generate.settings");
         let before = h.state().session.project().clone();
         click(&mut h, "subtitles.generate");
         if !option.local {
@@ -2176,7 +2189,6 @@ fn generate_explicit_choices_insert_once_and_missing_models_offer_setup_without_
     ));
     let mut h = harness(e, 1.0);
     h.run_steps(3);
-    click(&mut h, "subtitles.generate.settings");
     click(&mut h, "subtitles.generate");
     wait(&mut h, |e| !panel(e).busy);
     assert_eq!(
@@ -2212,7 +2224,6 @@ fn caption_language_auto_retry_covers_no_speech_low_confidence_and_silent_clips(
         ));
         let mut h = harness(e, 1.0);
         h.run_steps(3);
-        click(&mut h, "subtitles.generate.settings");
         click(&mut h, "subtitles.generate");
         wait(&mut h, |e| !panel(e).busy);
         let expected = match failure {

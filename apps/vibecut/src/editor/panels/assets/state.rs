@@ -98,6 +98,8 @@ pub(in crate::editor) struct State {
     pub(in crate::editor) thumbnail_root: Option<PathBuf>,
     /// Captions tab: the panel, built on first use.
     pub(in crate::editor) captions: Option<super::captions::Subtitles>,
+    /// Captions tab: the sub-navigation page.
+    pub(in crate::editor) captions_section: super::CaptionsSection,
     /// Stickers tab: the category tab, whether See all widened the results, and the thumbnails.
     pub(super) sticker_tab: super::stickers::StickerTab,
     pub(super) sticker_expanded: bool,
@@ -154,6 +156,7 @@ impl Default for State {
             restoring_asset: None,
             thumbnail_root: None,
             captions: None,
+            captions_section: super::CaptionsSection::default(),
             sticker_tab: Default::default(),
             sticker_expanded: false,
             sticker_thumbnails: Default::default(),

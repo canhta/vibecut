@@ -56,4 +56,4 @@ destination selection without re-encoding. Retry refuses running, cancelled and
 successful attempts. A degraded retry needs an explicit toggle over the listed
 diagnostics, and a project or audio-scope change clears that consent.
 
-The settings sheet recomputes spoken-word warnings from the captured project, output choices and shared render state before submission. Safe reason labels never include caption text, and a warning keeps the ordinary base caption rather than blocking an otherwise valid export.
+The caption section (`caption_outputs.rs`) lists SRT, VTT, TXT and the burned MP4 under the settings. Each click returns `DialogAction::Caption`; the frame raises `EditorAction::ExportCaption` and the window's native save picker answers with the path, which the captions panel writes through its engine export. Its buttons are enabled only when the project holds a caption item. The settings sheet recomputes spoken-word warnings from the captured project, output choices and shared render state before submission. Safe reason labels never include caption text, and a warning keeps the ordinary base caption rather than blocking an otherwise valid export.
