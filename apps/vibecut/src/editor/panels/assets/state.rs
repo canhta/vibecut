@@ -86,6 +86,8 @@ pub(in crate::editor) struct State {
     pub(in crate::editor) pending_imports: BTreeMap<super::AssetId, PathBuf>,
     pub(in crate::editor) restoring_asset: Option<super::AssetId>,
     pub(in crate::editor) thumbnail_root: Option<PathBuf>,
+    /// Captions tab: the panel, built on first use.
+    pub(in crate::editor) captions: Option<super::captions::Subtitles>,
 }
 
 impl Default for State {
@@ -131,6 +133,7 @@ impl Default for State {
             pending_imports: BTreeMap::new(),
             restoring_asset: None,
             thumbnail_root: None,
+            captions: None,
         }
     }
 }

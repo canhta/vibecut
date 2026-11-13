@@ -1,3 +1,4 @@
+//! Paints the captions panel and its dialogs from the staged cue, style and job state.
 use super::{Options, Pick, Picker, Repaint, Subtitles, key};
 use crate::i18n;
 use crate::{

@@ -1,5 +1,5 @@
 //! Routes assets intentions through existing editor commands.
-use crate::editor::{Editor, Rect, Vec2, assets, captions, egui};
+use crate::editor::{Editor, Rect, Vec2, assets, egui};
 
 impl Editor {
     pub(in crate::editor) fn show_assets(&mut self, ui: &mut egui::Ui) {
@@ -53,7 +53,7 @@ impl Editor {
                 assets::Action::Captions(rect) => {
                     if let Some(ui) = ui.as_deref_mut() {
                         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
-                        captions::show(self, &mut child);
+                        assets::captions::show(self, &mut child);
                         self.drain_requests();
                     }
                 }

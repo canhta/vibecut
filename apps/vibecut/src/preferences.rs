@@ -8,6 +8,7 @@ mod easing;
 mod font_picker;
 mod geometry;
 mod store;
+mod subtitles;
 
 pub use crate::services::remote_models::{AiPreferences, MAX_RECENT_MODELS, ModelChoice};
 pub use adjustment::{
@@ -23,3 +24,4 @@ pub use easing::{EasingPreferences, EasingTab, MAX_SAVED_EASINGS, SavedEasing};
 pub use font_picker::{FontPickerPreferences, FontTab};
 pub use geometry::WindowGeometry;
 pub use store::{PreferenceIssue, PreferenceStore};
+pub use subtitles::{Options as SubtitleOptions, SOURCE_LANGUAGES};

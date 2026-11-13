@@ -71,7 +71,8 @@ impl Editor {
             || self.frame.recording_active
             || self.frame.shortcuts_open
             || self
-                .subtitles
+                .assets
+                .captions
                 .as_ref()
                 .is_some_and(|s| !s.edit_ready(&self.session))
             || matches!(&self.session, crate::lifecycle::EditorSession::Persistent(s) if s.saving())
@@ -122,7 +123,8 @@ impl Editor {
         self.properties.input_ready(&self.session)
             && !self.player.transform.text_edit_open()
             && self
-                .subtitles
+                .assets
+                .captions
                 .as_ref()
                 .is_none_or(|s| s.edit_ready(&self.session))
             && !matches!(&self.session, crate::lifecycle::EditorSession::Persistent(s) if s.saving())
@@ -142,7 +144,8 @@ impl Editor {
             .is_some()
             && !self.player.transform.text_edit_open()
             && self
-                .subtitles
+                .assets
+                .captions
                 .as_ref()
                 .is_none_or(|s| s.edit_ready(&self.session))
             && !matches!(&self.session, crate::lifecycle::EditorSession::Persistent(s) if s.saving())
@@ -393,7 +396,7 @@ impl Editor {
                 action: UiAction::Subtitles,
                 ..
             } if id.starts_with("subtitles.style.") => {
-                self.subtitles.as_ref().is_some_and(|panel| {
+                self.assets.captions.as_ref().is_some_and(|panel| {
                     if matches!(id, "subtitles.style.save" | "subtitles.style.manage") {
                         self.caption_bank_ready()
                             && panel.bank_available(&self.session, id == "subtitles.style.save")

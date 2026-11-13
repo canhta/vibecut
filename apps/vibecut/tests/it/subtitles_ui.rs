@@ -17,11 +17,10 @@ use std::{
 };
 use time::{TICKS_PER_SECOND, Tick};
 use vibecut::{
-    AssetsTab, Editor, egui,
+    AssetsTab, Editor, Subtitles, SubtitlesInspection, egui,
     i18n::Locale,
-    preferences::PreferenceStore,
+    preferences::{PreferenceStore, SubtitleOptions as Options},
     services::ai_access::{Choice, Opener},
-    subtitles::{Options, Subtitles},
 };
 #[path = "support/subtitles.rs"]
 mod fixture;
@@ -81,10 +80,9 @@ fn track(e: &Editor) -> CueTrack {
         })
         .unwrap()
 }
-fn panel(e: &Editor) -> subtitles_inspect::Inspection {
+fn panel(e: &Editor) -> SubtitlesInspection {
     e.inspect().unwrap().subtitles.unwrap()
 }
-use vibecut::subtitles as subtitles_inspect;
 
 #[test]
 fn caption_bank_name_refusals_and_cap_preserve_the_real_project() {
@@ -1243,15 +1241,11 @@ fn caption_style_actions_refuse_drafts_locks_transactions_and_busy_work() {
         assert!(h.state_mut().activate(id).is_err());
     }
     assert!(h.state_mut().activate("subtitles.style.box").is_err());
-    h.state_mut().subtitles.as_mut().unwrap().cancel();
+    h.state_mut().subtitles_mut().unwrap().cancel();
 }
 
 fn with_panel<T>(e: &mut Editor, f: impl FnOnce(&mut Subtitles, &mut Session, &Options) -> T) -> T {
-    f(
-        e.subtitles.as_mut().unwrap(),
-        &mut e.session,
-        &e.preferences.subtitles,
-    )
+    e.with_subtitles(f).unwrap()
 }
 
 #[test]
@@ -1616,7 +1610,7 @@ impl ai::Translator for Translator {
 }
 fn translated_editor(source: &str, calls: Arc<AtomicUsize>) -> Editor {
     let mut e = editor(source);
-    e.subtitles = Some(
+    e.set_subtitles(Some(
         Subtitles::with_access(
             e.playback.budget().clone(),
             TranslateWorkflow {
@@ -1628,7 +1622,7 @@ fn translated_editor(source: &str, calls: Arc<AtomicUsize>) -> Editor {
             .opener(),
         )
         .unwrap(),
-    );
+    ));
     e
 }
 type Gate = Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>;
@@ -1644,7 +1638,7 @@ impl Drop for OpenOnDrop {
 }
 fn held_editor(source: &str, calls: Arc<AtomicUsize>, gate: &Gate) -> Editor {
     let mut e = editor(source);
-    e.subtitles = Some(
+    e.set_subtitles(Some(
         Subtitles::with_access(
             e.playback.budget().clone(),
             TranslateWorkflow {
@@ -1656,7 +1650,7 @@ fn held_editor(source: &str, calls: Arc<AtomicUsize>, gate: &Gate) -> Editor {
             .opener(),
         )
         .unwrap(),
-    );
+    ));
     e
 }
 #[test]
@@ -1779,7 +1773,7 @@ fn consent_denial_provider_change_cancel_and_stale_results_never_apply() {
         let calls = Arc::new(AtomicUsize::new(0));
         let mut e = translated_editor("vi", calls.clone());
         if action == "provider-failure" {
-            e.subtitles = Some(
+            e.set_subtitles(Some(
                 Subtitles::with_access(
                     e.playback.budget().clone(),
                     TranslateWorkflow {
@@ -1791,7 +1785,7 @@ fn consent_denial_provider_change_cancel_and_stale_results_never_apply() {
                     .opener(),
                 )
                 .unwrap(),
-            );
+            ));
         }
         let mut h = harness(e, 1.0);
         h.run_steps(3);
@@ -1812,7 +1806,7 @@ fn consent_denial_provider_change_cancel_and_stale_results_never_apply() {
         match action {
             "deny" => click(&mut h, "subtitles.consent.deny"),
             "change" => h.state_mut().preferences.subtitles.translation = "anthropic".into(),
-            "cancel" => h.state_mut().subtitles.as_mut().unwrap().cancel(),
+            "cancel" => h.state_mut().subtitles_mut().unwrap().cancel(),
             "provider-failure" => click(&mut h, "subtitles.consent.approve"),
             _ => {
                 h.state_mut()
@@ -2115,10 +2109,10 @@ fn generate_explicit_choices_insert_once_and_missing_models_offer_setup_without_
         e.selection.insert(source);
         e.preferences.subtitles.transcription = option.id.into();
         e.preferences.subtitles.transcription_model = option.models[0].clone();
-        e.subtitles = Some(
+        e.set_subtitles(Some(
             Subtitles::with_access(e.playback.budget().clone(), generate_opener(false, None))
                 .unwrap(),
-        );
+        ));
         let mut h = harness(e, 1.0);
         h.run_steps(3);
         click(&mut h, "subtitles.generate.settings");
@@ -2164,9 +2158,9 @@ fn generate_explicit_choices_insert_once_and_missing_models_offer_setup_without_
     let mut e = editor("vi");
     let source = source_clip(&mut e);
     e.selection.insert(source);
-    e.subtitles = Some(
+    e.set_subtitles(Some(
         Subtitles::with_access(e.playback.budget().clone(), generate_opener(true, None)).unwrap(),
-    );
+    ));
     let mut h = harness(e, 1.0);
     h.run_steps(3);
     click(&mut h, "subtitles.generate.settings");
@@ -2196,13 +2190,13 @@ fn caption_language_auto_retry_covers_no_speech_low_confidence_and_silent_clips(
         let clip = source_clip(&mut e);
         e.selection.insert(clip);
         e.preferences.subtitles.source = source.into();
-        e.subtitles = Some(
+        e.set_subtitles(Some(
             Subtitles::with_access(
                 e.playback.budget().clone(),
                 generate_opener(false, Some(failure)),
             )
             .unwrap(),
-        );
+        ));
         let mut h = harness(e, 1.0);
         h.run_steps(3);
         click(&mut h, "subtitles.generate.settings");
@@ -2508,7 +2502,7 @@ fn translation_unknown_price_requires_the_actual_model_checkbox_in_both_locales(
             .select("openai", ai::Operation::Translate, "fixture-unknown-price")
             .unwrap();
         e.preferences.resolve_models();
-        e.subtitles = Some(
+        e.set_subtitles(Some(
             Subtitles::with_access(
                 e.playback.budget().clone(),
                 TranslateWorkflow {
@@ -2520,7 +2514,7 @@ fn translation_unknown_price_requires_the_actual_model_checkbox_in_both_locales(
                 .opener(),
             )
             .unwrap(),
-        );
+        ));
         let mut h = harness(e, scale);
         h.run_steps(3);
         click(&mut h, "subtitles.cue.cue-0");

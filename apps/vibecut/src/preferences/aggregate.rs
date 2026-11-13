@@ -109,7 +109,7 @@ pub struct Preferences {
     pub windows: BTreeMap<String, WindowGeometry>,
     pub export: crate::export::ExportOptions,
     pub export_directory: Option<PathBuf>,
-    pub subtitles: crate::subtitles::Options,
+    pub subtitles: super::SubtitleOptions,
     pub locale: Locale,
     pub dark: bool,
     /// Timeline snapping; on by default and persisted across runs.
@@ -161,7 +161,7 @@ impl Default for Preferences {
             windows: BTreeMap::new(),
             export: crate::export::ExportOptions::default(),
             export_directory: None,
-            subtitles: crate::subtitles::Options::default(),
+            subtitles: super::SubtitleOptions::default(),
             locale: Locale::En,
             dark: true,
             snapping: true,

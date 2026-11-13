@@ -150,7 +150,6 @@ groups = [
     "assets",
     "properties",
     "timeline",
-    "captions",
 ]
 
 [[crate.layer]]
@@ -214,10 +213,6 @@ name = "snapping"
 group = "timeline"
 
 [[crate.module]]
-name = "subtitles"
-group = "captions"
-
-[[crate.module]]
 name = "home"
 group = "home"
 
@@ -240,7 +235,7 @@ groups = ["context"]
 
 [[crate.folder.layer]]
 name = "areas"
-groups = ["captions", "dialogs", "panels", "timeline", "widgets"]
+groups = ["dialogs", "panels", "timeline", "widgets"]
 
 [[crate.folder.layer]]
 name = "frame"
@@ -253,10 +248,6 @@ group = "context"
 [[crate.folder.module]]
 name = "timing"
 group = "context"
-
-[[crate.folder.module]]
-name = "captions"
-group = "captions"
 
 [[crate.folder.module]]
 name = "dialogs"

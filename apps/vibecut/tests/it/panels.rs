@@ -2346,7 +2346,7 @@ fn text_fade_preflight_preserves_focused_and_unfocused_caption_and_properties_dr
     let before = h.state().session.project().clone();
     assert!(h.state_mut().activate("text.animation.fade_in").is_err());
     assert_eq!(h.state().session.project(), &before);
-    h.state_mut().subtitles = None;
+    h.state_mut().set_subtitles(None);
     h.run_steps(2);
     click(&mut h, "inspector.text_size");
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);

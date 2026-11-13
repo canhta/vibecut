@@ -1,8 +1,24 @@
-//! Renders the captions panel.
-use crate::editor::{Arc, Editor, Error, Request, Tick, egui};
+//! Mounts the captions panel in the assets area and queues its cross-area requests.
+use super::Subtitles;
+use crate::editor::panels::assets::State;
+use crate::editor::{Arc, Editor, Error, Request, Result, Tick, egui};
+
+impl State {
+    /// Initialize the panel without any download or provider construction.
+    pub(in crate::editor) fn prepare_captions(
+        &mut self,
+        budget: &engine::ByteBudget,
+    ) -> Result<()> {
+        if self.captions.is_none() {
+            self.captions = Some(Subtitles::new(budget.clone())?);
+        }
+        Ok(())
+    }
+}
 
 pub(in crate::editor) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
-    if let Err(e) = editor.prepare_subtitles() {
+    let budget = editor.playback.budget().clone();
+    if let Err(e) = editor.assets.prepare_captions(&budget) {
         editor.desk().fail(e.to_string());
         return;
     }
@@ -10,7 +26,7 @@ pub(in crate::editor) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
     let mut options = editor.preferences.subtitles.clone();
     let at = editor.playback.position().unwrap_or(Tick::ZERO);
     let bank_ready = editor.caption_bank_ready();
-    if let Some(subtitles) = &mut editor.subtitles {
+    if let Some(subtitles) = &mut editor.assets.captions {
         subtitles.models = editor.preferences.ai_models.clone();
         let widgets = subtitles.ui(
             ui,
@@ -46,12 +62,14 @@ pub(in crate::editor) fn queue_requests(editor: &mut Editor) {
     let mut desk = editor.desk();
     let seek = desk
         .editor()
-        .subtitles
+        .assets
+        .captions
         .as_mut()
         .and_then(|panel| panel.requested_seek.take());
     let model = desk
         .editor()
-        .subtitles
+        .assets
+        .captions
         .as_mut()
         .and_then(|panel| panel.requested_model.take());
     if let Some(at) = seek {

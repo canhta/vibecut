@@ -22,10 +22,10 @@ Each module's contract is its README.
 | `editor/panels/assets/sounds/` | [Sounds tab](src/editor/panels/assets/sounds/README.md) |
 | `editor/panels/assets/view/` | [Assets view](src/editor/panels/assets/view/README.md) |
 | `editor/panels/assets/workflow/` | [Assets workflow](src/editor/panels/assets/workflow/README.md) |
+| `editor/panels/assets/captions.rs` | [Captions tab](src/editor/panels/assets/captions/README.md) |
 | `editor/panels/assets/effects.rs` | [Effect previews](src/editor/panels/assets/effects/README.md) |
 | `editor/panels/assets/import.rs` | [Media import](src/editor/panels/assets/import/README.md) |
 | `editor/panels/assets/media_panel.rs` | [Media library](src/editor/panels/assets/media_panel/README.md) |
-| `editor/captions/` | [Captions panel](src/editor/captions/README.md) |
 | `editor/context/` | [Editor context](src/editor/context/README.md) |
 | `editor/dialogs/` | [Editor dialogs](src/editor/dialogs/README.md) |
 | `editor/dialogs/export/` | [Export dialog](src/editor/dialogs/export/README.md) |
@@ -63,7 +63,6 @@ Each module's contract is its README.
 | `shorts.rs` / `shorts/` | [Long video to shorts](src/shorts/README.md) |
 | `shorts/view/` | [Shorts view](src/shorts/view/README.md) |
 | `snapping.rs` | [Snapping](src/snapping/README.md) |
-| `subtitles.rs` / `subtitles/` | [Subtitles](src/subtitles/README.md) |
 | `workspace.rs` | [Windows and budgets](src/workspace/README.md) |
 
 ## Checks

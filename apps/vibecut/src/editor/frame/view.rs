@@ -58,7 +58,11 @@ impl Editor {
             self.discard_gesture();
         }
         if !self.dialogs.export.is_open()
-            && !self.subtitles.as_ref().is_some_and(|s| s.modal_open())
+            && !self
+                .assets
+                .captions
+                .as_ref()
+                .is_some_and(|s| s.modal_open())
             && self.player.crop.is_none()
         {
             self.keyboard(ui.ctx());
@@ -194,7 +198,7 @@ impl Editor {
         self.show_toast(ui.ctx());
         self.show_export(ui);
         super::super::panels::player::crop::show(self, ui.ctx());
-        if let Some(subtitles) = &mut self.subtitles {
+        if let Some(subtitles) = &mut self.assets.captions {
             let widgets = subtitles.dialogs(
                 ui.ctx(),
                 &self.session,

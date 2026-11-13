@@ -1,7 +1,7 @@
 # Assets
 
 Interface: `State`, `show`, `Action`, `prepare`, `media_panel`, `import`, `sounds`,
-`music`.
+`music`, `captions`.
 
 The area owns its navigation drafts, the media selection and thumbnail caches, the
 import batch and its last report, and the prepared workflow projection; `show` consumes

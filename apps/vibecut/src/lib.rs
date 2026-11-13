@@ -15,7 +15,6 @@ pub mod selection;
 pub mod services;
 pub mod shorts;
 pub mod snapping;
-pub mod subtitles;
 pub mod workspace;
 pub use editor::dialogs::export;
 pub use editor::dialogs::models::model_manager;
@@ -28,8 +27,8 @@ pub use editor::{
     Inspection, MAX_IMPORT_FILES, MediaKind, MediaSort, MediaSortKey, MediaSortOrder, MediaView,
     Music, MusicMode, MusicProblem, MusicView, PREVIEW_SCALE, PREVIEW_SIZE, PreviewAxis,
     PreviewGuide, PreviewZoom, SETTLE_BUDGET, ShortcutRow, ShortcutTab, ShortcutsInspection,
-    Sounds, SoundsMode, SoundsProblem, SoundsView, TextCaret, ThumbnailOutcome, ThumbnailSource,
-    WidgetState,
+    Sounds, SoundsMode, SoundsProblem, SoundsView, Subtitles, SubtitlesInspection, TextCaret,
+    ThumbnailOutcome, ThumbnailSource, WidgetState,
 };
 pub use eframe::egui;
 

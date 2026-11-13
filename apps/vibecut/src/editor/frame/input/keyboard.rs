@@ -102,7 +102,11 @@ impl Editor {
     }
     pub(in crate::editor) fn dispatch_context(&self, ctx: &egui::Context) -> DispatchContext {
         DispatchContext {
-            overlay_open: self.subtitles.as_ref().is_some_and(|s| s.modal_open())
+            overlay_open: self
+                .assets
+                .captions
+                .as_ref()
+                .is_some_and(|s| s.modal_open())
                 || self.timeline.scenes.is_open()
                 || self.frame.shortcuts_open
                 || self.dialogs.export.is_open()
@@ -112,7 +116,11 @@ impl Editor {
             // its own progress surface and dispatches no actions.
             project_loading: false,
             recording: self.frame.recording_active,
-            text_input: self.subtitles.as_ref().is_some_and(|s| s.editing(ctx))
+            text_input: self
+                .assets
+                .captions
+                .as_ref()
+                .is_some_and(|s| s.editing(ctx))
                 || ctx.text_edit_focused()
                 || self.frame.rename.is_some()
                 || self.timeline.renaming_track()

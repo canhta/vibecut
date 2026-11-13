@@ -1,4 +1,5 @@
 //! Owns the assets presentation boundary.
+pub mod captions;
 pub mod effects;
 pub mod import;
 pub mod media_panel;

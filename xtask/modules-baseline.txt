@@ -1,4 +1,3 @@
 doc	apps/vibecut/build.rs	first line is not a //! responsibility line
 doc	apps/vibecut/src/main.rs	first line is not a //! responsibility line
-doc	apps/vibecut/src/subtitles/view.rs	first line is not a //! responsibility line
-folder	apps/vibecut/src	22 direct children (limit 12)
+folder	apps/vibecut/src	21 direct children (limit 12)

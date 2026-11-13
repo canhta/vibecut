@@ -133,14 +133,14 @@ The shortcut list is a separate 719 px-wide window that resizes with its tab (64
 
 ## Captions workflow
 
-Captions lives in the assets-panel tab. Generate and translation settings use compact disclosures above a scrollable cue list; import and SRT, VTT, TXT and MP4 export share the top action row. Times, source text and each target language stack at panel width, with full fields on selected rows, compact unselected text, edited marks and profile-based CPS warnings. Selection tools sit above the list. The exact-upload approval modal stays global while another tab is visible. Cue editing, bilingual controls and glossary placement fill uncaptured states ([proposed], coordinator-approved); the named captions audit scenes are our rendered evidence. Reference: `.spikes/ui-reference/live/06-text-captions/`. Behaviour: [captions panel](../../../apps/vibecut/src/editor/captions/README.md).
+Captions lives in the assets-panel tab. Generate and translation settings use compact disclosures above a scrollable cue list; import and SRT, VTT, TXT and MP4 export share the top action row. Times, source text and each target language stack at panel width, with full fields on selected rows, compact unselected text, edited marks and profile-based CPS warnings. Selection tools sit above the list. The exact-upload approval modal stays global while another tab is visible. Cue editing, bilingual controls and glossary placement fill uncaptured states ([proposed], coordinator-approved); the named captions audit scenes are our rendered evidence. Reference: `.spikes/ui-reference/live/06-text-captions/`. Behaviour: [captions panel](../../../apps/vibecut/src/editor/panels/assets/captions/README.md).
 
 The Captions Style chooser sits below the caption-item selector, above cue tools, using the
 shared 22 px field and 12 px label system. Outline/Box and Custom/Mixed describe the current
 saved style; a selected project preset shows its name and an edited marker plus an Overrides
 editor for the full font, size, colour, outline, box, position, safe-area and max-line values.
 This uncaptured composition is new; desktop reference parity is unverified.
-Availability and edit behavior belong to the [subtitles owner](../../../apps/vibecut/src/subtitles/README.md).
+Availability and edit behavior belong to the [captions owner](../../../apps/vibecut/src/editor/panels/assets/captions/README.md).
 
 The selected-Text Animation composition uses two current segmented rows in the 22 px
 field, 12 px type and property-row spacing: Fade, Slide and Scale effects above In, Out

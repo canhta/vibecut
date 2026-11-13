@@ -16,7 +16,7 @@ use crate::editor::{Desk, Result};
 
 impl State {
     pub(in crate::editor) fn remember_assets_tab(
-        &self,
+        &mut self,
         desk: &mut Desk<'_>,
         tab: AssetsTab,
     ) -> Result<()> {
@@ -25,7 +25,7 @@ impl State {
             if editor.preferences.assets_tab == tab {
                 return Ok(());
             }
-            if let Some(panel) = &mut editor.subtitles {
+            if let Some(panel) = &mut self.captions {
                 panel.flush_drafts(&mut editor.session)?
             } else {
                 false

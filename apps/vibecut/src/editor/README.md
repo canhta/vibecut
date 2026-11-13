@@ -22,7 +22,7 @@ queued and drained by the frame after that area returns. A read-only context car
 session, selection, locale and theme into areas; both live in the shared context
 below every area.
 
-The assets, properties, timeline and captions areas and the player are folder
+The assets (Captions tab included), properties and timeline areas and the player are folder
 interfaces with private view and workflow implementations; the export and model
 manager dialogs own their state and workflow. The player's Crop modal edits a
 transient `project::Crop` through the shared `crate::services::crop` control, locked

@@ -6,7 +6,7 @@ Interface: `Preferences`, `PreferenceStore`, `PreferenceIssue`, `PREFERENCES_VER
 `DEFAULT_PANELS`, `drag_panel`, `validate_panels`, `WindowGeometry`,
 `FontPickerPreferences`, `FontTab`, `AdjustmentPreset`, `MAX_ADJUSTMENT_PRESETS`,
 `MAX_ADJUSTMENT_PRESET_NAME`, `validate_adjustment_presets`, `EasingPreferences`, `EasingTab`,
-`SavedEasing`, `MAX_SAVED_EASINGS`.
+`SavedEasing`, `MAX_SAVED_EASINGS`, `SubtitleOptions`, `SOURCE_LANGUAGES`.
 
 The composition root of the one versioned local preference document, persisted in a
 bounded JSON file. It names feature-owned section types rather than redefining them:

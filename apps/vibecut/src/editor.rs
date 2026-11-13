@@ -1,6 +1,5 @@
 //! Coordinates the editor through area interfaces.
 use crate::i18n;
-mod captions;
 mod context;
 pub(crate) use context::{Context, Desk, Request};
 pub(crate) mod dialogs;
@@ -16,6 +15,7 @@ mod timeline;
 mod widgets;
 
 mod state;
+pub use assets::captions::{Inspection as SubtitlesInspection, Subtitles};
 pub use assets::effects::{
     EffectPreviewStatus, EffectPreviews, PREVIEW_SCALE, PREVIEW_SIZE, SETTLE_BUDGET,
 };
@@ -205,6 +205,35 @@ impl Editor {
         self.assets.set_sounds(sounds);
     }
 
+    /// Build the captions panel without any download or provider construction.
+    pub fn prepare_subtitles(&mut self) -> Result<()> {
+        let budget = self.playback.budget().clone();
+        self.assets.prepare_captions(&budget)
+    }
+
+    /// Injection boundary for tests: replace or clear the captions panel.
+    pub fn set_subtitles(&mut self, panel: Option<Subtitles>) {
+        self.assets.captions = panel;
+    }
+
+    /// The captions panel, once the Captions tab or a caption action built it.
+    pub fn subtitles_mut(&mut self) -> Option<&mut Subtitles> {
+        self.assets.captions.as_mut()
+    }
+
+    /// Run `run` on the captions panel with the session and the persisted options.
+    pub fn with_subtitles<T>(
+        &mut self,
+        run: impl FnOnce(
+            &mut Subtitles,
+            &mut engine::Session,
+            &crate::preferences::SubtitleOptions,
+        ) -> T,
+    ) -> Option<T> {
+        let panel = self.assets.captions.as_mut()?;
+        Some(run(panel, &mut self.session, &self.preferences.subtitles))
+    }
+
     /// Project-owned media directory used when a library sound is added.
     pub fn set_sound_media_dir(&mut self, directory: PathBuf) {
         self.assets.set_sound_media_dir(directory);
@@ -295,7 +324,6 @@ impl Editor {
             dialogs: dialogs::State::default(),
             music: None,
             music_media_dir: None,
-            subtitles: None,
             copy_snapshot_requested: false,
             requests: Vec::new(),
         }
@@ -450,7 +478,11 @@ impl Editor {
                 .crop
                 .as_ref()
                 .map(panels::player::crop::Dialog::inspect),
-            subtitles: self.subtitles.as_ref().map(|s| s.inspect(&self.session)),
+            subtitles: self
+                .assets
+                .captions
+                .as_ref()
+                .map(|s| s.inspect(&self.session)),
             models: self.dialogs.models.inspect(),
             keybinding_issues: self.frame.keybinding_issues.clone(),
             color_preview: self.properties.color_preview(),

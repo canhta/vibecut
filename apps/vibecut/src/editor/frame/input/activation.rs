@@ -41,7 +41,7 @@ impl Editor {
         id: Option<&str>,
         execute: impl FnOnce(&mut Self) -> Result<T>,
     ) -> Result<T> {
-        let flushed = if let Some(subtitles) = &mut self.subtitles {
+        let flushed = if let Some(subtitles) = &mut self.assets.captions {
             if matches!(
                 id.unwrap_or_default(),
                 "subtitles.dismiss"
@@ -229,7 +229,7 @@ impl Editor {
                 UiAction::Subtitles | UiAction::SubtitleCue => {
                     self.prepare_subtitles()?;
                     let mut options = self.preferences.subtitles.clone();
-                    if let Some(panel) = &mut self.subtitles {
+                    if let Some(panel) = &mut self.assets.captions {
                         panel.activate(
                             &mut self.session,
                             &mut options,
@@ -237,7 +237,7 @@ impl Editor {
                             at,
                             id,
                         )?;
-                        crate::editor::captions::queue_requests(self);
+                        crate::editor::assets::captions::queue_requests(self);
                     }
                     if options != self.preferences.subtitles {
                         self.set_preference("subtitles", serde_json::to_value(options)?)?;

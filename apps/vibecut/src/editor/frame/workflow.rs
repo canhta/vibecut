@@ -28,7 +28,7 @@ impl Editor {
         self.dialogs
             .export
             .tick(self.session.project(), self.preferences.export);
-        if let Some(subtitles) = &mut self.subtitles {
+        if let Some(subtitles) = &mut self.assets.captions {
             subtitles.invalidate_options(&self.preferences.subtitles);
             let result = subtitles.tick(&mut self.session);
             let notice = subtitles.notice.take();

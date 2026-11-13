@@ -173,7 +173,7 @@ pub struct Inspection {
     /// Working crop while its dialog is open; the project keeps its own copy.
     pub crop: Option<super::panels::player::crop::Inspection>,
     pub models: Option<crate::model_manager::ModelInspection>,
-    pub subtitles: Option<crate::subtitles::Inspection>,
+    pub subtitles: Option<super::assets::captions::Inspection>,
     /// Unknown actions, invalid chords and conflicts from the persisted map.
     pub keybinding_issues: Vec<KeybindingIssue>,
     pub color_preview: Option<project::Color>,
@@ -295,7 +295,6 @@ pub struct Editor {
     pub(super) dialogs: super::dialogs::State,
     pub(super) music: Option<super::assets::music::Music>,
     pub(super) music_media_dir: Option<PathBuf>,
-    pub subtitles: Option<crate::subtitles::Subtitles>,
     /// A copy-snapshot action waits for the next frame's egui context.
     pub(super) copy_snapshot_requested: bool,
     /// Cross-area requests the frame drains after the area that raised them.

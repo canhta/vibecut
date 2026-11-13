@@ -1,17 +1,33 @@
-# Subtitles
+# Captions
 
-Interface: `Subtitles`, `Options`, `TaskEvents`.
+Interface: `Subtitles`, `TaskEvents`, `show`, `queue_requests`. The persisted `Options` live in
+[preferences](../../../../preferences/README.md) as `SubtitleOptions`.
 
-Presents the captions panel: cue editing, translation staging and export requests over
-engine's subtitle owners. Requests the panel cannot apply itself are queued for the frame.
+The Captions tab is part of the assets area: its panel state is `assets::State.captions`,
+built on first use, and `show` mounts it in the tab body. Cue editing, translation staging
+and export requests run over engine's subtitle owners. Opening a picker constructs no adapter
+and downloads no model. Settings persist in preferences; approval, transcripts and the session
+glossary do not. Requests the panel cannot apply itself (a seek, opening the model manager) stay
+`Request` values that `queue_requests` hands to the frame, which drains them after the tab returns.
+
+Cue times seek in output coordinates. Shift extends a range from a cue identity (after
+a merge the surviving selection is the anchor); Cmd/Ctrl toggles. Text edits keep
+independent language edit and provenance flags and normalize through captions. Drafts
+commit on leaving a field, switching tabs, and on cue, page, item, language and timing
+actions; unrelated project edits keep them, and a concurrent change to the same
+caption keeps a copyable draft until explicit reload. Focused text never triggers
+timeline shortcuts. All edits are registered engine commands in the shared history.
+
+Cue, import, text and glossary limits belong to [captions](../../../../../../../crates/captions/README.md).
+Design: [captions workflow](../../../../../../../docs/product/ui/editor.md#captions-workflow).
 
 The spoken-language select lists Auto plus every language the configured ASR adapters
 accept. Auto is the default; a project's explicit choice is stored in
-`Options::project_sources`, so another project starts from Auto. Auto runs the local
+`SubtitleOptions::project_sources`, so another project starts from Auto. Auto runs the local
 language detector first and passes the detected tag explicitly to every recognition
 request.
 
-Generate declares the [engine transcript working ceiling](../../../../crates/engine/src/transcript/README.md)
+Generate declares the [engine transcript working ceiling](../../../../../../../crates/engine/src/transcript/README.md)
 in its outer job alongside the existing 32 MiB result reservation. Shared budget pressure
 prevents the workflow from starting, and the synchronous pipeline adds no second charge.
 
@@ -46,7 +62,7 @@ bank management works without a caption target. Deleting a selected style refuse
 look is materialized. The snapshot-bound name editor confirms on Enter/blur and cancels on Escape
 or stale project, item, time, tab, lock or readiness. Editor-owned Properties/inline/save/import/
 modal admission is shared with direct actions; caption draft readiness remains here. Names and
-limits belong to the [project model](../../../../crates/project/src/model/README.md#saved-caption-values).
+limits belong to the [project model](../../../../../../../crates/project/src/model/README.md#saved-caption-values).
 
 Provider setup/refusal and direct Runtime cancellation are borrowed from the provider result
 or its explicit engine composition. Missing-model setup retains its existing download action;
