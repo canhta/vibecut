@@ -28,6 +28,51 @@ use fixture::settle;
 use report::{Row, copy_reference, index_html, opaque, reference_root};
 use scenes::select;
 
+/// Interactive nodes of every scene (dark, 1x) that lack a label or an
+/// automation id, as `scene: Role "label"`.
+#[cfg(test)]
+pub(super) fn unaddressed_nodes() -> Result<std::collections::BTreeSet<String>, Failure> {
+    use egui_kittest::kittest::NodeT as _;
+    use vibecut::egui::Role;
+    let mut found = std::collections::BTreeSet::new();
+    for scene in scenes::SCENES {
+        let mut app = (scene.build)(application::Theme::Dark, 1.0)?;
+        app.run_steps(2);
+        settle(&mut app)?;
+        for node in app.root().children_recursive() {
+            let node = node.accesskit_node();
+            if node.is_hidden()
+                || !matches!(
+                    node.role(),
+                    Role::Button
+                        | Role::CheckBox
+                        | Role::RadioButton
+                        | Role::Switch
+                        | Role::Slider
+                        | Role::SpinButton
+                        | Role::TextInput
+                        | Role::MultilineTextInput
+                        | Role::ComboBox
+                        | Role::Tab
+                )
+            {
+                continue;
+            }
+            let label = node.label().filter(|label| !label.trim().is_empty());
+            let id = node.data().author_id().filter(|id| !id.is_empty());
+            if label.is_none() || id.is_none() {
+                found.insert(format!(
+                    "{}: {:?} {:?}",
+                    scene.name,
+                    node.role(),
+                    label.unwrap_or_default()
+                ));
+            }
+        }
+    }
+    Ok(found)
+}
+
 pub(crate) fn run(args: Vec<String>) -> Result<(), Failure> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let root = root.canonicalize()?;

@@ -23,6 +23,35 @@ mod tests {
     use std::time::{Duration, Instant};
     use vibecut::egui;
 
+    /// Interactive nodes known to lack a label or an automation id. It only shrinks.
+    const UNADDRESSED: &[&str] = &[];
+
+    #[test]
+    #[ignore = "run once after the combined build to fill UNADDRESSED or fix the nodes, then drop this attribute"]
+    fn every_interactive_node_has_a_label_and_an_automation_id() -> Result<(), Failure> {
+        let found = super::audit::unaddressed_nodes()?;
+        let new: Vec<_> = found
+            .iter()
+            .filter(|node| !UNADDRESSED.contains(&node.as_str()))
+            .collect();
+        assert!(
+            new.is_empty(),
+            "{} interactive nodes lack a label or an automation id:
+{new:#?}",
+            new.len()
+        );
+        let fixed: Vec<_> = UNADDRESSED
+            .iter()
+            .filter(|node| !found.contains(**node))
+            .collect();
+        assert!(
+            fixed.is_empty(),
+            "remove from UNADDRESSED:
+{fixed:#?}"
+        );
+        Ok(())
+    }
+
     #[test]
     fn readme_capture_refuses_wrong_source_before_staging_and_keeps_history() -> Result<(), Failure>
     {
