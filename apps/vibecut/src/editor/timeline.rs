@@ -15,7 +15,7 @@ mod visuals;
 mod workflow;
 
 pub(super) use action::{Action, Gesture};
-pub(super) use state::{DropZone, State};
+pub(super) use state::{DropZone, State, Tool};
 pub(super) use view::{TOOLBAR_ACTIONS, add_track_command, show, show_scenes};
 pub(super) use visuals::Media;
 

@@ -69,6 +69,33 @@ impl Editor {
             .collect();
         self.replace_selection(items);
     }
+    /// Select every unlocked item that starts before (`rightward` false) or ends
+    /// after (`rightward` true) the playhead. Nothing to select leaves the selection.
+    pub(in crate::editor) fn select_by_playhead(&mut self, rightward: bool) -> Result<()> {
+        let at = self.playback.position()?;
+        let items: BTreeSet<ItemId> = self
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .filter(|track| !track.locked)
+            .flat_map(|track| &track.items)
+            .filter(|item| {
+                if rightward {
+                    item.end().is_ok_and(|end| end > at)
+                } else {
+                    item.start < at
+                }
+            })
+            .map(|item| item.id)
+            .collect();
+        if !items.is_empty() {
+            self.replace_selection(items);
+        }
+        Ok(())
+    }
     /// The selection changed: end the open scrub and drop every nested scope.
     pub(in crate::editor) fn selection_changed(&mut self) {
         self.finish_scrub(false);

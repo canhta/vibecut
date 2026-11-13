@@ -190,8 +190,19 @@ impl Scenes {
     }
 }
 
+/// The pointer tool: Select clicks and drags clips, Split cuts the clip under
+/// the pointer at the pointer time. Presentation state, never saved.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(in crate::editor) enum Tool {
+    #[default]
+    Select,
+    Split,
+}
+
 /// Everything the timeline panel remembers between frames.
 pub(in crate::editor) struct State {
+    /// The active pointer tool; Select until the user switches it.
+    pub(in crate::editor::timeline) tool: Tool,
     pub(in crate::editor::timeline) zoom: f32,
     pub(in crate::editor::timeline) scroll: f32,
     pub(in crate::editor::timeline) vertical_scroll: f32,
@@ -245,6 +256,7 @@ impl Default for State {
 impl State {
     pub(in crate::editor) fn new(zoom: f32, scroll: f32) -> Self {
         Self {
+            tool: Tool::Select,
             zoom,
             scroll,
             vertical_scroll: 0.0,
@@ -280,6 +292,10 @@ impl State {
     }
     pub(in crate::editor) fn zoom(&self) -> f32 {
         self.zoom
+    }
+    /// Switch the pointer tool; an open drag keeps its own state until it ends.
+    pub(in crate::editor) fn set_tool(&mut self, tool: Tool) {
+        self.tool = tool;
     }
     pub(in crate::editor) fn scroll(&self) -> f32 {
         self.scroll

@@ -37,6 +37,7 @@ pub(crate) enum Icon {
     Copy,
     CornersOut,
     Crop,
+    Cursor,
     Diamond,
     DotsThree,
     Export,
@@ -108,6 +109,7 @@ impl Icon {
         Self::Copy,
         Self::CornersOut,
         Self::Crop,
+        Self::Cursor,
         Self::Diamond,
         Self::DotsThree,
         Self::Export,
@@ -178,6 +180,7 @@ impl Icon {
             Self::Copy => "copy",
             Self::CornersOut => "corners-out",
             Self::Crop => "crop",
+            Self::Cursor => "cursor",
             Self::Diamond => "diamond",
             Self::DotsThree => "dots-three",
             Self::Export => "export",
@@ -323,6 +326,10 @@ const ICONS: &[(&str, &[u8])] = &[
     (
         "crop",
         include_bytes!("../../../../assets/icons/phosphor/regular/crop.svg"),
+    ),
+    (
+        "cursor",
+        include_bytes!("../../../../assets/icons/phosphor/regular/cursor.svg"),
     ),
     (
         "diamond",

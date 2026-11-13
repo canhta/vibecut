@@ -69,6 +69,8 @@ track and track removal refuse a locked track; `track.set_flags`, `track.rename`
 `track.reorder` and `track.set_locked` remain permitted on one, so it can be unlocked
 ([`tracks.rs`](tracks.rs)).
 
+`timeline.split_all {at}` cuts every unlocked item whose span contains `at`, on every track of the active scene, as one undo step. Locked tracks are skipped as the single-item split of a selection skips them; a playhead with nothing unlocked under it refuses the edit ([`execute_split_all`](clips.rs)).
+
 Ripple policy is independent of app preferences and is a command, not a method:
 `timeline.edit {commands, ripple}` supplies it for a whole batch (a typed caller wraps one atomic
 command the same way). A typed entry may also wrap exactly one `timeline.preview` to give a

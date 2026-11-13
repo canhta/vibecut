@@ -64,6 +64,33 @@ fn split_trim_ripple_and_history_use_exact_source_and_output_coordinates() {
     assert!(Arc::ptr_eq(s.project(), &final_state));
 }
 #[test]
+fn split_all_cuts_every_unlocked_item_under_the_playhead_as_one_step() {
+    let (mut s, video, _audio, clip) = audible_session();
+    let before = s.project().clone();
+    for at in [Tick::ZERO, Tick(100), Tick(101)] {
+        let result = s.apply(Command::TimelineSplitAll { at });
+        assert!(result.is_err(), "at {at:?} unexpectedly succeeded");
+        assert!(Arc::ptr_eq(&before, s.project()));
+    }
+    s.apply(Command::SetTrackLocked {
+        track: video,
+        locked: true,
+    })
+    .unwrap();
+    let locked = s.project().clone();
+    let out = s.apply(Command::TimelineSplitAll { at: Tick(40) }).unwrap();
+    assert_eq!(out.created.len(), 1, "only the unlocked audio item splits");
+    assert_eq!(get(&s, clip.0).source_range, range(0, 100));
+    s.undo().unwrap();
+    assert!(Arc::ptr_eq(s.project(), &locked));
+    s.undo().unwrap();
+    assert!(Arc::ptr_eq(s.project(), &before));
+    let out = s.apply(Command::TimelineSplitAll { at: Tick(40) }).unwrap();
+    assert_eq!(out.created.len(), 2, "every unlocked item splits in one step");
+    s.undo().unwrap();
+    assert!(Arc::ptr_eq(s.project(), &before));
+}
+#[test]
 fn split_variants_refuse_boundaries_and_remove_the_requested_side() {
     let (mut s, _video, _audio, clip) = audible_session();
     let start = Tick(0);

@@ -423,6 +423,14 @@ impl Editor {
                     let after = !self.preferences.preview_axis;
                     self.set_preference("preview_axis", serde_json::json!(after))?;
                 }
+                UiAction::SelectTool => {
+                    self.timeline.set_tool(crate::editor::timeline::Tool::Select);
+                }
+                UiAction::SplitTool => {
+                    self.timeline.set_tool(crate::editor::timeline::Tool::Split);
+                }
+                UiAction::SelectLeftward => self.select_by_playhead(false)?,
+                UiAction::SelectRightward => self.select_by_playhead(true)?,
                 UiAction::ZoomIn => self.zoom_timeline(true),
                 UiAction::ZoomOut => self.zoom_timeline(false),
                 UiAction::Theme => {

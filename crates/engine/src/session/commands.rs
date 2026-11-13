@@ -767,6 +767,7 @@ commands! {
     SetReverse, "timeline.set_reverse", "Reverse clip", Edit { items: Vec<ItemId>, reverse: bool } => Timeline, serde_json::json!({"items":[5],"reverse":true}), available = RetimableItem;
     TimelineSetRipple, "timeline.set_ripple", "Set ripple editing", SessionControl { enabled: bool } => Timeline, serde_json::json!({"enabled":false}), available = NoTransaction, grant = Agent;
     SetSpeed, "timeline.set_speed", "Set clip speed", Edit { items: Vec<ItemId>, speed: time::Speed, maintain_pitch: bool } => Timeline, serde_json::json!({"items":[5],"speed":2.0,"maintain_pitch":true}), available = RetimableItem;
+    TimelineSplitAll, "timeline.split_all", "Split all items at the playhead", Edit { at: Tick } => Timeline, serde_json::json!({"at":381024000000_i64}), available = UnlockedItem;
     TimelineSplitLeft, "timeline.split_left", "Split items and remove the left part", Edit { items: Vec<ItemId>, at: Tick } => Timeline, serde_json::json!({"items":[5],"at":381024000000_i64}), available = UnlockedItem;
     TimelineSplitRight, "timeline.split_right", "Split items and remove the right part", Edit { items: Vec<ItemId>, at: Tick } => Timeline, serde_json::json!({"items":[5],"at":381024000000_i64}), available = UnlockedItem;
     TimelineTrim, "timeline.trim", "Trim timeline group", Edit { items: Vec<ItemId>, edge: TrimEdge, delta: Tick } => Timeline, serde_json::json!({"items":[1],"edge":"end","delta":-1}), available = UnlockedItem;

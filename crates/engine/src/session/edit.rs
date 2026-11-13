@@ -626,6 +626,9 @@ pub(crate) fn apply(
         EditCommand::SplitAt { item: id, at } => {
             data = clips::execute_split_at(data, id, at, created, next, sources)?;
         }
+        EditCommand::TimelineSplitAll { at } => {
+            data = clips::execute_split_all(data, at, created, next, sources)?;
+        }
         EditCommand::TimelineSplitLeft { items, at } => {
             data = clips::execute_split_left(data, items, at, created, next, sources)?;
         }

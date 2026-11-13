@@ -4,7 +4,8 @@
 //! 12 px between buttons, 1×16 dividers with 8 px either side (221643 y 574-606).
 
 use crate::editor::timeline::{
-    Action, Context, Icon, Rect, State, Text, TimelineLayout, Vec2, egui, slider_to_zoom, theme,
+    Action, Context, Icon, Rect, State, Text, TimelineLayout, Tool, Vec2, egui, icons,
+    slider_to_zoom, theme,
     view::{Ink, tr},
     zoom_to_slider,
 };
@@ -12,6 +13,9 @@ use crate::i18n;
 
 const EDGE: f32 = 4.0;
 const CELL: f32 = theme::size::CONTROL;
+/// Caret glyph and the strip it sits in, right of the tool glyph: the measured 12 px
+/// small-glyph token `theme::icon::PLAY`, not a new value.
+const TOOL_CARET: f32 = theme::icon::PLAY;
 const GAP: f32 = 12.0;
 const DIVIDER_GAP: f32 = 8.0;
 const DIVIDER_HEIGHT: f32 = 16.0;
@@ -99,6 +103,8 @@ impl State {
             None,
         );
         left.divider(ui, divider, DIVIDER_GAP);
+        let tool = left.cell(CELL + TOOL_CARET);
+        self.toolbar_tool(cx, ui, tool);
         for (id, icon, label) in [
             ("edit.undo", Icon::ArrowCounterClockwise, Text::Undo),
             ("edit.redo", Icon::ArrowClockwise, Text::Redo),
@@ -314,6 +320,70 @@ impl State {
             return false;
         }
         clicked
+    }
+
+    /// The pointer-tool button: the active tool's glyph with a caret. Its menu lists
+    /// both tools with their shortcuts and runs the chosen tool's registered action.
+    fn toolbar_tool(&mut self, cx: &Context<'_>, ui: &mut egui::Ui, rect: Rect) {
+        let ink = Ink::of(cx);
+        let (icon, label) = match self.tool {
+            Tool::Select => (Icon::Cursor, Text::ActionTimelineToolSelect),
+            Tool::Split => (Icon::Scissors, Text::ActionTimelineToolSplit),
+        };
+        let label = tr(cx, label);
+        let glyph = Rect::from_min_size(rect.min, Vec2::splat(CELL));
+        let caret = Rect::from_min_size(
+            egui::pos2(rect.left() + CELL, rect.top()),
+            Vec2::new(TOOL_CARET, CELL),
+        );
+        let button = ui
+            .scope_builder(egui::UiBuilder::new().max_rect(glyph), |ui| {
+                crate::kit::icon_button(ui, "timeline.tool", icon, label, false)
+            })
+            .inner;
+        let caret_hit = ui.interact(
+            caret,
+            egui::Id::new("timeline.tool.caret"),
+            egui::Sense::click(),
+        );
+        let response = button.union(caret_hit);
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
+        self.remember_icon("timeline.tool", Some(icon.name()), &response);
+        icons::tinted(Icon::CaretDown, TOOL_CARET, ink.text()).paint_at(
+            ui,
+            Rect::from_center_size(caret.center(), Vec2::splat(TOOL_CARET)),
+        );
+        egui::Popup::menu(&response).show(|ui| {
+            for (id, icon, label, tool) in [
+                (
+                    "timeline.tool.select",
+                    Icon::Cursor,
+                    Text::ActionTimelineToolSelect,
+                    Tool::Select,
+                ),
+                (
+                    "timeline.tool.split",
+                    Icon::Scissors,
+                    Text::ActionTimelineToolSplit,
+                    Tool::Split,
+                ),
+            ] {
+                let mut entry = egui::Button::image_and_text(
+                    icons::tinted(icon, 16.0, ink.text()),
+                    tr(cx, label),
+                )
+                .selected(self.tool == tool);
+                if let Some(shortcut) = cx.shortcut(id) {
+                    entry = entry.shortcut_text(shortcut);
+                }
+                let response = ui.add(entry);
+                self.remember_icon(id, Some(icon.name()), &response);
+                if response.clicked() {
+                    self.push(Action::Activate(id.to_owned()));
+                    ui.close();
+                }
+            }
+        });
     }
 
     /// The keyframe graph button: enabled while the selection has an easable
