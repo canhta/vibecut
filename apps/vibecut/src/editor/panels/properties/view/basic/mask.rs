@@ -81,6 +81,17 @@ impl Panel<'_, '_> {
             .and_then(mask_picker::current)
             .cloned();
         let locked = read::item_locked(self.cx.session.project(), item);
+        let project = self.cx.session.project();
+        let timing = read::item(project, item).and_then(|found| {
+            let (start, end) = read::range_of(project, item)?;
+            let at = self.cx.playhead;
+            Some(mask_picker::Timing {
+                animations: &found.animations,
+                start,
+                time: time::Tick(at.0 - start.0),
+                inside: start <= at && at < end,
+            })
+        });
         let anchor = self.state.area.map_or_else(
             || egui::pos2(ctx.content_rect().left() + 24.0, 120.0),
             |panel| {
@@ -99,6 +110,7 @@ impl Panel<'_, '_> {
             item,
             mask.as_ref(),
             locked,
+            timing,
         );
         for (id, response) in event.widgets {
             self.remember(id, &response);

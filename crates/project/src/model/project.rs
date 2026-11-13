@@ -460,6 +460,17 @@ fn validate(data: &ProjectData) -> Result<()> {
                     }
                 }
             }
+            for (path, _) in item.animations.iter() {
+                let Some(rest) = path.as_str().strip_prefix("masks.") else {
+                    continue;
+                };
+                let known = rest.split_once(".params.").is_some_and(|(id, key)| {
+                    crate::MASK_SCALARS.contains(&key) && item.masks.iter().any(|m| m.id == id)
+                });
+                if !known {
+                    return Err(Error::Invalid("mask animation path"));
+                }
+            }
             item.animations.validate()?;
             if item
                 .animations

@@ -3,7 +3,8 @@ use super::state::{Choice, State};
 use crate::egui::{self, Align, Align2, Id, Rect, Sense, Stroke, StrokeKind, Vec2};
 use crate::i18n::{self, Locale, Text};
 use crate::kit as theme;
-use project::{ItemId, Mask};
+use project::{Animations, ItemId, Mask};
+use time::Tick;
 
 /// The reference's mask panel is 240 px wide; the shape grid needs a little more.
 const WIDTH: f32 = 288.0;
@@ -12,6 +13,86 @@ const TILE_GAP: f32 = 8.0;
 const CELL_HEIGHT: f32 = 78.0;
 const FIELD_WIDTH: f32 = 64.0;
 const DONE: Vec2 = Vec2::new(90.0, 34.0);
+
+/// The playhead as the mask's keys see it: the item's animations, the item-relative
+/// time, and whether that time sits inside the item where keys can change.
+#[derive(Clone, Copy)]
+pub struct Timing<'a> {
+    pub animations: &'a Animations,
+    /// The item's timeline start, so key times convert to absolute seeks.
+    pub start: Tick,
+    pub time: Tick,
+    pub inside: bool,
+}
+
+/// One open mask with its playhead: the stored mask, the mask at the playhead
+/// (what the fields show) and the edit gates.
+#[derive(Clone, Copy)]
+struct Keys<'a> {
+    item: ItemId,
+    timing: Timing<'a>,
+    mask: &'a Mask,
+    shown: &'a Mask,
+    locked: bool,
+}
+
+impl<'a> Keys<'a> {
+    /// The animated parameter behind one mask field, if it has one.
+    fn param(self, key: &str) -> Option<&'a project::Param> {
+        let animations: &'a Animations = self.timing.animations;
+        animations.get(&self.mask.path(key).ok()?)
+    }
+    /// Whether the field is animated at all: its parameter exists.
+    fn animated(self, key: &str) -> bool {
+        self.param(key).is_some()
+    }
+    /// Whether the field's channel owns a key at the playhead.
+    fn keyed(self, key: &str) -> bool {
+        let time = self.timing.time;
+        self.param(key)
+            .and_then(|param| param.channel(None).ok())
+            .is_some_and(|channel| {
+                channel
+                    .keys()
+                    .binary_search_by_key(&time, |k| k.time)
+                    .is_ok()
+            })
+    }
+    /// Whether the field carries keys; edits at the playhead then upsert one.
+    fn curved(self, key: &str) -> bool {
+        self.param(key)
+            .and_then(|param| param.channel(None).ok())
+            .is_some_and(|channel| !channel.keys().is_empty())
+    }
+    /// The engine value the toggle records for an unkeyed field: what is shown now.
+    fn shown_value(self, key: &str) -> f64 {
+        engine_value(self.shown, key)
+    }
+}
+
+/// Engine units of a field, as the static and keyed edits store them.
+fn engine_value(mask: &Mask, key: &str) -> f64 {
+    match key {
+        "feather" => mask.feather,
+        "width" => mask.width,
+        "height" => mask.height,
+        "center_x" => mask.center_x,
+        "center_y" => mask.center_y,
+        "rotation" => mask.rotation,
+        _ => 0.0,
+    }
+}
+
+/// Converts a displayed field value (per cent for position and size) to engine units.
+fn engine_units(key: &str, value: f64) -> f64 {
+    match key {
+        "feather" => value.clamp(0.0, 100.0),
+        "width" | "height" => (value / 100.0).clamp(0.000_001, 100.0),
+        "center_x" | "center_y" => (value / 100.0).clamp(-100.0, 100.0),
+        "rotation" => value.clamp(-1_000_000.0, 1_000_000.0),
+        _ => value,
+    }
+}
 
 /// What the mask panel asks the properties owner to do.
 #[derive(Clone, Debug, PartialEq)]
@@ -23,9 +104,36 @@ pub enum Action {
         item: ItemId,
         shape: Option<project::MaskShape>,
     },
+    /// A static edit of the stored mask.
     Update {
         item: ItemId,
         mask: Mask,
+    },
+    /// Toggle the diamond over one group of mask fields at the playhead, as one step.
+    ToggleKeyframe {
+        item: ItemId,
+        mask: String,
+        fields: Vec<(&'static str, f64)>,
+        time: Tick,
+    },
+    /// Upsert a key on an animated mask field at the playhead.
+    SetKeyframe {
+        item: ItemId,
+        mask: String,
+        key: &'static str,
+        value: f64,
+        time: Tick,
+    },
+    /// Move the playhead to a neighbouring key of a mask group (absolute time).
+    Seek {
+        at: Tick,
+    },
+    /// Replace the base of an animated mask field that holds no keys.
+    SetBase {
+        item: ItemId,
+        mask: String,
+        key: &'static str,
+        value: f64,
     },
 }
 
@@ -48,6 +156,7 @@ pub fn show(
     item: ItemId,
     mask: Option<&Mask>,
     locked: bool,
+    timing: Option<Timing<'_>>,
 ) -> Event {
     let mut event = Event {
         widgets: Vec::new(),
@@ -81,7 +190,24 @@ pub fn show(
                     .strong()
                     .size(theme::type_size::BODY),
             );
-            fields(ui, state, locale, tr, dark, locked, item, mask, &mut event);
+            // Fields show the mask at the playhead; static edits still write the stored mask.
+            let shown = timing.map_or_else(
+                || mask.clone(),
+                |timing| {
+                    mask.at(timing.animations, timing.time)
+                        .unwrap_or_else(|_| mask.clone())
+                },
+            );
+            let keys = timing.map(|timing| Keys {
+                item,
+                timing,
+                mask,
+                shown: &shown,
+                locked,
+            });
+            fields(
+                ui, state, locale, tr, dark, locked, item, mask, &shown, keys, &mut event,
+            );
             ui.add_space(theme::space::XS);
         }
         ui.separator();
@@ -225,10 +351,22 @@ fn fields(
     locked: bool,
     item: ItemId,
     mask: &Mask,
+    shown: &Mask,
+    keys: Option<Keys<'_>>,
     event: &mut Event,
 ) {
     let mut changes: Vec<(&'static str, f64)> = Vec::new();
-    feather_row(ui, state, tr, dark, locked, mask, &mut changes, event);
+    feather_row(
+        ui,
+        state,
+        tr,
+        dark,
+        locked,
+        shown,
+        keys,
+        &mut changes,
+        event,
+    );
     let choice = Choice::of(&mask.shape);
     let (show_width, show_height) = choice.map_or((true, true), |choice| choice.size_fields());
     if show_width || show_height {
@@ -238,7 +376,7 @@ fn fields(
                 id: "inspector.mask.size.w",
                 key: "width",
                 prefix: Some("W"),
-                value: mask.width * 100.0,
+                value: shown.width * 100.0,
                 min: 1.0,
                 max: 10_000.0,
                 step: 1.0,
@@ -250,7 +388,7 @@ fn fields(
                 id: "inspector.mask.size.h",
                 key: "height",
                 prefix: Some("H"),
-                value: mask.height * 100.0,
+                value: shown.height * 100.0,
                 min: 1.0,
                 max: 10_000.0,
                 step: 1.0,
@@ -267,6 +405,7 @@ fn fields(
             locked,
             &mut changes,
             event,
+            keys.map(|keys| (keys, &["width", "height"][..])),
         );
     }
     row(
@@ -279,7 +418,7 @@ fn fields(
                 id: "inspector.mask.position.x",
                 key: "center_x",
                 prefix: Some("X"),
-                value: mask.center_x * 100.0,
+                value: shown.center_x * 100.0,
                 min: -10_000.0,
                 max: 10_000.0,
                 step: 1.0,
@@ -289,7 +428,7 @@ fn fields(
                 id: "inspector.mask.position.y",
                 key: "center_y",
                 prefix: Some("Y"),
-                value: mask.center_y * 100.0,
+                value: shown.center_y * 100.0,
                 min: -10_000.0,
                 max: 10_000.0,
                 step: 1.0,
@@ -300,6 +439,7 @@ fn fields(
         locked,
         &mut changes,
         event,
+        keys.map(|keys| (keys, &["center_x", "center_y"][..])),
     );
     row(
         ui,
@@ -310,7 +450,7 @@ fn fields(
             id: "inspector.mask.rotation",
             key: "rotation",
             prefix: None,
-            value: mask.rotation,
+            value: shown.rotation,
             min: -1_000_000.0,
             max: 1_000_000.0,
             step: 1.0,
@@ -320,6 +460,7 @@ fn fields(
         locked,
         &mut changes,
         event,
+        keys.map(|keys| (keys, &["rotation"][..])),
     );
     let mut inverted = mask.inverted;
     let response = ui
@@ -349,23 +490,47 @@ fn fields(
     if response.changed() && !locked {
         changes.push(("inverted", f64::from(u8::from(inverted))));
     }
-    if changes.is_empty() {
-        return;
-    }
+    // An animated field edits its key at the playhead, or its base when it holds no keys;
+    // every other field edits the stored mask in one update.
     let mut next = mask.clone();
+    let mut stored = false;
     for (key, value) in changes {
-        match key {
-            "feather" => next.feather = value.clamp(0.0, 100.0),
-            "width" => next.width = (value / 100.0).clamp(0.000_001, 100.0),
-            "height" => next.height = (value / 100.0).clamp(0.000_001, 100.0),
-            "center_x" => next.center_x = (value / 100.0).clamp(-100.0, 100.0),
-            "center_y" => next.center_y = (value / 100.0).clamp(-100.0, 100.0),
-            "rotation" => next.rotation = value.clamp(-1_000_000.0, 1_000_000.0),
-            "inverted" => next.inverted = value != 0.0,
-            _ => {}
+        let value = engine_units(key, value);
+        match keys.filter(|keys| keys.animated(key)) {
+            Some(keys) if keys.curved(key) => event.actions.push(Action::SetKeyframe {
+                item,
+                mask: mask.id.clone(),
+                key,
+                value,
+                time: keys.timing.time,
+            }),
+            Some(_) => event.actions.push(Action::SetBase {
+                item,
+                mask: mask.id.clone(),
+                key,
+                value,
+            }),
+            None => stored |= set_stored(&mut next, key, value),
         }
     }
-    event.actions.push(Action::Update { item, mask: next });
+    if stored {
+        event.actions.push(Action::Update { item, mask: next });
+    }
+}
+
+/// Writes one stored field; `false` for a key the mask does not store.
+fn set_stored(mask: &mut Mask, key: &str, value: f64) -> bool {
+    match key {
+        "feather" => mask.feather = value,
+        "width" => mask.width = value,
+        "height" => mask.height = value,
+        "center_x" => mask.center_x = value,
+        "center_y" => mask.center_y = value,
+        "rotation" => mask.rotation = value,
+        "inverted" => mask.inverted = value != 0.0,
+        _ => return false,
+    }
+    true
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -375,7 +540,8 @@ fn feather_row(
     tr: impl Fn(Text) -> &'static str + Copy,
     dark: bool,
     locked: bool,
-    mask: &Mask,
+    shown: &Mask,
+    keys: Option<Keys<'_>>,
     changes: &mut Vec<(&'static str, f64)>,
     event: &mut Event,
 ) {
@@ -385,9 +551,10 @@ fn feather_row(
             .color(theme::text(dark)),
     );
     ui.horizontal(|ui| {
-        let group = FIELD_WIDTH + theme::size::STEPPER + theme::space::XXS;
+        let reserve = keys.map_or(0.0, |_| theme::size::KEYFRAME_CLUSTER + theme::space::XXS);
+        let group = FIELD_WIDTH + theme::size::STEPPER + theme::space::XXS + reserve;
         let rail_width = (ui.available_width() - group - theme::space::MD).max(40.0);
-        let preview = state.feather_preview().unwrap_or(mask.feather);
+        let preview = state.feather_preview().unwrap_or(shown.feather);
         let (response, value) = ui
             .add_enabled_ui(!locked, |ui| {
                 theme::rail_slider(
@@ -416,7 +583,7 @@ fn feather_row(
             id: "inspector.mask.feather",
             key: "feather",
             prefix: None,
-            value: state.feather_preview().unwrap_or(mask.feather),
+            value: state.feather_preview().unwrap_or(shown.feather),
             min: 0.0,
             max: 100.0,
             step: 1.0,
@@ -432,7 +599,98 @@ fn feather_row(
         ) {
             changes.push(("feather", value));
         }
+        if let Some(keys) = keys {
+            cluster(ui, tr, keys, &["feather"], event);
+        }
     });
+}
+
+/// The nearest keys either side of the playhead across one group, item-relative.
+fn neighbours(keys: Keys<'_>, group: &[&'static str]) -> (Option<Tick>, Option<Tick>) {
+    let at = keys.timing.time;
+    let mut before: Option<Tick> = None;
+    let mut after: Option<Tick> = None;
+    for key in group {
+        let Some(channel) = keys.param(key).and_then(|param| param.channel(None).ok()) else {
+            continue;
+        };
+        for time in channel.keys().iter().map(|key| key.time) {
+            if time < at {
+                before = before.max(Some(time));
+            } else if time > at {
+                after = Some(after.map_or(time, |next| next.min(time)));
+            }
+        }
+    }
+    (before, after)
+}
+
+/// The row-end keyframe cluster of one group of mask fields. Its diamond keys every
+/// field of the group at the playhead, or removes them when all are keyed. Previous and
+/// next seeks are not wired in this popover, so both arrows stay disabled.
+fn cluster(
+    ui: &mut egui::Ui,
+    tr: impl Fn(Text) -> &'static str + Copy,
+    keys: Keys<'_>,
+    group: &[&'static str],
+    event: &mut Event,
+) {
+    let Some(lead) = group.first() else {
+        return;
+    };
+    let id = format!("inspector.mask.keyframe.{lead}");
+    let keyed = group.iter().all(|key| keys.keyed(key));
+    let (rect, _) = ui.allocate_exact_size(
+        Vec2::new(theme::size::KEYFRAME_CLUSTER, theme::size::CONTROL),
+        Sense::hover(),
+    );
+    let (before, after) = neighbours(keys, group);
+    let [previous, toggle, next] = theme::keyframe_cluster(
+        ui,
+        &id,
+        rect,
+        &theme::KeyframeControl {
+            previous_label: tr(Text::PreviousKeyframe),
+            toggle_label: tr(if keyed {
+                Text::RemoveKeyframe
+            } else {
+                Text::AddKeyframe
+            }),
+            next_label: tr(Text::NextKeyframe),
+            keyed,
+            can_toggle: keys.timing.inside && !keys.locked,
+            has_previous: before.is_some(),
+            has_next: after.is_some(),
+        },
+    );
+    record(
+        &mut event.widgets,
+        &format!("{id}.previous"),
+        previous.clone(),
+    );
+    record(&mut event.widgets, &id, toggle.clone());
+    record(&mut event.widgets, &format!("{id}.next"), next.clone());
+    if let Some(time) = before.filter(|_| previous.clicked()) {
+        event.actions.push(Action::Seek {
+            at: keys.timing.start + time,
+        });
+    }
+    if let Some(time) = after.filter(|_| next.clicked()) {
+        event.actions.push(Action::Seek {
+            at: keys.timing.start + time,
+        });
+    }
+    if toggle.clicked() && keys.timing.inside && !keys.locked {
+        event.actions.push(Action::ToggleKeyframe {
+            item: keys.item,
+            mask: keys.mask.id.clone(),
+            fields: group
+                .iter()
+                .map(|key| (*key, keys.shown_value(key)))
+                .collect(),
+            time: keys.timing.time,
+        });
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -458,6 +716,7 @@ fn row(
     locked: bool,
     changes: &mut Vec<(&'static str, f64)>,
     event: &mut Event,
+    keys: Option<(Keys<'_>, &[&'static str])>,
 ) {
     let (row, _) = ui.allocate_exact_size(
         Vec2::new(ui.available_width(), theme::size::PROPERTY_ROW),
@@ -472,10 +731,11 @@ fn row(
     );
     let spec_width = specs.len() as f32 * (FIELD_WIDTH + theme::size::STEPPER);
     let gap = (specs.len().saturating_sub(1)) as f32 * (theme::space::XXS + 3.0);
+    let reserve = keys.map_or(0.0, |_| theme::size::KEYFRAME_CLUSTER + theme::space::XXS);
     let mut value_ui = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(Rect::from_min_max(
-                egui::pos2(row.right() - spec_width - gap, row.top()),
+                egui::pos2(row.right() - spec_width - gap - reserve, row.top()),
                 row.max,
             ))
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
@@ -495,6 +755,10 @@ fn row(
         ) {
             changes.push((spec.key, value));
         }
+    }
+    if let Some((keys, group)) = keys {
+        let tr = |text: Text| i18n::text(locale, text);
+        cluster(&mut value_ui, tr, keys, group, event);
     }
 }
 

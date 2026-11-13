@@ -980,6 +980,31 @@ fn model_trust_boundaries() {
         item.masks.push(mask);
         cases.push(d);
     }
+    // Mask animation paths name a present mask and one of its scalar keys.
+    for (path, accepted) in [
+        ("masks.m.params.feather", true),
+        ("masks.ghost.params.feather", false),
+        ("masks.m.params.text", false),
+    ] {
+        let mut d = base.clone();
+        let item = d
+            .scene_mut()
+            .timeline
+            .iter_mut()
+            .flat_map(|track| &mut track.items)
+            .find(|item| matches!(item.content, ItemParams::Text(_)))
+            .unwrap();
+        item.masks.push(Mask::new("m", MaskShape::Rectangle));
+        let animated = Param::new(ParamValue::Scalar(0.5)).unwrap();
+        item.animations
+            .set(AnimationPath::new(path).unwrap(), animated)
+            .unwrap();
+        if accepted {
+            assert!(Project::new(d).is_ok(), "{path}");
+        } else {
+            cases.push(d);
+        }
+    }
     let mut d = base.clone();
     d.scene_mut().timeline.main.kind = TrackKind::Audio;
     cases.push(d);
