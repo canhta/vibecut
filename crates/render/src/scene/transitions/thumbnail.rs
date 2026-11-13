@@ -1,5 +1,5 @@
 //! Tile thumbnails: a transition applied to two generated frames, cached.
-use super::transitions::apply;
+use super::apply;
 use crate::{Error, ExecutionHooks, Image, Result};
 use project::TransitionParams;
 use std::sync::{Arc, Mutex, PoisonError};

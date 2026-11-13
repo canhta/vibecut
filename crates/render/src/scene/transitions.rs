@@ -9,6 +9,7 @@ mod grunge;
 mod lights;
 mod motion;
 mod pixels;
+pub mod thumbnail;
 mod wipe;
 
 /// Rows evaluated between cancellation checks.
