@@ -366,6 +366,70 @@ fn cli_animates_opacity_and_exported_frames_follow_the_curve() {
 }
 
 #[test]
+fn cli_animates_a_mask_and_exported_frames_follow_its_coverage() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("masked.vibecut");
+    let output_path = dir.path().join("masked.mp4");
+    let duration = Tick(time::TICKS_PER_SECOND * 6 / 5);
+    overlay_project_color(&project, 64, 64, duration, [255, 255, 255, 255]);
+    exec(
+        &project,
+        "masks.add",
+        json!({"item":0,"mask":project::Mask::new("m", project::MaskShape::Rectangle)}),
+    );
+    let key = |time: i64, value: f64| {
+        json!({
+            "time": time,
+            "value": {"kind": "scalar", "value": value},
+            "segment": "linear",
+            "tangent": "broken",
+            "incoming": null,
+            "outgoing": null,
+        })
+    };
+    // The centre starts left of the canvas middle and reaches it at one second.
+    exec(
+        &project,
+        "keyframes.set_param",
+        json!({
+            "item": 0,
+            "path": "masks.m.params.center_x",
+            "param": {
+                "kind": "value",
+                "channels": {
+                    "value": {"kind": "scalar", "value": -0.4},
+                    "keys": [key(0, -0.4), key(time::TICKS_PER_SECOND, 0.0)],
+                    "before": "hold",
+                    "after": "hold",
+                },
+            },
+        }),
+    );
+    let output = cli(&[
+        os("export"),
+        project.as_os_str(),
+        os("--out"),
+        output_path.as_os_str(),
+        os("--json"),
+    ]);
+    assert_eq!(
+        code(&output),
+        0,
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(stdout_json(&output)["status"], "completed");
+    assert!(tools(), "required ffmpeg/ffprobe oracle setup");
+    let frames = decoded_rgb(&output_path, 64, 64, &[0, 30]);
+    // Red channel at (x, y) of a 64x64 rgb24 frame.
+    let red = |frame: &[u8], x: usize, y: usize| frame[(y * 64 + x) * 3];
+    // Frame 0 (centre x 6.4, half width 19.2) covers x 4 and not x 46; frame 30
+    // (centre x 32) covers x 46 and not x 4.
+    assert!(red(&frames[0], 4, 32) > 128 && red(&frames[0], 46, 32) < 128);
+    assert!(red(&frames[1], 4, 32) < 128 && red(&frames[1], 46, 32) > 128);
+}
+
+#[test]
 fn cli_clipboard_item_payload_pastes_with_relative_track_overwrite() {
     let dir = tempfile::tempdir().unwrap();
     let project = dir.path().join("clipboard-items.vibecut");

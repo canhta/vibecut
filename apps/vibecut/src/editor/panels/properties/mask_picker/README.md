@@ -25,4 +25,6 @@ group's `masks.<id>.params.<name>` paths at the playhead through `keyframes.togg
 or removes them when all are keyed, as one step. Fields show the mask evaluated at the
 playhead. An animated field with keys upserts its key at the playhead; one with no keys
 replaces its base with `keyframes.set_param`; any other field edits the stored mask.
-Previous and next key seeks are not wired here, so the arrows stay disabled.
+The arrows seek to the nearest key of the group either side of the playhead, through the
+same `Request::Seek` the properties keyed sliders use, and stay disabled when no key exists
+on their side.

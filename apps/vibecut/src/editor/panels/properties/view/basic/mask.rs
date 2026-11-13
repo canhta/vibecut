@@ -87,6 +87,7 @@ impl Panel<'_, '_> {
             let at = self.cx.playhead;
             Some(mask_picker::Timing {
                 animations: &found.animations,
+                start,
                 time: time::Tick(at.0 - start.0),
                 inside: start <= at && at < end,
             })

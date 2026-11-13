@@ -1838,6 +1838,64 @@ fn mask_diamond_keys_the_centre_at_the_playhead_and_removes_it_again() {
     assert_eq!(keys(&harness), 0, "the same diamond removes the key");
 }
 
+#[test]
+fn mask_key_arrows_seek_to_the_neighbouring_keys_of_the_group() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    select(&mut harness, fixture.video);
+    click(&mut harness, "inspector.mask.row");
+    click(&mut harness, "inspector.mask.shape.rectangle");
+    let path = mask_of(&harness, fixture.video)
+        .unwrap()
+        .path("center_x")
+        .unwrap();
+    harness
+        .state_mut()
+        .session
+        .apply(Command::SetAnimatedParam {
+            item: fixture.video,
+            path: path.clone(),
+            param: project::Param::new(project::ParamValue::Scalar(0.0)).unwrap(),
+        })
+        .unwrap();
+    for seconds in [1, 2] {
+        harness
+            .state_mut()
+            .session
+            .apply(Command::AddKeyframe {
+                item: fixture.video,
+                path: path.clone(),
+                component: None,
+                key: project::Keyframe::new(
+                    Tick(seconds * SECOND),
+                    project::ParamValue::Scalar(0.1 * seconds as f64),
+                ),
+            })
+            .unwrap();
+    }
+    harness.run_steps(2);
+    let position = |harness: &Harness<Editor>| harness.state().inspect().unwrap().position;
+    assert_eq!(position(&harness), Tick(0));
+    click(&mut harness, "inspector.mask.keyframe.center_x.next");
+    harness.run_steps(2);
+    assert_eq!(
+        position(&harness),
+        Tick(SECOND),
+        "next seeks to the first key"
+    );
+    click(&mut harness, "inspector.mask.keyframe.center_x.next");
+    harness.run_steps(2);
+    assert_eq!(
+        position(&harness),
+        Tick(2 * SECOND),
+        "next seeks to the second key"
+    );
+    click(&mut harness, "inspector.mask.keyframe.center_x.previous");
+    harness.run_steps(2);
+    assert_eq!(position(&harness), Tick(SECOND), "previous seeks back");
+}
+
 fn mask_of(harness: &Harness<Editor>, id: ItemId) -> Option<project::Mask> {
     item(harness, id).masks.first().cloned()
 }

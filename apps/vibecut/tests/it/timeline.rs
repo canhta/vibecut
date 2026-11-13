@@ -4160,6 +4160,68 @@ fn keyframe_lanes_and_volume_line_render_the_audit_screenshot() {
 }
 
 #[test]
+fn mask_keys_list_as_lanes_and_open_the_graph_editor() {
+    let fixture = fixture();
+    let id = fixture.video_a;
+    let mut editor = fixture.editor;
+    editor
+        .session
+        .apply(Command::AddMask {
+            item: id,
+            mask: project::Mask::new("m", project::MaskShape::Rectangle),
+        })
+        .unwrap();
+    add_key(
+        &mut editor,
+        id,
+        "masks.m.params.center_x",
+        Tick(2 * SECOND),
+        0.1,
+    );
+    add_key(
+        &mut editor,
+        id,
+        "masks.m.params.center_x",
+        Tick(4 * SECOND),
+        0.3,
+    );
+    let mut harness = harness(editor);
+    harness.run_steps(3);
+    // The lane enumerates every animated path, so the mask key gets its own lane.
+    let lanes = widget(&harness, &format!("timeline.item.{}.lanes", id.0));
+    click_at(&mut harness, lanes.center());
+    let key = widget(
+        &harness,
+        &format!(
+            "timeline.keyframe.{}.masks_m_params_center_x.none.{}",
+            id.0,
+            2 * SECOND
+        ),
+    );
+    click_at(&mut harness, key.center());
+    harness
+        .state_mut()
+        .selection_scopes
+        .keyframes
+        .insert(vibecut::KeyframeSelection {
+            item: id,
+            path: project::AnimationPath::new("masks.m.params.center_x").unwrap(),
+            component: None,
+            time: Tick(2 * SECOND),
+        });
+    harness.run_steps(3);
+    let by =
+        |author: &'static str| By::new().predicate(move |node| node.author_id() == Some(author));
+    assert!(
+        !harness
+            .get(by("timeline.graph"))
+            .accesskit_node()
+            .is_disabled(),
+        "a selected mask key opens the graph editor"
+    );
+}
+
+#[test]
 fn graph_popover_stages_curves_and_commits_or_cancels_in_one_undo_step() {
     let fixture = fixture();
     let id = fixture.video_a;

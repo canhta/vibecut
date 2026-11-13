@@ -19,6 +19,8 @@ const DONE: Vec2 = Vec2::new(90.0, 34.0);
 #[derive(Clone, Copy)]
 pub struct Timing<'a> {
     pub animations: &'a Animations,
+    /// The item's timeline start, so key times convert to absolute seeks.
+    pub start: Tick,
     pub time: Tick,
     pub inside: bool,
 }
@@ -121,6 +123,10 @@ pub enum Action {
         key: &'static str,
         value: f64,
         time: Tick,
+    },
+    /// Move the playhead to a neighbouring key of a mask group (absolute time).
+    Seek {
+        at: Tick,
     },
     /// Replace the base of an animated mask field that holds no keys.
     SetBase {
@@ -599,6 +605,26 @@ fn feather_row(
     });
 }
 
+/// The nearest keys either side of the playhead across one group, item-relative.
+fn neighbours(keys: Keys<'_>, group: &[&'static str]) -> (Option<Tick>, Option<Tick>) {
+    let at = keys.timing.time;
+    let mut before: Option<Tick> = None;
+    let mut after: Option<Tick> = None;
+    for key in group {
+        let Some(channel) = keys.param(key).and_then(|param| param.channel(None).ok()) else {
+            continue;
+        };
+        for time in channel.keys().iter().map(|key| key.time) {
+            if time < at {
+                before = before.max(Some(time));
+            } else if time > at {
+                after = Some(after.map_or(time, |next| next.min(time)));
+            }
+        }
+    }
+    (before, after)
+}
+
 /// The row-end keyframe cluster of one group of mask fields. Its diamond keys every
 /// field of the group at the playhead, or removes them when all are keyed. Previous and
 /// next seeks are not wired in this popover, so both arrows stay disabled.
@@ -618,6 +644,7 @@ fn cluster(
         Vec2::new(theme::size::KEYFRAME_CLUSTER, theme::size::CONTROL),
         Sense::hover(),
     );
+    let (before, after) = neighbours(keys, group);
     let [previous, toggle, next] = theme::keyframe_cluster(
         ui,
         &id,
@@ -632,13 +659,27 @@ fn cluster(
             next_label: tr(Text::NextKeyframe),
             keyed,
             can_toggle: keys.timing.inside && !keys.locked,
-            has_previous: false,
-            has_next: false,
+            has_previous: before.is_some(),
+            has_next: after.is_some(),
         },
     );
-    record(&mut event.widgets, &format!("{id}.previous"), previous);
+    record(
+        &mut event.widgets,
+        &format!("{id}.previous"),
+        previous.clone(),
+    );
     record(&mut event.widgets, &id, toggle.clone());
-    record(&mut event.widgets, &format!("{id}.next"), next);
+    record(&mut event.widgets, &format!("{id}.next"), next.clone());
+    if let Some(time) = before.filter(|_| previous.clicked()) {
+        event.actions.push(Action::Seek {
+            at: keys.timing.start + time,
+        });
+    }
+    if let Some(time) = after.filter(|_| next.clicked()) {
+        event.actions.push(Action::Seek {
+            at: keys.timing.start + time,
+        });
+    }
     if toggle.clicked() && keys.timing.inside && !keys.locked {
         event.actions.push(Action::ToggleKeyframe {
             item: keys.item,

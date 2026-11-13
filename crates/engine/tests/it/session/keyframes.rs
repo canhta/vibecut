@@ -537,6 +537,45 @@ fn trimming_a_clip_refits_its_animations_in_one_step() {
     })
     .unwrap();
     assert_eq!(keys_of(&s, id, BuiltinPath::Opacity), edited);
+
+    // A mask key trims with the start: its local time moves with the cut.
+    let (mut s, id) = rig(true, 60);
+    let start = item(&s, id).start;
+    s.apply(Command::AddMask {
+        item: id,
+        mask: Mask::new("m", MaskShape::Rectangle),
+    })
+    .unwrap();
+    let mask_path = AnimationPath::new("masks.m.params.feather").unwrap();
+    s.apply(Command::SetAnimatedParam {
+        item: id,
+        path: mask_path.clone(),
+        param: Param::new(ParamValue::Scalar(0.0)).unwrap(),
+    })
+    .unwrap();
+    s.apply(Command::AddKeyframe {
+        item: id,
+        path: mask_path.clone(),
+        component: None,
+        key: Keyframe::new(f(20), ParamValue::Scalar(10.0)),
+    })
+    .unwrap();
+    s.apply(Command::TrimStart {
+        item: id,
+        at: start.checked_add(f(10)).unwrap(),
+    })
+    .unwrap();
+    let mask_keys: Vec<Tick> = item(&s, id)
+        .animations
+        .get(&mask_path)
+        .unwrap()
+        .channel(None)
+        .unwrap()
+        .keys()
+        .iter()
+        .map(|key| key.time)
+        .collect();
+    assert_eq!(mask_keys, [f(10)]);
 }
 
 #[test]

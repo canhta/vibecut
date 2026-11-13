@@ -22,6 +22,11 @@ impl State {
                 port.apply_result(engine::Command::UpdateMask { item, mask })?;
                 Ok(())
             }
+            // The same seek the properties keyed sliders use.
+            Action::Seek { at } => {
+                port.request(crate::editor::context::Request::Seek(at));
+                Ok(())
+            }
             Action::ToggleKeyframe {
                 item,
                 mask,
