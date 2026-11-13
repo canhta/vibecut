@@ -33,8 +33,8 @@ key, so agents save presets the same way the popover does and it joins preferenc
 bounded custom IDs and four recent IDs per pair, using AI's shipped table for defaults.
 The Captions and Shorts provider pickers resolve their transient request snapshots
 from this map. Downloaded local weight choices remain in their local owner. Keys,
-fetched lists and price acknowledgements are never serialized. Preferences schema 9
-rejects earlier documents through the existing version refusal; there is no migration.
+fetched lists and price acknowledgements are never serialized. A document whose version is not
+`PREFERENCES_VERSION` is refused through the version refusal; there is no migration.
 
 `adjustment_presets` is the bounded app-owned bank of named colour grades (at most 32,
 64-byte unique names, exactly the current `color_grade` parameter set with each value

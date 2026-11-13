@@ -30,6 +30,8 @@ Items within a track are sorted by output start, nonnegative and nonoverlapping;
 
 Each item's typed `ItemParams` determines its track kind. Video and audio items require an asset with a corresponding stream and cannot exceed its known presentation duration. Caption items keep source asset identity and captions' `CueTrack` (source ranges, languages, edited flags, translation references, and one shared style table that cues reference by `CueStyleId`); cues must fit the item's source range and every style id must name a valid table entry. `Item::word_spans` reads a caption item's native ASR words as `WordSpan` values carrying the item, retained cue, index, and clipped source and output ranges; a word is clipped to its cue and the item's source window, so a trim never duplicates a word range. Text and solid-overlay items have no media reference and their source range uses local content ticks.
 
+`#[serde(default)]` fields on `ItemParams` exist because it is also the `timeline.insert` wire input, where callers omit them; they are not for reading old project files.
+
 `VideoParams.crop` is the optional source region a video or image item shows: `x`/`y` are the top-left corner and `width`/`height` the size, as fractions of the whole source frame, finite, positive and contained in `0..=1`. Absent means the full frame. The crop follows the item through trim, retime, split, undo/redo and persistence because it is item content, not render state.
 
 Missing referenced asset IDs are invalid; missing files are valid and carry media-owned relink state ([media source](../../../media/src/source/README.md)). Source paths are absolute native paths; working-directory changes never reinterpret them.
