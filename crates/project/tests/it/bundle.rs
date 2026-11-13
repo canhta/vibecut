@@ -119,7 +119,7 @@ fn round_trip_copies_media_once_relinks_by_hash_and_reports_missing() {
     );
     // The copied LUT is a complete bundle the project's record points at.
     let record = imported.project().data().luts.first().unwrap();
-    assert_eq!(record.id, original.data().luts.get(0).unwrap().id);
+    assert_eq!(record.id, original.data().luts.first().unwrap().id);
     assert!(
         record
             .directory

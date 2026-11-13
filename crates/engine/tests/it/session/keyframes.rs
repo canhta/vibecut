@@ -320,7 +320,8 @@ fn clip_animation_combo_presets_span_the_whole_clip() {
         TransformScaleX as SX, TransformScaleY as SY,
     };
     // Channel, key count, value at the last key; the first key is at 0 and the last at the end.
-    let table: [(Look, &[(BuiltinPath, usize, f64)]); 13] = [
+    type Row<'a> = (Look, &'a [(BuiltinPath, usize, f64)]);
+    let table: [Row<'_>; 13] = [
         (Look::Pulse, &[(SX, 3, 1.0), (SY, 3, 1.0)]),
         (Look::Heartbeat, &[(SX, 8, 1.0), (SY, 8, 1.0)]),
         (Look::Sway, &[(R, 4, 0.0)]),
@@ -2197,7 +2198,7 @@ fn clipboard_refusal_is_atomic_across_paths_locks_batches_and_stale_refs() {
     assert_ne!(cut.project(), &original);
     assert_eq!(cut.history_len().0, cut_history.0 + 1);
     assert!(cut.clipboard_has_entry());
-    assert!(!cut.can_copy_keyframes(&[k.clone()]));
+    assert!(!cut.can_copy_keyframes(std::slice::from_ref(&k)));
     cut.undo().unwrap();
     assert_eq!(cut.project(), &original);
     assert!(cut.clipboard_has_entry(), "undo keeps the cut payload");

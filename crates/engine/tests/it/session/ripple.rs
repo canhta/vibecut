@@ -530,7 +530,8 @@ fn main_magnet_closes_only_the_span_that_removals_vacate_in_one_undo_step() {
     };
     let both_overlays = vec![(10, 0), (11, 60)];
     // (name, magnet, command, expected main starts, expected overlay starts)
-    let rows: Vec<(&str, bool, Command, Vec<i64>, Vec<(u64, i64)>)> = vec![
+    type Row<'a> = (&'a str, bool, Command, Vec<i64>, Vec<(u64, i64)>);
+    let rows: Vec<Row<'_>> = vec![
         (
             "delete middle, magnet on",
             true,

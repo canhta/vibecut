@@ -40,7 +40,7 @@ const GAIN_ATTACK: f32 = 0.7;
 pub(super) fn frame_size(rate: u32) -> usize {
     match rate {
         ..=50_000 => 2048,
-        ..=100_000 => 4096,
+        50_001..=100_000 => 4096,
         _ => 8192,
     }
 }

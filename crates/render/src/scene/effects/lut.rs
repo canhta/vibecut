@@ -116,10 +116,10 @@ fn segment(nodes: &[f64], t: f64) -> (usize, f64) {
         .partition_point(|x| *x <= t)
         .saturating_sub(1)
         .min(last);
-    (
-        i,
-        ((t - nodes[i]) / (nodes[i + 1] - nodes[i])).clamp(0., 1.),
-    )
+    let (Some(start), Some(end)) = (nodes.get(i), nodes.get(i + 1)) else {
+        return (i, 0.);
+    };
+    (i, ((t - start) / (end - start)).clamp(0., 1.))
 }
 fn triple(text: &str, line: usize) -> Result<[f64; 3]> {
     let mut words = text.split_whitespace();
@@ -555,7 +555,9 @@ impl Cube3d {
                                     continue;
                                 }
                                 let at = ((bi + db) * n + gi + dg) * n + ri + dr;
-                                for (v, s) in value.iter_mut().zip(samples[at]) {
+                                let sample =
+                                    samples.get(at).ok_or(Error::Invalid("shaped LUT sample"))?;
+                                for (v, s) in value.iter_mut().zip(*sample) {
                                     *v += weight * f64::from(s);
                                 }
                             }

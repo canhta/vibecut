@@ -1471,7 +1471,14 @@ mod layouts {
         };
         let mut b_speaks = camera(&[0.25, 0.75]);
         b_speaks.speaker = speaking(1);
-        let rows: Vec<(&str, Vec<ShotAnalysis>, LayoutOverrides, Layout, Vec<Probe>)> = vec![
+        type Row<'a> = (
+            &'a str,
+            Vec<ShotAnalysis>,
+            LayoutOverrides,
+            Layout,
+            Vec<Probe>,
+        );
+        let rows: Vec<Row<'_>> = vec![
             (
                 "fill follows the speaker on the right",
                 vec![camera(&[0.75])],

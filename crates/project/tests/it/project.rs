@@ -440,7 +440,6 @@ fn item(id: u64, start: i64) -> Item {
                 offset_y: 12.0,
                 radius: 20.0,
             }),
-            ..Default::default()
         }),
     }
 }
@@ -2128,7 +2127,8 @@ fn fit_modes_place_portrait_and_landscape_sources_and_reject_unknown_names() {
     let landscape = [1920.0, 1080.0];
     let portrait = [1080.0, 1920.0];
     // (mode, canvas, source px, extent, whether the renderer crops)
-    let rows: [(FitMode, [f64; 2], [f64; 2], [f64; 2], bool); 9] = [
+    type Row = (FitMode, [f64; 2], [f64; 2], [f64; 2], bool);
+    let rows: [Row; 9] = [
         // Portrait into landscape: Fit letterboxes at the canvas height.
         (
             FitMode::Fit,

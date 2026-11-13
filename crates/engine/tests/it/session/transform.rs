@@ -1,4 +1,8 @@
-#![allow(clippy::unwrap_used, reason = "validated test fixtures and assertions")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "validated test fixtures and assertions"
+)]
 use crate::support::session::{get, project, range, session};
 use engine::{Command, ItemParamPatch, Session};
 use media::{AssetId, ContentHash};

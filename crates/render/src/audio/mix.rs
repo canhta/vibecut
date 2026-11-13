@@ -438,8 +438,8 @@ pub(crate) fn mix_raw(
         // and the item stays aligned with its picture and every other item.
         let cleanup_chain = match cleanup_of(item).filter(|cleanup| !cleanup.is_bypassed()) {
             Some(cleanup) => {
-                if !cleanups.contains_key(&item.id) {
-                    cleanups.insert(item.id, CleanupChain::new(cleanup, rate, hooks)?);
+                if let std::collections::btree_map::Entry::Vacant(slot) = cleanups.entry(item.id) {
+                    slot.insert(CleanupChain::new(cleanup, rate, hooks)?);
                 }
                 cleanups.get_mut(&item.id)
             }

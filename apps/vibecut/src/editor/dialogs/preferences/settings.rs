@@ -354,7 +354,7 @@ pub(super) fn show(
             }
             ui.separator();
             let response =
-                crate::kit::dialog_button(ui, "settings.close", &tr(Text::ModelClose), false);
+                crate::kit::dialog_button(ui, "settings.close", tr(Text::ModelClose), false);
             actions.push(Action::Remember("settings.close".into(), response.clone()));
             if response.clicked() {
                 state.open = false;

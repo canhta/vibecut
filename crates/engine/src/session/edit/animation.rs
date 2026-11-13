@@ -224,8 +224,8 @@ fn scalar_base(target: &Item, path: BuiltinPath, default: f64) -> Result<f64> {
 
 fn resting(target: &Item) -> Result<[f64; 6]> {
     let mut out = [0.0; 6];
-    for (index, path) in OWNED.into_iter().enumerate() {
-        out[index] = scalar_base(target, path, default_of(index))?;
+    for ((index, path), slot) in OWNED.into_iter().enumerate().zip(out.iter_mut()) {
+        *slot = scalar_base(target, path, default_of(index))?;
     }
     if !(0.0..=1.0).contains(&out[OPACITY]) {
         return Err(EditError::Invalid("clip opacity base"));
@@ -262,8 +262,8 @@ fn edge_keys(
         OPACITY => look.fade.then_some(0.0),
         POSITION_X => (look.x != 0.0).then(|| base + sign * look.x * f64::from(canvas.width)),
         POSITION_Y => (look.y != 0.0).then(|| base + sign * look.y * f64::from(canvas.height)),
-        SCALE_X | SCALE_Y => (look.scale != 0.0).then(|| base * (1.0 + sign * look.scale)),
-        _ => (look.rotate != 0.0).then(|| base + sign * look.rotate),
+        SCALE_X | SCALE_Y => (look.scale != 0.0).then_some(base * (1.0 + sign * look.scale)),
+        _ => (look.rotate != 0.0).then_some(base + sign * look.rotate),
     };
     let Some(mut outer) = outer else {
         return Ok(None);
@@ -337,7 +337,7 @@ fn merge(parts: Vec<Keys>) -> Result<Keys> {
 
 fn plan(anim: &ClipAnimations, bases: &[f64; 6], length: Tick, canvas: &Canvas) -> Result<Plan> {
     let mut out = Plan::default();
-    for (index, base) in bases.iter().copied().enumerate() {
+    for ((index, base), slot) in bases.iter().copied().enumerate().zip(out.0.iter_mut()) {
         let mut parts: Vec<Keys> = Vec::new();
         if let Some((preset, duration)) = anim.enter {
             let look = edge_look(preset).ok_or(EditError::Invalid("not an In or Out look"))?;
@@ -356,7 +356,7 @@ fn plan(anim: &ClipAnimations, bases: &[f64; 6], length: Tick, canvas: &Canvas) 
             parts.extend(combo_keys(table, index, base, canvas, length)?);
         }
         if !parts.is_empty() {
-            out.0[index] = Some(merge(parts)?);
+            *slot = Some(merge(parts)?);
         }
     }
     Ok(out)
@@ -390,18 +390,19 @@ fn param(base: f64, keys: &[(Tick, f64)]) -> Result<Param> {
 
 /// Write the new keys; a channel only the old animations owned returns to its bare base.
 fn write(target: &mut Item, old: &Plan, new: &Plan, bases: &[f64; 6]) -> Result<()> {
-    for (index, path) in OWNED.into_iter().enumerate() {
-        match (&new.0[index], &old.0[index]) {
-            (Some(keys), _) => target
-                .animations
-                .set(path.into(), param(bases[index], keys)?)?,
+    let rows = OWNED
+        .into_iter()
+        .enumerate()
+        .zip(new.0.iter().zip(&old.0))
+        .zip(bases.iter().copied());
+    for (((index, path), (new, old)), base) in rows {
+        match (new, old) {
+            (Some(keys), _) => target.animations.set(path.into(), param(base, keys)?)?,
             (None, Some(_)) => {
-                if bases[index] == default_of(index) {
+                if base == default_of(index) {
                     target.animations.remove(&path.into());
                 } else {
-                    target
-                        .animations
-                        .set(path.into(), param(bases[index], &[])?)?;
+                    target.animations.set(path.into(), param(base, &[])?)?;
                 }
             }
             (None, None) => {}

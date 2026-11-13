@@ -1145,7 +1145,8 @@ fn item_fit_modes_render_portrait_and_landscape_sources_and_refit_on_canvas_chan
     use project::FitMode as M;
     // (case, canvas, source, mode, probes)
     type Probes = Vec<((usize, usize), [u8; 3])>;
-    let cases: Vec<(&str, [u32; 2], [u32; 2], M, Probes)> = vec![
+    type Case<'a> = (&'a str, [u32; 2], [u32; 2], M, Probes);
+    let cases: Vec<Case<'_>> = vec![
         // A 2:1 landscape source in a square canvas.
         (
             "landscape fit",

@@ -101,10 +101,7 @@ pub(super) fn parse_hex(text: &str) -> Option<[u8; 32]> {
         return None;
     }
     let mut bytes = Vec::with_capacity(32);
-    for pair in text.as_bytes().chunks_exact(2) {
-        let [high, low] = pair else {
-            return None;
-        };
+    for [high, low] in text.as_bytes().as_chunks::<2>().0 {
         bytes.push((digit(*high)? << 4) | digit(*low)?);
     }
     <[u8; 32]>::try_from(bytes).ok()

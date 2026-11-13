@@ -2602,18 +2602,15 @@ fn text_insert_and_style_controls_use_one_undo_step_per_edit() {
         .get(By::new().predicate(|n| n.author_id() == Some("inspector.text_background")))
         .click();
     harness.run_steps(2);
-    for (field, value) in [("text_content", "Xin chào")] {
-        let id = format!("inspector.{field}");
-        harness
-            .get(By::new().predicate(|n| n.author_id() == Some(id.as_str())))
-            .click();
-        harness.run_steps(1);
-        harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
-        harness.event(egui::Event::Text(value.into()));
-        harness.run_steps(1);
-        harness.key_press(egui::Key::Tab);
-        harness.run_steps(2);
-    }
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.text_content")))
+        .click();
+    harness.run_steps(1);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.event(egui::Event::Text("Xin chào".into()));
+    harness.run_steps(1);
+    harness.key_press(egui::Key::Tab);
+    harness.run_steps(2);
     // Colour is the swatch popover's hex entry, one commit; position is the shared Transform
     // row's X and Y fields, one commit each.
     harness
