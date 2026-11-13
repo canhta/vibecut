@@ -140,8 +140,9 @@ pub(crate) use loudness_admission::VERSION as LOUDNESS_VERSION;
 pub use loudness_admission::{admit as admit_loudness, content_key as loudness_content_key};
 mod rendering;
 pub use rendering::{
-    submit_export, submit_export_publication, submit_export_with_sources,
-    submit_scene_exports_with_sources, subtitle_file,
+    AssetExport, plan_asset_exports, submit_asset_exports, submit_export,
+    submit_export_publication, submit_export_with_sources, submit_scene_exports_with_sources,
+    subtitle_file,
 };
 
 pub(crate) use staged_publication::snapshot_project_name;

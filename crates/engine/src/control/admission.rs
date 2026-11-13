@@ -193,7 +193,8 @@ impl Session {
         | Command::Snapshot { path, .. }
         | Command::ClipsExport {
             directory: path, ..
-        } = &command
+        }
+        | Command::ExportClips { dir: path, .. } = &command
         {
             bounded_json(path, MAX_PATH_BYTES)?;
         }

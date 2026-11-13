@@ -436,3 +436,74 @@ fn export_allow_degraded_is_explicit_consent() {
     );
     assert!(fs::metadata(&output_path).unwrap().len() > 0);
 }
+
+#[test]
+fn export_clips_writes_each_full_source_once_with_deterministic_names() {
+    if !tools() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("source.mp4");
+    let project_path = dir.path().join("clips.vibecut");
+    generate_av(&source, 1);
+    media_project(&project_path, &source, None);
+    // A second asset with the same file stem: its output must take the next free name.
+    let second_dir = dir.path().join("second");
+    fs::create_dir(&second_dir).unwrap();
+    let second = second_dir.join("source.mp4");
+    fs::copy(&source, &second).unwrap();
+    let mut data = project::load(&project_path).unwrap().project.into_data();
+    data.assets
+        .push(media::SourceAsset::import(media::AssetId(3), second).unwrap());
+    let project = project::Project::new(data).unwrap();
+    fs::write(&project_path, project::encode(&project, true).unwrap()).unwrap();
+    let out = dir.path().join("clips");
+    fs::create_dir(&out).unwrap();
+
+    let export = |assets: &[&str], overwrite: bool| {
+        let mut args = vec![os("media"), os("export-clips"), project_path.as_os_str()];
+        for asset in assets {
+            args.push(os("--asset"));
+            args.push(os(asset));
+        }
+        args.extend([os("--dir"), out.as_os_str()]);
+        if overwrite {
+            args.push(os("--overwrite"));
+        }
+        cli(&args)
+    };
+    let output = export(&["1", "3"], false);
+    assert_eq!(
+        code(&output),
+        0,
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    for name in ["source.mp4", "source-2.mp4"] {
+        let probe = tool_command("ffprobe")
+            .args([
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "csv=p=0",
+            ])
+            .arg(out.join(name))
+            .output()
+            .unwrap();
+        assert!(probe.status.success(), "{name}");
+        let seconds: f64 = String::from_utf8_lossy(&probe.stdout)
+            .trim()
+            .parse()
+            .unwrap();
+        assert!((seconds - 1.0).abs() < 0.1, "{name}: {seconds}");
+    }
+
+    // Existing outputs are refused without --overwrite and stay byte-identical.
+    let before = fs::read(out.join("source.mp4")).unwrap();
+    assert_ne!(code(&export(&["1", "3"], false)), 0);
+    assert_eq!(fs::read(out.join("source.mp4")).unwrap(), before);
+    // A repeated asset is refused before any render starts.
+    assert_ne!(code(&export(&["1", "1"], true)), 0);
+}

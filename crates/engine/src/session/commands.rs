@@ -463,6 +463,7 @@ impl Command {
                 ..
             } => Some((directory.clone(), *overwrite)),
             Self::ChaptersExportSidecars { dir, .. } => Some((dir.clone(), false)),
+            Self::ExportClips { dir, overwrite, .. } => Some((dir.clone(), *overwrite)),
             _ => None,
         }
     }
@@ -662,6 +663,7 @@ commands! {
     ToggleEffect, "effects.toggle", "Enable effect", Edit { item: ItemId, effect: String, enabled: bool } => Timeline, serde_json::json!({"item":1,"effect":"blur1","enabled":false}), available = VisualItem;
     UpdateEffectParam, "effects.update_param", "Update effect parameter", Edit { item: ItemId, effect: String, key: String, value: project::EffectParamUpdate } => Timeline, serde_json::json!({"item":1,"effect":"blur1","key":"intensity","value":30.0}), available = VisualItem;
     Export, "export", "Export video", FilePublish { settings: render::OutputOptions, path: std::path::PathBuf, overwrite: bool } => Timeline, serde_json::json!({"settings":render::OutputOptions{range:render::RangeChoice::InOut{start:time::Tick::ZERO,end:time::Tick(8467200000_i64)},..render::OutputOptions::default()},"path":"$output/export.mp4","overwrite":false}), curated = true;
+    ExportClips, "export.clips", "Export clips", FilePublish { #[schemars(length(max = 256))] asset_ids: Vec<media::AssetId>, dir: std::path::PathBuf, overwrite: bool } => Video, serde_json::json!({"asset_ids":[97],"dir":"$output","overwrite":false}), available = Assets;
     ExportSubtitles, "export_subtitles", "Export subtitle file", FilePublish { track: TrackId, format: captions::Format, languages: Vec<captions::LanguageTag>, path: std::path::PathBuf, overwrite: bool } => Timeline, serde_json::json!({"track":4,"format":"srt","languages":["en"],"path":"$output/subtitles.srt","overwrite":false}), available = CaptionItem;
     FillersClassify, "fillers.classify", "Classify fillers with the lent provider", JobControl { language: captions::LanguageTag, include_markers: bool } => Words, serde_json::json!({"language":"en","include_markers":false}), available = CaptionItem, grant = Agent;
     FontsDownload, "fonts.download", "Download font family", JobControl { family: NfcText, accept_license: bool } => Timeline, serde_json::json!({"family":"Lobster","accept_license":true}), grant = Human;

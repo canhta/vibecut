@@ -116,7 +116,9 @@ impl Policy for Grants {
                     overwrite,
                     matches!(
                         command,
-                        Command::ChaptersExportSidecars { .. } | Command::ClipsExport { .. }
+                        Command::ChaptersExportSidecars { .. }
+                            | Command::ClipsExport { .. }
+                            | Command::ExportClips { .. }
                     ),
                     project,
                 )

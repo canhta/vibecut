@@ -413,6 +413,253 @@ pub fn submit_export_publication(
     )
 }
 
+/// One whole-source output of `export.clips`, planned and validated before submission.
+pub struct AssetExport {
+    pub asset: media::AssetId,
+    pub path: PathBuf,
+    pub project: project::Project,
+    pub range: time::TimeRange,
+    pub settings: render::ExportSettings,
+}
+
+/// Most source assets one `export.clips` job admits.
+const MAX_ASSET_EXPORTS: usize = 256;
+
+/// Plan one full-source export per selected asset, in request order. Each output is
+/// the asset's complete source `[0, duration)` in the project's export settings; used
+/// ranges, trims, effects, scenes and the timeline play no part.
+pub fn plan_asset_exports(
+    project: &project::Project,
+    assets: &[media::AssetId],
+    directory: &std::path::Path,
+    overwrite: bool,
+) -> Result<Vec<AssetExport>> {
+    if assets.is_empty() || assets.len() > MAX_ASSET_EXPORTS {
+        return Err(RuntimeError::Edit(crate::EditError::Invalid(
+            "asset export count",
+        )));
+    }
+    if !directory.is_dir() {
+        return Err(RuntimeError::Edit(crate::EditError::Invalid(
+            "asset export directory",
+        )));
+    }
+    let mut chosen = std::collections::BTreeSet::new();
+    let mut names = std::collections::BTreeSet::new();
+    let mut plan = Vec::with_capacity(assets.len());
+    for &asset_id in assets {
+        if !chosen.insert(asset_id) {
+            return Err(RuntimeError::Edit(crate::EditError::Invalid(
+                "duplicate asset export",
+            )));
+        }
+        let asset = project
+            .data()
+            .assets
+            .iter()
+            .find(|candidate| candidate.id() == asset_id)
+            .ok_or(RuntimeError::Edit(crate::EditError::Invalid(
+                "export clip asset",
+            )))?;
+        if !asset
+            .probe()
+            .streams
+            .iter()
+            .any(|stream| stream.kind == media::StreamKind::Video)
+        {
+            return Err(RuntimeError::Edit(crate::EditError::Invalid(
+                "export clip media",
+            )));
+        }
+        let duration = asset
+            .probe()
+            .duration
+            .filter(|duration| *duration > time::Tick::ZERO)
+            .ok_or(RuntimeError::Edit(crate::EditError::Invalid(
+                "export clip duration",
+            )))?;
+        let range = time::TimeRange::new(time::Tick::ZERO, duration)
+            .map_err(|_| RuntimeError::Edit(crate::EditError::Invalid("export clip duration")))?;
+        let derived = full_source_project(project, asset, range)?;
+        let mut settings = render::ExportSettings::from_project(&derived);
+        settings.overwrite = overwrite_policy(overwrite);
+        render::Renderer::new(&derived, settings.render.clone())?;
+        super::loudness_admission::admit(&derived)?;
+        let stem = asset
+            .path()
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or_default();
+        let name = unique_export_name(stem, &mut names);
+        plan.push(AssetExport {
+            asset: asset_id,
+            path: directory.join(name),
+            project: derived,
+            range,
+            settings,
+        });
+    }
+    Ok(plan)
+}
+
+/// Submit one job that exports the planned sources in order, one file each. Every
+/// destination is admitted before the first render. Cancellation stops the file in
+/// progress, whose staged output is removed; files already published stay complete.
+pub fn submit_asset_exports(
+    runner: &mut JobRunner,
+    input: CacheKey,
+    plan: Vec<AssetExport>,
+) -> Result<(JobId, CancelToken)> {
+    let count = plan.len();
+    runner.submit::<RuntimeError>(
+        JobSpec {
+            kind: JobKind::Export,
+            class: ResourceClass::GpuEncoder,
+            input,
+            bytes: JobBytes::default(),
+        },
+        move |context| {
+            for export in &plan {
+                render::validate_output_path(&export.project, &export.path, context)?;
+                drop(project::atomic::StreamingStage::new(
+                    &export.path,
+                    export.settings.overwrite,
+                    export.settings.max_bytes,
+                )?);
+            }
+            for (index, export) in plan.iter().enumerate() {
+                let hooks = AssetProgress {
+                    context,
+                    index,
+                    count,
+                };
+                render::export_with_sources(
+                    &export.project,
+                    export.range,
+                    &export.settings,
+                    &export.path,
+                    &mut render::FileSources::default(),
+                    &hooks,
+                )?;
+            }
+            Ok(Vec::new())
+        },
+    )
+}
+
+/// Maps one file's render progress onto the whole job, so the job's fraction is monotonic.
+struct AssetProgress<'a> {
+    context: &'a JobContext,
+    index: usize,
+    count: usize,
+}
+
+impl render::ExecutionHooks for AssetProgress<'_> {
+    fn cancelled(&self) -> bool {
+        self.context.cancelled()
+    }
+    fn parallelism(&self) -> usize {
+        render::ExecutionHooks::parallelism(self.context)
+    }
+    fn run_tasks(
+        &self,
+        tasks: &mut [&mut (dyn FnMut() -> render::Result<()> + Send)],
+    ) -> render::Result<()> {
+        render::ExecutionHooks::run_tasks(self.context, tasks)
+    }
+    fn reserve(
+        &self,
+        kind: render::MemoryKind,
+        bytes: u64,
+    ) -> render::Result<Box<dyn render::Reservation>> {
+        render::ExecutionHooks::reserve(self.context, kind, bytes)
+    }
+    fn begin_publish(&self) -> render::Result<()> {
+        render::ExecutionHooks::begin_publish(self.context)
+    }
+    fn progress(&self, stage: render::Stage, fraction: f32) -> render::Result<()> {
+        let whole = (self.index as f32 + fraction) / self.count.max(1) as f32;
+        render::ExecutionHooks::progress(self.context, stage, whole)
+    }
+}
+
+/// `<stem>.mp4`, then `<stem>-2.mp4` and onward for repeats. Compared case-insensitively,
+/// because the default Windows and macOS volumes are case-insensitive.
+fn unique_export_name(stem: &str, taken: &mut std::collections::BTreeSet<String>) -> String {
+    let mut index = 1usize;
+    loop {
+        let base = if index == 1 {
+            stem.to_owned()
+        } else {
+            format!("{stem}-{index}")
+        };
+        let name = super::default_file_name(&base, "mp4");
+        if taken.insert(name.to_lowercase()) {
+            return name;
+        }
+        index += 1;
+    }
+}
+
+/// A one-item project over one asset's whole source. It keeps the source canvas, rate,
+/// LUTs and settings, and none of the source timeline.
+fn full_source_project(
+    source: &project::Project,
+    asset: &media::SourceAsset,
+    range: time::TimeRange,
+) -> Result<project::Project> {
+    let data = source.data();
+    let mut timeline = project::Timeline::default();
+    timeline.main = project::Track {
+        id: project::TrackId(2),
+        name: "Main Track".into(),
+        kind: project::TrackKind::Video,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![project::Item {
+            hidden: false,
+            blend_mode: Default::default(),
+            retime: Default::default(),
+            masks: Vec::new(),
+            effects: Vec::new(),
+            animations: Default::default(),
+            id: project::ItemId(1),
+            source_asset: Some(asset.id()),
+            source_range: range,
+            start: time::Tick::ZERO,
+            content: project::ItemParams::Video(project::VideoParams {
+                fades: Default::default(),
+                source_audio_enabled: true,
+                volume: 0.0,
+                muted: false,
+                crop: None,
+            }),
+        }],
+    };
+    let scenes = vec![project::Scene {
+        id: project::SceneId(0),
+        name: "Main scene".into(),
+        is_main: true,
+        timeline,
+        bookmarks: Vec::new(),
+    }];
+    let scenes: project::Scenes = scenes.try_into()?;
+    Ok(project::Project::new(project::ProjectData {
+        id: data.id,
+        name: data.name.clone(),
+        canvas: data.canvas.clone(),
+        original_canvas_size: data.original_canvas_size,
+        assets: vec![asset.clone()],
+        luts: data.luts.clone(),
+        scenes,
+        current_scene_id: project::SceneId(0),
+        settings: data.settings.clone(),
+        caption_presets: data.caption_presets.clone(),
+        text_presets: data.text_presets.clone(),
+    })?)
+}
+
 impl crate::Session {
     /// Dispatch a registered export command against this immutable snapshot.
     /// Export does not edit history; gestures/batches cannot publish files.

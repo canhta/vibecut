@@ -816,6 +816,30 @@ impl Session {
                     paths,
                 })
             }
+            Command::ExportClips {
+                asset_ids,
+                dir,
+                overwrite,
+            } => {
+                if self.transaction_active() {
+                    return Err(EngineError::Session(
+                        crate::session::SessionError::TransactionActive,
+                    ));
+                }
+                let plan = crate::plan_asset_exports(self.project(), &asset_ids, &dir, overwrite)?;
+                let paths = plan.iter().map(|export| export.path.clone()).collect();
+                let (job, _) = crate::submit_asset_exports(
+                    runner,
+                    crate::control_preview::control_key(fingerprint)?,
+                    plan,
+                )?;
+                Ok(ControlResult::JobAccepted {
+                    word_highlight_warnings: project::CaptionWordWarnings::default(),
+                    job,
+                    revision: self.revision(),
+                    paths,
+                })
+            }
             command @ (Command::ExportSubtitles { .. } | Command::BurnSubtitles { .. }) => {
                 let path = match &command {
                     Command::ExportSubtitles { path, .. } | Command::BurnSubtitles { path, .. } => {
