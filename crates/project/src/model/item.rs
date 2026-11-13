@@ -347,6 +347,10 @@ pub enum AudioSource {
     Music {
         music: LibraryMusic,
     },
+    /// Speech generated from text; the take is ordinary audio media.
+    Narration {
+        narration: super::narration::Narration,
+    },
 }
 /// `Default` is the plain clip: unity volume (0 dB), not muted, an uploaded source,
 /// no fades and no cleanup. Every field has a neutral value, so no `plain()` is needed.

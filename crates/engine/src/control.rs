@@ -153,6 +153,7 @@ mod admission;
 mod clips;
 mod decode;
 mod dispatch;
+mod dub;
 mod fork;
 mod media;
 mod output;
@@ -163,6 +164,7 @@ pub use clips::{
     ClipWorkflow, ClipsExportRequest, ClipsSuggestRequest, MAX_CLIPS_RESULT_BYTES, decode_clips,
     encode_clips, resolve_clip_shots,
 };
+pub use dub::{DubGenerateRequest, DubWorkflow};
 pub use media::MediaAccess;
 
 /// Supplied by the trusted composition root, never deserialized from client JSON.

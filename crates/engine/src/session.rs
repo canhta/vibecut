@@ -36,3 +36,7 @@ pub(crate) use edit::Result;
 pub(crate) use edit::check_budget;
 pub use edit::{AssetUsage, DEFAULT_BOOKMARK_COLOR, EditError};
 pub(crate) use edit::{DEFAULT_DURATION as DEFAULT_ANIMATION_DURATION, sample_animations};
+pub use edit::{
+    DurationFit, Fit, FitInput, OVERFLOW_DENOMINATOR, OVERFLOW_NUMERATOR,
+    PROVIDER_SPEED_MAX_THOUSANDTHS, STRETCH_MAX_THOUSANDTHS, STRETCH_MIN_THOUSANDTHS, fit,
+};

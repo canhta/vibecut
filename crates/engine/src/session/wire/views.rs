@@ -271,6 +271,7 @@ pub enum JobKind {
     GenerateChapters,
     ClassifyFillers,
     SelectEmphasis,
+    Synthesize,
     AnalyzeShots,
     AnalyzeReframe,
     DetectScenes,

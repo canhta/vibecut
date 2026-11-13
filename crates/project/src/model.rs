@@ -9,6 +9,7 @@ macro_rules! id {
 }
 mod audio_cleanup;
 mod item;
+mod narration;
 mod project;
 mod scene;
 mod settings;
@@ -24,6 +25,10 @@ pub use item::{
     MusicLicence, OverlayParams, StickerParams, TextAlign, TextBackground, TextCase,
     TextDecoration, TextParams, TextShadow, TextStroke, TextStyle, VOLUME_DB_RANGE, VideoParams,
     WordSpan, valid_volume,
+};
+pub use narration::{
+    MAX_DUCK_MS, MAX_DUCK_TENTHS_DB, Narration, NarrationConsent, NarrationCost, NarrationDucking,
+    PROVIDER_SPEED_THOUSANDTHS,
 };
 pub use project::{
     CaptionPresetId, MAX_CAPTION_PRESETS, MAX_TEXT_PRESETS, Project, ProjectData, ProjectId,

@@ -27,14 +27,14 @@ Lowest first; imports go down only.
 |---|---|
 | Kernel | `session/`: session, command registry, history, control wire contract; the only mutation path |
 | Substrate | `runtime/` (jobs, budget, cache, publication), `store/` (library, recovery), `providers/` (consent, models), `transcript/` (ASR and cue translation) |
-| Features | `subtitles/`, `analysis/`, `artifacts/` |
+| Features | `subtitles/`, `analysis/`, `artifacts/`, `dubbing/` |
 | Control | `control/`: admission and dispatch; may call every feature |
 
 ```mermaid
 flowchart TB
   control[Control: control/] --> features
   subgraph features[Features: never import each other]
-    subtitles; analysis; artifacts
+    subtitles; analysis; artifacts; dubbing
   end
   features --> substrate
   subgraph substrate[Substrate]

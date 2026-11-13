@@ -22,6 +22,8 @@ pub struct CaptionAccess {
     /// An opaque workflow lent by the composition root; the control layer, which
     /// names its type, stores and reads it through `with_clips` and `clips`.
     pub(crate) clips: Option<Arc<dyn Any + Send + Sync>>,
+    /// The narration workflow, stored and read the same way through `with_dubbing`.
+    pub(crate) dubbing: Option<Arc<dyn Any + Send + Sync>>,
 }
 impl CaptionAccess {
     pub fn new(
@@ -33,6 +35,7 @@ impl CaptionAccess {
             resources: Ok(Arc::new(Resources { providers, cache })),
             consent,
             clips: None,
+            dubbing: None,
         }
     }
     /// Retain an optional composition failure for caption commands; other commands stay usable.
@@ -41,6 +44,7 @@ impl CaptionAccess {
             resources: Err(Arc::new(error)),
             consent: Arc::new(crate::providers::DenyUploads),
             clips: None,
+            dubbing: None,
         }
     }
     fn resources(&self) -> RuntimeResult<&Resources> {

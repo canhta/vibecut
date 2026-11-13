@@ -651,6 +651,9 @@ fn validate(data: &ProjectData) -> Result<()> {
                 if let AudioSource::Music { music } = &p.source {
                     music.validate()?;
                 }
+                if let AudioSource::Narration { narration } = &p.source {
+                    narration.validate()?;
+                }
             }
         }
     }

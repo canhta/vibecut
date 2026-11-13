@@ -1163,6 +1163,7 @@ fn owner_failures_classify_publication_receipts_and_events() {
         row!(E::Edit(engine::EditError::CuesNotAdjacent), Refused, false),
         row!(E::Edit(engine::EditError::CuesAcrossTracks), Refused, false),
         row!(E::Edit(engine::EditError::CuesAcrossItems), Refused, false),
+        row!(E::Edit(engine::EditError::DurationFit), Refused, false),
         row!(
             E::Edit(engine::EditError::Overlap(TrackId(1))),
             Refused,

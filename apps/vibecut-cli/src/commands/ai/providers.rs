@@ -105,6 +105,7 @@ fn provider_option_json(option: &ProviderOption) -> Value {
             CatalogOperation::GenerateChapters => "generate_chapters",
             CatalogOperation::ClassifyFillers => "classify_fillers",
             CatalogOperation::SelectEmphasis => "select_emphasis",
+            CatalogOperation::SynthesizeSpeech => "synthesize_speech",
         },
         "location": if option.local { "local" } else { "remote" },
         "models": option.models,

@@ -31,6 +31,8 @@ pub enum Availability {
     VideoItem,
     /// Any unlocked item.
     UnlockedItem,
+    /// An unlocked narration item (an audio item generated from text).
+    NarrationItem,
 }
 impl Availability {
     pub fn holds(self, session: &Session) -> bool {
@@ -71,6 +73,18 @@ impl Availability {
                         .any(|i| matches!(i.content, ItemParams::Video(_)))
             }),
             Self::UnlockedItem => timeline.iter().any(|t| !t.locked && !t.items.is_empty()),
+            Self::NarrationItem => timeline.iter().any(|t| {
+                !t.locked
+                    && t.items.iter().any(|i| {
+                        matches!(
+                            &i.content,
+                            ItemParams::Audio(project::AudioParams {
+                                source: project::AudioSource::Narration { .. },
+                                ..
+                            })
+                        )
+                    })
+            }),
         }
     }
 

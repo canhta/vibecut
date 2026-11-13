@@ -35,6 +35,7 @@ mod store;
 pub use store::library;
 pub use store::luts;
 pub use store::recovery;
+pub mod dubbing;
 pub mod subtitles;
 pub mod transcript;
 pub use transcript::translation;

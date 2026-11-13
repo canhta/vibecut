@@ -41,7 +41,9 @@ pub(super) fn decode(kind: JobKind, bytes: Option<&[u8]>) -> Result<Option<JobOu
         JobKind::SuggestClips => {
             JobOutput::Clips(Box::new(super::clips::decode_clips(retained()?)?))
         }
-        JobKind::AnalyzeShots
+        // The take is audio, not wire data: the desktop decodes the retained bytes itself.
+        JobKind::Synthesize
+        | JobKind::AnalyzeShots
         | JobKind::AnalyzeSpeechActivity
         | JobKind::GenerateWaveform
         | JobKind::GenerateClipThumbnails

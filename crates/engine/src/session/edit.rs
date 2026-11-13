@@ -57,6 +57,8 @@ pub enum EditError {
     Unsupported(&'static str),
     #[error("project candidate rejected")]
     Project(#[from] project::Error),
+    #[error("narration does not fit its cue")]
+    DurationFit,
     #[error("invalid edit time")]
     Time(#[from] time::TimeError),
     #[error("invalid caption mapping")]
@@ -83,6 +85,7 @@ impl Failure for EditError {
             | Self::CuesAcrossTracks
             | Self::CuesAcrossItems
             | Self::Overlap(_)
+            | Self::DurationFit
             | Self::Invalid(_)
             | Self::Unsupported(_)
             | Self::Project(_)
@@ -530,6 +533,22 @@ pub(crate) fn apply(
         } => {
             return Err(EditError::Invalid("library audio requires a session"));
         }
+        // Session commits the asset, item, fit and ducking as one grouped transaction.
+        EditCommand::DubPlace {
+            placement: _placement,
+            start: _start,
+            asset: _asset,
+            narration: _narration,
+            speed: _speed,
+        } => {
+            return Err(EditError::Invalid("narration placement requires a session"));
+        }
+        EditCommand::DubSetFit { item: id, speed } => {
+            data = dubbing::execute_set_fit(data, id, speed)?;
+        }
+        EditCommand::DubSetDucking { item: id, ducking } => {
+            data = dubbing::execute_set_ducking(data, id, ducking)?;
+        }
         EditCommand::StickersInsert {
             placement: _placement,
             sticker: _sticker,
@@ -921,6 +940,7 @@ fn check_timeline(data: &mut ProjectData) -> Result<()> {
 }
 mod audio;
 mod clips;
+mod dubbing;
 mod effects;
 mod masks;
 mod media_edits;
@@ -933,6 +953,10 @@ mod tracks;
 mod transitions;
 
 pub(crate) use animation::{DEFAULT_DURATION, sample_animations};
+pub use dubbing::{
+    DurationFit, Fit, FitInput, OVERFLOW_DENOMINATOR, OVERFLOW_NUMERATOR,
+    PROVIDER_SPEED_MAX_THOUSANDTHS, STRETCH_MAX_THOUSANDTHS, STRETCH_MIN_THOUSANDTHS, fit,
+};
 use motion::{animation, keyframes};
 pub use project_edits::DEFAULT_BOOKMARK_COLOR;
 
