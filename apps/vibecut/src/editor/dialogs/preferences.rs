@@ -1,4 +1,10 @@
 //! Edits the single persisted provider/feature model map; refresh is explicitly requested.
+pub(in crate::editor) mod settings;
+mod shortcuts;
+
+pub(in crate::editor) use settings::Shortcuts;
+pub(in crate::editor) use shortcuts::{export as export_shortcuts, import as import_shortcuts};
+
 use crate::{
     editor::{Context, Desk, egui},
     i18n::Text,
@@ -10,6 +16,10 @@ use std::{sync::Arc, time::Duration};
 #[derive(Default)]
 pub(in crate::editor) struct State {
     pub(in crate::editor) open: bool,
+    /// The AI model rows; opened from the Settings General tab.
+    pub(in crate::editor) models_open: bool,
+    tab: settings::Tab,
+    shortcut_notice: Option<settings::ShortcutNotice>,
     catalogs: Catalogs,
     draft: Option<Draft>,
     transport: Option<Arc<dyn transport::HttpTransport>>,
@@ -23,6 +33,9 @@ struct Draft {
 pub(in crate::editor) enum Action {
     Models(AiPreferences),
     Remember(String, egui::Response),
+    Set(&'static str, serde_json::Value),
+    ClearCache,
+    Shortcuts(settings::Shortcuts),
 }
 fn feature_text(feature: Operation) -> Text {
     match feature {
@@ -44,7 +57,10 @@ pub(super) fn show(
 ) -> Vec<Action> {
     state.catalogs.sync(credentials);
     let mut actions = Vec::new();
-    if !state.open {
+    if state.open {
+        settings::show(state, cx, ctx, &mut actions);
+    }
+    if !state.models_open {
         return actions;
     }
     let tr = |text: Text| text.text(cx.locale);
@@ -217,12 +233,12 @@ pub(super) fn show(
                 response.clone(),
             ));
             if response.clicked() {
-                state.open = false;
+                state.models_open = false;
                 state.draft = None;
             }
         });
     if modal.should_close() {
-        state.open = false;
+        state.models_open = false;
         state.draft = None;
     }
     if models != cx.preferences.ai_models {
@@ -238,6 +254,21 @@ pub(super) fn apply(desk: &mut Desk<'_>, action: Action) {
             }
         }
         Action::Remember(id, response) => desk.editor().remember(id, &response),
+        Action::Set(key, value) => {
+            desk.set_preference(key, value);
+        }
+        Action::ClearCache => desk.request(crate::editor::context::Request::Cache(
+            crate::editor::context::CacheAction::Clear,
+        )),
+        Action::Shortcuts(kind) => {
+            let request = match kind {
+                Shortcuts::Export => crate::services::lifecycle::EditorAction::KeybindingsExport,
+                Shortcuts::Import { replace } => {
+                    crate::services::lifecycle::EditorAction::KeybindingsImport { replace }
+                }
+            };
+            desk.editor().lifecycle_action = Some(request);
+        }
     }
 }
 

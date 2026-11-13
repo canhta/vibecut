@@ -52,8 +52,13 @@ pub(super) fn apply(desk: &mut crate::editor::Desk<'_>, action: Action) {
     match action {
         Action::Start(options) => {
             let blocked = editor.session.transaction_active();
+            let encoder = editor.preferences.hardware_acceleration.encode_preference();
             let project = editor.session.project().clone();
-            if let Err(error) = editor.dialogs.export.start(project, options, blocked) {
+            if let Err(error) = editor
+                .dialogs
+                .export
+                .start(project, options, blocked, encoder)
+            {
                 editor.dialogs.export.fail(error);
             }
         }

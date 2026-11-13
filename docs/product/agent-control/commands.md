@@ -1721,7 +1721,8 @@ Effect: `SessionControl`. Fixture: `Create`.
 ```json
 {
   "id": "18446744073709551615",
-  "name": "Created"
+  "name": "Created",
+  "fps": 30
 }
 ```
 

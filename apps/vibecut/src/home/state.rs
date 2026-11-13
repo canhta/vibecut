@@ -61,6 +61,8 @@ pub struct State {
     pub(super) ready: bool,
     pub(super) pending: usize,
     pub(super) creating: bool,
+
+    pub(super) default_fps: u32,
     pub(super) duplicate: Option<(usize, usize)>,
     pub(super) rename: Option<RenameDialog>,
     pub(super) info: Option<ProjectId>,
@@ -90,6 +92,8 @@ impl State {
             ready: false,
             pending: 0,
             creating: false,
+
+            default_fps: crate::preferences::DEFAULT_PROJECT_FPS,
             duplicate: None,
             rename: None,
             info: None,
@@ -345,6 +349,7 @@ impl State {
         if self.send(Request::Create {
             id: next_id(),
             base_name,
+            fps: self.default_fps,
         }) {
             self.pending += 1;
             self.creating = true;
@@ -686,6 +691,7 @@ mod tests {
                         Command::CreateProject {
                             id: ProjectId(id),
                             name: format!("Project {id}").as_str().into(),
+                            fps: 30,
                         },
                     )
                     .expect("create");
@@ -737,6 +743,8 @@ mod tests {
                             look: state.1,
                             projects: &mut state.2,
                             status: None,
+
+                            default_fps: 30,
                         },
                         ui,
                     );
@@ -784,6 +792,7 @@ mod tests {
                         Command::CreateProject {
                             id: ProjectId(id),
                             name: format!("Project {id}").as_str().into(),
+                            fps: 30,
                         },
                     )
                     .expect("create");
@@ -813,6 +822,8 @@ mod tests {
                             look: state.1,
                             projects: &mut state.2,
                             status: None,
+
+                            default_fps: 30,
                         },
                         ui,
                     );
@@ -881,6 +892,7 @@ mod tests {
                 Command::CreateProject {
                     id: ProjectId(1),
                     name: "Alpha".into(),
+                    fps: 30,
                 },
             )
             .expect("create");

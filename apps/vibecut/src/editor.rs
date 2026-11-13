@@ -525,7 +525,25 @@ impl Editor {
         let project = self.session.project().clone();
         let budget = self.playback.budget().clone();
         let render = self.playback.render_state()?;
-        self.dialogs.export.run(&project, options, budget, render)
+        self.dialogs.export.run(
+            &project,
+            options,
+            budget,
+            render,
+            self.preferences.hardware_acceleration.encode_preference(),
+        )
+    }
+    /// Apply a shortcut file chosen in the native picker, merging or replacing it.
+    pub fn keybindings_import_picked(
+        &mut self,
+        path: std::path::PathBuf,
+        replace: bool,
+    ) -> Result<()> {
+        dialogs::import_shortcuts(self, &path, replace)
+    }
+    /// Write the canonical shortcut profile to the picked destination.
+    pub fn keybindings_export_picked(&mut self, path: std::path::PathBuf) -> Result<()> {
+        dialogs::export_shortcuts(self, &path)
     }
     /// Open or raise the export dialog without changing project content.
     pub(in crate::editor) fn open_export(&mut self) -> Result<()> {

@@ -2,6 +2,7 @@
 pub mod export;
 pub(crate) mod models;
 mod preferences;
+pub(in crate::editor) use preferences::{export_shortcuts, import_shortcuts};
 
 use crate::editor::{Context, Desk, egui};
 

@@ -44,6 +44,7 @@ impl Fixture {
                         Command::CreateProject {
                             id,
                             name: (*name).into(),
+                            fps: 30,
                         },
                     )
                     .unwrap();

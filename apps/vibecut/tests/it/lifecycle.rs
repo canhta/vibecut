@@ -1044,6 +1044,7 @@ fn header_delete_asks_first_then_saves_leaves_and_moves_the_library_project_to_t
                 Command::CreateProject {
                     id,
                     name: "Doomed".into(),
+                    fps: 30,
                 },
             )
             .unwrap();

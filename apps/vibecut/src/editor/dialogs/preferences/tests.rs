@@ -71,7 +71,7 @@ fn bench(locale: Locale, http: Arc<Reply>) -> Bench<super::super::State, super::
             ..Default::default()
         },
     );
-    editor.dialogs.preferences.open = true;
+    editor.dialogs.preferences.models_open = true;
     editor.dialogs.preferences.transport = Some(http);
     Bench::hosted(
         editor,
@@ -219,5 +219,97 @@ fn localized_refresh_failure_and_empty_results_keep_custom_available() {
                     .is_some()
             );
         }
+    }
+}
+
+#[test]
+fn settings_modal_applies_preferences_and_shortcut_transfers_through_the_picker_seam() {
+    for locale in [Locale::En, Locale::Vi] {
+        let http = Arc::new(Reply {
+            calls: AtomicUsize::new(0),
+            body: Mutex::new(Vec::new()),
+            status: 200,
+        });
+        let mut bench = bench(locale, http.clone());
+        bench.editor_mut().dialogs.preferences.open = true;
+        bench.editor_mut().dialogs.preferences.models_open = false;
+        bench.harness_mut().run_steps(4);
+        bench.click("settings.tab.draft");
+        bench.click("settings.draft.fps");
+        bench.click("settings.draft.fps.60");
+        assert_eq!(bench.editor().preferences.default_fps, 60);
+        bench.click("settings.tab.performance");
+        bench.click("settings.performance.hardware");
+        bench.click("settings.performance.hardware.Off");
+        assert_eq!(
+            bench.editor().preferences.hardware_acceleration,
+            crate::preferences::HardwareAcceleration::Off
+        );
+        bench.click("settings.performance.cache");
+        bench.click("settings.performance.cache.1024");
+        assert_eq!(bench.editor().preferences.cache_limit_bytes, 1024 << 20);
+        bench.click("settings.performance.cache.clear");
+        // Settings clears through the one cache-maintenance path the timeline owns.
+        assert!(
+            bench
+                .editor()
+                .requests
+                .contains(&crate::editor::context::Request::Cache(
+                    crate::editor::context::CacheAction::Clear
+                )),
+            "Clear cache requests the shared clear"
+        );
+        bench.harness_mut().run_steps(2);
+        let name = if matches!(locale, Locale::En) {
+            "en"
+        } else {
+            "vi"
+        };
+        let shot = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("../../target/p1-75-settings-{name}.png"));
+        bench.harness_mut().render().unwrap().save(&shot).unwrap();
+        bench.click("settings.tab.general");
+        bench.click("settings.general.shortcuts.export");
+        assert!(matches!(
+            bench.editor_mut().take_lifecycle_action(),
+            Some(crate::services::lifecycle::EditorAction::KeybindingsExport)
+        ));
+        let dir = tempfile::tempdir().unwrap();
+        let exported = dir.path().join("keys.json");
+        bench
+            .editor_mut()
+            .keybindings_export_picked(exported.clone())
+            .unwrap();
+        let profile = std::fs::read_to_string(&exported).unwrap();
+        assert!(profile.contains("\"version\":1"));
+        let merge = dir.path().join("merge.json");
+        std::fs::write(
+            &merge,
+            r#"{"format":"vibecut-keybindings","version":1,"bindings":{"timeline.snap":["Ctrl+Shift+K"],"future.action":["F9"]},"isCustomized":["timeline.snap"]}"#,
+        )
+        .unwrap();
+        bench
+            .editor_mut()
+            .keybindings_import_picked(merge, false)
+            .unwrap();
+        assert_eq!(
+            bench.editor().preferences.keybindings.bindings["timeline.snap"],
+            ["Ctrl+Shift+K"]
+        );
+        assert!(matches!(
+            bench.editor().dialogs.preferences.shortcut_notice,
+            Some(super::settings::ShortcutNotice::Imported { unknown: 1 })
+        ));
+        // A corrupt file is refused before any binding changes.
+        let corrupt = dir.path().join("corrupt.json");
+        std::fs::write(&corrupt, "{").unwrap();
+        let before = bench.editor().preferences.keybindings.clone();
+        assert!(
+            bench
+                .editor_mut()
+                .keybindings_import_picked(corrupt, true)
+                .is_err()
+        );
+        assert_eq!(bench.editor().preferences.keybindings, before);
     }
 }

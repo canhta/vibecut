@@ -42,3 +42,9 @@ checked against its definition). Saving, applying and deleting a preset are pref
 and project-command paths; the bank never enters project JSON or project history.
 
 `sticker_recents` is the Stickers tab's recent ids (flag sticker ids and shape command ids), newest first and deduplicated, at most `MAX_RECENT_STICKERS` (50). It is written without a history entry and never enters project JSON.
+
+`default_fps` is one of the project frame rates the settings dialog offers (24, 25, 30,
+60, 120; default 30). `hardware_acceleration` is `auto`, `on` or `off`. `cache_limit_bytes`
+is the one aggregate byte budget the app opens the engine with, bounded to 256 MiB–8 GiB
+(default 768 MiB, the previous fixed value). The limit and acceleration apply at the next
+start; an open project is never changed by either.

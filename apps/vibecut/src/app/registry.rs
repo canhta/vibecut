@@ -51,7 +51,7 @@ impl Workspace {
         preferences: Preferences,
         path: Option<PathBuf>,
     ) -> Result<Self> {
-        let budget = ByteBudget::new(768 << 20)?;
+        let budget = ByteBudget::new(preferences.cache_limit_bytes)?;
         let persistence = ByteBudget::new(256 << 20)?;
         let lending = Lending::open(&root, &budget);
         let runner = std::rc::Rc::new(std::cell::RefCell::new(JobRunner::new(
@@ -517,7 +517,7 @@ mod tests {
             std::thread::sleep(Duration::from_millis(1));
         }
         let clock = Arc::new(ManualClock::default());
-        let session = fresh("picker test").unwrap();
+        let session = fresh("picker test", 30).unwrap();
         let autosave = Autosave::new(
             &workspace.home.root,
             session,
@@ -607,7 +607,7 @@ mod tests {
         }
         let autosave = Autosave::new(
             &workspace.home.root,
-            fresh("not listed").unwrap(),
+            fresh("not listed", 30).unwrap(),
             workspace.home.budget.clone(),
             Arc::new(ManualClock::default()),
             Schedule::default(),

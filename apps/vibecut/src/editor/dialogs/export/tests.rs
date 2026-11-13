@@ -322,11 +322,11 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
         open(&mut bench);
         assert_eq!(bench.editor().preferences.export.format, ExportFormat::Webm);
         assert!(matches!(
-            bench
-                .editor_mut()
-                .export_dialog()
-                .unwrap()
-                .start(Arc::new(project(true, false)), ExportOptions::default()),
+            bench.editor_mut().export_dialog().unwrap().start(
+                Arc::new(project(true, false)),
+                ExportOptions::default(),
+                media::EncodePreference::default()
+            ),
             Err(Error::EmptyTimeline)
         ));
     }
@@ -786,6 +786,15 @@ fn filenames_are_sanitized_and_export_preferences_roundtrip() {
         ..Default::default()
     };
     assert!(!options.settings(&project(false, false)).include_audio);
+    // The hardware choice reaches export encoding; Auto keeps the media default.
+    assert!(matches!(
+        crate::preferences::HardwareAcceleration::Off.encode_preference(),
+        media::EncodePreference::Software
+    ));
+    assert!(matches!(
+        crate::preferences::HardwareAcceleration::On.encode_preference(),
+        media::EncodePreference::Hardware
+    ));
     let dir = tempfile::tempdir().unwrap();
     let store = PreferenceStore::new(dir.path().join("prefs.json"));
     let preferences = Preferences {
@@ -870,7 +879,11 @@ fn export_output_panel_persists_scene_range_refuses_empty_and_never_edits_projec
             .editor_mut()
             .export_dialog()
             .unwrap()
-            .start(Arc::new(project(false, false)), invalid)
+            .start(
+                Arc::new(project(false, false)),
+                invalid,
+                media::EncodePreference::default()
+            )
             .is_err()
     );
     let fps = bench.editor().session.project().data().canvas.fps;

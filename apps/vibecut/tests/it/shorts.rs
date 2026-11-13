@@ -222,7 +222,9 @@ fn actions_and_play_order_reach_preview_and_single_step_editor_insertion() {
     .unwrap();
     dialog.set_sources(Arc::new(Spatial)).unwrap();
     let project = session.project().clone();
-    dialog.start(project.clone(), options).unwrap();
+    dialog
+        .start(project.clone(), options, media::EncodePreference::default())
+        .unwrap();
     let output = tempfile::tempdir().unwrap();
     let path = output.path().join("off-center.mp4");
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);

@@ -292,7 +292,10 @@ fn run(
         }
         Work::New => session(
             root,
-            fresh(i18n::text(preferences.locale, Text::NewProject))?,
+            fresh(
+                i18n::text(preferences.locale, Text::NewProject),
+                preferences.default_fps,
+            )?,
             persistence.clone(),
         )?,
         Work::Short(short, settings) => {
@@ -320,7 +323,10 @@ fn run(
             {
                 session(
                     root,
-                    fresh(i18n::text(preferences.locale, Text::UntitledProject))?,
+                    fresh(
+                        i18n::text(preferences.locale, Text::UntitledProject),
+                        preferences.default_fps,
+                    )?,
                     persistence.clone(),
                 )?
             }

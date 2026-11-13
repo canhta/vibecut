@@ -198,6 +198,9 @@ mod tests {
             ("ripple", serde_json::json!(true)),
             ("preview_axis", serde_json::json!(false)),
             ("playback_loop", serde_json::json!(true)),
+            ("default_fps", serde_json::json!(60)),
+            ("hardware_acceleration", serde_json::json!("off")),
+            ("cache_limit_bytes", serde_json::json!(1u64 << 30)),
             ("panels", serde_json::json!([0.30, 0.20, 0.35])),
             ("sections", serde_json::json!({"inspector.canvas": false})),
             ("assets_tab", serde_json::json!("captions")),
@@ -407,6 +410,11 @@ mod tests {
                 serde_json::json!({"key": "name", "order": "bogus"}),
             ),
             ("timeline_lanes", serde_json::json!({"12": oversized_lanes})),
+            ("default_fps", serde_json::json!(48)),
+            ("default_fps", serde_json::json!("30")),
+            ("hardware_acceleration", serde_json::json!("maybe")),
+            ("cache_limit_bytes", serde_json::json!((256u64 << 20) - 1)),
+            ("cache_limit_bytes", serde_json::json!((8u64 << 30) + 1)),
         ] {
             assert!(preferences.set(key, value).is_err(), "{key}");
             assert_eq!(preferences, before, "{key} must fail atomically");

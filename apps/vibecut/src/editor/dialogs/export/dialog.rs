@@ -12,6 +12,7 @@ use engine::{
     cache::{ArtifactKind, CacheKey, KeyInputs},
     jobs::{CancelToken, JobId, JobRunner, JobSnapshot, JobState, RunnerConfig, SystemClock},
 };
+use media::EncodePreference;
 pub use render::{OutputOptions, RangeChoice, SceneChoice};
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, sync::Arc, time::Duration};
@@ -166,6 +167,7 @@ pub struct ExportDialog {
     temp: Option<PathBuf>,
     scene_outputs: std::collections::VecDeque<PathBuf>,
     attempt_project: Option<Arc<project::Project>>,
+    attempt_encoder: EncodePreference,
     pub(crate) selection_range: Option<time::TimeRange>,
     save_index: usize,
     finished: Option<PathBuf>,
@@ -212,6 +214,7 @@ impl ExportDialog {
             temp: None,
             scene_outputs: Default::default(),
             attempt_project: None,
+            attempt_encoder: EncodePreference::default(),
             selection_range: None,
             save_index: 0,
             finished: None,
@@ -400,7 +403,12 @@ impl ExportDialog {
         }
         Ok(())
     }
-    pub fn start(&mut self, project: Arc<project::Project>, options: ExportOptions) -> Result<()> {
+    pub fn start(
+        &mut self,
+        project: Arc<project::Project>,
+        options: ExportOptions,
+        encoder: EncodePreference,
+    ) -> Result<()> {
         if self.active() {
             return Err(Error::Invalid("export in progress"));
         }
@@ -422,6 +430,7 @@ impl ExportDialog {
         let path = temp_output(options.format.extension());
         let paths = options.output.paths(&project, &path)?;
         let mut settings = options.settings(&project);
+        settings.encoder = encoder;
         settings.render = self.render_state.settings(&project)?;
         options.output.apply(&mut settings)?;
         settings.overwrite = project::atomic::Overwrite::Replace;
@@ -469,6 +478,7 @@ impl ExportDialog {
         self.temp = paths.pop_front();
         self.scene_outputs = paths;
         self.attempt_project = Some(project.clone());
+        self.attempt_encoder = encoder;
         self.save_index = 0;
         self.finished = None;
         self.pending_save = false;
@@ -496,7 +506,11 @@ impl ExportDialog {
         let options = self
             .attempt
             .ok_or(Error::Invalid("no export settings to retry"))?;
-        self.start(self.attempt_project.clone().unwrap_or(project), options)
+        self.start(
+            self.attempt_project.clone().unwrap_or(project),
+            options,
+            self.attempt_encoder,
+        )
     }
     pub fn take_save_request(
         &mut self,

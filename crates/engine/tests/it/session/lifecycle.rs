@@ -9,11 +9,23 @@ fn project_creation_rename_undo_and_view_state_have_distinct_history() {
         Command::CreateProject {
             id: ProjectId(1),
             name: "New project".into(),
+            fps: 30,
         },
         10,
     )
     .unwrap();
     assert_eq!(session.project().data().canvas, project::Canvas::default());
+    // The creation frame rate is the preference the caller passes; 60 is a listed choice.
+    let fast = Session::create(
+        Command::CreateProject {
+            id: ProjectId(2),
+            name: "Fast".into(),
+            fps: 60,
+        },
+        10,
+    )
+    .unwrap();
+    assert_eq!(fast.project().data().canvas.fps, time::FrameRate::new(60, 1).unwrap());
     session
         .apply(Command::RenameProject {
             name: "Tiếng Việt".into(),
@@ -120,6 +132,7 @@ fn autosave_metadata_survives_save_to_and_reopen() {
         Command::CreateProject {
             id: ProjectId(1),
             name: "New project".into(),
+            fps: 30,
         },
         10,
     )
@@ -246,6 +259,7 @@ fn unrenderable_thumbnail_is_a_persisted_placeholder() {
             Command::CreateProject {
                 id: ProjectId(1),
                 name: "Small budget".into(),
+                fps: 30,
             },
         )
         .unwrap();

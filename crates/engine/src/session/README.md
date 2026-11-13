@@ -185,7 +185,7 @@ Session state.
 
 ## Project lifecycle and view state
 
-`Session::create(Command::CreateProject { id, name }, history_limit)` consumes the registered
+`Session::create(Command::CreateProject { id, name, fps }, history_limit)` consumes the registered
 `project.create` command and uses project's default canvas and timeline. `project.rename` is an
 ordinary edit with undo/redo. `project.set_view_state` requires `zoom`, `scroll` and `playhead`;
 it validates through project and changes only `Session::metadata`, outside project undo and

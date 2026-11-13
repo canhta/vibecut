@@ -19,13 +19,30 @@ use std::{
 pub(super) enum Request {
     List,
     ListTrash,
-    Create { id: ProjectId, base_name: String },
-    Rename { id: ProjectId, name: String },
-    Duplicate { sources: Vec<ProjectId> },
-    Delete { ids: Vec<ProjectId> },
-    Restore { ids: Vec<ProjectId> },
-    Purge { ids: Vec<ProjectId> },
-    Thumbnail { id: ProjectId },
+    Create {
+        id: ProjectId,
+        base_name: String,
+        fps: u32,
+    },
+    Rename {
+        id: ProjectId,
+        name: String,
+    },
+    Duplicate {
+        sources: Vec<ProjectId>,
+    },
+    Delete {
+        ids: Vec<ProjectId>,
+    },
+    Restore {
+        ids: Vec<ProjectId>,
+    },
+    Purge {
+        ids: Vec<ProjectId>,
+    },
+    Thumbnail {
+        id: ProjectId,
+    },
 }
 
 pub(super) enum Event {
@@ -108,7 +125,7 @@ pub(super) fn catalog_worker(
                 let listed = library.list_trash().map_err(|error| error.to_string());
                 let _ = events.send(Event::TrashListed(listed));
             }
-            Request::Create { id, base_name } => {
+            Request::Create { id, base_name, fps } => {
                 let result = (|| {
                     let entries = library.list()?;
                     let name = unique_name(&entries, &base_name);
@@ -117,6 +134,7 @@ pub(super) fn catalog_worker(
                         Command::CreateProject {
                             id,
                             name: name.as_str().into(),
+                            fps,
                         },
                     )?;
                     let entries = library.list()?;
@@ -240,6 +258,7 @@ mod tests {
                     Command::CreateProject {
                         id: ProjectId(id),
                         name: name.into(),
+                        fps: 30,
                     },
                 )
                 .expect("create");

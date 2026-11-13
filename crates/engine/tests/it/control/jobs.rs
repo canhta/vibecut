@@ -685,6 +685,7 @@ fn lut_managed_duplicate_history_and_trash_keep_verified_copied_resources() {
             Command::CreateProject {
                 id: project::ProjectId(1),
                 name: "Managed".into(),
+                fps: 30,
             },
         )
         .unwrap();

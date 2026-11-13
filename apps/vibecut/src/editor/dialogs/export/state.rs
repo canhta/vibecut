@@ -17,6 +17,7 @@ impl State {
         &mut self,
         budget: engine::ByteBudget,
         render: Arc<RenderState>,
+
         project: &Project,
     ) -> Result<()> {
         self.ensure(budget, render)?;
@@ -33,6 +34,7 @@ impl State {
         options: ExportOptions,
         budget: engine::ByteBudget,
         render: Arc<RenderState>,
+        encoder: media::EncodePreference,
     ) -> Result<()> {
         self.ensure(budget, render)?;
         let dialog = self
@@ -40,7 +42,7 @@ impl State {
             .as_mut()
             .ok_or(Error::Invalid("export dialog"))?;
         dialog.show(project);
-        dialog.start(project.clone(), options)
+        dialog.start(project.clone(), options, encoder)
     }
 
     /// Start the attempt, propagating a refusal for the caller to report.
@@ -49,6 +51,7 @@ impl State {
         project: Arc<Project>,
         options: ExportOptions,
         blocked: bool,
+        encoder: media::EncodePreference,
     ) -> Result<()> {
         if blocked {
             return Err(Error::Engine(engine::control::Error::Session(
@@ -59,7 +62,7 @@ impl State {
             .dialog
             .as_mut()
             .ok_or(Error::Invalid("export dialog"))?;
-        dialog.start(project, options)
+        dialog.start(project, options, encoder)
     }
 
     /// Retry the failed attempt, propagating a refusal for the caller to report.

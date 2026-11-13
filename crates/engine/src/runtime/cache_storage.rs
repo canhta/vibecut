@@ -883,6 +883,56 @@ mod tests {
     }
 
     #[test]
+    fn clear_evicts_unpinned_entries_and_reports_bytes_on_the_aggregate_budget() {
+        let dir = tempfile::tempdir().unwrap();
+        let budget = ByteBudget::new(8192).unwrap();
+        let (mut cache, _) = ArtifactCache::open(dir.path(), budget.clone(), 8).unwrap();
+        let mut keys = Vec::new();
+        for n in 1..=3u8 {
+            let key = super::CacheKey::new(super::KeyInputs {
+                kind: super::ArtifactKind::Waveform,
+                source: [n; 32],
+                provider: "test",
+                model: "test",
+                version: "1",
+                settings: &[],
+                transcript: [0; 32],
+                cues: [0; 32],
+                clip_range: [0; 32],
+                translation: [0; 32],
+            })
+            .unwrap();
+            cache.put(key, &[n; 28]).unwrap();
+            keys.push(key);
+        }
+        let entry = 28 + super::HEADER as u64;
+        let pinned = cache.get(keys[0]).unwrap().unwrap();
+        let before = budget.snapshot().unwrap().used;
+        assert_eq!(before, 3 * entry);
+        let report = cache
+            .maintenance()
+            .unwrap()
+            .run(super::CacheOperation::Clear, || false);
+        assert_eq!(
+            (report.removed_bytes, report.in_use, report.failed),
+            (2 * entry, 1, 0),
+        );
+        assert_eq!(budget.snapshot().unwrap().used, before - 2 * entry);
+        assert_eq!(
+            pinned.bytes(),
+            [1u8; 28].as_slice(),
+            "a pinned entry survives the clear"
+        );
+        drop(pinned);
+        let rest = cache
+            .maintenance()
+            .unwrap()
+            .run(super::CacheOperation::Clear, || false);
+        assert_eq!((rest.removed_bytes, rest.in_use), (entry, 0));
+        assert_eq!(budget.snapshot().unwrap().used, 0);
+    }
+
+    #[test]
     fn cache_reopen_waits_for_last_owner_but_not_retained_descriptors() {
         let root = tempfile::tempdir().unwrap();
         let budget = ByteBudget::new(1024 * 1024).unwrap();

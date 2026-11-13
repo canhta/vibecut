@@ -155,8 +155,8 @@ impl Session {
     /// Create the default canvas/timeline through the registered lifecycle command.
     pub fn create(command: Command, history_limit: usize) -> Result<Self> {
         match command {
-            Command::CreateProject { id, name } => {
-                Self::new(Project::empty(id, name)?, history_limit)
+            Command::CreateProject { id, name, fps } => {
+                Self::new(Project::empty_with_fps(id, name, fps)?, history_limit)
             }
             _ => Err(EditError::Invalid("expected project.create")),
         }

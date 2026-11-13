@@ -992,7 +992,10 @@ impl State {
         let batch = self.prepare(&[self.selected], None, std::env::temp_dir())?;
         let prepared = batch.project(0).ok_or(Error::Invalid("editor project"))?;
         let mut data = prepared.data().clone();
-        data.id = crate::services::lifecycle::fresh(prepared.data().name.as_str())?
+        data.id = crate::services::lifecycle::fresh(
+            prepared.data().name.as_str(),
+            crate::preferences::DEFAULT_PROJECT_FPS,
+        )?
             .project()
             .data()
             .id;

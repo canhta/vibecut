@@ -111,6 +111,7 @@ impl Workspace {
                 });
                 let cx = home::Context {
                     look: self.preferences.look(),
+                    default_fps: self.preferences.default_fps,
                     projects: &mut self.preferences.projects,
                     status,
                 };

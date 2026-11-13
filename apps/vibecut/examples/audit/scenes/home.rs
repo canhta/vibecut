@@ -51,6 +51,7 @@ pub(super) fn home_projects(theme: Theme, scale: f32) -> Result<AppHarness, Fail
                 Command::CreateProject {
                     id: ProjectId(id),
                     name: format!("Draft {id}").into(),
+                    fps: 30,
                 },
             )?;
         }
@@ -92,6 +93,7 @@ pub(super) fn projects_trash(theme: Theme, scale: f32) -> Result<AppHarness, Fai
                 Command::CreateProject {
                     id: ProjectId(id),
                     name: format!("Draft {id}").into(),
+                    fps: 30,
                 },
             )?;
         }
@@ -157,6 +159,7 @@ pub(super) fn projects_scene(
                 Command::CreateProject {
                     id: ProjectId(id),
                     name: name.into(),
+                    fps: 30,
                 },
             )?;
         }

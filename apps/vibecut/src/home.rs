@@ -23,10 +23,12 @@ pub struct Context<'a> {
     pub projects: &'a mut ProjectsPreferences,
     /// The one-line short-video job state shown in the top band.
     pub status: Option<Text>,
+    pub default_fps: u32,
 }
 
 /// Draw the window and return the lifecycle actions a click requested.
 pub fn show(state: &mut State, cx: Context<'_>, ui: &mut egui::Ui) -> Vec<Action> {
+    state.default_fps = cx.default_fps;
     view::show(state, ui, cx.look, cx.projects, cx.status);
     state.action.take().into_iter().collect()
 }

@@ -105,6 +105,58 @@ impl KeybindingPreferences {
     }
 }
 
+/// How an imported profile combines with the bindings already in effect.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ImportMode {
+    /// Profile entries replace the same actions; other customizations stay.
+    Merge,
+    /// Every current customization is dropped; only the profile's entries remain.
+    Replace,
+}
+
+/// A validated profile applied over the current bindings. Unknown actions are
+/// left out of `preferences` and named here for the caller to report.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ImportOutcome {
+    pub preferences: KeybindingPreferences,
+    pub unknown_actions: Vec<String>,
+}
+
+impl KeybindingPreferences {
+    /// Applies a profile that `KeybindingProfile::import` already validated.
+    /// `known` answers whether an action id exists in the registry. The
+    /// receiver is untouched, so a refusal leaves the current bindings in place.
+    pub fn apply_profile(
+        &self,
+        profile: KeybindingPreferences,
+        mode: ImportMode,
+        known: impl Fn(&str) -> bool,
+    ) -> Result<ImportOutcome, KeybindingError> {
+        let mut next = match mode {
+            ImportMode::Merge => self.clone(),
+            ImportMode::Replace => Self::default(),
+        };
+        let mut unknown_actions = Vec::new();
+        for (action, chords) in profile.bindings {
+            if !known(action.as_str()) {
+                unknown_actions.push(action);
+                continue;
+            }
+            if profile.is_customized.contains(&action) {
+                next.is_customized.insert(action.clone());
+            } else {
+                next.is_customized.remove(&action);
+            }
+            next.bindings.insert(action, chords);
+        }
+        next.validate()?;
+        Ok(ImportOutcome {
+            preferences: next,
+            unknown_actions,
+        })
+    }
+}
+
 /// A portable binding profile for the import/export entry points in p1-parity/04.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

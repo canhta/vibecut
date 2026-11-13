@@ -328,6 +328,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
                         Command::CreateProject {
                             id: project::ProjectId(1),
                             name: "Example".into(),
+                            fps: 30,
                         },
                     )
                     .unwrap();

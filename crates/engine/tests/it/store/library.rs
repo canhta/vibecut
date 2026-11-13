@@ -22,6 +22,7 @@ fn create(library: &mut ProjectLibrary, id: u64) {
             Command::CreateProject {
                 id: ProjectId(id),
                 name: format!("Project {id}").into(),
+                fps: 30,
             },
         )
         .unwrap();
