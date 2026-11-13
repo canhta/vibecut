@@ -1,6 +1,8 @@
 # Effects view
 
-The Adjust tab's colour wheels and tone-curve editor.
+The Adjust tab's colour wheels and tone-curve editor, and a filter clip's Filter section.
+
+`filter.rs` draws a filter clip's look name and its Intensity, which is the clip's opacity channel edited through the ordinary item parameter path.
 
 `wheel.rs` owns the UI-only polar mapping between a puck position and the stored lift, gamma and gain percentages. `curve.rs` owns the pointer-edit proposal that produces a validated monotone `ToneCurve`. The parent `effects.rs` draws both, records their automation ids and turns each gesture into effect commands; it keeps no project copy.
 

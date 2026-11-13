@@ -455,6 +455,9 @@ fn select(harness: &mut Harness<Editor>, item: ItemId) {
 }
 
 fn click(harness: &mut Harness<Editor>, id: &str) {
+    if id.starts_with("assets.tab.") {
+        reveal_tab(harness, id);
+    }
     harness
         .get(By::new().predicate(|node| node.author_id() == Some(id)))
         .click();
@@ -470,6 +473,43 @@ fn node_id(harness: &Harness<Editor>, id: &str) -> String {
             .accesskit_node()
             .id()
     )
+}
+
+/// The feature strip scrolls sideways when the assets panel is narrower than its tabs: wheel it
+/// over the strip, as a user does, until the tab sits fully inside the panel.
+fn reveal_tab(harness: &mut Harness<Editor>, id: &str) {
+    for _ in 0..60 {
+        let panel = harness.state().panels()["media"];
+        let tab = harness
+            .state()
+            .inspect()
+            .unwrap()
+            .widgets
+            .into_iter()
+            .find(|widget| widget.id == id)
+            .map(|widget| widget.rect)
+            .unwrap_or_else(|| panic!("missing {id}"));
+        if tab.left() >= panel.left() - 0.5 && tab.right() <= panel.right() + 0.5 {
+            return;
+        }
+        // A negative vertical wheel reveals the right-hand tabs.
+        let turn = if tab.right() > panel.right() {
+            -120.0
+        } else {
+            120.0
+        };
+        harness.hover_at(egui::pos2(panel.center().x, tab.center().y));
+        harness.run_steps(2);
+        harness.event(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, turn),
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Wheel,
+            modifiers: egui::Modifiers::NONE,
+        });
+        harness.run_steps(30);
+    }
+    panic!("{id} is not reachable by a plain wheel");
 }
 
 fn has_widget(harness: &Harness<Editor>, id: &str) -> bool {

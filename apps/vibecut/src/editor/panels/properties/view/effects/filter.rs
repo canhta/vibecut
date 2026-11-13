@@ -6,7 +6,7 @@ impl Panel<'_, '_> {
     /// The Filter section: the clip's look, then its Intensity. Intensity is the clip's
     /// opacity channel, so it edits through the ordinary item parameter path, one undo step per
     /// typed value or scrub gesture, and it keys like opacity.
-    pub(super) fn filter_section(&mut self, ui: &mut egui::Ui, item: ItemId) {
+    pub(in super::super) fn filter_section(&mut self, ui: &mut egui::Ui, item: ItemId) {
         let Some(clip) = read::item(self.cx.session.project(), item) else {
             return;
         };

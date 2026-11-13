@@ -1,5 +1,6 @@
 //! Renders effect parameters.
 mod curve;
+mod filter;
 mod wheel;
 
 use super::Panel;
