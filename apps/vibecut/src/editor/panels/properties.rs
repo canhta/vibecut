@@ -61,6 +61,36 @@ impl AdjustTab {
     }
 }
 
+/// The clip background value each kind last showed this session, so choosing a kind
+/// starts from it. View memory only: the clip's background is the one truth.
+#[derive(Clone, Copy, Debug, Default)]
+struct BackgroundMemory {
+    colour: Option<project::Color>,
+    blur: Option<u32>,
+}
+
+impl BackgroundMemory {
+    /// Records the value a shown background carries; None keeps what was remembered.
+    fn remember(&mut self, background: project::ClipBackground) {
+        match background {
+            project::ClipBackground::None => {}
+            project::ClipBackground::Solid { color } => self.colour = Some(color),
+            project::ClipBackground::Blur { intensity } => self.blur = Some(intensity),
+        }
+    }
+
+    /// Where a Colour choice starts: its last colour this session, else black.
+    fn colour_or_black(self) -> project::Color {
+        self.colour.unwrap_or(project::Color([0, 0, 0, 255]))
+    }
+
+    /// Where a Blur choice starts: its last intensity this session, else the default.
+    fn blur_or_default(self) -> u32 {
+        self.blur
+            .unwrap_or(project::ClipBackground::DEFAULT_BLUR_INTENSITY)
+    }
+}
+
 /// Transient properties presentation state, independent of every other area.
 pub(in crate::editor) struct State {
     /// Uncommitted text of fields being edited, by field key.
@@ -109,6 +139,8 @@ pub(in crate::editor) struct State {
     /// Clip whose Chroma key is switched on before any colour is picked; the
     /// first pick adds the effect, so no effect exists while this is set.
     chroma_staged: Option<ItemId>,
+    /// Last colour and blur intensity the Background tab showed, per kind.
+    background_memory: BackgroundMemory,
     /// Rect of the last drawn panel, where the picker hangs off.
     area: Option<Rect>,
     widgets: Vec<Widget>,
@@ -220,6 +252,7 @@ impl Default for State {
             font_import: None,
             mask: mask_picker::State::default(),
             chroma_staged: None,
+            background_memory: BackgroundMemory::default(),
             area: None,
             widgets: Vec::new(),
         }
