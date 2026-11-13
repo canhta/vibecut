@@ -69,6 +69,8 @@ pub(in crate::editor) struct State {
     pub(in crate::editor) media_marquee: Option<MediaMarquee>,
     pub(in crate::editor) media_reveal: Option<MediaReveal>,
     pub(in crate::editor) media_delete_confirm: Option<Vec<super::AssetId>>,
+    /// Media tab: the clip export owner, its queued request and running job.
+    pub(in crate::editor) clip_exports: Option<super::media_panel::clips::ClipExports>,
     pub(in crate::editor) asset_states: BTreeMap<super::AssetId, AssetState>,
     pub(in crate::editor) thumbnails:
         BTreeMap<super::AssetId, engine::thumbnails::RetainedThumbnail>,
@@ -119,6 +121,7 @@ impl Default for State {
             media_marquee: None,
             media_reveal: None,
             media_delete_confirm: None,
+            clip_exports: None,
             asset_states: BTreeMap::new(),
             thumbnails: BTreeMap::new(),
             thumbnail_textures: std::cell::RefCell::default(),

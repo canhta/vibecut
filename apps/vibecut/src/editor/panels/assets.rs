@@ -53,6 +53,7 @@ struct Model {
     graphic_previews: [Option<egui::TextureHandle>; 4],
     importing: bool,
     selection: BTreeSet<AssetId>,
+    clip_export: Option<media_panel::clips::ClipStatus>,
     reveal: Option<AssetId>,
     marquee: Option<MediaMarquee>,
     failed: bool,
@@ -106,6 +107,8 @@ pub(in crate::editor) enum Action {
     Command(String),
     Select(AssetId, egui::Modifiers),
     Delete(Vec<AssetId>),
+    ExportClips(Vec<AssetId>),
+    ClipExportCancel,
     Record(Box<Recorded>),
     Marquee {
         content: Rect,

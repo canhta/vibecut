@@ -729,6 +729,28 @@ fn import_batch_shows_progress_and_disables_view_sort_import_and_insert() {
     assert!(harness.state().inspect().unwrap().import_cancelled);
 }
 
+/// No-match results offer a clear action that restores every asset; the project is untouched.
+#[test]
+fn search_no_matches_clear_restores_every_asset() {
+    let mut harness = build(editor_with(
+        Preferences::default(),
+        &[(1, "bravo.mp4"), (2, "alpha.mp4")],
+    ));
+    harness.run_steps(3);
+    let before = harness.state().session.project().clone();
+    click(&mut harness, "assets.search");
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("assets.search")))
+        .type_text("missing");
+    harness.run_steps(3);
+    assert!(!has_widget(&harness, "media.asset.1"));
+    click(&mut harness, "media.search.clear");
+    harness.run_steps(3);
+    assert!(has_widget(&harness, "media.asset.1"));
+    assert!(has_widget(&harness, "media.asset.2"));
+    assert!(Arc::ptr_eq(&before, harness.state().session.project()));
+}
+
 /// The captured grid has one thumbnail followed by a single filename line.
 #[test]
 fn grid_card_fits_its_measured_thumbnail_and_filename() {

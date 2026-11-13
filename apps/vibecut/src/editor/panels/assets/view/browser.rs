@@ -5,6 +5,7 @@ use super::{
     display_short_time, egui, icons, theme,
 };
 use crate::i18n;
+use media::AssetId;
 
 impl View<'_> {
     pub(super) fn browser(&mut self, ui: &mut egui::Ui) {
@@ -77,8 +78,48 @@ impl View<'_> {
                 matches && row.display.name.to_lowercase().contains(&search)
             })
             .collect();
-        let results =
-            Rect::from_min_max(area.min + Vec2::new(0.0, toolbar_height + 36.0), area.max);
+        // The strip is one control row plus the grid gap, measured by the toolbar tokens.
+        let export_height = if self.cx.clip_export.is_some() {
+            theme::size::CONTROL + theme::space::MD
+        } else {
+            0.0
+        };
+        if let Some(status) = self.cx.clip_export {
+            let strip = Rect::from_min_size(
+                area.min + Vec2::new(0.0, toolbar_height + 36.0),
+                Vec2::new(area.width(), theme::size::CONTROL),
+            );
+            ui.scope_builder(
+                egui::UiBuilder::new()
+                    .id_salt("media.export.strip")
+                    .max_rect(strip),
+                |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(self.tr(Text::ClipExportRunning))
+                                .size(theme::type_size::BODY),
+                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if self.icon(
+                                ui,
+                                "media.export.cancel",
+                                Icon::X,
+                                Text::Cancel,
+                                !status.cancelling,
+                            ) {
+                                self.actions.push(Action::ClipExportCancel);
+                            }
+                            let width = ui.available_width();
+                            ui.add(egui::ProgressBar::new(status.progress).desired_width(width));
+                        });
+                    });
+                },
+            );
+        }
+        let results = Rect::from_min_max(
+            area.min + Vec2::new(0.0, toolbar_height + 36.0 + export_height),
+            area.max,
+        );
         ui.scope_builder(
             egui::UiBuilder::new()
                 .id_salt("media.results")
@@ -104,6 +145,9 @@ impl View<'_> {
                             Text::AssetsNoMatches
                         },
                     );
+                    if !search.is_empty() && !self.cx.failed && !self.cx.importing {
+                        self.clear_search(ui);
+                    }
                 } else {
                     self.grid(ui, &rows);
                 }
@@ -269,7 +313,7 @@ impl View<'_> {
                             "media.insert",
                             Icon::Plus,
                             Text::AddToTimeline,
-                            !importing && !self.cx.selection().is_empty(),
+                            !importing && !self.cx.selection.is_empty(),
                         ) {
                             self.actions.push(Action::Command("media.insert".into()));
                         }
@@ -423,6 +467,46 @@ impl View<'_> {
             });
     }
 
+    /// The empty-results clear action: presentation only, the project is untouched.
+    fn clear_search(&mut self, ui: &mut egui::Ui) {
+        // Sits one gap below the empty state's label, which `View::empty` places at 36% + 32.
+        let area = ui.available_rect_before_wrap();
+        let top =
+            area.top() + area.height() * 0.36 + 32.0 + theme::type_size::BODY + theme::space::MD;
+        let row = Rect::from_min_size(
+            egui::pos2(area.left(), top),
+            Vec2::new(area.width(), theme::size::CONTROL),
+        );
+        let response = ui
+            .scope_builder(egui::UiBuilder::new().max_rect(row), |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.button(
+                        egui::RichText::new(self.tr(Text::AssetsClearSearch))
+                            .size(theme::type_size::BODY),
+                    )
+                })
+                .inner
+            })
+            .inner;
+        self.remember("media.search.clear", &response, None);
+        if response.clicked() {
+            self.state.searches.remove(&AssetsTab::Media);
+        }
+    }
+    /// Why the context menu cannot export `targets`; `None` when it can.
+    fn clip_export_refusal(&self, targets: &[AssetId]) -> Option<Text> {
+        if self.cx.clip_export.is_some() {
+            return Some(Text::ClipExportBusy);
+        }
+        let video_only = !targets.is_empty()
+            && targets.iter().all(|id| {
+                self.cx
+                    .rows
+                    .iter()
+                    .any(|row| row.display.id == *id && row.kind == MediaKind::Video)
+            });
+        (!video_only).then_some(Text::ClipExportNeedsVideo)
+    }
     fn asset(&mut self, ui: &mut egui::Ui, row: &AssetRow, rect: Rect, list: bool) {
         let response = ui.interact(
             rect,
@@ -441,11 +525,11 @@ impl View<'_> {
             self.actions
                 .push(Action::Select(row.id, ui.input(|input| input.modifiers)));
         }
-        if response.secondary_clicked() && !self.cx.selection().contains(&row.id) {
+        if response.secondary_clicked() && !self.cx.selection.contains(&row.id) {
             self.actions
                 .push(Action::Select(row.id, egui::Modifiers::NONE));
         }
-        let selected = self.cx.selection().contains(&row.id);
+        let selected = self.cx.selection.contains(&row.id);
         let dark = self.cx.preferences.dark;
         if list {
             ui.painter().rect_filled(
@@ -576,19 +660,32 @@ impl View<'_> {
             }
         }
         response.on_hover_text(&row.info).context_menu(|ui| {
+            let targets: Vec<AssetId> = if selected {
+                self.cx.selection.iter().copied().collect()
+            } else {
+                vec![row.id]
+            };
+            let refusal = self.clip_export_refusal(&targets);
             let export = ui.add_enabled(
-                false,
+                refusal.is_none() && !self.cx.importing,
                 egui::Button::image_and_text(
                     icons::tinted(Icon::Export, 16.0, theme::text(self.cx.preferences.dark)),
                     self.tr(Text::ExportClips),
                 ),
             );
-            let export = export.on_disabled_hover_text(self.tr(Text::NotAvailableYet));
+            let export = match refusal {
+                Some(text) => export.on_disabled_hover_text(self.tr(text)),
+                None => export,
+            };
             self.remember("media.export_clip", &export, Some(Icon::Export));
-            let mut button = egui::Button::new(if selected && self.cx.selection().len() > 1 {
+            if export.clicked() {
+                self.actions.push(Action::ExportClips(targets));
+                ui.close();
+            }
+            let mut button = egui::Button::new(if selected && self.cx.selection.len() > 1 {
                 i18n::format_count(
                     self.cx.preferences.locale,
-                    self.cx.selection().len() as u64,
+                    self.cx.selection.len() as u64,
                     Text::DeleteItemsOther,
                     Text::DeleteItemsOther,
                 )
@@ -602,7 +699,7 @@ impl View<'_> {
             self.remember("media.delete", &response, Some(Icon::Trash));
             if response.clicked() {
                 let ids = if selected {
-                    self.cx.selection().iter().copied().collect()
+                    self.cx.selection.iter().copied().collect()
                 } else {
                     vec![row.id]
                 };
