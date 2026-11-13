@@ -183,8 +183,16 @@ struct Request {
     playing: bool,
     /// Transient preview-axis time; `None` follows the transport.
     hover: Option<Tick>,
+    /// Loop `[start, end)` in ticks; `None` plays through to the timeline end.
+    loop_range: Option<(Tick, Tick)>,
 }
 impl Request {
+    /// The loop range clamped to this snapshot's duration; `None` when empty.
+    fn loop_bounds(&self) -> Option<(Tick, Tick)> {
+        let (start, end) = self.loop_range?;
+        let end = end.min(self.project.duration());
+        (start >= Tick::ZERO && start < end).then_some((start, end))
+    }
     /// The tick the preview shows: the pointer time while the axis holds one.
     fn display_at(&self, counter: u64) -> Result<Tick> {
         match self.hover {
@@ -199,15 +207,18 @@ impl Request {
             0
         };
         let delta = i64::try_from(delta).map_err(|_| Error::Invalid("device clock overflow"))?;
-        Ok(self
+        let at = self
             .start
             .checked_add(Tick::from_units(
                 delta,
                 i64::from(self.project.data().settings.audio_sample_rate),
                 Rounding::Nearest,
             )?)
-            .ok_or(Error::Invalid("transport overflow"))?
-            .min(self.project.duration()))
+            .ok_or(Error::Invalid("transport overflow"))?;
+        Ok(match self.loop_bounds() {
+            Some((start, end)) if self.playing => Tick(wrap_units(at.0, start.0, end.0)),
+            _ => at.min(self.project.duration()),
+        })
     }
 }
 pub struct Frame {
@@ -285,6 +296,7 @@ impl Playback {
             origin: 0,
             playing: false,
             hover: None,
+            loop_range: None,
         }));
         let output = Arc::new(Mutex::new(Output {
             frames: VecDeque::new(),
@@ -530,6 +542,29 @@ impl Playback {
         };
         self.seek(at, playing, project)
     }
+    /// The stored loop range, `[start, end)` ticks, before clamping to the timeline.
+    pub fn loop_range(&self) -> Result<Option<(Tick, Tick)>> {
+        Ok(read_request(&self.request)?.loop_range)
+    }
+    /// Loop `[start, end)`, or the whole timeline with `None`. A paused transport keeps
+    /// its position. A playing one restarts its audio epoch at the same position, so only
+    /// a changed range re-seeks. Ranges must satisfy `0 <= start < end <= duration`.
+    pub fn set_loop(
+        &mut self,
+        range: Option<(Tick, Tick)>,
+        project: Arc<project::Project>,
+    ) -> Result<()> {
+        if let Some((start, end)) = range
+            && (start < Tick::ZERO || start >= end || end > project.duration())
+        {
+            return Err(Error::Invalid("loop range"));
+        }
+        if read_request(&self.request)?.loop_range == range {
+            return Ok(());
+        }
+        self.request.lock().map_err(|_| Error::Poisoned)?.loop_range = range;
+        self.seek(self.position()?, self.playing(), project)
+    }
     pub fn seek(&mut self, at: Tick, playing: bool, project: Arc<project::Project>) -> Result<()> {
         if at < Tick::ZERO || at > project.duration() {
             return Err(Error::Invalid("seek outside timeline"));
@@ -563,6 +598,7 @@ impl Playback {
             origin: self.port.submitted.load(Ordering::Acquire),
             playing,
             hover: None,
+            loop_range: request.loop_range,
         };
         self.port.epoch.store(epoch, Ordering::Release);
         self.preview_generation.store(generation, Ordering::Release);
@@ -689,6 +725,73 @@ impl Drop for Playback {
         self.runner.shutdown();
     }
 }
+/// Map `at` into a looping `[from, to)` range; one rule for ticks and samples.
+/// Positions before `to` pass through, and an empty range never wraps.
+fn wrap_units(at: i64, from: i64, to: i64) -> i64 {
+    if at < to || to <= from {
+        at
+    } else {
+        from + (at - from).rem_euclid(to - from)
+    }
+}
+
+/// The loop range the transport holds. `in_out` is the export in/out marker pair; an
+/// unset, inverted or empty pair falls back to the whole timeline. Disabled or an empty
+/// timeline gives `None`.
+pub fn loop_window(
+    enabled: bool,
+    in_out: Option<(Tick, Tick)>,
+    duration: Tick,
+) -> Option<(Tick, Tick)> {
+    if !enabled {
+        return None;
+    }
+    if let Some((start, end)) = in_out {
+        let start = start.clamp(Tick::ZERO, duration);
+        let end = end.clamp(Tick::ZERO, duration);
+        if start < end {
+            return Some((start, end));
+        }
+    }
+    (duration > Tick::ZERO).then_some((Tick::ZERO, duration))
+}
+
+/// One output block of `frames` samples: `head` samples from `start`, then, when the loop
+/// wraps inside the block, `rest` = (loop start, frames) continues it.
+#[derive(Debug, PartialEq, Eq)]
+struct BlockPlan {
+    start: i64,
+    head: usize,
+    rest: Option<(i64, usize)>,
+}
+
+fn plan_block(first: i64, bounds: Option<(i64, i64)>, frames: usize) -> BlockPlan {
+    let Some((from, to)) = bounds else {
+        return BlockPlan {
+            start: first,
+            head: frames,
+            rest: None,
+        };
+    };
+    let start = wrap_units(first, from, to);
+    let head = (to - start).clamp(1, frames as i64) as usize;
+    BlockPlan {
+        start,
+        head,
+        rest: (head < frames).then_some((from, frames - head)),
+    }
+}
+
+impl BlockPlan {
+    /// The timeline sample each output slot reads, in order.
+    fn indices(&self) -> Vec<i64> {
+        let mut out: Vec<i64> = (0..self.head as i64).map(|n| self.start + n).collect();
+        if let Some((from, frames)) = self.rest {
+            out.extend((0..frames as i64).map(|n| from + n));
+        }
+        out
+    }
+}
 fn read_request(request: &Mutex<Request>) -> Result<Request> {
     Ok(request.lock().map_err(|_| Error::Poisoned)?.clone())
 }
@@ -730,6 +833,17 @@ fn audio_loop(
         epoch,
     };
     // DSP state belongs only to a playing epoch, and drops on pause/seek.
+    let rate = i64::from(r.project.data().settings.audio_sample_rate);
+    // Loop bounds in samples. The first block takes its position from the transport;
+    // later blocks continue sample by sample, so the loop boundary has no gap.
+    let bounds = match r.loop_bounds() {
+        Some((from, to)) => Some((
+            from.to_units(rate, Rounding::Nearest)?,
+            to.to_units(rate, Rounding::Nearest)?,
+        )),
+        None => None,
+    };
+    let mut carried: Option<i64> = None;
     let mut mixer = render::AudioMixer::new(&r.project, 2, 0, &audio_hooks)?;
     while !hooks.cancelled() && port.epoch.load(Ordering::Acquire) == epoch {
         let submitted = port.submitted.load(Ordering::Acquire);
@@ -739,32 +853,44 @@ fn audio_loop(
             std::thread::sleep(Duration::from_millis(2));
             continue;
         }
-        let at = r.at(cursor)?;
-        let start = at.to_units(
-            i64::from(r.project.data().settings.audio_sample_rate),
-            Rounding::Nearest,
-        )?;
-        let block = mixer.mix(start, BLOCK, sources.as_mut(), &audio_hooks)?;
+        let first = match carried {
+            Some(sample) => sample,
+            None => r.at(cursor)?.to_units(rate, Rounding::Nearest)?,
+        };
+        // A looping block stops at the loop end; its remainder comes from the loop start.
+        let plan = plan_block(first, bounds, BLOCK);
+        let head = plan.head;
+        let block = mixer.mix(plan.start, head, sources.as_mut(), &audio_hooks)?;
+        let rest = match plan.rest {
+            Some((from, frames)) => {
+                Some(mixer.mix(from, frames, sources.as_mut(), &audio_hooks)?)
+            }
+            None => None,
+        };
         if port.epoch.load(Ordering::Acquire) == epoch {
             for n in 0..BLOCK {
+                let (source, k) = match rest.as_ref() {
+                    Some(rest) if n >= head => (rest, n - head),
+                    _ => (&block, n),
+                };
                 let index = cursor.saturating_add(n as u64);
                 if let Some(slot) = port.slots.get(index as usize % RING_FRAMES) {
                     slot.epoch.store(0, Ordering::Release);
                     slot.left.store(
-                        block
+                        source
                             .planes()
                             .first()
-                            .and_then(|p| p.get(n))
+                            .and_then(|p| p.get(k))
                             .copied()
                             .unwrap_or(0.0)
                             .to_bits(),
                         Ordering::Relaxed,
                     );
                     slot.right.store(
-                        block
+                        source
                             .planes()
                             .get(1)
-                            .and_then(|p| p.get(n))
+                            .and_then(|p| p.get(k))
                             .copied()
                             .unwrap_or(0.0)
                             .to_bits(),
@@ -776,6 +902,7 @@ fn audio_loop(
             }
         }
         cursor = cursor.saturating_add(BLOCK as u64);
+        carried = bounds.map(|_| plan.start.saturating_add(BLOCK as i64));
     }
     Ok(())
 }
@@ -796,6 +923,8 @@ fn video_loop(
     // advance it with the audio clock.
     let pinned = !r.playing || r.hover.is_some();
     let mut next = fps.frame_at(r.display_at(port.audible.load(Ordering::Acquire))?)?;
+    let mut last = next;
+    let looping = r.loop_bounds().is_some();
     let mut settings = r.render_state.settings(&r.project)?;
     let scale = (640.0 / f64::from(settings.width))
         .min(360.0 / f64::from(settings.height))
@@ -806,6 +935,12 @@ fn video_loop(
     let mut renderer = render::Renderer::new(&r.project, settings)?;
     while !hooks.cancelled() && generation.load(Ordering::Acquire) == preview_generation {
         let current = fps.frame_at(r.display_at(port.audible.load(Ordering::Acquire))?)?;
+        if looping && current < last {
+            // The transport wrapped: frames rendered past the loop end are stale.
+            next = current;
+            output.lock().map_err(|_| Error::Poisoned)?.frames.clear();
+        }
+        last = current;
         next = next.max(current);
         if (pinned && next > current)
             || output.lock().map_err(|_| Error::Poisoned)?.frames.len() >= MAX_FRAMES
@@ -840,4 +975,82 @@ fn video_loop(
             .ok_or(Error::Invalid("frame overflow"))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{loop_window, plan_block, wrap_units};
+    use time::Tick;
+
+    #[test]
+    fn loop_wrap_rows() {
+        // (position, loop start, loop end, expected)
+        let rows = [
+            (0, 0, 10, 0),
+            (9, 0, 10, 9),
+            (10, 0, 10, 0),
+            (25, 0, 10, 5),
+            (12, 4, 10, 6),
+            (3, 4, 10, 3),
+            // An in/out range wraps at its out point back to its in point.
+            (10, 4, 10, 4),
+            (13, 4, 10, 7),
+            // An empty range never wraps.
+            (7, 5, 5, 7),
+        ];
+        for (at, from, to, expected) in rows {
+            assert_eq!(
+                wrap_units(at, from, to),
+                expected,
+                "at {at} in {from}..{to}"
+            );
+        }
+    }
+
+    #[test]
+    fn loop_window_rows() {
+        // (enabled, in/out ticks, duration, expected window)
+        let rows: [(bool, Option<(i64, i64)>, i64, Option<(i64, i64)>); 9] = [
+            (false, Some((10, 50)), 100, None),
+            (true, None, 100, Some((0, 100))),
+            (true, Some((10, 50)), 100, Some((10, 50))),
+            (true, Some((-5, 30)), 100, Some((0, 30))),
+            (true, Some((40, 200)), 100, Some((40, 100))),
+            (true, Some((50, 50)), 100, Some((0, 100))),
+            (true, Some((60, 20)), 100, Some((0, 100))),
+            (true, None, 0, None),
+            (true, Some((0, 0)), 0, None),
+        ];
+        for (enabled, in_out, duration, expected) in rows {
+            let in_out = in_out.map(|(a, b)| (Tick(a), Tick(b)));
+            let expected = expected.map(|(a, b)| (Tick(a), Tick(b)));
+            assert_eq!(
+                loop_window(enabled, in_out, Tick(duration)),
+                expected,
+                "enabled {enabled} in/out {in_out:?} duration {duration}"
+            );
+        }
+    }
+
+    #[test]
+    fn loop_block_split_rows() {
+        // (first sample, loop bounds, block frames, timeline sample per output slot)
+        let rows: [(i64, Option<(i64, i64)>, usize, Vec<i64>); 6] = [
+            (2, None, 4, vec![2, 3, 4, 5]),
+            (2, Some((0, 10)), 4, vec![2, 3, 4, 5]),
+            // The block crosses the loop end: the slots after 9 read the loop start, 0 and 1.
+            (8, Some((0, 10)), 4, vec![8, 9, 0, 1]),
+            (10, Some((0, 10)), 4, vec![0, 1, 2, 3]),
+            (9, Some((4, 10)), 4, vec![9, 4, 5, 6]),
+            (25, Some((0, 10)), 4, vec![5, 6, 7, 8]),
+        ];
+        for (first, bounds, frames, expected) in rows {
+            let plan = plan_block(first, bounds, frames);
+            assert_eq!(plan.indices(), expected, "first {first} bounds {bounds:?}");
+            // Continuity: the slot after the loop end reads the loop start sample.
+            if let Some((from, _)) = plan.rest {
+                assert_eq!(expected.get(plan.head).copied(), Some(from));
+            }
+        }
+    }
 }

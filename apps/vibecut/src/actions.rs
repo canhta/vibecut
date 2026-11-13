@@ -153,6 +153,7 @@ pub enum UiAction {
     Redo,
     Snap,
     Ripple,
+    Loop,
     PreviewAxis,
     /// Timeline pointer mode: Select clicks and drags clips, Split cuts them.
     SelectTool,

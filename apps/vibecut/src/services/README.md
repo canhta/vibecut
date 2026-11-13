@@ -46,6 +46,16 @@ budget. It never blocks the UI on an adapter; a noncooperating adapter delays re
 and shutdown until it returns. Playback resumes only explicitly, and old work cannot
 publish into the new generation.
 
+Loop playback (`set_loop`) holds the transport in `[start, end)` while playing. The
+editor passes the export in/out markers (`RangeChoice::InOut`) when they are set and
+non-empty, else the whole timeline. The range is clamped to the snapshot duration on each
+read, so a shortened timeline cannot play past its end. A position outside the range
+plays on to the loop end and then wraps into it. Audio mixes each block up to the loop end
+and continues the same block from the loop start, sample-accurately: there is no crossfade,
+so a discontinuous source at the boundary is audible as is. Video drops frames queued past
+the end when the transport wraps. Changing the range re-seeks at the current position.
+The 10-minute A/V drift measurement is not part of the test set yet.
+
 `transport` is the one mapping from a player request to a seek: play toggles and
 restarts at an end position, second and frame steps clamp to the timeline, and Start and
 End are explicit positions. The editor frame and the shorts window call it with the

@@ -64,6 +64,7 @@ SHA-256 of each embedded file:
 | `pencil-simple.svg` | `999530da442f44d8cf0054364373d16150f3e082c2ac294a4988a9c3a4295c28` |
 | `play.svg` | `885b3ed2095889c4ff063dac35dc424cb9f6c00273ab44e2f90dc9dadbee661a` |
 | `plus.svg` | `d688feb9dd2e41c1721d6906a05a2a42e18cd774762fe706d72b2bdfd91cddc4` |
+| `repeat.svg` | `12cef5f8ba7074921f909838088154a6847b936b11342c28daa475c62b71df86` |
 | `scissors.svg` | `54180ec6ac157bafe78c40b16a0a03b588886e1e86497241c97ba9f4aacdeab8` |
 | `skip-back.svg` | `20f318558e166d5dea09fb854a1bbc199e9891b17febed640e912a6ee4712d37` |
 | `skip-forward.svg` | `52f1ed5a89f1a38bf8537b38bd2da0501e396fc4cb03a2cdde38d248ceb03fbe` |

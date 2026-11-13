@@ -322,6 +322,18 @@ impl Editor {
                     self.preview_transform(item, &values);
                 }
                 Action::TransformEnd { commit } => self.end_preview_transform(commit),
+                Action::MasterPreview { volume, muted } => {
+                    self.desk().preview(
+                        Command::TimelinePreview {
+                            commands: vec![Command::SetMaster { volume, muted }],
+                        },
+                        false,
+                    );
+                }
+                Action::MasterEnd { commit } => self.end_preview_transform(commit),
+                Action::MasterSet { volume, muted } => {
+                    self.track_command(Command::SetMaster { volume, muted });
+                }
                 Action::TextBegin { item } => self.begin_text_edit(item),
                 Action::TextPreview { item, content } => self.preview_text(item, &content),
                 Action::TextEnd { commit } => self.end_preview_transform(commit),

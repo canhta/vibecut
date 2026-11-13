@@ -1000,9 +1000,11 @@ pub struct WordSpan {
 }
 
 /// Clip/master dB range and hundredth-dB editing grid. Curves interpolate continuously.
+pub const VOLUME_DB_RANGE: std::ops::RangeInclusive<f32> = -60.0..=20.0;
+
 pub fn valid_volume(value: f32) -> bool {
     value.is_finite()
-        && (-60.0..=20.0).contains(&value)
+        && VOLUME_DB_RANGE.contains(&value)
         && (value * 100.0 - (value * 100.0).round()).abs() < 0.001
 }
 
