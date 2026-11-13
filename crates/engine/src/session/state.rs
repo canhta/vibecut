@@ -2,6 +2,7 @@
 use super::edit;
 use crate::session::{EditError, Result};
 mod checkpoint;
+mod fork;
 mod session_control;
 use crate::{Command, NewItem, Outcome, Placement};
 use checkpoint::Checkpoint;
@@ -71,6 +72,8 @@ pub struct Session {
     pub(crate) ledger: super::wire::Ledger,
     state: State,
     limit: usize,
+    /// `Some` only in a fork's session: the commands that changed its project, in order.
+    recorded: Option<Vec<super::fork::Logged>>,
     gesture: Option<State>,
     timeline_preview: bool,
     grouping: bool,
@@ -127,6 +130,7 @@ impl Session {
                 change: None,
             },
             limit: history_limit,
+            recorded: None,
             gesture: None,
             timeline_preview: false,
             grouping: false,
@@ -388,6 +392,7 @@ impl Session {
             crate::session::wire::ControlError::Limit,
         ))?;
         let before = self.state.clone();
+        let logged = self.recorded.as_ref().map_or(0, Vec::len);
         self.state.trim_sources.clear();
         self.grouping = true;
         let result = catch_unwind(AssertUnwindSafe(|| run(self)));
@@ -398,6 +403,9 @@ impl Session {
                 Ok(value)
             }
             failed => {
+                if let Some(log) = &mut self.recorded {
+                    log.truncate(logged);
+                }
                 // Targets captured by child commands belong to discarded previews.
                 self.invalidate_revision(false)?;
                 self.state.rewind(before);
@@ -435,12 +443,24 @@ impl Session {
     /// Refusal or unwind leaves the session as it was. A continuous gesture goes
     /// through `begin_gesture` and `commit_gesture` to become one undo step.
     pub fn apply(&mut self, command: Command) -> Result<Outcome> {
-        self.boundary(|session| session.commit(command, false, session.ripple))
+        self.apply_recorded(command, false)
     }
     /// The control adapter's entry: wire admission shares the candidate invariant;
     /// typed in-process editing retains the owner's full integer domain.
     pub(crate) fn apply_control(&mut self, command: Command) -> Result<Outcome> {
-        self.boundary(|session| session.commit(command, true, session.ripple))
+        self.apply_recorded(command, true)
+    }
+    /// The one place the two entries meet: a fork logs what its caller applied, never the
+    /// children a command applies to itself through [`Session::staged`].
+    fn apply_recorded(&mut self, command: Command, wire: bool) -> Result<Outcome> {
+        let logged = self.recorded.is_some().then(|| command.clone());
+        let outcome = self.staged(command, wire)?;
+        self.record(logged, wire, &outcome);
+        Ok(outcome)
+    }
+    /// One command at its own boundary, unrecorded.
+    fn staged(&mut self, command: Command, wire: bool) -> Result<Outcome> {
+        self.boundary(|session| session.commit(command, wire, session.ripple))
     }
     /// Run `run` atomically: a refusal or an unwind leaves the session as
     /// [`Checkpoint`] captured it.
@@ -489,28 +509,34 @@ impl Session {
         self.transaction(|session| {
             created.extend(
                 session
-                    .apply(Command::AddAsset {
-                        asset: asset.clone(),
-                    })?
+                    .staged(
+                        Command::AddAsset {
+                            asset: asset.clone(),
+                        },
+                        false,
+                    )?
                     .created,
             );
-            let outcome = session.apply(Command::InsertItem {
-                placement,
-                item: NewItem {
-                    retime: Default::default(),
-                    animations: project::Animations::default(),
-                    source_asset: Some(source_asset),
-                    source_range: SourceRange::new(Tick::ZERO, duration)?,
-                    start,
-                    content: ItemParams::Audio(AudioParams {
-                        fades: Default::default(),
-                        volume: 0.0,
-                        muted: false,
-                        source: source.clone(),
-                        cleanup: Default::default(),
-                    }),
+            let outcome = session.staged(
+                Command::InsertItem {
+                    placement,
+                    item: NewItem {
+                        retime: Default::default(),
+                        animations: project::Animations::default(),
+                        source_asset: Some(source_asset),
+                        source_range: SourceRange::new(Tick::ZERO, duration)?,
+                        start,
+                        content: ItemParams::Audio(AudioParams {
+                            fades: Default::default(),
+                            volume: 0.0,
+                            muted: false,
+                            source: source.clone(),
+                            cleanup: Default::default(),
+                        }),
+                    },
                 },
-            })?;
+                false,
+            )?;
             created.extend(outcome.created);
             placements.extend(outcome.placements);
             Ok::<(), EditError>(())

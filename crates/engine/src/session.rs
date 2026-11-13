@@ -2,6 +2,8 @@
 mod clipboard;
 pub use clipboard::{ItemClipboard, ItemPasteSource, KeyframeClipboard, KeyframePasteSource};
 mod failures;
+mod fork;
+pub use fork::{ChangeSummary, Fork};
 mod revision;
 mod state;
 pub(crate) mod wire;

@@ -500,3 +500,125 @@ fn groups_evict_only_one_step_and_noop_gestures_preserve_redo() {
     assert!(s.take_change().is_none());
     assert!(!Arc::ptr_eq(&initial, s.project()));
 }
+
+fn bookmark() -> Command {
+    Command::BookmarkAdd {
+        start: Tick(1),
+        duration: Tick(0),
+        note: "".into(),
+        color: Color([0; 4]),
+    }
+}
+
+#[test]
+fn a_fork_applies_back_as_one_undo_step_and_only_to_the_revision_it_was_taken_at() {
+    use crate::support::control::{Allow, caller, runner};
+    let mut r = runner();
+    let mut live = Session::new(project(), 4).unwrap();
+    let pristine = live.project().clone();
+    let mut fork = live.fork().unwrap();
+    for command in [
+        Command::MoveItem {
+            item: ItemId(10),
+            track: TrackId(2),
+            start: Tick(200),
+        },
+        bookmark(),
+        Command::Delete {
+            items: vec![ItemId(11)],
+        },
+    ] {
+        fork.control_command(command, caller(&Allow), &mut r)
+            .unwrap();
+    }
+    // A refused command, and the session controls a fork never runs, leave no log entry.
+    for refused in [
+        Command::Delete {
+            items: vec![ItemId(99)],
+        },
+        Command::Undo {},
+        Command::TimelineSetRipple { enabled: true },
+    ] {
+        assert!(
+            fork.control_command(refused, caller(&Allow), &mut r)
+                .is_err()
+        );
+    }
+    assert_eq!(fork.commands().count(), 3);
+    assert!(Arc::ptr_eq(&pristine, live.project()));
+    assert_eq!(live.history_len(), (0, 0));
+    assert!(live.take_change().is_none());
+
+    let summary = fork.summary();
+    assert_eq!(summary.moved, vec![ItemId(10)]);
+    assert_eq!(summary.removed, vec![ItemId(11)]);
+    assert!(summary.added.is_empty() && summary.trimmed.is_empty() && summary.retimed.is_empty());
+    assert!(summary.params_changed.is_empty() && summary.captions_changed.is_empty());
+    assert_eq!(
+        (summary.duration_before, summary.duration_after),
+        (Tick(100), Tick(240))
+    );
+
+    let forked = fork.session().project().clone();
+    let outcome = live.apply_fork(fork).unwrap();
+    assert!(outcome.changed);
+    assert_eq!(outcome.created.len(), 1);
+    assert_eq!(live.project(), &forked);
+    assert_eq!(live.history_len(), (1, 0));
+    assert!(live.take_change().is_some());
+    assert!(live.take_change().is_none());
+    live.undo().unwrap();
+    assert!(Arc::ptr_eq(&pristine, live.project()));
+}
+
+#[test]
+fn a_fork_applies_nowhere_but_its_own_revision_and_never_while_a_group_is_open() {
+    use crate::support::control::{Allow, caller, runner};
+    fn forked(live: &Session, r: &mut engine::jobs::JobRunner) -> engine::Fork {
+        let mut fork = live.fork().unwrap();
+        fork.control_command(bookmark(), caller(&Allow), r).unwrap();
+        fork
+    }
+    let mut r = runner();
+    let mut live = Session::new(project(), 4).unwrap();
+    // Rows: a live edit since the fork, and a successor session of the same project, which
+    // is what reopening a deleted and restored project creates.
+    let moved_on = forked(&live, &mut r);
+    live.apply(bookmark()).unwrap();
+    let successor = forked(&live, &mut r);
+    let mut reopened = Session::new(live.project().as_ref().clone(), 4).unwrap();
+    for (target, fork) in [(&mut live, moved_on), (&mut reopened, successor)] {
+        let project = target.project().clone();
+        let (revision, history) = (target.revision(), target.history_len());
+        assert!(matches!(
+            target.apply_fork(fork),
+            Err(EditError::Control(
+                engine::control::ControlError::StaleRevision
+            ))
+        ));
+        assert!(Arc::ptr_eq(&project, target.project()));
+        assert_eq!(
+            (target.revision(), target.history_len()),
+            (revision, history)
+        );
+    }
+
+    // An empty log is a no-op: no undo entry, no change event, no new revision.
+    live.take_change();
+    let (revision, history) = (live.revision(), live.history_len());
+    let empty = live.fork().unwrap();
+    let outcome = live.apply_fork(empty).unwrap();
+    assert!(!outcome.changed);
+    assert_eq!(live.revision(), revision);
+    assert_eq!(live.history_len(), history);
+    assert!(live.take_change().is_none());
+
+    // No fork while a gesture or a group holds an uncommitted project.
+    live.begin_gesture().unwrap();
+    assert!(live.fork().is_err());
+    live.cancel_gesture().unwrap();
+    assert!(
+        live.transaction(|s| Ok::<_, EditError>(s.fork().is_err()))
+            .unwrap()
+    );
+}
