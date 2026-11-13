@@ -53,6 +53,10 @@ pub(crate) fn caller(policy: &dyn Policy) -> Caller<'_> {
     }
 }
 pub(crate) fn runner() -> JobRunner {
+    runner_with_budget(512 << 20)
+}
+/// A runner whose job budget is `bytes`, for jobs that reserve more than the default.
+pub(crate) fn runner_with_budget(bytes: u64) -> JobRunner {
     JobRunner::new(
         RunnerConfig {
             concurrency: [1, 1, 1],
@@ -62,7 +66,7 @@ pub(crate) fn runner() -> JobRunner {
             backoff: Duration::from_millis(1),
             progress_interval: Duration::from_millis(10),
         },
-        ByteBudget::new(512 << 20).unwrap(),
+        ByteBudget::new(bytes).unwrap(),
         Arc::new(SystemClock::default()),
     )
     .unwrap()
