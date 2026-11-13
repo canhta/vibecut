@@ -30,6 +30,8 @@ Usage:
   vibecut-cli transcript <project> [--item <id> --cue <id> --words <first>-<last>]
   vibecut-cli reframe <project> --item <id> --target 9:16|1:1|16:9
                    [--replace-manual] [--dry-run]
+  vibecut-cli freeze <project> --item <id> --at SECONDS --dir ABSOLUTE_DIR
+                   [--duration SECONDS]
   vibecut-cli subtitle <in> [--from vi|en|zh|auto] --to vi|en|zh [--bilingual]
                    [--srt <out>] [--burn <out.mp4>] [--aspect 9:16]
                    [--provider <id>] [--model <id>] [--translate-provider <id>]

@@ -39,8 +39,6 @@ pub enum Error {
     Unsupported(&'static str),
     #[error("action is disabled: {0}")]
     ActionDisabled(&'static str),
-    #[error("not available yet: {0}")]
-    NotAvailable(&'static str),
     #[error("keybinding failed")]
     Keybinding(#[from] crate::actions::KeybindingError),
     #[error("operation cancelled")]

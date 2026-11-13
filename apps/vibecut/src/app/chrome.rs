@@ -38,6 +38,15 @@ impl EditorWindow {
         if self.project_window {
             self.tick();
         }
+        if !self.busy()
+            && let Some(item) = self
+                .editor
+                .as_mut()
+                .and_then(|editor| editor.replace_request.take())
+            && let Err(error) = self.pick(ui.ctx(), PickerAction::ReplaceMedia { item })
+        {
+            self.error = Some(error);
+        }
         if self.open_file_requested && !self.busy() {
             self.open_file_requested = false;
             if let Err(error) = self.pick(ui.ctx(), PickerAction::Open) {

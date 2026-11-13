@@ -17,9 +17,6 @@ impl Editor {
             self.commit_text_edit();
         }
         let (spec, argument) = actions::resolve(id).ok_or(Error::Unsupported("widget action"))?;
-        if let Some(ticket) = spec.pending_ticket() {
-            return Err(Error::NotAvailable(ticket));
-        }
         // A disabled style action must not flush an unrelated caption draft.
         if (id.starts_with("subtitles.style.")
             || id.starts_with("text.animation.")
@@ -112,7 +109,6 @@ impl Editor {
         }
         match spec.target {
             ActionTarget::Engine(route) => self.execute_engine_action(route)?,
-            ActionTarget::Pending { ticket, .. } => return Err(Error::NotAvailable(ticket)),
             ActionTarget::Ui { action, .. } => match action {
                 UiAction::Copy => match self.selection_scopes.active(self.session.selection()) {
                     crate::editor::selection::SelectionScope::Keyframes => {

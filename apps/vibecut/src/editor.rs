@@ -58,6 +58,9 @@ use engine::{
 };
 use media::{AssetId, ContentHash, SourceAsset, StreamKind, UnsupportedReason};
 use project::{BookmarkId, ItemId, ItemParams, TrackId, TrackKind};
+
+/// Default hold for Freeze frame: three seconds. Unverified against the CapCut reference.
+const FREEZE_HOLD_TICKS: i64 = 3 * time::TICKS_PER_SECOND;
 use properties::ColorTarget;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -287,6 +290,7 @@ impl Editor {
             lifecycle_action: None,
             clock: Arc::new(SystemClock::default()),
             toast: None,
+            replace_request: None,
             assets: asset_state,
             dialogs: dialogs::State::default(),
             music: None,
@@ -603,6 +607,79 @@ impl Editor {
     }
     pub fn models(&self) -> Option<&dialogs::models::model_manager::ModelManager> {
         self.dialogs.models.manager()
+    }
+    /// The folder beside the saved project that holds its frozen stills: `<project>.media`.
+    /// `None` until the project has a saved path, because the engine refuses a relative folder.
+    pub fn media_directory(&self) -> Option<PathBuf> {
+        match &self.session {
+            crate::services::lifecycle::EditorSession::Persistent(saving) => saving
+                .saved_path()
+                .map(|path| path.with_extension("media")),
+            crate::services::lifecycle::EditorSession::Memory(_) => None,
+        }
+    }
+    /// Hold the selected video item's frame at the playhead for the default hold.
+    pub(in crate::editor) fn freeze_selected_frame(&mut self) -> Result<()> {
+        let item = self
+            .freeze_target()
+            .ok_or(Error::Invalid("freeze selection"))?;
+        let at = self.playback.position()?;
+        let dir = self
+            .media_directory()
+            .ok_or(Error::Invalid("save the project before freezing"))?;
+        let protected = self
+            .session
+            .autosave()
+            .map(|autosave| autosave.protected_export_paths())
+            .transpose()?
+            .unwrap_or_default();
+        let budget = self.playback.budget().clone();
+        let hold = time::Tick(FREEZE_HOLD_TICKS);
+        let held = crate::services::freeze::hold(
+            &mut self.session,
+            budget,
+            item,
+            at,
+            hold,
+            &dir,
+            protected,
+        );
+        match held {
+            Ok(_) => {
+                self.set_toast(self.tr(Text::FreezeDone), None);
+                Ok(())
+            }
+            Err(error) => {
+                self.desk().fail(error.to_string());
+                Err(error)
+            }
+        }
+    }
+    /// Ask the window to open the native media picker for one clip's replacement.
+    pub(in crate::editor) fn request_replace_media(&mut self, item: ItemId) {
+        self.replace_request = Some(item);
+    }
+    /// Replace one clip's source with a file that is already a project asset. A file
+    /// that has not been imported refuses, so the timeline never gains an unlisted source.
+    pub fn replace_picked_file(&mut self, item: ItemId, path: PathBuf) -> Result<()> {
+        let asset = self
+            .session
+            .project()
+            .data()
+            .assets
+            .iter()
+            .find(|asset| asset.path() == path.as_path())
+            .map(SourceAsset::id)
+            .ok_or(Error::Invalid("import the file before replacing"))?;
+        self.desk()
+            .apply_result(
+                Command::ReplaceMedia {
+                    items: vec![item],
+                    asset,
+                },
+                false,
+            )
+            .map(|_| ())
     }
     /// Native picker destination applied through the consumed `preview.snapshot`
     /// command. Failure stays typed and never shows a success toast.

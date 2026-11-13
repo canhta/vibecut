@@ -47,6 +47,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         "captions" => project::captions(context, rest),
         "cut" => project::cut(context, rest),
         "reframe" => project::reframe(context, rest),
+        "freeze" => project::freeze(context, rest),
         "transcript" => project::transcript(context, rest),
         "subtitle" => ai::subtitle(context, rest),
         "clips" => ai::text::clips(context, rest),

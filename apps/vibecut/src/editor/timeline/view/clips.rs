@@ -343,6 +343,20 @@ impl State {
             }
         }
         if item.source_asset.is_some() {
+            // Relink for a missing source uses the same picker: the new file replaces it.
+            let replace = format!("timeline.item.{}.replace", item.id.0);
+            if self.menu_action(
+                cx,
+                ui,
+                replace,
+                "timeline.replace_media",
+                Text::ReplaceMedia,
+                Icon::ArrowClockwise,
+                editable,
+            ) {
+                self.push(Action::ReplaceMedia(item.id));
+                ui.close();
+            }
             let reveal = format!("timeline.item.{}.reveal", item.id.0);
             if self.menu_action(
                 cx,

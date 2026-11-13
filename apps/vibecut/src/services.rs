@@ -3,6 +3,7 @@ pub mod ai_access;
 pub mod ai_task;
 pub mod color_picker;
 pub mod crop;
+pub mod freeze;
 pub mod gpu;
 pub mod lifecycle;
 pub mod music;

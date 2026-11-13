@@ -119,14 +119,17 @@ impl State {
             let rect = left.cell(CELL);
             self.toolbar_button(cx, ui, rect, id, icon, label, None);
         }
+        // Reserved slot after Duplicate, unchanged since the desktop layout was measured.
+        // [new] the button is live: it holds the selected video frame at the playhead.
         let freeze = left.cell(CELL);
-        self.toolbar_unavailable(
+        self.toolbar_button(
             cx,
             ui,
             freeze,
             "timeline.freeze",
             Icon::Snowflake,
             Text::FreezeFrame,
+            None,
         );
         let delete = left.cell(CELL);
         self.toolbar_button(
@@ -346,35 +349,6 @@ impl State {
                 egui::pos2(rect.left(), rect.bottom() + theme::space::XS),
             );
         }
-    }
-
-    /// A visible toolbar cell whose action is not available yet; its tooltip
-    /// carries the reason.
-    fn toolbar_unavailable(
-        &mut self,
-        cx: &Context<'_>,
-        ui: &mut egui::Ui,
-        rect: Rect,
-        id: &'static str,
-        icon: Icon,
-        label: Text,
-    ) {
-        let label = tr(cx, label);
-        let tooltip = i18n::format(
-            cx.locale,
-            Text::ActionUnavailable,
-            &[("action", label), ("reason", tr(cx, Text::NotAvailableYet))],
-        );
-        let response = ui
-            .scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
-                ui.add_enabled_ui(false, |ui| {
-                    crate::kit::icon_button(ui, id, icon, &tooltip, false)
-                })
-                .inner
-            })
-            .inner;
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, false, &tooltip));
-        self.remember_with(id, Some(icon.name()), Some(tooltip), &response);
     }
 
     fn toolbar_scene(&mut self, cx: &Context<'_>, ui: &mut egui::Ui, rect: Rect, name: &str) {
