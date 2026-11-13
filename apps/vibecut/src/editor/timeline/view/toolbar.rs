@@ -13,8 +13,9 @@ use crate::i18n;
 
 const EDGE: f32 = 4.0;
 const CELL: f32 = theme::size::CONTROL;
-/// Width of the caret strip the pointer-tool button adds right of its glyph.
-const TOOL_CARET: f32 = 10.0;
+/// Caret glyph and the strip it sits in, right of the tool glyph: the measured 12 px
+/// small-glyph token `theme::icon::PLAY`, not a new value.
+const TOOL_CARET: f32 = theme::icon::PLAY;
 const GAP: f32 = 12.0;
 const DIVIDER_GAP: f32 = 8.0;
 const DIVIDER_HEIGHT: f32 = 16.0;
@@ -348,9 +349,9 @@ impl State {
         let response = button.union(caret_hit);
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
         self.remember_icon("timeline.tool", Some(icon.name()), &response);
-        icons::tinted(Icon::CaretDown, 10.0, ink.text()).paint_at(
+        icons::tinted(Icon::CaretDown, TOOL_CARET, ink.text()).paint_at(
             ui,
-            Rect::from_center_size(caret.center(), Vec2::splat(10.0)),
+            Rect::from_center_size(caret.center(), Vec2::splat(TOOL_CARET)),
         );
         egui::Popup::menu(&response).show(|ui| {
             for (id, icon, label, tool) in [
