@@ -297,6 +297,24 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
                 .format
                 .audio_only()
         );
+        assert!(
+            bench
+                .editor()
+                .inspect()
+                .unwrap()
+                .widgets
+                .iter()
+                .all(|w| w.id != "export.codec")
+        );
+        let screenshot =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/84-export-m4a.png");
+        std::fs::create_dir_all(screenshot.parent().unwrap()).unwrap();
+        bench
+            .harness_mut()
+            .render()
+            .unwrap()
+            .save(&screenshot)
+            .unwrap();
         bench.click("export.format");
         bench.click("export.format.webm");
         bench.click("export.close");
