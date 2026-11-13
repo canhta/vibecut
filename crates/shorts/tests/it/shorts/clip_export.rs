@@ -658,18 +658,22 @@ fn missing_source_fails_each_short_with_typed_diagnostics_and_allows_retry() {
             (error as &(dyn std::error::Error + 'static)).downcast_ref::<EngineError>()
         }) {
             Some(EngineError::Render(render::Error::Unavailable(details))) => {
-                assert_eq!(details.len(), 2);
+                // Each segment is a silent video item plus its own audio item, and each is
+                // a separate use of the missing source.
+                assert_eq!(details.len(), 4);
                 for detail in details {
                     assert_eq!(detail.asset, AssetId(1));
                     assert_eq!(detail.reason, render::UnavailableReason::Missing);
                 }
-                let ranges: Vec<_> = details.iter().map(|detail| detail.range).collect();
                 let expected = if index == 0 {
-                    vec![range(0, 1), range(3, 4)]
+                    [range(0, 1), range(3, 4)]
                 } else {
-                    vec![range(1, 2), range(4, 5)]
+                    [range(1, 2), range(4, 5)]
                 };
-                assert_eq!(ranges, expected);
+                for want in expected {
+                    let uses = details.iter().filter(|detail| detail.range == want).count();
+                    assert_eq!(uses, 2, "video and audio item of {want:?}");
+                }
             }
             other => panic!("unexpected error: {other:?}"),
         }
@@ -1822,17 +1826,17 @@ mod layouts {
         let rate = prepared.data().settings.audio_sample_rate as usize;
         let fade = batch.settings(0).unwrap().audio_cut_fade_ms;
         let mut mixer = render::AudioMixer::new(prepared, 2, fade, &Hooks).unwrap();
-        let latency = mixer.latency_samples();
         let mixed = mixer.mix(0, rate * 5 / 4, &mut Coded, &Hooks).unwrap();
         let plane = &mixed.planes()[0];
         let plateau = plane[rate / 2];
         assert!(plateau > 0.05, "the source is audible: {plateau}");
-        let around = &plane[rate + latency - 100..rate + latency + 100];
+        // The mixer returns PCM on the requested sample grid, with its delay removed.
+        let around = &plane[rate - 100..rate + 100];
         assert!(
             around.iter().all(|v| (v - plateau).abs() < 1e-6),
             "no ramp at the shot cut"
         );
-        assert!(plane[latency] < plateau / 2.0, "the segment still ramps in");
+        assert!(plane[0].abs() < plateau / 2.0, "the segment still ramps in");
         // The cut itself switches the rendered frame.
         near(
             &frame(&batch, ms(900)),
