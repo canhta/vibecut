@@ -826,12 +826,12 @@ impl<'a, 'c> Panel<'a, 'c> {
         state.can_toggle && toggle.clicked()
     }
 
-    /// The project Details: name and path, a divider, then the canvas rows, the sample
-    /// rate, the collapsed info section and `Modify`, which opens the Settings tab.
+    /// The project Details: name, path and imported media, a divider, then the canvas rows,
+    /// the sample rate, the collapsed info section and `Modify`, which opens the Settings tab.
     fn project_details(&mut self, ui: &mut egui::Ui) {
         let locale = self.cx.locale;
         // Owned text first: the rows below may take `&mut self`.
-        let (name, aspect, resolution, frame_rate, sample_rate) = {
+        let (name, imported, aspect, resolution, frame_rate, sample_rate) = {
             let data = self.cx.session.project().data();
             let canvas = project::CanvasSize {
                 width: data.canvas.width,
@@ -862,8 +862,16 @@ impl<'a, 'c> Panel<'a, 'c> {
             let frame_rate = i18n::format(locale, Text::FrameRate, &[("rate", &rate)]);
             let sample = i18n::number(locale, u64::from(data.settings.audio_sample_rate));
             let sample_rate = i18n::format(locale, Text::SampleRate, &[("rate", &sample)]);
+            // Imported media is referenced by its path and never copied, so the file stays in
+            // place. Ephemeral assets are internal (proxies, subtitle imports), not user media.
+            let imported = if data.assets.iter().any(|asset| !asset.ephemeral()) {
+                self.tr(Text::DetailStayInOriginal)
+            } else {
+                self.tr(Text::EmptyValue)
+            };
             (
                 data.name.as_str().to_owned(),
+                imported,
                 aspect,
                 resolution,
                 frame_rate,
@@ -881,6 +889,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                 if let Some(path) = &path {
                     self.detail_pair(ui, self.tr(Text::DetailPath), path);
                 }
+                self.detail_pair(ui, self.tr(Text::DetailImportedMedia), imported);
                 ui.separator();
                 self.detail_pair(ui, self.tr(Text::DetailAspectRatio), aspect);
                 self.detail_pair(ui, self.tr(Text::DetailResolution), &resolution);
