@@ -29,10 +29,6 @@ pub enum Guide {
 /// One UI-covered region as fractions of the frame: `[left, top, right, bottom]`.
 pub type Region = [f32; 4];
 
-/// The guide choices the picker lists after None and Grid, one row per platform.
-pub const PLATFORM_GUIDES: [Guide; 3] =
-    [Guide::TikTok, Guide::InstagramReels, Guide::YouTubeShorts];
-
 /// Covered bands of a 9:16 frame: full-width top and bottom bands and the left
 /// and right columns between them.
 fn banded(top: f32, bottom: f32, left: f32, right: f32) -> Vec<Region> {
@@ -240,6 +236,9 @@ mod tests {
             assert!(guide.validate().is_ok());
         }
     }
+
+    const PLATFORM_GUIDES: [Guide; 3] =
+        [Guide::TikTok, Guide::InstagramReels, Guide::YouTubeShorts];
 
     fn area(regions: &[Region]) -> f32 {
         regions.iter().map(|r| (r[2] - r[0]) * (r[3] - r[1])).sum()
