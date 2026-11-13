@@ -269,7 +269,7 @@ pub(crate) fn submit_suggest(
                 elapsed_seconds: started.elapsed().as_secs_f64(),
             };
             // Hours-long sources downsample their energy windows to fit the result limit.
-            Ok(encode_clips(result)?)
+            encode_clips(result)
         },
     )?;
     Ok(id)
