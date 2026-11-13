@@ -35,3 +35,4 @@ pub(crate) mod transitions {
 pub(crate) use edit::Result;
 pub(crate) use edit::check_budget;
 pub use edit::{AssetUsage, DEFAULT_BOOKMARK_COLOR, EditError};
+pub(crate) use edit::{DEFAULT_DURATION as DEFAULT_ANIMATION_DURATION, sample_animations};

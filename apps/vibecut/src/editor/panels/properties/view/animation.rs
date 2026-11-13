@@ -4,8 +4,12 @@ use crate::editor::properties::{
     ANIMATION_DRAFT as DRAFT, Action, ItemId, Text, egui, read, theme,
 };
 use crate::kit;
+use engine::animation_previews::PREVIEW_FRAMES;
 use engine::{AnimationPreset as Look, AnimationSlot as Slot};
 use time::{Rounding, Tick};
+
+mod previews;
+pub(in crate::editor) use previews::Previews;
 
 /// Automation marker the frame sets while the element cannot take an edit.
 pub(super) const DISABLED: &str = "animation.edit";
@@ -13,6 +17,21 @@ pub(super) const DISABLED: &str = "animation.edit";
 const COLUMNS: usize = 6;
 const TILE: f32 = 58.0;
 const GUTTER: f32 = 15.0;
+/// Name under a tile (capture 221759: a 12 px line), and the gap that brings the row pitch
+/// to the measured 82 px (58 + 12 + 12).
+const NAME_HEIGHT: f32 = 12.0;
+const ROW_GAP: f32 = 12.0;
+/// The frame a resting tile shows, a third of the way into its motion: In and Combo near
+/// the start, Out near the end, where the picture is still moving.
+const fn rest_frame(slot: Slot) -> u32 {
+    match slot {
+        Slot::In => 2,
+        Slot::Out => 8,
+        Slot::Combo => 3,
+    }
+}
+/// A hovered tile plays its whole strip once a second, on a loop.
+const LOOP_SECONDS: f64 = 1.0;
 const FIELD_WIDTH: f32 = 68.0;
 /// Stepper step in seconds; the engine clamps a duration to one frame..the clip.
 const STEP_SECONDS: f64 = 0.1;
@@ -128,31 +147,110 @@ impl Panel<'_, '_> {
     ) -> Option<Option<Look>> {
         let mut entries: Vec<Option<Look>> = vec![None];
         entries.extend(Look::for_slot(slot).iter().copied().map(Some));
+        if self.state.animation_previews.is_none() {
+            self.state.animation_previews = Previews::new();
+        }
+        let ctx = ui.ctx().clone();
+        let busy = self
+            .state
+            .animation_previews
+            .as_mut()
+            .is_some_and(|previews| previews.update(&ctx, slot, Look::for_slot(slot)));
+        if busy {
+            ctx.request_repaint_after(std::time::Duration::from_millis(16));
+        }
         let mut chosen = None;
         for row in entries.chunks(COLUMNS) {
-            ui.horizontal(|ui| {
+            ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = GUTTER;
                 for entry in row {
-                    let label = entry.map_or(self.tr(Text::AnimationNone), |look| {
-                        self.tr(look_text(look))
-                    });
-                    let word = entry.map_or("none", Look::word);
-                    let selected = *entry == held;
-                    let response = ui
-                        .add_sized([TILE, TILE], egui::Button::new(label).selected(selected))
-                        .on_hover_text(self.tr(Text::TextAnimationTip));
-                    self.remember(
-                        format!("inspector.animation.{}.{word}", slot_word(slot)),
-                        &response,
-                    );
-                    if response.clicked() && !selected {
-                        chosen = Some(*entry);
+                    if let Some(clicked) = self.animation_tile(ui, slot, *entry, held) {
+                        chosen = Some(clicked);
                     }
                 }
             });
-            ui.add_space(GUTTER);
+            ui.add_space(ROW_GAP);
         }
         chosen
+    }
+
+    /// One tile: the look's preview with its name beneath; the None tile is empty. Returns
+    /// the entry when it is clicked and was not already held.
+    fn animation_tile(
+        &mut self,
+        ui: &mut egui::Ui,
+        slot: Slot,
+        entry: Option<Look>,
+        held: Option<Look>,
+    ) -> Option<Option<Look>> {
+        let dark = self.cx.dark;
+        let label = entry.map_or(self.tr(Text::AnimationNone), |look| {
+            self.tr(look_text(look))
+        });
+        let word = entry.map_or("none", Look::word);
+        let selected = entry == held;
+        let mut clicked = None;
+        ui.vertical(|ui| {
+            ui.set_width(TILE);
+            ui.spacing_mut().item_spacing.y = 0.0;
+            let (rect, response) =
+                ui.allocate_exact_size(egui::Vec2::splat(TILE), egui::Sense::click());
+            let radius = theme::radius::UPLOAD;
+            ui.painter().rect_filled(rect, radius, theme::field(dark));
+            let strip = entry.and_then(|look| {
+                self.state
+                    .animation_previews
+                    .as_ref()
+                    .and_then(|previews| previews.strip(slot, look))
+            });
+            if let Some(texture) = strip {
+                let frames = f64::from(PREVIEW_FRAMES);
+                let frame = if response.hovered() {
+                    ui.ctx()
+                        .request_repaint_after(std::time::Duration::from_millis(16));
+                    let phase = (ui.input(|input| input.time) / LOOP_SECONDS).fract();
+                    ((phase * frames) as u32).min(PREVIEW_FRAMES - 1)
+                } else {
+                    rest_frame(slot)
+                };
+                let left = (f64::from(frame) / frames) as f32;
+                let right = (f64::from(frame + 1) / frames) as f32;
+                ui.painter().image(
+                    texture.id(),
+                    rect,
+                    egui::Rect::from_min_max(egui::pos2(left, 0.0), egui::pos2(right, 1.0)),
+                    egui::Color32::WHITE,
+                );
+            }
+            if selected || response.hovered() || response.has_focus() {
+                ui.painter().rect_stroke(
+                    rect,
+                    radius,
+                    egui::Stroke::new(1.0, theme::accent(dark)),
+                    egui::StrokeKind::Inside,
+                );
+            }
+            let response = response.on_hover_text(self.tr(Text::TextAnimationTip));
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
+            self.remember(
+                format!("inspector.animation.{}.{word}", slot_word(slot)),
+                &response,
+            );
+            ui.add_sized(
+                [TILE, NAME_HEIGHT],
+                egui::Label::new(
+                    egui::RichText::new(label)
+                        .font(theme::label_font())
+                        .size(theme::type_size::SMALL_LABEL)
+                        .color(self.text_color()),
+                )
+                .truncate(),
+            );
+            if response.clicked() && !selected {
+                clicked = Some(entry);
+            }
+        });
+        clicked
     }
 
     /// Draft field (commit on Enter or blur, Escape cancels) with its stepper.
