@@ -22,16 +22,16 @@ impl Scene {
 
 pub(super) const SCENES: &[Scene] = &[
     Scene {
-        name: "ai-preferences",
+        name: "settings",
         reference_dark: None,
         reference_light: None,
-        build: |theme, scale| ai_preferences(theme, scale, Locale::En),
+        build: |theme, scale| settings_dialog(theme, scale, Locale::En),
     },
     Scene {
-        name: "ai-preferences-vi",
+        name: "settings-vi",
         reference_dark: None,
         reference_light: None,
-        build: |theme, scale| ai_preferences(theme, scale, Locale::Vi),
+        build: |theme, scale| settings_dialog(theme, scale, Locale::Vi),
     },
     Scene {
         name: "player-timecode",
@@ -794,12 +794,6 @@ pub(super) fn select(
         }
     }
     if !unknown.is_empty() {
-        if unknown.iter().any(|name| name == "settings") {
-            return Err(
-                "scene `settings` is unavailable: main exposes language/theme in the editor header; the settings dialog and its audit scene belong to p1-parity/75"
-                    .into(),
-            );
-        }
         let known: Vec<_> = SCENES
             .iter()
             .flat_map(|scene| {
@@ -835,9 +829,9 @@ mod shorts;
 mod timeline;
 use assets::assets_scene;
 use editor::{
-    ai_preferences, caption_word_scene, captions_scene, editor_empty, editor_frame_state,
-    editor_media, editor_transitions, export_dialog, export_resolution, import_progress, models,
-    models_vi, player_scene, player_variant,
+    caption_word_scene, captions_scene, editor_empty, editor_frame_state, editor_media,
+    editor_transitions, export_dialog, export_resolution, import_progress, models, models_vi,
+    player_scene, player_variant, settings_dialog,
 };
 use home::{home, home_projects, projects_scene, projects_trash};
 pub(crate) use properties::inspector_mixed_vi;

@@ -277,15 +277,27 @@ fn settings_modal_applies_preferences_and_shortcut_transfers_through_the_picker_
             "Clear cache requests the shared clear"
         );
         assert!(cache.cause.is_some());
+        assert!(matches!(cache.problem(), Some(Text::CacheUnavailable)));
         bench.harness_mut().run_steps(2);
-        let name = if matches!(locale, Locale::En) {
-            "en"
-        } else {
-            "vi"
-        };
-        let shot = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join(format!("../../target/p1-75-settings-{name}.png"));
-        bench.harness_mut().render().unwrap().save(&shot).unwrap();
+        // Hardware acceleration and the storage limit say they apply after restart.
+        assert!(
+            bench
+                .harness()
+                .query_by_label(Text::SettingsHardwareHint.text(locale))
+                .is_some()
+        );
+        assert!(
+            bench
+                .harness()
+                .query_by_label(Text::SettingsCacheHint.text(locale))
+                .is_some()
+        );
+        assert!(
+            bench
+                .harness()
+                .query_by_label(Text::CacheUnavailable.text(locale))
+                .is_some()
+        );
         bench.click("settings.tab.general");
         bench.click("settings.general.shortcuts.export");
         assert!(matches!(
@@ -318,16 +330,90 @@ fn settings_modal_applies_preferences_and_shortcut_transfers_through_the_picker_
             bench.editor().dialogs.preferences.shortcut_notice,
             Some(super::settings::ShortcutNotice::Imported { unknown: 1 })
         ));
-        // A corrupt file is refused before any binding changes.
+        // Replace drops the merged customization and keeps only the file's entries.
+        let replace = dir.path().join("replace.json");
+        std::fs::write(
+            &replace,
+            r#"{"format":"vibecut-keybindings","version":1,"bindings":{"timeline.snap":["Ctrl+Shift+J"]},"isCustomized":["timeline.snap"]}"#,
+        )
+        .unwrap();
+        bench
+            .editor_mut()
+            .keybindings_import_picked(replace, true)
+            .unwrap();
+        assert_eq!(
+            bench.editor().preferences.keybindings.bindings["timeline.snap"],
+            ["Ctrl+Shift+J"]
+        );
+        assert!(matches!(
+            bench.editor().dialogs.preferences.shortcut_notice,
+            Some(super::settings::ShortcutNotice::Imported { unknown: 0 })
+        ));
+        // A corrupt file and a newer-schema file are refused before any binding changes.
+        let newer = dir.path().join("newer.json");
+        std::fs::write(
+            &newer,
+            r#"{"format":"vibecut-keybindings","version":2,"bindings":{"timeline.snap":["F8"]},"isCustomized":["timeline.snap"]}"#,
+        )
+        .unwrap();
         let corrupt = dir.path().join("corrupt.json");
         std::fs::write(&corrupt, "{").unwrap();
         let before = bench.editor().preferences.keybindings.clone();
+        for refused in [corrupt, newer] {
+            assert!(
+                bench
+                    .editor_mut()
+                    .keybindings_import_picked(refused, true)
+                    .is_err()
+            );
+            assert!(matches!(
+                bench.editor().dialogs.preferences.shortcut_notice,
+                Some(super::settings::ShortcutNotice::Refused)
+            ));
+            assert_eq!(bench.editor().preferences.keybindings, before);
+        }
+        bench.harness_mut().run_steps(2);
         assert!(
             bench
-                .editor_mut()
-                .keybindings_import_picked(corrupt, true)
-                .is_err()
+                .harness()
+                .query_by_label(Text::ShortcutsRefused.text(locale))
+                .is_some()
         );
-        assert_eq!(bench.editor().preferences.keybindings, before);
+    }
+}
+
+#[test]
+fn cache_problem_names_a_busy_clear_typed() {
+    use crate::editor::context::CacheUi;
+    let busy = CacheUi {
+        cause: Some(std::sync::Arc::new(engine::control::Error::Runtime(
+            engine::RuntimeError::CacheBusy,
+        ))),
+        ..Default::default()
+    };
+    assert!(matches!(busy.problem(), Some(Text::CacheBusy)));
+    assert!(CacheUi::default().problem().is_none());
+}
+
+#[test]
+fn invalid_custom_model_draft_shows_inline_notice() {
+    for locale in [Locale::En, Locale::Vi] {
+        let http = Arc::new(Reply {
+            calls: AtomicUsize::new(0),
+            body: Mutex::new(Vec::new()),
+            status: 200,
+        });
+        let mut bench = bench(locale, http);
+        bench.harness_mut().run_steps(4);
+        bench.click("preferences.ai.openai.transcribe.model");
+        bench.click("preferences.ai.openai.transcribe.custom");
+        bench.harness_mut().run_steps(4);
+        // An empty draft is not a valid model id, so the row names the problem inline.
+        assert!(
+            bench
+                .harness()
+                .query_by_label(Text::ModelRemoteInvalid.text(locale))
+                .is_some()
+        );
     }
 }

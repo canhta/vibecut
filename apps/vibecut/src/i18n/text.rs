@@ -1313,6 +1313,7 @@ catalog! {
     SettingsTabPerformance { key: "settings_tab_performance", en: "Performance", vi: "Hiệu năng" },
     ShortcutsExported { key: "shortcuts_exported", en: "Shortcuts exported.", vi: "Đã xuất phím tắt." },
     ShortcutsImported { key: "shortcuts_imported", en: "Shortcuts imported. Unknown actions skipped: {count}.", vi: "Đã nhập phím tắt. Bỏ qua hành động không rõ: {count}." },
+    ShortcutsRefused { key: "shortcuts_refused", en: "Shortcut file refused: it is damaged, too large or from a newer VibeCut. Shortcuts unchanged.", vi: "Đã từ chối tệp phím tắt: tệp hỏng, quá lớn hoặc từ VibeCut mới hơn. Phím tắt không đổi." },
 
     // Font picker.
     ActionAlignBottom { key: "action_align_bottom", en: "Align bottom", vi: "Căn dưới" },

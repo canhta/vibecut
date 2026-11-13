@@ -3,7 +3,7 @@
 //! apply after the next start, and say so in the row.
 use super::{Action, State};
 use crate::{
-    editor::{Context, egui},
+    editor::{Context, context::CachePhase, egui},
     i18n::{self, Locale, Text},
     preferences::{DEFAULT_CACHE_LIMIT, HardwareAcceleration, PROJECT_FPS},
 };
@@ -57,6 +57,8 @@ pub(in crate::editor) enum Shortcuts {
 pub(in crate::editor) enum ShortcutNotice {
     Imported { unknown: usize },
     Exported,
+    /// The file was oversized, malformed or from a newer schema; nothing changed.
+    Refused,
 }
 
 fn mib(bytes: u64) -> u64 {
@@ -251,8 +253,11 @@ pub(super) fn show(
                     });
                     // The default must be one of the offered choices.
                     debug_assert!(CACHE_LIMITS_MIB.contains(&mib(DEFAULT_CACHE_LIMIT)));
+                    let cache = &cx.cache;
+                    let clearing = cache.phase == CachePhase::Clearing;
                     ui.horizontal(|ui| {
-                        let response = ui.button(tr(Text::CacheClear));
+                        let response =
+                            ui.add_enabled(!clearing, egui::Button::new(tr(Text::CacheClear)));
                         actions.push(Action::Remember(
                             "settings.performance.cache.clear".into(),
                             response.clone(),
@@ -260,7 +265,7 @@ pub(super) fn show(
                         if response.clicked() {
                             actions.push(Action::ClearCache);
                         }
-                        if let Some(report) = &cx.cache.report {
+                        if let Some(report) = &cache.report {
                             ui.label(i18n::format(
                                 locale,
                                 Text::SettingsCacheFreed,
@@ -278,6 +283,21 @@ pub(super) fn show(
                             ));
                         }
                     });
+                    let status = match cache.phase {
+                        CachePhase::Clearing => Some(Text::CacheClearing),
+                        CachePhase::Inspecting => Some(Text::CacheInspecting),
+                        CachePhase::Cancelling => Some(Text::CacheCancelling),
+                        _ => None,
+                    };
+                    if let Some(status) = status {
+                        ui.label(tr(status));
+                    }
+                    // A clear that raced an active job reports CacheBusy here, typed.
+                    if let Some(problem) = cache.problem() {
+                        ui.label(
+                            egui::RichText::new(tr(problem)).color(crate::kit::warning(cx.dark)),
+                        );
+                    }
                 }
                 Tab::General => {
                     let other = match prefs.locale {
@@ -338,6 +358,12 @@ pub(super) fn show(
                         }
                         Some(ShortcutNotice::Exported) => {
                             ui.label(tr(Text::ShortcutsExported));
+                        }
+                        Some(ShortcutNotice::Refused) => {
+                            ui.label(
+                                egui::RichText::new(tr(Text::ShortcutsRefused))
+                                    .color(crate::kit::warning(cx.dark)),
+                            );
                         }
                         None => {}
                     }

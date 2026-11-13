@@ -16,6 +16,20 @@ pub(in crate::editor) fn import(
     path: &Path,
     replace: bool,
 ) -> Result<()> {
+    match apply(port, path, replace) {
+        Ok(unknown) => {
+            state.shortcut_notice = Some(ShortcutNotice::Imported { unknown });
+            Ok(())
+        }
+        Err(error) => {
+            state.shortcut_notice = Some(ShortcutNotice::Refused);
+            Err(error)
+        }
+    }
+}
+
+/// Validate and apply the file, returning how many of its actions were unknown.
+fn apply(port: &mut Port<'_>, path: &Path, replace: bool) -> Result<usize> {
     if std::fs::metadata(path)?.len() > MAX_PROFILE_BYTES as u64 {
         return Err(Error::Invalid("shortcut file"));
     }
@@ -35,8 +49,7 @@ pub(in crate::editor) fn import(
     let unknown = outcome.unknown_actions.len();
     let value = serde_json::to_value(&outcome.preferences)?;
     port.set_preference_result("keybindings", value)?;
-    state.shortcut_notice = Some(ShortcutNotice::Imported { unknown });
-    Ok(())
+    Ok(unknown)
 }
 
 /// Write the canonical, versioned binding map to the picked destination.

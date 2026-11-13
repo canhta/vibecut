@@ -77,6 +77,50 @@ impl Default for CacheUi {
         }
     }
 }
+
+impl CacheUi {
+    /// The typed warning both cache controls show for the last failure or the
+    /// last report's cause; `None` when the cache is healthy.
+    pub(crate) fn problem(&self) -> Option<Text> {
+        let cause = self.cause.as_deref();
+        let runtime = match cause {
+            Some(engine::control::Error::Runtime(error)) => Some(error),
+            Some(_) => None,
+            None => self
+                .report
+                .as_ref()
+                .and_then(|report| report.cause.as_ref()),
+        };
+        if cause.is_none() && runtime.is_none() {
+            return None;
+        }
+        if self
+            .report
+            .as_ref()
+            .is_some_and(|report| report.root_unavailable)
+        {
+            return Some(Text::CacheRestart);
+        }
+        Some(match runtime {
+            Some(engine::RuntimeError::Cancelled) => Text::CacheCancelled,
+            Some(engine::RuntimeError::CacheCorrupt) => Text::CacheCorrupt,
+            Some(engine::RuntimeError::CacheBusy) => Text::CacheBusy,
+            Some(engine::RuntimeError::Edit(engine::EditError::Unsupported(_))) => {
+                Text::CacheUnavailable
+            }
+            _ if matches!(
+                cause,
+                Some(engine::control::Error::Edit(
+                    engine::EditError::Unsupported(_)
+                ))
+            ) =>
+            {
+                Text::CacheUnavailable
+            }
+            _ => Text::CacheFailed,
+        })
+    }
+}
 /// Read-only composition inputs shared by editor areas.
 pub(crate) struct Context<'a> {
     pub(crate) playback: &'a Playback,
