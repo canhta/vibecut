@@ -1,0 +1,8 @@
+asset: LICENSE
+title: flag-icons MIT license
+author: Panayiotis Lipiridis
+source: https://github.com/lipis/flag-icons
+license: MIT
+license-file: assets/stickers/flags/LICENSE
+added: p1-parity/30
+notes: License text for the bundled flag SVGs in this directory.

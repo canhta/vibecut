@@ -17,6 +17,15 @@ pub mod sounds {
         SoundLibrary, SoundPreview, SoundResult, Token, add_saved, add_to_timeline, commercial,
     };
 }
+mod sticker_library;
+pub mod stickers {
+    //! Provides bundled stickers for the Stickers panel.
+    pub use super::sticker_library::{
+        DEFAULT_SEARCH_LIMIT, FLAGS_PROVIDER, FlagMatch, FlagPage, MAX_RECENT_STICKERS,
+        Recents, SHAPE_VALUES, SHAPES_PROVIDER, ShapeMatch, build_sticker_id,
+        is_known_sticker_id, parse_sticker_id, search_flags, search_shapes,
+    };
+}
 mod music_library;
 pub mod music {
     //! Provides openly licensed music for projects.

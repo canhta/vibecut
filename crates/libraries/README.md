@@ -10,5 +10,6 @@ Use `brand_kit::BrandKit` for the user's brand kits, which live outside projects
 | `sound_library/` | Provides licensed sound assets for projects. | [Sound library](src/sound_library/README.md) |
 | `music_library/` | Provides openly licensed music for projects. | [Music library](src/music_library/README.md) |
 | `brand_kit/` | Stores the user's brand kits; projects copy values out of them. | [Brand kit](src/brand_kit/README.md) |
+| `sticker_library/` | Searches bundled flag and shape stickers and keeps recent ids outside projects. | [Sticker library](src/sticker_library/README.md) |
 
 Follow [verification](../../docs/engineering/verification.md#checks) for tests and evidence.

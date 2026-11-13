@@ -1,0 +1,8 @@
+asset: dm.svg
+title: Flag dm (flag-icons)
+author: Panayiotis Lipiridis
+source: https://github.com/lipis/flag-icons
+license: MIT
+license-file: assets/stickers/flags/LICENSE
+added: p1-parity/30
+notes: Unmodified SVG from flag-icons as shipped in the reference catalog.
