@@ -2,7 +2,7 @@
 use super::{
     Action, Context, State,
     overlay::{GRID_MAX, GRID_MIN, Guide, Overlay, OverlayVisibility, PLANES},
-    state::TimecodeEdit,
+    state::{GridDraft, TimecodeEdit},
 };
 use crate::{
     actions::{BookmarkDirection, bookmark_target},
@@ -119,7 +119,7 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
                 None,
             );
             ui.separator();
-            guide_menu(ui, cx, &mut actions);
+            guide_menu(ui, cx, state, &mut actions);
         });
         remember(cx, &mut actions, "preview.menu", response);
     });
@@ -284,7 +284,7 @@ fn menu(
     remember(cx, actions, id, r);
 }
 /// The guide picker, its grid size and the guide switch in the player menu.
-fn guide_menu(ui: &mut egui::Ui, cx: &Context<'_>, actions: &mut Vec<Action>) {
+fn guide_menu(ui: &mut egui::Ui, cx: &Context<'_>, state: &mut State, actions: &mut Vec<Action>) {
     let visibility = cx.preferences.preview_overlays;
     let mut guide = visibility.guide;
     let response = ui.checkbox(&mut guide, cx.tr(Text::PreviewGuideShow));
@@ -300,15 +300,8 @@ fn guide_menu(ui: &mut egui::Ui, cx: &Context<'_>, actions: &mut Vec<Action>) {
     remember(cx, actions, "preview.guide.show", response);
     let current = cx.preferences.preview_guide;
     for (id, choice, text) in [
+        ("preview.guide.none", Guide::None, Text::GuideNone),
         ("preview.guide.grid", Guide::default(), Text::GuideGrid),
-        ("preview.guide.tiktok", Guide::Tiktok, Text::GuideTiktok),
-        ("preview.guide.reels", Guide::Reels, Text::GuideReels),
-        ("preview.guide.shorts", Guide::Shorts, Text::GuideShorts),
-        (
-            "preview.guide.spotlight",
-            Guide::Spotlight,
-            Text::GuideSpotlight,
-        ),
     ] {
         let selected = current.same_choice(choice);
         let response = ui.selectable_label(selected, cx.tr(text));
@@ -321,26 +314,38 @@ fn guide_menu(ui: &mut egui::Ui, cx: &Context<'_>, actions: &mut Vec<Action>) {
         remember(cx, actions, id, response);
     }
     if let Guide::Grid { rows, cols } = current {
-        let (mut rows_edit, mut cols_edit) = (rows, cols);
+        // The gesture rule of the properties scrubs: a drag or typed edit drafts
+        // the sizes, and one preference edit publishes the final value on release
+        // or when the field is left. Unchanged values record no history step.
+        let mut draft = state.grid_draft.unwrap_or(GridDraft { rows, cols });
         let (rows_response, cols_response) = ui
             .horizontal(|ui| {
                 ui.label(cx.tr(Text::GuideRows));
                 let rows_response =
-                    ui.add(egui::DragValue::new(&mut rows_edit).range(GRID_MIN..=GRID_MAX));
+                    ui.add(egui::DragValue::new(&mut draft.rows).range(GRID_MIN..=GRID_MAX));
                 ui.label(cx.tr(Text::GuideCols));
                 let cols_response =
-                    ui.add(egui::DragValue::new(&mut cols_edit).range(GRID_MIN..=GRID_MAX));
+                    ui.add(egui::DragValue::new(&mut draft.cols).range(GRID_MIN..=GRID_MAX));
                 (rows_response, cols_response)
             })
             .inner;
-        if rows_response.changed() || cols_response.changed() {
-            actions.push(Action::SetPreference {
-                key: "preview_guide",
-                value: serde_json::json!(Guide::Grid {
-                    rows: rows_edit,
-                    cols: cols_edit,
-                }),
-            });
+        let ended = rows_response.drag_stopped()
+            || cols_response.drag_stopped()
+            || rows_response.lost_focus()
+            || cols_response.lost_focus();
+        if ended {
+            state.grid_draft = None;
+            if draft != (GridDraft { rows, cols }) {
+                actions.push(Action::SetPreference {
+                    key: "preview_guide",
+                    value: serde_json::json!(Guide::Grid {
+                        rows: draft.rows,
+                        cols: draft.cols,
+                    }),
+                });
+            }
+        } else if rows_response.changed() || cols_response.changed() || state.grid_draft.is_some() {
+            state.grid_draft = Some(draft);
         }
         remember(cx, actions, "preview.guide.rows", rows_response);
         remember(cx, actions, "preview.guide.cols", cols_response);
@@ -381,20 +386,6 @@ fn guide(cx: &Context<'_>, ui: &egui::Ui, stage: Rect, displayed: Rect) {
             displayed.x_range(),
             displayed.top() + displayed.height() * fraction,
             stroke,
-        );
-    }
-    if let Some([left, top, right, bottom]) = guide.safe_area() {
-        let point = |x: f32, y: f32| {
-            egui::pos2(
-                displayed.left() + displayed.width() * x,
-                displayed.top() + displayed.height() * y,
-            )
-        };
-        painter.rect_stroke(
-            Rect::from_min_max(point(left, top), point(right, bottom)),
-            0.0,
-            stroke,
-            egui::StrokeKind::Inside,
         );
     }
 }

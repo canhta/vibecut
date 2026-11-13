@@ -1,4 +1,4 @@
-//! Preview guide model: grid bounds, safe areas, overlay visibility, paint planes.
+//! Preview guide model: grid bounds, overlay visibility, paint planes.
 
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
@@ -8,24 +8,12 @@ pub const GRID_MIN: u8 = 1;
 /// Most rows or columns a grid guide may draw.
 pub const GRID_MAX: u8 = 24;
 
-/// Left, top, right and bottom safe-area edges as fractions of the frame.
-///
-/// UNVERIFIED placeholder: no published TikTok value was checked. Measure it
-/// against the platform before relying on it.
-pub const TIKTOK_SAFE_AREA: [f32; 4] = [0.05, 0.10, 0.95, 0.80];
-
 /// The guide the picker selects. Only the app paints it, so export never sees it.
-///
-/// Reels, Shorts and Spotlight have no frame geometry in the reference source,
-/// so they draw nothing; their safe areas are open.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Guide {
+    None,
     Grid { rows: u8, cols: u8 },
-    Tiktok,
-    Reels,
-    Shorts,
-    Spotlight,
 }
 
 impl Default for Guide {
@@ -53,20 +41,11 @@ impl Guide {
     }
 
     /// Interior boundaries as fractions of the frame, `(vertical, horizontal)`.
-    /// Empty for every guide except the grid.
+    /// Empty when no guide is picked.
     pub fn grid_lines(self) -> (Vec<f32>, Vec<f32>) {
         match self {
             Self::Grid { rows, cols } => (boundaries(cols), boundaries(rows)),
-            _ => (Vec::new(), Vec::new()),
-        }
-    }
-
-    /// The safe-area rectangle as `[left, top, right, bottom]` fractions of the
-    /// frame, or `None` when the guide draws no frame geometry.
-    pub fn safe_area(self) -> Option<[f32; 4]> {
-        match self {
-            Self::Tiktok => Some(TIKTOK_SAFE_AREA),
-            _ => None,
+            Self::None => (Vec::new(), Vec::new()),
         }
     }
 }
@@ -188,12 +167,9 @@ mod tests {
     }
 
     #[test]
-    fn only_tiktok_has_frame_geometry_and_the_picker_ignores_grid_size() {
-        assert!(Guide::Tiktok.safe_area().is_some());
-        assert!(Guide::Reels.safe_area().is_none());
-        assert!(Guide::Shorts.safe_area().is_none());
-        assert!(Guide::Spotlight.safe_area().is_none());
+    fn the_picker_ignores_grid_size_and_no_guide_draws_no_lines() {
         assert!(Guide::Grid { rows: 5, cols: 2 }.same_choice(Guide::default()));
-        assert!(!Guide::Grid { rows: 5, cols: 2 }.same_choice(Guide::Tiktok));
+        assert!(!Guide::Grid { rows: 5, cols: 2 }.same_choice(Guide::None));
+        assert_eq!(Guide::None.grid_lines(), (Vec::new(), Vec::new()));
     }
 }

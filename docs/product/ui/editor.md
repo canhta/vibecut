@@ -92,9 +92,9 @@ Geometry is in the [measured frame](#measured-frame). Empty, loading, unavailabl
 
 ### Preview guides and notes
 
-[new] No reference capture shows a guide picker or a notes overlay; the reference source's guide picker is unreachable and its bookmark notes have a web-only layout. The picker sits in the player menu: Grid (rows and columns 1–24, default 3×3), TikTok, Reels, Shorts and Spotlight, with a show switch. Reels, Shorts and Spotlight draw no frame geometry. The TikTok safe area is unverified. Notes show each active bookmark's text top-left over the frame, behind a context-menu switch (default on). Guides are off by default; both choices persist and are undoable preference edits. Export never shows guides or notes.
+[new] No reference capture shows a guide picker or a notes overlay; the reference source's guide picker is unreachable and its bookmark notes have a web-only layout. The picker sits in the player menu and offers None or Grid (rows and columns 1–24, default 3×3), with a show switch. Notes show each active bookmark's text top-left over the frame, behind a context-menu switch (default on). Guides are hidden by default; both choices persist and are undoable preference edits, and a grid-size drag is one undo step. Export never shows guides or notes.
 
-Open: the TikTok safe-area insets; the geometry and styling of the guide picker and notes (layout, spacing, width); the default guide visibility; the Reels, Shorts and Spotlight safe areas; whether grid-size drags should merge into one undo step (each drag change is one step today).
+Open: the geometry and styling of the guide picker and notes (layout, spacing, width). Platform safe-area guides (TikTok, Reels, Shorts, Spotlight) are a separate ticket, to be built once their geometry is measured.
 
 ## Effects
 

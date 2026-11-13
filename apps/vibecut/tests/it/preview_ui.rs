@@ -19,7 +19,7 @@ use std::{
 };
 use time::{FrameRate, SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
-    AppCommand, Editor, Guide, PreviewZoom, egui,
+    AppCommand, Editor, Guide, OverlayVisibility, PreviewZoom, egui,
     i18n::{Locale, Text},
     preferences::{PreferenceStore, Preferences},
     services::playback::{Files, Playback},
@@ -964,23 +964,18 @@ fn guide_picker_grid_size_and_notes_switch_are_undoable_preferences_and_leave_th
     assert!(h.query_all(By::new().label("Hook")).next().is_none());
 
     // The header menu picks a guide and edits its grid size.
-    for (id, guide) in [
-        ("preview.guide.tiktok", Guide::Tiktok),
-        ("preview.guide.reels", Guide::Reels),
-        ("preview.guide.shorts", Guide::Shorts),
-        ("preview.guide.spotlight", Guide::Spotlight),
-    ] {
-        click(&mut h, id);
-        assert_eq!(h.state().preferences.preview_guide, guide);
-    }
+    click(&mut h, "preview.guide.none");
+    assert_eq!(h.state().preferences.preview_guide, Guide::None);
     click(&mut h, "preview.guide.grid");
     assert_eq!(
         h.state().preferences.preview_guide,
         Guide::Grid { rows: 3, cols: 3 }
     );
-    h.get(By::new().predicate(|node| node.author_id() == Some("preview.guide.rows")))
-        .click();
-    h.run_steps(2);
+    // Typed path: click the field, select its text with the select-all chord,
+    // type the value and leave the field with Enter.
+    click(&mut h, "preview.guide.rows");
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.run_steps(1);
     h.get(By::new().predicate(|node| node.author_id() == Some("preview.guide.rows")))
         .type_text("5");
     h.key_press(egui::Key::Enter);
@@ -1027,6 +1022,90 @@ fn guide_picker_grid_size_and_notes_switch_are_undoable_preferences_and_leave_th
         std::fs::create_dir_all(parent).unwrap();
     }
     h.render().unwrap().save(&screenshot).unwrap();
+}
+
+#[test]
+fn grid_size_drag_publishes_one_undo_step_from_its_start() {
+    let project = Project::new(project(FrameRate::FPS_30, 640, 360, false).into_data()).unwrap();
+    let mut h = build(editor(project, Preferences::default()));
+    click(&mut h, "preview.guide.grid");
+    assert_eq!(h.state().preferences.preview_guide, Guide::default());
+    let start = h
+        .get(By::new().predicate(|node| node.author_id() == Some("preview.guide.rows")))
+        .rect()
+        .center();
+    // Drag up across several rows; the picker drafts, the preference waits.
+    h.hover_at(start);
+    h.run_steps(1);
+    h.drag_at(start);
+    h.run_steps(1);
+    for step in [20.0, 40.0, 60.0] {
+        h.hover_at(start - egui::vec2(0.0, step));
+        h.run_steps(2);
+    }
+    assert_eq!(
+        h.state().preferences.preview_guide,
+        Guide::default(),
+        "nothing is published while the drag is open"
+    );
+    h.drop_at(start - egui::vec2(0.0, 60.0));
+    h.run_steps(3);
+    let Guide::Grid { rows, cols } = h.state().preferences.preview_guide else {
+        panic!("grid stays selected")
+    };
+    assert_ne!(rows, 3, "the drag moved the rows");
+    assert_eq!(cols, 3);
+    h.key_press(egui::Key::Escape);
+    h.run_steps(3);
+    // One undo returns to the start of the whole drag, not one intermediate value.
+    click(&mut h, "edit.undo");
+    assert_eq!(h.state().preferences.preview_guide, Guide::default());
+    click(&mut h, "edit.redo");
+    assert_eq!(
+        h.state().preferences.preview_guide,
+        Guide::Grid { rows, cols: 3 }
+    );
+}
+
+#[test]
+fn guides_and_notes_never_change_the_exported_frame() {
+    // The export frame comes from the engine's snapshot path, which takes only the
+    // project. The app's guide and notes state must not reach it.
+    let noted_project = || {
+        let mut data = project(FrameRate::FPS_30, 640, 360, false).into_data();
+        data.scene_mut().bookmarks.push(project::Bookmark {
+            id: project::BookmarkId(1),
+            start: Tick::ZERO,
+            duration: Tick::ZERO,
+            note: "Hook".into(),
+            color: project::Color([255, 255, 0, 255]),
+        });
+        Project::new(data).unwrap()
+    };
+    let frame = |preferences: Preferences| {
+        let editor = editor(noted_project(), preferences);
+        engine::snapshot::image(editor.session.project(), Tick::ZERO)
+            .unwrap()
+            .png
+    };
+    let shown = frame(Preferences {
+        preview_guide: Guide::Grid { rows: 5, cols: 5 },
+        preview_overlays: OverlayVisibility {
+            guide: true,
+            notes: true,
+        },
+        ..Default::default()
+    });
+    let hidden = frame(Preferences {
+        preview_guide: Guide::None,
+        preview_overlays: OverlayVisibility {
+            guide: false,
+            notes: false,
+        },
+        ..Default::default()
+    });
+    assert!(!shown.is_empty());
+    assert_eq!(shown, hidden);
 }
 
 #[test]

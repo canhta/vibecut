@@ -38,7 +38,7 @@ Language for the editor's privacy and execution boundaries.
 - **Viewport**: The screen region displaying a project's canvas, fitted with letterboxing and adjusted by preview zoom and pan.
 - **Handle**: A point on an item's selection box used to change its scale; its displayed position follows the item's rotation.
 - **Reflection (flip)**: Reversal of an item's local horizontal or vertical axis about its placed centre, applied before clockwise rotation and preserving positive scale magnitudes. It is a held Boolean item parameter, never a negative scale.
-- **Preview guide**: A framing overlay the player draws over the preview (grid, TikTok, Reels, Shorts or Spotlight); the app paints it and export never includes it.
+- **Preview guide**: A framing overlay the player draws over the preview (currently a grid); the app paints it and export never includes it.
 - **Snap guide**: A line drawn across the preview canvas while a transform gesture holds a snap to the canvas centre or edge, or to another item's box edge; it disappears on release and never changes the project before the drop.
 - **Selection scope**: The current level of selection: timeline items, keyframes within items, or points within a mask. Clearing a selection acts on the most specific occupied scope first.
 - **Face track**: Observations of one visible face within a single shot; its identifier is local to that shot.

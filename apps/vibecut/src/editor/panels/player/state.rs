@@ -19,6 +19,15 @@ pub(crate) struct State {
     pub(in crate::editor) key_color_pick: Option<KeyPick>,
     /// Last view state read from the session metadata.
     pub(in crate::editor) last_view: project::ViewState,
+    /// Grid size an open drag or typed edit shows; it is published once when the gesture ends.
+    pub(in crate::editor) grid_draft: Option<GridDraft>,
+}
+
+/// The grid size a picker gesture is drafting, as rows and columns.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::editor) struct GridDraft {
+    pub(in crate::editor) rows: u8,
+    pub(in crate::editor) cols: u8,
 }
 impl State {
     pub(in crate::editor) fn new(fit: bool, zoom: f64) -> Self {
@@ -38,6 +47,7 @@ impl State {
             texture: preview::FrameTexture::default(),
             key_color_pick: None,
             last_view: project::ViewState::default(),
+            grid_draft: None,
         }
     }
 }

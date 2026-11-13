@@ -431,6 +431,7 @@ mod tests {
                 serde_json::json!({"kind": "grid", "rows": 3, "cols": 25}),
             ),
             ("preview_guide", serde_json::json!({"kind": "custom"})),
+            ("preview_guide", serde_json::json!({"kind": "tiktok"})),
             ("preview_overlays", serde_json::json!({"guide": true})),
             (
                 "preview_overlays",
