@@ -38,6 +38,21 @@ deletes the item. Escape cancels a live drag, then clears the point scope, then 
 through to the item scope. A completed drag stages `masks.set_path` inside
 `timeline.preview` and publishes one undo step.
 
+`mask_box` adds the whole-mask gizmo to the same target: the mask box is outlined with
+four corner handles and a rotation grip, all mapped through `MaskGeometry`. Dragging a
+corner scales the mask uniformly about its centre (`scale`, the freeform path's own uniform
+size mode), the grip rotates it (`rotation`), and a press inside the box that meets no
+anchor, tangent, handle or curve moves it (`center_x`/`center_y`); a Shift press inside the
+box starts the additive marquee instead. Anchors win where they coincide with a corner. A
+gesture stages `masks.update` with absolute values from the press inside `timeline.preview`
+and one drop publishes one undo step; like the inspector it edits the static fields.
+Snapping uses `snap`: the moved box's edges and centre meet the canvas and other items'
+lines, the dragged corner meets them per axis, and rotation meets quarter turns within 5°;
+the preference turns it off and Shift bypasses it. The inserted point's cubic parameter is
+the nearest one clamped to 0.001..0.999 and split by de Casteljau, the reference's
+`insertPointIntoFreeformSegment` rule. Selected anchors' tangents and the gizmo handles
+expose the `preview.mask.tangent.<n>.<in|out>` and `preview.mask.box.*` targets.
+
 A double click on a visible text item opens one inline session over its rendered box.
 Transparent input glyphs leave the preview visible; the caret and selection are painted at
 the text crate's layout positions for the item's own font, size, letter spacing, line

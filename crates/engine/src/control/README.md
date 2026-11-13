@@ -208,8 +208,9 @@ analysis, thumbnails and, when attached, preview proxies), refusing more
 than 256 ordinary entries in total. It neither opens other roots nor adds a control command;
 the desktop releases the access mutex before running maintenance IO.
 
-The Agent-granted `clipboard.copy`, `clipboard.copy_keyframes`, `clipboard.cut`,
-`clipboard.paste` and `clipboard.paste_keyframes` use ordinary
+The Agent-granted `clipboard.copy`, `clipboard.copy_keyframes`, `clipboard.copy_mask_points`,
+`clipboard.cut`, `clipboard.paste`, `clipboard.paste_keyframes` and
+`clipboard.paste_mask_points` use ordinary
 revision/receipt admission. `clipboard.read` returns the same Session's
 nullable bounded keyframe snapshot without a receipt. Replay leaves a newer store intact;
 snapshot events omit it.

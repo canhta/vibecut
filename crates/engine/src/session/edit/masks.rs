@@ -116,6 +116,33 @@ pub(super) fn execute_remove_mask_point(
 
     Ok(data)
 }
+/// Insert the clipboard's anchors after anchor `after` of an editable closed path in
+/// one step. An empty clipboard is a silent no-op; an item snapshot refuses.
+pub(super) fn execute_paste_mask_points(
+    mut data: ProjectData,
+    id: ItemId,
+    mask_id: String,
+    after: usize,
+    payload: Option<&crate::ItemClipboard>,
+) -> Result<ProjectData> {
+    let Some(payload) = payload else {
+        return Ok(data);
+    };
+    let vertices = payload.mask_vertices()?;
+    let target = item(&mut data, id)?;
+    let mask = target
+        .masks
+        .iter_mut()
+        .find(|m| m.id == mask_id)
+        .ok_or(EditError::Invalid("missing mask"))?;
+    let project::MaskShape::Path { path } = &mask.shape else {
+        return Err(EditError::Invalid("mask is not a path"));
+    };
+    let next = path.with_inserted(after, vertices)?;
+    mask.shape = project::MaskShape::Path { path: next };
+
+    Ok(data)
+}
 pub(super) fn execute_reorder_masks(
     mut data: ProjectData,
     id: ItemId,

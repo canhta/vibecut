@@ -2057,6 +2057,26 @@ fn freeform_path_constructors_and_edits_keep_cubic_geometry() {
     for points in [vec![], vec![0, 0], vec![7], vec![0, 1, 2]] {
         assert!(removed.without(&points).is_err(), "{points:?}");
     }
+
+    // Pasted anchors land after the given anchor, in order, with their handles.
+    let copied = [ellipse.vertices[1].clone(), ellipse.vertices[3].clone()];
+    let pasted = ellipse.with_inserted(1, &copied).unwrap();
+    assert_eq!(pasted.vertices.len(), 6);
+    assert_eq!(pasted.vertices[1], ellipse.vertices[1]);
+    assert_eq!(pasted.vertices[2], copied[0]);
+    assert_eq!(pasted.vertices[3], copied[1]);
+    assert_eq!(pasted.vertices[4], ellipse.vertices[2]);
+    assert!(pasted.closed);
+    let mut far = copied.clone();
+    far[0].p = [101.0, 0.0];
+    for (after, vertices) in [(9, &copied[..]), (0, &[][..]), (0, &far[..])] {
+        assert!(ellipse.with_inserted(after, vertices).is_err());
+    }
+    let open = MaskPath {
+        closed: false,
+        ..ellipse.clone()
+    };
+    assert!(open.with_inserted(0, &copied).is_err());
 }
 
 #[test]

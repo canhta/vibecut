@@ -553,6 +553,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
                 "captions.rename_preset",
                 "clipboard.copy",
                 "clipboard.copy_keyframes",
+                "clipboard.copy_mask_points",
                 "clipboard.paste",
                 "clipboard.read",
                 "color.import_lut",
@@ -580,6 +581,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
         (
             Availability::VisualItem,
             &[
+                "clipboard.paste_mask_points",
                 "effects.add",
                 "effects.remove",
                 "effects.reorder",

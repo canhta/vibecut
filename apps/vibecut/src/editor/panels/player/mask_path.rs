@@ -4,7 +4,7 @@
 //! drag maps through the render-owned mask affine, so handles stay on the
 //! rendered contour under mask and item rotation and scale.
 
-use super::{Action, Context};
+use super::{Action, Context, mask_box};
 use crate::{
     editor::selection::MaskPointSelection,
     egui::{self, CursorIcon, Pos2, Sense, Vec2},
@@ -18,6 +18,12 @@ use time::Tick;
 const SEGMENT_HIT: f64 = 6.0;
 /// Samples per cubic when locating the nearest segment parameter.
 const SAMPLES: usize = 64;
+/// The inserted point's cubic parameter is the nearest one clamped to this range, then
+/// split by de Casteljau. The implementation reference clamps its hit parameter to the
+/// same 0.001..=0.999 in its freeform segment insert; it finds the hit with 24 samples
+/// and 8 refinements, and the finer search here gives the same parameter within the
+/// pointer's pixel.
+const SPLIT_T: (f64, f64) = (0.001, 0.999);
 /// Pointer travel before a press on empty canvas becomes a marquee; the same
 /// threshold as the media marquee.
 const MARQUEE_MOVE: f64 = 4.0;
@@ -26,13 +32,15 @@ const MARQUEE_MOVE: f64 = 4.0;
 pub(in crate::editor) struct State {
     drag: Option<Drag>,
     marquee: Option<Marquee>,
+    gizmo: mask_box::State,
 }
 
 impl State {
     /// Abandon a mask gesture; the caller discards its staged candidate.
     pub(in crate::editor) fn cancel(&mut self) -> bool {
         let marquee = self.marquee.take().is_some();
-        self.drag.take().is_some() || marquee
+        let gizmo = self.gizmo.cancel();
+        self.drag.take().is_some() || marquee || gizmo
     }
 }
 
@@ -118,6 +126,7 @@ pub(super) fn show(
     else {
         state.drag = None;
         state.marquee = None;
+        state.gizmo = mask_box::State::default();
         return false;
     };
     let pointer = ui.input(|i| i.pointer.interact_pos());
@@ -131,6 +140,21 @@ pub(super) fn show(
             point,
         })
     };
+
+    if mask_box::drive(
+        &mut state.gizmo,
+        cx,
+        ui,
+        viewport,
+        frame,
+        pointer,
+        down,
+        shift,
+        actions,
+    ) {
+        paint(ui, &target, viewport, &selected, cx.dark, None);
+        return true;
+    }
 
     if let Some(mut drag) = state.drag.take() {
         if down {
@@ -274,6 +298,30 @@ pub(super) fn show(
         ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
         return true;
     }
+    // The box handles come after the anchors, which win where they coincide, and before
+    // the curve so a corner is never read as an insertion.
+    let begin = |state: &mut State, kind: mask_box::Kind| {
+        renderer(cx).is_some_and(|renderer| {
+            state.gizmo.begin(
+                cx.staged_project(),
+                &renderer,
+                viewport,
+                target.item,
+                &target.mask,
+                target.geometry,
+                kind,
+                screen,
+                at,
+            )
+        })
+    };
+    if let Some(kind) =
+        mask_box::Handles::new(&target.geometry, viewport).and_then(|handles| handles.hit(pointer))
+        && begin(state, kind)
+    {
+        ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
+        return true;
+    }
     if let Some((segment, t, _)) = nearest_segment(&target, viewport, screen) {
         actions.push(Action::MaskPointAdd {
             item: target.item,
@@ -281,6 +329,17 @@ pub(super) fn show(
             segment,
             t,
         });
+        return true;
+    }
+    // A press inside the box moves the whole mask; Shift keeps the additive marquee.
+    if !shift
+        && frame.contains(pointer)
+        && target
+            .geometry
+            .inverse(viewport, screen)
+            .is_ok_and(|local| local.iter().all(|v| (0.0..=1.0).contains(v)))
+        && begin(state, mask_box::Kind::Move)
+    {
         return true;
     }
     if frame.contains(pointer) {
@@ -455,10 +514,14 @@ fn nearest_segment(
             _ => break,
         }
     }
-    // The engine splits only strictly inside a segment (2^-20..=1-2^-20).
-    let t = ((low + high) / 2.0).clamp(1.0 / 1_048_576.0, 1.0 - 1.0 / 1_048_576.0);
+    let t = split_t((low + high) / 2.0);
     let value = distance(control, t)?;
     (value <= SEGMENT_HIT).then_some((segment, t, value))
+}
+
+/// The hit parameter an inserted point takes: strictly inside the segment.
+fn split_t(t: f64) -> f64 {
+    t.clamp(SPLIT_T.0, SPLIT_T.1)
 }
 
 fn paint(
@@ -469,6 +532,9 @@ fn paint(
     dark: bool,
     pointer: Option<Pos2>,
 ) {
+    if let Some(handles) = mask_box::Handles::new(&target.geometry, viewport) {
+        handles.paint(ui, dark);
+    }
     let painter = ui.painter();
     let stroke = egui::Stroke::new(kit::size::TRANSFORM_STROKE, kit::accent(dark));
     let mut curve = Vec::with_capacity(target.path.vertices.len() * 24);
@@ -573,5 +639,64 @@ pub(super) fn remember(
             tooltip: None,
             response,
         });
+        // A selected anchor shows its tangent handles; each is its own target.
+        if !selected {
+            continue;
+        }
+        for (side, tangent) in [("out", vertex.t_out), ("in", vertex.t_in)] {
+            let Ok([x, y]) = target.geometry.point(
+                viewport,
+                [vertex.p[0] + tangent[0], vertex.p[1] + tangent[1]],
+            ) else {
+                continue;
+            };
+            let id = format!("preview.mask.tangent.{index}.{side}");
+            let response = ui.interact(
+                egui::Rect::from_center_size(
+                    egui::pos2(x as f32, y as f32),
+                    Vec2::splat(kit::size::TRANSFORM_HIT * 2.0),
+                ),
+                ui.make_persistent_id(&id),
+                Sense::click_and_drag(),
+            );
+            response.widget_info(|| {
+                egui::WidgetInfo::labeled(
+                    egui::Role::Button,
+                    true,
+                    crate::i18n::text(cx.locale, crate::i18n::Text::MaskPath),
+                )
+            });
+            actions.push(Action::Remember {
+                id,
+                icon: None,
+                tooltip: None,
+                response,
+            });
+        }
+    }
+    if let Some(handles) = mask_box::Handles::new(&target.geometry, viewport) {
+        handles.remember(ui, cx, actions);
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_inserted_point_parameter_stays_strictly_inside_the_segment_like_the_reference() {
+        assert_eq!(split_t(-1.0), 0.001);
+        assert_eq!(split_t(0.0), 0.001);
+        assert_eq!(split_t(0.4), 0.4);
+        assert_eq!(split_t(1.0), 0.999);
+        // The engine accepts exactly the parameters the player can hit, on every segment.
+        let path = MaskPath::ellipse();
+        for segment in 0..path.vertices.len() {
+            for raw in [0.0, 0.25, 1.0] {
+                let split = path.split(segment, split_t(raw)).unwrap();
+                assert_eq!(split.vertices.len(), path.vertices.len() + 1);
+            }
+        }
     }
 }

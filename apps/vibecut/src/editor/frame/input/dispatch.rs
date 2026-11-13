@@ -109,9 +109,12 @@ impl Editor {
                 SelectionScope::Items => self
                     .session
                     .can_copy_items(&self.session.selection().iter().copied().collect::<Vec<_>>()),
-                SelectionScope::MaskPoints | SelectionScope::Transition | SelectionScope::None => {
-                    false
+                SelectionScope::MaskPoints => {
+                    self.mask_point_group().is_some_and(|(item, mask, points)| {
+                        self.session.can_copy_mask_points(item, &mask, &points)
+                    })
                 }
+                SelectionScope::Transition | SelectionScope::None => false,
             }
         } else {
             let Ok(at) = self.playback.position() else {
@@ -129,9 +132,13 @@ impl Editor {
                         || crate::editor::context::single(self.session.selection())
                             .is_some_and(|item| self.session.can_paste_keyframes(item, at))
                 }
-                SelectionScope::MaskPoints | SelectionScope::Transition | SelectionScope::None => {
-                    false
+                SelectionScope::MaskPoints => {
+                    self.mask_point_group().is_some_and(|(item, mask, points)| {
+                        let after = points.iter().copied().max().unwrap_or(0);
+                        self.session.can_paste_mask_points(item, &mask, after)
+                    })
                 }
+                SelectionScope::Transition | SelectionScope::None => false,
             }
         }
     }

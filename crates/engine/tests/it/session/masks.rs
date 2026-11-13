@@ -393,3 +393,140 @@ fn open_open_path() -> MaskPath {
         vertices: MaskPath::ellipse().vertices,
     }
 }
+
+#[test]
+fn mask_point_clipboard_rides_the_item_payload_and_pastes_in_one_undo_step() {
+    use crate::support::session::Wire;
+    use engine::{ItemClipboard, ItemPasteSource};
+    use serde_json::json;
+    let mut s = session();
+    let seed = MaskPath::ellipse();
+    for (id, path) in [("p", seed.clone()), ("q", MaskPath::rectangle())] {
+        s.apply(Command::AddMask {
+            item: ItemId(2),
+            mask: Mask::new(id, MaskShape::Path { path }),
+        })
+        .unwrap();
+    }
+    s.apply(Command::AddMask {
+        item: ItemId(2),
+        mask: Mask::new("flat", MaskShape::Rectangle),
+    })
+    .unwrap();
+    let copy = |mask: &str, points: Vec<usize>| Command::CopyMaskPoints {
+        item: ItemId(2),
+        mask: mask.into(),
+        points,
+    };
+
+    // Nothing is stored for an empty selection; stale, duplicate or non-path targets refuse.
+    assert!(!s.clipboard_has_entry());
+    s.apply(copy("p", vec![])).unwrap();
+    assert!(!s.clipboard_has_entry());
+    assert!(!s.can_copy_mask_points(ItemId(2), "p", &[]));
+    for (mask, points) in [
+        ("p", vec![9]),
+        ("p", vec![1, 1]),
+        ("flat", vec![0]),
+        ("none", vec![0]),
+    ] {
+        assert!(
+            s.apply(copy(mask, points.clone())).is_err(),
+            "{mask} {points:?}"
+        );
+        assert!(!s.can_copy_mask_points(ItemId(2), mask, &points));
+        assert!(!s.clipboard_has_entry());
+    }
+
+    // Copy keeps path order whatever the selection order, and is not a history step.
+    let history = s.history_len();
+    assert!(s.can_copy_mask_points(ItemId(2), "p", &[3, 1]));
+    let copied = s
+        .wire(
+            "clipboard.copy_mask_points",
+            json!({"item":2,"mask":"p","points":[3,1]}),
+        )
+        .unwrap();
+    assert!(!copied.changed);
+    assert_eq!(s.history_len(), history);
+    assert_eq!(s.mask_point_clipboard_len(), 2);
+    assert!(
+        !s.can_paste_items(Tick::ZERO),
+        "an item Paste refuses mask points"
+    );
+    assert!(
+        s.apply(Command::PasteItems {
+            at: Tick::ZERO,
+            source: ItemPasteSource::Stored,
+        })
+        .is_err()
+    );
+
+    // Paste lands the anchors after the given one with their tangents, in one undo step.
+    assert!(s.can_paste_mask_points(ItemId(2), "q", 1));
+    assert!(
+        !s.can_paste_mask_points(ItemId(2), "q", 4),
+        "past the last anchor"
+    );
+    assert!(!s.can_paste_mask_points(ItemId(2), "flat", 0));
+    let before = s.project().clone();
+    let paste = |after: usize| Command::PasteMaskPoints {
+        item: ItemId(2),
+        mask: "q".into(),
+        after,
+        source: ItemPasteSource::Stored,
+    };
+    s.apply(paste(1)).unwrap();
+    let mut expected = MaskPath::rectangle();
+    expected.vertices.insert(2, seed.vertices[3].clone());
+    expected.vertices.insert(2, seed.vertices[1].clone());
+    assert_eq!(path_of(&s, ItemId(2), "q"), expected);
+    s.apply(Command::Undo {}).unwrap();
+    assert_eq!(s.project(), &before);
+    s.apply(Command::Redo {}).unwrap();
+    assert_eq!(path_of(&s, ItemId(2), "q"), expected);
+    let pasted = s.project().clone();
+    assert!(s.apply(paste(9)).is_err());
+    assert_eq!(
+        s.project(),
+        &pasted,
+        "a refusal leaves the project untouched"
+    );
+
+    // The explicit payload is the item payload with `maskPoints` and no items.
+    let wire = json!({"version":1,"items":[],"span":0,"maskPoints":[
+        {"p":[0.5,0.5],"t_in":[-0.1,0.0],"t_out":[0.1,0.0]}]});
+    let payload: ItemClipboard = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&payload).unwrap(), wire);
+    assert_eq!(payload.mask_point_count(), 1);
+    s.apply(Command::PasteMaskPoints {
+        item: ItemId(2),
+        mask: "p".into(),
+        after: 3,
+        source: ItemPasteSource::Payload { payload },
+    })
+    .unwrap();
+    let grown = path_of(&s, ItemId(2), "p");
+    assert_eq!(grown.vertices.len(), 5);
+    assert_eq!(grown.vertices[4].t_in, [-0.1, 0.0]);
+    let point = |p: f64| json!({"p":[p,0.0],"t_in":[0.0,0.0],"t_out":[0.0,0.0]});
+    for bad in [
+        json!({"version":1,"items":[],"span":0,"maskPoints":[]}),
+        json!({"version":1,"items":[],"span":5,"maskPoints":[point(0.0)]}),
+        json!({"version":1,"items":[],"span":0,"maskPoints":[point(101.0)]}),
+        json!({"version":2,"items":[],"span":0,"maskPoints":[point(0.0)]}),
+        json!({"version":1,"items":[],"span":0}),
+    ] {
+        assert!(
+            serde_json::from_value::<ItemClipboard>(bad.clone()).is_err(),
+            "{bad}"
+        );
+    }
+
+    // The saved project never carries the clipboard.
+    let saved = project::encode(s.project(), false).unwrap();
+    assert_eq!(
+        &project::decode(&saved).unwrap().project,
+        s.project().as_ref()
+    );
+}

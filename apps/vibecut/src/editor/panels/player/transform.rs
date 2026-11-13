@@ -139,20 +139,7 @@ impl Drag {
         let start = Values::at(data, local)?;
         let geometry = renderer.item_geometry(item, at).ok().flatten()?;
         let extent = snap::extent(&geometry);
-        let targets = snap::Targets::new(
-            [project.data().canvas.width, project.data().canvas.height],
-            project
-                .data()
-                .scene()
-                .timeline
-                .iter()
-                .flat_map(|track| track.items.iter())
-                .filter(|candidate| candidate.id != item)
-                .filter_map(|candidate| {
-                    let geometry = renderer.item_geometry(candidate.id, at).ok().flatten()?;
-                    Some((candidate.id, snap::extent(&geometry)))
-                }),
-        );
+        let targets = snap::targets(project, renderer, item, at);
         let (screen, angle) = match kind {
             Kind::Move => (pointer, 0.0),
             Kind::Scale(handle) => (geometry.handle_position(viewport, handle).ok()?, 0.0),
@@ -610,7 +597,7 @@ fn handle_target(ui: &mut egui::Ui, position: Pos2, id: &str, label: &str) -> eg
 }
 
 /// Dashed accent lines across the canvas for the snap a gesture holds.
-fn paint_guides(
+pub(super) fn paint_guides(
     ui: &egui::Ui,
     viewport: &Viewport,
     dimensions: [u32; 2],
@@ -647,7 +634,7 @@ fn paint_guides(
     }
 }
 
-fn paint_handle(ui: &egui::Ui, position: Pos2, radius: f32, dark: bool) {
+pub(super) fn paint_handle(ui: &egui::Ui, position: Pos2, radius: f32, dark: bool) {
     ui.painter()
         .circle_filled(position, radius, kit::panel(dark));
     ui.painter().circle_stroke(

@@ -11,6 +11,7 @@ pub const MAX_CLIPBOARD_PATHS: usize = 64;
 pub const MAX_CLIPBOARD_BYTES: usize = 1 << 20;
 pub const MAX_CLIPBOARD_ITEMS: usize = 1024;
 pub const MAX_ITEM_CLIPBOARD_BYTES: usize = 4 << 20;
+pub const MAX_CLIPBOARD_MASK_POINTS: usize = 4096;
 
 #[derive(Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -583,29 +584,36 @@ struct CopiedItem {
 struct ItemPayload {
     #[schemars(range(min = 1, max = 1))]
     version: u8,
-    #[schemars(length(min = 1, max = 1024))]
+    #[schemars(length(max = 1024))]
     items: Vec<CopiedItem>,
     #[schemars(range(min = 0, max = 9007199254740991i64))]
     span: Tick,
+    #[serde(rename = "maskPoints")]
+    mask_points: Option<Vec<project::MaskVertex>>,
 }
-/// Version-one immutable item snapshot; at most 1024 items and 4 MiB compact JSON.
+/// Version-one immutable snapshot; at most 1024 items and 4 MiB compact JSON.
 /// Each item keeps its content, source window, retime, effects, masks and animation
 /// parameters with a group-relative start; the payload never carries a source id.
+/// A mask-point snapshot is the same payload with `maskPoints` (1 to 4096 anchors with
+/// their tangents, in path order) and no items: exactly one of the two parts is present.
 #[derive(Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(try_from = "ItemPayload")]
 pub struct ItemClipboard {
     #[schemars(range(min = 1, max = 1))]
     version: u8,
-    #[schemars(length(min = 1, max = 1024))]
+    #[schemars(length(max = 1024))]
     items: Vec<CopiedItem>,
     #[schemars(range(min = 0, max = 9007199254740991i64))]
     span: Tick,
+    #[serde(rename = "maskPoints", skip_serializing_if = "Option::is_none")]
+    mask_points: Option<Vec<project::MaskVertex>>,
 }
 impl std::fmt::Debug for ItemClipboard {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ItemClipboard")
             .field("items", &self.items.len())
             .field("span", &self.span)
+            .field("mask_points", &self.mask_points.as_ref().map(Vec::len))
             .finish()
     }
 }
@@ -617,7 +625,17 @@ impl TryFrom<ItemPayload> for ItemClipboard {
                 crate::session::wire::ControlError::InvalidParams,
             ));
         }
-        let clipboard = Self::assemble(value.items)?;
+        let clipboard = match value.mask_points {
+            Some(points) => {
+                if !value.items.is_empty() {
+                    return Err(EditError::Control(
+                        crate::session::wire::ControlError::InvalidParams,
+                    ));
+                }
+                Self::from_mask_points(points)?
+            }
+            None => Self::assemble(value.items)?,
+        };
         if clipboard.span != value.span {
             return Err(EditError::Control(
                 crate::session::wire::ControlError::InvalidParams,
@@ -758,9 +776,106 @@ impl ItemClipboard {
             version: 1,
             items,
             span,
+            mask_points: None,
         };
         value.compact_bytes()?;
         Ok(value)
+    }
+    /// A mask-point snapshot: 1 to 4096 finite anchors within the persisted path bounds.
+    fn from_mask_points(points: Vec<project::MaskVertex>) -> Result<Self> {
+        if points.is_empty() {
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::InvalidParams,
+            ));
+        }
+        if points.len() > MAX_CLIPBOARD_MASK_POINTS {
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
+        }
+        if points
+            .iter()
+            .flat_map(|v| v.p.iter().chain(&v.t_in).chain(&v.t_out))
+            .any(|n| !n.is_finite() || n.abs() > 100.0)
+        {
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::InvalidParams,
+            ));
+        }
+        let value = Self {
+            version: 1,
+            items: Vec::new(),
+            span: Tick::ZERO,
+            mask_points: Some(points),
+        };
+        value.compact_bytes()?;
+        Ok(value)
+    }
+    /// Copy the given anchors of one path mask, in path order. An empty selection
+    /// stores nothing; a stale, duplicate or out-of-range index refuses.
+    pub(super) fn capture_mask_points(
+        data: &ProjectData,
+        item: project::ItemId,
+        mask: &str,
+        points: &[usize],
+    ) -> Result<Option<Self>> {
+        if points.is_empty() {
+            return Ok(None);
+        }
+        if points.len() > MAX_CLIPBOARD_MASK_POINTS {
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
+        }
+        let source = data
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| track.items.iter())
+            .find(|candidate| candidate.id == item)
+            .ok_or(EditError::NoItem(item))?;
+        let project::MaskShape::Path { path } = &source
+            .masks
+            .iter()
+            .find(|candidate| candidate.id == mask)
+            .ok_or(EditError::Invalid("missing mask"))?
+            .shape
+        else {
+            return Err(EditError::Invalid("mask is not a path"));
+        };
+        let mut order = points.to_vec();
+        order.sort_unstable();
+        order.dedup();
+        if order.len() != points.len() || order.iter().any(|i| *i >= path.vertices.len()) {
+            return Err(EditError::Invalid("mask point selection"));
+        }
+        let vertices = order
+            .into_iter()
+            .filter_map(|index| path.vertices.get(index).cloned())
+            .collect();
+        Self::from_mask_points(vertices).map(Some)
+    }
+    /// Current admission for the desktop mask-point Copy; no state changes.
+    pub(super) fn can_capture_mask_points(
+        data: &ProjectData,
+        item: project::ItemId,
+        mask: &str,
+        points: &[usize],
+    ) -> bool {
+        matches!(
+            Self::capture_mask_points(data, item, mask, points),
+            Ok(Some(_))
+        )
+    }
+    /// Number of copied anchors; zero for an item snapshot.
+    pub fn mask_point_count(&self) -> usize {
+        self.mask_points.as_ref().map_or(0, Vec::len)
+    }
+    /// The copied anchors, or a refusal when this snapshot holds items.
+    pub(super) fn mask_vertices(&self) -> Result<&[project::MaskVertex]> {
+        self.mask_points
+            .as_deref()
+            .ok_or(EditError::Invalid("clipboard holds items"))
     }
     pub(super) fn same_bytes(&self, other: &Self) -> Result<bool> {
         Ok(bounded_size(self, MAX_ITEM_CLIPBOARD_BYTES)?
@@ -813,6 +928,9 @@ impl ItemClipboard {
         data: &ProjectData,
         at: Tick,
     ) -> Result<Vec<Destination<'_>>> {
+        if self.mask_points.is_some() {
+            return Err(EditError::Invalid("clipboard holds mask points"));
+        }
         if at < Tick::ZERO {
             return Err(EditError::Control(
                 crate::session::wire::ControlError::InvalidParams,

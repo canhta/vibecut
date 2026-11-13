@@ -269,9 +269,33 @@ pub struct MaskGeometry {
     size: [f64; 2],
     /// Clockwise radians.
     rotation: f64,
+    /// The item's placement box before the item transform, in project canvas
+    /// pixels: the frame the mask centre fractions are measured in.
+    frame: Rect,
     item: ItemGeometry,
 }
 impl MaskGeometry {
+    /// The item placement box the mask centre offsets are fractions of.
+    pub fn frame(&self) -> Rect {
+        self.frame
+    }
+    /// Mask-box centre in the placement frame's project canvas pixels.
+    pub fn centre(&self) -> [f64; 2] {
+        self.centre
+    }
+    /// Evaluated mask-box size in project canvas pixels.
+    pub fn size(&self) -> [f64; 2] {
+        self.size
+    }
+    /// Evaluated mask rotation in clockwise degrees.
+    pub fn rotation_degrees(&self) -> f64 {
+        self.rotation.to_degrees()
+    }
+    /// Logical screen point to the placement frame's project canvas pixels, before
+    /// the item transform: the space `centre` is in.
+    pub fn frame_point(&self, viewport: &Viewport, screen: [f64; 2]) -> Result<[f64; 2]> {
+        self.item.inverse(viewport, screen)
+    }
     /// Normalized mask-local point (0..1 spans the evaluated mask box) to
     /// logical screen pixels.
     pub fn point(&self, viewport: &Viewport, local: [f64; 2]) -> Result<[f64; 2]> {
@@ -387,6 +411,12 @@ impl Renderer<'_> {
             centre,
             size,
             rotation: evaluated.rotation.to_radians(),
+            frame: Rect {
+                x: f64::from(canvas.width) * r.x,
+                y: f64::from(canvas.height) * r.y,
+                width: dw,
+                height: dh,
+            },
             item: base,
         }))
     }

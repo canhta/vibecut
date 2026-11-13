@@ -374,6 +374,25 @@ impl Editor {
         self.desk()
             .preview(Command::TimelinePreview { commands }, false);
     }
+    /// Stage one absolute whole-mask candidate from a gizmo gesture origin.
+    pub(in crate::editor) fn preview_mask_box(&mut self, item: ItemId, mask: project::Mask) {
+        let commands = vec![Command::UpdateMask { item, mask }];
+        self.desk()
+            .preview(Command::TimelinePreview { commands }, false);
+    }
+    /// The anchors of the one mask the point scope holds, as `(item, mask, indices)`
+    /// in path order. The scope only ever holds one mask of one item.
+    pub(in crate::editor) fn mask_point_group(&self) -> Option<(ItemId, String, Vec<usize>)> {
+        let first = self.selection_scopes.mask_points.iter().next()?;
+        let points = self
+            .selection_scopes
+            .mask_points
+            .iter()
+            .filter(|point| point.item == first.item && point.mask == first.mask)
+            .map(|point| point.point)
+            .collect();
+        Some((first.item, first.mask.clone(), points))
+    }
     /// Insert one point at the nearest cubic parameter, then select it.
     pub(in crate::editor) fn add_mask_point(
         &mut self,
