@@ -4749,12 +4749,13 @@ fn context_and_header_menus_expose_registered_items_and_reasons() {
         .into_iter()
         .find(|widget| widget.id == "timeline.freeze")
         .expect("freeze toolbar cell");
-    assert!(!freeze.enabled);
+    // The selected video clip spans the playhead, so the live freeze button is enabled.
+    assert!(freeze.enabled);
     assert!(
         freeze
             .tooltip
             .as_ref()
-            .is_some_and(|tooltip| tooltip.contains("Not available yet")),
+            .is_some_and(|tooltip| tooltip.contains("Freeze frame")),
         "{:?}",
         freeze.tooltip
     );

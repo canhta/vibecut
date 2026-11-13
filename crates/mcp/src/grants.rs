@@ -119,6 +119,7 @@ impl Policy for Grants {
                         Command::ChaptersExportSidecars { .. }
                             | Command::ClipsExport { .. }
                             | Command::ExportClips { .. }
+                            | Command::FreezeFrame { .. }
                     ),
                     project,
                 )

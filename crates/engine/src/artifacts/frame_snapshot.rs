@@ -18,6 +18,8 @@ use time::Tick;
 pub const MAX_SNAPSHOT_PNG_BYTES: usize = 32 << 20;
 /// Local accounting ceiling for callers that do not supply the shared budget.
 pub const MAX_SNAPSHOT_MEMORY: u64 = 1 << 30;
+/// Source-probe reservation the renderer makes when it opens a media source.
+const PROBE_ALLOWANCE: u64 = 256 << 20;
 
 /// A rendered snapshot before publication. `png` is returned so the desktop app
 /// can put the same frame image on the clipboard without a second render.
@@ -144,8 +146,11 @@ pub fn render_time(project: &Project, time: Tick) -> ArtifactResult<Tick> {
 fn local_budget(project: &Project) -> ArtifactResult<ByteBudget> {
     let canvas = &project.data().canvas;
     let bytes = render::Image::bytes(canvas.width, canvas.height)?;
+    // Opening a video or audio source reserves a fixed probe allowance before decoding
+    // (`render::sources`), so a project with media needs it on top of the frame buffers.
     let limit = bytes
         .saturating_mul(4)
+        .saturating_add(PROBE_ALLOWANCE)
         .saturating_add(64 << 20)
         .min(MAX_SNAPSHOT_MEMORY);
     Ok(ByteBudget::new(limit)?)
