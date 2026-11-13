@@ -4,7 +4,7 @@
 //! 12 px between buttons, 1×16 dividers with 8 px either side (221643 y 574-606).
 
 use crate::editor::timeline::{
-    Action, Context, Icon, Rect, State, Text, Tick, TimelineLayout, Tool, Vec2, egui, icons,
+    Action, Context, Icon, Id, Rect, State, Text, Tick, TimelineLayout, Tool, Vec2, egui, icons,
     slider_to_zoom, theme,
     view::{Ink, tr},
     zoom_to_slider,
@@ -62,20 +62,28 @@ fn single_selected_span(cx: &Context<'_>) -> Option<(project::ItemId, Tick, Tick
     Some((id, item.start, item.end().ok()?))
 }
 
-/// Left-to-right cursor over the toolbar row.
+/// Left-to-right cursor over the toolbar's left group. Only cells that lie wholly
+/// between `left` and `right` are drawn or hit; the rest of the row stays laid out
+/// so the scroll offset can bring them in.
 struct Cursor {
     x: f32,
     top: f32,
+    left: f32,
+    right: f32,
 }
 impl Cursor {
-    fn cell(&mut self, width: f32) -> Rect {
+    fn cell(&mut self, width: f32) -> Option<Rect> {
         let rect = Rect::from_min_size(egui::pos2(self.x, self.top), Vec2::new(width, CELL));
         self.x += width + GAP;
-        rect
+        (rect.left() >= self.left && rect.right() <= self.right).then_some(rect)
     }
     fn divider(&mut self, ui: &egui::Ui, color: egui::Color32, gap: f32) {
         // The previous cell already added `GAP`; bring the divider `gap` from it.
         let x = self.x - GAP + gap;
+        self.x = x + 1.0 + gap;
+        if x < self.left || x + 1.0 > self.right {
+            return;
+        }
         let center = self.top + CELL / 2.0;
         ui.painter().line_segment(
             [
@@ -84,8 +92,59 @@ impl Cursor {
             ],
             egui::Stroke::new(1.0, color),
         );
-        self.x = x + 1.0 + gap;
     }
+}
+
+/// The right group's rects, placed from the right edge inwards.
+struct RightGroup {
+    /// The leftmost button; the left group must end before it.
+    scene: Rect,
+    mic: Rect,
+    toggles: [Rect; 4],
+    /// x of the 1 px divider between the toggles and the zoom buttons.
+    divider_x: f32,
+    zoom_out: Rect,
+    slider: Rect,
+    zoom_in: Rect,
+}
+
+fn right_group(bar: Rect, top: f32) -> RightGroup {
+    let mut right = bar.right() - EDGE;
+    let zoom_in = Rect::from_min_size(egui::pos2(right - CELL, top), Vec2::splat(CELL));
+    right = zoom_in.left() - GAP;
+    let slider = Rect::from_min_size(
+        egui::pos2(right - theme::size::ZOOM_SLIDER, top),
+        Vec2::new(theme::size::ZOOM_SLIDER, CELL),
+    );
+    right = slider.left() - GAP;
+    let zoom_out = Rect::from_min_size(egui::pos2(right - CELL, top), Vec2::splat(CELL));
+    right = zoom_out.left() - GAP - DIVIDER_GAP;
+    let divider_x = right;
+    right -= 1.0 + DIVIDER_GAP;
+    let mut toggles = [Rect::NOTHING; 4];
+    for toggle in toggles.iter_mut().rev() {
+        *toggle = Rect::from_min_size(egui::pos2(right - CELL, top), Vec2::splat(CELL));
+        right = toggle.left() - GAP;
+    }
+    // The measured right group starts with the mic (221643); the scene
+    // button moves one slot along.
+    let mic = Rect::from_min_size(egui::pos2(right - CELL - 1.0, top), Vec2::splat(CELL));
+    let scene = Rect::from_min_size(egui::pos2(mic.left() - GAP - CELL, top), Vec2::splat(CELL));
+    RightGroup {
+        scene,
+        mic,
+        toggles,
+        divider_x,
+        zoom_out,
+        slider,
+        zoom_in,
+    }
+}
+
+/// The left group's scroll offset and the unscrolled right edge of its last cell,
+/// both in px, kept per toolbar between frames.
+fn left_scroll_id() -> Id {
+    Id::new("timeline.toolbar.left_scroll")
 }
 
 impl State {
@@ -106,23 +165,44 @@ impl State {
             egui::Stroke::new(1.0, theme::separator(ink.dark())),
         );
         let divider = ink.border();
-        let mut left = Cursor {
-            x: bar.left() + EDGE,
-            top,
-        };
-        let rect = left.cell(CELL);
-        self.toolbar_button(
-            cx,
-            ui,
-            rect,
-            "timeline.add_track",
-            Icon::Plus,
-            Text::AddTrack,
-            None,
+        let group = right_group(bar, top);
+        // The left group may run up to the right group's first button. When the
+        // window is too narrow for both, it scrolls under the wheel and cells that
+        // would cross that edge stay hidden until scrolled into place.
+        let region = Rect::from_min_max(
+            egui::pos2(bar.left(), bar.top()),
+            egui::pos2(group.scene.left(), bar.bottom()),
         );
+        let (scroll, last_extent) = ui
+            .data(|data| data.get_temp::<(f32, f32)>(left_scroll_id()))
+            .unwrap_or((0.0, 0.0));
+        let max_scroll = (last_extent - region.right()).max(0.0);
+        let mut scroll = scroll.clamp(0.0, max_scroll);
+        if ui.rect_contains_pointer(region) {
+            let wheel = ui.input(|input| input.smooth_scroll_delta);
+            scroll = (scroll - wheel.x - wheel.y).clamp(0.0, max_scroll);
+        }
+        let mut left = Cursor {
+            x: bar.left() + EDGE - scroll,
+            top,
+            left: region.left(),
+            right: region.right(),
+        };
+        if let Some(rect) = left.cell(CELL) {
+            self.toolbar_button(
+                cx,
+                ui,
+                rect,
+                "timeline.add_track",
+                Icon::Plus,
+                Text::AddTrack,
+                None,
+            );
+        }
         left.divider(ui, divider, DIVIDER_GAP);
-        let tool = left.cell(CELL + TOOL_CARET);
-        self.toolbar_tool(cx, ui, tool);
+        if let Some(tool) = left.cell(CELL + TOOL_CARET) {
+            self.toolbar_tool(cx, ui, tool);
+        }
         for (id, icon, label) in [
             ("edit.undo", Icon::ArrowCounterClockwise, Text::Undo),
             ("edit.redo", Icon::ArrowClockwise, Text::Redo),
@@ -140,31 +220,34 @@ impl State {
             ),
             ("timeline.duplicate", Icon::Copy, Text::Duplicate),
         ] {
-            let rect = left.cell(CELL);
-            self.toolbar_button(cx, ui, rect, id, icon, label, None);
+            if let Some(rect) = left.cell(CELL) {
+                self.toolbar_button(cx, ui, rect, id, icon, label, None);
+            }
         }
         // Reserved slot after Duplicate, unchanged since the desktop layout was measured.
         // [new] the button is live: it holds the selected video frame at the playhead.
-        let freeze = left.cell(CELL);
-        self.toolbar_button(
-            cx,
-            ui,
-            freeze,
-            "timeline.freeze",
-            Icon::Snowflake,
-            Text::FreezeFrame,
-            None,
-        );
-        let delete = left.cell(CELL);
-        self.toolbar_button(
-            cx,
-            ui,
-            delete,
-            "timeline.delete",
-            Icon::Trash,
-            Text::Delete,
-            None,
-        );
+        if let Some(freeze) = left.cell(CELL) {
+            self.toolbar_button(
+                cx,
+                ui,
+                freeze,
+                "timeline.freeze",
+                Icon::Snowflake,
+                Text::FreezeFrame,
+                None,
+            );
+        }
+        if let Some(delete) = left.cell(CELL) {
+            self.toolbar_button(
+                cx,
+                ui,
+                delete,
+                "timeline.delete",
+                Icon::Trash,
+                Text::Delete,
+                None,
+            );
+        }
         left.divider(ui, divider, DIVIDER_GAP);
         for (id, icon, label) in [
             (
@@ -184,48 +267,39 @@ impl State {
                 Text::ActionFlipVertical,
             ),
         ] {
-            let rect = left.cell(CELL);
-            self.toolbar_button(cx, ui, rect, id, icon, label, None);
+            if let Some(rect) = left.cell(CELL) {
+                self.toolbar_button(cx, ui, rect, id, icon, label, None);
+            }
         }
         // [proposed] placement: the download glyph is not in the measured strip, so it
         // sits after Flip vertical and before the graph until a capture measures the slot.
-        let download = left.cell(CELL + TOOL_CARET);
-        self.toolbar_download(cx, ui, download);
-        let graph = left.cell(CELL);
-        self.toolbar_graph(cx, ui, graph);
+        if let Some(download) = left.cell(CELL + TOOL_CARET) {
+            self.toolbar_download(cx, ui, download);
+        }
+        if let Some(graph) = left.cell(CELL) {
+            self.toolbar_graph(cx, ui, graph);
+        }
+        let extent = left.x - GAP + scroll;
+        ui.data_mut(|data| data.insert_temp(left_scroll_id(), (scroll, extent)));
 
         // Right group, placed from the right edge inwards.
-        let mut right = bar.right() - EDGE;
-        let zoom_in = Rect::from_min_size(egui::pos2(right - CELL, top), Vec2::splat(CELL));
-        right = zoom_in.left() - GAP;
-        let slider = Rect::from_min_size(
-            egui::pos2(right - theme::size::ZOOM_SLIDER, top),
-            Vec2::new(theme::size::ZOOM_SLIDER, CELL),
-        );
-        right = slider.left() - GAP;
-        let zoom_out = Rect::from_min_size(egui::pos2(right - CELL, top), Vec2::splat(CELL));
-        right = zoom_out.left() - GAP - DIVIDER_GAP;
         let center = top + CELL / 2.0;
         ui.painter().line_segment(
             [
-                egui::pos2(right - 0.5, center - DIVIDER_HEIGHT / 2.0),
-                egui::pos2(right - 0.5, center + DIVIDER_HEIGHT / 2.0),
+                egui::pos2(group.divider_x - 0.5, center - DIVIDER_HEIGHT / 2.0),
+                egui::pos2(group.divider_x - 0.5, center + DIVIDER_HEIGHT / 2.0),
             ],
             egui::Stroke::new(1.0, divider),
         );
-        right -= 1.0 + DIVIDER_GAP;
-        let mut toggles = [Rect::NOTHING; 4];
-        for toggle in toggles.iter_mut().rev() {
-            *toggle = Rect::from_min_size(egui::pos2(right - CELL, top), Vec2::splat(CELL));
-            right = toggle.left() - GAP;
-        }
-        let scene = Rect::from_min_size(egui::pos2(right - CELL - 1.0, top), Vec2::splat(CELL));
-
-        // The measured right group starts with the mic (221643); the scene
-        // button moves one slot along.
-        let mic = scene;
-        let scene =
-            Rect::from_min_size(egui::pos2(mic.left() - GAP - CELL, top), Vec2::splat(CELL));
+        let RightGroup {
+            scene,
+            mic,
+            toggles,
+            zoom_out,
+            slider,
+            zoom_in,
+            ..
+        } = group;
         self.toolbar_button(
             cx,
             ui,

@@ -1,6 +1,7 @@
 //! Renders timeline clips.
 
 use crate::editor::context::visuals::{StripState, StripTile, WaveBar, WaveState};
+use crate::editor::media_panel;
 use crate::editor::timeline::{
     Action, Align2, Color32, Context, DragMode, FontId, Icon, Id, ItemParams, ItemView,
     LABEL_CHARS, Locale, MIN_ZOOM_FLOOR, Rect, State, Text, Tick, TimelineLayout, Tool, TrackKind,
@@ -41,7 +42,6 @@ impl State {
                 egui::Sense::click_and_drag()
             },
         );
-        self.remember(format!("timeline.item.{}", item.id.0), &response);
         let ink = Ink::of(cx);
         let dark = ink.dark();
         let (fill, border, text) = item_palette(item.kind, dark, selected, item.overlay);
@@ -56,23 +56,33 @@ impl State {
         painter.rect_filled(visible, theme::radius::PANEL, fill);
         let inner = full.shrink(1.0);
         // A source file gone from disk keeps its asset record: the clip draws the
-        // missing state in place of strip and waveform and asks for neither.
+        // missing state in place of strip and waveform and asks for neither, and
+        // names its file so the clip keeps a name while the footage is gone.
         // Caption clips only name their source; Replace media serves Video and Audio.
-        let missing = matches!(item.kind, TrackKind::Video | TrackKind::Audio)
-            && item
-                .source_asset
-                .and_then(|id| {
+        let missing_asset = matches!(item.kind, TrackKind::Video | TrackKind::Audio)
+            .then(|| {
+                item.source_asset.and_then(|id| {
                     cx.staged_project()
                         .data()
                         .assets
                         .iter()
                         .find(|asset| asset.id() == id)
                 })
-                .is_some_and(|asset| {
-                    cx.visuals.availability(asset) == media::AssetAvailability::Missing
-                });
+            })
+            .flatten()
+            .filter(|asset| cx.visuals.availability(asset) == media::AssetAvailability::Missing);
+        let name = missing_asset.map(media_panel::asset_name);
+        let label = name.as_deref().unwrap_or(item.label.as_str());
+        self.remember_with(
+            format!("timeline.item.{}", item.id.0),
+            None,
+            name.clone(),
+            &response,
+        );
         match item.kind {
-            _ if missing => self.paint_missing_media(cx, ui, &painter, item, inner, dark),
+            _ if missing_asset.is_some() => {
+                self.paint_missing_media(cx, ui, &painter, item, inner, dark);
+            }
             TrackKind::Video if item.overlay.is_none() => {
                 // Top band, filmstrip, waveform: 17 + 39 + 16 px inside the border.
                 let strip_top = inner.top() + theme::size::CLIP_BAND;
@@ -124,11 +134,11 @@ impl State {
             egui::Stroke::new(1.0, border),
             egui::StrokeKind::Inside,
         );
-        if !item.label.is_empty() {
+        if !label.is_empty() {
             painter.text(
                 egui::pos2(visible.left() + 22.0, visible.center().y),
                 Align2::LEFT_CENTER,
-                &item.label,
+                label,
                 FontId::proportional(theme::type_size::BODY),
                 text,
             );

@@ -889,6 +889,25 @@ fn a_clip_whose_source_file_is_missing_draws_the_relink_state_until_replaced() {
     let missing = "Media missing. Replace media to relink";
     assert_eq!(harness.state().tooltip(&strip).as_deref(), Some(missing));
     assert_eq!(harness.state().tooltip(&wave).as_deref(), Some(missing));
+    // One badge per band: the filmstrip and the waveform, and no other visual band.
+    let item = format!("timeline.item.{}.", first.0);
+    let bands: Vec<&str> = harness
+        .state()
+        .widgets
+        .iter()
+        .filter_map(|widget| widget.id.strip_prefix(item.as_str()))
+        .filter(|band| matches!(*band, "filmstrip" | "waveform" | "missing"))
+        .collect();
+    assert_eq!(bands, ["filmstrip", "waveform"]);
+    // The clip keeps its name: the file's name, in place of the label a healthy
+    // video clip never carries.
+    assert_eq!(
+        harness
+            .state()
+            .tooltip(&format!("timeline.item.{}", first.0))
+            .as_deref(),
+        Some("fixture.mp4")
+    );
     assert!(
         harness.state().calls().is_empty(),
         "a missing source asks the display queries for nothing"
@@ -1175,6 +1194,74 @@ fn a_changed_source_asset_returns_to_pending_and_requests_the_new_source() {
     let call = calls.last().expect("display queried");
     assert_eq!(call.asset, AssetId(2));
     assert_eq!(call.item, replacement);
+}
+
+#[test]
+fn toolbar_cells_never_overlap_at_1000_px() {
+    let mut harness = harness(Rig::new());
+    harness.state_mut().take();
+    let widgets = &harness.state().widgets;
+    // Every toolbar cell that is laid out. The left group may hide its last cells
+    // at this width (they scroll into place); the shown cells must not overlap.
+    let cells: Vec<(&str, egui::Rect)> = [
+        "timeline.add_track",
+        "timeline.tool",
+        "edit.undo",
+        "edit.redo",
+        "timeline.split",
+        "timeline.split_left",
+        "timeline.split_right",
+        "timeline.extract_audio",
+        "timeline.duplicate",
+        "timeline.freeze",
+        "timeline.delete",
+        "timeline.bookmark",
+        "timeline.crop",
+        "timeline.flip_horizontal",
+        "timeline.flip_vertical",
+        "timeline.graph",
+        "scene.open",
+        "voiceover.open",
+        "timeline.snap",
+        "timeline.magnet",
+        "timeline.ripple",
+        "timeline.preview_axis",
+        "timeline.zoom_out",
+        "timeline.zoom_slider",
+        "timeline.zoom_in",
+    ]
+    .into_iter()
+    .filter_map(|id| {
+        widgets
+            .iter()
+            .find(|widget| widget.id == id)
+            .map(|widget| (id, widget.response.rect))
+    })
+    .collect();
+    // The edit cells up to Delete always fit at 1000 px.
+    for id in [
+        "timeline.add_track",
+        "timeline.tool",
+        "edit.undo",
+        "timeline.delete",
+    ] {
+        assert!(
+            cells.iter().any(|(shown, _)| *shown == id),
+            "{id} is not laid out"
+        );
+    }
+    for (index, (id, rect)) in cells.iter().enumerate() {
+        assert!(
+            rect.left() >= 0.0 && rect.right() <= 1000.0,
+            "{id} {rect:?} leaves the window"
+        );
+        for (other, other_rect) in &cells[index + 1..] {
+            assert!(
+                !rect.intersect(*other_rect).is_positive(),
+                "{id} {rect:?} overlaps {other} {other_rect:?}"
+            );
+        }
+    }
 }
 
 #[test]
