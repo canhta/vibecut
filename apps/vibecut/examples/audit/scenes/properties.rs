@@ -339,7 +339,20 @@ pub(super) fn inspector_video_keyframes(theme: Theme, scale: f32) -> Result<AppH
 }
 
 pub(super) fn inspector_project(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
-    let (mut editor, _) = media_editor(theme, Locale::En)?;
+    inspector_project_locale(theme, scale, Locale::En)
+}
+
+/// The Vietnamese Settings tab: its longer Reset label must stay inside its button.
+pub(super) fn inspector_project_vi(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    inspector_project_locale(theme, scale, Locale::Vi)
+}
+
+fn inspector_project_locale(
+    theme: Theme,
+    scale: f32,
+    locale: Locale,
+) -> Result<AppHarness, Failure> {
+    let (mut editor, _) = media_editor(theme, locale)?;
     capture_columns(&mut editor)?;
     let mut app = harness_sized(App::Editor(Box::new(editor)), scale, CAPTURE_WINDOW);
     wait_for_presented(&mut app)?;

@@ -13,6 +13,7 @@ use project::{AspectPreset, CanvasSize, Project, ProjectId};
 use std::sync::Arc;
 use vibecut::{
     Editor, egui,
+    i18n::Locale,
     preferences::Preferences,
     services::color_picker::palette,
     services::playback::{Files, Playback},
@@ -236,6 +237,57 @@ fn canvas_settings_pick_preset_custom_fps_swatch_reset_and_persist() {
             height: 722
         }
     );
+}
+
+fn widget_rect(harness: &Harness<Editor>, id: &str) -> egui::Rect {
+    harness
+        .state()
+        .inspect()
+        .unwrap()
+        .widgets
+        .into_iter()
+        .find(|widget| widget.id == id)
+        .unwrap_or_else(|| panic!("missing widget {id}"))
+        .rect
+}
+
+/// Rects of every text shape painted with exactly `expected`.
+fn painted_text_rects(harness: &Harness<Editor>, expected: &str) -> Vec<egui::Rect> {
+    let mut pending: Vec<_> = harness.output().shapes.iter().map(|s| &s.shape).collect();
+    let mut rects = Vec::new();
+    while let Some(shape) = pending.pop() {
+        match shape {
+            egui::Shape::Vec(children) => pending.extend(children),
+            egui::Shape::Text(text) if text.galley.text() == expected => {
+                rects.push(egui::Rect::from_min_size(text.pos, text.galley.size()));
+            }
+            _ => {}
+        }
+    }
+    rects
+}
+
+#[test]
+fn reset_original_label_draws_once_inside_its_button_in_both_locales_and_themes() {
+    let mut harness = build(editor());
+    for (locale, label) in [
+        (Locale::En, "Reset to original"),
+        (Locale::Vi, "Đặt lại về kích thước gốc"),
+    ] {
+        for dark in [true, false] {
+            harness.state_mut().preferences.locale = locale;
+            harness.state_mut().preferences.dark = dark;
+            harness.run_steps(3);
+            let button = widget_rect(&harness, "inspector.canvas.reset_original");
+            let painted = painted_text_rects(&harness, label);
+            assert_eq!(painted.len(), 1, "{locale:?} dark={dark}: one label");
+            let text = painted[0];
+            assert!(
+                button.contains(text.min) && button.contains(text.max),
+                "{locale:?} dark={dark}: label {text:?} outside button {button:?}"
+            );
+        }
+    }
 }
 
 #[test]
