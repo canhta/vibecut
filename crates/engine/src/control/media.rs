@@ -10,6 +10,7 @@ use crate::{
     },
     artifacts::thumbnails::ThumbnailCache,
     cache::ArtifactCache,
+    footage::{CorrectionJob, CorrectionKind, CorrectionRequest, Resolution},
     jobs::{JobId, JobKind, JobRunner, JobState},
     scene_detection::{DetectionJob, DetectionRequest, DetectionSettings},
     waveform::{self, WaveformJob, WaveformRequest, WaveformState},
@@ -79,6 +80,9 @@ pub struct MediaAccess {
     waveforms: BTreeMap<JobId, WaveformJob>,
     strips: BTreeMap<JobId, ThumbnailStripJob>,
     scenes: BTreeMap<JobId, DetectionJob>,
+    corrections: BTreeMap<JobId, CorrectionJob>,
+    /// Counts published corrections, so a reader of stored corrections knows when to look again.
+    correction_epoch: u64,
     reframes: BTreeMap<JobId, ReframeEntry>,
     /// Shot analyses a clip export started, with their cache identity, until published.
     analyses: BTreeMap<JobId, ([u8; 32], AnalysisJob)>,
@@ -123,6 +127,8 @@ impl MediaAccess {
             waveforms: BTreeMap::new(),
             strips: BTreeMap::new(),
             scenes: BTreeMap::new(),
+            corrections: BTreeMap::new(),
+            correction_epoch: 0,
             reframes: BTreeMap::new(),
             analyses: BTreeMap::new(),
         }
@@ -335,6 +341,33 @@ impl MediaAccess {
         Ok(id)
     }
 
+    /// Submit one source's footage correction. A warm entry completes without opening the
+    /// source; the entry is published when `job_status` first sees the job complete.
+    pub(crate) fn analyze_footage(
+        &mut self,
+        runner: &mut JobRunner,
+        asset: SourceAsset,
+        kind: CorrectionKind,
+    ) -> crate::analysis::Result<JobId> {
+        self.retain(runner);
+        let job = CorrectionRequest::new(asset, kind)?.submit(runner, &mut self.artifacts)?;
+        let id = job.id;
+        self.corrections.insert(id, job);
+        Ok(id)
+    }
+
+    /// Changes whenever a correction is published, so cached lookups know to read again.
+    pub fn footage_epoch(&self) -> u64 {
+        self.correction_epoch
+    }
+
+    /// The stored corrections of every switched-on item in `project`, read from the cache only.
+    /// Items without one come back as `missing`: render draws them uncorrected, the properties
+    /// row offers analysis and export refuses to start.
+    pub fn footage_corrections(&mut self, project: &project::Project) -> Resolution {
+        crate::footage::resolve(project, &mut self.artifacts)
+    }
+
     /// Submit one item's reframe analysis. A warm entry completes without
     /// opening the source or calling the detector; the entry is published when
     /// `job_status` first sees the job complete. The item is retained so
@@ -391,6 +424,11 @@ impl MediaAccess {
         }
         if let Some(handle) = self.scenes.remove(&job) {
             handle.finish(runner, &mut self.artifacts)?;
+        }
+        if let Some(handle) = self.corrections.remove(&job)
+            && handle.finish(runner, &mut self.artifacts)?.is_some()
+        {
+            self.correction_epoch += 1;
         }
         self.publish_analyses(runner);
         // Keep the reframe handle: `reframe.apply` reads the same retained
@@ -474,6 +512,7 @@ impl MediaAccess {
         self.waveforms.remove(&job);
         self.strips.remove(&job);
         self.scenes.remove(&job);
+        self.corrections.remove(&job);
         self.reframes.remove(&job);
         self.analyses.remove(&job);
     }
@@ -490,6 +529,8 @@ impl MediaAccess {
             .retain(|id, _| runner.snapshot(*id).is_some());
         self.strips.retain(|id, _| runner.snapshot(*id).is_some());
         self.scenes.retain(|id, _| runner.snapshot(*id).is_some());
+        self.corrections
+            .retain(|id, _| runner.snapshot(*id).is_some());
         self.reframes.retain(|id, _| runner.snapshot(*id).is_some());
         self.analyses.retain(|id, _| runner.snapshot(*id).is_some());
     }

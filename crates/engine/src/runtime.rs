@@ -22,6 +22,8 @@ pub enum Error {
     Cancelled,
     #[error("loudness gains are missing or measured for different audio; measure again")]
     LoudnessStale,
+    #[error("footage analysis is missing for items {}; analyze them before exporting", item_list(.0))]
+    CorrectionMissing(Vec<project::ItemId>),
     #[error("cache is in use")]
     CacheBusy,
     #[error("model transfer response does not match the requested representation")]
@@ -51,6 +53,14 @@ pub enum Error {
     #[error("background job failed: {0}")]
     Failed(std::sync::Arc<dyn Failure + 'static>),
 }
+/// The item ids an error names, comma separated.
+fn item_list(items: &[project::ItemId]) -> String {
+    items
+        .iter()
+        .map(|item| item.0.to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
 impl Failure for Error {
     fn job_policy(&self) -> JobFailurePolicy {
         JobFailurePolicy {
@@ -75,6 +85,7 @@ impl Failure for Error {
             Self::Limit => ErrorCode::Limit,
             Self::IdExhausted
             | Self::LoudnessStale
+            | Self::CorrectionMissing(_)
             | Self::CacheBusy
             | Self::ModelResponse
             | Self::StorageFull
@@ -135,6 +146,7 @@ pub mod transfer {
     pub(crate) use super::verified_transfer::header;
     pub use super::verified_transfer::response;
 }
+pub(crate) mod footage_admission;
 pub(crate) mod loudness_admission;
 mod rendering;
 pub use rendering::{

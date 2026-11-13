@@ -334,6 +334,27 @@ fn blend_dropdown_and_opacity_field_dispatch_real_edits() {
     harness.state_mut().activate("edit.undo").unwrap();
     harness.run_steps(2);
     assert!(!noise(&harness));
+    // The Stabilize switch picks Normal, its level row sets the other levels, each one undo step.
+    let stabilize = |harness: &Harness<'_, Editor>| match &item(harness.state(), id).content {
+        project::ItemParams::Video(params) => params.stabilize,
+        _ => panic!("video item"),
+    };
+    assert_eq!(stabilize(&harness), None);
+    crate::panels::reveal(&mut harness, "inspector.stabilize");
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.stabilize")))
+        .click();
+    harness.run_steps(3);
+    assert_eq!(stabilize(&harness), Some(project::StabilizeLevel::Normal));
+    crate::panels::reveal(&mut harness, "inspector.stabilize.level.stable");
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.stabilize.level.stable")))
+        .click();
+    harness.run_steps(3);
+    assert_eq!(stabilize(&harness), Some(project::StabilizeLevel::Stable));
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert_eq!(stabilize(&harness), Some(project::StabilizeLevel::Normal));
 }
 
 #[test]

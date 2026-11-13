@@ -705,6 +705,7 @@ commands! {
     FontsImport, "fonts.import", "Import custom font", JobControl { path: std::path::PathBuf, accept_license: bool } => Timeline, serde_json::json!({"path":"$output/font.ttf","accept_license":true}), grant = Human, returns = [JobAccepted];
     FontsList, "fonts.list", "List fonts", Read { #[serde(default)] query: Option<NfcText> } => Timeline, serde_json::json!({"query":"lob"}), returns = [Fonts];
     FontsLoad, "fonts.load", "Load font family", Read { family: NfcText } => Timeline, serde_json::json!({"family":"Lobster"}), returns = [Font];
+    AnalyzeFootage, "footage.analyze", "Analyze footage", JobControl { item: ItemId, kind: super::wire::CorrectionKind } => Reframe, serde_json::json!({"item":8,"kind":"stabilize"}), idle = true, grant = Agent, returns = [JobAccepted];
     AddAsset, "import.add_asset", "Add asset", Edit { asset: SourceAsset } => Timeline, serde_json::json!({"asset":{"ephemeral":false,"id":99,"path":"$output/offline.mp4","content_hash":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"probe":{"format":"mp4","duration":null,"streams":[]}}}), grant = Human;
     Inspect, "inspect", "Inspect project", Read {} => Timeline, serde_json::json!({}), idle = true, curated = true, returns = [Inspection];
     JobCancel, "job_cancel", "Cancel job", JobControl { job: super::wire::JobId } => Job, serde_json::json!({"job":0}), grant = Agent, curated = true, returns = [CancelRequested];

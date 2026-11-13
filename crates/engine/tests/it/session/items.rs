@@ -1696,6 +1696,37 @@ fn reduce_noise_is_a_video_item_switch_with_one_undo_step() {
     assert!(!noise(&s));
 }
 
+#[test]
+fn stabilize_is_a_video_item_level_with_one_undo_step_and_reads_from_text() {
+    use engine::ItemParamPatch as P;
+    let (mut s, _video, _audio, clip) = audible_session();
+    let level = |s: &Session| match &get_id(s, clip).content {
+        ItemParams::Video(p) => p.stabilize,
+        _ => panic!("video item"),
+    };
+    assert_eq!(level(&s), None, "off at creation");
+    s.apply(Command::SetItemField {
+        item: clip,
+        patch: P::Stabilize(Some(project::StabilizeLevel::Stable)),
+    })
+    .unwrap();
+    assert_eq!(level(&s), Some(project::StabilizeLevel::Stable));
+    s.undo().unwrap();
+    assert_eq!(level(&s), None);
+    // The text an inspector or script holds: a level word switches on, `off` or `none` off.
+    assert_eq!(
+        P::parse("stabilize", "flexible").unwrap(),
+        P::Stabilize(Some(project::StabilizeLevel::Flexible))
+    );
+    assert_eq!(P::parse("stabilize", "off").unwrap(), P::Stabilize(None));
+    assert_eq!(P::parse("stabilize", "none").unwrap(), P::Stabilize(None));
+    assert!(P::parse("stabilize", "extreme").is_err());
+    // It addresses video items only.
+    let patch = P::Stabilize(Some(project::StabilizeLevel::Normal));
+    assert!(patch.compatible(&get_id(&s, clip).content));
+    assert!(!patch.compatible(&ItemParams::Audio(project::AudioParams::default())));
+}
+
 /// The crop carried by a video item, `None` for any other item kind.
 fn crop_of(item: &Item) -> Option<project::Crop> {
     let ItemParams::Video(p) = &item.content else {

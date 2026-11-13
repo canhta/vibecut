@@ -7,6 +7,7 @@ pub mod effects;
 mod evaluation;
 pub mod mask;
 mod raster;
+pub mod stabilize;
 pub(crate) mod transform;
 pub use transform::arrange;
 pub mod transitions;
@@ -94,6 +95,9 @@ pub struct RenderSettings {
     pub text_cache_entries: usize,
     pub caption_languages: Vec<captions::LanguageTag>,
     pub caption_style: CaptionStyle,
+    /// The analysed camera track of each stabilized video item, resolved by the caller from the
+    /// engine's correction cache. An item with the switch on and no entry renders uncorrected.
+    pub stabilization: stabilize::Tracks,
 }
 impl RenderSettings {
     pub fn from_project(project: &Project) -> Self {
@@ -107,6 +111,7 @@ impl RenderSettings {
             text_cache_entries: 4,
             caption_languages: Vec::new(),
             caption_style: CaptionStyle::default(),
+            stabilization: BTreeMap::new(),
         }
     }
     pub fn portrait(project: &Project) -> Self {
@@ -120,6 +125,7 @@ impl RenderSettings {
         caption::validate(&self.caption_style)?;
         if self.background_blur.is_some_and(|r| r > 64)
             || self.placements.len() > 100000
+            || self.stabilization.len() > 100000
             || self.text_cache_bytes > 256 << 20
             || self.text_cache_entries > 64
             || self.caption_languages.len() > 2
@@ -165,4 +171,6 @@ pub struct Renderer<'a> {
     opacity_path: AnimationPath,
     /// Sticker assets the last frames could not draw; each failure is kept once.
     sticker_errors: Vec<StickerError>,
+    /// Warp tables of stabilized items, kept while track, level and source range stay the same.
+    stabilizers: BTreeMap<ItemId, stabilize::Cached>,
 }

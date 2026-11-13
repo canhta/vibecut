@@ -19,6 +19,13 @@ a valid envelope whose payload fails request validation. Waveforms also regenera
 invalid payloads, while cache-only display reports Failed without starting work.
 Job progress, cancellation and byte admission belong to the [job runner](../runtime/README.md#background-jobs-and-byte-policy).
 
+## Footage correction
+
+`footage::CorrectionRequest::new(asset, kind)` turns one source's footage into a stored correction;
+`footage.analyze {item, kind}` runs it as a local CPU `AnalyzeFootage` job and edits nothing.
+Stabilize is the first kind: per-frame camera poses measured once per source, reused by every item,
+trim, split, retime and level over that source. See [footage correction](correction/README.md).
+
 ## Reframe
 
 `ReframeRequest` turns a source range into a cached subject path in source ticks and

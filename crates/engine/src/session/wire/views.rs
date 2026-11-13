@@ -273,6 +273,7 @@ pub enum JobKind {
     SelectEmphasis,
     AnalyzeShots,
     AnalyzeReframe,
+    AnalyzeFootage,
     DetectScenes,
     AnalyzeSpeechActivity,
     GenerateWaveform,
@@ -465,6 +466,14 @@ pub struct DetectionResult {
     pub(crate) range: SourceRange,
     pub candidates: Vec<SceneCandidate>,
     pub decoded_frames: u64,
+}
+
+/// A correction computed once per source and applied at render, never stored in the project.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CorrectionKind {
+    /// Per-frame camera motion that `stabilize` smooths away.
+    Stabilize,
 }
 
 /// Output aspect of a constant auto-reframe crop window.

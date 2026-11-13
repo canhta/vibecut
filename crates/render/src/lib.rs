@@ -18,7 +18,7 @@ pub use scene::{
     MAX_STICKER_RASTER_SIDE, Placement, RasterCacheStats, Rect, RenderSettings, Renderer,
     StickerError, StickerRaster, rasterize_sticker, style_from_cue,
 };
-pub use scene::{arrange, blend, color, effects, mask, transitions, viewport};
+pub use scene::{arrange, blend, color, effects, mask, stabilize, transitions, viewport};
 pub use sources::{FileSources, SourceProvider};
 use time::SourceRange;
 

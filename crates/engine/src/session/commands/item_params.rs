@@ -198,6 +198,11 @@ impl Admit for Option<project::Crop> {
         self.as_ref().is_none_or(|crop| crop.valid())
     }
 }
+impl Admit for Option<project::StabilizeLevel> {
+    fn admits(&self, _: &ParamBounds) -> bool {
+        true
+    }
+}
 impl Admit for Option<TextBackground> {
     fn admits(&self, _: &ParamBounds) -> bool {
         self.as_ref().is_none_or(TextBackground::valid)
@@ -344,6 +349,18 @@ macro_rules! from_color {
 }
 from_color!(TextBackground, project::TextStroke, project::TextShadow);
 text_shape!(TextBackground, project::TextStroke, project::TextShadow);
+/// `none` or `off` switches stabilization off; a level word switches it on at that level.
+impl ParamText for Option<project::StabilizeLevel> {
+    fn from_text(text: &str, _: &ParamBounds) -> Option<Self> {
+        let text = text.trim();
+        if text.eq_ignore_ascii_case("none") || text.eq_ignore_ascii_case("off") {
+            return Some(None);
+        }
+        serde_json::from_value(serde_json::Value::String(text.to_owned()))
+            .ok()
+            .map(Some)
+    }
+}
 /// A crop is placed by dragging, not typed, so no text reads as one.
 impl ParamText for Option<project::Crop> {
     fn from_text(_: &str, _: &ParamBounds) -> Option<Self> {
@@ -922,6 +939,20 @@ item_params! {
         apply: |t, v, cx| {
             if let ItemParams::Video(p) = &mut t.content {
                 p.reduce_noise = *v;
+            }
+            Ok(())
+        },
+    },
+    /// Per-item stabilization of a video item: a level switches it on, `None` off. The corrective
+    /// motion is not stored here; render looks it up by source.
+    Stabilize(Option<project::StabilizeLevel>) = "stabilize" {
+        targets: VIDEO,
+        bounds: ParamBounds::Free,
+        unit: ParamUnit::None,
+        path: None,
+        apply: |t, v, cx| {
+            if let ItemParams::Video(p) = &mut t.content {
+                p.stabilize = *v;
             }
             Ok(())
         },

@@ -6,7 +6,7 @@ mod canvas;
 mod commands;
 mod effects;
 mod fonts;
-pub(in crate::editor) mod lut;
+pub(in crate::editor) mod jobs;
 mod masks;
 mod number_edit;
 mod speed;
@@ -154,6 +154,11 @@ fn route(state: &mut State, port: &mut Port<'_>, actions: Vec<Action>) {
             Action::SetFps { num, den } => canvas::set_canvas_fps(port, num, den),
             Action::SetClipBackground { items, background } => {
                 background::set_clip_background(port, items, background)
+            }
+            Action::AnalyzeFootage { item } => state.request_footage(port, item),
+            Action::CancelFootage { item } => {
+                state.cancel_footage(item);
+                Ok(())
             }
             Action::ResetTransform(item) => commands::reset_transform(port, item),
             Action::ResetBlend(item) => commands::reset_blend(port, item),

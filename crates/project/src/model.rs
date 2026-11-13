@@ -21,7 +21,8 @@ pub use audio_cleanup::{
 pub use item::{
     AudioParams, AudioSource, CaptionParams, CaptionWordWarning, CaptionWordWarnings,
     ClipBackground, EffectParams, GraphicParams, Item, ItemId, ItemParams, LibraryMusic,
-    LibrarySound, MusicLicence, OverlayParams, StickerParams, TextAlign, TextBackground, TextCase,
+    LibrarySound, MusicLicence, OverlayParams, StabilizeLevel, StickerParams, TextAlign,
+    TextBackground, TextCase,
     TextDecoration, TextParams, TextShadow, TextStroke, TextStyle, VOLUME_DB_RANGE, VideoParams,
     WordSpan, valid_volume,
 };

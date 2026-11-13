@@ -199,6 +199,8 @@ mismatched measured gains with code `Refused`, no source and no transience. Expo
 submission composes this error before admitting any single- or multi-scene job;
 no target needs no measurement. The content key excludes the master fader.
 
+`footage_admission::admit` refuses `CorrectionMissing(items)` (code `Refused`) when a visible video item of the exported scene has stabilization switched on and the export's `RenderSettings.stabilization` holds no track for it. It runs beside the loudness admission in every single- and multi-scene submission, so an export never differs silently from a preview that drew the correction; the error names the item ids.
+
 `submit_export` submits an immutable Project snapshot to the runner's export resource class.
 `JobContext` implements render's `ExecutionHooks`, leasing actual buffers from the shared
 `ByteBudget` under decoded, compositor and export owners rather than declaring a second

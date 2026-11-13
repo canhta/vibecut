@@ -2,6 +2,7 @@
 mod chapters;
 mod emphasis;
 mod fillers;
+mod footage_correction;
 mod loudness;
 mod pause_candidates;
 mod reframe;

@@ -2,6 +2,8 @@
 
 The LUT workflow captures its target before requesting the frame-owned file picker, submits the registered engine job through shared process media access, and applies only a completed descriptor whose session, snapshot, selection, lock and tab still match. The frame owns picker lifecycle and polling composition; the area's state is restored before it can receive another action. No area reads another area's private state or edits the project outside engine commands.
 
+The footage workflow (`jobs/footage.rs`) starts `footage.analyze` for a stabilized clip through shared process media access with its own runner, advances the running jobs once per frame, publishes a finished or failed job through `job_status`, shows progress, cancels on request and keeps the set of switched-on clips that still lack a stored correction. It re-reads that set only when the project snapshot or the cache's correction epoch changes, then asks the frame to resync the preview so playback reads the new correction.
+
 Interface: `add_effect_to_item`, `apply`, `effect_refusal`,
 `set_item_field`, `set_shared_field`, `transform_scrub`.
 

@@ -73,6 +73,12 @@ pub mod scene_detection {
     };
     pub use crate::session::wire::{ChangeKind, DetectionResult, SceneCandidate};
 }
+mod correction;
+pub mod footage {
+    //! Computes footage corrections once per source and looks them up by key.
+    pub use super::correction::{CorrectionJob, CorrectionRequest, Resolution, resolve};
+    pub use crate::session::wire::CorrectionKind;
+}
 mod shot_analysis;
 pub(crate) use shot_analysis::{VisionHooks, iou};
 mod reframe;

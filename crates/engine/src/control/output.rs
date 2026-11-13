@@ -42,6 +42,7 @@ pub(super) fn decode(kind: JobKind, bytes: Option<&[u8]>) -> Result<Option<JobOu
             JobOutput::Clips(Box::new(super::clips::decode_clips(retained()?)?))
         }
         JobKind::AnalyzeShots
+        | JobKind::AnalyzeFootage
         | JobKind::AnalyzeSpeechActivity
         | JobKind::GenerateWaveform
         | JobKind::GenerateClipThumbnails

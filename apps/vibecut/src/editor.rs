@@ -125,6 +125,9 @@ impl Editor {
     ) {
         self.properties
             .attach_luts(media.clone(), self.playback.budget().clone());
+        self.properties
+            .attach_footage(media.clone(), self.playback.budget().clone());
+        self.playback.set_footage(media.clone());
         self.timeline.set_media(media);
         self.timeline.set_proxies(self.playback.proxies().cloned());
     }

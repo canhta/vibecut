@@ -43,6 +43,7 @@ Each module's contract is its README.
 | `editor/panels/properties/view/basic/` | [Basic sub-tabs](src/editor/panels/properties/view/basic/README.md) |
 | `editor/panels/properties/view/effects/` | [Colour wheels and curves](src/editor/panels/properties/view/effects/README.md) |
 | `editor/panels/properties/workflow/` | [Properties workflow](src/editor/panels/properties/workflow/README.md) |
+| `editor/panels/properties/workflow/jobs/` | [Properties jobs](src/editor/panels/properties/workflow/jobs/README.md) |
 | `editor/timeline/` | [Timeline](src/editor/timeline/README.md) |
 | `editor/timeline/view/` | [Timeline view](src/editor/timeline/view/README.md) |
 | `editor/timeline/view/ruler/` | [Timeline ruler](src/editor/timeline/view/ruler/README.md) |

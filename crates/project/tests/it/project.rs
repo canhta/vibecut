@@ -485,6 +485,7 @@ fn populated(path: PathBuf) -> Project {
             }),
             fit: FitMode::Stretch,
             reduce_noise: true,
+            stabilize: Some(project::StabilizeLevel::Stable),
             ..VideoParams::plain()
         }),
         ItemParams::Audio(AudioParams {
