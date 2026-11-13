@@ -138,6 +138,10 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
             Action::ToggleKeyframe { item, fields, time } => {
                 commands::toggle_keyframes(desk, item, &fields, time)
             }
+            Action::SeekToKey(at) => {
+                desk.request(crate::editor::context::Request::Seek(at));
+                Ok(())
+            }
             Action::SetKeyframeAt {
                 item,
                 field,

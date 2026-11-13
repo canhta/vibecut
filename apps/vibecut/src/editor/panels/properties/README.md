@@ -17,10 +17,16 @@ the complete preference candidate before ending coalescing or publishing the pro
 edit and adopts it only after that edit succeeds, without a preference undo step.
 
 
-Animatable rows (Transform scale, position and rotation, Blend opacity, Audio
-volume) carry a diamond toggle right of the label that adds or removes a key at the
-playhead through `keyframes.toggle_at`. It is disabled when the playhead is outside
-the item and filled when a key exists.
+Every animatable row (Transform scale, position and rotation, Blend opacity, Audio
+volume, graphic and effect parameters, including colour rows) ends in the kit's
+`< diamond >` cluster at its right edge; value controls stop short of it. The diamond
+(`inspector.keyframe.<field>`) adds or removes a key at the playhead through
+`keyframes.toggle_at`; it is disabled when the playhead is outside the item and filled
+when a key exists. The arrows (`.previous`, `.next`) seek the playhead to the nearest
+key before or after it, over every channel the diamond keys together (a colour spans its
+four), and are disabled when that side has none. They stay live outside the item and
+on a read-only keyed slider. A click queues `Action::SeekToKey`, which the workflow
+sends through the shared `Request::Seek` transport request; no project edit, no undo step.
 
 The Transform section also carries two reflection toggles below Rotate. They activate
 `timeline.flip_horizontal` / `timeline.flip_vertical`, the same registered commands as
@@ -161,8 +167,12 @@ key exposes the retained base.
 
 The Blend section sits under Basic after Transform, with its own reset arrow. Reset
 restores blend mode Normal and opacity 1.0 (the engine's base) as one batch, one undo
-step; it is `ResetBlend` in the workflow. Blend has no enable checkbox yet: the project
-model has no blend-enabled field, so none is invented here.
+step; it is `ResetBlend` in the workflow. The header's enable checkbox
+(`inspector.section.blending.enable`) has no field of its own: it reads checked while the
+blend mode is not Normal, so the project's blend mode stays the one truth. Unchecking
+sets blend mode Normal; checking restores the mode it replaced (kept in the area's
+`blend_restore` view memory, per item) or, with none remembered, the first non-Normal
+mode. Each click is one `blendMode` edit, one undo step. Opacity is untouched by it.
 
 ## Animation
 

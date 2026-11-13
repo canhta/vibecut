@@ -2,7 +2,7 @@
 
 use super::read;
 use super::{
-    Action, ColorTarget, Context, Rect, State, Text, Vec2, Widget, egui, element_kind, theme,
+    Action, ColorTarget, Context, Rect, State, Text, Tick, Vec2, Widget, egui, element_kind, theme,
 };
 use crate::editor::context::single;
 use crate::i18n;
@@ -25,6 +25,62 @@ fn diamond_group(field: &str) -> &str {
 }
 /// Left edge of the value column inside a 39 px property row.
 const VALUE_COLUMN: f32 = 120.0;
+
+/// Width a row gives up at its right edge for the keyframe cluster: the cluster plus
+/// the 10 px gap measured between the value stepper and the cluster (221703).
+const KEYFRAME_RESERVE: f32 = theme::size::KEYFRAME_CLUSTER + theme::space::ROW_INSET;
+
+/// What one keyframe cluster shows: where the item starts (neighbour keys are
+/// item-relative), whether a key sits at the playhead and the keys on each side.
+struct ClusterState {
+    start: Tick,
+    keyed: bool,
+    can_toggle: bool,
+    neighbours: read::Neighbours,
+}
+
+/// The cluster's rectangle on the right edge of a row, centred on it.
+fn keyframe_cluster_rect(row: Rect) -> Rect {
+    Rect::from_min_size(
+        egui::pos2(
+            row.right() - theme::size::KEYFRAME_CLUSTER,
+            row.center().y - theme::size::CONTROL / 2.0,
+        ),
+        Vec2::new(theme::size::KEYFRAME_CLUSTER, theme::size::CONTROL),
+    )
+}
+
+/// The animatable fields of a row, one group per cluster (a position or scale pair keys together).
+fn animatable_groups(specs: &[ScrubSpec]) -> Vec<(&'static str, Vec<ScrubSpec>)> {
+    let mut groups: Vec<(&'static str, Vec<ScrubSpec>)> = Vec::new();
+    for spec in specs.iter().copied().filter(|spec| {
+        spec.field == "audio_gain"
+            || spec.field.starts_with("params.")
+            || matches!(
+                project::BuiltinPath::parse(spec.field),
+                Some(
+                    project::BuiltinPath::Opacity
+                        | project::BuiltinPath::TransformPositionX
+                        | project::BuiltinPath::TransformPositionY
+                        | project::BuiltinPath::TransformScaleX
+                        | project::BuiltinPath::TransformScaleY
+                        | project::BuiltinPath::TransformRotate
+                )
+            )
+    }) {
+        let key = diamond_group(spec.field);
+        match groups.last_mut() {
+            Some((last, group)) if *last == key => group.push(spec),
+            _ => groups.push((key, vec![spec])),
+        }
+    }
+    groups
+}
+
+/// The right edge a row's value controls stop at: clear of its cluster when it has one.
+fn keyframe_reserve(specs: &[ScrubSpec]) -> f32 {
+    KEYFRAME_RESERVE * animatable_groups(specs).len() as f32
+}
 
 fn is_basic(tab: PropertiesTab) -> bool {
     matches!(
@@ -244,7 +300,10 @@ impl<'a, 'c> Panel<'a, 'c> {
         let target = ColorTarget::GraphicColor { item, stroke, time };
         let name = if stroke { "stroke" } else { "fill" };
         let id = format!("inspector.graphic.{name}");
-        let pos = ui.next_widget_position();
+        let row = Rect::from_min_size(
+            ui.next_widget_position(),
+            Vec2::new(ui.available_width(), theme::size::PROPERTY_ROW),
+        );
         self.color_row(
             ui,
             &id,
@@ -255,25 +314,24 @@ impl<'a, 'c> Panel<'a, 'c> {
             },
             target.clone(),
         );
-        let rect = Rect::from_min_size(
-            pos + Vec2::new(VALUE_COLUMN - theme::size::CONTROL - 4., 8.),
-            Vec2::splat(theme::size::CONTROL),
-        );
-        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
         let enabled = target.inside(self.cx.session.project());
-        let response = child
-            .add_enabled_ui(enabled, |ui| {
-                kit::icon_button(
-                    ui,
-                    &format!("{id}.key"),
-                    crate::kit::Icon::Diamond,
-                    self.tr(Text::AddKeyframe),
-                    target.rgb_keys(self.cx.session.project(), true),
-                )
-            })
-            .inner;
-        self.remember(format!("{id}.key"), &response);
-        if response.clicked() {
+        let keyed = target.rgb_keys(self.cx.session.project(), true);
+        let neighbours = target.key_neighbours(
+            self.cx.session.project(),
+            Tick(self.cx.playhead.0 - start.0),
+        );
+        let clicked = self.keyframe_cluster(
+            ui,
+            &format!("{id}.key"),
+            keyframe_cluster_rect(row),
+            ClusterState {
+                start,
+                keyed,
+                can_toggle: enabled,
+                neighbours,
+            },
+        );
+        if clicked {
             match target.toggle_rgb(self.cx.session.project()) {
                 Ok(command) => self.graphic_command(command),
                 Err(e) => self.fail(e),
@@ -352,24 +410,19 @@ impl<'a, 'c> Panel<'a, 'c> {
             })
             .inner;
         self.remember("inspector.graphic.strokeAlign", &response);
-        let rect = Rect::from_min_size(
-            row.min + Vec2::new(VALUE_COLUMN - theme::size::CONTROL - 4., 8.),
-            Vec2::splat(theme::size::CONTROL),
+        let neighbours = read::param_neighbours(&param, Tick(self.cx.playhead.0 - target.start.0));
+        let clicked = self.keyframe_cluster(
+            ui,
+            "inspector.graphic.strokeAlign.key",
+            keyframe_cluster_rect(row),
+            ClusterState {
+                start: target.start,
+                keyed: exists,
+                can_toggle: inside,
+                neighbours,
+            },
         );
-        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
-        let response = child
-            .add_enabled_ui(inside, |ui| {
-                kit::icon_button(
-                    ui,
-                    "inspector.graphic.strokeAlign.key",
-                    crate::kit::Icon::Diamond,
-                    self.tr(Text::AddKeyframe),
-                    exists,
-                )
-            })
-            .inner;
-        self.remember("inspector.graphic.strokeAlign.key", &response);
-        if selected.is_none() && !response.clicked() {
+        if selected.is_none() && !clicked {
             return;
         }
         let Ok(channel) = param.channel_mut(None) else {
@@ -646,7 +699,7 @@ impl<'a, 'c> Panel<'a, 'c> {
         });
     }
 
-    /// A diamond per animatable field in this row, at the right of the label column.
+    /// One keyframe cluster per animatable field group in this row, at the row's right edge.
     fn keyframe_diamonds(
         &mut self,
         ui: &mut egui::Ui,
@@ -654,26 +707,8 @@ impl<'a, 'c> Panel<'a, 'c> {
         item: ItemId,
         specs: &[ScrubSpec],
     ) {
-        let animate: Vec<ScrubSpec> = specs
-            .iter()
-            .copied()
-            .filter(|spec| {
-                spec.field == "audio_gain"
-                    || spec.field.starts_with("params.")
-                    || matches!(
-                        project::BuiltinPath::parse(spec.field),
-                        Some(
-                            project::BuiltinPath::Opacity
-                                | project::BuiltinPath::TransformPositionX
-                                | project::BuiltinPath::TransformPositionY
-                                | project::BuiltinPath::TransformScaleX
-                                | project::BuiltinPath::TransformScaleY
-                                | project::BuiltinPath::TransformRotate
-                        )
-                    )
-            })
-            .collect();
-        if animate.is_empty() {
+        let groups = animatable_groups(specs);
+        if groups.is_empty() {
             return;
         }
         let Some((start, end)) = super::read::range_of(self.cx.session.project(), item) else {
@@ -682,47 +717,35 @@ impl<'a, 'c> Panel<'a, 'c> {
         let at = self.cx.playhead;
         let inside = start <= at
             && (at < end || (!specs.iter().any(|s| s.field.starts_with("params.")) && at == end));
-        let relative = at.saturating_sub(start);
-        // CapCut shows one diamond for a position or scale pair.
-        let mut groups: Vec<(&str, Vec<ScrubSpec>)> = Vec::new();
-        for spec in animate {
-            let key = diamond_group(spec.field);
-            match groups.last_mut() {
-                Some((last, group)) if *last == key => group.push(spec),
-                _ => groups.push((key, vec![spec])),
-            }
-        }
-        let width = theme::size::CONTROL * groups.len() as f32;
-        let rect = Rect::from_min_max(
-            egui::pos2(row.left() + VALUE_COLUMN - width - 4.0, row.top()),
-            egui::pos2(row.left() + VALUE_COLUMN - 4.0, row.bottom()),
-        );
-        let mut strip = ui.new_child(
-            egui::UiBuilder::new()
-                .max_rect(rect)
-                .layout(egui::Layout::left_to_right(egui::Align::Center)),
-        );
-        strip.spacing_mut().item_spacing.x = 0.0;
-        for (_, group) in groups {
+        // Signed: a playhead before the item still navigates to its first key.
+        let relative = Tick(at.0 - start.0);
+        for (index, (_, group)) in groups.into_iter().enumerate() {
             let Some(lead) = group.first().map(|spec| spec.field) else {
                 continue;
             };
             let id = format!("inspector.keyframe.{}", lead.replace("params.", "graphic."));
-            let exists = group.iter().all(|spec| {
+            let fields: Vec<&str> = group.iter().map(|spec| spec.field).collect();
+            let keyed = group.iter().all(|spec| {
                 super::read::has_key_at(self.cx.session.project(), item, spec.field, relative)
             });
-            let label = self.tr(if exists {
-                Text::RemoveKeyframe
-            } else {
-                Text::AddKeyframe
-            });
-            let response = strip
-                .add_enabled_ui(inside, |ui| {
-                    kit::icon_button(ui, &id, crate::kit::Icon::Diamond, label, exists)
-                })
-                .inner;
-            self.remember_with_icon(id, Some(crate::kit::Icon::Diamond.name()), &response);
-            if response.clicked() && inside {
+            let neighbours =
+                super::read::neighbour_keys(self.cx.session.project(), item, &fields, relative);
+            let rect = keyframe_cluster_rect(row).translate(Vec2::new(
+                -(index as f32) * theme::size::KEYFRAME_CLUSTER,
+                0.0,
+            ));
+            let toggled = self.keyframe_cluster(
+                ui,
+                &id,
+                rect,
+                ClusterState {
+                    start,
+                    keyed,
+                    can_toggle: inside,
+                    neighbours,
+                },
+            );
+            if toggled && inside {
                 let fields = group
                     .iter()
                     .map(|spec| {
@@ -743,6 +766,46 @@ impl<'a, 'c> Panel<'a, 'c> {
                 });
             }
         }
+    }
+
+    /// The shared row-end cluster: draws the kit control, remembers its three cells for
+    /// automation and queues a seek for a previous or next click. Returns whether the
+    /// toggle was clicked; the caller owns what a toggle does.
+    fn keyframe_cluster(
+        &mut self,
+        ui: &mut egui::Ui,
+        id: &str,
+        rect: Rect,
+        state: ClusterState,
+    ) -> bool {
+        let [previous, toggle, next] = kit::keyframe_cluster(
+            ui,
+            id,
+            rect,
+            &kit::KeyframeControl {
+                previous_label: self.tr(Text::PreviousKeyframe),
+                toggle_label: self.tr(if state.keyed {
+                    Text::RemoveKeyframe
+                } else {
+                    Text::AddKeyframe
+                }),
+                next_label: self.tr(Text::NextKeyframe),
+                keyed: state.keyed,
+                can_toggle: state.can_toggle,
+                has_previous: state.neighbours.previous.is_some(),
+                has_next: state.neighbours.next.is_some(),
+            },
+        );
+        self.remember(format!("{id}.previous"), &previous);
+        self.remember_with_icon(id, Some(crate::kit::Icon::Diamond.name()), &toggle);
+        self.remember(format!("{id}.next"), &next);
+        if let Some(time) = state.neighbours.previous.filter(|_| previous.clicked()) {
+            self.actions.push(Action::SeekToKey(state.start + time));
+        }
+        if let Some(time) = state.neighbours.next.filter(|_| next.clicked()) {
+            self.actions.push(Action::SeekToKey(state.start + time));
+        }
+        state.can_toggle && toggle.clicked()
     }
 
     /// The project Details: name and path, a divider, then the canvas rows, the sample
@@ -898,15 +961,44 @@ impl<'a, 'c> Panel<'a, 'c> {
         reset: bool,
         body: impl FnOnce(&mut Self, &mut egui::Ui),
     ) -> bool {
+        self.panel_section_with(ui, id, key, label, default_open, reset, None, body)
+            .0
+    }
+
+    /// A section with an optional enable checkbox before its label (its label and checked
+    /// state). Returns whether reset was clicked and whether the checkbox was.
+    #[allow(clippy::too_many_arguments)]
+    fn panel_section_with(
+        &mut self,
+        ui: &mut egui::Ui,
+        id: &'static str,
+        key: &'static str,
+        label: Text,
+        default_open: bool,
+        reset: bool,
+        enable: Option<(Text, bool)>,
+        body: impl FnOnce(&mut Self, &mut egui::Ui),
+    ) -> (bool, bool) {
         let stored = self.cx.preferences.section_open(key, default_open);
         let mut open = stored;
         let label = self.tr(label);
         let reset_label = self.tr(Text::ResetValue);
-        let header =
-            kit::section_header_with(ui, id, label, &mut open, reset.then_some(reset_label), None);
+        let header = kit::section_header_with(
+            ui,
+            id,
+            label,
+            &mut open,
+            reset.then_some(reset_label),
+            None,
+            enable.map(|(text, checked)| (self.tr(text), checked)),
+        );
         self.remember(id, &header.toggle);
         let clicked = header.reset.as_ref().is_some_and(|response| {
             self.remember(format!("{id}.reset"), response);
+            response.clicked()
+        });
+        let enable_clicked = header.enable.as_ref().is_some_and(|response| {
+            self.remember(format!("{id}.enable"), response);
             response.clicked()
         });
         if open != stored {
@@ -915,7 +1007,26 @@ impl<'a, 'c> Panel<'a, 'c> {
         if open {
             body(self, ui);
         }
-        clicked
+        (clicked, enable_clicked)
+    }
+
+    /// The Blend checkbox: unchecking reverts the blend mode to Normal and remembers the
+    /// mode; checking restores it, or picks the first non-Normal mode when none is remembered.
+    fn toggle_blend(&mut self, item: ItemId) {
+        let Some(current) = read::item(self.cx.session.project(), item).map(|i| i.blend_mode)
+        else {
+            return;
+        };
+        let next = if current == project::BlendMode::Normal {
+            match self.state.blend_restore {
+                Some((remembered, mode)) if remembered == item => mode,
+                _ => project::BlendMode::ALL[1],
+            }
+        } else {
+            self.state.blend_restore = Some((item, current));
+            project::BlendMode::Normal
+        };
+        self.set_item_field(item, "blendMode", next.id());
     }
 
     /// One selected element: its type's tab set, remembered per element type.
@@ -1119,13 +1230,16 @@ impl<'a, 'c> Panel<'a, 'c> {
     /// The Blending section after Transform: the blend mode, and the opacity too where the
     /// tab has no Opacity row of its own. Its reset restores both.
     fn blending_section(&mut self, ui: &mut egui::Ui, item: ItemId, with_opacity: bool) {
-        let blend_reset = self.panel_section(
+        let blend_on = read::item(self.cx.session.project(), item)
+            .is_some_and(|i| i.blend_mode != project::BlendMode::Normal);
+        let (blend_reset, blend_toggle) = self.panel_section_with(
             ui,
             "inspector.section.blending",
             "inspector.blending",
             Text::Blending,
             true,
             true,
+            Some((Text::BlendEnable, blend_on)),
             |panel, ui| {
                 if with_opacity {
                     panel.blend_section(ui, item);
@@ -1134,6 +1248,9 @@ impl<'a, 'c> Panel<'a, 'c> {
                 }
             },
         );
+        if blend_toggle {
+            self.toggle_blend(item);
+        }
         if blend_reset {
             self.state.drafts.clear();
             self.state.focus = None;

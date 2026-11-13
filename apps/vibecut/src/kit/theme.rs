@@ -289,6 +289,17 @@ pub(crate) mod size {
     pub const VALUE: f32 = 54.0;
     pub const KEYFRAME: f32 = 27.0;
     pub const KEYFRAME_DIAMOND: f32 = 10.0;
+    /// Section enable checkbox box (221703 x 1301-1312.5); the label starts 9 px after it.
+    pub const CHECKBOX: f32 = 12.0;
+    /// Row-end keyframe cluster hit cells: previous 8, toggle 16, next 8 (221703 glyph x 1732-1736, 1741-1752, 1757.5-1761.5).
+    pub const KEYFRAME_ARROW_CELL: f32 = 8.0;
+    pub const KEYFRAME_TOGGLE_CELL: f32 = 16.0;
+    pub const KEYFRAME_CLUSTER: f32 = 32.0;
+    /// Row-end toggle diamond, 11 px square (221703 x 1741-1752, y 314-325).
+    pub const KEYFRAME_GLYPH: f32 = 11.0;
+    /// Row-end previous and next chevrons: 4 px wide, 8 px high.
+    pub const KEYFRAME_ARROW_WIDTH: f32 = 4.0;
+    pub const KEYFRAME_ARROW_HEIGHT: f32 = 8.0;
     pub const POSITION: f32 = 66.5;
     pub const SLIDER: f32 = 336.0;
     pub const SLIDER_RAIL: f32 = 2.0;

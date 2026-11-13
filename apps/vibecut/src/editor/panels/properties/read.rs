@@ -203,6 +203,79 @@ pub(super) fn channel_has_keys(project: &project::Project, item: ItemId, field: 
         .is_some_and(|channel| !channel.keys().is_empty())
 }
 
+/// The nearest key times on each side of a time, item-relative. Both sides are
+/// `None` when the channel has no key there.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct Neighbours {
+    pub(super) previous: Option<Tick>,
+    pub(super) next: Option<Tick>,
+}
+
+impl Neighbours {
+    /// The closest previous and the closest next across two channels.
+    fn merge(self, other: Self) -> Self {
+        Self {
+            previous: self.previous.max(other.previous),
+            next: match (self.next, other.next) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            },
+        }
+    }
+}
+
+fn channel_neighbours(channel: &project::Channel, at: Tick) -> Neighbours {
+    let keys = channel.keys();
+    Neighbours {
+        previous: keys
+            .iter()
+            .rev()
+            .map(|key| key.time)
+            .find(|time| *time < at),
+        next: keys.iter().map(|key| key.time).find(|time| *time > at),
+    }
+}
+
+/// The neighbouring keys of one animated parameter; a colour spans its four channels.
+pub(super) fn param_neighbours(param: &project::Param, at: Tick) -> Neighbours {
+    match param {
+        project::Param::Value(channel) => channel_neighbours(channel, at),
+        project::Param::Color(_) => {
+            use project::ColorComponent as C;
+            [C::R, C::G, C::B, C::A]
+                .into_iter()
+                .filter_map(|component| param.channel(Some(component)).ok())
+                .fold(Neighbours::default(), |all, channel| {
+                    all.merge(channel_neighbours(channel, at))
+                })
+        }
+    }
+}
+
+/// The neighbouring keys across every listed field of one item at an item-relative
+/// time (negative before the item starts), so a pair that keys together navigates together.
+pub(super) fn neighbour_keys(
+    project: &project::Project,
+    item: ItemId,
+    fields: &[&str],
+    at: Tick,
+) -> Neighbours {
+    let Some(item) = find(project, item) else {
+        return Neighbours::default();
+    };
+    fields.iter().fold(Neighbours::default(), |all, field| {
+        let path = if *field == "audio_gain" {
+            Some(project::AnimationPath::from(project::BuiltinPath::Volume))
+        } else {
+            project::AnimationPath::new(*field).ok()
+        };
+        match path.and_then(|path| item.animations.get(&path)) {
+            Some(param) => all.merge(param_neighbours(param, at)),
+            None => all,
+        }
+    })
+}
+
 /// Whether the field already owns a key at an item-relative time.
 pub(super) fn has_key_at(project: &project::Project, item: ItemId, field: &str, at: Tick) -> bool {
     let Some(item) = find(project, item) else {

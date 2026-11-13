@@ -302,8 +302,40 @@ pub(super) fn inspector_video(theme: Theme, scale: f32) -> Result<AppHarness, Fa
     inspector_video_tab(theme, scale, "transform")
 }
 
-pub(super) fn inspector_video_blend(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
-    inspector_video_tab(theme, scale, "transform")
+/// Video > Basic with Blend on and opacity and position keyed on both sides of the
+/// playhead (3 s, keys at 1 s and 5 s), so every row-end cluster shows live arrows and
+/// the Blend checkbox is checked. Rendered beside desktop shot 221703.
+pub(super) fn inspector_video_keyframes(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let (mut editor, item) = media_editor(theme, Locale::En)?;
+    capture_columns(&mut editor)?;
+    editor.session.apply(Command::SetItemField {
+        item,
+        patch: ItemParamPatch::BlendMode(project::BlendMode::Multiply),
+    })?;
+    for (path, first, second) in [("opacity", 1.0, 0.5), ("transform.positionX", 0.0, 120.0)] {
+        let path = project::AnimationPath::new(path)?;
+        editor.session.apply(Command::SetAnimatedParam {
+            item,
+            path: path.clone(),
+            param: project::Param::new(project::ParamValue::Scalar(first))?,
+        })?;
+        for (time, value) in [(SECOND, first), (5 * SECOND, second)] {
+            editor.session.apply(Command::AddKeyframe {
+                item,
+                path: path.clone(),
+                component: None,
+                key: project::Keyframe::new(Tick(time), project::ParamValue::Scalar(value)),
+            })?;
+        }
+    }
+    editor.select([item].into_iter().collect())?;
+    editor
+        .preferences
+        .set("properties_tabs", serde_json::json!({"video": "transform"}))?;
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, CAPTURE_WINDOW);
+    wait_for_presented(&mut app)?;
+    app.run_steps(3);
+    Ok(app)
 }
 
 pub(super) fn inspector_project(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {

@@ -50,7 +50,7 @@ impl Panel<'_, '_> {
         let editable = !read::channel_has_keys(self.cx.session.project(), item, "opacity")
             || read::range_of(self.cx.session.project(), item)
                 .is_some_and(|(start, end)| start <= self.cx.playhead && self.cx.playhead < end);
-        ui.add_enabled_ui(editable, |ui| self.slider_row(ui, item, OPACITY_SCRUB));
+        self.slider_row_in(ui, item, OPACITY_SCRUB, editable);
     }
 
     pub(super) fn blend_control(&mut self, ui: &mut egui::Ui, item: ItemId) {

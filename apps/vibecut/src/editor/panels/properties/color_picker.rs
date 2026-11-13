@@ -483,6 +483,32 @@ impl ColorTarget {
             })
         })
     }
+    /// The nearest key times on each side of an item-relative time, over every colour channel.
+    pub(super) fn key_neighbours(
+        &self,
+        project: &project::Project,
+        at: Tick,
+    ) -> super::read::Neighbours {
+        if matches!(self, Self::GraphicColor { .. }) {
+            return self
+                .graphic_animation(project)
+                .map(|(_, param)| super::read::param_neighbours(&param, at))
+                .unwrap_or_default();
+        }
+        let Self::EffectColor { effect, key, .. } = self else {
+            return super::read::Neighbours::default();
+        };
+        let Ok(item) = self.effect_item(project) else {
+            return super::read::Neighbours::default();
+        };
+        let Ok(path) = AnimationPath::new(format!("effects.{effect}.params.{key}")) else {
+            return super::read::Neighbours::default();
+        };
+        item.animations
+            .get(&path)
+            .map(|param| super::read::param_neighbours(param, at))
+            .unwrap_or_default()
+    }
     pub(super) fn inside(&self, project: &project::Project) -> bool {
         if let Self::GraphicColor { time, .. } = self {
             return self

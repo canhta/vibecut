@@ -788,6 +788,23 @@ fn transform_fields_clamp_reset_scrub_cancel_and_persist() {
             .value(),
         before_reset
     );
+    // The Blend checkbox is the blend mode against Normal, with no second field: checking
+    // picks a mode, unchecking reverts to Normal and a re-check restores the mode, one undo step each.
+    let blend = |harness: &Harness<Editor>| item(harness, fixture.video).blend_mode;
+    assert_eq!(blend(&harness), project::BlendMode::Normal);
+    let history = harness.state().session.history_len();
+    click(&mut harness, "inspector.section.blending.enable");
+    let enabled = blend(&harness);
+    assert_ne!(enabled, project::BlendMode::Normal, "checking sets a mode");
+    click(&mut harness, "inspector.section.blending.enable");
+    assert_eq!(
+        blend(&harness),
+        project::BlendMode::Normal,
+        "unchecking reverts"
+    );
+    click(&mut harness, "inspector.section.blending.enable");
+    assert_eq!(blend(&harness), enabled, "a re-check restores the mode");
+    assert_eq!(harness.state().session.history_len().0, history.0 + 3);
     enter(&mut harness, "inspector.transform.scaleX", "-4");
     assert_eq!(
         project::TransformField::ScaleX
