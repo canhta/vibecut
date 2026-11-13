@@ -866,6 +866,8 @@ fn transform_fields_clamp_reset_scrub_cancel_and_persist() {
         ("inspector.transform.flip_horizontal", true),
         ("inspector.transform.flip_vertical", false),
     ] {
+        // The Fit row above the flips pushes them below the fold of this window.
+        reveal(&mut harness, id);
         assert_eq!(
             harness
                 .get(By::new().predicate(|node| node.author_id() == Some(id)))

@@ -344,6 +344,8 @@ fn blend_dropdown_and_opacity_field_dispatch_real_edits() {
         _ => panic!("video item"),
     };
     assert!(!noise(&harness));
+    // The switch sits under Blend, below the fold of this window.
+    crate::panels::reveal(&mut harness, "inspector.reduce_noise");
     harness
         .get(By::new().predicate(|n| n.author_id() == Some("inspector.reduce_noise")))
         .click();

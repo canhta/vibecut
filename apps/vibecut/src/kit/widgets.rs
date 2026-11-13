@@ -671,9 +671,27 @@ pub(crate) fn text_tabs(
     paint(ui).rect_filled(full, radius::PANEL, theme::strip(dark));
     let mut x = full.left() + space::ROW_INSET + space::XXS / 2.0;
     let mut out = Vec::new();
-    for (index, (id, label)) in ids.iter().zip(labels).enumerate() {
+    let galleys: Vec<_> = labels
+        .iter()
+        .enumerate()
+        .map(|(index, label)| {
+            paint(ui).layout_no_wrap(
+                (*label).to_owned(),
+                theme::label_font(),
+                ink(ui, index == selected),
+            )
+        })
+        .collect();
+    // A long locale shrinks the gaps so the last tab never leaves the strip.
+    let text: f32 = galleys.iter().map(|galley| galley.size().x).sum();
+    let room = full.right() - x - space::ROW_INSET - text;
+    let gap = if galleys.len() > 1 {
+        (room / (galleys.len() - 1) as f32).clamp(space::XS, space::TAB_GAP)
+    } else {
+        space::TAB_GAP
+    };
+    for (index, ((id, label), galley)) in ids.iter().zip(labels).zip(galleys).enumerate() {
         let color = ink(ui, index == selected);
-        let galley = paint(ui).layout_no_wrap((*label).to_owned(), theme::label_font(), color);
         let rect = Rect::from_min_size(
             egui::pos2(x, full.top()),
             Vec2::new(galley.size().x, size::TAB_STRIP),
@@ -693,7 +711,7 @@ pub(crate) fn text_tabs(
         });
         author(&response, id);
         focus_ring(ui, &response);
-        x = rect.right() + space::TAB_GAP;
+        x = rect.right() + gap;
         out.push(response);
     }
     ui.allocate_rect(full, Sense::hover());
