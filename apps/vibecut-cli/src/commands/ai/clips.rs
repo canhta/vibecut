@@ -334,7 +334,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
     let media = engine::control::MediaAccess::open(budget.clone())
         .ok()
         .map(Mutex::new);
-    let vision = shorts::installed_faces(budget.clone(), access.cache().ok().cloned());
+    let vision = crate::session::vision_access(budget.clone(), access.cache().ok().cloned());
     let shots = Shots {
         media: media.as_ref(),
         vision: &vision,

@@ -32,6 +32,6 @@ pub use clip_suggest::{
     check_suggestion_credentials, choose_suggestion, suggestion_options,
 };
 mod vision;
-pub use vision::installed_faces;
+pub use vision::{ModelLookup, installed_faces};
 mod workflow;
 pub use workflow::ClipJobs;

@@ -1,8 +1,10 @@
 //! The one lending point: the process stores and the model service every editor borrows.
 use super::window::EditorWindow;
 use crate::{
-    Editor, Error, editor::LibraryStore, model_manager::ModelManager,
-    services::assets::music::MusicSession,
+    Editor, Error,
+    editor::LibraryStore,
+    model_manager::ModelManager,
+    services::{assets::music::MusicSession, model_cache::ModelCache},
 };
 use engine::{
     ByteBudget, MusicError, SoundError,
@@ -32,6 +34,8 @@ pub(super) struct Lending {
     /// The installed local face detector behind the shorts review's shot layouts. It reads the
     /// shared verified model cache on each load and never downloads.
     vision: Arc<VisionAccess>,
+    /// The one models cache the model manager and the face detector both read.
+    model_cache: Arc<ModelCache>,
     /// The model service follows the focused editor: it is lent for a frame and
     /// taken back, so downloads outlive any one project window.
     models: Option<ModelManager>,
@@ -54,6 +58,7 @@ impl Lending {
         let media = MediaAccess::open_in(&root.with_file_name("media"), budget.clone())
             .ok()
             .map(|access| Arc::new(Mutex::new(access)));
+        let model_cache = Arc::new(ModelCache::new(budget.clone()));
         let brand = BrandKit::open(&root.with_file_name("brand_kits"))
             .ok()
             .map(Arc::new);
@@ -63,7 +68,8 @@ impl Lending {
             music: open_music(root),
             media,
             brand,
-            vision: Arc::new(::shorts::installed_faces(budget.clone(), None)),
+            vision: Arc::new(::shorts::installed_faces(model_cache.lookup())),
+            model_cache,
             models: None,
         }
     }
@@ -80,6 +86,7 @@ impl Lending {
     pub(super) fn lend_stores(&self, editor: &mut Editor) {
         self.lend_sounds(editor);
         self.lend_music(editor);
+        editor.set_model_cache(self.model_cache.clone());
         if let Some(media) = &self.media {
             editor.set_media(media.clone());
         }

@@ -375,6 +375,49 @@ fn opening_lists_licence_scope_and_never_transfers_before_download_click() {
     );
 }
 
+struct NoHooks;
+impl ai::ExecutionHooks for NoHooks {
+    fn cancelled(&self) -> bool {
+        false
+    }
+    fn stage(&self, _: ai::Stage) {}
+}
+
+#[test]
+fn a_detector_lookup_while_the_manager_is_open_reads_the_shared_cache_and_is_not_busy() {
+    use crate::services::model_cache::ModelCache;
+    let dir = tempfile::tempdir().unwrap();
+    let fixture = model("fixture-faces", "MIT", &[3u8; 1024]);
+    let budget = ByteBudget::new(4 << 20).unwrap();
+    let (cache, _) = ArtifactCache::open(dir.path(), budget.clone(), 16).unwrap();
+    let shared = Arc::new(ModelCache::with_transfers(
+        budget,
+        ModelTransfers::new(
+            cache,
+            Arc::new(Http::default()),
+            Arc::new(Io {
+                available: u64::MAX,
+            }),
+        ),
+    ));
+    let manager = ModelManager::with_shared(
+        shared.budget().clone(),
+        vec![fixture.clone()],
+        shared.transfers().unwrap(),
+    )
+    .unwrap();
+    let mut bench = bench(open(manager, "fixture-faces"));
+    wait_check(&mut bench);
+    assert!(Arc::ptr_eq(
+        &shared.transfers().unwrap(),
+        &shared.transfers().unwrap()
+    ));
+    // The manager holds the cache root, yet the lookup goes through the same handle: an
+    // uninstalled bundle is an ordinary miss, never a second open or a busy refusal.
+    let lookup = shared.lookup();
+    assert!(matches!(lookup(&fixture, &NoHooks), Ok(None)));
+}
+
 #[test]
 fn cancel_stops_the_active_download() {
     let dir = tempfile::tempdir().unwrap();

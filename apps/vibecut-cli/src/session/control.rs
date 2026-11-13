@@ -98,7 +98,7 @@ fn control_with(
         .ok()
         .map(std::sync::Mutex::new);
     let captions = super::caption_access(context.budget()?);
-    let vision = shorts::installed_faces(context.budget()?, captions.cache().ok().cloned());
+    let vision = super::vision_access(context.budget()?, captions.cache().ok().cloned());
     let policy = ControlPolicy { allow_overwrite };
     let stdin = io::stdin();
     let mut input = stdin.lock();

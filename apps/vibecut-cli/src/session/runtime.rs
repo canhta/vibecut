@@ -72,3 +72,43 @@ pub(crate) fn caption_access(budget: ByteBudget) -> engine::subtitles::CaptionAc
     };
     open().unwrap_or_else(engine::subtitles::CaptionAccess::unavailable)
 }
+
+/// The local face detector lent to `reframe.generate` and clip-export layouts. A root that
+/// already holds the models cache (through `CaptionAccess::cache`) passes it as `shared`;
+/// otherwise the process opens the models cache once here. Either way every load reads
+/// through that one cache, and no weights are downloaded.
+pub(crate) fn vision_access(
+    budget: ByteBudget,
+    shared: Option<Arc<std::sync::Mutex<engine::cache::ArtifactCache>>>,
+) -> engine::control::VisionAccess {
+    use ai::foundation::models::Model;
+    use engine::cache::ModelLease;
+    let lookup: shorts::ModelLookup = match shared {
+        Some(cache) => Arc::new(
+            move |model: &Model,
+                  hooks: &dyn ai::ExecutionHooks|
+                  -> engine::control::Result<Option<ModelLease>> {
+                Ok(cache
+                    .lock()
+                    .map_err(|_| engine::RuntimeError::Poisoned)?
+                    .model(model, hooks)?)
+            },
+        ),
+        None => {
+            let opened = engine::models::ModelTransfers::open_native(budget, 128)
+                .ok()
+                .map(|(transfers, _)| transfers);
+            Arc::new(
+                move |model: &Model,
+                      hooks: &dyn ai::ExecutionHooks|
+                      -> engine::control::Result<Option<ModelLease>> {
+                    match &opened {
+                        Some(transfers) => Ok(transfers.installed(model, hooks)?),
+                        None => Err(engine::RuntimeError::CacheBusy.into()),
+                    }
+                },
+            )
+        }
+    };
+    shorts::installed_faces(lookup)
+}

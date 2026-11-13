@@ -1,35 +1,28 @@
 //! The installed local face detector a composition root lends to shot analysis.
-use engine::{ByteBudget, cache::ArtifactCache, control::VisionAccess};
-use std::sync::{Arc, Mutex};
+use ai::foundation::models::Model;
+use engine::{cache::ModelLease, control::VisionAccess};
+use std::sync::Arc;
 
 const MODEL: &str = "yunet-2026may";
 
+/// The root's verified model-cache lookup. Each process opens its models cache once and
+/// every consumer (model manager, captions, this loader) reads through that one owner, so
+/// the loader never opens a second cache of its own.
+pub type ModelLookup = Arc<
+    dyn Fn(&Model, &dyn ai::ExecutionHooks) -> engine::control::Result<Option<ModelLease>>
+        + Send
+        + Sync,
+>;
+
 /// The local YuNet detector behind `reframe.generate` and clip-export layouts. Model files
-/// are read from the shared verified cache and never downloaded here: a missing bundle
-/// returns the typed `ModelMissing` refusal, which clip analysis reports as `models_missing`
-/// and the CLI reframe command turns into the `model download yunet-2026may` setup message.
-/// A root that already holds the models cache (through `CaptionAccess::cache`) passes it as
-/// `shared`, because that root is opened once per process; otherwise each load opens the
-/// cache for the duration of the lookup.
-pub fn installed_faces(
-    budget: ByteBudget,
-    shared: Option<Arc<Mutex<ArtifactCache>>>,
-) -> VisionAccess {
+/// come from the root's `lookup` and are never downloaded here: a missing bundle returns
+/// the typed `ModelMissing` refusal, which clip analysis reports as `models_missing` and
+/// the CLI reframe command turns into the `model download yunet-2026may` setup message.
+pub fn installed_faces(lookup: ModelLookup) -> VisionAccess {
     VisionAccess::new(move || {
         let model = engine::models::catalog_model(MODEL)?;
         let hooks = Hooks;
-        let lease = match &shared {
-            Some(cache) => cache
-                .lock()
-                .map_err(|_| engine::RuntimeError::Poisoned)?
-                .model(&model, &hooks)?,
-            None => {
-                let (transfers, _) =
-                    engine::models::ModelTransfers::open_native(budget.clone(), 128)?;
-                transfers.installed(&model, &hooks)?
-            }
-        }
-        .ok_or(engine::control::Error::Providers(
+        let lease = lookup(&model, &hooks)?.ok_or(engine::control::Error::Providers(
             engine::providers::Error::ModelMissing(MODEL),
         ))?;
         let vision = ai::vision::TractVision::load_faces(lease.directory(), 2, 3, &hooks)?;

@@ -88,7 +88,7 @@ pub(crate) fn run(
         let shared = captions.cache().ok().cloned();
         inbox.attach_captions(std::sync::Arc::new(captions));
         inbox.attach_stickers(crate::session::sticker_lend());
-        inbox.attach_vision(std::sync::Arc::new(shorts::installed_faces(
+        inbox.attach_vision(std::sync::Arc::new(crate::session::vision_access(
             context.budget()?,
             shared,
         )));
