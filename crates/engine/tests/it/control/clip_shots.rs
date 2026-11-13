@@ -6,8 +6,8 @@
     reason = "public-interface conformance assertions"
 )]
 use crate::support::control::{
-    Allow, caller, finish, media_access, ok, request, runner_with_budget, seed, vision_access, with_video,
-    write_video,
+    Allow, caller, finish, media_access, ok, request, runner_with_budget, seed, vision_access,
+    with_video, write_video,
 };
 use engine::control::{self, ClipShotsDiagnostic, ControlResult};
 use engine::jobs::{JobId, JobRunner};

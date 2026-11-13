@@ -1,6 +1,8 @@
 //! Draws the Animation control every visual element shares.
 use super::Panel;
-use crate::editor::properties::{ANIMATION_DRAFT as DRAFT, Action, ItemId, Text, egui, read, theme};
+use crate::editor::properties::{
+    ANIMATION_DRAFT as DRAFT, Action, ItemId, Text, egui, read, theme,
+};
 use crate::kit;
 use engine::{AnimationPreset as Look, AnimationSlot as Slot};
 use time::{Rounding, Tick};
