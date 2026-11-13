@@ -416,10 +416,12 @@ fn settings_cache_rows_show_clearing_disabled_clear_and_bytes_freed() {
             "a disabled clear button starts no request"
         );
         // A finished clear reports the bytes it freed and what is still in use.
-        let mut report = engine::cache::CacheMaintenanceReport::default();
-        report.removed_bytes = 3 << 20;
-        report.disk_bytes = 5 << 20;
-        report.in_use = 1;
+        let report = engine::cache::CacheMaintenanceReport {
+            removed_bytes: 3 << 20,
+            disk_bytes: 5 << 20,
+            in_use: 1,
+            ..Default::default()
+        };
         bench.editor_mut().timeline.script_cache(CacheUi {
             phase: CachePhase::Idle,
             report: Some(Arc::new(report)),
@@ -429,11 +431,7 @@ fn settings_cache_rows_show_clearing_disabled_clear_and_bytes_freed() {
         let freed = crate::i18n::format(
             locale,
             Text::SettingsCacheFreed,
-            &[
-                ("freed", &"3".to_string()),
-                ("after", &"2".to_string()),
-                ("kept", &"1".to_string()),
-            ],
+            &[("freed", "3"), ("after", "2"), ("kept", "1")],
         );
         assert!(bench.harness().query_by_label(&freed).is_some());
     }

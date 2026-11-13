@@ -509,10 +509,11 @@ impl Panel<'_, '_> {
             let radius = theme::radius::UPLOAD;
             ui.painter().rect_filled(rect, radius, theme::field(dark));
             let [red, green, blue, alpha] = look.style().color.0;
+            let sample = self.tr(Text::LookSample);
             ui.painter().text(
                 rect.center(),
                 egui::Align2::CENTER_CENTER,
-                "Aa",
+                sample,
                 theme::label_font(),
                 egui::Color32::from_rgba_unmultiplied(red, green, blue, alpha),
             );
