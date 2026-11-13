@@ -1279,6 +1279,11 @@ fn owner_failures_classify_publication_receipts_and_events() {
             false
         ),
         row!(
+            E::Render(render::Error::Media(media::MediaError::Invalid("decode"))),
+            Media,
+            false
+        ),
+        row!(
             E::Edit(engine::EditError::Project(project::Error::Conflict)),
             Conflict,
             false

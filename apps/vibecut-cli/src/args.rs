@@ -138,6 +138,11 @@ mod exit_codes {
                 2
             ),
             row!(E::Render(render::Error::Cancelled), "render", 6),
+            row!(
+                E::Render(render::Error::Media(media::MediaError::Invalid("decode"))),
+                "media",
+                6
+            ),
             row!(E::Media(media::MediaError::Cancelled), "media", 6),
             row!(E::Ai(ai::Error::Auth), "ai", 4),
             row!(

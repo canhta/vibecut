@@ -12,6 +12,7 @@ impl Failure for render::Error {
     fn code(&self) -> ErrorCode {
         match self {
             Self::Unavailable(_) => ErrorCode::Unavailable,
+            Self::Media(error) => error.code(),
             _ => ErrorCode::Render,
         }
     }
