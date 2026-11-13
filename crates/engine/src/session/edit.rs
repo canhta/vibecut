@@ -925,7 +925,7 @@ mod effects;
 mod masks;
 mod media_edits;
 mod motion;
-mod parameters;
+pub(in crate::session) mod parameters;
 mod project_edits;
 mod retime;
 mod text;

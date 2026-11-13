@@ -38,7 +38,6 @@ impl State {
 
 pub(in crate::editor) fn transform_scrub(field: project::TransformField) -> ScrubSpec {
     use project::TransformField as F;
-    let (min, max) = field.bounds();
     let label = match field {
         F::PositionX => Text::PositionX,
         F::PositionY => Text::PositionY,
@@ -47,23 +46,15 @@ pub(in crate::editor) fn transform_scrub(field: project::TransformField) -> Scru
         F::Rotate => Text::Rotate,
     };
     let scale = matches!(field, F::ScaleX | F::ScaleY);
-    ScrubSpec {
-        scale: if scale { 100.0 } else { 1.0 },
-        field: field.builtin().as_str(),
+    ScrubSpec::of(
+        field.builtin().as_str(),
         label,
-        min,
-        max,
-        step: if scale || field == F::Rotate {
+        if scale || field == F::Rotate {
             0.01
         } else {
             1.0
         },
-        pixels_per_step: if field == F::Rotate { 0.02 } else { 2.0 },
-        decimals: if scale || field == F::Rotate { 2 } else { 0 },
-        suffix: match field {
-            F::Rotate => "°",
-            F::ScaleX | F::ScaleY => "%",
-            _ => "",
-        },
-    }
+        if field == F::Rotate { 0.02 } else { 2.0 },
+        if scale || field == F::Rotate { 2 } else { 0 },
+    )
 }

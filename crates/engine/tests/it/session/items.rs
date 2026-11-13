@@ -2460,3 +2460,61 @@ fn align_translates_curve_values_and_refuses_whole_lists() {
     ));
     assert_eq!(two.project(), &before);
 }
+
+/// The parameter table is the one declaration: every row names its kinds and bounds, is
+/// found by its wire name, and is the field the patch serializes under.
+#[test]
+fn item_param_table_rows_declare_kinds_and_bounds_and_parse_by_wire_name() {
+    use engine::{ITEM_PARAMS, ItemParamPatch, ParamBounds, ParamParseError, item_param};
+    // One text per payload type: numbers, switches, words, colours and cleared shapes.
+    const SAMPLES: [&str; 7] = [
+        "1",
+        "true",
+        "multiply",
+        "fill",
+        "center",
+        "#FF0000FF",
+        "none",
+    ];
+    let mut names = std::collections::BTreeSet::new();
+    for row in ITEM_PARAMS {
+        assert!(names.insert(row.name), "{} is declared twice", row.name);
+        assert!(!row.targets.is_empty(), "{} names no kind", row.name);
+        assert_eq!(item_param(row.name), Some(row));
+        if let ParamBounds::Range { min, max, .. } = row.bounds {
+            assert!(min < max, "{} has an empty range", row.name);
+            for edge in [min, max] {
+                assert!(
+                    ItemParamPatch::parse(row.name, &edge.to_string()).is_ok(),
+                    "{} refuses its own bound {edge}",
+                    row.name
+                );
+            }
+        }
+        // A crop is placed by dragging, so no text reads as one.
+        if row.name == "crop" {
+            assert_eq!(
+                ItemParamPatch::parse(row.name, "1"),
+                Err(ParamParseError::Value)
+            );
+            continue;
+        }
+        let patch = SAMPLES
+            .iter()
+            .find_map(|text| ItemParamPatch::parse(row.name, text).ok())
+            .unwrap_or_else(|| panic!("{} reads no sample text", row.name));
+        assert_eq!(patch.field(), row.name);
+        assert_eq!(patch.row(), row);
+        let wire = serde_json::to_value(&patch).unwrap();
+        assert_eq!(wire["field"], row.name);
+        assert_eq!(
+            serde_json::from_value::<ItemParamPatch>(wire).unwrap(),
+            patch
+        );
+    }
+    assert_eq!(
+        ItemParamPatch::parse("audio_gain", "1"),
+        Err(ParamParseError::Unknown)
+    );
+    assert_eq!(item_param("audio_gain"), None);
+}

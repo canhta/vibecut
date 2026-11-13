@@ -2710,7 +2710,7 @@ fn mixed_audio_mute_shows_indeterminate_and_undo_restores_each_item() {
     harness.run_steps(3);
     let before = harness.state().session.project().clone();
     let history = harness.state().session.history_len().0;
-    let mute = By::new().predicate(|n| n.author_id() == Some("inspector.audio_muted"));
+    let mute = By::new().predicate(|n| n.author_id() == Some("inspector.muted"));
     assert_eq!(
         harness.get(mute.clone()).accesskit_node().toggled(),
         Some(egui::accesskit::Toggled::Mixed)
@@ -2810,7 +2810,7 @@ fn audio_mute_and_volume_controls_commit_one_step_and_persist() {
 
     harness
         .state_mut()
-        .set_shared_field("audio_gain", "-6")
+        .set_shared_field("volume", "-6")
         .unwrap();
     let ItemParams::Audio(params) = &item(harness.state(), audio).content else {
         panic!("audio")
@@ -2821,7 +2821,7 @@ fn audio_mute_and_volume_controls_commit_one_step_and_persist() {
         assert!(
             harness
                 .state_mut()
-                .set_shared_field("audio_gain", invalid)
+                .set_shared_field("volume", invalid)
                 .is_err(),
             "gain accepted {invalid}"
         );
@@ -2830,7 +2830,7 @@ fn audio_mute_and_volume_controls_commit_one_step_and_persist() {
         assert!(
             harness
                 .state_mut()
-                .set_shared_field("audio_muted", invalid)
+                .set_shared_field("muted", invalid)
                 .is_err(),
             "mute accepted {invalid}"
         );
@@ -2840,7 +2840,7 @@ fn audio_mute_and_volume_controls_commit_one_step_and_persist() {
     assert_eq!(decoded.project, **harness.state().session.project());
     harness
         .state_mut()
-        .set_shared_field("audio_muted", "false")
+        .set_shared_field("muted", "false")
         .unwrap();
     let ItemParams::Audio(params) = &item(harness.state(), audio).content else {
         panic!("audio")
@@ -2881,7 +2881,7 @@ fn compatible_audio_gain_inspector_edits_video_and_preserves_mute() {
         harness.run_steps(2);
     }
     harness
-        .get(By::new().predicate(|n| n.author_id() == Some("inspector.audio_gain")))
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.volume")))
         .click();
     harness.run_steps(1);
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
