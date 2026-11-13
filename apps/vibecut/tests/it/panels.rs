@@ -3939,27 +3939,6 @@ fn font_picker_screenshot_is_available() {
     assert!(path.exists());
 }
 
-/// A five-second rectangle graphic at the start, the item the graphic shelf tests edit.
-fn graphic_rectangle(session: &mut Session) -> ItemId {
-    let outcome = session
-        .apply(Command::InsertItem {
-            placement: Placement::Auto,
-            item: NewItem {
-                retime: Default::default(),
-                animations: Default::default(),
-                source_asset: None,
-                source_range: SourceRange::new(Tick::ZERO, Tick(5 * SECOND)).unwrap(),
-                start: Tick::ZERO,
-                content: ItemParams::Graphic(project::GraphicParams::rectangle()),
-            },
-        })
-        .unwrap();
-    match outcome.created.first().copied() {
-        Some(CreatedId::Item(id)) => id,
-        _ => panic!("graphic"),
-    }
-}
-
 #[test]
 fn graphic_shelf_keyed_rgba_numeric_drafts_history_and_captures() {
     for locale in [vibecut::i18n::Locale::En, vibecut::i18n::Locale::Vi] {
@@ -3972,13 +3951,13 @@ fn graphic_shelf_keyed_rgba_numeric_drafts_history_and_captures() {
                 .apply(Command::Delete { items: ids })
                 .unwrap();
             f.editor.preferences.assets_tab = AssetsTab::Stickers;
-            let id = graphic_rectangle(&mut f.editor.session);
             let mut h = crate::gpu::builder()
                 .with_size(egui::vec2(1440., 1000.))
                 .with_pixels_per_point(scale)
                 .build_ui_state(|ui, e: &mut Editor| e.ui(ui), f.editor);
             h.run_steps(3);
-            select(&mut h, id);
+            click(&mut h, "graphic.insert.rectangle");
+            let id = *h.state().selection().iter().next().unwrap();
             assert!(matches!(
                 item(&h, id).content,
                 ItemParams::Graphic(project::GraphicParams::Rectangle { .. })
