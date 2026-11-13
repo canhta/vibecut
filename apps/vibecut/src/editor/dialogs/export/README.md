@@ -17,7 +17,7 @@ canvas ratio, custom even dimensions change output only, and explicit frame rate
 target bitrate, compatible codec and H.264 profile feed the renderer. Range is full by
 default, or frame-snapped in and out markers or the selected clips' bounds; range
 errors disable Export before any job is submitted. Scene scope is active by default,
-all, or a named scene. Preferences persist these choices plus the format, quality,
+all, or a named scene. Audio-only formats (M4A, WebM audio) hide the video controls and export the mastered mix. Preferences persist these choices plus the format, quality,
 audio switch and last directory; source consent and overwrite authorization stay
 transient. Project and undo history never store export state. An empty timeline shows
 a catalog error and refuses start.

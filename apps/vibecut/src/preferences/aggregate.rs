@@ -53,11 +53,13 @@ pub const PREFERENCE_KEYS: &[&str] = &[
     "preview_fit",
     "preview_zoom",
     "preview_axis",
+    "playback_loop",
     "keybindings",
     "recent_colors",
     "timeline_lanes",
     "font_picker",
     "adjustment_presets",
+    "sticker_recents",
     "easing",
 ];
 
@@ -137,6 +139,8 @@ pub struct Preferences {
     pub preview_zoom: f64,
     /// Hovering the timeline scrubs the preview to the pointer time; on by default.
     pub preview_axis: bool,
+    /// Loop playback over the export in/out range, or the whole timeline when unset.
+    pub playback_loop: bool,
     /// Last directory used by the snapshot save dialog.
     pub snapshot_directory: Option<PathBuf>,
     /// App-local action overrides. Defaults and action metadata live in
@@ -150,6 +154,8 @@ pub struct Preferences {
     pub font_picker: FontPickerPreferences,
     /// Named colour-adjustment presets stored with the app.
     pub adjustment_presets: Vec<AdjustmentPreset>,
+    /// Recently inserted sticker ids, newest first and deduplicated; presentation memory, never project data.
+    pub sticker_recents: Vec<String>,
     /// Graph editor tab and saved easing curves; user data, never project state.
     pub easing: EasingPreferences,
 }
@@ -176,12 +182,14 @@ impl Default for Preferences {
             preview_fit: true,
             preview_zoom: 1.0,
             preview_axis: true,
+            playback_loop: false,
             snapshot_directory: None,
             keybindings: KeybindingPreferences::default(),
             recent_colors: Vec::new(),
             timeline_lanes: BTreeMap::new(),
             font_picker: FontPickerPreferences::default(),
             adjustment_presets: Vec::new(),
+            sticker_recents: Vec::new(),
             easing: EasingPreferences::default(),
         }
     }
@@ -237,6 +245,9 @@ impl Preferences {
         }
         self.font_picker.validate()?;
         super::adjustment::validate_adjustment_presets(&self.adjustment_presets)?;
+        if self.sticker_recents.len() > libraries::stickers::MAX_RECENT_STICKERS {
+            return Err(Error::Invalid("sticker recents"));
+        }
         self.easing.validate()?;
         if serde_json::to_vec(self)?.len() as u64 > MAX_PREFERENCES_BYTES {
             return Err(Error::Invalid("preference size"));
@@ -325,12 +336,14 @@ impl Preferences {
             "preview_fit" => Ok(serde_json::Value::Bool(self.preview_fit)),
             "preview_zoom" => Ok(serde_json::json!(self.preview_zoom)),
             "preview_axis" => Ok(serde_json::Value::Bool(self.preview_axis)),
+            "playback_loop" => Ok(serde_json::Value::Bool(self.playback_loop)),
             "snapshot_directory" => Ok(serde_json::to_value(&self.snapshot_directory)?),
             "keybindings" => Ok(serde_json::to_value(&self.keybindings)?),
             "recent_colors" => Ok(serde_json::to_value(&self.recent_colors)?),
             "timeline_lanes" => Ok(serde_json::to_value(&self.timeline_lanes)?),
             "font_picker" => Ok(serde_json::to_value(&self.font_picker)?),
             "adjustment_presets" => Ok(serde_json::to_value(&self.adjustment_presets)?),
+            "sticker_recents" => Ok(serde_json::to_value(&self.sticker_recents)?),
             "easing" => Ok(serde_json::to_value(&self.easing)?),
             _ => Err(Error::Unsupported("preference key")),
         }
@@ -364,12 +377,14 @@ impl Preferences {
             "preview_fit" => self.preview_fit = serde_json::from_value(value)?,
             "preview_zoom" => self.preview_zoom = serde_json::from_value(value)?,
             "preview_axis" => self.preview_axis = serde_json::from_value(value)?,
+            "playback_loop" => self.playback_loop = serde_json::from_value(value)?,
             "snapshot_directory" => self.snapshot_directory = serde_json::from_value(value)?,
             "keybindings" => self.keybindings = serde_json::from_value(value)?,
             "recent_colors" => self.recent_colors = serde_json::from_value(value)?,
             "timeline_lanes" => self.timeline_lanes = serde_json::from_value(value)?,
             "font_picker" => self.font_picker = serde_json::from_value(value)?,
             "adjustment_presets" => self.adjustment_presets = serde_json::from_value(value)?,
+            "sticker_recents" => self.sticker_recents = serde_json::from_value(value)?,
             "easing" => self.easing = serde_json::from_value(value)?,
             _ => return Err(Error::Unsupported("preference key")),
         }

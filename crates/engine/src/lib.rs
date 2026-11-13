@@ -5,8 +5,8 @@ mod session;
 pub(crate) use session::transitions;
 pub use session::wire::{Failure, JobFailurePolicy};
 pub use session::{
-    AssetUsage, BrandKitError, EditError, FontError, JobTarget, MusicError, Session, SessionError,
-    SoundError,
+    AssetUsage, BrandKitError, ChangeSummary, EditError, FontError, Fork, JobTarget, MusicError,
+    Session, SessionError, SoundError,
 };
 pub use session::{
     Availability, CaptionPreset, CaptionStyleApply, ChapterSidecars, Command, CommandKind,
@@ -22,9 +22,9 @@ pub use runtime::jobs;
 pub(crate) use runtime::publication;
 pub use runtime::transfer;
 pub use runtime::{
-    AssetExport, plan_asset_exports, submit_asset_exports, submit_export,
-    submit_export_publication, submit_export_with_sources, submit_scene_exports_with_sources,
-    subtitle_file,
+    AssetExport, plan_asset_exports, submit_asset_exports, submit_asset_exports_with_sources,
+    submit_export, submit_export_publication, submit_export_with_sources,
+    submit_scene_exports_with_sources, subtitle_file,
 };
 pub use runtime::{
     BudgetSnapshot, ByteBudget, ByteBudgetHooks, ByteLease, ByteOwner, Error as RuntimeError,

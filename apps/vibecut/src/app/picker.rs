@@ -12,6 +12,7 @@ pub(super) enum PickerAction {
     Save { leave: bool, close: bool },
     ImportMedia,
     ImportLut,
+    ExportClips,
     ExportSave,
     SnapshotSave,
 }
@@ -69,8 +70,13 @@ impl EditorWindow {
                 }
                 Box::pin(async move { dialog.save_file().await.map(|file| vec![file]) })
             }
+            PickerAction::ExportClips => {
+                let dialog = rfd::AsyncFileDialog::new().set_title(self.tr(Text::ClipExportFolder));
+                Box::pin(async move { dialog.pick_folder().await.map(|folder| vec![folder]) })
+            }
             PickerAction::ImportLut => {
-                let dialog = rfd::AsyncFileDialog::new().add_filter(self.tr(Text::Lut), &["cube"]);
+                let dialog =
+                    rfd::AsyncFileDialog::new().add_filter(self.tr(Text::Lut), &["cube", "3dl"]);
                 Box::pin(async move { dialog.pick_file().await.map(|file| vec![file]) })
             }
             PickerAction::ImportMedia => {
@@ -136,6 +142,19 @@ impl EditorWindow {
             .ok_or(Error::Invalid("no project"))?
             .start_import(paths)
     }
+    /// Start `export.clips` in the folder the native picker chose.
+    pub fn export_clips_picked(&mut self, directory: PathBuf) -> Result<()> {
+        self.editor
+            .as_mut()
+            .ok_or(Error::Invalid("no project"))?
+            .export_clips_picked(directory)
+    }
+    /// A dismissed folder picker leaves the queued clips unexported.
+    pub fn export_clips_cancelled(&mut self) {
+        if let Some(editor) = &mut self.editor {
+            editor.export_clips_cancelled();
+        }
+    }
     /// Apply a save-picker destination to the existing export dialog.
     pub fn export_picked_file(&mut self, path: PathBuf) -> Result<()> {
         self.editor
@@ -181,6 +200,9 @@ impl EditorWindow {
                 {
                     self.error = Some(error);
                 }
+                if matches!(picker.action, PickerAction::ExportClips) {
+                    self.export_clips_cancelled();
+                }
             }
             std::task::Poll::Ready(Some(mut files)) => {
                 let result = match picker.action {
@@ -208,6 +230,13 @@ impl EditorWindow {
                         Some(file) => self.snapshot_picked_file(file.path().to_owned()),
                         None => {
                             self.snapshot_save_cancelled();
+                            Ok(())
+                        }
+                    },
+                    PickerAction::ExportClips => match files.pop() {
+                        Some(folder) => self.export_clips_picked(folder.path().to_owned()),
+                        None => {
+                            self.export_clips_cancelled();
                             Ok(())
                         }
                     },
@@ -273,6 +302,7 @@ mod tests {
                 muted: false,
                 crop: None,
                 cleanup: Default::default(),
+                background: project::ClipBackground::None,
             }),
             effects: vec![],
             masks: vec![],

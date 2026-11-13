@@ -69,6 +69,8 @@ pub(in crate::editor) struct State {
     pub(in crate::editor) media_marquee: Option<MediaMarquee>,
     pub(in crate::editor) media_reveal: Option<MediaReveal>,
     pub(in crate::editor) media_delete_confirm: Option<Vec<super::AssetId>>,
+    /// Media tab: the clip export owner, its queued request and running job.
+    pub(in crate::editor) clip_exports: Option<super::media_panel::clips::ClipExports>,
     pub(in crate::editor) asset_states: BTreeMap<super::AssetId, AssetState>,
     pub(in crate::editor) thumbnails:
         BTreeMap<super::AssetId, engine::thumbnails::RetainedThumbnail>,
@@ -88,6 +90,10 @@ pub(in crate::editor) struct State {
     pub(in crate::editor) thumbnail_root: Option<PathBuf>,
     /// Captions tab: the panel, built on first use.
     pub(in crate::editor) captions: Option<super::captions::Subtitles>,
+    /// Stickers tab: the category tab, whether See all widened the results, and the thumbnails.
+    pub(super) sticker_tab: super::stickers::StickerTab,
+    pub(super) sticker_expanded: bool,
+    pub(in crate::editor) sticker_thumbnails: super::stickers::Thumbnails,
 }
 
 impl Default for State {
@@ -119,6 +125,7 @@ impl Default for State {
             media_marquee: None,
             media_reveal: None,
             media_delete_confirm: None,
+            clip_exports: None,
             asset_states: BTreeMap::new(),
             thumbnails: BTreeMap::new(),
             thumbnail_textures: std::cell::RefCell::default(),
@@ -134,6 +141,9 @@ impl Default for State {
             restoring_asset: None,
             thumbnail_root: None,
             captions: None,
+            sticker_tab: Default::default(),
+            sticker_expanded: false,
+            sticker_thumbnails: Default::default(),
         }
     }
 }

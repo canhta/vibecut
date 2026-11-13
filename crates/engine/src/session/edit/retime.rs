@@ -40,6 +40,7 @@ pub(super) fn set_speed(
         },
         speed,
         maintain_pitch,
+        reverse: target.retime.reverse,
     };
     let new_end = target.end()?;
     if ripple {
@@ -52,6 +53,49 @@ pub(super) fn set_speed(
     }
     Ok(())
 }
+
+/// Flip one video/audio item's traversal direction. Its timeline span is kept:
+/// the item plays the same source span backwards, including a split or trimmed
+/// piece, whose retained window is mirrored (see `Item::set_reversed`).
+fn set_reverse(data: &mut ProjectData, id: ItemId, reverse: bool) -> Result<()> {
+    let timeline = &mut data.scene_mut().timeline;
+    let Some(t) = timeline
+        .iter_mut()
+        .find(|t| t.items.iter().any(|i| i.id == id))
+    else {
+        return Err(EditError::NoItem(id));
+    };
+    unlocked(t)?;
+    let target = t
+        .items
+        .iter_mut()
+        .find(|i| i.id == id)
+        .ok_or(EditError::NoItem(id))?;
+    if !matches!(target.content, ItemParams::Video(_) | ItemParams::Audio(_)) {
+        return Err(EditError::Unsupported("reverse on non-media item"));
+    }
+    target.set_reversed(reverse)?;
+    Ok(())
+}
+
+pub(super) fn execute_set_reverse(
+    mut data: ProjectData,
+    items: Vec<ItemId>,
+    reverse: bool,
+) -> Result<ProjectData> {
+    if items.is_empty() {
+        return Err(EditError::Invalid("empty item selection"));
+    }
+    let mut seen = BTreeSet::new();
+    for id in items {
+        if !seen.insert(id) {
+            return Err(EditError::Invalid("duplicate reverse item"));
+        }
+        set_reverse(&mut data, id, reverse)?;
+    }
+    Ok(data)
+}
+
 pub(super) fn execute_set_speed(
     mut data: ProjectData,
     items: Vec<ItemId>,

@@ -199,6 +199,57 @@ fn export_refuses_hostile_settings_and_zero_duration_with_typed_errors() {
             Err(Error::Invalid("export settings/range"))
         ));
     }
+    // Audio-only output refuses a missing audio request and any stream copy before staging.
+    let mut silent = ExportSettings::from_project(&p);
+    silent.audio_only = true;
+    silent.include_audio = false;
+    assert!(matches!(
+        export(
+            &p,
+            range,
+            &silent,
+            std::path::Path::new("never-written.m4a"),
+            &Hooks::default()
+        ),
+        Err(Error::Invalid("audio-only export without audio"))
+    ));
+    let mut copy = ExportSettings::from_project(&p);
+    copy.audio_only = true;
+    copy.mode = ExportMode::StreamCopy;
+    assert!(matches!(
+        export(
+            &p,
+            range,
+            &copy,
+            std::path::Path::new("never-written.m4a"),
+            &Hooks::default()
+        ),
+        Err(Error::Unsupported(_))
+    ));
+    // Audio-only options refuse video fields and MOV; `m4a` names audio-only output only.
+    assert!(matches!(
+        OutputOptions {
+            audio_only: true,
+            bit_rate: Some(128_000),
+            ..Default::default()
+        }
+        .validate(),
+        Err(Error::Invalid(
+            "audio-only output carries no video settings"
+        ))
+    ));
+    assert!(matches!(
+        OutputOptions::container_for_path(std::path::Path::new("clip.m4a"), false),
+        Err(Error::Invalid("output extension"))
+    ));
+    assert!(matches!(
+        OutputOptions::container_for_path(std::path::Path::new("clip.m4a"), true),
+        Ok(media::Container::Mp4)
+    ));
+    assert!(matches!(
+        OutputOptions::container_for_path(std::path::Path::new("clip.mov"), true),
+        Err(Error::Unsupported("audio-only container"))
+    ));
     // An empty timeline cannot form a positive range, so it refuses before staging.
     let mut data = project::Project::empty(project::ProjectId(0), "".into())
         .unwrap()
@@ -772,11 +823,13 @@ fn preview_audio_mix_obeys_item_gain_and_mute() {
                 .build(),
         )
         .build();
-    let base = |volume, muted| {
+    let base = |volume, muted, master: f32, master_muted: bool| {
         let mut data = project::Project::empty(project::ProjectId(0), "".into())
             .unwrap()
             .into_data();
         data.assets.push(source.clone());
+        data.settings.master_volume = master;
+        data.settings.master_muted = master_muted;
         data.scene_mut().timeline.insert_track(project::Track {
             id: project::TrackId(1),
             name: "Audio".into(),
@@ -807,17 +860,21 @@ fn preview_audio_mix_obeys_item_gain_and_mute() {
         project::Project::new(data).unwrap()
     };
     let hooks = Hooks::default();
-    for (volume, muted, expected) in [
-        (-3.0, false, 10f32.powf(-3.0 / 20.0) * 0.98),
-        (-6.0, false, 10f32.powf(-6.0 / 20.0) * 0.98),
-        (0.0, true, 0.0),
-        (-6.0, true, 0.0),
+    // Master volume is the export's master chain (dB, summed with the item gain); master
+    // mute silences every item, as export's source admission assumes.
+    for (volume, muted, master, master_muted, expected) in [
+        (-3.0, false, 0.0, false, 10f32.powf(-3.0 / 20.0) * 0.98),
+        (-6.0, false, 0.0, false, 10f32.powf(-6.0 / 20.0) * 0.98),
+        (0.0, true, 0.0, false, 0.0),
+        (-6.0, true, 0.0, false, 0.0),
+        (-3.0, false, -6.0, false, 10f32.powf(-9.0 / 20.0) * 0.98),
+        (-3.0, false, 0.0, true, 0.0),
     ] {
-        let project = base(volume, muted);
+        let project = base(volume, muted, master, master_muted);
         let block = mix_audio(&project, 0, 480, 2, &mut ConstantAudio, &hooks).unwrap();
         assert!(
             (block.peak() - expected).abs() < 1e-6,
-            "{volume}dB muted={muted}"
+            "{volume}dB muted={muted} master={master}dB master_muted={master_muted}"
         );
         assert!(
             block
@@ -960,6 +1017,61 @@ fn publication_preserves_destination_on_cancel_fail_finalize_and_mux_limit() {
         ));
         std::fs::remove_file(path).unwrap();
     }
+    // Audio-only shares the publication contract: cancel leaves no final file, and
+    // a failed finalize keeps the previous destination byte for byte.
+    let mut audio = ExportSettings::from_project(&p);
+    audio.audio_only = true;
+    audio.overwrite = project::atomic::Overwrite::Replace;
+    let cancelled = dir.path().join("cancelled.m4a");
+    let h = Hooks {
+        event: Some(std::sync::Arc::new(|stage| {
+            if stage == Stage::Render {
+                Err(Error::Cancelled)
+            } else {
+                Ok(())
+            }
+        })),
+        ..Default::default()
+    };
+    assert!(matches!(
+        export(
+            &p,
+            TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+            &audio,
+            &cancelled,
+            &h
+        ),
+        Err(Error::Cancelled)
+    ));
+    assert!(!cancelled.exists());
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+    let path = dir.path().join("existing audio.m4a");
+    std::fs::write(&path, b"original").unwrap();
+    let h = Hooks {
+        event: Some(std::sync::Arc::new(|stage| {
+            if stage == Stage::Finalize {
+                Err(Error::Io(std::io::Error::other(
+                    "injected finalize failure",
+                )))
+            } else {
+                Ok(())
+            }
+        })),
+        ..Default::default()
+    };
+    assert!(
+        export(
+            &p,
+            TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+            &audio,
+            &path,
+            &h
+        )
+        .is_err()
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), b"original");
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    std::fs::remove_file(path).unwrap();
 }
 #[test]
 fn encoded_color_patch_uses_same_compositor_and_has_valid_audio_video() {
@@ -1040,6 +1152,44 @@ fn encoded_color_patch_uses_same_compositor_and_has_valid_audio_video() {
             );
         }
         Err(other) => panic!("unexpected software encoder failure: {other:?}"),
+    }
+    // Audio-only rows: the same mixer and audio encoder, one audio stream, no video.
+    for (container, extension, codec) in [
+        (media::Container::Mp4, "m4a", "aac"),
+        (media::Container::WebM, "webm", "opus"),
+    ] {
+        let path = root().join(format!("audio-only.{extension}"));
+        let mut s = ExportSettings::from_project(&p);
+        s.audio_only = true;
+        s.container = container;
+        s.overwrite = project::atomic::Overwrite::Replace;
+        let receipt = export(
+            &p,
+            TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+            &s,
+            &path,
+            &h,
+        )
+        .unwrap();
+        assert_eq!(receipt.video_frames, 0);
+        assert_eq!(receipt.audio_samples, 48000);
+        let info = probe(&path);
+        let streams = info["streams"].as_array().unwrap();
+        assert_eq!(streams.len(), 1, "{extension}");
+        assert_eq!(streams[0]["codec_type"], "audio");
+        assert_eq!(streams[0]["codec_name"], codec);
+        assert_eq!(streams[0]["sample_rate"], "48000");
+        assert_eq!(streams[0]["channels"], 2);
+        let duration: f64 = info["format"]["duration"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(
+            (duration - 1.0).abs() < 0.05,
+            "{extension} duration {duration}"
+        );
+        std::fs::remove_file(path).unwrap();
     }
 }
 #[test]
@@ -1660,10 +1810,10 @@ fn graphic_effect_mask_transform_and_final_opacity_keep_the_shared_stage_order()
     );
 }
 
-/// Sticker pixels: a flag SVG rasterises solid at several sizes, shapes reuse the graphic
-/// contours, and an asset that cannot be drawn paints a placeholder and reports a typed error.
+/// Sticker pixels: a flag SVG rasterises solid at several sizes, and an asset that cannot be drawn
+/// (a missing flag or a shape id) paints a placeholder and reports a typed error.
 #[test]
-fn stickers_draw_flags_and_shapes_and_report_missing_assets_with_a_placeholder() {
+fn stickers_draw_flags_and_report_missing_assets_with_a_placeholder() {
     use project::{ItemParams, StickerParams, TrackKind};
     for (w, h) in [(64_u32, 48_u32), (640, 480), (1920, 1440)] {
         let raster = rasterize_sticker("flags:VN", w, h).unwrap();
@@ -1717,21 +1867,15 @@ fn stickers_draw_flags_and_shapes_and_report_missing_assets_with_a_placeholder()
     assert!(corner[3] > 0.99 && corner[0] > 0.5 && corner[1] < 0.05);
     assert_eq!(at(&flag, 64, 4)[3], 0., "above the flag box");
 
-    // Shapes: the placement is the 512 author square scaled to the canvas.
-    let (circle, errors) = render("shapes:circle", (512, 512));
-    assert!(errors.is_empty());
-    assert!(at(&circle, 64, 64)[3] > 0.99 && at(&circle, 1, 1)[3] < 0.01);
-    let (diamond, _) = render("shapes:diamond", (512, 512));
-    for (x, y, inside) in [
-        (64, 10, true),
-        (10, 64, true),
-        (20, 20, false),
-        (4, 4, false),
-    ] {
-        assert_eq!(at(&diamond, x, y)[3] > 0.99, inside, "diamond ({x}, {y})");
-    }
-    let (star, _) = render("shapes:star", (512, 512));
-    assert!(at(&star, 64, 64)[3] > 0.99 && at(&star, 1, 1)[3] < 0.01);
+    // Shapes are graphic items; a shape-provider id is not a sticker and paints the placeholder.
+    let (shape_id, errors) = render("shapes:star", (512, 512));
+    assert_eq!(
+        errors,
+        [StickerError::Missing {
+            sticker: "shapes:star".into()
+        }]
+    );
+    assert!(at(&shape_id, 1, 17)[3] > 0.9, "placeholder border");
 
     // A missing asset keeps the frame, paints the placeholder border and names the sticker.
     let (missing, errors) = render("flags:zz", (640, 480));
@@ -1743,4 +1887,205 @@ fn stickers_draw_flags_and_shapes_and_report_missing_assets_with_a_placeholder()
     );
     assert!(at(&missing, 1, 17)[3] > 0.9, "placeholder border");
     assert_eq!(at(&missing, 64, 4)[3], 0.);
+}
+
+/// Side of the square split clip. Bilinear upscaling ramps over one source column, so the
+/// clip has enough columns that the ramp stays well under the smallest blur sigma probed.
+const SPLIT_SIDE: u32 = 256;
+
+/// A square clip, left half red and right half green: its seam is the probe.
+struct SplitClip;
+impl SourceProvider for SplitClip {
+    fn status(
+        &mut self,
+        _: &media::SourceAsset,
+        _: bool,
+        _: &dyn ExecutionHooks,
+    ) -> Result<Option<UnavailableReason>> {
+        Ok(None)
+    }
+    fn video(
+        &mut self,
+        _: &media::SourceAsset,
+        _: project::ItemId,
+        _: time::Tick,
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<Option<Image>> {
+        let bytes: Vec<u8> = (0..SPLIT_SIDE * SPLIT_SIDE)
+            .flat_map(|pixel| {
+                if pixel % SPLIT_SIDE < SPLIT_SIDE / 2 {
+                    [255u8, 0, 0, 255]
+                } else {
+                    [0u8, 255, 0, 255]
+                }
+            })
+            .collect();
+        Ok(Some(Image::from_rgba8(
+            SPLIT_SIDE,
+            SPLIT_SIDE,
+            &bytes,
+            false,
+            13,
+            hooks,
+        )?))
+    }
+    fn audio(
+        &mut self,
+        _: &media::SourceAsset,
+        _: project::ItemId,
+        _: i64,
+        _: usize,
+        _: u32,
+        _: &dyn ExecutionHooks,
+    ) -> Result<render::AudioBlock> {
+        panic!("unexpected audio read")
+    }
+}
+
+/// One split clip on a canvas. A non-covering clip is the left half (scale 0.5,
+/// shifted to the canvas edge); a covering clip fills the canvas.
+fn split_project(
+    width: u32,
+    height: u32,
+    background: project::ClipBackground,
+    covering: bool,
+) -> project::Project {
+    use project::*;
+    use time::{SourceRange, Tick};
+    let asset = testkit::source::asset(1, std::env::temp_dir().join("render-clip-background"))
+        .format("synthetic")
+        .duration(tick(1, 1))
+        .stream(
+            testkit::source::video()
+                .codec("rgba")
+                .time_base(media::TimeBase::new(1, 30).unwrap())
+                .duration(tick(1, 1))
+                .start(Tick::ZERO)
+                .frame_count(30)
+                .variable_frame_rate(false)
+                .size(SPLIT_SIDE, SPLIT_SIDE)
+                .build(),
+        )
+        .build();
+    let mut data = Project::empty(ProjectId(8), "background".into())
+        .unwrap()
+        .into_data();
+    data.canvas.width = width;
+    data.canvas.height = height;
+    data.assets.push(asset);
+    let mut animations = Animations::default();
+    if !covering {
+        for (path, value) in [
+            ("transform.scaleX", 0.5),
+            ("transform.scaleY", 0.5),
+            ("transform.positionX", -f64::from(width) / 4.0),
+        ] {
+            animations
+                .set(
+                    AnimationPath::new(path).unwrap(),
+                    Param::new(ParamValue::Scalar(value)).unwrap(),
+                )
+                .unwrap();
+        }
+    }
+    data.scene_mut().timeline.main.items.push(Item {
+        hidden: false,
+        blend_mode: Default::default(),
+        retime: Default::default(),
+        masks: vec![],
+        effects: vec![],
+        animations,
+        id: ItemId(1),
+        source_asset: Some(media::AssetId(1)),
+        source_range: SourceRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+        start: Tick::ZERO,
+        content: ItemParams::Video(VideoParams {
+            crop: None,
+            fades: Default::default(),
+            source_audio_enabled: false,
+            volume: 0.0,
+            muted: false,
+            cleanup: Default::default(),
+            background,
+        }),
+    });
+    Project::new(data).unwrap()
+}
+
+fn render_split(project: &project::Project, hooks: &Hooks) -> Image {
+    let mut renderer = Renderer::new(project, RenderSettings::from_project(project)).unwrap();
+    renderer
+        .render_frame(Tick::ZERO, &mut SplitClip, hooks)
+        .unwrap()
+}
+
+fn pixel_at(image: &Image, x: u32, y: u32) -> [f32; 4] {
+    image.pixels()[(y * image.width() + x) as usize]
+}
+
+#[test]
+fn solid_clip_background_shows_only_outside_a_clip_that_leaves_canvas_open() {
+    let hooks = Hooks::default();
+    let blue = project::ClipBackground::Solid {
+        color: project::Color([0, 0, 255, 255]),
+    };
+    let image = render_split(&split_project(1920, 1080, blue, false), &hooks);
+    // Inside the clip's red half, then outside it to the right and above.
+    let inside = pixel_at(&image, 240, 540);
+    assert!(inside[0] > 0.9 && inside[2] < 0.1, "{inside:?}");
+    let outside = pixel_at(&image, 1440, 135);
+    assert!(outside[2] > 0.9 && outside[0] < 0.1, "{outside:?}");
+}
+
+/// The background is the clip frame cover-fitted to the canvas, so its seam sits at
+/// the centre. One sigma past the seam a Gaussian step keeps about 16% of the red side.
+fn assert_blurred_seam(width: u32, height: u32, intensity: u32, hooks: &Hooks) {
+    let scale = (f64::from(width) / 1920.0).min(f64::from(height) / 1080.0);
+    let sigma = f64::from(intensity) / 5.0 * scale;
+    let background = project::ClipBackground::Blur { intensity };
+    let image = render_split(&split_project(width, height, background, false), hooks);
+    let edge = pixel_at(&image, width / 2 + sigma.round() as u32, height / 2);
+    assert!(
+        edge[1] > 0.5 && edge[0] > 0.05 && edge[0] < 0.35,
+        "{width}x{height} intensity {intensity}: {edge:?}"
+    );
+    let far = pixel_at(&image, width * 15 / 16, height / 8);
+    assert!(
+        far[1] > 0.9 && far[0] < 0.1,
+        "{width}x{height} intensity {intensity}: {far:?}"
+    );
+}
+
+#[test]
+fn clip_blur_softens_the_clip_edge_at_each_preset_on_both_canvases() {
+    let hooks = Hooks::default();
+    for (width, height) in [(1920, 1080), (1080, 1920)] {
+        for intensity in project::ClipBackground::BLUR_PRESETS {
+            assert_blurred_seam(width, height, intensity, &hooks);
+        }
+    }
+}
+
+#[test]
+fn heavy_clip_blur_on_a_large_canvas_takes_the_half_resolution_path() {
+    // Sigma 133 is past the single-iteration limit, so the blur runs on a pyramid.
+    assert_blurred_seam(2560, 1440, 500, &Hooks::default());
+}
+
+#[test]
+fn a_covering_clip_paints_no_background() {
+    let hooks = Hooks::default();
+    let plain = render_split(
+        &split_project(320, 180, project::ClipBackground::None, true),
+        &hooks,
+    );
+    for background in [
+        project::ClipBackground::Solid {
+            color: project::Color([0, 0, 255, 255]),
+        },
+        project::ClipBackground::Blur { intensity: 500 },
+    ] {
+        let image = render_split(&split_project(320, 180, background, true), &hooks);
+        assert_eq!(image.pixels(), plain.pixels());
+    }
 }

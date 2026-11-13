@@ -43,7 +43,12 @@ impl View<'_> {
 
     pub(super) fn sounds(&mut self, ui: &mut egui::Ui) {
         let Some(view) = self.cx.sounds.clone() else {
-            self.empty(ui, Icon::MusicNotes, Text::SoundsUnavailable);
+            self.empty(
+                ui,
+                Icon::MusicNotes,
+                Text::SoundsUnavailable,
+                crate::kit::Tone::Quiet,
+            );
             return;
         };
         let area = ui.available_rect_before_wrap();
@@ -167,6 +172,7 @@ impl View<'_> {
                 } else {
                     Text::SoundsNoResults
                 },
+                crate::kit::Tone::Quiet,
             );
             return;
         }

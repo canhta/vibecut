@@ -274,6 +274,44 @@ pub(super) fn sigma_passes(sigma: f32, width: u32, height: u32) -> Result<Vec<Ef
         })
         .collect())
 }
+/// Blurs a clip background frame at a preset intensity through the shared image
+/// blur. Sigma follows the blur effect's scale: intensity / 5 at 1920x1080 on
+/// the smaller axis.
+pub(super) fn clip_background_blur(
+    image: &Image,
+    intensity: u32,
+    hooks: &dyn ExecutionHooks,
+) -> Result<Image> {
+    /// Sigma one kernel iteration covers (`sigma_passes` splits larger sigmas into
+    /// (sigma / 8)^2 iterations, which grows too fast to run per frame).
+    const SINGLE_ITERATION_SIGMA: f32 = 8.0;
+    let scale = (f64::from(image.width) / 1920.0).min(f64::from(image.height) / 1080.0);
+    let mut sigma = (f64::from(intensity) / 5.0 * scale) as f32;
+    // A clip background is smooth, so large sigmas blur a half-resolution copy
+    // at half sigma per level, then scale back up. Each level halves both axes.
+    let mut levels: Option<Image> = None;
+    while sigma > SINGLE_ITERATION_SIGMA {
+        let (width, height) = levels
+            .as_ref()
+            .map_or((image.width, image.height), |low| (low.width, low.height));
+        if width.min(height) <= 2 {
+            break;
+        }
+        let next = match levels.as_ref() {
+            Some(low) => low.half(hooks)?,
+            None => image.half(hooks)?,
+        };
+        levels = Some(next);
+        sigma /= 2.0;
+    }
+    match levels {
+        None => image_ops::blur(image, sigma, hooks),
+        Some(low) => {
+            let blurred = image_ops::blur(&low, sigma, hooks)?;
+            image_ops::upsample(&blurred, image.width, image.height, hooks)
+        }
+    }
+}
 /// Linear-light mid grey that contrast pivots around.
 pub const GRADE_PIVOT: f32 = 0.18;
 /// BT.709 luma coefficients, also the key's luma for the shadow stage.

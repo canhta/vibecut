@@ -121,7 +121,7 @@ impl Editor {
         }
     }
 
-    pub(in crate::editor) fn graphic_insertion_available(&self) -> bool {
+    pub(in crate::editor) fn insertion_available(&self) -> bool {
         self.properties.input_ready(&self.session)
             && !self.player.transform.text_edit_open()
             && self
@@ -178,6 +178,19 @@ impl Editor {
             })
             .map(|(_, item)| item.id)
             .collect()
+    }
+
+    /// Whether any unlocked item spans `at`, the playhead `split_all` would cut.
+    fn has_split_all_target(&self, at: Tick) -> bool {
+        self.session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .filter(|track| !track.locked)
+            .flat_map(|track| &track.items)
+            .any(|item| item.start < at && item.end().is_ok_and(|end| at < end))
     }
 
     fn selected_items(&self) -> Vec<(bool, &project::Item)> {
@@ -382,7 +395,7 @@ impl Editor {
             ActionTarget::Ui {
                 action: UiAction::InsertGraphic(_),
                 ..
-            } => self.graphic_insertion_available(),
+            } => self.insertion_available(),
             ActionTarget::Ui {
                 action: UiAction::Copy,
                 ..
@@ -479,6 +492,14 @@ impl Editor {
                     .into_iter()
                     .map(|item| Command::SplitAt { item, at })
                     .collect()
+            }
+            EngineAction::SplitAll => {
+                let at = self.playback.position()?;
+                if self.has_split_all_target(at) {
+                    vec![Command::TimelineSplitAll { at }]
+                } else {
+                    Vec::new()
+                }
             }
             EngineAction::SplitLeft | EngineAction::SplitRight => {
                 let at = self.playback.position()?;
@@ -597,7 +618,10 @@ impl Editor {
             })
             .collect();
         match route {
-            EngineAction::Split | EngineAction::SplitLeft | EngineAction::Duplicate => {
+            EngineAction::Split
+            | EngineAction::SplitAll
+            | EngineAction::SplitLeft
+            | EngineAction::Duplicate => {
                 self.session
                     .set_selection(created_items.iter().copied().collect())?;
             }

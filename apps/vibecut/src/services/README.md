@@ -16,7 +16,7 @@ areas, frame and composition root; a services module never names a window, an ar
 | `ai_task` | `TaskEvents`: one coalescing progress slot and one exact per-upload consent request, carrying cancellation. |
 | `remote_models` | [Model selection and explicit refresh](remote_models/README.md). |
 | `text_clipboard` | Read-only native text access with injected reader composition; viewport custody belongs to [input](../input/README.md). |
-| `progress` | `job_progress`: the stage line and progress bar every job surface draws from an engine snapshot. |
+| `progress` | `job_progress` and `line`: the status line with its percentage over the kit progress bar, drawn from an engine snapshot or a surface's own status words. The percentage is now a "Status N%" line above the bar, not text inside it. |
 | `lifecycle` | [Project lifecycle](lifecycle/README.md): `EditorSession`, the editor's memory or autosave-backed engine session. |
 | `gpu` | [GPU adapters](gpu/README.md): `GpuEffects`, the wgpu implementation of render's effect interface, and `Capture`, bounded fresh-frame screenshots. |
 
@@ -45,6 +45,16 @@ finished jobs, then resubmits both jobs with the same source factory, audio port
 budget. It never blocks the UI on an adapter; a noncooperating adapter delays replacement
 and shutdown until it returns. Playback resumes only explicitly, and old work cannot
 publish into the new generation.
+
+Loop playback (`set_loop`) holds the transport in `[start, end)` while playing. The
+editor passes the export in/out markers (`RangeChoice::InOut`) when they are set and
+non-empty, else the whole timeline. The range is clamped to the snapshot duration on each
+read, so a shortened timeline cannot play past its end. A position outside the range
+plays on to the loop end and then wraps into it. Audio mixes each block up to the loop end
+and continues the same block from the loop start, sample-accurately: there is no crossfade,
+so a discontinuous source at the boundary is audible as is. Video drops frames queued past
+the end when the transport wraps. Changing the range re-seeks at the current position.
+The 10-minute A/V drift measurement is not part of the test set yet.
 
 `transport` is the one mapping from a player request to a seek: play toggles and
 restarts at an end position, second and frame steps clamp to the timeline, and Start and

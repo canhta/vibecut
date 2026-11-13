@@ -2,7 +2,7 @@
 
 use crate::editor::timeline::{
     Action, BTreeSet, Context, DropZone, FontId, ICON_BUTTON, Icon, Id, ItemId, ItemView, Locale,
-    Rect, State, Text, TimelineLayout, TrackKind, TrackRow, Vec2, egui, icons, theme,
+    Rect, State, Text, TimelineLayout, Tool, TrackKind, TrackRow, Vec2, egui, icons, theme,
     view::{Ink, tr},
 };
 use crate::i18n;
@@ -247,10 +247,15 @@ impl State {
                 }
             }
         }
+        // Split mode keeps the click (clears the selection) but takes no marquee drag.
         let background = ui.interact(
             layout.body,
             Id::unique("timeline.marquee"),
-            egui::Sense::click_and_drag(),
+            if self.tool == Tool::Split {
+                egui::Sense::click()
+            } else {
+                egui::Sense::click_and_drag()
+            },
         );
         self.remember("timeline.marquee", &background);
         let modifiers = ui.ctx().input(|input| input.modifiers);

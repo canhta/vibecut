@@ -22,9 +22,8 @@ pub mod stickers {
     //! Provides bundled stickers for the Stickers panel.
     pub use super::sticker_library::{
         DEFAULT_SEARCH_LIMIT, FLAG_SIZE, FLAGS_PROVIDER, FlagMatch, FlagPage, MAX_RECENT_STICKERS,
-        Recents, SHAPE_SIZE, SHAPE_VALUES, SHAPES_PROVIDER, ShapeMatch, build_sticker_id,
-        insert_sticker, is_known_sticker_id, parse_sticker_id, resolve_sticker, search_catalog,
-        search_flags, search_shapes,
+        Recents, build_sticker_id, insert_sticker, parse_sticker_id, resolve_sticker,
+        search_catalog, search_flags,
     };
 }
 mod music_library;

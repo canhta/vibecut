@@ -8,6 +8,14 @@ impl Editor {
         {
             self.music_loaded();
         }
+        if let Some((text, detail)) = self.assets.poll_clip_exports() {
+            let message = self.tr(text);
+            self.set_toast(message, detail);
+        }
+        if self.assets.clip_export_status().is_some() {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_nanos(1_000_000_000 / 30));
+        }
         assets::prepare(self, ui.ctx());
         let mut state = std::mem::take(&mut self.assets);
         let cx = self.context();
@@ -31,6 +39,8 @@ impl Editor {
                 assets::Action::Command(id) => self.action(&id),
                 assets::Action::Select(id, modifiers) => self.select_asset(id, modifiers),
                 assets::Action::Delete(ids) => self.request_media_delete(ids),
+                assets::Action::ExportClips(ids) => self.request_clip_export(ids),
+                assets::Action::ClipExportCancel => self.cancel_clip_export(),
                 assets::Action::Record(widget) => {
                     self.remember_with_icon(
                         &widget.id,
@@ -105,7 +115,35 @@ impl Editor {
                         self.desk().fail(error.to_string());
                     }
                 }
+                assets::Action::InsertSticker(id) => {
+                    self.with_assets(|assets, desk| assets.insert_sticker(desk, &id));
+                }
+                assets::Action::InsertShape(id) => {
+                    if self.action_enabled(&id) {
+                        self.action(&id);
+                        self.with_assets(|assets, desk| assets.remember_sticker(desk, &id));
+                    }
+                }
+                assets::Action::ClearStickerRecents => {
+                    self.with_assets(|assets, desk| assets.clear_sticker_recents(desk));
+                }
             }
+        }
+    }
+    /// The Media tab asked for `export.clips`; the folder picker answers next.
+    pub(in crate::editor) fn request_clip_export(&mut self, ids: Vec<media::AssetId>) {
+        let budget = self.playback.budget().clone();
+        match self.assets.queue_clip_export(&budget, ids) {
+            Ok(()) => {
+                self.lifecycle_action = Some(crate::services::lifecycle::EditorAction::ExportClips);
+            }
+            Err(error) => self.desk().fail(error.to_string()),
+        }
+    }
+    /// The strip's cancel asks the engine to stop the running export.
+    pub(in crate::editor) fn cancel_clip_export(&mut self) {
+        if let Err(error) = self.assets.cancel_clip_export(&mut self.session) {
+            self.desk().fail(error.to_string());
         }
     }
     pub(in crate::editor) fn show_media_delete_dialog(&mut self, ctx: &egui::Context) {

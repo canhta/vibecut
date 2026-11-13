@@ -68,6 +68,7 @@ impl EditorWindow {
                     EditorAction::SnapshotSave => self.pick(ui.ctx(), PickerAction::SnapshotSave),
                     EditorAction::ImportMedia => self.pick(ui.ctx(), PickerAction::ImportMedia),
                     EditorAction::ImportLut => self.pick(ui.ctx(), PickerAction::ImportLut),
+                    EditorAction::ExportClips => self.pick(ui.ctx(), PickerAction::ExportClips),
                     EditorAction::FocusHome => {
                         self.focus_home = true;
                         Ok(())
@@ -118,36 +119,38 @@ impl EditorWindow {
             });
         }
         if self.editor.is_none() && !self.busy() && !self.candidates.is_empty() {
-            egui::Modal::new(egui::Id::unique("recovery.prompt")).show(ui.ctx(), |ui| {
-                ui.heading(self.tr(Text::Recovery));
-                if let Some(candidate) = self.candidates.first() {
-                    ui.label(&candidate.journal.name);
-                }
-                ui.label(self.tr(Text::SaveAsNeeded));
-                ui.horizontal(|ui| {
-                    if self.button(
-                        ui,
-                        "recovery.recover",
-                        Icon::ArrowCounterClockwise,
-                        Text::Recover,
-                    ) {
-                        let candidate = self.candidates.remove(0);
-                        if let Err(e) =
-                            self.submit(Work::Recover(Box::new(candidate)), Text::LoadingProject)
-                        {
-                            self.error = Some(e);
-                        }
+            egui::Modal::new(egui::Id::unique("recovery.prompt"))
+                .frame(crate::kit::dialog_frame(ui.ctx()))
+                .show(ui.ctx(), |ui| {
+                    crate::kit::dialog_title(ui, self.tr(Text::Recovery));
+                    if let Some(candidate) = self.candidates.first() {
+                        ui.label(&candidate.journal.name);
                     }
-                    if self.button(ui, "recovery.discard", Icon::Trash, Text::Discard) {
-                        let candidate = self.candidates.remove(0);
-                        if let Err(e) =
-                            self.submit(Work::Discard(Box::new(candidate)), Text::Discovering)
-                        {
-                            self.error = Some(e);
+                    ui.label(self.tr(Text::SaveAsNeeded));
+                    ui.horizontal(|ui| {
+                        if self.button(
+                            ui,
+                            "recovery.recover",
+                            Icon::ArrowCounterClockwise,
+                            Text::Recover,
+                        ) {
+                            let candidate = self.candidates.remove(0);
+                            if let Err(e) = self
+                                .submit(Work::Recover(Box::new(candidate)), Text::LoadingProject)
+                            {
+                                self.error = Some(e);
+                            }
                         }
-                    }
+                        if self.button(ui, "recovery.discard", Icon::Trash, Text::Discard) {
+                            let candidate = self.candidates.remove(0);
+                            if let Err(e) =
+                                self.submit(Work::Discard(Box::new(candidate)), Text::Discovering)
+                            {
+                                self.error = Some(e);
+                            }
+                        }
+                    });
                 });
-            });
         }
         if !self.diagnostics.is_empty() {
             egui::Window::new(self.tr(Text::RecoveryDiagnostic))
@@ -253,22 +256,24 @@ impl EditorWindow {
                 });
         }
         if self.close_prompt && !self.busy() {
-            egui::Modal::new(egui::Id::unique("project.close.prompt")).show(ui.ctx(), |ui| {
-                ui.heading(self.tr(Text::ClosePrompt));
-                if self.button(ui, "project.close.save", Icon::FloppyDisk, Text::SaveClose)
-                    && let Err(e) = self.save_from_ui(ui.ctx(), true, true, false)
-                {
-                    self.error = Some(e);
-                }
-                if self.button(ui, "project.close.recover", Icon::File, Text::Close)
-                    && let Err(e) = self.persist(None, true, true, true)
-                {
-                    self.error = Some(e);
-                }
-                if self.button(ui, "project.close.cancel", Icon::X, Text::Cancel) {
-                    self.close_prompt = false;
-                }
-            });
+            egui::Modal::new(egui::Id::unique("project.close.prompt"))
+                .frame(crate::kit::dialog_frame(ui.ctx()))
+                .show(ui.ctx(), |ui| {
+                    crate::kit::dialog_title(ui, self.tr(Text::ClosePrompt));
+                    if self.button(ui, "project.close.save", Icon::FloppyDisk, Text::SaveClose)
+                        && let Err(e) = self.save_from_ui(ui.ctx(), true, true, false)
+                    {
+                        self.error = Some(e);
+                    }
+                    if self.button(ui, "project.close.recover", Icon::File, Text::Close)
+                        && let Err(e) = self.persist(None, true, true, true)
+                    {
+                        self.error = Some(e);
+                    }
+                    if self.button(ui, "project.close.cancel", Icon::X, Text::Cancel) {
+                        self.close_prompt = false;
+                    }
+                });
         }
         if self.ready_to_close {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);

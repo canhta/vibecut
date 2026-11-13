@@ -1,10 +1,11 @@
 //! Renders searchable media rows with stable interaction identities.
 use super::{
     Action, Align2, AssetRow, AssetState, AssetsTab, Color32, Filter, FontId, Icon, Id, MediaKind,
-    MediaSortKey, MediaSortOrder, MediaView, Rect, Row, Text, Vec2, View, asset_state_color, egui,
-    icons, theme,
+    MediaSortKey, MediaSortOrder, MediaView, Recorded, Rect, Row, Text, Vec2, View,
+    asset_state_color, egui, icons, theme,
 };
 use crate::i18n;
+use media::AssetId;
 
 impl View<'_> {
     pub(super) fn browser(&mut self, ui: &mut egui::Ui) {
@@ -77,13 +78,57 @@ impl View<'_> {
                 matches && row.display.name.to_lowercase().contains(&search)
             })
             .collect();
-        let results =
-            Rect::from_min_max(area.min + Vec2::new(0.0, toolbar_height + 36.0), area.max);
+        // Strip height and gap are theme tokens (kit size::CONTROL, space::MD). Its composition is
+        // unmeasured: docs/product/ui/editor.md Gaps.
+        let export_height = if self.cx.clip_export.is_some() {
+            theme::size::CONTROL + theme::space::MD
+        } else {
+            0.0
+        };
+        if let Some(status) = self.cx.clip_export {
+            let strip = Rect::from_min_size(
+                area.min + Vec2::new(0.0, toolbar_height + 36.0),
+                Vec2::new(area.width(), theme::size::CONTROL),
+            );
+            ui.scope_builder(
+                egui::UiBuilder::new()
+                    .id_salt("media.export.strip")
+                    .max_rect(strip),
+                |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(self.tr(Text::ClipExportRunning))
+                                .size(theme::type_size::BODY),
+                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if self.icon(
+                                ui,
+                                "media.export.cancel",
+                                Icon::X,
+                                Text::Cancel,
+                                !status.cancelling,
+                            ) {
+                                self.actions.push(Action::ClipExportCancel);
+                            }
+                            let width = ui.available_width();
+                            ui.add(egui::ProgressBar::new(status.progress).desired_width(width));
+                        });
+                    });
+                },
+            );
+        }
+        let results = Rect::from_min_max(
+            area.min + Vec2::new(0.0, toolbar_height + 36.0 + export_height),
+            area.max,
+        );
         ui.scope_builder(
             egui::UiBuilder::new()
                 .id_salt("media.results")
                 .max_rect(results),
             |ui| {
+                if !search.is_empty() && rows.is_empty() && !self.cx.failed && !self.cx.importing {
+                    self.clear_search(ui);
+                }
                 if rows.is_empty() {
                     self.empty(
                         ui,
@@ -102,6 +147,11 @@ impl View<'_> {
                             Text::AssetsNoMedia
                         } else {
                             Text::AssetsNoMatches
+                        },
+                        if self.cx.failed {
+                            crate::kit::Tone::Error
+                        } else {
+                            crate::kit::Tone::Quiet
                         },
                     );
                 } else {
@@ -423,6 +473,36 @@ impl View<'_> {
             });
     }
 
+    /// Clear-search row placed in flow above the empty state, so no offset is derived from it.
+    /// Its composition is unmeasured: docs/product/ui/editor.md Gaps.
+    fn clear_search(&mut self, ui: &mut egui::Ui) {
+        let response = ui
+            .vertical_centered(|ui| {
+                ui.button(
+                    egui::RichText::new(self.tr(Text::AssetsClearSearch))
+                        .size(theme::type_size::BODY),
+                )
+            })
+            .inner;
+        self.remember("media.search.clear", &response, None);
+        if response.clicked() {
+            self.state.searches.remove(&AssetsTab::Media);
+        }
+    }
+    /// Why the context menu cannot export `targets`; `None` when it can.
+    fn clip_export_refusal(&self, targets: &[AssetId]) -> Option<Text> {
+        if self.cx.clip_export.is_some() {
+            return Some(Text::ClipExportBusy);
+        }
+        let video_only = !targets.is_empty()
+            && targets.iter().all(|id| {
+                self.cx
+                    .rows
+                    .iter()
+                    .any(|row| row.display.id == *id && row.kind == MediaKind::Video)
+            });
+        (!video_only).then_some(Text::ClipExportNeedsVideo)
+    }
     fn asset(&mut self, ui: &mut egui::Ui, row: &AssetRow, rect: Rect, list: bool) {
         let response = ui.interact(
             rect,
@@ -576,15 +656,35 @@ impl View<'_> {
             }
         }
         response.on_hover_text(&row.info).context_menu(|ui| {
+            let targets: Vec<AssetId> = if selected {
+                self.cx.selection.iter().copied().collect()
+            } else {
+                vec![row.id]
+            };
+            let refusal = self.clip_export_refusal(&targets);
             let export = ui.add_enabled(
-                false,
+                refusal.is_none() && !self.cx.importing,
                 egui::Button::image_and_text(
                     icons::tinted(Icon::Export, 16.0, theme::text(self.cx.preferences.dark)),
                     self.tr(Text::ExportClips),
                 ),
             );
-            let export = export.on_disabled_hover_text(self.tr(Text::NotAvailableYet));
-            self.remember("media.export_clip", &export, Some(Icon::Export));
+            let tooltip = refusal.map(|text| self.tr(text).to_owned());
+            let export = match refusal {
+                Some(text) => export.on_disabled_hover_text(self.tr(text)),
+                None => export,
+            };
+            // The refusal reason rides on the widget record so the reason is inspectable.
+            self.actions.push(Action::Record(Box::new(Recorded {
+                id: "media.export_clip".into(),
+                response: export.clone(),
+                glyph: Some(Icon::Export),
+                tooltip,
+            })));
+            if export.clicked() {
+                self.actions.push(Action::ExportClips(targets));
+                ui.close();
+            }
             let mut button = egui::Button::new(if selected && self.cx.selection.len() > 1 {
                 i18n::format_count(
                     self.cx.preferences.locale,

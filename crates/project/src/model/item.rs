@@ -25,6 +25,36 @@ pub struct VideoParams {
     /// Non-destructive cleanup of the item's source audio; the source media is never changed.
     #[serde(default)]
     pub cleanup: crate::AudioCleanup,
+    /// Fill behind the clip wherever the clip does not cover the canvas; absent is none.
+    #[serde(default)]
+    pub background: ClipBackground,
+}
+/// What fills the canvas behind a visual clip. Exclusive: one kind per clip.
+/// The blur reads the clip's own decoded frame, so it never feeds back.
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ClipBackground {
+    #[default]
+    None,
+    Solid { color: Color },
+    Blur { intensity: u32 },
+}
+impl ClipBackground {
+    /// Intensity a clip starts at when Blur is chosen; a preset replaces it.
+    pub const DEFAULT_BLUR_INTENSITY: u32 = 10;
+    /// Light, Medium and Heavy presets, in reference order.
+    pub const BLUR_PRESETS: [u32; 3] = [100, 200, 500];
+    /// Largest accepted blur intensity: the Heavy preset.
+    pub const MAX_BLUR_INTENSITY: u32 = 500;
+    /// Whether a blur intensity lies within the accepted range.
+    pub const fn valid(self) -> bool {
+        match self {
+            Self::None | Self::Solid { .. } => true,
+            Self::Blur { intensity } => intensity <= Self::MAX_BLUR_INTENSITY,
+        }
+    }
 }
 /// Remote-library provenance carried with an audio item. URLs are canonical and
 /// bounded; no token, cache path or local absolute path belongs here.
@@ -1000,9 +1030,11 @@ pub struct WordSpan {
 }
 
 /// Clip/master dB range and hundredth-dB editing grid. Curves interpolate continuously.
+pub const VOLUME_DB_RANGE: std::ops::RangeInclusive<f32> = -60.0..=20.0;
+
 pub fn valid_volume(value: f32) -> bool {
     value.is_finite()
-        && (-60.0..=20.0).contains(&value)
+        && VOLUME_DB_RANGE.contains(&value)
         && (value * 100.0 - (value * 100.0).round()).abs() < 0.001
 }
 

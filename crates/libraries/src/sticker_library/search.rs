@@ -1,5 +1,4 @@
-//! Case-insensitive search over the flag and shape catalogs, in catalog order.
-use super::SHAPE_VALUES;
+//! Case-insensitive search over the flag catalog, in catalog order.
 use super::flags::{COUNTRIES, Country, REGION_GROUPS, REGIONS};
 
 /// Results returned when a caller gives no limit.
@@ -22,12 +21,6 @@ pub struct FlagPage {
     pub items: Vec<FlagMatch>,
     pub total: usize,
     pub has_more: bool,
-}
-
-/// One shape a search returned.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ShapeMatch {
-    pub value: &'static str,
 }
 
 /// Searches flags by name, code, region or continent keyword. An empty query matches everything.
@@ -70,16 +63,6 @@ pub fn search_flags(query: &str, limit: usize) -> FlagPage {
         total,
         has_more,
     }
-}
-
-/// Searches shapes by value name, in the fixed shape order.
-pub fn search_shapes(query: &str) -> Vec<ShapeMatch> {
-    let query = query.trim().to_lowercase();
-    SHAPE_VALUES
-        .iter()
-        .filter(|value| query.is_empty() || value.contains(query.as_str()))
-        .map(|value| ShapeMatch { value })
-        .collect()
 }
 
 fn resolve_regions(query: &str) -> Option<Vec<&'static str>> {

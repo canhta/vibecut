@@ -305,9 +305,19 @@ fn reduce(
             .ok_or(crate::session::EditError::from(
                 crate::session::wire::ControlError::Limit,
             ))?;
-        let source_start = item.source_time_at(tick(output_start)?)?;
-        let source_end = item
-            .source_time_at(tick(output_end)?)?
+        let (source_start, source_end) = if item.retime.reverse {
+            // A reversed span reads from its last output tick's source up to its first's.
+            let first = item.source_time_at(tick(output_start)?)?;
+            let last = item.source_time_at(tick(output_end)?)?;
+            // Tick::MAX cannot be exceeded by a clamped source window, so keep `first`.
+            (last, first.checked_add(Tick(1)).unwrap_or(first))
+        } else {
+            (
+                item.source_time_at(tick(output_start)?)?,
+                item.source_time_at(tick(output_end)?)?,
+            )
+        };
+        let source_end = source_end
             .min(item.source_range.end())
             .max(item.source_range.start());
         let source_start = source_start.max(item.source_range.start());

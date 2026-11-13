@@ -1,6 +1,7 @@
 //! Media library presentation state: view mode, stable sorting and type
 //! classification. Project assets stay owned by the engine; this module never
 //! mutates a `SourceAsset` and reads file size only for display/sort.
+pub(in crate::editor) mod clips;
 use media::{AssetId, SourceAsset, StreamKind};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, path::Path};

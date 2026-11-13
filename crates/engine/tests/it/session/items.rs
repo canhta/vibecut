@@ -64,6 +64,37 @@ fn split_trim_ripple_and_history_use_exact_source_and_output_coordinates() {
     assert!(Arc::ptr_eq(s.project(), &final_state));
 }
 #[test]
+fn split_all_cuts_every_unlocked_item_under_the_playhead_as_one_step() {
+    let (mut s, video, _audio, clip) = audible_session();
+    let before = s.project().clone();
+    for at in [Tick::ZERO, Tick(100), Tick(101)] {
+        let result = s.apply(Command::TimelineSplitAll { at });
+        assert!(result.is_err(), "at {at:?} unexpectedly succeeded");
+        assert!(Arc::ptr_eq(&before, s.project()));
+    }
+    s.apply(Command::SetTrackLocked {
+        track: video,
+        locked: true,
+    })
+    .unwrap();
+    let locked = s.project().clone();
+    let out = s.apply(Command::TimelineSplitAll { at: Tick(40) }).unwrap();
+    assert_eq!(out.created.len(), 1, "only the unlocked audio item splits");
+    assert_eq!(get(&s, clip.0).source_range, range(0, 100));
+    s.undo().unwrap();
+    assert!(Arc::ptr_eq(s.project(), &locked));
+    s.undo().unwrap();
+    assert!(Arc::ptr_eq(s.project(), &before));
+    let out = s.apply(Command::TimelineSplitAll { at: Tick(40) }).unwrap();
+    assert_eq!(
+        out.created.len(),
+        2,
+        "every unlocked item splits in one step"
+    );
+    s.undo().unwrap();
+    assert!(Arc::ptr_eq(s.project(), &before));
+}
+#[test]
 fn split_variants_refuse_boundaries_and_remove_the_requested_side() {
     let (mut s, _video, _audio, clip) = audible_session();
     let start = Tick(0);
@@ -219,6 +250,10 @@ fn hide_and_mute_refuse_incompatible_kinds_and_survive_persistence() {
     })
     .unwrap();
     assert!(get_id(&s, clip).hidden);
+    let background_of = |project: &Project, id: ItemId| match &get_project_id(project, id).content {
+        ItemParams::Video(params) => params.background,
+        _ => panic!("video item expected"),
+    };
     s.apply(Command::SetItemsMuted {
         items: vec![clip, audio_clip],
         muted: true,
@@ -246,10 +281,40 @@ fn hide_and_mute_refuse_incompatible_kinds_and_survive_persistence() {
     s.redo().unwrap();
     s.redo().unwrap();
     assert!(get_id(&s, clip).hidden);
+    let before_background = s.project().clone();
+    for (items, background) in [
+        (vec![clip], project::ClipBackground::Blur { intensity: 501 }),
+        (
+            vec![audio_clip],
+            project::ClipBackground::Solid {
+                color: Color([9, 9, 9, 255]),
+            },
+        ),
+    ] {
+        assert!(
+            s.apply(Command::SetItemsBackground { items, background })
+                .is_err()
+        );
+        assert!(Arc::ptr_eq(&before_background, s.project()));
+    }
+    let blur = project::ClipBackground::Blur { intensity: 200 };
+    s.apply(Command::SetItemsBackground {
+        items: vec![clip],
+        background: blur,
+    })
+    .unwrap();
+    assert_eq!(background_of(s.project(), clip), blur);
+    s.undo().unwrap();
+    assert_eq!(
+        background_of(s.project(), clip),
+        project::ClipBackground::None
+    );
+    s.redo().unwrap();
     let bytes = project::encode(s.project(), false).unwrap();
     let loaded = project::decode(&bytes).unwrap();
     assert_eq!(loaded.project.data(), s.project().data());
     assert!(get_project_id(&loaded.project, clip).hidden);
+    assert_eq!(background_of(&loaded.project, clip), blur);
     assert_eq!(video, s.project().data().scene().timeline.overlays[0].id);
 }
 #[test]
@@ -538,6 +603,7 @@ fn audible_session() -> (Session, TrackId, TrackId, ItemId) {
             muted: false,
             crop: None,
             cleanup: Default::default(),
+            background: project::ClipBackground::None,
         }),
     );
     insert(

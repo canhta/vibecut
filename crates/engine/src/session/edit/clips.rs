@@ -557,6 +557,33 @@ pub(super) fn execute_split_right(
     execute_delete(data, right)
 }
 
+/// Split every unlocked item that spans the playhead, on every track of the
+/// active scene, as one step. Locked tracks are skipped; nothing to split refuses.
+pub(super) fn execute_split_all(
+    mut data: ProjectData,
+    at: Tick,
+    created: &mut Vec<CreatedId>,
+    next: &mut Option<u64>,
+    sources: &mut TrimSources,
+) -> Result<ProjectData> {
+    let targets: Vec<ItemId> = data
+        .scene()
+        .timeline
+        .iter()
+        .filter(|track| !track.locked)
+        .flat_map(|track| &track.items)
+        .filter(|item| item.start < at && item.end().is_ok_and(|end| at < end))
+        .map(|item| item.id)
+        .collect();
+    if targets.is_empty() {
+        return Err(EditError::Invalid("nothing under playhead"));
+    }
+    for id in targets {
+        data = execute_split_at(data, id, at, created, next, sources)?;
+    }
+    Ok(data)
+}
+
 fn split_targets(data: &ProjectData, items: Vec<ItemId>) -> Result<Vec<ItemId>> {
     if items.is_empty() {
         return Err(EditError::Invalid("empty timeline group"));
@@ -673,6 +700,33 @@ pub(super) fn execute_set_items_muted(
             ItemParams::Video(params) => params.muted = muted,
             ItemParams::Audio(params) => params.muted = muted,
             _ => return Err(EditError::Invalid("item has no audio")),
+        }
+    }
+
+    Ok(data)
+}
+
+/// Sets the clip background on video items; one undo step for the whole list.
+/// A blur intensity above the accepted range is refused before any item changes.
+pub(super) fn execute_set_items_background(
+    mut data: ProjectData,
+    items: Vec<ItemId>,
+    background: project::ClipBackground,
+) -> Result<ProjectData> {
+    let mut seen = BTreeSet::new();
+    if items.is_empty() {
+        return Err(EditError::Invalid("empty timeline group"));
+    }
+    if !background.valid() {
+        return Err(EditError::Invalid("clip background"));
+    }
+    for id in items {
+        if !seen.insert(id) {
+            return Err(EditError::Invalid("duplicate item"));
+        }
+        match &mut item(&mut data, id)?.content {
+            ItemParams::Video(params) => params.background = background,
+            _ => return Err(EditError::Invalid("item has no video frame")),
         }
     }
 

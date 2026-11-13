@@ -21,6 +21,8 @@ const RATES: [time::FrameRate; 5] = [
 const SWATCHES_PER_ROW: usize = 12;
 const SWATCH_SIZE: f32 = 20.0;
 const SWATCH_ROW: f32 = 24.0;
+/// Preference key of the Settings canvas section, which Modify opens.
+pub(super) const SECTION_KEY: &str = "inspector.canvas";
 
 impl Panel<'_, '_> {
     pub(super) fn settings(&mut self, ui: &mut egui::Ui) {
@@ -32,7 +34,7 @@ impl Panel<'_, '_> {
         self.panel_section(
             ui,
             "inspector.section.canvas",
-            "inspector.canvas",
+            SECTION_KEY,
             Text::Project,
             true,
             false,
@@ -217,7 +219,7 @@ impl Panel<'_, '_> {
         }
     }
 
-    fn preset_text(&self, preset: AspectPreset) -> &'static str {
+    pub(super) fn preset_text(&self, preset: AspectPreset) -> &'static str {
         if preset == AspectPreset::Original {
             self.tr(Text::Original)
         } else {
@@ -306,6 +308,11 @@ impl Panel<'_, '_> {
         );
         let response = kit::value_field(&mut value_ui, &id, &mut next, 120.0, None, self.tr(label));
         self.remember(id, &response);
+        // Modify from the Details view lands here: focus the width and bring it into view.
+        if width && self.state.take_canvas_focus() {
+            response.request_focus();
+            response.scroll_to_me(Some(egui::Align::Center));
+        }
         if response.has_focus() {
             self.state.focus = Some(key.to_owned());
         }
@@ -428,10 +435,29 @@ impl Panel<'_, '_> {
 
     fn background_palette(&mut self, ui: &mut egui::Ui) {
         let current = self.cx.session.project().data().canvas.background;
+        self.swatch_palette(
+            ui,
+            current,
+            "inspector.canvas.palette",
+            "inspector.canvas_swatch",
+            Action::SetBackground,
+        );
+    }
+
+    /// The reference's solid swatch grid. `pick` builds the action for a swatch
+    /// click; `prefix` names the swatch ids for automation.
+    pub(super) fn swatch_palette(
+        &mut self,
+        ui: &mut egui::Ui,
+        current: project::Color,
+        scroll_id: &'static str,
+        prefix: &'static str,
+        pick: impl Fn(project::Color) -> Action,
+    ) {
         let dark = self.cx.dark;
         let rows = palette::SOLID.len().div_ceil(SWATCHES_PER_ROW);
         egui::ScrollArea::vertical()
-            .id_salt("inspector.canvas.palette")
+            .id_salt(scroll_id)
             .max_height(150.0)
             .show_rows(ui, SWATCH_ROW, rows, |ui, range| {
                 ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
@@ -469,9 +495,9 @@ impl Panel<'_, '_> {
                                 );
                             }
                             let response = response.on_hover_text(render::color::hex(color));
-                            self.remember(format!("inspector.canvas_swatch.{index}"), &response);
+                            self.remember(format!("{prefix}.{index}"), &response);
                             if response.clicked() {
-                                self.actions.push(Action::SetBackground(color));
+                                self.actions.push(pick(color));
                             }
                         }
                     });

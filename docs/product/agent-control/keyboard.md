@@ -50,6 +50,7 @@
 | `timeline.split` — Split | Edit | Ctrl+B | `split_at` | — |
 | `timeline.split_left` — Split and remove left | Edit | Q | `timeline.split_left` | — |
 | `timeline.split_right` — Split and remove right | Edit | W | `timeline.split_right` | — |
+| `timeline.split_all` — Split all | Edit | Ctrl+Shift+B | `timeline.split_all` | — |
 | `timeline.delete` — Delete | Edit | Backspace, Delete | `delete` / `ripple_delete` (ripple enabled) | — |
 | `timeline.freeze` — Freeze frame | Timeline | — | — | freeze frame (unavailable) |
 | `timeline.ripple_delete` — Ripple delete | Edit | Shift+Backspace, Shift+Delete | `ripple_delete` | — |
@@ -65,6 +66,7 @@
 | `transport.end` — Go to end | Navigation | End | — | playback transport |
 | `playback.jump_bookmark.next` — Next bookmark | Playback | — | — | playback transport |
 | `playback.jump_bookmark.previous` — Previous bookmark | Playback | — | — | playback transport |
+| `playback.loop` — Loop playback | Playback | — | — | playback transport |
 | `timeline.select_all` — Select all | Selection | Ctrl+A | — | timeline selection |
 | `timeline.deselect_all` — Deselect all | Selection | — | — | timeline selection |
 | `timeline.duplicate` — Duplicate | Selection | Ctrl+D | `timeline.duplicate` | — |
@@ -78,6 +80,10 @@
 | `timeline.snap` — Toggle snapping | Timeline | N | — | timeline view |
 | `timeline.ripple` — Toggle ripple editing | Timeline | — | — | timeline view |
 | `timeline.preview_axis` — Preview axis | Timeline | S | — | timeline view |
+| `timeline.tool.select` — Select | Timeline | A | — | timeline tool |
+| `timeline.tool.split` — Split mode | Timeline | B | — | timeline tool |
+| `timeline.select_left` — Select leftward | Selection | [ | — | timeline selection |
+| `timeline.select_right` — Select rightward | Selection | ] | — | timeline selection |
 | `timeline.zoom_in` — Zoom in | Timeline | — | — | timeline view |
 | `timeline.zoom_out` — Zoom out | Timeline | — | — | timeline view |
 | `timeline.add_track` — Add track | Timeline | — | `timeline.add_track` | — |

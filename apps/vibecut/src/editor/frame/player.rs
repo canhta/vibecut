@@ -50,6 +50,33 @@ impl Editor {
         }
     }
 
+    /// The range loop playback holds: the export in/out markers when set and non-empty,
+    /// otherwise the whole timeline. `None` while looping is off or the timeline is empty.
+    pub(in crate::editor) fn loop_range(&self) -> Option<(Tick, Tick)> {
+        let duration = self
+            .session
+            .preview_project()
+            .unwrap_or(self.session.project())
+            .duration();
+        let in_out = match self.preferences.export.output.range {
+            render::RangeChoice::InOut { start, end } => Some((start, end)),
+            _ => None,
+        };
+        crate::services::playback::loop_window(self.preferences.playback_loop, in_out, duration)
+    }
+
+    /// Hold the transport's loop range in step with preferences and the timeline. Runs
+    /// every frame; `set_loop` re-seeks only when the range changed.
+    pub(in crate::editor) fn sync_loop(&mut self) -> Result<()> {
+        let range = self.loop_range();
+        let project = self
+            .session
+            .preview_project()
+            .unwrap_or(self.session.project())
+            .clone();
+        self.playback.set_loop(range, project)
+    }
+
     pub(in crate::editor) fn commit_timecode(&mut self) {
         let Some(edit) = self.player.timecode_edit.take() else {
             return;

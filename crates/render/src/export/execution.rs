@@ -13,10 +13,13 @@ use project::{AudioSource, ItemParams, Project};
 use std::collections::{BTreeMap, BTreeSet};
 use time::{FrameRate, Rounding, Tick, TimeRange};
 
+/// `video` is false for audio-only output: video items then neither render nor
+/// count as missing sources.
 pub(super) fn admission(
     project: &Project,
     range: TimeRange,
     sources: &mut dyn SourceProvider,
+    video: bool,
     include_audio: bool,
     hash: bool,
     hooks: &dyn ExecutionHooks,
@@ -32,7 +35,9 @@ pub(super) fn admission(
         .collect();
     for track in timeline.iter() {
         for item in &track.items {
-            let video = rendered.contains(&item.id) && matches!(item.content, ItemParams::Video(_));
+            let video = video
+                && rendered.contains(&item.id)
+                && matches!(item.content, ItemParams::Video(_));
             let audio = include_audio
                 && !track.muted
                 && !project.data().settings.master_muted
@@ -59,8 +64,23 @@ pub(super) fn admission(
             };
             if let Some(reason) = reason {
                 let window = if overlaps {
-                    let start = item.source_time_at(range.start().max(item.start))?;
-                    let end = item.source_time_at(range.end().min(item.end()?))?.max(
+                    let first = range.start().max(item.start);
+                    let last = range.end().min(item.end()?);
+                    // A reversed span runs from the source of its last output tick up
+                    // to the source of its first (exclusive); a forward one the other way.
+                    let (start, far) = if item.retime.reverse {
+                        let last = last
+                            .checked_sub(Tick(1))
+                            .ok_or(Error::Invalid("diagnostic range"))?;
+                        let far = item
+                            .source_time_at(first)?
+                            .checked_add(Tick(1))
+                            .ok_or(Error::Invalid("diagnostic range"))?;
+                        (item.source_time_at(last)?, far)
+                    } else {
+                        (item.source_time_at(first)?, item.source_time_at(last)?)
+                    };
+                    let end = far.max(
                         start
                             .checked_add(Tick(1))
                             .ok_or(Error::Invalid("diagnostic range"))?,
@@ -271,14 +291,9 @@ pub(super) fn encoded_export(
     let mut video = VideoEncoder::with_preference(video_settings, &first_frame, settings.encoder)?;
     drop(first_frame);
     let mut audio = if settings.include_audio {
-        Some(AudioEncoder::new(AudioEncoderSettings {
-            bit_rate: 192_000,
-            webm: matches!(settings.container, Container::WebM),
-            ..AudioEncoderSettings::aac(
-                project.data().settings.audio_sample_rate,
-                settings.channels,
-            )
-        })?)
+        Some(AudioEncoder::new(audio_encoder_settings(
+            project, settings,
+        ))?)
     } else {
         None
     };
@@ -384,6 +399,69 @@ pub(super) fn encoded_export(
         degraded: Vec::new(),
     })
 }
+fn audio_encoder_settings(project: &Project, settings: &ExportSettings) -> AudioEncoderSettings {
+    AudioEncoderSettings {
+        bit_rate: 192_000,
+        webm: matches!(settings.container, Container::WebM),
+        ..AudioEncoderSettings::aac(project.data().settings.audio_sample_rate, settings.channels)
+    }
+}
+
+/// Audio-only pass: the shared mixer feeds the same audio encoder and muxer as
+/// the video pass, with no video stream and no renderer frames.
+pub(super) fn audio_only_export(
+    project: &Project,
+    range: TimeRange,
+    settings: &ExportSettings,
+    file: project::atomic::StreamingWriter,
+    sources: &mut dyn SourceProvider,
+    hooks: &dyn ExecutionHooks,
+) -> Result<ExportReceipt> {
+    hooks.progress(Stage::Render, 0.0)?;
+    let mut audio = AudioEncoder::new(audio_encoder_settings(project, settings))?;
+    let mut mux = Muxer::new(file, settings.container)?;
+    mux.set_metadata(&licence_tags(project)?)?;
+    let ai = mux.add_parameters(&audio.parameters(), audio.time_base())?;
+    let sample_rate = project.data().settings.audio_sample_rate;
+    let total = range
+        .duration()
+        .to_units(i64::from(sample_rate), Rounding::Nearest)?;
+    let origin = range
+        .start()
+        .to_units(i64::from(sample_rate), Rounding::Nearest)?;
+    let mut mixer = crate::AudioMixer::new(
+        project,
+        settings.channels,
+        settings.audio_cut_fade_ms,
+        hooks,
+    )?;
+    let mut samples = 0i64;
+    fill_audio(
+        &mut mixer,
+        project,
+        origin,
+        total,
+        &mut samples,
+        settings,
+        sources,
+        hooks,
+        &mut audio,
+        &mut mux,
+        ai,
+    )?;
+    for packet in audio.flush()? {
+        mux.write_packet(ai, &packet)?;
+    }
+    check(hooks)?;
+    mux.finish()?;
+    Ok(ExportReceipt {
+        video_frames: 0,
+        audio_samples: samples as u64,
+        stream_copied: false,
+        degraded: Vec::new(),
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn fill_audio(
     mixer: &mut crate::AudioMixer<'_>,
@@ -462,14 +540,9 @@ pub(super) fn copy_export(
         }
     }
     let mut audio = if settings.include_audio {
-        Some(AudioEncoder::new(AudioEncoderSettings {
-            bit_rate: 192_000,
-            webm: matches!(settings.container, Container::WebM),
-            ..AudioEncoderSettings::aac(
-                project.data().settings.audio_sample_rate,
-                settings.channels,
-            )
-        })?)
+        Some(AudioEncoder::new(audio_encoder_settings(
+            project, settings,
+        ))?)
     } else {
         None
     };
@@ -517,6 +590,7 @@ pub(super) fn copy_export(
             project,
             range,
             sources,
+            true,
             settings.include_audio,
             false,
             hooks,

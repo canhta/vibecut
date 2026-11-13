@@ -26,9 +26,10 @@ pub(super) fn show(state: &mut State, ctx: &egui::Context, look: Look) {
         let mut save = false;
         let mut cancel = false;
         let title = i18n::text(locale, Text::ProjectsRenameTitle);
-        let response =
-            egui::Modal::new(egui::Id::unique("projects.rename.dialog")).show(ctx, |ui| {
-                ui.heading(title);
+        let response = egui::Modal::new(egui::Id::unique("projects.rename.dialog"))
+            .frame(crate::kit::dialog_frame(ctx))
+            .show(ctx, |ui| {
+                crate::kit::dialog_title(ui, &title);
                 let response =
                     ui.add(egui::TextEdit::singleline(&mut dialog.name).desired_width(320.0));
                 set_author_id(&response, "projects.rename.input");
@@ -95,35 +96,37 @@ pub(super) fn show(state: &mut State, ctx: &egui::Context, look: Look) {
         let modified = i18n::date(locale, entry.modified_unix_ms);
         let title = i18n::text(locale, Text::ProjectsInfoTitle);
         let mut close = false;
-        let response = egui::Modal::new(egui::Id::unique("projects.info.dialog")).show(ctx, |ui| {
-            ui.set_width(420.0);
-            ui.heading(title);
-            ui.label(egui::RichText::new(name).strong().size(16.0));
-            ui.label(i18n::format(
-                locale,
-                Text::ProjectsDuration,
-                &[("duration", &duration)],
-            ));
-            ui.label(i18n::format(
-                locale,
-                Text::CreatedDate,
-                &[("date", &created)],
-            ));
-            ui.label(i18n::format(
-                locale,
-                Text::ModifiedDate,
-                &[("date", &modified)],
-            ));
-            if action_button(
-                ui,
-                "projects.info.close",
-                Icon::X,
-                i18n::text(locale, Text::ProjectsInfoClose),
-                true,
-            ) {
-                close = true;
-            }
-        });
+        let response = egui::Modal::new(egui::Id::unique("projects.info.dialog"))
+            .frame(crate::kit::dialog_frame(ctx))
+            .show(ctx, |ui| {
+                ui.set_width(420.0);
+                crate::kit::dialog_title(ui, &title);
+                ui.label(egui::RichText::new(name).strong().size(16.0));
+                ui.label(i18n::format(
+                    locale,
+                    Text::ProjectsDuration,
+                    &[("duration", &duration)],
+                ));
+                ui.label(i18n::format(
+                    locale,
+                    Text::CreatedDate,
+                    &[("date", &created)],
+                ));
+                ui.label(i18n::format(
+                    locale,
+                    Text::ModifiedDate,
+                    &[("date", &modified)],
+                ));
+                if action_button(
+                    ui,
+                    "projects.info.close",
+                    Icon::X,
+                    i18n::text(locale, Text::ProjectsInfoClose),
+                    true,
+                ) {
+                    close = true;
+                }
+            });
         set_author_id(&response.response, "projects.info.dialog");
         if close {
             state.info = None;
@@ -171,45 +174,47 @@ pub(super) fn show(state: &mut State, ctx: &egui::Context, look: Look) {
         } else {
             "projects.delete.dialog"
         };
-        let response = egui::Modal::new(egui::Id::unique(dialog_id)).show(ctx, |ui| {
-            ui.set_width(420.0);
-            ui.heading(title);
-            ui.label(prompt);
-            let names_label = names.join(", ");
-            let response =
-                ui.add(egui::Label::new(egui::RichText::new(names_label).strong()).wrap());
-            set_author_id(&response, "projects.delete.names");
-            if let Some(error) = &dialog.error {
-                ui.label(egui::RichText::new(error).color(kit::error_text(dark)));
-            }
-            ui.horizontal(|ui| {
-                if action_button(
-                    ui,
-                    "projects.delete.confirm",
-                    Icon::Trash,
-                    i18n::text(
-                        locale,
-                        if permanent {
-                            Text::ProjectsPurgeConfirm
-                        } else {
-                            Text::ProjectsDeleteConfirm
-                        },
-                    ),
-                    !busy,
-                ) {
-                    confirm = true;
+        let response = egui::Modal::new(egui::Id::unique(dialog_id))
+            .frame(crate::kit::dialog_frame(ctx))
+            .show(ctx, |ui| {
+                ui.set_width(420.0);
+                crate::kit::dialog_title(ui, &title);
+                ui.label(prompt);
+                let names_label = names.join(", ");
+                let response =
+                    ui.add(egui::Label::new(egui::RichText::new(names_label).strong()).wrap());
+                set_author_id(&response, "projects.delete.names");
+                if let Some(error) = &dialog.error {
+                    ui.label(egui::RichText::new(error).color(kit::error_text(dark)));
                 }
-                if action_button(
-                    ui,
-                    "projects.delete.cancel",
-                    Icon::X,
-                    i18n::text(locale, Text::Cancel),
-                    !busy,
-                ) {
-                    cancel = true;
-                }
+                ui.horizontal(|ui| {
+                    if action_button(
+                        ui,
+                        "projects.delete.confirm",
+                        Icon::Trash,
+                        i18n::text(
+                            locale,
+                            if permanent {
+                                Text::ProjectsPurgeConfirm
+                            } else {
+                                Text::ProjectsDeleteConfirm
+                            },
+                        ),
+                        !busy,
+                    ) {
+                        confirm = true;
+                    }
+                    if action_button(
+                        ui,
+                        "projects.delete.cancel",
+                        Icon::X,
+                        i18n::text(locale, Text::Cancel),
+                        !busy,
+                    ) {
+                        cancel = true;
+                    }
+                });
             });
-        });
         set_author_id(&response.response, dialog_id);
         if confirm {
             let ids = dialog.ids.clone();

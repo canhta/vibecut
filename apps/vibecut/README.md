@@ -82,8 +82,8 @@ crate-private. A new export needs a named consumer here.
 ## Checks
 
 The offscreen audit is an example tool. `examples/ui_audit.rs` is the stable CLI
-and composition root holding the two existing test-fixture `#[path]` seams and
-the example tests; its private implementation lives under `examples/audit/`.
+and composition root holding the two test-fixture `#[path]` seams and the example tests;
+its private implementation lives under `examples/audit/`.
 `application.rs` owns the harness, app and theme, `fixture.rs` the shared
 deterministic media and session fixtures, `scenes.rs` the scene registry with
 `scenes/{home,editor,properties,timeline,shorts,assets}.rs`, `readme.rs` the
@@ -95,7 +95,7 @@ copy plus gallery HTML. `Cargo.toml` declares the `ui_audit` and
 `cargo test -p vibecut` asserts widget and engine state and writes no image. `cargo
 xtask ui-audit [SCENE...]` renders named scenes offscreen through the automation IDs
 at 1x and 2x into `$CARGO_TARGET_DIR/ui-audit/` (or `target/ui-audit/`) with an
-`index.html` beside each `.spikes/ui-reference/` counterpart; it waits for every
+`index.html` beside each local reference counterpart; it waits for every
 async effect preview to settle, opens no native window and never runs in
 `cargo xtask ci`. Device performance is recorded from observed native runs only.
 

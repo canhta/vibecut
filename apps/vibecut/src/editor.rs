@@ -76,15 +76,6 @@ impl Editor {
     pub(in crate::editor) fn tr(&self, key: Text) -> &'static str {
         i18n::text(self.preferences.locale, key)
     }
-    pub(in crate::editor) fn accent(&self) -> Color32 {
-        theme::accent(self.preferences.dark)
-    }
-    pub(in crate::editor) fn panel_fill(&self) -> Color32 {
-        theme::panel(self.preferences.dark)
-    }
-    pub(in crate::editor) fn secondary(&self) -> Color32 {
-        theme::secondary(self.preferences.dark)
-    }
     /// Inject the catalog command adapter. Production opens it lazily; tests
     /// and audits supply a recording fake.
     pub fn set_font_backend(&mut self, backend: Box<dyn properties::font_picker::Backend>) {
@@ -240,10 +231,11 @@ impl Editor {
         Self::new(session, playback, preferences)
     }
     fn with_session(
-        session: crate::services::lifecycle::EditorSession,
+        mut session: crate::services::lifecycle::EditorSession,
         playback: Playback,
         preferences: Preferences,
     ) -> Self {
+        session.set_asset_export_sources(playback.export_sources());
         let font_error = libraries::fonts::FontStore::native()
             .and_then(|store| store.load_project(session.project()))
             .err()
@@ -543,6 +535,18 @@ impl Editor {
         self.dialogs.export.open(budget, render, &project)
     }
     /// Accept the native export save picker's result without opening OS UI in tests.
+    /// The folder picker chose `directory`: start `export.clips` for the queued assets.
+    pub fn export_clips_picked(&mut self, directory: PathBuf) -> Result<()> {
+        if let Err(error) = self.assets.start_clip_export(&mut self.session, directory) {
+            let message = self.tr(crate::i18n::Text::ClipExportRefused);
+            self.set_toast(message, Some(error.to_string()));
+        }
+        Ok(())
+    }
+    /// The folder picker was dismissed: the queued assets are not exported.
+    pub fn export_clips_cancelled(&mut self) {
+        self.assets.cancel_clip_pick();
+    }
     pub fn export_picked_file(&mut self, path: PathBuf) -> Result<()> {
         let protected = self
             .session
@@ -688,7 +692,7 @@ impl Editor {
         self.frame.widgets.clear();
         self.tick();
         ui.painter()
-            .rect_filled(ui.max_rect(), 0.0, self.panel_fill());
+            .rect_filled(ui.max_rect(), 0.0, theme::panel(self.preferences.dark));
         self.frame.panels.insert("media", ui.max_rect());
         self.show_assets(ui);
         self.show_import_overlay(ui.ctx());

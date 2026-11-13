@@ -46,6 +46,7 @@ pub enum EditorAction {
     OpenFeedback,
     ImportMedia,
     ImportLut,
+    ExportClips,
     ExportSave,
     SnapshotSave,
 }

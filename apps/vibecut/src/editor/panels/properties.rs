@@ -75,6 +75,8 @@ pub(in crate::editor) struct State {
     uniform_scale: bool,
     /// Project/Details switch shown while no single element is selected.
     details: bool,
+    /// Set by Modify: the next Settings frame focuses and scrolls to the canvas width.
+    canvas_focus: bool,
     scrub: Option<ScrubDrag>,
     spatial_edit: Option<(ItemId, ScrubTarget, Tick)>,
     /// Wheel or curve drag in progress and whether it wrote a value.
@@ -110,6 +112,15 @@ impl State {
     /// The Project/Details switch reads as details-only.
     pub(in crate::editor) fn details(&self) -> bool {
         self.details
+    }
+
+    pub(in crate::editor) fn request_canvas_focus(&mut self) {
+        self.canvas_focus = true;
+    }
+
+    /// Takes the pending Modify focus request.
+    pub(in crate::editor) fn take_canvas_focus(&mut self) -> bool {
+        std::mem::take(&mut self.canvas_focus)
     }
 
     pub(in crate::editor) fn set_details(&mut self, details: bool) {
@@ -182,6 +193,7 @@ impl Default for State {
             focus: None,
             uniform_scale: true,
             details: false,
+            canvas_focus: false,
             scrub: None,
             spatial_edit: None,
             graph: None,

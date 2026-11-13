@@ -29,7 +29,10 @@ const VALUE_COLUMN: f32 = 120.0;
 fn is_basic(tab: PropertiesTab) -> bool {
     matches!(
         tab,
-        PropertiesTab::Transform | PropertiesTab::RemoveBackground | PropertiesTab::Mask
+        PropertiesTab::Transform
+            | PropertiesTab::Background
+            | PropertiesTab::RemoveBackground
+            | PropertiesTab::Mask
     )
 }
 
@@ -631,6 +634,9 @@ impl<'a, 'c> Panel<'a, 'c> {
             maintain_pitch,
         });
     }
+    fn set_reverse(&mut self, item: ItemId, reverse: bool) {
+        self.actions.push(Action::SetReverse { item, reverse });
+    }
     fn set_effect_param(&mut self, item: ItemId, effect: &str, key: &str, value: f64) {
         self.actions.push(Action::SetEffectParam {
             item,
@@ -739,40 +745,88 @@ impl<'a, 'c> Panel<'a, 'c> {
         }
     }
 
+    /// The project Details: name and path, a divider, then the canvas rows, the sample
+    /// rate, the collapsed info section and `Modify`, which opens the Settings tab.
     fn project_details(&mut self, ui: &mut egui::Ui) {
-        self.panel_section(
-            ui,
-            "inspector.section.canvas",
-            "inspector.canvas",
-            Text::Canvas,
-            true,
-            false,
-            |panel, ui| {
-                let locale = panel.cx.locale;
-                let data = panel.cx.session.project().data();
+        let locale = self.cx.locale;
+        // Owned text first: the rows below may take `&mut self`.
+        let (name, aspect, resolution, frame_rate, sample_rate) = {
+            let data = self.cx.session.project().data();
+            let canvas = project::CanvasSize {
+                width: data.canvas.width,
+                height: data.canvas.height,
+            };
+            // The ratio label reads `Original` whenever the canvas is the retained media size.
+            let aspect = if data.original_canvas_size == Some(canvas) {
+                self.tr(Text::Original)
+            } else {
+                data.canvas
+                    .preset
+                    .map_or_else(|| self.tr(Text::Custom), |preset| self.preset_text(preset))
+            };
+            // The canvas follows the first media only in the Original preset.
+            let resolution = if data.canvas.preset == Some(project::AspectPreset::Original) {
+                self.tr(Text::DetailAdapted).to_owned()
+            } else {
                 let width = i18n::number(locale, u64::from(data.canvas.width));
                 let height = i18n::number(locale, u64::from(data.canvas.height));
-                let numerator = i18n::signed(locale, data.canvas.fps.num());
-                let denominator = i18n::signed(locale, data.canvas.fps.den());
-                let rate = i18n::number(locale, u64::from(data.settings.audio_sample_rate));
-                let lines = [
-                    i18n::format(
-                        locale,
-                        Text::CanvasSize,
-                        &[("width", &width), ("height", &height)],
-                    ),
-                    i18n::format(
-                        locale,
-                        Text::FrameRate,
-                        &[("num", &numerator), ("den", &denominator)],
-                    ),
-                    i18n::format(locale, Text::SampleRate, &[("rate", &rate)]),
-                ];
-                for line in lines {
-                    panel.detail_row(ui, &line);
+                i18n::format(
+                    locale,
+                    Text::CanvasSize,
+                    &[("width", &width), ("height", &height)],
+                )
+            };
+            // Two decimals for display only; the stored rate stays exact.
+            let rate = i18n::decimal(locale, data.canvas.fps.as_f64(), 2);
+            let frame_rate = i18n::format(locale, Text::FrameRate, &[("rate", &rate)]);
+            let sample = i18n::number(locale, u64::from(data.settings.audio_sample_rate));
+            let sample_rate = i18n::format(locale, Text::SampleRate, &[("rate", &sample)]);
+            (
+                data.name.as_str().to_owned(),
+                aspect,
+                resolution,
+                frame_rate,
+                sample_rate,
+            )
+        };
+        let path = self.cx.project_path.map(|path| path.display().to_string());
+        let modify = self.tr(Text::DetailModify);
+        let fill = self.control_fill();
+        egui::ScrollArea::vertical()
+            .id_salt("inspector.details.rows")
+            .show(ui, |ui| {
+                self.detail_pair(ui, self.tr(Text::DetailName), &name);
+                // An unsaved project has no path yet.
+                if let Some(path) = &path {
+                    self.detail_pair(ui, self.tr(Text::DetailPath), path);
                 }
-            },
-        );
+                ui.separator();
+                self.detail_pair(ui, self.tr(Text::DetailAspectRatio), aspect);
+                self.detail_pair(ui, self.tr(Text::DetailResolution), &resolution);
+                self.detail_pair(ui, self.tr(Text::DetailFrameRate), &frame_rate);
+                self.detail_row(ui, &sample_rate);
+                self.project_info(ui);
+                let response = ui
+                    .with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.add(egui::Button::new(modify).fill(fill))
+                    })
+                    .inner;
+                self.remember("inspector.details.modify", &response);
+                if response.clicked() {
+                    self.state.request_canvas_focus();
+                    // A collapsed canvas section would never draw the width that takes the focus.
+                    if !self.cx.preferences.section_open(canvas::SECTION_KEY, true) {
+                        self.actions.push(Action::SetSection {
+                            key: canvas::SECTION_KEY,
+                            open: true,
+                        });
+                    }
+                    self.actions.push(Action::Activate("inspector.project"));
+                }
+            });
+    }
+
+    fn project_info(&mut self, ui: &mut egui::Ui) {
         self.panel_section(
             ui,
             "inspector.section.metadata",
@@ -793,6 +847,28 @@ impl<'a, 'c> Panel<'a, 'c> {
                 }
             },
         );
+    }
+
+    /// A label on the left in the secondary colour and its value on the right; a long
+    /// value (the project path) wraps inside the remaining width.
+    fn detail_pair(&self, ui: &mut egui::Ui, label: &str, value: &str) {
+        ui.horizontal_top(|ui| {
+            ui.label(
+                egui::RichText::new(label)
+                    .size(theme::type_size::BODY)
+                    .color(self.secondary()),
+            );
+            ui.with_layout(egui::Layout::top_down(egui::Align::Max), |ui| {
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(value)
+                            .size(theme::type_size::BODY)
+                            .color(self.text_color()),
+                    )
+                    .wrap_mode(egui::TextWrapMode::Wrap),
+                );
+            });
+        });
     }
 
     fn detail_row(&self, ui: &mut egui::Ui, text: &str) {
@@ -862,6 +938,15 @@ impl<'a, 'c> Panel<'a, 'c> {
             .copied()
             .filter(|tab| {
                 !(*tab == PropertiesTab::Audio && kind == ElementKind::Video && !has_audio)
+            })
+            // The Background tab shows only while the clip leaves part of the canvas open.
+            .filter(|tab| {
+                *tab != PropertiesTab::Background
+                    || read::clip_background_visible(
+                        self.cx.session.project(),
+                        item,
+                        self.cx.playhead,
+                    )
             })
             .collect();
         let stored = self
@@ -1256,6 +1341,9 @@ impl<'a, 'c> Panel<'a, 'c> {
                     |panel, ui| panel.adjust_controls(ui, item),
                 );
             }
+            PropertiesTab::Background if kind == ElementKind::Video => {
+                self.background_controls(ui, item);
+            }
             PropertiesTab::RemoveBackground
                 if matches!(kind, ElementKind::Video | ElementKind::Image) =>
             {
@@ -1305,8 +1393,8 @@ mod number_edit;
 
 mod remove_background;
 
-mod selection;
+mod background;
 
-mod font_dialog;
+mod selection;
 
 mod transition;

@@ -14,8 +14,8 @@
 | App surfaces and accents | Semantic colour functions | App palette |
 | Light surfaces and non-editor status colours | Semantic colour functions | Accessible ramp |
 
-Reference hex samples are not app tokens; colour differences from the reference are intentional. Dark and light share measured geometry. Hover, pressed, focus and disabled states reuse app semantic roles. Page heading sizes, dialog margins, uncaptured track types and panel layout calculations stay caller-owned until measured.
+Reference hex samples are not app tokens; colour differences from the reference are intentional. Dark and light share measured geometry. Hover, pressed, focus and disabled states reuse app semantic roles. The 24 px dialog inset, 90×34 footer buttons and 320 px toast are kit tokens (`space::DIALOG`, `size::DIALOG_BUTTON_*`, `size::TOAST_WIDTH`), taken from the export capture and applied to every modal. Page heading sizes, uncaptured track types and panel layout calculations stay caller-owned until measured.
 
-[`kit.rs`](../../../apps/vibecut/src/kit.rs) owns the shared kit: icon buttons, tab strips, section headers, property rows and slider/stepper drafts. Callers keep their labels, tooltips, automation IDs, preferences and preview/commit/rollback decisions.
+[`kit.rs`](../../../apps/vibecut/src/kit.rs) owns the shared kit: icon buttons, tab rows, section headers, steppers and value fields, panel states, progress bars, toasts and dialog frames. Callers keep their labels, tooltips, automation IDs, preferences and preview/commit/rollback decisions.
 
 The measured text styles, 22 px control height, spacing and 4 px corners are an editor-only density (`kit::install_editor_density`, called by the editor frame). Home, Shorts and the workspace shell keep toolkit defaults until measured.

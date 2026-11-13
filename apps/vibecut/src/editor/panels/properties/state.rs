@@ -61,6 +61,11 @@ pub(in crate::editor) enum Action {
         edge: project::FadeEdge,
         seconds: f64,
     },
+    /// The Speed tab's Reverse switch, through `timeline.set_reverse`.
+    SetReverse {
+        item: ItemId,
+        reverse: bool,
+    },
     /// The selected transition's duration, through `transition.set_duration`.
     SetTransitionDuration {
         transition: project::TransitionId,
@@ -82,6 +87,11 @@ pub(in crate::editor) enum Action {
         den: i64,
     },
     SetBackground(project::Color),
+    /// One clip-background commit over the listed video items, one undo step.
+    SetClipBackground {
+        items: Vec<ItemId>,
+        background: project::ClipBackground,
+    },
     ResetTransform(ItemId),
     /// The Blend section's defaults (blend mode and opacity) as one undo step.
     ResetBlend(ItemId),

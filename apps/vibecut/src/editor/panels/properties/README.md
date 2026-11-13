@@ -43,7 +43,7 @@ compatible/selected count. A single element uses per-type tabs: Text (content, f
 background, position, size scrub, colour), Basic's Blend section (blend menu, opacity scrub), Audio
 (see below), and Speed for video and audio. Speed is a 0.01–5x scrub with a
 reset and, for items with audio, a `Change pitch` checkbox that is on while pitch
-follows speed (`maintain_pitch` off). Speed edits use `timeline.set_speed`, one undo
+follows speed (`maintain_pitch` off). A `Reverse` switch (video and audio) uses `timeline.set_reverse`, one undo step, and keeps the span. Speed edits use `timeline.set_speed`, one undo
 step per commit; trim bounds extend by the retimed output length. Caption generation
 refuses a retimed source item. The text button inserts a five-second title at the
 playhead in one undo step.
@@ -81,6 +81,10 @@ command of its own: it is `transition.move` to the span position the alignment n
 batched with a `transition.set_duration` shrink when the span is longer than the handle it
 must grow into, so one click is one undo step; a span moved by hand shows none selected.
 Remove is `transition.remove`.
+
+## Background sub-tab
+
+A video clip's Background cell sits second in the Basic sub-tab bar. It is listed only while the clip leaves part of the canvas open at the playhead (`read::clip_background_visible`, which asks `render::arrange::covers_canvas`). The kind row is None, Colour and Blur. Choosing a kind commits one `timeline.set_background` undo step: Colour starts from the current solid colour or black, and Blur starts from the current intensity or 10. Colour shows the colour row with Hex and the shared solid swatch grid. Blur shows Light, Medium and Heavy (100, 200 and 500). Apply to all copies the current background to every unlocked video item as one undo step. Controls send `Action::SetClipBackground`; the workflow sends `timeline.set_background`.
 
 ## Remove BG sub-tab
 

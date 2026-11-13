@@ -468,7 +468,7 @@ fn control_requires_an_explicit_overwrite_grant() {
         "r1",
         "export",
         json!({
-            "settings":{"version":1,"resolution":null,"fps":null,"bit_rate":null,"codec":"automatic","profile":"automatic","scene":{"kind":"active"},"range":{"kind":"in_out","start":0,"end":time::TICKS_PER_SECOND}},
+            "settings":{"version":1,"resolution":null,"fps":null,"bit_rate":null,"codec":"automatic","profile":"automatic","audio_only":false,"scene":{"kind":"active"},"range":{"kind":"in_out","start":0,"end":time::TICKS_PER_SECOND}},
             "path":path,
             "overwrite":true,
         }),

@@ -86,6 +86,7 @@ fn project(source: &media::SourceAsset) -> Project {
                 muted: false,
                 crop: None,
                 cleanup: Default::default(),
+                background: project::ClipBackground::None,
             }),
         }],
     });

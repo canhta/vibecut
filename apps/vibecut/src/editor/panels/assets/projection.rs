@@ -1,5 +1,6 @@
 //! Prepares the area's read-only workflow projection before rendering.
 use super::effects::preview_instance;
+use super::stickers;
 use super::{
     AssetRow, AssetState, AssetsTab, BTreeMap, Editor, EffectRow, Icon, MediaKind, Model, Row,
     Text, asset_row, egui, file_name,
@@ -131,31 +132,24 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
         } else {
             (None, false)
         };
-    let graphic_previews = if preferences.assets_tab == AssetsTab::Stickers {
-        [
-            project::GraphicParams::rectangle(),
-            project::GraphicParams::ellipse(),
-            project::GraphicParams::polygon(),
-            project::GraphicParams::star(),
-        ]
-        .map(
-            |graphic| match graphic_preview(graphic, ctx.pixels_per_point()) {
-                Ok(image) => {
-                    Some(ctx.load_texture("graphic-shelf", image, egui::TextureOptions::LINEAR))
-                }
-                Err(_) => {
-                    tracing::warn!(category = "graphic_preview", "shape preview unavailable");
-                    None
-                }
-            },
-        )
-    } else {
-        [None, None, None, None]
-    };
     let (music_credits, music_credits_failed) = match editor.session.project().music_credits() {
         Ok(credits) => (credits, false),
         Err(_) => (Vec::new(), true),
     };
+    let stickers = (preferences.assets_tab == AssetsTab::Stickers).then(|| {
+        let query = editor
+            .assets
+            .searches
+            .get(&AssetsTab::Stickers)
+            .map_or("", String::as_str);
+        stickers::rows(
+            query,
+            editor.assets.sticker_tab,
+            editor.assets.sticker_expanded,
+            &editor.preferences.sticker_recents,
+            editor.preferences.locale,
+        )
+    });
     editor.assets.model = Model {
         preferences,
         rows,
@@ -163,10 +157,11 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
         effects,
         transition_refusal,
         transition_drag_enabled,
-        graphic_insertion_ready: editor.graphic_insertion_available(),
-        graphic_previews,
+        insertion_ready: editor.insertion_available(),
+        stickers,
         importing: editor.assets.importing(),
         selection: editor.assets.media_selection.clone(),
+        clip_export: editor.assets.clip_export_status(),
         reveal: editor.assets.media_reveal.map(|reveal| reveal.asset),
         marquee: editor.assets.media_marquee.clone(),
         failed: !editor.assets.import_failures.is_empty() || editor.assets.import_notice.is_some(),
@@ -175,43 +170,4 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
         music_credits,
         music_credits_failed,
     };
-}
-
-/// Tiny run-owned shelf images use the production compositor, not a second shape renderer.
-fn graphic_preview(graphic: project::GraphicParams, scale: f32) -> crate::Result<egui::ColorImage> {
-    let mut data = project::Project::empty(project::ProjectId(0), "".into())?.into_data();
-    data.canvas.width = 512;
-    data.canvas.height = 512;
-    data.canvas.background = project::Color([0; 4]);
-    data.scene_mut().timeline.main.items.push(project::Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        masks: vec![],
-        effects: vec![],
-        animations: Default::default(),
-        id: project::ItemId(0),
-        source_asset: None,
-        source_range: time::SourceRange::new(time::Tick::ZERO, time::Tick(1))?,
-        start: time::Tick::ZERO,
-        retime: Default::default(),
-        content: project::ItemParams::Graphic(graphic),
-    });
-    let project = project::Project::new(data)?;
-    let size = (48. * scale).round().clamp(48., 192.) as u32;
-    let mut settings = render::RenderSettings::from_project(&project);
-    settings.width = size;
-    settings.height = size;
-    let budget = engine::ByteBudget::new(4 << 20)?;
-    let hooks = engine::ByteBudgetHooks::new(&budget, None);
-    let image = render::Renderer::new(&project, settings)?
-        .render_frame(
-            time::Tick::ZERO,
-            &mut render::FileSources::default(),
-            &hooks,
-        )?
-        .rgba8(13, &hooks)?;
-    Ok(egui::ColorImage::from_rgba_unmultiplied(
-        [size as usize, size as usize],
-        &image.bytes,
-    ))
 }

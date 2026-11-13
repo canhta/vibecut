@@ -85,6 +85,18 @@ impl Panel<'_, '_> {
                 self.set_speed(item, 1.0, maintain_pitch);
             }
         });
+        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        self.row_label(ui, row, self.tr(Text::SpeedReverse));
+        let mut reversed = read::retime_reversed(project, item).unwrap_or(false);
+        let response = value_ui.add(egui::Checkbox::without_text(&mut reversed));
+        let name = self.tr(Text::SpeedReverse);
+        response
+            .ctx
+            .accesskit_node_builder(response.id, |node| node.set_label(name));
+        self.remember("inspector.speed.reverse", &response);
+        if response.changed() {
+            self.set_reverse(item, reversed);
+        }
         if has_audio {
             let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
             self.row_label(ui, row, self.tr(Text::ChangePitch));

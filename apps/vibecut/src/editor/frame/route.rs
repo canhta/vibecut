@@ -6,6 +6,12 @@ impl Editor {
     pub(in crate::editor) fn context(&self) -> Context<'_> {
         Context {
             session: &self.session,
+            project_path: match &self.session {
+                crate::services::lifecycle::EditorSession::Persistent(autosave) => {
+                    autosave.saved_path()
+                }
+                crate::services::lifecycle::EditorSession::Memory(_) => None,
+            },
             locale: self.preferences.locale,
             dark: self.preferences.dark,
             save_status: self.save_status(),
@@ -79,6 +85,9 @@ impl Editor {
     pub(super) fn timeline_panel(&mut self, ui: &mut egui::Ui) {
         self.with_timeline(|state, cx| timeline::show(state, cx, ui));
         self.sync_hover();
+        if let Err(error) = self.sync_loop() {
+            self.desk().fail(error.to_string());
+        }
         if let Err(error) = self.remember_view() {
             self.desk().fail(error.to_string());
         }

@@ -23,6 +23,10 @@ impl Session {
         wire: bool,
         ripple: bool,
     ) -> Result<Outcome> {
+        // A fork replays onto its parent, which owns the view, history and clipboard.
+        if self.recorded.is_some() {
+            return Err(EditError::Unsupported("session control on a fork"));
+        }
         match command {
             Command::CopyItems { items } => {
                 if self.transaction_active() {

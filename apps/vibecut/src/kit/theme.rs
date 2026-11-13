@@ -215,8 +215,10 @@ pub(crate) mod space {
     pub const GRID: f32 = 15.0;
     pub const XL: f32 = 16.0;
     pub const TAB_GAP: f32 = 28.0;
+    /// Dialog inner margin (export capture: 24 px frame inset).
+    pub const DIALOG: f32 = 24.0;
 }
-/// Only panel and control corners are measured; dialog corners remain proposed.
+/// Panel and control corners are measured; the dialog corner is the export capture applied app-wide.
 pub(crate) mod radius {
     pub const PANEL: u8 = 0;
     pub const FRAME_PANEL: u8 = 8;
@@ -224,6 +226,8 @@ pub(crate) mod radius {
     /// Value fields and steppers (221643 corners: about 2 px; the 4 px mapping was unproven).
     pub const FIELD: u8 = 2;
     pub const UPLOAD: u8 = 8;
+    /// Dialogs and toasts: the export capture's corner applied app-wide.
+    pub const DIALOG: u8 = 12;
 }
 /// Inter-equivalent sizes inferred from measured capital heights.
 pub(crate) mod type_size {
@@ -235,6 +239,8 @@ pub(crate) mod type_size {
     pub const CHROME: f32 = 14.0;
     /// Ruler captions: digit height 8 px in 221643.
     pub const CAPTION: f32 = 11.0;
+    /// Dialog title: the export capture's title applied app-wide.
+    pub const DIALOG_TITLE: f32 = 18.0;
 }
 /// Measured boxes and row pitches from the desktop capture set.
 pub(crate) mod size {
@@ -320,12 +326,20 @@ pub(crate) mod size {
     /// capture (2026-11-09) draws a 2 px caret and a ~38 % accent selection.
     pub const TEXT_EDIT_CARET: f32 = 2.0;
     pub const TEXT_EDIT_SELECTION: f32 = 0.38;
+    /// Dialog footer button (export capture: 90x34).
+    pub const DIALOG_BUTTON_WIDTH: f32 = 90.0;
+    pub const DIALOG_BUTTON_HEIGHT: f32 = 34.0;
+    /// Bottom-right toast width and import progress bar height (ui design States).
+    pub const TOAST_WIDTH: f32 = 320.0;
+    pub const PROGRESS_BAR: f32 = 2.0;
 }
 /// Measured glyph boxes; larger empty-state glyphs are not editor measurements.
 pub(crate) mod icon {
     pub const DENSE: f32 = 16.0;
     pub const PLAY: f32 = 12.0;
     pub const LAYOUT_WIDTH: f32 = 18.0;
+    /// Empty, loading and error states use a 24 px box (ui design Iconography).
+    pub const STATE: f32 = 24.0;
 }
 /// Header and field roles reuse the app palette.
 pub(crate) fn strip(dark: bool) -> Color32 {

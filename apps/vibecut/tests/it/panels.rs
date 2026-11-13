@@ -406,6 +406,7 @@ fn fixture() -> Fixture {
             muted: false,
             crop: None,
             cleanup: Default::default(),
+            background: project::ClipBackground::None,
         }),
     );
     let graphic = insert(
@@ -431,6 +432,7 @@ fn fixture() -> Fixture {
             muted: false,
             crop: None,
             cleanup: Default::default(),
+            background: project::ClipBackground::None,
         }),
     );
     let silent_video = insert(
@@ -446,6 +448,7 @@ fn fixture() -> Fixture {
             muted: false,
             crop: None,
             cleanup: Default::default(),
+            background: project::ClipBackground::None,
         }),
     );
     let text = insert(
@@ -1365,12 +1368,14 @@ fn reachable_element_kinds_show_their_reference_tab_sets() {
         let mut seen = visible_tabs(&harness);
         seen.sort();
         // A basic group holding only Transform shows no sub-tab bar, so no transform tab.
+        // Background is listed only while a clip leaves the canvas open; these clips cover it.
         let shown: Vec<PropertiesTab> = expected
             .iter()
             .copied()
             .filter(|tab| {
                 *tab != PropertiesTab::Transform || has_widget(&harness, "inspector.tab.transform")
             })
+            .filter(|tab| *tab != PropertiesTab::Background)
             .collect();
         let mut want = names(&shown);
         want.sort();
@@ -1382,7 +1387,7 @@ fn reachable_element_kinds_show_their_reference_tab_sets() {
         .tabs()
         .iter()
         .copied()
-        .filter(|tab| *tab != PropertiesTab::Audio)
+        .filter(|tab| *tab != PropertiesTab::Audio && *tab != PropertiesTab::Background)
         .collect();
     let mut seen = visible_tabs(&harness);
     seen.sort();
@@ -1406,6 +1411,7 @@ fn every_registry_kind_has_its_reference_tab_set() {
             ElementKind::Video,
             &[
                 PropertiesTab::Transform,
+                PropertiesTab::Background,
                 PropertiesTab::RemoveBackground,
                 PropertiesTab::Mask,
                 PropertiesTab::Audio,
@@ -2647,6 +2653,21 @@ fn speed_tab_scrubs_resets_and_toggles_pitch_through_one_command() {
         project::Retime::default()
     );
 
+    // Reverse is one undo step that keeps the span; the switch reads back from the item.
+    let history = harness.state().session.history_len();
+    let span = item(&harness, fixture.video).duration().unwrap();
+    click(&mut harness, "inspector.speed.reverse");
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    let reversed = item(&harness, fixture.video);
+    assert!(reversed.retime.reverse);
+    assert_eq!(
+        reversed.duration().unwrap(),
+        span,
+        "reverse keeps the duration"
+    );
+    harness.state_mut().session.undo().unwrap();
+    assert!(!item(&harness, fixture.video).retime.reverse);
+
     // Audio items get the same controls; a video without audio has nothing to pitch-shift.
     select(&mut harness, fixture.audio);
     click(&mut harness, "inspector.tab.speed");
@@ -2678,6 +2699,11 @@ fn speed_tab_renders_the_retimed_clip_controls() {
     std::fs::create_dir_all(&target).unwrap();
     image.save(target.join("p1-41-retime.png")).unwrap();
     assert!(image.width() > 0 && image.height() > 0);
+    click(&mut harness, "inspector.speed.reverse");
+    harness.run_steps(3);
+    let reversed = harness.render().expect("offscreen render");
+    reversed.save(target.join("p1-65-reverse.png")).unwrap();
+    assert!(item(&harness, fixture.video).retime.reverse);
 }
 
 #[test]
@@ -4512,6 +4538,124 @@ fn graphic_scalar_label_drags_cancel_when_their_context_becomes_stale() {
             }
         }
     }
+}
+
+/// Replaces the Stickers search draft with `text`, as a person selecting the field and typing.
+fn set_sticker_search(harness: &mut Harness<Editor>, text: &str) {
+    click(harness, "assets.search");
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.key_press(egui::Key::Backspace);
+    if !text.is_empty() {
+        harness.event(egui::Event::Text(text.into()));
+    }
+    harness.run_steps(2);
+}
+
+fn item_count(harness: &Harness<Editor>) -> usize {
+    harness
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .map(|track| track.items.len())
+        .sum()
+}
+
+fn sticker_of(harness: &Harness<Editor>, id: ItemId) -> (String, u32, u32) {
+    match item(harness, id).content {
+        ItemParams::Sticker(params) => (params.sticker, params.width, params.height),
+        other => panic!("sticker expected, found {other:?}"),
+    }
+}
+
+#[test]
+fn stickers_panel_searches_switches_inserts_and_keeps_recents_in_preferences() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = PreferenceStore::new(dir.path().join("preferences.json"));
+    let mut f = fixture();
+    f.editor.preferences.assets_tab = AssetsTab::Stickers;
+    let mut h = build(f.editor);
+    h.run_steps(3);
+    for id in [
+        "assets.search",
+        "stickers.category.all",
+        "stickers.category.flags",
+        "stickers.category.shapes",
+        "stickers.see_all",
+    ] {
+        assert!(has_widget(&h, id), "{id}");
+    }
+    assert!(!has_widget(&h, "stickers.recent.clear"));
+
+    // A region keyword filters flags by region: "asia" keeps Afghanistan (AF, South Asia) and drops Andorra (AD).
+    click(&mut h, "stickers.category.flags");
+    set_sticker_search(&mut h, "asia");
+    assert!(has_widget(&h, "stickers.insert.flags-AF"));
+    assert!(!has_widget(&h, "stickers.insert.flags-AD"));
+    click(&mut h, "stickers.insert.flags-AF");
+    let flag = *h.state().selection().iter().next().unwrap();
+    assert_eq!(sticker_of(&h, flag), ("flags:AF".into(), 640, 480));
+    assert_eq!(item(&h, flag).duration().unwrap(), Tick(5 * SECOND));
+
+    // The "asia" query matches no shape, so the Shapes tab shows no card until the query clears.
+    click(&mut h, "stickers.category.shapes");
+    assert!(!has_widget(&h, "graphic.insert.star"));
+    set_sticker_search(&mut h, "");
+    click(&mut h, "graphic.insert.star");
+    let shape = *h.state().selection().iter().next().unwrap();
+    assert!(matches!(
+        item(&h, shape).content,
+        ItemParams::Graphic(project::GraphicParams::Star { .. })
+    ));
+
+    // Recent follows the tab: Shapes lists only the shape, All lists both, newest first.
+    assert!(has_widget(&h, "stickers.recent.clear"));
+    assert!(has_widget(&h, "stickers.recent.insert.graphic.insert.star"));
+    assert!(!has_widget(&h, "stickers.recent.insert.flags-AF"));
+    click(&mut h, "stickers.category.all");
+    assert!(has_widget(&h, "stickers.recent.insert.flags-AF"));
+    assert_eq!(
+        h.state().preferences.sticker_recents,
+        ["graphic.insert.star", "flags:AF"]
+    );
+
+    // Re-inserting moves an id to the front without duplicating it.
+    click(&mut h, "stickers.recent.insert.flags-AF");
+    assert_eq!(
+        h.state().preferences.sticker_recents,
+        ["flags:AF", "graphic.insert.star"]
+    );
+
+    // Recents survive a restart through the app preferences.
+    store.save(&h.state().preferences).unwrap();
+    let restored = store.load_with_warning().0;
+    assert_eq!(
+        restored.sticker_recents,
+        ["flags:AF", "graphic.insert.star"]
+    );
+
+    // See all widens the result page; Clear empties the saved list and nothing else.
+    click(&mut h, "stickers.see_all");
+    assert!(!has_widget(&h, "stickers.see_all"));
+    let placed = item_count(&h);
+    click(&mut h, "stickers.recent.clear");
+    assert!(h.state().preferences.sticker_recents.is_empty());
+    assert!(!has_widget(&h, "stickers.recent.clear"));
+    assert_eq!(item_count(&h), placed);
+
+    // Vietnamese labels reach the same panel.
+    h.state_mut().preferences.locale = vibecut::i18n::Locale::Vi;
+    h.run_steps(3);
+    assert!(has_widget(&h, "stickers.category.flags"));
+
+    let image = h.render().expect("offscreen render");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-30-stickers.png");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    image.save(&path).unwrap();
+    assert!(path.exists());
 }
 
 fn pointer_drag(harness: &mut Harness<Editor>, from: egui::Pos2, to: egui::Pos2) {

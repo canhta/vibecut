@@ -68,6 +68,7 @@ fn project(empty: bool, source: bool) -> Project {
                     muted: false,
                     crop: None,
                     cleanup: Default::default(),
+                    background: project::ClipBackground::None,
                 })
             } else {
                 ItemParams::Overlay(project::OverlayParams {
@@ -285,6 +286,38 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
             store.load_with_warning().0.export,
             bench.editor().preferences.export
         );
+        // Audio-only formats are admitted rows of the same format control.
+        bench.click("export.format");
+        bench.click("export.format.m4a");
+        assert!(
+            bench
+                .editor()
+                .inspect()
+                .unwrap()
+                .export_options
+                .format
+                .audio_only()
+        );
+        assert!(
+            bench
+                .editor()
+                .inspect()
+                .unwrap()
+                .widgets
+                .iter()
+                .all(|w| w.id != "export.codec")
+        );
+        let screenshot =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/84-export-m4a.png");
+        std::fs::create_dir_all(screenshot.parent().unwrap()).unwrap();
+        bench
+            .harness_mut()
+            .render()
+            .unwrap()
+            .save(&screenshot)
+            .unwrap();
+        bench.click("export.format");
+        bench.click("export.format.webm");
         bench.click("export.close");
         open(&mut bench);
         assert_eq!(bench.editor().preferences.export.format, ExportFormat::Webm);

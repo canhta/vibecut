@@ -39,7 +39,7 @@ impl State {
             if let Some(state) = &mut self.media_marquee {
                 state.moved |= marquee.origin.distance(pointer) > 4.0;
             }
-            let accent = desk.editor().accent();
+            let accent = crate::kit::accent(desk.editor().preferences.dark);
             ui.painter().with_clip_rect(content).rect_filled(
                 rect,
                 0.0,

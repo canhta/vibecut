@@ -68,7 +68,7 @@ fn lut_cli_imports_applies_reopens_and_refuses_without_project_write() {
     let loaded = project::load(&path).unwrap().project;
     assert_eq!(loaded.data().luts.len(), 1);
     let record = &loaded.data().luts[0];
-    assert!(record.directory.join("original.cube").is_file());
+    assert!(record.directory.join("original").is_file());
     fs::remove_file(&source).unwrap();
     let budget = engine::ByteBudget::new(64 << 20).unwrap();
     let hooks = engine::ByteBudgetHooks::new(&budget, None);
@@ -1330,6 +1330,48 @@ fn cli_retimes_linked_clips_and_the_export_follows_speed_and_pitch() {
         .count();
     let hertz = crossings as f64 / ((to - from) as f64 / 48000.0);
     assert!((hertz - 440.0).abs() < 15.0, "measured {hertz} Hz");
+
+    // Reverse then export: the same 0.5 s at 2x plays backwards with the same frame count.
+    exec(
+        &project,
+        "timeline.set_reverse",
+        json!({"items":[0,1],"reverse":true}),
+    );
+    assert_eq!(
+        info(&project)["duration"]["seconds"],
+        0.5,
+        "reverse keeps the span"
+    );
+    let reversed_path = dir.path().join("retime-reversed.mp4");
+    let output = cli(&[
+        os("export"),
+        project.as_os_str(),
+        os("--out"),
+        reversed_path.as_os_str(),
+        os("--json"),
+    ]);
+    assert_eq!(
+        code(&output),
+        0,
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let probe = tool_command("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "stream=codec_type,nb_frames,duration",
+            "-of",
+            "json",
+        ])
+        .arg(&reversed_path)
+        .output()
+        .unwrap();
+    let value: Value = serde_json::from_slice(&probe.stdout).unwrap();
+    let streams = value["streams"].as_array().unwrap();
+    let video_stream = streams.iter().find(|s| s["codec_type"] == "video").unwrap();
+    assert_eq!(video_stream["nb_frames"], "15", "reversed frame count");
 }
 
 #[test]

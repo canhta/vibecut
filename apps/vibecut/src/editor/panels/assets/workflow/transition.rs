@@ -215,9 +215,9 @@ impl State {
                     egui::Stroke::new(
                         3.0,
                         if valid {
-                            desk.editor().accent()
+                            crate::kit::accent(desk.editor().preferences.dark)
                         } else {
-                            desk.editor().secondary()
+                            crate::kit::secondary(desk.editor().preferences.dark)
                         },
                     ),
                 );

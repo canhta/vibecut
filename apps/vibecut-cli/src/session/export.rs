@@ -120,11 +120,7 @@ fn export_configured(
         .ok_or(CliError::Rejected("no scenes"))?
         .1;
     let mut settings = export_settings(&project, aspect, allow_degraded, overwrite);
-    settings.container = output
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .and_then(media::Container::from_extension)
-        .ok_or_else(|| CliError::Usage("output extension must be mp4, mov or webm".into()))?;
+    settings.container = render::OutputOptions::container_for_path(&output, options.audio_only)?;
     options.apply(&mut settings)?;
     let key = export_job_key(&project, range, &settings)?;
 
@@ -181,7 +177,7 @@ pub(crate) fn export_job_key(
         media::ContentHash::from_bytes(format!("{}:{}", range.start().0, range.end().0).as_bytes())
             .0;
     let settings_key = format!(
-        "{}x{}@{}/{}:{}:{}:{}",
+        "{}x{}@{}/{}:{}:{}:{}:{:?}:{}",
         settings.render.width,
         settings.render.height,
         settings.fps.num(),
@@ -189,6 +185,8 @@ pub(crate) fn export_job_key(
         settings.bit_rate,
         settings.quality,
         settings.include_audio,
+        settings.container,
+        settings.audio_only,
     );
     // Export has no persistent artifact kind; this key only identifies the job.
     Ok(CacheKey::new(KeyInputs {

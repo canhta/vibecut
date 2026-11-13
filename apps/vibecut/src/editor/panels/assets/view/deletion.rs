@@ -8,28 +8,43 @@ pub(in crate::editor) fn show(state: &State, cx: &Context<'_>, ctx: &egui::Conte
         return Vec::new();
     };
     let mut actions = Vec::new();
-    egui::Modal::new(Id::unique("media.delete_dialog")).show(ctx, |ui| {
-        ui.set_max_width(380.0);
-        ui.heading(format!("{} {}", cx.tr(Text::Delete), cx.tr(Text::Media)));
-        ui.label(i18n::format_count(
-            cx.locale,
-            ids.len() as u64,
-            Text::DeleteMediaPromptOne,
-            Text::DeleteMediaPromptOther,
-        ));
-        ui.horizontal(|ui| {
-            let response = ui.add_sized([90.0, 34.0], egui::Button::new(cx.tr(Text::Cancel)));
-            remember(&mut actions, "media.cancel_delete", &response);
-            if response.clicked() {
-                actions.push(Action::Command("media.cancel_delete".into()));
-            }
-            let response = ui.add_sized([90.0, 34.0], egui::Button::new(cx.tr(Text::Delete)));
-            remember(&mut actions, "media.confirm_delete", &response);
-            if response.clicked() {
-                actions.push(Action::Command("media.confirm_delete".into()));
-            }
+    egui::Modal::new(Id::unique("media.delete_dialog"))
+        .frame(crate::kit::dialog_frame(ctx))
+        .show(ctx, |ui| {
+            ui.set_max_width(380.0);
+            crate::kit::dialog_title(
+                ui,
+                &format!("{} {}", cx.tr(Text::Delete), cx.tr(Text::Media)),
+            );
+            ui.label(i18n::format_count(
+                cx.locale,
+                ids.len() as u64,
+                Text::DeleteMediaPromptOne,
+                Text::DeleteMediaPromptOther,
+            ));
+            ui.horizontal(|ui| {
+                let response = crate::kit::dialog_button(
+                    ui,
+                    "media.cancel_delete",
+                    cx.tr(Text::Cancel),
+                    false,
+                );
+                remember(&mut actions, "media.cancel_delete", &response);
+                if response.clicked() {
+                    actions.push(Action::Command("media.cancel_delete".into()));
+                }
+                let response = crate::kit::dialog_button(
+                    ui,
+                    "media.confirm_delete",
+                    cx.tr(Text::Delete),
+                    false,
+                );
+                remember(&mut actions, "media.confirm_delete", &response);
+                if response.clicked() {
+                    actions.push(Action::Command("media.confirm_delete".into()));
+                }
+            });
         });
-    });
     actions
 }
 

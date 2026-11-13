@@ -299,6 +299,7 @@ impl Rig {
                 crop: None,
                 fades: Default::default(),
                 cleanup: Default::default(),
+                background: project::ClipBackground::None,
             })
         };
         let first = match session
@@ -355,6 +356,7 @@ impl Rig {
         let mask_points = scopes.mask_points;
         let cx = Context {
             session: &self.session,
+            project_path: None,
             locale: Locale::En,
             dark: true,
             save_status: Text::AutoSaved,
@@ -460,6 +462,7 @@ fn new_media_item(asset: AssetId, kind: TrackKind) -> NewItem {
             crop: None,
             fades: Default::default(),
             cleanup: Default::default(),
+            background: project::ClipBackground::None,
         })
     };
     NewItem {

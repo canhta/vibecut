@@ -4,7 +4,7 @@
     clippy::panic,
     clippy::expect_used
 )]
-use super::timeline_ui::{fixture, harness, widget};
+use super::timeline::{fixture, harness, widget};
 use egui_kittest::kittest::{By, Queryable};
 use engine::Command;
 use time::{TICKS_PER_SECOND, Tick};

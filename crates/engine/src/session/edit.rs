@@ -178,11 +178,13 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
             | Command::AlignItems { items, .. }
             | Command::DistributeItems { items, .. }
             | Command::SetItemsMuted { items, .. }
+            | Command::SetItemsBackground { items, .. }
             | Command::ExtractAudio { items }
             | Command::RecoverAudio { items }
             | Command::Delete { items }
             | Command::SetItemParamMany { items, .. }
             | Command::SetSpeed { items, .. }
+            | Command::SetReverse { items, .. }
                 if items.len() > super::wire::MAX_COLLECTION =>
             {
                 return Err(EditError::Control(
@@ -625,6 +627,9 @@ pub(crate) fn apply(
         EditCommand::SplitAt { item: id, at } => {
             data = clips::execute_split_at(data, id, at, created, next, sources)?;
         }
+        EditCommand::TimelineSplitAll { at } => {
+            data = clips::execute_split_all(data, at, created, next, sources)?;
+        }
         EditCommand::TimelineSplitLeft { items, at } => {
             data = clips::execute_split_left(data, items, at, created, next, sources)?;
         }
@@ -656,6 +661,9 @@ pub(crate) fn apply(
         }
         EditCommand::SetItemsMuted { items, muted } => {
             data = clips::execute_set_items_muted(data, items, muted)?;
+        }
+        EditCommand::SetItemsBackground { items, background } => {
+            data = clips::execute_set_items_background(data, items, background)?;
         }
         EditCommand::ExtractAudio { items } => {
             data = clips::execute_extract_audio(data, items, created, next)?;
@@ -700,6 +708,9 @@ pub(crate) fn apply(
             maintain_pitch,
         } => {
             data = retime::execute_set_speed(data, items, speed, maintain_pitch)?;
+        }
+        EditCommand::SetReverse { items, reverse } => {
+            data = retime::execute_set_reverse(data, items, reverse)?;
         }
         EditCommand::SetItemParamMany { items, patch } => {
             data = parameters::execute_set_item_param_many(data, items, patch, copied_text_bytes)?;

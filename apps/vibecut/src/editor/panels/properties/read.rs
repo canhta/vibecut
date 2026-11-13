@@ -255,6 +255,40 @@ pub(super) fn retime_seconds(project: &project::Project, item: ItemId) -> Option
     ))
 }
 
+/// The clip background of a video item; `None` for any other item.
+pub(super) fn clip_background(
+    project: &project::Project,
+    item: ItemId,
+) -> Option<project::ClipBackground> {
+    match &find(project, item)?.content {
+        ItemParams::Video(params) => Some(params.background),
+        _ => None,
+    }
+}
+
+/// Whether the Background tab applies at `at`: a video clip that does not cover the canvas.
+pub(super) fn clip_background_visible(project: &project::Project, item: ItemId, at: Tick) -> bool {
+    let Some(found) = find(project, item) else {
+        return false;
+    };
+    matches!(found.content, ItemParams::Video(_))
+        && render::arrange::covers_canvas(project.data(), found, at).is_ok_and(|covers| !covers)
+}
+
+/// Unlocked video items, in timeline order: the targets of Apply to all.
+pub(super) fn unlocked_video_items(project: &project::Project) -> Vec<ItemId> {
+    project
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .filter(|item| matches!(item.content, ItemParams::Video(_)))
+        .map(|item| item.id)
+        .filter(|id| !item_locked(project, *id))
+        .collect()
+}
+
 /// Speed, pitch policy and whether the item has audio to retime.
 pub(super) fn retime_of(project: &project::Project, item: ItemId) -> Option<(f64, bool, bool)> {
     let found = find(project, item)?;
@@ -268,6 +302,11 @@ pub(super) fn retime_of(project: &project::Project, item: ItemId) -> Option<(f64
         found.retime.maintain_pitch,
         audible,
     ))
+}
+
+/// Whether a video or audio item plays its source backwards.
+pub(super) fn retime_reversed(project: &project::Project, item: ItemId) -> Option<bool> {
+    Some(find(project, item)?.retime.reverse)
 }
 
 /// The effect scalar at an item-relative time: an animated channel reads its

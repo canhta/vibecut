@@ -1,9 +1,9 @@
 //! Verifies native export command behaviour.
 use crate::cli::fixtures::overlay_project;
-use crate::cli::fixtures::{decoded_rgb, generate_audio};
+use crate::cli::fixtures::{decoded_rgb, exec, generate_audio};
 use crate::cli::process::{cli, code, error_json, os, stdout_json};
-use crate::media_fixture::{generate_av, media_project, tool_command, tools};
-use serde_json::Value;
+use crate::media_fixture::{ffmpeg, generate_av, media_project, tool_command, tools};
+use serde_json::{Value, json};
 use std::fs;
 use time::{Tick, TimeRange};
 
@@ -506,4 +506,79 @@ fn export_clips_writes_each_full_source_once_with_deterministic_names() {
     assert_eq!(fs::read(out.join("source.mp4")).unwrap(), before);
     // A repeated asset is refused before any render starts.
     assert_ne!(code(&export(&["1", "1"], true)), 0);
+}
+
+#[test]
+fn export_paints_each_clip_background_kind_outside_a_clip_that_leaves_canvas_open() {
+    if !tools() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("red.mp4");
+    let project = dir.path().join("background.vibecut");
+    // A one-second solid red source, so the probe colour is known.
+    ffmpeg(&[
+        os("-f"),
+        os("lavfi"),
+        os("-i"),
+        os("color=c=red:size=128x96:rate=30:duration=1"),
+        os("-c:v"),
+        os("libx264"),
+        os("-pix_fmt"),
+        os("yuv420p"),
+        os("-color_primaries"),
+        os("bt709"),
+        os("-color_trc"),
+        os("bt709"),
+        os("-colorspace"),
+        os("bt709"),
+        source.as_os_str(),
+    ]);
+    media_project(&project, &source, None);
+    // The clip shrinks to the left half, so the probe at (100, 10) lies outside it.
+    for (field, value) in [
+        ("transform.scaleX", 0.5),
+        ("transform.scaleY", 0.5),
+        ("transform.positionX", -32.0),
+    ] {
+        exec(
+            &project,
+            "timeline.set_item_param",
+            json!({"item":0,"patch":{"field":field,"value":value}}),
+        );
+    }
+    let probe = (10 * 128 + 100) * 3;
+    for (kind, background) in [
+        ("none", json!({"kind":"none"})),
+        ("solid", json!({"kind":"solid","color":[0,0,255,255]})),
+        ("blur", json!({"kind":"blur","intensity":100})),
+    ] {
+        exec(
+            &project,
+            "timeline.set_background",
+            json!({"items":[0],"background":background}),
+        );
+        let output_path = dir.path().join(format!("{kind}.mp4"));
+        let output = cli(&[
+            os("export"),
+            project.as_os_str(),
+            os("--out"),
+            output_path.as_os_str(),
+            os("--json"),
+        ]);
+        assert_eq!(
+            code(&output),
+            0,
+            "{kind}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let frame = &decoded_rgb(&output_path, 128, 96, &[0])[0];
+        let [r, g, b] = [frame[probe], frame[probe + 1], frame[probe + 2]];
+        match kind {
+            "none" => assert!(r < 60 && g < 60 && b < 60, "{kind}: {r} {g} {b}"),
+            "solid" => assert!(b > 180 && r < 80 && g < 80, "{kind}: {r} {g} {b}"),
+            // The blur of the red source is red, so the outside is not black.
+            _ => assert!(r > 120 && g < 80 && b < 80, "{kind}: {r} {g} {b}"),
+        }
+    }
 }

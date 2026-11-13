@@ -589,7 +589,7 @@ fn music_commands_return_typed_results_and_never_edit_the_project() {
     assert!(!s.can_undo());
 }
 
-// Sticker catalogs, search and recents: the bundled flag assets, the flag and shape search rows, and the recents list with its file round trip.
+// Sticker catalogs, search and recents: the bundled flag assets, the flag search rows, and the recents list.
 fn flag_asset_dir() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/stickers/flags")
 }
@@ -663,23 +663,6 @@ fn flag_search_matches_names_codes_regions_and_continents() {
 }
 
 #[test]
-fn shape_search_keeps_catalog_order_and_matches_names() {
-    use libraries::stickers::search_shapes;
-    let values = |query: &str| {
-        search_shapes(query)
-            .iter()
-            .map(|shape| shape.value)
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(
-        values(""),
-        ["square", "circle", "triangle", "hexagon", "diamond", "star"]
-    );
-    assert_eq!(values("  TRI "), ["triangle"]);
-    assert!(values("zzz").is_empty());
-}
-
-#[test]
 fn recent_stickers_cap_order_dedupe_and_clear() {
     use libraries::stickers::{FLAGS_PROVIDER, Recents, build_sticker_id, search_flags};
     let ids: Vec<String> = search_flags("", 500)
@@ -708,53 +691,21 @@ fn recent_stickers_cap_order_dedupe_and_clear() {
     );
     assert_eq!(recents.ids()[1], ids[270]);
 
-    assert!(
-        recents.record(" flags:us "),
-        "ids are trimmed and canonicalised"
-    );
-    assert_eq!(recents.ids()[0], "flags:US");
-    assert!(
-        !recents.record("flags:ZZ"),
-        "unknown flag codes are refused"
-    );
-    assert!(!recents.record("nope:x"), "unknown providers are refused");
-    assert!(
-        !recents.record("shapes:pentagon"),
-        "unknown shapes are refused"
-    );
+    assert!(recents.record(" graphic.insert.star "), "ids are trimmed");
+    assert_eq!(recents.ids()[0], "graphic.insert.star");
+    assert!(!recents.record("  "), "empty ids are refused");
     assert_eq!(recents.ids().len(), 50);
 
     let loaded =
-        Recents::from_ids(["flags:ad", "flags:AD", "bad", "shapes:star"].map(str::to_owned));
+        Recents::from_ids(["flags:AD", "flags:AD", "", "graphic.insert.star"].map(str::to_owned));
     assert_eq!(
         loaded.ids(),
-        ["flags:AD", "shapes:star"],
-        "dedupe keeps the first"
+        ["flags:AD", "graphic.insert.star"],
+        "dedupe keeps the first and empty ids drop"
     );
 
     recents.clear();
     assert!(recents.ids().is_empty());
-}
-
-#[test]
-fn recent_stickers_persist_round_trip_and_refuse_malformed_files() {
-    use libraries::stickers::Recents;
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("stickers").join("recents.json");
-    assert!(
-        Recents::load(&path).unwrap().ids().is_empty(),
-        "a missing file is empty"
-    );
-
-    let mut recents = Recents::default();
-    recents.record("shapes:star");
-    recents.record("flags:US");
-    recents.save(&path).unwrap();
-    assert_eq!(Recents::load(&path).unwrap(), recents);
-
-    std::fs::write(&path, "{not a list").unwrap();
-    let error = Recents::load(&path).unwrap_err();
-    assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
 }
 
 // Sticker commands through the real catalog: browse and search pages, `stickers.insert` with
@@ -794,34 +745,24 @@ fn sticker_commands_search_insert_undo_redo_and_round_trip() {
     use engine::control::{StickerCategory, StickerEntry, StickerPage, StickerQuery};
     use libraries::stickers::{resolve_sticker, search_catalog};
     let page = search_catalog("", StickerCategory::All, Some(8));
-    assert_eq!(page.total, 277, "six shapes and 271 flags");
+    assert_eq!(page.total, 271, "every sticker is a flag");
     let ids: Vec<&str> = page.results.iter().map(|entry| entry.id.as_str()).collect();
     assert_eq!(
         ids,
         [
-            "shapes:square",
-            "shapes:circle",
-            "shapes:triangle",
-            "shapes:hexagon",
-            "shapes:diamond",
-            "shapes:star",
-            "flags:AD",
-            "flags:AE"
+            "flags:AD", "flags:AE", "flags:AF", "flags:AG", "flags:AI", "flags:AL", "flags:AM",
+            "flags:AO"
         ]
     );
-    assert_eq!((page.results[0].width, page.results[0].height), (512, 512));
-    assert_eq!((page.results[6].width, page.results[6].height), (640, 480));
+    assert_eq!((page.results[0].width, page.results[0].height), (640, 480));
     let flags = search_catalog("", StickerCategory::Flags, Some(1000));
     assert_eq!((flags.total, flags.results.len()), (271, 271));
-    let shapes = search_catalog("", StickerCategory::Shapes, None);
-    assert_eq!((shapes.total, shapes.results.len()), (6, 6));
     assert!(search_catalog("asia", StickerCategory::Flags, None).total > 0);
-    assert_eq!(
-        search_catalog("asia", StickerCategory::Shapes, None).total,
-        0
-    );
     assert_eq!(resolve_sticker(" flags:vn ").unwrap().id, "flags:VN");
-    assert_eq!(resolve_sticker("shapes:star").unwrap().name, "Star");
+    assert!(
+        resolve_sticker("shapes:star").is_none(),
+        "shapes are graphic items, not stickers"
+    );
     assert!(resolve_sticker("flags:zz").is_none());
     assert!(resolve_sticker("emoji:smile").is_none());
 

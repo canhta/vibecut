@@ -1187,6 +1187,11 @@ fn owner_failures_classify_publication_receipts_and_events() {
         ),
         row!(E::Session(engine::SessionError::Panicked), Failed, false),
         row!(
+            E::Session(engine::SessionError::ForkDiverged),
+            Failed,
+            false
+        ),
+        row!(
             E::Session(engine::SessionError::TransactionActive),
             TransactionActive,
             false
@@ -1550,4 +1555,56 @@ fn clipboard_copy_receipts_preserve_newer_snapshot_and_stale_paste_is_atomic() {
     )))
     .unwrap();
     assert_eq!(result["payload"], Value::Null);
+}
+
+#[test]
+fn a_fork_is_a_run_target_with_its_own_identity_and_receipts() {
+    let mut r = runner();
+    let mut live = seed();
+    let pristine = live.project().clone();
+    let revision = live.revision();
+    let tracks = pristine.data().scene().timeline.track_count();
+    let mut fork = live.fork().unwrap();
+    assert_ne!(fork.session().session_id(), live.session_id());
+    let add = json!({"name":"Added","kind":"video"});
+
+    // A request addressed to the parent, or refused by the policy, runs nothing and logs nothing.
+    let stray = request(&live, "timeline.add_track", add.clone(), "stray");
+    error(
+        fork.control_request(stray, caller(&Allow), &mut r).unwrap(),
+        ErrorCode::SessionGone,
+    );
+    let denied = request(fork.session(), "timeline.add_track", add.clone(), "denied");
+    error(
+        fork.control_request(denied, caller(&Deny), &mut r).unwrap(),
+        ErrorCode::Permission,
+    );
+    assert!(fork.is_empty());
+
+    // An accepted request is logged once; the same key replays without a second entry.
+    let accepted = request(fork.session(), "timeline.add_track", add, "accepted");
+    for _ in 0..2 {
+        ok(fork
+            .control_request(accepted.clone(), caller(&Allow), &mut r)
+            .unwrap());
+    }
+    assert_eq!(fork.commands().count(), 1);
+    assert_eq!(
+        fork.session()
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .track_count(),
+        tracks + 1
+    );
+    assert!(std::sync::Arc::ptr_eq(&pristine, live.project()));
+    assert_eq!(live.revision(), revision);
+
+    live.apply_fork(fork).unwrap();
+    assert_eq!(
+        live.project().data().scene().timeline.track_count(),
+        tracks + 1
+    );
+    assert_eq!(live.history_len(), (1, 0));
 }

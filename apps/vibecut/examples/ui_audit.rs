@@ -3,7 +3,7 @@
 //! `cargo xtask ui-audit` renders named scenes through the real
 //! [`vibecut::Editor`] and [`vibecut::app::Workspace`] widget paths at 1x
 //! and 2x, plus an `index.html` that places each render beside its matching
-//! `.spikes/ui-reference/` image when one exists.
+//! reference image from the local reference set when one exists.
 //! This is an audit tool, not a test: it never runs in `cargo xtask ci`.
 #[path = "../tests/it/support/shorts.rs"]
 mod shorts_fixture;
@@ -27,6 +27,35 @@ mod tests {
     use std::fs;
     use std::time::{Duration, Instant};
     use vibecut::egui;
+
+    /// Interactive nodes known to lack a label or an automation id. It only shrinks.
+    const UNADDRESSED: &[&str] = &[];
+
+    #[test]
+    #[ignore = "baseline filled by the next combined build"]
+    fn every_interactive_node_has_a_label_and_an_automation_id() -> Result<(), Failure> {
+        let found = super::audit::unaddressed_nodes()?;
+        let new: Vec<_> = found
+            .iter()
+            .filter(|node| !UNADDRESSED.contains(&node.as_str()))
+            .collect();
+        assert!(
+            new.is_empty(),
+            "{} interactive nodes lack a label or an automation id:
+{new:#?}",
+            new.len()
+        );
+        let fixed: Vec<_> = UNADDRESSED
+            .iter()
+            .filter(|node| !found.contains(**node))
+            .collect();
+        assert!(
+            fixed.is_empty(),
+            "remove from UNADDRESSED:
+{fixed:#?}"
+        );
+        Ok(())
+    }
 
     #[test]
     fn readme_capture_refuses_wrong_source_before_staging_and_keeps_history() -> Result<(), Failure>

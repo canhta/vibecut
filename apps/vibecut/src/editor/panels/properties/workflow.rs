@@ -1,6 +1,7 @@
 //! Applies the properties workflows.
 mod appearance;
 mod audio;
+mod background;
 mod canvas;
 mod commands;
 mod effects;
@@ -104,6 +105,7 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
                 edge,
                 seconds,
             } => audio::set_fade(desk, item, edge, seconds),
+            Action::SetReverse { item, reverse } => speed::set_reverse(desk, item, reverse),
             Action::SetTransitionDuration {
                 transition,
                 duration,
@@ -120,6 +122,9 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
             } => canvas::set_canvas(desk, width, height, preset),
             Action::SetFps { num, den } => canvas::set_canvas_fps(desk, num, den),
             Action::SetBackground(color) => canvas::set_canvas_background(desk, color),
+            Action::SetClipBackground { items, background } => {
+                background::set_clip_background(desk, items, background)
+            }
             Action::ResetTransform(item) => commands::reset_transform(desk, item),
             Action::ResetBlend(item) => commands::reset_blend(desk, item),
             Action::ToggleKeyframe { item, fields, time } => {

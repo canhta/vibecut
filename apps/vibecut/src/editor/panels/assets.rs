@@ -7,6 +7,7 @@ pub mod music;
 mod projection;
 pub mod sounds;
 mod state;
+mod stickers;
 mod tabs;
 mod transition;
 mod view;
@@ -49,10 +50,12 @@ struct Model {
     effects: Vec<EffectRow>,
     transition_refusal: Option<Text>,
     transition_drag_enabled: bool,
-    graphic_insertion_ready: bool,
-    graphic_previews: [Option<egui::TextureHandle>; 4],
+    insertion_ready: bool,
+    /// Stickers tab rows; present only while that tab is shown.
+    stickers: Option<stickers::StickerRows>,
     importing: bool,
     selection: BTreeSet<AssetId>,
+    clip_export: Option<media_panel::clips::ClipStatus>,
     reveal: Option<AssetId>,
     marquee: Option<MediaMarquee>,
     failed: bool,
@@ -106,6 +109,8 @@ pub(in crate::editor) enum Action {
     Command(String),
     Select(AssetId, egui::Modifiers),
     Delete(Vec<AssetId>),
+    ExportClips(Vec<AssetId>),
+    ClipExportCancel,
     Record(Box<Recorded>),
     Marquee {
         content: Rect,
@@ -145,4 +150,9 @@ pub(in crate::editor) enum Action {
     /// Apply or delete one app-owned adjustment preset.
     ApplyAdjustment(usize),
     DeleteAdjustment(usize),
+    /// Insert one bundled flag at the playhead and record it as recent.
+    InsertSticker(String),
+    /// Insert one shape through its `graphic.insert.*` command and record it as recent.
+    InsertShape(String),
+    ClearStickerRecents,
 }

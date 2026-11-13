@@ -37,6 +37,7 @@ pub(crate) enum Icon {
     Copy,
     CornersOut,
     Crop,
+    Cursor,
     Diamond,
     DotsThree,
     Export,
@@ -72,6 +73,7 @@ pub(crate) enum Icon {
     SquaresFour,
     SpeakerHigh,
     SpeakerSlash,
+    Repeat,
     Sticker,
     Subtitles,
     TextT,
@@ -108,6 +110,7 @@ impl Icon {
         Self::Copy,
         Self::CornersOut,
         Self::Crop,
+        Self::Cursor,
         Self::Diamond,
         Self::DotsThree,
         Self::Export,
@@ -143,6 +146,7 @@ impl Icon {
         Self::SquaresFour,
         Self::SpeakerHigh,
         Self::SpeakerSlash,
+        Self::Repeat,
         Self::Sticker,
         Self::Subtitles,
         Self::TextT,
@@ -178,6 +182,7 @@ impl Icon {
             Self::Copy => "copy",
             Self::CornersOut => "corners-out",
             Self::Crop => "crop",
+            Self::Cursor => "cursor",
             Self::Diamond => "diamond",
             Self::DotsThree => "dots-three",
             Self::Export => "export",
@@ -213,6 +218,7 @@ impl Icon {
             Self::SquaresFour => "squares-four",
             Self::SpeakerHigh => "speaker-high",
             Self::SpeakerSlash => "speaker-slash",
+            Self::Repeat => "repeat",
             Self::Sticker => "sticker",
             Self::Subtitles => "subtitles",
             Self::TextT => "text-t",
@@ -323,6 +329,10 @@ const ICONS: &[(&str, &[u8])] = &[
     (
         "crop",
         include_bytes!("../../../../assets/icons/phosphor/regular/crop.svg"),
+    ),
+    (
+        "cursor",
+        include_bytes!("../../../../assets/icons/phosphor/regular/cursor.svg"),
     ),
     (
         "diamond",
@@ -463,6 +473,10 @@ const ICONS: &[(&str, &[u8])] = &[
     (
         "speaker-slash",
         include_bytes!("../../../../assets/icons/phosphor/regular/speaker-slash.svg"),
+    ),
+    (
+        "repeat",
+        include_bytes!("../../../../assets/icons/phosphor/regular/repeat.svg"),
     ),
     (
         "sticker",

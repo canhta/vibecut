@@ -20,9 +20,11 @@ pub use audio_cleanup::{
 };
 pub use item::{
     AudioParams, AudioSource, CaptionParams, CaptionWordWarning, CaptionWordWarnings,
-    GraphicParams, Item, ItemId, ItemParams, LibraryMusic, LibrarySound, MusicLicence,
-    OverlayParams, StickerParams, TextAlign, TextBackground, TextDecoration, TextParams,
-    TextPosition, TextShadow, TextStroke, TextStyle, VideoParams, WordSpan, valid_volume,
+    ClipBackground, GraphicParams, Item, ItemId, ItemParams, LibraryMusic, LibrarySound,
+    MusicLicence, OverlayParams, StickerParams, TextAlign, TextBackground, TextDecoration,
+    TextParams, TextPosition, TextShadow, TextStroke, TextStyle, VOLUME_DB_RANGE, VideoParams,
+    WordSpan,
+    valid_volume,
 };
 pub use project::{
     CaptionPresetId, MAX_CAPTION_PRESETS, MAX_TEXT_PRESETS, Project, ProjectData, ProjectId,

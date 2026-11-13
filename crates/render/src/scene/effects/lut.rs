@@ -24,6 +24,25 @@ pub enum LutUnavailableReason {
     Changed,
     Invalid,
 }
+/// Source formats admitted for import. Both decode to the same canonical `.cube` text.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LutFormat {
+    Cube,
+    ThreeDl,
+}
+impl LutFormat {
+    /// Case-insensitive `.cube` or `.3dl` extension; anything else is not a LUT source.
+    pub fn from_path(path: &Path) -> Option<Self> {
+        let extension = path.extension()?.to_str()?;
+        if extension.eq_ignore_ascii_case("cube") {
+            Some(Self::Cube)
+        } else if extension.eq_ignore_ascii_case("3dl") {
+            Some(Self::ThreeDl)
+        } else {
+            None
+        }
+    }
+}
 
 /// Immutable samples retain their original execution admission through every pass.
 pub struct Cube3d {
@@ -54,6 +73,13 @@ fn invalid(line: usize, reason: LutInvalidReason) -> Error {
         line: line as u32,
         reason,
     }
+}
+/// Smallest common integer full scale that holds `v`.
+fn bit_max(v: f32) -> f32 {
+    [255.0, 1023.0, 4095.0, 16383.0, 65535.0]
+        .into_iter()
+        .find(|m| v <= *m)
+        .unwrap_or(65535.0)
 }
 fn triple(text: &str, line: usize) -> Result<[f64; 3]> {
     let mut words = text.split_whitespace();
@@ -201,10 +227,24 @@ impl Cube3d {
         if samples.len() != size.pow(3) {
             return Err(invalid(0, R::Count));
         }
-        let min = min.unwrap_or([0.; 3]);
-        let max = max.unwrap_or([1.; 3]);
+        Self::assemble(
+            size,
+            min.unwrap_or([0.; 3]),
+            max.unwrap_or([1.; 3]),
+            samples,
+            lease.ok_or_else(|| invalid(0, R::Count))?,
+        )
+    }
+    /// Shared finish for every admitted format: domain check and identity detection.
+    fn assemble(
+        size: usize,
+        min: [f64; 3],
+        max: [f64; 3],
+        samples: Vec<[f32; 3]>,
+        lease: Box<dyn Reservation>,
+    ) -> Result<Self> {
         if min.iter().zip(max).any(|(a, b)| b - *a < 1e-6) {
-            return Err(invalid(0, R::Domain));
+            return Err(invalid(0, LutInvalidReason::Domain));
         }
         let identity = min == [0.; 3]
             && max == [1.; 3]
@@ -219,8 +259,155 @@ impl Cube3d {
             max,
             samples,
             identity,
-            _lease: lease.ok_or_else(|| invalid(0, R::Count))?,
+            _lease: lease,
         })
+    }
+    /// Autodesk `.3dl`: optional `3DMESH` / `Mesh <in> <out>` headers, one integer input
+    /// mesh line of 2..=65 strictly increasing values, then N³ integer rows with blue
+    /// changing fastest. The mesh must be uniform to within one input code value; a
+    /// shaped (non-uniform) mesh needs a 1D shaper and refuses as unsupported. Output
+    /// depth is the `Mesh` header's or else the smallest integer depth holding the peak.
+    pub fn parse_3dl(bytes: &[u8], hooks: &dyn ExecutionHooks) -> Result<Self> {
+        use LutInvalidReason as R;
+        check(hooks)?;
+        if bytes.len() as u64 > MAX_CUBE_SOURCE {
+            return Err(invalid(0, R::Size));
+        }
+        let text = std::str::from_utf8(bytes).map_err(|_| invalid(0, R::Header))?;
+        let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+        let mut size: Option<usize> = None;
+        let mut domain: Option<([f64; 3], [f64; 3])> = None;
+        let mut out_bits: Option<u32> = None;
+        let mut samples: Vec<[f32; 3]> = Vec::new();
+        let mut lease = None;
+        let mut header = 0usize;
+        for (index, raw) in text.lines().enumerate() {
+            let line = index + 1;
+            check(hooks)?;
+            if raw.len() > 1024 {
+                return Err(invalid(line, R::Metadata));
+            }
+            let raw = raw.split('#').next().unwrap_or_default().trim();
+            if raw.is_empty() {
+                continue;
+            }
+            let first = raw.split_whitespace().next().unwrap_or_default();
+            if size.is_none() {
+                header += raw.len() + 1;
+                if header > 16384 {
+                    return Err(invalid(line, R::Metadata));
+                }
+                if first.eq_ignore_ascii_case("3DMESH") && raw.split_whitespace().count() == 1 {
+                    continue;
+                }
+                if first.eq_ignore_ascii_case("Mesh") {
+                    let values = raw
+                        .split_whitespace()
+                        .skip(1)
+                        .map(|v| v.parse::<u32>().ok())
+                        .collect::<Option<Vec<u32>>>()
+                        .ok_or_else(|| invalid(line, R::Header))?;
+                    let bits = match values.as_slice() {
+                        [_, bits] if (8..=16u32).contains(bits) && out_bits.is_none() => *bits,
+                        _ => return Err(invalid(line, R::Header)),
+                    };
+                    out_bits = Some(bits);
+                    continue;
+                }
+                if first
+                    .as_bytes()
+                    .first()
+                    .is_some_and(|c| c.is_ascii_alphabetic())
+                {
+                    return Err(Error::Unsupported("3dl directive"));
+                }
+                let mesh = raw
+                    .split_whitespace()
+                    .map(|v| v.parse::<u32>().ok())
+                    .collect::<Option<Vec<u32>>>()
+                    .ok_or_else(|| invalid(line, R::Number))?;
+                let n = mesh.len();
+                let (Some(&low), Some(&high)) = (mesh.first(), mesh.last()) else {
+                    return Err(invalid(line, R::Size));
+                };
+                if !(2..=65).contains(&n) || mesh.windows(2).any(|w| matches!(w, [a, b] if b <= a))
+                {
+                    return Err(invalid(line, R::Size));
+                }
+                let uniform = mesh.iter().enumerate().all(|(i, m)| {
+                    let expected =
+                        f64::from(low) + f64::from(high - low) * i as f64 / (n - 1) as f64;
+                    (f64::from(*m) - expected).abs() <= 1.0
+                });
+                if !uniform {
+                    return Err(Error::Unsupported(
+                        "non-uniform 3dl input mesh needs a shaper",
+                    ));
+                }
+                let in_max = f64::from(bit_max(high as f32));
+                domain = Some(([f64::from(low) / in_max; 3], [f64::from(high) / in_max; 3]));
+                let count = n * n * n;
+                let reserved = count
+                    .checked_mul(std::mem::size_of::<[f32; 3]>())
+                    .and_then(|v| v.checked_add(std::mem::size_of::<Self>() + 64))
+                    .ok_or_else(|| invalid(line, R::Size))?;
+                lease = Some(hooks.reserve(MemoryKind::Compositor, reserved as u64)?);
+                samples.try_reserve_exact(count)?;
+                if samples.capacity() > count {
+                    return Err(Error::Budget {
+                        requested: (samples.capacity() * 12) as u64,
+                        limit: (count * 12) as u64,
+                    });
+                }
+                size = Some(n);
+                continue;
+            }
+            let n = size.unwrap_or_default();
+            let values = raw
+                .split_whitespace()
+                .map(|v| v.parse::<u32>().ok())
+                .collect::<Option<Vec<u32>>>()
+                .ok_or_else(|| invalid(line, R::Number))?;
+            let Ok([r, g, b]) = <[u32; 3]>::try_from(values.as_slice()) else {
+                return Err(invalid(line, R::Number));
+            };
+            if samples.len() >= n * n * n {
+                return Err(invalid(line, R::Count));
+            }
+            // Raw integer codes, exact in f32 below 2^24; normalised once the depth is known.
+            samples.push([r as f32, g as f32, b as f32]);
+        }
+        let n = size.ok_or_else(|| invalid(0, R::Header))?;
+        if samples.len() != n * n * n {
+            return Err(invalid(0, R::Count));
+        }
+        let peak = samples.iter().flatten().fold(0f32, |a, v| a.max(*v));
+        let out_max = match out_bits {
+            Some(bits) => ((1u32 << bits) - 1) as f32,
+            None => bit_max(peak),
+        };
+        if peak > out_max {
+            return Err(invalid(0, R::Number));
+        }
+        for sample in &mut samples {
+            *sample = sample.map(|v| v / out_max);
+        }
+        // The file lists blue fastest; the canonical table is red fastest.
+        for green in 0..n {
+            for red in 0..n {
+                for blue in (red + 1)..n {
+                    samples.swap((red * n + green) * n + blue, (blue * n + green) * n + red);
+                }
+            }
+        }
+        let (min, max) = domain.ok_or_else(|| invalid(0, R::Header))?;
+        Self::assemble(
+            n,
+            min,
+            max,
+            samples,
+            lease.ok_or_else(|| invalid(0, R::Count))?,
+        )
     }
     /// Stable canonical text, consumed by durable import publication.
     pub fn write_cube(&self, writer: &mut dyn Write, hooks: &dyn ExecutionHooks) -> Result<()> {
@@ -312,8 +499,9 @@ impl Cube3d {
 
 /// Read a bounded regular file without following a final symlink. The input lease
 /// remains live until parsing is complete, including sample allocation overlap.
-pub fn read_cube(
+pub fn read_lut(
     path: &Path,
+    format: LutFormat,
     limit: u64,
     hooks: &dyn ExecutionHooks,
 ) -> Result<(Cube3d, media::ContentHash)> {
@@ -361,7 +549,11 @@ pub fn read_cube(
         return Err(invalid(0, LutInvalidReason::Size));
     }
     let hash = media::ContentHash::from_bytes(&bytes);
-    Ok((Cube3d::parse(&bytes, hooks)?, hash))
+    let cube = match format {
+        LutFormat::Cube => Cube3d::parse(&bytes, hooks)?,
+        LutFormat::ThreeDl => Cube3d::parse_3dl(&bytes, hooks)?,
+    };
+    Ok((cube, hash))
 }
 
 /// Closed per-frame resources. Every table belongs to the exact hooks supplied to
@@ -401,8 +593,8 @@ impl LutResources {
                     },
                 )?;
                 let path = record.directory.join("canonical.cube");
-                let (cube, hash) =
-                    read_cube(&path, MAX_CUBE_CANONICAL, hooks).map_err(|error| match error {
+                let (cube, hash) = read_lut(&path, LutFormat::Cube, MAX_CUBE_CANONICAL, hooks)
+                    .map_err(|error| match error {
                         Error::Io(ref io) if io.kind() == std::io::ErrorKind::NotFound => {
                             Error::LutUnavailable {
                                 id: *id,
@@ -670,11 +862,69 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("look.cube");
         std::fs::write(&path, &valid).unwrap();
-        let (cube, hash) = read_cube(&path, MAX_CUBE_SOURCE, &hooks).unwrap();
+        let (cube, hash) = read_lut(&path, LutFormat::Cube, MAX_CUBE_SOURCE, &hooks).unwrap();
         assert_eq!(hash, media::ContentHash::from_bytes(valid.as_bytes()));
         assert!(hooks.bytes.load(Ordering::SeqCst) > 17 * 17 * 17 * 12);
         drop(cube);
         assert_eq!(hooks.bytes.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn three_dl_uses_blue_fastest_rows_and_refuses_hostile_inputs() {
+        let hooks = Hooks::default();
+        // Two-sample LUT: 10-bit mesh 0..1023, blue changes fastest in the file.
+        // Equal to the .cube table below, which is red fastest.
+        let body = "0 0 0\n0 1023 0\n1023 0 0\n1023 1023 0\n0 0 1023\n0 1023 1023\n1023 0 1023\n1023 1023 1023\n";
+        let valid = format!("3DMESH\n0 1023\n{body}");
+        let cube = Cube3d::parse(
+            b"LUT_3D_SIZE 2\n0 0 0\n0 0 1\n1 0 0\n1 0 1\n0 1 0\n0 1 1\n1 1 0\n1 1 1\n",
+            &hooks,
+        )
+        .unwrap();
+        let (mut expected, mut actual) = (Vec::new(), Vec::new());
+        cube.write_cube(&mut expected, &hooks).unwrap();
+        Cube3d::parse_3dl(valid.as_bytes(), &hooks)
+            .unwrap()
+            .write_cube(&mut actual, &hooks)
+            .unwrap();
+        assert_eq!(actual, expected);
+        drop(cube);
+        let sixty_six = (0..66).map(|v| v.to_string()).collect::<Vec<_>>().join(" ");
+        for source in [
+            String::new(),
+            format!("3DMESH\n{body}"),
+            format!("3DMESH\n0 1023 2047\n{body}"),
+            format!("3DMESH\n1023 0\n{body}"),
+            format!("3DMESH\n0 1 1023\n{body}"),
+            format!("3DMESH\n{sixty_six}\n{body}"),
+            format!("LUT8\n{valid}"),
+            format!(
+                "Mesh 10 10\n{}",
+                valid.replace("1023 1023 1023", "1023 1023 1024")
+            ),
+            format!("Mesh 10 9\n{valid}"),
+            format!(
+                "3DMESH\n0 1023\n{}",
+                body.replace("1023 1023 1023", "-1 0 0")
+            ),
+            format!("3DMESH\n0 1023\n{body}0 0 0\n"),
+            format!(
+                "3DMESH\n0 1023\n{}",
+                body.lines().take(7).collect::<Vec<_>>().join("\n")
+            ),
+            format!(
+                "3DMESH\n0 1023\n{}",
+                body.replace("1023 1023 1023", "1023 1023")
+            ),
+        ] {
+            assert!(Cube3d::parse_3dl(source.as_bytes(), &hooks).is_err());
+            assert_eq!(hooks.bytes.load(Ordering::SeqCst), 0);
+        }
+        hooks.cancel.store(true, Ordering::SeqCst);
+        assert!(matches!(
+            Cube3d::parse_3dl(valid.as_bytes(), &hooks),
+            Err(Error::Cancelled)
+        ));
     }
 
     #[test]
@@ -723,7 +973,7 @@ mod tests {
             once: AtomicBool::new(false),
         };
         assert!(matches!(
-            read_cube(&path, MAX_CUBE_SOURCE, &hooks),
+            read_lut(&path, LutFormat::Cube, MAX_CUBE_SOURCE, &hooks),
             Err(Error::InvalidLut {
                 reason: LutInvalidReason::Size,
                 ..

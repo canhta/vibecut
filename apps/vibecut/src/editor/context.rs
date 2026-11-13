@@ -52,6 +52,8 @@ pub(crate) struct Context<'a> {
     pub(crate) playback: &'a Playback,
     pub(crate) keybindings: &'a actions::KeybindingPreferences,
     pub(crate) session: &'a engine::Session,
+    /// Where the open project is saved; `None` until its first save.
+    pub(crate) project_path: Option<&'a std::path::Path>,
     pub(crate) locale: Locale,
     pub(crate) dark: bool,
     pub(crate) preferences: &'a crate::preferences::Preferences,
