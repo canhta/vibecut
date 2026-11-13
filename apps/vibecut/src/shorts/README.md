@@ -33,6 +33,18 @@ jobs, each with independent progress, cancel and retry; editing a review does no
 an already submitted immutable batch. Source-language captions can be burned and
 exported as SRT.
 
+Layouts: after a suggestion the window asks the engine for the per-shot analysis of the
+review's pieces through `engine::control::resolve_clip_shots` (the same reuse-or-start as
+`clips.export`, on the window's own runner; `State::lend_analysis` is the composition
+root's seam and `with_shot_source` the test seam) and passes the shots to every
+`ClipBatch::prepare`, so the preview and the export lay shorts out alike. While the
+analysis job runs the preview has no evidence (centred Fill) and `tick` asks again once
+the job is terminal; a failed job is reported, never resubmitted. Without a detector,
+model weights or a working analysis the typed reason shows once in the toast and can be
+dismissed. The desktop lends the process media cache but no face detector yet, so it
+reports the detector as unavailable. A short's review crop still replaces the detected
+speaker crop of its Fill pieces; other layouts ignore it.
+
 Preview and every export share the one transient render-state owner that resolves
 placements against each immutable snapshot, so deleting items and undo or redo leave no
 stale placement IDs. Open in editor inserts every video segment and mapped

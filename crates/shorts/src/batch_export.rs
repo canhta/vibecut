@@ -35,8 +35,11 @@ pub struct ClipShort {
     pub title: NfcText,
     /// Canonical AI clip pieces in play order. Export reads each piece's range.
     pub segments: Vec<ai::text::clips::ClipSourceSegment>,
-    /// Optional normalized source crop applied to every piece.
+    /// Optional normalized source crop applied to every piece shown in the Fill
+    /// layout; it replaces the crop around the detected speaker.
     pub crop: Option<project::Crop>,
+    /// The reviewer's layout choices; empty leaves every shot automatic.
+    pub layout: crate::layout::LayoutOverrides,
 }
 impl ClipShort {
     pub fn new(
@@ -47,6 +50,7 @@ impl ClipShort {
             title: title.into(),
             segments,
             crop: None,
+            layout: Default::default(),
         }
     }
     /// Preserve the accepted suggestion's play order and ranges; crop stays centered.
@@ -55,11 +59,17 @@ impl ClipShort {
             title: suggestion.proposal.title.clone(),
             segments: suggestion.segments.clone(),
             crop: None,
+            layout: Default::default(),
         }
     }
-    /// Apply one normalized crop rectangle to every piece in this short.
+    /// Apply one normalized crop rectangle to every Fill piece in this short.
     pub fn with_crop(mut self, crop: Option<project::Crop>) -> Self {
         self.crop = crop;
+        self
+    }
+    /// Keep the reviewer's layout choices with the short.
+    pub fn with_layout(mut self, layout: crate::layout::LayoutOverrides) -> Self {
+        self.layout = layout;
         self
     }
 }
@@ -72,6 +82,10 @@ pub struct ClipBatchRequest {
     /// Source-timed cues; mapped through each short's ordered pieces.
     pub cues: CueTrack,
     pub shorts: Vec<ClipShort>,
+    /// The source's per-shot analysis exactly as `AnalysisResult::shots` returns
+    /// it (ordered, disjoint, source time); empty means no evidence, so every
+    /// shot is a centred Fill.
+    pub shots: Vec<engine::ShotAnalysis>,
     /// Existing output directory.
     pub directory: PathBuf,
     /// None for no captions, or one/two distinct languages to burn and write.
@@ -94,6 +108,7 @@ impl ClipBatchRequest {
             asset,
             cues: CueTrack::default(),
             shorts,
+            shots: Vec::new(),
             directory: directory.into(),
             languages: Vec::new(),
             subtitle_formats: Vec::new(),
@@ -128,6 +143,7 @@ struct PreparedClip {
     settings: render::ExportSettings,
     paths: ClipPaths,
     caption_track: Option<TrackId>,
+    layouts: Vec<crate::layout::ShotLayout>,
     languages: Vec<LanguageTag>,
     input: CacheKey,
     duration: Tick,
@@ -178,6 +194,14 @@ impl ClipBatch {
 }
 
 impl ClipBatch {
+    /// The layout of every shot piece of the prepared short in play order, with
+    /// whether a layout's condition failed on the way.
+    pub fn layouts(&self, index: usize) -> Option<&[crate::layout::ShotLayout]> {
+        self.clips.get(index).map(|clip| clip.layouts.as_slice())
+    }
+}
+
+impl ClipBatch {
     pub fn paths(&self, index: usize) -> Option<&ClipPaths> {
         self.clips.get(index).map(|clip| &clip.paths)
     }
@@ -208,6 +232,7 @@ impl ClipBatch {
 struct Options<'a> {
     asset: &'a media::SourceAsset,
     cues: &'a CueTrack,
+    shots: &'a [engine::ShotAnalysis],
     languages: &'a [LanguageTag],
     formats: &'a [Format],
     directory: &'a Path,

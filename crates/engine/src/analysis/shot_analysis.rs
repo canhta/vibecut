@@ -269,6 +269,23 @@ impl AnalysisRequest {
             request: self.clone(),
         })
     }
+    /// The validated cached result for this exact request, if any. A corrupt or stale
+    /// entry is a miss, as in `submit`.
+    pub(crate) fn cached(&self, cache: &mut ArtifactCache) -> Result<Option<AnalysisResult>> {
+        match cache.get(self.key) {
+            Ok(Some(lease)) => match self.decode(lease.bytes()) {
+                Ok(result) => Ok(Some(result)),
+                Err(crate::RuntimeError::CacheCorrupt) => Ok(None),
+                Err(error) => Err(error.into()),
+            },
+            Ok(None) | Err(crate::RuntimeError::CacheCorrupt) => Ok(None),
+            Err(error) => Err(error.into()),
+        }
+    }
+    /// Cache identity of this request, for matching a running job to it.
+    pub(crate) fn key_bytes(&self) -> [u8; 32] {
+        self.key.bytes()
+    }
     fn decode(&self, bytes: &[u8]) -> crate::runtime::Result<AnalysisResult> {
         if bytes.len() > MAX_BYTES {
             return Err(crate::RuntimeError::CacheCorrupt);

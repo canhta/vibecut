@@ -10,6 +10,8 @@ pub mod clip_boundaries {
     };
     pub use super::error::BoundaryFailure;
 }
+mod layout;
+pub use layout::{Layout, LayoutEdit, LayoutOverrides, ShotLayout};
 mod batch_export;
 pub use batch_export::{
     ClipBatch, ClipBatchRequest, ClipPaths, ClipShort, ClipSubtitlePath, MAX_BATCH_CLIPS,

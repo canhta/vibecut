@@ -554,6 +554,7 @@ fn registry_export_submits_one_job_per_selected_short() {
         },
         select,
         languages,
+        shots: Vec::new(),
         formats: Vec::new(),
         directory: directory.to_path_buf(),
         overwrite: false,

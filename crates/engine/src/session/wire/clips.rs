@@ -130,3 +130,18 @@ pub struct ClipExportShort {
     pub video: PathBuf,
     pub subtitles: Vec<ClipSubtitleFile>,
 }
+
+/// Why a clip export carries no per-shot analysis: every short then keeps the centred Fill
+/// layout. The export still runs; this names what to do to get layouts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ClipShotsDiagnostic {
+    /// The process lends no vision detector or media cache.
+    DetectorUnavailable,
+    /// The detector's model weights are not installed, or their download was declined.
+    ModelsMissing,
+    /// The analysis runs as this job; an export after it completes reuses its cached result.
+    Pending { job: JobId },
+    /// The analysis could not be requested or published.
+    Failed,
+}

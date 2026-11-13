@@ -1253,3 +1253,819 @@ fn retry_resumes_after_sidecar_publication_failure_without_overwrite() {
     assert_eq!(std::fs::read(&video).unwrap(), video_bytes);
     assert_eq!(temporary_files(&out), 0);
 }
+
+/// Layouts: each shot is composed from crop, fit and transform params and
+/// probed as pixels of the rendered frame.
+mod layouts {
+    use super::*;
+    use engine::{FaceTrack, Scene, ShotAnalysis, SpeakerRef, SpeakerState};
+    use render::{
+        AudioBlock, ExecutionHooks, Image, MemoryKind, Reservation, SourceProvider,
+        UnavailableReason,
+    };
+    use shorts::{Layout, LayoutEdit, LayoutOverrides};
+
+    const BLACK: [u8; 3] = [0, 0, 0];
+    const RED: [u8; 3] = [255, 0, 0];
+    const GREEN: [u8; 3] = [0, 255, 0];
+    const BLUE: [u8; 3] = [0, 0, 255];
+    const YELLOW: [u8; 3] = [255, 255, 0];
+    const MAGENTA: [u8; 3] = [255, 0, 255];
+    const CYAN: [u8; 3] = [0, 255, 255];
+    const WHITE: [u8; 3] = [255, 255, 255];
+    /// The source's four vertical bands, top half then bottom half, so a probe
+    /// names the source region it shows.
+    const BANDS: [[[u8; 3]; 4]; 2] = [[RED, GREEN, BLUE, YELLOW], [MAGENTA, CYAN, WHITE, RED]];
+
+    struct Lease;
+    impl Reservation for Lease {}
+    struct Hooks;
+    impl ExecutionHooks for Hooks {
+        fn cancelled(&self) -> bool {
+            false
+        }
+        fn reserve(&self, _: MemoryKind, _: u64) -> render::Result<Box<dyn Reservation>> {
+            Ok(Box::new(Lease))
+        }
+    }
+    struct Coded;
+    impl SourceProvider for Coded {
+        fn status(
+            &mut self,
+            _: &SourceAsset,
+            _: bool,
+            _: &dyn ExecutionHooks,
+        ) -> render::Result<Option<UnavailableReason>> {
+            Ok(None)
+        }
+        fn video(
+            &mut self,
+            asset: &SourceAsset,
+            _: project::ItemId,
+            _: Tick,
+            hooks: &dyn ExecutionHooks,
+        ) -> render::Result<Option<Image>> {
+            let shape = asset
+                .probe()
+                .streams
+                .iter()
+                .find_map(|stream| stream.video.as_ref())
+                .unwrap();
+            let (width, height) = (shape.width as usize, shape.height as usize);
+            let mut bytes = Vec::new();
+            for y in 0..height {
+                for x in 0..width {
+                    let [r, g, b] = BANDS[usize::from(y * 2 >= height)][x * 4 / width];
+                    bytes.extend_from_slice(&[r, g, b, 255]);
+                }
+            }
+            Ok(Some(Image::from_rgba8(
+                shape.width,
+                shape.height,
+                &bytes,
+                false,
+                13,
+                hooks,
+            )?))
+        }
+        fn audio(
+            &mut self,
+            _: &SourceAsset,
+            _: project::ItemId,
+            _: i64,
+            frames: usize,
+            rate: u32,
+            hooks: &dyn ExecutionHooks,
+        ) -> render::Result<AudioBlock> {
+            let mut block = AudioBlock::new(rate, 2, frames, MemoryKind::Decoded, hooks)?;
+            for plane in block.planes_mut() {
+                plane.fill(0.1);
+            }
+            Ok(block)
+        }
+    }
+
+    fn ms(value: i64) -> Tick {
+        Tick::from_units(value, 1000, Rounding::Nearest).unwrap()
+    }
+    /// A face box 20 px wide centred at `cx` of the 320 px source frame, mid-height.
+    fn person(id: u32, cx: f64) -> FaceTrack {
+        FaceTrack {
+            identity: None,
+            id,
+            bounds: [(cx * 320.0 - 10.0) as f32, 70.0, 20.0, 40.0],
+            observed_frames: 10,
+        }
+    }
+    fn shot(
+        start: Tick,
+        end: Tick,
+        scene: Scene,
+        tracks: Vec<FaceTrack>,
+        speaker: SpeakerState,
+    ) -> ShotAnalysis {
+        ShotAnalysis {
+            range: TimeRange::new(start, end).unwrap(),
+            people_count: tracks.len(),
+            tracks,
+            speaker,
+            continuity_hint: None,
+            scene,
+            seconds: Vec::new(),
+        }
+    }
+    /// One camera shot of the first four seconds.
+    fn camera(cx: &[f64]) -> ShotAnalysis {
+        let tracks = cx
+            .iter()
+            .enumerate()
+            .map(|(id, cx)| person(id as u32, *cx))
+            .collect();
+        shot(
+            Tick::ZERO,
+            seconds(4),
+            Scene::Camera,
+            tracks,
+            SpeakerState::Unknown,
+        )
+    }
+    fn forced(layout: Layout) -> LayoutOverrides {
+        LayoutOverrides {
+            short: Some(layout),
+            ..Default::default()
+        }
+    }
+    fn prepare(
+        dir: &Path,
+        shots: Vec<ShotAnalysis>,
+        segments: Vec<ClipSourceSegment>,
+        layout: LayoutOverrides,
+    ) -> Result<ClipBatch, shorts::Error> {
+        let source = project(asset(1, dir.join("missing-source.mp4"), 60));
+        let short = ClipShort::new("Layout", segments).with_layout(layout);
+        let request = ClipBatchRequest {
+            shots,
+            ..batch(1, vec![short], CueTrack::default(), dir)
+        };
+        ClipBatch::prepare(&source, request)
+    }
+    /// Renders the frame at `at` as export and as preview, which must agree.
+    fn frame(batch: &ClipBatch, at: Tick) -> Vec<u8> {
+        let project = batch.project(0).unwrap();
+        let settings = batch.settings(0).unwrap().render.clone();
+        let mut renderer = render::Renderer::new(project, settings).unwrap();
+        let exported = renderer.render_frame(at, &mut Coded, &Hooks).unwrap();
+        let previewed = renderer.preview_frame(at, &mut Coded, &Hooks).unwrap();
+        assert_eq!(
+            exported.pixels(),
+            previewed.pixels(),
+            "preview matches export"
+        );
+        exported.rgba8(1, &Hooks).unwrap().bytes
+    }
+    fn near(bytes: &[u8], probes: &[(usize, usize, [u8; 3])], case: &str) {
+        for (x, y, expected) in probes {
+            let at = (y * 1080 + x) * 4;
+            let actual = [bytes[at], bytes[at + 1], bytes[at + 2]];
+            assert!(
+                actual
+                    .iter()
+                    .zip(expected)
+                    .all(|(a, e)| a.abs_diff(*e) <= 3),
+                "{case}: ({x}, {y}) is {actual:?}, expected {expected:?}"
+            );
+        }
+    }
+    fn video_tracks(batch: &ClipBatch) -> Vec<project::Track> {
+        batch
+            .project(0)
+            .unwrap()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .filter(|track| track.kind == project::TrackKind::Video)
+            .cloned()
+            .collect()
+    }
+
+    #[test]
+    fn each_layout_renders_its_composition_as_pixel_probes() {
+        type Probe = (usize, usize, [u8; 3]);
+        let screen = |cx: &[f64]| {
+            let mut screen = camera(cx);
+            screen.scene = Scene::Screen;
+            screen
+        };
+        let speaking = |track: u32| SpeakerState::Visible {
+            local: SpeakerRef { shot: 0, track },
+            probability: 0.9,
+        };
+        let pinned = LayoutOverrides {
+            pin_first_speaker: true,
+            ..Default::default()
+        };
+        let mut b_speaks = camera(&[0.25, 0.75]);
+        b_speaks.speaker = speaking(1);
+        let rows: Vec<(&str, Vec<ShotAnalysis>, LayoutOverrides, Layout, Vec<Probe>)> = vec![
+            (
+                "fill follows the speaker on the right",
+                vec![camera(&[0.75])],
+                LayoutOverrides::default(),
+                Layout::Fill,
+                vec![
+                    (270, 480, BLUE),
+                    (810, 480, YELLOW),
+                    (270, 1440, WHITE),
+                    (810, 1440, RED),
+                ],
+            ),
+            (
+                "fill without analysis is the centred cover",
+                vec![],
+                LayoutOverrides::default(),
+                Layout::Fill,
+                vec![(270, 480, GREEN), (810, 480, BLUE)],
+            ),
+            (
+                "fit letterboxes the whole frame",
+                vec![camera(&[0.5])],
+                forced(Layout::Fit),
+                Layout::Fit,
+                vec![
+                    (540, 100, BLACK),
+                    (108, 800, RED),
+                    (972, 800, YELLOW),
+                    (108, 1100, MAGENTA),
+                    (540, 1800, BLACK),
+                ],
+            ),
+            (
+                "split puts the left person on top",
+                vec![camera(&[0.25, 0.75])],
+                LayoutOverrides::default(),
+                Layout::Split,
+                vec![
+                    (108, 240, RED),
+                    (540, 240, GREEN),
+                    (972, 240, BLUE),
+                    (108, 720, MAGENTA),
+                    (540, 720, CYAN),
+                    (972, 720, WHITE),
+                    (108, 1200, GREEN),
+                    (540, 1200, BLUE),
+                    (972, 1200, YELLOW),
+                    (972, 1680, RED),
+                ],
+            ),
+            (
+                "split without the pin keeps left to right",
+                vec![b_speaks.clone()],
+                LayoutOverrides::default(),
+                Layout::Split,
+                vec![(108, 240, RED), (108, 1200, GREEN)],
+            ),
+            (
+                "pin first speaker puts the speaker on top",
+                vec![b_speaks],
+                pinned,
+                Layout::Split,
+                vec![(108, 240, GREEN), (972, 240, YELLOW), (108, 1200, RED)],
+            ),
+            (
+                "three is one wide cell over two narrow cells",
+                vec![camera(&[0.2, 0.5, 0.8])],
+                LayoutOverrides::default(),
+                Layout::Three,
+                vec![
+                    (108, 240, RED),
+                    (135, 1200, GREEN),
+                    (405, 1200, BLUE),
+                    (620, 1200, BLUE),
+                    (1000, 1200, YELLOW),
+                ],
+            ),
+            (
+                "four is a grid read left to right",
+                vec![camera(&[0.125, 0.375, 0.625, 0.875])],
+                LayoutOverrides::default(),
+                Layout::Four,
+                vec![
+                    (135, 240, RED),
+                    (480, 240, GREEN),
+                    (675, 240, GREEN),
+                    (1053, 240, BLUE),
+                    (135, 1200, BLUE),
+                    (513, 1200, YELLOW),
+                    (594, 1200, BLUE),
+                    (972, 1200, YELLOW),
+                ],
+            ),
+            (
+                "screenshare shows the screen over the speaker",
+                vec![screen(&[0.75])],
+                LayoutOverrides::default(),
+                Layout::Screenshare,
+                vec![
+                    (540, 100, BLACK),
+                    (108, 300, RED),
+                    (972, 300, YELLOW),
+                    (108, 650, MAGENTA),
+                    (540, 850, BLACK),
+                    (108, 1200, GREEN),
+                    (972, 1200, YELLOW),
+                ],
+            ),
+            (
+                "gameplay is the speaker at 30 percent over the content",
+                vec![screen(&[0.5])],
+                forced(Layout::Gameplay),
+                Layout::Gameplay,
+                vec![
+                    (108, 150, RED),
+                    (972, 150, YELLOW),
+                    (540, 800, BLACK),
+                    (108, 1000, RED),
+                    (972, 1000, YELLOW),
+                    (108, 1500, MAGENTA),
+                    (540, 1700, BLACK),
+                ],
+            ),
+        ];
+        for (name, shots, layout, expected, probes) in rows {
+            let dir = tempfile::tempdir().unwrap();
+            let batch = prepare(dir.path(), shots, vec![segment(0, 4, 0)], layout).unwrap();
+            let layouts = batch.layouts(0).unwrap();
+            assert_eq!(layouts.len(), 1, "{name}");
+            assert_eq!(layouts[0].layout, expected, "{name}");
+            assert!(!layouts[0].fallback, "{name}");
+            near(&frame(&batch, Tick::ZERO), &probes, name);
+        }
+    }
+
+    #[test]
+    fn fit_and_fill_layouts_are_the_item_fit_boxes() {
+        let dir = tempfile::tempdir().unwrap();
+        for (layout, fill) in [(Layout::Fit, false), (Layout::Fill, true)] {
+            let batch = prepare(
+                dir.path(),
+                vec![camera(&[0.5])],
+                vec![segment(0, 4, 0)],
+                forced(layout),
+            )
+            .unwrap();
+            let prepared = batch.project(0).unwrap();
+            let data = prepared.data();
+            assert_eq!((data.canvas.width, data.canvas.height), (1080, 1920));
+            let item = &data.scene().timeline.main.items[0];
+            let boxed = project::fit_box(&data.canvas, &data.assets, item).unwrap();
+            if fill {
+                assert_eq!(
+                    (boxed.x, boxed.y, boxed.width, boxed.height),
+                    (0.0, 0.0, 1.0, 1.0)
+                );
+                assert!(boxed.cover);
+            } else {
+                // 320x180 fitted into 1080x1920 is 1080x607.5, centred.
+                assert!((boxed.width - 1.0).abs() < 1e-9);
+                assert!((boxed.height - 607.5 / 1920.0).abs() < 1e-9);
+                assert!((boxed.y - (1.0 - boxed.height) / 2.0).abs() < 1e-9);
+                assert!(!boxed.cover);
+            }
+        }
+    }
+
+    #[test]
+    fn a_failed_condition_falls_back_to_fill_or_fit() {
+        let one = camera(&[0.5]);
+        let three = camera(&[0.2, 0.5, 0.8]);
+        let mut screen_one = camera(&[0.5]);
+        screen_one.scene = Scene::Screen;
+        let mut screen_none = camera(&[]);
+        screen_none.scene = Scene::Screen;
+        let rows = [
+            (
+                "split needs two",
+                &one,
+                Some(Layout::Split),
+                Layout::Fill,
+                true,
+            ),
+            (
+                "four needs four",
+                &three,
+                Some(Layout::Four),
+                Layout::Fill,
+                true,
+            ),
+            (
+                "screenshare needs a screen",
+                &one,
+                Some(Layout::Screenshare),
+                Layout::Fill,
+                true,
+            ),
+            (
+                "gameplay needs a screen",
+                &one,
+                Some(Layout::Gameplay),
+                Layout::Fill,
+                true,
+            ),
+            (
+                "gameplay needs a person",
+                &screen_none,
+                Some(Layout::Gameplay),
+                Layout::Fit,
+                true,
+            ),
+            (
+                "a screen without a person is fit",
+                &screen_none,
+                None,
+                Layout::Fit,
+                true,
+            ),
+            (
+                "a screen with a person is screenshare",
+                &screen_one,
+                None,
+                Layout::Screenshare,
+                false,
+            ),
+            (
+                "nobody on camera is fit",
+                &camera(&[]),
+                None,
+                Layout::Fit,
+                false,
+            ),
+            ("one person is fill", &one, None, Layout::Fill, false),
+            ("three people", &three, None, Layout::Three, false),
+            (
+                "five people use four cells",
+                &camera(&[0.1, 0.3, 0.5, 0.7, 0.9]),
+                None,
+                Layout::Four,
+                false,
+            ),
+        ];
+        for (name, shot, forced, expected, fallback) in rows {
+            let dir = tempfile::tempdir().unwrap();
+            let overrides = LayoutOverrides {
+                short: forced,
+                ..Default::default()
+            };
+            let batch = prepare(
+                dir.path(),
+                vec![shot.clone()],
+                vec![segment(0, 4, 0)],
+                overrides,
+            )
+            .unwrap();
+            let layouts = batch.layouts(0).unwrap();
+            assert_eq!(
+                (layouts[0].layout, layouts[0].fallback),
+                (expected, fallback),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn layouts_switch_only_at_shot_cuts() {
+        let dir = tempfile::tempdir().unwrap();
+        let alone = |start, end| {
+            shot(
+                start,
+                end,
+                Scene::Camera,
+                vec![person(0, 0.5)],
+                SpeakerState::Unknown,
+            )
+        };
+        let shots = vec![
+            shot(
+                Tick::ZERO,
+                seconds(2),
+                Scene::Camera,
+                vec![person(0, 0.25), person(1, 0.75)],
+                SpeakerState::Unknown,
+            ),
+            alone(seconds(2), seconds(4)),
+            alone(seconds(8), seconds(14)),
+        ];
+        let batch = prepare(
+            dir.path(),
+            shots,
+            vec![segment(1, 3, 0), segment(10, 12, 1)],
+            LayoutOverrides::default(),
+        )
+        .unwrap();
+        let got: Vec<_> = batch
+            .layouts(0)
+            .unwrap()
+            .iter()
+            .map(|l| (l.segment, l.range, l.layout))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                (0, range(1, 2), Layout::Split),
+                (0, range(2, 3), Layout::Fill),
+                (1, range(10, 12), Layout::Fill),
+            ]
+        );
+        let tracks = video_tracks(&batch);
+        let main = &batch.project(0).unwrap().data().scene().timeline.main;
+        let starts: Vec<_> = main
+            .items
+            .iter()
+            .map(|i| (i.source_range, i.start))
+            .collect();
+        assert_eq!(
+            starts,
+            vec![
+                (range(1, 2), Tick::ZERO),
+                (range(2, 3), seconds(1)),
+                (range(10, 12), seconds(2)),
+            ]
+        );
+        // The second slot of the Split stretch is a silent item on its own track.
+        let slot = tracks.iter().find(|t| t.id == project::TrackId(4)).unwrap();
+        assert_eq!(slot.items.len(), 1);
+        assert_eq!(slot.items[0].source_range, range(1, 2));
+        assert_eq!(slot.items[0].start, Tick::ZERO);
+        // Every video item is silent; the audio is one item per segment, so a shot cut
+        // inside a segment never splits the speech.
+        let silent = |item: &project::Item| match &item.content {
+            project::ItemParams::Video(params) => !params.source_audio_enabled,
+            _ => panic!("video item"),
+        };
+        assert!(main.items.iter().all(silent));
+        assert!(silent(&slot.items[0]));
+        let timeline = &batch.project(0).unwrap().data().scene().timeline;
+        assert_eq!(timeline.audio.len(), 1);
+        let audio: Vec<_> = timeline.audio[0]
+            .items
+            .iter()
+            .map(|item| (item.source_range, item.start))
+            .collect();
+        assert_eq!(
+            audio,
+            vec![(range(1, 3), Tick::ZERO), (range(10, 12), seconds(2))]
+        );
+        assert_eq!(batch.duration(0), Some(seconds(4)));
+        // The export mixes with its 10 ms cut ramps: the samples run through the shot cut
+        // at output 1 s unchanged, and the ramp still opens the segment.
+        let prepared = batch.project(0).unwrap();
+        let rate = prepared.data().settings.audio_sample_rate as usize;
+        let fade = batch.settings(0).unwrap().audio_cut_fade_ms;
+        let mut mixer = render::AudioMixer::new(prepared, 2, fade, &Hooks).unwrap();
+        let latency = mixer.latency_samples();
+        let mixed = mixer.mix(0, rate * 5 / 4, &mut Coded, &Hooks).unwrap();
+        let plane = &mixed.planes()[0];
+        let plateau = plane[rate / 2];
+        assert!(plateau > 0.05, "the source is audible: {plateau}");
+        let around = &plane[rate + latency - 100..rate + latency + 100];
+        assert!(
+            around.iter().all(|v| (v - plateau).abs() < 1e-6),
+            "no ramp at the shot cut"
+        );
+        assert!(plane[latency] < plateau / 2.0, "the segment still ramps in");
+        // The cut itself switches the rendered frame.
+        near(
+            &frame(&batch, ms(900)),
+            &[(108, 240, RED), (108, 1200, GREEN)],
+            "split before the cut",
+        );
+        near(
+            &frame(&batch, ms(1100)),
+            &[(270, 480, GREEN), (810, 480, BLUE)],
+            "fill after the cut",
+        );
+    }
+
+    #[test]
+    fn a_piece_under_one_frame_and_a_no_op_cut_add_no_switch() {
+        let dir = tempfile::tempdir().unwrap();
+        let two = |start, end| {
+            shot(
+                start,
+                end,
+                Scene::Camera,
+                vec![person(0, 0.25), person(1, 0.75)],
+                SpeakerState::Unknown,
+            )
+        };
+        let one = |start, end| {
+            shot(
+                start,
+                end,
+                Scene::Camera,
+                vec![person(0, 0.5)],
+                SpeakerState::Unknown,
+            )
+        };
+        // The next shot starts 10 ms before the segment ends: under one frame.
+        let sliver = prepare(
+            dir.path(),
+            vec![two(Tick::ZERO, ms(1990)), one(ms(1990), seconds(6))],
+            vec![segment(0, 2, 0)],
+            LayoutOverrides::default(),
+        )
+        .unwrap();
+        let layouts = sliver.layouts(0).unwrap();
+        assert_eq!(layouts.len(), 1);
+        assert_eq!(
+            (layouts[0].range, layouts[0].layout),
+            (range(0, 2), Layout::Split)
+        );
+        // Two shots with the same person at the same place are one item.
+        let merged = prepare(
+            dir.path(),
+            vec![one(Tick::ZERO, seconds(1)), one(seconds(1), seconds(3))],
+            vec![segment(0, 2, 0)],
+            LayoutOverrides::default(),
+        )
+        .unwrap();
+        assert_eq!(merged.layouts(0).unwrap().len(), 1);
+        let prepared = merged.project(0).unwrap();
+        assert_eq!(prepared.data().scene().timeline.main.items.len(), 1);
+    }
+
+    #[test]
+    fn pin_first_speaker_follows_the_person_across_shots() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = shot(
+            Tick::ZERO,
+            seconds(2),
+            Scene::Camera,
+            vec![person(0, 0.25)],
+            SpeakerState::Visible {
+                local: SpeakerRef { shot: 0, track: 0 },
+                probability: 0.9,
+            },
+        );
+        // The same person now stands on the right and the listener on the left.
+        let mut same = person(1, 0.75);
+        same.identity = Some(SpeakerRef { shot: 0, track: 0 });
+        let second = shot(
+            seconds(2),
+            seconds(4),
+            Scene::Camera,
+            vec![person(0, 0.25), same],
+            SpeakerState::Unknown,
+        );
+        for (pin, top) in [(true, GREEN), (false, RED)] {
+            let overrides = LayoutOverrides {
+                pin_first_speaker: pin,
+                ..Default::default()
+            };
+            let batch = prepare(
+                dir.path(),
+                vec![first.clone(), second.clone()],
+                vec![segment(0, 4, 0)],
+                overrides,
+            )
+            .unwrap();
+            let layouts = batch.layouts(0).unwrap();
+            assert_eq!(layouts.len(), 2);
+            assert_eq!(layouts[1].layout, Layout::Split);
+            near(
+                &frame(&batch, ms(2500)),
+                &[(108, 240, top)],
+                &format!("pin {pin}"),
+            );
+        }
+    }
+
+    #[test]
+    fn overrides_win_per_segment_persist_and_undo() {
+        let dir = tempfile::tempdir().unwrap();
+        let shots = vec![
+            camera(&[0.25, 0.75]),
+            shot(
+                seconds(8),
+                seconds(14),
+                Scene::Camera,
+                vec![person(0, 0.5), person(1, 0.8)],
+                SpeakerState::Unknown,
+            ),
+        ];
+        let encoded = |overrides: &LayoutOverrides| {
+            let segments = vec![segment(0, 2, 0), segment(10, 12, 1)];
+            let batch = prepare(dir.path(), shots.clone(), segments, overrides.clone()).unwrap();
+            (
+                project::encode(batch.project(0).unwrap(), false).unwrap(),
+                batch.layouts(0).unwrap().to_vec(),
+            )
+        };
+        let (automatic, auto_layouts) = encoded(&LayoutOverrides::default());
+        assert_eq!(
+            auto_layouts.iter().map(|l| l.layout).collect::<Vec<_>>(),
+            [Layout::Split, Layout::Split]
+        );
+        // The same input prepares the same project.
+        assert_eq!(
+            encoded(&LayoutOverrides::default()),
+            (automatic.clone(), auto_layouts)
+        );
+
+        let mut overrides = LayoutOverrides::default();
+        let mut history = Vec::new();
+        let mut states = vec![overrides.clone()];
+        for edit in [
+            LayoutEdit::Short(Some(Layout::Fit)),
+            LayoutEdit::Segment {
+                index: 1,
+                layout: Some(Layout::Fill),
+            },
+            LayoutEdit::PinFirstSpeaker(true),
+            LayoutEdit::Segment {
+                index: 1,
+                layout: None,
+            },
+        ] {
+            history.push(overrides.apply(edit));
+            states.push(overrides.clone());
+        }
+        // A segment's own choice beats the short's.
+        let (edited, edited_layouts) = encoded(&LayoutOverrides {
+            short: Some(Layout::Fit),
+            segments: [(1, Layout::Fill)].into(),
+            pin_first_speaker: false,
+        });
+        assert_eq!(
+            edited_layouts.iter().map(|l| l.layout).collect::<Vec<_>>(),
+            [Layout::Fit, Layout::Fill]
+        );
+        assert_ne!(edited, automatic);
+
+        // Persistence: the overrides round-trip and refuse stale or foreign fields.
+        let json = serde_json::to_string(&overrides).unwrap();
+        assert_eq!(
+            serde_json::from_str::<LayoutOverrides>(&json).unwrap(),
+            overrides
+        );
+        assert!(
+            serde_json::from_str::<LayoutOverrides>(r#"{"short":null,"segments":{}}"#).is_err()
+        );
+        assert!(
+            serde_json::from_str::<LayoutOverrides>(
+                r#"{"short":null,"segments":{},"pin_first_speaker":false,"x":1}"#
+            )
+            .is_err()
+        );
+
+        // Undo replays the inverses back to the start, redo forward again.
+        let mut redo = Vec::new();
+        for (inverse, state) in history.iter().rev().zip(states.iter().rev().skip(1)) {
+            redo.push(overrides.apply(*inverse));
+            assert_eq!(&overrides, state);
+        }
+        assert_eq!(overrides, LayoutOverrides::default());
+        assert_eq!(encoded(&overrides).0, automatic);
+        for (inverse, state) in redo.iter().rev().zip(states.iter().skip(1)) {
+            overrides.apply(*inverse);
+            assert_eq!(&overrides, state);
+        }
+    }
+
+    #[test]
+    fn refuses_layout_requests_that_name_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let stray = LayoutOverrides {
+            segments: [(3, Layout::Fit)].into(),
+            ..Default::default()
+        };
+        assert!(matches!(
+            prepare(dir.path(), vec![], vec![segment(0, 1, 0)], stray),
+            Err(shorts::Error::ClipExport {
+                short: 0,
+                reason: "layout segment outside short"
+            })
+        ));
+        let backwards = vec![
+            camera(&[0.5]),
+            shot(
+                seconds(1),
+                seconds(2),
+                Scene::Camera,
+                vec![],
+                SpeakerState::Unknown,
+            ),
+        ];
+        assert!(matches!(
+            prepare(
+                dir.path(),
+                backwards,
+                vec![segment(0, 1, 0)],
+                LayoutOverrides::default()
+            ),
+            Err(shorts::Error::Engine(EngineError::Edit(
+                engine::EditError::Invalid("clip shot analysis")
+            )))
+        ));
+    }
+}

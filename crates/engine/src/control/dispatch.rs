@@ -315,6 +315,7 @@ impl Session {
                         | JobKind::GenerateClipThumbnails
                         | JobKind::DetectScenes
                         | JobKind::AnalyzeReframe
+                        | JobKind::AnalyzeShots
                 ) && let Some(media) = caller.media
                 {
                     let mut media = media.lock().map_err(|_| crate::RuntimeError::Poisoned)?;
@@ -731,12 +732,21 @@ impl Session {
                         params.cues.clone()
                     }
                 };
+                let (shots, diagnostic) = super::clips::export_shots(
+                    runner,
+                    self,
+                    caller.media,
+                    caller.vision,
+                    &result,
+                    &select,
+                )?;
                 let shorts = workflow.export(
                     runner,
                     self.project().as_ref(),
                     super::ClipsExportRequest {
                         result,
                         cues,
+                        shots,
                         select,
                         languages,
                         formats,
@@ -748,6 +758,7 @@ impl Session {
                 Ok(ControlResult::ClipExports {
                     revision: self.revision(),
                     shorts,
+                    shots: diagnostic,
                 })
             }
             Command::CaptionsApply { job, start } => {

@@ -11,8 +11,8 @@ mod view;
 use crate::egui;
 
 pub use state::{
-    ClipCandidate, Decision, GenerationRequest, Importer, Review, ReviewSource, State, TaskEvents,
-    desktop_importer,
+    ClipCandidate, Decision, GenerationRequest, Importer, Review, ReviewSource, ShotSource, State,
+    TaskEvents, desktop_importer,
 };
 
 /// The window the shorts viewport opens at; Home and the editor own their own sizes.

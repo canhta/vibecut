@@ -837,3 +837,120 @@ fn workspace_shorts_raw_text_paste_reaches_the_real_trim_field() {
         range(10, 14)
     );
 }
+
+/// A scripted analysis: the first answer is a running job, the next the shots of two
+/// people on screen together over the whole fixture.
+fn two_people(
+    calls: Arc<std::sync::atomic::AtomicUsize>,
+    gate: Arc<std::sync::atomic::AtomicBool>,
+) -> vibecut::shorts::ShotSource {
+    use engine::control::ClipShotsDiagnostic::Pending;
+    use std::sync::atomic::Ordering;
+    Arc::new(move |runner, _, _, _| {
+        if calls.fetch_add(1, Ordering::SeqCst) == 0 {
+            let key = engine::cache::CacheKey::new(engine::cache::KeyInputs {
+                kind: engine::cache::ArtifactKind::Preview,
+                source: [0; 32],
+                provider: "fixture",
+                model: "shots",
+                version: "1",
+                settings: &[],
+                transcript: [0; 32],
+                cues: [0; 32],
+                clip_range: [0; 32],
+                translation: [0; 32],
+            })?;
+            let gate = gate.clone();
+            let (job, _) = runner.submit::<engine::control::Error>(
+                engine::jobs::JobSpec {
+                    kind: engine::jobs::JobKind::AnalyzeShots,
+                    class: engine::jobs::ResourceClass::Cpu,
+                    input: key,
+                    bytes: Default::default(),
+                },
+                move |context| {
+                    while !gate.load(Ordering::SeqCst) {
+                        context.check_cancelled()?;
+                        std::thread::yield_now();
+                    }
+                    Ok(Vec::new())
+                },
+            )?;
+            return Ok((Vec::new(), Some(Pending { job })));
+        }
+        let person = |id: u32, x: f32| engine::FaceTrack {
+            identity: None,
+            id,
+            bounds: [x, 70.0, 20.0, 40.0],
+            observed_frames: 20,
+        };
+        Ok((
+            vec![engine::ShotAnalysis {
+                range: range(0, 20),
+                people_count: 2,
+                tracks: vec![person(0, 70.0), person(1, 230.0)],
+                speaker: engine::SpeakerState::Unknown,
+                continuity_hint: None,
+                scene: engine::Scene::Camera,
+                seconds: Vec::new(),
+            }],
+            None,
+        ))
+    })
+}
+
+#[test]
+fn a_pending_analysis_refreshes_the_preview_to_a_split_layout_when_its_job_finishes() {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    let (calls, gate) = (
+        Arc::new(AtomicUsize::new(0)),
+        Arc::new(AtomicBool::new(false)),
+    );
+    let mut app = fixture::app();
+    app.with_shot_source(two_people(calls.clone(), gate.clone()));
+    app.generate().unwrap();
+    wait(&mut app);
+    // While the analysis job runs the preview has no evidence: the centred Fill.
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    let tracks = |app: &Shorts| {
+        app.preview_session()
+            .unwrap()
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .filter(|track| track.kind == project::TrackKind::Video)
+            .count()
+    };
+    assert_eq!(tracks(&app), 1);
+    gate.store(true, Ordering::SeqCst);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while calls.load(Ordering::SeqCst) < 2 {
+        app.tick();
+        assert!(std::time::Instant::now() < deadline, "analysis timeout");
+        std::thread::yield_now();
+    }
+    app.tick();
+    // The refreshed preview lays the two people out as a Split: a second video track.
+    assert_eq!(tracks(&app), 2);
+    let preview = app.preview_session().unwrap().project();
+    let items = &preview.data().scene().timeline.main.items;
+    assert_eq!(items[0].source_range, range(10, 13));
+    assert!(app.error().is_none());
+}
+
+#[test]
+fn an_unavailable_detector_is_reported_once_and_can_be_dismissed() {
+    let mut app = fixture::app();
+    app.lend_analysis(None, None);
+    app.generate().unwrap();
+    wait(&mut app);
+    let mut h = harness(app, 1.0);
+    h.run_steps(3);
+    let count = |h: &Harness<'static, Shorts>| h.query_all(by("shorts.shots.dismiss")).count();
+    assert_eq!(count(&h), 1);
+    h.get(by("shorts.shots.dismiss")).click();
+    h.run_steps(3);
+    assert_eq!(count(&h), 0);
+}

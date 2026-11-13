@@ -5,18 +5,18 @@ use crate::{Command, Session};
 pub use crate::session::wire::{
     API_VERSION, BrandColorView, BrandEntryState, BrandKitView, BrandMediaView, CaptionsResult,
     ClipAdjustment, ClipCandidateView, ClipEdge, ClipEnergy, ClipExportShort, ClipPieceRange,
-    ClipPieceSpan, ClipRefusal, ClipSubtitleFile, ClipsResult, ControlError, ControlResult,
-    CostView, Cursor, ErrorCode, Event, Failure, FillerCandidate, FontEntry, FontLoad,
-    FontLoadState, FontOrigin, FontState, JobOutput, JobView, LIMITS, Limits, MAX_BATCH_COMMANDS,
-    MAX_BATCH_DEPTH, MAX_COLLECTION, MAX_DEPTH, MAX_EVENTS, MAX_FRAME_BYTES, MAX_KEY_BYTES,
-    MAX_NODES, MAX_PATH_BYTES, MAX_PAUSE_MS, MAX_PAUSE_SPANS, MAX_PREVIEW_CLIPS, MAX_PREVIEW_EDGE,
-    MAX_PREVIEW_FRAMES, MAX_RECEIPT_BYTES, MAX_RECEIPTS, MAX_RESPONSE_BYTES, MAX_SAFE_INTEGER,
-    MAX_TEXT_BYTES, MusicEntry, MusicPage, MusicSource, OutputSpan, PREVIEW_QUALITY,
-    PauseCandidates, Payload, PreviewFrame, PreviewResult, ProviderView, RECEIPT_RESERVATION,
-    ReframeReason, ReframeReport, ReframeShotReport, ReframeTarget, Request, Response,
-    ResponseValue, Revision, SavedMusicEntry, SavedSoundEntry, Snapshot, SoundEntry, SoundPage,
-    SoundSource, StickerCategory, StickerEntry, StickerPage, TranslationsResult, bounded_json,
-    contract_schema, output_schema, parse_frame, reference_markdown, registry_hash,
+    ClipPieceSpan, ClipRefusal, ClipShotsDiagnostic, ClipSubtitleFile, ClipsResult, ControlError,
+    ControlResult, CostView, Cursor, ErrorCode, Event, Failure, FillerCandidate, FontEntry,
+    FontLoad, FontLoadState, FontOrigin, FontState, JobOutput, JobView, LIMITS, Limits,
+    MAX_BATCH_COMMANDS, MAX_BATCH_DEPTH, MAX_COLLECTION, MAX_DEPTH, MAX_EVENTS, MAX_FRAME_BYTES,
+    MAX_KEY_BYTES, MAX_NODES, MAX_PATH_BYTES, MAX_PAUSE_MS, MAX_PAUSE_SPANS, MAX_PREVIEW_CLIPS,
+    MAX_PREVIEW_EDGE, MAX_PREVIEW_FRAMES, MAX_RECEIPT_BYTES, MAX_RECEIPTS, MAX_RESPONSE_BYTES,
+    MAX_SAFE_INTEGER, MAX_TEXT_BYTES, MusicEntry, MusicPage, MusicSource, OutputSpan,
+    PREVIEW_QUALITY, PauseCandidates, Payload, PreviewFrame, PreviewResult, ProviderView,
+    RECEIPT_RESERVATION, ReframeReason, ReframeReport, ReframeShotReport, ReframeTarget, Request,
+    Response, ResponseValue, Revision, SavedMusicEntry, SavedSoundEntry, Snapshot, SoundEntry,
+    SoundPage, SoundSource, StickerCategory, StickerEntry, StickerPage, TranslationsResult,
+    bounded_json, contract_schema, output_schema, parse_frame, reference_markdown, registry_hash,
 };
 
 use crate::{
@@ -160,7 +160,7 @@ mod receipts;
 mod resync;
 pub use clips::{
     ClipWorkflow, ClipsExportRequest, ClipsSuggestRequest, MAX_CLIPS_RESULT_BYTES, decode_clips,
-    encode_clips,
+    encode_clips, resolve_clip_shots,
 };
 pub use media::MediaAccess;
 
