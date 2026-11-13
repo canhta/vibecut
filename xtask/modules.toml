@@ -91,6 +91,69 @@ group = "brand_kit"
 name = "sticker_library"
 group = "sticker_library"
 
+# The agent sits above engine and ai: the contract (errors, events, cancel) is lowest, the
+# command policy and the read views feed the tools, the turn loop drives the tools and the
+# evaluation drives the loop.
+[[crate]]
+name = "agent"
+path = "crates/agent"
+
+[[crate.layer]]
+name = "contract"
+groups = ["contract"]
+
+[[crate.layer]]
+name = "admission"
+groups = ["policy"]
+
+[[crate.layer]]
+name = "tools"
+groups = ["tools"]
+
+[[crate.layer]]
+name = "loop"
+groups = ["turn"]
+
+[[crate.layer]]
+name = "evaluation"
+groups = ["eval"]
+
+[[crate.module]]
+name = "error"
+group = "contract"
+
+[[crate.module]]
+name = "event"
+group = "contract"
+
+[[crate.module]]
+name = "cancel"
+group = "contract"
+
+[[crate.module]]
+name = "provider"
+group = "contract"
+
+[[crate.module]]
+name = "policy"
+group = "policy"
+
+[[crate.module]]
+name = "reads"
+group = "tools"
+
+[[crate.module]]
+name = "tools"
+group = "tools"
+
+[[crate.module]]
+name = "turn"
+group = "turn"
+
+[[crate.module]]
+name = "eval"
+group = "eval"
+
 # Shorts operations are independent; only the suggestion workflow composes them.
 [[crate]]
 name = "shorts"

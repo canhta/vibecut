@@ -17,10 +17,11 @@ The core runs headless. Only `apps/*` may depend on UI, GPU, native window or di
 | ai | crates/ai | Provider interfaces, capabilities, consent and cost, AI adapters | time, media, captions, schemars, transport, testkit |
 | engine | crates/engine | Session, commands, history, recovery scheduling, jobs, cache, adapter selection and per-shot analysis | time, media, project, captions, text, render, ai, transport, testkit |
 | mcp | crates/mcp | MCP stdio protocol adapter, grants, inbox and OS-permissioned attach transport | engine, project, ai, render, time |
+| agent | crates/agent | In-app agent turn loop on a session fork, tool set generated from the registry, agent command policy, event stream and evaluation set | engine, ai, project, time, transport |
 | libraries | crates/libraries | External project assets: user brand kits, font catalog with verified download/import cache, licensed sound search, saved library and previews, sticker flags and downloadable emoji and icon collections | engine, media, project, render, text, time, transport |
 | shorts | crates/shorts | Clip suggestion, boundary snapping and accepted-short batch export | time, media, project, captions, render, ai, engine, transport, testkit |
 | clip-eval | crates/clip-eval | Fixed labelled clip-pipeline evaluation harness, metrics and local reports | time, media, captions, ai, engine, shorts, transport |
-| vibecut-cli | apps/vibecut-cli | Headless adapter: CLI arguments, typed exit codes, dispatch, control-session lifetime, project lease composition, export admission, bounded batch job files | engine, ai, media, project, render, time, shorts, libraries, mcp, testkit |
+| vibecut-cli | apps/vibecut-cli | Headless adapter: CLI arguments, typed exit codes, dispatch, control-session lifetime, project lease composition, export admission, bounded batch job files | engine, ai, media, project, render, time, shorts, libraries, mcp, agent, testkit |
 | vibecut | apps/vibecut | Desktop app: UI, playback, model-manager presentation, wgpu compositor, preferences, app controls and inspection; composes the MCP adapter into its composition root | time, engine, media, project, captions, text, render, ai, mcp, shorts, libraries, transport, testkit |
 
 Only `media` links FFmpeg. Render's CPU compositor is the reference for preview and export; the app owns the optional wgpu adapter.
@@ -46,6 +47,9 @@ flowchart BT
   libraries --> render
   libraries --> transport
   mcp --> engine
+  agent --> engine
+  agent --> ai
+  agent --> transport
   shorts --> engine
   shorts --> transport
   eval[clip-eval] --> shorts
@@ -53,13 +57,14 @@ flowchart BT
   cli[vibecut-cli] --> shorts
   cli --> libraries
   cli --> mcp
+  cli --> agent
   app[vibecut] --> mcp
   app --> transport
   subgraph apps
     cli; app
   end
   subgraph core[headless core]
-    time; text; transport; media; captions; project; ai; render; engine; mcp; libraries; shorts; eval
+    time; text; transport; media; captions; project; ai; render; engine; mcp; agent; libraries; shorts; eval
   end
 ```
 
@@ -97,6 +102,7 @@ Definitions: [glossary](../../GLOSSARY.md). Contract details live in these owner
 | Filler classification input, exact-ID validation and shared text-model transport | [ai fillers](../../crates/ai/src/text/fillers/README.md) / [engine job](../../crates/engine/src/analysis/README.md#filler-classification) |
 | SpeechSynthesizer capabilities, requests, consent, PCM validation | [ai speech](../../crates/ai/src/speech/README.md) |
 | Transcript text search, folding and per-asset index entries in the artifact cache | [engine transcript search](../../crates/engine/src/transcript/search/README.md) |
+| Agent turn, tool set, command policy, events, limits | [agent](../product/agent-control/agent.md) / [agent crate](../../crates/agent/README.md) |
 
 Every project mutation goes through the engine command registry; UI, CLI and MCP only translate their transport into it. In-process callers pass a typed `Command`; a command id with JSON parameters exists only on the control wire. A workflow that runs as a job is a registry command, so every transport can start it. Engine wraps media, render and AI execution with progress and cancellation. Per-project view state lives in the project's [metadata sidecar](../../crates/project/src/persistence/README.md#optional-project-metadata), outside undo. Recovery: [engine](../../crates/engine/src/store/recovery_workflow/README.md#session-recovery-and-save-acknowledgement).
 

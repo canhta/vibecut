@@ -50,6 +50,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         "reframe" => project::reframe(context, rest),
         "freeze" => project::freeze(context, rest),
         "transcript" => project::transcript(context, rest),
+        "agent" => ai::agent(context, rest),
         "subtitle" => ai::subtitle(context, rest),
         "clips" => ai::clips(context, rest),
         "chapters" => ai::chapters(context, rest),

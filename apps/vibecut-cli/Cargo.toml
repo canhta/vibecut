@@ -13,6 +13,7 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
+agent.workspace = true
 shorts.workspace = true
 libraries.workspace = true
 mcp.workspace = true

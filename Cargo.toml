@@ -10,6 +10,7 @@ repository = "https://github.com/canhta/vibecut"
 
 [workspace.dependencies]
 # Internal path crates shared by two or more members.
+agent = { path = "crates/agent" }
 ai = { path = "crates/ai" }
 captions = { path = "crates/captions" }
 engine = { path = "crates/engine" }

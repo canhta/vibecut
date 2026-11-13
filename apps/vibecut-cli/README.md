@@ -12,7 +12,7 @@ Headless `vibecut-cli` process adapter. Parses native command-line arguments, di
 |---|---|---|
 | `args.rs` / `args/` | Parses and validates native arguments. | [Arguments](src/args/README.md) |
 | `commands.rs` / `commands/` | Dispatches each command through one `run` adapter. | [Commands](src/commands/README.md) |
-| `commands/ai/` | Adapts subtitle, provider, model, clip, chapter and filler commands. | [AI commands](src/commands/ai/README.md) |
+| `commands/ai/` | Adapts subtitle, provider, model, clip, chapter, filler and agent commands. | [AI commands](src/commands/ai/README.md) |
 | `commands/catalog/` | Prints the generated command and schema catalogs. | [Catalog commands](src/commands/catalog/README.md) |
 | `commands/libraries/` | Adapts font and sound library commands. | [Library commands](src/commands/libraries/README.md) |
 | `commands/media/` | Adapts export, normalize, probe, scene, waveform and thumbnail commands. | [Media commands](src/commands/media/README.md) |

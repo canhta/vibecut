@@ -1,4 +1,6 @@
 //! Groups native ai command adapters.
+mod agent;
+pub(super) use agent::run as agent;
 mod subtitle;
 pub(super) use subtitle::run as subtitle;
 mod clips;

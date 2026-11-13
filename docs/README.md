@@ -7,7 +7,7 @@
 | Scope, priority, providers, languages | [Requirements](product/requirements.md) | tickets as the source of truth |
 | UI principles, design language, reference evidence, geometry, copy rules, states, gaps | [UI design](product/ui/index.md) and its window files ([editor](product/ui/editor.md), [Home](product/ui/home.md), [shorts](product/ui/shorts.md)) | widget literals; ticket ids |
 | Token contracts, Rust owners, measured sources | [UI tokens](product/ui/tokens.md); values in `kit/theme.rs` | - |
-| Agent-facing surfaces | [CLI](product/agent-control/cli.md), [MCP](product/agent-control/mcp.md), [Keyboard](product/agent-control/keyboard.md), [Commands](product/agent-control/commands.md) | crate READMEs |
+| Agent-facing surfaces | [CLI](product/agent-control/cli.md), [MCP](product/agent-control/mcp.md), [In-app agent](product/agent-control/agent.md), [Keyboard](product/agent-control/keyboard.md), [Commands](product/agent-control/commands.md) | crate READMEs |
 | Rust safety, structural admission, errors, logging, time and text | [Standards](engineering/standards.md) | - |
 | Ticket loop, research, copy imports, upgrades, commits, provisioning summary | [Workflows](engineering/workflows.md) | - |
 | Checks, tests, fixtures, evidence, reports | [Verification](engineering/verification.md) | - |
