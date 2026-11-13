@@ -42,7 +42,7 @@ pub trait RunStore: Send + Sync {
 pub(super) enum Event {
     Listed(Result<Vec<RunEntry>>),
     Saved(Result<ProjectId>),
-    Loaded(Result<Project>),
+    Loaded(Result<Box<Project>>),
     Removed(Result<()>),
 }
 
@@ -115,7 +115,7 @@ impl Runs {
     pub(super) fn load(&mut self, id: ProjectId) {
         self.loading = true;
         self.spawn(move |store, send| {
-            let _ = send.send(Event::Loaded(store.load(id)));
+            let _ = send.send(Event::Loaded(store.load(id).map(Box::new)));
         });
     }
     pub(super) fn remove(&mut self, id: ProjectId) {

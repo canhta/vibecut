@@ -1,6 +1,6 @@
 # Services
 
-Interface: `playback`, `preview`, `crop`, `color_picker`, `ai_access`, `ai_task`, `remote_models`, `progress`, `text_clipboard`, `lifecycle`, `assets`, `gpu`.
+Interface: `playback`, `preview`, `crop`, `color_picker`, `ai_access`, `ai_task`, `remote_models`, `progress`, `clipboard`, `lifecycle`, `assets`, `gpu`.
 
 What more than one window needs and no window owns. Imports point here from the windows,
 areas, frame and composition root; a services module never names a window, an area or
@@ -15,7 +15,7 @@ areas, frame and composition root; a services module never names a window, an ar
 | `ai_access` | The one desktop composition of provider credentials, the process models cache (opened once) and registry dispatch (`run`): windows send `captions.*`/`clips.*` commands with the `CaptionAccess` an `Opener` builds per run; tests inject the opener. `ModelCache` is the one `ModelTransfers` of the process (opened on first use over the default models root, lent by `Lending`). The model manager and `shorts::installed_faces` both read through it, because the cache root is exclusive and a second open fails busy; a lookup racing an active check or download answers busy and is retried by the next analysis. |
 | `ai_task` | `TaskEvents`: one coalescing progress slot and one exact per-upload consent request, carrying cancellation. |
 | `remote_models` | [Model selection and explicit refresh](remote_models/README.md). |
-| `text_clipboard` | Read-only native text access with injected reader composition; viewport custody belongs to [input](../input/README.md). |
+| `clipboard` | [Clipboard reads](clipboard/README.md): `TextClipboard` and `FileClipboard`. |
 | `progress` | `job_progress` and `line`: the status line with its percentage over the kit progress bar, drawn from an engine snapshot or a surface's own status words. The percentage is now a "Status N%" line above the bar, not text inside it. |
 | `lifecycle` | [Project lifecycle](lifecycle/README.md): `EditorSession`, the editor's memory or autosave-backed engine session. |
 | `assets` | [Asset intake](assets/README.md): the services that bring a new source asset into the project (music library tracks, voice-over takes, frozen stills). |

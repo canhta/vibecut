@@ -57,6 +57,7 @@ Each module's contract is its README.
 | `kit/widgets/` | [Kit widgets](src/kit/widgets/README.md) |
 | `preferences.rs` / `preferences/` | [Preferences](src/preferences/README.md) |
 | `services.rs` / `services/` | [Services](src/services/README.md) |
+| `services/clipboard/` | [Clipboard reads](src/services/clipboard/README.md) |
 | `services/color_picker/` | [Colour picker](src/services/color_picker/README.md) |
 | `services/gpu/` | [GPU adapters](src/services/gpu/README.md) |
 | `services/lifecycle.rs` | [Project lifecycle](src/services/lifecycle/README.md) |

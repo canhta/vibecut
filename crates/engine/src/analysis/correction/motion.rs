@@ -102,10 +102,7 @@ impl Motion {
             let grid_row = y * grid_height / height;
             *row_counts.get_mut(grid_row)? += 1;
             let target = sums.get_mut(grid_row * grid_width..(grid_row + 1) * grid_width)?;
-            for (pixel, &column) in row.chunks_exact(4).zip(&columns) {
-                let &[r, g, b, _] = pixel else {
-                    return None;
-                };
+            for (&[r, g, b, _], &column) in row.as_chunks::<4>().0.iter().zip(&columns) {
                 let luma = (77 * u32::from(r) + 150 * u32::from(g) + 29 * u32::from(b)) >> 8;
                 *target.get_mut(column)? += luma;
             }

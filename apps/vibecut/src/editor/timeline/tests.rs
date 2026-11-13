@@ -1219,6 +1219,7 @@ fn toolbar_cells_never_overlap_at_1000_px() {
         "timeline.crop",
         "timeline.flip_horizontal",
         "timeline.flip_vertical",
+        "timeline.download_clip",
         "timeline.graph",
         "scene.open",
         "voiceover.open",

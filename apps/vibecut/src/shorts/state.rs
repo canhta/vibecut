@@ -821,7 +821,7 @@ impl State {
                 | runs::Event::Saved(Err(e))
                 | runs::Event::Removed(Err(e))
                 | runs::Event::Loaded(Err(e)) => Err(Error::Engine(e)),
-                runs::Event::Loaded(Ok(project)) => self.adopt_run(project),
+                runs::Event::Loaded(Ok(project)) => self.adopt_run(*project),
                 runs::Event::Listed(Ok(_))
                 | runs::Event::Saved(Ok(_))
                 | runs::Event::Removed(Ok(())) => Ok(()),

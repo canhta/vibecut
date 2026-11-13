@@ -772,7 +772,7 @@ impl Session {
                     self,
                     frames,
                     runner,
-                    corrections,
+                    move |settings| corrections.clone().attach(settings),
                 )?)
             }
             Command::FreezeFrame {

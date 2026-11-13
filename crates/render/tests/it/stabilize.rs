@@ -50,9 +50,9 @@ fn rms_motion(positions: &[[[f64; 2]; 4]]) -> f64 {
     let mut sum = 0.0;
     let mut count = 0.0;
     for pair in positions.windows(2) {
-        for corner in 0..4 {
-            for axis in 0..2 {
-                let delta = pair[1][corner][axis] - pair[0][corner][axis];
+        for (after, before) in pair[1].iter().zip(&pair[0]) {
+            for (a, b) in after.iter().zip(before) {
+                let delta = a - b;
                 sum += delta * delta;
                 count += 1.0;
             }
@@ -64,12 +64,10 @@ fn corners() -> [[f64; 2]; 4] {
     let (hx, hy) = (f64::from(GRID[0]) / 2.0, f64::from(GRID[1]) / 2.0);
     [[-hx, -hy], [hx, -hy], [hx, hy], [-hx, hy]]
 }
+/// The four frame corners of each frame, in order.
+type CornerPath = Vec<[[f64; 2]; 4]>;
 /// The corner paths of a clip in the raw footage and after the stabilizer at `level`.
-fn corner_paths(
-    track: &Track,
-    level: StabilizeLevel,
-    frames: usize,
-) -> (Vec<[[f64; 2]; 4]>, Vec<[[f64; 2]; 4]>) {
+fn corner_paths(track: &Track, level: StabilizeLevel, frames: usize) -> (CornerPath, CornerPath) {
     let stabilizer = track.stabilizer(level, whole(frames));
     let mut raw = Vec::new();
     let mut steady = Vec::new();
