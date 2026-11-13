@@ -8,8 +8,8 @@ time; there is no runtime network or font request.
 - Source archive: <https://registry.npmjs.org/@phosphor-icons/core/-/core-2.1.1.tgz>
 - Author: Phosphor Icons
 - Licence: MIT, see [LICENSE](LICENSE)
-- Added: p0-core/39; extended: p1-parity/06, p1-parity/09, p1-parity/54, p1-parity/117, 2026-11-12
-- Files: 68 unmodified `assets/regular/*.svg` files.
+- Added: p0-core/39; extended: p1-parity/06, p1-parity/09, p1-parity/54, p1-parity/117, 2026-11-12, 2026-11-13
+- Files: 69 unmodified `assets/regular/*.svg` files.
 
 SHA-256 of each embedded file:
 
@@ -41,6 +41,7 @@ SHA-256 of each embedded file:
 | `cursor.svg` | `67df1a1f6d7868c4eed4705775cafd972c19a3ff25f99b1b260b525b7c85d1e4` |
 | `diamond.svg` | `c97299f11d98956233202f1b182b5d94de27b122193ad9d4201288472b02b1cd` |
 | `dots-three.svg` | `ca4e748007101155641ec3041cd129bb03a8030d0eed16e313b9dd75e6beac77` |
+| `download-simple.svg` | `c48678aa09b44ba4974954690ee6cc846379c448a7214f8c802604c2a1562014` |
 | `export.svg` | `b3323cae86c93d7a4d344e921dc1500f97a73c66e5d9f0e6c46aab64e4a6f616` |
 | `eye-slash.svg` | `070b0296a7df89ebf4cec12436e323b5531d458aa9aed3608924085889e1fd17` |
 | `eye.svg` | `91d39f20bf95e0f36c07bd79b83a85fe6ff4ca20e2759c4afee7419ef80403fe` |

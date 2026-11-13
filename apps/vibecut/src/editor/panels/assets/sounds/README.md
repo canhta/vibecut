@@ -8,7 +8,10 @@ library and works offline. Searches use the commercial-only filter by default; t
 switch reruns the search without it. Results page 30 at a time and every result shows
 author, duration, licence and precomputed attribution.
 
-Save and unsave are local-library operations outside project history. Preview uses the
+The Music section never calls the music client or library directly for search, save
+or unsave: each runs the `music.search`, `music.save` or `music.unsave` registry
+command through `services::music::run_music` (an empty session per call and the
+library's control adapter, as the CLI does). They are outside project history. Preview uses the
 engine play/stop seam and an app-owned cpal sink on the retained preview worker,
 capped at min(EOF, 120 seconds), including ordinary longer tracks. The continuous
 resampler clips its crossing frame to the remaining stereo capacity and stops
@@ -60,3 +63,15 @@ A header disclosure lists the project's complete used-track credits from
 The settings sheet applies or removes the optional source key for this process only,
 using a masked field and a direct source-terms link; the key never enters project,
 preferences, automation, undo or logs.
+
+Every search request, Browse or Saved, first retires the one in flight (a generation
+check), so a late Browse reply never overwrites Saved or a newer query. One remote
+worker is retained; only the newest later request waits for it. Saved is re-read when
+another window changes the shared library (`MusicLibrary::revision`), keeping this
+window's mode and query. Saved pages by 15 and `Load more` shows for both modes.
+
+An add is an `AddIntent` (track plus the playhead start at click time). The intent
+rides the cache job, a refused timeline add keeps it, and Retry resubmits that exact
+intent: it never reloads search and a later playhead move never retargets it. User
+Cancel drops it. The add slot of an uncached row shows the download glyph labelled
+"Download and add"; a cached row shows Add. Selecting a row never downloads.

@@ -25,3 +25,5 @@ The final callback validates identity/lease/target immediately before rename. Pr
 The genre and mood chips in `CHIPS` are source tags, each sent as `tags=`; the panel labels a chip with the tag itself. Nothing is bundled or mirrored: search, preview, user-initiated save and local cache only.
 
 Container export writes deduplicated attribution, licence, licence URL and source records from every music item into the MP4/WebM `comment` tag through media's bounded muxer metadata seam.
+
+`MusicLibrary::revision` counts committed Saved changes in this process, so another handle on the shared library can tell its copy of Saved is stale without re-reading it.

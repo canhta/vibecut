@@ -186,3 +186,47 @@ fn music_cli_refuses_missing_cache_and_invalid_arguments() {
         Some(2)
     );
 }
+#[test]
+fn music_cli_add_keeps_absolute_media_for_a_relative_project_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("rel.vibecut");
+    assert_eq!(
+        cli(&[os("project"), os("new"), project.as_os_str()])
+            .status
+            .code(),
+        Some(0)
+    );
+    let library = dir.path().join("library");
+    let json = track_json("track-7", "https://cdn.example/7.mp3");
+    assert_eq!(
+        cli(&[os("music"), os("save"), library.as_os_str(), os(&json)])
+            .status
+            .code(),
+        Some(0)
+    );
+    let handle = libraries::music::MusicLibrary::open(&library).unwrap();
+    handle
+        .store_cached("https://cdn.example/7.mp3", &wav_fixture())
+        .unwrap();
+    drop(handle);
+    let output = std::process::Command::new(crate::cli::process::bin())
+        .current_dir(dir.path())
+        .args([
+            os("music"),
+            os("add"),
+            os("rel.vibecut"),
+            library.as_os_str(),
+            os("track-7"),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    let loaded = project::load(&project).unwrap().project;
+    let media = loaded.data().assets[0].path().to_owned();
+    assert!(media.is_absolute(), "{media:?}");
+    assert!(media.is_file(), "{media:?}");
+    assert_eq!(
+        media.parent().unwrap().file_name().unwrap(),
+        "rel.vibecut.media"
+    );
+}

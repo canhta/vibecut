@@ -3,12 +3,12 @@
 //! Provider, cache, persistence and command behaviour stay in `libraries::music`;
 //! this module only presents them and owns the app's device sink composition.
 
-use crate::services::music::MusicSession;
+use crate::services::music::{MusicSession, run_music};
 use crate::{Error, Result};
 use engine::MusicError;
 use engine::{
     ByteBudget,
-    control::Error as EngineError,
+    control::{ControlResult, Error as EngineError},
     jobs::{CancelToken, JobId, JobRunner, JobState, RunnerConfig, SystemClock},
 };
 use libraries::music::{
@@ -24,8 +24,32 @@ use std::{
     },
     time::Duration,
 };
+use time::Tick;
 
 const PAGE_SIZE: u32 = 15;
+
+/// One `music.search` through the registry: Saved reads the local library, a
+/// remote search is approved only when a client is lent.
+fn search_page(
+    library: &libraries::music::MusicLibrary,
+    client: Option<&MusicClient>,
+    budget: &ByteBudget,
+    request: &SearchRequest,
+) -> std::result::Result<SearchPage, EngineError> {
+    let params = serde_json::json!({
+        "query": request.query,
+        "tag": request.tag,
+        "page": request.page,
+        "page_size": request.page_size,
+        "saved": client.is_none(),
+    });
+    match run_music(library, client, budget, "music.search", params)? {
+        ControlResult::MusicSearch { page } => Ok(page.into()),
+        _ => Err(EngineError::Edit(engine::EditError::Invalid(
+            "music.search result",
+        ))),
+    }
+}
 
 /// The two Music views. Saved is the offline library; Browse searches the
 /// open source by tag or free text.
@@ -121,6 +145,8 @@ pub struct MusicView {
     pub results: Vec<MusicResult>,
     pub saved: Vec<SavedMusic>,
     pub saved_ids: BTreeSet<String>,
+    /// Listed tracks whose audio is already in the local cache, so Add needs no download.
+    pub cached_ids: BTreeSet<String>,
     pub page: u32,
     pub count: u64,
     pub has_next: bool,
@@ -132,10 +158,18 @@ pub struct MusicView {
     pub cache: Option<MusicCacheView>,
 }
 
+/// One add as the creator asked for it: the track and the timeline position the
+/// click targeted. Later playhead movement never retargets a retry.
+#[derive(Clone, Debug)]
+pub struct AddIntent {
+    pub music: MusicResult,
+    pub start: Tick,
+}
+
 struct CacheJob {
     id: JobId,
     cancel: CancelToken,
-    music: MusicResult,
+    intent: AddIntent,
     progress: f32,
     cancelling: bool,
 }
@@ -149,6 +183,7 @@ pub struct Music {
     /// Whether this presentation may run remote searches at all.
     online: bool,
     key_generation: u64,
+    budget: ByteBudget,
     downloads: Arc<MusicDownloads>,
     preview: Arc<MusicPreview>,
     runner: JobRunner,
@@ -163,11 +198,18 @@ pub struct Music {
     searching: bool,
     searched: bool,
     search_generation: u64,
-    search_rx: Option<Receiver<(u64, std::result::Result<SearchPage, MusicError>)>>,
+    search_rx: Option<Receiver<(u64, std::result::Result<SearchPage, EngineError>)>>,
+    /// The one retained remote search worker. A newer request waits in
+    /// `search_pending` (only the newest is kept) until it finishes.
+    search_worker: Option<std::thread::JoinHandle<()>>,
+    search_pending: Option<SearchRequest>,
     search_problem: Option<MusicProblem>,
     saved: Vec<SavedMusic>,
     saved_ids: BTreeSet<String>,
+    cached_ids: BTreeSet<String>,
     saved_problem: Option<MusicProblem>,
+    /// The shared library revision this presentation last read Saved at.
+    saved_revision: u64,
     previewing: Option<String>,
     preview_rx: Option<Receiver<std::result::Result<(), MusicError>>>,
     preview_worker: Option<std::thread::JoinHandle<()>>,
@@ -178,8 +220,8 @@ pub struct Music {
     cache_problem: Option<MusicProblem>,
     /// The track whose add failed, retained so Retry resubmits it rather than
     /// reloading search or losing the creator's target.
-    failed_add: Option<MusicResult>,
-    ready_add: Option<MusicResult>,
+    failed_add: Option<AddIntent>,
+    ready_add: Option<AddIntent>,
 }
 
 impl Music {
@@ -228,9 +270,10 @@ impl Music {
                 backoff: Duration::from_millis(250),
                 progress_interval: Duration::from_millis(20),
             },
-            budget,
+            budget.clone(),
             Arc::new(SystemClock::default()),
         )?;
+        let saved_revision = session.library().revision();
         let saved = session
             .library()
             .saved()
@@ -245,6 +288,7 @@ impl Music {
             client_override,
             online,
             key_generation,
+            budget,
             downloads,
             preview,
             runner,
@@ -260,10 +304,14 @@ impl Music {
             searched: false,
             search_generation: 0,
             search_rx: None,
+            search_worker: None,
+            search_pending: None,
             search_problem: None,
             saved,
             saved_ids,
+            cached_ids: BTreeSet::new(),
             saved_problem: None,
+            saved_revision,
             previewing: None,
             preview_rx: None,
             preview_worker: None,
@@ -308,9 +356,7 @@ impl Music {
             .clone()
             .or_else(|| self.online.then(|| self.session.client()));
         self.key_generation = self.session.generation();
-        self.search_generation = self.search_generation.wrapping_add(1);
-        self.search_rx = None;
-        self.searching = false;
+        self.cancel_search();
         self.searched = false;
         self.results.clear();
         self.page = 1;
@@ -349,24 +395,57 @@ impl Music {
         };
         self.search_problem = None;
         self.searched = true;
+        // Every request first retires whatever search was in flight, so a late
+        // Browse reply can never overwrite a Saved page or a newer query.
+        self.cancel_search();
         if mode == MusicMode::Saved || self.client.is_none() {
-            self.apply_page(self.session.library().search_local(&request), more);
+            let page = search_page(self.session.library(), None, &self.budget, &request);
+            self.apply_page(page, more);
             return;
         }
+        self.search_pending = Some(request);
+        self.searching = true;
+        self.start_search();
+    }
+
+    /// Retire the in-flight and pending remote search. The worker, if any, is
+    /// retained until it finishes; its reply has nowhere to go.
+    fn cancel_search(&mut self) {
+        self.search_generation = self.search_generation.wrapping_add(1);
+        self.search_rx = None;
+        self.search_pending = None;
+        self.searching = false;
+    }
+
+    /// Run the newest pending search once the single worker slot is free.
+    fn start_search(&mut self) {
+        if self.search_worker.is_some() {
+            return;
+        }
+        let Some(request) = self.search_pending.take() else {
+            return;
+        };
         let Some(client) = self.client.clone() else {
+            self.searching = false;
             return;
         };
         let (tx, rx) = mpsc::channel();
-        self.search_generation = self.search_generation.wrapping_add(1);
         let generation = self.search_generation;
+        let library = self.session.library().clone();
+        let budget = self.budget.clone();
         let spawned = std::thread::Builder::new()
             .name("vibecut-music-search".into())
             .spawn(move || {
-                let _ = tx.send((generation, client.search(&request)));
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    search_page(&library, Some(&client), &budget, &request)
+                }))
+                .unwrap_or(Err(EngineError::Music(MusicError::InvalidResponse)));
+                let _ = tx.send((generation, result));
             });
         match spawned {
-            Ok(_) => {
+            Ok(worker) => {
                 self.searching = true;
+                self.search_worker = Some(worker);
                 self.search_rx = Some(rx);
             }
             Err(_) => {
@@ -384,7 +463,27 @@ impl Music {
         self.search(&query, mode, chip, true);
     }
 
-    fn apply_page(&mut self, page: std::result::Result<SearchPage, MusicError>, append: bool) {
+    /// Re-stat the listed tracks' cache files; display only, an add re-verifies.
+    fn refresh_cached(&mut self) {
+        let library = self.session.library();
+        self.cached_ids = self
+            .results
+            .iter()
+            .filter(|music| library.cache_path(&music.audio_url).is_file())
+            .map(|music| music.id.clone())
+            .collect();
+    }
+
+    fn apply_page(&mut self, page: std::result::Result<SearchPage, EngineError>, append: bool) {
+        self.apply_page_rows(page, append);
+        self.refresh_cached();
+    }
+
+    fn apply_page_rows(
+        &mut self,
+        page: std::result::Result<SearchPage, EngineError>,
+        append: bool,
+    ) {
         self.searching = false;
         match page {
             Ok(page) => {
@@ -399,12 +498,14 @@ impl Music {
                 self.source = page.source;
             }
             Err(error) => {
-                self.search_problem = Some(MusicProblem::from_error(&error));
+                self.search_problem = Some(MusicProblem::from_edit(&error));
             }
         }
     }
 
     pub fn refresh_saved(&mut self) {
+        // Read the revision first: a change racing this read is seen next tick.
+        self.saved_revision = self.session.library().revision();
         match self.session.library().saved() {
             Ok(saved) => {
                 self.saved_ids = saved.iter().map(|item| item.music.id.clone()).collect();
@@ -423,26 +524,38 @@ impl Music {
             .cloned()
     }
 
-    /// Save or unsave one track; the local library owns both operations.
+    /// Save or unsave one track through the `music.save` and `music.unsave`
+    /// registry commands.
     pub fn toggle_saved(&mut self, id: &str) {
         let Some(music) = self.music(id) else {
             self.saved_problem = Some(MusicProblem::Library);
             return;
         };
-        let result = if self.saved_ids.contains(id) {
-            self.session.library().unsave(id).map(|_| ())
+        let (command, params) = if self.saved_ids.contains(id) {
+            ("music.unsave", serde_json::json!({"id": id}))
         } else {
-            self.session.library().save(&music).map(|_| ())
+            (
+                "music.save",
+                serde_json::json!({"music": engine::control::MusicEntry::from(music)}),
+            )
         };
+        let result = run_music(
+            self.session.library(),
+            None,
+            &self.budget,
+            command,
+            params,
+        );
         match result {
-            Ok(()) => {
+            Ok(_) => {
                 self.saved_problem = None;
                 self.refresh_saved();
                 if self.mode == MusicMode::Saved {
                     self.reload_saved();
                 }
+                self.refresh_cached();
             }
-            Err(error) => self.saved_problem = Some(MusicProblem::from_error(&error)),
+            Err(error) => self.saved_problem = Some(MusicProblem::from_edit(&error)),
         }
     }
 
@@ -453,7 +566,8 @@ impl Music {
             page: 1,
             page_size: PAGE_SIZE.min(20),
         };
-        self.apply_page(self.session.library().search_local(&request), false);
+        let page = search_page(self.session.library(), None, &self.budget, &request);
+        self.apply_page(page, false);
     }
 
     pub fn play(&mut self, id: &str) {
@@ -517,40 +631,43 @@ impl Music {
 
     /// Queue a cache job for an add that has no local audio yet. The editor
     /// consumes `take_ready_add` after the job publishes complete audio.
-    pub fn request_add(&mut self, music: MusicResult) {
+    pub fn request_add(&mut self, intent: AddIntent) {
         if self.cache.is_some() {
             self.cache_problem = Some(MusicProblem::CacheBusy);
             return;
         }
-        match self.session.library().cached(&music.audio_url) {
+        match self.session.library().cached(&intent.music.audio_url) {
             Ok(Some(_)) => {
                 self.cache_problem = None;
                 self.failed_add = None;
-                self.ready_add = Some(music);
+                self.ready_add = Some(intent);
                 return;
             }
             Ok(None) => {}
             Err(error) => {
                 self.cache_problem = Some(MusicProblem::from_error(&error));
-                self.failed_add = Some(music);
+                self.failed_add = Some(intent);
                 return;
             }
         }
-        match self.downloads.submit(&mut self.runner, &music.audio_url) {
+        match self
+            .downloads
+            .submit(&mut self.runner, &intent.music.audio_url)
+        {
             Ok((id, cancel)) => {
                 self.cache_problem = None;
                 self.failed_add = None;
                 self.cache = Some(CacheJob {
                     id,
                     cancel,
-                    music,
+                    intent,
                     progress: 0.0,
                     cancelling: false,
                 });
             }
             Err(error) => {
                 self.cache_problem = Some(MusicProblem::from_edit(&error));
-                self.failed_add = Some(music);
+                self.failed_add = Some(intent);
             }
         }
     }
@@ -560,22 +677,25 @@ impl Music {
             cache.cancel.cancel();
             cache.cancelling = true;
         }
+        self.failed_add = None;
     }
 
     /// Resubmit the retained failed add with its original track and target.
     pub fn retry_add(&mut self) {
-        if let Some(music) = self.failed_add.take() {
+        if let Some(intent) = self.failed_add.take() {
             self.cache_problem = None;
-            self.request_add(music);
+            self.request_add(intent);
         }
     }
 
-    pub fn take_ready_add(&mut self) -> Option<MusicResult> {
+    pub fn take_ready_add(&mut self) -> Option<AddIntent> {
         self.ready_add.take()
     }
 
-    pub fn add_failed(&mut self, problem: MusicProblem) {
+    /// Record a refused timeline add and retain its intent for Retry.
+    pub fn add_failed(&mut self, intent: AddIntent, problem: MusicProblem) {
         self.cache_problem = Some(problem);
+        self.failed_add = Some(intent);
     }
 
     pub fn cached(&self, music: &MusicResult) -> Option<CachedMusic> {
@@ -602,6 +722,14 @@ impl Music {
             self.cache_problem = Some(MusicProblem::from_edit(&error.into()));
             self.cache = None;
         }
+        if self.saved_revision != self.session.library().revision() {
+            // Another window saved or unsaved: re-read, keeping this window's mode.
+            self.refresh_saved();
+            if self.mode == MusicMode::Saved {
+                self.reload_saved();
+            }
+            self.refresh_cached();
+        }
         if let Some(rx) = &self.search_rx {
             match rx.try_recv() {
                 Ok((generation, page)) => {
@@ -618,6 +746,16 @@ impl Music {
                 }
                 Err(TryRecvError::Empty) => {}
             }
+        }
+        if self
+            .search_worker
+            .as_ref()
+            .is_some_and(|worker| worker.is_finished())
+        {
+            if let Some(worker) = self.search_worker.take() {
+                let _ = worker.join(); // The worker catches panics into its reply.
+            }
+            self.start_search();
         }
         if self
             .preview_worker
@@ -651,7 +789,7 @@ impl Music {
             }
             self.start_preview();
         }
-        let (music, cancelling, state, error, progress) = {
+        let (intent, cancelling, state, error, progress) = {
             let Some(cache) = self.cache.as_ref() else {
                 return Ok(());
             };
@@ -659,7 +797,7 @@ impl Music {
                 return Ok(());
             };
             (
-                cache.music.clone(),
+                cache.intent.clone(),
                 cache.cancelling,
                 snapshot.state,
                 snapshot.error.clone(),
@@ -672,21 +810,22 @@ impl Music {
         match state {
             JobState::Completed => {
                 self.cache = None;
-                match self.session.library().cached(&music.audio_url) {
+                self.refresh_cached();
+                match self.session.library().cached(&intent.music.audio_url) {
                     Ok(Some(_)) => {
                         self.failed_add = None;
-                        self.ready_add = Some(music);
+                        self.ready_add = Some(intent);
                     }
                     Ok(None) | Err(_) => {
                         self.cache_problem = Some(MusicProblem::CacheFailed);
-                        self.failed_add = Some(music);
+                        self.failed_add = Some(intent);
                     }
                 }
             }
             JobState::Failed | JobState::Cancelled => {
                 self.cache = None;
                 if state == JobState::Failed {
-                    self.failed_add = Some(music.clone());
+                    self.failed_add = Some(intent);
                 }
                 if !cancelling && state == JobState::Failed {
                     self.cache_problem = Some(
@@ -722,6 +861,7 @@ impl Music {
             results: self.results.clone(),
             saved: self.saved.clone(),
             saved_ids: self.saved_ids.clone(),
+            cached_ids: self.cached_ids.clone(),
             page: self.page,
             count: self.count,
             has_next: self.has_next,
@@ -731,7 +871,7 @@ impl Music {
             cache_problem: self.cache_problem,
             saved_problem: self.saved_problem,
             cache: self.cache.as_ref().map(|cache| MusicCacheView {
-                id: cache.music.id.clone(),
+                id: cache.intent.music.id.clone(),
                 progress: cache.progress,
                 cancelling: cache.cancelling,
             }),

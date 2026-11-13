@@ -174,6 +174,9 @@ pub struct MusicLibrary {
     audio: OwnedDirectory,
     lease: project::WriterLease,
     state: Mutex<Vec<SavedMusic>>,
+    /// Bumped on every committed Saved change, so another handle on this shared
+    /// library can tell its copy of Saved is stale without re-reading it.
+    revision: AtomicU64,
     operation: AtomicBool,
 }
 

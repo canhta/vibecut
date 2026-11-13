@@ -1,8 +1,8 @@
 //! Applies the Music section's provider, cache, key and add workflows.
+use super::super::sounds::music::AddIntent;
 use crate::editor::{Editor, Result};
 use crate::services::music::MusicSession;
 use engine::CreatedId;
-use libraries::music::MusicResult;
 use std::path::PathBuf;
 use time::Tick;
 
@@ -46,12 +46,15 @@ impl Editor {
         if let Some(message) = failure {
             self.desk().fail(message);
         }
-        let Some(music) = ready else {
+        let Some(intent) = ready else {
             return;
         };
-        if let Err(error) = self.add_music_to_timeline(&music) {
+        if let Err(error) = self.add_music_to_timeline(&intent) {
             if let Some(music) = &mut self.music {
-                music.add_failed(super::super::sounds::music::MusicProblem::from_app(&error));
+                music.add_failed(
+                    intent,
+                    super::super::sounds::music::MusicProblem::from_app(&error),
+                );
             }
             self.desk().fail(error.to_string());
         }
@@ -156,37 +159,45 @@ impl Editor {
         let Some(track) = self.music.as_ref().and_then(|state| state.music(id)) else {
             return;
         };
+        // The target is fixed at click time, so a later playhead move or a retry
+        // never retargets this add.
+        let intent = AddIntent {
+            music: track,
+            start: self.playback.position().unwrap_or(Tick::ZERO),
+        };
         if self
             .music
             .as_ref()
-            .is_some_and(|state| state.cached(&track).is_some())
+            .is_some_and(|state| state.cached(&intent.music).is_some())
         {
-            if let Err(error) = self.add_music_to_timeline(&track) {
+            if let Err(error) = self.add_music_to_timeline(&intent) {
                 if let Some(state) = &mut self.music {
-                    state.add_failed(super::super::sounds::music::MusicProblem::from_app(&error));
+                    state.add_failed(
+                        intent,
+                        super::super::sounds::music::MusicProblem::from_app(&error),
+                    );
                 }
                 self.desk().fail(error.to_string());
             }
         } else if let Some(state) = &mut self.music {
-            state.request_add(track);
+            state.request_add(intent);
         }
     }
 
-    fn add_music_to_timeline(&mut self, music: &MusicResult) -> Result<()> {
+    fn add_music_to_timeline(&mut self, intent: &AddIntent) -> Result<()> {
         let cached = self
             .music
             .as_ref()
-            .and_then(|state| state.cached(music))
+            .and_then(|state| state.cached(&intent.music))
             .ok_or(crate::Error::Invalid("music cache"))?;
         let media = self.music_media_path();
-        let start = self.playback.position().unwrap_or(Tick::ZERO);
         let outcome = libraries::music::add_to_timeline(
             &mut self.session,
-            music,
+            &intent.music,
             &cached,
             &media,
             engine::Placement::Auto,
-            start,
+            intent.start,
         )?;
         if let Some(CreatedId::Item(item)) = outcome
             .created

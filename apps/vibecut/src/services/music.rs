@@ -4,6 +4,11 @@
 //! Preferences, a project, automation, undo or a log; `Debug` is redacted and the
 //! key is sent only as a bearer header by the library's transport.
 use crate::{Error, Result};
+use engine::{
+    ByteBudget, Command, Session,
+    control::{API_VERSION, Caller, ControlResult, Policy, Request, registry_hash},
+    jobs::{JobRunner, RunnerConfig, SystemClock},
+};
 use libraries::music::{MusicClient, MusicLibrary, MusicToken};
 use std::sync::{
     Arc, Mutex,
@@ -76,6 +81,82 @@ impl MusicSession {
             Err(_) => MusicClient::ureq(None),
         }
     }
+}
+
+/// The desktop is the trusted composition root of its own music requests.
+struct Trusted;
+impl Policy for Trusted {
+    fn authorize(&self, _: &Command, _: &project::Project) -> engine::control::Result<()> {
+        Ok(())
+    }
+}
+
+/// Run one `music.*` registry command over `library`, the way the CLI does: an
+/// empty workflow session per call and the library adapter as the lent access.
+/// `remote` is the scoped approval for a deliberate remote search; Saved, save and
+/// unsave pass `None` and never resolve a client. Callable from any thread.
+pub fn run_music(
+    library: &MusicLibrary,
+    remote: Option<&MusicClient>,
+    budget: &ByteBudget,
+    command: &str,
+    params: serde_json::Value,
+) -> engine::control::Result<ControlResult> {
+    let mut session = Session::new(
+        project::Project::empty(project::ProjectId(0), String::new().into())?,
+        1,
+    )
+    .map_err(engine::control::Error::Edit)?;
+    let mut runner = JobRunner::new(
+        RunnerConfig {
+            concurrency: [1, 1, 1],
+            queue: 1,
+            retained: 1,
+            network_attempts: 1,
+            backoff: std::time::Duration::from_millis(250),
+            progress_interval: std::time::Duration::from_millis(50),
+        },
+        budget.clone(),
+        Arc::new(SystemClock::default()),
+    )?;
+    let request = Request {
+        api_version: API_VERSION,
+        registry_hash: Some(registry_hash().into()),
+        session_id: session.session_id().into(),
+        request_id: command.into(),
+        idempotency_key: None,
+        base_rev: None,
+        command: command.into(),
+        params,
+    };
+    let resolve = remote.map(|client| move || -> libraries::music::Music<MusicClient> {
+        Ok(client.clone())
+    });
+    let approval = resolve
+        .as_ref()
+        .map(|resolve| resolve as &dyn Fn() -> libraries::music::Music<MusicClient>);
+    let result = library.with_control(approval, |access| {
+        session.control_typed(
+            request,
+            Caller {
+                principal: "vibecut-desktop",
+                external: false,
+                policy: &Trusted,
+                fonts: None,
+                sounds: None,
+                music: Some(access),
+                stickers: None,
+                brand: None,
+                media: None,
+                chapters: None,
+                captions: None,
+                vision: None,
+            },
+            &mut runner,
+        )
+    });
+    runner.shutdown();
+    result
 }
 
 impl std::fmt::Debug for MusicSession {

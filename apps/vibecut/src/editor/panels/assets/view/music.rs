@@ -402,7 +402,7 @@ impl View<'_> {
             egui::Sense::hover(),
         );
         let dark = self.cx.preferences.dark;
-        let cached = view
+        let caching = view
             .cache
             .as_ref()
             .is_some_and(|cache| cache.id == music.id);
@@ -486,7 +486,7 @@ impl View<'_> {
             FontId::proportional(theme::type_size::SMALL_LABEL),
             theme::secondary(dark),
         );
-        if cached && let Some(cache) = &view.cache {
+        if caching && let Some(cache) = &view.cache {
             let bar = Rect::from_min_max(
                 egui::pos2(rect.left() + 8.0, rect.bottom() - 3.0),
                 egui::pos2(rect.right() - 8.0, rect.bottom() - 1.0),
@@ -520,7 +520,7 @@ impl View<'_> {
             egui::pos2(start + 28.0, rect.center().y - 12.0),
             Vec2::splat(24.0),
         );
-        if cached {
+        if caching {
             if self.music_button(
                 ui,
                 add,
@@ -535,8 +535,17 @@ impl View<'_> {
             ui,
             add,
             &format!("music.add.{}", music.id),
-            Icon::Plus,
-            Text::MusicAdd,
+            // An uncached track downloads first; selecting a row never downloads.
+            if view.cached_ids.contains(&music.id) {
+                Icon::Plus
+            } else {
+                Icon::DownloadSimple
+            },
+            if view.cached_ids.contains(&music.id) {
+                Text::MusicAdd
+            } else {
+                Text::MusicDownloadAdd
+            },
             false,
         ) {
             self.actions.push(Action::MusicAdd(music.id.clone()));
