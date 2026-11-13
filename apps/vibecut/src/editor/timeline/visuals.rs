@@ -144,6 +144,12 @@ impl Media {
         self.proxies.request(action, assets, self.access.as_ref());
     }
 
+    /// Test seam: script the cache projection a maintenance worker would have written.
+    #[cfg(test)]
+    pub(in crate::editor) fn script_cache(&mut self, cache: CacheUi) {
+        self.cache = cache;
+    }
+
     pub(in crate::editor) fn cache_ui(&self) -> CacheUi {
         let mut ui = self.cache.clone();
         ui.proxy = self.proxies.ui();

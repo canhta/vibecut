@@ -447,6 +447,11 @@ impl State {
     pub(in crate::editor) fn cache_ui(&self) -> crate::editor::context::CacheUi {
         self.media.cache_ui()
     }
+    /// Test seam: script the Settings cache rows without a maintenance worker.
+    #[cfg(test)]
+    pub(in crate::editor) fn script_cache(&mut self, cache: crate::editor::context::CacheUi) {
+        self.media.script_cache(cache);
+    }
     /// The display queries the context lends to every area.
     pub(in crate::editor) fn visuals(&self) -> &dyn crate::editor::context::VisualQuery {
         &self.media

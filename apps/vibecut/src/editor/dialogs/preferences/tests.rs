@@ -383,6 +383,111 @@ fn settings_modal_applies_preferences_and_shortcut_transfers_through_the_picker_
 }
 
 #[test]
+fn settings_cache_rows_show_clearing_disabled_clear_and_bytes_freed() {
+    use crate::editor::context::{CachePhase, CacheUi};
+    for locale in [Locale::En, Locale::Vi] {
+        let http = Arc::new(Reply {
+            calls: AtomicUsize::new(0),
+            body: Mutex::new(Vec::new()),
+            status: 200,
+        });
+        let mut bench = bench(locale, http);
+        bench.editor_mut().dialogs.preferences.open = true;
+        bench.editor_mut().dialogs.preferences.models_open = false;
+        bench.harness_mut().run_steps(4);
+        bench.click("settings.tab.performance");
+        // A maintenance worker is clearing: the row says so and clear cannot start another.
+        bench.editor_mut().timeline.script_cache(CacheUi {
+            phase: CachePhase::Clearing,
+            ..Default::default()
+        });
+        bench.harness_mut().run_steps(2);
+        assert!(
+            bench
+                .harness()
+                .query_by_label(Text::CacheClearing.text(locale))
+                .is_some()
+        );
+        bench.click("settings.performance.cache.clear");
+        bench.harness_mut().run_steps(2);
+        assert_eq!(
+            bench.editor().timeline.cache_ui().phase,
+            CachePhase::Clearing,
+            "a disabled clear button starts no request"
+        );
+        // A finished clear reports the bytes it freed and what is still in use.
+        let mut report = engine::cache::CacheMaintenanceReport::default();
+        report.removed_bytes = 3 << 20;
+        report.disk_bytes = 5 << 20;
+        report.in_use = 1;
+        bench.editor_mut().timeline.script_cache(CacheUi {
+            phase: CachePhase::Idle,
+            report: Some(Arc::new(report)),
+            ..Default::default()
+        });
+        bench.harness_mut().run_steps(2);
+        let freed = crate::i18n::format(
+            locale,
+            Text::SettingsCacheFreed,
+            &[
+                ("freed", &"3".to_string()),
+                ("after", &"2".to_string()),
+                ("kept", &"1".to_string()),
+            ],
+        );
+        assert!(bench.harness().query_by_label(&freed).is_some());
+    }
+}
+
+#[test]
+fn settings_clear_during_an_active_job_reports_busy_end_to_end() {
+    use crate::editor::context::CachePhase;
+    for locale in [Locale::En, Locale::Vi] {
+        let http = Arc::new(Reply {
+            calls: AtomicUsize::new(0),
+            body: Mutex::new(Vec::new()),
+            status: 200,
+        });
+        let mut bench = bench(locale, http);
+        // The real media cache: the active job holds its lock while Settings clears.
+        let dir = tempfile::tempdir().unwrap();
+        let budget = engine::ByteBudget::new(64 << 20).unwrap();
+        let (artifacts, _) =
+            engine::cache::ArtifactCache::open(&dir.path().join("waveform"), budget.clone(), 128)
+                .unwrap();
+        let thumbnails = engine::thumbnails::ThumbnailCache::open(
+            &dir.path().join("thumbnails"),
+            budget.clone(),
+            128,
+        )
+        .unwrap();
+        let access = Arc::new(Mutex::new(engine::control::MediaAccess::new(
+            artifacts,
+            thumbnails,
+            engine::luts::LutStore::open(&dir.path().join("luts")).unwrap(),
+        )));
+        bench.editor_mut().set_media(access.clone());
+        bench.editor_mut().dialogs.preferences.open = true;
+        bench.editor_mut().dialogs.preferences.models_open = false;
+        bench.harness_mut().run_steps(4);
+        bench.click("settings.tab.performance");
+        let job = access.lock().unwrap();
+        bench.click("settings.performance.cache.clear");
+        bench.harness_mut().run_steps(2);
+        let cache = bench.editor().timeline.cache_ui();
+        assert_eq!(cache.phase, CachePhase::Failed);
+        assert!(matches!(cache.problem(), Some(Text::CacheBusy)));
+        assert!(
+            bench
+                .harness()
+                .query_by_label(Text::CacheBusy.text(locale))
+                .is_some()
+        );
+        drop(job);
+    }
+}
+
+#[test]
 fn cache_problem_names_a_busy_clear_typed() {
     use crate::editor::context::CacheUi;
     let busy = CacheUi {
