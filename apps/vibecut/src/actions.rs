@@ -865,7 +865,7 @@ mod tests {
             .set_action("timeline.split", Vec::new())
             .unwrap();
         store.save(&preferences).unwrap();
-        let loaded = store.load().unwrap();
+        let loaded = store.load_with_warning().0;
         assert_eq!(loaded.keybindings, preferences.keybindings);
         assert!(loaded.keybindings.is_customized.contains("timeline.snap"));
         assert!(loaded.keybindings.is_customized.contains("timeline.ripple"));

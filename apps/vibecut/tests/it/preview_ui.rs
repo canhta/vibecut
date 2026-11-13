@@ -901,7 +901,7 @@ fn zoom_and_fit_and_snapshot_directory_round_trip_through_the_store() {
         ..Default::default()
     };
     store.save(&prefs).unwrap();
-    assert_eq!(store.load().unwrap(), prefs);
+    assert_eq!(store.load_with_warning().0, prefs);
 
     let mut h = build(editor(
         project(FrameRate::FPS_30, 640, 360, false),
@@ -915,7 +915,7 @@ fn zoom_and_fit_and_snapshot_directory_round_trip_through_the_store() {
         .unwrap();
     prefs = h.state().preferences.clone();
     store.save(&prefs).unwrap();
-    let restored = store.load().unwrap();
+    let restored = store.load_with_warning().0;
     assert!(!restored.preview_fit);
     assert!((restored.preview_zoom - 1.25).abs() < 1e-6);
     assert_eq!(restored.snapshot_directory, prefs.snapshot_directory);
@@ -928,7 +928,7 @@ fn zoom_and_fit_and_snapshot_directory_round_trip_through_the_store() {
     h.state_mut().snapshot_picked_file(out.clone()).unwrap();
     let saved = h.state().preferences.clone();
     store.save(&saved).unwrap();
-    let restored = store.load().unwrap();
+    let restored = store.load_with_warning().0;
     assert_eq!(restored.snapshot_directory, Some(dir.path().to_path_buf()));
     assert_eq!(
         h.state().inspect().unwrap().snapshot_saved,

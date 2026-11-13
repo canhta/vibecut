@@ -1108,7 +1108,7 @@ fn picker_hex_hsv_recents_unavailable_and_screenshot() {
     let store = PreferenceStore::new(dir.path().join("prefs.json"));
     store.save(&harness.state().preferences).unwrap();
     assert_eq!(
-        store.load().unwrap().recent_colors,
+        store.load_with_warning().0.recent_colors,
         harness.state().preferences.recent_colors
     );
     assert_eq!(
@@ -2622,7 +2622,7 @@ fn assets_tabs_switch_views_and_persist_with_the_app_store() {
     assert!(has_widget(&harness, "file.import"));
     click(&mut harness, "assets.tab.captions");
     store.save(&harness.state().preferences).unwrap();
-    let restored = store.load().unwrap();
+    let restored = store.load_with_warning().0;
     assert_eq!(restored.assets_tab, AssetsTab::Captions);
     let mut restarted = build(fixture().editor);
     restarted.state_mut().preferences = restored;
@@ -2645,7 +2645,7 @@ fn active_tab_memory_round_trips_through_the_store() {
     select(&mut harness, image);
     click(&mut harness, "inspector.tab.adjust");
     store.save(&harness.state().preferences).unwrap();
-    let restored = store.load().unwrap();
+    let restored = store.load_with_warning().0;
     assert_eq!(
         restored.properties_tabs.get("image").map(String::as_str),
         Some("adjust")

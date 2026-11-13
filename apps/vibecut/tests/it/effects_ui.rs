@@ -1868,7 +1868,7 @@ fn effect_preferences_round_trip_through_the_app_store() {
     harness.run_steps(3);
     click(&mut harness, "assets.tab.effects");
     store.save(&harness.state().preferences).unwrap();
-    let restored = store.load().unwrap();
+    let restored = store.load_with_warning().0;
     assert_eq!(restored.assets_tab, vibecut::AssetsTab::Effects);
 }
 

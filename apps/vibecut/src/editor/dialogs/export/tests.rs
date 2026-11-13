@@ -282,7 +282,7 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
         assert!(!bench.editor().preferences.export.include_audio);
         store.save(&bench.editor().preferences).unwrap();
         assert_eq!(
-            store.load().unwrap().export,
+            store.load_with_warning().0.export,
             bench.editor().preferences.export
         );
         bench.click("export.close");
@@ -761,7 +761,7 @@ fn filenames_are_sanitized_and_export_preferences_roundtrip() {
         ..Default::default()
     };
     store.save(&preferences).unwrap();
-    let loaded = store.load().unwrap();
+    let loaded = store.load_with_warning().0;
     assert_eq!(loaded.export, options);
     assert_eq!(loaded.export_directory, preferences.export_directory);
 }
@@ -853,7 +853,7 @@ fn export_output_panel_persists_scene_range_refuses_empty_and_never_edits_projec
     let store = PreferenceStore::new(dir.path().join("prefs.json"));
     store.save(&bench.editor().preferences).unwrap();
     assert_eq!(
-        store.load().unwrap().export,
+        store.load_with_warning().0.export,
         bench.editor().preferences.export
     );
     let options = bench.editor().preferences.export;

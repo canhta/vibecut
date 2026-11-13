@@ -284,7 +284,7 @@ fn view_and_sort_toggle_through_real_widgets_and_round_trip_through_the_store() 
     );
 
     store.save(&harness.state().preferences).unwrap();
-    let restored = store.load().unwrap();
+    let restored = store.load_with_warning().0;
     assert_eq!(restored.media_view, MediaView::List);
     assert_eq!(restored.media_sort.key, MediaSortKey::Size);
     assert_eq!(restored.media_sort.order, MediaSortOrder::Asc);

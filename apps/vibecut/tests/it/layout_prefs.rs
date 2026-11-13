@@ -232,7 +232,7 @@ fn splitter_drags_clamp_boundaries_and_restore_after_restart() {
 
     harness.state_mut().preferences.panels = [0.30, 0.20, 0.45];
     store.save(&harness.state().preferences).unwrap();
-    let restored = store.load().unwrap();
+    let restored = store.load_with_warning().0;
     let mut restarted = build(editor(restored.clone()));
     restarted.run_steps(3);
     let media = restarted.state().panels()["media"].width();
@@ -280,7 +280,7 @@ fn property_sections_collapse_expand_and_persist_per_key() {
             .section_open("inspector.canvas", false)
     );
     store.save(&harness.state().preferences).unwrap();
-    let restored = store.load().unwrap();
+    let restored = store.load_with_warning().0;
     assert!(restored.section_open("inspector.canvas", false));
     assert!(!restored.section_open("inspector.metadata", false));
 }
@@ -330,7 +330,7 @@ fn invalid_section_edits_are_atomic_and_do_not_enter_history() {
         let dir = tempfile::tempdir().unwrap();
         let store = PreferenceStore::new(dir.path().join("prefs.json"));
         store.save(&editor.preferences).unwrap();
-        assert_eq!(store.load().unwrap(), editor.preferences);
+        assert_eq!(store.load_with_warning().0, editor.preferences);
     }
 }
 
@@ -438,13 +438,13 @@ fn window_geometry_is_independent_bounded_and_persisted_outside_project_history(
         .windows
         .insert("editor.2".into(), second.clone());
     store.save(&preferences).unwrap();
-    let loaded = store.load().unwrap();
+    let loaded = store.load_with_warning().0;
     assert_eq!(loaded.windows.get("editor.1"), Some(&first));
     assert_eq!(loaded.windows.get("editor.2"), Some(&second));
     for bad in [f32::NAN, f32::INFINITY, 0.0, 16385.0] {
         preferences.windows.get_mut("editor.1").unwrap().size[0] = bad;
         assert!(preferences.validate().is_err());
         assert!(store.save(&preferences).is_err());
-        assert_eq!(store.load().unwrap(), loaded);
+        assert_eq!(store.load_with_warning().0, loaded);
     }
 }

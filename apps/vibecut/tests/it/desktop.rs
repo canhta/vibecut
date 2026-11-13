@@ -14,7 +14,7 @@ use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
     Editor, egui,
     i18n::Locale,
-    preferences::{PreferenceStore, Preferences},
+    preferences::{PreferenceIssue, PreferenceStore, Preferences},
     services::lifecycle::EditorAction,
     services::playback::{Files, Playback},
 };
@@ -618,9 +618,9 @@ fn preference_store_roundtrips_locale_and_refuses_hostile_size() {
         ..Default::default()
     };
     store.save(&p).unwrap();
-    assert_eq!(store.load().unwrap().locale, Locale::Vi);
+    assert_eq!(store.load_with_warning().0.locale, Locale::Vi);
     std::fs::write(store.path(), vec![b' '; 4097]).unwrap();
-    assert!(store.load().is_err());
+    assert_eq!(store.load_with_warning().1, Some(PreferenceIssue::Read));
 }
 
 struct PanickingSources;

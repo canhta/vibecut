@@ -1900,11 +1900,11 @@ fn capabilities_locale_and_choices_persist_without_loading_models() {
     let store = PreferenceStore::new(dir.path().join("prefs.json"));
     store.save(&h.state().preferences).unwrap();
     assert_eq!(
-        store.load().unwrap().subtitles,
+        store.load_with_warning().0.subtitles,
         h.state().preferences.subtitles
     );
     assert_eq!(
-        store.load().unwrap().subtitles.source_for(project),
+        store.load_with_warning().0.subtitles.source_for(project),
         "en",
         "the spoken-language choice persists per project"
     );

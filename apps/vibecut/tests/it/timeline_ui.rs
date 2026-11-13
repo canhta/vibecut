@@ -678,7 +678,7 @@ fn snapping_preference_toggles_through_app_history_and_persists() {
     let dir = tempfile::tempdir().unwrap();
     let store = vibecut::preferences::PreferenceStore::new(dir.path().join("preferences.json"));
     store.save(&harness.state().preferences).unwrap();
-    assert!(!store.load().unwrap().snapping);
+    assert!(!store.load_with_warning().0.snapping);
     let undo = widget(&harness, "edit.undo");
     click_at(&mut harness, undo.center());
     assert!(harness.state().preferences.snapping);
@@ -827,7 +827,7 @@ fn preview_axis_hover_scrubs_the_counter_and_preview_without_moving_the_playhead
     let store = vibecut::preferences::PreferenceStore::new(dir.path().join("preferences.json"));
     store.save(&harness.state().preferences).unwrap();
     assert!(
-        !store.load().unwrap().preview_axis,
+        !store.load_with_warning().0.preview_axis,
         "the toggle persists off"
     );
     harness.hover_at(first);
@@ -3718,7 +3718,7 @@ fn expanded_lane_shows_diamonds_and_drag_retimes_one_undo_step() {
     let dir = tempfile::tempdir().unwrap();
     let store = vibecut::preferences::PreferenceStore::new(dir.path().join("preferences.json"));
     store.save(&harness.state().preferences).unwrap();
-    let loaded = store.load().unwrap();
+    let loaded = store.load_with_warning().0;
     assert_eq!(
         loaded.timeline_lanes.get(&ProjectId(12)).cloned(),
         Some(std::collections::BTreeSet::from([id.0])),
@@ -3747,7 +3747,7 @@ fn expanded_lane_shows_diamonds_and_drag_retimes_one_undo_step() {
     let other_lanes = widget(&other_harness, &format!("timeline.item.{}.lanes", id.0));
     click_at(&mut other_harness, other_lanes.center());
     store.save(&other_harness.state().preferences).unwrap();
-    let stored = store.load().unwrap();
+    let stored = store.load_with_warning().0;
     assert_eq!(
         stored.timeline_lanes.get(&ProjectId(12)).cloned(),
         Some(std::collections::BTreeSet::from([id.0])),
@@ -3761,7 +3761,7 @@ fn expanded_lane_shows_diamonds_and_drag_retimes_one_undo_step() {
     let other_lanes = widget(&other_harness, &format!("timeline.item.{}.lanes", id.0));
     click_at(&mut other_harness, other_lanes.center());
     store.save(&other_harness.state().preferences).unwrap();
-    let collapsed = store.load().unwrap();
+    let collapsed = store.load_with_warning().0;
     assert_eq!(
         collapsed.timeline_lanes.get(&ProjectId(12)).cloned(),
         Some(std::collections::BTreeSet::from([id.0])),

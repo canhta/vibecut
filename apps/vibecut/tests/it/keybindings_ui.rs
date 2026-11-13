@@ -349,7 +349,7 @@ fn bookmark_jump_bindings_persist_and_run_through_the_normal_keymap() {
     let dir = tempfile::tempdir().unwrap();
     let store = PreferenceStore::new(dir.path().join("preferences.json"));
     store.save(&editor.preferences).unwrap();
-    let loaded = store.load().unwrap();
+    let loaded = store.load_with_warning().0;
     editor
         .set_preference(
             "keybindings",
@@ -835,7 +835,7 @@ fn shortcuts_bindings_and_reset_state_roundtrip_through_the_preference_store() {
         .record_shortcut("timeline.ripple", "Ctrl+Shift+R")
         .unwrap();
     store.save(&editor.preferences).unwrap();
-    let loaded = store.load().unwrap();
+    let loaded = store.load_with_warning().0;
     assert_eq!(
         loaded.keybindings.bindings["timeline.snap"],
         ["Ctrl+Shift+N"]
@@ -857,7 +857,7 @@ fn shortcuts_bindings_and_reset_state_roundtrip_through_the_preference_store() {
         .dispatch(AppCommand::ResetKeybindings { action: None })
         .unwrap();
     store.save(&editor.preferences).unwrap();
-    let reloaded = store.load().unwrap();
+    let reloaded = store.load_with_warning().0;
     assert!(reloaded.keybindings.bindings.is_empty());
     assert!(reloaded.keybindings.is_customized.is_empty());
     assert_eq!(reloaded.keybindings.effective_chords(snap), ["N"]);

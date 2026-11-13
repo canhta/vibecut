@@ -260,7 +260,7 @@ fn search_sort_and_view_persist_through_the_preference_store() {
 
     let store = vibecut::preferences::PreferenceStore::new(fixture.projects.join("prefs.json"));
     store.save(&harness.state().preferences).unwrap();
-    let loaded = store.load().unwrap();
+    let loaded = store.load_with_warning().0;
     assert_eq!(loaded.projects, harness.state().preferences.projects);
 
     let unicode = Fixture::new(&[("Tiếng Việt", missing())]);

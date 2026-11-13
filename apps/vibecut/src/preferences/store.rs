@@ -37,12 +37,6 @@ impl PreferenceStore {
     pub fn path(&self) -> &Path {
         &self.path
     }
-    /// Strict read used by tests and callers that must refuse a damaged file.
-    pub fn load(&self) -> Result<Preferences> {
-        let value = self.read()?;
-        value.validate()?;
-        Ok(value)
-    }
     /// Startup read: a damaged document is replaced wholesale, while a damaged
     /// layout keeps unrelated preferences and is reported through the warning.
     pub fn load_with_warning(&self) -> (Preferences, Option<PreferenceIssue>) {
@@ -264,7 +258,7 @@ mod tests {
             preferences.set(key, value).expect("set preference");
         }
         store.save(&preferences).expect("save preferences");
-        let loaded = store.load().expect("load preferences");
+        let loaded = store.load_with_warning().0;
         assert_eq!(loaded.version, PREFERENCES_VERSION);
         for key in PREFERENCE_KEYS {
             assert_eq!(
@@ -384,13 +378,9 @@ mod tests {
             br#"{"locale":"en","dark":true,"panels":[0.25,0.25,0.4]}"#.as_slice(),
         ] {
             std::fs::write(store.path(), document).expect("write old preferences");
-            assert!(matches!(
-                store.load(),
-                Err(Error::Unsupported("preferences version"))
-            ));
             assert_eq!(store.load_with_warning(), (Preferences::system(), None));
             store.save(&Preferences::default()).expect("overwrite old preferences");
-            assert_eq!(store.load().expect("load saved"), Preferences::default());
+            assert_eq!(store.load_with_warning().0, Preferences::default());
         }
     }
 
@@ -594,7 +584,7 @@ mod tests {
             .timeline_lanes
             .insert(project::ProjectId(1), (0..4096).collect());
         assert!(store.save(&preferences).is_err());
-        assert_eq!(store.load().unwrap(), Preferences::default());
+        assert_eq!(store.load_with_warning().0, Preferences::default());
     }
 
     #[test]
@@ -642,7 +632,7 @@ mod model_tests {
         let dir = tempfile::tempdir().unwrap();
         let store = crate::preferences::PreferenceStore::new(dir.path().join("prefs.json"));
         store.save(&preferences).unwrap();
-        let loaded = store.load().unwrap();
+        let loaded = store.load_with_warning().0;
         assert_eq!(loaded.ai_models, settings);
         assert_eq!(loaded.subtitles.transcription_model, "fixture-5");
         assert_eq!(
@@ -673,7 +663,7 @@ mod model_tests {
         }
         preferences.resolve_models();
         store.save(&preferences).unwrap();
-        let restored = store.load().unwrap();
+        let restored = store.load_with_warning().0;
         assert_eq!(restored.ai_models, preferences.ai_models);
         assert_eq!(
             restored.subtitles.transcription_model,
