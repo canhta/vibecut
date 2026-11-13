@@ -361,8 +361,8 @@ impl Subtitles {
         );
         match result {
             Ok(ControlResult::ChapterSidecars { .. }) => self.chapters.saved = Some(2),
-            Err(engine::control::Error::Edit(engine::EditError::Invalid(
-                "chapter sidecar destination exists",
+            Err(engine::control::Error::Artifacts(engine::ArtifactError::Edit(
+                engine::EditError::Invalid("chapter sidecar destination exists"),
             ))) => self.chapters.problem = Some(Text::ChaptersExists),
             Ok(_) | Err(_) => self.chapters.problem = Some(Text::ChaptersExportFailed),
         }

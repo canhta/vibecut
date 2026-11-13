@@ -131,6 +131,8 @@ fn settle(bench: &mut Mounted, done: impl Fn(&State) -> bool) {
         bench.step();
         std::thread::sleep(Duration::from_millis(10));
     }
+    // The state changed after the last frame painted; paint it once before it is queried.
+    bench.step();
 }
 
 fn clip_count(bench: &Mounted) -> usize {

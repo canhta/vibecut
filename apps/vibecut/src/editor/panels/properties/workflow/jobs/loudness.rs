@@ -22,7 +22,6 @@ pub(in crate::editor) enum Failed {
 
 #[derive(Default)]
 pub(in crate::editor) struct LoudnessWorkflow {
-    budget: Option<engine::ByteBudget>,
     runner: Option<JobRunner>,
     capture: Option<Capture>,
     /// Latest finished measurement. Shown only while the project still holds its gains.
@@ -60,10 +59,6 @@ pub(in crate::editor) fn scope_target(
 }
 
 impl LoudnessWorkflow {
-    pub(in crate::editor) fn attach(&mut self, budget: engine::ByteBudget) {
-        self.budget = Some(budget);
-    }
-
     /// Whether a measurement job is running.
     pub(in crate::editor) fn busy(&self) -> bool {
         self.capture.is_some()
@@ -96,8 +91,8 @@ impl LoudnessWorkflow {
             .then_some(result)
     }
 
-    /// The shared job runner, created on first use with the attached budget.
-    fn runner(&mut self) -> Result<&mut JobRunner> {
+    /// The shared job runner, created on first use with the editor's byte budget.
+    fn runner(&mut self, budget: &engine::ByteBudget) -> Result<&mut JobRunner> {
         if self.runner.is_none() {
             self.runner = Some(JobRunner::new(
                 engine::jobs::RunnerConfig {
@@ -108,9 +103,7 @@ impl LoudnessWorkflow {
                     backoff: std::time::Duration::from_millis(100),
                     progress_interval: std::time::Duration::from_millis(40),
                 },
-                self.budget
-                    .clone()
-                    .ok_or(Error::Invalid("loudness budget unavailable"))?,
+                budget.clone(),
                 std::sync::Arc::new(engine::jobs::SystemClock::default()),
             )?);
         }
@@ -122,9 +115,10 @@ impl LoudnessWorkflow {
     fn control(
         &mut self,
         session: &mut Session,
+        budget: &engine::ByteBudget,
         command: engine::Command,
     ) -> Result<ControlResult> {
-        let runner = self.runner()?;
+        let runner = self.runner(budget)?;
         Ok(session.control_command(
             command,
             engine::control::Caller {
@@ -156,10 +150,6 @@ impl LoudnessWorkflow {
 }
 
 impl State {
-    pub(in crate::editor) fn attach_loudness(&mut self, budget: engine::ByteBudget) {
-        self.loudness.attach(budget);
-    }
-
     /// One scope's switch. On sets the shown target on that scope; off clears it. One undo step.
     pub(in crate::editor) fn set_loudness_scope(
         &mut self,
@@ -232,9 +222,10 @@ impl State {
         if port.view().session.transaction_active() {
             return Err(Error::Invalid("finish the open edit before measuring"));
         }
+        let budget = port.read.budget.clone();
         let accepted = port.with_session(|session| {
             self.loudness
-                .control(session, engine::Command::MeasureLoudness {})
+                .control(session, &budget, engine::Command::MeasureLoudness {})
         })?;
         let ControlResult::JobAccepted { job, .. } = accepted else {
             return Err(Error::Invalid("loudness job"));
@@ -291,9 +282,10 @@ impl State {
         self.loudness.progress = snapshot.progress;
         match snapshot.state {
             JobState::Completed => {
+                let budget = port.read.budget.clone();
                 let status = port.with_session(|session| {
                     self.loudness
-                        .control(session, engine::Command::JobStatus { job })
+                        .control(session, &budget, engine::Command::JobStatus { job })
                 });
                 self.loudness.capture = None;
                 self.loudness.progress = 0.0;

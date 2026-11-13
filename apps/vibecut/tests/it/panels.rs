@@ -604,6 +604,7 @@ fn needs_reveal(id: &str) -> bool {
         || id.starts_with("inspector.animation.")
         || id.starts_with("inspector.lut.")
         || id.starts_with("inspector.loudness.")
+        || id.starts_with("inspector.volume")
         || id.starts_with("inspector.transform.distribute_")
         || blend_control(id)
 }
@@ -2791,15 +2792,14 @@ fn loudness_failed_measurement_shows_the_reason_and_applies_nothing() {
     click(&mut harness, "inspector.loudness.apply");
     settle_loudness(&mut harness);
     harness.run_steps(2);
+    // The status line sits below Apply; bring it into the panel before reading it.
+    reveal(&mut harness, "inspector.loudness.status");
     assert_eq!(loudness_of(&harness).measured, None);
     assert_eq!(loudness_of(&harness).clip, target);
     assert_eq!(harness.state().session.history_len().0, history);
     assert!(
         harness
-            .query(By::new().predicate(|node| {
-                node.label()
-                    .is_some_and(|label| label.starts_with("Measurement failed"))
-            }))
+            .query(By::new().label_contains("Measurement failed"))
             .is_some(),
         "the failure reason shows on the Audio tab"
     );

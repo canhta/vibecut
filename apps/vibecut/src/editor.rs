@@ -124,8 +124,6 @@ impl Editor {
         media: std::sync::Arc<std::sync::Mutex<engine::control::MediaAccess>>,
     ) {
         self.properties
-            .attach_loudness(self.playback.budget().clone());
-        self.properties
             .attach_luts(media.clone(), self.playback.budget().clone());
         self.properties
             .attach_footage(media.clone(), self.playback.budget().clone());

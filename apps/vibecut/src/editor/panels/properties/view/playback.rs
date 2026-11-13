@@ -135,24 +135,32 @@ impl Panel<'_, '_> {
         }
         if let Some(progress) = frame.progress {
             let (_, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
-            let bar = kit::progress_bar(&mut value_ui, "inspector.loudness.progress", progress);
-            self.remember("inspector.loudness.progress", &bar);
-            let cancel = value_ui
-                .push_id("inspector.loudness.cancel", |ui| {
-                    ui.add(egui::Button::new(self.tr(Text::LoudnessCancel)))
+            // Cancel takes its width at the right first; the bar fills what is left of the row.
+            let label = self.tr(Text::LoudnessCancel);
+            let (cancel, bar) = value_ui
+                .with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let cancel = ui
+                        .push_id("inspector.loudness.cancel", |ui| {
+                            ui.add(egui::Button::new(label))
+                        })
+                        .inner;
+                    let bar = kit::progress_bar(ui, "inspector.loudness.progress", progress);
+                    (cancel, bar)
                 })
                 .inner;
+            self.remember("inspector.loudness.progress", &bar);
             self.remember("inspector.loudness.cancel", &cancel);
             if cancel.clicked() {
                 self.actions.push(Action::CancelLoudness);
             }
         }
         for line in self.loudness_status(&frame) {
-            ui.label(
+            let status = ui.label(
                 egui::RichText::new(line)
                     .size(theme::type_size::BODY)
                     .color(self.secondary()),
             );
+            self.remember("inspector.loudness.status", &status);
         }
     }
 

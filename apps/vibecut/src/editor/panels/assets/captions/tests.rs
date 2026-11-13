@@ -16,7 +16,7 @@ use time::{SourceRange, TICKS_PER_SECOND, Tick};
 
 /// The assets column width the assets tests use. The short height makes the page scroll.
 const PANEL_WIDTH: f32 = 420.0;
-const PANEL_HEIGHT: f32 = 400.0;
+const PANEL_HEIGHT: f32 = 300.0;
 /// Find and replace controls in document order; each must reach the area above the footer.
 const FIND: [&str; 6] = [
     "subtitles.find.query",
@@ -33,10 +33,16 @@ struct Rig {
     options: SubtitleOptions,
     /// The top of the page area, which is the top of the scroll viewport.
     top: f32,
+    /// The app's fonts are installed on the first frame, as the window does.
+    fonts: bool,
 }
 
 impl Rig {
     fn paint(&mut self, ui: &mut egui::Ui) {
+        if !self.fonts {
+            crate::kit::install_fonts(ui.ctx());
+            self.fonts = true;
+        }
         self.top = ui.max_rect().top();
         self.captions.ui(
             ui,
@@ -99,6 +105,7 @@ fn rig() -> Rig {
         session: session(),
         options: SubtitleOptions::default(),
         top: 0.0,
+        fonts: false,
     }
 }
 
@@ -129,7 +136,8 @@ fn find_and_replace_scroll_above_the_auto_footer() {
     );
     assert!(
         rect(&harness, FIND[0]).bottom() > footer,
-        "fixture: the Find section starts above the footer, so nothing scrolls"
+        "fixture: the Find section starts above the footer, so nothing scrolls: find {:?} footer {footer}",
+        rect(&harness, FIND[0])
     );
     for id in FIND {
         for _ in 0..80 {
@@ -137,7 +145,8 @@ fn find_and_replace_scroll_above_the_auto_footer() {
             if rect.top() >= page_top && rect.bottom() <= footer_top(&harness) {
                 break;
             }
-            harness.hover_at(egui::pos2(200.0, 300.0));
+            // Wheel over the middle of the page, above the footer.
+            harness.hover_at(egui::pos2(200.0, (page_top + footer_top(&harness)) / 2.0));
             harness.run_steps(2);
             harness.event(egui::Event::MouseWheel {
                 unit: egui::MouseWheelUnit::Point,

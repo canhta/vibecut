@@ -225,7 +225,9 @@ fn chapter_harness(text: TextOpener, track: Option<CueTrack>) -> Harness<'static
 
 /// Replace the title draft with `text`: focus the field, select all, type.
 fn retype_title(h: &mut Harness<'_, Editor>, text: &str) {
-    click(h, "subtitles.chapters.title");
+    h.get(By::new().predicate(|n| n.author_id() == Some("subtitles.chapters.title")))
+        .focus();
+    h.run_steps(2);
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
     h.event(egui::Event::Text(text.into()));
     h.run_steps(3);
@@ -369,11 +371,10 @@ fn chapters_without_transcript_shows_the_empty_state_and_sends_nothing() {
     assert_eq!(calls.load(Ordering::SeqCst), 0);
 }
 
-/// Whether any widget's accessible label starts with `prefix`.
-fn has_label(h: &Harness<'_, Editor>, prefix: &str) -> bool {
-    h.query_all(By::new().predicate(|n| n.label().is_some_and(|label| label.starts_with(prefix))))
-        .next()
-        .is_some()
+/// Whether any widget's accessible label contains `text`. A text label's words are its
+/// AccessKit value, which `label_contains` reads.
+fn has_label(h: &Harness<'_, Editor>, text: &str) -> bool {
+    h.query_all(By::new().label_contains(text)).next().is_some()
 }
 
 #[test]
