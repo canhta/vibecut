@@ -75,6 +75,7 @@ impl State {
                             muted: false,
                             crop: None,
                             cleanup: Default::default(),
+                            background: ClipBackground::None,
                         }),
                         _ => ItemParams::Audio(project::AudioParams {
                             fades: Default::default(),

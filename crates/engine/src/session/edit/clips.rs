@@ -706,6 +706,33 @@ pub(super) fn execute_set_items_muted(
     Ok(data)
 }
 
+/// Sets the clip background on video items; one undo step for the whole list.
+/// A blur intensity above the accepted range is refused before any item changes.
+pub(super) fn execute_set_items_background(
+    mut data: ProjectData,
+    items: Vec<ItemId>,
+    background: project::ClipBackground,
+) -> Result<ProjectData> {
+    let mut seen = BTreeSet::new();
+    if items.is_empty() {
+        return Err(EditError::Invalid("empty timeline group"));
+    }
+    if !background.valid() {
+        return Err(EditError::Invalid("clip background"));
+    }
+    for id in items {
+        if !seen.insert(id) {
+            return Err(EditError::Invalid("duplicate item"));
+        }
+        match &mut item(&mut data, id)?.content {
+            ItemParams::Video(params) => params.background = background,
+            _ => return Err(EditError::Invalid("item has no video frame")),
+        }
+    }
+
+    Ok(data)
+}
+
 struct Extracted {
     video: ItemId,
     start: Tick,

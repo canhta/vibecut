@@ -200,6 +200,32 @@ pub mod arrange {
         Ok(envelope)
     }
 
+    /// Whether a video clip, transformed at output time `at`, covers every canvas
+    /// pixel. The axis-aligned envelope must reach all four canvas edges and the
+    /// rotation must be a whole number of quarter turns, so no corner is left open.
+    ///
+    /// # Errors
+    ///
+    /// Refuses what [`bounds`] refuses.
+    pub fn covers_canvas(data: &ProjectData, item: &Item, at: Tick) -> Result<bool> {
+        let local = at.saturating_sub(item.start).min(
+            item.duration()
+                .map_err(|_| Error::Invalid("item duration"))?,
+        );
+        let turns = Transform::at(item, local)?.radians / std::f64::consts::FRAC_PI_2;
+        if (turns - turns.round()).abs() > 1e-9 {
+            return Ok(false);
+        }
+        let envelope = bounds(data, item, at)?;
+        let width = f64::from(data.canvas.width);
+        let height = f64::from(data.canvas.height);
+        const EPS: f64 = 1e-6;
+        Ok(envelope.x <= EPS
+            && envelope.y <= EPS
+            && envelope.x + envelope.width >= width - EPS
+            && envelope.y + envelope.height >= height - EPS)
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;

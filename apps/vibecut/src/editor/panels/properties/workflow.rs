@@ -1,6 +1,7 @@
 //! Applies the properties workflows.
 mod appearance;
 mod audio;
+mod background;
 mod canvas;
 mod commands;
 mod effects;
@@ -121,6 +122,9 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
             } => canvas::set_canvas(desk, width, height, preset),
             Action::SetFps { num, den } => canvas::set_canvas_fps(desk, num, den),
             Action::SetBackground(color) => canvas::set_canvas_background(desk, color),
+            Action::SetClipBackground { items, background } => {
+                background::set_clip_background(desk, items, background)
+            }
             Action::ResetTransform(item) => commands::reset_transform(desk, item),
             Action::ResetBlend(item) => commands::reset_blend(desk, item),
             Action::ToggleKeyframe { item, fields, time } => {

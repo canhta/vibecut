@@ -764,6 +764,7 @@ commands! {
     SetItemField, "timeline.set_item_param", "Set item parameter", Edit { item: ItemId, patch: ItemParamPatch } => Timeline, serde_json::json!({"item":1,"patch":{"field":"blendMode","value":"multiply"}}), available = UnlockedItem;
     SetItemParamMany, "timeline.set_item_param_many", "Set shared item field", Edit { items: Vec<ItemId>, patch: ItemParamPatch } => Timeline, serde_json::json!({"items":[1],"patch":{"field":"text_size","value":48.0}});
     SetItemsMuted, "timeline.set_muted", "Mute items", Edit { items: Vec<ItemId>, muted: bool } => Timeline, serde_json::json!({"items":[5],"muted":true}), available = UnlockedItem;
+    SetItemsBackground, "timeline.set_background", "Set clip background", Edit { items: Vec<ItemId>, background: project::ClipBackground } => Timeline, serde_json::json!({"items":[5],"background":{"kind":"blur","intensity":200}}), available = UnlockedItem;
     SetReverse, "timeline.set_reverse", "Reverse clip", Edit { items: Vec<ItemId>, reverse: bool } => Timeline, serde_json::json!({"items":[5],"reverse":true}), available = RetimableItem;
     TimelineSetRipple, "timeline.set_ripple", "Set ripple editing", SessionControl { enabled: bool } => Timeline, serde_json::json!({"enabled":false}), available = NoTransaction, grant = Agent;
     SetSpeed, "timeline.set_speed", "Set clip speed", Edit { items: Vec<ItemId>, speed: time::Speed, maintain_pitch: bool } => Timeline, serde_json::json!({"items":[5],"speed":2.0,"maintain_pitch":true}), available = RetimableItem;

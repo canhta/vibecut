@@ -15,6 +15,8 @@ pub(super) struct Draft {
 pub enum ColorTarget {
     Text(ItemId),
     Background(ItemId),
+    /// A video clip's solid background colour; a non-solid background reads as black.
+    ClipBackground(ItemId),
     GraphicFill(ItemId),
     GraphicColor {
         item: ItemId,
@@ -41,6 +43,7 @@ impl ColorTarget {
         match self {
             Self::Text(id)
             | Self::Background(id)
+            | Self::ClipBackground(id)
             | Self::GraphicFill(id)
             | Self::GraphicStroke(id) => Some(*id),
             Self::GraphicColor { item, .. }
@@ -89,6 +92,11 @@ impl ColorTarget {
             (Self::Background(_), project::ItemParams::Text(p)) => {
                 Ok(p.background.as_ref().map_or(Color([0; 4]), |b| b.color))
             }
+            (Self::ClipBackground(_), project::ItemParams::Video(p)) => Ok(match p.background {
+                project::ClipBackground::Solid { color } => color,
+                // The classic web editor's default background colour, black.
+                _ => Color([0, 0, 0, 255]),
+            }),
             (Self::GraphicFill(_), project::ItemParams::Overlay(p)) => Ok(p.color),
             (Self::GraphicStroke(_), project::ItemParams::Overlay(_)) => Ok(render::color::at(
                 &item.animations,
@@ -139,6 +147,12 @@ impl ColorTarget {
     ) -> Result<engine::Command> {
         if *self == Self::Canvas {
             return Ok(engine::Command::SetBackground { color });
+        }
+        if let Self::ClipBackground(item) = self {
+            return Ok(engine::Command::SetItemsBackground {
+                items: vec![*item],
+                background: project::ClipBackground::Solid { color },
+            });
         }
         if let Self::Bookmark(bookmark) = self {
             return Ok(engine::Command::UpdateBookmark {

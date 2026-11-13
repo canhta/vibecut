@@ -29,7 +29,10 @@ const VALUE_COLUMN: f32 = 120.0;
 fn is_basic(tab: PropertiesTab) -> bool {
     matches!(
         tab,
-        PropertiesTab::Transform | PropertiesTab::RemoveBackground | PropertiesTab::Mask
+        PropertiesTab::Transform
+            | PropertiesTab::Background
+            | PropertiesTab::RemoveBackground
+            | PropertiesTab::Mask
     )
 }
 
@@ -929,6 +932,15 @@ impl<'a, 'c> Panel<'a, 'c> {
             .filter(|tab| {
                 !(*tab == PropertiesTab::Audio && kind == ElementKind::Video && !has_audio)
             })
+            // The Background tab shows only while the clip leaves part of the canvas open.
+            .filter(|tab| {
+                *tab != PropertiesTab::Background
+                    || read::clip_background_visible(
+                        self.cx.session.project(),
+                        item,
+                        self.cx.playhead,
+                    )
+            })
             .collect();
         let stored = self
             .cx
@@ -1322,6 +1334,9 @@ impl<'a, 'c> Panel<'a, 'c> {
                     |panel, ui| panel.adjust_controls(ui, item),
                 );
             }
+            PropertiesTab::Background if kind == ElementKind::Video => {
+                self.background_controls(ui, item);
+            }
             PropertiesTab::RemoveBackground
                 if matches!(kind, ElementKind::Video | ElementKind::Image) =>
             {
@@ -1372,6 +1387,8 @@ mod mask;
 mod number_edit;
 
 mod remove_background;
+
+mod background;
 
 mod selection;
 

@@ -302,6 +302,7 @@ mod tests {
                 muted: false,
                 crop: None,
                 cleanup: Default::default(),
+                background: ClipBackground::None,
             }),
             effects: vec![],
             masks: vec![],

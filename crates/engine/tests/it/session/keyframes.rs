@@ -1622,6 +1622,7 @@ fn clipboard_translates_output_local_bezier_snapshot_with_one_undo() {
         crop: None,
         fades: Default::default(),
         cleanup: Default::default(),
+        background: ClipBackground::None,
     });
     video.retime.speed = time::Speed::from_thousandths(2000).unwrap();
     let mut s = Session::new(Project::new(data).unwrap(), 100).unwrap();

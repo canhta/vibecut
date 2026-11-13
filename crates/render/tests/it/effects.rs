@@ -1587,6 +1587,7 @@ fn content_scene(effects: Vec<project::EffectInstance>) -> project::Project {
             volume: 0.0,
             muted: false,
             cleanup: Default::default(),
+            background: ClipBackground::None,
         }),
     });
     Project::new(data).unwrap()

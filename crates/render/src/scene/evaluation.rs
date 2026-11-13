@@ -374,6 +374,21 @@ impl<'a> Renderer<'a> {
                     } else {
                         1.
                     };
+                // The background sits on the canvas under the clip, outside the clip's own
+                // layer, so the clip's opacity, blend, transform and effects leave it alone.
+                if let ItemParams::Video(params) = &item.content
+                    && params.background != project::ClipBackground::None
+                    && !super::transform::arrange::covers_canvas(self.project.data(), item, at)?
+                {
+                    paint_clip_background(
+                        &mut out,
+                        params.background,
+                        video.as_ref(),
+                        item,
+                        local,
+                        hooks,
+                    )?;
+                }
                 let below = if !graphic && !has_passes && !masked && !blended && !transform.active()
                 {
                     None
@@ -1096,6 +1111,39 @@ fn item_crop(item: &Item, mut placement: Placement, local: Tick) -> Result<Place
         };
     }
     Ok(placement)
+}
+/// Paints a clip background over the whole canvas. A blur reads only the clip's
+/// own decoded frame, so it never samples the canvas it is painting onto.
+fn paint_clip_background(
+    out: &mut Image,
+    background: project::ClipBackground,
+    frame: Option<&Image>,
+    item: &Item,
+    local: Tick,
+    hooks: &dyn ExecutionHooks,
+) -> Result<()> {
+    match background {
+        project::ClipBackground::None => {}
+        project::ClipBackground::Solid { color: fill } => {
+            let solid = Image::new(out.width, out.height, color(fill.0), hooks)?;
+            draw(out, &solid, Placement::default(), hooks)?;
+        }
+        project::ClipBackground::Blur { intensity } => {
+            let Some(frame) = frame else {
+                return Ok(());
+            };
+            let mut fitted = Image::new(out.width, out.height, [0.0; 4], hooks)?;
+            draw(
+                &mut fitted,
+                frame,
+                item_crop(item, Placement::default(), local)?,
+                hooks,
+            )?;
+            let blurred = super::effects::clip_background_blur(&fitted, intensity, hooks)?;
+            draw(out, &blurred, Placement::default(), hooks)?;
+        }
+    }
+    Ok(())
 }
 /// Finite scalar channel value at the item-local time, or the stored base when unkeyed.
 fn scalar_at(

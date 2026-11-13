@@ -25,6 +25,32 @@ pub struct VideoParams {
     /// Non-destructive cleanup of the item's source audio; the source media is never changed.
     #[serde(default)]
     pub cleanup: crate::AudioCleanup,
+    /// Fill behind the clip wherever the clip does not cover the canvas.
+    pub background: ClipBackground,
+}
+/// What fills the canvas behind a visual clip. Exclusive: one kind per clip.
+/// The blur reads the clip's own decoded frame, so it never feeds back.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ClipBackground {
+    None,
+    Solid { color: Color },
+    Blur { intensity: u32 },
+}
+impl ClipBackground {
+    /// Intensity a clip starts at when Blur is chosen; a preset replaces it.
+    pub const DEFAULT_BLUR_INTENSITY: u32 = 10;
+    /// Light, Medium and Heavy presets, in reference order.
+    pub const BLUR_PRESETS: [u32; 3] = [100, 200, 500];
+    /// Largest accepted blur intensity: the Heavy preset.
+    pub const MAX_BLUR_INTENSITY: u32 = 500;
+    /// Whether a blur intensity lies within the accepted range.
+    pub const fn valid(self) -> bool {
+        match self {
+            Self::None | Self::Solid { .. } => true,
+            Self::Blur { intensity } => intensity <= Self::MAX_BLUR_INTENSITY,
+        }
+    }
 }
 /// Remote-library provenance carried with an audio item. URLs are canonical and
 /// bounded; no token, cache path or local absolute path belongs here.

@@ -71,6 +71,7 @@ fn policy_insert(id: u64) -> Command {
                 muted: false,
                 crop: None,
                 cleanup: Default::default(),
+                background: ClipBackground::None,
             }),
         },
     }

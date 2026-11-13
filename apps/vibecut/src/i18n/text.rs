@@ -1391,6 +1391,12 @@ catalog! {
     // Adjust basic set, HSL bands, tabs and footer.
     AdjustmentPresetsEmpty { key: "adjustment_presets_empty", en: "No presets", vi: "Chưa có mẫu" },
     ApplyToAll { key: "apply_to_all", en: "Apply to all", vi: "Áp dụng cho tất cả" },
+    ClipBlurHeavy { key: "clip_blur_heavy", en: "Heavy", vi: "Mạnh" },
+    ClipBlurLight { key: "clip_blur_light", en: "Light", vi: "Nhẹ" },
+    ClipBlurMedium { key: "clip_blur_medium", en: "Medium", vi: "Vừa" },
+    ClipKindBlur { key: "clip_kind_blur", en: "Blur", vi: "Làm mờ" },
+    ClipKindColor { key: "clip_kind_color", en: "Colour", vi: "Màu" },
+    ClipKindNone { key: "clip_kind_none", en: "None", vi: "Không" },
     ColorWheel { key: "color_wheel", en: "Color wheel", vi: "Bánh xe màu" },
     Curves { key: "curves", en: "Curves", vi: "Đường cong" },
     EffectCyan { key: "effect_cyan", en: "Cyan", vi: "Xanh lơ" },

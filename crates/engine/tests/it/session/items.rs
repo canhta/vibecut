@@ -250,6 +250,10 @@ fn hide_and_mute_refuse_incompatible_kinds_and_survive_persistence() {
     })
     .unwrap();
     assert!(get_id(&s, clip).hidden);
+    let background_of = |project: &Project, id: ItemId| match &get_project_id(project, id).content {
+        ItemParams::Video(params) => params.background,
+        _ => panic!("video item expected"),
+    };
     s.apply(Command::SetItemsMuted {
         items: vec![clip, audio_clip],
         muted: true,
@@ -277,10 +281,40 @@ fn hide_and_mute_refuse_incompatible_kinds_and_survive_persistence() {
     s.redo().unwrap();
     s.redo().unwrap();
     assert!(get_id(&s, clip).hidden);
+    let before_background = s.project().clone();
+    for (items, background) in [
+        (vec![clip], project::ClipBackground::Blur { intensity: 501 }),
+        (
+            vec![audio_clip],
+            project::ClipBackground::Solid {
+                color: Color([9, 9, 9, 255]),
+            },
+        ),
+    ] {
+        assert!(
+            s.apply(Command::SetItemsBackground { items, background })
+                .is_err()
+        );
+        assert!(Arc::ptr_eq(&before_background, s.project()));
+    }
+    let blur = project::ClipBackground::Blur { intensity: 200 };
+    s.apply(Command::SetItemsBackground {
+        items: vec![clip],
+        background: blur,
+    })
+    .unwrap();
+    assert_eq!(background_of(s.project(), clip), blur);
+    s.undo().unwrap();
+    assert_eq!(
+        background_of(s.project(), clip),
+        project::ClipBackground::None
+    );
+    s.redo().unwrap();
     let bytes = project::encode(s.project(), false).unwrap();
     let loaded = project::decode(&bytes).unwrap();
     assert_eq!(loaded.project.data(), s.project().data());
     assert!(get_project_id(&loaded.project, clip).hidden);
+    assert_eq!(background_of(&loaded.project, clip), blur);
     assert_eq!(video, s.project().data().scene().timeline.overlays[0].id);
 }
 #[test]
@@ -569,6 +603,7 @@ fn audible_session() -> (Session, TrackId, TrackId, ItemId) {
             muted: false,
             crop: None,
             cleanup: Default::default(),
+            background: ClipBackground::None,
         }),
     );
     insert(

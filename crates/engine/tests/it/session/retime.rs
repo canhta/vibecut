@@ -193,6 +193,7 @@ fn video(id: u64, start: i64, source: SourceRange) -> Item {
             muted: false,
             crop: None,
             cleanup: Default::default(),
+            background: ClipBackground::None,
         }),
     }
 }

@@ -50,9 +50,10 @@ impl ElementKind {
                 PropertiesTab::Transform,
                 PropertiesTab::Effects,
             ],
-            // Basic sub-tabs in the reference order: Basic, Remove BG, Mask.
+            // Basic sub-tabs in the reference order: Basic, Background, Remove BG, Mask.
             Self::Video => &[
                 PropertiesTab::Transform,
+                PropertiesTab::Background,
                 PropertiesTab::RemoveBackground,
                 PropertiesTab::Mask,
                 PropertiesTab::Audio,
@@ -102,10 +103,11 @@ pub enum PropertiesTab {
     RemoveBackground,
     Effects,
     Graphic,
+    Background,
 }
 
 impl PropertiesTab {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Text,
         Self::Transform,
         Self::Audio,
@@ -115,6 +117,7 @@ impl PropertiesTab {
         Self::RemoveBackground,
         Self::Effects,
         Self::Graphic,
+        Self::Background,
     ];
 
     pub const fn id(self) -> &'static str {
@@ -128,6 +131,7 @@ impl PropertiesTab {
             Self::RemoveBackground => "remove_background",
             Self::Effects => "effects",
             Self::Graphic => "graphic",
+            Self::Background => "background",
         }
     }
 
@@ -146,6 +150,7 @@ impl PropertiesTab {
             Self::RemoveBackground => Text::RemoveBackground,
             Self::Effects => Text::Effects,
             Self::Graphic => Text::Graphic,
+            Self::Background => Text::TextBackground,
         }
     }
 }

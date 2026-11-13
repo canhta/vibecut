@@ -217,6 +217,7 @@ pub(super) fn player_editor(theme: Theme, empty: bool) -> Result<Editor, Failure
                 muted: false,
                 fades: Default::default(),
                 cleanup: Default::default(),
+                background: ClipBackground::None,
             }),
         )?;
     }

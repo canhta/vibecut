@@ -1888,3 +1888,193 @@ fn stickers_draw_flags_and_report_missing_assets_with_a_placeholder() {
     assert!(at(&missing, 1, 17)[3] > 0.9, "placeholder border");
     assert_eq!(at(&missing, 64, 4)[3], 0.);
 }
+
+/// A 4x4 clip, left two columns red and right two green: its seam is the probe.
+struct SplitClip;
+impl SourceProvider for SplitClip {
+    fn status(
+        &mut self,
+        _: &media::SourceAsset,
+        _: bool,
+        _: &dyn ExecutionHooks,
+    ) -> Result<Option<UnavailableReason>> {
+        Ok(None)
+    }
+    fn video(
+        &mut self,
+        _: &media::SourceAsset,
+        _: project::ItemId,
+        _: time::Tick,
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<Option<Image>> {
+        let bytes: Vec<u8> = (0..16)
+            .flat_map(|pixel| {
+                if pixel % 4 < 2 {
+                    [255u8, 0, 0, 255]
+                } else {
+                    [0u8, 255, 0, 255]
+                }
+            })
+            .collect();
+        Ok(Some(Image::from_rgba8(4, 4, &bytes, false, 13, hooks)?))
+    }
+    fn audio(
+        &mut self,
+        _: &media::SourceAsset,
+        _: project::ItemId,
+        _: i64,
+        _: usize,
+        _: u32,
+        _: &dyn ExecutionHooks,
+    ) -> Result<render::AudioBlock> {
+        panic!("unexpected audio read")
+    }
+}
+
+/// One split clip on a canvas. A non-covering clip is the left half (scale 0.5,
+/// shifted to the canvas edge); a covering clip fills the canvas.
+fn split_project(
+    width: u32,
+    height: u32,
+    background: project::ClipBackground,
+    covering: bool,
+) -> project::Project {
+    use project::*;
+    use time::{SourceRange, Tick};
+    let asset = testkit::source::asset(1, std::env::temp_dir().join("render-clip-background"))
+        .format("synthetic")
+        .duration(tick(1, 1))
+        .stream(
+            testkit::source::video()
+                .codec("rgba")
+                .time_base(media::TimeBase::new(1, 30).unwrap())
+                .duration(tick(1, 1))
+                .start(Tick::ZERO)
+                .frame_count(30)
+                .variable_frame_rate(false)
+                .size(4, 4)
+                .build(),
+        )
+        .build();
+    let mut data = Project::empty(ProjectId(8), "background".into())
+        .unwrap()
+        .into_data();
+    data.canvas.width = width;
+    data.canvas.height = height;
+    data.assets.push(asset);
+    let mut animations = Animations::default();
+    if !covering {
+        for (path, value) in [
+            ("transform.scaleX", 0.5),
+            ("transform.scaleY", 0.5),
+            ("transform.positionX", -f64::from(width) / 4.0),
+        ] {
+            animations
+                .set(
+                    AnimationPath::new(path).unwrap(),
+                    Param::new(ParamValue::Scalar(value)).unwrap(),
+                )
+                .unwrap();
+        }
+    }
+    data.scene_mut().timeline.main.items.push(Item {
+        hidden: false,
+        blend_mode: Default::default(),
+        retime: Default::default(),
+        masks: vec![],
+        effects: vec![],
+        animations,
+        id: ItemId(1),
+        source_asset: Some(media::AssetId(1)),
+        source_range: SourceRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+        start: Tick::ZERO,
+        content: ItemParams::Video(VideoParams {
+            crop: None,
+            fades: Default::default(),
+            source_audio_enabled: false,
+            volume: 0.0,
+            muted: false,
+            cleanup: Default::default(),
+            background,
+        }),
+    });
+    Project::new(data).unwrap()
+}
+
+fn render_split(project: &project::Project, hooks: &Hooks) -> Image {
+    let mut renderer = Renderer::new(project, RenderSettings::from_project(project)).unwrap();
+    renderer
+        .render_frame(Tick::ZERO, &mut SplitClip, hooks)
+        .unwrap()
+}
+
+fn pixel_at(image: &Image, x: u32, y: u32) -> [f32; 4] {
+    image.pixels()[(y * image.width() + x) as usize]
+}
+
+#[test]
+fn solid_clip_background_shows_only_outside_a_clip_that_leaves_canvas_open() {
+    let hooks = Hooks::default();
+    let blue = project::ClipBackground::Solid {
+        color: project::Color([0, 0, 255, 255]),
+    };
+    let image = render_split(&split_project(1920, 1080, blue, false), &hooks);
+    // Inside the clip's red half, then outside it to the right and above.
+    let inside = pixel_at(&image, 240, 540);
+    assert!(inside[0] > 0.9 && inside[2] < 0.1, "{inside:?}");
+    let outside = pixel_at(&image, 1440, 135);
+    assert!(outside[2] > 0.9 && outside[0] < 0.1, "{outside:?}");
+}
+
+/// The background is the clip frame cover-fitted to the canvas, so its seam sits at
+/// the centre. One sigma past the seam a Gaussian step keeps about 16% of the red side.
+fn assert_blurred_seam(width: u32, height: u32, intensity: u32, hooks: &Hooks) {
+    let scale = (f64::from(width) / 1920.0).min(f64::from(height) / 1080.0);
+    let sigma = f64::from(intensity) / 5.0 * scale;
+    let background = project::ClipBackground::Blur { intensity };
+    let image = render_split(&split_project(width, height, background, false), hooks);
+    let edge = pixel_at(&image, width / 2 + sigma.round() as u32, height / 2);
+    assert!(
+        edge[1] > 0.5 && edge[0] > 0.05 && edge[0] < 0.35,
+        "{width}x{height} intensity {intensity}: {edge:?}"
+    );
+    let far = pixel_at(&image, width * 15 / 16, height / 8);
+    assert!(
+        far[1] > 0.9 && far[0] < 0.1,
+        "{width}x{height} intensity {intensity}: {far:?}"
+    );
+}
+
+#[test]
+fn clip_blur_softens_the_clip_edge_at_each_preset_on_both_canvases() {
+    let hooks = Hooks::default();
+    for (width, height) in [(1920, 1080), (1080, 1920)] {
+        for intensity in project::ClipBackground::BLUR_PRESETS {
+            assert_blurred_seam(width, height, intensity, &hooks);
+        }
+    }
+}
+
+#[test]
+fn heavy_clip_blur_on_a_large_canvas_takes_the_half_resolution_path() {
+    // Sigma 133 is past the single-iteration limit, so the blur runs on a pyramid.
+    assert_blurred_seam(2560, 1440, 500, &Hooks::default());
+}
+
+#[test]
+fn a_covering_clip_paints_no_background() {
+    let hooks = Hooks::default();
+    let plain = render_split(
+        &split_project(320, 180, project::ClipBackground::None, true),
+        &hooks,
+    );
+    for background in [
+        project::ClipBackground::Solid {
+            color: project::Color([0, 0, 255, 255]),
+        },
+        project::ClipBackground::Blur { intensity: 500 },
+    ] {
+        let image = render_split(&split_project(320, 180, background, true), &hooks);
+        assert_eq!(image.pixels(), plain.pixels());
+    }
+}
