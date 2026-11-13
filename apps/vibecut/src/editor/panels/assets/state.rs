@@ -2,7 +2,6 @@
 use super::{
     BTreeMap, BTreeSet, ContentHash, ImportFailure, ImportQueue, Model, PathBuf, Text, egui,
 };
-use engine::control::StickerCategory;
 use media::UnsupportedReason;
 use std::time::Duration;
 
@@ -90,7 +89,7 @@ pub(in crate::editor) struct State {
     /// Captions tab: the panel, built on first use.
     pub(in crate::editor) captions: Option<super::captions::Subtitles>,
     /// Stickers tab: the category tab, whether See all widened the results, and the thumbnails.
-    pub(super) sticker_category: StickerCategory,
+    pub(super) sticker_tab: super::stickers::StickerTab,
     pub(super) sticker_expanded: bool,
     pub(in crate::editor) sticker_thumbnails: super::stickers::Thumbnails,
 }
@@ -139,7 +138,7 @@ impl Default for State {
             restoring_asset: None,
             thumbnail_root: None,
             captions: None,
-            sticker_category: StickerCategory::default(),
+            sticker_tab: Default::default(),
             sticker_expanded: false,
             sticker_thumbnails: Default::default(),
         }

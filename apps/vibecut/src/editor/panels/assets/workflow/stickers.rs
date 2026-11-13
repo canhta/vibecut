@@ -1,5 +1,6 @@
 //! Inserts bundled stickers from the Stickers tab and keeps the recent list.
 
+use super::super::stickers;
 use super::super::{CreatedId, SelectionScopes, TICKS_PER_SECOND, Text, Tick};
 use super::State;
 use crate::editor::Desk;
@@ -50,8 +51,14 @@ impl State {
         desk.select(BTreeSet::from([item]));
         desk.editor().selection_scopes = SelectionScopes::default();
         desk.editor().properties.clear_drafts();
-        let mut recents = Recents::from_ids(desk.editor().preferences.sticker_recents.clone());
-        recents.record(sticker_id);
+        self.remember_sticker(desk, sticker_id);
+    }
+
+    /// Move one inserted id to the front of the saved recents. Stale saved ids drop out here.
+    pub(in crate::editor) fn remember_sticker(&mut self, desk: &mut Desk<'_>, id: &str) {
+        let saved = desk.editor().preferences.sticker_recents.clone();
+        let mut recents = Recents::from_ids(stickers::known_ids(&saved));
+        recents.record(id);
         if let Err(error) =
             desk.store_preference("sticker_recents", serde_json::json!(recents.ids()))
         {

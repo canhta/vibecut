@@ -708,31 +708,20 @@ fn recent_stickers_cap_order_dedupe_and_clear() {
     );
     assert_eq!(recents.ids()[1], ids[270]);
 
-    assert!(
-        recents.record(" flags:us "),
-        "ids are trimmed and canonicalised"
-    );
-    assert_eq!(recents.ids()[0], "flags:US");
-    assert!(
-        !recents.record("flags:ZZ"),
-        "unknown flag codes are refused"
-    );
-    assert!(!recents.record("nope:x"), "unknown providers are refused");
-    assert!(
-        !recents.record("shapes:pentagon"),
-        "unknown shapes are refused"
-    );
+    assert!(recents.record(" graphic.insert.star "), "ids are trimmed");
+    assert_eq!(recents.ids()[0], "graphic.insert.star");
+    assert!(!recents.record("  "), "empty ids are refused");
     assert_eq!(recents.ids().len(), 50);
 
     let loaded = Recents::from_ids(
-        ["flags:ad", "flags:AD", "bad", "shapes:star"]
+        ["flags:AD", "flags:AD", "", "graphic.insert.star"]
             .map(str::to_owned)
             .into_iter(),
     );
     assert_eq!(
         loaded.ids(),
-        ["flags:AD", "shapes:star"],
-        "dedupe keeps the first"
+        ["flags:AD", "graphic.insert.star"],
+        "dedupe keeps the first and empty ids drop"
     );
 
     recents.clear();

@@ -147,7 +147,9 @@ pub(in crate::editor) enum Action {
     /// Apply or delete one app-owned adjustment preset.
     ApplyAdjustment(usize),
     DeleteAdjustment(usize),
-    /// Insert one bundled sticker at the playhead and record it as recent.
+    /// Insert one bundled flag at the playhead and record it as recent.
     InsertSticker(String),
+    /// Insert one shape through its `graphic.insert.*` command and record it as recent.
+    InsertShape(String),
     ClearStickerRecents,
 }

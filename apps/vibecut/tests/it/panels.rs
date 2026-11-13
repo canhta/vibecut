@@ -4521,36 +4521,42 @@ fn stickers_panel_searches_switches_inserts_and_keeps_recents_in_preferences() {
     assert_eq!(sticker_of(&h, flag), ("flags:AF".into(), 640, 480));
     assert_eq!(item(&h, flag).duration().unwrap(), Tick(5 * SECOND));
 
-    // The "asia" query matches no shape, so the Shapes category shows no result until the query clears.
+    // The "asia" query matches no shape, so the Shapes tab shows no card until the query clears.
     click(&mut h, "stickers.category.shapes");
-    assert!(!has_widget(&h, "stickers.insert.shapes-star"));
+    assert!(!has_widget(&h, "graphic.insert.star"));
     set_sticker_search(&mut h, "");
-    click(&mut h, "stickers.insert.shapes-star");
+    click(&mut h, "graphic.insert.star");
     let shape = *h.state().selection().iter().next().unwrap();
-    assert_eq!(sticker_of(&h, shape), ("shapes:star".into(), 512, 512));
+    assert!(matches!(
+        item(&h, shape).content,
+        ItemParams::Graphic(project::GraphicParams::Star { .. })
+    ));
 
-    // Recent follows the category: Shapes lists only the shape, All lists both, newest first.
+    // Recent follows the tab: Shapes lists only the shape, All lists both, newest first.
     assert!(has_widget(&h, "stickers.recent.clear"));
-    assert!(has_widget(&h, "stickers.recent.insert.shapes-star"));
+    assert!(has_widget(&h, "stickers.recent.insert.graphic.insert.star"));
     assert!(!has_widget(&h, "stickers.recent.insert.flags-AF"));
     click(&mut h, "stickers.category.all");
     assert!(has_widget(&h, "stickers.recent.insert.flags-AF"));
     assert_eq!(
         h.state().preferences.sticker_recents,
-        ["shapes:star", "flags:AF"]
+        ["graphic.insert.star", "flags:AF"]
     );
 
     // Re-inserting moves an id to the front without duplicating it.
     click(&mut h, "stickers.recent.insert.flags-AF");
     assert_eq!(
         h.state().preferences.sticker_recents,
-        ["flags:AF", "shapes:star"]
+        ["flags:AF", "graphic.insert.star"]
     );
 
     // Recents survive a restart through the app preferences.
     store.save(&h.state().preferences).unwrap();
     let restored = store.load_with_warning().0;
-    assert_eq!(restored.sticker_recents, ["flags:AF", "shapes:star"]);
+    assert_eq!(
+        restored.sticker_recents,
+        ["flags:AF", "graphic.insert.star"]
+    );
 
     // See all widens the result page; Clear empties the saved list and nothing else.
     click(&mut h, "stickers.see_all");

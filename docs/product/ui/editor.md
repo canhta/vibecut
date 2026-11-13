@@ -162,7 +162,7 @@ The Captions Style chooser lists Saved in project as live selections, retaining 
 
 ### Generated Shapes
 
-The Stickers tab's Shapes category lists square, circle, triangle, hexagon, diamond and star as sticker shapes; see [assets](../../../apps/vibecut/src/editor/panels/assets/README.md#stickers). The former Rectangle, Ellipse, Polygon and Star cards left this tab and their commands stay registered, so their Graphic items keep alpha-capable fill/stroke, stroke width/alignment, rectangle and polygon corner radius, polygon sides (3-12) and star points (3-12) and depth (1-99%) through ordinary key controls. No capture of the Stickers tab exists. Placement and transform limits are owned by [render](../../../crates/render/src/scene/README.md#generated-graphic-geometry).
+The Stickers tab's Shapes tab shows the Rectangle, Ellipse, Polygon and Star cards, which insert Graphic items through their `graphic.insert.*` commands; All lists these cards first, then the flags ([assets](../../../apps/vibecut/src/editor/panels/assets/README.md#stickers)). Graphic items keep alpha-capable fill/stroke, stroke width/alignment, rectangle and polygon corner radius, polygon sides (3-12) and star points (3-12) and depth (1-99%) through ordinary key controls. Stickers are flags only. No capture of the Stickers tab exists. Placement and transform limits are owned by [render](../../../crates/render/src/scene/README.md#generated-graphic-geometry).
 
 The keyframe-lane Copy/Paste menu, selected-item Paste row and item-scope Ctrl+C/Ctrl+V
 adopt the current menu pattern, localized labels, existing icons and 20 px lanes as a new

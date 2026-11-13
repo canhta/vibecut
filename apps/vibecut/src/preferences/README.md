@@ -41,4 +41,4 @@ fetched lists and price acknowledgements are never serialized. A document whose 
 checked against its definition). Saving, applying and deleting a preset are preference
 and project-command paths; the bank never enters project JSON or project history.
 
-`sticker_recents` is the Stickers tab's recent sticker ids, newest first and deduplicated, at most `MAX_RECENT_STICKERS` (50). It is written without a history entry and never enters project JSON.
+`sticker_recents` is the Stickers tab's recent ids (flag sticker ids and shape command ids), newest first and deduplicated, at most `MAX_RECENT_STICKERS` (50). It is written without a history entry and never enters project JSON.

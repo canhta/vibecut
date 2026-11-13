@@ -152,9 +152,10 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
                 .map_or("", String::as_str);
             stickers::rows(
                 query,
-                editor.assets.sticker_category,
+                editor.assets.sticker_tab,
                 editor.assets.sticker_expanded,
                 &editor.preferences.sticker_recents,
+                editor.preferences.locale,
             )
         }),
         importing: editor.assets.importing(),

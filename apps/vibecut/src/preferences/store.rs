@@ -222,7 +222,7 @@ mod tests {
             ),
             (
                 "sticker_recents",
-                serde_json::json!(["flags:VN", "shapes:star"]),
+                serde_json::json!(["flags:VN", "graphic.insert.star"]),
             ),
             (
                 "timeline_lanes",

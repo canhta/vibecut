@@ -108,6 +108,12 @@ impl Editor {
                 assets::Action::InsertSticker(id) => {
                     self.with_assets(|assets, desk| assets.insert_sticker(desk, &id));
                 }
+                assets::Action::InsertShape(id) => {
+                    if self.action_enabled(&id) {
+                        self.action(&id);
+                        self.with_assets(|assets, desk| assets.remember_sticker(desk, &id));
+                    }
+                }
                 assets::Action::ClearStickerRecents => {
                     self.with_assets(|assets, desk| assets.clear_sticker_recents(desk));
                 }
