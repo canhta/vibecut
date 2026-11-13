@@ -277,15 +277,27 @@ fn settings_modal_applies_preferences_and_shortcut_transfers_through_the_picker_
             "Clear cache requests the shared clear"
         );
         assert!(cache.cause.is_some());
+        assert!(matches!(cache.problem(), Some(Text::CacheUnavailable)));
         bench.harness_mut().run_steps(2);
-        let name = if matches!(locale, Locale::En) {
-            "en"
-        } else {
-            "vi"
-        };
-        let shot = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join(format!("../../target/p1-75-settings-{name}.png"));
-        bench.harness_mut().render().unwrap().save(&shot).unwrap();
+        // Hardware acceleration and the storage limit say they apply after restart.
+        assert!(
+            bench
+                .harness()
+                .query_by_label(Text::SettingsHardwareHint.text(locale))
+                .is_some()
+        );
+        assert!(
+            bench
+                .harness()
+                .query_by_label(Text::SettingsCacheHint.text(locale))
+                .is_some()
+        );
+        assert!(
+            bench
+                .harness()
+                .query_by_label(Text::CacheUnavailable.text(locale))
+                .is_some()
+        );
         bench.click("settings.tab.general");
         bench.click("settings.general.shortcuts.export");
         assert!(matches!(
@@ -318,16 +330,195 @@ fn settings_modal_applies_preferences_and_shortcut_transfers_through_the_picker_
             bench.editor().dialogs.preferences.shortcut_notice,
             Some(super::settings::ShortcutNotice::Imported { unknown: 1 })
         ));
-        // A corrupt file is refused before any binding changes.
+        // Replace drops the merged customization and keeps only the file's entries.
+        let replace = dir.path().join("replace.json");
+        std::fs::write(
+            &replace,
+            r#"{"format":"vibecut-keybindings","version":1,"bindings":{"timeline.snap":["Ctrl+Shift+J"]},"isCustomized":["timeline.snap"]}"#,
+        )
+        .unwrap();
+        bench
+            .editor_mut()
+            .keybindings_import_picked(replace, true)
+            .unwrap();
+        assert_eq!(
+            bench.editor().preferences.keybindings.bindings["timeline.snap"],
+            ["Ctrl+Shift+J"]
+        );
+        assert!(matches!(
+            bench.editor().dialogs.preferences.shortcut_notice,
+            Some(super::settings::ShortcutNotice::Imported { unknown: 0 })
+        ));
+        // A corrupt file and a newer-schema file are refused before any binding changes.
+        let newer = dir.path().join("newer.json");
+        std::fs::write(
+            &newer,
+            r#"{"format":"vibecut-keybindings","version":2,"bindings":{"timeline.snap":["F8"]},"isCustomized":["timeline.snap"]}"#,
+        )
+        .unwrap();
         let corrupt = dir.path().join("corrupt.json");
         std::fs::write(&corrupt, "{").unwrap();
         let before = bench.editor().preferences.keybindings.clone();
+        for refused in [corrupt, newer] {
+            assert!(
+                bench
+                    .editor_mut()
+                    .keybindings_import_picked(refused, true)
+                    .is_err()
+            );
+            assert!(matches!(
+                bench.editor().dialogs.preferences.shortcut_notice,
+                Some(super::settings::ShortcutNotice::Refused)
+            ));
+            assert_eq!(bench.editor().preferences.keybindings, before);
+        }
+        bench.harness_mut().run_steps(2);
         assert!(
             bench
-                .editor_mut()
-                .keybindings_import_picked(corrupt, true)
-                .is_err()
+                .harness()
+                .query_by_label(Text::ShortcutsRefused.text(locale))
+                .is_some()
         );
-        assert_eq!(bench.editor().preferences.keybindings, before);
+    }
+}
+
+#[test]
+fn settings_cache_rows_show_clearing_disabled_clear_and_bytes_freed() {
+    use crate::editor::context::{CachePhase, CacheUi};
+    for locale in [Locale::En, Locale::Vi] {
+        let http = Arc::new(Reply {
+            calls: AtomicUsize::new(0),
+            body: Mutex::new(Vec::new()),
+            status: 200,
+        });
+        let mut bench = bench(locale, http);
+        bench.editor_mut().dialogs.preferences.open = true;
+        bench.editor_mut().dialogs.preferences.models_open = false;
+        bench.harness_mut().run_steps(4);
+        bench.click("settings.tab.performance");
+        // A maintenance worker is clearing: the row says so and clear cannot start another.
+        bench.editor_mut().timeline.script_cache(CacheUi {
+            phase: CachePhase::Clearing,
+            ..Default::default()
+        });
+        bench.harness_mut().run_steps(2);
+        assert!(
+            bench
+                .harness()
+                .query_by_label(Text::CacheClearing.text(locale))
+                .is_some()
+        );
+        bench.click("settings.performance.cache.clear");
+        bench.harness_mut().run_steps(2);
+        assert_eq!(
+            bench.editor().timeline.cache_ui().phase,
+            CachePhase::Clearing,
+            "a disabled clear button starts no request"
+        );
+        // A finished clear reports the bytes it freed and what is still in use.
+        let mut report = engine::cache::CacheMaintenanceReport::default();
+        report.removed_bytes = 3 << 20;
+        report.disk_bytes = 5 << 20;
+        report.in_use = 1;
+        bench.editor_mut().timeline.script_cache(CacheUi {
+            phase: CachePhase::Idle,
+            report: Some(Arc::new(report)),
+            ..Default::default()
+        });
+        bench.harness_mut().run_steps(2);
+        let freed = crate::i18n::format(
+            locale,
+            Text::SettingsCacheFreed,
+            &[
+                ("freed", &"3".to_string()),
+                ("after", &"2".to_string()),
+                ("kept", &"1".to_string()),
+            ],
+        );
+        assert!(bench.harness().query_by_label(&freed).is_some());
+    }
+}
+
+#[test]
+fn settings_clear_during_an_active_job_reports_busy_end_to_end() {
+    use crate::editor::context::CachePhase;
+    for locale in [Locale::En, Locale::Vi] {
+        let http = Arc::new(Reply {
+            calls: AtomicUsize::new(0),
+            body: Mutex::new(Vec::new()),
+            status: 200,
+        });
+        let mut bench = bench(locale, http);
+        // The real media cache: the active job holds its lock while Settings clears.
+        let dir = tempfile::tempdir().unwrap();
+        let budget = engine::ByteBudget::new(64 << 20).unwrap();
+        let (artifacts, _) =
+            engine::cache::ArtifactCache::open(&dir.path().join("waveform"), budget.clone(), 128)
+                .unwrap();
+        let thumbnails = engine::thumbnails::ThumbnailCache::open(
+            &dir.path().join("thumbnails"),
+            budget.clone(),
+            128,
+        )
+        .unwrap();
+        let access = Arc::new(Mutex::new(engine::control::MediaAccess::new(
+            artifacts,
+            thumbnails,
+            engine::luts::LutStore::open(&dir.path().join("luts")).unwrap(),
+        )));
+        bench.editor_mut().set_media(access.clone());
+        bench.editor_mut().dialogs.preferences.open = true;
+        bench.editor_mut().dialogs.preferences.models_open = false;
+        bench.harness_mut().run_steps(4);
+        bench.click("settings.tab.performance");
+        let job = access.lock().unwrap();
+        bench.click("settings.performance.cache.clear");
+        bench.harness_mut().run_steps(2);
+        let cache = bench.editor().timeline.cache_ui();
+        assert_eq!(cache.phase, CachePhase::Failed);
+        assert!(matches!(cache.problem(), Some(Text::CacheBusy)));
+        assert!(
+            bench
+                .harness()
+                .query_by_label(Text::CacheBusy.text(locale))
+                .is_some()
+        );
+        drop(job);
+    }
+}
+
+#[test]
+fn cache_problem_names_a_busy_clear_typed() {
+    use crate::editor::context::CacheUi;
+    let busy = CacheUi {
+        cause: Some(std::sync::Arc::new(engine::control::Error::Runtime(
+            engine::RuntimeError::CacheBusy,
+        ))),
+        ..Default::default()
+    };
+    assert!(matches!(busy.problem(), Some(Text::CacheBusy)));
+    assert!(CacheUi::default().problem().is_none());
+}
+
+#[test]
+fn invalid_custom_model_draft_shows_inline_notice() {
+    for locale in [Locale::En, Locale::Vi] {
+        let http = Arc::new(Reply {
+            calls: AtomicUsize::new(0),
+            body: Mutex::new(Vec::new()),
+            status: 200,
+        });
+        let mut bench = bench(locale, http);
+        bench.harness_mut().run_steps(4);
+        bench.click("preferences.ai.openai.transcribe.model");
+        bench.click("preferences.ai.openai.transcribe.custom");
+        bench.harness_mut().run_steps(4);
+        // An empty draft is not a valid model id, so the row names the problem inline.
+        assert!(
+            bench
+                .harness()
+                .query_by_label(Text::ModelRemoteInvalid.text(locale))
+                .is_some()
+        );
     }
 }

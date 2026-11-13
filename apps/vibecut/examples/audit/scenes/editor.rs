@@ -395,7 +395,8 @@ pub(super) fn import_progress(theme: Theme, scale: f32) -> Result<AppHarness, Fa
     Ok(app)
 }
 
-pub(super) fn ai_preferences(
+/// The Settings modal as Window / Settings opens it (Draft tab).
+pub(super) fn settings_dialog(
     theme: Theme,
     scale: f32,
     locale: Locale,

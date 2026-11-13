@@ -170,42 +170,7 @@ impl Panel<'_, '_> {
             let response = ui.label(egui::RichText::new(summary).small().color(self.secondary()));
             self.remember("inspector.cache.result", &response);
         }
-        let cause = cache.cause.as_deref();
-        let runtime = match cause {
-            Some(engine::control::Error::Runtime(error)) => Some(error),
-            Some(_) => None,
-            None => cache
-                .report
-                .as_ref()
-                .and_then(|report| report.cause.as_ref()),
-        };
-        if cause.is_some() || runtime.is_some() {
-            let key = if cache
-                .report
-                .as_ref()
-                .is_some_and(|report| report.root_unavailable)
-            {
-                Text::CacheRestart
-            } else {
-                match runtime {
-                    Some(engine::RuntimeError::Cancelled) => Text::CacheCancelled,
-                    Some(engine::RuntimeError::CacheCorrupt) => Text::CacheCorrupt,
-                    Some(engine::RuntimeError::CacheBusy) => Text::CacheBusy,
-                    Some(engine::RuntimeError::Edit(engine::EditError::Unsupported(_))) => {
-                        Text::CacheUnavailable
-                    }
-                    _ if matches!(
-                        cause,
-                        Some(engine::control::Error::Edit(
-                            engine::EditError::Unsupported(_)
-                        ))
-                    ) =>
-                    {
-                        Text::CacheUnavailable
-                    }
-                    _ => Text::CacheFailed,
-                }
-            };
+        if let Some(key) = cache.problem() {
             let response = ui.label(
                 egui::RichText::new(self.tr(key))
                     .small()
