@@ -442,6 +442,7 @@ fn settings_cache_rows_show_clearing_disabled_clear_and_bytes_freed() {
 #[test]
 fn settings_clear_during_an_active_job_reports_busy_end_to_end() {
     use crate::editor::context::CachePhase;
+    use egui_kittest::kittest::NodeT;
     for locale in [Locale::En, Locale::Vi] {
         let http = Arc::new(Reply {
             calls: AtomicUsize::new(0),
@@ -471,8 +472,19 @@ fn settings_clear_during_an_active_job_reports_busy_end_to_end() {
         bench.editor_mut().dialogs.preferences.models_open = false;
         bench.harness_mut().run_steps(4);
         bench.click("settings.tab.performance");
-        let job = access.lock().unwrap();
-        bench.click("settings.performance.cache.clear");
+        // An active job holds the media cache while the clear the button routes arrives. The
+        // frame's own display reads lock the cache too, so the job's hold spans the routed
+        // request alone, as a worker's short hold does, and ends before the next frame.
+        let clear = By::new()
+            .predicate(|n| n.author_id() == Some("settings.performance.cache.clear"));
+        assert!(!bench.harness().get(clear).accesskit_node().is_disabled());
+        {
+            let _job = access.lock().unwrap();
+            bench
+                .editor_mut()
+                .timeline
+                .request_cache(crate::editor::context::CacheAction::Clear);
+        }
         bench.harness_mut().run_steps(2);
         let cache = bench.editor().timeline.cache_ui();
         assert_eq!(cache.phase, CachePhase::Failed);
@@ -483,7 +495,6 @@ fn settings_clear_during_an_active_job_reports_busy_end_to_end() {
                 .query_by_label(Text::CacheBusy.text(locale))
                 .is_some()
         );
-        drop(job);
     }
 }
 

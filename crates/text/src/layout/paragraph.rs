@@ -442,11 +442,14 @@ fn line_metrics(glyphs: &[ShapedGlyph], primary: Resolved, size: f32) -> (f32, f
 }
 
 /// Right edge of a line's painted ink from the line start, never less than its advance width.
+/// Only synthetically slanted glyphs count, so upright text keeps its advance-width placement.
 fn ink_extent(glyphs: &[ShapedGlyph], content_end: usize, size: f32, width: f32) -> f32 {
     let mut pen = 0.0f32;
     let mut right = width;
     for glyph in glyphs.iter().filter(|glyph| glyph.cluster < content_end) {
-        right = right.max(pen + glyph.offset_x + ink_right(glyph, size));
+        if glyph.synth_italic {
+            right = right.max(pen + glyph.offset_x + ink_right(glyph, size));
+        }
         pen += glyph.advance;
     }
     right

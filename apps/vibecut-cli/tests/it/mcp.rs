@@ -420,7 +420,7 @@ fn caption_style_command_run_custom_values_stale_revision_and_replay() {
             .contains("Hello")
     );
     let initial = client.call("inspect", json!({}), None, None);
-    let params = json!({"item":item,"style":{"kind":"preset","preset":"box"}});
+    let params = json!({"item":item,"style":{"kind":"preset","preset":"label_black"}});
     let applied = client.call(
         "captions.apply_style",
         params.clone(),
@@ -466,7 +466,7 @@ fn caption_style_command_run_custom_values_stale_revision_and_replay() {
     };
     let mut style = params.cues.styles[0].clone();
     assert_eq!(style.border_style, 3);
-    assert_eq!(style.background_color, [0, 0, 0, 255]);
+    assert_eq!(style.background_color, [0, 0, 0, 160]);
     style.primary_color = [20, 240, 60, 255];
     let custom = client.call(
         "captions.apply_style",
@@ -569,7 +569,7 @@ fn caption_style_command_run_custom_values_stale_revision_and_replay() {
     // A referenced live preset is not deleted; materialize first, then delete.
     let detached = client.call(
         "captions.apply_style",
-        json!({"item":item,"style":{"kind":"preset","preset":"outline"}}),
+        json!({"item":item,"style":{"kind":"preset","preset":"outline_bottom"}}),
         Some(&copied["rev_after"]),
         Some("bank-detach"),
     );

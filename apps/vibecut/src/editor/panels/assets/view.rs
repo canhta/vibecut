@@ -619,18 +619,21 @@ mod tests {
             "assets.tab.adjustment",
         ];
         let mut bench = bench();
+        // The host frame insets the panel; the unscrolled first tab marks its left edge.
+        let left = tab(&bench, "assets.tab.media").left();
+        let right = left + PANEL;
         assert!(
-            tab(&bench, "assets.tab.adjustment").right() > PANEL,
+            tab(&bench, "assets.tab.adjustment").right() > right,
             "fixture: the strip must overflow the panel"
         );
         for id in ids {
             for _ in 0..60 {
                 let rect = tab(&bench, id);
-                if rect.left() >= -0.5 && rect.right() <= PANEL + 0.5 {
+                if rect.left() >= left - 0.5 && rect.right() <= right + 0.5 {
                     break;
                 }
                 // A negative vertical wheel reveals the right-hand tabs.
-                let turn = if rect.right() > PANEL { -120.0 } else { 120.0 };
+                let turn = if rect.right() > right { -120.0 } else { 120.0 };
                 let harness = bench.harness_mut();
                 harness.hover_at(egui::pos2(200.0, 21.0));
                 harness.run_steps(2);
@@ -645,7 +648,7 @@ mod tests {
             }
             let rect = tab(&bench, id);
             assert!(
-                rect.left() >= -0.5 && rect.right() <= PANEL + 0.5,
+                rect.left() >= left - 0.5 && rect.right() <= right + 0.5,
                 "{id} is not reachable by a plain wheel: {rect:?}"
             );
         }
