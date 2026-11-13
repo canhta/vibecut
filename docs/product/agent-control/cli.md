@@ -21,7 +21,7 @@ Build with `cargo build -p vibecut-cli` through the [build wrapper](../../../xta
 | `vibecut-cli normalize <project> [--clip] [--master] [--target-lufs -14] [--true-peak-db -1]` | Measure and store loudness gains for clip or master scopes |
 | `vibecut-cli control <project>` | Run a revision-bound control session over newline-delimited JSON |
 | `vibecut-cli mcp <project>` / `mcp --attach --socket <endpoint>` | Serve [MCP control](mcp.md) over stdio, headless or attached to the app |
-| `vibecut-cli export <project> --out <mp4\|mov\|webm>` | Export saved scene(s) to the container selected by the extension |
+| `vibecut-cli export <project> --out <mp4\|mov\|webm\|m4a>` | Export saved scene(s) to the container selected by the extension; `m4a` and audio-only output need `"audio_only": true` in `--settings` |
 | `vibecut-cli batch <job-file>` | Render the validated export jobs in a JSON job file |
 | `vibecut-cli subtitle <in> --to <lang>` | Transcribe, translate and export SRT/burned subtitles |
 | `vibecut-cli captions import <project> <file.ass>` | Import ASS cues and styles as one caption item and print counts |

@@ -74,6 +74,8 @@ pub struct OutputOptions {
     pub profile: media::H264Profile,
     pub range: RangeChoice,
     pub scene: SceneChoice,
+    /// Audio-only output (`m4a` AAC or `webm` Opus); refuses every video field.
+    pub audio_only: bool,
 }
 
 struct RequiredNullable<T>(std::marker::PhantomData<T>);
@@ -104,6 +106,7 @@ impl Default for OutputOptions {
             profile: media::H264Profile::Automatic,
             range: RangeChoice::Full,
             scene: SceneChoice::Active,
+            audio_only: false,
         }
     }
 }
@@ -137,6 +140,17 @@ impl OutputOptions {
     pub fn validate(self) -> Result<()> {
         if self.version != 1 {
             return Err(Error::Unsupported("export options version"));
+        }
+        if self.audio_only
+            && (self.resolution.is_some()
+                || self.fps.is_some()
+                || self.bit_rate.is_some()
+                || self.codec != VideoCodec::Automatic
+                || self.profile != media::H264Profile::Automatic)
+        {
+            return Err(Error::Invalid(
+                "audio-only output carries no video settings",
+            ));
         }
         if let Some([w, h]) = self.resolution
             && (w < 2
@@ -197,6 +211,26 @@ impl OutputOptions {
         }
         Ok(TimeRange::new(start, end)?)
     }
+    /// Container an output path selects. Audio-only admits `m4a` (AAC in MP4) plus
+    /// `mp4` and `webm`; video admits `mp4`, `mov` and `webm`. MOV is video-only.
+    pub fn container_for_path(
+        path: &std::path::Path,
+        audio_only: bool,
+    ) -> Result<media::Container> {
+        let extension = path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .ok_or(Error::Invalid("output extension"))?;
+        let container = if audio_only && extension.eq_ignore_ascii_case("m4a") {
+            media::Container::Mp4
+        } else {
+            media::Container::from_extension(extension).ok_or(Error::Invalid("output extension"))?
+        };
+        if audio_only && matches!(container, media::Container::Mov) {
+            return Err(Error::Unsupported("audio-only container"));
+        }
+        Ok(container)
+    }
     /// Whether `profile` can be requested for `container`: an explicit H.264
     /// profile has no meaning in WebM.
     pub fn profile_fits(profile: media::H264Profile, container: media::Container) -> bool {
@@ -242,6 +276,12 @@ impl OutputOptions {
             || !Self::profile_fits(self.profile, settings.container)
         {
             return Err(Error::Unsupported("codec/profile for container"));
+        }
+        if self.audio_only {
+            if matches!(settings.container, media::Container::Mov) {
+                return Err(Error::Unsupported("audio-only container"));
+            }
+            settings.audio_only = true;
         }
         if let Some([width, height]) = self.resolution {
             settings.render.width = width;

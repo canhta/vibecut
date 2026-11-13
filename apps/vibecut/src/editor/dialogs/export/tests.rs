@@ -285,6 +285,20 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
             store.load_with_warning().0.export,
             bench.editor().preferences.export
         );
+        // Audio-only formats are admitted rows of the same format control.
+        bench.click("export.format");
+        bench.click("export.format.m4a");
+        assert!(
+            bench
+                .editor()
+                .inspect()
+                .unwrap()
+                .export_options
+                .format
+                .audio_only()
+        );
+        bench.click("export.format");
+        bench.click("export.format.webm");
         bench.click("export.close");
         open(&mut bench);
         assert_eq!(bench.editor().preferences.export.format, ExportFormat::Webm);

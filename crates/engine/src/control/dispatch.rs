@@ -822,13 +822,8 @@ impl Session {
                     ));
                 }
                 let mut settings = render::ExportSettings::from_project(self.project());
-                settings.container = path
-                    .extension()
-                    .and_then(|extension| extension.to_str())
-                    .and_then(media::Container::from_extension)
-                    .ok_or(EngineError::Edit(crate::EditError::Invalid(
-                        "export container extension",
-                    )))?;
+                settings.container =
+                    render::OutputOptions::container_for_path(&path, options.audio_only)?;
                 let paths = options.paths(self.project(), &path)?;
                 for output in &paths {
                     caller.policy.authorize(

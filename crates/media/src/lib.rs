@@ -32,7 +32,8 @@ pub use vision::{
 };
 pub use write::{
     AudioEncoder, AudioEncoderSettings, Container, EncodePreference, H264Profile, MuxSink, Muxer,
-    VideoEncoder, VideoEncoderSettings, export_container_available, h264_encoder_available,
+    VideoEncoder, VideoEncoderSettings, audio_export_container_available,
+    export_container_available, h264_encoder_available,
 };
 
 /// Typed failures from the media boundary. Provider paths and media text are not
