@@ -25,6 +25,18 @@ pub enum HardwareAcceleration {
     Off,
 }
 
+impl HardwareAcceleration {
+    /// The export encoder this choice selects. `Auto` keeps the media crate's
+    /// per-platform default; decoding is not covered by this preference.
+    pub fn encode_preference(self) -> media::EncodePreference {
+        match self {
+            Self::Auto => media::EncodePreference::default(),
+            Self::On => media::EncodePreference::Hardware,
+            Self::Off => media::EncodePreference::Software,
+        }
+    }
+}
+
 pub fn validate_project_fps(fps: u32) -> Result<u32> {
     if PROJECT_FPS.contains(&fps) {
         Ok(fps)

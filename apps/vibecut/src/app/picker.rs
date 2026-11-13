@@ -14,6 +14,8 @@ pub(super) enum PickerAction {
     ImportLut,
     ExportSave,
     SnapshotSave,
+    KeybindingsImport { replace: bool },
+    KeybindingsExport,
 }
 pub(super) struct Picker {
     pub(super) future:
@@ -67,6 +69,17 @@ impl EditorWindow {
                 if let Some(directory) = directory {
                     dialog = dialog.set_directory(directory);
                 }
+                Box::pin(async move { dialog.save_file().await.map(|file| vec![file]) })
+            }
+            PickerAction::KeybindingsImport { .. } => {
+                let dialog = rfd::AsyncFileDialog::new()
+                    .add_filter(self.tr(Text::KeybindingsFormat), &["json"]);
+                Box::pin(async move { dialog.pick_file().await.map(|file| vec![file]) })
+            }
+            PickerAction::KeybindingsExport => {
+                let dialog = rfd::AsyncFileDialog::new()
+                    .add_filter(self.tr(Text::KeybindingsFormat), &["json"])
+                    .set_file_name(self.tr(Text::KeybindingsFileName));
                 Box::pin(async move { dialog.save_file().await.map(|file| vec![file]) })
             }
             PickerAction::ImportLut => {
@@ -165,6 +178,20 @@ impl EditorWindow {
             editor.snapshot_save_cancelled();
         }
     }
+    /// Apply a shortcut file chosen in the native picker, merging or replacing it.
+    pub fn keybindings_import_picked(&mut self, path: PathBuf, replace: bool) -> Result<()> {
+        self.editor
+            .as_mut()
+            .ok_or(Error::Invalid("no project"))?
+            .keybindings_import_picked(path, replace)
+    }
+    /// Write the canonical shortcut profile to the picked destination.
+    pub fn keybindings_export_picked(&mut self, path: PathBuf) -> Result<()> {
+        self.editor
+            .as_mut()
+            .ok_or(Error::Invalid("no project"))?
+            .keybindings_export_picked(path)
+    }
     pub(super) fn poll_picker(&mut self) {
         let Some(mut picker) = self.picker.take() else {
             return;
@@ -210,6 +237,16 @@ impl EditorWindow {
                             self.snapshot_save_cancelled();
                             Ok(())
                         }
+                    },
+                    PickerAction::KeybindingsImport { replace } => match files.pop() {
+                        Some(file) => {
+                            self.keybindings_import_picked(file.path().to_owned(), replace)
+                        }
+                        None => Ok(()),
+                    },
+                    PickerAction::KeybindingsExport => match files.pop() {
+                        Some(file) => self.keybindings_export_picked(file.path().to_owned()),
+                        None => Ok(()),
                     },
                     PickerAction::ImportLut => {
                         self.lut_picked_file(files.pop().map(|file| file.path().to_owned()))

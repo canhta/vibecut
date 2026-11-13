@@ -111,7 +111,8 @@ impl Editor {
                 || self.frame.shortcuts_open
                 || self.dialogs.export.is_open()
                 || self.dialogs.models.is_open()
-                || self.dialogs.preferences.open,
+                || self.dialogs.preferences.open
+                || self.dialogs.preferences.models_open,
             // There is no Editor while a project is loading; the workspace shows
             // its own progress surface and dispatches no actions.
             project_loading: false,

@@ -203,6 +203,14 @@ impl Project {
             }
         }
     }
+    /// An empty project whose canvas starts at `fps` whole frames per second.
+    pub fn empty_with_fps(id: ProjectId, name: NfcText, fps: u32) -> Result<Self> {
+        let fps =
+            time::FrameRate::new(i64::from(fps), 1).map_err(|_| Error::Invalid("frame rate"))?;
+        let mut data = Self::empty(id, name)?.into_data();
+        data.canvas.fps = fps;
+        Self::new(data)
+    }
     pub fn into_data(self) -> ProjectData {
         self.0
     }

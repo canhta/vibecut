@@ -468,6 +468,17 @@ impl Editor {
                         .ok_or(Error::Invalid("preview zoom"))?;
                     self.set_preview_zoom(zoom, viewport, canvas)?;
                 }
+                UiAction::ImportKeybindings => {
+                    self.lifecycle_action = Some(
+                        crate::services::lifecycle::EditorAction::KeybindingsImport {
+                            replace: false,
+                        },
+                    );
+                }
+                UiAction::ExportKeybindings => {
+                    self.lifecycle_action =
+                        Some(crate::services::lifecycle::EditorAction::KeybindingsExport);
+                }
                 UiAction::JumpBookmark(direction) => {
                     self.dispatch(crate::editor::AppCommand::JumpBookmark(direction))?;
                 }
@@ -475,7 +486,9 @@ impl Editor {
                 | UiAction::SetPreviewZoom
                 | UiAction::SetPreference
                 | UiAction::SetKeybinding
-                | UiAction::ResetKeybindings => {
+                | UiAction::ResetKeybindings
+                | UiAction::ImportKeybindings
+                | UiAction::ExportKeybindings => {
                     return Err(Error::Unsupported("action requires parameters"));
                 }
                 UiAction::SelectItem => {

@@ -488,7 +488,7 @@ mod tests {
             std::thread::sleep(Duration::from_millis(1));
         }
         let clock = Arc::new(ManualClock::default());
-        let session = fresh("picker test").unwrap();
+        let session = fresh("picker test", 30).unwrap();
         let autosave = Autosave::new(
             &workspace.home.root,
             session,

@@ -27,7 +27,8 @@ pub use runtime::{
     subtitle_file,
 };
 pub use runtime::{
-    BudgetSnapshot, ByteBudget, ByteBudgetHooks, ByteLease, ByteOwner, Error as RuntimeError,
+    BudgetSnapshot, ByteBudget, ByteBudgetHooks, ByteLease, ByteOwner, ClearReport,
+    Error as RuntimeError,
 };
 mod store;
 pub use store::library;

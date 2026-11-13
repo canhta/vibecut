@@ -191,6 +191,8 @@ pub enum UiAction {
     SetPreference,
     SetKeybinding,
     ResetKeybindings,
+    ImportKeybindings,
+    ExportKeybindings,
     OpenHelp,
     OpenFeedback,
 }
@@ -345,7 +347,9 @@ impl ActionSpec {
                         | UiAction::SetPreviewZoom
                         | UiAction::SetPreference
                         | UiAction::SetKeybinding
-                        | UiAction::ResetKeybindings,
+                        | UiAction::ResetKeybindings
+                        | UiAction::ImportKeybindings
+                        | UiAction::ExportKeybindings,
                     ..
                 }
         )
@@ -773,16 +777,23 @@ mod tests {
         );
         let imported = KeybindingProfile::import(profile.as_bytes()).unwrap();
         let merged = current
-            .apply_profile(imported.clone(), crate::input::ImportMode::Merge, known)            .unwrap();
+            .apply_profile(imported.clone(), crate::input::ImportMode::Merge, known)
+            .unwrap();
         assert_eq!(merged.unknown_actions, ["future.action"]);
-        assert_eq!(merged.preferences.bindings["timeline.snap"], ["Ctrl+Shift+K"]);
+        assert_eq!(
+            merged.preferences.bindings["timeline.snap"],
+            ["Ctrl+Shift+K"]
+        );
         assert_eq!(merged.preferences.bindings["playback.seek"], ["F7"]);
         assert!(!merged.preferences.bindings.contains_key("future.action"));
         let replaced = current
             .apply_profile(imported, crate::input::ImportMode::Replace, known)
             .unwrap();
         assert_eq!(replaced.preferences.bindings.len(), 1);
-        assert_eq!(replaced.preferences.is_customized, BTreeSet::from(["timeline.snap".into()]));
+        assert_eq!(
+            replaced.preferences.is_customized,
+            BTreeSet::from(["timeline.snap".into()])
+        );
         assert_eq!(replaced.unknown_actions, ["future.action"]);
         // A corrupt file never reaches apply_profile, so the current bindings stay as they were.
         assert_eq!(

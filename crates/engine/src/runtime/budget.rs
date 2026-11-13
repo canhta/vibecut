@@ -31,6 +31,15 @@ impl ByteOwner {
         }
     }
 }
+/// What a cache clear released on the aggregate policy. `kept` counts registered
+/// artifacts left in place: pinned by a reader or job, or native model weights.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ClearReport {
+    pub before: u64,
+    pub after: u64,
+    pub removed: u64,
+    pub kept: u64,
+}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BudgetSnapshot {
     pub limit: u64,
@@ -86,6 +95,44 @@ impl ByteBudget {
     /// Whether both handles retain the same accounting policy, including its child scope.
     pub fn same_policy(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
+    }
+    /// The aggregate policy every child and cache reports into.
+    pub fn root(&self) -> Self {
+        self.0
+            .parent
+            .as_ref()
+            .map_or_else(|| self.clone(), |parent| parent.root())
+    }
+    /// Evicts every unpinned persistent artifact registered on this policy, in the
+    /// LRU order reclaim uses. Call on `root()` to clear every cache. Native model
+    /// weights are never evicted here, and nothing pinned is touched.
+    pub fn clear_persistent(&self) -> Result<ClearReport> {
+        let before = self.snapshot()?.used;
+        let mut candidates: Vec<_> = {
+            let mut artifacts = self.0.artifacts.lock().map_err(|_| Error::Poisoned)?;
+            artifacts.retain(|entry| entry.upgrade().is_some_and(|a| !a.removed()));
+            artifacts
+                .iter()
+                .filter_map(Weak::upgrade)
+                .map(|artifact| (artifact.stamp(), artifact))
+                .collect()
+        };
+        candidates.sort_by_key(|(stamp, _)| *stamp);
+        let (mut removed, mut kept) = (0, 0);
+        for (_, artifact) in candidates {
+            if artifact.evict()? {
+                removed += 1;
+            } else {
+                kept += 1;
+            }
+        }
+        let after = self.snapshot()?.used;
+        Ok(ClearReport {
+            before,
+            after,
+            removed,
+            kept,
+        })
     }
     pub fn snapshot(&self) -> Result<BudgetSnapshot> {
         Ok(self

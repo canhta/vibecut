@@ -708,7 +708,7 @@ commands! {
     MusicUnsave, "music.unsave", "Unsave library music", Read { id: String } => Timeline, serde_json::json!({"id":"0f6c1c7e-2b3a-4a9e-9d3d-2a6f1f0b8c11"}), grant = Human;
     Preview, "preview", "Preview frames", JobControl { frames: Vec<i64> } => Timeline, serde_json::json!({"frames":[0]}), grant = Agent, curated = true;
     Snapshot, "preview.snapshot", "Save preview snapshot", FilePublish { time: Tick, path: std::path::PathBuf } => Timeline, serde_json::json!({"time":0,"path":"$output/snapshot.png"}), available = PlayableTimeline;
-    CreateProject, "project.create", "Create project", SessionControl { id: project::ProjectId, name: NfcText } => Create, serde_json::json!({"id":"18446744073709551615","name":"Created"}), grant = Human, lifecycle = Create;
+    CreateProject, "project.create", "Create project", SessionControl { id: project::ProjectId, name: NfcText, fps: u32 } => Create, serde_json::json!({"id":"18446744073709551615","name":"Created","fps":30}), grant = Human, lifecycle = Create;
     DeleteProject, "project.delete", "Move project to trash", SessionControl {} => Library, serde_json::json!({}), grant = Human, lifecycle = Delete;
     DuplicateProject, "project.duplicate", "Duplicate project", SessionControl { id: project::ProjectId } => Library, serde_json::json!({"id":"2"}), grant = Human, lifecycle = Duplicate;
     PurgeProject, "project.purge", "Permanently delete trashed project", SessionControl {} => Library, serde_json::json!({}), grant = Human, lifecycle = Purge;

@@ -48,13 +48,15 @@ pub enum EditorAction {
     ImportLut,
     ExportSave,
     SnapshotSave,
+    KeybindingsExport,
+    KeybindingsImport { replace: bool },
 }
 
 /// Project-owned documentation and issue entry points; no hosted feedback service.
 pub(crate) const HELP_URL: &str = "https://github.com/canhta/vibecut/blob/main/docs/README.md";
 pub(crate) const FEEDBACK_URL: &str = "https://github.com/canhta/vibecut/issues/new/choose";
 
-pub(crate) fn fresh(name: &str) -> Result<Session> {
+pub(crate) fn fresh(name: &str, fps: u32) -> Result<Session> {
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let epoch = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -66,6 +68,7 @@ pub(crate) fn fresh(name: &str) -> Result<Session> {
         Command::CreateProject {
             id: project::ProjectId(id),
             name: name.into(),
+            fps,
         },
         100,
     )?)

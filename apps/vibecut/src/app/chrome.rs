@@ -68,6 +68,12 @@ impl EditorWindow {
                     EditorAction::SnapshotSave => self.pick(ui.ctx(), PickerAction::SnapshotSave),
                     EditorAction::ImportMedia => self.pick(ui.ctx(), PickerAction::ImportMedia),
                     EditorAction::ImportLut => self.pick(ui.ctx(), PickerAction::ImportLut),
+                    EditorAction::KeybindingsExport => {
+                        self.pick(ui.ctx(), PickerAction::KeybindingsExport)
+                    }
+                    EditorAction::KeybindingsImport { replace } => {
+                        self.pick(ui.ctx(), PickerAction::KeybindingsImport { replace })
+                    }
                     EditorAction::FocusHome => {
                         self.focus_home = true;
                         Ok(())

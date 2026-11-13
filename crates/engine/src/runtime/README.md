@@ -119,7 +119,7 @@ retry. Atomic reader pins exclude in-use files and a read's requested entry. `us
 every category; `limited_used()` excludes model bytes, which free-disk preflight admits. Model
 files stay pinned and cannot starve ordinary work admission. Reservations are declared
 allocation ceilings, not an allocator sandbox or RSS measurement; captured task data is
-caller-owned and must be bounded. The preferences owner supplies the aggregate limit.
+caller-owned and must be bounded. The preferences owner supplies the aggregate limit. `ByteBudget::root().clear_persistent()` evicts every unpinned persistent artifact on that policy in reclaim order and reports bytes before and after; pinned entries and native model weights stay, counted in `kept`.
 
 Scheduler configuration, submission, tick, cancellation and JobContext progress return
 `runtime::Result` directly. Higher feature/control/app boundaries compose their Control result

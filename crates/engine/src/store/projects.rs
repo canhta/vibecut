@@ -405,9 +405,9 @@ impl ProjectLibrary {
         self._lease.validate()?;
         checkpoint(cancelled)?;
         match command {
-            Command::CreateProject { id, name } => {
+            Command::CreateProject { id, name, fps } => {
                 self.check_name(&name, None)?;
-                let project = Project::empty(id, name)?;
+                let project = Project::empty_with_fps(id, name, fps)?;
                 self.publish(&project, id, Metadata::default(), cancelled)?;
                 self.clear_history();
             }
@@ -874,6 +874,7 @@ mod tests {
                 Command::CreateProject {
                     id: ProjectId(1),
                     name: "Clock".into(),
+                    fps: 30,
                 },
             )
             .expect("create");

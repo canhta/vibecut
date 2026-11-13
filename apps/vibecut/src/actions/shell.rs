@@ -156,4 +156,20 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         UiAction::ResetKeybindings,
         &[],
     ),
+    ActionSpec::ui(
+        "ui.keybindings.import",
+        Text::ActionUiKeybindingsImport,
+        ActionCategory::View,
+        "shortcut dialog",
+        UiAction::ImportKeybindings,
+        &[],
+    ),
+    ActionSpec::ui(
+        "ui.keybindings.export",
+        Text::ActionUiKeybindingsExport,
+        ActionCategory::View,
+        "shortcut dialog",
+        UiAction::ExportKeybindings,
+        &[],
+    ),
 ];

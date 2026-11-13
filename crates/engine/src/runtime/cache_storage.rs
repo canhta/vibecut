@@ -883,6 +883,48 @@ mod tests {
     }
 
     #[test]
+    fn clear_persistent_evicts_unpinned_entries_and_reports_bytes_on_the_aggregate_budget() {
+        let dir = tempfile::tempdir().unwrap();
+        let budget = ByteBudget::new(8192).unwrap();
+        let (mut cache, _) = ArtifactCache::open(dir.path(), budget.clone(), 8).unwrap();
+        let mut keys = Vec::new();
+        for n in 1..=3u8 {
+            let key = super::CacheKey::new(super::KeyInputs {
+                kind: super::ArtifactKind::Waveform,
+                source: [n; 32],
+                provider: "test",
+                model: "test",
+                version: "1",
+                settings: &[],
+                transcript: [0; 32],
+                cues: [0; 32],
+                clip_range: [0; 32],
+                translation: [0; 32],
+            })
+            .unwrap();
+            cache.put(key, &[n; 28]).unwrap();
+            keys.push(key);
+        }
+        let entry = 28 + super::HEADER as u64;
+        let pinned = cache.get(keys[0]).unwrap().unwrap();
+        let before = budget.snapshot().unwrap().used;
+        assert_eq!(before, 3 * entry);
+        let report = budget.root().clear_persistent().unwrap();
+        assert_eq!(
+            (report.before, report.after, report.removed, report.kept),
+            (before, before - 2 * entry, 2, 1),
+        );
+        assert_eq!(
+            pinned.bytes(),
+            [1u8; 28].as_slice(),
+            "a pinned entry survives the clear"
+        );
+        drop(pinned);
+        let rest = budget.root().clear_persistent().unwrap();
+        assert_eq!((rest.removed, rest.kept, rest.after), (1, 0, 0));
+    }
+
+    #[test]
     fn cache_reopen_waits_for_last_owner_but_not_retained_descriptors() {
         let root = tempfile::tempdir().unwrap();
         let budget = ByteBudget::new(1024 * 1024).unwrap();

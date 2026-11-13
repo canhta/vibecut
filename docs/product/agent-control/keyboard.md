@@ -139,6 +139,8 @@
 | `ui.prefs.set` — Change a setting | View | — | — | preference store |
 | `ui.keybindings.set` — Change a shortcut | View | — | — | shortcut dialog |
 | `ui.keybindings.reset` — Restore shortcuts | View | — | — | shortcut dialog |
+| `ui.keybindings.import` — Import shortcuts | View | — | — | shortcut dialog |
+| `ui.keybindings.export` — Export shortcuts | View | — | — | shortcut dialog |
 <!-- END GENERATED KEYMAP -->
 
 Every project mutation uses its engine command id (`vibecut-cli commands --json` lists the schemas). UI-only actions stay app-owned; actions marked unavailable are registered but do not run.
