@@ -5,7 +5,7 @@ Interface: `SelectionScope`, `SelectionScopes`, `KeyframeSelection`,
 
 The engine `Session` is the only owner of the selected items: areas read them through
 `Context::selection` or `Session::selection`, and every write goes through the one
-`Desk::select` entry, which calls `Session::set_selection`. The session refuses a change
+`select` entry (`Port::select` for an area), which calls `Session::set_selection`. The session refuses a change
 while a gesture is open; a click, marquee or `Editor::select` therefore ends the
 inspector's scrub, wheel, curve or picker gesture and the timeline graph popover first
 (the same reconciliation the inspector runs every frame), and any other open gesture

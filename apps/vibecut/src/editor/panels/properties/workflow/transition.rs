@@ -1,5 +1,5 @@
 //! Applies transition inspector edits through the transition commands.
-use crate::editor::{Desk, Error, Result};
+use crate::editor::{Error, Port, Result};
 use engine::Command;
 use project::{TransitionAlignment, TransitionId};
 use time::Tick;
@@ -7,11 +7,11 @@ use time::Tick;
 /// Resize through `transition.set_duration`; the engine clamps to the handles
 /// on both sides and refuses a span with none, leaving the project unchanged.
 pub(super) fn set_duration(
-    desk: &mut Desk<'_>,
+    port: &mut Port<'_>,
     transition: TransitionId,
     duration: Tick,
 ) -> Result<()> {
-    desk.apply_result(Command::SetTransitionDuration {
+    port.apply_result(Command::SetTransitionDuration {
         transition,
         duration,
     })?;
@@ -22,21 +22,21 @@ pub(super) fn set_duration(
 /// position that alignment names, batched with a shrink when the handle on the
 /// side the span must grow into is shorter than the span.
 pub(super) fn set_alignment(
-    desk: &mut Desk<'_>,
+    port: &mut Port<'_>,
     transition: TransitionId,
     alignment: TransitionAlignment,
 ) -> Result<()> {
-    let commands = alignment_commands(desk.view().session.project(), transition, alignment)?;
+    let commands = alignment_commands(port.view().session.project(), transition, alignment)?;
     if !commands.is_empty() {
-        desk.apply_result(Command::Batch { commands })?;
+        port.apply_result(Command::Batch { commands })?;
     }
     Ok(())
 }
 
-pub(super) fn remove(desk: &mut Desk<'_>, transition: TransitionId) -> Result<()> {
-    desk.apply_result(Command::RemoveTransition { transition })?;
-    if desk.view().transition == Some(transition) {
-        desk.clear_transition_scope();
+pub(super) fn remove(port: &mut Port<'_>, transition: TransitionId) -> Result<()> {
+    port.apply_result(Command::RemoveTransition { transition })?;
+    if port.view().transition == Some(transition) {
+        port.leave_transition();
     }
     Ok(())
 }

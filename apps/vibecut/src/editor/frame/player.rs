@@ -23,7 +23,7 @@ impl Editor {
         if self.playback.seek(at, playing, project.clone()).is_err()
             && let Err(error) = self.playback.seek(at, false, project)
         {
-            self.desk().fail(error.to_string());
+            self.fail(error.to_string());
         }
     }
 
@@ -46,7 +46,7 @@ impl Editor {
     pub(in crate::editor) fn sync_hover(&mut self) {
         let hover = self.timeline.hover_time();
         if let Err(error) = self.playback.set_hover(hover) {
-            self.desk().fail(error.to_string());
+            self.fail(error.to_string());
         }
     }
 
@@ -86,7 +86,7 @@ impl Editor {
         match time::parse_timecode(&edit.text, rate) {
             Ok(at) if at >= Tick::ZERO && at <= duration => {
                 if let Err(error) = self.dispatch(AppCommand::Seek(at)) {
-                    self.desk().fail(error.to_string());
+                    self.fail(error.to_string());
                 } else {
                     self.player.timecode_error = None;
                 }

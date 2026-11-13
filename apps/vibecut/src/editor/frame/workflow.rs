@@ -12,7 +12,7 @@ impl Editor {
             self.persistence_error = Some(std::sync::Arc::new(e));
         }
         if let Err(e) = self.playback.poll(std::time::Instant::now()) {
-            self.desk().fail(e.to_string());
+            self.fail(e.to_string());
         }
         if let Some(previews) = &mut self.assets.effect_previews {
             previews.update(
@@ -20,7 +20,7 @@ impl Editor {
                 self.clock.now(),
             );
             if let Err(e) = previews.tick() {
-                self.desk().fail(e.to_string());
+                self.fail(e.to_string());
             }
         }
         self.with_assets(|assets, port| {
@@ -35,9 +35,9 @@ impl Editor {
             let result = subtitles.tick(&mut self.session);
             let notice = subtitles.notice.take();
             match result {
-                Ok(true) => self.desk().sync(),
+                Ok(true) => self.sync_preview(),
                 Ok(false) => {}
-                Err(e) => self.desk().fail(e.to_string()),
+                Err(e) => self.fail(e.to_string()),
             }
             if let Some(count) = notice {
                 let message = i18n::format(
@@ -56,15 +56,16 @@ impl Editor {
             assets.restore_asset_state(port);
         });
         self.poll_fonts();
-        let mut properties = std::mem::take(&mut self.properties);
-        if let Err(error) = properties.poll_lut(&mut self.desk()) {
-            properties.abort_lut();
-            self.desk().fail(error.to_string());
-        }
-        properties.set_lut_failure(self.playback.error());
-        self.properties = properties;
+        self.with_properties(|properties, port| {
+            if let Err(error) = properties.poll_lut(port) {
+                properties.abort_lut();
+                port.fail(error.to_string());
+            }
+        });
+        let failure = self.playback.error();
+        self.properties.set_lut_failure(failure);
         if let Err(error) = self.timeline.tick_media(&mut self.session) {
-            self.desk().fail(error.to_string());
+            self.fail(error.to_string());
         }
         self.truncate_toast();
         if self
@@ -76,7 +77,7 @@ impl Editor {
             self.assets.media_reveal = None;
         }
         if let Err(error) = self.remember_view() {
-            self.desk().fail(error.to_string());
+            self.fail(error.to_string());
         }
     }
 

@@ -17,8 +17,8 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ctx: &egui::Context) -> 
     actions
 }
 
-pub(super) fn apply(desk: &mut crate::editor::Desk<'_>, action: Action) {
+pub(super) fn apply(port: &mut crate::editor::Port<'_>, action: Action) {
     match action {
-        Action::Remember { id, response } => desk.editor().remember(id, &response),
+        Action::Remember { id, response } => port.widget(id, None, None, &response),
     }
 }

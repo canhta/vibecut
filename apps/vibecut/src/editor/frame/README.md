@@ -9,7 +9,7 @@ records, so areas return what they painted instead of writing those. The header 
 confirmation (`project_delete`) is frame chrome: Confirm hands the intent to the lifecycle
 owner, which alone saves, leaves and trashes the project.
 
-`lend` builds a `Port` from the `Editor` fields (`with_assets`, `with_player`, `with_timeline`) and applies the notes an area leaves. An area handles its own actions; the frame routes only the cross-area `Request`s (`Seek`, `OpenModel`, `Action`, `ExportClips`, `AddEffect`, `InsertShape`, `ArmKeyColor`, `ReplaceMedia`, `PruneSelection`, cache and proxy intentions) in `route`.
+`lend` builds a `Port` from the `Editor` fields (`with_assets`, `with_player`, `with_timeline`, `with_properties`, `with_dialogs`) and applies the notes an area leaves. An area handles its own actions; the frame routes only the cross-area `Request`s (`Seek`, `OpenModel`, `Action`, `ExportClips`, `Lifecycle`, `AddEffect`, `InsertShape`, `ArmKeyColor`, `ReplaceMedia`, `PruneSelection`, cache and proxy intentions) in `route`. `bench` mounts one area alone in an offscreen harness for area tests and routes its actions through the same frame entry.
 
 A timeline fade gesture rolls back when its audio target disappears or becomes locked,
 the window loses focus or fullscreen hides the timeline. A gesture closed externally

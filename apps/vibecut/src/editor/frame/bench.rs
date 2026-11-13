@@ -1,6 +1,5 @@
 //! Drives one editor area alone over a state harness.
-use super::{Context, Desk};
-use crate::editor::{Editor, egui};
+use crate::editor::{Context, Editor, egui};
 use egui_kittest::{
     Harness,
     kittest::{By, Queryable},
@@ -21,7 +20,7 @@ impl<A> Clone for Host<A> {
 impl<A> Copy for Host<A> {}
 
 /// One area mounted in a window-sized harness; every returned request is
-/// routed through the shared desk before the next frame.
+/// routed through the frame before the next frame.
 pub(crate) struct Bench<A, M> {
     harness: Harness<'static, Scene<A, M>>,
 }
@@ -31,7 +30,7 @@ pub(crate) struct Scene<A, M> {
     area: Option<A>,
     host: Option<Host<A>>,
     show: fn(&mut A, &Context<'_>, &mut egui::Ui) -> Vec<M>,
-    route: fn(&mut Desk<'_>, Vec<M>),
+    route: fn(&mut Editor, Vec<M>),
     configured: bool,
 }
 
@@ -63,10 +62,7 @@ impl<A, M> Scene<A, M> {
             Some(host) => (host.put)(&mut self.editor, area),
             None => self.area = Some(area),
         }
-        {
-            let mut desk = self.editor.desk();
-            (self.route)(&mut desk, actions);
-        }
+        (self.route)(&mut self.editor, actions);
         self.editor.drain_requests();
     }
 }
@@ -78,7 +74,7 @@ impl<A: 'static, M: 'static> Bench<A, M> {
         take: fn(&mut Editor) -> A,
         put: fn(&mut Editor, A),
         show: fn(&mut A, &Context<'_>, &mut egui::Ui) -> Vec<M>,
-        route: fn(&mut Desk<'_>, Vec<M>),
+        route: fn(&mut Editor, Vec<M>),
         size: egui::Vec2,
     ) -> Self {
         Self::mount(editor, None, Some(Host { take, put }), show, route, size)
@@ -89,7 +85,7 @@ impl<A: 'static, M: 'static> Bench<A, M> {
         area: Option<A>,
         host: Option<Host<A>>,
         show: fn(&mut A, &Context<'_>, &mut egui::Ui) -> Vec<M>,
-        route: fn(&mut Desk<'_>, Vec<M>),
+        route: fn(&mut Editor, Vec<M>),
         size: egui::Vec2,
     ) -> Self {
         let scene = Scene {
@@ -220,7 +216,7 @@ mod tests {
             |editor| std::mem::take(&mut editor.properties),
             |editor, state| editor.properties = state,
             properties::show,
-            properties::apply,
+            Editor::apply_properties,
             egui::vec2(360.0, 900.0),
         )
     }

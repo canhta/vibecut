@@ -6,7 +6,7 @@ pub(in crate::editor) use settings::Shortcuts;
 pub(in crate::editor) use shortcuts::{export as export_shortcuts, import as import_shortcuts};
 
 use crate::{
-    editor::{Context, Desk, egui},
+    editor::{Context, Port, egui},
     i18n::Text,
     services::remote_models::{AiPreferences, Catalogs},
 };
@@ -246,18 +246,18 @@ pub(super) fn show(
     }
     actions
 }
-pub(super) fn apply(desk: &mut Desk<'_>, action: Action) {
+pub(super) fn apply(port: &mut Port<'_>, action: Action) {
     match action {
         Action::Models(models) => {
             if let Ok(value) = serde_json::to_value(models) {
-                desk.set_preference("ai_models", value);
+                port.set_preference("ai_models", value);
             }
         }
-        Action::Remember(id, response) => desk.editor().remember(id, &response),
+        Action::Remember(id, response) => port.widget(id, None, None, &response),
         Action::Set(key, value) => {
-            desk.set_preference(key, value);
+            port.set_preference(key, value);
         }
-        Action::ClearCache => desk.request(crate::editor::context::Request::Cache(
+        Action::ClearCache => port.request(crate::editor::context::Request::Cache(
             crate::editor::context::CacheAction::Clear,
         )),
         Action::Shortcuts(kind) => {
@@ -267,7 +267,7 @@ pub(super) fn apply(desk: &mut Desk<'_>, action: Action) {
                     crate::services::lifecycle::EditorAction::KeybindingsImport { replace }
                 }
             };
-            desk.editor().lifecycle_action = Some(request);
+            port.request(crate::editor::context::Request::Lifecycle(request));
         }
     }
 }

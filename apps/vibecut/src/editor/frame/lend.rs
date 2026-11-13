@@ -1,6 +1,6 @@
 //! Lends areas their ports and applies the notes they leave behind.
 use crate::editor::panels::player;
-use crate::editor::{Editor, SelectionScopes};
+use crate::editor::{Editor, SelectionScopes, dialogs, properties};
 use crate::editor::{Note, Port, Read, Rect, Vec2, assets, egui, timeline};
 
 impl Editor {
@@ -12,6 +12,7 @@ impl Editor {
     ) -> T {
         let insertion_available = self.insertion_available();
         let caption_bank_ready = self.caption_bank_ready();
+        let edit_ready = self.edit_ready();
         let mut state = std::mem::take(&mut self.assets);
         let mut port = Port::new(
             &mut self.session,
@@ -23,6 +24,8 @@ impl Editor {
                 now: self.clock.now(),
                 insertion_available,
                 caption_bank_ready,
+                edit_ready,
+                transition: self.selection_scopes.transition,
             },
         );
         let result = run(&mut state, &mut port);
@@ -40,6 +43,7 @@ impl Editor {
     ) -> T {
         let insertion_available = self.insertion_available();
         let caption_bank_ready = self.caption_bank_ready();
+        let edit_ready = self.edit_ready();
         let mut port = Port::new(
             &mut self.session,
             Read {
@@ -50,6 +54,8 @@ impl Editor {
                 now: self.clock.now(),
                 insertion_available,
                 caption_bank_ready,
+                edit_ready,
+                transition: self.selection_scopes.transition,
             },
         );
         let result = run(&mut self.player, &mut port);
@@ -66,6 +72,7 @@ impl Editor {
     ) -> T {
         let insertion_available = self.insertion_available();
         let caption_bank_ready = self.caption_bank_ready();
+        let edit_ready = self.edit_ready();
         let mut state = std::mem::take(&mut self.timeline);
         let item_rects = state.item_rects().to_vec();
         let mut port = Port::new(
@@ -78,6 +85,8 @@ impl Editor {
                 now: self.clock.now(),
                 insertion_available,
                 caption_bank_ready,
+                edit_ready,
+                transition: self.selection_scopes.transition,
             },
         );
         let result = run(&mut state, &mut port);
@@ -85,6 +94,78 @@ impl Editor {
         self.timeline = state;
         self.apply_notes(notes);
         result
+    }
+
+    /// Lend the properties state and a port to one workflow step, then apply the notes
+    /// the step left, in order. Cross-area requests the notes carry run once it returns.
+    pub(in crate::editor) fn with_properties<T>(
+        &mut self,
+        run: impl FnOnce(&mut properties::State, &mut Port<'_>) -> T,
+    ) -> T {
+        let insertion_available = self.insertion_available();
+        let caption_bank_ready = self.caption_bank_ready();
+        let edit_ready = self.edit_ready();
+        let mut port = Port::new(
+            &mut self.session,
+            Read {
+                budget: self.playback.budget(),
+                preferences: &self.preferences,
+                playhead: self.playback.position().ok(),
+                item_rects: self.timeline.item_rects(),
+                now: self.clock.now(),
+                insertion_available,
+                caption_bank_ready,
+                edit_ready,
+                transition: self.selection_scopes.transition,
+            },
+        );
+        let result = run(&mut self.properties, &mut port);
+        let notes = port.into_notes();
+        self.apply_notes(notes);
+        result
+    }
+
+    /// Route the properties actions one step each, so every step reads what the
+    /// steps before it wrote.
+    pub(in crate::editor) fn apply_properties(&mut self, actions: Vec<properties::Action>) {
+        for action in actions {
+            self.with_properties(|state, port| properties::apply(state, port, vec![action]));
+        }
+    }
+
+    /// Lend the dialog states and a port to one step, then apply the notes it left.
+    pub(in crate::editor) fn with_dialogs<T>(
+        &mut self,
+        run: impl FnOnce(&mut dialogs::State, &mut Port<'_>) -> T,
+    ) -> T {
+        let insertion_available = self.insertion_available();
+        let caption_bank_ready = self.caption_bank_ready();
+        let edit_ready = self.edit_ready();
+        let mut port = Port::new(
+            &mut self.session,
+            Read {
+                budget: self.playback.budget(),
+                preferences: &self.preferences,
+                playhead: self.playback.position().ok(),
+                item_rects: self.timeline.item_rects(),
+                now: self.clock.now(),
+                insertion_available,
+                caption_bank_ready,
+                edit_ready,
+                transition: self.selection_scopes.transition,
+            },
+        );
+        let result = run(&mut self.dialogs, &mut port);
+        let notes = port.into_notes();
+        self.apply_notes(notes);
+        result
+    }
+
+    /// Route the dialog actions in paint order, one step each.
+    pub(in crate::editor) fn apply_dialogs(&mut self, actions: Vec<dialogs::Action>) {
+        for action in actions {
+            self.with_dialogs(|state, port| dialogs::apply(state, port, action));
+        }
     }
 
     /// Apply what an area asked for, in the order it asked.
@@ -132,6 +213,16 @@ impl Editor {
                     self.requests.push(request);
                     requested = true;
                 }
+                Note::SelectSingle(item) => self.select_single(item),
+                Note::LeaveTransition => self.selection_scopes.transition = None,
+                Note::Stage { at, project } => {
+                    if let Err(error) = self.playback.seek(at, false, project) {
+                        // The draft was refused: show the committed project again.
+                        self.sync_preview();
+                        self.error = Some(error.to_string());
+                    }
+                }
+                Note::AdoptPreferences(preferences) => self.preferences = *preferences,
             }
         }
         if requested {

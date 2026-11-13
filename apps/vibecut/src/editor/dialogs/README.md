@@ -4,8 +4,10 @@ Interface: `State`, `Action`, `show_export`, `show_models`, `show_preferences`, 
 
 The export, model-manager and AI preferences sheets the editor window owns. Each dialog is one
 module: its `State` is the only place its fields live, and its `show` receives the
-editor's read-only context and returns requests the frame routes through the shared
-write context. Neither dialog reaches another area's state.
+editor's read-only context and returns requests; the frame lends the dialog states and a
+`Port` for each request (`Editor::with_dialogs`) and each dialog applies its own. A save or
+picker step (export save, shortcut import or export) leaves a `Request::Lifecycle` for the
+window. Neither dialog reaches another area's state.
 
 `State` holds the dialog states so `Editor` keeps one field instead of one per
 sheet. The frame paints the export sheet before the crop and subtitle sheets and the

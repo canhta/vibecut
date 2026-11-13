@@ -370,7 +370,9 @@ impl Editor {
     }
 
     pub(in crate::editor) fn action(&mut self, id: &str) {
-        self.desk().act(id);
+        if let Err(error) = self.activate(id) {
+            self.fail(error.to_string());
+        }
     }
     /// App command dispatcher shared by UI and agents. Every variant is typed;
     /// preference edits have their own entry and never touch engine history.

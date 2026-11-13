@@ -35,6 +35,10 @@ pub(in crate::editor) fn show(
     view::show(state, cx, ui.ctx())
 }
 
-pub(in crate::editor) fn apply(desk: &mut crate::editor::Desk<'_>, action: Action) {
-    view::apply(desk, action);
+pub(in crate::editor) fn apply(
+    state: &mut State,
+    port: &mut crate::editor::Port<'_>,
+    action: Action,
+) {
+    view::apply(state, port, action);
 }

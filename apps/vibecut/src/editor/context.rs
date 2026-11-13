@@ -1,7 +1,5 @@
 //! Lends editor areas the shared read context and the one write context.
 
-#[cfg(test)]
-pub(crate) mod bench;
 mod port;
 pub(crate) mod visuals;
 
@@ -142,7 +140,7 @@ impl Context<'_> {
     }
 }
 
-/// Read-only view a workflow reads the editor through while it holds the desk.
+/// Read-only view a workflow step reads the open session through.
 pub(in crate::editor) struct View<'a> {
     pub(in crate::editor) budget: &'a engine::ByteBudget,
     pub(in crate::editor) session: &'a engine::Session,
@@ -150,9 +148,6 @@ pub(in crate::editor) struct View<'a> {
     pub(in crate::editor) playhead: time::Tick,
     /// Whether no frame-owned surface blocks an edit the area would start.
     pub(in crate::editor) edit_ready: bool,
-    /// The properties area's Project/Details choice as the frame holds it; an activation
-    /// that runs while the area's own state is lent writes it here.
-    pub(in crate::editor) details: bool,
     /// The selected timeline transition, if any.
     pub(in crate::editor) transition: Option<project::TransitionId>,
 }
@@ -288,248 +283,6 @@ pub(crate) enum Request {
     ReplaceMedia(project::ItemId),
     /// Edits changed the project: drop the nested selection scopes it left dangling.
     PruneSelection,
-}
-
-/// The shared editor context. One area receives it for one frame; its edit
-/// entry applies the command, reports the failure and resyncs the preview once
-/// per committed change.
-pub(crate) struct Desk<'a> {
-    editor: &'a mut crate::editor::Editor,
-}
-
-impl<'a> Desk<'a> {
-    pub(in crate::editor) fn new(editor: &'a mut crate::editor::Editor) -> Self {
-        Self { editor }
-    }
-
-    /// Show a creator-facing failure on the editor's error line.
-    pub(in crate::editor) fn fail(&mut self, message: impl Into<String>) {
-        self.editor.error = Some(message.into());
-    }
-
-    /// Clear the error line after a successful retry.
-    pub(in crate::editor) fn clear_error(&mut self) {
-        self.editor.error = None;
-    }
-
-    /// Resync the preview with the current project snapshot.
-    pub(in crate::editor) fn sync(&mut self) {
-        self.editor.sync_preview();
-    }
-
-    /// The one selection write. The engine session owns the set; it refuses a
-    /// change while a gesture is open or when an item is gone, and the refusal
-    /// shows on the error line with the selection left as it was.
-    pub(in crate::editor) fn select(
-        &mut self,
-        items: std::collections::BTreeSet<project::ItemId>,
-    ) -> bool {
-        match self.editor.session.set_selection(items) {
-            Ok(()) => true,
-            Err(error) => {
-                self.fail(error.to_string());
-                false
-            }
-        }
-    }
-
-    /// Apply one typed command without reporting or resyncing.
-    pub(in crate::editor) fn run_command(
-        &mut self,
-        command: engine::Command,
-    ) -> std::result::Result<engine::Outcome, engine::EditError> {
-        self.editor.session.apply(command)
-    }
-
-    /// Run one registered action through the editor's shared activation path.
-    pub(in crate::editor) fn run_action(&mut self, id: &str) -> crate::Result<()> {
-        self.editor.activate(id)
-    }
-
-    /// The transaction entry for callers that propagate the failure.
-    pub(in crate::editor) fn transaction_result<T>(
-        &mut self,
-        run: impl FnOnce(&mut engine::Session) -> engine::control::Result<T>,
-    ) -> crate::Result<T> {
-        let result = self.editor.session.transaction(run);
-        match result {
-            Ok(value) => {
-                self.sync();
-                Ok(value)
-            }
-            Err(error) => {
-                self.fail(error.to_string());
-                Err(error.into())
-            }
-        }
-    }
-
-    /// Stage a preview and always show it; a reversal must restore the entry
-    /// frame even when the engine reports no net change.
-    pub(in crate::editor) fn preview(&mut self, command: engine::Command) -> bool {
-        match self.run_command(command) {
-            Ok(_) => {
-                self.sync();
-                true
-            }
-            Err(error) => {
-                self.fail(error.to_string());
-                false
-            }
-        }
-    }
-
-    /// The typed-command entry for callers that propagate the failure.
-    pub(in crate::editor) fn apply_result(
-        &mut self,
-        command: engine::Command,
-    ) -> crate::Result<engine::Outcome> {
-        let before = self.editor.session.project().clone();
-        match self.editor.session.apply(command) {
-            Ok(outcome) => {
-                if outcome.changed
-                    || !std::sync::Arc::ptr_eq(&before, self.editor.session.project())
-                {
-                    self.sync();
-                }
-                Ok(outcome)
-            }
-            Err(error) => {
-                self.fail(error.to_string());
-                Err(error.into())
-            }
-        }
-    }
-
-    /// Run one registered action, reporting a failure.
-    pub(in crate::editor) fn act(&mut self, id: &str) -> bool {
-        match self.run_action(id) {
-            Ok(()) => true,
-            Err(error) => {
-                self.fail(error.to_string());
-                false
-            }
-        }
-    }
-
-    /// Record one preference edit in the app's own history, reporting a failure.
-    pub(in crate::editor) fn set_preference(
-        &mut self,
-        key: &str,
-        value: serde_json::Value,
-    ) -> bool {
-        match self.set_preference_result(key, value) {
-            Ok(()) => true,
-            Err(error) => {
-                self.fail(error.to_string());
-                false
-            }
-        }
-    }
-
-    /// Record one preference edit in the app's own history, for callers that
-    /// propagate the failure.
-    pub(in crate::editor) fn set_preference_result(
-        &mut self,
-        key: &str,
-        value: serde_json::Value,
-    ) -> crate::Result<()> {
-        self.editor.set_preference(key, value)
-    }
-
-    /// Queue a cross-area request; the frame drains it after this area returns.
-    pub(in crate::editor) fn request(&mut self, request: Request) {
-        self.editor.requests.push(request);
-    }
-
-    /// The editor, for reads and state the edit entry does not own.
-    pub(in crate::editor) fn editor(&mut self) -> &mut crate::editor::Editor {
-        self.editor
-    }
-
-    /// Lend the read view for one workflow step.
-    pub(in crate::editor) fn view(&self) -> View<'_> {
-        View {
-            budget: self.editor.playback.budget(),
-            session: &self.editor.session,
-            preferences: &self.editor.preferences,
-            playhead: self.editor.playback.position().unwrap_or(time::Tick::ZERO),
-            edit_ready: self.editor.edit_ready(),
-            details: self.editor.properties.details(),
-            transition: self.editor.selection_scopes.transition,
-        }
-    }
-
-    /// Lend the properties state apart from the editor for one step. The editor holds a
-    /// placeholder meanwhile, so an activation the step runs cannot reach the lent state.
-    pub(in crate::editor) fn lend_properties<T>(
-        &mut self,
-        run: impl FnOnce(&mut crate::editor::properties::State, &mut Self) -> T,
-    ) -> T {
-        let mut state = std::mem::take(&mut self.editor.properties);
-        let result = run(&mut state, self);
-        self.editor.properties = state;
-        result
-    }
-
-    /// Leave the selected transition scope after the transition is gone.
-    pub(in crate::editor) fn clear_transition_scope(&mut self) {
-        self.editor.selection_scopes.transition = None;
-    }
-
-    /// Run one catalog operation against the editable session.
-    pub(in crate::editor) fn with_session<T>(
-        &mut self,
-        run: impl FnOnce(&mut engine::Session) -> crate::Result<T>,
-    ) -> crate::Result<T> {
-        run(&mut self.editor.session)
-    }
-
-    /// Show a creator-facing toast for five seconds.
-    pub(in crate::editor) fn toast(&mut self, text: &str, detail: Option<String>) {
-        self.editor.set_toast(text, detail);
-    }
-
-    /// Select exactly one item, clearing every other selection.
-    pub(in crate::editor) fn select_single(&mut self, item: project::ItemId) {
-        self.editor.select_single(item);
-    }
-
-    /// Persist one section's open state as one preference edit.
-    pub(in crate::editor) fn set_section_open(
-        &mut self,
-        key: &str,
-        open: bool,
-    ) -> crate::Result<()> {
-        self.editor.set_section_open(key, open)
-    }
-
-    /// Write one preference without an app-history entry.
-    pub(in crate::editor) fn store_preference(
-        &mut self,
-        key: &str,
-        value: serde_json::Value,
-    ) -> crate::Result<()> {
-        self.editor.preferences.set(key, value)?;
-        Ok(())
-    }
-
-    /// Adopt a fully validated preference candidate after its project edit
-    /// succeeds, without adding an app-history entry.
-    pub(in crate::editor) fn adopt_preferences(
-        &mut self,
-        preferences: crate::preferences::Preferences,
-    ) {
-        self.editor.preferences = preferences;
-    }
-
-    /// Show a draft project at `at` without touching the editable session.
-    pub(in crate::editor) fn stage_frame(
-        &mut self,
-        at: time::Tick,
-        project: std::sync::Arc<project::Project>,
-    ) -> crate::Result<()> {
-        self.editor.playback.seek(at, false, project)?;
-        Ok(())
-    }
+    /// Hand one lifecycle step (a save, a picker) to the window that owns it.
+    Lifecycle(crate::services::lifecycle::EditorAction),
 }

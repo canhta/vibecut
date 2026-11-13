@@ -1,23 +1,23 @@
 //! Applies effect stack changes.
 use super::super::{ElementKind, State, element_kind, read};
-use crate::editor::{BTreeSet, Desk, Error, ItemId, Result, Text, error_detail};
+use crate::editor::{BTreeSet, Error, ItemId, Port, Result, Text, error_detail};
 
 /// The Remove BG switch: on with no effect stages the eyedropper, so the
 /// first pick adds the effect; off removes an existing effect. Enabling a
 /// bypassed effect is a toggle, not a second instance.
 impl State {
-    pub(super) fn toggle_chroma_key(&mut self, desk: &mut Desk<'_>, item: ItemId, enabled: bool) {
-        let existing = read::chroma_key(desk.view().session.project(), item)
+    pub(super) fn toggle_chroma_key(&mut self, port: &mut Port<'_>, item: ItemId, enabled: bool) {
+        let existing = read::chroma_key(port.view().session.project(), item)
             .map(|effect| (effect.id.clone(), effect.enabled));
         match (enabled, existing) {
             (true, Some((id, false))) => {
-                toggle_effect(desk, item, &id, true);
+                toggle_effect(port, item, &id, true);
                 self.chroma_staged = None;
             }
             (true, Some((_, true))) => self.chroma_staged = None,
             (true, None) => self.chroma_staged = Some(item),
             (false, Some((id, _))) => {
-                remove_effect(desk, item, &id);
+                remove_effect(port, item, &id);
                 self.chroma_staged = None;
             }
             (false, None) => self.chroma_staged = None,
@@ -28,20 +28,20 @@ impl State {
     /// update an existing effect. The staged switch clears only on success.
     pub(in crate::editor) fn pick_key_color(
         &mut self,
-        desk: &mut Desk<'_>,
+        port: &mut Port<'_>,
         item: ItemId,
         effect: Option<&str>,
         color: project::Color,
     ) -> Result<()> {
         let existing = effect.map(str::to_owned).or_else(|| {
-            read::chroma_key(desk.view().session.project(), item).map(|effect| effect.id.clone())
+            read::chroma_key(port.view().session.project(), item).map(|effect| effect.id.clone())
         });
         if let Some(effect) = existing {
-            set_key_color(desk, item, &effect, color)?;
+            set_key_color(port, item, &effect, color)?;
         } else {
             let [r, g, b, _] = color.0;
             let packed = (u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b)) as f64;
-            set_effect_param(desk, item, "chroma_key", "key_color", packed)?;
+            set_effect_param(port, item, "chroma_key", "key_color", packed)?;
         }
         self.chroma_staged = None;
         Ok(())
@@ -50,16 +50,16 @@ impl State {
     /// Restore the catalog's default key colour in one undo step.
     pub(super) fn reset_key_color(
         &mut self,
-        desk: &mut Desk<'_>,
+        port: &mut Port<'_>,
         item: ItemId,
         effect: &str,
     ) -> Result<()> {
         let default = project::CHROMA_KEY_COLOR_DEFAULT;
-        let current = read::chroma_key_color(desk.view().session.project(), item, effect);
+        let current = read::chroma_key_color(port.view().session.project(), item, effect);
         if current == Some(default) {
             return Ok(());
         }
-        set_key_color(desk, item, effect, default)
+        set_key_color(port, item, effect, default)
     }
 }
 
@@ -88,24 +88,24 @@ pub(in crate::editor) fn effect_refusal(project: &project::Project, id: ItemId) 
 }
 
 /// Attach one effect definition to a clip's stack as one undo step.
-pub(in crate::editor) fn add_effect_to_item(desk: &mut Desk<'_>, item: ItemId, kind: &str) {
-    if let Some(reason) = effect_refusal(desk.view().session.project(), item) {
-        let text = crate::i18n::text(desk.view().preferences.locale, reason).to_owned();
-        desk.toast(&text, None);
+pub(in crate::editor) fn add_effect_to_item(port: &mut Port<'_>, item: ItemId, kind: &str) {
+    if let Some(reason) = effect_refusal(port.view().session.project(), item) {
+        let text = crate::i18n::text(port.view().preferences.locale, reason).to_owned();
+        port.toast(&text, None);
         return;
     }
     let Some(definition) = project::effect_definitions()
         .iter()
         .find(|definition| definition.id == kind)
     else {
-        let text = crate::i18n::text(desk.view().preferences.locale, Text::EffectKindUnsupported)
+        let text = crate::i18n::text(port.view().preferences.locale, Text::EffectKindUnsupported)
             .to_owned();
-        desk.toast(&text, None);
+        port.toast(&text, None);
         return;
     };
-    let Some(effect_id) = next_effect_id(desk.view().session.project(), item, kind) else {
-        let text = crate::i18n::text(desk.view().preferences.locale, Text::EffectLimit).to_owned();
-        desk.toast(&text, None);
+    let Some(effect_id) = next_effect_id(port.view().session.project(), item, kind) else {
+        let text = crate::i18n::text(port.view().preferences.locale, Text::EffectLimit).to_owned();
+        port.toast(&text, None);
         return;
     };
     let effect = project::EffectInstance {
@@ -114,20 +114,20 @@ pub(in crate::editor) fn add_effect_to_item(desk: &mut Desk<'_>, item: ItemId, k
         enabled: true,
         params: definition.defaults(),
     };
-    let before = desk.view().session.project().clone();
-    match desk
+    let before = port.view().session.project().clone();
+    match port
         .with_session(|session| Ok(session.apply(engine::Command::AddEffect { item, effect })?))
     {
         Ok(_) => {
-            desk.select_single(item);
+            port.select_single(item);
             let text =
-                crate::i18n::text(desk.view().preferences.locale, Text::EffectAdded).to_owned();
+                crate::i18n::text(port.view().preferences.locale, Text::EffectAdded).to_owned();
             let name = crate::i18n::effect_label(definition.id, None)
                 .map_or(definition.name, |key| {
-                    crate::i18n::text(desk.view().preferences.locale, key)
+                    crate::i18n::text(port.view().preferences.locale, key)
                 })
                 .to_owned();
-            desk.toast(&text, Some(name));
+            port.toast(&text, Some(name));
         }
         Err(error) => {
             let text = if matches!(
@@ -136,15 +136,15 @@ pub(in crate::editor) fn add_effect_to_item(desk: &mut Desk<'_>, item: ItemId, k
                     project::Error::TooLarge(_)
                 )))
             ) {
-                crate::i18n::text(desk.view().preferences.locale, Text::EffectLimit).to_owned()
+                crate::i18n::text(port.view().preferences.locale, Text::EffectLimit).to_owned()
             } else {
                 error_detail(&error)
             };
-            desk.toast(&text, None);
+            port.toast(&text, None);
         }
     }
-    if !std::sync::Arc::ptr_eq(&before, desk.view().session.project()) {
-        desk.sync();
+    if !std::sync::Arc::ptr_eq(&before, port.view().session.project()) {
+        port.sync();
     }
 }
 
@@ -177,14 +177,14 @@ pub(super) fn next_effect_id(
 
 /// Write one key colour as the packed scalar the effect command admits.
 fn set_key_color(
-    desk: &mut Desk<'_>,
+    port: &mut Port<'_>,
     item: ItemId,
     effect: &str,
     color: project::Color,
 ) -> Result<()> {
     let [r, g, b, _] = color.0;
     let packed = (u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b)) as f64;
-    desk.apply_result(engine::Command::UpdateEffectParam {
+    port.apply_result(engine::Command::UpdateEffectParam {
         item,
         effect: effect.to_owned(),
         key: "key_color".into(),
@@ -193,23 +193,23 @@ fn set_key_color(
     Ok(())
 }
 
-pub(super) fn remove_effect(desk: &mut Desk<'_>, item: ItemId, effect: &str) {
-    let _ = desk.apply_result(engine::Command::RemoveEffect {
+pub(super) fn remove_effect(port: &mut Port<'_>, item: ItemId, effect: &str) {
+    let _ = port.apply_result(engine::Command::RemoveEffect {
         item,
         effect: effect.to_owned(),
     });
 }
 
-pub(super) fn toggle_effect(desk: &mut Desk<'_>, item: ItemId, effect: &str, enabled: bool) {
-    let _ = desk.apply_result(engine::Command::ToggleEffect {
+pub(super) fn toggle_effect(port: &mut Port<'_>, item: ItemId, effect: &str, enabled: bool) {
+    let _ = port.apply_result(engine::Command::ToggleEffect {
         item,
         effect: effect.to_owned(),
         enabled,
     });
 }
 
-pub(super) fn reorder_effect(desk: &mut Desk<'_>, item: ItemId, effect: &str, target_effect: &str) {
-    let Some(current) = desk
+pub(super) fn reorder_effect(port: &mut Port<'_>, item: ItemId, effect: &str, target_effect: &str) {
+    let Some(current) = port
         .view()
         .session
         .project()
@@ -231,8 +231,8 @@ pub(super) fn reorder_effect(desk: &mut Desk<'_>, item: ItemId, effect: &str, ta
     };
     let Some(from) = current.iter().position(|id| id == effect) else {
         let text =
-            crate::i18n::text(desk.view().preferences.locale, Text::EffectMissing).to_owned();
-        desk.toast(&text, None);
+            crate::i18n::text(port.view().preferences.locale, Text::EffectMissing).to_owned();
+        port.toast(&text, None);
         return;
     };
     let Some(target) = current.iter().position(|id| id == target_effect) else {
@@ -244,21 +244,21 @@ pub(super) fn reorder_effect(desk: &mut Desk<'_>, item: ItemId, effect: &str, ta
     if order == current {
         return;
     }
-    let _ = desk.apply_result(engine::Command::ReorderEffects {
+    let _ = port.apply_result(engine::Command::ReorderEffects {
         item,
         order: order.clone(),
     });
 }
 
 pub(super) fn set_effect_param(
-    desk: &mut Desk<'_>,
+    port: &mut Port<'_>,
     item: ItemId,
     effect: &str,
     key: &str,
     value: f64,
 ) -> Result<()> {
     set_effect_values(
-        desk,
+        port,
         item,
         effect,
         &[(key.to_owned(), project::EffectParamUpdate::Scalar(value))],
@@ -267,7 +267,7 @@ pub(super) fn set_effect_param(
 
 /// Replace one or more typed values; a multi-value reset is one atomic batch.
 pub(super) fn set_effect_values(
-    desk: &mut Desk<'_>,
+    port: &mut Port<'_>,
     item: ItemId,
     effect: &str,
     values: &[(String, project::EffectParamUpdate)],
@@ -275,7 +275,7 @@ pub(super) fn set_effect_values(
     if values.is_empty() {
         return Ok(());
     }
-    let present = desk
+    let present = port
         .view()
         .session
         .project()
@@ -303,11 +303,11 @@ pub(super) fn set_effect_values(
         } else {
             engine::Command::Batch { commands }
         };
-        desk.apply_result(command)?;
+        port.apply_result(command)?;
     } else {
         // First edit on a panel that shows a registered effect at neutral:
         // add it carrying the edited values, inside the open gesture.
-        if let Some(reason) = effect_refusal(desk.view().session.project(), item) {
+        if let Some(reason) = effect_refusal(port.view().session.project(), item) {
             return Err(Error::Invalid(match reason {
                 Text::EffectLocked => "track is locked",
                 _ => "effect unsupported on this item",
@@ -321,20 +321,20 @@ pub(super) fn set_effect_values(
         for (key, value) in values {
             instance.set_param(key, *value)?;
         }
-        desk.apply_result(engine::Command::AddEffect {
+        port.apply_result(engine::Command::AddEffect {
             item,
             effect: instance,
         })?;
     }
-    desk.sync();
+    port.sync();
     Ok(())
 }
 
 /// Copy the selected item's complete grade onto every unlocked video and image
 /// item as one `batch` command, so the whole copy is one undo step. Items that
 /// already carry a grade receive its values; the rest gain an instance.
-pub(super) fn apply_grade_to_all(desk: &mut Desk<'_>, source: ItemId) -> Result<()> {
-    let project = desk.view().session.project();
+pub(super) fn apply_grade_to_all(port: &mut Port<'_>, source: ItemId) -> Result<()> {
+    let project = port.view().session.project();
     let Some(params) = read::item(project, source)
         .and_then(|item| {
             item.effects
@@ -388,14 +388,14 @@ pub(super) fn apply_grade_to_all(desk: &mut Desk<'_>, source: ItemId) -> Result<
     if commands.is_empty() {
         return Ok(());
     }
-    desk.apply_result(engine::Command::Batch { commands })?;
-    desk.sync();
+    port.apply_result(engine::Command::Batch { commands })?;
+    port.sync();
     Ok(())
 }
 
 /// Store the selected item's grade as the next free app-owned preset name.
-pub(super) fn save_grade_preset(desk: &mut Desk<'_>, source: ItemId) -> Result<()> {
-    let project = desk.view().session.project();
+pub(super) fn save_grade_preset(port: &mut Port<'_>, source: ItemId) -> Result<()> {
+    let project = port.view().session.project();
     let Some(params) = read::item(project, source)
         .and_then(|item| {
             item.effects
@@ -406,7 +406,7 @@ pub(super) fn save_grade_preset(desk: &mut Desk<'_>, source: ItemId) -> Result<(
     else {
         return Ok(());
     };
-    let mut presets = desk.view().preferences.adjustment_presets.clone();
+    let mut presets = port.view().preferences.adjustment_presets.clone();
     let taken: BTreeSet<&str> = presets.iter().map(|preset| preset.name.as_str()).collect();
     let Some(number) = (1..=crate::preferences::MAX_ADJUSTMENT_PRESETS).find(|number| {
         let name = format!("Preset {number}");
@@ -418,5 +418,5 @@ pub(super) fn save_grade_preset(desk: &mut Desk<'_>, source: ItemId) -> Result<(
         name: format!("Preset {number}"),
         params,
     });
-    desk.store_preference("adjustment_presets", serde_json::to_value(presets)?)
+    port.store_preference_result("adjustment_presets", serde_json::to_value(presets)?)
 }

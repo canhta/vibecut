@@ -11,7 +11,7 @@ impl Editor {
             self.session.project(),
             crate::editor::context::single(self.session.selection()),
         );
-        crate::editor::properties::apply(&mut self.desk(), actions);
+        self.apply_properties(actions);
         self.drain_requests();
         // The eyedropper belongs to one selected clip's panel.
         if self.player.key_color_pick.as_ref().is_some_and(|pick| {
@@ -74,7 +74,7 @@ impl Editor {
             // The timeline is not painted here, so the pointer necessarily left it.
             self.timeline.clear_hover();
             if let Err(error) = self.playback.set_hover(None) {
-                self.desk().fail(error.to_string());
+                self.fail(error.to_string());
             }
             let rect = ui.max_rect();
             let rect = Rect::from_min_size(rect.min, rect.size().max(Vec2::ZERO));
@@ -256,7 +256,7 @@ impl Editor {
         if !actions.is_empty() {
             ui.ctx().request_repaint();
         }
-        crate::editor::properties::apply(&mut self.desk(), actions);
+        self.apply_properties(actions);
         self.drain_requests();
     }
     /// Paint the export dialog and route its requests.
@@ -269,13 +269,13 @@ impl Editor {
             self.dialogs = state;
             actions
         };
-        super::super::dialogs::apply(&mut self.desk(), actions);
+        self.apply_dialogs(actions);
     }
     fn show_preferences(&mut self, ui: &mut egui::Ui) {
         let mut state = std::mem::take(&mut self.dialogs);
         let actions = super::super::dialogs::show_preferences(&mut state, &self.context(), ui);
         self.dialogs = state;
-        super::super::dialogs::apply(&mut self.desk(), actions);
+        self.apply_dialogs(actions);
     }
     /// Paint the voice-over recorder and route its requests.
     fn show_voiceover(&mut self, ui: &mut egui::Ui) {
@@ -287,7 +287,7 @@ impl Editor {
             self.dialogs = state;
             actions
         };
-        super::super::dialogs::apply(&mut self.desk(), actions);
+        self.apply_dialogs(actions);
     }
     /// Paint the model manager and route its requests.
     fn show_models(&mut self, ui: &mut egui::Ui) {
@@ -299,7 +299,7 @@ impl Editor {
             self.dialogs = state;
             actions
         };
-        super::super::dialogs::apply(&mut self.desk(), actions);
+        self.apply_dialogs(actions);
     }
     /// Render the player through its read-only boundary, then route its requests.
     pub(in crate::editor) fn show_player(&mut self, ui: &mut egui::Ui) {
@@ -336,7 +336,7 @@ impl Editor {
                 }
                 Action::TransformEnd { commit } => self.end_preview_transform(commit),
                 Action::MasterPreview { volume, muted } => {
-                    self.desk().preview(Command::TimelinePreview {
+                    self.preview_command(Command::TimelinePreview {
                         commands: vec![Command::SetMaster { volume, muted }],
                     });
                 }
@@ -381,7 +381,7 @@ impl Editor {
                 }
                 Action::Zoom(factor) => {
                     if let Err(error) = self.preview_zoom_by(factor) {
-                        self.desk().fail(error.to_string());
+                        self.fail(error.to_string());
                     }
                 }
                 Action::PickKeyColor(color) => {
@@ -389,18 +389,20 @@ impl Editor {
                         && let Err(error) =
                             self.pick_key_color(pick.item, pick.effect.as_deref(), color)
                     {
-                        self.desk().fail(error.to_string());
+                        self.fail(error.to_string());
                     }
                 }
                 Action::SetPreference { key, value } => {
-                    self.desk().set_preference(key, value);
+                    if let Err(error) = self.set_preference(key, value) {
+                        self.fail(error.to_string());
+                    }
                 }
             }
         }
         if std::mem::take(&mut self.copy_snapshot_requested)
             && let Err(error) = self.copy_snapshot(ui.ctx())
         {
-            self.desk().fail(error.to_string());
+            self.fail(error.to_string());
         }
     }
     pub(super) fn save_status(&self) -> Text {
@@ -435,7 +437,7 @@ impl Editor {
                     let command = Command::RenameProject {
                         name: name.clone().into(),
                     };
-                    if self.desk().apply_result(command).is_err() {
+                    if self.apply_result(command).is_err() {
                         self.frame.rename = Some(name);
                     }
                 }

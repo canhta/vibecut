@@ -37,7 +37,7 @@ impl Editor {
             .session
             .apply(engine::Command::TimelineSetRipple { enabled })
         {
-            self.desk().fail(error.to_string());
+            self.fail(error.to_string());
         }
     }
     /// Section keys are dynamic; the whole open/closed map is one history entry.
@@ -49,7 +49,8 @@ impl Editor {
     pub(in crate::editor) fn record_layout_change(&mut self, before: [f32; 3]) {
         let after = self.preferences.panels;
         self.preferences.panels = before;
-        self.desk()
-            .set_preference("panels", serde_json::json!(after));
+        if let Err(error) = self.set_preference("panels", serde_json::json!(after)) {
+            self.fail(error.to_string());
+        }
     }
 }

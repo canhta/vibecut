@@ -1,5 +1,5 @@
 //! Routes the actions an area returns to the owners that apply them.
-use crate::editor::{Command, Context, Desk, Editor, ItemId, Request, Tick, egui, timeline};
+use crate::editor::{Command, Context, Editor, ItemId, Request, Tick, egui, timeline};
 
 impl Editor {
     /// The read-only services every area receives.
@@ -82,10 +82,10 @@ impl Editor {
         self.paint_timeline(|state, cx| timeline::show(state, cx, ui));
         self.sync_hover();
         if let Err(error) = self.sync_loop() {
-            self.desk().fail(error.to_string());
+            self.fail(error.to_string());
         }
         if let Err(error) = self.remember_view() {
-            self.desk().fail(error.to_string());
+            self.fail(error.to_string());
         }
     }
     /// Paint the scene sheet and apply its requests.
@@ -181,9 +181,9 @@ impl Editor {
         match result {
             Ok(()) => {
                 self.selection_scopes.keyframes.clear();
-                self.desk().sync();
+                self.sync_preview();
             }
-            Err(error) => self.desk().fail(error.to_string()),
+            Err(error) => self.fail(error.to_string()),
         }
     }
 
@@ -200,7 +200,7 @@ impl Editor {
                 patch: transform_patch(*field, *value),
             })
             .collect();
-        self.desk().preview(Command::TimelinePreview { commands });
+        self.preview_command(Command::TimelinePreview { commands });
     }
     /// Close a transform gesture with one undo step, or restore its entry project.
     pub(in crate::editor) fn end_preview_transform(&mut self, commit: bool) {
@@ -212,7 +212,7 @@ impl Editor {
         } else {
             Command::TimelineDiscardPreview {}
         };
-        self.desk().preview(command);
+        self.preview_command(command);
     }
     /// Select the text item whose inline session just opened and keep the
     /// timeline's preview contract as the only writer.
@@ -229,7 +229,7 @@ impl Editor {
             item,
             patch: engine::ItemParamPatch::TextContent(content.into()),
         }];
-        self.desk().preview(Command::TimelinePreview { commands });
+        self.preview_command(Command::TimelinePreview { commands });
     }
     /// Commit an open inline edit as one undo step, or discard a net-zero session.
     pub(in crate::editor) fn commit_text_edit(&mut self) -> bool {
@@ -309,12 +309,12 @@ impl Editor {
             mask: mask.to_owned(),
             path: path.clone(),
         }];
-        self.desk().preview(Command::TimelinePreview { commands });
+        self.preview_command(Command::TimelinePreview { commands });
     }
     /// Stage one absolute whole-mask candidate from a gizmo gesture origin.
     pub(in crate::editor) fn preview_mask_box(&mut self, item: ItemId, mask: project::Mask) {
         let commands = vec![Command::UpdateMask { item, mask }];
-        self.desk().preview(Command::TimelinePreview { commands });
+        self.preview_command(Command::TimelinePreview { commands });
     }
     /// The anchors of the one mask the point scope holds, as `(item, mask, indices)`
     /// in path order. The scope only ever holds one mask of one item.
@@ -346,7 +346,7 @@ impl Editor {
             segment,
             t,
         };
-        match self.desk().apply_result(command) {
+        match self.apply_result(command) {
             Ok(outcome) if outcome.changed => {
                 self.selection_scopes.mask_points.clear();
                 self.selection_scopes.mask_points.insert(
@@ -378,7 +378,7 @@ impl Editor {
             .into_iter()
             .map(|((item, mask), points)| Command::RemoveMaskPoint { item, mask, points })
             .collect();
-        if let Ok(outcome) = self.desk().apply_result(Command::Batch { commands })
+        if let Ok(outcome) = self.apply_result(Command::Batch { commands })
             && outcome.changed
         {
             self.selection_scopes.mask_points.clear();
@@ -391,7 +391,7 @@ impl Editor {
             return false;
         }
         if self.session.gesture_active() {
-            self.desk().preview(Command::TimelineDiscardPreview {});
+            self.preview_command(Command::TimelineDiscardPreview {});
         }
         true
     }
@@ -406,7 +406,7 @@ impl Editor {
         if self.session.transaction_active()
             && let Err(error) = self.session.cancel_gesture()
         {
-            self.desk().fail(error.to_string());
+            self.fail(error.to_string());
             self.timeline.abandon_gesture();
             return;
         }
@@ -417,7 +417,7 @@ impl Editor {
             return;
         }
         if let Err(error) = self.session.begin_gesture() {
-            self.desk().fail(error.to_string());
+            self.fail(error.to_string());
             self.timeline.abandon_gesture();
         }
     }
@@ -430,7 +430,7 @@ impl Editor {
         if self.session.transaction_active()
             && let Err(error) = self.session.cancel_gesture()
         {
-            self.desk().fail(error.to_string());
+            self.fail(error.to_string());
             self.timeline.abandon_gesture();
             return;
         }
@@ -464,7 +464,7 @@ impl Editor {
             if self.session.gesture_active()
                 && let Err(error) = self.session.apply(Command::TimelineDiscardPreview {})
             {
-                self.desk().fail(error.to_string());
+                self.fail(error.to_string());
             }
             return;
         }
@@ -486,10 +486,10 @@ impl Editor {
             if self.session.gesture_active()
                 && let Err(error) = self.session.cancel_gesture()
             {
-                self.desk().fail(error.to_string());
+                self.fail(error.to_string());
             }
             if changed {
-                self.desk().sync();
+                self.sync_preview();
             }
             return;
         }
@@ -497,10 +497,10 @@ impl Editor {
             if self.session.gesture_active()
                 && let Err(error) = self.session.cancel_gesture()
             {
-                self.desk().fail(error.to_string());
+                self.fail(error.to_string());
             }
             if changed {
-                self.desk().sync();
+                self.sync_preview();
             }
             return;
         }
@@ -558,21 +558,55 @@ impl Editor {
     fn proxy_intention(&mut self, action: crate::editor::context::ProxyAction) {
         if let crate::editor::context::ProxyAction::Toggle(on) = action {
             if let Err(error) = self.session.set_proxy_preview(on) {
-                self.desk().fail(error.to_string());
+                self.fail(error.to_string());
                 return;
             }
             if let Err(error) = self.playback.set_proxy_preview(on) {
-                self.desk().fail(error.to_string());
+                self.fail(error.to_string());
             }
-            self.desk().sync();
+            self.sync_preview();
         }
         let budget = self.playback.budget().clone();
         let assets = self.session.project().data().assets.clone();
         self.timeline.request_proxy(action, &assets, &budget);
     }
-    /// Lend the write context to one area for this frame.
-    pub(in crate::editor) fn desk(&mut self) -> Desk<'_> {
-        Desk::new(self)
+    /// Show a creator-facing failure on the editor's error line.
+    pub(in crate::editor) fn fail(&mut self, message: impl Into<String>) {
+        self.error = Some(message.into());
+    }
+    /// Stage a preview and always show it; a reversal must restore the entry
+    /// frame even when the engine reports no net change.
+    pub(in crate::editor) fn preview_command(&mut self, command: Command) -> bool {
+        match self.session.apply(command) {
+            Ok(_) => {
+                self.sync_preview();
+                true
+            }
+            Err(error) => {
+                self.fail(error.to_string());
+                false
+            }
+        }
+    }
+    /// Apply one typed command; resync the preview once when it committed a change
+    /// and show a refusal on the error line.
+    pub(in crate::editor) fn apply_result(
+        &mut self,
+        command: Command,
+    ) -> crate::Result<engine::Outcome> {
+        let before = self.session.project().clone();
+        match self.session.apply(command) {
+            Ok(outcome) => {
+                if outcome.changed || !std::sync::Arc::ptr_eq(&before, self.session.project()) {
+                    self.sync_preview();
+                }
+                Ok(outcome)
+            }
+            Err(error) => {
+                self.fail(error.to_string());
+                Err(error.into())
+            }
+        }
     }
     /// Apply the requests areas queued; each runs once, in push order.
     pub(in crate::editor) fn drain_requests(&mut self) {
@@ -587,12 +621,12 @@ impl Editor {
                     }
                     Request::Seek(at) => {
                         if let Err(error) = self.seek(at) {
-                            self.desk().fail(error.to_string());
+                            self.fail(error.to_string());
                         }
                     }
                     Request::OpenModel(id) => {
                         if let Err(error) = self.open_model(&id) {
-                            self.desk().fail(error.to_string());
+                            self.fail(error.to_string());
                         }
                     }
                     Request::Action(id) => self.action(&id),
@@ -601,12 +635,11 @@ impl Editor {
                             Some(crate::services::lifecycle::EditorAction::ExportClips);
                     }
                     Request::AddEffect { item, kind } => {
-                        crate::editor::properties::add_effect_to_item(
-                            &mut self.desk(),
-                            item,
-                            &kind,
-                        );
+                        self.with_properties(|_, port| {
+                            crate::editor::properties::add_effect_to_item(port, item, &kind);
+                        });
                     }
+                    Request::Lifecycle(action) => self.lifecycle_action = Some(action),
                     Request::ArmKeyColor(pick) => self.player.key_color_pick = pick,
                     Request::ReplaceMedia(item) => self.timeline.request_replace(item),
                     Request::PruneSelection => self.prune_selection(),

@@ -6,13 +6,14 @@ Interface: `add_effect_to_item`, `apply`, `effect_refusal`,
 `set_item_field`, `set_shared_field`, `transform_scrub`.
 
 Applies property workflows: colour requests, canvas commits, command patches, effect
-stack changes, numeric gestures and retiming. A workflow reads the editor through the
-shared read view and writes only through the shared desk, so no area method reaches the
-`Editor` fields; `apply` drains the area's actions after the frame has released its read
-borrow and lends the area its own state apart from the editor (`Desk::lend_properties`).
+stack changes, numeric gestures and retiming. A workflow reads the session through the
+port's read view and writes only through the port, so no area method reaches the
+`Editor` fields; the frame lends the area its own state and a port for each action
+(`Editor::with_properties`) and applies the notes the step left before the next one.
+An `Activate` action becomes a `Request::Action` the frame runs once the state is back.
 The colour-picker open and the LUT pick completion are `State` entry points
 (`open_color_picker`, `lut_picked_file`); the editor facade only lends the state. Every project change goes
-through the shared write context and therefore through an engine command.
+through the port and therefore through an engine command.
 
 Refused header activation preserves the current Project/Details choice and does not
 stop later requests in the routing pass. Colour commits validate the full recent-colour

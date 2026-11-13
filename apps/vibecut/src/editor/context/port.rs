@@ -1,5 +1,5 @@
 //! Lends an area the open session and collects the notes it leaves for the frame.
-use super::Request;
+use super::{Request, View};
 use crate::{egui, preferences::Preferences, services::lifecycle::EditorSession};
 use std::time::Duration;
 
@@ -17,6 +17,10 @@ pub(in crate::editor) struct Read<'a> {
     pub(in crate::editor) insertion_available: bool,
     /// Whether the caption bank accepts input right now.
     pub(in crate::editor) caption_bank_ready: bool,
+    /// Whether no frame-owned surface blocks an edit the area would start.
+    pub(in crate::editor) edit_ready: bool,
+    /// The selected timeline transition the inspector edits instead of items.
+    pub(in crate::editor) transition: Option<project::TransitionId>,
 }
 
 /// One effect on frame-owned state that an area asks for; the frame applies it in order.
@@ -47,6 +51,18 @@ pub(in crate::editor) enum Note {
         response: egui::Response,
     },
     Request(Request),
+    /// Replace the item selection with one item, as a click on it does.
+    SelectSingle(project::ItemId),
+    /// Leave the selected transition's scope; the transition is gone.
+    LeaveTransition,
+    /// Show `project` at `at` without touching the editable session; a refusal resyncs
+    /// the committed project and shows on the error line.
+    Stage {
+        at: time::Tick,
+        project: std::sync::Arc<project::Project>,
+    },
+    /// Adopt a validated preferences candidate without an app-history entry.
+    AdoptPreferences(Box<Preferences>),
 }
 
 /// The open session plus a read snapshot, lent to one area for one step. The area never
@@ -82,6 +98,26 @@ impl<'a> Port<'a> {
     /// Localized text for the current locale.
     pub(in crate::editor) fn tr(&self, key: crate::i18n::Text) -> &'static str {
         crate::i18n::text(self.locale(), key)
+    }
+
+    /// The read view a workflow step reads the open session through.
+    pub(in crate::editor) fn view(&self) -> View<'_> {
+        View {
+            budget: self.read.budget,
+            session: self.session,
+            preferences: self.read.preferences,
+            playhead: self.read.playhead.unwrap_or(time::Tick::ZERO),
+            edit_ready: self.read.edit_ready,
+            transition: self.read.transition,
+        }
+    }
+
+    /// Run one catalog operation against the editable session.
+    pub(in crate::editor) fn with_session<T>(
+        &mut self,
+        run: impl FnOnce(&mut engine::Session) -> crate::Result<T>,
+    ) -> crate::Result<T> {
+        run(self.session)
     }
 
     /// The transport position, or the failure of reading it.
@@ -152,6 +188,83 @@ impl<'a> Port<'a> {
                 Err(error.into())
             }
         }
+    }
+
+    /// Run one transaction; resync the preview when it commits, report a refusal.
+    pub(in crate::editor) fn transaction_result<T>(
+        &mut self,
+        run: impl FnOnce(&mut engine::Session) -> engine::control::Result<T>,
+    ) -> crate::Result<T> {
+        match self.session.transaction(run) {
+            Ok(value) => {
+                self.sync();
+                Ok(value)
+            }
+            Err(error) => {
+                self.fail(error.to_string());
+                Err(error.into())
+            }
+        }
+    }
+
+    /// Replace the item selection with one item, as a click on it does.
+    pub(in crate::editor) fn select_single(&mut self, item: project::ItemId) {
+        self.notes.push(Note::SelectSingle(item));
+    }
+
+    /// Leave the selected transition's scope after the transition is gone.
+    pub(in crate::editor) fn leave_transition(&mut self) {
+        self.notes.push(Note::LeaveTransition);
+    }
+
+    /// Show a draft project at `at` without touching the editable session.
+    pub(in crate::editor) fn stage_frame(
+        &mut self,
+        at: time::Tick,
+        project: std::sync::Arc<project::Project>,
+    ) {
+        self.notes.push(Note::Stage { at, project });
+    }
+
+    /// Adopt a fully validated preference candidate after its project edit succeeds,
+    /// without adding an app-history entry.
+    pub(in crate::editor) fn adopt_preferences(&mut self, preferences: Preferences) {
+        self.notes
+            .push(Note::AdoptPreferences(Box::new(preferences)));
+    }
+
+    /// Record one preference edit in the app's own history once it validates: a refused
+    /// value fails here and leaves no note.
+    pub(in crate::editor) fn set_preference_result(
+        &mut self,
+        key: &str,
+        value: serde_json::Value,
+    ) -> crate::Result<()> {
+        self.read.preferences.clone().set(key, value.clone())?;
+        self.set_preference(key, value);
+        Ok(())
+    }
+
+    /// Persist one section's open state as one preference edit.
+    pub(in crate::editor) fn set_section_open(
+        &mut self,
+        key: &str,
+        open: bool,
+    ) -> crate::Result<()> {
+        let mut sections = self.read.preferences.sections.clone();
+        sections.insert(key.to_owned(), open);
+        self.set_preference_result("sections", serde_json::to_value(sections)?)
+    }
+
+    /// Write one preference without an app-history entry once it validates.
+    pub(in crate::editor) fn store_preference_result(
+        &mut self,
+        key: &str,
+        value: serde_json::Value,
+    ) -> crate::Result<()> {
+        self.read.preferences.clone().set(key, value.clone())?;
+        self.store_preference(key, value);
+        Ok(())
     }
 
     /// Write one preference without an app-history entry.

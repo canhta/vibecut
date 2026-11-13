@@ -1,6 +1,6 @@
 //! Adapts property edits to engine patches.
 use super::super::read;
-use crate::editor::{Desk, Error, ItemId, ItemParamPatch, Result};
+use crate::editor::{Error, ItemId, ItemParamPatch, Port, Result};
 
 /// One animation slot of a clip: the slot, its look (`None` removes) and its duration.
 pub(super) type SlotChange = (
@@ -11,13 +11,13 @@ pub(super) type SlotChange = (
 
 pub(super) fn set_clip_animation(
     state: &mut super::State,
-    desk: &mut Desk<'_>,
+    port: &mut Port<'_>,
     item: ItemId,
     (slot, preset, duration): SlotChange,
     snapshot: std::sync::Arc<project::Project>,
 ) -> Result<()> {
-    text_target(state, desk, item, &snapshot, "clip animation")?;
-    desk.apply_result(engine::Command::SetClipAnimation {
+    text_target(state, port, item, &snapshot, "clip animation")?;
+    port.apply_result(engine::Command::SetClipAnimation {
         item,
         slot,
         preset,
@@ -28,13 +28,13 @@ pub(super) fn set_clip_animation(
 
 pub(in crate::editor) fn apply_text_preset(
     state: &mut super::State,
-    desk: &mut Desk<'_>,
+    port: &mut Port<'_>,
     item: ItemId,
     preset: project::TextPresetId,
     snapshot: std::sync::Arc<project::Project>,
 ) -> Result<()> {
-    text_target(state, desk, item, &snapshot, "text preset")?;
-    desk.apply_result(engine::Command::ApplyTextPreset {
+    text_target(state, port, item, &snapshot, "text preset")?;
+    port.apply_result(engine::Command::ApplyTextPreset {
         items: vec![item],
         preset,
     })?;
@@ -43,27 +43,27 @@ pub(in crate::editor) fn apply_text_preset(
 
 pub(in crate::editor) fn save_text_preset(
     state: &mut super::State,
-    desk: &mut Desk<'_>,
+    port: &mut Port<'_>,
     item: ItemId,
     snapshot: std::sync::Arc<project::Project>,
 ) -> Result<()> {
-    text_target(state, desk, item, &snapshot, "text preset")?;
-    let name = next_preset_name(desk.view().session.project())?;
-    desk.apply_result(engine::Command::SaveTextPreset { item, name })?;
+    text_target(state, port, item, &snapshot, "text preset")?;
+    let name = next_preset_name(port.view().session.project())?;
+    port.apply_result(engine::Command::SaveTextPreset { item, name })?;
     Ok(())
 }
 
 /// Guard a text workflow against a stale target, open transaction or blocked editor.
 fn text_target(
     state: &mut super::State,
-    desk: &mut Desk<'_>,
+    port: &mut Port<'_>,
     item: ItemId,
     snapshot: &std::sync::Arc<project::Project>,
     what: &'static str,
 ) -> Result<()> {
-    if !desk.view().edit_ready
-        || state.animation_target(desk.view().session, desk.view().selection()) != Some(item)
-        || !std::sync::Arc::ptr_eq(snapshot, desk.view().session.project())
+    if !port.view().edit_ready
+        || state.animation_target(port.view().session, port.view().selection()) != Some(item)
+        || !std::sync::Arc::ptr_eq(snapshot, port.view().session.project())
     {
         return Err(Error::Invalid(match what {
             "text preset" => "text preset target changed",
@@ -85,36 +85,36 @@ fn next_preset_name(project: &project::Project) -> Result<captions::NfcText> {
 
 /// The inspector and automation use the same registered atomic field edit.
 pub(in crate::editor) fn set_shared_field(
-    desk: &mut Desk<'_>,
+    port: &mut Port<'_>,
     field: &str,
     value: &str,
 ) -> Result<()> {
     if field == "opacity"
-        && let Some(item) = crate::editor::context::single(desk.view().selection())
+        && let Some(item) = crate::editor::context::single(port.view().selection())
     {
-        return set_item_field(desk, item, field, value);
+        return set_item_field(port, item, field, value);
     }
     let patch = item_patch(field, value)?;
-    let items = desk.view().selection().iter().copied().collect();
-    desk.apply_result(engine::Command::SetItemParamMany { items, patch })?;
+    let items = port.view().selection().iter().copied().collect();
+    port.apply_result(engine::Command::SetItemParamMany { items, patch })?;
     Ok(())
 }
 
 /// Toggle one diamond over its fields at the playhead as one undo step: keys
 /// are removed when every field has one, otherwise added where missing.
 pub(super) fn toggle_keyframes(
-    desk: &mut Desk<'_>,
+    port: &mut Port<'_>,
     item: ItemId,
     fields: &[(String, f64)],
     time: time::Tick,
 ) -> Result<()> {
     let all = {
-        let view = desk.view();
+        let view = port.view();
         fields
             .iter()
             .all(|(field, _)| read::has_key_at(view.session.project(), item, field, time))
     };
-    desk.transaction_result(|session| {
+    port.transaction_result(|session| {
         for (field, value) in fields {
             let has = read::has_key_at(session.project(), item, field, time);
             if has != all {
@@ -135,13 +135,13 @@ pub(super) fn toggle_keyframes(
 
 /// Upsert a key while the field already has a curve; the base stays untouched.
 pub(super) fn set_keyframe_at(
-    desk: &mut Desk<'_>,
+    port: &mut Port<'_>,
     item: ItemId,
     field: &str,
     time: time::Tick,
     value: f64,
 ) -> Result<()> {
-    desk.apply_result(engine::Command::AddKeyframe {
+    port.apply_result(engine::Command::AddKeyframe {
         item,
         path: project::AnimationPath::new(field)?,
         component: None,
@@ -153,8 +153,8 @@ pub(super) fn set_keyframe_at(
 /// Reset every authored transform channel, reflections included, as one atomic
 /// batch. A keyed reflection axis refuses the batch before any channel changes.
 /// A Manual fit returns to Fill, since its recorded scale is part of the reset.
-pub(super) fn reset_transform(desk: &mut Desk<'_>, item: ItemId) -> Result<()> {
-    let manual = read::item(desk.view().session.project(), item).is_some_and(|item| {
+pub(super) fn reset_transform(port: &mut Port<'_>, item: ItemId) -> Result<()> {
+    let manual = read::item(port.view().session.project(), item).is_some_and(|item| {
         matches!(
             &item.content,
             project::ItemParams::Video(params) if params.fit == project::FitMode::Manual
@@ -180,14 +180,14 @@ pub(super) fn reset_transform(desk: &mut Desk<'_>, item: ItemId) -> Result<()> {
             flipped: false,
         });
     }
-    desk.apply_result(engine::Command::Batch { commands })?;
+    port.apply_result(engine::Command::Batch { commands })?;
     Ok(())
 }
 
 /// Reset the Blend section's channels (blend mode and opacity) to their engine
 /// defaults as one atomic batch, one undo step.
-pub(super) fn reset_blend(desk: &mut Desk<'_>, item: ItemId) -> Result<()> {
-    desk.apply_result(engine::Command::Batch {
+pub(super) fn reset_blend(port: &mut Port<'_>, item: ItemId) -> Result<()> {
+    port.apply_result(engine::Command::Batch {
         commands: vec![
             engine::Command::SetItemParamMany {
                 items: vec![item],
@@ -204,16 +204,16 @@ pub(super) fn reset_blend(desk: &mut Desk<'_>, item: ItemId) -> Result<()> {
 
 /// One element's committed field edit, through the singular registered command.
 pub(in crate::editor) fn set_item_field(
-    desk: &mut Desk<'_>,
+    port: &mut Port<'_>,
     item: ItemId,
     field: &str,
     value: &str,
 ) -> Result<()> {
     let bounds = animated_bounds(field);
-    if bounds.is_some() && read::channel_has_keys(desk.view().session.project(), item, field) {
-        let (start, end) = read::range_of(desk.view().session.project(), item)
+    if bounds.is_some() && read::channel_has_keys(port.view().session.project(), item, field) {
+        let (start, end) = read::range_of(port.view().session.project(), item)
             .ok_or(Error::Invalid("opacity target"))?;
-        let at = desk.view().playhead;
+        let at = port.view().playhead;
         if at < start || at >= end {
             return Err(Error::Invalid("opacity playhead outside item"));
         }
@@ -224,7 +224,7 @@ pub(in crate::editor) fn set_item_field(
             .ok()
             .filter(|value| value.is_finite() && (min..=max).contains(value))
             .ok_or(Error::Invalid("opacity"))?;
-        return set_keyframe_at(desk, item, field, at.saturating_sub(start), value);
+        return set_keyframe_at(port, item, field, at.saturating_sub(start), value);
     }
     if field == "speed" {
         let speed = value
@@ -232,8 +232,8 @@ pub(in crate::editor) fn set_item_field(
             .parse::<f64>()
             .map_err(|_| Error::Invalid("speed"))?;
         let (_, maintain_pitch, _) =
-            read::retime_of(desk.view().session.project(), item).ok_or(Error::Invalid("speed"))?;
-        return super::speed::set_speed(desk, item, speed, maintain_pitch);
+            read::retime_of(port.view().session.project(), item).ok_or(Error::Invalid("speed"))?;
+        return super::speed::set_speed(port, item, speed, maintain_pitch);
     }
     if let Some((min, max)) = animated_bounds(field).filter(|_| field.starts_with("params.")) {
         let value = value
@@ -242,7 +242,7 @@ pub(in crate::editor) fn set_item_field(
             .ok()
             .filter(|v| v.is_finite() && (min..=max).contains(v))
             .ok_or(Error::Invalid("graphic scalar"))?;
-        desk.apply_result(engine::Command::SetAnimatedParam {
+        port.apply_result(engine::Command::SetAnimatedParam {
             item,
             path: project::AnimationPath::new(field)?,
             param: project::Param::new(project::ParamValue::Scalar(value))?,
@@ -250,7 +250,7 @@ pub(in crate::editor) fn set_item_field(
         return Ok(());
     }
     let patch = item_patch(field, value)?;
-    desk.apply_result(engine::Command::SetItemField { item, patch })?;
+    port.apply_result(engine::Command::SetItemField { item, patch })?;
     Ok(())
 }
 

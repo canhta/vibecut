@@ -5,7 +5,7 @@ mod preferences;
 pub(in crate::editor) use preferences::{export_shortcuts, import_shortcuts};
 pub(crate) mod voiceover;
 
-use crate::editor::{Context, Desk, egui};
+use crate::editor::{Context, Port, egui};
 
 /// Every editor dialog and the state the frame lends them.
 #[derive(Default)]
@@ -61,15 +61,13 @@ pub(in crate::editor) fn show_models(
         .collect()
 }
 
-/// Apply every dialog request in paint order.
-pub(in crate::editor) fn apply(desk: &mut Desk<'_>, actions: Vec<Action>) {
-    for action in actions {
-        match action {
-            Action::Export(action) => export::apply(desk, action),
-            Action::Models(action) => models::apply(desk, action),
-            Action::Preferences(action) => preferences::apply(desk, action),
-            Action::Voiceover(action) => voiceover::apply(desk, action),
-        }
+/// Apply one dialog request; each dialog handles its own.
+pub(in crate::editor) fn apply(state: &mut State, port: &mut Port<'_>, action: Action) {
+    match action {
+        Action::Export(action) => export::apply(&mut state.export, port, action),
+        Action::Models(action) => models::apply(port, action),
+        Action::Preferences(action) => preferences::apply(port, action),
+        Action::Voiceover(action) => voiceover::apply(&mut state.voiceover, port, action),
     }
 }
 

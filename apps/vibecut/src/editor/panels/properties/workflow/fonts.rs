@@ -2,35 +2,35 @@
 use super::super::State;
 use super::super::font_picker::{self, Action, Download};
 use super::commands::set_shared_field;
-use crate::editor::{Desk, Error, Result};
+use crate::editor::{Error, Port, Result};
 use crate::preferences;
 use engine::control::FontLoadState;
 use engine::jobs::JobState;
 
 impl State {
-    pub(super) fn font_action(&mut self, desk: &mut Desk<'_>, action: Action) -> Result<()> {
+    pub(super) fn font_action(&mut self, port: &mut Port<'_>, action: Action) -> Result<()> {
         match action {
             Action::Close => {
-                self.cancel_font_import(desk);
+                self.cancel_font_import(port);
                 self.font_picker.close();
                 Ok(())
             }
-            Action::List => self.font_list(desk),
-            Action::Tab(tab) => self.font_tab(desk, tab),
-            Action::Favorite { family, favorite } => self.font_favorite(desk, &family, favorite),
-            Action::Select(family) => self.font_select(desk, &family),
-            Action::Download(family) => self.font_download(desk, &family),
-            Action::Cancel => self.font_cancel(desk),
-            Action::Import => self.font_import(desk),
+            Action::List => self.font_list(port),
+            Action::Tab(tab) => self.font_tab(port, tab),
+            Action::Favorite { family, favorite } => self.font_favorite(port, &family, favorite),
+            Action::Select(family) => self.font_select(port, &family),
+            Action::Download(family) => self.font_download(port, &family),
+            Action::Cancel => self.font_cancel(port),
+            Action::Import => self.font_import(port),
             Action::CancelImport => {
-                self.cancel_font_import(desk);
+                self.cancel_font_import(port);
                 Ok(())
             }
         }
     }
 
-    fn ensure_font_backend(&mut self, desk: &mut Desk<'_>) -> Result<()> {
-        let budget = desk.view().budget.clone();
+    fn ensure_font_backend(&mut self, port: &mut Port<'_>) -> Result<()> {
+        let budget = port.view().budget.clone();
         if self.font_backend.is_none() {
             let backend: Box<dyn font_picker::Backend> = Box::new(
                 font_picker::EngineBackend::native(budget.clone())
@@ -48,10 +48,10 @@ impl State {
         Ok(())
     }
 
-    fn font_list(&mut self, desk: &mut Desk<'_>) -> Result<()> {
+    fn font_list(&mut self, port: &mut Port<'_>) -> Result<()> {
         self.font_picker.status = font_picker::Status::Loading;
         self.font_picker.request_sent = true;
-        if self.ensure_font_backend(desk).is_err() {
+        if self.ensure_font_backend(port).is_err() {
             self.font_picker.status = font_picker::Status::Failed;
             self.font_picker.request_sent = false;
             return Ok(());
@@ -59,7 +59,7 @@ impl State {
         let Some(backend) = self.font_backend.as_mut() else {
             return Err(Error::Invalid("font catalog unavailable"));
         };
-        let entries = desk.with_session(|session| backend.list(session, None));
+        let entries = port.with_session(|session| backend.list(session, None));
         match entries {
             Ok(entries) => {
                 self.font_picker.has_imports = entries
@@ -77,31 +77,31 @@ impl State {
         Ok(())
     }
 
-    fn font_tab(&mut self, desk: &mut Desk<'_>, tab: preferences::FontTab) -> Result<()> {
-        let mut preferences = desk.view().preferences.font_picker.clone();
+    fn font_tab(&mut self, port: &mut Port<'_>, tab: preferences::FontTab) -> Result<()> {
+        let mut preferences = port.view().preferences.font_picker.clone();
         preferences.tab = tab;
         self.font_picker.category = font_picker::Category::All;
-        desk.set_preference_result("font_picker", serde_json::to_value(preferences)?)
+        port.set_preference_result("font_picker", serde_json::to_value(preferences)?)
     }
 
-    fn font_favorite(&mut self, desk: &mut Desk<'_>, family: &str, favorite: bool) -> Result<()> {
-        let mut preferences = desk.view().preferences.font_picker.clone();
+    fn font_favorite(&mut self, port: &mut Port<'_>, family: &str, favorite: bool) -> Result<()> {
+        let mut preferences = port.view().preferences.font_picker.clone();
         preferences.favorites.retain(|name| name != family);
         if favorite {
             preferences.favorites.push(family.to_owned());
             preferences.favorites.sort();
         }
-        desk.set_preference_result("font_picker", serde_json::to_value(preferences)?)
+        port.set_preference_result("font_picker", serde_json::to_value(preferences)?)
     }
 
-    fn font_select(&mut self, desk: &mut Desk<'_>, family: &str) -> Result<()> {
+    fn font_select(&mut self, port: &mut Port<'_>, family: &str) -> Result<()> {
         let unchanged = self.font_picker.current.as_deref() == Some(family);
-        if self.ensure_font_backend(desk).is_err() {
+        if self.ensure_font_backend(port).is_err() {
             self.font_picker.close();
             return Ok(());
         }
         let loaded = self.font_backend.as_mut().is_some_and(|backend| {
-            desk.with_session(|session| backend.load(session, family))
+            port.with_session(|session| backend.load(session, family))
                 .is_ok_and(|font| font.state == FontLoadState::Loaded)
         });
         let chosen = if loaded {
@@ -109,19 +109,19 @@ impl State {
         } else {
             // A failed preview falls back silently to the next available family.
             self.font_picker
-                .next_available(&desk.view().preferences.font_picker, family)
+                .next_available(&port.view().preferences.font_picker, family)
         };
         self.font_picker.current = chosen.clone();
         self.font_picker.close();
         if let Some(chosen) = chosen
             && !unchanged
         {
-            set_shared_field(desk, "text_font", &chosen)?;
+            set_shared_field(port, "text_font", &chosen)?;
         }
         Ok(())
     }
 
-    fn font_download(&mut self, desk: &mut Desk<'_>, family: &str) -> Result<()> {
+    fn font_download(&mut self, port: &mut Port<'_>, family: &str) -> Result<()> {
         self.font_picker.download = Some(Download {
             family: family.to_owned(),
             job: None,
@@ -129,14 +129,14 @@ impl State {
             cancelling: false,
             failed: false,
         });
-        if self.ensure_font_backend(desk).is_err() {
+        if self.ensure_font_backend(port).is_err() {
             if let Some(download) = self.font_picker.download.as_mut() {
                 download.failed = true;
             }
             return Ok(());
         }
         let job = self.font_backend.as_mut().and_then(|backend| {
-            desk.with_session(|session| backend.download(session, family))
+            port.with_session(|session| backend.download(session, family))
                 .ok()
         });
         match job {
@@ -154,7 +154,7 @@ impl State {
         Ok(())
     }
 
-    fn font_cancel(&mut self, desk: &mut Desk<'_>) -> Result<()> {
+    fn font_cancel(&mut self, port: &mut Port<'_>) -> Result<()> {
         let Some(job) = self
             .font_picker
             .download
@@ -164,7 +164,7 @@ impl State {
             return Ok(());
         };
         if let Some(backend) = self.font_backend.as_mut() {
-            desk.with_session(|session| backend.cancel(session, job))?;
+            port.with_session(|session| backend.cancel(session, job))?;
         }
         if let Some(download) = self.font_picker.download.as_mut() {
             download.cancelling = true;
@@ -172,21 +172,21 @@ impl State {
         Ok(())
     }
 
-    fn font_import(&mut self, desk: &mut Desk<'_>) -> Result<()> {
+    fn font_import(&mut self, port: &mut Port<'_>) -> Result<()> {
         if !self.font_picker.open || self.font_import.is_some() {
             return Ok(());
         }
-        self.ensure_font_backend(desk)?;
-        let locale = desk.view().preferences.locale;
+        self.ensure_font_backend(port)?;
+        let locale = port.view().preferences.locale;
         let choice = self
             .font_backend
             .as_mut()
             .ok_or(Error::Invalid("font catalog unavailable"))?
             .choose_font(locale);
         self.font_import = Some(font_picker::PendingImport {
-            snapshot: desk.view().session.project().clone(),
-            selection: desk.view().selection().clone(),
-            at: desk.view().playhead,
+            snapshot: port.view().session.project().clone(),
+            selection: port.view().selection().clone(),
+            at: port.view().playhead,
             lifetime: self.font_picker.lifetime,
             choice: Some(choice),
             job: None,
@@ -196,30 +196,30 @@ impl State {
         Ok(())
     }
 
-    pub(super) fn cancel_font_import(&mut self, desk: &mut Desk<'_>) {
+    pub(super) fn cancel_font_import(&mut self, port: &mut Port<'_>) {
         if let Some(pending) = self.font_import.take()
             && let Some(job) = pending.job
             && let Some(backend) = self.font_backend.as_mut()
         {
-            let _ = desk.with_session(|session| backend.cancel(session, job));
+            let _ = port.with_session(|session| backend.cancel(session, job));
         }
         self.font_picker.importing = false;
     }
 
-    fn poll_font_import(&mut self, desk: &mut Desk<'_>) {
+    fn poll_font_import(&mut self, port: &mut Port<'_>) {
         let Some(mut pending) = self.font_import.take() else {
             return;
         };
         let valid = self.font_picker.open
             && self.font_picker.lifetime == pending.lifetime
-            && std::sync::Arc::ptr_eq(&pending.snapshot, desk.view().session.project())
-            && pending.selection == *desk.view().selection()
-            && pending.at == desk.view().playhead
-            && !desk.view().session.transaction_active()
-            && desk.view().session.preview_project().is_none();
+            && std::sync::Arc::ptr_eq(&pending.snapshot, port.view().session.project())
+            && pending.selection == *port.view().selection()
+            && pending.at == port.view().playhead
+            && !port.view().session.transaction_active()
+            && port.view().session.preview_project().is_none();
         if !valid {
             self.font_import = Some(pending);
-            self.cancel_font_import(desk);
+            self.cancel_font_import(port);
             return;
         }
         let Some(backend) = self.font_backend.as_mut() else {
@@ -230,7 +230,7 @@ impl State {
             let mut context = std::task::Context::from_waker(std::task::Waker::noop());
             if let std::task::Poll::Ready(path) = choice.as_mut().poll(&mut context) {
                 pending.choice = None;
-                match path.map(|path| desk.with_session(|session| backend.import(session, path))) {
+                match path.map(|path| port.with_session(|session| backend.import(session, path))) {
                     Some(Ok(job)) => pending.job = Some(job),
                     Some(Err(_)) => {
                         self.font_picker.import_failed = true;
@@ -267,12 +267,12 @@ impl State {
     }
 
     /// Poll owned font work; imports never implicitly choose a family or edit text.
-    pub(in crate::editor) fn poll_fonts(&mut self, desk: &mut Desk<'_>) {
-        if self.font_backend.is_some() && self.ensure_font_backend(desk).is_err() {
-            self.cancel_font_import(desk);
+    pub(in crate::editor) fn poll_fonts(&mut self, port: &mut Port<'_>) {
+        if self.font_backend.is_some() && self.ensure_font_backend(port).is_err() {
+            self.cancel_font_import(port);
             return;
         }
-        self.poll_font_import(desk);
+        self.poll_font_import(port);
         let Some(download) = self.font_picker.download.clone() else {
             return;
         };

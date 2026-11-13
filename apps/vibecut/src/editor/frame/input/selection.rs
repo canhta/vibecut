@@ -30,11 +30,17 @@ impl Editor {
             self.session.project(),
             crate::editor::context::single(&items),
         );
-        crate::editor::properties::apply(&mut self.desk(), actions);
+        self.apply_properties(actions);
         if self.timeline.graph_popover_open() {
             self.with_timeline(crate::editor::timeline::release_graph);
         }
-        self.desk().select(items)
+        match self.session.set_selection(items) {
+            Ok(()) => true,
+            Err(error) => {
+                self.fail(error.to_string());
+                false
+            }
+        }
     }
     /// Replace the item selection: end the open scrub, drop every nested scope
     /// and stale draft, then write once.
@@ -138,15 +144,13 @@ impl Editor {
         let Some(transition) = self.selection_scopes.transition else {
             return;
         };
-        let result = self
-            .desk()
-            .apply_result(engine::Command::RemoveTransition { transition });
+        let result = self.apply_result(engine::Command::RemoveTransition { transition });
         match result {
             Ok(_) => {
                 self.selection_scopes.transition = None;
                 self.properties.clear_drafts();
             }
-            Err(error) => self.desk().fail(error.to_string()),
+            Err(error) => self.fail(error.to_string()),
         }
     }
     /// The session prunes vanished items from the selection itself; the nested

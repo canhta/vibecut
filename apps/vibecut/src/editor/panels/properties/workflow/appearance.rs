@@ -1,27 +1,27 @@
 //! Applies colour picker drafts and commits.
 use super::super::State;
-use crate::editor::{Desk, Result, Session};
+use crate::editor::{Port, Result, Session};
 
 impl State {
     /// Show a colour draft without touching the editable session.
     pub(super) fn preview_color(
         &mut self,
-        desk: &mut Desk<'_>,
+        port: &mut Port<'_>,
         command: engine::Command,
     ) -> Result<()> {
         let result = (|| -> Result<()> {
             let project = {
-                let view = desk.view();
+                let view = port.view();
                 let mut draft = Session::new(view.session.project().as_ref().clone(), 1)?;
                 draft.apply(command)?;
                 draft.project().clone()
             };
-            let at = desk.view().playhead;
-            desk.stage_frame(at, project)?;
+            let at = port.view().playhead;
+            port.stage_frame(at, project);
             Ok(())
         })();
         if result.is_err() {
-            desk.sync();
+            port.sync();
         }
         result
     }
@@ -29,15 +29,15 @@ impl State {
     /// Commit a released colour as one undoable command and remember it as recent.
     pub(super) fn commit_color(
         &mut self,
-        desk: &mut Desk<'_>,
+        port: &mut Port<'_>,
         command: engine::Command,
         recent: Vec<project::Color>,
     ) -> Result<()> {
-        let mut preferences = desk.view().preferences.clone();
+        let mut preferences = port.view().preferences.clone();
         preferences.set("recent_colors", serde_json::to_value(recent)?)?;
-        if let Err(error) = desk.apply_result(command) {
+        if let Err(error) = port.apply_result(command) {
             // The engine refused: show the committed project again.
-            desk.sync();
+            port.sync();
             return Err(error);
         }
         if let Some(draft) = self.picker.as_mut() {
@@ -46,8 +46,8 @@ impl State {
         self.color_base = self
             .picker
             .as_ref()
-            .map(|_| desk.view().session.project().clone());
-        desk.adopt_preferences(preferences);
+            .map(|_| port.view().session.project().clone());
+        port.adopt_preferences(preferences);
         Ok(())
     }
 }

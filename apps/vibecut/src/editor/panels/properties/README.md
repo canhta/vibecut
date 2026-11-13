@@ -8,8 +8,8 @@ Interface: `State`, `Action`, `Widget`, `show`, `apply`, `element_kind`, `Elemen
 
 The area owns its drafts, scrub gestures, picker and popovers, its font catalog
 backend, the effect reorder draft and its gesture contracts, and returns `Action`
-values the frame routes. A workflow reads the editor through the shared read view and
-writes through the shared desk; every project change goes through an engine command and
+values the frame routes. A workflow reads the session through the port's read view and
+writes through the port; every project change goes through an engine command and
 the area never writes project JSON. Colour targets and their draft-to-command mapping
 belong here; the target-free controls come from the shared
 [colour service](../../../services/color_picker/README.md). A colour commit validates

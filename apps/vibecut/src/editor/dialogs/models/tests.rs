@@ -1,7 +1,7 @@
 //! Drives the model manager dialog alone over the one-area bench.
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 use super::model_manager::{ModelManager, ModelProblem};
-use crate::editor::context::bench::Bench;
+use crate::editor::frame::bench::Bench;
 use crate::editor::{Editor, egui};
 use crate::preferences::Preferences;
 use crate::services::playback::{Files, Playback};
@@ -236,7 +236,7 @@ fn bench(editor: Editor) -> Bench<super::super::State, super::super::Action> {
         |editor| std::mem::take(&mut editor.dialogs),
         |editor, state| editor.dialogs = state,
         super::super::show,
-        super::super::apply,
+        crate::editor::Editor::apply_dialogs,
         egui::vec2(1280.0, 800.0),
     )
 }

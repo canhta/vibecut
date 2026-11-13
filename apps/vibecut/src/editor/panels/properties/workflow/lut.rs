@@ -1,6 +1,6 @@
 //! Applies captured LUT import results to the selected clip.
 use super::super::{State, read};
-use crate::editor::{Desk, Error, ItemId, Result};
+use crate::editor::{Error, ItemId, Port, Result};
 use engine::{
     Session,
     control::{ControlResult, JobOutput, MediaAccess, Revision},
@@ -116,42 +116,42 @@ impl State {
     }
     pub(in crate::editor) fn request_lut(
         &mut self,
-        desk: &mut Desk<'_>,
+        port: &mut Port<'_>,
         item: ItemId,
         expected: Option<project::LutId>,
     ) -> Result<()> {
-        if read::item_locked(desk.view().session.project(), item)
-            || desk.view().session.transaction_active()
+        if read::item_locked(port.view().session.project(), item)
+            || port.view().session.transaction_active()
         {
             return Err(Error::Invalid("LUT target unavailable"));
         }
         self.lut.cancel();
         self.lut.capture = Some(Capture {
-            snapshot: desk.view().session.project().clone(),
-            session: desk.view().session.session_id().into(),
-            revision: desk.view().session.revision(),
+            snapshot: port.view().session.project().clone(),
+            session: port.view().session.session_id().into(),
+            revision: port.view().session.revision(),
             item,
             expected,
             job: None,
         });
-        desk.request(crate::editor::Request::ImportLut);
+        port.request(crate::editor::Request::ImportLut);
         Ok(())
     }
     pub(in crate::editor) fn picked_lut(
         &mut self,
-        desk: &mut Desk<'_>,
+        port: &mut Port<'_>,
         path: Option<std::path::PathBuf>,
     ) -> Result<()> {
         let Some(path) = path else {
             self.lut.cancel();
             return Ok(());
         };
-        if !self.valid_lut_capture(desk) {
+        if !self.valid_lut_capture(port) {
             self.lut.cancel();
             return Err(Error::Invalid("stale LUT picker"));
         }
         let expected = self.lut.capture.as_ref().and_then(|c| c.expected);
-        let result = desk.with_session(|session| {
+        let result = port.with_session(|session| {
             self.lut.request(
                 session,
                 engine::Command::ImportLut {
@@ -170,9 +170,9 @@ impl State {
         }
         Ok(())
     }
-    fn valid_lut_capture(&self, desk: &Desk<'_>) -> bool {
+    fn valid_lut_capture(&self, port: &Port<'_>) -> bool {
         self.lut.capture.as_ref().is_some_and(|capture| {
-            let view = desk.view();
+            let view = port.view();
             let kind = super::super::element_kind(view.session.project(), capture.item)
                 .map(|(kind, _)| kind.id());
             capture.session == view.session.session_id()
@@ -187,11 +187,11 @@ impl State {
                     .is_some_and(|tab| tab == "adjust")
         })
     }
-    pub(in crate::editor) fn poll_lut(&mut self, desk: &mut Desk<'_>) -> Result<()> {
+    pub(in crate::editor) fn poll_lut(&mut self, port: &mut Port<'_>) -> Result<()> {
         if self.lut.capture.is_none() {
             return Ok(());
         }
-        if !self.valid_lut_capture(desk) {
+        if !self.valid_lut_capture(port) {
             self.lut.cancel();
             return Ok(());
         }
@@ -210,7 +210,7 @@ impl State {
             .ok_or(Error::Invalid("LUT output expired"))?;
         match snapshot.state {
             JobState::Completed => {
-                let result = desk.with_session(|session| {
+                let result = port.with_session(|session| {
                     self.lut
                         .request(session, engine::Command::JobStatus { job })
                 })?;
@@ -220,7 +220,7 @@ impl State {
                 let Some(JobOutput::Lut(record)) = snapshot.output else {
                     return Err(Error::Invalid("LUT job output"));
                 };
-                if !self.valid_lut_capture(desk) {
+                if !self.valid_lut_capture(port) {
                     self.lut.cancel();
                     return Ok(());
                 }
@@ -241,11 +241,11 @@ impl State {
                 } else {
                     100.
                 };
-                desk.with_session(|session| {
+                port.with_session(|session| {
                     Ok(session.apply_lut(capture.item, record, strength)?)
                 })?;
                 self.lut.unavailable = None;
-                desk.sync();
+                port.sync();
             }
             JobState::Failed | JobState::Cancelled => {
                 self.lut.capture = None;
@@ -261,12 +261,12 @@ impl State {
     }
     pub(super) fn select_lut(
         &mut self,
-        desk: &mut Desk<'_>,
+        port: &mut Port<'_>,
         item: ItemId,
         id: Option<project::LutId>,
     ) -> Result<()> {
         if let Some(id) = id {
-            let current = read::item(desk.view().session.project(), item)
+            let current = read::item(port.view().session.project(), item)
                 .and_then(|i| i.effects.iter().find(|e| e.kind == "color_grade"));
             if current.and_then(|e| e.value("lut")) == Some(&project::EffectValue::Lut(Some(id))) {
                 return Ok(());
@@ -275,7 +275,7 @@ impl State {
                 .and_then(|e| e.value("lut_strength"))
                 .and_then(project::EffectValue::scalar)
                 .unwrap_or(100.);
-            let record = desk
+            let record = port
                 .view()
                 .session
                 .project()
@@ -285,13 +285,13 @@ impl State {
                 .find(|r| r.id == id)
                 .cloned()
                 .ok_or(Error::Invalid("unregistered LUT"))?;
-            desk.with_session(|session| Ok(session.apply_lut(item, record, strength)?))?;
-            desk.sync();
-        } else if let Some(effect) = read::item(desk.view().session.project(), item)
+            port.with_session(|session| Ok(session.apply_lut(item, record, strength)?))?;
+            port.sync();
+        } else if let Some(effect) = read::item(port.view().session.project(), item)
             .and_then(|i| i.effects.iter().find(|e| e.kind == "color_grade"))
             .map(|e| e.id.clone())
         {
-            desk.apply_result(engine::Command::UpdateEffectParam {
+            port.apply_result(engine::Command::UpdateEffectParam {
                 item,
                 effect,
                 key: "lut".into(),

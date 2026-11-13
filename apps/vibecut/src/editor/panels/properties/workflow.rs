@@ -17,19 +17,15 @@ pub(in crate::editor) use effects::{add_effect_to_item, effect_refusal};
 pub(super) use number_edit::transform_scrub;
 
 use super::{Action, State};
-use crate::editor::{Desk, Result};
+use crate::editor::{Port, Result};
 
 /// Execute the requests `show` returned, in order. Failures surface through
-/// the editor's error line; later requests still run. The area's own state is
-/// borrowed apart from the editor for the duration of the routing pass.
-pub(in crate::editor) fn apply(desk: &mut Desk<'_>, actions: Vec<Action>) {
-    if actions.is_empty() {
-        return;
-    }
-    desk.lend_properties(|state, desk| route(state, desk, actions));
+/// the editor's error line; later requests still run.
+pub(in crate::editor) fn apply(state: &mut State, port: &mut Port<'_>, actions: Vec<Action>) {
+    route(state, port, actions);
 }
 
-fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
+fn route(state: &mut State, port: &mut Port<'_>, actions: Vec<Action>) {
     for action in actions {
         // Advance only the captured scrub's own mutation. A different snapshot,
         // selection or clock must still be rejected by the next frame's guard.
@@ -52,7 +48,7 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
                     .opacity_edit
                     .as_ref()
                     .is_some_and(|(snapshot, bound_item, at)| {
-                        let view = desk.view();
+                        let view = port.view();
                         bound_item == item
                             && *at == view.playhead
                             && crate::editor::context::single(view.selection()) == Some(*item)
@@ -63,11 +59,11 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
         };
         let result = match action {
             Action::Cache(action) => {
-                desk.request(crate::editor::context::Request::Cache(action));
+                port.request(crate::editor::context::Request::Cache(action));
                 Ok(())
             }
             Action::Proxy(action) => {
-                desk.request(crate::editor::context::Request::Proxy(action));
+                port.request(crate::editor::context::Request::Proxy(action));
                 Ok(())
             }
             Action::SetClipAnimation {
@@ -77,70 +73,67 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
                 duration,
                 snapshot,
             } => {
-                commands::set_clip_animation(state, desk, item, (slot, preset, duration), snapshot)
+                commands::set_clip_animation(state, port, item, (slot, preset, duration), snapshot)
             }
             Action::ApplyTextPreset {
                 item,
                 preset,
                 snapshot,
-            } => commands::apply_text_preset(state, desk, item, preset, snapshot),
+            } => commands::apply_text_preset(state, port, item, preset, snapshot),
             Action::SaveTextPreset { item, snapshot } => {
-                commands::save_text_preset(state, desk, item, snapshot)
+                commands::save_text_preset(state, port, item, snapshot)
             }
             Action::Activate(id) => {
-                // Activation runs on the editor, which holds a placeholder while
-                // this pass carries the area state. A refusal did not write it.
-                if desk.act(id) {
-                    state.set_details(desk.view().details);
-                }
+                // Activation runs on the editor once this step returns the area state.
+                port.request(crate::editor::context::Request::Action(id.to_owned()));
                 Ok(())
             }
-            Action::ImportLut { item, expected } => state.request_lut(desk, item, expected),
-            Action::SelectLut { item, id } => state.select_lut(desk, item, id),
+            Action::ImportLut { item, expected } => state.request_lut(port, item, expected),
+            Action::SelectLut { item, id } => state.select_lut(port, item, id),
             Action::SetField { item, field, value } => {
-                commands::set_item_field(desk, item, &field, &value)
+                commands::set_item_field(port, item, &field, &value)
             }
-            Action::SetShared { field, value } => commands::set_shared_field(desk, &field, &value),
+            Action::SetShared { field, value } => commands::set_shared_field(port, &field, &value),
             Action::SetSpeed {
                 item,
                 speed,
                 maintain_pitch,
-            } => speed::set_speed(desk, item, speed, maintain_pitch),
+            } => speed::set_speed(port, item, speed, maintain_pitch),
             Action::SetFade {
                 item,
                 edge,
                 seconds,
-            } => audio::set_fade(desk, item, edge, seconds),
+            } => audio::set_fade(port, item, edge, seconds),
             Action::SetNoiseReduction { item, enabled } => {
-                audio::set_noise_reduction(desk, item, enabled)
+                audio::set_noise_reduction(port, item, enabled)
             }
-            Action::SetReverse { item, reverse } => speed::set_reverse(desk, item, reverse),
+            Action::SetReverse { item, reverse } => speed::set_reverse(port, item, reverse),
             Action::SetTransitionDuration {
                 transition,
                 duration,
-            } => transition::set_duration(desk, transition, duration),
+            } => transition::set_duration(port, transition, duration),
             Action::SetTransitionAlignment {
                 transition,
                 alignment,
-            } => transition::set_alignment(desk, transition, alignment),
-            Action::RemoveTransition(transition) => transition::remove(desk, transition),
+            } => transition::set_alignment(port, transition, alignment),
+            Action::RemoveTransition(transition) => transition::remove(port, transition),
             Action::SetCanvas {
                 width,
                 height,
                 preset,
-            } => canvas::set_canvas(desk, width, height, preset),
-            Action::SetFps { num, den } => canvas::set_canvas_fps(desk, num, den),
-            Action::SetBackground(color) => canvas::set_canvas_background(desk, color),
+            } => canvas::set_canvas(port, width, height, preset),
+            Action::SetFps { num, den } => canvas::set_canvas_fps(port, num, den),
+            Action::SetBackground(color) => canvas::set_canvas_background(port, color),
             Action::SetClipBackground { items, background } => {
-                background::set_clip_background(desk, items, background)
+                background::set_clip_background(port, items, background)
             }
-            Action::ResetTransform(item) => commands::reset_transform(desk, item),
-            Action::ResetBlend(item) => commands::reset_blend(desk, item),
+            Action::ResetTransform(item) => commands::reset_transform(port, item),
+            Action::ResetBlend(item) => commands::reset_blend(port, item),
             Action::ToggleKeyframe { item, fields, time } => {
-                commands::toggle_keyframes(desk, item, &fields, time)
+                commands::toggle_keyframes(port, item, &fields, time)
             }
             Action::SeekToKey(at) => {
-                desk.request(crate::editor::context::Request::Seek(at));
+                port.request(crate::editor::context::Request::Seek(at));
                 Ok(())
             }
             Action::SetKeyframeAt {
@@ -148,43 +141,43 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
                 field,
                 time,
                 value,
-            } => commands::set_keyframe_at(desk, item, &field, time, value),
+            } => commands::set_keyframe_at(port, item, &field, time, value),
             Action::SetKeyColorPick(pick) => {
-                desk.request(crate::editor::context::Request::ArmKeyColor(pick));
+                port.request(crate::editor::context::Request::ArmKeyColor(pick));
                 Ok(())
             }
             Action::ToggleChromaKey { item, enabled } => {
-                state.toggle_chroma_key(desk, item, enabled);
+                state.toggle_chroma_key(port, item, enabled);
                 Ok(())
             }
-            Action::ResetKeyColor { item, effect } => state.reset_key_color(desk, item, &effect),
-            Action::SetSection { key, open } => desk.set_section_open(key, open),
-            Action::SetTab { kind, tab } => state.set_tab(desk, kind, tab),
-            Action::ScrubBegin => state.begin_gesture(desk),
-            Action::ScrubEnd { commit, changed } => state.end_gesture(desk, commit, changed),
+            Action::ResetKeyColor { item, effect } => state.reset_key_color(port, item, &effect),
+            Action::SetSection { key, open } => port.set_section_open(key, open),
+            Action::SetTab { kind, tab } => state.set_tab(port, kind, tab),
+            Action::ScrubBegin => state.begin_gesture(port),
+            Action::ScrubEnd { commit, changed } => state.end_gesture(port, commit, changed),
             Action::SetEffectParam {
                 item,
                 effect,
                 key,
                 value,
-            } => effects::set_effect_param(desk, item, &effect, &key, value),
+            } => effects::set_effect_param(port, item, &effect, &key, value),
             Action::SetEffectValues {
                 item,
                 effect,
                 values,
-            } => effects::set_effect_values(desk, item, &effect, &values),
-            Action::ApplyGradeToAll { item } => effects::apply_grade_to_all(desk, item),
-            Action::SaveGradePreset { item } => effects::save_grade_preset(desk, item),
+            } => effects::set_effect_values(port, item, &effect, &values),
+            Action::ApplyGradeToAll { item } => effects::apply_grade_to_all(port, item),
+            Action::SaveGradePreset { item } => effects::save_grade_preset(port, item),
             Action::ToggleEffect {
                 item,
                 effect,
                 enabled,
             } => {
-                effects::toggle_effect(desk, item, &effect, enabled);
+                effects::toggle_effect(port, item, &effect, enabled);
                 Ok(())
             }
             Action::RemoveEffect { item, effect } => {
-                effects::remove_effect(desk, item, &effect);
+                effects::remove_effect(port, item, &effect);
                 Ok(())
             }
             Action::ReorderEffect {
@@ -192,34 +185,34 @@ fn route(state: &mut State, desk: &mut Desk<'_>, actions: Vec<Action>) {
                 effect,
                 target,
             } => {
-                effects::reorder_effect(desk, item, &effect, &target);
+                effects::reorder_effect(port, item, &effect, &target);
                 Ok(())
             }
             Action::SyncPreview => {
-                desk.sync();
+                port.sync();
                 Ok(())
             }
-            Action::SetAnimatedParam { item, path, param } => desk
+            Action::SetAnimatedParam { item, path, param } => port
                 .apply_result(engine::Command::SetAnimatedParam { item, path, param })
                 .map(|_| ()),
-            Action::ColorPreview { command } => state.preview_color(desk, command),
-            Action::ColorCommit { command, recent } => state.commit_color(desk, command, recent),
-            Action::Font(action) => state.font_action(desk, action),
-            Action::Mask(action) => state.mask_action(desk, action),
+            Action::ColorPreview { command } => state.preview_color(port, command),
+            Action::ColorCommit { command, recent } => state.commit_color(port, command, recent),
+            Action::Font(action) => state.font_action(port, action),
+            Action::Mask(action) => state.mask_action(port, action),
             Action::Error(message) => {
-                desk.fail(message);
+                port.fail(message);
                 Ok(())
             }
         };
         let succeeded = result.is_ok();
         if let Err(error) = result {
-            desk.fail(error.to_string());
+            port.fail(error.to_string());
         }
         if refresh_scrub_snapshot
             && succeeded
             && let Some((snapshot, _, _)) = &mut state.opacity_edit
         {
-            *snapshot = desk.view().session.project().clone();
+            *snapshot = port.view().session.project().clone();
         }
     }
 }
@@ -228,21 +221,21 @@ impl State {
     /// Open the shared colour picker on a target the workspace owns.
     pub(in crate::editor) fn open_color_picker(
         &mut self,
-        desk: &mut Desk<'_>,
+        port: &mut Port<'_>,
         target: super::ColorTarget,
     ) -> Result<()> {
-        let actions = self.open_picker(desk.view().session.project(), target, None)?;
-        route(self, desk, actions);
+        let actions = self.open_picker(port.view().session.project(), target, None)?;
+        route(self, port, actions);
         Ok(())
     }
 
     /// Complete the source picker; a refusal drops the captured LUT target.
     pub(in crate::editor) fn lut_picked_file(
         &mut self,
-        desk: &mut Desk<'_>,
+        port: &mut Port<'_>,
         path: Option<std::path::PathBuf>,
     ) -> Result<()> {
-        let result = self.picked_lut(desk, path);
+        let result = self.picked_lut(port, path);
         if result.is_err() {
             self.abort_lut();
         }
@@ -252,16 +245,16 @@ impl State {
     /// Switch one element kind's remembered tab as one preference edit.
     fn set_tab(
         &mut self,
-        desk: &mut Desk<'_>,
+        port: &mut Port<'_>,
         kind: &'static str,
         tab: &'static str,
     ) -> Result<()> {
-        desk.request(crate::editor::context::Request::ArmKeyColor(None));
-        self.cancel_font_import(desk);
+        port.request(crate::editor::context::Request::ArmKeyColor(None));
+        self.cancel_font_import(port);
         self.font_picker.close();
         self.chroma_staged = None;
-        let mut next = desk.view().preferences.properties_tabs.clone();
+        let mut next = port.view().preferences.properties_tabs.clone();
         next.insert(kind.to_owned(), tab.to_owned());
-        desk.store_preference("properties_tabs", serde_json::to_value(next)?)
+        port.store_preference_result("properties_tabs", serde_json::to_value(next)?)
     }
 }

@@ -1,7 +1,7 @@
 //! Coordinates the editor through area interfaces.
 use crate::i18n;
 mod context;
-pub(crate) use context::{Context, Desk, Request};
+pub(crate) use context::{Context, Request};
 pub(in crate::editor) use context::{Note, Port, Read};
 pub(crate) mod dialogs;
 mod frame;
@@ -89,8 +89,7 @@ impl Editor {
     }
     /// Open the shared colour picker on a target the workspace owns.
     pub fn open_color_picker(&mut self, target: ColorTarget) -> Result<()> {
-        self.desk()
-            .lend_properties(|state, desk| state.open_color_picker(desk, target))
+        self.with_properties(|state, port| state.open_color_picker(port, target))
     }
     /// Inject the native capability boundary for an open picker.
     pub fn set_eyedropper(
@@ -101,11 +100,11 @@ impl Editor {
     }
     /// The inspector and automation use the same registered atomic field edit.
     pub fn set_shared_field(&mut self, field: &str, value: &str) -> Result<()> {
-        properties::set_shared_field(&mut self.desk(), field, value)
+        self.with_properties(|_, port| properties::set_shared_field(port, field, value))
     }
     /// One element's committed field edit, through the singular registered command.
     pub fn set_item_field(&mut self, item: ItemId, field: &str, value: &str) -> Result<()> {
-        properties::set_item_field(&mut self.desk(), item, field, value)
+        self.with_properties(|_, port| properties::set_item_field(port, item, field, value))
     }
     /// Adopt one chroma-key eyedropper pick for the selected clip.
     pub(in crate::editor) fn pick_key_color(
@@ -114,18 +113,16 @@ impl Editor {
         effect: Option<&str>,
         color: project::Color,
     ) -> Result<()> {
-        self.desk()
-            .lend_properties(|state, desk| state.pick_key_color(desk, item, effect, color))
+        self.with_properties(|state, port| state.pick_key_color(port, item, effect, color))
     }
     /// Poll the active font download; the frame ticks it once per frame.
     pub(in crate::editor) fn poll_fonts(&mut self) {
-        self.desk()
-            .lend_properties(|state, desk| state.poll_fonts(desk));
+        self.with_properties(|state, port| state.poll_fonts(port));
     }
     /// End the properties scrub gesture, if one is open.
     pub(in crate::editor) fn finish_scrub(&mut self, commit: bool) {
         let actions = self.properties.end_scrub(commit);
-        properties::apply(&mut self.desk(), actions);
+        self.apply_properties(actions);
     }
     /// Adopt the workspace's one media cache instance for timeline display
     /// reads and generation. The same instance is lent to the MCP inbox.
@@ -253,8 +250,7 @@ impl Editor {
 
     /// Complete the source picker through the captured properties workflow.
     pub fn lut_picked_file(&mut self, path: Option<std::path::PathBuf>) -> Result<()> {
-        self.desk()
-            .lend_properties(|state, desk| state.lut_picked_file(desk, path))
+        self.with_properties(|state, port| state.lut_picked_file(port, path))
     }
 
     pub fn new(session: Session, playback: Playback, preferences: Preferences) -> Self {
@@ -583,11 +579,15 @@ impl Editor {
         path: std::path::PathBuf,
         replace: bool,
     ) -> Result<()> {
-        dialogs::import_shortcuts(self, &path, replace)
+        self.with_dialogs(|state, port| {
+            dialogs::import_shortcuts(&mut state.preferences, port, &path, replace)
+        })
     }
     /// Write the canonical shortcut profile to the picked destination.
     pub fn keybindings_export_picked(&mut self, path: std::path::PathBuf) -> Result<()> {
-        dialogs::export_shortcuts(self, &path)
+        self.with_dialogs(|state, port| {
+            dialogs::export_shortcuts(&mut state.preferences, port, &path)
+        })
     }
     /// Open or raise the export dialog without changing project content.
     pub(in crate::editor) fn open_export(&mut self) -> Result<()> {
@@ -710,7 +710,7 @@ impl Editor {
                 Ok(())
             }
             Err(error) => {
-                self.desk().fail(error.to_string());
+                self.fail(error.to_string());
                 Err(error)
             }
         }
@@ -732,12 +732,11 @@ impl Editor {
             .find(|asset| asset.path() == path.as_path())
             .map(SourceAsset::id)
             .ok_or(Error::Invalid("import the file before replacing"))?;
-        self.desk()
-            .apply_result(Command::ReplaceMedia {
-                items: vec![item],
-                asset,
-            })
-            .map(|_| ())
+        self.apply_result(Command::ReplaceMedia {
+            items: vec![item],
+            asset,
+        })
+        .map(|_| ())
     }
     /// Native picker destination applied through the consumed `preview.snapshot`
     /// command. Failure stays typed and never shows a success toast.
@@ -765,7 +764,7 @@ impl Editor {
                 Ok(())
             }
             Err(error) => {
-                self.desk().fail(error.to_string());
+                self.fail(error.to_string());
                 Err(error)
             }
         }
@@ -797,7 +796,7 @@ impl Editor {
                 )) => engine::control::ErrorCode::EmptyProject,
                 _ => engine::control::ErrorCode::Failed,
             });
-            self.desk().fail(error.to_string());
+            self.fail(error.to_string());
             return Err(error);
         }
         self.player.snapshot.error = None;

@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 use super::*;
 use crate::{
-    editor::{Editor, context::bench::Bench},
+    editor::{Editor, frame::bench::Bench},
     i18n::Locale,
     preferences::Preferences,
     services::playback::{Files, Playback},
@@ -78,7 +78,7 @@ fn bench(locale: Locale, http: Arc<Reply>) -> Bench<super::super::State, super::
         |editor| std::mem::take(&mut editor.dialogs),
         |editor, state| editor.dialogs = state,
         paint,
-        super::super::apply,
+        crate::editor::Editor::apply_dialogs,
         egui::vec2(1280.0, 900.0),
     )
 }

@@ -53,7 +53,7 @@ impl Editor {
             false
         };
         if flushed {
-            self.desk().sync();
+            self.sync_preview();
         }
         if let Some(id) = id
             && !self.action_enabled(id)
@@ -69,7 +69,7 @@ impl Editor {
         }
         self.assets.prune_media_selection(&self.session);
         if !Arc::ptr_eq(&before, self.session.project()) {
-            self.desk().sync();
+            self.sync_preview();
         }
         self.remember_view()?;
         self.drain_requests();
@@ -513,7 +513,7 @@ impl Editor {
                 UiAction::OpenShortcuts => self.open_shortcuts(),
                 UiAction::RetryPreview => {
                     self.playback.clear()?;
-                    self.desk().clear_error();
+                    self.error = None;
                 }
                 UiAction::ProjectInspector => self.properties.set_details(false),
                 UiAction::DetailsInspector => self.properties.set_details(true),

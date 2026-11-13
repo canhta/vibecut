@@ -1,6 +1,6 @@
 //! Records one voice-over take and inserts it at the playhead.
 use crate::{
-    editor::{Command, Context, CreatedId, Desk, ItemParams, NewItem, SourceAsset, Tick, egui},
+    editor::{Command, Context, CreatedId, ItemParams, NewItem, Port, SourceAsset, Tick, egui},
     i18n::{self, Text},
     services::assets::voiceover::{CpalHost, Failure, Finished, InputHost, Recorder},
 };
@@ -288,18 +288,16 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ctx: &egui::Context) -> 
     actions
 }
 
-pub(super) fn apply(desk: &mut Desk<'_>, action: Action) {
+pub(super) fn apply(state: &mut State, port: &mut Port<'_>, action: Action) {
     match action {
-        Action::Remember(id, response) => desk.editor().remember(id, &response),
-        Action::Start => start(desk),
-        Action::Stop => stop(desk),
+        Action::Remember(id, response) => port.widget(id, None, None, &response),
+        Action::Start => start(state, port),
+        Action::Stop => stop(state, port),
         Action::Cancel => {
-            let state = &mut desk.editor().dialogs.voiceover;
             state.take = None;
             state.level = 0.0;
         }
         Action::Close => {
-            let state = &mut desk.editor().dialogs.voiceover;
             state.take = None;
             state.level = 0.0;
             state.open = false;
@@ -307,19 +305,15 @@ pub(super) fn apply(desk: &mut Desk<'_>, action: Action) {
     }
 }
 
-fn start(desk: &mut Desk<'_>) {
-    let editor = desk.editor();
-    if editor.dialogs.voiceover.take.is_some() {
+fn start(state: &mut State, port: &Port<'_>) {
+    if state.take.is_some() {
         return;
     }
-    let at = editor.playback.position().unwrap_or(Tick::ZERO);
-    let directory = editor
-        .dialogs
-        .voiceover
+    let at = port.read.playhead.unwrap_or(Tick::ZERO);
+    let directory = state
         .directory
         .clone()
-        .unwrap_or_else(|| project::media_dir(editor.session.saved_path()));
-    let state = &mut editor.dialogs.voiceover;
+        .unwrap_or_else(|| project::media_dir(port.session.saved_path()));
     let host = state.host();
     state.problem = None;
     match Recorder::start(host.as_ref(), state.device.as_deref(), &directory) {
@@ -331,8 +325,7 @@ fn start(desk: &mut Desk<'_>) {
     }
 }
 
-fn stop(desk: &mut Desk<'_>) {
-    let state = &mut desk.editor().dialogs.voiceover;
+fn stop(state: &mut State, port: &mut Port<'_>) {
     let Some(Take { recorder, at }) = state.take.take() else {
         return;
     };
@@ -344,21 +337,20 @@ fn stop(desk: &mut Desk<'_>) {
             return;
         }
     };
-    if insert(desk, &finished, at).is_ok() {
-        desk.editor().dialogs.voiceover.open = false;
-        let added = i18n::text(desk.editor().preferences.locale, Text::VoiceoverAdded);
-        desk.toast(added, None);
+    if insert(port, &finished, at).is_ok() {
+        state.open = false;
+        let added = i18n::text(port.locale(), Text::VoiceoverAdded);
+        port.toast(added, None);
     } else {
         // The asset never reached the project, so the promoted file is an orphan.
         let _ = std::fs::remove_file(&finished.path);
-        desk.editor().dialogs.voiceover.problem = Some(Problem::Insert);
+        state.problem = Some(Problem::Insert);
     }
 }
 
 /// Register the take as an asset and place it at `at`, as one undo step.
-fn insert(desk: &mut Desk<'_>, finished: &Finished, at: Tick) -> Result<(), Problem> {
-    let next = desk
-        .editor()
+fn insert(port: &mut Port<'_>, finished: &Finished, at: Tick) -> Result<(), Problem> {
+    let next = port
         .session
         .project()
         .data()
@@ -383,8 +375,7 @@ fn insert(desk: &mut Desk<'_>, finished: &Finished, at: Tick) -> Result<(), Prob
         start: at,
         content: ItemParams::Audio(project::AudioParams::default()),
     };
-    let created = desk
-        .editor()
+    let created = port
         .session
         .transaction(|session| -> std::result::Result<_, engine::EditError> {
             session.apply(Command::AddAsset { asset })?;
@@ -402,7 +393,7 @@ fn insert(desk: &mut Desk<'_>, finished: &Finished, at: Tick) -> Result<(), Prob
             _ => None,
         })
         .collect();
-    desk.select(items);
-    desk.sync();
+    port.select(items);
+    port.sync();
     Ok(())
 }

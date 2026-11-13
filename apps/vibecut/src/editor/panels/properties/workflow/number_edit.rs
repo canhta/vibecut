@@ -1,15 +1,15 @@
 //! Applies numeric editing gestures.
 use super::super::{State, gesture::ScrubSpec};
-use crate::editor::{Desk, Result, Text};
+use crate::editor::{Port, Result, Text};
 
 impl State {
     /// Open the engine gesture for the scrub the panel recorded.
-    pub(super) fn begin_gesture(&mut self, desk: &mut Desk<'_>) -> Result<()> {
+    pub(super) fn begin_gesture(&mut self, port: &mut Port<'_>) -> Result<()> {
         let result = (|| -> Result<()> {
-            if desk.view().session.transaction_active() {
-                desk.with_session(|session| Ok(session.cancel_gesture().map(|_| ())?))?;
+            if port.view().session.transaction_active() {
+                port.with_session(|session| Ok(session.cancel_gesture().map(|_| ())?))?;
             }
-            desk.with_session(|session| Ok(session.begin_gesture().map(|_| ())?))?;
+            port.with_session(|session| Ok(session.begin_gesture().map(|_| ())?))?;
             Ok(())
         })();
         if result.is_err() {
@@ -20,17 +20,17 @@ impl State {
 
     pub(super) fn end_gesture(
         &mut self,
-        desk: &mut Desk<'_>,
+        port: &mut Port<'_>,
         commit: bool,
         changed: bool,
     ) -> Result<()> {
         let result = if commit && changed {
-            desk.with_session(|session| Ok(session.commit_gesture().map(|_| ())?))
+            port.with_session(|session| Ok(session.commit_gesture().map(|_| ())?))
         } else {
-            desk.with_session(|session| Ok(session.cancel_gesture().map(|_| ())?))
+            port.with_session(|session| Ok(session.cancel_gesture().map(|_| ())?))
         };
         if changed {
-            desk.sync();
+            port.sync();
         }
         result
     }

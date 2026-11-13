@@ -1,6 +1,7 @@
 //! Renders the export dialog into the frame requests.
 use super::{Action, State, dialog::DialogAction};
-use crate::editor::{Context, Text, egui};
+use crate::editor::{Context, Port, Request, Text, egui};
+use crate::services::lifecycle::EditorAction;
 
 pub(super) fn show(state: &mut State, cx: &Context<'_>, ctx: &egui::Context) -> Vec<Action> {
     let mut actions = Vec::new();
@@ -47,41 +48,38 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ctx: &egui::Context) -> 
 }
 
 /// Apply one request from the dialog; a failure stays inside the dialog.
-pub(super) fn apply(desk: &mut crate::editor::Desk<'_>, action: Action) {
-    let editor = desk.editor();
+pub(super) fn apply(state: &mut State, port: &mut Port<'_>, action: Action) {
     match action {
         Action::Start(options) => {
-            let blocked = editor.session.transaction_active();
-            let encoder = editor.preferences.hardware_acceleration.encode_preference();
-            let project = editor.session.project().clone();
-            if let Err(error) = editor
-                .dialogs
-                .export
-                .start(project, options, blocked, encoder)
-            {
-                editor.dialogs.export.fail(error);
+            let blocked = port.session.transaction_active();
+            let encoder = port
+                .read
+                .preferences
+                .hardware_acceleration
+                .encode_preference();
+            let project = port.session.project().clone();
+            if let Err(error) = state.start(project, options, blocked, encoder) {
+                state.fail(error);
             }
         }
         Action::Retry => {
-            let blocked = editor.session.transaction_active();
-            let project = editor.session.project().clone();
-            if let Err(error) = editor.dialogs.export.retry(project, blocked) {
-                editor.dialogs.export.fail(error);
+            let blocked = port.session.transaction_active();
+            let project = port.session.project().clone();
+            if let Err(error) = state.retry(project, blocked) {
+                state.fail(error);
             }
         }
-        Action::Save => {
-            editor.lifecycle_action = Some(crate::services::lifecycle::EditorAction::ExportSave);
-        }
+        Action::Save => port.request(Request::Lifecycle(EditorAction::ExportSave)),
         Action::Options(options) => {
-            editor
-                .desk()
-                .set_preference("export", serde_json::json!(options));
+            port.set_preference("export", serde_json::json!(options));
         }
         Action::Saved(saved) => {
-            editor.preferences.export_directory = saved.parent().map(|path| path.to_owned());
-            let text = editor.tr(Text::ExportSaved);
-            editor.set_toast(text, Some(saved.to_string_lossy().into_owned()));
+            let mut preferences = port.read.preferences.clone();
+            preferences.export_directory = saved.parent().map(|path| path.to_owned());
+            port.adopt_preferences(preferences);
+            let text = port.tr(Text::ExportSaved);
+            port.toast(text, Some(saved.to_string_lossy().into_owned()));
         }
-        Action::Remember { id, response } => editor.remember(id, &response),
+        Action::Remember { id, response } => port.widget(id, None, None, &response),
     }
 }
