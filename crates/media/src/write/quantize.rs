@@ -37,7 +37,7 @@ impl Cell {
 pub(super) fn quantize(rgba: &[u8], width: usize, max_colors: usize, dither: GifDither) -> Indexed {
     let mut cells: Vec<Cell> = Vec::new();
     let mut slot = vec![UNSET; CELLS];
-    for pixel in rgba.chunks_exact(4) {
+    for pixel in rgba.as_chunks::<4>().0.iter() {
         let key = cell_key(pixel);
         let Some(entry) = slot.get_mut(key) else {
             continue;
@@ -93,7 +93,7 @@ pub(super) fn quantize(rgba: &[u8], width: usize, max_colors: usize, dither: Gif
     let width = width.max(1);
     let dithered = !exact && dither == GifDither::Bayer;
     let mut indices = Vec::with_capacity(rgba.len() / 4);
-    for (n, pixel) in rgba.chunks_exact(4).enumerate() {
+    for (n, pixel) in rgba.as_chunks::<4>().0.iter().enumerate() {
         let mut key = cell_key(pixel);
         if dithered {
             let (x, y) = (n % width, n / width);
