@@ -206,8 +206,9 @@ Named caption preset IDs share the existing allocator and loaded maximum with sc
 ## Clipboard
 
 `clipboard.rs` owns `KeyframeClipboard`, `ItemClipboard` and their `Stored | Payload`
-paste sources, consumed by `clipboard.copy`, `clipboard.copy_keyframes`, `clipboard.read`,
-`clipboard.paste` and `clipboard.paste_keyframes`. One Session slot holds the most recent
+paste sources, consumed by `clipboard.copy`, `clipboard.copy_keyframes`,
+`clipboard.copy_mask_points`, `clipboard.read`, `clipboard.paste`,
+`clipboard.paste_keyframes` and `clipboard.paste_mask_points`. One Session slot holds the most recent
 copy of either kind; a successful copy of one clears the other. Copy of an empty or
 already-identical scope preserves the store.
 
@@ -259,6 +260,27 @@ Paste overwrites at the playhead and moves the metadata playhead to the pasted s
 so repeated Paste advances; Paste Insert ripple remains future work. Stored-empty Paste
 is an exact no-op. A changed Paste is one undo step and reports only the freshly inserted
 items as created, not overwrite split pieces.
+
+### Mask-point clipboard
+
+`ItemClipboard` also carries mask points: the same version-one payload with `maskPoints`
+(1 to 4096 anchors, each with its in and out tangent offsets, in path order) and no items,
+so exactly one of the two parts is present and no third payload model exists. It shares the
+item slot, the `Stored | Payload` source and the 4 MiB ceiling. `clipboard.copy_mask_points`
+names one item, one path mask and its anchor indices; a stale, duplicate or out-of-range
+index, a missing mask or a non-path mask refuses, and an empty list stores nothing. Locks
+permit Copy. `clipboard.paste_mask_points {item, mask, after, source}` inserts the copied
+anchors in order directly after anchor `after` of an editable closed path, in place with
+their tangents unchanged, as one undo step. It refuses an item snapshot, an open or short
+path, an index past the last anchor, a locked item, and a result over 4096 anchors. Item
+Paste refuses a mask-point snapshot and the reverse. Stored-empty Paste is a no-op.
+
+Mask-point cut (the hook for `clipboard.cut`): add `CutTarget::MaskPoints { item, mask,
+points }` and one arm in `Session::cut` that captures with
+`ItemClipboard::capture_mask_points`, applies `Command::RemoveMaskPoint` inside the same
+`transaction`, then stores the payload through `Session::store_item_clipboard`, the way the
+items arm stores its payload only after the delete commits. `Session::can_cut` gains the
+matching `Session::can_copy_mask_points` arm.
 
 ### Custody and transports
 

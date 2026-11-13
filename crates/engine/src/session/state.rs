@@ -181,6 +181,48 @@ impl Session {
         };
         payload.can_paste(self.project().data(), at)
     }
+    /// Current committed selection admission for the desktop mask-point Copy action.
+    pub fn can_copy_mask_points(&self, item: ItemId, mask: &str, points: &[usize]) -> bool {
+        !self.transaction_active()
+            && super::ItemClipboard::can_capture_mask_points(
+                self.project().data(),
+                item,
+                mask,
+                points,
+            )
+    }
+    /// Anchors the stored snapshot holds for a mask-point Paste, or zero when the entry
+    /// is absent or holds items or keyframes.
+    pub fn mask_point_clipboard_len(&self) -> usize {
+        self.item_clipboard
+            .as_deref()
+            .map_or(0, super::ItemClipboard::mask_point_count)
+    }
+    /// Current admission for the desktop mask-point Paste after anchor `after` of one mask.
+    pub fn can_paste_mask_points(&self, item: ItemId, mask: &str, after: usize) -> bool {
+        if self.transaction_active() {
+            return false;
+        }
+        let Some(payload) = &self.item_clipboard else {
+            return false;
+        };
+        let Ok(vertices) = payload.mask_vertices() else {
+            return false;
+        };
+        self.project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .filter(|track| !track.locked)
+            .flat_map(|track| &track.items)
+            .find(|candidate| candidate.id == item)
+            .and_then(|candidate| candidate.masks.iter().find(|m| m.id == mask))
+            .is_some_and(|m| match &m.shape {
+                project::MaskShape::Path { path } => path.with_inserted(after, vertices).is_ok(),
+                _ => false,
+            })
+    }
     /// Current committed selection admission for the desktop Copy action; no state changes.
     pub fn can_copy_keyframes(&self, keys: &[crate::KeyframeRef]) -> bool {
         !self.transaction_active()

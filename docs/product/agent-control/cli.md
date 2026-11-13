@@ -249,10 +249,12 @@ Rectangle, ellipse, polygon and star items use `timeline.insert` with `content.k
 ## Clipboard
 
 A long-lived `control` session supports `clipboard.copy`, `clipboard.copy_keyframes`,
-`clipboard.read`, `clipboard.paste` and `clipboard.paste_keyframes`. Read returns
+`clipboard.copy_mask_points`, `clipboard.read`, `clipboard.paste`,
+`clipboard.paste_keyframes` and `clipboard.paste_mask_points`. Read returns
 `{kind:"clipboard", payload:...}` for the keyframe slot; a client may send that
 version-one payload explicitly with `source:{kind:"payload",payload:...}`. Item paste
-also accepts an explicit version-one item payload. Use `source:{kind:"stored"}` within
+also accepts an explicit version-one item payload, and mask-point paste one with
+`maskPoints` and no items. Use `source:{kind:"stored"}` within
 the same Session. Effectful calls use ordinary revision/idempotency admission; Copy
 advances revision without dirtying the project. One-shot `exec` can paste explicit
 serialized payloads but a second process inherits no store, and `exec` does not execute

@@ -90,8 +90,9 @@ retained completed suggestion job and starts one export job per selected short u
 existing output directory grant (never overwriting); an optional `item` names the caption item
 (source cues plus any `captions.translate` result) whose languages are burned.
 
-The five noncurated Agent commands `clipboard.copy`, `clipboard.copy_keyframes`,
-`clipboard.read`, `clipboard.paste` and `clipboard.paste_keyframes` run through
+The seven noncurated Agent commands `clipboard.copy`, `clipboard.copy_keyframes`,
+`clipboard.copy_mask_points`, `clipboard.read`, `clipboard.paste`,
+`clipboard.paste_keyframes` and `clipboard.paste_mask_points` run through
 `command_run` (and their generated all-tools names). Read returns the bounded keyframe
 payload in structuredContent. Attached UI and MCP share the selected Editor's Session
 store; other editors and headless processes start empty. No item or keyframe payload is

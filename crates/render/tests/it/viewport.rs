@@ -630,6 +630,26 @@ fn mask_geometry_matches_the_compositor_affine_under_mask_and_item_rotation() {
             local,
         );
     }
+    // The placement frame and mask box the whole-mask gizmos edit, before the item
+    // transform: anchor (0,0) of the 90-degree box sits at (120,10) in that frame.
+    assert_eq!(
+        geometry.frame(),
+        Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 100.0,
+        }
+    );
+    near(geometry.centre(), [100.0, 50.0]);
+    near(geometry.size(), [80.0, 40.0]);
+    assert!((geometry.rotation_degrees() - 90.0).abs() < 1e-9);
+    near(
+        geometry
+            .frame_point(&viewport, geometry.point(&viewport, [0.0, 0.0]).unwrap())
+            .unwrap(),
+        [120.0, 10.0],
+    );
     // The default placement spans the canvas; the same point round-trips.
     let mut data = transformed().into_data();
     let mask = project::Mask::new(

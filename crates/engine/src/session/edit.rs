@@ -152,6 +152,20 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
                     }
                 }
             }
+            Command::PasteMaskPoints { source, .. } => {
+                if let crate::ItemPasteSource::Payload { payload } = source {
+                    item_clipboard_bytes = item_clipboard_bytes
+                        .checked_add(payload.compact_bytes()?)
+                        .ok_or(EditError::Control(
+                            crate::session::wire::ControlError::Limit,
+                        ))?;
+                    if item_clipboard_bytes > super::clipboard::MAX_ITEM_CLIPBOARD_BYTES {
+                        return Err(EditError::Control(
+                            crate::session::wire::ControlError::Limit,
+                        ));
+                    }
+                }
+            }
             Command::TimelineEdit { .. } if depth != 0 => {
                 return Err(EditError::Invalid("nested ripple policy"));
             }
@@ -371,6 +385,18 @@ pub(crate) fn apply(
                 crate::ItemPasteSource::Payload { payload } => Some(payload),
             };
             data = clips::execute_paste_items(data, at, payload, created, next, sources)?;
+        }
+        EditCommand::PasteMaskPoints {
+            item: id,
+            mask,
+            after,
+            source,
+        } => {
+            let payload = match &source {
+                crate::ItemPasteSource::Stored => clipboards.items,
+                crate::ItemPasteSource::Payload { payload } => Some(payload),
+            };
+            data = masks::execute_paste_mask_points(data, id, mask, after, payload)?;
         }
         EditCommand::ApplyTextAnimation { item, preset } => {
             data = keyframes::execute_apply_text_animation(data, item, preset)?;

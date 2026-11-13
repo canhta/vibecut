@@ -32,7 +32,12 @@ snapshot with its track kind/index and group-relative offsets; Keyframes scope c
 the selected keys for one item. Paste needs one in-app entry: keyframes paste into the
 single selected item, items paste at the playhead on the relative track (falling back to
 the last track of that kind), overwrite overlapped ranges and advance the playhead to the
-pasted span's end. A mask-point scope is unavailable.
+pasted span's end. MaskPoints scope copies the selected anchors of the one mask the scope
+holds; Paste inserts them in place directly after the last selected anchor and selects the
+pasted anchors, so a repeated Paste chains. It enables only when that mask is an editable
+closed path on an unlocked track. The mask-point cut target is
+`mask_point_group()` mapped to `CutTarget::MaskPoints`, and a cut in this scope clears the
+point scope, not the item selection.
 
 The shared current eligibility check runs before draft flushing or selection/view writes,
 and before the timeline temporarily takes area state. Busy/save/transaction/inline edits,

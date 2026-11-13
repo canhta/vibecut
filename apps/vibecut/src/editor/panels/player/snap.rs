@@ -157,6 +157,30 @@ impl Targets {
     }
 }
 
+/// The lines a gesture on `item` can snap to at `at`: the canvas centre and edges and
+/// every other visible item's transformed box edges. Transform and mask gestures share it.
+pub(in crate::editor) fn targets(
+    project: &project::Project,
+    renderer: &render::Renderer<'_>,
+    item: ItemId,
+    at: time::Tick,
+) -> Targets {
+    Targets::new(
+        [project.data().canvas.width, project.data().canvas.height],
+        project
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| track.items.iter())
+            .filter(|candidate| candidate.id != item)
+            .filter_map(|candidate| {
+                let geometry = renderer.item_geometry(candidate.id, at).ok().flatten()?;
+                Some((candidate.id, extent(&geometry)))
+            }),
+    )
+}
+
 /// The preview threshold in canvas pixels at the current viewport scale.
 /// Hostile geometry cannot form a threshold and allows only an exact match.
 pub(in crate::editor) fn threshold(viewport: &Viewport) -> f64 {

@@ -4867,3 +4867,358 @@ fn freeform_mask_path_tile_edits_points_and_publishes_one_step_per_drag() {
     harness.render().unwrap().save(&screenshot).unwrap();
     assert!(screenshot.exists());
 }
+
+/// A selected video item carrying one freeform ellipse mask, playhead at zero.
+fn freeform_harness() -> (Harness<'static, Editor>, ItemId) {
+    let fixture = fixture();
+    let video = fixture.video;
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    select(&mut harness, video);
+    let project = harness.state().session.project().clone();
+    harness
+        .state_mut()
+        .playback
+        .seek(Tick::ZERO, false, project)
+        .unwrap();
+    harness.run_steps(2);
+    click(&mut harness, "inspector.mask.row");
+    click(&mut harness, "inspector.mask.shape.path");
+    click(&mut harness, "inspector.mask.done");
+    harness.run_steps(2);
+    (harness, video)
+}
+
+/// `pointer_drag` with `modifiers` held from before the press to after the release.
+fn pointer_drag_with(
+    harness: &mut Harness<Editor>,
+    from: egui::Pos2,
+    to: egui::Pos2,
+    modifiers: egui::Modifiers,
+) {
+    harness.event(egui::Event::ModifiersChanged(modifiers));
+    harness.event(egui::Event::PointerMoved(from));
+    harness.run_steps(1);
+    harness.event(egui::Event::PointerButton {
+        pos: from,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers,
+    });
+    harness.run_steps(1);
+    harness.event(egui::Event::PointerMoved(to));
+    harness.run_steps(2);
+    harness.event(egui::Event::PointerButton {
+        pos: to,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers,
+    });
+    harness.run_steps(2);
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::default()));
+    harness.run_steps(1);
+}
+
+fn target_center(harness: &Harness<Editor>, id: &str) -> egui::Pos2 {
+    widget_rect(harness, id).center()
+}
+
+fn point_scope(harness: &Harness<Editor>) -> Vec<usize> {
+    harness
+        .state()
+        .selection_scopes
+        .mask_points
+        .iter()
+        .map(|point| point.point)
+        .collect()
+}
+
+fn assert_near(actual: egui::Pos2, expected: egui::Pos2, what: &str) {
+    assert!(
+        actual.distance(expected) < 1.5,
+        "{what}: {actual:?} is not at {expected:?}"
+    );
+}
+
+#[test]
+fn whole_mask_gizmo_moves_resizes_and_rotates_one_undo_step_per_drag() {
+    let (mut harness, video) = freeform_harness();
+    harness.state_mut().preferences.snapping = false;
+    let seeded = harness.render().unwrap();
+    for id in [
+        "preview.mask.box.move",
+        "preview.mask.box.rotate",
+        "preview.mask.box.corner.0",
+        "preview.mask.box.corner.1",
+        "preview.mask.box.corner.2",
+        "preview.mask.box.corner.3",
+    ] {
+        assert!(has_widget(&harness, id), "{id} exposes a target");
+    }
+    let start = mask_of(&harness, video).unwrap();
+    let history = harness.state().session.history_len().0;
+
+    // Move: a press inside the box that meets no handle drags the whole mask, and the
+    // box centre follows the pointer exactly.
+    let centre = target_center(&harness, "preview.mask.box.move");
+    let to = centre + egui::vec2(37.0, 21.0);
+    pointer_drag(&mut harness, centre, to);
+    let moved = mask_of(&harness, video).unwrap();
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    assert!(moved.center_x > start.center_x && moved.center_y > start.center_y);
+    assert_eq!(
+        (moved.scale, moved.rotation, &moved.shape),
+        (start.scale, start.rotation, &start.shape),
+        "a move touches neither the size, the rotation nor the path"
+    );
+    assert_near(target_center(&harness, "preview.mask.box.move"), to, "move");
+
+    // Resize: the bottom-right corner dragged along its diagonal scales the mask about
+    // its centre, and the corner lands on the pointer.
+    let centre = target_center(&harness, "preview.mask.box.move");
+    let corner = target_center(&harness, "preview.mask.box.corner.2");
+    let before = (corner - centre).length();
+    let to = corner + (corner - centre) / before * 24.0;
+    pointer_drag(&mut harness, corner, to);
+    let resized = mask_of(&harness, video).unwrap();
+    assert_eq!(harness.state().session.history_len().0, history + 2);
+    let expected = moved.scale * f64::from((before + 24.0) / before);
+    assert!(
+        (resized.scale - expected).abs() < 1e-3,
+        "scale {} vs {expected}",
+        resized.scale
+    );
+    assert_eq!(
+        (resized.center_x, resized.center_y),
+        (moved.center_x, moved.center_y)
+    );
+    assert_near(
+        target_center(&harness, "preview.mask.box.corner.2"),
+        to,
+        "resize",
+    );
+
+    // Rotate: the grip turned 92 degrees clockwise about the centre rotates the mask 92
+    // degrees and the grip follows.
+    let turned = |arm: egui::Vec2, degrees: f32| {
+        let (sin, cos) = degrees.to_radians().sin_cos();
+        egui::vec2(arm.x * cos - arm.y * sin, arm.x * sin + arm.y * cos)
+    };
+    let centre = target_center(&harness, "preview.mask.box.move");
+    let grip = target_center(&harness, "preview.mask.box.rotate");
+    let to = centre + turned(grip - centre, 92.0);
+    pointer_drag(&mut harness, grip, to);
+    let rotated = mask_of(&harness, video).unwrap();
+    assert_eq!(harness.state().session.history_len().0, history + 3);
+    assert!(
+        (rotated.rotation - 92.0).abs() < 0.05,
+        "rotation {}",
+        rotated.rotation
+    );
+    assert_near(
+        target_center(&harness, "preview.mask.box.rotate"),
+        to,
+        "rotate",
+    );
+
+    // With snapping on, a turn that ends within 5 degrees of a quarter turn lands on it.
+    harness.state_mut().preferences.snapping = true;
+    let centre = target_center(&harness, "preview.mask.box.move");
+    let grip = target_center(&harness, "preview.mask.box.rotate");
+    let to = centre + turned(grip - centre, -2.0);
+    pointer_drag(&mut harness, grip, to);
+    assert_eq!(mask_of(&harness, video).unwrap().rotation, 90.0);
+    assert_eq!(harness.state().session.history_len().0, history + 4);
+
+    // Undo walks the four gestures back one by one.
+    for steps in (0..4).rev() {
+        harness.state_mut().session.apply(Command::Undo {}).unwrap();
+        assert_eq!(
+            harness.state().session.history_len().0,
+            history + steps,
+            "undo {steps}"
+        );
+    }
+    assert_eq!(mask_of(&harness, video).unwrap(), start);
+    for _ in 0..4 {
+        harness.state_mut().session.apply(Command::Redo {}).unwrap();
+    }
+    harness.run_steps(3);
+
+    // Escape abandons a live gesture without a history step; the gesture is cancelled
+    // while the button is still down, and the later release does nothing.
+    let committed = mask_of(&harness, video).unwrap();
+    let centre = target_center(&harness, "preview.mask.box.move");
+    harness.event(egui::Event::PointerMoved(centre));
+    harness.run_steps(1);
+    harness.event(egui::Event::PointerButton {
+        pos: centre,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::default(),
+    });
+    harness.run_steps(1);
+    harness.event(egui::Event::PointerMoved(centre + egui::vec2(30.0, 0.0)));
+    harness.run_steps(2);
+    assert!(harness.state().session.gesture_active());
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+    harness.event(egui::Event::PointerButton {
+        pos: centre,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::default(),
+    });
+    harness.run_steps(2);
+    assert!(!harness.state().session.gesture_active());
+    assert_eq!(mask_of(&harness, video).unwrap(), committed);
+    assert_eq!(harness.state().session.history_len().0, history + 4);
+
+    // Offscreen evidence: the frame with the edited mask and its gizmo differs from the
+    // frame with the freshly seeded one.
+    let screenshot =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-37-freeform-gizmo.png");
+    if let Some(parent) = screenshot.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
+    let image = harness.render().unwrap();
+    assert_ne!(
+        image.as_raw(),
+        seeded.as_raw(),
+        "the edited mask and gizmo change the frame"
+    );
+    image.save(&screenshot).unwrap();
+    assert!(screenshot.exists());
+}
+
+#[test]
+fn rotated_scaled_mask_hits_and_drags_its_tangent_and_shift_toggles_points() {
+    let (mut harness, video) = freeform_harness();
+    let mut mask = mask_of(&harness, video).unwrap();
+    mask.rotation = 30.0;
+    mask.scale = 0.8;
+    harness
+        .state_mut()
+        .session
+        .apply(Command::UpdateMask { item: video, mask })
+        .unwrap();
+    harness.run_steps(3);
+    let seed = path_of(&harness, video);
+    assert!(
+        !has_widget(&harness, "preview.mask.tangent.1.out"),
+        "an unselected anchor shows no tangent handles"
+    );
+
+    // Selecting anchor 1 exposes its two tangent handles on the rotated, scaled contour.
+    point_target(
+        &mut harness,
+        "preview.mask.point.1",
+        egui::Modifiers::default(),
+    );
+    for side in ["in", "out"] {
+        assert!(has_widget(
+            &harness,
+            &format!("preview.mask.tangent.1.{side}")
+        ));
+    }
+    let history = harness.state().session.history_len().0;
+    let handle = target_center(&harness, "preview.mask.tangent.1.out");
+    let other = target_center(&harness, "preview.mask.tangent.1.in");
+    let to = handle + egui::vec2(14.0, -9.0);
+    pointer_drag(&mut harness, handle, to);
+
+    // The drag hit the tangent, not the anchor, and moved only that side: the handle
+    // follows the pointer through the rotation and scale in one undo step.
+    let dragged = path_of(&harness, video);
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    assert_eq!(dragged.vertices[1].p, seed.vertices[1].p);
+    assert_eq!(dragged.vertices[1].t_in, seed.vertices[1].t_in);
+    assert_ne!(dragged.vertices[1].t_out, seed.vertices[1].t_out);
+    for index in [0, 2, 3] {
+        assert_eq!(dragged.vertices[index], seed.vertices[index]);
+    }
+    assert_near(
+        target_center(&harness, "preview.mask.tangent.1.out"),
+        to,
+        "tangent",
+    );
+    assert_near(
+        target_center(&harness, "preview.mask.tangent.1.in"),
+        other,
+        "the other tangent stays",
+    );
+    assert_eq!(point_scope(&harness), vec![1]);
+
+    // Shift toggles a second point in and out of the scope.
+    point_target(&mut harness, "preview.mask.point.3", egui::Modifiers::SHIFT);
+    assert_eq!(point_scope(&harness), vec![1, 3]);
+    point_target(&mut harness, "preview.mask.point.3", egui::Modifiers::SHIFT);
+    assert_eq!(point_scope(&harness), vec![1]);
+}
+
+#[test]
+fn shift_marquee_adds_the_covered_anchors_to_the_point_scope() {
+    let (mut harness, _) = freeform_harness();
+    point_target(
+        &mut harness,
+        "preview.mask.point.0",
+        egui::Modifiers::default(),
+    );
+    assert_eq!(point_scope(&harness), vec![0]);
+    let (right, bottom) = (
+        target_center(&harness, "preview.mask.point.1"),
+        target_center(&harness, "preview.mask.point.2"),
+    );
+    let from = egui::pos2(right.x.max(bottom.x) + 15.0, right.y.max(bottom.y) + 15.0);
+    let to = egui::pos2(right.x.min(bottom.x) - 15.0, right.y.min(bottom.y) - 15.0);
+
+    // Shift keeps the anchor already selected and adds the two the box covers; a second
+    // identical marquee changes nothing.
+    pointer_drag_with(&mut harness, from, to, egui::Modifiers::SHIFT);
+    assert_eq!(point_scope(&harness), vec![0, 1, 2]);
+    pointer_drag_with(&mut harness, from, to, egui::Modifiers::SHIFT);
+    assert_eq!(point_scope(&harness), vec![0, 1, 2]);
+
+    // Without Shift the same marquee replaces the scope.
+    pointer_drag(&mut harness, from, to);
+    assert_eq!(point_scope(&harness), vec![1, 2]);
+}
+
+#[test]
+fn mask_points_copy_and_paste_through_the_session_clipboard_and_chain() {
+    let (mut harness, video) = freeform_harness();
+    let seed = path_of(&harness, video);
+    point_target(
+        &mut harness,
+        "preview.mask.point.0",
+        egui::Modifiers::default(),
+    );
+    point_target(&mut harness, "preview.mask.point.2", egui::Modifiers::SHIFT);
+    assert_eq!(point_scope(&harness), vec![0, 2]);
+    let history = harness.state().session.history_len().0;
+
+    // Copy stores two anchors with their tangents and is not an undo step.
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::C);
+    harness.run_steps(2);
+    assert_eq!(harness.state().session.mask_point_clipboard_len(), 2);
+    assert_eq!(harness.state().session.history_len().0, history);
+
+    // Paste lands them in place after the last selected anchor and selects them.
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::V);
+    harness.run_steps(2);
+    let pasted = path_of(&harness, video);
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    assert_eq!(pasted.vertices.len(), 6);
+    assert_eq!(pasted.vertices[3], seed.vertices[0]);
+    assert_eq!(pasted.vertices[4], seed.vertices[2]);
+    assert_eq!(pasted.vertices[5], seed.vertices[3]);
+    assert_eq!(point_scope(&harness), vec![3, 4]);
+
+    // A second Paste chains after the pasted anchors; one undo removes it.
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::V);
+    harness.run_steps(2);
+    assert_eq!(path_of(&harness, video).vertices.len(), 8);
+    assert_eq!(point_scope(&harness), vec![5, 6]);
+    harness.state_mut().session.apply(Command::Undo {}).unwrap();
+    assert_eq!(path_of(&harness, video), pasted);
+}

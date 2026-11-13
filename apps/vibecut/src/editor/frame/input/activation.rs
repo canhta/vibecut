@@ -124,8 +124,17 @@ impl Editor {
                         let items = self.session.selection().iter().copied().collect();
                         self.session.apply(engine::Command::CopyItems { items })?;
                     }
-                    crate::editor::selection::SelectionScope::MaskPoints
-                    | crate::editor::selection::SelectionScope::Transition
+                    crate::editor::selection::SelectionScope::MaskPoints => {
+                        let (item, mask, points) = self
+                            .mask_point_group()
+                            .ok_or(Error::Invalid("clipboard target"))?;
+                        self.session.apply(engine::Command::CopyMaskPoints {
+                            item,
+                            mask,
+                            points,
+                        })?;
+                    }
+                    crate::editor::selection::SelectionScope::Transition
                     | crate::editor::selection::SelectionScope::None => {
                         return Err(Error::Invalid("clipboard scope"));
                     }
@@ -165,8 +174,36 @@ impl Editor {
                                 source: engine::ItemPasteSource::Stored,
                             })?
                         }
-                        crate::editor::selection::SelectionScope::MaskPoints
-                        | crate::editor::selection::SelectionScope::Transition
+                        crate::editor::selection::SelectionScope::MaskPoints => {
+                            // The copied anchors land after the last selected one and
+                            // become the point scope, so a repeated Paste chains.
+                            let (item, mask, points) = self
+                                .mask_point_group()
+                                .ok_or(Error::Invalid("clipboard target"))?;
+                            let after = points
+                                .iter()
+                                .copied()
+                                .max()
+                                .ok_or(Error::Invalid("clipboard target"))?;
+                            let count = self.session.mask_point_clipboard_len();
+                            let outcome = self.session.apply(engine::Command::PasteMaskPoints {
+                                item,
+                                mask: mask.clone(),
+                                after,
+                                source: engine::ItemPasteSource::Stored,
+                            })?;
+                            if outcome.changed {
+                                self.selection_scopes.mask_points = (after + 1..=after + count)
+                                    .map(|point| crate::editor::MaskPointSelection {
+                                        item,
+                                        mask: mask.clone(),
+                                        point,
+                                    })
+                                    .collect();
+                            }
+                            return Ok(());
+                        }
+                        crate::editor::selection::SelectionScope::Transition
                         | crate::editor::selection::SelectionScope::None => {
                             return Err(Error::Invalid("clipboard scope"));
                         }

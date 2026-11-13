@@ -185,6 +185,29 @@ impl MaskPath {
         }
         Ok(out)
     }
+    /// Insert copied anchors, in order, directly after anchor `after`. Positions and
+    /// tangent offsets are kept as given; the path stays closed and at most 4096 anchors.
+    pub fn with_inserted(&self, after: usize, vertices: &[MaskVertex]) -> Result<Self> {
+        self.editable()?;
+        if after >= self.vertices.len() || vertices.is_empty() {
+            return Err(Error::Invalid("mask point paste"));
+        }
+        if self.vertices.len() + vertices.len() > 4096 {
+            return Err(Error::TooLarge("mask vertices"));
+        }
+        if vertices
+            .iter()
+            .flat_map(|v| v.p.iter().chain(&v.t_in).chain(&v.t_out))
+            .any(|n| !n.is_finite() || n.abs() > 100.0)
+        {
+            return Err(Error::Invalid("mask vertex"));
+        }
+        let mut out = self.clone();
+        let tail = out.vertices.split_off(after + 1);
+        out.vertices.extend(vertices.iter().cloned());
+        out.vertices.extend(tail);
+        Ok(out)
+    }
     /// Remove anchors by index, keeping at least three. Survivors keep their
     /// positions and tangent offsets; neighbors reconnect by their handles.
     pub fn without(&self, points: &[usize]) -> Result<Self> {

@@ -1,5 +1,6 @@
 //! Owns preview presentation state behind the player panel interface.
 pub mod crop;
+mod mask_box;
 mod mask_path;
 mod snap;
 mod state;
@@ -79,7 +80,12 @@ pub(crate) enum Action {
         mask: String,
         path: project::MaskPath,
     },
-    /// Close a mask path gesture, publishing one undo step when `commit`.
+    /// Stage one absolute whole-mask candidate (centre, scale or rotation) from a gizmo drag.
+    MaskBoxPreview {
+        item: ItemId,
+        mask: project::Mask,
+    },
+    /// Close a mask path or whole-mask gesture, publishing one undo step when `commit`.
     MaskPathEnd {
         commit: bool,
     },

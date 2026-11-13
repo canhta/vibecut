@@ -38,17 +38,25 @@ impl Session {
                     self.project().data(),
                     &items,
                 )? {
-                    let same = self
-                        .item_clipboard
-                        .as_deref()
-                        .map(|stored| stored.same_bytes(&payload))
-                        .transpose()?
-                        .unwrap_or(false);
-                    if !same {
-                        self.item_clipboard = Some(Arc::new(payload));
-                        self.clipboard = None;
-                        self.invalidate_revision(false)?;
-                    }
+                    self.store_item_clipboard(payload)?;
+                }
+                Ok(outcome(false))
+            }
+            Command::CopyMaskPoints { item, mask, points } => {
+                if self.transaction_active() {
+                    return Err(EditError::Session(
+                        crate::session::SessionError::TransactionActive,
+                    ));
+                }
+                if let Some(payload) =
+                    crate::session::clipboard::ItemClipboard::capture_mask_points(
+                        self.project().data(),
+                        item,
+                        &mask,
+                        &points,
+                    )?
+                {
+                    self.store_item_clipboard(payload)?;
                 }
                 Ok(outcome(false))
             }
@@ -115,6 +123,23 @@ impl Session {
                 "lifecycle command requires its library or persistence owner",
             )),
         }
+    }
+
+    /// Keep one copied item or mask-point snapshot as the Session's entry; an identical
+    /// entry leaves the slot and the revision alone.
+    fn store_item_clipboard(&mut self, payload: crate::ItemClipboard) -> Result<()> {
+        let same = self
+            .item_clipboard
+            .as_deref()
+            .map(|stored| stored.same_bytes(&payload))
+            .transpose()?
+            .unwrap_or(false);
+        if !same {
+            self.item_clipboard = Some(Arc::new(payload));
+            self.clipboard = None;
+            self.invalidate_revision(false)?;
+        }
+        Ok(())
     }
 
     fn set_ripple(&mut self, enabled: bool) -> Result<Outcome> {

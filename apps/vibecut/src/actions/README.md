@@ -33,6 +33,8 @@ metadata work; an actual jump uses the existing Seek path.
 
 `edit.copy` and `edit.paste` run the scope-specific clipboard workflows through typed
 Session commands: selected item snapshots when Items is the active scope, selected-key
-snapshots when Keyframes is. Mask-point clipboard remains unavailable. Paste requires one
+snapshots when Keyframes is, the selected anchors with their tangents when MaskPoints is
+(`clipboard.copy_mask_points` / `clipboard.paste_mask_points`; mask-point cut waits for
+`clipboard.cut` and its `CutTarget`). Paste requires one
 entry in that editor's Session. Eligibility and draft preflight belong to
 [frame input](../editor/frame/input/README.md#clipboard-actions).
