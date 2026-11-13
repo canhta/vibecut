@@ -206,8 +206,10 @@ impl Workspace {
             }
             if actions.contains(&crate::shorts::Action::OpenEditor) && !self.home.busy() {
                 let result = shorts.editor_session().and_then(|(s, settings)| {
-                    self.home
-                        .submit(Work::Short(Box::new(s), settings), Text::LoadingProject)
+                    self.home.submit(
+                        Work::Short(Box::new(s), Box::new(settings)),
+                        Text::LoadingProject,
+                    )
                 });
                 if let Err(e) = result {
                     self.home.error = Some(e);

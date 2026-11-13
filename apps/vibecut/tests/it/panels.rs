@@ -3039,10 +3039,12 @@ fn animation_tiles_show_previews_with_names_beneath_at_the_measured_pitch() {
         slide.left() - fade.left()
     );
     // Preview pixels of a look are lighter than the dark tile fill; the None tile stays empty.
+    // Only the middle of the tile counts: the favourite star in its corner is light too.
     let lit = |image: &image::RgbaImage, rect: egui::Rect| {
         let mut count = 0;
-        for y in rect.top() as u32 + 4..rect.bottom() as u32 - 4 {
-            for x in rect.left() as u32 + 4..rect.right() as u32 - 4 {
+        let inner = rect.shrink(16.0);
+        for y in inner.top() as u32..inner.bottom() as u32 {
+            for x in inner.left() as u32..inner.right() as u32 {
                 if image.get_pixel(x, y).0[..3]
                     .iter()
                     .all(|channel| *channel > 50)

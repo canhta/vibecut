@@ -41,7 +41,7 @@ pub(super) enum Work {
     Discover,
     Open(PathBuf),
     New,
-    Short(Box<Session>, render::RenderSettings),
+    Short(Box<Session>, Box<render::RenderSettings>),
     Recover(Box<Candidate>),
     Discard(Box<Candidate>),
     Persist {
@@ -306,7 +306,7 @@ fn run(
         Work::Short(short, settings) => {
             let autosave = session(root, *short, persistence.clone())?;
             let mut playback = Playback::new(autosave.session(), budget, preview_sources())?;
-            playback.set_render_settings(settings)?;
+            playback.set_render_settings(*settings)?;
             return Ok(Completed::Opened(Box::new(Editor::persisted(
                 autosave,
                 playback,

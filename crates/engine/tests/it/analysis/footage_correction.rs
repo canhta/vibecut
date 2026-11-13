@@ -1,5 +1,6 @@
 #![allow(
     clippy::unwrap_used,
+    clippy::panic,
     clippy::indexing_slicing,
     reason = "synthetic fixtures and assertions"
 )]
@@ -200,9 +201,9 @@ fn rms_motion(paths: &[[[f64; 2]; 4]]) -> f64 {
     let mut sum = 0.0;
     let mut count = 0.0;
     for pair in paths.windows(2) {
-        for corner in 0..4 {
-            for axis in 0..2 {
-                let delta = pair[1][corner][axis] - pair[0][corner][axis];
+        for (after, before) in pair[1].iter().zip(&pair[0]) {
+            for (a, b) in after.iter().zip(before) {
+                let delta = a - b;
                 sum += delta * delta;
                 count += 1.0;
             }
@@ -458,7 +459,7 @@ fn a_person_matte_round_trips_one_plane_per_frame_and_two_runs_retain_the_same_b
     );
     // The stand-in sees the texture, so the stored planes are not flat.
     let plane = first.plane(0).unwrap();
-    assert!(plane.iter().any(|v| *v == 255) && plane.iter().any(|v| *v < 128));
+    assert!(plane.contains(&255) && plane.iter().any(|v| *v < 128));
     // The two kinds never share a key.
     assert_ne!(
         CorrectionRequest::new(asset.clone(), CorrectionKind::PersonMatte)

@@ -907,11 +907,11 @@ impl Editor {
     }
     /// Replace the OS file-clipboard reader that Paste consults; tests inject a fixture.
     pub fn set_os_clipboard_files(&mut self, read: impl FnMut() -> Vec<PathBuf> + Send + 'static) {
-        self.assets.os_files = crate::services::file_clipboard::FileClipboard::new(read);
+        self.assets.os_files = crate::services::clipboard::FileClipboard::new(read);
     }
     /// Read the platform clipboard's files on Paste. The desktop wires this once per window.
     pub fn use_native_file_clipboard(&mut self) {
-        self.assets.os_files = crate::services::file_clipboard::FileClipboard::native();
+        self.assets.os_files = crate::services::clipboard::FileClipboard::native();
     }
     /// Replace the media boundary in tests; production keeps the media owner.
     pub fn set_import_probe(&mut self, probe: Arc<dyn ImportProbe>) -> Result<()> {

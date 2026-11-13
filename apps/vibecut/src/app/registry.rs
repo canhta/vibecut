@@ -26,7 +26,7 @@ pub struct Workspace {
     pub shorts: Option<crate::shorts::State>,
     pub preferences: Preferences,
     /// Injected native reader shared by Home and immediate child composition.
-    pub text_clipboard: crate::services::text_clipboard::TextClipboard,
+    pub text_clipboard: crate::services::clipboard::TextClipboard,
     pub(super) home: EditorWindow,
     pub(super) focused: Option<project::ProjectId>,
     pub(super) focus_requested: Option<project::ProjectId>,

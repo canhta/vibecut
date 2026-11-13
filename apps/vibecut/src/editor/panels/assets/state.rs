@@ -51,7 +51,7 @@ pub(in crate::editor) struct State {
     /// Media panel: the asset drag in flight, resolved by the timeline's lanes.
     pub(in crate::editor) media_drag: Option<crate::editor::context::MediaDrag>,
     /// The OS clipboard's file list, read on paste; tests inject a fixture reader.
-    pub(in crate::editor) os_files: crate::services::file_clipboard::FileClipboard,
+    pub(in crate::editor) os_files: crate::services::clipboard::FileClipboard,
     /// A paste import in flight: the playhead its probed files insert at.
     pub(in crate::editor) paste_at: Option<super::Tick>,
     /// Assets the current import batch added, in probe order.

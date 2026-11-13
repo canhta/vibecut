@@ -128,7 +128,7 @@ impl State {
         } else if !self.footage.missing.contains(&target) {
             FootageStatus::Ready
         } else if let Some(id) = self.footage.models.get(&target) {
-            FootageStatus::ModelMissing(*id)
+            FootageStatus::ModelMissing(id)
         } else {
             FootageStatus::NeedsAnalysis
         }
