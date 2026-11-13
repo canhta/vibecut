@@ -43,6 +43,7 @@ fn project_new(path: PathBuf) -> Result<Output, CliError> {
         engine::Command::CreateProject {
             id: ProjectId(0),
             name: "Untitled".into(),
+            fps: 30,
         },
         1,
     )?;
