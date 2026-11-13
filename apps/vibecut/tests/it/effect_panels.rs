@@ -1079,6 +1079,12 @@ fn adjustment_layer_inserts_at_playhead_takes_an_effect_moves_and_changes_previe
     click(&mut harness, "assets.tab.effects");
     click(&mut harness, "effects.add.black_white");
     assert_eq!(effect_ids(&harness, layer), vec!["black_white".to_owned()]);
+    // The layer stays selected, and the inspector Effects tab lists its stack.
+    assert_eq!(*harness.state().selection(), [layer].into_iter().collect());
+    assert!(
+        has_widget(&harness, "effects.row.black_white.handle"),
+        "the Effects tab lists the adjustment layer's effect"
+    );
     let grey = wait_centre(&mut harness, |p| p != red);
     assert_ne!(grey, red);
     let zoom = harness.state().inspect().unwrap().zoom;

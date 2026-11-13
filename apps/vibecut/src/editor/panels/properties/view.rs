@@ -1567,6 +1567,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                         | ElementKind::Sticker
                         | ElementKind::Graphic
                         | ElementKind::Text
+                        | ElementKind::Effect
                 ) =>
             {
                 self.effects_stack(ui, item);
