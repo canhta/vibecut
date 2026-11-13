@@ -158,7 +158,9 @@ fn click(harness: &mut Harness<Editor>, id: &str) {
     harness
         .get(By::new().predicate(|node| node.author_id() == Some(id)))
         .click();
-    harness.run_steps(2);
+    // One frame applies the click, one lays out the changed dialog and one re-centres the
+    // resized modal, so the next query reads where its buttons are now drawn.
+    harness.run_steps(3);
 }
 
 fn view(harness: &Harness<Editor>) -> VoiceoverView {
@@ -170,6 +172,10 @@ fn wait(harness: &mut Harness<Editor>, what: &str, mut predicate: impl FnMut(&Ed
     loop {
         harness.run_steps(1);
         if predicate(harness.state()) {
+            // The state change can resize the modal (a problem line appears), and egui
+            // re-centres it a frame later; let it settle so the next pointer click lands
+            // on the button and not on the backdrop, which closes the dialog.
+            harness.run_steps(2);
             return;
         }
         assert!(

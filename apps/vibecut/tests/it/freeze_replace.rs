@@ -45,6 +45,14 @@ fn saved(editor: &mut Editor, root: &Path) {
     )
     .unwrap();
     saving.save_to(root.join("title.vibecut")).unwrap();
+    // The save runs on a worker; the saved path is the project's only once a tick
+    // acknowledges it.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while saving.saved_path().is_none() {
+        assert!(std::time::Instant::now() < deadline, "save never completed");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        saving.tick().unwrap();
+    }
     editor.session = EditorSession::Persistent(Box::new(saving));
 }
 
@@ -87,10 +95,39 @@ fn source_of(editor: &Editor, item: ItemId) -> Option<AssetId> {
         .source_asset
 }
 
+/// Swap `item`'s synthetic source for a decodable ten-second clip, so the freeze has a
+/// real frame to render. `None` when the FFmpeg oracle is absent.
+fn real_source(editor: &mut Editor, item: ItemId) -> Option<()> {
+    let path = testkit::oracle::generate(
+        &testkit::fixture::dir("freeze-replace"),
+        "freeze frame",
+        "source.mkv",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=s=64x36:r=10:d=10",
+            "-c:v",
+            "ffv1",
+            "-pix_fmt",
+            "yuv420p",
+        ],
+    )?;
+    let asset = SourceAsset::import(AssetId(3), path).unwrap();
+    // Import resolves the path; Replace looks the file up by the asset's own path.
+    let path = asset.path().to_owned();
+    editor.session.apply(Command::AddAsset { asset }).unwrap();
+    editor.replace_picked_file(item, path).unwrap();
+    Some(())
+}
+
 #[test]
 fn toolbar_freeze_holds_the_selected_frame_as_a_still_beside_the_project() {
     let root = tempfile::tempdir().unwrap();
     let mut f = fixture();
+    let Some(()) = real_source(&mut f.editor, f.video_a) else {
+        return;
+    };
     saved(&mut f.editor, root.path());
     select_at(&mut f.editor, f.video_a, 2 * SECOND);
     let before = f.editor.session.project().clone();
@@ -119,6 +156,9 @@ fn toolbar_freeze_holds_the_selected_frame_as_a_still_beside_the_project() {
 #[test]
 fn freeze_works_before_the_first_save_in_the_temp_media_folder() {
     let mut f = fixture();
+    let Some(()) = real_source(&mut f.editor, f.video_a) else {
+        return;
+    };
     select_at(&mut f.editor, f.video_a, 2 * SECOND);
     let before = f.editor.session.project().clone();
     let mut harness = harness(f.editor);

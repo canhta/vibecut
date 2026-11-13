@@ -120,7 +120,17 @@ fn music_cli_saves_searches_and_adds_a_cached_track_offline() {
         "https://creativecommons.org/licenses/by/4.0/"
     );
     let media = data.assets[0].path().to_owned();
-    assert!(media.starts_with(dir.path().join("music.vibecut.media")));
+    // The saved project names its media by the resolved path of the project folder.
+    let folder = dir
+        .path()
+        .canonicalize()
+        .unwrap()
+        .join("music.vibecut.media");
+    assert!(
+        media.starts_with(&folder),
+        "{} lies outside the project's media folder",
+        media.display()
+    );
     assert!(
         !String::from_utf8_lossy(&output.stdout).contains("token"),
         "no credential is printed"
