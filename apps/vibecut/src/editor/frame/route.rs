@@ -6,6 +6,12 @@ impl Editor {
     pub(in crate::editor) fn context(&self) -> Context<'_> {
         Context {
             session: &self.session,
+            project_path: match &self.session {
+                crate::services::lifecycle::EditorSession::Persistent(autosave) => {
+                    autosave.saved_path()
+                }
+                crate::services::lifecycle::EditorSession::Memory(_) => None,
+            },
             locale: self.preferences.locale,
             dark: self.preferences.dark,
             save_status: self.save_status(),
