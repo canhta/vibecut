@@ -9,6 +9,28 @@ pub(super) fn set_speed(
     speed: time::Speed,
     maintain_pitch: bool,
 ) -> Result<()> {
+    change_retime(data, id, |current| project::Retime {
+        speed,
+        maintain_pitch,
+        ..current
+    })
+}
+
+/// Give one video/audio item a whole `Retime` value through the same key stretch and
+/// ripple as a speed edit. A retained window survives only while the speed is unchanged.
+pub(super) fn set_retime(
+    data: &mut ProjectData,
+    id: ItemId,
+    retime: project::Retime,
+) -> Result<()> {
+    change_retime(data, id, |_| retime)
+}
+
+fn change_retime(
+    data: &mut ProjectData,
+    id: ItemId,
+    next: impl FnOnce(project::Retime) -> project::Retime,
+) -> Result<()> {
     let timeline = &mut data.scene_mut().timeline;
     let ripple = timeline.magnet && timeline.main.items.iter().any(|i| i.id == id);
     let Some(t) = timeline
@@ -28,20 +50,23 @@ pub(super) fn set_speed(
         return Err(EditError::Unsupported("speed on non-media item"));
     }
     let old_end = target.end()?;
-    let (num, den) = target.retime.speed.stretch_to(speed);
+    let old = target.retime;
+    let new = next(old);
+    let (num, den) = old.speed.stretch_to(new.speed);
     if num != den {
         target.animations.retime(num, den)?;
     }
     target.retime = project::Retime {
-        window: if target.retime.speed == speed {
-            target.retime.window
+        window: if old.speed == new.speed {
+            old.window
         } else {
             None
         },
-        speed,
-        maintain_pitch,
-        reverse: target.retime.reverse,
+        reverse: old.reverse,
+        ..new
     };
+    // A direction flip mirrors a retained window, so it goes through the item's own rule.
+    target.set_reversed(new.reverse)?;
     let new_end = target.end()?;
     if ripple {
         let delta = sub(new_end, old_end)?;
@@ -114,15 +139,4 @@ pub(super) fn execute_set_speed(
     }
 
     Ok(data)
-}
-
-/// Give one video/audio item the whole retime of a copied item: speed, pitch handling and
-/// direction, through the same ripple and key-stretch rules as a speed edit.
-pub(super) fn set_retime(
-    data: &mut ProjectData,
-    id: ItemId,
-    retime: project::Retime,
-) -> Result<()> {
-    set_speed(data, id, retime.speed, retime.maintain_pitch)?;
-    set_reverse(data, id, retime.reverse)
 }
