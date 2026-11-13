@@ -1,12 +1,11 @@
-//! Keyword emphasis section of the Captions tab: manual word picks, the lexicon choice,
-//! preview, clear and the consented AI suggestion. Each gesture is one engine command, so it
-//! is one undo step; AI suggestions apply as one batch.
+//! Keyword emphasis of the selected caption cue: manual word picks, the lexicon choice,
+//! preview, clear and the consented AI suggestion. The properties area draws the section from
+//! `keyword_ui` and sends `keyword_action`s back through the frame. Each gesture is one engine
+//! command, so it is one undo step; AI suggestions apply as one batch.
 use super::Subtitles;
-use super::view::Controls;
 use crate::{
-    egui,
+    editor::context::{KeywordAction, KeywordRun, KeywordUi},
     i18n::Text,
-    kit::Icon,
     preferences::SubtitleOptions as Options,
     services::{
         ai_access::{Consent, TextOpener},
@@ -74,6 +73,10 @@ struct View {
     target: Option<captions::Cue>,
     /// Every selected cue carries verified word timing.
     timed: bool,
+    /// Timed words of the target cue: word id and text.
+    words: Vec<(u32, String)>,
+    /// Most words the target cue may emphasise.
+    limit: usize,
     /// The target's emphasis that still validates against its current source text.
     shown: Vec<u32>,
     /// A stored selection no longer validates, for example after its source text changed.
@@ -140,33 +143,80 @@ impl Subtitles {
                 }
             }
         }
-        let (shown, stale) = match &target {
+        let (words, limit, shown, stale) = match &target {
             Some(cue) => {
+                let timed_words = cue.words();
+                let words = timed_words
+                    .iter()
+                    .enumerate()
+                    .map(|(index, word)| (index as u32, word.text.as_str().to_owned()))
+                    .collect();
                 let stored = params.emphasis.get(&cue.id).cloned().unwrap_or_default();
                 let shown = captions::resolve_selection(cue, &stored).to_vec();
                 let stale = !stored.is_empty() && shown.is_empty();
-                (shown, stale)
+                (
+                    words,
+                    captions::emphasis_limit(timed_words.len()),
+                    shown,
+                    stale,
+                )
             }
-            None => (Vec::new(), false),
+            None => (Vec::new(), 0, Vec::new(), false),
         };
         Some(View {
             item,
             selected,
             target,
             timed,
+            words,
+            limit,
             shown,
             stale,
             highlight: params.word_highlight,
         })
     }
 
-    /// The keyword section under the cue list.
-    pub(super) fn emphasis_ui(
+    /// The keyword section's read for the caption item the properties area shows. `None`
+    /// unless that item is the Captions panel's current item.
+    pub(crate) fn keyword_ui(&self, session: &Session, item: ItemId) -> Option<KeywordUi> {
+        if self.item != Some(item) {
+            return None;
+        }
+        let view = self.emphasis_view(session)?;
+        let owned = self.emphasis.item == Some(item);
+        let run = match &self.suggest {
+            None => KeywordRun::Idle,
+            Some(_) if self.keywords_awaiting_approval() => KeywordRun::AwaitingApproval,
+            Some(_) => KeywordRun::Working,
+        };
+        Some(KeywordUi {
+            item,
+            cue: view.target.as_ref().map(|cue| cue.id.clone()),
+            selected: view.selected.len(),
+            timed: view.timed,
+            words: view.words,
+            shown: view.shown,
+            limit: view.limit,
+            stale: view.stale,
+            highlight: view.highlight,
+            suggested: if owned {
+                self.emphasis.suggestions.len()
+            } else {
+                0
+            },
+            run,
+            problem: if owned { self.emphasis.problem } else { None },
+            busy: self.busy(),
+        })
+    }
+
+    /// Apply one keyword intention from the properties area. Edits wait while other subtitle
+    /// work runs; cancelling stops only the suggestion run.
+    pub(crate) fn keyword_action(
         &mut self,
-        ui: &mut egui::Ui,
         session: &mut Session,
-        c: &mut Controls,
         options: &Options,
+        action: KeywordAction,
     ) {
         if self.emphasis.item != self.item {
             self.emphasis = Panel {
@@ -174,160 +224,61 @@ impl Subtitles {
                 ..Panel::default()
             };
         }
+        if action == KeywordAction::Cancel {
+            if let Some(run) = &self.suggest {
+                run.cancel.cancel();
+            }
+            return;
+        }
+        if self.busy() {
+            return;
+        }
         let Some(view) = self.emphasis_view(session) else {
             return;
         };
-        let idle = !self.busy();
-        let running = self.suggest.is_some();
-        let awaiting = self.keywords_awaiting_approval();
-        let mut choose = false;
-        let mut clear = false;
-        let mut preview = false;
-        let mut ai = false;
-        let mut apply = false;
-        let mut cancel = false;
-        let mut pick: Option<Vec<u32>> = None;
-        let header = egui::CollapsingHeader::new(c.tr(Text::EmphasisTitle))
-            .id_salt("subtitles.emphasis")
-            .show(ui, |ui| {
-                ui.add_enabled_ui(idle, |ui| {
-                    ui.horizontal_wrapped(|ui| {
-                        choose = c.button(
-                            ui,
-                            "subtitles.emphasis.choose",
-                            Text::EmphasisChoose,
-                            Icon::TextT,
-                            view.timed,
-                        );
-                        preview = c.button(
-                            ui,
-                            "subtitles.emphasis.preview",
-                            Text::EmphasisPreview,
-                            Icon::Play,
-                            view.target.is_some(),
-                        );
-                        clear = c.button(
-                            ui,
-                            "subtitles.emphasis.clear",
-                            Text::EmphasisClear,
-                            Icon::X,
-                            view.target.is_some() && (!view.shown.is_empty() || view.stale),
-                        );
-                        ai = c.button(
-                            ui,
-                            "subtitles.emphasis.ai",
-                            Text::EmphasisAi,
-                            Icon::Sparkle,
-                            !view.selected.is_empty(),
-                        );
-                    });
-                    if view.selected.len() > 1 {
-                        ui.label(c.tr(Text::EmphasisOneCue));
-                    }
-                    if let Some(cue) = &view.target {
-                        let words = cue.words();
-                        if words.is_empty() {
-                            ui.label(c.tr(Text::EmphasisNoTimings));
-                        } else {
-                            let limit = captions::emphasis_limit(words.len());
-                            ui.horizontal_wrapped(|ui| {
-                                for (index, word) in words.iter().enumerate() {
-                                    let id = index as u32;
-                                    let on = view.shown.contains(&id);
-                                    let full = !on && view.shown.len() >= limit;
-                                    let r = ui.add_enabled(
-                                        !full,
-                                        egui::Button::new(word.text.as_str()).selected(on),
-                                    );
-                                    c.remember(format!("subtitles.emphasis.word.{index}"), &r);
-                                    if r.clicked() {
-                                        let mut next = view.shown.clone();
-                                        if on {
-                                            next.retain(|value| *value != id);
-                                        } else {
-                                            next.push(id);
-                                            next.sort_unstable();
-                                        }
-                                        pick = Some(next);
-                                    }
-                                }
-                            });
-                        }
-                    }
-                    if view.stale {
-                        ui.label(c.tr(Text::EmphasisStale));
-                    } else if view.target.is_some() && !view.highlight {
-                        ui.label(c.tr(Text::EmphasisHighlightOff));
-                    }
-                });
-                if running {
-                    ui.horizontal(|ui| {
-                        ui.spinner();
-                        let waiting = if awaiting {
-                            Text::EmphasisAwaitingApproval
-                        } else {
-                            Text::EmphasisWorking
-                        };
-                        ui.label(c.tr(waiting));
-                        cancel =
-                            c.button(ui, "subtitles.emphasis.cancel", Text::Cancel, Icon::X, true);
-                    });
-                }
-                if let Some(problem) = self.emphasis.problem {
-                    ui.label(c.tr(problem));
-                }
-                if !self.emphasis.suggestions.is_empty() {
-                    apply = c.button(
-                        ui,
-                        "subtitles.emphasis.apply",
-                        Text::EmphasisApply,
-                        Icon::TextT,
-                        idle,
-                    );
-                }
-            });
-        c.remember("subtitles.emphasis", &header.header_response);
-        if cancel {
-            self.cancel();
-        }
-        if choose {
-            self.commit_emphasis(
+        match action {
+            KeywordAction::Choose => self.commit_emphasis(
                 session,
                 Command::SelectCaptionEmphasis {
                     item: view.item,
                     cue_ids: view.selected.clone(),
                     mode: EmphasisMode::Lexicon,
                 },
-            );
-        }
-        if let (Some(cue), Some(word_ids)) = (&view.target, pick) {
-            self.commit_emphasis(
-                session,
-                Command::SetCaptionEmphasis {
-                    item: view.item,
-                    cue_id: cue.id.clone(),
-                    word_ids,
-                },
-            );
-        }
-        if clear && let Some(cue) = &view.target {
-            self.commit_emphasis(
-                session,
-                Command::SetCaptionEmphasis {
-                    item: view.item,
-                    cue_id: cue.id.clone(),
-                    word_ids: Vec::new(),
-                },
-            );
-        }
-        if preview && let Some(cue) = &view.target {
-            self.preview_emphasis(session, &cue.id);
-        }
-        if ai {
-            self.suggest_emphasis(session, options, view.item, view.selected.clone());
-        }
-        if apply {
-            self.apply_suggestions(session);
+            ),
+            KeywordAction::Clear => {
+                if let Some(cue) = &view.target {
+                    self.commit_emphasis(
+                        session,
+                        Command::SetCaptionEmphasis {
+                            item: view.item,
+                            cue_id: cue.id.clone(),
+                            word_ids: Vec::new(),
+                        },
+                    );
+                }
+            }
+            KeywordAction::Pick(word_ids) => {
+                if let Some(cue) = &view.target {
+                    self.commit_emphasis(
+                        session,
+                        Command::SetCaptionEmphasis {
+                            item: view.item,
+                            cue_id: cue.id.clone(),
+                            word_ids,
+                        },
+                    );
+                }
+            }
+            KeywordAction::Preview => {
+                if let Some(cue) = &view.target {
+                    self.preview_emphasis(session, &cue.id);
+                }
+            }
+            KeywordAction::Suggest => {
+                self.suggest_emphasis(session, options, view.item, view.selected.clone());
+            }
+            KeywordAction::Apply => self.apply_suggestions(session),
+            KeywordAction::Cancel => {}
         }
     }
 
@@ -376,8 +327,8 @@ impl Subtitles {
         }
     }
 
-    /// Start one consented suggestion for the selected cues. The model comes from the
-    /// provider's default for keyword selection, so the run never reads a stale snapshot.
+    /// Start one consented suggestion for the selected cues, with the model the preferences
+    /// snapshot resolved for the provider's keyword selection.
     fn suggest_emphasis(
         &mut self,
         session: &mut Session,
@@ -404,8 +355,7 @@ impl Subtitles {
             budget: self.budget.clone(),
             opener: self.text.clone(),
             provider: options.text_provider.clone(),
-            model: ai::defaults::model(&options.text_provider, ai::Operation::SelectEmphasis)
-                .into(),
+            model: options.emphasis_model.clone(),
             consent,
             cancel: cancel.clone(),
         };

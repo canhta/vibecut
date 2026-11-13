@@ -210,6 +210,12 @@ using `text.save_preset`. Both use the engine preset commands from
 and the row's selection compares the complete stored style. Words and animation keys are
 never saved.
 
+A caption item selected alone shows a collapsed Keywords section in its Text tab
+(`inspector.keywords`). It draws the read `Context.keywords` carries from the Captions panel,
+which owns the cue selection and the suggestion run; its chips, Choose, Preview, Clear, Suggest
+and Apply emit `Action::Keywords`, and the frame routes them to that panel (one undo step each,
+Apply as one batch). Behaviour: [captions owner](../assets/captions/README.md).
+
 Exactly one unlocked Text and no active work, transaction, save, inline/caption or
 Properties draft is required. Captured row actions revalidate their target and snapshot;
 direct activation uses the same readiness before any unrelated draft can flush.

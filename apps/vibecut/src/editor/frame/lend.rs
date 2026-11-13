@@ -129,7 +129,22 @@ impl Editor {
     /// steps before it wrote.
     pub(in crate::editor) fn apply_properties(&mut self, actions: Vec<properties::Action>) {
         for action in actions {
-            self.with_properties(|state, port| properties::apply(state, port, vec![action]));
+            match action {
+                properties::Action::Keywords(keyword) => {
+                    if let Some(captions) = &mut self.assets.captions {
+                        captions.keyword_action(
+                            &mut self.session,
+                            &self.preferences.subtitles,
+                            keyword,
+                        );
+                    }
+                }
+                action => {
+                    self.with_properties(|state, port| {
+                        properties::apply(state, port, vec![action])
+                    });
+                }
+            }
         }
     }
 

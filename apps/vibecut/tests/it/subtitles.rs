@@ -3405,11 +3405,33 @@ fn verified_english_cue(
     }
 }
 
+/// The first caption item of the scene.
+fn caption_item(e: &Editor) -> project::ItemId {
+    e.session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find_map(|item| matches!(item.content, ItemParams::Caption(_)).then_some(item.id))
+        .unwrap()
+}
+
+/// Selects the caption item on the timeline, which the Captions panel follows, and opens the
+/// Keywords section in its Text tab.
+fn open_keywords(h: &mut Harness<'_, Editor>) {
+    let item = caption_item(h.state());
+    h.state_mut().select([item].into_iter().collect()).unwrap();
+    h.run_steps(3);
+    press(h, "inspector.keywords");
+}
+
 /// The keyword chips of the selected cue, in word order.
 fn emphasis_chips(h: &Harness<'_, Editor>) -> Vec<String> {
     h.query_all(By::new().predicate(|n| {
         n.author_id()
-            .is_some_and(|id| id.starts_with("subtitles.emphasis.word."))
+            .is_some_and(|id| id.starts_with("inspector.keywords.word."))
     }))
     .filter_map(|n| n.accesskit_node().author_id().map(str::to_owned))
     .collect()
@@ -3440,7 +3462,7 @@ fn press(h: &mut Harness<'_, Editor>, id: &str) {
 fn emphasis_choose_pick_clear_and_preview_are_one_undo_step_each() {
     let mut h = harness(editor_with_cues("vi", filler_cues()), 1.0);
     h.run_steps(3);
-    click(&mut h, "subtitles.emphasis");
+    open_keywords(&mut h);
     with_panel(h.state_mut(), |panel, session, _| {
         panel.select_cue(session, 0, false, false).unwrap();
     });
@@ -3451,7 +3473,7 @@ fn emphasis_choose_pick_clear_and_preview_are_one_undo_step_each() {
     let lexicon = captions::EmphasisLexicon::builtin(&lang("vi")).unwrap();
     let expected = captions::select_lexicon(&cue0, Some(&lexicon)).unwrap();
     let history = h.state().session.history_len().0;
-    press(&mut h, "subtitles.emphasis.choose");
+    press(&mut h, "inspector.keywords.choose");
     if !expected.is_empty() {
         assert_eq!(h.state().session.history_len().0, history + 1);
     }
@@ -3465,12 +3487,12 @@ fn emphasis_choose_pick_clear_and_preview_are_one_undo_step_each() {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     h.render().unwrap().save(&path).unwrap();
 
-    press(&mut h, "subtitles.emphasis.clear");
+    press(&mut h, "inspector.keywords.clear");
     assert_eq!(stored_emphasis(h.state(), "cue-0"), None);
 
     let before_pick = h.state().session.project().clone();
     let history = h.state().session.history_len().0;
-    press(&mut h, "subtitles.emphasis.word.1");
+    press(&mut h, "inspector.keywords.word.1");
     assert_eq!(stored_emphasis(h.state(), "cue-0"), Some(vec![1]));
     assert_eq!(
         h.state().session.history_len().0,
@@ -3479,7 +3501,7 @@ fn emphasis_choose_pick_clear_and_preview_are_one_undo_step_each() {
     );
 
     let history = h.state().session.history_len().0;
-    press(&mut h, "subtitles.emphasis.preview");
+    press(&mut h, "inspector.keywords.preview");
     assert_eq!(
         h.state().session.history_len().0,
         history,
@@ -3495,7 +3517,7 @@ fn emphasis_choose_pick_clear_and_preview_are_one_undo_step_each() {
 fn emphasis_untimed_cue_warns_and_changes_nothing() {
     let mut h = harness(editor("vi"), 1.0);
     h.run_steps(3);
-    click(&mut h, "subtitles.emphasis");
+    open_keywords(&mut h);
     with_panel(h.state_mut(), |panel, session, _| {
         panel.select_cue(session, 0, false, false).unwrap();
     });
@@ -3507,7 +3529,7 @@ fn emphasis_untimed_cue_warns_and_changes_nothing() {
     );
     let before = h.state().session.project().clone();
     let history = h.state().session.history_len().0;
-    press(&mut h, "subtitles.emphasis.choose");
+    press(&mut h, "inspector.keywords.choose");
     assert_eq!(h.state().session.project(), &before);
     assert_eq!(h.state().session.history_len().0, history);
 }
@@ -3516,12 +3538,12 @@ fn emphasis_untimed_cue_warns_and_changes_nothing() {
 fn emphasis_selection_goes_stale_when_the_source_text_changes() {
     let mut h = harness(editor_with_cues("vi", filler_cues()), 1.0);
     h.run_steps(3);
-    click(&mut h, "subtitles.emphasis");
+    open_keywords(&mut h);
     with_panel(h.state_mut(), |panel, session, _| {
         panel.select_cue(session, 0, false, false).unwrap();
     });
     h.run_steps(3);
-    press(&mut h, "subtitles.emphasis.word.1");
+    press(&mut h, "inspector.keywords.word.1");
     assert_eq!(stored_emphasis(h.state(), "cue-0"), Some(vec![1]));
 
     with_panel(h.state_mut(), |panel, session, _| {
@@ -3536,7 +3558,7 @@ fn emphasis_selection_goes_stale_when_the_source_text_changes() {
         "the old word ids are not offered"
     );
 
-    press(&mut h, "subtitles.emphasis.clear");
+    press(&mut h, "inspector.keywords.clear");
     assert_eq!(stored_emphasis(h.state(), "cue-0"), None);
 }
 
@@ -3639,7 +3661,7 @@ fn ai_emphasis_harness(fail: bool, calls: Arc<AtomicUsize>) -> Harness<'static, 
     e.set_subtitles(Some(panel));
     let mut h = harness(e, 1.0);
     h.run_steps(3);
-    click(&mut h, "subtitles.emphasis");
+    open_keywords(&mut h);
     with_panel(h.state_mut(), |panel, session, _| {
         panel.select_cue(session, 0, false, false).unwrap();
         panel.select_cue(session, 1, true, false).unwrap();
@@ -3653,7 +3675,7 @@ fn emphasis_ai_waits_for_approval_then_applies_suggestions_as_one_undo_step() {
     let calls = Arc::new(AtomicUsize::new(0));
     let mut h = ai_emphasis_harness(false, calls.clone());
     let before = h.state().session.project().clone();
-    press(&mut h, "subtitles.emphasis.ai");
+    press(&mut h, "inspector.keywords.suggest");
     wait(&mut h, approval_sheet_open);
     h.get_by_label("Approve the upload to continue.");
     assert_eq!(
@@ -3673,7 +3695,7 @@ fn emphasis_ai_waits_for_approval_then_applies_suggestions_as_one_undo_step() {
     );
 
     let history = h.state().session.history_len().0;
-    press(&mut h, "subtitles.emphasis.apply");
+    press(&mut h, "inspector.keywords.apply");
     assert_eq!(
         h.state().session.history_len().0,
         history + 1,
@@ -3692,7 +3714,7 @@ fn emphasis_ai_reports_a_declined_upload_and_sends_nothing() {
     let calls = Arc::new(AtomicUsize::new(0));
     let mut h = ai_emphasis_harness(false, calls.clone());
     let before = h.state().session.project().clone();
-    press(&mut h, "subtitles.emphasis.ai");
+    press(&mut h, "inspector.keywords.suggest");
     wait(&mut h, approval_sheet_open);
     click(&mut h, "subtitles.consent.deny");
     wait(&mut h, subtitles_idle);
@@ -3706,14 +3728,14 @@ fn emphasis_ai_reports_a_provider_failure_after_approval() {
     let calls = Arc::new(AtomicUsize::new(0));
     let mut h = ai_emphasis_harness(true, calls.clone());
     let before = h.state().session.project().clone();
-    press(&mut h, "subtitles.emphasis.ai");
+    press(&mut h, "inspector.keywords.suggest");
     wait(&mut h, approval_sheet_open);
     click(&mut h, "subtitles.consent.approve");
     wait(&mut h, subtitles_idle);
     h.get_by_label("Couldn't suggest keywords. Try again.");
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     assert!(
-        h.query_all(By::new().predicate(|n| n.author_id() == Some("subtitles.emphasis.apply")))
+        h.query_all(By::new().predicate(|n| n.author_id() == Some("inspector.keywords.apply")))
             .next()
             .is_none(),
         "a failed run offers nothing to apply"

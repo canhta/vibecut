@@ -16,6 +16,8 @@ pub(in crate::editor) struct Widget {
 /// Requests the properties area cannot satisfy alone; the frame routes them
 /// in order after `show` returns.
 pub(in crate::editor) enum Action {
+    /// Keyword emphasis of the selected caption cue; the frame sends it to the Captions panel.
+    Keywords(crate::editor::context::KeywordAction),
     ImportLut {
         item: ItemId,
         expected: Option<project::LutId>,
