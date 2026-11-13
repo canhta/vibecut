@@ -1267,7 +1267,19 @@ fn colour_popover_draft_reaches_the_player_pixel_and_empty_recents_leave_no_row(
             ],
         })
         .unwrap();
-    let at = Tick(2 * SECOND + SECOND / 2);
+    // The magnetic main track closes the gap, so the graphic's own range decides the seek.
+    let graphic_start = fixture_editor
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| item.id == fixture.graphic)
+        .unwrap()
+        .start;
+    let at = Tick(graphic_start.0 + SECOND / 2);
     fixture_editor
         .playback
         .seek(at, false, fixture_editor.session.project().clone())

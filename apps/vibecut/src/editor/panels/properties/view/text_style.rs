@@ -10,6 +10,8 @@ use crate::editor::properties::{
 use crate::kit;
 use project::{TextLook, TextShelf};
 
+mod keywords;
+
 const fn spec(field: &'static str, label: Text, decimals: usize) -> ScrubSpec {
     ScrubSpec::of(
         field,

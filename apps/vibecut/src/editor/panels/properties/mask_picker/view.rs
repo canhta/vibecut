@@ -787,15 +787,14 @@ fn number(
     let mut next = state
         .draft(spec.key)
         .map_or_else(|| shown(spec.value, spec.suffix), str::to_owned);
+    // One scope in the caller's horizontal layout: a nested row would add a second `XXS`
+    // after the stepper, which the callers' width budgets do not count.
     let (response, (up, down)) = ui
         .add_enabled_ui(!locked, |ui| {
-            ui.horizontal(|ui| {
-                let response =
-                    theme::value_field(ui, spec.id, &mut next, FIELD_WIDTH, spec.prefix, spec.id);
-                let (up, down) = theme::stepper(ui, spec.id, spec.id);
-                (response, (up, down))
-            })
-            .inner
+            let response =
+                theme::value_field(ui, spec.id, &mut next, FIELD_WIDTH, spec.prefix, spec.id);
+            let (up, down) = theme::stepper(ui, spec.id, spec.id);
+            (response, (up, down))
         })
         .inner;
     record(widgets, spec.id, response.clone());

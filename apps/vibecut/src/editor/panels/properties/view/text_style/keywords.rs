@@ -16,7 +16,7 @@ use project::ItemId;
 impl Panel<'_, '_> {
     /// The collapsed Keywords section. Its chips and buttons act on the cue selected in the
     /// Captions panel, and draw nothing when that selection is not this item's.
-    pub(super) fn keywords_section(&mut self, ui: &mut egui::Ui, item: ItemId) {
+    pub(in super::super) fn keywords_section(&mut self, ui: &mut egui::Ui, item: ItemId) {
         let Some(keywords) = self.cx.keywords.clone() else {
             return;
         };
