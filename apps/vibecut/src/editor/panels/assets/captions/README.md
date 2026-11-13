@@ -47,11 +47,19 @@ engine command, one undo step.
 
 The filler cut list ([fillers.rs](fillers.rs)) is a section after the cue list. Find calls
 `timeline.filler_candidates` for the caption item's first cue language and refuses with a
-word-timing message when no cue has measured words. Remove selected passes exactly the checked
-candidate ids to `timeline.remove_fillers` with `confirm_edited` set only after the inline
-confirmation of an edited caption; the list then re-reads. Its state lives in `Subtitles`, resets
-when the caption item changes, and never mutates the project itself. Lexicon and limits belong to
-the [captions crate](../../../../../../../crates/captions/README.md).
+word-timing message when no cue has measured words. Find with AI runs `fillers.classify` on a
+worker thread with the configured text provider (`translation` in the subtitle options), because
+`submit` requests consent synchronously. The worker's [`TaskEvents`](../../../../services/ai_task.rs)
+is the captions panel's own upload sheet, so approval, refusal and cancellation use the same
+`approve_upload` path as every other upload; a refusal shows the declined line and sends nothing,
+and a provider failure shows its own line. The desktop text opener
+([`ai_access`](../../../../services/ai_access.rs)) builds the access with `choose_filler` and
+the process credentials; no fallback exists. Remove selected passes exactly the checked candidate
+ids to `timeline.remove_fillers` as one command, with `confirm_edited` set only after the inline
+confirmation of an edited caption. After a removal the list clears and shows `Removed N`; a fresh
+Find reads again. There is no applying state: the removal is synchronous, so nothing is in flight
+to show. Its state lives in `Subtitles`, resets when the caption item changes, and never mutates
+the project itself. Lexicon and limits belong to the [captions crate](../../../../../../../crates/captions/README.md).
 
 Import accepts SRT and VTT. Export offers SRT, VTT, TXT and burned MP4; TXT is one cue
 per line with no timings, serialized by captions.

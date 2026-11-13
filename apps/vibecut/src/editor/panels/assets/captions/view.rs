@@ -655,7 +655,7 @@ impl Subtitles {
                         self.cues_ui(ui, session, options, &mut controls, dark);
                     },
                 );
-                self.fillers_ui(ui, session, &mut controls, locale);
+                self.fillers_ui(ui, session, &mut controls, locale, options);
             });
         self.bank_ui(ui, session, at, &mut controls);
         self.style_editor_ui(ui, session, at, &mut controls);
@@ -1569,8 +1569,8 @@ impl Subtitles {
         }
     }
     fn consent_ui(&mut self, ctx: &egui::Context, c: &mut Controls) {
-        let upload = self.active.as_ref().and_then(|a| {
-            a.events
+        let upload = self.consent_events().and_then(|events| {
+            events
                 .state
                 .lock()
                 .ok()
@@ -1623,8 +1623,8 @@ impl Subtitles {
                 }
             }
             let mut acknowledged = false;
-            if let Some(active) = &self.active
-                && let Ok(mut state) = active.events.state.lock()
+            if let Some(events) = self.consent_events()
+                && let Ok(mut state) = events.state.lock()
                 && let Some(pending) = &mut state.upload
             {
                 if matches!(upload.cost, engine::providers::Cost::Unknown) {

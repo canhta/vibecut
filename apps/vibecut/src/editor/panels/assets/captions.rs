@@ -9,7 +9,7 @@ use crate::{
     Error, Result, egui,
     i18n::Text,
     preferences::{SOURCE_LANGUAGES, SubtitleOptions as Options},
-    services::ai_access::{self, Choice, Opener},
+    services::ai_access::{self, Choice, Opener, TextOpener},
 };
 use captions::{LanguageTag, NfcText};
 use engine::{
@@ -129,8 +129,10 @@ pub struct Subtitles {
     bank_frame: Option<u64>,
     word_warnings: Option<WordWarnings>,
     access: Opener,
+    text: TextOpener,
     budget: ByteBudget,
     active: Option<Active>,
+    classify: Option<fillers::Classify>,
     active_options: Option<Options>,
     export: Option<(JobId, CancelToken)>,
     export_count: Option<usize>,
@@ -169,18 +171,7 @@ impl Subtitles {
     }
     /// Tests inject the opener at the lent-access seam; the window still sends registry commands.
     pub fn with_access(budget: ByteBudget, access: Opener) -> Result<Self> {
-        let runner = JobRunner::new(
-            RunnerConfig {
-                concurrency: [1, 1, 1],
-                queue: 4,
-                retained: 8,
-                network_attempts: 1,
-                backoff: Duration::from_millis(10),
-                progress_interval: Duration::from_millis(20),
-            },
-            budget.clone(),
-            Arc::new(SystemClock::default()),
-        )?;
+        let runner = job_runner(&budget)?;
         Ok(Self {
             models: Default::default(),
             bank: None,
@@ -188,7 +179,9 @@ impl Subtitles {
             bank_frame: None,
             word_warnings: None,
             access,
+            text: ai_access::desktop_text_opener(),
             budget,
+            classify: None,
             runner,
             active: None,
             active_options: None,
@@ -217,8 +210,20 @@ impl Subtitles {
             fillers: fillers::Cuts::default(),
         })
     }
+    /// Tests inject the text-provider opener for the filler cut list.
+    pub fn with_text_access(mut self, text: TextOpener) -> Self {
+        self.text = text;
+        self
+    }
     pub fn busy(&self) -> bool {
-        self.active.is_some() || self.export.is_some()
+        self.active.is_some() || self.export.is_some() || self.classify.is_some()
+    }
+    /// The run whose consent sheet is open: the active job, or the filler classification.
+    fn consent_events(&self) -> Option<&Arc<TaskEvents>> {
+        self.active
+            .as_ref()
+            .map(|active| &active.events)
+            .or_else(|| self.classify.as_ref().map(|run| &run.events))
     }
     pub fn inspect(&self, session: &Session) -> Inspection {
         let state = self
@@ -278,9 +283,8 @@ impl Subtitles {
     pub(crate) fn modal_open(&self) -> bool {
         self.overwrite.is_some()
             || self
-                .active
-                .as_ref()
-                .is_some_and(|a| a.events.state.lock().is_ok_and(|s| s.upload.is_some()))
+                .consent_events()
+                .is_some_and(|events| events.state.lock().is_ok_and(|s| s.upload.is_some()))
     }
     pub(crate) fn invalidate_options(&mut self, options: &Options) {
         if self.active.is_some() && self.active_options.as_ref().is_some_and(|o| o != options) {
@@ -300,16 +304,14 @@ impl Subtitles {
         if let Some((_, token)) = &self.export {
             token.cancel();
         }
+        if let Some(run) = &self.classify {
+            run.cancel.cancel();
+        }
     }
     pub fn approve_upload(&mut self, approved: bool) -> Result<()> {
-        let active = self
-            .active
-            .as_ref()
-            .ok_or(Error::Invalid("no subtitle job"))?;
-        if active.cancel.cancelled() {
-            return Err(Error::Cancelled);
-        }
-        active.events.answer(approved)
+        self.consent_events()
+            .ok_or(Error::Invalid("no subtitle job"))?
+            .answer(approved)
     }
     /// One job at a time, never inside a gesture; the job's cancellation and consent slot.
     fn begin(&mut self, session: &Session) -> Result<(Cancellation, Arc<TaskEvents>)> {
@@ -521,6 +523,7 @@ impl Subtitles {
     /// Poll even while another tab is visible. Terminal results never apply after cancellation.
     pub fn tick(&mut self, session: &mut Session) -> Result<bool> {
         self.runner.tick()?;
+        self.poll_classify();
         let mut changed = false;
         if self.active.as_ref().is_some_and(|a| {
             self.runner
@@ -894,6 +897,21 @@ impl Subtitles {
     }
 }
 /// The presentation stage of an engine job stage; anything else shows as loading.
+/// The captions job runner: one job per class, a short queue and one network attempt.
+fn job_runner(budget: &ByteBudget) -> Result<JobRunner> {
+    Ok(JobRunner::new(
+        RunnerConfig {
+            concurrency: [1, 1, 1],
+            queue: 4,
+            retained: 8,
+            network_attempts: 1,
+            backoff: Duration::from_millis(10),
+            progress_interval: Duration::from_millis(20),
+        },
+        budget.clone(),
+        Arc::new(SystemClock::default()),
+    )?)
+}
 fn stage_of(stage: JobStage) -> Option<Stage> {
     match stage {
         JobStage::Extract => Some(Stage::Extract),

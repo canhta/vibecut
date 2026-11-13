@@ -7,7 +7,7 @@ use engine::{
     cache::{ArtifactCache, CacheRoot},
     control::{API_VERSION, Caller, ControlResult, Policy, Request, Revision, registry_hash},
     jobs::JobRunner,
-    providers::{ConsentPrompt, Credentials, Providers, Runtime},
+    providers::{ConsentPrompt, Credentials, Providers, Runtime, TextAccess, UploadRequest},
     subtitles::CaptionAccess,
 };
 use std::sync::{
@@ -32,6 +32,35 @@ pub enum Choice<'a> {
 pub type Opener = Arc<
     dyn for<'a> Fn(Choice<'a>, Consent) -> engine::control::Result<CaptionAccess> + Send + Sync,
 >;
+
+/// Builds the text-provider access one filler run lends. Its consent is the run's own sheet,
+/// handed in by the caller, so no second consent path exists.
+pub type TextOpener =
+    Arc<dyn Fn(&str, &str, Consent) -> engine::providers::Result<TextAccess> + Send + Sync>;
+
+/// The shipped text opener: the configured provider and model through `choose_filler`, with
+/// credentials from the process environment. Nothing falls back to another provider.
+pub fn desktop_text_opener() -> TextOpener {
+    Arc::new(|provider, model, consent| {
+        let provider = engine::providers::choose_filler(provider, Some(model))?;
+        TextAccess::open(
+            provider,
+            &Credentials::from_env(),
+            Box::new(SharedConsent(consent)),
+        )
+    })
+}
+
+/// Lends one run's sheet to a lent access, which owns its consent box.
+pub struct SharedConsent(pub Consent);
+impl ConsentPrompt for SharedConsent {
+    fn approve(&self, request: &UploadRequest) -> engine::providers::Result<()> {
+        self.0.approve(request)
+    }
+    fn approve_unknown_price(&self, request: &UploadRequest) -> engine::providers::Result<()> {
+        self.0.approve_unknown_price(request)
+    }
+}
 
 /// The shipped opener: credentials from the process environment, local ASR resources, the
 /// process models cache opened once, and the clip workflow over the same providers.

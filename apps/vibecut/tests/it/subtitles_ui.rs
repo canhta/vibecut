@@ -20,7 +20,7 @@ use vibecut::{
     AssetsTab, Editor, Subtitles, SubtitlesInspection, egui,
     i18n::Locale,
     preferences::{PreferenceStore, SubtitleOptions as Options},
-    services::ai_access::{Choice, Opener},
+    services::ai_access::{Choice, Opener, SharedConsent, TextOpener},
 };
 #[path = "support/subtitles.rs"]
 mod fixture;
@@ -2824,7 +2824,10 @@ fn filler_cut_list_removes_only_checked_candidates_as_one_undo_step() {
         "chào ừm",
         "unchecked candidates keep their words"
     );
-    assert_eq!(filler_toggles(&h).len(), 2, "the list re-reads the remaining fillers");
+    assert!(filler_toggles(&h).is_empty(), "the list clears after a removal");
+    h.get_by_label("Removed 1");
+    click(&mut h, "subtitles.fillers.find");
+    assert_eq!(filler_toggles(&h).len(), 2, "a fresh read finds what remains");
 
     h.state_mut().session.undo().unwrap();
     h.run_steps(3);
@@ -2851,6 +2854,8 @@ fn filler_cut_list_asks_before_removing_edited_captions() {
     click(&mut h, "subtitles.fillers.confirm");
     assert_eq!(h.state().session.history_len().0, history + 1);
     assert!(filler_toggles(&h).is_empty());
+    h.get_by_label("Removed 3");
+    click(&mut h, "subtitles.fillers.find");
     h.get_by_label("No fillers found");
 }
 
@@ -2873,4 +2878,182 @@ fn filler_cut_list_reports_missing_timings_and_empty_results() {
     click(&mut h, "subtitles.fillers.find");
     h.get_by_label("No fillers found");
     assert!(filler_toggles(&h).is_empty());
+}
+
+/// The consent sheet of the captions panel is open for a classification or a job.
+fn approval_sheet_open(e: &Editor) -> bool {
+    panel(e).consent.is_some()
+}
+fn subtitles_idle(e: &Editor) -> bool {
+    !panel(e).busy
+}
+
+/// A text provider that never reaches the network: it flags every word spelled "ừm", or fails,
+/// and counts the calls it receives.
+struct ScriptedFillers {
+    config: ai::ProviderConfig,
+    fail: bool,
+    calls: Arc<AtomicUsize>,
+}
+impl ai::text::fillers::FillerClassifier for ScriptedFillers {
+    fn config(&self) -> &ai::ProviderConfig {
+        &self.config
+    }
+    fn capabilities(&self, _: &ai::Scope) -> ai::Capabilities {
+        ai::Capabilities {
+            model: self.config.model().clone(),
+            mode: "context-window".into(),
+            operation: ai::Operation::ClassifyFillers,
+            languages: ["vi", "en", "zh", "zh-Hans", "zh-Hant"].map(lang).to_vec(),
+            target_languages: Vec::new(),
+            timing: BTreeSet::new(),
+            diarization: ai::Support::Unsupported,
+            live_audio_input: ai::Support::Unsupported,
+            file_result_stream: ai::Support::Unsupported,
+            max_upload_bytes: None,
+            max_duration_micros: None,
+            evidence: ai::Evidence::FixtureVerified,
+            revision: "fixture".into(),
+        }
+    }
+    fn estimate(&self, _: &ai::Scope) -> ai::CostEstimate {
+        ai::CostEstimate::Free
+    }
+    fn classify(
+        &self,
+        input: &ai::text::fillers::FillerInput,
+        _: &ai::Request<'_>,
+        _: &dyn ai::ExecutionHooks,
+    ) -> Result<ai::text::fillers::FillerProposal, ai::Error> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        if self.fail {
+            return Err(ai::Error::Server);
+        }
+        Ok(ai::text::fillers::FillerProposal {
+            fillers: input
+                .segments
+                .iter()
+                .flat_map(|segment| &segment.words)
+                .filter(|word| word.text.as_str() == "ừm")
+                .map(|word| ai::text::fillers::FillerFinding {
+                    id: word.id.clone(),
+                    kind: captions::FillerKind::FilledPause,
+                })
+                .collect(),
+        })
+    }
+}
+
+/// The chapter adapter of the filler access; the cut list never asks for chapters.
+struct NoChapters(ai::ProviderConfig);
+impl ai::text::chapters::ChapterGenerator for NoChapters {
+    fn config(&self) -> &ai::ProviderConfig {
+        &self.0
+    }
+    fn capabilities(&self, _: &ai::Scope) -> ai::Capabilities {
+        panic!("chapter capabilities are unused by the cut list")
+    }
+    fn estimate(&self, _: &ai::Scope) -> ai::CostEstimate {
+        ai::CostEstimate::Free
+    }
+    fn propose(
+        &self,
+        _: &ai::text::chapters::ChapterInput,
+        _: &ai::Request<'_>,
+        _: &dyn ai::ExecutionHooks,
+    ) -> Result<ai::text::chapters::ChapterProposal, ai::Error> {
+        Err(ai::Error::Unsupported)
+    }
+}
+
+/// The lent text access of each run: the scripted classifier behind that run's own sheet.
+fn filler_text_opener(fail: bool, calls: Arc<AtomicUsize>) -> TextOpener {
+    Arc::new(move |provider, model, consent| {
+        let config = ai::ProviderConfig::new(
+            provider.into(),
+            model.into(),
+            "fixture-v1".into(),
+            ai::Location::Remote {
+                backend: "fixture".into(),
+                base_url: "https://provider.example".into(),
+                auth_ref: "fixture".into(),
+            },
+        )?;
+        Ok(engine::providers::TextAccess::new(
+            Arc::new(NoChapters(config.clone())),
+            Arc::new(ScriptedFillers {
+                config,
+                fail,
+                calls: calls.clone(),
+            }),
+            Box::new(SharedConsent(consent)),
+        ))
+    })
+}
+
+/// Opens the AI route on the filler fixture editor, with the scripted text provider injected.
+fn ai_filler_harness(fail: bool, calls: Arc<AtomicUsize>) -> Harness<'static, Editor> {
+    let mut e = editor_with_cues("vi", filler_cues());
+    let panel = Subtitles::with_access(e.playback.budget().clone(), generate_opener(false, None))
+        .unwrap()
+        .with_text_access(filler_text_opener(fail, calls));
+    e.set_subtitles(Some(panel));
+    let mut h = harness(e, 1.0);
+    h.run_steps(3);
+    click(&mut h, "subtitles.fillers");
+    h
+}
+
+#[test]
+fn filler_cut_list_finds_with_ai_only_after_the_upload_is_approved() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut h = ai_filler_harness(false, calls.clone());
+    let before = h.state().session.project().clone();
+    click(&mut h, "subtitles.fillers.ai");
+    wait(&mut h, approval_sheet_open);
+    h.get_by_label("Approve the upload to continue.");
+    assert_eq!(calls.load(Ordering::SeqCst), 0, "nothing is sent before approval");
+    assert_eq!(h.state().session.project(), &before);
+
+    click(&mut h, "subtitles.consent.approve");
+    wait(&mut h, subtitles_idle);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(filler_toggles(&h).len(), 3, "the classified words start checked");
+
+    let history = h.state().session.history_len().0;
+    click(&mut h, "subtitles.fillers.apply");
+    click(&mut h, "subtitles.fillers.confirm");
+    assert_eq!(h.state().session.history_len().0, history + 1);
+    assert_ne!(h.state().session.project(), &before);
+    h.get_by_label("Removed 3");
+}
+
+#[test]
+fn filler_cut_list_reports_a_declined_upload_and_sends_nothing() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut h = ai_filler_harness(false, calls.clone());
+    let before = h.state().session.project().clone();
+    click(&mut h, "subtitles.fillers.ai");
+    wait(&mut h, approval_sheet_open);
+    click(&mut h, "subtitles.consent.deny");
+    wait(&mut h, subtitles_idle);
+    h.get_by_label("Upload not approved. Nothing was sent.");
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert!(filler_toggles(&h).is_empty());
+    assert_eq!(h.state().session.project(), &before);
+}
+
+#[test]
+fn filler_cut_list_reports_a_provider_failure_after_approval() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut h = ai_filler_harness(true, calls.clone());
+    let before = h.state().session.project().clone();
+    click(&mut h, "subtitles.fillers.ai");
+    wait(&mut h, approval_sheet_open);
+    click(&mut h, "subtitles.consent.approve");
+    wait(&mut h, subtitles_idle);
+    h.get_by_label("Couldn't find fillers with AI. Try again.");
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert!(filler_toggles(&h).is_empty());
+    assert_eq!(h.state().session.project(), &before);
 }
