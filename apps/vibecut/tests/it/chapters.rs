@@ -261,6 +261,10 @@ fn chapters_generate_waits_for_approval_and_export_writes_the_edited_title() {
     );
 
     retype_title(&mut h, "Edited title");
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-ai-05-chapters.png");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    h.render().unwrap().save(&path).unwrap();
     let dir = scratch_dir("chapters-edited");
     h.state_mut()
         .subtitles_mut()
