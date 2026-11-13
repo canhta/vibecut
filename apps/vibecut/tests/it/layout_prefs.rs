@@ -311,8 +311,12 @@ fn details_rows_and_info_section_collapse_and_persist() {
         click(&mut harness, "inspector.details");
         assert!(harness.query_by_label("Path:").is_none());
         let top = |text: &str| harness.get_by_label(text).rect().top();
-        let (name, aspect_row, resolution_row, rate_row) =
-            (top("Test"), top(aspect), top(resolution), top(rate));
+        // The top bar's title button also carries the project name; the Details row is a label.
+        let name = harness
+            .get(By::new().label("Test").role(egui::accesskit::Role::Label))
+            .rect()
+            .top();
+        let (aspect_row, resolution_row, rate_row) = (top(aspect), top(resolution), top(rate));
         assert!(name < aspect_row && aspect_row < resolution_row && resolution_row < rate_row);
         harness.get_by_label("Name:");
         harness.get_by_label("Aspect ratio:");
@@ -334,6 +338,13 @@ fn details_rows_and_info_section_collapse_and_persist() {
     .unwrap();
     let saved_path = root.path().join("title.vibecut");
     saving.save_as(saved_path.clone()).unwrap();
+    // Save As publishes on a worker; the path is the saved one once tick acknowledges it.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while saving.saved_path().is_none() {
+        assert!(std::time::Instant::now() < deadline, "save never completed");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        saving.tick().unwrap();
+    }
     let mut saved = editor_with(project, Preferences::default());
     saved.session = vibecut::services::lifecycle::EditorSession::Persistent(Box::new(saving));
     let mut harness = build(saved);

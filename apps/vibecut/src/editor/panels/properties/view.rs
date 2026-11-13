@@ -789,7 +789,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                 sample_rate,
             )
         };
-        let path = self.cx.project_path.map(|path| path.display().to_string());
+        let path = self.cx.project_path.map(user_path);
         let modify = self.tr(Text::DetailModify);
         let fill = self.control_fill();
         egui::ScrollArea::vertical()
@@ -1384,6 +1384,19 @@ mod playback;
 mod effects;
 
 mod text_style;
+
+/// The path as the creator typed it: a saved path is canonical, and on Windows that adds the
+/// verbatim `\\?\` prefix, which the Details row leaves out.
+fn user_path(path: &std::path::Path) -> String {
+    let text = path.display().to_string();
+    if let Some(share) = text.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{share}");
+    }
+    match text.strip_prefix(r"\\?\") {
+        Some(disk) if disk.as_bytes().get(1) == Some(&b':') => disk.to_owned(),
+        _ => text,
+    }
+}
 
 mod appearance;
 
