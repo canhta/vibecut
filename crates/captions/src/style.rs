@@ -84,13 +84,7 @@ pub struct CaptionStyle {
     pub max_lines: usize,
     /// RGB of the word-highlight overlay: the active spoken word and the keyword-emphasis
     /// words. Alpha stays the caption colour's alpha.
-    #[serde(default = "default_word_highlight_color")]
     pub word_highlight_color: [u8; 3],
-}
-
-/// Gold, the word-highlight colour before it became part of the style.
-fn default_word_highlight_color() -> [u8; 3] {
-    [255, 215, 0]
 }
 
 impl Default for CaptionStyle {
@@ -108,7 +102,7 @@ impl Default for CaptionStyle {
             position: CaptionPosition::Bottom,
             safe_area_percent: 5.0,
             max_lines: 2,
-            word_highlight_color: default_word_highlight_color(),
+            word_highlight_color: [255, 215, 0],
         }
     }
 }
