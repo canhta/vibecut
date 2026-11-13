@@ -6,7 +6,7 @@ use crate::editor::properties::State;
 use crate::editor::{Error, Port, Result};
 use engine::{
     Session,
-    control::{ControlResult, ErrorCode, Failure, JobOutput, Revision},
+    control::{ControlResult, ErrorCode, JobOutput, Revision},
     jobs::{JobId, JobRunner, JobState},
 };
 use project::{LoudnessScope, LoudnessTarget};

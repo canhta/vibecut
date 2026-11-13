@@ -2638,6 +2638,8 @@ enum LoudnessSource {
     Fail,
     /// The first block's source file is missing, so the job ends failed with that cause.
     Missing,
+    /// The first block cannot be decoded, so the job ends failed with a media error.
+    Decode,
     /// Reports its first block on `entered`, then holds until `open` is set.
     Hold {
         entered: std::sync::mpsc::Sender<()>,
@@ -2683,6 +2685,9 @@ impl render::SourceProvider for LoudnessSource {
                 range: SourceRange::new(Tick::ZERO, Tick(1))?,
                 reason: render::UnavailableReason::Missing,
             }])),
+            Self::Decode => Err(render::Error::Media(media::MediaError::Invalid(
+                "audio packet",
+            ))),
             Self::Hold { entered, open } => {
                 let _ = entered.send(());
                 let (lock, wake) = &**open;
@@ -2795,8 +2800,13 @@ fn loudness_failed_measurement_names_its_cause_and_applies_nothing() {
             LoudnessSource::Missing,
             "Measurement failed: a source file is missing or changed",
         ),
+        (
+            LoudnessSource::Decode,
+            "Measurement failed: the media could not be decoded",
+        ),
     ];
     for (source, line) in rows {
+        let decode = matches!(source, LoudnessSource::Decode);
         let fixture = fixture();
         let mut harness = build(fixture.editor);
         harness.run_steps(3);
@@ -2821,6 +2831,15 @@ fn loudness_failed_measurement_names_its_cause_and_applies_nothing() {
             harness.query(By::new().label_contains(line)).is_some(),
             "the failure cause shows on the Audio tab: {line}"
         );
+        if decode {
+            let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
+            std::fs::create_dir_all(&target).unwrap();
+            harness
+                .render()
+                .unwrap()
+                .save(target.join("p1-ai-06-loudness-failed.png"))
+                .unwrap();
+        }
     }
 }
 
