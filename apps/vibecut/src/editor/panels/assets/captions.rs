@@ -357,7 +357,7 @@ impl Subtitles {
             .find(|i| i.id == source)
             .ok_or(Error::Invalid("select source media"))?;
         // Cues are source-time at 1x; a retimed item needs a rate-aware captions mapping first.
-        if !item.retime.speed.is_unity() {
+        if !item.retime.speed.is_unity() || item.retime.curve.is_some() {
             return Err(Error::Invalid("captions for a retimed item"));
         }
         let (range, start) = (item.source_range, item.start);

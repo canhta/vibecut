@@ -6,6 +6,7 @@ mod fade;
 mod keyframes;
 mod params;
 mod retime;
+mod speed_curve;
 
 pub use easing::{EasingCurve, EasingPreset};
 pub use fade::{Fade, FadeCurve, FadeEdge, FadeSpans, Fades};
@@ -19,3 +20,6 @@ pub use params::{
     Param, ParamValue,
 };
 pub use retime::{Cut, Retime, RetimeWindow};
+pub use speed_curve::{
+    MAX_SPEED_KEYS, SPEED_SPAN_TOTAL, SpeedCurve, SpeedKey, SpeedPreset, SpeedSegment,
+};

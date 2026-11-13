@@ -1,7 +1,7 @@
 //! Mixes project audio into bounded output blocks.
 
 use super::cleanup::CleanupChain;
-use super::retime::{Pitch, Retimer};
+use super::retime::{Pitch, RateMap, Retimer};
 use crate::{
     Error, ExecutionHooks, MemoryKind, Reservation, Result, SourceProvider, check, vector,
 };
@@ -345,7 +345,6 @@ pub(crate) fn mix_raw(
         let output_end = output_start
             .checked_add(
                 item.retime
-                    .speed
                     .output_duration(window.source_range.duration())?,
             )
             .ok_or(Error::Invalid("audio continuation end"))?
@@ -357,7 +356,10 @@ pub(crate) fn mix_raw(
         // The item's source samples `[lo, hi)` on the output clock, retimed and validated.
         let mut read = |lo: i64, hi: i64| -> Result<AudioBlock> {
             let count = (hi - lo) as usize;
-            let input = if item.retime.speed.is_unity() && !item.retime.reverse {
+            let input = if item.retime.speed.is_unity()
+                && item.retime.curve.is_none()
+                && !item.retime.reverse
+            {
                 let source = origin
                     .checked_add(lo - output_origin)
                     .ok_or(Error::Invalid("source sample position"))?;
@@ -371,17 +373,19 @@ pub(crate) fn mix_raw(
                 // A reversed item retimes the window's samples reversed, so the reversal
                 // lands before rate conversion and time stretch: pitch is kept as usual.
                 // At 1x the identity resampler (Follow, ratio 1) is exact.
-                let pitch = if item.retime.maintain_pitch && !item.retime.speed.is_unity() {
+                let pitch = if item.retime.maintain_pitch
+                    && (item.retime.curve.is_some() || !item.retime.speed.is_unity())
+                {
                     Pitch::Keep
                 } else {
                     Pitch::Follow
                 };
-                let speed = item.retime.speed.ratio();
+                let map = rate_map(item, rate)?;
                 if retimers
                     .get(&item.id)
-                    .is_none_or(|r| !r.matches(rate, speed, pitch, length))
+                    .is_none_or(|r| !r.matches(rate, &map, pitch, length))
                 {
-                    retimers.insert(item.id, Retimer::new(rate, speed, pitch, length, hooks)?);
+                    retimers.insert(item.id, Retimer::new(rate, map, pitch, length, hooks)?);
                 }
                 let retimer = retimers
                     .get_mut(&item.id)
@@ -623,4 +627,27 @@ pub(crate) fn has_source_audio(item: &project::Item) -> bool {
     } else {
         !muted
     }
+}
+
+/// The item's output-to-source sample map: its constant ratio, or its speed
+/// curve's keys converted to the project sample grid (keys that collapse onto
+/// the previous one at this rate are dropped).
+fn rate_map(item: &project::Item, rate: u32) -> Result<RateMap> {
+    let Some(curve) = &item.retime.curve else {
+        return Ok(RateMap::Constant(item.retime.speed.ratio()));
+    };
+    let mut knots: Vec<(i64, i64)> = Vec::new();
+    for key in curve.keys() {
+        let knot = (
+            key.output.to_units(i64::from(rate), Rounding::Nearest)?,
+            key.source.to_units(i64::from(rate), Rounding::Nearest)?,
+        );
+        if knots
+            .last()
+            .is_none_or(|last| knot.0 > last.0 && knot.1 > last.1)
+        {
+            knots.push(knot);
+        }
+    }
+    Ok(RateMap::Curve(knots))
 }

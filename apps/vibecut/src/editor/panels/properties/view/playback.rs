@@ -88,6 +88,12 @@ impl Panel<'_, '_> {
         let Some((current, maintain_pitch, has_audio)) = read::retime_of(project, item) else {
             return;
         };
+        let segments = read::speed_segments(project, item);
+        self.speed_tabs(ui, item, segments.is_some(), maintain_pitch);
+        if segments.is_some() || self.state.speed_curve_view {
+            self.speed_curve_controls(ui, item, segments, maintain_pitch, has_audio);
+            return;
+        }
         self.scrub_field(ui, item, SPEED_SCRUB);
         let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
         self.row_label(ui, row, self.tr(Text::SpeedDuration));
@@ -137,6 +143,146 @@ impl Panel<'_, '_> {
             self.remember("inspector.speed.pitch", &response);
             if response.changed() {
                 self.set_speed(item, current, !follows);
+            }
+        }
+    }
+}
+
+/// Automation word and label of a speed ramp preset.
+fn preset_entry(preset: project::SpeedPreset) -> (&'static str, Text) {
+    match preset {
+        project::SpeedPreset::SlowInFastOut => ("slow_in_fast_out", Text::SpeedPresetSlowInFastOut),
+        project::SpeedPreset::FastInSlowOut => ("fast_in_slow_out", Text::SpeedPresetFastInSlowOut),
+        project::SpeedPreset::SlowMiddle => ("slow_middle", Text::SpeedPresetSlowMiddle),
+        project::SpeedPreset::FastMiddle => ("fast_middle", Text::SpeedPresetFastMiddle),
+    }
+}
+
+impl Panel<'_, '_> {
+    /// The Standard / Curve sub-tabs. Standard is the constant rate; Curve is the
+    /// ramp editor. Returning to Standard from a curve resets to a constant 1x, one undo step.
+    fn speed_tabs(
+        &mut self,
+        ui: &mut egui::Ui,
+        item: ItemId,
+        has_curve: bool,
+        maintain_pitch: bool,
+    ) {
+        let open = has_curve || self.state.speed_curve_view;
+        let ids = [
+            "inspector.speed.tab.standard".to_owned(),
+            "inspector.speed.tab.curve".to_owned(),
+        ];
+        let labels = [self.tr(Text::SpeedStandard), self.tr(Text::SpeedCurveTab)];
+        let cells = kit::segmented(ui, &ids, &labels, usize::from(open));
+        for (id, cell) in ids.iter().zip(&cells) {
+            self.remember(id.clone(), cell);
+        }
+        if let [standard, curve] = cells.as_slice() {
+            if standard.clicked() && open {
+                self.state.speed_curve_view = false;
+                if has_curve {
+                    self.set_speed(item, 1.0, maintain_pitch);
+                }
+            }
+            if curve.clicked() && !open {
+                self.state.speed_curve_view = true;
+            }
+        }
+        ui.add_space(theme::space::XS);
+    }
+
+    /// The Curve view: ramp presets, then one speed field per stretch of the
+    /// item's curve. Every commit rewrites the whole curve through one command.
+    fn speed_curve_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        item: ItemId,
+        segments: Option<Vec<project::SpeedSegment>>,
+        maintain_pitch: bool,
+        has_audio: bool,
+    ) {
+        for pair in project::SpeedPreset::ALL.chunks(2) {
+            ui.horizontal(|ui| {
+                for preset in pair {
+                    let (word, label) = preset_entry(*preset);
+                    let selected = segments.as_deref() == Some(preset.segments().as_slice());
+                    let width = (ui.available_width() - theme::space::XS) / 2.0;
+                    let response = ui.add_sized(
+                        [width, theme::size::CONTROL],
+                        egui::Button::new(self.tr(label)).selected(selected),
+                    );
+                    self.remember(format!("inspector.speed.preset.{word}"), &response);
+                    if response.clicked() && !selected {
+                        self.actions.push(Action::ApplySpeedPreset {
+                            item,
+                            preset: *preset,
+                            maintain_pitch,
+                        });
+                    }
+                }
+            });
+        }
+        let Some(segments) = segments else {
+            return;
+        };
+        ui.add_space(theme::space::XS);
+        let pairs = |segments: &[project::SpeedSegment]| -> Vec<(u16, f64)> {
+            segments
+                .iter()
+                .map(|stretch| (stretch.span, stretch.speed.as_f64()))
+                .collect()
+        };
+        let mut start = 0u32;
+        for (index, segment) in segments.iter().enumerate() {
+            let end = start + u32::from(segment.span);
+            let label = format!(
+                "{:.0}-{:.0}%",
+                f64::from(start) / 10.0,
+                f64::from(end) / 10.0
+            );
+            start = end;
+            let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+            self.row_label(ui, row, &label);
+            let before = segment.speed.as_f64();
+            let mut value = before;
+            let response = value_ui.add(
+                egui::DragValue::new(&mut value)
+                    .range(0.0..=10.0)
+                    .speed(0.01)
+                    .max_decimals(3),
+            );
+            self.remember(format!("inspector.speed.segment.{index}"), &response);
+            if ((response.changed() && !response.dragged()) || response.drag_stopped())
+                && (value - before).abs() > f64::EPSILON
+            {
+                let mut edited = pairs(&segments);
+                if let Some(slot) = edited.get_mut(index) {
+                    slot.1 = value;
+                }
+                self.actions.push(Action::SetSpeedCurve {
+                    item,
+                    segments: edited,
+                    maintain_pitch,
+                });
+            }
+        }
+        if has_audio {
+            let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+            self.row_label(ui, row, self.tr(Text::ChangePitch));
+            let mut follows = !maintain_pitch;
+            let response = value_ui.add(egui::Checkbox::without_text(&mut follows));
+            let name = self.tr(Text::ChangePitch);
+            response
+                .ctx
+                .accesskit_node_builder(response.id, |node| node.set_label(name));
+            self.remember("inspector.speed.pitch", &response);
+            if response.changed() {
+                self.actions.push(Action::SetSpeedCurve {
+                    item,
+                    segments: pairs(&segments),
+                    maintain_pitch: !follows,
+                });
             }
         }
     }

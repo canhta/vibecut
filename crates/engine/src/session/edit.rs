@@ -677,6 +677,20 @@ pub(crate) fn apply(
         } => {
             data = retime::execute_set_speed(data, items, speed, maintain_pitch)?;
         }
+        EditCommand::SetSpeedCurve {
+            items,
+            segments,
+            maintain_pitch,
+        } => {
+            data = retime::execute_set_speed_curve(data, items, segments, maintain_pitch)?;
+        }
+        EditCommand::ApplySpeedPreset {
+            items,
+            preset,
+            maintain_pitch,
+        } => {
+            data = retime::execute_apply_speed_preset(data, items, preset, maintain_pitch)?;
+        }
         EditCommand::SetReverse { items, reverse } => {
             data = retime::execute_set_reverse(data, items, reverse)?;
         }

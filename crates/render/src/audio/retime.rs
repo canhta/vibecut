@@ -1,4 +1,4 @@
-//! Streaming audio retime for items that play at a constant speed other than 1x.
+//! Streaming audio retime for items that play at a constant speed other than 1x, or along a speed curve.
 //!
 //! The mix graph asks for item-local output samples in order; a [`Retimer`]
 //! pulls the matching source samples (relative to the item's source start, on
@@ -30,9 +30,91 @@ pub(crate) enum Pitch {
     Keep,
 }
 
+/// Output-sample to source-sample map of one item, on the project sample grid.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum RateMap {
+    /// Constant speed as a reduced ratio `(num, den)`.
+    Constant((i64, i64)),
+    /// Piecewise-linear knots `(output, source)`, both strictly increasing from
+    /// `(0, 0)`; the end stretches extend linearly past the first and last knot.
+    Curve(Vec<(i64, i64)>),
+}
+
+impl RateMap {
+    fn valid(&self) -> bool {
+        match self {
+            Self::Constant((num, den)) => *num > 0 && *den > 0,
+            Self::Curve(knots) => {
+                knots.len() >= 2
+                    && knots.first() == Some(&(0, 0))
+                    && knots
+                        .windows(2)
+                        .all(|w| matches!(w, [a, b] if b.0 > a.0 && b.1 > a.1))
+            }
+        }
+    }
+
+    /// The stretch `(output start, source start, output span, source span)` holding `n`.
+    fn stretch(&self, n: i64) -> (i64, i64, i64, i64) {
+        match self {
+            Self::Constant((num, den)) => (0, 0, *den, *num),
+            Self::Curve(knots) => {
+                let mut found = (0, 0, 1, 1);
+                for pair in knots.windows(2) {
+                    if let [a, b] = pair {
+                        found = (a.0, a.1, b.0 - a.0, b.1 - a.1);
+                        if n < b.0 {
+                            break;
+                        }
+                    }
+                }
+                found
+            }
+        }
+    }
+
+    /// Source position of output sample `n`: whole sample and fraction in `[0, 1)`.
+    fn position(&self, n: i64) -> (i64, f64) {
+        let (o, s, out, src) = self.stretch(n);
+        let scaled = i128::from(n - o) * i128::from(src);
+        (
+            s + scaled.div_euclid(i128::from(out)) as i64,
+            scaled.rem_euclid(i128::from(out)) as f64 / out as f64,
+        )
+    }
+
+    /// Source position of output sample `n`, rounded to the nearest sample.
+    fn centre(&self, n: i64) -> i64 {
+        let (o, s, out, src) = self.stretch(n);
+        let scaled = i128::from(n - o) * i128::from(src) + i128::from(out) / 2;
+        s + scaled.div_euclid(i128::from(out)) as i64
+    }
+
+    /// Local speed `(num, den)` at output sample `n`.
+    fn rate_at(&self, n: i64) -> (i64, i64) {
+        let (_, _, out, src) = self.stretch(n);
+        (src, out)
+    }
+
+    /// Linear taps that cover the fastest stretch.
+    fn max_taps(&self) -> i64 {
+        match self {
+            Self::Constant((num, den)) => (num + den - 1) / den,
+            Self::Curve(knots) => knots
+                .windows(2)
+                .filter_map(|w| match w {
+                    [a, b] => Some((b.1 - a.1 + (b.0 - a.0) - 1) / (b.0 - a.0)),
+                    _ => None,
+                })
+                .max()
+                .unwrap_or(1),
+        }
+    }
+}
+
 pub(crate) struct Retimer {
     rate: u32,
-    speed: (i64, i64),
+    map: RateMap,
     pitch: Pitch,
     length: i64,
     next: i64,
@@ -42,16 +124,15 @@ pub(crate) struct Retimer {
 }
 
 impl Retimer {
-    /// `length` is the item's source window in samples; `speed` is the reduced
-    /// ratio `(num, den)`.
+    /// `length` is the item's source window in samples; `map` is its output-to-source map.
     pub(crate) fn new(
         rate: u32,
-        speed: (i64, i64),
+        map: RateMap,
         pitch: Pitch,
         length: i64,
         hooks: &dyn ExecutionHooks,
     ) -> Result<Self> {
-        if speed.0 <= 0 || speed.1 <= 0 || length < 0 || !(8000..=192_000).contains(&rate) {
+        if !map.valid() || length < 0 || !(8000..=192_000).contains(&rate) {
             return Err(Error::Invalid("retime parameters"));
         }
         let stretch = Stretch::new(rate);
@@ -65,7 +146,7 @@ impl Retimer {
         let lease = hooks.reserve(MemoryKind::Compositor, samples as u64 * 4)?;
         Ok(Self {
             rate,
-            speed,
+            map,
             pitch,
             length,
             next: 0,
@@ -75,8 +156,8 @@ impl Retimer {
         })
     }
 
-    pub(crate) fn matches(&self, rate: u32, speed: (i64, i64), pitch: Pitch, length: i64) -> bool {
-        self.rate == rate && self.speed == speed && self.pitch == pitch && self.length == length
+    pub(crate) fn matches(&self, rate: u32, map: &RateMap, pitch: Pitch, length: i64) -> bool {
+        self.rate == rate && self.map == *map && self.pitch == pitch && self.length == length
     }
 
     fn restart(&mut self) {
@@ -119,10 +200,10 @@ impl Retimer {
         hooks: &dyn ExecutionHooks,
     ) -> Result<Planes> {
         let out = match self.pitch {
-            Pitch::Follow => follow(&mut self.source, self.speed, start, frames, pull)?,
+            Pitch::Follow => follow(&mut self.source, &self.map, start, frames, pull)?,
             Pitch::Keep => {
                 self.stretch
-                    .read(&mut self.source, self.speed, start, frames, pull, hooks)?
+                    .read(&mut self.source, &self.map, start, frames, pull, hooks)?
             }
         };
         self.next = start + frames as i64;
@@ -236,38 +317,34 @@ impl Source {
     }
 }
 
-/// Pitch follows speed: output `n` reads source position `n * num / den`.
+/// Pitch follows speed: output `n` reads the map's source position, averaging
+/// `ceil(local speed)` linear taps over one output step when decimating.
 fn follow(
     source: &mut Source,
-    (num, den): (i64, i64),
+    map: &RateMap,
     start: i64,
     frames: usize,
     pull: &mut dyn FnMut(i64, usize) -> Result<Planes>,
 ) -> Result<Planes> {
-    // Area average over one output step when decimating: ceil(speed) linear taps.
-    let taps = (num + den - 1) / den;
-    let reach = taps / 2 + 2;
-    let position = |n: i64| -> (i64, f64) {
-        let scaled = i128::from(n) * i128::from(num);
-        (
-            scaled.div_euclid(i128::from(den)) as i64,
-            scaled.rem_euclid(i128::from(den)) as f64 / den as f64,
-        )
-    };
-    let (first, _) = position(start);
-    let (last, _) = position(start + frames as i64);
+    let reach = map.max_taps() / 2 + 2;
+    let (first, _) = map.position(start);
+    let (last, _) = map.position(start + frames as i64);
     source.ensure(first - reach, last + reach + 1, pull)?;
-    let spacing = num as f64 / den as f64 / taps as f64;
     let mut out = vec![vec![0.0f32; frames]; source.channels()];
     for i in 0..frames {
-        let (whole, fraction) = position(start + i as i64);
+        let n = start + i as i64;
+        let (num, den) = map.rate_at(n);
+        let taps = (num + den - 1) / den;
+        let speed = num as f64 / den as f64;
+        let spacing = speed / taps as f64;
+        let (whole, fraction) = map.position(n);
         for (c, plane) in out.iter_mut().enumerate() {
             let mut sum = 0.0f64;
             for t in 0..taps {
                 let offset = if taps == 1 {
                     0.0
                 } else {
-                    (t as f64 + 0.5) * spacing - num as f64 / den as f64 / 2.0
+                    (t as f64 + 0.5) * spacing - speed / 2.0
                 };
                 let at = fraction + offset;
                 let base = at.floor();
@@ -282,7 +359,7 @@ fn follow(
             }
         }
     }
-    let (next, _) = position(start + frames as i64);
+    let (next, _) = map.position(start + frames as i64);
     source.release_before(next - reach - 1);
     Ok(out)
 }
@@ -330,7 +407,7 @@ impl Stretch {
     fn read(
         &mut self,
         source: &mut Source,
-        speed: (i64, i64),
+        map: &RateMap,
         start: i64,
         frames: usize,
         pull: &mut dyn FnMut(i64, usize) -> Result<Planes>,
@@ -339,7 +416,7 @@ impl Stretch {
         let end = start + frames as i64;
         while self.next_grain * self.hop < end {
             check(hooks)?;
-            self.synthesize(source, speed, pull)?;
+            self.synthesize(source, map, pull)?;
             check(hooks)?;
         }
         let channels = source.channels();
@@ -369,15 +446,14 @@ impl Stretch {
     fn synthesize(
         &mut self,
         source: &mut Source,
-        (num, den): (i64, i64),
+        map: &RateMap,
         pull: &mut dyn FnMut(i64, usize) -> Result<Planes>,
     ) -> Result<()> {
         let hop = self.hop;
         let k = self.next_grain;
         let output = k * hop;
-        // The grain centre plays source position (output + hop) * speed.
-        let centre = (i128::from(output + hop) * i128::from(num) + i128::from(den) / 2)
-            .div_euclid(i128::from(den)) as i64;
+        // The grain centre plays the source position of output sample `output + hop`.
+        let centre = map.centre(output + hop);
         let nominal = centre - hop;
         let length = source.length;
         let span_end = nominal + self.reach + self.grain as i64;
@@ -397,11 +473,7 @@ impl Stretch {
         }
         self.previous = Some(chosen);
         self.next_grain += 1;
-        let next_nominal = {
-            let c = (i128::from((k + 1) * hop + hop) * i128::from(num) + i128::from(den) / 2)
-                .div_euclid(i128::from(den)) as i64;
-            c - hop
-        };
+        let next_nominal = map.centre((k + 1) * hop + hop) - hop;
         source.release_before((next_nominal - self.reach).min(chosen + hop));
         Ok(())
     }

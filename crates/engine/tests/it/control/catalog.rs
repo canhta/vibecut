@@ -583,7 +583,12 @@ fn deterministic_catalog_and_schema_document_receipts() {
         (Availability::Assets, &["export.clips", "media.remove"]),
         (
             Availability::RetimableItem,
-            &["timeline.set_reverse", "timeline.set_speed"],
+            &[
+                "timeline.apply_speed_preset",
+                "timeline.set_reverse",
+                "timeline.set_speed",
+                "timeline.set_speed_curve",
+            ],
         ),
         (Availability::RemovableTrack, &["track.remove"]),
         (

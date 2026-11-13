@@ -5381,3 +5381,94 @@ fn ctrl_x_cuts_mask_points_in_one_undo_step_and_keeps_the_item_selected() {
     assert_eq!(path_of(&harness, video), seed);
     assert_eq!(harness.state().session.mask_point_clipboard_len(), 1);
 }
+
+#[test]
+fn speed_curve_tab_applies_presets_edits_a_stretch_and_refuses_invalid_curves() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    select(&mut harness, fixture.video);
+    click(&mut harness, "inspector.tab.speed");
+    // Constant mode is the default; the Curve entry opens the editor without a project change.
+    assert!(has_widget(&harness, "inspector.speed.scrub"));
+    assert!(has_widget(&harness, "inspector.speed.tab.curve"));
+    click(&mut harness, "inspector.speed.tab.curve");
+    harness.run_steps(2);
+    assert!(!has_widget(&harness, "inspector.speed.scrub"));
+    assert!(has_widget(
+        &harness,
+        "inspector.speed.preset.slow_in_fast_out"
+    ));
+    assert_eq!(
+        item(&harness, fixture.video).retime,
+        project::Retime::default()
+    );
+    let steps = |harness: &Harness<Editor>| harness.state().session.history_len().0;
+
+    // A preset is one undo step and shows its four stretches as editable fields.
+    let history = steps(&harness);
+    click(&mut harness, "inspector.speed.preset.slow_in_fast_out");
+    harness.run_steps(2);
+    assert_eq!(steps(&harness), history + 1);
+    let ramped = item(&harness, fixture.video);
+    let curve = ramped.retime.curve.expect("preset sets a curve");
+    assert_eq!(
+        curve.segments(),
+        project::SpeedPreset::SlowInFastOut.segments()
+    );
+    assert!(has_widget(&harness, "inspector.speed.segment.3"));
+    assert!(!has_widget(&harness, "inspector.speed.segment.4"));
+
+    // Editing one stretch rewrites the curve in one step.
+    enter(&mut harness, "inspector.speed.segment.0", "1.5");
+    assert_eq!(steps(&harness), history + 2);
+    let edited = item(&harness, fixture.video);
+    let segments = edited.retime.curve.unwrap().segments();
+    assert_eq!(segments.first().unwrap().speed.as_f64(), 1.5);
+    assert_eq!(
+        segments.get(1).unwrap().speed.as_f64(),
+        0.8,
+        "other stretches keep their speed"
+    );
+
+    // A speed outside 0.01-5x is refused and changes nothing.
+    let before = harness.state().session.project().clone();
+    enter(&mut harness, "inspector.speed.segment.1", "9");
+    assert_eq!(steps(&harness), history + 2);
+    assert_eq!(*harness.state().session.project(), before);
+
+    // The pitch policy keeps the curve.
+    click(&mut harness, "inspector.speed.pitch");
+    let kept = item(&harness, fixture.video);
+    assert!(!kept.retime.maintain_pitch);
+    assert_eq!(kept.retime.curve, edited.retime.curve);
+
+    // Undo walks back through the edits; Standard returns to a constant 1x as one step.
+    harness.state_mut().session.undo().unwrap();
+    harness.state_mut().session.undo().unwrap();
+    assert_eq!(item(&harness, fixture.video).retime.curve, Some(curve));
+    click(&mut harness, "inspector.speed.tab.standard");
+    harness.run_steps(2);
+    let constant = item(&harness, fixture.video);
+    assert_eq!(constant.retime.curve, None);
+    assert_eq!(constant.retime.speed, time::Speed::UNITY);
+    assert!(has_widget(&harness, "inspector.speed.scrub"));
+}
+
+#[test]
+#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-64-ramps.png"]
+fn speed_curve_tab_renders_the_ramp_editor() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    select(&mut harness, fixture.video);
+    click(&mut harness, "inspector.tab.speed");
+    click(&mut harness, "inspector.speed.tab.curve");
+    click(&mut harness, "inspector.speed.preset.slow_in_fast_out");
+    harness.run_steps(3);
+    let image = harness.render().expect("offscreen render");
+    let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
+    std::fs::create_dir_all(&target).unwrap();
+    image.save(target.join("p1-64-ramps.png")).unwrap();
+    assert!(image.width() > 0 && image.height() > 0);
+}

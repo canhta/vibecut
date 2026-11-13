@@ -1,13 +1,14 @@
 //! Applies retime commands to a candidate project.
 use super::{BTreeSet, EditError, ItemId, ItemParams, ProjectData, Result, add, sub, unlocked};
 
-/// Change one video/audio item's speed, keeping its source window. Keyframes stretch
-/// with the item; on a magnetic main track later items ripple by the duration change.
-pub(super) fn set_speed(
+/// Rewrite one video/audio item's retime through `change`, which returns the
+/// factor `(num, den)` its keyframes stretch by (new duration over old). On a
+/// magnetic main track later items ripple by the duration change.
+fn retime_item(
     data: &mut ProjectData,
     id: ItemId,
-    speed: time::Speed,
-    maintain_pitch: bool,
+    unsupported: &'static str,
+    change: impl FnOnce(&mut project::Item) -> Result<(i64, i64)>,
 ) -> Result<()> {
     let timeline = &mut data.scene_mut().timeline;
     let ripple = timeline.magnet && timeline.main.items.iter().any(|i| i.id == id);
@@ -25,23 +26,13 @@ pub(super) fn set_speed(
         .ok_or(EditError::NoItem(id))?;
     let target = t.items.get_mut(index).ok_or(EditError::NoItem(id))?;
     if !matches!(target.content, ItemParams::Video(_) | ItemParams::Audio(_)) {
-        return Err(EditError::Unsupported("speed on non-media item"));
+        return Err(EditError::Unsupported(unsupported));
     }
     let old_end = target.end()?;
-    let (num, den) = target.retime.speed.stretch_to(speed);
+    let (num, den) = change(target)?;
     if num != den {
         target.animations.retime(num, den)?;
     }
-    target.retime = project::Retime {
-        window: if target.retime.speed == speed {
-            target.retime.window
-        } else {
-            None
-        },
-        speed,
-        maintain_pitch,
-        reverse: target.retime.reverse,
-    };
     let new_end = target.end()?;
     if ripple {
         let delta = sub(new_end, old_end)?;
@@ -52,6 +43,92 @@ pub(super) fn set_speed(
         }
     }
     Ok(())
+}
+
+/// Change one video/audio item's speed, keeping its source window. Keyframes stretch
+/// with the item; on a magnetic main track later items ripple by the duration change.
+/// A speed curve on the item is replaced by the constant rate.
+pub(super) fn set_speed(
+    data: &mut ProjectData,
+    id: ItemId,
+    speed: time::Speed,
+    maintain_pitch: bool,
+) -> Result<()> {
+    retime_item(data, id, "speed on non-media item", |target| {
+        let had_curve = target.retime.curve.is_some();
+        let old_duration = target.duration()?;
+        let ratio = target.retime.speed.stretch_to(speed);
+        let keep_window = !had_curve && target.retime.speed == speed;
+        target.retime = project::Retime {
+            window: if keep_window {
+                target.retime.window
+            } else {
+                None
+            },
+            speed,
+            maintain_pitch,
+            reverse: target.retime.reverse,
+            curve: None,
+        };
+        if had_curve {
+            Ok((target.duration()?.0, old_duration.0))
+        } else {
+            Ok(ratio)
+        }
+    })
+}
+
+/// Give one video/audio item a speed curve over its visible source range,
+/// replacing its constant rate. Keyframes stretch with the item.
+fn set_speed_curve(
+    data: &mut ProjectData,
+    id: ItemId,
+    segments: &[project::SpeedSegment],
+    maintain_pitch: bool,
+) -> Result<()> {
+    retime_item(data, id, "speed curve on non-media item", |target| {
+        if target.retime.reverse {
+            return Err(EditError::Invalid("speed curve on a reversed clip"));
+        }
+        let old_duration = target.duration()?;
+        let curve = project::SpeedCurve::from_segments(target.source_range.duration(), segments)?;
+        target.retime = project::Retime {
+            window: None,
+            speed: time::Speed::UNITY,
+            maintain_pitch,
+            reverse: false,
+            curve: Some(curve),
+        };
+        Ok((target.duration()?.0, old_duration.0))
+    })
+}
+
+pub(super) fn execute_set_speed_curve(
+    mut data: ProjectData,
+    items: Vec<ItemId>,
+    segments: Vec<project::SpeedSegment>,
+    maintain_pitch: bool,
+) -> Result<ProjectData> {
+    if items.is_empty() {
+        return Err(EditError::Invalid("empty item selection"));
+    }
+    let mut seen = BTreeSet::new();
+    for id in items {
+        if !seen.insert(id) {
+            return Err(EditError::Invalid("duplicate speed item"));
+        }
+        set_speed_curve(&mut data, id, &segments, maintain_pitch)?;
+    }
+    Ok(data)
+}
+
+pub(super) fn execute_apply_speed_preset(
+    data: ProjectData,
+    items: Vec<ItemId>,
+    preset: project::SpeedPreset,
+    maintain_pitch: bool,
+) -> Result<ProjectData> {
+    execute_set_speed_curve(data, items, preset.segments(), maintain_pitch)
 }
 
 /// Flip one video/audio item's traversal direction. Its timeline span is kept:

@@ -134,6 +134,7 @@ pub(super) fn copy_plan<'a>(
         || !item.effects.is_empty()
         || items.len() != 1
         || !item.retime.speed.is_unity()
+        || item.retime.curve.is_some()
         || item.start > range.start()
         || item.end()? < range.end()
         || item.animations.iter().any(|(path, _)| {

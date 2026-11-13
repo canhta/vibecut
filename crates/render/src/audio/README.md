@@ -55,3 +55,5 @@ The planner reports progress through `Stage::Mix`, honours cancellation and retu
 ## Export audio
 
 `ExportSettings::audio_cut_fade_ms` optionally applies linear ramps at audible item edges on the absolute sample grid (0 disables, maximum 1000 ms, capped at half item duration). Clip batch exports use 10 ms. All included export audio runs through the graph and encodes AAC at 192 kbit/s for MP4/MOV or Opus for WebM, even when video packets copy. Media owns codec priming and FIFO.
+
+A speed curve item retimes through the same `Retimer` with a `RateMap::Curve` of sample-grid knots instead of a constant ratio. Output sample `n` reads the map's source position (linear inside each stretch, so the position is continuous at every key), averaging `ceil(local speed)` taps while pitch follows speed. With `maintain_pitch` on, WSOLA grain centres come from the same map, so pitch holds through every stretch and no grain restarts at a key. Knots that collapse onto the previous one at the project rate are dropped. Block partitions and seeks give identical audio as for a constant rate.

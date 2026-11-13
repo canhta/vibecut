@@ -70,6 +70,19 @@ pub(in crate::editor) enum Action {
         item: ItemId,
         enabled: bool,
     },
+    /// The Speed tab's curve editor: the whole curve as `(span in thousandths, speed)`
+    /// stretches, through `timeline.set_speed_curve`.
+    SetSpeedCurve {
+        item: ItemId,
+        segments: Vec<(u16, f64)>,
+        maintain_pitch: bool,
+    },
+    /// A speed ramp preset, through `timeline.apply_speed_preset`.
+    ApplySpeedPreset {
+        item: ItemId,
+        preset: project::SpeedPreset,
+        maintain_pitch: bool,
+    },
     /// The Speed tab's Reverse switch, through `timeline.set_reverse`.
     SetReverse {
         item: ItemId,
