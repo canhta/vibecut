@@ -1013,6 +1013,21 @@ fn guide_picker_grid_size_and_notes_switch_are_undoable_preferences_and_leave_th
     h.key_press(egui::Key::Escape);
     h.run_steps(3);
     assert!(h.query_all(By::new().label("Hook")).next().is_some());
+
+    // One picker row per platform; each choice is a preference edit, and the last
+    // one stays selected for the screenshot of the shaded regions.
+    for (id, guide) in [
+        ("preview.guide.instagram_reels", Guide::InstagramReels),
+        ("preview.guide.youtube_shorts", Guide::YouTubeShorts),
+        ("preview.guide.tiktok", Guide::TikTok),
+    ] {
+        click(&mut h, id);
+        assert_eq!(h.state().preferences.preview_guide, guide, "{id}");
+        assert!(!guide.covered_regions().is_empty());
+    }
+    assert!(Arc::ptr_eq(&committed, h.state().session.project()));
+    h.key_press(egui::Key::Escape);
+    h.run_steps(3);
     let screenshot =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-26-guides.png");
     if let Some(parent) = screenshot.parent() {
@@ -1132,8 +1147,17 @@ fn guides_and_notes_never_change_the_exported_frame() {
         },
         ..Default::default()
     });
+    let platform = frame(Preferences {
+        preview_guide: Guide::TikTok,
+        preview_overlays: OverlayVisibility {
+            guide: true,
+            notes: true,
+        },
+        ..Default::default()
+    });
     assert!(!shown.is_empty());
     assert_eq!(shown, hidden);
+    assert_eq!(platform, hidden);
 }
 
 #[test]

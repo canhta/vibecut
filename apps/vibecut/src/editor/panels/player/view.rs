@@ -312,6 +312,17 @@ fn guide_menu(ui: &mut egui::Ui, cx: &Context<'_>, state: &mut State, actions: &
     for (id, choice, text) in [
         ("preview.guide.none", Guide::None, Text::GuideNone),
         ("preview.guide.grid", Guide::default(), Text::GuideGrid),
+        ("preview.guide.tiktok", Guide::TikTok, Text::GuideTikTok),
+        (
+            "preview.guide.instagram_reels",
+            Guide::InstagramReels,
+            Text::GuideInstagramReels,
+        ),
+        (
+            "preview.guide.youtube_shorts",
+            Guide::YouTubeShorts,
+            Text::GuideYouTubeShorts,
+        ),
     ] {
         let selected = current.same_choice(choice);
         let response = ui.selectable_label(selected, cx.tr(text));
@@ -381,7 +392,7 @@ fn overlays(cx: &Context<'_>, ui: &mut egui::Ui, stage: Rect, displayed: Rect) {
     }
 }
 
-/// Draws the selected guide over the displayed frame, clipped to the stage.
+/// Draws the selected guide (grid lines or platform regions) over the displayed frame, clipped to the stage.
 fn guide(cx: &Context<'_>, ui: &egui::Ui, stage: Rect, displayed: Rect) {
     let painter = ui.painter().with_clip_rect(stage);
     let stroke = egui::Stroke::new(kit::space::HAIRLINE, kit::text(cx.dark).gamma_multiply(0.5));
@@ -400,6 +411,21 @@ fn guide(cx: &Context<'_>, ui: &egui::Ui, stage: Rect, displayed: Rect) {
             displayed.top() + displayed.height() * fraction,
             stroke,
         );
+    }
+    // A platform guide shades the regions its UI covers.
+    let fill = kit::text(cx.dark).gamma_multiply(0.18);
+    for [left, top, right, bottom] in guide.covered_regions() {
+        let region = Rect::from_min_max(
+            egui::pos2(
+                displayed.left() + displayed.width() * left,
+                displayed.top() + displayed.height() * top,
+            ),
+            egui::pos2(
+                displayed.left() + displayed.width() * right,
+                displayed.top() + displayed.height() * bottom,
+            ),
+        );
+        painter.rect_filled(region, 0.0, fill);
     }
 }
 
