@@ -2631,6 +2631,8 @@ fn text_insert_and_style_controls_use_one_undo_step_per_edit() {
         ("inspector.transform.positionX", "25"),
         ("inspector.transform.positionY", "30"),
     ] {
+        // The Transform section sits below Font, Format and Style in the Text tab.
+        crate::panels::reveal(&mut harness, id);
         harness
             .get(By::new().predicate(|n| n.author_id() == Some(id)))
             .click();

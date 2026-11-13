@@ -35,7 +35,7 @@ fn viewport_transform_text_preview_is_atomic_reversible_and_persistent() {
     )
     .unwrap();
     let selected = renderer
-        .hit_test(&viewport, [960., 913.], Tick::ZERO)
+        .hit_test(&viewport, [960., 540.], Tick::ZERO)
         .unwrap()
         .unwrap();
     assert_eq!(selected, ItemId(10));
