@@ -254,7 +254,7 @@ pub(super) fn readme_project(source: &Path) -> Result<(Editor, ItemId, ItemId), 
     let mut settings = render::RenderSettings::from_project(editor.session.project());
     settings.caption_languages = vec![LanguageTag::parse("vi")?, LanguageTag::parse("en")?];
     editor.playback.set_render_settings(settings)?;
-    editor.select([first].into_iter().collect()).unwrap();
+    editor.select([first].into_iter().collect())?;
     Ok((editor, first, second))
 }
 
