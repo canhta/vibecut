@@ -330,18 +330,17 @@ impl Editor {
         for point in points {
             self.selection_scopes
                 .mask_points
-                .insert(crate::selection::MaskPointSelection {
+                .insert(crate::editor::selection::MaskPointSelection {
                     item,
                     mask: mask.to_owned(),
                     point: *point,
                 });
         }
-        if self.selection.len() != 1 || !self.selection.contains(&item) {
-            self.selection.clear();
-            self.selection.insert(item);
+        let selected = self.session.selection();
+        if selected.len() != 1 || !selected.contains(&item) {
+            self.write_selection(std::collections::BTreeSet::from([item]));
         }
         self.properties.clear_drafts();
-        self.desk().select();
     }
     /// Drop the mask-point scope and keep the item selected.
     pub(in crate::editor) fn clear_mask_points(&mut self) {
