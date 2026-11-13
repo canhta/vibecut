@@ -722,6 +722,10 @@ mod model_tests {
         // One text-task provider; each task snapshots its own row for that provider.
         preferences
             .ai_models
+            .select("anthropic", ai::Operation::Translate, "fixture-translate")
+            .unwrap();
+        preferences
+            .ai_models
             .select(
                 "anthropic",
                 ai::Operation::ClassifyFillers,
@@ -736,7 +740,7 @@ mod model_tests {
             })
             .unwrap();
         assert_eq!(preferences.subtitles.text_provider, "anthropic");
-        assert_eq!(preferences.subtitles.translation_model, "fixture-5");
+        assert_eq!(preferences.subtitles.translation_model, "fixture-translate");
         assert_eq!(preferences.subtitles.fillers_model, "fixture-filler");
         assert_eq!(
             restored.subtitles.transcription_model,

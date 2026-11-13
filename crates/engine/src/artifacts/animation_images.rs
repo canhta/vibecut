@@ -115,13 +115,18 @@ pub fn preview_bytes(slot: AnimationSlot, preset: AnimationPreset) -> ArtifactRe
     let width = (PREVIEW_EDGE * PREVIEW_FRAMES) as usize;
     let mut out = vec![0_u8; width * PREVIEW_EDGE as usize * 4];
     for frame in 0..PREVIEW_FRAMES {
-        let at = LENGTH
-            .checked_scale(
-                i64::from(frame),
-                i64::from(PREVIEW_FRAMES),
-                time::Rounding::Nearest,
-            )
-            .map_err(|_| invalid())?;
+        // `checked_scale` refuses a zero factor, so the first frame is the clip start.
+        let at = if frame == 0 {
+            Tick::ZERO
+        } else {
+            LENGTH
+                .checked_scale(
+                    i64::from(frame),
+                    i64::from(PREVIEW_FRAMES),
+                    time::Rounding::Nearest,
+                )
+                .map_err(|_| invalid())?
+        };
         let pose = pose(&animations, at)?;
         for y in 0..PREVIEW_EDGE {
             for x in 0..PREVIEW_EDGE {

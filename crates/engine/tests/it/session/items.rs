@@ -2470,10 +2470,11 @@ fn align_translates_curve_values_and_refuses_whole_lists() {
 fn item_param_table_rows_declare_kinds_and_bounds_and_parse_by_wire_name() {
     use engine::{ITEM_PARAMS, ItemParamPatch, ParamBounds, ParamParseError, item_param};
     // One text per payload type: numbers, switches, words, colours and cleared shapes.
-    const SAMPLES: [&str; 7] = [
+    const SAMPLES: [&str; 8] = [
         "1",
         "true",
         "multiply",
+        "upper",
         "fill",
         "center",
         "#FF0000FF",

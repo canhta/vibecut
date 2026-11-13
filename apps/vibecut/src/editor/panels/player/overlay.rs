@@ -259,7 +259,7 @@ mod tests {
         assert!(near(reels[0][3], 0.14) && near(reels[1][1], 0.65) && near(reels[2][2], 0.06));
         let shorts = Guide::YouTubeShorts.covered_regions();
         assert!(near(shorts[0][3], 0.15) && near(shorts[1][1], 0.65));
-        assert!(near(shorts[2][2], 48.0 / 1080.0) && near(shorts[3][0], 0.8));
+        assert!(near(shorts[2][2], 48.0 / 1080.0) && near(shorts[3][0], 888.0 / 1080.0));
         for guide in PLATFORM_GUIDES {
             let regions = guide.covered_regions();
             for (i, a) in regions.iter().enumerate() {

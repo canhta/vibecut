@@ -236,8 +236,11 @@ impl Panel<'_, '_> {
                 format!("inspector.animation.{}.{word}", slot_word(slot)),
                 &response,
             );
-            ui.add_sized(
-                [TILE, NAME_HEIGHT],
+            // The name line is exactly NAME_HEIGHT; an 11 px label's natural row is taller,
+            // so it sits in a child that does not grow the tile and stretch the pitch.
+            let (name, _) =
+                ui.allocate_exact_size(egui::vec2(TILE, NAME_HEIGHT), egui::Sense::hover());
+            ui.new_child(egui::UiBuilder::new().max_rect(name)).add(
                 egui::Label::new(
                     egui::RichText::new(label)
                         .font(theme::label_font())

@@ -96,23 +96,24 @@ pub(super) fn show(
                     egui::Label::new(tr(Text::ModelTextProvider)),
                 );
                 let current = cx.preferences.subtitles.text_provider.clone();
-                let combo = egui::ComboBox::from_id_salt("preferences.text.provider")
-                    .selected_text(provider_name(&current))
-                    .width(280.0)
-                    .show_ui(ui, |ui| {
-                        for provider in TEXT_PROVIDERS {
-                            let response =
-                                ui.selectable_label(provider == current, provider_name(provider));
-                            actions.push(Action::Remember(
-                                format!("preferences.text.provider.{provider}"),
-                                response.clone(),
-                            ));
-                            if response.clicked() {
-                                actions.push(Action::TextProvider(provider.into()));
-                                ui.close();
+                let combo =
+                    egui::ComboBox::from_id_salt(egui::IdSalt::new("preferences.text.provider"))
+                        .selected_text(provider_name(&current))
+                        .width(280.0)
+                        .show_ui(ui, |ui| {
+                            for provider in TEXT_PROVIDERS {
+                                let response = ui
+                                    .selectable_label(provider == current, provider_name(provider));
+                                actions.push(Action::Remember(
+                                    format!("preferences.text.provider.{provider}"),
+                                    response.clone(),
+                                ));
+                                if response.clicked() {
+                                    actions.push(Action::TextProvider(provider.into()));
+                                    ui.close();
+                                }
                             }
-                        }
-                    });
+                        });
                 actions.push(Action::Remember(
                     "preferences.text.provider.combo".into(),
                     combo.response.labelled_by(label.id),

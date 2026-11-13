@@ -239,7 +239,7 @@ fn caption_bank_name_invalidation_precedes_enter_and_blur() {
             }
             "models" => {
                 h.state_mut().set_model_cache(std::sync::Arc::new(
-                    vibecut::services::model_cache::ModelCache::new(
+                    vibecut::services::ai_access::ModelCache::new(
                         ByteBudget::new(64 << 20).unwrap(),
                     ),
                 ));
