@@ -8,7 +8,10 @@ library and works offline. Searches use the commercial-only filter by default; t
 switch reruns the search without it. Results page 30 at a time and every result shows
 author, duration, licence and precomputed attribution.
 
-Save and unsave are local-library operations outside project history. Preview uses the
+The Music section never calls the music client or library directly for search, save
+or unsave: each runs the `music.search`, `music.save` or `music.unsave` registry
+command through `services::music::run_music` (an empty session per call and the
+library's control adapter, as the CLI does). They are outside project history. Preview uses the
 engine play/stop seam and an app-owned cpal sink on the retained preview worker,
 capped at min(EOF, 120 seconds), including ordinary longer tracks. The continuous
 resampler clips its crossing frame to the remaining stereo capacity and stops

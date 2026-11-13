@@ -56,6 +56,23 @@ impl SearchPage {
     }
 }
 
+impl From<MusicPage> for SearchPage {
+    /// Rebuild the library page from the registry view a UI receives back.
+    fn from(page: MusicPage) -> Self {
+        Self {
+            count: page.count,
+            page: page.page,
+            page_size: page.page_size,
+            results: page.results.iter().map(MusicResult::from).collect(),
+            has_next: page.has_next,
+            source: match page.source {
+                MusicSource::Remote => SearchSource::Remote,
+                MusicSource::Local => SearchSource::Local,
+            },
+        }
+    }
+}
+
 impl From<SavedMusic> for SavedMusicEntry {
     fn from(saved: SavedMusic) -> Self {
         Self {

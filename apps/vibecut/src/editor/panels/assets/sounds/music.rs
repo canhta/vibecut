@@ -3,12 +3,12 @@
 //! Provider, cache, persistence and command behaviour stay in `libraries::music`;
 //! this module only presents them and owns the app's device sink composition.
 
-use crate::services::music::MusicSession;
+use crate::services::music::{MusicSession, run_music};
 use crate::{Error, Result};
 use engine::MusicError;
 use engine::{
     ByteBudget,
-    control::Error as EngineError,
+    control::{ControlResult, Error as EngineError},
     jobs::{CancelToken, JobId, JobRunner, JobState, RunnerConfig, SystemClock},
 };
 use libraries::music::{
@@ -27,6 +27,29 @@ use std::{
 use time::Tick;
 
 const PAGE_SIZE: u32 = 15;
+
+/// One `music.search` through the registry: Saved reads the local library, a
+/// remote search is approved only when a client is lent.
+fn search_page(
+    library: &libraries::music::MusicLibrary,
+    client: Option<&MusicClient>,
+    budget: &ByteBudget,
+    request: &SearchRequest,
+) -> std::result::Result<SearchPage, EngineError> {
+    let params = serde_json::json!({
+        "query": request.query,
+        "tag": request.tag,
+        "page": request.page,
+        "page_size": request.page_size,
+        "saved": client.is_none(),
+    });
+    match run_music(library, client, budget, "music.search", params)? {
+        ControlResult::MusicSearch { page } => Ok(page.into()),
+        _ => Err(EngineError::Edit(engine::EditError::Invalid(
+            "music.search result",
+        ))),
+    }
+}
 
 /// The two Music views. Saved is the offline library; Browse searches the
 /// open source by tag or free text.
@@ -160,6 +183,7 @@ pub struct Music {
     /// Whether this presentation may run remote searches at all.
     online: bool,
     key_generation: u64,
+    budget: ByteBudget,
     downloads: Arc<MusicDownloads>,
     preview: Arc<MusicPreview>,
     runner: JobRunner,
@@ -174,7 +198,7 @@ pub struct Music {
     searching: bool,
     searched: bool,
     search_generation: u64,
-    search_rx: Option<Receiver<(u64, std::result::Result<SearchPage, MusicError>)>>,
+    search_rx: Option<Receiver<(u64, std::result::Result<SearchPage, EngineError>)>>,
     /// The one retained remote search worker. A newer request waits in
     /// `search_pending` (only the newest is kept) until it finishes.
     search_worker: Option<std::thread::JoinHandle<()>>,
@@ -246,7 +270,7 @@ impl Music {
                 backoff: Duration::from_millis(250),
                 progress_interval: Duration::from_millis(20),
             },
-            budget,
+            budget.clone(),
             Arc::new(SystemClock::default()),
         )?;
         let saved_revision = session.library().revision();
@@ -264,6 +288,7 @@ impl Music {
             client_override,
             online,
             key_generation,
+            budget,
             downloads,
             preview,
             runner,
@@ -374,7 +399,8 @@ impl Music {
         // Browse reply can never overwrite a Saved page or a newer query.
         self.cancel_search();
         if mode == MusicMode::Saved || self.client.is_none() {
-            self.apply_page(self.session.library().search_local(&request), more);
+            let page = search_page(self.session.library(), None, &self.budget, &request);
+            self.apply_page(page, more);
             return;
         }
         self.search_pending = Some(request);
@@ -405,13 +431,15 @@ impl Music {
         };
         let (tx, rx) = mpsc::channel();
         let generation = self.search_generation;
+        let library = self.session.library().clone();
+        let budget = self.budget.clone();
         let spawned = std::thread::Builder::new()
             .name("vibecut-music-search".into())
             .spawn(move || {
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    client.search(&request)
+                    search_page(&library, Some(&client), &budget, &request)
                 }))
-                .unwrap_or(Err(MusicError::InvalidResponse));
+                .unwrap_or(Err(EngineError::Music(MusicError::InvalidResponse)));
                 let _ = tx.send((generation, result));
             });
         match spawned {
@@ -446,12 +474,16 @@ impl Music {
             .collect();
     }
 
-    fn apply_page(&mut self, page: std::result::Result<SearchPage, MusicError>, append: bool) {
+    fn apply_page(&mut self, page: std::result::Result<SearchPage, EngineError>, append: bool) {
         self.apply_page_rows(page, append);
         self.refresh_cached();
     }
 
-    fn apply_page_rows(&mut self, page: std::result::Result<SearchPage, MusicError>, append: bool) {
+    fn apply_page_rows(
+        &mut self,
+        page: std::result::Result<SearchPage, EngineError>,
+        append: bool,
+    ) {
         self.searching = false;
         match page {
             Ok(page) => {
@@ -466,7 +498,7 @@ impl Music {
                 self.source = page.source;
             }
             Err(error) => {
-                self.search_problem = Some(MusicProblem::from_error(&error));
+                self.search_problem = Some(MusicProblem::from_edit(&error));
             }
         }
     }
@@ -492,19 +524,30 @@ impl Music {
             .cloned()
     }
 
-    /// Save or unsave one track; the local library owns both operations.
+    /// Save or unsave one track through the `music.save` and `music.unsave`
+    /// registry commands.
     pub fn toggle_saved(&mut self, id: &str) {
         let Some(music) = self.music(id) else {
             self.saved_problem = Some(MusicProblem::Library);
             return;
         };
-        let result = if self.saved_ids.contains(id) {
-            self.session.library().unsave(id).map(|_| ())
+        let (command, params) = if self.saved_ids.contains(id) {
+            ("music.unsave", serde_json::json!({"id": id}))
         } else {
-            self.session.library().save(&music).map(|_| ())
+            (
+                "music.save",
+                serde_json::json!({"music": engine::control::MusicEntry::from(music)}),
+            )
         };
+        let result = run_music(
+            self.session.library(),
+            None,
+            &self.budget,
+            command,
+            params,
+        );
         match result {
-            Ok(()) => {
+            Ok(_) => {
                 self.saved_problem = None;
                 self.refresh_saved();
                 if self.mode == MusicMode::Saved {
@@ -512,7 +555,7 @@ impl Music {
                 }
                 self.refresh_cached();
             }
-            Err(error) => self.saved_problem = Some(MusicProblem::from_error(&error)),
+            Err(error) => self.saved_problem = Some(MusicProblem::from_edit(&error)),
         }
     }
 
@@ -523,7 +566,8 @@ impl Music {
             page: 1,
             page_size: PAGE_SIZE.min(20),
         };
-        self.apply_page(self.session.library().search_local(&request), false);
+        let page = search_page(self.session.library(), None, &self.budget, &request);
+        self.apply_page(page, false);
     }
 
     pub fn play(&mut self, id: &str) {
