@@ -106,7 +106,7 @@ Remove is `transition.remove`.
 
 ## Background sub-tab
 
-A video clip's Background cell sits second in the Basic sub-tab bar. It is listed only while the clip leaves part of the canvas open at the playhead (`read::clip_background_visible`, which asks `render::arrange::covers_canvas`). The kind row is None, Colour and Blur. Choosing a kind commits one `timeline.set_background` undo step: Colour starts from the current solid colour or black, and Blur starts from the current intensity or 10. Colour shows the colour row with Hex and the shared solid swatch grid. Blur shows Light, Medium and Heavy (100, 200 and 500). Apply to all copies the current background to every unlocked video item as one undo step. Controls send `Action::SetClipBackground`; the workflow sends `timeline.set_background`.
+A video clip's Background cell sits second in the Basic sub-tab bar. It is listed only while the clip leaves part of the canvas open at the playhead (`read::clip_background_visible`, which asks `render::arrange::covers_canvas`). The kind row is None, Colour and Blur. Choosing a kind commits one `timeline.set_background` undo step: Colour starts from the solid colour the Background tab last showed this session, or black, and Blur starts from the intensity it last showed, or 10. That memory is view state (`BackgroundMemory` on the properties state), never project data. Colour shows the colour row with Hex and the shared solid swatch grid. Blur shows Light, Medium and Heavy (100, 200 and 500). Apply to all copies the current background to every unlocked video item as one undo step. Controls send `Action::SetClipBackground`; the workflow sends `timeline.set_background`.
 
 ## Remove BG sub-tab
 

@@ -1006,6 +1006,64 @@ fn transform_fields_clamp_reset_scrub_cancel_and_persist() {
 }
 
 #[test]
+fn clip_background_kinds_start_from_their_session_value_and_blur_presets_commit() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    select(&mut harness, fixture.video);
+    // Scaling the clip down leaves canvas open, which is what lists the Background tab.
+    enter(&mut harness, "inspector.transform.scaleX", "50");
+    if has_widget(&harness, "inspector.group.basic") {
+        click(&mut harness, "inspector.group.basic");
+    }
+    click(&mut harness, "inspector.tab.background");
+    let background = |harness: &Harness<Editor>| match item(harness, fixture.video).content {
+        ItemParams::Video(params) => params.background,
+        _ => panic!("video"),
+    };
+    assert_eq!(background(&harness), project::ClipBackground::None);
+    // Blur starts at the default 10 when nothing was shown yet, then each preset commits once.
+    click(&mut harness, "inspector.clip_background.kind.blur");
+    assert_eq!(
+        background(&harness),
+        project::ClipBackground::Blur { intensity: 10 }
+    );
+    click(&mut harness, "inspector.clip_background.blur.2");
+    assert_eq!(
+        background(&harness),
+        project::ClipBackground::Blur { intensity: 500 }
+    );
+    // Leaving Blur and returning restores the intensity it last showed, not the default.
+    click(&mut harness, "inspector.clip_background.kind.none");
+    assert_eq!(background(&harness), project::ClipBackground::None);
+    click(&mut harness, "inspector.clip_background.kind.blur");
+    assert_eq!(
+        background(&harness),
+        project::ClipBackground::Blur { intensity: 500 }
+    );
+    // Colour starts black until a swatch is picked; the picked colour then survives a round trip.
+    click(&mut harness, "inspector.clip_background.kind.color");
+    assert_eq!(
+        background(&harness),
+        project::ClipBackground::Solid {
+            color: Color([0, 0, 0, 255])
+        }
+    );
+    click(&mut harness, "inspector.clip_swatch.40");
+    let chosen = match background(&harness) {
+        project::ClipBackground::Solid { color } => color,
+        other => panic!("solid after a swatch, got {other:?}"),
+    };
+    assert_ne!(chosen, Color([0, 0, 0, 255]));
+    click(&mut harness, "inspector.clip_background.kind.none");
+    click(&mut harness, "inspector.clip_background.kind.color");
+    assert_eq!(
+        background(&harness),
+        project::ClipBackground::Solid { color: chosen }
+    );
+}
+
+#[test]
 fn scale_is_uniform_until_toggled_and_steppers_move_one_unit() {
     let fixture = fixture();
     let mut harness = build(fixture.editor);

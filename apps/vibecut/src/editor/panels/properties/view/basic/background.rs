@@ -4,26 +4,7 @@
 use super::super::Panel;
 use crate::editor::properties::{Action, ColorTarget, Icon, ItemId, Text, egui, read, theme};
 use crate::kit;
-use project::{ClipBackground, Color};
-
-/// The colour a Colour choice starts from: the solid colour, else black.
-fn solid_colour(current: ClipBackground) -> Color {
-    match current {
-        ClipBackground::Solid { color } => color,
-        // The classic web editor's default background colour, black.
-        ClipBackground::None | ClipBackground::Blur { .. } => Color([0, 0, 0, 255]),
-    }
-}
-
-/// The intensity a Blur choice starts from: the current blur, else the default.
-fn blur_intensity(current: ClipBackground) -> u32 {
-    match current {
-        ClipBackground::Blur { intensity } => intensity,
-        ClipBackground::None | ClipBackground::Solid { .. } => {
-            ClipBackground::DEFAULT_BLUR_INTENSITY
-        }
-    }
-}
+use project::ClipBackground;
 
 impl Panel<'_, '_> {
     pub(in super::super) fn background_controls(&mut self, ui: &mut egui::Ui, item: ItemId) {
@@ -32,12 +13,13 @@ impl Panel<'_, '_> {
             return;
         };
         let editable = !read::item_locked(project, item);
+        self.state.background_memory.remember(current);
         ui.add_enabled_ui(editable, |ui| {
             self.background_kind_row(ui, item, current);
             ui.add_space(theme::space::MD);
             match current {
                 ClipBackground::None => {}
-                ClipBackground::Solid { .. } => {
+                ClipBackground::Solid { color } => {
                     self.color_row(
                         ui,
                         "inspector.clip_background.color",
@@ -47,7 +29,7 @@ impl Panel<'_, '_> {
                     ui.add_space(theme::space::MD);
                     self.swatch_palette(
                         ui,
-                        solid_colour(current),
+                        color,
                         "inspector.clip_background.palette",
                         "inspector.clip_swatch",
                         move |color| Action::SetClipBackground {
@@ -63,7 +45,7 @@ impl Panel<'_, '_> {
         });
     }
 
-    /// None, Colour or Blur. Choosing a kind keeps its own starting value.
+    /// None, Colour or Blur. Choosing a kind starts from the value it last showed this session.
     fn background_kind_row(&mut self, ui: &mut egui::Ui, item: ItemId, current: ClipBackground) {
         let index = match current {
             ClipBackground::None => 0,
@@ -85,13 +67,14 @@ impl Panel<'_, '_> {
             if !response.clicked() || position == index {
                 continue;
             }
+            let memory = self.state.background_memory;
             let background = match position {
                 0 => ClipBackground::None,
                 1 => ClipBackground::Solid {
-                    color: solid_colour(current),
+                    color: memory.colour_or_black(),
                 },
                 _ => ClipBackground::Blur {
-                    intensity: blur_intensity(current),
+                    intensity: memory.blur_or_default(),
                 },
             };
             self.actions.push(Action::SetClipBackground {
