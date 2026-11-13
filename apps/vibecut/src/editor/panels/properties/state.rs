@@ -196,12 +196,20 @@ pub(in crate::editor) enum Action {
     Error(String),
 }
 
+/// Draft and focus key of the animation duration field.
+pub(in crate::editor) const ANIMATION_DRAFT: &str = "animation_duration";
+
 impl State {
     pub(in crate::editor) fn input_ready(&self, session: &engine::Session) -> bool {
+        self.ready_except(session, None)
+    }
+
+    /// `input_ready`, not counting the focus and draft of the field named by `own`.
+    fn ready_except(&self, session: &engine::Session, own: Option<&str>) -> bool {
         !session.transaction_active()
             && session.preview_project().is_none()
-            && !self.editing()
-            && self.drafts.is_empty()
+            && self.focus.as_deref().is_none_or(|focus| Some(focus) == own)
+            && self.drafts.keys().all(|key| Some(key.as_str()) == own)
             && self.scrub.is_none()
             && self.graph.is_none()
             && self.picker.is_none()
@@ -215,7 +223,8 @@ impl State {
         session: &engine::Session,
         selection: &std::collections::BTreeSet<ItemId>,
     ) -> Option<ItemId> {
-        if !self.input_ready(session) {
+        // The duration field is part of the control, so typing in it must not disable it.
+        if !self.ready_except(session, Some(ANIMATION_DRAFT)) {
             return None;
         }
         let id = crate::editor::context::single(selection)?;

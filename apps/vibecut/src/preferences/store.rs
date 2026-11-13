@@ -207,7 +207,7 @@ mod tests {
             ("panels", serde_json::json!([0.30, 0.20, 0.35])),
             ("sections", serde_json::json!({"inspector.canvas": false})),
             ("assets_tab", serde_json::json!("captions")),
-            ("properties_tabs", serde_json::json!({"text": "transform"})),
+            ("properties_tabs", serde_json::json!({"text": "effects"})),
             ("media_view", serde_json::json!("list")),
             (
                 "media_sort",
@@ -466,7 +466,7 @@ mod tests {
             .set(
                 "properties_tabs",
                 serde_json::json!({
-                    "text": "transform",
+                    "text": "effects",
                     "video": "audio",
                     "graphic": "graphic"
                 }),
@@ -474,7 +474,7 @@ mod tests {
             .expect("valid tab memory");
         assert_eq!(
             preferences.properties_tabs.get("text").map(String::as_str),
-            Some("transform")
+            Some("effects")
         );
         for value in [
             serde_json::json!({"unknown": "transform"}),

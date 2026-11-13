@@ -222,13 +222,10 @@ impl Panel<'_, '_> {
                 TextAlign::Right,
             ),
         ] {
-            let response = kit::icon_button(
-                &mut cells,
-                &format!("inspector.text_align.{word}"),
-                icon,
-                self.tr(label),
-                params.align == align,
-            );
+            let id = format!("inspector.text_align.{word}");
+            let response =
+                kit::icon_button(&mut cells, &id, icon, self.tr(label), params.align == align);
+            self.remember(id, &response);
             if response.clicked() {
                 self.set_item_field(item, "text_align", word);
             }
@@ -368,6 +365,10 @@ impl Panel<'_, '_> {
         self.row_label(ui, row, self.tr(label));
         let response = value_ui
             .add(egui::Checkbox::without_text(&mut checked).indeterminate(field.value.is_none()));
+        let name = self.tr(label);
+        response
+            .ctx
+            .accesskit_node_builder(response.id, |node| node.set_label(name));
         self.remember(id, &response);
         if response.changed() {
             self.set_shared_field(field.id, if checked { on_value } else { "none" });
