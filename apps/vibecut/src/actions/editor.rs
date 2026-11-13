@@ -358,12 +358,12 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         EngineAction::Delete,
         &["Backspace", "Delete"],
     ),
-    ActionSpec::pending(
+    ActionSpec::engine(
         "timeline.freeze",
         Text::ActionTimelineFreeze,
         ActionCategory::Timeline,
-        "freeze frame",
-        "53",
+        EngineAction::FreezeFrame,
+        &[],
     ),
     ActionSpec::engine(
         "timeline.ripple_delete",

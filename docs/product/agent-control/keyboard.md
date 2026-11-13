@@ -50,7 +50,7 @@
 | `timeline.split_right` — Split and remove right | Edit | W | `timeline.split_right` | — |
 | `timeline.split_all` — Split all | Edit | Ctrl+Shift+B | `timeline.split_all` | — |
 | `timeline.delete` — Delete | Edit | Backspace, Delete | `delete` / `ripple_delete` (ripple enabled) | — |
-| `timeline.freeze` — Freeze frame | Timeline | — | — | freeze frame (unavailable) |
+| `timeline.freeze` — Freeze frame | Timeline | — | — | freeze frame |
 | `timeline.ripple_delete` — Ripple delete | Edit | Shift+Backspace, Shift+Delete | `ripple_delete` | — |
 | `transport.play` — Play/Pause | Playback | Space | — | playback transport |
 | `transport.pause` — Pause | Playback | K | — | playback transport |
@@ -151,6 +151,6 @@
 | `ui.keybindings.export` — Export shortcuts | View | — | — | shortcut dialog |
 <!-- END GENERATED KEYMAP -->
 
-Every project mutation uses its engine command id (`vibecut-cli commands --json` lists the schemas). UI-only actions stay app-owned; actions marked unavailable are registered but do not run.
+Every project mutation uses its engine command id (`vibecut-cli commands --json` lists the schemas). UI-only actions stay app-owned.
 
 Bindings persist in the app preference store. A recorded chord is refused when another action already uses it; resetting an action removes its `isCustomized` marker. A binding profile with an unsupported format or version is refused with a typed diagnostic.

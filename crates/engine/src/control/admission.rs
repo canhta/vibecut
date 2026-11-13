@@ -193,6 +193,7 @@ impl Session {
         | Command::Snapshot { path, .. }
         | Command::ExportProjectBundle { path }
         | Command::SaveProjectAs { path, .. }
+        | Command::FreezeFrame { dir: path, .. }
         | Command::ClipsExport {
             directory: path, ..
         }

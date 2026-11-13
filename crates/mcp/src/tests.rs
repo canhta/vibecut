@@ -578,6 +578,8 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("timeline.split_left", Effect::Edit, true, true),
         ("timeline.split_right", Effect::Edit, true, true),
         ("timeline.duplicate", Effect::Edit, true, true),
+        ("timeline.freeze_frame", Effect::FilePublish, true, false),
+        ("timeline.replace_media", Effect::Edit, true, true),
         ("timeline.set_flipped", Effect::Edit, true, true),
         ("timeline.align_items", Effect::Edit, true, true),
         ("timeline.distribute_items", Effect::Edit, true, true),

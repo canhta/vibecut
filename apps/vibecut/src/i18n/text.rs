@@ -71,6 +71,7 @@ catalog! {
     DeleteKeyframes { key: "delete_keyframes", en: "Delete keyframes", vi: "Xóa khung hình chính" },
     ExitProject { key: "exit_project", en: "Exit project", vi: "Thoát dự án" },
     Feedback { key: "feedback", en: "Feedback", vi: "Phản hồi" },
+    FreezeDone { key: "freeze_done", en: "Frame held as a still", vi: "Khung hình đã được giữ lại thành ảnh tĩnh" },
     FreezeFrame { key: "freeze_frame", en: "Freeze frame", vi: "Đóng băng khung hình" },
     Help { key: "help", en: "Help", vi: "Trợ giúp" },
     HideKeyframes { key: "hide_keyframes", en: "Hide keyframes", vi: "Ẩn khung hình chính" },
@@ -86,6 +87,7 @@ catalog! {
     NotAvailableYet { key: "not_available_yet", en: "Not available yet", vi: "Chưa dùng được" },
     Opacity { key: "opacity", en: "Opacity", vi: "Độ mờ" },
     RemoveKeyframe { key: "remove_keyframe", en: "Remove keyframe", vi: "Xóa khung hình chính" },
+    ReplaceMedia { key: "replace_media", en: "Replace media", vi: "Thay media" },
     ShortsDismiss { key: "shorts_dismiss", en: "Dismiss", vi: "Đóng thông báo" },
     ShortsJobFailed { key: "shorts_job_failed", en: "Failed", vi: "Thất bại" },
     ShortsMoney { key: "shorts_money", en: "{currency} {amount}", vi: "{currency} {amount}" },
@@ -1079,7 +1081,6 @@ catalog! {
 
     // Timeline actions.
     ActionShortcut { key: "action_shortcut", en: "{action} ({shortcut})", vi: "{action} ({shortcut})" },
-    ActionUnavailable { key: "action_unavailable", en: "{action} ({reason})", vi: "{action} ({reason})" },
     BookmarkColor { key: "bookmark_color", en: "Colour", vi: "Màu" },
     BookmarkColorReset { key: "bookmark_color_reset", en: "Reset to the default colour", vi: "Đặt lại màu mặc định" },
     BookmarkDelete { key: "bookmark_delete", en: "Delete bookmark", vi: "Xoá đánh dấu" },

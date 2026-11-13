@@ -165,6 +165,8 @@ pub struct Inspection {
     pub media_sort: MediaSort,
     pub media_order: Vec<AssetId>,
     pub media_highlight: Option<AssetId>,
+    /// A clip whose Replace media request is waiting for the window's native picker.
+    pub replace_request: Option<ItemId>,
     pub media_delete_pending: Vec<AssetId>,
     pub sounds: Option<super::assets::sounds::SoundsView>,
     pub music: Option<super::assets::sounds::music::MusicView>,
@@ -289,6 +291,8 @@ pub struct Editor {
     /// Time base for transient UI timers (toast and media reveal).
     pub(super) clock: Arc<dyn Clock>,
     pub(super) toast: Option<Toast>,
+    /// A timeline "Replace media" request waiting for the window to open the native picker.
+    pub(crate) replace_request: Option<ItemId>,
     pub(super) assets: super::assets::State,
     pub(super) dialogs: super::dialogs::State,
     pub(super) music: Option<super::assets::sounds::music::Music>,

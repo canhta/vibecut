@@ -4,6 +4,7 @@ use crate::{
     Error, Result, egui,
     i18n::{self, Text},
 };
+use project::ItemId;
 use std::{path::PathBuf, sync::Arc};
 
 #[derive(Clone, Copy)]
@@ -13,6 +14,8 @@ pub(super) enum PickerAction {
     ImportMedia,
     ImportLut,
     ExportClips,
+    /// Replace one clip's source with a file the project already holds.
+    ReplaceMedia { item: ItemId },
     ExportSave,
     SnapshotSave,
     KeybindingsImport { replace: bool },
@@ -86,6 +89,13 @@ impl EditorWindow {
                     .add_filter(self.tr(Text::KeybindingsFormat), &["json"])
                     .set_file_name(self.tr(Text::KeybindingsFileName));
                 Box::pin(async move { dialog.save_file().await.map(|file| vec![file]) })
+            }
+            PickerAction::ReplaceMedia { .. } => {
+                let dialog = rfd::AsyncFileDialog::new().add_filter(
+                    self.tr(Text::Media),
+                    crate::editor::assets::import::MEDIA_EXTENSIONS,
+                );
+                Box::pin(async move { dialog.pick_file().await.map(|file| vec![file]) })
             }
             PickerAction::ImportLut => {
                 let dialog =
@@ -167,6 +177,14 @@ impl EditorWindow {
         if let Some(editor) = &mut self.editor {
             editor.export_clips_cancelled();
         }
+    }
+    /// Apply the replace picker's file to the clip it was requested for. Tests inject a
+    /// path here without opening a native dialog.
+    pub fn replace_picked_file(&mut self, item: ItemId, path: PathBuf) -> Result<()> {
+        self.editor
+            .as_mut()
+            .ok_or(Error::Invalid("no project"))?
+            .replace_picked_file(item, path)
     }
     /// Apply a save-picker destination to the existing export dialog.
     pub fn export_picked_file(&mut self, path: PathBuf) -> Result<()> {
@@ -280,6 +298,10 @@ impl EditorWindow {
                     PickerAction::ImportLut => {
                         self.lut_picked_file(files.pop().map(|file| file.path().to_owned()))
                     }
+                    PickerAction::ReplaceMedia { item } => match files.pop() {
+                        Some(file) => self.replace_picked_file(item, file.path().to_owned()),
+                        None => Ok(()),
+                    },
                     PickerAction::ImportMedia => {
                         let paths = files
                             .into_iter()

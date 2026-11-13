@@ -101,7 +101,7 @@ impl Editor {
                 // The focused field sees Escape and blurs itself.
             }
             Dispatch::Blocked(_) | Dispatch::NoMatch | Dispatch::FellThrough(_) => {}
-            Dispatch::Unavailable { action, .. } | Dispatch::Action { action, .. } => {
+            Dispatch::Action { action, .. } => {
                 self.action(action);
             }
         }

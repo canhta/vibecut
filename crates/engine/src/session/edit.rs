@@ -185,6 +185,7 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
             | Command::SetItemParamMany { items, .. }
             | Command::SetSpeed { items, .. }
             | Command::SetReverse { items, .. }
+            | Command::ReplaceMedia { items, .. }
                 if items.len() > super::wire::MAX_COLLECTION =>
             {
                 return Err(EditError::Control(
@@ -454,6 +455,9 @@ pub(crate) fn apply(
         }
         EditCommand::RemoveAssets { assets } => {
             data = media_edits::execute_remove_assets(data, assets)?;
+        }
+        EditCommand::ReplaceMedia { items, asset } => {
+            data = media_edits::execute_replace_media(data, items, asset)?;
         }
         EditCommand::AddTrack {
             name,

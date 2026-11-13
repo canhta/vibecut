@@ -214,6 +214,8 @@ pub enum UiAction {
 pub enum EngineAction {
     InsertMedia,
     Split,
+    /// Hold the selected video item's frame at the playhead as a still.
+    FreezeFrame,
     SplitLeft,
     SplitRight,
     SplitAll,
@@ -241,6 +243,7 @@ impl EngineAction {
         match self {
             Self::InsertMedia => K::InsertItem,
             Self::Split => K::SplitAt,
+            Self::FreezeFrame => K::FreezeFrame,
             Self::SplitLeft => K::TimelineSplitLeft,
             Self::SplitRight => K::TimelineSplitRight,
             Self::SplitAll => K::TimelineSplitAll,
@@ -270,10 +273,6 @@ pub enum ActionTarget {
     Ui {
         owner: &'static str,
         action: UiAction,
-    },
-    Pending {
-        owner: &'static str,
-        ticket: &'static str,
     },
 }
 
@@ -325,31 +324,12 @@ impl ActionSpec {
         }
     }
 
-    /// A row that is visible in a menu or toolbar but cannot run yet.
-    const fn pending(
-        id: &'static str,
-        label: Text,
-        category: ActionCategory,
-        owner: &'static str,
-        ticket: &'static str,
-    ) -> Self {
-        Self {
-            id,
-            label,
-            category,
-            target: ActionTarget::Pending { owner, ticket },
-            defaults: &[],
-            requires_clipboard: false,
-        }
-    }
-
     /// Parameterized widget families need an item/scene identity, so a global
     /// chord cannot invoke them. Shortcut editors list only bindable actions.
     pub const fn bindable(&self) -> bool {
         !matches!(
             self.target,
-            ActionTarget::Pending { .. }
-                | ActionTarget::Ui {
+            ActionTarget::Ui {
                     action: UiAction::RenameScene
                         | UiAction::SceneRow
                         | UiAction::SelectItem
@@ -368,28 +348,9 @@ impl ActionSpec {
         )
     }
 
-    pub const fn available(&self) -> bool {
-        !matches!(self.target, ActionTarget::Pending { .. })
-    }
-
-    pub fn pending_ticket(&self) -> Option<&'static str> {
-        match self.target {
-            ActionTarget::Pending { ticket, .. } => Some(ticket),
-            _ => None,
-        }
-    }
-
-    fn owner(self) -> Option<&'static str> {
-        match self.target {
-            ActionTarget::Ui { owner, .. } => Some(owner),
-            ActionTarget::Pending { owner, .. } => Some(owner),
-            ActionTarget::Engine(_) => None,
-        }
-    }
 }
 
-/// Every key, menu and button action in the desktop app. Actions whose payload
-/// belongs to an open ticket are registered here but marked unavailable.
+/// Every key, menu and button action in the desktop app.
 mod editor;
 mod shell;
 
@@ -456,9 +417,6 @@ pub fn keyboard_guide_table() -> String {
                 (commands, "—".to_owned())
             }
             ActionTarget::Ui { owner, .. } => ("—".to_owned(), owner.to_owned()),
-            ActionTarget::Pending { owner, .. } => {
-                ("—".to_owned(), format!("{owner} (unavailable)"))
-            }
         };
         text.push_str(&format!(
             "| `{}` — {} | {} | {} | {} | {} |\n",
@@ -582,8 +540,6 @@ impl Keymap {
                 spec.id,
                 DispatchInfo {
                     bindable: true,
-                    available: spec.available(),
-                    owner: spec.owner(),
                     requires_clipboard: spec.requires_clipboard,
                 },
             );

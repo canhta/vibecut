@@ -102,6 +102,7 @@ impl Editor {
             match action {
                 Action::Activate(id) => self.action(&id),
                 Action::Command(command) => self.track_command(*command),
+                Action::ReplaceMedia(item) => self.request_replace_media(item),
                 Action::Generate(request) => {
                     let budget = self.playback.budget().clone();
                     if let Err(error) = self.timeline.generate(&mut self.session, request, &budget)

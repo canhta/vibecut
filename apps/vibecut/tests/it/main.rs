@@ -6,6 +6,7 @@ mod desktop;
 mod effect_panels;
 mod effects;
 mod export;
+mod freeze_replace;
 mod gpu;
 mod keybindings;
 mod layout_prefs;

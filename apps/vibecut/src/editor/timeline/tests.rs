@@ -1106,7 +1106,8 @@ fn toolbar_buttons_return_their_registered_action_and_respect_availability() {
             "{id} returned {returned:?}"
         );
     }
-    // Freeze frame is visible but unavailable until its engine command lands.
+    // Freeze frame needs one selected video item under the playhead; this harness has none,
+    // so the live button is visible and disabled and a click returns nothing.
     let at = harness.state().rect("timeline.freeze").center();
     click(&mut harness, at);
     assert!(harness.state_mut().take().is_empty());

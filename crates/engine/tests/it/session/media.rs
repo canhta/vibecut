@@ -32,7 +32,12 @@ fn session() -> Session {
     session
 }
 
-fn insert_video(session: &mut Session, asset: AssetId) -> project::ItemId {
+/// Video of `asset` over `range` at output zero on the main track.
+fn insert_video_range(
+    session: &mut Session,
+    asset: AssetId,
+    range: SourceRange,
+) -> project::ItemId {
     let main = session.project().data().scene().timeline.main.id;
     let outcome = session
         .apply(Command::InsertItem {
@@ -41,7 +46,7 @@ fn insert_video(session: &mut Session, asset: AssetId) -> project::ItemId {
                 retime: Default::default(),
                 animations: Default::default(),
                 source_asset: Some(asset),
-                source_range: SourceRange::new(Tick::ZERO, Tick(1_000)).unwrap(),
+                source_range: range,
                 start: Tick::ZERO,
                 content: ItemParams::Video(project::VideoParams {
                     fades: Default::default(),
@@ -61,6 +66,33 @@ fn insert_video(session: &mut Session, asset: AssetId) -> project::ItemId {
         Some(engine::CreatedId::Item(id)) => *id,
         _ => panic!("item"),
     }
+}
+
+fn insert_video(session: &mut Session, asset: AssetId) -> project::ItemId {
+    insert_video_range(
+        session,
+        asset,
+        SourceRange::new(Tick::ZERO, Tick(1_000)).unwrap(),
+    )
+}
+
+/// A video (or audio-only) asset whose probed duration is `duration`.
+fn asset_with(id: u64, path: &str, duration: Tick, video: bool) -> SourceAsset {
+    let mut builder = testkit::source::asset(id, std::env::temp_dir().join(path))
+        .format("mp4")
+        .duration(duration)
+        .hash([id as u8; 32]);
+    if video {
+        builder = builder.stream(testkit::source::video().duration(duration).build());
+    }
+    builder
+        .stream(
+            testkit::source::audio()
+                .index(if video { 1 } else { 0 })
+                .duration(duration)
+                .build(),
+        )
+        .build()
 }
 
 #[test]
@@ -199,4 +231,142 @@ fn removing_a_referenced_asset_after_deleting_its_item_succeeds() {
             .collect::<Vec<_>>(),
         vec![AssetId(2)]
     );
+}
+
+fn item_of(session: &Session, id: project::ItemId) -> project::Item {
+    session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| track.items.iter())
+        .find(|item| item.id == id)
+        .cloned()
+        .unwrap()
+}
+
+#[test]
+fn replace_keeps_trims_timing_and_params_and_undoes_exactly() {
+    let mut session = session();
+    let window = SourceRange::new(Tick(200), Tick(1_200)).unwrap();
+    let item = insert_video_range(&mut session, AssetId(1), window);
+    let original = item_of(&session, item);
+    let before = session.project().clone();
+    let history = session.history_len();
+    session
+        .apply(Command::ReplaceMedia {
+            items: vec![item],
+            asset: AssetId(2),
+        })
+        .unwrap();
+    let replaced = item_of(&session, item);
+    assert_eq!(replaced.source_asset, Some(AssetId(2)));
+    assert_eq!(replaced.source_range, original.source_range, "trims kept");
+    assert_eq!(replaced.start, original.start);
+    assert_eq!(replaced.duration().unwrap(), original.duration().unwrap());
+    assert_eq!(replaced.retime, original.retime);
+    assert_eq!(replaced.content, original.content, "params kept");
+    assert_eq!(session.history_len(), (history.0 + 1, 0));
+    let changed = session.project().clone();
+    session.undo().unwrap();
+    assert_eq!(session.project(), &before, "undo restores the exact project");
+    session.redo().unwrap();
+    assert_eq!(session.project(), &changed, "redo restores the replacement");
+}
+
+#[test]
+fn replace_refuses_short_kind_mismatched_and_hostile_targets_atomically() {
+    let mut session = session();
+    session
+        .apply(Command::AddAsset {
+            asset: asset_with(3, "media-short.mp4", Tick(1_000), true),
+        })
+        .unwrap();
+    session
+        .apply(Command::AddAsset {
+            asset: asset_with(4, "media-audio.m4a", Tick(10_000), false),
+        })
+        .unwrap();
+    let window = SourceRange::new(Tick(200), Tick(1_200)).unwrap();
+    let item = insert_video_range(&mut session, AssetId(1), window);
+    let main = session.project().data().scene().timeline.main.id;
+    let overlay = match session
+        .apply(Command::InsertItem {
+            placement: Placement::Track { track: main },
+            item: NewItem {
+                retime: Default::default(),
+                animations: Default::default(),
+                source_asset: None,
+                source_range: SourceRange::new(Tick::ZERO, Tick(1_000)).unwrap(),
+                start: Tick(2_000),
+                content: ItemParams::Overlay(project::OverlayParams {
+                    color: project::Color([0, 0, 0, 255]),
+                }),
+            },
+        })
+        .unwrap()
+        .created
+        .first()
+    {
+        Some(engine::CreatedId::Item(id)) => *id,
+        _ => panic!("overlay"),
+    };
+    let before = session.project().clone();
+    let history = session.history_len();
+    for (items, asset, expected) in [
+        (
+            vec![item],
+            AssetId(3),
+            EditError::Invalid("replacement source too short"),
+        ),
+        (
+            vec![item],
+            AssetId(4),
+            EditError::Invalid("replacement media kind mismatch"),
+        ),
+        (vec![item], AssetId(9), EditError::NoAsset(AssetId(9))),
+        (
+            vec![overlay],
+            AssetId(2),
+            EditError::Unsupported("replace media on non-media item"),
+        ),
+        (
+            Vec::new(),
+            AssetId(2),
+            EditError::Invalid("empty item selection"),
+        ),
+        (
+            vec![item, item],
+            AssetId(2),
+            EditError::Invalid("duplicate replace item"),
+        ),
+        (
+            vec![item, project::ItemId(99)],
+            AssetId(2),
+            EditError::NoItem(project::ItemId(99)),
+        ),
+    ] {
+        let error = session
+            .apply(Command::ReplaceMedia { items, asset })
+            .unwrap_err();
+        assert_eq!(format!("{error:?}"), format!("{expected:?}"));
+        assert_eq!(session.project(), &before, "refusal changes nothing");
+        assert_eq!(session.history_len(), history);
+    }
+    session
+        .apply(Command::SetTrackLocked {
+            track: main,
+            locked: true,
+        })
+        .unwrap();
+    let locked = session.project().clone();
+    let error = session
+        .apply(Command::ReplaceMedia {
+            items: vec![item],
+            asset: AssetId(2),
+        })
+        .unwrap_err();
+    assert!(matches!(error, EditError::Locked(track) if track == main));
+    assert_eq!(session.project(), &locked);
 }

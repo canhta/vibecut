@@ -8,8 +8,6 @@ use std::collections::BTreeMap;
 #[derive(Clone, Copy, Debug)]
 pub struct DispatchInfo {
     pub bindable: bool,
-    pub available: bool,
-    pub owner: Option<&'static str>,
     pub requires_clipboard: bool,
 }
 
@@ -98,13 +96,6 @@ impl Keymap {
                 } if *pressed_key == key && chord.matches(platform, *modifiers)
             )
         });
-        if spec.available {
-            Dispatch::Action { action, chord }
-        } else {
-            Dispatch::Unavailable {
-                action,
-                owner: spec.owner.unwrap_or("another ticket"),
-            }
-        }
+        Dispatch::Action { action, chord }
     }
 }

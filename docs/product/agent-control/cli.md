@@ -32,6 +32,7 @@ Build with `cargo build -p vibecut-cli` through the [build wrapper](../../../xta
 | `vibecut-cli transcript <project> [--item <id> --cue <id> --words <first>-<last>]` | List cue/word output times, or delete a measured word range as one undoable edit |
 | `vibecut-cli clips <in>` | Suggest ranked shorts from a long video and optionally export them |
 | `vibecut-cli reframe <project> --item <id> --target 9:16\|1:1\|16:9 [--replace-manual] [--dry-run]` | Generate and apply the auto-reframe crop, printing per-shot reasons |
+| `vibecut-cli freeze <project> --item <id> --at SECONDS --dir ABSOLUTE_DIR [--duration SECONDS]` | Hold the frame at the playhead as a still (default 3 s) that splits the item, as one undoable edit |
 | `vibecut-cli chapters <project> --language <tag> [--max-chapters N] [--export <dir>]` | Generate chapters, title and description, and optionally export the sidecars |
 | `vibecut-cli fillers <project> --language <tag> --llm [--include-markers]` | Classify fillers through the lent text provider and list candidates |
 | `vibecut-cli providers` | List transcription, translation, clip, chapter and filler providers offline |

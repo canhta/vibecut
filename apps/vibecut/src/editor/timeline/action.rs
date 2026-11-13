@@ -65,6 +65,8 @@ pub(in crate::editor) enum Action {
     /// Run one typed engine command on the current selection; the frame prunes
     /// the selection and restarts the preview when the project changed.
     Command(Box<engine::Command>),
+    /// Open the native media picker to replace one clip's source; the window owns the dialog.
+    ReplaceMedia(ItemId),
     /// Submit one registered media generation job for a pending clip visual.
     Generate(VisualRequest),
     /// Rename a scene; the frame reports a refusal back through

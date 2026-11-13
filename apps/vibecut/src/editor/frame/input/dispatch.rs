@@ -444,7 +444,6 @@ impl Editor {
                     }
                 })
             }
-            ActionTarget::Pending { .. } => false,
             ActionTarget::Engine(route) => {
                 route
                     .command(self.preferences.ripple)
@@ -472,6 +471,7 @@ impl Editor {
                         EngineAction::InsertMedia => {
                             !self.importing() && self.assets.has_media_selection()
                         }
+                        EngineAction::FreezeFrame => self.freeze_target().is_some(),
                         _ => true,
                     }
             }
@@ -504,8 +504,28 @@ impl Editor {
         }
     }
 
+    /// The one selected video item whose visible span strictly contains the playhead.
+    pub(in crate::editor) fn freeze_target(&self) -> Option<ItemId> {
+        let item = crate::editor::context::single(self.session.selection())?;
+        let at = self.playback.position().ok()?;
+        let host = self
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| track.items.iter())
+            .find(|candidate| candidate.id == item)?;
+        (matches!(host.content, project::ItemParams::Video(_))
+            && at > host.start
+            && host.end().ok()? > at)
+            .then_some(item)
+    }
+
     pub(in crate::editor) fn engine_commands(&self, route: EngineAction) -> Result<Vec<Command>> {
         Ok(match route {
+            EngineAction::FreezeFrame => Vec::new(),
             EngineAction::Split => {
                 let at = self.playback.position()?;
                 self.split_targets()
@@ -619,6 +639,9 @@ impl Editor {
             self.insert_selected_assets();
             return Ok(());
         }
+        if route == EngineAction::FreezeFrame {
+            return self.freeze_selected_frame();
+        }
         let commands = self.engine_commands(route)?;
         if commands.is_empty() {
             return Ok(());
@@ -658,7 +681,7 @@ impl Editor {
             }
             EngineAction::DeleteScenes => self.clear_scene_selection(),
             EngineAction::AddTrack => self.prune_selection(),
-            EngineAction::InsertMedia => {}
+            EngineAction::InsertMedia | EngineAction::FreezeFrame => {}
             EngineAction::SplitRight
             | EngineAction::SetHidden
             | EngineAction::SetMuted

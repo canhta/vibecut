@@ -813,6 +813,29 @@ impl Session {
             Command::Preview { frames } => {
                 Ok(crate::control_preview::preview(self, frames, runner)?)
             }
+            Command::FreezeFrame {
+                item,
+                at,
+                duration,
+                dir,
+            } => {
+                if self.transaction_active() {
+                    return Err(EngineError::Session(
+                        crate::session::SessionError::TransactionActive,
+                    ));
+                }
+                let protected = self.protected_paths().to_vec();
+                let outcome = crate::artifacts::freeze::freeze(
+                    self,
+                    item,
+                    at,
+                    duration,
+                    &dir,
+                    &protected,
+                    runner.memory_budget(),
+                )?;
+                Ok(ControlResult::Edit { outcome })
+            }
             Command::Snapshot { time, path } => {
                 if self.transaction_active() {
                     return Err(EngineError::Session(
