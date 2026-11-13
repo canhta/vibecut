@@ -268,14 +268,14 @@ pub(super) fn sigma_passes(sigma: f32, width: u32, height: u32) -> Result<Vec<Ef
     Ok((0..iterations)
         .flat_map(|_| [true, false])
         .map(|horizontal| EffectPass::Convolve {
-            entry_point: "gaussian",
+            entry_point: GAUSSIAN,
             horizontal,
             weights: weights.clone(),
         })
         .collect())
 }
 /// Linear-light mid grey that contrast pivots around.
-pub const GRADE_PIVOT: f32 = 0.18;
+const GRADE_PIVOT: f32 = 0.18;
 /// BT.709 luma coefficients, also the key's luma for the shadow stage.
 const KEY_LUMA: [f32; 3] = [0.2126, 0.7152, 0.0722];
 /// BT.709 chroma scaling: 2*(1-Kb) and 2*(1-Kr) from the same coefficients.
@@ -284,13 +284,13 @@ const KEY_CR_SCALE: f32 = 1.5748;
 /// Chroma-distance tolerance at intensity 0 and its span at intensity 100: the
 /// implementation reference maps its 0..100 tolerance to `0.08 + 0.5*t`.
 /// Intensity 0 emits no pass, matching the observed reference.
-pub const KEY_TOLERANCE_MIN: f32 = 0.08;
-pub const KEY_TOLERANCE_SPAN: f32 = 0.5;
+const KEY_TOLERANCE_MIN: f32 = 0.08;
+const KEY_TOLERANCE_SPAN: f32 = 0.5;
 /// Matte gain spans 1..3 across intensity, like the reference's
 /// `1 + 2*transparency`.
-pub const KEY_GAIN: f32 = 2.0;
+const KEY_GAIN: f32 = 2.0;
 /// The reference's shadow stage doubles the luma gap before adding it to the matte.
-pub const KEY_SHADOW_GAIN: f32 = 2.0;
+const KEY_SHADOW_GAIN: f32 = 2.0;
 /// Grade pass values: `[gain, contrast exponent, saturation, hue radians]`.
 /// Controls are the persisted -50..=50 sliders: brightness is +-1 stop of
 /// linear gain, contrast a power around [`GRADE_PIVOT`] (0.5..1.5), saturation
@@ -327,7 +327,7 @@ pub fn grade_passes(
 }
 /// One premultiplied linear pixel through a grade pass; the reference the
 /// GPU shader mirrors. Colour stays within `0..=alpha`.
-pub fn grade_pixel(pixel: [f32; 4], weights: &[f32]) -> [f32; 4] {
+fn grade_pixel(pixel: [f32; 4], weights: &[f32]) -> [f32; 4] {
     let [gain, exponent, sat, hue] = [0, 1, 2, 3].map(|i| weights.get(i).copied().unwrap_or(0.0));
     let alpha = pixel[3];
     if alpha <= 0.0 {
@@ -413,14 +413,14 @@ pub fn gain_passes(r: f64, g: f64, b: f64) -> Result<Vec<EffectPass>> {
     )])
 }
 /// One pixel-local lift stage: `straight + L * (1 - straight)`, clamped.
-pub fn lift_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+fn lift_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     let (c, alpha) = straight(pixel);
     let lift = [uniform(values, 0), uniform(values, 1), uniform(values, 2)];
     let mapped = zip3(c, lift, |c, l| (c + l * (1.0 - c)).clamp(0.0, 1.0));
     premultiply(mapped, alpha)
 }
 /// One pixel-local gamma stage: `straight^(1/gamma)`, clamped.
-pub fn tone_gamma_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+fn tone_gamma_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     let (c, alpha) = straight(pixel);
     let gamma = [uniform(values, 0), uniform(values, 1), uniform(values, 2)];
     let mapped = zip3(c, gamma, |c, gamma| {
@@ -429,19 +429,19 @@ pub fn tone_gamma_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     premultiply(mapped, alpha)
 }
 /// One pixel-local gain stage: `straight * gain`, clamped.
-pub fn gain_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+fn gain_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     let (c, alpha) = straight(pixel);
     let gain = [uniform(values, 0), uniform(values, 1), uniform(values, 2)];
     let mapped = zip3(c, gain, |c, g| (c * g).clamp(0.0, 1.0));
     premultiply(mapped, alpha)
 }
 /// Fade mixes linear light toward this mid grey; negative values mix away.
-pub const FADE_PIVOT: f32 = 0.18;
+const FADE_PIVOT: f32 = 0.18;
 /// One shared basic stage after the primary grade controls:
 /// `[temperature, highlight, shadow, shine, fade]`, each normalized to -1..=1.
 /// Temperature is a red/blue gain pair, highlight and shadow add to bright and
 /// dark linear values, shine scales highlights and fade mixes toward mid grey.
-pub fn tone_passes(
+fn tone_passes(
     temperature: f64,
     highlight: f64,
     shadow: f64,
@@ -469,7 +469,7 @@ pub fn tone_passes(
     )])
 }
 /// One pixel-local tone stage; values are normalized -1..=1.
-pub fn tone_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+fn tone_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     let temperature = uniform(values, 0);
     let highlight = uniform(values, 1);
     let shadow = uniform(values, 2);
@@ -495,7 +495,7 @@ pub fn tone_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
 }
 /// The flat HSL band layout: eight bands of `[hue, saturation, lightness]`,
 /// each normalized to -1..=1.
-pub const HSL_BAND_UNIFORMS: usize = project::HSL_BANDS.len() * project::HSL_CONTROLS.len();
+const HSL_BAND_UNIFORMS: usize = project::HSL_BANDS.len() * project::HSL_CONTROLS.len();
 /// HSL band centres in turns, in the catalogue's band order.
 const HSL_CENTERS: [f32; 8] = [
     0.0,
@@ -508,7 +508,7 @@ const HSL_CENTERS: [f32; 8] = [
     330.0 / 360.0,
 ];
 /// One shared pixel stage applying per-band hue, saturation and lightness.
-pub fn hsl_bands_passes(values: &[f64; HSL_BAND_UNIFORMS]) -> Result<Vec<EffectPass>> {
+fn hsl_bands_passes(values: &[f64; HSL_BAND_UNIFORMS]) -> Result<Vec<EffectPass>> {
     let range = project::GRADE_MIN..=project::GRADE_MAX;
     if values.iter().any(|v| !v.is_finite() || !range.contains(v)) {
         return Err(Error::Invalid("HSL band control"));
@@ -526,7 +526,7 @@ pub fn hsl_bands_passes(values: &[f64; HSL_BAND_UNIFORMS]) -> Result<Vec<EffectP
 }
 /// One pixel-local HSL band stage. Encoded sRGB bands overlap with a
 /// triangular 45-degree kernel and normalize, so no hue falls between bands.
-pub fn hsl_bands_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+fn hsl_bands_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     if values.len() != HSL_BAND_UNIFORMS {
         return pixel;
     }
@@ -618,18 +618,18 @@ fn curve_channel_pixel(pixel: [f32; 4], values: &[f32], channel: usize) -> [f32;
     }
     premultiply(mapped, alpha)
 }
-pub fn curve_red_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+fn curve_red_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     curve_channel_pixel(pixel, values, 0)
 }
-pub fn curve_green_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+fn curve_green_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     curve_channel_pixel(pixel, values, 1)
 }
-pub fn curve_blue_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+fn curve_blue_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     curve_channel_pixel(pixel, values, 2)
 }
 /// One pixel-local luma stage: preserves chroma by scaling straight RGB by
 /// `C(Y)/Y`; black stays black because every curve fixes `(0,0)`.
-pub fn curve_luma_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+fn curve_luma_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     let (c, alpha) = straight(pixel);
     let y = luma(c).clamp(0.0, 1.0);
     let mapped = curve_map(values, y);
@@ -812,208 +812,55 @@ fn curve_uniforms_valid(values: &[f32]) -> bool {
     }
     previous == [1.0, 1.0]
 }
-/// A pixel-local op: its shader entry, flat uniform count, uniform check and
-/// the CPU reference the shader mirrors.
-struct PixelOp {
+/// Entry name of the shared separable gaussian, CPU and shader.
+const GAUSSIAN: &str = "gaussian";
+/// Entry name of the shader-only blend composite.
+pub const BLEND_ENTRY: &str = "blend";
+/// The one image, besides the current one, that a shader entry binds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReadImage {
+    /// The image the effect instance started with.
+    Instance,
+    /// The backdrop below the item.
+    Below,
+}
+/// Whether `effects.wgsl` has a compute entry named like the op, and what it reads.
+#[derive(Clone, Copy)]
+enum Wgsl {
+    /// CPU reference only; the run splitter leaves the pass to the CPU.
+    Absent,
+    /// A shader entry reading the current image alone.
+    Entry,
+    /// A shader entry that also reads one more image.
+    Reads(ReadImage),
+}
+/// How the CPU runs an op. The shader side is [`Wgsl`].
+#[derive(Clone, Copy)]
+enum Kernel {
+    /// Normalised separable convolution; the executor owns the loop.
+    Convolve,
+    /// Shader-only composite of an item over its backdrop; no pass reaches the CPU.
+    Composite,
+    Pixel(PixelOp),
+    Sample(SampleOp),
+}
+/// The one description of a pass kind: its id, which is also its WGSL entry name,
+/// how the CPU runs it and what a device adapter must provide. Pass admission, the
+/// CPU executor and the GPU adapter's pipeline list and image bindings all read
+/// this table; a new kind is one entry.
+struct EffectOp {
     entry_point: &'static str,
+    wgsl: Wgsl,
+    kernel: Kernel,
+}
+/// A pixel-local op: flat uniform count, uniform check and the CPU reference the
+/// shader mirrors.
+#[derive(Clone, Copy)]
+struct PixelOp {
     len: usize,
     valid: fn(&[f32]) -> bool,
     apply: fn([f32; 4], &[f32]) -> [f32; 4],
 }
-static PIXEL_OPS: [PixelOp; 26] = [
-    PixelOp {
-        entry_point: "grade",
-        len: 4,
-        valid: |v| v.get(1).is_some_and(|exponent| *exponent > 0.0),
-        apply: grade_pixel,
-    },
-    PixelOp {
-        entry_point: "lift",
-        len: 3,
-        valid: lift_uniforms,
-        apply: lift_pixel,
-    },
-    PixelOp {
-        entry_point: "tone_gamma",
-        len: 3,
-        valid: gamma_uniforms,
-        apply: tone_gamma_pixel,
-    },
-    PixelOp {
-        entry_point: "gain",
-        len: 3,
-        valid: gain_uniforms,
-        apply: gain_pixel,
-    },
-    PixelOp {
-        entry_point: "tone",
-        len: 5,
-        valid: tone_uniforms,
-        apply: tone_pixel,
-    },
-    PixelOp {
-        entry_point: "hsl_bands",
-        len: HSL_BAND_UNIFORMS,
-        valid: hsl_band_uniforms,
-        apply: hsl_bands_pixel,
-    },
-    PixelOp {
-        entry_point: "curve_red",
-        len: CURVE_UNIFORMS,
-        valid: curve_uniforms_valid,
-        apply: curve_red_pixel,
-    },
-    PixelOp {
-        entry_point: "curve_green",
-        len: CURVE_UNIFORMS,
-        valid: curve_uniforms_valid,
-        apply: curve_green_pixel,
-    },
-    PixelOp {
-        entry_point: "curve_blue",
-        len: CURVE_UNIFORMS,
-        valid: curve_uniforms_valid,
-        apply: curve_blue_pixel,
-    },
-    PixelOp {
-        entry_point: "curve_luma",
-        len: CURVE_UNIFORMS,
-        valid: curve_uniforms_valid,
-        apply: curve_luma_pixel,
-    },
-    PixelOp {
-        entry_point: "chroma_key",
-        len: 5,
-        valid: |v| v.iter().all(|c| (0.0..=1.0).contains(c)),
-        apply: chroma_key_pixel,
-    },
-    PixelOp {
-        entry_point: "highlights",
-        len: 2,
-        valid: |v| {
-            v.first()
-                .is_some_and(|threshold| (0.0..=1.0).contains(threshold))
-                && v.get(1).is_some_and(|soft| *soft > 0.0 && *soft <= 1.0)
-        },
-        apply: whole_image::highlights,
-    },
-    PixelOp {
-        entry_point: "alpha_plane",
-        len: 0,
-        valid: |_| true,
-        apply: whole_image::alpha_plane,
-    },
-    PixelOp {
-        entry_point: "color_key",
-        len: 6,
-        valid: whole_image::valid_color_key,
-        apply: whole_image::color_key,
-    },
-    PixelOp {
-        entry_point: "luma_key",
-        len: 3,
-        valid: whole_image::valid_luma_key,
-        apply: whole_image::luma_key,
-    },
-    PixelOp {
-        entry_point: "black_white",
-        len: 0,
-        valid: |_| true,
-        apply: black_white_pixel,
-    },
-    PixelOp {
-        entry_point: "channel_mix",
-        len: 12,
-        valid: |v| v.iter().all(|g| (-2.0..=2.0).contains(g)),
-        apply: channel_mix_pixel,
-    },
-    PixelOp {
-        entry_point: "color_pass",
-        len: 5,
-        valid: |v| {
-            v.get(..3)
-                .is_some_and(|key| key.iter().all(|c| (0.0..=1.0).contains(c)))
-                && v.get(3).is_some_and(|sim| (0.0..=1.2).contains(sim))
-                && v.get(4)
-                    .is_some_and(|reverse| (0.0..=1.0).contains(reverse))
-        },
-        apply: color_pass_pixel,
-    },
-    PixelOp {
-        entry_point: "color_replace",
-        len: 8,
-        valid: |v| {
-            v.first().is_some_and(|sim| (0.0..=1.2).contains(sim))
-                && v.get(1).is_some_and(|solid| (0.0..=1.0).contains(solid))
-                && v.get(2..8)
-                    .is_some_and(|c| c.iter().all(|v| (0.0..=1.0).contains(v)))
-        },
-        apply: color_replace_pixel,
-    },
-    PixelOp {
-        entry_point: "extract",
-        len: 4,
-        valid: |v| {
-            v.first().is_some_and(|lo| (0.0..=1.0).contains(lo))
-                && v.get(1).is_some_and(|hi| (0.0..=1.0).contains(hi))
-                && v.get(2).is_some_and(|soft| (0.0..=0.2001).contains(soft))
-                && v.get(3).is_some_and(|invert| (0.0..=1.0).contains(invert))
-        },
-        apply: extract_pixel,
-    },
-    PixelOp {
-        entry_point: "gamma",
-        len: 1,
-        valid: |v| v.first().is_some_and(|g| *g > 0.0 && *g <= 4.0),
-        apply: gamma_pixel,
-    },
-    PixelOp {
-        entry_point: "invert",
-        len: 2,
-        valid: |v| {
-            v.first()
-                .is_some_and(|channel| (0.0..=4.0).contains(channel))
-                && v.get(1).is_some_and(|blend| (0.0..=1.0).contains(blend))
-        },
-        apply: invert_pixel,
-    },
-    PixelOp {
-        entry_point: "levels",
-        len: 5,
-        valid: |v| {
-            v.get(0..4)
-                .is_some_and(|bounds| bounds.iter().all(|b| (0.0..=1.0).contains(b)))
-                && v.get(4).is_some_and(|gamma| *gamma > 0.0 && *gamma <= 12.0)
-        },
-        apply: levels_pixel,
-    },
-    PixelOp {
-        entry_point: "posterize",
-        len: 1,
-        valid: |v| v.first().is_some_and(|n| *n >= 1.0 && n.is_finite()),
-        apply: posterize_pixel,
-    },
-    PixelOp {
-        entry_point: "strobe",
-        len: 4,
-        valid: |v| {
-            v.get(0..3)
-                .is_some_and(|c| c.iter().all(|v| (0.0..=1.0).contains(v)))
-                && v.get(3).is_some_and(|blend| (0.0..=1.0).contains(blend))
-        },
-        apply: strobe_pixel,
-    },
-    PixelOp {
-        entry_point: "tint",
-        len: 7,
-        valid: |v| {
-            v.get(0..6)
-                .is_some_and(|c| c.iter().all(|v| (0.0..=1.0).contains(v)))
-                && v.get(6).is_some_and(|amount| (0.0..=1.0).contains(amount))
-        },
-        apply: tint_pixel,
-    },
-];
 
 /// Straight linear colour and alpha of a premultiplied working pixel; transparent
 /// black for a fully transparent one so every op keeps its contract.
@@ -1114,13 +961,13 @@ fn hsl_color(h: f32, s: f32, l: f32) -> [f32; 3] {
     [channel(h + 1.0 / 3.0), channel(h), channel(h - 1.0 / 3.0)]
 }
 /// Rec. 709 luma of the straight linear colour replaces every channel.
-pub fn black_white_pixel(pixel: [f32; 4], _: &[f32]) -> [f32; 4] {
+fn black_white_pixel(pixel: [f32; 4], _: &[f32]) -> [f32; 4] {
     let (c, alpha) = straight(pixel);
     premultiply([luma(c); 3], alpha)
 }
 /// Encoded-space channel inversion mixed back by `blend`; the Alpha channel
 /// inverts coverage instead.
-pub fn invert_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+fn invert_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     let channel = uniform(values, 0).round().clamp(0.0, 4.0) as u32;
     let blend = uniform(values, 1).clamp(0.0, 1.0);
     if channel == 4 {
@@ -1153,14 +1000,14 @@ pub fn invert_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     premultiply(decoded_color(mixed), alpha)
 }
 /// Encoded-space quantisation into `n + 1` levels.
-pub fn posterize_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+fn posterize_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     let n = uniform(values, 0).max(1.0);
     let (c, alpha) = straight(pixel);
     let quantized = encoded_color(c).map(|v| (v * n).round() / n);
     premultiply(decoded_color(quantized), alpha)
 }
 /// Encoded-space input/output remap with a gamma power.
-pub fn levels_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+fn levels_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     let [in_black, in_white, out_black, out_white, gamma] =
         [0, 1, 2, 3, 4].map(|i| uniform(values, i));
     let span = (in_white - in_black).max(1e-3);
@@ -1171,14 +1018,14 @@ pub fn levels_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     premultiply(decoded_color(mapped), alpha)
 }
 /// Encoded-space power; a gain of 1 is the identity.
-pub fn gamma_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+fn gamma_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     let gamma = uniform(values, 0).max(1e-3);
     let (c, alpha) = straight(pixel);
     let mapped = encoded_color(c).map(|v| v.max(0.0).powf(gamma));
     premultiply(decoded_color(mapped), alpha)
 }
 /// Encoded luma ramps between the two mapped colours, then mixes by amount.
-pub fn tint_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+fn tint_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     let black = uniform_color(values, 0);
     let white = uniform_color(values, 3);
     let amount = uniform(values, 6).clamp(0.0, 1.0);
@@ -1190,7 +1037,7 @@ pub fn tint_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     premultiply(decoded_color(mixed), alpha)
 }
 /// Keeps colours within `similarity` of the key and greys the rest.
-pub fn color_pass_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+fn color_pass_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     let key = uniform_color(values, 0);
     let similarity = uniform(values, 3).clamp(0.0, 1.2);
     let reverse = uniform(values, 4) > 0.5;
@@ -1203,7 +1050,7 @@ pub fn color_pass_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
 }
 /// Replaces colours within `similarity` of the target, keeping the pixel's
 /// lightness unless `solid` asks for the flat replace colour.
-pub fn color_replace_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+fn color_replace_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     let similarity = uniform(values, 0).clamp(0.0, 1.2);
     let solid = uniform(values, 1) > 0.5;
     let target = uniform_color(values, 2);
@@ -1224,7 +1071,7 @@ pub fn color_replace_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     premultiply(decoded_color(mixed), alpha)
 }
 /// Encoded 3x4 channel matrix; the last value of each row is a constant.
-pub fn channel_mix_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+fn channel_mix_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     let (c, alpha) = straight(pixel);
     let e = encoded_color(c);
     let [er, eg, eb] = e;
@@ -1239,7 +1086,7 @@ pub fn channel_mix_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     premultiply(decoded_color(mixed), alpha)
 }
 /// Black-and-white threshold on encoded luma with an optional feathered band.
-pub fn extract_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+fn extract_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     let low = uniform(values, 0);
     let high = uniform(values, 1);
     let softness = uniform(values, 2).max(0.0);
@@ -1256,15 +1103,53 @@ pub fn extract_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     premultiply([if invert { 1.0 - inside } else { inside }; 3], alpha)
 }
 /// Mixes the linear colour toward the strobe colour by `blend`.
-pub fn strobe_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
+fn strobe_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
     let strobe = decoded_color(uniform_color(values, 0));
     let blend = uniform(values, 3).clamp(0.0, 1.0);
     let (c, alpha) = straight(pixel);
     let mixed = zip3(strobe, c, |s, c| s + (c - s) * blend);
     premultiply(mixed, alpha)
 }
-fn pixel_op(entry_point: &str) -> Option<&'static PixelOp> {
-    PIXEL_OPS.iter().find(|op| op.entry_point == entry_point)
+fn op(entry_point: &str) -> Option<&'static EffectOp> {
+    OPS.iter().find(|op| op.entry_point == entry_point)
+}
+fn pixel_op(entry_point: &str) -> Option<PixelOp> {
+    match op(entry_point)?.kernel {
+        Kernel::Pixel(op) => Some(op),
+        _ => None,
+    }
+}
+fn sample_op(entry_point: &str) -> Option<SampleOp> {
+    match op(entry_point)?.kernel {
+        Kernel::Sample(op) => Some(op),
+        _ => None,
+    }
+}
+/// A shader entry a device adapter builds a pipeline for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ShaderEntry {
+    pub name: &'static str,
+    /// The image it binds besides the current one.
+    pub reads: Option<ReadImage>,
+}
+fn shader_entry_of(op: &EffectOp) -> Option<ShaderEntry> {
+    let reads = match op.wgsl {
+        Wgsl::Absent => return None,
+        Wgsl::Entry => None,
+        Wgsl::Reads(image) => Some(image),
+    };
+    Some(ShaderEntry {
+        name: op.entry_point,
+        reads,
+    })
+}
+/// Every compute entry `effects.wgsl` must define, in table order.
+pub fn shader_entries() -> impl Iterator<Item = ShaderEntry> {
+    OPS.iter().filter_map(shader_entry_of)
+}
+/// The shader entry for `name`, if the table gives it one.
+pub fn shader_entry(name: &str) -> Option<ShaderEntry> {
+    shader_entry_of(op(name)?)
 }
 /// The two images a sample op reads: `current`, the output of the previous pass,
 /// and `input`, the image the effect instance started with.
@@ -1302,216 +1187,586 @@ fn texel(image: &Image, x: u32, y: u32) -> [f32; 4] {
         .copied()
         .unwrap_or([0.0; 4])
 }
-/// A sample op: entry name, flat uniform count, uniform check and the CPU reference
-/// a shader entry mirrors (one output pixel from its coordinate, the uniforms and
+/// A sample op: flat uniform count, uniform check and the CPU reference a shader
+/// entry mirrors (one output pixel from its coordinate, the uniforms and
 /// [`SampleInputs`]).
+#[derive(Clone, Copy)]
 struct SampleOp {
-    entry_point: &'static str,
     len: usize,
     valid: fn(&[f32], u32, u32) -> bool,
     apply: fn(&SampleInputs<'_>, u32, u32, &[f32]) -> [f32; 4],
 }
-static SAMPLE_OPS: [SampleOp; 30] = [
-    SampleOp {
-        entry_point: "pixelate",
-        len: 3,
-        valid: |v, _, _| {
-            v.first()
-                .is_some_and(|block| block.is_finite() && *block >= 1.0)
-                && v.get(1)
-                    .is_some_and(|block| block.is_finite() && *block >= 1.0)
-                && v.get(2)
-                    .is_some_and(|softness| (0.0..=1.0).contains(softness))
-        },
-        apply: pixelate_sample,
+static OPS: &[EffectOp] = &[
+    EffectOp {
+        entry_point: GAUSSIAN,
+        wgsl: Wgsl::Entry,
+        kernel: Kernel::Convolve,
     },
-    SampleOp {
-        entry_point: "detail_boost",
-        len: 2,
-        valid: |v, _, _| {
-            v.first().is_some_and(|gain| (0.0..=40.0).contains(gain))
-                && v.get(1)
+    EffectOp {
+        entry_point: BLEND_ENTRY,
+        wgsl: Wgsl::Reads(ReadImage::Below),
+        kernel: Kernel::Composite,
+    },
+    EffectOp {
+        entry_point: "grade",
+        wgsl: Wgsl::Entry,
+        kernel: Kernel::Pixel(PixelOp {
+            len: 4,
+            valid: |v| v.get(1).is_some_and(|exponent| *exponent > 0.0),
+            apply: grade_pixel,
+        }),
+    },
+    EffectOp {
+        entry_point: "lift",
+        wgsl: Wgsl::Entry,
+        kernel: Kernel::Pixel(PixelOp {
+            len: 3,
+            valid: lift_uniforms,
+            apply: lift_pixel,
+        }),
+    },
+    EffectOp {
+        entry_point: "tone_gamma",
+        wgsl: Wgsl::Entry,
+        kernel: Kernel::Pixel(PixelOp {
+            len: 3,
+            valid: gamma_uniforms,
+            apply: tone_gamma_pixel,
+        }),
+    },
+    EffectOp {
+        entry_point: "gain",
+        wgsl: Wgsl::Entry,
+        kernel: Kernel::Pixel(PixelOp {
+            len: 3,
+            valid: gain_uniforms,
+            apply: gain_pixel,
+        }),
+    },
+    EffectOp {
+        entry_point: "tone",
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Pixel(PixelOp {
+            len: 5,
+            valid: tone_uniforms,
+            apply: tone_pixel,
+        }),
+    },
+    EffectOp {
+        entry_point: "hsl_bands",
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Pixel(PixelOp {
+            len: HSL_BAND_UNIFORMS,
+            valid: hsl_band_uniforms,
+            apply: hsl_bands_pixel,
+        }),
+    },
+    EffectOp {
+        entry_point: "curve_red",
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Pixel(PixelOp {
+            len: CURVE_UNIFORMS,
+            valid: curve_uniforms_valid,
+            apply: curve_red_pixel,
+        }),
+    },
+    EffectOp {
+        entry_point: "curve_green",
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Pixel(PixelOp {
+            len: CURVE_UNIFORMS,
+            valid: curve_uniforms_valid,
+            apply: curve_green_pixel,
+        }),
+    },
+    EffectOp {
+        entry_point: "curve_blue",
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Pixel(PixelOp {
+            len: CURVE_UNIFORMS,
+            valid: curve_uniforms_valid,
+            apply: curve_blue_pixel,
+        }),
+    },
+    EffectOp {
+        entry_point: "curve_luma",
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Pixel(PixelOp {
+            len: CURVE_UNIFORMS,
+            valid: curve_uniforms_valid,
+            apply: curve_luma_pixel,
+        }),
+    },
+    EffectOp {
+        entry_point: "chroma_key",
+        wgsl: Wgsl::Entry,
+        kernel: Kernel::Pixel(PixelOp {
+            len: 5,
+            valid: |v| v.iter().all(|c| (0.0..=1.0).contains(c)),
+            apply: chroma_key_pixel,
+        }),
+    },
+    EffectOp {
+        entry_point: "highlights",
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Pixel(PixelOp {
+            len: 2,
+            valid: |v| {
+                v.first()
                     .is_some_and(|threshold| (0.0..=1.0).contains(threshold))
-        },
-        apply: detail_boost_sample,
+                    && v.get(1).is_some_and(|soft| *soft > 0.0 && *soft <= 1.0)
+            },
+            apply: whole_image::highlights,
+        }),
     },
-    SampleOp {
+    EffectOp {
+        entry_point: "alpha_plane",
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Pixel(PixelOp {
+            len: 0,
+            valid: |_| true,
+            apply: whole_image::alpha_plane,
+        }),
+    },
+    EffectOp {
+        entry_point: "color_key",
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Pixel(PixelOp {
+            len: 6,
+            valid: whole_image::valid_color_key,
+            apply: whole_image::color_key,
+        }),
+    },
+    EffectOp {
+        entry_point: "luma_key",
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Pixel(PixelOp {
+            len: 3,
+            valid: whole_image::valid_luma_key,
+            apply: whole_image::luma_key,
+        }),
+    },
+    EffectOp {
+        entry_point: "black_white",
+        wgsl: Wgsl::Entry,
+        kernel: Kernel::Pixel(PixelOp {
+            len: 0,
+            valid: |_| true,
+            apply: black_white_pixel,
+        }),
+    },
+    EffectOp {
+        entry_point: "channel_mix",
+        wgsl: Wgsl::Entry,
+        kernel: Kernel::Pixel(PixelOp {
+            len: 12,
+            valid: |v| v.iter().all(|g| (-2.0..=2.0).contains(g)),
+            apply: channel_mix_pixel,
+        }),
+    },
+    EffectOp {
+        entry_point: "color_pass",
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Pixel(PixelOp {
+            len: 5,
+            valid: |v| {
+                v.get(..3)
+                    .is_some_and(|key| key.iter().all(|c| (0.0..=1.0).contains(c)))
+                    && v.get(3).is_some_and(|sim| (0.0..=1.2).contains(sim))
+                    && v.get(4)
+                        .is_some_and(|reverse| (0.0..=1.0).contains(reverse))
+            },
+            apply: color_pass_pixel,
+        }),
+    },
+    EffectOp {
+        entry_point: "color_replace",
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Pixel(PixelOp {
+            len: 8,
+            valid: |v| {
+                v.first().is_some_and(|sim| (0.0..=1.2).contains(sim))
+                    && v.get(1).is_some_and(|solid| (0.0..=1.0).contains(solid))
+                    && v.get(2..8)
+                        .is_some_and(|c| c.iter().all(|v| (0.0..=1.0).contains(v)))
+            },
+            apply: color_replace_pixel,
+        }),
+    },
+    EffectOp {
+        entry_point: "extract",
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Pixel(PixelOp {
+            len: 4,
+            valid: |v| {
+                v.first().is_some_and(|lo| (0.0..=1.0).contains(lo))
+                    && v.get(1).is_some_and(|hi| (0.0..=1.0).contains(hi))
+                    && v.get(2).is_some_and(|soft| (0.0..=0.2001).contains(soft))
+                    && v.get(3).is_some_and(|invert| (0.0..=1.0).contains(invert))
+            },
+            apply: extract_pixel,
+        }),
+    },
+    EffectOp {
+        entry_point: "gamma",
+        wgsl: Wgsl::Entry,
+        kernel: Kernel::Pixel(PixelOp {
+            len: 1,
+            valid: |v| v.first().is_some_and(|g| *g > 0.0 && *g <= 4.0),
+            apply: gamma_pixel,
+        }),
+    },
+    EffectOp {
+        entry_point: "invert",
+        wgsl: Wgsl::Entry,
+        kernel: Kernel::Pixel(PixelOp {
+            len: 2,
+            valid: |v| {
+                v.first()
+                    .is_some_and(|channel| (0.0..=4.0).contains(channel))
+                    && v.get(1).is_some_and(|blend| (0.0..=1.0).contains(blend))
+            },
+            apply: invert_pixel,
+        }),
+    },
+    EffectOp {
+        entry_point: "levels",
+        wgsl: Wgsl::Entry,
+        kernel: Kernel::Pixel(PixelOp {
+            len: 5,
+            valid: |v| {
+                v.get(0..4)
+                    .is_some_and(|bounds| bounds.iter().all(|b| (0.0..=1.0).contains(b)))
+                    && v.get(4).is_some_and(|gamma| *gamma > 0.0 && *gamma <= 12.0)
+            },
+            apply: levels_pixel,
+        }),
+    },
+    EffectOp {
+        entry_point: "posterize",
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Pixel(PixelOp {
+            len: 1,
+            valid: |v| v.first().is_some_and(|n| *n >= 1.0 && n.is_finite()),
+            apply: posterize_pixel,
+        }),
+    },
+    EffectOp {
+        entry_point: "strobe",
+        wgsl: Wgsl::Entry,
+        kernel: Kernel::Pixel(PixelOp {
+            len: 4,
+            valid: |v| {
+                v.get(0..3)
+                    .is_some_and(|c| c.iter().all(|v| (0.0..=1.0).contains(v)))
+                    && v.get(3).is_some_and(|blend| (0.0..=1.0).contains(blend))
+            },
+            apply: strobe_pixel,
+        }),
+    },
+    EffectOp {
+        entry_point: "tint",
+        wgsl: Wgsl::Entry,
+        kernel: Kernel::Pixel(PixelOp {
+            len: 7,
+            valid: |v| {
+                v.get(0..6)
+                    .is_some_and(|c| c.iter().all(|v| (0.0..=1.0).contains(v)))
+                    && v.get(6).is_some_and(|amount| (0.0..=1.0).contains(amount))
+            },
+            apply: tint_pixel,
+        }),
+    },
+    EffectOp {
+        entry_point: "pixelate",
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 3,
+            valid: |v, _, _| {
+                v.first()
+                    .is_some_and(|block| block.is_finite() && *block >= 1.0)
+                    && v.get(1)
+                        .is_some_and(|block| block.is_finite() && *block >= 1.0)
+                    && v.get(2)
+                        .is_some_and(|softness| (0.0..=1.0).contains(softness))
+            },
+            apply: pixelate_sample,
+        }),
+    },
+    EffectOp {
+        entry_point: "detail_boost",
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 2,
+            valid: |v, _, _| {
+                v.first().is_some_and(|gain| (0.0..=40.0).contains(gain))
+                    && v.get(1)
+                        .is_some_and(|threshold| (0.0..=1.0).contains(threshold))
+            },
+            apply: detail_boost_sample,
+        }),
+    },
+    EffectOp {
         entry_point: "vignette",
-        len: 1,
-        valid: |v, _, _| v.first().is_some_and(|a| (-1.0..=1.0).contains(a)),
-        apply: vignette_sample,
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 1,
+            valid: |v, _, _| v.first().is_some_and(|a| (-1.0..=1.0).contains(a)),
+            apply: vignette_sample,
+        }),
     },
-    SampleOp {
+    EffectOp {
         entry_point: "grain",
-        len: 1,
-        valid: |v, _, _| v.first().is_some_and(|a| (-1.0..=1.0).contains(a)),
-        apply: grain_sample,
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 1,
+            valid: |v, _, _| v.first().is_some_and(|a| (-1.0..=1.0).contains(a)),
+            apply: grain_sample,
+        }),
     },
-    SampleOp {
+    EffectOp {
         entry_point: "mirror",
-        len: 4,
-        valid: mirror_uniforms,
-        apply: mirror,
+        wgsl: Wgsl::Reads(ReadImage::Instance),
+        kernel: Kernel::Sample(SampleOp {
+            len: 4,
+            valid: mirror_uniforms,
+            apply: mirror,
+        }),
     },
-    SampleOp {
+    EffectOp {
         entry_point: "streak_blur",
-        len: 3,
-        valid: |v, _, _| {
-            v.get(2)
-                .is_some_and(|n| (2.0..=64.0).contains(n) && n.fract() == 0.0)
-        },
-        apply: streak_sample,
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 3,
+            valid: |v, _, _| {
+                v.get(2)
+                    .is_some_and(|n| (2.0..=64.0).contains(n) && n.fract() == 0.0)
+            },
+            apply: streak_sample,
+        }),
     },
-    SampleOp {
+    EffectOp {
         entry_point: "edge_lines",
-        len: 2,
-        valid: |v, _, _| {
-            v.first().is_some_and(|invert| (0.0..=1.0).contains(invert))
-                && v.get(1).is_some_and(|blend| (0.0..=1.0).contains(blend))
-        },
-        apply: edge_lines_sample,
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 2,
+            valid: |v, _, _| {
+                v.first().is_some_and(|invert| (0.0..=1.0).contains(invert))
+                    && v.get(1).is_some_and(|blend| (0.0..=1.0).contains(blend))
+            },
+            apply: edge_lines_sample,
+        }),
     },
-    SampleOp {
+    EffectOp {
         entry_point: "colour_relief",
-        len: 4,
-        valid: |v, _, _| {
-            v.get(2)
-                .is_some_and(|contrast| (0.0..=5.0).contains(contrast))
-                && v.get(3).is_some_and(|blend| (0.0..=1.0).contains(blend))
-        },
-        apply: colour_relief_sample,
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 4,
+            valid: |v, _, _| {
+                v.get(2)
+                    .is_some_and(|contrast| (0.0..=5.0).contains(contrast))
+                    && v.get(3).is_some_and(|blend| (0.0..=1.0).contains(blend))
+            },
+            apply: colour_relief_sample,
+        }),
     },
-    SampleOp {
+    EffectOp {
         entry_point: "twirl",
-        len: 4,
-        valid: whole_image::valid_twirl,
-        apply: whole_image::twirl,
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 4,
+            valid: whole_image::valid_twirl,
+            apply: whole_image::twirl,
+        }),
     },
-    SampleOp {
+    EffectOp {
         entry_point: "spherize",
-        len: 3,
-        valid: whole_image::valid_spherize,
-        apply: whole_image::spherize,
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 3,
+            valid: whole_image::valid_spherize,
+            apply: whole_image::spherize,
+        }),
     },
-    SampleOp {
+    EffectOp {
         entry_point: "magnify",
-        len: 6,
-        valid: whole_image::valid_magnify,
-        apply: whole_image::magnify,
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 6,
+            valid: whole_image::valid_magnify,
+            apply: whole_image::magnify,
+        }),
     },
-    SampleOp {
+    EffectOp {
         entry_point: "wave_warp",
-        len: 4,
-        valid: whole_image::valid_wave,
-        apply: whole_image::wave_warp,
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 4,
+            valid: whole_image::valid_wave,
+            apply: whole_image::wave_warp,
+        }),
     },
-    SampleOp {
+    EffectOp {
         entry_point: "lens_distortion",
-        len: 4,
-        valid: whole_image::valid_lens,
-        apply: whole_image::lens_distortion,
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 4,
+            valid: whole_image::valid_lens,
+            apply: whole_image::lens_distortion,
+        }),
     },
-    SampleOp {
+    EffectOp {
         entry_point: "turbulent_displace",
-        len: 8,
-        valid: whole_image::valid_turbulent,
-        apply: whole_image::turbulent_displace,
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 8,
+            valid: whole_image::valid_turbulent,
+            apply: whole_image::turbulent_displace,
+        }),
     },
-    SampleOp {
+    EffectOp {
         entry_point: "corner_pin",
-        len: 11,
-        valid: whole_image::valid_corner,
-        apply: whole_image::corner_pin,
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 11,
+            valid: whole_image::valid_corner,
+            apply: whole_image::corner_pin,
+        }),
     },
-    SampleOp {
+    EffectOp {
         entry_point: "basic_3d",
-        len: 6,
-        valid: whole_image::valid_basic_3d,
-        apply: whole_image::basic_3d,
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 6,
+            valid: whole_image::valid_basic_3d,
+            apply: whole_image::basic_3d,
+        }),
     },
-    SampleOp {
+    EffectOp {
         entry_point: "brush_strokes",
-        len: 5,
-        valid: whole_image::valid_brush,
-        apply: whole_image::brush_strokes,
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 5,
+            valid: whole_image::valid_brush,
+            apply: whole_image::brush_strokes,
+        }),
     },
-    SampleOp {
+    EffectOp {
         entry_point: "roughen_edges",
-        len: 8,
-        valid: whole_image::valid_roughen,
-        apply: whole_image::roughen_edges,
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 8,
+            valid: whole_image::valid_roughen,
+            apply: whole_image::roughen_edges,
+        }),
     },
-    SampleOp {
+    EffectOp {
         entry_point: "camera_shake",
-        len: 5,
-        valid: whole_image::valid_shake,
-        apply: whole_image::camera_shake,
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 5,
+            valid: whole_image::valid_shake,
+            apply: whole_image::camera_shake,
+        }),
     },
-    SampleOp {
+    EffectOp {
         entry_point: "sobel_edges",
-        len: 1,
-        valid: whole_image::valid_sobel,
-        apply: whole_image::sobel_edges,
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 1,
+            valid: whole_image::valid_sobel,
+            apply: whole_image::sobel_edges,
+        }),
     },
-    SampleOp {
+    EffectOp {
         entry_point: "glow_add",
-        len: 8,
-        valid: whole_image::valid_glow,
-        apply: whole_image::glow_add,
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 8,
+            valid: whole_image::valid_glow,
+            apply: whole_image::glow_add,
+        }),
     },
-    SampleOp {
+    EffectOp {
         entry_point: "glint_rays",
-        len: 9,
-        valid: whole_image::valid_glint,
-        apply: whole_image::glint_rays,
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 9,
+            valid: whole_image::valid_glint,
+            apply: whole_image::glint_rays,
+        }),
     },
-    SampleOp {
+    EffectOp {
         entry_point: "radial_rays",
-        len: 9,
-        valid: whole_image::valid_radial,
-        apply: whole_image::radial_rays,
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 9,
+            valid: whole_image::valid_radial,
+            apply: whole_image::radial_rays,
+        }),
     },
-    SampleOp {
+    EffectOp {
         entry_point: "light_leaks",
-        len: 12,
-        valid: whole_image::valid_leaks,
-        apply: whole_image::light_leaks,
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 12,
+            valid: whole_image::valid_leaks,
+            apply: whole_image::light_leaks,
+        }),
     },
-    SampleOp {
+    EffectOp {
         entry_point: "lens_flare",
-        len: 4,
-        valid: whole_image::valid_flare,
-        apply: whole_image::lens_flare,
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 4,
+            valid: whole_image::valid_flare,
+            apply: whole_image::lens_flare,
+        }),
     },
-    SampleOp {
+    EffectOp {
         entry_point: "rgb_split",
-        len: 7,
-        valid: whole_image::valid_split,
-        apply: whole_image::rgb_split,
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 7,
+            valid: whole_image::valid_split,
+            apply: whole_image::rgb_split,
+        }),
     },
-    SampleOp {
+    EffectOp {
         entry_point: "drop_shadow",
-        len: 7,
-        valid: whole_image::valid_drop,
-        apply: whole_image::drop_shadow,
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 7,
+            valid: whole_image::valid_drop,
+            apply: whole_image::drop_shadow,
+        }),
     },
-    SampleOp {
+    EffectOp {
         entry_point: "long_shadow",
-        len: 10,
-        valid: whole_image::valid_long,
-        apply: whole_image::long_shadow,
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 10,
+            valid: whole_image::valid_long,
+            apply: whole_image::long_shadow,
+        }),
     },
-    SampleOp {
+    EffectOp {
         entry_point: "gradient",
-        len: 12,
-        valid: whole_image::valid_gradient,
-        apply: whole_image::gradient,
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 12,
+            valid: whole_image::valid_gradient,
+            apply: whole_image::gradient,
+        }),
     },
-    SampleOp {
+    EffectOp {
         entry_point: "four_color_gradient",
-        len: 20,
-        valid: whole_image::valid_four,
-        apply: whole_image::four_color_gradient,
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 20,
+            valid: whole_image::valid_four,
+            apply: whole_image::four_color_gradient,
+        }),
     },
 ];
 /// Premultiplied linear luma of a sample near the current texel.
@@ -1784,9 +2039,6 @@ fn colour_relief(frame: &EffectFrame, geometry: &EffectGeometry) -> Result<Vec<E
         ],
     }])
 }
-fn sample_op(entry_point: &str) -> Option<&'static SampleOp> {
-    SAMPLE_OPS.iter().find(|op| op.entry_point == entry_point)
-}
 /// Mirror uniforms use an image-edge centre (admitted against geometry below)
 /// and an explicitly unit normal. Components are in [-1,1]; squared length may
 /// differ from 1 by at most eight f32 epsilons for representation roundoff.
@@ -2026,7 +2278,7 @@ pub fn validate_pass(pass: &EffectPass, width: u32, height: u32) -> Result<()> {
             weights,
             ..
         } => {
-            *entry_point == "gaussian"
+            op(entry_point).is_some_and(|op| matches!(op.kernel, Kernel::Convolve))
                 && !weights.is_empty()
                 && weights.len() <= 49
                 && !weights.len().is_multiple_of(2)

@@ -2,7 +2,10 @@
 use eframe::wgpu;
 use render::{
     Error, ExecutionHooks, Image, MemoryKind, Result,
-    effects::{EffectCompositor, EffectInputs, EffectPass, FrameLayer},
+    effects::{
+        BLEND_ENTRY, EffectCompositor, EffectInputs, EffectPass, FrameLayer, ReadImage,
+        shader_entries, shader_entry,
+    },
 };
 use std::{
     borrow::Cow,
@@ -22,20 +25,11 @@ struct ComputePass<'a> {
     values: Cow<'a, [f32]>,
 }
 
-#[derive(Clone, Copy, PartialEq)]
-enum ReadImage {
-    Instance,
-    Below,
-}
-
+/// The extra image an entry binds, from the render crate's effect description.
 fn read_image(entry: &str) -> Result<Option<ReadImage>> {
-    match entry {
-        "gaussian" | "grade" | "lift" | "tone_gamma" | "gain" | "chroma_key" | "gamma"
-        | "invert" | "black_white" | "channel_mix" | "tint" | "levels" | "strobe" => Ok(None),
-        "mirror" => Ok(Some(ReadImage::Instance)),
-        "blend" => Ok(Some(ReadImage::Below)),
-        _ => Err(Error::Unsupported("GPU shader inputs")),
-    }
+    shader_entry(entry)
+        .map(|entry| entry.reads)
+        .ok_or(Error::Unsupported("GPU shader inputs"))
 }
 
 /// Cumulative native work this adapter performed: counted at the call, not inferred
@@ -117,38 +111,21 @@ impl GpuEffects {
             immediate_size: 0,
         });
         let module = device.create_shader_module(wgpu::include_wgsl!("effects.wgsl"));
-        let pipelines = [
-            "gaussian",
-            "blend",
-            "grade",
-            "lift",
-            "tone_gamma",
-            "gain",
-            "chroma_key",
-            "mirror",
-            "gamma",
-            "invert",
-            "black_white",
-            "channel_mix",
-            "tint",
-            "levels",
-            "strobe",
-        ]
-        .into_iter()
-        .map(|entry| {
-            (
-                entry,
-                device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                    label: Some(entry),
-                    layout: Some(&pipeline_layout),
-                    module: &module,
-                    entry_point: Some(entry),
-                    compilation_options: Default::default(),
-                    cache: None,
-                }),
-            )
-        })
-        .collect();
+        let pipelines = shader_entries()
+            .map(|entry| {
+                (
+                    entry.name,
+                    device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                        label: Some(entry.name),
+                        layout: Some(&pipeline_layout),
+                        module: &module,
+                        entry_point: Some(entry.name),
+                        compilation_options: Default::default(),
+                        cache: None,
+                    }),
+                )
+            })
+            .collect();
         if scope.pop().await.is_some() {
             return Err(Error::Unsupported("GPU effect pipeline"));
         }
@@ -886,7 +863,7 @@ impl EffectCompositor for FrameEffects<'_> {
         }
         let values = [opacity, mode as u32 as f32];
         let pass = ComputePass {
-            entry_point: "blend",
+            entry_point: BLEND_ENTRY,
             horizontal: false,
             values: Cow::Borrowed(&values),
         };
@@ -919,7 +896,7 @@ impl EffectCompositor for FrameEffects<'_> {
         self.execute(
             top.image,
             std::iter::once(ComputePass {
-                entry_point: "blend",
+                entry_point: BLEND_ENTRY,
                 horizontal: false,
                 values: Cow::Borrowed(&values),
             }),
@@ -1105,5 +1082,20 @@ mod tests {
             drop(gpu.frame(hooks).unwrap().unwrap());
             assert_eq!(boundary.budget.snapshot().unwrap().used, 0);
         }
+    }
+
+    #[test]
+    fn shader_file_defines_exactly_the_entries_the_description_lists() {
+        let source = include_str!("effects.wgsl");
+        let mut defined: Vec<&str> = source
+            .lines()
+            .zip(source.lines().skip(1))
+            .filter(|(line, _)| line.starts_with("@compute"))
+            .filter_map(|(_, next)| next.strip_prefix("fn ")?.split('(').next())
+            .collect();
+        let mut described: Vec<&str> = shader_entries().map(|entry| entry.name).collect();
+        defined.sort_unstable();
+        described.sort_unstable();
+        assert_eq!(defined, described);
     }
 }
