@@ -1,4 +1,6 @@
-//! Applies the Audio tab's fade edits through `audio.set_fade`.
+//! Applies the Audio tab's fade edits through `audio.set_fade`, and its loudness controls.
+pub(in crate::editor) mod loudness;
+
 use super::super::read;
 use crate::editor::{Error, ItemId, Port, Result};
 

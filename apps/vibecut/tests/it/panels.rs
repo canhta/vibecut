@@ -592,6 +592,7 @@ fn needs_reveal(id: &str) -> bool {
         || id.starts_with("inspector.section.")
         || id.starts_with("inspector.animation.")
         || id.starts_with("inspector.lut.")
+        || id.starts_with("inspector.loudness.")
         || id.starts_with("inspector.transform.distribute_")
         || blend_control(id)
 }
@@ -2073,6 +2074,98 @@ fn opacity_and_audio_gain_scrub_through_their_tabs() {
     harness.state_mut().session.undo().unwrap();
     harness.run_steps(2);
     assert_eq!(cleanup(&harness), off);
+}
+
+#[test]
+fn loudness_controls_switch_target_and_apply_through_commands() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    select(&mut harness, fixture.audio);
+    let loudness = |harness: &Harness<Editor>| {
+        harness
+            .state()
+            .session
+            .project()
+            .data()
+            .settings
+            .loudness
+            .clone()
+    };
+    for id in [
+        "inspector.loudness.clip",
+        "inspector.loudness.master",
+        "inspector.loudness.target",
+        "inspector.loudness.true_peak",
+        "inspector.loudness.apply",
+    ] {
+        assert!(has_widget(&harness, id), "{id}");
+    }
+    assert_eq!(loudness(&harness), project::Loudness::default());
+
+    // A scope switch is one undo step: on sets the shown default target, off clears it.
+    let history = harness.state().session.history_len().0;
+    click(&mut harness, "inspector.loudness.clip");
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    assert_eq!(
+        loudness(&harness).clip,
+        Some(project::LoudnessTarget::DEFAULT)
+    );
+    click(&mut harness, "inspector.loudness.clip");
+    assert_eq!(harness.state().session.history_len().0, history + 2);
+    assert_eq!(loudness(&harness).clip, None);
+    harness.state_mut().session.undo().unwrap();
+    harness.run_steps(2);
+    assert_eq!(
+        loudness(&harness).clip,
+        Some(project::LoudnessTarget::DEFAULT)
+    );
+
+    // An out-of-range target refuses before any command and keeps the typed draft.
+    let history = harness.state().session.history_len().0;
+    enter(&mut harness, "inspector.loudness.target", "-4");
+    assert_eq!(harness.state().session.history_len().0, history);
+    assert_eq!(
+        loudness(&harness).clip,
+        Some(project::LoudnessTarget::DEFAULT)
+    );
+
+    // A valid target commits once, reaching every switched-on scope in one batch.
+    enter(&mut harness, "inspector.loudness.target", "-16");
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    assert_eq!(loudness(&harness).clip.map(|t| t.target_lufs), Some(-16.0));
+
+    // Both scopes on hold the one shared target; switching master on is one undo step.
+    let history = harness.state().session.history_len().0;
+    click(&mut harness, "inspector.loudness.master");
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    assert_eq!(loudness(&harness).master, loudness(&harness).clip);
+    enter(&mut harness, "inspector.loudness.target", "-14");
+    assert_eq!(harness.state().session.history_len().0, history + 2);
+    let both = loudness(&harness);
+    assert_eq!(both.clip.map(|t| t.target_lufs), Some(-14.0));
+    assert_eq!(both.master, both.clip);
+
+    // Apply runs the measurement job; the frame polls it to the end, which drops the
+    // progress control. The gains are stored only when the job completed.
+    click(&mut harness, "inspector.loudness.apply");
+    let mut steps = 0;
+    while has_widget(&harness, "inspector.loudness.progress") {
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        harness.run_steps(1);
+        steps += 1;
+        assert!(steps < 5000, "loudness measurement never finished");
+    }
+    assert!(!has_widget(&harness, "inspector.loudness.cancel"));
+    assert!(has_widget(&harness, "inspector.loudness.apply"));
+
+    let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
+    std::fs::create_dir_all(&target).unwrap();
+    harness
+        .render()
+        .unwrap()
+        .save(target.join("p1-ai-06-loudness.png"))
+        .unwrap();
 }
 
 #[test]

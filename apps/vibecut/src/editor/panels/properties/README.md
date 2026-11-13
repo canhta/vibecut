@@ -90,7 +90,9 @@ smoothing, full mix) or enables the item's existing one; off disables it and kee
 `audio.add_cleanup_effect` or `audio.update_cleanup_effect` undo step, and the switch reads on only while the item's
 first noise reduction effect is enabled. A chain already holding eight effects refuses the add through the error line.
 Equaliser bands have no control here: the capture shows no equaliser, so `audio.*_cleanup_effect` is their only
-surface. A Normalize loudness row is not here yet: the loudness controls have not landed.
+surface.
+
+Normalize loudness sits below the fades and Noise reduction. Clip and Master are two switches: on sends `audio.set_loudness` for that scope with the shown target, off sends `audio.clear_loudness`; each is one undo step. Target and True peak are draft fields committed on Enter or blur (Escape cancels). A commit is one `audio.set_loudness` batch over the switched-on scopes, so one undo step; an out-of-range draft sends nothing and the status line says so. Apply starts `audio.measure_loudness` through the engine job runner: the frame polls it, the progress bar and Cancel (`runner.cancel_job`) show while it runs, and a completed job's gains are stored with `audio.apply_loudness`. A failure shows its reason, and a project change during the job stops it with a notice. The status line then shows the result per scope, or the silent (no gain) state. The rows are project-wide, shown on any selected audio or video item, and disabled on a locked track or while measuring. Layout: [editor design](../../../../../../docs/product/ui/editor.md#audio-tab).
 
 ## Transition inspector
 

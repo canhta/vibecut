@@ -61,6 +61,7 @@ impl Editor {
                 properties.abort_lut();
                 port.fail(error.to_string());
             }
+            properties.poll_loudness(port);
         });
         let failure = self.playback.error();
         self.properties.set_lut_failure(failure);

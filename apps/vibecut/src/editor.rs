@@ -131,6 +131,8 @@ impl Editor {
         media: std::sync::Arc<std::sync::Mutex<engine::control::MediaAccess>>,
     ) {
         self.properties
+            .attach_loudness(self.playback.budget().clone());
+        self.properties
             .attach_luts(media.clone(), self.playback.budget().clone());
         self.timeline.set_media(media);
         self.timeline.set_proxies(self.playback.proxies().cloned());

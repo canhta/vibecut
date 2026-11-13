@@ -70,6 +70,17 @@ pub(in crate::editor) enum Action {
         item: ItemId,
         enabled: bool,
     },
+    /// One loudness scope switched on or off: `audio.set_loudness` or `audio.clear_loudness`.
+    SetLoudnessScope {
+        scope: project::LoudnessScope,
+        enabled: bool,
+    },
+    /// The shared loudness target, applied to every switched-on scope in one batch.
+    SetLoudnessTarget(project::LoudnessTarget),
+    /// Apply: measure the switched-on scopes and store their gains.
+    MeasureLoudness,
+    /// Stop the running loudness measurement.
+    CancelLoudness,
     /// The Speed tab's Reverse switch, through `timeline.set_reverse`.
     SetReverse {
         item: ItemId,
