@@ -17,12 +17,15 @@ pub struct Options {
     /// Transient workflow snapshot; remote choices persist only in AiPreferences.
     #[serde(skip)]
     pub transcription_model: String,
-    /// Text-task provider shared by translation and filler classification. Its model is
-    /// the Translate row of `AiPreferences` for this provider.
+    /// Text-task provider shared by translation and filler classification. Each task's
+    /// model is its own `AiPreferences` row for this provider.
     pub text_provider: String,
-    /// Transient workflow snapshot resolved from `AiPreferences`.
+    /// Transient snapshot of the Translate row for `text_provider`.
     #[serde(skip)]
-    pub text_model: String,
+    pub translation_model: String,
+    /// Transient snapshot of the ClassifyFillers row for `text_provider`.
+    #[serde(skip)]
+    pub fillers_model: String,
     pub bilingual: bool,
     /// Last spoken-language choice per project; absent means Auto.
     pub project_sources: BTreeMap<project::ProjectId, String>,
@@ -36,7 +39,8 @@ impl Default for Options {
             local_transcription_model: "whisper-large-v3-turbo".into(),
             transcription_model: "whisper-large-v3-turbo".into(),
             text_provider: "openai".into(),
-            text_model: ai::defaults::model("openai", ai::Operation::Translate).into(),
+            translation_model: ai::defaults::model("openai", ai::Operation::Translate).into(),
+            fillers_model: ai::defaults::model("openai", ai::Operation::ClassifyFillers).into(),
             bilingual: false,
             project_sources: BTreeMap::new(),
         }
@@ -65,7 +69,11 @@ impl Options {
         )?;
         engine::providers::choose_translation(
             &self.text_provider,
-            (!self.text_model.is_empty()).then_some(self.text_model.as_str()),
+            (!self.translation_model.is_empty()).then_some(self.translation_model.as_str()),
+        )?;
+        engine::providers::choose_filler(
+            &self.text_provider,
+            (!self.fillers_model.is_empty()).then_some(self.fillers_model.as_str()),
         )?;
         Ok(())
     }

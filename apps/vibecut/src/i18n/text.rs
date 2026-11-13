@@ -37,8 +37,7 @@ catalog! {
     ModelRemoteCustom { key: "ai_custom", en: "Custom model ID", vi: "Mã mô hình tùy chỉnh" },
     ModelRemoteEmphasis { key: "ai_emphasis", en: "Caption keyword emphasis", vi: "Nhấn mạnh từ khóa phụ đề" },
     ModelRemoteEmpty { key: "ai_empty", en: "This key returned no models. You can enter an ID below.", vi: "Khóa này không trả về mô hình. Bạn có thể nhập mã bên dưới." },
-    ModelTextProvider { key: "ai_text_provider", en: "Text tasks provider", vi: "Nhà cung cấp tác vụ văn bản" },
-    ModelTextTasks { key: "ai_text_tasks", en: "Text tasks", vi: "Tác vụ văn bản" },
+    ModelRemoteFillers { key: "ai_fillers", en: "Filler classification", vi: "Phân loại từ đệm" },
     ModelRemoteInvalid { key: "ai_invalid", en: "Enter a model ID of 1–256 bytes without control characters.", vi: "Nhập mã mô hình từ 1–256 byte, không có ký tự điều khiển." },
     ModelRemoteListFailed { key: "ai_list_failed", en: "Could not refresh. Default, recent and custom models remain available.", vi: "Không làm mới được. Vẫn có thể dùng mô hình mặc định, gần đây và tùy chỉnh." },
     ModelRemoteLoading { key: "ai_loading", en: "Loading models…", vi: "Đang tải danh sách mô hình…" },
@@ -47,6 +46,7 @@ catalog! {
     ModelRemoteRefresh { key: "ai_refresh", en: "Refresh models", vi: "Làm mới mô hình" },
     ModelRemoteSpeech { key: "ai_speech", en: "Text to speech", vi: "Chuyển chữ thành giọng nói" },
     ModelRemoteUnknownPrice { key: "ai_unknown_price", en: "I accept that this model's price is unknown to VibeCut for this job kind.", vi: "Tôi chấp nhận rằng VibeCut chưa biết giá của mô hình này cho loại tác vụ này." },
+    ModelTextProvider { key: "ai_text_provider", en: "Text tasks provider", vi: "Nhà cung cấp tác vụ văn bản" },
     // Common
     AddKeyframe { key: "add_keyframe", en: "Add keyframe", vi: "Thêm khung hình chính" },
     AfterKeyframes { key: "after_keyframes", en: "After", vi: "Sau" },

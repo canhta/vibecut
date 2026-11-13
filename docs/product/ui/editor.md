@@ -262,10 +262,10 @@ No comparable captured menu reference exists; product/native parity remains unve
 
 ## AI preferences
 
-Window / Settings opens the AI model rows. A `Text tasks provider` row at the top picks
-the one provider that translation and the filler cut's `Find with AI` both use; its
-`Text tasks` model row sits under that provider's group (filler classification has no
-row of its own). The other rows stay grouped by provider and feature. The
+Window / Settings opens the AI model rows, grouped by provider and feature. A
+`Text tasks provider` combo above the groups picks the one provider that translation and
+the filler cut's `Find with AI` both use. Each task keeps its own model row under that
+provider's group: Translation and Filler classification. The
 shipped default comes first; Refresh adds models for the selected key, followed by
 recent choices and a custom-ID field with Apply. Without a key or offline, default
 and custom remain usable. Refresh alone requests the remote list. Pending, empty,

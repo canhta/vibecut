@@ -356,7 +356,7 @@ impl Subtitles {
             budget: self.budget.clone(),
             opener: self.text.clone(),
             provider: options.text_provider.clone(),
-            model: options.text_model.clone(),
+            model: options.fillers_model.clone(),
             consent,
             cancel: cancel.clone(),
         };

@@ -681,7 +681,8 @@ mod model_tests {
             .set("ai_models", serde_json::to_value(&settings).unwrap())
             .unwrap();
         assert_eq!(preferences.subtitles.transcription_model, "fixture-5");
-        assert_eq!(preferences.subtitles.text_model, "fixture-5");
+        assert_eq!(preferences.subtitles.translation_model, "fixture-5");
+        assert_eq!(preferences.subtitles.fillers_model, "fixture-5");
         let dir = tempfile::tempdir().unwrap();
         let store = crate::preferences::PreferenceStore::new(dir.path().join("prefs.json"));
         store.save(&preferences).unwrap();
@@ -718,7 +719,15 @@ mod model_tests {
         store.save(&preferences).unwrap();
         let restored = store.load_with_warning().0;
         assert_eq!(restored.ai_models, preferences.ai_models);
-        // One text-task provider: translation and filler classification both take this snapshot.
+        // One text-task provider; each task snapshots its own row for that provider.
+        preferences
+            .ai_models
+            .select(
+                "anthropic",
+                ai::Operation::ClassifyFillers,
+                "fixture-filler",
+            )
+            .unwrap();
         preferences
             .set("subtitles", {
                 let mut subtitles = preferences.subtitles.clone();
@@ -727,12 +736,8 @@ mod model_tests {
             })
             .unwrap();
         assert_eq!(preferences.subtitles.text_provider, "anthropic");
-        assert_eq!(
-            preferences.subtitles.text_model,
-            preferences
-                .ai_models
-                .model("anthropic", ai::Operation::Translate)
-        );
+        assert_eq!(preferences.subtitles.translation_model, "fixture-5");
+        assert_eq!(preferences.subtitles.fillers_model, "fixture-filler");
         assert_eq!(
             restored.subtitles.transcription_model,
             preferences.subtitles.transcription_model

@@ -442,9 +442,16 @@ impl Preferences {
                 .model(&self.subtitles.transcription, ai::Operation::Transcribe)
                 .into();
         }
-        self.subtitles.text_model = self
+        self.subtitles.translation_model = self
             .ai_models
             .model(&self.subtitles.text_provider, ai::Operation::Translate)
+            .into();
+        self.subtitles.fillers_model = self
+            .ai_models
+            .model(
+                &self.subtitles.text_provider,
+                ai::Operation::ClassifyFillers,
+            )
             .into();
     }
 }

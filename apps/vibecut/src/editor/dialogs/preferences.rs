@@ -51,12 +51,12 @@ fn provider_name(provider: &str) -> &'static str {
 fn feature_text(feature: Operation) -> Text {
     match feature {
         Operation::Transcribe => Text::ShortsTranscriber,
-        // Filler classification has no row of its own: it runs on the text-task model.
-        Operation::Translate | Operation::ClassifyFillers => Text::ModelTextTasks,
+        Operation::Translate => Text::SubTranslate,
         Operation::SuggestClips => Text::ShortsSuggester,
         Operation::GenerateChapters => Text::ModelRemoteChapters,
         Operation::SelectEmphasis => Text::ModelRemoteEmphasis,
         Operation::Synthesize => Text::ModelRemoteSpeech,
+        Operation::ClassifyFillers => Text::ModelRemoteFillers,
         Operation::Align => Text::ShortsTranscriber,
     }
 }
@@ -177,11 +177,10 @@ pub(super) fn show(
                         if let Some(status) = status {
                             ui.label(tr(status));
                         }
-                        for row in ai::defaults::DEFAULTS.iter().filter(|row| {
-                            row.shipped_default
-                                && row.provider == provider
-                                && row.feature != Operation::ClassifyFillers
-                        }) {
+                        for row in ai::defaults::DEFAULTS
+                            .iter()
+                            .filter(|row| row.shipped_default && row.provider == provider)
+                        {
                             let id = format!("preferences.ai.{provider}.{:?}", row.feature)
                                 .to_lowercase();
                             ui.horizontal(|ui| {

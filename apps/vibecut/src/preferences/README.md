@@ -37,10 +37,11 @@ fetched lists and price acknowledgements are never serialized. A document whose 
 `PREFERENCES_VERSION` is refused through the version refusal; there is no migration.
 
 The text-task provider is one persisted choice, `subtitles.text_provider`, shared by
-translation and `fillers.classify`. Its model is the Translate row of `AiPreferences` for
-that provider, resolved into the transient `subtitles.text_model` snapshot. Version 12
-replaced the translation-only `translation` and `translation_model` fields with it; there is
-no migration.
+translation and `fillers.classify`. The models are not shared: each task takes its own
+`AiPreferences` row for that provider, the Translate row into the transient
+`subtitles.translation_model` and the ClassifyFillers row into `subtitles.fillers_model`.
+Version 12 replaced the translation-only `translation` and `translation_model` fields with
+these; there is no migration.
 
 `preview_guide` and `preview_overlays` store the preview guide choice (none, or a grid with
 rows and columns 1–24, validated on load and set) and the per-overlay visibility. Both are presentation only;
