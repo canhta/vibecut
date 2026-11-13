@@ -113,7 +113,9 @@ fn filter_pixel(x: f32, y: f32) -> [f32; 4] {
         colour = [grey, grey, grey];
     }
     if y >= height - chip_height && x >= ramp {
-        let index = (((x - ramp) / (width - ramp)) * 6.0).floor().clamp(0.0, 5.0) as usize;
+        let index = (((x - ramp) / (width - ramp)) * 6.0)
+            .floor()
+            .clamp(0.0, 5.0) as usize;
         colour = chips[index];
     }
     let linear = |c: f32| {

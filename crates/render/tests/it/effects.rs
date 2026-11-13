@@ -5787,11 +5787,7 @@ fn every_filter_changes_the_picture_and_intensity_zero_is_identity_and_export_eq
         // The preview path composes the same frame as the export path.
         let preview = Renderer::new(&project, settings.clone())
             .unwrap()
-            .preview_frame(
-                tick(0, 30),
-                &mut crate::support::Empty,
-                &Hooks::default(),
-            )
+            .preview_frame(tick(0, 30), &mut crate::support::Empty, &Hooks::default())
             .unwrap();
         assert_eq!(preview.pixels(), exported.pixels(), "{} preview", look.id);
         // Half intensity lands between the two.
