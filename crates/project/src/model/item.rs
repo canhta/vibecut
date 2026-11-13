@@ -614,6 +614,55 @@ pub struct CaptionParams {
 pub struct OverlayParams {
     pub color: Color,
 }
+/// A bundled sticker: its `provider:value` id and the intrinsic pixel size captured at insert.
+/// Stickers take transform, blend and effects but no masks.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StickerParams {
+    pub sticker: String,
+    pub width: u32,
+    pub height: u32,
+}
+impl StickerParams {
+    /// Longest accepted sticker id in bytes.
+    pub const MAX_ID_BYTES: usize = 128;
+    /// Largest accepted intrinsic side in pixels.
+    pub const MAX_SIDE: u32 = 16384;
+    pub fn new(sticker: impl Into<String>, width: u32, height: u32) -> Self {
+        Self {
+            sticker: sticker.into(),
+            width,
+            height,
+        }
+    }
+    /// The provider half of the id.
+    pub fn provider(&self) -> &str {
+        self.sticker.split_once(':').map_or("", |(provider, _)| provider)
+    }
+    /// The value half of the id.
+    pub fn value(&self) -> &str {
+        self.sticker.split_once(':').map_or("", |(_, value)| value)
+    }
+    /// `provider:value` of ASCII letters, digits, `-`, `_` and `.`, with an intrinsic size in range.
+    pub fn validate(&self) -> Result<()> {
+        let part = |text: &str| {
+            !text.is_empty()
+                && text
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+        };
+        if self.sticker.len() > Self::MAX_ID_BYTES
+            || !part(self.provider())
+            || !part(self.value())
+            || self.sticker.matches(':').count() != 1
+            || !(1..=Self::MAX_SIDE).contains(&self.width)
+            || !(1..=Self::MAX_SIDE).contains(&self.height)
+        {
+            return Err(Error::Invalid("sticker parameters"));
+        }
+        Ok(())
+    }
+}
 /// Generated geometry in a 512-pixel author square. Saved appearance is explicit.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(
@@ -841,6 +890,7 @@ pub enum ItemParams {
     Caption(CaptionParams),
     Overlay(OverlayParams),
     Graphic(GraphicParams),
+    Sticker(StickerParams),
 }
 impl ItemParams {
     pub fn kind(&self) -> TrackKind {
@@ -850,6 +900,7 @@ impl ItemParams {
             Self::Text(_) => TrackKind::Text,
             Self::Caption(_) => TrackKind::Text,
             Self::Overlay(_) | Self::Graphic(_) => TrackKind::Video,
+            Self::Sticker(_) => TrackKind::Sticker,
         }
     }
     /// Visual kinds that carry a placed raster layer a reflection can mirror.
@@ -865,7 +916,11 @@ impl ItemParams {
     fn has_placed_box(&self) -> bool {
         matches!(
             self,
-            Self::Video(_) | Self::Text(_) | Self::Overlay(_) | Self::Graphic(_)
+            Self::Video(_)
+                | Self::Text(_)
+                | Self::Overlay(_)
+                | Self::Graphic(_)
+                | Self::Sticker(_)
         )
     }
 }

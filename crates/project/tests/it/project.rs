@@ -522,6 +522,7 @@ fn populated(path: PathBuf) -> Project {
         ItemParams::Overlay(OverlayParams {
             color: Color([40, 50, 60, 255]),
         }),
+        ItemParams::Sticker(StickerParams::new("flags:vn", 640, 480)),
     ];
     for (i, content) in contents.into_iter().enumerate() {
         let source_asset = matches!(
@@ -565,7 +566,7 @@ fn populated(path: PathBuf) -> Project {
     .enumerate()
     {
         data.scene_mut().timeline.insert_track(Track {
-            id: TrackId(index as u64 + 6),
+            id: TrackId(index as u64 + 7),
             name: "Empty overlay".into(),
             kind,
             muted: false,
@@ -1101,6 +1102,26 @@ fn model_trust_boundaries() {
             .unwrap()
             .kind = kind;
         cases.push(d);
+    }
+    // Sticker rows: a mask, malformed ids, sizes outside 1..=16384 and a media reference.
+    for edit in 0..6 {
+        let mut candidate = base.clone();
+        let item = candidate
+            .scene_mut()
+            .timeline
+            .iter_mut()
+            .flat_map(|track| &mut track.items)
+            .find(|item| matches!(item.content, ItemParams::Sticker(_)))
+            .unwrap();
+        match (edit, &mut item.content) {
+            (0, _) => item.masks.push(Mask::new("m", MaskShape::Rectangle)),
+            (1, ItemParams::Sticker(p)) => p.sticker = "flags".into(),
+            (2, ItemParams::Sticker(p)) => p.sticker = "flags:a:b".into(),
+            (3, ItemParams::Sticker(p)) => p.width = 0,
+            (4, ItemParams::Sticker(p)) => p.height = StickerParams::MAX_SIDE + 1,
+            (_, _) => item.source_asset = Some(AssetId(3)),
+        }
+        cases.push(candidate);
     }
     for d in cases {
         assert!(Project::new(d).is_err());

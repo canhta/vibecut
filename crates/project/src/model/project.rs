@@ -607,10 +607,19 @@ fn validate(data: &ProjectData) -> Result<()> {
                 }
                 ItemParams::Overlay(_) => {}
                 ItemParams::Graphic(p) => p.validate(&item.animations)?,
+                ItemParams::Sticker(p) => {
+                    p.validate()?;
+                    if !item.masks.is_empty() {
+                        return Err(Error::Invalid("mask on sticker item"));
+                    }
+                }
             }
             if matches!(
                 item.content,
-                ItemParams::Text(_) | ItemParams::Overlay(_) | ItemParams::Graphic(_)
+                ItemParams::Text(_)
+                    | ItemParams::Overlay(_)
+                    | ItemParams::Graphic(_)
+                    | ItemParams::Sticker(_)
             ) && asset.is_some()
             {
                 return Err(Error::Invalid("generated item cannot reference media"));
