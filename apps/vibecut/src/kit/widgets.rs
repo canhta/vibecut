@@ -363,7 +363,6 @@ pub(crate) fn icon_tab(
 pub(crate) struct SectionResponse {
     pub toggle: Response,
     pub reset: Option<Response>,
-    pub keyframe: Option<Response>,
 }
 
 /// Measured header: label with a caret, then reset and the keyframe group at
@@ -423,7 +422,7 @@ pub(crate) fn section_header_with(
                     false,
                 )
             });
-            let keyframe = keyframe_label.map(|keyframe_label| {
+            if let Some(keyframe_label) = keyframe_label {
                 let keyframe_id = format!("{id}.keyframe");
                 let response = ui
                     .push_id(&keyframe_id, |ui| {
@@ -469,13 +468,8 @@ pub(crate) fn section_header_with(
                     .on_hover_text(keyframe_label);
                 author(&response, &keyframe_id);
                 focus_ring(ui, &response);
-                response
-            });
-            SectionResponse {
-                toggle,
-                reset,
-                keyframe,
             }
+            SectionResponse { toggle, reset }
         },
     );
     paint(ui).hline(
