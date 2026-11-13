@@ -183,6 +183,58 @@ pub(crate) struct Context<'a> {
     pub(crate) key_color_pick: Option<crate::editor::KeyPick>,
     /// The colour popover's eyedropper is armed; the player samples its next click.
     pub(crate) colour_sampling: bool,
+    /// Keyword emphasis of the selected caption item's cue, when one item is selected.
+    pub(crate) keywords: Option<KeywordUi>,
+}
+/// Keyword emphasis as the caption item's Text tab shows it. Plain values only: the Captions
+/// panel owns the cue selection and the suggestion run, and the frame routes `KeywordAction`s
+/// back to it.
+#[derive(Clone)]
+pub(crate) struct KeywordUi {
+    /// The caption item this section acts on.
+    pub(crate) item: project::ItemId,
+    /// The one cue selected in the Captions panel, if exactly one is.
+    pub(crate) cue: Option<captions::NfcText>,
+    /// Cues selected in the Captions panel.
+    pub(crate) selected: usize,
+    /// Every selected cue carries verified word timing.
+    pub(crate) timed: bool,
+    /// Timed words of the selected cue: word id and text.
+    pub(crate) words: Vec<(u32, String)>,
+    /// Word ids the cue emphasises now, after validation.
+    pub(crate) shown: Vec<u32>,
+    /// Most words the cue may emphasise.
+    pub(crate) limit: usize,
+    /// A stored selection no longer validates against the cue's source text.
+    pub(crate) stale: bool,
+    /// Word highlight is on, so the player draws the keywords.
+    pub(crate) highlight: bool,
+    /// Suggestions waiting to be applied.
+    pub(crate) suggested: usize,
+    pub(crate) run: KeywordRun,
+    pub(crate) problem: Option<Text>,
+    /// Other subtitle work is running, so the section's edits wait.
+    pub(crate) busy: bool,
+}
+/// Where a keyword suggestion run stands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub(crate) enum KeywordRun {
+    #[default]
+    Idle,
+    AwaitingApproval,
+    Working,
+}
+/// Keyword emphasis intentions. The frame routes them to the Captions panel.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum KeywordAction {
+    Choose,
+    Clear,
+    Preview,
+    /// The complete new word selection for the selected cue.
+    Pick(Vec<u32>),
+    Suggest,
+    Apply,
+    Cancel,
 }
 impl Context<'_> {
     /// The selected items; the engine session is their only owner.

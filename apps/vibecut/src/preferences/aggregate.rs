@@ -454,5 +454,9 @@ impl Preferences {
                 ai::Operation::ClassifyFillers,
             )
             .into();
+        self.subtitles.emphasis_model = self
+            .ai_models
+            .model(&self.subtitles.text_provider, ai::Operation::SelectEmphasis)
+            .into();
     }
 }

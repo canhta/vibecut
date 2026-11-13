@@ -288,6 +288,10 @@ impl Subtitles {
             .models
             .model(&options.text_provider, ai::Operation::ClassifyFillers)
             .into();
+        options.emphasis_model = self
+            .models
+            .model(&options.text_provider, ai::Operation::SelectEmphasis)
+            .into();
         let previous_options = options.clone();
         let mut controls = Controls {
             models: self.models.clone(),

@@ -253,6 +253,12 @@ These fields are not engine parameter rows. `write_field` sends them as `Action:
 `commands::text_effect_patch` builds one `TextStroke` or `TextShadow` patch from the item's
 current value with only that field replaced, so the colour and the other geometry survive.
 
+A caption item selected alone shows a collapsed Keywords section in its Text tab
+(`inspector.keywords`). It draws the read `Context.keywords` carries from the Captions panel,
+which owns the cue selection and the suggestion run; its chips, Choose, Preview, Clear, Suggest
+and Apply emit `Action::Keywords`, and the frame routes them to that panel (one undo step each,
+Apply as one batch). Behaviour: [captions owner](../assets/captions/README.md).
+
 Exactly one unlocked Text and no active work, transaction, save, inline/caption or
 Properties draft is required. Captured row actions revalidate their target and snapshot;
 direct activation uses the same readiness before any unrelated draft can flush.

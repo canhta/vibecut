@@ -175,6 +175,8 @@ fn route(state: &mut State, port: &mut Port<'_>, actions: Vec<Action>) {
             Action::ToggleKeyframe { item, fields, time } => {
                 commands::toggle_keyframes(port, item, &fields, time)
             }
+            // The frame routes keyword intentions to the Captions panel before this match.
+            Action::Keywords(_) => Ok(()),
             Action::SeekToKey(at) => {
                 port.request(crate::editor::context::Request::Seek(at));
                 Ok(())

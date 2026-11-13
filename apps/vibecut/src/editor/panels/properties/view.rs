@@ -1349,6 +1349,15 @@ impl<'a, 'c> Panel<'a, 'c> {
     ) {
         match tab {
             PropertiesTab::Text
+                if self
+                    .cx
+                    .keywords
+                    .as_ref()
+                    .is_some_and(|keywords| keywords.item == item) =>
+            {
+                self.keywords_section(ui, item);
+            }
+            PropertiesTab::Text
                 if super::read::item_value(
                     self.cx.session.project(),
                     item,
@@ -1606,6 +1615,8 @@ mod effects;
 mod filter;
 
 mod text_style;
+
+mod keywords;
 
 /// The path as the creator typed it: a saved path is canonical, and on Windows that adds the
 /// verbatim `\\?\` prefix, which the Details row leaves out.

@@ -21,6 +21,17 @@ timeline shortcuts. All edits are registered engine commands in the shared histo
 Cue, import, text and glossary limits belong to [captions](../../../../../../../crates/captions/README.md).
 Design: [captions workflow](../../../../../../../docs/product/ui/editor.md#captions-workflow).
 
+`emphasis.rs` is the keyword state behind the caption item's properties Keywords section, which
+draws the `keyword_ui` read and returns `keyword_action`s the frame routes here. Its chips, Choose keywords and Clear
+are one `captions.set_emphasis` or `captions.select_emphasis` command each through
+`Session::apply`, so each is one undo step; a cue without verified word timing refuses with
+`NoWordTiming` and changes nothing. Preview selects the cue and seeks to it. Suggest with AI runs
+the lent text provider's keyword selection on a worker thread behind the same upload sheet as the
+filler cut list, with the `emphasis_model` snapshot of the SelectEmphasis row for the text provider.
+Apply sends every suggested cue in one `Batch`. A stored selection whose words no longer validate
+against the cue's source text shows as stale and is offered no chips. Design:
+[keyword section](../../../../../../../docs/product/ui/editor.md#captions-workflow).
+
 `transcript.rs` is the transcript pane below the cue list. It reads `Session::transcript()`
 for every caption item of the active scene, keyed by the project snapshot it was read from, so
 undo, redo and any edit rebuild the view. Its selection (words, cues and their anchor) is the

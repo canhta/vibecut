@@ -46,7 +46,18 @@ impl Editor {
     /// and stale draft, then write once.
     pub(in crate::editor) fn replace_selection(&mut self, items: BTreeSet<ItemId>) -> bool {
         self.selection_changed();
-        self.write_selection(items)
+        let single = (items.len() == 1)
+            .then(|| items.iter().next().copied())
+            .flatten();
+        let written = self.write_selection(items);
+        // One selected caption item becomes the Captions panel's item, so its cue keywords
+        // show in the item's Text tab. A non-caption item leaves the panel's item alone.
+        if let (Some(item), Some(captions)) = (single, self.assets.captions.as_mut())
+            && captions.item != Some(item)
+        {
+            let _ = captions.select_item(&self.session, item);
+        }
+        written
     }
     pub(in crate::editor) fn select_single(&mut self, item: ItemId) {
         self.replace_selection(BTreeSet::from([item]));

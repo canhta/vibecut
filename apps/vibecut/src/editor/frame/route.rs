@@ -36,7 +36,21 @@ impl Editor {
             media_drag: self.assets.media_drag.clone(),
             key_color_pick: self.player.key_color_pick.clone(),
             colour_sampling: self.properties.sampling_colour(),
+            keywords: self.keyword_ui(),
         }
+    }
+
+    /// The keyword section's read for the one selected caption item.
+    fn keyword_ui(&self) -> Option<crate::editor::context::KeywordUi> {
+        let selection = self.session.selection();
+        if selection.len() != 1 {
+            return None;
+        }
+        let item = *selection.iter().next()?;
+        self.assets
+            .captions
+            .as_ref()?
+            .keyword_ui(&self.session, item)
     }
     /// Run `paint` with the timeline state and its context, then apply what it returns.
     fn paint_timeline(
