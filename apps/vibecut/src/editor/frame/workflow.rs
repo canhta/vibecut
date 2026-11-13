@@ -23,8 +23,10 @@ impl Editor {
                 self.desk().fail(e.to_string());
             }
         }
-        self.with_assets(|assets, desk| assets.tick_sounds(desk));
-        self.tick_music();
+        self.with_assets(|assets, port| {
+            assets.tick_sounds(port);
+            assets.tick_music(port);
+        });
         self.dialogs
             .export
             .tick(self.session.project(), self.preferences.export);
@@ -49,8 +51,10 @@ impl Editor {
                 self.set_toast(&message, None);
             }
         }
-        self.apply_import_events();
-        self.restore_asset_state();
+        self.with_assets(|assets, port| {
+            assets.apply_import_events(port);
+            assets.restore_asset_state(port);
+        });
         self.poll_fonts();
         let mut properties = std::mem::take(&mut self.properties);
         if let Err(error) = properties.poll_lut(&mut self.desk()) {

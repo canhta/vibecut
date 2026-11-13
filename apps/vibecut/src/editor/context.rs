@@ -2,6 +2,7 @@
 
 #[cfg(test)]
 pub(crate) mod bench;
+mod port;
 pub(crate) mod visuals;
 
 use crate::{
@@ -10,6 +11,7 @@ use crate::{
     services::playback::Playback,
 };
 
+pub(in crate::editor) use port::{Note, Port, Read};
 pub(crate) use visuals::VisualQuery;
 
 /// Human-only desktop cache intentions, outside editing/agent commands.
@@ -146,6 +148,13 @@ pub(in crate::editor) struct View<'a> {
     pub(in crate::editor) session: &'a engine::Session,
     pub(in crate::editor) preferences: &'a crate::preferences::Preferences,
     pub(in crate::editor) playhead: time::Tick,
+    /// Whether no frame-owned surface blocks an edit the area would start.
+    pub(in crate::editor) edit_ready: bool,
+    /// The properties area's Project/Details choice as the frame holds it; an activation
+    /// that runs while the area's own state is lent writes it here.
+    pub(in crate::editor) details: bool,
+    /// The selected timeline transition, if any.
+    pub(in crate::editor) transition: Option<project::TransitionId>,
 }
 impl View<'_> {
     /// The selected items; the engine session is their only owner.
@@ -261,6 +270,18 @@ pub(crate) enum Request {
     Proxy(ProxyAction),
     /// Open the model manager on a missing model.
     OpenModel(String),
+    /// Run one registered action through the shared activation path.
+    Action(String),
+    /// Attach one effect to a clip through the properties workflow.
+    AddEffect {
+        item: project::ItemId,
+        kind: String,
+    },
+    /// Ask for the folder that receives the selected clips' export.
+    ExportClips,
+    /// Insert one shape through its `graphic.insert.*` action when it is enabled, then
+    /// tell the assets area to record it as recent.
+    InsertShape(String),
 }
 
 /// The shared editor context. One area receives it for one frame; its edit
@@ -268,36 +289,6 @@ pub(crate) enum Request {
 /// per committed change.
 pub(crate) struct Desk<'a> {
     editor: &'a mut crate::editor::Editor,
-}
-
-/// The editor's ripple preference as a command: an edit or replacement preview is
-/// wrapped in `timeline.edit` so the policy never rides on session state; a
-/// `batch` becomes the policy's own command list. Library audio and every non-edit
-/// command carry no policy.
-fn ripple_policy(command: engine::Command, ripple: bool) -> engine::Command {
-    use engine::{Command, Effect};
-    match command {
-        Command::Batch { commands } => Command::TimelineEdit { commands, ripple },
-        command @ Command::TimelinePreview { .. } => Command::TimelineEdit {
-            commands: vec![command],
-            ripple,
-        },
-        command
-            if command.effect() == Effect::Edit
-                && !matches!(
-                    command,
-                    Command::TimelineEdit { .. }
-                        | Command::AddLibrarySound { .. }
-                        | Command::AddLibraryMusic { .. }
-                ) =>
-        {
-            Command::TimelineEdit {
-                commands: vec![command],
-                ripple,
-            }
-        }
-        command => command,
-    }
 }
 
 impl<'a> Desk<'a> {
@@ -340,9 +331,8 @@ impl<'a> Desk<'a> {
     pub(in crate::editor) fn run_command(
         &mut self,
         command: engine::Command,
-        ripple: bool,
     ) -> std::result::Result<engine::Outcome, engine::EditError> {
-        self.editor.session.apply(ripple_policy(command, ripple))
+        self.editor.session.apply(command)
     }
 
     /// Run one registered action through the editor's shared activation path.
@@ -370,8 +360,8 @@ impl<'a> Desk<'a> {
 
     /// Stage a preview and always show it; a reversal must restore the entry
     /// frame even when the engine reports no net change.
-    pub(in crate::editor) fn preview(&mut self, command: engine::Command, ripple: bool) -> bool {
-        match self.run_command(command, ripple) {
+    pub(in crate::editor) fn preview(&mut self, command: engine::Command) -> bool {
+        match self.run_command(command) {
             Ok(_) => {
                 self.sync();
                 true
@@ -387,10 +377,9 @@ impl<'a> Desk<'a> {
     pub(in crate::editor) fn apply_result(
         &mut self,
         command: engine::Command,
-        ripple: bool,
     ) -> crate::Result<engine::Outcome> {
         let before = self.editor.session.project().clone();
-        match self.editor.session.apply(ripple_policy(command, ripple)) {
+        match self.editor.session.apply(command) {
             Ok(outcome) => {
                 if outcome.changed
                     || !std::sync::Arc::ptr_eq(&before, self.editor.session.project())
@@ -459,7 +448,27 @@ impl<'a> Desk<'a> {
             session: &self.editor.session,
             preferences: &self.editor.preferences,
             playhead: self.editor.playback.position().unwrap_or(time::Tick::ZERO),
+            edit_ready: self.editor.edit_ready(),
+            details: self.editor.properties.details(),
+            transition: self.editor.selection_scopes.transition,
         }
+    }
+
+    /// Lend the properties state apart from the editor for one step. The editor holds a
+    /// placeholder meanwhile, so an activation the step runs cannot reach the lent state.
+    pub(in crate::editor) fn lend_properties<T>(
+        &mut self,
+        run: impl FnOnce(&mut crate::editor::properties::State, &mut Self) -> T,
+    ) -> T {
+        let mut state = std::mem::take(&mut self.editor.properties);
+        let result = run(&mut state, self);
+        self.editor.properties = state;
+        result
+    }
+
+    /// Leave the selected transition scope after the transition is gone.
+    pub(in crate::editor) fn clear_transition_scope(&mut self) {
+        self.editor.selection_scopes.transition = None;
     }
 
     /// Run one catalog operation against the editable session.

@@ -228,6 +228,13 @@ groups = ["dialogs", "panels", "timeline", "widgets"]
 name = "frame"
 groups = ["frame"]
 
+# The shared context and the areas take a `Port`; only the frame and the `Editor`
+# record may name the editor record itself. Files that still do are listed in
+# `modules-baseline.txt` until their slice of the editor area ports lands.
+[[crate.folder.forbid]]
+name = "Editor"
+layers = ["contract", "areas"]
+
 [[crate.folder.module]]
 name = "context"
 group = "context"

@@ -43,29 +43,18 @@ fn video_project(path: &Path) -> project::Project {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![project::Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: project::ItemId(0),
-            source_asset: Some(media::AssetId(1)),
-            source_range: TimeRange::new(Tick::ZERO, duration).unwrap(),
-            start: Tick::ZERO,
-            content: project::ItemParams::Video(project::VideoParams {
-                fades: Default::default(),
-                source_audio_enabled: true,
-                volume: 0.0,
-                muted: false,
-                crop: None,
-                fit: Default::default(),
-                cleanup: Default::default(),
-                background: project::ClipBackground::None,
-                reduce_noise: false,
-            }),
-        }],
+        items: vec![
+            testkit::item::item(
+                project::ItemId(0),
+                project::ItemParams::Video(project::VideoParams {
+                    source_audio_enabled: true,
+                    ..project::VideoParams::plain()
+                }),
+            )
+            .asset(media::AssetId(1))
+            .source(TimeRange::new(Tick::ZERO, duration).unwrap())
+            .build(),
+        ],
     });
     project::Project::new(d).unwrap()
 }
@@ -417,46 +406,34 @@ fn resampling_split_trim_offset_and_irregular_blocks_are_identical() {
         let offset = if n == 1 { tick(103, 48000) } else { Tick::ZERO };
         let source_in = if n == 1 { tick(123, 44100) } else { Tick::ZERO };
         let end = tick(1, 1) - source_in;
-        let mut items = vec![project::Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: project::ItemId(n * 10),
-            source_asset: Some(media::AssetId(n)),
-            source_range: TimeRange::new(source_in, tick(1, 1)).unwrap(),
-            start: offset,
-            content: project::ItemParams::Audio(project::AudioParams {
-                fades: Default::default(),
-                volume: -3.0,
-                muted: false,
-                source: Default::default(),
-                cleanup: Default::default(),
-            }),
-        }];
+        let mut items = vec![
+            testkit::item::item(
+                project::ItemId(n * 10),
+                project::ItemParams::Audio(project::AudioParams {
+                    volume: -3.0,
+                    ..project::AudioParams::default()
+                }),
+            )
+            .asset(media::AssetId(n))
+            .source(TimeRange::new(source_in, tick(1, 1)).unwrap())
+            .start(offset)
+            .build(),
+        ];
         if n == 2 {
             items[0].source_range = TimeRange::new(Tick::ZERO, tick(1, 2)).unwrap();
-            items.push(project::Item {
-                hidden: false,
-                blend_mode: Default::default(),
-                retime: Default::default(),
-                masks: Vec::new(),
-                effects: Vec::new(),
-                animations: Default::default(),
-                id: project::ItemId(21),
-                source_asset: Some(media::AssetId(2)),
-                source_range: TimeRange::new(tick(1, 2), tick(1, 1)).unwrap(),
-                start: tick(1, 2),
-                content: project::ItemParams::Audio(project::AudioParams {
-                    fades: Default::default(),
-                    volume: -3.0,
-                    muted: false,
-                    source: Default::default(),
-                    cleanup: Default::default(),
-                }),
-            });
+            items.push(
+                testkit::item::item(
+                    project::ItemId(21),
+                    project::ItemParams::Audio(project::AudioParams {
+                        volume: -3.0,
+                        ..project::AudioParams::default()
+                    }),
+                )
+                .asset(media::AssetId(2))
+                .source(TimeRange::new(tick(1, 2), tick(1, 1)).unwrap())
+                .start(tick(1, 2))
+                .build(),
+            );
         }
         assert!(end > Tick::ZERO);
         d.scene_mut().timeline.insert_track(project::Track {
@@ -846,25 +823,12 @@ fn missing_audio_only_is_required_only_when_audio_is_requested() {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![project::Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: project::ItemId(1),
-            source_asset: Some(media::AssetId(3)),
-            source_range: TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
-            start: Tick::ZERO,
-            content: project::ItemParams::Audio(project::AudioParams {
-                fades: Default::default(),
-                volume: 0.0,
-                muted: false,
-                source: Default::default(),
-                cleanup: Default::default(),
-            }),
-        }],
+        items: vec![
+            testkit::item::audio(project::ItemId(1))
+                .asset(media::AssetId(3))
+                .source(TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap())
+                .build(),
+        ],
     });
     let p = project::Project::new(d).unwrap();
     std::fs::remove_file(path).unwrap();
@@ -1491,25 +1455,12 @@ fn stereo_policy_keeps_headroom_and_export_limits_overload() {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![project::Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: project::ItemId(7),
-            source_asset: Some(media::AssetId(7)),
-            source_range: TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
-            start: Tick::ZERO,
-            content: project::ItemParams::Audio(project::AudioParams {
-                fades: Default::default(),
-                volume: 0.0,
-                muted: false,
-                source: Default::default(),
-                cleanup: Default::default(),
-            }),
-        }],
+        items: vec![
+            testkit::item::audio(project::ItemId(7))
+                .asset(media::AssetId(7))
+                .source(TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap())
+                .build(),
+        ],
     });
     let p = project::Project::new(d.clone()).unwrap();
     let h = Hooks::default();
@@ -2041,11 +1992,9 @@ fn export_item_mute_and_gain_change_samples() {
                 .and_then(|track| track.items.first_mut())
             {
                 item.content = project::ItemParams::Audio(project::AudioParams {
-                    fades: Default::default(),
-                    volume,
-                    muted,
-                    source: Default::default(),
-                    cleanup: Default::default(),
+                    volume: volume,
+                    muted: muted,
+                    ..project::AudioParams::default()
                 });
             }
             data.scene_mut().timeline.audio[0].muted = video_audio;
@@ -2108,13 +2057,7 @@ fn export_keeps_track_picture_and_audio_flags_independent() {
         if audio_track {
             let mut audio = data.scene_mut().timeline.main.items[0].clone();
             audio.id = project::ItemId(1);
-            audio.content = project::ItemParams::Audio(project::AudioParams {
-                fades: Default::default(),
-                volume: 0.0,
-                muted: false,
-                source: Default::default(),
-                cleanup: Default::default(),
-            });
+            audio.content = project::ItemParams::Audio(project::AudioParams::default());
             if let project::ItemParams::Video(params) =
                 &mut data.scene_mut().timeline.main.items[0].content
             {
@@ -2203,37 +2146,30 @@ fn sound_library_attribution_and_licence_are_written_into_export_metadata() {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![project::Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: project::ItemId(1),
-            source_asset: Some(asset.id()),
-            source_range: TimeRange::new(Tick::ZERO, duration).unwrap(),
-            start: Tick::ZERO,
-            content: project::ItemParams::Audio(project::AudioParams {
-                fades: Default::default(),
-                volume: 0.0,
-                muted: false,
-                source: project::AudioSource::Library {
-                    sound: project::LibrarySound {
-                        id: 42,
-                        name: "Whoosh".into(),
-                        author: "Freesound user".into(),
-                        licence: "Attribution".into(),
-                        attribution: "Whoosh by Freesound user (Attribution)".into(),
-                        source_url: "https://freesound.org/s/42/".into(),
-                        audio_url: "https://cdn.example/42.mp3".into(),
-                        downloads: 10,
-                        duration_ms: 1000,
+        items: vec![
+            testkit::item::item(
+                project::ItemId(1),
+                project::ItemParams::Audio(project::AudioParams {
+                    source: project::AudioSource::Library {
+                        sound: project::LibrarySound {
+                            id: 42,
+                            name: "Whoosh".into(),
+                            author: "Freesound user".into(),
+                            licence: "Attribution".into(),
+                            attribution: "Whoosh by Freesound user (Attribution)".into(),
+                            source_url: "https://freesound.org/s/42/".into(),
+                            audio_url: "https://cdn.example/42.mp3".into(),
+                            downloads: 10,
+                            duration_ms: 1000,
+                        },
                     },
-                },
-                cleanup: Default::default(),
-            }),
-        }],
+                    ..project::AudioParams::default()
+                }),
+            )
+            .asset(asset.id())
+            .source(TimeRange::new(Tick::ZERO, duration).unwrap())
+            .build(),
+        ],
     });
     let p = project::Project::new(data).unwrap();
     let mut settings = ExportSettings::from_project(&p);
@@ -2325,26 +2261,20 @@ fn music_library_attribution_and_licence_url_are_written_into_export_metadata() 
         audio_url: "https://upload.example/Night_Walk.ogg".into(),
         duration_ms: 31_000,
     };
-    let item = |id: u64, start: Tick| project::Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        masks: Vec::new(),
-        effects: Vec::new(),
-        animations: Default::default(),
-        id: project::ItemId(id),
-        source_asset: Some(asset.id()),
-        source_range: TimeRange::new(Tick::ZERO, duration).unwrap(),
-        start,
-        content: project::ItemParams::Audio(project::AudioParams {
-            fades: Default::default(),
-            volume: 0.0,
-            muted: false,
-            source: project::AudioSource::Music {
-                music: music.clone(),
-            },
-            cleanup: Default::default(),
-        }),
+    let item = |id: u64, start: Tick| {
+        testkit::item::item(
+            project::ItemId(id),
+            project::ItemParams::Audio(project::AudioParams {
+                source: project::AudioSource::Music {
+                    music: music.clone(),
+                },
+                ..project::AudioParams::default()
+            }),
+        )
+        .asset(asset.id())
+        .source(TimeRange::new(Tick::ZERO, duration).unwrap())
+        .start(start)
+        .build()
     };
     data.scene_mut().timeline.insert_track(project::Track {
         id: project::TrackId(2),
@@ -2422,36 +2352,29 @@ fn clip_fades_export_matches_the_preview_mix_across_block_partitions() {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![project::Item {
-            hidden: false,
-            retime: Default::default(),
-            blend_mode: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: project::ItemId(7),
-            source_asset: Some(media::AssetId(7)),
-            source_range: TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
-            start: Tick::ZERO,
-            content: project::ItemParams::Audio(project::AudioParams {
-                fades: project::Fades {
-                    fade_in: project::Fade {
-                        duration: tick(12_000, 48_000),
-                        offset: Tick::ZERO,
-                        curve: project::FadeCurve::EqualPower,
+        items: vec![
+            testkit::item::item(
+                project::ItemId(7),
+                project::ItemParams::Audio(project::AudioParams {
+                    fades: project::Fades {
+                        fade_in: project::Fade {
+                            duration: tick(12_000, 48_000),
+                            offset: Tick::ZERO,
+                            curve: project::FadeCurve::EqualPower,
+                        },
+                        fade_out: project::Fade {
+                            duration: tick(12_000, 48_000),
+                            offset: Tick::ZERO,
+                            curve: project::FadeCurve::Exponential,
+                        },
                     },
-                    fade_out: project::Fade {
-                        duration: tick(12_000, 48_000),
-                        offset: Tick::ZERO,
-                        curve: project::FadeCurve::Exponential,
-                    },
-                },
-                volume: 0.0,
-                muted: false,
-                source: Default::default(),
-                cleanup: Default::default(),
-            }),
-        }],
+                    ..project::AudioParams::default()
+                }),
+            )
+            .asset(media::AssetId(7))
+            .source(TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap())
+            .build(),
+        ],
     });
     let p = project::Project::new(d).unwrap();
     let h = Hooks::default();

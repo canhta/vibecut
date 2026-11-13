@@ -18,8 +18,8 @@ when the pointer leaves; movement compensates only the clamped shift.
 Ruler seeking moves the shared transport. Move, edge trims, bookmark drag, split, delete,
 ripple delete and track edits dispatch engine commands; zoom, scroll and selection stay
 presentation state. Ripple is a persisted toolbar preference (off by default), bindable in
-Shortcuts, outside app undo history so Undo restores the last project edit. The app passes
-it into each atomic engine command; gap-closing semantics belong to the [engine ripple
+Shortcuts, outside app undo history so Undo restores the last project edit. The editor sets it on
+the session when it changes and sends plain commands; gap-closing semantics belong to the [engine ripple
 policy](../../../../../../crates/engine/src/session/edit/README.md#edit-semantics-and-limits).
 
 Move and edge trim stage the group contract: each pointer update sends an absolute

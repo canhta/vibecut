@@ -26,21 +26,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let duration = Tick::from_units(60, 1, Rounding::Nearest)?;
     let mut data =
         project::Project::empty(project::ProjectId(1), "Mix benchmark".into())?.into_data();
-    data.scene_mut().timeline.main.items.push(project::Item {
-        hidden: false,
-        id: project::ItemId(1),
-        source_asset: None,
-        source_range: TimeRange::new(Tick::ZERO, duration)?,
-        start: Tick::ZERO,
-        animations: Default::default(),
-        effects: vec![],
-        masks: vec![],
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        content: project::ItemParams::Overlay(project::OverlayParams {
-            color: project::Color([32, 80, 128, 255]),
-        }),
-    });
+    data.scene_mut().timeline.main.items.push(
+        testkit::item::item(
+            project::ItemId(1),
+            project::ItemParams::Overlay(project::OverlayParams {
+                color: project::Color([32, 80, 128, 255]),
+            }),
+        )
+        .source(TimeRange::new(Tick::ZERO, duration)?)
+        .build(),
+    );
     for (id, name) in [(2, "44100.wav"), (3, "48000.wav")] {
         data.assets.push(media::SourceAsset::import(
             media::AssetId(id),
@@ -53,25 +48,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             hidden: false,
             muted: false,
             locked: false,
-            items: vec![project::Item {
-                hidden: false,
-                id: project::ItemId(id),
-                source_asset: Some(media::AssetId(id)),
-                source_range: TimeRange::new(Tick::ZERO, duration)?,
-                start: Tick::ZERO,
-                animations: Default::default(),
-                effects: vec![],
-                masks: vec![],
-                blend_mode: Default::default(),
-                retime: Default::default(),
-                content: project::ItemParams::Audio(project::AudioParams {
-                    fades: Default::default(),
-                    volume: -6.0,
-                    muted: false,
-                    source: Default::default(),
-                    cleanup: Default::default(),
-                }),
-            }],
+            items: vec![
+                testkit::item::item(
+                    project::ItemId(id),
+                    project::ItemParams::Audio(project::AudioParams {
+                        volume: -6.0,
+                        ..project::AudioParams::default()
+                    }),
+                )
+                .asset(media::AssetId(id))
+                .source(TimeRange::new(Tick::ZERO, duration)?)
+                .build(),
+            ],
         });
     }
     let project = project::Project::new(data)?;

@@ -96,24 +96,12 @@ fn project_of(
         items: clips
             .iter()
             .enumerate()
-            .map(|(n, &(asset, start, seconds))| project::Item {
-                hidden: false,
-                id: project::ItemId(n as u64 + 1),
-                source_asset: Some(media::AssetId(asset)),
-                source_range: TimeRange::new(Tick::ZERO, tick(seconds, 1)).unwrap(),
-                start: tick(start, 1),
-                retime: Default::default(),
-                animations: Default::default(),
-                effects: vec![],
-                masks: vec![],
-                blend_mode: Default::default(),
-                content: project::ItemParams::Audio(project::AudioParams {
-                    volume: 0.0,
-                    muted: false,
-                    source: Default::default(),
-                    fades: Default::default(),
-                    cleanup: Default::default(),
-                }),
+            .map(|(n, &(asset, start, seconds))| {
+                testkit::item::audio(project::ItemId(n as u64 + 1))
+                    .asset(media::AssetId(asset))
+                    .source(TimeRange::new(Tick::ZERO, tick(seconds, 1)).unwrap())
+                    .start(tick(start, 1))
+                    .build()
             })
             .collect(),
     });

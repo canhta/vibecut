@@ -26,47 +26,43 @@ fn scene(texts: &[(&str, &str)]) -> project::Project {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![project::Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: project::ItemId(1),
-            source_asset: Some(media::AssetId(1)),
-            source_range: TimeRange::new(Tick::ZERO, tick(2, 1)).unwrap(),
-            start: Tick::ZERO,
-            content: project::ItemParams::Caption(project::CaptionParams {
-                emphasis: Default::default(),
-                word_highlight: false,
-                preset: None,
-                overrides: captions::CaptionOverrides::default(),
-                cues: captions::CueTrack {
-                    styles: Vec::new(),
-                    cues: vec![captions::Cue {
-                        word_timing: captions::CueWordTiming::Unverified,
-                        id: "stress".into(),
-                        range,
-                        source_lang: captions::LanguageTag::parse(texts[0].0).unwrap(),
-                        texts: texts
-                            .iter()
-                            .map(|(lang, value)| {
-                                (
-                                    captions::LanguageTag::parse(lang).unwrap(),
-                                    captions::CueText {
-                                        text: (*value).into(),
-                                        edited: false,
-                                        translation_ref: None,
-                                    },
-                                )
-                            })
-                            .collect(),
-                        style: None,
-                    }],
-                },
-            }),
-        }],
+        items: vec![
+            testkit::item::item(
+                project::ItemId(1),
+                project::ItemParams::Caption(project::CaptionParams {
+                    emphasis: Default::default(),
+                    word_highlight: false,
+                    preset: None,
+                    overrides: captions::CaptionOverrides::default(),
+                    cues: captions::CueTrack {
+                        styles: Vec::new(),
+                        cues: vec![captions::Cue {
+                            word_timing: captions::CueWordTiming::Unverified,
+                            id: "stress".into(),
+                            range,
+                            source_lang: captions::LanguageTag::parse(texts[0].0).unwrap(),
+                            texts: texts
+                                .iter()
+                                .map(|(lang, value)| {
+                                    (
+                                        captions::LanguageTag::parse(lang).unwrap(),
+                                        captions::CueText {
+                                            text: (*value).into(),
+                                            edited: false,
+                                            translation_ref: None,
+                                        },
+                                    )
+                                })
+                                .collect(),
+                            style: None,
+                        }],
+                    },
+                }),
+            )
+            .asset(media::AssetId(1))
+            .source(TimeRange::new(Tick::ZERO, tick(2, 1)).unwrap())
+            .build(),
+        ],
     });
     project::Project::new(d).unwrap()
 }

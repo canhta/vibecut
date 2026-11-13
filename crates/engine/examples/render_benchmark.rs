@@ -108,24 +108,19 @@ fn text_benchmark(
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![project::Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: project::ItemId(0),
-            source_asset: None,
-            source_range: TimeRange::new(Tick::ZERO, Tick(time::TICKS_PER_SECOND))?,
-            start: Tick::ZERO,
-            content: project::ItemParams::Text(project::TextParams {
-                content: "Tiếng Việt 中文".into(),
-                font_size: 40.0,
-                color: project::Color([255; 4]),
-                ..Default::default()
-            }),
-        }],
+        items: vec![
+            testkit::item::item(
+                project::ItemId(0),
+                project::ItemParams::Text(project::TextParams {
+                    content: "Tiếng Việt 中文".into(),
+                    font_size: 40.0,
+                    color: project::Color([255; 4]),
+                    ..Default::default()
+                }),
+            )
+            .source(TimeRange::new(Tick::ZERO, Tick(time::TICKS_PER_SECOND))?)
+            .build(),
+        ],
     });
     let p = project::Project::new(d)?;
     let mut settings = render::RenderSettings::from_project(&p);
@@ -214,29 +209,12 @@ fn export_benchmark(
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![project::Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: project::ItemId(0),
-            source_asset: Some(media::AssetId(0)),
-            source_range: TimeRange::new(Tick::ZERO, duration)?,
-            start: Tick::ZERO,
-            content: project::ItemParams::Video(project::VideoParams {
-                fades: Default::default(),
-                source_audio_enabled: false,
-                volume: 0.0,
-                muted: false,
-                crop: None,
-                fit: Default::default(),
-                cleanup: Default::default(),
-                background: project::ClipBackground::None,
-                reduce_noise: false,
-            }),
-        }],
+        items: vec![
+            testkit::item::video(project::ItemId(0))
+                .asset(media::AssetId(0))
+                .source(TimeRange::new(Tick::ZERO, duration)?)
+                .build(),
+        ],
     });
     if blur
         && let Some(item) = d

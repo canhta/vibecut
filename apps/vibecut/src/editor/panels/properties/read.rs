@@ -15,6 +15,15 @@ pub(super) fn item(project: &project::Project, id: ItemId) -> Option<&project::I
     find(project, id)
 }
 
+/// The admitted range of the parameter keyed on `path`, from the engine's parameter table.
+pub(super) fn path_bounds(path: &str) -> Option<(f64, f64)> {
+    engine::ITEM_PARAMS
+        .iter()
+        .find(|row| row.path == Some(path))?
+        .bounds
+        .limits()
+}
+
 /// The field's model value at the start of the item, for display.
 pub(super) fn item_value(project: &project::Project, item: ItemId, field: &str) -> Option<f64> {
     let item = find(project, item)?;
@@ -57,8 +66,8 @@ pub(super) fn item_value(project: &project::Project, item: ItemId, field: &str) 
                 _ => return None,
             }))
         }
-        ("audio_gain", ItemParams::Audio(params)) => Some(f64::from(params.volume)),
-        ("audio_gain", ItemParams::Video(params)) => Some(f64::from(params.volume)),
+        ("volume", ItemParams::Audio(params)) => Some(f64::from(params.volume)),
+        ("volume", ItemParams::Video(params)) => Some(f64::from(params.volume)),
         (field, content) if fade_edge(field).is_some() => {
             let edge = fade_edge(field)?;
             Some(fade_on(fades_of(content)?, edge).duration.seconds())
@@ -167,28 +176,18 @@ pub(super) fn item_value_at(
         return transform.value_at(&item.animations, at).ok();
     }
     if field.starts_with("params.") && matches!(item.content, ItemParams::Graphic(_)) {
-        let max = match field {
-            "params.strokeWidth" => 64.,
-            "params.depth" => 99.,
-            "params.sides" | "params.points" => 12.,
-            _ => 50.,
-        };
+        let (min, max) = path_bounds(field)?;
         return match item
             .animations
             .value_at(&project::AnimationPath::new(field).ok()?, at)
             .ok()
             .flatten()
         {
-            Some(project::ParamValue::Scalar(v)) => Some(v.clamp(0., max)),
+            Some(project::ParamValue::Scalar(v)) => Some(v.clamp(min, max)),
             _ => item_value(project, item.id, field),
         };
     }
-    let builtin = if field == "audio_gain" {
-        Some(project::BuiltinPath::Volume)
-    } else {
-        project::BuiltinPath::parse(field)
-    };
-    match builtin {
+    match project::BuiltinPath::parse(field) {
         Some(project::BuiltinPath::Opacity) if !matches!(&item.content, ItemParams::Audio(_)) => {
             let path = project::AnimationPath::from(project::BuiltinPath::Opacity);
             return Some(match item.animations.value_at(&path, at).ok().flatten() {
@@ -223,12 +222,9 @@ pub(super) fn channel_has_keys(project: &project::Project, item: ItemId, field: 
     let Some(item) = find(project, item) else {
         return false;
     };
-    let path = if field == "audio_gain" {
-        Some(project::AnimationPath::from(project::BuiltinPath::Volume))
-    } else {
-        project::AnimationPath::new(field).ok()
-    };
-    path.and_then(|path| item.animations.get(&path))
+    project::AnimationPath::new(field)
+        .ok()
+        .and_then(|path| item.animations.get(&path))
         .and_then(|param| match param {
             project::Param::Value(channel) => Some(channel),
             project::Param::Color(_) => None,
@@ -297,11 +293,7 @@ pub(super) fn neighbour_keys(
         return Neighbours::default();
     };
     fields.iter().fold(Neighbours::default(), |all, field| {
-        let path = if *field == "audio_gain" {
-            Some(project::AnimationPath::from(project::BuiltinPath::Volume))
-        } else {
-            project::AnimationPath::new(*field).ok()
-        };
+        let path = project::AnimationPath::new(*field).ok();
         match path.and_then(|path| item.animations.get(&path)) {
             Some(param) => all.merge(param_neighbours(param, at)),
             None => all,
@@ -314,11 +306,7 @@ pub(super) fn has_key_at(project: &project::Project, item: ItemId, field: &str, 
     let Some(item) = find(project, item) else {
         return false;
     };
-    let path = if field == "audio_gain" {
-        Some(project::AnimationPath::from(project::BuiltinPath::Volume))
-    } else {
-        project::AnimationPath::new(field).ok()
-    };
+    let path = project::AnimationPath::new(field).ok();
     let Some(path) = path else {
         return false;
     };

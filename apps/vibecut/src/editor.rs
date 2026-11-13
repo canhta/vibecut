@@ -2,6 +2,7 @@
 use crate::i18n;
 mod context;
 pub(crate) use context::{Context, Desk, Request};
+pub(in crate::editor) use context::{Note, Port, Read};
 pub(crate) mod dialogs;
 mod frame;
 pub use frame::{AppCommand, PreviewZoom};
@@ -88,11 +89,8 @@ impl Editor {
     }
     /// Open the shared colour picker on a target the workspace owns.
     pub fn open_color_picker(&mut self, target: ColorTarget) -> Result<()> {
-        let actions = self
-            .properties
-            .open_picker(self.session.project(), target, None)?;
-        properties::apply(&mut self.desk(), actions);
-        Ok(())
+        self.desk()
+            .lend_properties(|state, desk| state.open_color_picker(desk, target))
     }
     /// Inject the native capability boundary for an open picker.
     pub fn set_eyedropper(
@@ -116,23 +114,13 @@ impl Editor {
         effect: Option<&str>,
         color: project::Color,
     ) -> Result<()> {
-        let mut state = std::mem::take(&mut self.properties);
-        let result = {
-            let mut desk = self.desk();
-            state.pick_key_color(&mut desk, item, effect, color)
-        };
-        self.properties = state;
-        result
-    }
-    /// Attach one effect definition to a clip's stack as one undo step.
-    pub(in crate::editor) fn add_effect_to_item(&mut self, item: ItemId, kind: &str) {
-        properties::add_effect_to_item(&mut self.desk(), item, kind);
+        self.desk()
+            .lend_properties(|state, desk| state.pick_key_color(desk, item, effect, color))
     }
     /// Poll the active font download; the frame ticks it once per frame.
     pub(in crate::editor) fn poll_fonts(&mut self) {
-        let mut state = std::mem::take(&mut self.properties);
-        state.poll_fonts(&mut self.desk());
-        self.properties = state;
+        self.desk()
+            .lend_properties(|state, desk| state.poll_fonts(desk));
     }
     /// End the properties scrub gesture, if one is open.
     pub(in crate::editor) fn finish_scrub(&mut self, commit: bool) {
@@ -157,7 +145,10 @@ impl Editor {
         &mut self,
         effects: Arc<dyn render::effects::EffectCompositor>,
     ) -> Result<()> {
-        self.with_assets(|assets, desk| assets.set_effects(desk, effects))
+        let previews = assets::State::effect_previews_for(self.playback.budget(), effects.clone())?;
+        self.playback.set_effects(effects)?;
+        self.assets.effect_previews = Some(previews);
+        Ok(())
     }
 
     /// Attach the app-shared saved library. One library handle is shared by every
@@ -166,7 +157,7 @@ impl Editor {
         &mut self,
         library: Arc<libraries::sounds::SoundLibrary>,
     ) -> Result<()> {
-        self.with_assets(|assets, desk| assets.set_sound_library(desk, library))
+        self.with_assets(|assets, port| assets.set_sound_library(port, library))
     }
 
     /// Record why the app-shared Sounds library did not open; its section shows
@@ -190,12 +181,11 @@ impl Editor {
         self.assets.music_open
     }
 
-    /// A section's Retry asks the lending owner to open this store again. The
-    /// request is drained by the next frame's tick.
+    /// Stand-in for a section's Retry in tests: ask the lending owner to open this
+    /// store again. The request is drained by the next frame's tick.
+    #[cfg(test)]
     pub(crate) fn request_library_reopen(&mut self, store: LibraryStore) {
-        if !self.assets.library_reopens.contains(&store) {
-            self.assets.library_reopens.push(store);
-        }
+        self.assets.request_library_reopen(store);
     }
 
     /// Take the pending re-open requests; only the lending owner calls this.
@@ -206,6 +196,25 @@ impl Editor {
     /// Injection boundary for tests and audit scenes.
     pub fn set_sounds(&mut self, sounds: Sounds) {
         self.assets.set_sounds(sounds);
+    }
+
+    /// Attach the process-shared music session. One library and credential are
+    /// shared by every project window; each editor owns only its presentation.
+    pub fn set_music_session(
+        &mut self,
+        session: Arc<crate::services::assets::music::MusicSession>,
+    ) -> Result<()> {
+        self.with_assets(|assets, port| assets.set_music_session(port, session))
+    }
+
+    /// Injection boundary for tests and audit scenes.
+    pub fn set_music(&mut self, music: Music) {
+        self.assets.set_music(music);
+    }
+
+    /// Project-owned media directory used when a track is added.
+    pub fn set_music_media_dir(&mut self, directory: PathBuf) {
+        self.assets.set_music_media_dir(directory);
     }
 
     /// Build the captions panel without any download or provider construction.
@@ -244,13 +253,8 @@ impl Editor {
 
     /// Complete the source picker through the captured properties workflow.
     pub fn lut_picked_file(&mut self, path: Option<std::path::PathBuf>) -> Result<()> {
-        let mut state = std::mem::take(&mut self.properties);
-        let result = state.picked_lut(&mut self.desk(), path);
-        if result.is_err() {
-            state.abort_lut();
-        }
-        self.properties = state;
-        result
+        self.desk()
+            .lend_properties(|state, desk| state.lut_picked_file(desk, path))
     }
 
     pub fn new(session: Session, playback: Playback, preferences: Preferences) -> Self {
@@ -321,8 +325,6 @@ impl Editor {
             replace_request: None,
             assets: asset_state,
             dialogs: dialogs::State::default(),
-            music: None,
-            music_media_dir: None,
             copy_snapshot_requested: false,
             requests: Vec::new(),
         }
@@ -470,7 +472,7 @@ impl Editor {
             replace_request: self.replace_request,
             media_delete_pending,
             sounds: self.assets.sounds.as_ref().map(|sounds| sounds.view()),
-            music: self.music.as_ref().map(|music| music.view()),
+            music: self.assets.music.as_ref().map(|music| music.view()),
             export_options: self.preferences.export,
             export: self.dialogs.export.inspect(),
             crop: self
@@ -731,13 +733,10 @@ impl Editor {
             .map(SourceAsset::id)
             .ok_or(Error::Invalid("import the file before replacing"))?;
         self.desk()
-            .apply_result(
-                Command::ReplaceMedia {
-                    items: vec![item],
-                    asset,
-                },
-                false,
-            )
+            .apply_result(Command::ReplaceMedia {
+                items: vec![item],
+                asset,
+            })
             .map(|_| ())
     }
     /// Native picker destination applied through the consumed `preview.snapshot`
@@ -830,23 +829,13 @@ impl Editor {
         self.show_assets(ui);
         self.show_import_overlay(ui.ctx());
     }
-    /// Lend the assets state and the write context to one workflow step.
-    pub(in crate::editor) fn with_assets<T>(
-        &mut self,
-        run: impl FnOnce(&mut assets::State, &mut Desk<'_>) -> T,
-    ) -> T {
-        let mut state = std::mem::take(&mut self.assets);
-        let result = run(&mut state, &mut Desk::new(self));
-        self.assets = state;
-        result
-    }
     /// Replace the media boundary in tests; production keeps the media owner.
     pub fn set_import_probe(&mut self, probe: Arc<dyn ImportProbe>) -> Result<()> {
-        self.with_assets(|assets, desk| assets.set_import_probe(desk, probe))
+        self.with_assets(|assets, port| assets.set_import_probe(port, probe))
     }
     /// Replace thumbnail decoding in tests; production reuses media's decoder.
     pub fn set_thumbnailer(&mut self, thumbnailer: Arc<dyn ThumbnailSource>) -> Result<()> {
-        self.with_assets(|assets, desk| assets.set_thumbnailer(desk, thumbnailer))
+        self.with_assets(|assets, port| assets.set_thumbnailer(port, thumbnailer))
     }
     /// Persistent content-keyed thumbnail directory. Without one thumbnails are
     /// memoized for this session only.
@@ -861,59 +850,15 @@ impl Editor {
         self.start_import(paths)
     }
     pub fn start_import(&mut self, paths: Vec<PathBuf>) -> Result<()> {
-        self.with_assets(|assets, desk| assets.start_import(desk, paths))
+        self.with_assets(|assets, port| assets.start_import(port, paths))
     }
     /// Replace the media selection; tests and agents use the same state as clicks.
     pub fn select_media(&mut self, ids: impl IntoIterator<Item = AssetId>) {
-        self.with_assets(|assets, _| assets.select_media(ids));
+        self.assets.select_media(ids);
     }
     /// App action `media.reveal`: switch to Media, scroll and highlight for 1.5 s.
     pub fn reveal_media(&mut self, asset: AssetId) -> Result<()> {
-        self.with_assets(|assets, desk| assets.reveal_media(desk, asset))
-    }
-    pub(in crate::editor) fn select_asset(&mut self, id: AssetId, modifiers: egui::Modifiers) {
-        self.with_assets(|assets, desk| assets.select_asset(desk, id, modifiers));
-    }
-    pub(in crate::editor) fn request_media_delete(&mut self, ids: Vec<AssetId>) {
-        self.assets.request_media_delete(&self.session, ids);
-    }
-    pub(in crate::editor) fn cancel_media_delete(&mut self) {
-        self.assets.cancel_media_delete();
-    }
-    pub(in crate::editor) fn confirm_media_delete(&mut self) -> Result<()> {
-        self.with_assets(|assets, desk| assets.confirm_media_delete(desk))
-    }
-    pub(in crate::editor) fn insert_selected_assets(&mut self) {
-        self.with_assets(|assets, desk| assets.insert_selected_assets(desk));
-    }
-    pub(in crate::editor) fn insert_graphic(&mut self, shape: crate::actions::GraphicShape) {
-        self.with_assets(|assets, desk| assets.insert_graphic(desk, shape));
-    }
-    pub(in crate::editor) fn insert_text(&mut self) {
-        self.with_assets(|assets, desk| assets.insert_text(desk));
-    }
-    pub(in crate::editor) fn remember_assets_tab(&mut self, tab: AssetsTab) -> Result<()> {
-        self.with_assets(|assets, desk| assets.remember_assets_tab(desk, tab))
-    }
-    pub(in crate::editor) fn apply_import_events(&mut self) {
-        self.with_assets(|assets, desk| assets.apply_import_events(desk));
-    }
-    pub(in crate::editor) fn restore_asset_state(&mut self) {
-        self.with_assets(|assets, desk| assets.restore_asset_state(desk));
-    }
-    pub(in crate::editor) fn prune_media_selection(&mut self) {
-        self.assets.prune_media_selection(&self.session);
-    }
-    pub(in crate::editor) fn media_marquee(
-        &mut self,
-        ui: &mut egui::Ui,
-        content: Rect,
-        background: &egui::Response,
-        rects: &[(AssetId, Rect)],
-    ) {
-        self.with_assets(|assets, desk| {
-            assets.media_marquee(desk, ui, content, background, rects);
-        });
+        self.with_assets(|assets, port| assets.reveal_media(port, asset))
     }
 }
 fn error_detail(error: &dyn std::error::Error) -> String {

@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, reason = "validated test fixtures and assertions")]
 use crate::support::session::{content, get, new_item, project, range, session};
 use engine::{Command, EditError, Session};
-use project::{Color, Item, ItemId, Project, TrackId};
+use project::{Color, ItemId, Project, TrackId};
 use proptest::prelude::*;
 use serde_json::json;
 use std::sync::Arc;
@@ -186,18 +186,11 @@ fn measure_large_project_gesture() {
     let mut data = project().into_data();
     let track = data.scene_mut().timeline.overlays.first_mut().unwrap();
     track.items = (0..10000)
-        .map(|n| Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: ItemId(n + 10),
-            source_asset: None,
-            source_range: range(0, 10),
-            start: Tick(n as i64 * 20),
-            content: content(),
+        .map(|n| {
+            testkit::item::item(ItemId(n + 10), content())
+                .source(range(0, 10))
+                .start(Tick(n as i64 * 20))
+                .build()
         })
         .collect();
     let mut s = Session::new(Project::new(data).unwrap(), 4).unwrap();

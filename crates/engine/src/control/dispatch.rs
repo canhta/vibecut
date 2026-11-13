@@ -3,8 +3,7 @@ use super::{Caller, output};
 use crate::jobs::{JobKind, JobRunner, JobState};
 use crate::providers::{CatalogOperation, ProviderOption};
 use crate::session::wire::{
-    ControlResult, JobView, MAX_RESPONSE_BYTES, ProviderView, bounded_json, output_schema,
-    validate_wire,
+    ControlResult, JobView, MAX_RESPONSE_BYTES, ProviderView, bounded_json, validate_wire,
 };
 use crate::{Command, Session, control::Error as EngineError, control::Result, registry};
 
@@ -70,11 +69,14 @@ fn music_access<'a>(caller: &Caller<'a>) -> crate::session::Result<&'a super::Mu
 }
 
 impl Session {
-    /// Publishing reads the committed project, never an open gesture's preview.
-    fn reject_open_transaction(&self) -> Result<()> {
-        if self.transaction_active() {
-            return Err(EngineError::Session(
-                crate::session::SessionError::TransactionActive,
+    /// The one admission step every transport passes before dispatch: the command's
+    /// declared availability (including the open-transaction rule) and its declared
+    /// collection limits. A refusal is typed; nothing has run.
+    pub(super) fn admit(&self, command: &Command) -> Result<()> {
+        command.kind().admit(self).map_err(EngineError::Session)?;
+        if command.exceeds_collection_limit() {
+            return Err(EngineError::Control(
+                crate::session::wire::ControlError::Limit,
             ));
         }
         Ok(())
@@ -86,28 +88,17 @@ impl Session {
         fingerprint: blake3::Hash,
         caller: &Caller<'_>,
     ) -> Result<ControlResult> {
+        self.admit(&command)?;
         match command {
-            Command::ReadClipboard {} => {
-                if self.transaction_active() {
-                    return Err(EngineError::Session(
-                        crate::session::SessionError::TransactionActive,
-                    ));
-                }
-                Ok(ControlResult::Clipboard {
-                    payload: self.clipboard_payload(),
-                })
-            }
+            Command::ReadClipboard {} => Ok(ControlResult::Clipboard {
+                payload: self.clipboard_payload(),
+            }),
             Command::ImportLut {
                 path,
                 name,
                 licence,
                 expected_hash,
             } => {
-                if self.transaction_active() {
-                    return Err(EngineError::Session(
-                        crate::session::SessionError::TransactionActive,
-                    ));
-                }
                 let expected = expected_hash
                     .map(|id| {
                         self.project()
@@ -148,11 +139,6 @@ impl Session {
                 })
             }
             Command::Inspect {} => {
-                if self.transaction_active() {
-                    return Err(EngineError::Session(
-                        crate::session::SessionError::TransactionActive,
-                    ));
-                }
                 validate_wire(self.project().data())?;
                 Ok(ControlResult::Inspection {
                     project: Box::new(self.project().data().clone()),
@@ -160,7 +146,6 @@ impl Session {
             }
             Command::Catalog {} => {
                 let catalog = ControlResult::Catalog {
-                    output_schema: output_schema().clone(),
                     entries: registry().to_vec(),
                 };
                 bounded_json(&catalog, MAX_RESPONSE_BYTES - 4096)?;
@@ -187,11 +172,6 @@ impl Session {
                 language,
                 include_markers,
             } => {
-                if self.transaction_active() {
-                    return Err(EngineError::Session(
-                        crate::session::SessionError::TransactionActive,
-                    ));
-                }
                 let candidates = crate::session::filler::scene_candidates(
                     self.project().data(),
                     Some(&language),
@@ -331,11 +311,6 @@ impl Session {
                 Ok(ControlResult::Job { snapshot })
             }
             Command::GenerateWaveform { asset } => {
-                if self.transaction_active() {
-                    return Err(EngineError::Session(
-                        crate::session::SessionError::TransactionActive,
-                    ));
-                }
                 let asset = self
                     .project()
                     .data()
@@ -366,11 +341,6 @@ impl Session {
                 visible,
                 pixels_per_second,
             } => {
-                if self.transaction_active() {
-                    return Err(EngineError::Session(
-                        crate::session::SessionError::TransactionActive,
-                    ));
-                }
                 let data = self.project().data();
                 let clip = data
                     .scene()
@@ -409,11 +379,6 @@ impl Session {
                 })
             }
             Command::DetectScenes { asset, settings } => {
-                if self.transaction_active() {
-                    return Err(EngineError::Session(
-                        crate::session::SessionError::TransactionActive,
-                    ));
-                }
                 let asset = self
                     .project()
                     .data()
@@ -440,11 +405,6 @@ impl Session {
                 })
             }
             Command::MeasureLoudness {} => {
-                if self.transaction_active() {
-                    return Err(EngineError::Session(
-                        crate::session::SessionError::TransactionActive,
-                    ));
-                }
                 let job = crate::loudness::submit_loudness(runner, self.project().clone(), || {
                     Box::new(render::FileSources::default())
                 })?;
@@ -460,11 +420,6 @@ impl Session {
                 pad_ms,
                 crossfade_ms,
             } => {
-                if self.transaction_active() {
-                    return Err(EngineError::Session(
-                        crate::session::SessionError::TransactionActive,
-                    ));
-                }
                 let settings = crate::pause_candidates::PauseSettings {
                     min_pause_ms,
                     pad_ms,
@@ -486,11 +441,6 @@ impl Session {
                 language,
                 max_chapters,
             } => {
-                if self.transaction_active() {
-                    return Err(EngineError::Session(
-                        crate::session::SessionError::TransactionActive,
-                    ));
-                }
                 let access = caller
                     .chapters
                     .ok_or(crate::providers::Error::ConsentRequired)?;
@@ -508,11 +458,6 @@ impl Session {
                 language,
                 include_markers,
             } => {
-                if self.transaction_active() {
-                    return Err(EngineError::Session(
-                        crate::session::SessionError::TransactionActive,
-                    ));
-                }
                 let access = caller
                     .chapters
                     .ok_or(crate::providers::Error::ConsentRequired)?;
@@ -527,11 +472,6 @@ impl Session {
                 })
             }
             Command::CaptionsSuggestEmphasis { item, cue_ids } => {
-                if self.transaction_active() {
-                    return Err(EngineError::Session(
-                        crate::session::SessionError::TransactionActive,
-                    ));
-                }
                 let access = caller
                     .chapters
                     .ok_or(crate::providers::Error::ConsentRequired)?;
@@ -549,11 +489,6 @@ impl Session {
                 })
             }
             Command::ChaptersExportSidecars { dir, document } => {
-                if self.transaction_active() {
-                    return Err(EngineError::Session(
-                        crate::session::SessionError::TransactionActive,
-                    ));
-                }
                 let protected = self.protected_paths().to_vec();
                 let paths = crate::chapter_sidecars::write_to_directory(
                     self.project(),
@@ -568,11 +503,6 @@ impl Session {
                 range,
                 source_language,
             } => {
-                if self.transaction_active() {
-                    return Err(EngineError::Session(
-                        crate::session::SessionError::TransactionActive,
-                    ));
-                }
                 let access = caller
                     .captions
                     .ok_or(crate::providers::Error::ConsentRequired)?;
@@ -599,11 +529,6 @@ impl Session {
                 force,
                 glossary,
             } => {
-                if self.transaction_active() {
-                    return Err(EngineError::Session(
-                        crate::session::SessionError::TransactionActive,
-                    ));
-                }
                 let access = caller
                     .captions
                     .ok_or(crate::providers::Error::ConsentRequired)?;
@@ -638,11 +563,6 @@ impl Session {
                 overlap_tolerance,
                 keywords,
             } => {
-                if self.transaction_active() {
-                    return Err(EngineError::Session(
-                        crate::session::SessionError::TransactionActive,
-                    ));
-                }
                 let (access, workflow) = clip_access(caller)?;
                 let source = self
                     .project()
@@ -688,11 +608,6 @@ impl Session {
                 overwrite,
                 allow_degraded,
             } => {
-                if self.transaction_active() {
-                    return Err(EngineError::Session(
-                        crate::session::SessionError::TransactionActive,
-                    ));
-                }
                 let (_, workflow) = clip_access(caller)?;
                 let snapshot = runner
                     .snapshot(job)
@@ -762,11 +677,6 @@ impl Session {
                 })
             }
             Command::CaptionsApply { job, start } => {
-                if self.transaction_active() {
-                    return Err(EngineError::Session(
-                        crate::session::SessionError::TransactionActive,
-                    ));
-                }
                 let snapshot = runner
                     .snapshot(job)
                     .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
@@ -819,11 +729,6 @@ impl Session {
                 duration,
                 dir,
             } => {
-                if self.transaction_active() {
-                    return Err(EngineError::Session(
-                        crate::session::SessionError::TransactionActive,
-                    ));
-                }
                 let protected = self.protected_paths().to_vec();
                 let outcome = crate::artifacts::freeze::freeze(
                     self,
@@ -837,11 +742,6 @@ impl Session {
                 Ok(ControlResult::Edit { outcome })
             }
             Command::Snapshot { time, path } => {
-                if self.transaction_active() {
-                    return Err(EngineError::Session(
-                        crate::session::SessionError::TransactionActive,
-                    ));
-                }
                 let protected = self.protected_paths().to_vec();
                 let snapshot = crate::snapshot::save_with_overwrite(
                     self.project(),
@@ -862,11 +762,6 @@ impl Session {
                 path,
                 overwrite,
             } => {
-                if self.transaction_active() {
-                    return Err(EngineError::Session(
-                        crate::session::SessionError::TransactionActive,
-                    ));
-                }
                 let mut settings = render::ExportSettings::from_project(self.project());
                 settings.container =
                     render::OutputOptions::container_for_path(&path, options.audio_only)?;
@@ -912,11 +807,6 @@ impl Session {
                 dir,
                 overwrite,
             } => {
-                if self.transaction_active() {
-                    return Err(EngineError::Session(
-                        crate::session::SessionError::TransactionActive,
-                    ));
-                }
                 let plan = crate::plan_asset_exports(self.project(), &asset_ids, &dir, overwrite)?;
                 let paths = plan.iter().map(|export| export.path.clone()).collect();
                 let sources = self.asset_export_sources.clone();
@@ -982,11 +872,6 @@ impl Session {
                 })
             }
             Command::ReframeGenerate { item, target } => {
-                if self.transaction_active() {
-                    return Err(EngineError::Session(
-                        crate::session::SessionError::TransactionActive,
-                    ));
-                }
                 let data = self.project().data();
                 let clip = data
                     .scene()
@@ -1049,11 +934,6 @@ impl Session {
                 job,
                 replace_manual,
             } => {
-                if self.transaction_active() {
-                    return Err(EngineError::Session(
-                        crate::session::SessionError::TransactionActive,
-                    ));
-                }
                 let snapshot = runner
                     .snapshot(job)
                     .ok_or(EngineError::Runtime(crate::RuntimeError::JobNotRetained))?;
@@ -1119,18 +999,14 @@ impl Session {
                 let outcome = self.apply(Command::Batch { commands })?;
                 Ok(ControlResult::Edit { outcome })
             }
-            Command::SaveProjectAs { path, replace } => {
-                self.reject_open_transaction()?;
-                super::publish::save_copy(
-                    self.project(),
-                    self.metadata(),
-                    &path,
-                    replace,
-                    self.protected_paths(),
-                )
-            }
+            Command::SaveProjectAs { path, replace } => super::publish::save_copy(
+                self.project(),
+                self.metadata(),
+                &path,
+                replace,
+                self.protected_paths(),
+            ),
             Command::ExportProjectBundle { path } => {
-                self.reject_open_transaction()?;
                 super::publish::export_bundle(self.project(), &path)
             }
             Command::ImportProjectBundle {

@@ -6,42 +6,27 @@ use time::{Speed, TICKS_PER_SECOND, Tick};
 
 const SPEEDS: [u16; 5] = [10, 500, 1000, 2000, 5000];
 
-fn media(source_range: time::SourceRange, thousandths: u16, start: i64) -> Item {
-    Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Retime {
-            window: None,
-            speed: Speed::from_thousandths(thousandths).unwrap(),
-            maintain_pitch: false,
-            reverse: false,
-        },
-        masks: Vec::new(),
-        effects: Vec::new(),
-        animations: Default::default(),
-        id: ItemId(1),
-        source_asset: Some(media::AssetId(3)),
-        source_range,
-        start: Tick(start),
-        content: ItemParams::Video(VideoParams {
-            fades: Default::default(),
-            source_audio_enabled: true,
-            volume: 0.0,
-            muted: false,
-            crop: None,
-            fit: Default::default(),
-            cleanup: Default::default(),
-            background: project::ClipBackground::None,
-            reduce_noise: false,
-        }),
-    }
-}
-
 #[test]
 fn rate_duration_and_source_range_agree_at_every_boundary_speed() {
     let second = TICKS_PER_SECOND;
     for thousandths in SPEEDS {
-        let item = media(range(7 * second, 17 * second), thousandths, 3 * second);
+        let item = testkit::item::item(
+            ItemId(1),
+            ItemParams::Video(VideoParams {
+                source_audio_enabled: true,
+                ..VideoParams::plain()
+            }),
+        )
+        .asset(media::AssetId(3))
+        .source(range(7 * second, 17 * second))
+        .start(Tick(3 * second))
+        .retime(Retime {
+            window: None,
+            speed: Speed::from_thousandths(thousandths).unwrap(),
+            maintain_pitch: false,
+            reverse: false,
+        })
+        .build();
         let speed = item.retime.speed;
         let duration = item.duration().unwrap();
         assert_eq!(
@@ -144,7 +129,23 @@ fn split_and_trim_respect_retime_at_boundary_and_odd_cuts() {
     let second = TICKS_PER_SECOND;
     let frame = second / 30;
     for thousandths in SPEEDS {
-        let item = media(range(0, 4 * second), thousandths, 10 * second);
+        let item = testkit::item::item(
+            ItemId(1),
+            ItemParams::Video(VideoParams {
+                source_audio_enabled: true,
+                ..VideoParams::plain()
+            }),
+        )
+        .asset(media::AssetId(3))
+        .source(range(0, 4 * second))
+        .start(Tick(10 * second))
+        .retime(Retime {
+            window: None,
+            speed: Speed::from_thousandths(thousandths).unwrap(),
+            maintain_pitch: false,
+            reverse: false,
+        })
+        .build();
         let end = item.end().unwrap();
         let length = end.0 - item.start.0;
         for local in [
@@ -199,7 +200,23 @@ fn split_and_trim_respect_retime_at_boundary_and_odd_cuts() {
         assert!(item.trim_end(item.start).is_err());
     }
     // Unity speed keeps the exact tick arithmetic.
-    let unity = media(range(100, 200), 1000, 5);
+    let unity = testkit::item::item(
+        ItemId(1),
+        ItemParams::Video(VideoParams {
+            source_audio_enabled: true,
+            ..VideoParams::plain()
+        }),
+    )
+    .asset(media::AssetId(3))
+    .source(range(100, 200))
+    .start(Tick(5))
+    .retime(Retime {
+        window: None,
+        speed: Speed::from_thousandths(1000).unwrap(),
+        maintain_pitch: false,
+        reverse: false,
+    })
+    .build();
     let (left, right) = unity.split_at(Tick(45)).unwrap();
     assert_eq!(
         (left.source_range, right.source_range, right.start),
@@ -223,7 +240,7 @@ proptest! {
         cut in 1i64..4_000_000_000_000,
         start in 0i64..1_000_000_000,
     ) {
-        let item = media(range(0, source_ticks), thousandths, start);
+        let item = testkit::item::item(ItemId(1), ItemParams::Video(VideoParams { source_audio_enabled: true, ..VideoParams::plain() })).asset(media::AssetId(3)).source(range(0, source_ticks)).start(Tick(start)).retime(Retime { window: None, speed: Speed::from_thousandths(thousandths).unwrap(), maintain_pitch: false, reverse: false }).build();
         let length = item.duration().unwrap().0;
         prop_assume!(length >= 2);
         let at = Tick(start + 1 + cut % (length - 1));
@@ -238,18 +255,44 @@ fn persistence_roundtrips_speed_and_pitch_and_refuses_invalid_retime() {
     let dir = tempfile::tempdir().unwrap();
     let mut data = empty().into_data();
     data.assets.push(source(dir.path().join("clip.mp4")));
-    let mut video = media(range(0, 400), 500, 0);
+    let mut video = testkit::item::item(
+        ItemId(1),
+        ItemParams::Video(VideoParams {
+            source_audio_enabled: true,
+            ..VideoParams::plain()
+        }),
+    )
+    .asset(media::AssetId(3))
+    .source(range(0, 400))
+    .start(Tick(0))
+    .retime(Retime {
+        window: None,
+        speed: Speed::from_thousandths(500).unwrap(),
+        maintain_pitch: false,
+        reverse: false,
+    })
+    .build();
     video.retime.maintain_pitch = true;
     data.scene_mut().timeline.main.items.push(video);
-    let mut audio = media(range(0, 300), 2500, 0);
+    let mut audio = testkit::item::item(
+        ItemId(1),
+        ItemParams::Video(VideoParams {
+            source_audio_enabled: true,
+            ..VideoParams::plain()
+        }),
+    )
+    .asset(media::AssetId(3))
+    .source(range(0, 300))
+    .start(Tick(0))
+    .retime(Retime {
+        window: None,
+        speed: Speed::from_thousandths(2500).unwrap(),
+        maintain_pitch: false,
+        reverse: false,
+    })
+    .build();
     audio.id = ItemId(2);
-    audio.content = ItemParams::Audio(AudioParams {
-        fades: Default::default(),
-        volume: 0.0,
-        muted: false,
-        source: Default::default(),
-        cleanup: Default::default(),
-    });
+    audio.content = ItemParams::Audio(AudioParams::default());
     data.scene_mut().timeline.insert_track(Track {
         id: TrackId(9),
         name: "Audio".into(),
@@ -269,7 +312,23 @@ fn persistence_roundtrips_speed_and_pitch_and_refuses_invalid_retime() {
     );
     assert_eq!(decode(&bytes).unwrap().project, project);
 
-    let mut text_item = media(range(0, 10), 1000, 0);
+    let mut text_item = testkit::item::item(
+        ItemId(1),
+        ItemParams::Video(VideoParams {
+            source_audio_enabled: true,
+            ..VideoParams::plain()
+        }),
+    )
+    .asset(media::AssetId(3))
+    .source(range(0, 10))
+    .start(Tick(0))
+    .retime(Retime {
+        window: None,
+        speed: Speed::from_thousandths(1000).unwrap(),
+        maintain_pitch: false,
+        reverse: false,
+    })
+    .build();
     text_item.content = ItemParams::Text(TextParams::new("x"));
     text_item.source_asset = None;
     text_item.retime = Retime::default();
@@ -307,11 +366,25 @@ fn persistence_roundtrips_speed_and_pitch_and_refuses_invalid_retime() {
     // 4 source ticks at 5x play for less than one output tick.
     let mut data = empty().into_data();
     data.assets.push(source(dir.path().join("clip.mp4")));
-    data.scene_mut()
-        .timeline
-        .main
-        .items
-        .push(media(range(0, 4), 5000, 0));
+    data.scene_mut().timeline.main.items.push(
+        testkit::item::item(
+            ItemId(1),
+            ItemParams::Video(VideoParams {
+                source_audio_enabled: true,
+                ..VideoParams::plain()
+            }),
+        )
+        .asset(media::AssetId(3))
+        .source(range(0, 4))
+        .start(Tick(0))
+        .retime(Retime {
+            window: None,
+            speed: Speed::from_thousandths(5000).unwrap(),
+            maintain_pitch: false,
+            reverse: false,
+        })
+        .build(),
+    );
     assert!(Project::new(data).is_err());
 }
 
@@ -319,11 +392,23 @@ fn persistence_roundtrips_speed_and_pitch_and_refuses_invalid_retime() {
 fn long_retime_mapping_keeps_audio_and_video_within_one_sample_grid() {
     use time::Rounding;
     for thousandths in [10, 333, 500, 1000, 2000, 5000] {
-        let item = media(
-            range(7 * TICKS_PER_SECOND + 123, 7200 * TICKS_PER_SECOND),
-            thousandths,
-            3 * TICKS_PER_SECOND + 456,
-        );
+        let item = testkit::item::item(
+            ItemId(1),
+            ItemParams::Video(VideoParams {
+                source_audio_enabled: true,
+                ..VideoParams::plain()
+            }),
+        )
+        .asset(media::AssetId(3))
+        .source(range(7 * TICKS_PER_SECOND + 123, 7200 * TICKS_PER_SECOND))
+        .start(Tick(3 * TICKS_PER_SECOND + 456))
+        .retime(Retime {
+            window: None,
+            speed: Speed::from_thousandths(thousandths).unwrap(),
+            maintain_pitch: false,
+            reverse: false,
+        })
+        .build();
         let rate = 48000;
         let origin = item
             .source_range
@@ -359,7 +444,23 @@ fn long_retime_mapping_keeps_audio_and_video_within_one_sample_grid() {
 fn reversed_clip_plays_its_source_backwards_and_cuts_keep_the_mapping() {
     let second = TICKS_PER_SECOND;
     for thousandths in SPEEDS {
-        let mut item = media(range(0, 4 * second), thousandths, 10 * second);
+        let mut item = testkit::item::item(
+            ItemId(1),
+            ItemParams::Video(VideoParams {
+                source_audio_enabled: true,
+                ..VideoParams::plain()
+            }),
+        )
+        .asset(media::AssetId(3))
+        .source(range(0, 4 * second))
+        .start(Tick(10 * second))
+        .retime(Retime {
+            window: None,
+            speed: Speed::from_thousandths(thousandths).unwrap(),
+            maintain_pitch: false,
+            reverse: false,
+        })
+        .build();
         item.retime.reverse = true;
         let end = item.end().unwrap();
         let length = end.0 - item.start.0;

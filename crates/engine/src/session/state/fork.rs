@@ -48,6 +48,7 @@ impl Session {
             changed: false,
             created: Vec::new(),
             placements: Vec::new(),
+            closed_span: false,
         };
         if log.is_empty() {
             return Ok(outcome);
@@ -68,6 +69,7 @@ impl Session {
                     let applied = live.boundary(|s| s.commit(command, wire, s.ripple))?;
                     outcome.created.extend(applied.created);
                     outcome.placements.extend(applied.placements);
+                    outcome.closed_span |= applied.closed_span;
                 }
             }
             if *live.state.project != *target {

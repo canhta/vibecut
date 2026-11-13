@@ -17,6 +17,13 @@ pub(super) struct FolderTable {
     pub(super) path: String,
     pub(super) prefix: Vec<String>,
     pub(super) placements: BTreeMap<String, Placement>,
+    pub(super) forbidden: Vec<Forbidden>,
+}
+
+/// A type name the modules of some layers of a folder must never mention.
+pub(super) struct Forbidden {
+    pub(super) name: String,
+    pub(super) layers: Vec<String>,
 }
 
 pub(super) struct CrateTable {
@@ -149,10 +156,13 @@ pub(super) fn config(root: &Path) -> Result<Table, String> {
                 ));
             }
             let folder_context = format!("{context} folder `{folder_path}`");
+            let placements = placements(folder, &folder_context)?;
+            let forbidden = forbidden(folder, &placements, &folder_context)?;
             folders.push(FolderTable {
                 path: folder_path,
                 prefix,
-                placements: placements(folder, &folder_context)?,
+                placements,
+                forbidden,
             });
         }
         crates.push(CrateTable {
@@ -162,6 +172,34 @@ pub(super) fn config(root: &Path) -> Result<Table, String> {
         });
     }
     Ok(Table { crates })
+}
+
+fn forbidden(
+    folder: &toml::Value,
+    placements: &BTreeMap<String, Placement>,
+    context: &str,
+) -> Result<Vec<Forbidden>, String> {
+    let mut rows = Vec::new();
+    for row in array(folder, "forbid")? {
+        let name = text_value(row, "name")?;
+        let mut layers = Vec::new();
+        for layer in array(row, "layers")? {
+            let layer = layer
+                .as_str()
+                .ok_or_else(|| {
+                    format!("{CONFIG}: {context} forbid `{name}` has a non-string layer")
+                })?
+                .to_owned();
+            if !placements.values().any(|place| place.layer_name == layer) {
+                return Err(format!(
+                    "{CONFIG}: {context} forbid `{name}` names layer `{layer}`, which places no module"
+                ));
+            }
+            layers.push(layer);
+        }
+        rows.push(Forbidden { name, layers });
+    }
+    Ok(rows)
 }
 
 fn placements(entry: &toml::Value, context: &str) -> Result<BTreeMap<String, Placement>, String> {

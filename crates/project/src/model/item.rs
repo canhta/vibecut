@@ -35,6 +35,25 @@ pub struct VideoParams {
     #[serde(default)]
     pub reduce_noise: bool,
 }
+impl VideoParams {
+    /// A plain clip: its own audio off, unity volume, not muted, the full frame, default
+    /// fit, no fades, no cleanup, no background and no noise reduction. `Default` would
+    /// need a neutral `source_audio_enabled`, which has none: a clip with its audio on and
+    /// one without are both ordinary, so sites that want audio set it as a field update.
+    pub fn plain() -> Self {
+        Self {
+            source_audio_enabled: false,
+            volume: 0.0,
+            muted: false,
+            crop: None,
+            fit: crate::FitMode::default(),
+            fades: crate::Fades::default(),
+            cleanup: crate::AudioCleanup::default(),
+            background: ClipBackground::None,
+            reduce_noise: false,
+        }
+    }
+}
 /// What fills the canvas behind a visual clip. Exclusive: one kind per clip.
 /// The blur reads the clip's own decoded frame, so it never feeds back.
 #[derive(
@@ -329,7 +348,9 @@ pub enum AudioSource {
         music: LibraryMusic,
     },
 }
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+/// `Default` is the plain clip: unity volume (0 dB), not muted, an uploaded source,
+/// no fades and no cleanup. Every field has a neutral value, so no `plain()` is needed.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AudioParams {
     pub volume: f32,

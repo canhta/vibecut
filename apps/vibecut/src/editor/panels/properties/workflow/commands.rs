@@ -67,7 +67,7 @@ fn text_target(
     snapshot: &std::sync::Arc<project::Project>,
     what: &'static str,
 ) -> Result<()> {
-    if !desk.editor().clip_animation_available(state)
+    if !desk.view().edit_ready
         || state.animation_target(desk.view().session, desk.view().selection()) != Some(item)
         || !std::sync::Arc::ptr_eq(snapshot, desk.view().session.project())
     {
@@ -126,14 +126,9 @@ pub(super) fn toggle_keyframes(
             if has != all {
                 continue;
             }
-            let path = if field == "audio_gain" {
-                project::BuiltinPath::Volume.as_str()
-            } else {
-                field.as_str()
-            };
             session.apply(engine::Command::ToggleKeyframe {
                 item,
-                path: project::AnimationPath::new(path)?,
+                path: project::AnimationPath::new(field)?,
                 component: None,
                 time,
                 value: project::ParamValue::Scalar(*value),
@@ -152,15 +147,10 @@ pub(super) fn set_keyframe_at(
     time: time::Tick,
     value: f64,
 ) -> Result<()> {
-    let path = if field == "audio_gain" {
-        project::AnimationPath::from(project::BuiltinPath::Volume)
-    } else {
-        project::AnimationPath::new(field)?
-    };
     desk.apply_result(
         engine::Command::AddKeyframe {
             item,
-            path,
+            path: project::AnimationPath::new(field)?,
             component: None,
             key: project::Keyframe::new(time, project::ParamValue::Scalar(value)),
         },
@@ -231,11 +221,7 @@ pub(in crate::editor) fn set_item_field(
     field: &str,
     value: &str,
 ) -> Result<()> {
-    let bounds = if field == "opacity" {
-        Some((0., 1.))
-    } else {
-        scalar_bounds(field)
-    };
+    let bounds = animated_bounds(field);
     if bounds.is_some() && read::channel_has_keys(desk.view().session.project(), item, field) {
         let (start, end) = read::range_of(desk.view().session.project(), item)
             .ok_or(Error::Invalid("opacity target"))?;
@@ -261,7 +247,7 @@ pub(in crate::editor) fn set_item_field(
             read::retime_of(desk.view().session.project(), item).ok_or(Error::Invalid("speed"))?;
         return super::speed::set_speed(desk, item, speed, maintain_pitch);
     }
-    if let Some((min, max)) = scalar_bounds(field) {
+    if let Some((min, max)) = animated_bounds(field).filter(|_| field.starts_with("params.")) {
         let value = value
             .trim()
             .parse::<f64>()
@@ -283,160 +269,43 @@ pub(in crate::editor) fn set_item_field(
     Ok(())
 }
 
-/// Admitted range of a graphic scalar parameter, in authored units.
-fn scalar_bounds(field: &str) -> Option<(f64, f64)> {
-    match field {
-        "params.strokeWidth" => Some((0., 64.)),
-        "params.cornerRadius" => Some((0., 50.)),
-        "params.sides" | "params.points" => Some((3., 12.)),
-        "params.depth" => Some((1., 99.)),
-        _ => None,
-    }
+/// Admitted range of a field that edits through its curve while it is keyed: opacity and
+/// the graphic scalars, as the engine's parameter table declares them.
+fn animated_bounds(field: &str) -> Option<(f64, f64)> {
+    (field == "opacity" || field.starts_with("params."))
+        .then(|| read::path_bounds(field))
+        .flatten()
 }
 
+/// The patch a field name and its text stand for, read by the engine's parameter table.
 fn item_patch(field: &str, value: &str) -> Result<ItemParamPatch> {
-    if let Some(transform) = project::TransformField::ALL
-        .into_iter()
-        .find(|f| f.builtin().as_str() == field)
-    {
-        let value = value
-            .trim()
-            .parse::<f64>()
-            .map_err(|_| Error::Invalid("transform value"))?;
-        let value = transform.clamp(value)?;
-        use project::TransformField as F;
-        return Ok(match transform {
-            F::PositionX => ItemParamPatch::PositionX(value),
-            F::PositionY => ItemParamPatch::PositionY(value),
-            F::ScaleX => ItemParamPatch::ScaleX(value),
-            F::ScaleY => ItemParamPatch::ScaleY(value),
-            F::Rotate => ItemParamPatch::Rotate(value),
-        });
-    }
-    Ok(match field {
-        "fit" => ItemParamPatch::Fit(
-            serde_json::from_value(serde_json::json!(value))
-                .map_err(|_| Error::Invalid("fit mode"))?,
-        ),
-        "blendMode" => ItemParamPatch::BlendMode(
-            serde_json::from_value(serde_json::json!(value))
-                .map_err(|_| Error::Invalid("blend mode"))?,
-        ),
-        _ if project::BuiltinPath::parse(field) == Some(project::BuiltinPath::Opacity) => {
-            ItemParamPatch::Opacity(
-                value
-                    .trim()
-                    .parse()
-                    .map_err(|_| Error::Invalid("opacity"))?,
-            )
-        }
-        "audio_gain" => ItemParamPatch::AudioGain(
-            value
-                .trim()
-                .parse()
-                .map_err(|_| Error::Invalid("audio gain"))?,
-        ),
-        "audio_muted" => {
-            let muted = match value.trim() {
-                "true" | "1" | "muted" => true,
-                "false" | "0" | "unmuted" => false,
-                _ => return Err(Error::Invalid("audio mute")),
-            };
-            ItemParamPatch::AudioMuted(muted)
-        }
-        "text_content" => ItemParamPatch::TextContent(value.into()),
-        "text_font" => {
-            let font = value.trim();
-            if font.is_empty() || font.len() > 256 {
-                return Err(Error::Invalid("font family"));
-            }
-            ItemParamPatch::TextFont(font.into())
-        }
-        "text_size" => ItemParamPatch::TextSize(
-            value
-                .trim()
-                .parse()
-                .map_err(|_| Error::Invalid("text size"))?,
-        ),
-        "text_weight" => ItemParamPatch::TextWeight(
-            value
-                .trim()
-                .parse()
-                .map_err(|_| Error::Invalid("text weight"))?,
-        ),
-        "text_italic" => ItemParamPatch::TextItalic(parse_flag(value, "text style")?),
-        "reduce_noise" => ItemParamPatch::ReduceNoise(parse_flag(value, "reduce noise")?),
-        "text_align" => ItemParamPatch::TextAlign(parse_word(value, "text alignment")?),
-        "text_decoration" => ItemParamPatch::TextDecoration(parse_word(value, "text decoration")?),
-        "text_letter_spacing" => ItemParamPatch::TextLetterSpacing(parse_number(value)?),
-        "text_line_height" => ItemParamPatch::TextLineHeight(parse_number(value)?),
-        "text_background_padding_x" => ItemParamPatch::TextBackgroundPaddingX(parse_number(value)?),
-        "text_background_padding_y" => ItemParamPatch::TextBackgroundPaddingY(parse_number(value)?),
-        "text_background_offset_x" => ItemParamPatch::TextBackgroundOffsetX(parse_number(value)?),
-        "text_background_offset_y" => ItemParamPatch::TextBackgroundOffsetY(parse_number(value)?),
-        "text_background_corner_radius" => {
-            ItemParamPatch::TextBackgroundCornerRadius(parse_number(value)?)
-        }
-        "text_background" => {
-            let value = value.trim();
-            ItemParamPatch::TextBackground(if value.eq_ignore_ascii_case("none") {
-                None
-            } else {
-                Some(project::TextBackground {
-                    color: parse_color(value)?,
-                    ..Default::default()
-                })
-            })
-        }
-        "text_color" => ItemParamPatch::TextColor(parse_color(value)?),
-        "text_stroke" => {
-            let value = value.trim();
-            ItemParamPatch::TextStroke(if value.eq_ignore_ascii_case("none") {
-                None
-            } else {
-                Some(project::TextStroke {
-                    color: parse_color(value)?,
-                    ..Default::default()
-                })
-            })
-        }
-        "text_shadow" => {
-            let value = value.trim();
-            ItemParamPatch::TextShadow(if value.eq_ignore_ascii_case("none") {
-                None
-            } else {
-                Some(project::TextShadow {
-                    color: parse_color(value)?,
-                    ..Default::default()
-                })
-            })
-        }
-        "text_glow" => ItemParamPatch::TextGlow(
-            value
-                .trim()
-                .parse()
-                .map_err(|_| Error::Invalid("text glow"))?,
-        ),
-        _ => return Err(Error::Invalid("shared field")),
+    ItemParamPatch::parse(field, value).map_err(|error| {
+        Error::Invalid(match error {
+            engine::ParamParseError::Unknown => "shared field",
+            engine::ParamParseError::Value => "field value",
+        })
     })
 }
-fn parse_number(value: &str) -> Result<f32> {
-    value
-        .trim()
-        .parse()
-        .map_err(|_| Error::Invalid("text number"))
-}
-fn parse_flag(value: &str, what: &'static str) -> Result<bool> {
-    match value.trim() {
-        "true" | "1" => Ok(true),
-        "false" | "0" => Ok(false),
-        _ => Err(Error::Invalid(what)),
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_table_field_parses_by_its_wire_name() {
+        for row in engine::ITEM_PARAMS {
+            assert!(
+                !matches!(
+                    item_patch(row.name, ""),
+                    Err(Error::Invalid("shared field"))
+                ),
+                "{} is not parsed by its wire name",
+                row.name
+            );
+        }
+        assert!(matches!(
+            item_patch("audio_gain", "1"),
+            Err(Error::Invalid("shared field"))
+        ));
     }
-}
-/// A snake_case enum word such as `line_through`.
-fn parse_word<T: serde::de::DeserializeOwned>(value: &str, what: &'static str) -> Result<T> {
-    serde_json::from_value(serde_json::json!(value.trim())).map_err(|_| Error::Invalid(what))
-}
-fn parse_color(value: &str) -> Result<project::Color> {
-    Ok(render::color::parse_hex(value)?)
 }

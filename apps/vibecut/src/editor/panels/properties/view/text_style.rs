@@ -8,69 +8,23 @@ use crate::editor::properties::{
 };
 use crate::kit;
 
-const fn spec(field: &'static str, label: Text, min: f64, max: f64, decimals: usize) -> ScrubSpec {
-    ScrubSpec {
+const fn spec(field: &'static str, label: Text, decimals: usize) -> ScrubSpec {
+    ScrubSpec::of(
         field,
         label,
-        min,
-        max,
-        step: if decimals == 0 { 1.0 } else { 0.1 },
-        pixels_per_step: 2.0,
+        if decimals == 0 { 1.0 } else { 0.1 },
+        2.0,
         decimals,
-        suffix: "",
-        scale: 1.0,
-    }
+    )
 }
 
-const LETTER_SPACING: ScrubSpec = spec(
-    "text_letter_spacing",
-    Text::TextLetterSpacing,
-    -(project::MAX_LETTER_SPACING as f64),
-    project::MAX_LETTER_SPACING as f64,
-    1,
-);
-const LINE_HEIGHT: ScrubSpec = spec(
-    "text_line_height",
-    Text::TextLineHeight,
-    0.0,
-    project::MAX_LINE_HEIGHT as f64,
-    0,
-);
-const PADDING_X: ScrubSpec = spec(
-    "text_background_padding_x",
-    Text::BackgroundPaddingX,
-    0.0,
-    project::TextBackground::MAX_EXTENT as f64,
-    0,
-);
-const PADDING_Y: ScrubSpec = spec(
-    "text_background_padding_y",
-    Text::BackgroundPaddingY,
-    0.0,
-    project::TextBackground::MAX_EXTENT as f64,
-    0,
-);
-const OFFSET_X: ScrubSpec = spec(
-    "text_background_offset_x",
-    Text::BackgroundOffsetX,
-    -(project::TextBackground::MAX_OFFSET as f64),
-    project::TextBackground::MAX_OFFSET as f64,
-    0,
-);
-const OFFSET_Y: ScrubSpec = spec(
-    "text_background_offset_y",
-    Text::BackgroundOffsetY,
-    -(project::TextBackground::MAX_OFFSET as f64),
-    project::TextBackground::MAX_OFFSET as f64,
-    0,
-);
-const RADIUS: ScrubSpec = spec(
-    "text_background_corner_radius",
-    Text::BackgroundRadius,
-    0.0,
-    project::TextBackground::MAX_EXTENT as f64,
-    0,
-);
+const LETTER_SPACING: ScrubSpec = spec("text_letter_spacing", Text::TextLetterSpacing, 1);
+const LINE_HEIGHT: ScrubSpec = spec("text_line_height", Text::TextLineHeight, 0);
+const PADDING_X: ScrubSpec = spec("text_background_padding_x", Text::BackgroundPaddingX, 0);
+const PADDING_Y: ScrubSpec = spec("text_background_padding_y", Text::BackgroundPaddingY, 0);
+const OFFSET_X: ScrubSpec = spec("text_background_offset_x", Text::BackgroundOffsetX, 0);
+const OFFSET_Y: ScrubSpec = spec("text_background_offset_y", Text::BackgroundOffsetY, 0);
+const RADIUS: ScrubSpec = spec("text_background_corner_radius", Text::BackgroundRadius, 0);
 
 impl Panel<'_, '_> {
     /// Segmented choice row; returns the clicked option index.

@@ -19,8 +19,26 @@ impl Editor {
             if key == "keybindings" {
                 self.sync_keymap();
             }
+            if key == "ripple" {
+                self.sync_gap_policy();
+            }
         }
         Ok(())
+    }
+    /// Hand the ripple preference to the session, which alone decides how an edit
+    /// treats the gap it leaves. A gesture in flight keeps its policy; the next
+    /// frame retries.
+    pub(in crate::editor) fn sync_gap_policy(&mut self) {
+        let enabled = self.preferences.ripple;
+        if self.session.ripple() == enabled || self.session.transaction_active() {
+            return;
+        }
+        if let Err(error) = self
+            .session
+            .apply(engine::Command::TimelineSetRipple { enabled })
+        {
+            self.desk().fail(error.to_string());
+        }
     }
     /// Section keys are dynamic; the whole open/closed map is one history entry.
     pub fn set_section_open(&mut self, key: &str, open: bool) -> Result<()> {

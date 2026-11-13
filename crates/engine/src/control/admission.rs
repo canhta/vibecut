@@ -397,11 +397,7 @@ impl Session {
                 crate::session::wire::ControlError::StaleRevision,
             ));
         }
-        if self.transaction_active() {
-            return Err(EngineError::Session(
-                crate::session::SessionError::TransactionActive,
-            ));
-        }
+        self.admit(&command)?;
         let before = self.revision();
         let mut metadata = self.metadata().clone();
         metadata.touch();
@@ -418,6 +414,7 @@ impl Session {
                     changed: false,
                     created: Vec::new(),
                     placements: Vec::new(),
+                    closed_span: false,
                 },
             }),
             Err(error) => ResponseValue::Error(error.code()),

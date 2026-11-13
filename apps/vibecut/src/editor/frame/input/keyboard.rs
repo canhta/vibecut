@@ -33,7 +33,7 @@ impl Editor {
         }
         if self.assets.media_delete_confirm.is_some() {
             if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
-                self.cancel_media_delete();
+                self.assets.cancel_media_delete();
             }
             return;
         }

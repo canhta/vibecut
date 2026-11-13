@@ -13,22 +13,16 @@ fn session() -> Session {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: vec![],
-            animations: Default::default(),
-            id: ItemId(2),
-            source_asset: None,
-            source_range: SourceRange::new(Tick::ZERO, FrameRate::FPS_30.tick_of(30).unwrap())
-                .unwrap(),
-            start: Tick::ZERO,
-            content: ItemParams::Overlay(OverlayParams {
-                color: Color([255; 4]),
-            }),
-        }],
+        items: vec![
+            testkit::item::item(
+                ItemId(2),
+                ItemParams::Overlay(OverlayParams {
+                    color: Color([255; 4]),
+                }),
+            )
+            .source(SourceRange::new(Tick::ZERO, FrameRate::FPS_30.tick_of(30).unwrap()).unwrap())
+            .build(),
+        ],
     });
     Session::new(Project::new(data).unwrap(), 20).unwrap()
 }

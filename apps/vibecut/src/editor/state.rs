@@ -295,8 +295,6 @@ pub struct Editor {
     pub(crate) replace_request: Option<ItemId>,
     pub(super) assets: super::assets::State,
     pub(super) dialogs: super::dialogs::State,
-    pub(super) music: Option<super::assets::sounds::music::Music>,
-    pub(super) music_media_dir: Option<PathBuf>,
     /// A copy-snapshot action waits for the next frame's egui context.
     pub(super) copy_snapshot_requested: bool,
     /// Cross-area requests the frame drains after the area that raised them.

@@ -75,7 +75,7 @@ engine registry in one undo step. Focused text editing owns keyboard input.
 ## Audio tab
 
 Audio follows the Video tab for a video with source audio, and is the default tab of an
-audio clip. Its section has three slider rows with fields: Volume (`audio_gain`, -60 to
+audio clip. Its section has three slider rows with fields: Volume (`volume`, -60 to
 +20 dB, 0 neutral, keyframeable through the Volume diamond), then Fade in and Fade out
 (`audio_fade_in` / `audio_fade_out`, 0 to 10 s, capped at the clip less the other
 fade's window). Fade edits are `audio.set_fade` with the edge's current curve, one undo
@@ -211,8 +211,8 @@ Properties draft is required. Captured row actions revalidate their target and s
 direct activation uses the same readiness before any unrelated draft can flush.
 
 Audio and video source items share the batch inspector's volume and mute controls;
-volume steps 0.01 dB over -60..20 dB. `inspector.audio_gain` and
-`inspector.audio_muted` are stable automation IDs.
+volume steps 0.01 dB over -60..20 dB. `inspector.volume` and
+`inspector.muted` are stable automation IDs.
 
 ## Mask
 

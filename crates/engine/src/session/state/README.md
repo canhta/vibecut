@@ -22,7 +22,7 @@ A gesture cancel, a replaced timeline preview and a failed `transaction` return 
 
 Commands declared `SessionControl` (ripple policy, timeline preview, scene switch, view state, gestures, undo and redo) execute in `session_control`. `commit` reserves the generation, refuses lifecycle commands, which their library or persistence owner executes, then dispatches by the declared effect; everything else is an edit candidate.
 
-`commit` keeps three admission steps because they choose the input of the edit pipeline: `timeline.edit` unwraps into a batch with its own ripple policy, a reviewed span cut (`remove_pauses`, `transcript.delete_range`, `remove_fillers`, also nested in a batch) forces ripple, and `sounds.add_to_timeline` runs as a transaction of two edits.
+`commit` keeps three admission steps because they choose the input of the edit pipeline: `timeline.edit` unwraps into a batch with its own ripple policy, the `gap_ripple` table decides which commands ripple (a reviewed span cut such as `remove_pauses`, `transcript.delete_range` or `remove_fillers`, also nested in a batch, forces it; library audio never does), and `sounds.add_to_timeline` runs as a transaction of two edits.
 
 The Session clipboard snapshot (items or keyframes) is restored by `Checkpoint` alongside the revision,
 but deliberately excluded from `State` and history snapshots. Committed identity

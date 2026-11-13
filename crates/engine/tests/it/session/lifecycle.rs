@@ -212,21 +212,16 @@ fn thumbnails_backfill_on_open_and_refresh_at_exit_without_preview_state() {
     assert_eq!(project::read_metadata(&path).thumbnail, first);
     let mut data = autosave.session().project().data().clone();
     let frame = data.canvas.fps.tick_of(1).unwrap();
-    data.scene_mut().timeline.main.items.push(project::Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Default::default(),
-        masks: Vec::new(),
-        effects: Vec::new(),
-        animations: Default::default(),
-        id: project::ItemId(6),
-        source_asset: None,
-        start: time::Tick::ZERO,
-        source_range: time::SourceRange::new(time::Tick::ZERO, frame).unwrap(),
-        content: project::ItemParams::Overlay(project::OverlayParams {
-            color: project::Color([0, 255, 0, 255]),
-        }),
-    });
+    data.scene_mut().timeline.main.items.push(
+        testkit::item::item(
+            project::ItemId(6),
+            project::ItemParams::Overlay(project::OverlayParams {
+                color: project::Color([0, 255, 0, 255]),
+            }),
+        )
+        .source(time::SourceRange::new(time::Tick::ZERO, frame).unwrap())
+        .build(),
+    );
     // Change through the real command path, not a preview buffer.
     let item = data.scene().timeline.main.items[0].clone();
     autosave

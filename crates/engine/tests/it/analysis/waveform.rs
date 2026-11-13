@@ -11,9 +11,7 @@ use engine::{
     waveform::{MAX_COLUMNS, WaveformRequest, WaveformState, display},
 };
 use media::{AssetId, SourceAsset};
-use project::{
-    AudioParams, Item, ItemId, ItemParams, Project, ProjectId, Retime, Track, TrackId, TrackKind,
-};
+use project::{ItemId, Project, ProjectId, Retime, Track, TrackId, TrackKind};
 use std::{
     path::{Path, PathBuf},
     sync::{
@@ -23,7 +21,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use time::{SourceRange, Speed, TICKS_PER_SECOND, Tick, TimeRange};
+use time::{SourceRange, TICKS_PER_SECOND, Tick, TimeRange};
 
 fn t(seconds: i64) -> Tick {
     Tick(seconds * TICKS_PER_SECOND)
@@ -128,31 +126,6 @@ fn source_asset(path: &Path, id: u64) -> SourceAsset {
     SourceAsset::import(AssetId(id), path.to_path_buf()).unwrap()
 }
 
-fn item(asset: &SourceAsset, source: SourceRange, start: Tick, speed: f64) -> Item {
-    Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Retime {
-            speed: Speed::from_f64(speed).unwrap(),
-            ..Default::default()
-        },
-        masks: Vec::new(),
-        effects: Vec::new(),
-        animations: Default::default(),
-        id: ItemId(1),
-        source_asset: Some(asset.id()),
-        source_range: source,
-        start,
-        content: ItemParams::Audio(AudioParams {
-            fades: Default::default(),
-            volume: 0.0,
-            muted: false,
-            source: Default::default(),
-            cleanup: Default::default(),
-        }),
-    }
-}
-
 fn setup() -> (JobRunner, ArtifactCache, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let (runner, cache) = setup_at(dir.path(), Arc::new(SystemClock::default()));
@@ -242,7 +215,12 @@ fn trim_and_retime_map_to_bucket_positions() {
     );
 
     // Trim: source 1..3 s starts at timeline zero.
-    let trimmed = item(&asset, range(1, 3), Tick::ZERO, 1.0);
+    let trimmed = testkit::item::audio(ItemId(1))
+        .asset(&asset.id())
+        .source(range(1, 3))
+        .start(Tick::ZERO)
+        .speed(1.0)
+        .build();
     let bars = ready_bars(display(&asset, &trimmed, window(0, 2), 8, &mut cache).unwrap());
     assert_eq!(bars.len(), 8);
     for (index, peak) in peaks(&bars).into_iter().enumerate() {
@@ -256,7 +234,12 @@ fn trim_and_retime_map_to_bucket_positions() {
 
     // Retime 2x: 3 s of source spans 1.5 s of timeline. Bars that meet a
     // section boundary share its 16 ms bucket, so assert the section centres.
-    let retimed = item(&asset, range(0, 3), Tick::ZERO, 2.0);
+    let retimed = testkit::item::audio(ItemId(1))
+        .asset(&asset.id())
+        .source(range(0, 3))
+        .start(Tick::ZERO)
+        .speed(2.0)
+        .build();
     let bars = ready_bars(display(&asset, &retimed, one_and_a_half(), 12, &mut cache).unwrap());
     assert_eq!(bars.len(), 12);
     let values = peaks(&bars);
@@ -272,14 +255,24 @@ fn trim_and_retime_map_to_bucket_positions() {
     assert!((values[8] - 0.9).abs() < 0.03);
 
     // Trim and retime together: source 1..3 s at 2x spans 1 s of timeline.
-    let both = item(&asset, range(1, 3), Tick::ZERO, 2.0);
+    let both = testkit::item::audio(ItemId(1))
+        .asset(&asset.id())
+        .source(range(1, 3))
+        .start(Tick::ZERO)
+        .speed(2.0)
+        .build();
     let bars = ready_bars(display(&asset, &both, window(0, 1), 8, &mut cache).unwrap());
     let values = peaks(&bars);
     assert!(values.iter().take(4).all(|peak| (*peak - 0.5).abs() < 0.03));
     assert!(values.iter().skip(4).all(|peak| (*peak - 0.9).abs() < 0.03));
 
     // A later clip start moves the same source window down the timeline.
-    let moved = item(&asset, range(1, 3), t(5), 1.0);
+    let moved = testkit::item::audio(ItemId(1))
+        .asset(&asset.id())
+        .source(range(1, 3))
+        .start(t(5))
+        .speed(1.0)
+        .build();
     let before = display(&asset, &moved, window(8, 9), 1, &mut cache);
     assert!(matches!(
         before,
@@ -302,7 +295,12 @@ fn cold_pending_ready_over_and_unsupported_states() {
     let asset = source_asset(&path, 1);
     let request = WaveformRequest::new(asset.clone()).unwrap();
     let (mut runner, mut cache, _dir) = setup();
-    let clip = item(&asset, range(0, 3), Tick::ZERO, 1.0);
+    let clip = testkit::item::audio(ItemId(1))
+        .asset(&asset.id())
+        .source(range(0, 3))
+        .start(Tick::ZERO)
+        .speed(1.0)
+        .build();
     assert!(matches!(
         display(&asset, &clip, window(0, 3), 8, &mut cache).unwrap(),
         WaveformState::Pending
@@ -330,7 +328,12 @@ fn cold_pending_ready_over_and_unsupported_states() {
     let request = WaveformRequest::new(loud_asset.clone()).unwrap();
     let (summary, _runner, mut loud_cache, _dir) = run(&request);
     assert!((0..summary.bucket_count()).any(|bucket| summary.over(bucket)));
-    let clip = item(&loud_asset, range(0, 1), Tick::ZERO, 1.0);
+    let clip = testkit::item::audio(ItemId(1))
+        .asset(&loud_asset.id())
+        .source(range(0, 1))
+        .start(Tick::ZERO)
+        .speed(1.0)
+        .build();
     let half = TimeRange::new(Tick::ZERO, Tick(TICKS_PER_SECOND / 2)).unwrap();
     let bars = ready_bars(display(&loud_asset, &clip, half, 4, &mut loud_cache).unwrap());
     assert!(bars.iter().all(|bar| bar.over));
@@ -340,7 +343,12 @@ fn cold_pending_ready_over_and_unsupported_states() {
         WaveformRequest::new(video.clone()),
         Err(AnalysisError::Edit(engine::EditError::Unsupported(_)))
     ));
-    let clip = item(&video, range(0, 1), Tick::ZERO, 1.0);
+    let clip = testkit::item::audio(ItemId(1))
+        .asset(&video.id())
+        .source(range(0, 1))
+        .start(Tick::ZERO)
+        .speed(1.0)
+        .build();
     assert!(matches!(
         display(&video, &clip, window(0, 1), 4, &mut cache).unwrap(),
         WaveformState::Unsupported
@@ -426,7 +434,12 @@ fn warm_hit_opens_no_source_and_changed_content_misses() {
     };
     let changed = source_asset(&loud_path, 2);
     let request = WaveformRequest::new(changed.clone()).unwrap();
-    let clip = item(&changed, range(0, 1), Tick::ZERO, 1.0);
+    let clip = testkit::item::audio(ItemId(1))
+        .asset(&changed.id())
+        .source(range(0, 1))
+        .start(Tick::ZERO)
+        .speed(1.0)
+        .build();
     assert!(matches!(
         display(&changed, &clip, window(0, 1), 4, &mut cache).unwrap(),
         WaveformState::Pending
@@ -448,7 +461,12 @@ fn stereo_display_combines_channels_and_reports_over() {
     let request = WaveformRequest::new(asset.clone()).unwrap();
     let (summary, _runner, mut cache, _dir) = run(&request);
     assert_eq!(summary.channels(), 2);
-    let clip = item(&asset, range(0, 1), Tick::ZERO, 1.0);
+    let clip = testkit::item::audio(ItemId(1))
+        .asset(&asset.id())
+        .source(range(0, 1))
+        .start(Tick::ZERO)
+        .speed(1.0)
+        .build();
     let bars = ready_bars(display(&asset, &clip, window(0, 1), 4, &mut cache).unwrap());
     for bar in &bars {
         assert!((bar.max - 0.8).abs() < 0.03, "{bar:?}");
@@ -520,12 +538,22 @@ fn cancelling_a_changed_source_keeps_the_previous_cache() {
     assert!(runner.output_bytes(job.id).is_none());
     assert_eq!(cache.len(), 1, "cancel leaves the previous entry intact");
 
-    let clip = item(&asset, range(0, 3), Tick::ZERO, 1.0);
+    let clip = testkit::item::audio(ItemId(1))
+        .asset(&asset.id())
+        .source(range(0, 3))
+        .start(Tick::ZERO)
+        .speed(1.0)
+        .build();
     assert!(matches!(
         display(&asset, &clip, window(0, 3), 8, &mut cache).unwrap(),
         WaveformState::Ready(_)
     ));
-    let changed_clip = item(&changed, range(0, 1), Tick::ZERO, 1.0);
+    let changed_clip = testkit::item::audio(ItemId(1))
+        .asset(&changed.id())
+        .source(range(0, 1))
+        .start(Tick::ZERO)
+        .speed(1.0)
+        .build();
     assert!(matches!(
         display(&changed, &changed_clip, window(0, 1), 4, &mut cache).unwrap(),
         WaveformState::Pending
@@ -544,7 +572,12 @@ fn corrupt_cache_is_failed_and_regenerates() {
     cache
         .put(request.cache_key(), b"not a waveform summary")
         .unwrap();
-    let clip = item(&asset, range(0, 3), Tick::ZERO, 1.0);
+    let clip = testkit::item::audio(ItemId(1))
+        .asset(&asset.id())
+        .source(range(0, 3))
+        .start(Tick::ZERO)
+        .speed(1.0)
+        .build();
     assert!(matches!(
         display(&asset, &clip, window(0, 3), 8, &mut cache).unwrap(),
         WaveformState::Failed(engine::RuntimeError::CacheCorrupt)
@@ -581,7 +614,14 @@ fn project_json_stays_byte_identical_after_generation() {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![item(&asset, range(0, 3), Tick::ZERO, 1.0)],
+        items: vec![
+            testkit::item::audio(ItemId(1))
+                .asset(&asset.id())
+                .source(range(0, 3))
+                .start(Tick::ZERO)
+                .speed(1.0)
+                .build(),
+        ],
     });
     let project = Project::new(data).unwrap();
     let before = project::encode(&project, false).unwrap();
@@ -599,7 +639,12 @@ fn outside_asset_and_hostile_columns_are_typed_refusals() {
     let other = source_asset(&path, 2);
     let request = WaveformRequest::new(asset.clone()).unwrap();
     let (_summary, _runner, mut cache, _dir) = run(&request);
-    let mismatched = item(&other, range(0, 3), Tick::ZERO, 1.0);
+    let mismatched = testkit::item::audio(ItemId(1))
+        .asset(&other.id())
+        .source(range(0, 3))
+        .start(Tick::ZERO)
+        .speed(1.0)
+        .build();
     let visible = window(0, 3);
     assert!(matches!(
         display(&asset, &mismatched, visible, 8, &mut cache),
@@ -607,7 +652,12 @@ fn outside_asset_and_hostile_columns_are_typed_refusals() {
             "waveform display asset"
         )))
     ));
-    let clip = item(&asset, range(0, 3), Tick::ZERO, 1.0);
+    let clip = testkit::item::audio(ItemId(1))
+        .asset(&asset.id())
+        .source(range(0, 3))
+        .start(Tick::ZERO)
+        .speed(1.0)
+        .build();
     assert!(matches!(
         display(&asset, &clip, window(0, 1), MAX_COLUMNS + 1, &mut cache),
         Err(AnalysisError::Edit(engine::EditError::Invalid(
@@ -645,12 +695,12 @@ fn interview_generates_a_complete_summary() {
     assert!(summary.channels() == 1 || summary.channels() == 2);
     assert!(summary.total_samples() > 1_400 * 48_000);
     let duration = asset.probe().duration.unwrap();
-    let clip = item(
-        &asset,
-        SourceRange::new(Tick::ZERO, duration).unwrap(),
-        Tick::ZERO,
-        1.0,
-    );
+    let clip = testkit::item::audio(ItemId(1))
+        .asset(&asset.id())
+        .source(SourceRange::new(Tick::ZERO, duration).unwrap())
+        .start(Tick::ZERO)
+        .speed(1.0)
+        .build();
     let visible = TimeRange::new(Tick::ZERO, Tick(TICKS_PER_SECOND * 60)).unwrap();
     assert!(matches!(
         display(&asset, &clip, visible, 800, &mut cache).unwrap(),

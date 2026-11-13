@@ -161,17 +161,7 @@ pub(super) fn readme_project(source: &Path) -> Result<(Editor, ItemId, ItemId), 
         Tick::ZERO,
         range(0, 6)?,
         Some(asset_id),
-        ItemParams::Video(VideoParams {
-            fades: Default::default(),
-            source_audio_enabled: false,
-            volume: 0.0,
-            muted: false,
-            crop: None,
-            fit: Default::default(),
-            cleanup: Default::default(),
-            background: project::ClipBackground::None,
-            reduce_noise: false,
-        }),
+        ItemParams::Video(VideoParams::plain()),
     )?;
     let second = insert(
         &mut editor.session,
@@ -179,17 +169,7 @@ pub(super) fn readme_project(source: &Path) -> Result<(Editor, ItemId, ItemId), 
         Tick(6 * SECOND),
         range(6, 10)?,
         Some(asset_id),
-        ItemParams::Video(VideoParams {
-            fades: Default::default(),
-            source_audio_enabled: false,
-            volume: 0.0,
-            muted: false,
-            crop: None,
-            fit: Default::default(),
-            cleanup: Default::default(),
-            background: project::ClipBackground::None,
-            reduce_noise: false,
-        }),
+        ItemParams::Video(VideoParams::plain()),
     )?;
     let audio = track(&mut editor.session, "Audio", TrackKind::Audio)?;
     insert(
@@ -198,13 +178,7 @@ pub(super) fn readme_project(source: &Path) -> Result<(Editor, ItemId, ItemId), 
         Tick::ZERO,
         range(0, 10)?,
         Some(asset_id),
-        ItemParams::Audio(AudioParams {
-            fades: Default::default(),
-            volume: 0.0,
-            muted: false,
-            source: Default::default(),
-            cleanup: Default::default(),
-        }),
+        ItemParams::Audio(AudioParams::default()),
     )?;
     let text = track(&mut editor.session, "Text", TrackKind::Text)?;
     let chapter = insert(

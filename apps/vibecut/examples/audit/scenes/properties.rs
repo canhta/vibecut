@@ -66,7 +66,7 @@ pub(super) fn inspector_audio_locale(
         .ok_or("audio item")?
         .id;
     editor.select([audio].into_iter().collect())?;
-    editor.set_shared_field("audio_gain", "-3")?;
+    editor.set_shared_field("volume", "-3")?;
     let mut app = app_editor(editor, scale);
     wait_for_presented(&mut app)?;
     app.run_steps(3);

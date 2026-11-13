@@ -1,7 +1,7 @@
 //! Owns editor frame composition.
-mod assets;
 mod input;
 mod layout;
+mod lend;
 mod player;
 mod project_delete;
 mod route;

@@ -20,14 +20,22 @@ struct Snapshot {
     project: Arc<Project>,
     selection: Arc<BTreeSet<ItemId>>,
 }
-/// A reviewed span cut needs the ripple pass wherever it is nested.
-fn cuts_spans(command: &Command) -> bool {
+/// The one gap policy table: whether `command` runs the ripple pass, given the session's ripple
+/// setting. Callers (UI, MCP, CLI) send plain commands and never carry the policy.
+/// - library audio is exempt: it adds to a track and never closes a span;
+/// - a reviewed span cut always closes its vacated tails, wherever it is nested;
+/// - a batch follows its children;
+/// - everything else follows the setting (the main-track magnet rule is applied in `commit`).
+fn gap_ripple(command: &Command, setting: bool) -> bool {
     match command {
+        Command::AddLibrarySound { .. } | Command::AddLibraryMusic { .. } => false,
         Command::RemovePauses { .. }
         | Command::TranscriptDeleteRange { .. }
         | Command::RemoveFillers { .. } => true,
-        Command::Batch { commands } => commands.iter().any(cuts_spans),
-        _ => false,
+        Command::Batch { commands } => {
+            setting || commands.iter().any(|child| gap_ripple(child, false))
+        }
+        _ => setting,
     }
 }
 #[derive(Clone)]
@@ -370,11 +378,9 @@ impl Session {
         }
         self.apply(command)
     }
-    /// Whether `timeline.edit` with these commands and ripple policy closes the span they vacate,
-    /// so a kept piece moves to the cut: the session ripple, or the main-track magnet rule.
-    /// Read-only; it answers for the current project, before the edit.
-    pub fn closes_vacated_spans(&self, commands: &[Command], ripple: bool) -> bool {
-        ripple || edit::magnet_scope(self.state.project.data(), commands).is_some()
+    /// The session ripple setting every edit follows; `timeline.set_ripple` changes it.
+    pub fn ripple(&self) -> bool {
+        self.ripple
     }
     /// Current immutable snapshot. Timeline previews retain committed content here;
     /// explicit incremental gestures/groups expose their candidate during the transaction.
@@ -553,6 +559,7 @@ impl Session {
             changed,
             created: Vec::new(),
             placements: Vec::new(),
+            closed_span: false,
         })
     }
     /// Refusal or unwind leaves the session as it was. A continuous gesture goes
@@ -576,7 +583,12 @@ impl Session {
     }
     /// One command at its own boundary, unrecorded.
     fn staged(&mut self, command: Command, wire: bool) -> Result<Outcome> {
-        self.boundary(|session| session.commit(command, wire, session.ripple))
+        let ripple = self.ripple;
+        self.staged_with(command, wire, ripple)
+    }
+    /// One command at its own boundary under an explicit gap policy, unrecorded.
+    fn staged_with(&mut self, command: Command, wire: bool, ripple: bool) -> Result<Outcome> {
+        self.boundary(|session| session.commit(command, wire, ripple))
     }
     /// Run `run` atomically: a refusal or an unwind leaves the session as
     /// [`Checkpoint`] captured it.
@@ -611,6 +623,7 @@ impl Session {
         start: Tick,
         asset: media::SourceAsset,
         source: AudioSource,
+        ripple: bool,
     ) -> Result<Outcome> {
         let duration = asset
             .probe()
@@ -625,15 +638,16 @@ impl Session {
         self.transaction(|session| {
             created.extend(
                 session
-                    .staged(
+                    .staged_with(
                         Command::AddAsset {
                             asset: asset.clone(),
                         },
                         false,
+                        ripple,
                     )?
                     .created,
             );
-            let outcome = session.staged(
+            let outcome = session.staged_with(
                 Command::InsertItem {
                     placement,
                     item: NewItem {
@@ -643,15 +657,13 @@ impl Session {
                         source_range: SourceRange::new(Tick::ZERO, duration)?,
                         start,
                         content: ItemParams::Audio(AudioParams {
-                            fades: Default::default(),
-                            volume: 0.0,
-                            muted: false,
                             source: source.clone(),
-                            cleanup: Default::default(),
+                            ..AudioParams::default()
                         }),
                     },
                 },
                 false,
+                ripple,
             )?;
             created.extend(outcome.created);
             placements.extend(outcome.placements);
@@ -661,6 +673,7 @@ impl Session {
             changed: true,
             created,
             placements,
+            closed_span: false,
         })
     }
 
@@ -684,14 +697,6 @@ impl Session {
 
     fn commit(&mut self, command: Command, wire: bool, ripple: bool) -> Result<Outcome> {
         let (command, ripple) = match command {
-            // In-process entries may give one replacement preview its ripple policy;
-            // the wire keeps refusing a session control inside a batch.
-            Command::TimelineEdit {
-                mut commands,
-                ripple,
-            } if !wire && matches!(commands.as_slice(), [Command::TimelinePreview { .. }]) => {
-                (commands.remove(0), ripple)
-            }
             Command::TimelineEdit { commands, ripple } => {
                 let command = Command::Batch { commands };
                 edit::check_budget(&command)?;
@@ -699,6 +704,7 @@ impl Session {
             }
             command => (command, ripple),
         };
+        let ripple = gap_ripple(&command, ripple);
         let command = match command {
             Command::AddLibrarySound {
                 placement,
@@ -711,6 +717,7 @@ impl Session {
                     start,
                     asset,
                     AudioSource::Library { sound },
+                    ripple,
                 );
             }
             Command::AddLibraryMusic {
@@ -724,13 +731,11 @@ impl Session {
                     start,
                     asset,
                     AudioSource::Music { music },
+                    ripple,
                 );
             }
             command => command,
         };
-        // A reviewed span cut always closes its vacated tails; the caller cannot
-        // turn the ripple path off, including inside a batch.
-        let ripple = ripple || cuts_spans(&command);
         // Keep one generation available to close an active preview lifetime even
         // if its final child reaches exhaustion and the group must roll back.
         let closing = matches!(
@@ -814,6 +819,7 @@ impl Session {
                 changed: false,
                 created: Vec::new(),
                 placements: Vec::new(),
+                closed_span: false,
             });
         }
         let next = Arc::new(next);
@@ -872,6 +878,7 @@ impl Session {
             changed: true,
             created,
             placements,
+            closed_span: ripple || magnet.is_some(),
         })
     }
     fn change_scene_view(&mut self, next: &project::ProjectData) {
@@ -926,6 +933,42 @@ mod tests {
             zoom,
             scroll: 0.0,
             playhead: Tick::ZERO,
+        }
+    }
+
+    #[test]
+    fn the_gap_table_decides_ripple_for_every_command_shape() {
+        let delete = || Command::Delete { items: Vec::new() };
+        let pauses = || Command::RemovePauses {
+            spans: Vec::new(),
+            crossfade_ms: 0,
+        };
+        let fillers = || Command::RemoveFillers {
+            ids: Vec::new(),
+            confirm_edited: false,
+        };
+        let words = || Command::TranscriptDeleteRange {
+            word_ids: Vec::new(),
+        };
+        let batch = |commands| Command::Batch { commands };
+        // (name, command, setting, ripple runs)
+        let rows = [
+            ("plain edit follows an off setting", delete(), false, false),
+            ("plain edit follows an on setting", delete(), true, true),
+            ("pause cut always closes", pauses(), false, true),
+            ("filler cut always closes", fillers(), false, true),
+            ("word cut always closes", words(), false, true),
+            ("batch follows an off setting", batch(vec![delete()]), false, false),
+            ("batch follows an on setting", batch(vec![delete()]), true, true),
+            (
+                "a nested span cut closes the batch",
+                batch(vec![delete(), batch(vec![pauses()])]),
+                false,
+                true,
+            ),
+        ];
+        for (name, command, setting, expected) in rows {
+            assert_eq!(gap_ripple(&command, setting), expected, "{name}");
         }
     }
 

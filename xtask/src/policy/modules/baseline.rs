@@ -1,5 +1,5 @@
 //! Reads the only-shrinking `xtask/modules-baseline.txt` violation list.
-use super::{BASELINE, DOC, FOLDER, INTERFACE, LAYER, NAME, Violation};
+use super::{BASELINE, DOC, FOLDER, FRAME_TYPE, INTERFACE, LAYER, NAME, Violation};
 use std::{collections::BTreeSet, fs, path::Path};
 
 pub(super) fn baseline(root: &Path) -> Result<BTreeSet<Violation>, String> {
@@ -53,6 +53,7 @@ pub(super) fn rule_id(rule: &str) -> Option<&'static str> {
         FOLDER => Some(FOLDER),
         INTERFACE => Some(INTERFACE),
         LAYER => Some(LAYER),
+        FRAME_TYPE => Some(FRAME_TYPE),
         _ => None,
     }
 }

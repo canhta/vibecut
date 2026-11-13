@@ -14,13 +14,14 @@ pub use wire::ChapterSidecars;
 pub(crate) use wire::budget;
 mod command_facts;
 mod commands;
-pub use command_facts::{Availability, GrantClass, Lifecycle};
+pub use command_facts::{Availability, CollectionLimit, GrantClass, Lifecycle};
 use commands::EditCommand;
 pub use commands::{
     AnimationPreset, AnimationSlot, CaptionPreset, CaptionStyleApply, ClipAnimations, Command,
     CommandKind, CommandSpec, CreatedId, CutTarget, Effect, EmphasisMode, Example, Fixture,
-    ItemParamPatch, ItemPlacement, KeyframeRef, Move, NewItem, Outcome, Placement, TrackPlacement,
-    TrimEdge, declaration_order_error, lifecycle, registry,
+    ITEM_PARAMS, ItemParam, ItemParamPatch, ItemPlacement, KeyframeRef, Move, NewItem, Outcome,
+    ParamBounds, ParamParseError, ParamTarget, ParamUnit, Placement, TrackPlacement, TrimEdge,
+    declaration_order_error, item_param, lifecycle, registry,
 };
 mod edit;
 pub(crate) mod filler;

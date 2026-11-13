@@ -7,26 +7,26 @@ use super::super::{
     error_detail,
 };
 use super::State;
-use crate::editor::Desk;
+use crate::editor::Port;
 use crate::i18n;
 
 impl State {
     /// Replace the media boundary in tests; production keeps the media owner.
     pub(in crate::editor) fn set_import_probe(
         &mut self,
-        desk: &mut Desk<'_>,
+        port: &mut Port<'_>,
         probe: Arc<dyn ImportProbe>,
     ) -> Result<()> {
-        self.import_queue(desk)?.set_probe(probe);
+        self.import_queue(port)?.set_probe(probe);
         Ok(())
     }
     /// Replace thumbnail decoding in tests; production reuses media's decoder.
     pub(in crate::editor) fn set_thumbnailer(
         &mut self,
-        desk: &mut Desk<'_>,
+        port: &mut Port<'_>,
         thumbnailer: Arc<dyn ThumbnailSource>,
     ) -> Result<()> {
-        self.import_queue(desk)?.set_thumbnailer(thumbnailer);
+        self.import_queue(port)?.set_thumbnailer(thumbnailer);
         Ok(())
     }
     /// Persistent content-keyed thumbnail directory. Without one thumbnails are
@@ -51,7 +51,7 @@ impl State {
     }
     pub(in crate::editor) fn start_import(
         &mut self,
-        desk: &mut Desk<'_>,
+        port: &mut Port<'_>,
         paths: Vec<PathBuf>,
     ) -> Result<()> {
         if self.importing() {
@@ -60,7 +60,7 @@ impl State {
         if paths.is_empty() {
             return Ok(());
         }
-        let first = self.next_asset_id(desk.view().session);
+        let first = self.next_asset_id(&port.session);
         self.import_total = paths.len();
         self.import_completed = 0;
         self.import_imported = 0;
@@ -68,8 +68,8 @@ impl State {
         self.import_failures.clear();
         self.import_notice = None;
         self.import_error = None;
-        desk.editor().toast = None;
-        let result = self.start_import_paths(desk, paths, first);
+        port.clear_toast();
+        let result = self.start_import_paths(port, paths, first);
         if result.is_err() {
             self.import_total = 0;
         }
@@ -77,11 +77,11 @@ impl State {
     }
     pub(in crate::editor) fn start_import_paths(
         &mut self,
-        desk: &mut Desk<'_>,
+        port: &mut Port<'_>,
         paths: Vec<PathBuf>,
         first: u64,
     ) -> Result<()> {
-        let result = self.import_queue(desk)?.start(paths.clone(), first);
+        let result = self.import_queue(port)?.start(paths.clone(), first);
         if matches!(
             result,
             Err(Error::Engine(engine::control::Error::Runtime(
@@ -90,18 +90,18 @@ impl State {
         ) {
             self.thumbnail_textures.get_mut().clear();
             self.thumbnails.clear();
-            self.import_queue(desk)?.evict_thumbnails();
-            self.import_queue(desk)?.start(paths, first)
+            self.import_queue(port)?.evict_thumbnails();
+            self.import_queue(port)?.start(paths, first)
         } else {
             result
         }
     }
     pub(in crate::editor) fn import_queue(
         &mut self,
-        desk: &mut Desk<'_>,
+        port: &mut Port<'_>,
     ) -> Result<&mut ImportQueue> {
         if self.imports.is_none() {
-            let budget = desk.view().budget.clone();
+            let budget = port.read.budget.clone();
             self.imports = Some(ImportQueue::new(budget)?);
             if let Some(root) = &self.thumbnail_root
                 && let Some(queue) = &mut self.imports
@@ -123,15 +123,15 @@ impl State {
             .max()
             .map_or(1, |id| id.saturating_add(1))
     }
-    fn add_imported_asset(&mut self, desk: &mut Desk<'_>, asset: SourceAsset) -> Result<AssetId> {
+    fn add_imported_asset(&mut self, port: &mut Port<'_>, asset: SourceAsset) -> Result<AssetId> {
         // The worker reserves this identity before publishing its probing row;
         // undoing an earlier import must not renumber later job/thumbnail events.
         let id = asset.id();
-        desk.editor().session.apply(Command::AddAsset { asset })?;
+        port.session.apply(Command::AddAsset { asset })?;
         Ok(id)
     }
-    pub(in crate::editor) fn apply_import_events(&mut self, desk: &mut Desk<'_>) {
-        let before = desk.editor().session.project().clone();
+    pub(in crate::editor) fn apply_import_events(&mut self, port: &mut Port<'_>) {
+        let before = port.session.project().clone();
         let polled = match self.imports.as_mut() {
             Some(queue) => queue.poll(),
             None => Ok(Vec::new()),
@@ -139,7 +139,7 @@ impl State {
         let events = match polled {
             Ok(events) => events,
             Err(_) if self.restoring_asset.is_some() => {
-                self.finish_import(desk);
+                self.finish_import(port);
                 return;
             }
             Err(error) => {
@@ -148,7 +148,7 @@ impl State {
                 if let Some(queue) = &self.imports {
                     queue.cancel();
                 }
-                self.finish_import(desk);
+                self.finish_import(port);
                 return;
             }
         };
@@ -171,24 +171,16 @@ impl State {
                     let thumbnail = needs_thumbnail(&imported);
                     let adding = if self.restoring_asset == Some(imported.asset.id()) {
                         let id = imported.asset.id();
-                        let matches =
-                            desk.editor()
-                                .session
-                                .project()
-                                .data()
-                                .assets
-                                .iter()
-                                .any(|a| {
-                                    a.id() == id
-                                        && a.content_hash() == imported.asset.content_hash()
-                                });
+                        let matches = port.session.project().data().assets.iter().any(|a| {
+                            a.id() == id && a.content_hash() == imported.asset.content_hash()
+                        });
                         if matches {
                             Ok(id)
                         } else {
                             Err(Error::Invalid("restored media content changed"))
                         }
                     } else {
-                        self.add_imported_asset(desk, imported.asset)
+                        self.add_imported_asset(port, imported.asset)
                     };
                     match adding {
                         Ok(id) => {
@@ -252,7 +244,7 @@ impl State {
                     }
                 },
                 ImportEvent::Done { .. } if self.restoring_asset.is_some() => {
-                    self.finish_import(desk);
+                    self.finish_import(port);
                 }
                 ImportEvent::Done { cancelled, error } => {
                     self.import_cancelled = cancelled;
@@ -260,17 +252,17 @@ impl State {
                         self.import_notice = Some(error_detail(error.as_ref()));
                         self.import_error = Some(error);
                     }
-                    self.finish_import(desk);
+                    self.finish_import(port);
                 }
             }
         }
-        self.prune_asset_state(&desk.editor().session);
-        self.prune_media_selection(&desk.editor().session);
-        if !Arc::ptr_eq(&before, desk.editor().session.project()) {
-            desk.sync();
+        self.prune_asset_state(&port.session);
+        self.prune_media_selection(&port.session);
+        if !Arc::ptr_eq(&before, port.session.project()) {
+            port.sync();
         }
     }
-    pub(in crate::editor) fn finish_import(&mut self, desk: &mut Desk<'_>) {
+    pub(in crate::editor) fn finish_import(&mut self, port: &mut Port<'_>) {
         self.pending_imports.clear();
         if let Some(id) = self.restoring_asset.take() {
             if self.asset_states.get(&id) == Some(&AssetState::Probing) {
@@ -288,7 +280,7 @@ impl State {
         }
         let failed_count = self.import_failures.len();
         let unfinished_count = self.import_total.saturating_sub(self.import_completed);
-        let locale = desk.editor().preferences.locale;
+        let locale = port.locale();
         let imported = i18n::number(locale, self.import_imported as u64);
         let failed = i18n::number(locale, failed_count as u64);
         let unfinished = i18n::number(locale, unfinished_count as u64);
@@ -310,7 +302,7 @@ impl State {
         } else {
             i18n::text(locale, Text::ImportComplete)
         };
-        desk.toast(text, Some(detail));
+        port.toast(text, Some(detail));
         self.import_total = self.import_total.max(self.import_completed);
     }
 }

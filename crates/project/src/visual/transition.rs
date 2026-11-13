@@ -740,17 +740,7 @@ mod tests {
         );
         for i in &mut d.scene_mut().timeline.main.items {
             i.source_asset = Some(media::AssetId(1));
-            i.content = ItemParams::Video(crate::VideoParams {
-                source_audio_enabled: false,
-                volume: 0.,
-                muted: false,
-                fades: Default::default(),
-                crop: None,
-                fit: Default::default(),
-                cleanup: Default::default(),
-                background: crate::ClipBackground::None,
-                reduce_noise: false,
-            });
+            i.content = ItemParams::Video(crate::VideoParams::plain());
         }
         for (speed, cut, expected) in [
             (0.5, 200, (180, 200, 214)),

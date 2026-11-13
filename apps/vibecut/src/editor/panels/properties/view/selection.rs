@@ -49,7 +49,7 @@ impl Panel<'_, '_> {
             ) {
                 continue;
             }
-            if field.id == "audio_muted" {
+            if field.id == "muted" {
                 self.audio_mute_control(ui, &field);
                 continue;
             }
@@ -139,7 +139,7 @@ impl Panel<'_, '_> {
             }
             let (label, id) = match field.id {
                 "opacity" => (Text::Opacity, "inspector.opacity"),
-                "audio_gain" => (Text::AudioGain, "inspector.audio_gain"),
+                "volume" => (Text::AudioGain, "inspector.volume"),
                 "text_content" => (Text::TextContent, "inspector.text_content"),
                 "text_size" => (Text::TextSize, "inspector.text_size"),
                 _ => (Text::TextColor, "inspector.text_color"),
@@ -223,9 +223,9 @@ impl Panel<'_, '_> {
             egui::Checkbox::new(&mut muted, self.tr(Text::AudioMuted))
                 .indeterminate(field.value.is_none()),
         );
-        self.remember("inspector.audio_muted", &response);
+        self.remember("inspector.muted", &response);
         if response.changed() {
-            self.set_shared_field("audio_muted", &muted.to_string());
+            self.set_shared_field("muted", &muted.to_string());
         }
         if self.cx.selection().len() > 1 {
             self.compatible_count(ui, field.compatible);

@@ -115,7 +115,7 @@ impl Editor {
                         scene,
                         name: name.clone().into(),
                     };
-                    if self.desk().apply_result(command, false).is_err() {
+                    if self.desk().apply_result(command).is_err() {
                         self.timeline.keep_scene_rename(scene, name);
                     }
                 }
@@ -260,8 +260,7 @@ impl Editor {
                 patch: transform_patch(*field, *value),
             })
             .collect();
-        self.desk()
-            .preview(Command::TimelinePreview { commands }, false);
+        self.desk().preview(Command::TimelinePreview { commands });
     }
     /// Close a transform gesture with one undo step, or restore its entry project.
     pub(in crate::editor) fn end_preview_transform(&mut self, commit: bool) {
@@ -273,7 +272,7 @@ impl Editor {
         } else {
             Command::TimelineDiscardPreview {}
         };
-        self.desk().preview(command, false);
+        self.desk().preview(command);
     }
     /// Select the text item whose inline session just opened and keep the
     /// timeline's preview contract as the only writer.
@@ -290,8 +289,7 @@ impl Editor {
             item,
             patch: engine::ItemParamPatch::TextContent(content.into()),
         }];
-        self.desk()
-            .preview(Command::TimelinePreview { commands }, false);
+        self.desk().preview(Command::TimelinePreview { commands });
     }
     /// Commit an open inline edit as one undo step, or discard a net-zero session.
     pub(in crate::editor) fn commit_text_edit(&mut self) -> bool {
@@ -371,14 +369,12 @@ impl Editor {
             mask: mask.to_owned(),
             path: path.clone(),
         }];
-        self.desk()
-            .preview(Command::TimelinePreview { commands }, false);
+        self.desk().preview(Command::TimelinePreview { commands });
     }
     /// Stage one absolute whole-mask candidate from a gizmo gesture origin.
     pub(in crate::editor) fn preview_mask_box(&mut self, item: ItemId, mask: project::Mask) {
         let commands = vec![Command::UpdateMask { item, mask }];
-        self.desk()
-            .preview(Command::TimelinePreview { commands }, false);
+        self.desk().preview(Command::TimelinePreview { commands });
     }
     /// The anchors of the one mask the point scope holds, as `(item, mask, indices)`
     /// in path order. The scope only ever holds one mask of one item.
@@ -410,7 +406,7 @@ impl Editor {
             segment,
             t,
         };
-        match self.desk().apply_result(command, false) {
+        match self.desk().apply_result(command) {
             Ok(outcome) if outcome.changed => {
                 self.selection_scopes.mask_points.clear();
                 self.selection_scopes.mask_points.insert(
@@ -442,7 +438,7 @@ impl Editor {
             .into_iter()
             .map(|((item, mask), points)| Command::RemoveMaskPoint { item, mask, points })
             .collect();
-        if let Ok(outcome) = self.desk().apply_result(Command::Batch { commands }, false)
+        if let Ok(outcome) = self.desk().apply_result(Command::Batch { commands })
             && outcome.changed
         {
             self.selection_scopes.mask_points.clear();
@@ -455,8 +451,7 @@ impl Editor {
             return false;
         }
         if self.session.gesture_active() {
-            self.desk()
-                .preview(Command::TimelineDiscardPreview {}, false);
+            self.desk().preview(Command::TimelineDiscardPreview {});
         }
         true
     }
@@ -506,8 +501,7 @@ impl Editor {
             .preview_project()
             .unwrap_or(self.session.project())
             .clone();
-        let ripple = self.preferences.ripple;
-        let result = self.desk().run_command(command, ripple);
+        let result = self.desk().run_command(command);
         match result {
             Ok(_) => {
                 let current = self
@@ -557,8 +551,7 @@ impl Editor {
             .preview_project()
             .unwrap_or(self.session.project())
             .clone();
-        let ripple = self.preferences.ripple;
-        let result = self.desk().run_command(staged, ripple);
+        let result = self.desk().run_command(staged);
         match result {
             Ok(_) => {
                 // `project()` stays committed; the player follows the staged
@@ -755,8 +748,7 @@ impl Editor {
     /// Run a typed engine command on the current selection (track edits).
     pub(in crate::editor) fn track_command(&mut self, command: Command) {
         let before = self.session.project().clone();
-        let ripple = self.preferences.ripple;
-        let result = self.desk().run_command(command, ripple);
+        let result = self.desk().run_command(command);
         match result {
             Ok(_) => {
                 self.prune_selection();
@@ -808,6 +800,24 @@ impl Editor {
                     Request::OpenModel(id) => {
                         if let Err(error) = self.open_model(&id) {
                             self.desk().fail(error.to_string());
+                        }
+                    }
+                    Request::Action(id) => self.action(&id),
+                    Request::ExportClips => {
+                        self.lifecycle_action =
+                            Some(crate::services::lifecycle::EditorAction::ExportClips);
+                    }
+                    Request::AddEffect { item, kind } => {
+                        crate::editor::properties::add_effect_to_item(
+                            &mut self.desk(),
+                            item,
+                            &kind,
+                        );
+                    }
+                    Request::InsertShape(id) => {
+                        if self.action_enabled(&id) {
+                            self.action(&id);
+                            self.with_assets(|assets, port| assets.remember_sticker(port, &id));
                         }
                     }
                 }

@@ -6,6 +6,8 @@ The one read-only context and the one write context every editor area receives.
 
 `Desk` is lent to one area for one frame. Its entries apply typed engine commands, write the selection through the one `select` entry, report the failure, resync the preview once per committed change and record preference edits in the app's own history; `request` queues a cross-area intention the frame drains after the area returns. `View` is the read-only projection a workflow reads while it holds the desk: session (and its selection), preferences and playhead.
 
+`Port` is the session-only door an area edits through (slice plan: [structure](../../../../../docs/engineering/structure.md#editor-area-ports)). It holds the open session, a `Read` snapshot (byte budget, preferences, playhead, clip rectangles, clock, the frame's insertion and caption-bank answers) and the `Note`s the area leaves for the frame: error line, toast, preview resync, selection reset, preference write, widget record and cross-area `Request`. The frame builds it from disjoint `Editor` fields, so an area that takes a `Port` never names `Editor`; the frame applies the notes in order after the area returns.
+
 `bench` mounts one area alone in an offscreen harness for area tests. Layers and import direction: [structure](../../../../../docs/engineering/structure.md).
 
 The write context can adopt a fully validated preference candidate after its related

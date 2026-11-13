@@ -1,8 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
 use engine::{Command, Move, Session};
 use project::{
-    Color, Item, ItemId, ItemParams, OverlayParams, Project, ProjectId, TrackId,
-    TransitionAlignment, TransitionId,
+    Color, ItemId, ItemParams, OverlayParams, Project, ProjectId, TrackId, TransitionAlignment,
+    TransitionId,
 };
 use serde_json::json;
 use time::{SourceRange, Tick};
@@ -15,20 +15,16 @@ pub(crate) fn session(with_transition: bool) -> Session {
     d.scene_mut().timeline.main.items = [10, 11, 12]
         .into_iter()
         .enumerate()
-        .map(|(n, id)| Item {
-            hidden: false,
-            retime: Default::default(),
-            id: ItemId(id),
-            source_asset: None,
-            source_range: SourceRange::new(Tick(100), Tick(200)).unwrap(),
-            start: Tick(n as i64 * 100),
-            content: ItemParams::Overlay(OverlayParams {
-                color: Color([255, 0, 0, 255]),
-            }),
-            animations: Default::default(),
-            effects: vec![],
-            masks: vec![],
-            blend_mode: Default::default(),
+        .map(|(n, id)| {
+            testkit::item::item(
+                ItemId(id),
+                ItemParams::Overlay(OverlayParams {
+                    color: Color([255, 0, 0, 255]),
+                }),
+            )
+            .source(SourceRange::new(Tick(100), Tick(200)).unwrap())
+            .start(Tick(n as i64 * 100))
+            .build()
         })
         .collect();
     let mut s = Session::new(Project::new(d).unwrap(), 100).unwrap();

@@ -13,7 +13,7 @@ use engine::{
     thumbnails::ThumbnailCache,
 };
 use media::{AssetId, SourceAsset, THUMBNAIL_MAX_EDGE};
-use project::{Item, ItemId, ItemParams, Project, ProjectId, Retime, Track, TrackId, TrackKind};
+use project::{ItemId, Project, ProjectId, Retime, Track, TrackId, TrackKind};
 use std::{
     path::{Path, PathBuf},
     sync::{
@@ -23,7 +23,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use time::{SourceRange, Speed, TICKS_PER_SECOND, Tick, TimeRange};
+use time::{SourceRange, TICKS_PER_SECOND, Tick, TimeRange};
 
 fn t(seconds: i64) -> Tick {
     Tick(seconds * TICKS_PER_SECOND)
@@ -159,35 +159,6 @@ fn source_asset(path: &Path, id: u64) -> SourceAsset {
     SourceAsset::import(AssetId(id), path.to_path_buf()).unwrap()
 }
 
-fn item(asset: &SourceAsset, source: SourceRange, start: Tick, speed: f64) -> Item {
-    Item {
-        hidden: false,
-        blend_mode: Default::default(),
-        retime: Retime {
-            speed: Speed::from_f64(speed).unwrap(),
-            ..Default::default()
-        },
-        masks: Vec::new(),
-        effects: Vec::new(),
-        animations: Default::default(),
-        id: ItemId(1),
-        source_asset: Some(asset.id()),
-        source_range: source,
-        start,
-        content: ItemParams::Video(project::VideoParams {
-            source_audio_enabled: false,
-            volume: 0.0,
-            muted: false,
-            crop: None,
-            fades: Default::default(),
-            fit: Default::default(),
-            cleanup: Default::default(),
-            background: project::ClipBackground::None,
-            reduce_noise: false,
-        }),
-    }
-}
-
 fn setup() -> (JobRunner, ThumbnailCache, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let budget = ByteBudget::new(768 << 20).unwrap();
@@ -277,7 +248,12 @@ fn trim_and_retime_map_to_source_frames() {
     assert_eq!(strip.positions(), &[t(0), t(1), t(2)]);
 
     // Trim: source 1..3 s starts at timeline zero.
-    let trimmed = item(&asset, range(1, 3), Tick::ZERO, 1.0);
+    let trimmed = testkit::item::video(ItemId(1))
+        .asset(&asset.id())
+        .source(range(1, 3))
+        .start(Tick::ZERO)
+        .speed(1.0)
+        .build();
     let tiles = ready(
         display(
             &asset,
@@ -296,7 +272,12 @@ fn trim_and_retime_map_to_source_frames() {
     assert_eq!(tiles.tiles()[1].output, window(1, 2));
 
     // Retime 2x: 3 s of source spans 1.5 s of timeline.
-    let retimed = item(&asset, range(0, 3), Tick::ZERO, 2.0);
+    let retimed = testkit::item::video(ItemId(1))
+        .asset(&asset.id())
+        .source(range(0, 3))
+        .start(Tick::ZERO)
+        .speed(2.0)
+        .build();
     let tiles = ready(
         display(
             &asset,
@@ -313,7 +294,12 @@ fn trim_and_retime_map_to_source_frames() {
     assert_eq!(tiles.tiles()[1].at, t(2));
 
     // Trim and retime together: source 1..3 s at 2x spans 1 s of timeline.
-    let both = item(&asset, range(1, 3), Tick::ZERO, 2.0);
+    let both = testkit::item::video(ItemId(1))
+        .asset(&asset.id())
+        .source(range(1, 3))
+        .start(Tick::ZERO)
+        .speed(2.0)
+        .build();
     let tiles = ready(
         display(
             &asset,
@@ -329,7 +315,12 @@ fn trim_and_retime_map_to_source_frames() {
     assert_eq!(tiles.tiles()[0].at, t(1));
 
     // A later clip start moves the same source window down the timeline.
-    let moved = item(&asset, range(1, 3), t(5), 1.0);
+    let moved = testkit::item::video(ItemId(1))
+        .asset(&asset.id())
+        .source(range(1, 3))
+        .start(t(5))
+        .speed(1.0)
+        .build();
     let tiles = ready(
         display(
             &asset,
@@ -364,7 +355,12 @@ fn cold_pending_ready_and_hostile_inputs() {
         return;
     };
     let asset = source_asset(&path, 1);
-    let clip = item(&asset, range(0, 3), Tick::ZERO, 1.0);
+    let clip = testkit::item::video(ItemId(1))
+        .asset(&asset.id())
+        .source(range(0, 3))
+        .start(Tick::ZERO)
+        .speed(1.0)
+        .build();
     let (_runner, mut cache, _dir) = setup();
     assert!(matches!(
         display(
@@ -426,7 +422,12 @@ fn cold_pending_ready_and_hostile_inputs() {
     assert!(matches!(
         display(
             &asset,
-            &item(&other, range(0, 3), Tick::ZERO, 1.0),
+            &testkit::item::video(ItemId(1))
+                .asset(&other.id())
+                .source(range(0, 3))
+                .start(Tick::ZERO)
+                .speed(1.0)
+                .build(),
             window(0, 3),
             ONE_SECOND_PPS,
             THUMBNAIL_MAX_EDGE,
@@ -449,7 +450,12 @@ fn cold_pending_ready_and_hostile_inputs() {
             "thumbnail strip display outside clip"
         )))
     ));
-    let long = item(&asset, range(0, 300), Tick::ZERO, 1.0);
+    let long = testkit::item::video(ItemId(1))
+        .asset(&asset.id())
+        .source(range(0, 300))
+        .start(Tick::ZERO)
+        .speed(1.0)
+        .build();
     assert!(matches!(
         display(
             &asset,
@@ -494,7 +500,12 @@ fn cold_pending_ready_and_hostile_inputs() {
     assert!(matches!(
         display(
             &audio,
-            &item(&audio, range(0, 1), Tick::ZERO, 1.0),
+            &testkit::item::video(ItemId(1))
+                .asset(&audio.id())
+                .source(range(0, 1))
+                .start(Tick::ZERO)
+                .speed(1.0)
+                .build(),
             window(0, 1),
             ONE_SECOND_PPS,
             THUMBNAIL_MAX_EDGE,
@@ -516,7 +527,12 @@ fn still_images_repeat_one_cached_frame() {
         ThumbnailStripRequest::new(asset.clone(), range(0, 1), t(1), THUMBNAIL_MAX_EDGE).unwrap();
     assert_eq!(request.positions(), &[Tick::ZERO]);
     let (_strip, _runner, mut cache, _dir) = run(&request);
-    let clip = item(&asset, range(0, 1), Tick::ZERO, 1.0);
+    let clip = testkit::item::video(ItemId(1))
+        .asset(&asset.id())
+        .source(range(0, 1))
+        .start(Tick::ZERO)
+        .speed(1.0)
+        .build();
     let tiles = ready(
         display(
             &asset,
@@ -555,7 +571,12 @@ fn warm_hit_opens_no_source_and_changed_content_misses() {
     assert_eq!(state, JobState::Completed);
     let strip = again.finish(&mut runner, &mut cache).unwrap().unwrap();
     assert_eq!(strip.positions(), first.positions());
-    let clip = item(&asset, range(0, 3), Tick::ZERO, 1.0);
+    let clip = testkit::item::video(ItemId(1))
+        .asset(&asset.id())
+        .source(range(0, 3))
+        .start(Tick::ZERO)
+        .speed(1.0)
+        .build();
     assert!(matches!(
         display(
             &asset,
@@ -575,7 +596,12 @@ fn warm_hit_opens_no_source_and_changed_content_misses() {
     let changed = source_asset(&changed_path, 2);
     let changed_request =
         ThumbnailStripRequest::new(changed.clone(), range(0, 3), t(1), THUMBNAIL_MAX_EDGE).unwrap();
-    let changed_clip_item = item(&changed, range(0, 3), Tick::ZERO, 1.0);
+    let changed_clip_item = testkit::item::video(ItemId(1))
+        .asset(&changed.id())
+        .source(range(0, 3))
+        .start(Tick::ZERO)
+        .speed(1.0)
+        .build();
     assert!(matches!(
         display(
             &changed,
@@ -653,7 +679,12 @@ fn deleted_source_fails_and_keeps_no_frames() {
     assert!(runner.output_bytes(job.id).is_none());
     assert_eq!(runner.memory_budget().snapshot().unwrap().used, 0);
     assert_eq!(entries(dir.path()), 0);
-    let clip = item(&asset, range(0, 3), Tick::ZERO, 1.0);
+    let clip = testkit::item::video(ItemId(1))
+        .asset(&asset.id())
+        .source(range(0, 3))
+        .start(Tick::ZERO)
+        .speed(1.0)
+        .build();
     assert!(matches!(
         display(
             &asset,
@@ -747,7 +778,12 @@ fn cancelling_a_changed_source_keeps_the_previous_cache() {
         "cancel leaves the previous frames intact"
     );
 
-    let clip = item(&asset, range(0, 3), Tick::ZERO, 1.0);
+    let clip = testkit::item::video(ItemId(1))
+        .asset(&asset.id())
+        .source(range(0, 3))
+        .start(Tick::ZERO)
+        .speed(1.0)
+        .build();
     assert!(matches!(
         display(
             &asset,
@@ -760,7 +796,12 @@ fn cancelling_a_changed_source_keeps_the_previous_cache() {
         .unwrap(),
         ThumbnailStripState::Ready(_)
     ));
-    let changed_clip_item = item(&changed, range(0, 3), Tick::ZERO, 1.0);
+    let changed_clip_item = testkit::item::video(ItemId(1))
+        .asset(&changed.id())
+        .source(range(0, 3))
+        .start(Tick::ZERO)
+        .speed(1.0)
+        .build();
     assert!(matches!(
         display(
             &changed,
@@ -796,7 +837,12 @@ fn corrupt_cached_frames_are_failed_and_regenerate() {
             std::fs::write(entry.path(), bytes).unwrap();
         }
     }
-    let clip = item(&asset, range(0, 3), Tick::ZERO, 1.0);
+    let clip = testkit::item::video(ItemId(1))
+        .asset(&asset.id())
+        .source(range(0, 3))
+        .start(Tick::ZERO)
+        .speed(1.0)
+        .build();
     assert!(matches!(
         display(
             &asset,
@@ -844,7 +890,14 @@ fn project_json_stays_byte_identical_after_generation() {
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![item(&asset, range(0, 3), Tick::ZERO, 1.0)],
+        items: vec![
+            testkit::item::video(ItemId(1))
+                .asset(&asset.id())
+                .source(range(0, 3))
+                .start(Tick::ZERO)
+                .speed(1.0)
+                .build(),
+        ],
     };
     let project = Project::new(data).unwrap();
     let before = project::encode(&project, false).unwrap();
@@ -920,12 +973,12 @@ fn interview_samples_one_visible_range() {
     }
     let asset = SourceAsset::import(AssetId(30), path).unwrap();
     let duration = asset.probe().duration.unwrap();
-    let clip = item(
-        &asset,
-        SourceRange::new(Tick::ZERO, duration).unwrap(),
-        Tick::ZERO,
-        1.0,
-    );
+    let clip = testkit::item::video(ItemId(1))
+        .asset(&asset.id())
+        .source(SourceRange::new(Tick::ZERO, duration).unwrap())
+        .start(Tick::ZERO)
+        .speed(1.0)
+        .build();
     // One visible minute at the measured ruler scale (71.5 px/s) with a 39 px
     // filmstrip: one 16:9 tile every 39 * 16/9 / 71.5 s.
     let interval = tile_interval(39, 71.5).unwrap();

@@ -2,14 +2,16 @@
 //!
 //! Tracks the mechanical parts of the structure rules: every source file states
 //! its responsibility in a leading `//!` line, module and folder names use the
-//! concept's name, folders stay narrow, and intra-crate paths follow the layer
-//! table in `xtask/modules.toml`. Current violations live in
+//! concept's name, folders stay narrow, intra-crate paths follow the layer
+//! table in `xtask/modules.toml`, and the shared editor context and the areas
+//! never name the frame's `Editor` record. Current violations live in
 //! `xtask/modules-baseline.txt`, which only shrinks; the judgement calls in
 //! rule 7 stay with the reviewer.
 use std::{collections::BTreeSet, path::Path};
 
 use baseline::baseline;
 use config::config;
+use frame_type::frame_types;
 use imports::{control_test_order, imports};
 use layout::{file_name, folder_rules, inline_names, leading_doc, mod_file, test_folder_rules};
 
@@ -25,6 +27,7 @@ const NAME: &str = "name";
 const FOLDER: &str = "folder";
 const INTERFACE: &str = "interface";
 const LAYER: &str = "layer";
+const FRAME_TYPE: &str = "frame-type";
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct Violation {
@@ -76,6 +79,7 @@ pub fn check(root: &Path) -> Result<(), String> {
     violations.extend(folder_rules(&tracked));
     violations.extend(test_folder_rules(&tracked));
     violations.extend(imports(root, &config, &sources)?);
+    violations.extend(frame_types(root, &config, &sources)?);
     control_test_order(root)?;
     let baseline = baseline(root)?;
     let mut errors: Vec<String> = violations
@@ -148,12 +152,14 @@ fn rule_number(rule: &str) -> u8 {
         FOLDER => 2,
         INTERFACE => 3,
         LAYER => 4,
+        FRAME_TYPE => 5,
         _ => 0,
     }
 }
 
 mod baseline;
 mod config;
+mod frame_type;
 mod imports;
 mod layout;
 mod syntax;

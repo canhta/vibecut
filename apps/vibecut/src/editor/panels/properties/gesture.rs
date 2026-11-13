@@ -18,6 +18,41 @@ pub(super) struct ScrubSpec {
     pub(super) scale: f64,
 }
 impl ScrubSpec {
+    /// The contract of an engine table parameter. Its bounds, unit suffix and display scale
+    /// come from the table; the field is the channel it keys on, or its wire name when it
+    /// has none.
+    #[allow(
+        clippy::panic,
+        reason = "const evaluation: a name outside the table fails the build"
+    )]
+    pub(super) const fn of(
+        name: &'static str,
+        label: Text,
+        step: f64,
+        pixels_per_step: f32,
+        decimals: usize,
+    ) -> Self {
+        let Some(row) = engine::item_param(name) else {
+            panic!("item parameter is not in the table")
+        };
+        let Some((min, max)) = row.bounds.limits() else {
+            panic!("item parameter has no numeric range")
+        };
+        Self {
+            field: match row.path {
+                Some(path) => path,
+                None => row.name,
+            },
+            label,
+            min,
+            max,
+            step,
+            pixels_per_step,
+            decimals,
+            suffix: row.unit.suffix(),
+            scale: row.unit.shown_scale(),
+        }
+    }
     pub(in crate::editor) fn quantize(self, value: f64) -> f64 {
         if !value.is_finite() {
             return self.min;
@@ -29,28 +64,9 @@ impl ScrubSpec {
         format!("{:.*}", self.decimals, self.quantize(value))
     }
 }
-pub(super) const OPACITY_SCRUB: ScrubSpec = ScrubSpec {
-    field: project::BuiltinPath::Opacity.as_str(),
-    label: Text::Opacity,
-    min: 0.0,
-    max: 1.0,
-    step: 0.01,
-    pixels_per_step: 4.0,
-    decimals: 2,
-    suffix: "%",
-    scale: 100.0,
-};
-pub(super) const TEXT_SIZE_SCRUB: ScrubSpec = ScrubSpec {
-    field: "text_size",
-    label: Text::TextSize,
-    min: 1.0,
-    max: 4096.0,
-    step: 1.0,
-    pixels_per_step: 2.0,
-    decimals: 0,
-    suffix: "",
-    scale: 1.0,
-};
+pub(super) const OPACITY_SCRUB: ScrubSpec = ScrubSpec::of("opacity", Text::Opacity, 0.01, 4.0, 2);
+pub(super) const TEXT_SIZE_SCRUB: ScrubSpec =
+    ScrubSpec::of("text_size", Text::TextSize, 1.0, 2.0, 0);
 pub(super) const SPEED_SCRUB: ScrubSpec = ScrubSpec {
     field: "speed",
     label: Text::Speed,
@@ -75,17 +91,8 @@ pub(super) const TRANSITION_DURATION_SCRUB: ScrubSpec = ScrubSpec {
     suffix: "s",
     scale: 1.0,
 };
-pub(super) const AUDIO_GAIN_SCRUB: ScrubSpec = ScrubSpec {
-    field: "audio_gain",
-    label: Text::AudioGain,
-    min: -60.0,
-    max: 20.0,
-    step: 0.01,
-    pixels_per_step: 4.0,
-    decimals: 2,
-    suffix: "dB",
-    scale: 1.0,
-};
+pub(super) const AUDIO_GAIN_SCRUB: ScrubSpec =
+    ScrubSpec::of("volume", Text::AudioGain, 0.01, 4.0, 2);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum ScrubTarget {
     Item(&'static str),

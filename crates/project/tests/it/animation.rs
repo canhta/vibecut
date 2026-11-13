@@ -884,20 +884,17 @@ fn project_aggregate_key_budget_and_item_schema_are_enforced() {
         hidden: false,
         locked: false,
         items: (0..2)
-            .map(|i| Item {
-                hidden: false,
-                blend_mode: Default::default(),
-                retime: Default::default(),
-                masks: Vec::new(),
-                effects: Vec::new(),
-                id: ItemId(i),
-                source_asset: None,
-                start: Tick(i as i64 * 10),
-                source_range: time::SourceRange::new(Tick(0), Tick(10)).unwrap(),
-                content: ItemParams::Overlay(OverlayParams {
-                    color: Color([0; 4]),
-                }),
-                animations: animations.clone(),
+            .map(|i| {
+                testkit::item::item(
+                    ItemId(i),
+                    ItemParams::Overlay(OverlayParams {
+                        color: Color([0; 4]),
+                    }),
+                )
+                .source(time::SourceRange::new(Tick(0), Tick(10)).unwrap())
+                .start(Tick(i as i64 * 10))
+                .animations(animations.clone())
+                .build()
             })
             .collect(),
     });

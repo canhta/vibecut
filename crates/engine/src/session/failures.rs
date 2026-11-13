@@ -11,6 +11,8 @@ pub enum SessionError {
     TransactionActive,
     #[error("no gesture is active")]
     NoGesture,
+    #[error("command unavailable in this session state")]
+    Unavailable,
     #[error("no history step available")]
     NoHistory,
     #[error("command unwound; transaction rolled back")]
@@ -26,7 +28,7 @@ impl Failure for SessionError {
     fn code(&self) -> ErrorCode {
         match self {
             Self::TransactionActive | Self::NoGesture => ErrorCode::TransactionActive,
-            Self::NoHistory | Self::IdExhausted => ErrorCode::Refused,
+            Self::NoHistory | Self::IdExhausted | Self::Unavailable => ErrorCode::Refused,
             Self::Panicked | Self::ForkDiverged => ErrorCode::Failed,
             Self::StaleResult => ErrorCode::StaleResult,
             Self::ControlIdentity => ErrorCode::Refused,

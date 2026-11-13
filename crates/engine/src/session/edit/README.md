@@ -38,7 +38,7 @@ allocation ([`placement_track`](tracks.rs), [`placement_start`](clips.rs)).
 
 ## Transient selection and shared fields
 
-`timeline.set_item_param` and `timeline.set_item_param_many` apply one typed `ItemParamPatch`. `reduce_noise` (Boolean) sets `VideoParams.reduce_noise` on video items only; other kinds are left unchanged in a shared edit and refused in a single one.
+`timeline.set_item_param` and `timeline.set_item_param_many` apply one typed `ItemParamPatch`, declared once in [`commands/item_params.rs`](../commands/README.md). `reduce_noise` (Boolean) sets `VideoParams.reduce_noise` on video items only; other kinds are left unchanged in a shared edit and refused in a single one.
 Text content and font patches copy at most the control owner's `MAX_TEXT_BYTES` budget per
 command tree, including nested batches. The single-item command refuses an incompatible target;
 the many-item command skips incompatible kinds. Missing IDs, duplicates, invalid values and
@@ -78,12 +78,13 @@ before any change.
 
 `timeline.split_all {at}` cuts every unlocked item whose span contains `at`, on every track of the active scene, as one undo step. Locked tracks are skipped as the single-item split of a selection skips them; a playhead with nothing unlocked under it refuses the edit ([`execute_split_all`](clips.rs)).
 
-Ripple policy is independent of app preferences and is a command, not a method:
-`timeline.edit {commands, ripple}` supplies it for a whole batch (a typed caller wraps one atomic
-command the same way). A typed entry may also wrap exactly one `timeline.preview` to give a
-replacement preview the policy; the wire refuses that shape like any session control inside a
-batch. Nested policy wrappers refuse, and `timeline.set_ripple` sets the session default (off
-initially, no project or history entry, refused during a transaction). One post-command diff
+The session owns the whole gap policy (ripple setting, magnet, exclusions); a caller sends plain
+commands and the UI, MCP and CLI behave alike. `timeline.set_ripple` sets the session setting (off
+initially, no project or history entry, refused during a transaction; the app sets it when its
+preference changes), and every edit and replacement preview follows it. `timeline.edit {commands,
+ripple}` is the explicit batch form for a wire caller; nested policy wrappers refuse. The
+exclusions live in one table, `gap_ripple` in [state.rs](../state.rs): library audio never
+ripples, a reviewed span cut always does, a batch follows its children. One post-command diff
 closes same-track tails vacated by delete, tail trim or leftward movement; it never shifts
 another track, and cross-track moves, splits and hide/mute leave followers unchanged.
 
@@ -98,7 +99,7 @@ closed, whatever the tracks: `split_at` and any split over every track keep thei
 with the magnet on. Splitting left drops the left piece and the right piece takes the cut start;
 splitting right keeps the left piece and the vacated right span closes. The edit and its shifts
 publish as one undo step ([`close_vacated_tails`](clips.rs), [session](../README.md#transactions-gestures-and-changes)).
-`Session::closes_vacated_spans(commands, ripple)` answers this decision before an edit, so a caller that moves its playhead to a kept piece asks the engine rather than repeating the magnet test.
+`Outcome.closed_span` reports the decision after the edit (session ripple or magnet), so a caller that moves its playhead to a kept piece reads the result rather than repeating the magnet test.
 
 `EditError` and `AssetUsage` are declared in this owner and re-exported through Session
 and the crate. Its Result covers pure editing: safe-ID/static refusals and actual lower

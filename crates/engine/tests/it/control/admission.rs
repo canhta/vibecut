@@ -12,7 +12,7 @@ use crate::support::session::Wire;
 use engine::control::{self, Caller, ControlResult, ErrorCode, Payload, ResponseValue};
 use engine::jobs::JobRunner;
 use engine::{Command, Session, control::Error as EngineError, registry};
-use project::{Color, Item, ItemId, ItemParams, OverlayParams, Project, Track, TrackId, TrackKind};
+use project::{Color, ItemId, ItemParams, OverlayParams, Project, Track, TrackId, TrackKind};
 use serde_json::{Value, json};
 use time::{SourceRange, Tick};
 
@@ -641,25 +641,22 @@ fn integer_candidates_at_the_safe_limit_refuse_atomically_through_every_entry() 
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            id: ItemId(1),
-            animations: Default::default(),
-            source_asset: None,
-            source_range: SourceRange::new(
-                Tick(control::MAX_SAFE_INTEGER - 10),
-                Tick(control::MAX_SAFE_INTEGER),
+        items: vec![
+            testkit::item::item(
+                ItemId(1),
+                ItemParams::Overlay(OverlayParams {
+                    color: Color([0, 0, 0, 255]),
+                }),
             )
-            .unwrap(),
-            start: Tick::ZERO,
-            content: ItemParams::Overlay(OverlayParams {
-                color: Color([0, 0, 0, 255]),
-            }),
-        }],
+            .source(
+                SourceRange::new(
+                    Tick(control::MAX_SAFE_INTEGER - 10),
+                    Tick(control::MAX_SAFE_INTEGER),
+                )
+                .unwrap(),
+            )
+            .build(),
+        ],
     });
     for batch in [false, true] {
         let mut s = Session::new(Project::new(data.clone()).unwrap(), 10).unwrap();
@@ -764,25 +761,22 @@ fn integer_candidates_at_the_safe_limit_refuse_atomically_through_every_entry() 
         muted: false,
         hidden: false,
         locked: false,
-        items: vec![Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            id: ItemId(1),
-            animations: Default::default(),
-            source_asset: None,
-            source_range: SourceRange::new(
-                Tick(control::MAX_SAFE_INTEGER - 10),
-                Tick(control::MAX_SAFE_INTEGER),
+        items: vec![
+            testkit::item::item(
+                ItemId(1),
+                ItemParams::Overlay(OverlayParams {
+                    color: Color([0, 0, 0, 255]),
+                }),
             )
-            .unwrap(),
-            start: Tick::ZERO,
-            content: ItemParams::Overlay(OverlayParams {
-                color: Color([0, 0, 0, 255]),
-            }),
-        }],
+            .source(
+                SourceRange::new(
+                    Tick(control::MAX_SAFE_INTEGER - 10),
+                    Tick(control::MAX_SAFE_INTEGER),
+                )
+                .unwrap(),
+            )
+            .build(),
+        ],
     });
     let mut history = Session::new(Project::new(data).unwrap(), 10).unwrap();
     let mut r = runner();

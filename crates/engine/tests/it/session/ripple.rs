@@ -116,11 +116,7 @@ fn ripple_preview_reversal_discard_and_refusal_preserve_the_baseline() {
     };
     // The desktop starts a gesture before its first replacement preview.
     s.begin_gesture().unwrap();
-    s.apply(Command::TimelineEdit {
-        commands: vec![preview(40)],
-        ripple: true,
-    })
-    .unwrap();
+    s.apply(preview(40)).unwrap();
     assert_eq!(
         s.preview_project()
             .unwrap()
@@ -137,26 +133,12 @@ fn ripple_preview_reversal_discard_and_refusal_preserve_the_baseline() {
         s.apply(Command::TimelineSetRipple { enabled: false }),
         Err(EditError::Session(engine::SessionError::TransactionActive))
     ));
-    s.apply(Command::TimelineEdit {
-        commands: vec![preview(60)],
-        ripple: true,
-    })
-    .unwrap();
+    s.apply(preview(60)).unwrap();
     assert_eq!(s.preview_project().unwrap().as_ref(), s.project().as_ref());
-    s.apply(Command::TimelineEdit {
-        commands: vec![preview(40)],
-        ripple: true,
-    })
-    .unwrap();
-    assert!(
-        s.apply(Command::TimelineEdit {
-            commands: vec![preview(-1)],
-            ripple: true
-        })
-        .is_err()
-    );
-    // Typed entries may wrap one preview in the policy; the wire still refuses
-    // a session control inside an edit batch.
+    s.apply(preview(40)).unwrap();
+    assert!(s.apply(preview(-1)).is_err());
+    // The preview follows the session setting; the wire still refuses a session
+    // control inside an edit batch.
     assert!(
         s.wire(
             "timeline.edit",
@@ -188,10 +170,7 @@ fn ripple_preview_reversal_discard_and_refusal_preserve_the_baseline() {
     .unwrap();
     let staged = s.project().clone();
     assert!(matches!(
-        s.apply(Command::TimelineEdit {
-            commands: vec![preview(60)],
-            ripple: true
-        }),
+        s.apply(preview(60)),
         Err(EditError::Session(engine::SessionError::TransactionActive))
     ));
     assert_eq!(s.project(), &staged);
@@ -634,4 +613,59 @@ fn main_magnet_closes_only_the_span_that_removals_vacate_in_one_undo_step() {
     assert!(s.apply(delete(&[21, 99])).is_err());
     assert_eq!(s.project(), &before);
     assert_eq!(s.history_len(), (0, 0));
+}
+#[test]
+fn the_session_alone_decides_the_gap_and_reports_whether_a_span_closed() {
+    let delete = |items: &[u64]| Command::Delete { items: ids(items) };
+    // (name, magnet, session ripple, command, span closed)
+    let rows: Vec<(&str, bool, bool, Command, bool)> = vec![
+        ("main delete, magnet on", true, false, delete(&[21]), true),
+        ("main delete, magnet off", false, false, delete(&[21]), false),
+        ("main delete, ripple on", false, true, delete(&[21]), true),
+        ("overlay delete, magnet on", true, false, delete(&[10]), false),
+        ("overlay delete, ripple on", true, true, delete(&[10]), true),
+        (
+            "split keeping both pieces, magnet on",
+            true,
+            false,
+            Command::SplitAt {
+                item: ItemId(21),
+                at: Tick(60),
+            },
+            false,
+        ),
+    ];
+    for (name, magnet, ripple, command, closed) in rows {
+        let mut s = main_magnet_fixture(magnet);
+        s.apply(Command::TimelineSetRipple { enabled: ripple })
+            .unwrap();
+        assert_eq!(s.ripple(), ripple, "{name}: setting");
+        let outcome = s.apply(command.clone()).unwrap();
+        assert_eq!(outcome.closed_span, closed, "{name}: closed span");
+        // The same plain command through a batch and through the explicit wire form
+        // leaves the same project: the caller never carries the policy.
+        for (form, wrapped) in [
+            (
+                "batch",
+                Command::Batch {
+                    commands: vec![command.clone()],
+                },
+            ),
+            (
+                "timeline.edit",
+                Command::TimelineEdit {
+                    commands: vec![command.clone()],
+                    ripple,
+                },
+            ),
+        ] {
+            let mut other = main_magnet_fixture(magnet);
+            other
+                .apply(Command::TimelineSetRipple { enabled: ripple })
+                .unwrap();
+            let outcome = other.apply(wrapped).unwrap();
+            assert_eq!(outcome.closed_span, closed, "{name}: {form} closed span");
+            assert_eq!(other.project(), s.project(), "{name}: {form}");
+        }
+    }
 }

@@ -105,25 +105,12 @@ fn fixture_of(seconds: i64) -> project::Project {
         hidden: false,
         muted: false,
         locked: false,
-        items: vec![project::Item {
-            hidden: false,
-            id: project::ItemId(1),
-            source_asset: Some(media::AssetId(1)),
-            source_range: TimeRange::new(Tick::ZERO, tick(seconds, 1)).unwrap(),
-            start: Tick::ZERO,
-            animations: Default::default(),
-            effects: vec![],
-            masks: vec![],
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            content: project::ItemParams::Audio(project::AudioParams {
-                fades: Default::default(),
-                volume: 0.0,
-                muted: false,
-                source: Default::default(),
-                cleanup: Default::default(),
-            }),
-        }],
+        items: vec![
+            testkit::item::audio(project::ItemId(1))
+                .asset(media::AssetId(1))
+                .source(TimeRange::new(Tick::ZERO, tick(seconds, 1)).unwrap())
+                .build(),
+        ],
     });
     project::Project::new(data).unwrap()
 }

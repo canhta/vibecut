@@ -409,19 +409,9 @@ mod tests {
             .into_data();
         data.canvas.width = 640;
         data.canvas.height = 360;
-        let mut item = Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: ItemId(1),
-            source_asset: None,
-            source_range: SourceRange::new(Tick::ZERO, Tick(20 * TICKS_PER_SECOND)).unwrap(),
-            start: Tick::ZERO,
-            content: ItemParams::Text(TextParams::new("Snap")),
-        };
+        let mut item = testkit::item::item(ItemId(1), ItemParams::Text(TextParams::new("Snap")))
+            .source(SourceRange::new(Tick::ZERO, Tick(20 * TICKS_PER_SECOND)).unwrap())
+            .build();
         item.animations
             .set(
                 AnimationPath::from(TransformField::Rotate.builtin()),

@@ -1,7 +1,7 @@
 //! Applies the Sounds tab's provider, cache and add workflows.
-use super::super::sounds::{Sounds, SoundsMode, SoundsProblem};
+use super::super::sounds::{LibraryStore, Sounds, SoundsMode, SoundsProblem};
 use super::{AssetsTab, State};
-use crate::editor::{Desk, Editor, Result};
+use crate::editor::{Port, Result};
 use engine::CreatedId;
 use libraries::sounds::SoundResult;
 use std::path::PathBuf;
@@ -13,10 +13,10 @@ impl State {
     /// project window; each editor owns only its search/preview presentation.
     pub(in crate::editor) fn set_sound_library(
         &mut self,
-        desk: &mut Desk<'_>,
+        port: &mut Port<'_>,
         library: Arc<libraries::sounds::SoundLibrary>,
     ) -> Result<()> {
-        let sounds = Sounds::new(library, desk.editor().playback.budget().clone())?;
+        let sounds = Sounds::new(library, port.read.budget.clone())?;
         self.sounds = Some(sounds);
         self.sounds_open = None;
         Ok(())
@@ -32,7 +32,15 @@ impl State {
         self.sound_media_dir = Some(directory);
     }
 
-    pub(in crate::editor) fn tick_sounds(&mut self, desk: &mut Desk<'_>) {
+    /// A section's Retry asks the lending owner to open this store again; the lending
+    /// owner drains the request on the next frame.
+    pub(in crate::editor) fn request_library_reopen(&mut self, store: LibraryStore) {
+        if !self.library_reopens.contains(&store) {
+            self.library_reopens.push(store);
+        }
+    }
+
+    pub(in crate::editor) fn tick_sounds(&mut self, port: &mut Port<'_>) {
         let mut failure = None;
         let ready = if let Some(sounds) = &mut self.sounds {
             if let Err(error) = sounds.tick() {
@@ -43,16 +51,16 @@ impl State {
             None
         };
         if let Some(message) = failure {
-            desk.fail(message);
+            port.fail(message);
         }
         let Some(sound) = ready else {
             return;
         };
-        if let Err(error) = self.add_sound_to_timeline(desk, &sound) {
+        if let Err(error) = self.add_sound_to_timeline(port, &sound) {
             if let Some(sounds) = &mut self.sounds {
                 sounds.add_failed(SoundsProblem::from_app(&error));
             }
-            desk.fail(error.to_string());
+            port.fail(error.to_string());
         }
     }
 
@@ -108,7 +116,7 @@ impl State {
         }
     }
 
-    pub(in crate::editor) fn sounds_add(&mut self, desk: &mut Desk<'_>, id: u64) {
+    pub(in crate::editor) fn sounds_add(&mut self, port: &mut Port<'_>, id: u64) {
         let Some(sound) = self.sounds.as_ref().and_then(|sounds| sounds.sound(id)) else {
             return;
         };
@@ -117,27 +125,27 @@ impl State {
             .as_ref()
             .is_some_and(|sounds| sounds.cached(&sound).is_some())
         {
-            if let Err(error) = self.add_sound_to_timeline(desk, &sound) {
+            if let Err(error) = self.add_sound_to_timeline(port, &sound) {
                 if let Some(sounds) = &mut self.sounds {
                     sounds.add_failed(SoundsProblem::from_app(&error));
                 }
-                desk.fail(error.to_string());
+                port.fail(error.to_string());
             }
         } else if let Some(sounds) = &mut self.sounds {
             sounds.request_add(sound);
         }
     }
 
-    fn add_sound_to_timeline(&mut self, desk: &mut Desk<'_>, sound: &SoundResult) -> Result<()> {
+    fn add_sound_to_timeline(&mut self, port: &mut Port<'_>, sound: &SoundResult) -> Result<()> {
         let cached = self
             .sounds
             .as_ref()
             .and_then(|sounds| sounds.cached(sound))
             .ok_or(crate::Error::Invalid("sound cache"))?;
-        let media = self.sound_media_path(desk.editor());
-        let start = desk.editor().playback.position().unwrap_or(Tick::ZERO);
+        let media = self.sound_media_path(port);
+        let start = port.read.playhead.unwrap_or(Tick::ZERO);
         let outcome = libraries::sounds::add_to_timeline(
-            &mut desk.editor().session,
+            &mut *port.session,
             sound,
             &cached,
             &media,
@@ -150,23 +158,19 @@ impl State {
             .find(|id| matches!(id, CreatedId::Item(_)))
             .copied()
         {
-            desk.select(std::collections::BTreeSet::from([item]));
-            desk.editor().selection_scopes = Default::default();
+            port.select(std::collections::BTreeSet::from([item]));
+            port.reset_selection(false);
         }
-        desk.sync();
-        let added = crate::i18n::text(
-            desk.editor().preferences.locale,
-            crate::i18n::Text::SoundsAdded,
-        )
-        .to_owned();
-        desk.toast(&added, None);
+        port.sync();
+        let added = port.tr(crate::i18n::Text::SoundsAdded);
+        port.toast(added, None);
         Ok(())
     }
 
-    fn sound_media_path(&self, editor: &Editor) -> PathBuf {
+    fn sound_media_path(&self, port: &Port<'_>) -> PathBuf {
         if let Some(directory) = &self.sound_media_dir {
             return directory.clone();
         }
-        project::media_dir(editor.session.saved_path())
+        project::media_dir(port.session.saved_path())
     }
 }

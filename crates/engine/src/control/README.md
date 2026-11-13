@@ -59,6 +59,13 @@ compose it through this owner’s transparent `control::Error::Control`.
 `Policy::authorize` retains its heterogeneous `control::Result` so trusted policies can
 report their actual owner failures.
 
+One admission step, `Session::admit`, runs before dispatch for `control_request`, `control_typed`,
+`control_command` and the lifecycle save: it applies the declaration's availability (the
+`idle` open-transaction rule, then the `Availability` condition) and its declared collection
+limits, and refuses with a typed `SessionError` (`TransactionActive`, `NoGesture`, `NoHistory`
+or `Unavailable`) or `ControlError::Limit`. No arm of the dispatcher repeats those checks; the
+UI reads the same rule through `CommandSpec::enabled`.
+
 Effectful requests require `base_rev`; a revision that is not current refuses with
 `StaleRevision` before any child of a batch runs (revision rules:
 [wire](../session/wire/README.md#wire-contract)).

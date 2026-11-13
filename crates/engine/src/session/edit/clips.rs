@@ -842,9 +842,8 @@ pub(super) fn execute_extract_audio(
             content: ItemParams::Audio(project::AudioParams {
                 volume: source.volume,
                 muted: source.muted,
-                source: project::AudioSource::Upload,
                 fades: source.fades,
-                cleanup: Default::default(),
+                ..project::AudioParams::default()
             }),
         });
         created.push(CreatedId::Item(id));

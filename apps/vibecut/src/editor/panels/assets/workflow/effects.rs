@@ -2,33 +2,28 @@
 use super::super::effects::{EffectPreviews, preview_instance};
 use super::super::{Arc, Text, egui};
 use super::State;
-use crate::editor::{Desk, Result, context::single};
+use crate::editor::{Port, Request, Result, context::single};
 
 impl State {
-    /// Attach the native effect adapter to playback and thumbnail jobs, sharing
-    /// playback's byte budget. Failure leaves the thumbnail composition unchanged.
-    pub(in crate::editor) fn set_effects(
-        &mut self,
-        desk: &mut Desk<'_>,
+    /// Build the thumbnail previews that share playback's byte budget with the native
+    /// effect adapter. The frame attaches the adapter to playback itself.
+    pub(in crate::editor) fn effect_previews_for(
+        budget: &engine::ByteBudget,
         effects: Arc<dyn render::effects::EffectCompositor>,
-    ) -> Result<()> {
-        let budget = desk.editor().playback.budget().clone();
-        let cache =
-            engine::effect_thumbnails::EffectThumbnails::new(effects.clone(), budget.clone());
-        let previews = EffectPreviews::new(cache, budget)?;
-        desk.editor().playback.set_effects(effects)?;
-        self.effect_previews = Some(previews);
-        Ok(())
+    ) -> Result<EffectPreviews> {
+        let cache = engine::effect_thumbnails::EffectThumbnails::new(effects, budget.clone());
+        EffectPreviews::new(cache, budget.clone())
     }
 
-    pub(in crate::editor) fn add_effect_from_selection(&mut self, desk: &mut Desk<'_>, kind: &str) {
-        let selected = single(desk.view().selection());
-        match selected {
-            Some(item) => desk.editor().add_effect_to_item(item, kind),
+    pub(in crate::editor) fn add_effect_from_selection(&mut self, port: &mut Port<'_>, kind: &str) {
+        match single(port.session.selection()) {
+            Some(item) => port.request(Request::AddEffect {
+                item,
+                kind: kind.to_owned(),
+            }),
             None => {
-                let text =
-                    crate::i18n::text(desk.editor().preferences.locale, Text::EffectSelectClip);
-                desk.toast(text, None);
+                let text = port.tr(Text::EffectSelectClip);
+                port.toast(text, None);
             }
         }
     }
@@ -37,7 +32,7 @@ impl State {
     /// clip under the pointer accepts the effect.
     pub(in crate::editor) fn finish_effect_drag(
         &mut self,
-        desk: &mut Desk<'_>,
+        port: &mut Port<'_>,
         ctx: &egui::Context,
     ) {
         let Some(kind) = self.effect_drag.clone() else {
@@ -53,18 +48,18 @@ impl State {
                 .interact_pos()
                 .or_else(|| input.pointer.latest_pos())
         });
-        let rects = desk.editor().timeline.item_rects().to_vec();
         let target = position.and_then(|position| {
-            rects
+            port.read
+                .item_rects
                 .iter()
                 .find(|(_, rect)| rect.contains(position))
                 .map(|(item, _)| *item)
         });
         if let Some(item) = target {
-            desk.editor().add_effect_to_item(item, &kind);
+            port.request(Request::AddEffect { item, kind });
         } else {
-            let text = crate::i18n::text(desk.editor().preferences.locale, Text::EffectDropMiss);
-            desk.toast(text, None);
+            let text = port.tr(Text::EffectDropMiss);
+            port.toast(text, None);
         }
     }
 

@@ -1,40 +1,43 @@
 //! Applies the Music section's provider, cache, key and add workflows.
-use super::super::sounds::music::AddIntent;
-use crate::editor::{Editor, Result};
+use super::super::sounds::music::{AddIntent, Music, MusicMode, MusicProblem};
+use super::State;
+use crate::editor::{Port, Result};
 use crate::services::assets::music::MusicSession;
 use engine::CreatedId;
 use std::path::PathBuf;
 use time::Tick;
 
-impl Editor {
+impl State {
     /// Attach the process-shared music session. One library and credential are
     /// shared by every project window; each editor owns only its presentation.
-    pub fn set_music_session(&mut self, session: std::sync::Arc<MusicSession>) -> Result<()> {
-        let music =
-            super::super::sounds::music::Music::new(session, self.playback.budget().clone())?;
-        self.music = Some(music);
-        self.assets.music_open = None;
+    pub(in crate::editor) fn set_music_session(
+        &mut self,
+        port: &mut Port<'_>,
+        session: std::sync::Arc<MusicSession>,
+    ) -> Result<()> {
+        self.music = Some(Music::new(session, port.read.budget.clone())?);
+        self.music_open = None;
         Ok(())
     }
 
     /// Injection boundary for tests and audit scenes.
-    pub fn set_music(&mut self, music: super::super::sounds::music::Music) {
+    pub(in crate::editor) fn set_music(&mut self, music: Music) {
         self.music = Some(music);
     }
 
     /// Project-owned media directory used when a track is added.
-    pub fn set_music_media_dir(&mut self, directory: PathBuf) {
+    pub(in crate::editor) fn set_music_media_dir(&mut self, directory: PathBuf) {
         self.music_media_dir = Some(directory);
     }
 
     /// Load the first browse page once, when the Music section is first opened.
-    pub(crate) fn music_loaded(&mut self) {
+    pub(in crate::editor) fn music_loaded(&mut self) {
         if let Some(music) = &mut self.music {
             music.ensure_loaded();
         }
     }
 
-    pub(crate) fn tick_music(&mut self) {
+    pub(in crate::editor) fn tick_music(&mut self, port: &mut Port<'_>) {
         let mut failure = None;
         let ready = if let Some(music) = &mut self.music {
             if let Err(error) = music.tick() {
@@ -45,38 +48,35 @@ impl Editor {
             None
         };
         if let Some(message) = failure {
-            self.desk().fail(message);
+            port.fail(message);
         }
         let Some(intent) = ready else {
             return;
         };
-        if let Err(error) = self.add_music_to_timeline(&intent) {
+        if let Err(error) = self.add_music_to_timeline(port, &intent) {
             if let Some(music) = &mut self.music {
-                music.add_failed(
-                    intent,
-                    super::super::sounds::music::MusicProblem::from_app(&error),
-                );
+                music.add_failed(intent, MusicProblem::from_app(&error));
             }
-            self.desk().fail(error.to_string());
+            port.fail(error.to_string());
         }
     }
 
-    pub(crate) fn music_set_mode(&mut self, mode: super::super::sounds::music::MusicMode) {
-        self.assets.music_mode = mode;
+    pub(in crate::editor) fn music_set_mode(&mut self, mode: MusicMode) {
+        self.music_mode = mode;
         self.music_search(false);
     }
 
-    pub(crate) fn music_set_chip(&mut self, chip: &'static str) {
-        self.assets.music_chip = chip;
-        self.assets.music_mode = super::super::sounds::music::MusicMode::Browse;
-        self.assets.music_search.clear();
+    pub(in crate::editor) fn music_set_chip(&mut self, chip: &'static str) {
+        self.music_chip = chip;
+        self.music_mode = MusicMode::Browse;
+        self.music_search.clear();
         self.music_search(false);
     }
 
-    pub(crate) fn music_search(&mut self, more: bool) {
-        let mode = self.assets.music_mode;
-        let chip = self.assets.music_chip;
-        let query = self.assets.music_search.clone();
+    pub(in crate::editor) fn music_search(&mut self, more: bool) {
+        let mode = self.music_mode;
+        let chip = self.music_chip;
+        let query = self.music_search.clone();
         if let Some(music) = &mut self.music {
             if more {
                 music.search_more();
@@ -86,7 +86,7 @@ impl Editor {
         }
     }
 
-    pub(crate) fn music_retry(&mut self) {
+    pub(in crate::editor) fn music_retry(&mut self) {
         if let Some(music) = &mut self.music {
             music.clear_problems();
         }
@@ -94,25 +94,25 @@ impl Editor {
     }
 
     /// Resubmit the retained failed add; it never reloads search.
-    pub(crate) fn music_retry_add(&mut self) {
+    pub(in crate::editor) fn music_retry_add(&mut self) {
         if let Some(music) = &mut self.music {
             music.retry_add();
         }
     }
 
-    pub(crate) fn music_preview(&mut self, id: &str) {
+    pub(in crate::editor) fn music_preview(&mut self, id: &str) {
         if let Some(music) = &mut self.music {
             music.play(id);
         }
     }
 
-    pub(crate) fn music_toggle_saved(&mut self, id: &str) {
+    pub(in crate::editor) fn music_toggle_saved(&mut self, id: &str) {
         if let Some(music) = &mut self.music {
             music.toggle_saved(id);
         }
     }
 
-    pub(crate) fn music_cancel_cache(&mut self) {
+    pub(in crate::editor) fn music_cancel_cache(&mut self) {
         if let Some(music) = &mut self.music {
             music.cancel_cache();
         }
@@ -121,42 +121,36 @@ impl Editor {
     /// Apply the masked draft to this process only. A refused key keeps the
     /// previous credential and surfaces its typed failure; the draft is cleared
     /// only on success.
-    pub(crate) fn music_key_apply(&mut self) {
-        let draft = self.assets.music_key.clone();
+    pub(in crate::editor) fn music_key_apply(&mut self, port: &mut Port<'_>) {
+        let draft = self.music_key.clone();
         let key = (!draft.is_empty()).then_some(draft.as_str());
         let Some(music) = &mut self.music else {
             return;
         };
         match music.apply_key(key) {
             Ok(()) => {
-                self.assets.music_key.clear();
-                let saved =
-                    crate::i18n::text(self.preferences.locale, crate::i18n::Text::MusicKeySaved)
-                        .to_owned();
-                self.set_toast(&saved, None);
+                self.music_key.clear();
+                let saved = port.tr(crate::i18n::Text::MusicKeySaved);
+                port.toast(saved, None);
             }
             Err(_) => {
-                let refused =
-                    crate::i18n::text(self.preferences.locale, crate::i18n::Text::MusicAuth)
-                        .to_owned();
-                self.desk().fail(refused);
+                let refused = port.tr(crate::i18n::Text::MusicAuth);
+                port.fail(refused);
             }
         }
     }
 
     /// Remove the session key and return to anonymous operation.
-    pub(crate) fn music_key_remove(&mut self) {
+    pub(in crate::editor) fn music_key_remove(&mut self, port: &mut Port<'_>) {
         if let Some(music) = &mut self.music {
             let _ = music.apply_key(None);
         }
-        self.assets.music_key.clear();
-        let removed =
-            crate::i18n::text(self.preferences.locale, crate::i18n::Text::MusicKeyRemoved)
-                .to_owned();
-        self.set_toast(&removed, None);
+        self.music_key.clear();
+        let removed = port.tr(crate::i18n::Text::MusicKeyRemoved);
+        port.toast(removed, None);
     }
 
-    pub(crate) fn music_add(&mut self, id: &str) {
+    pub(in crate::editor) fn music_add(&mut self, port: &mut Port<'_>, id: &str) {
         let Some(track) = self.music.as_ref().and_then(|state| state.music(id)) else {
             return;
         };
@@ -164,36 +158,33 @@ impl Editor {
         // never retargets this add.
         let intent = AddIntent {
             music: track,
-            start: self.playback.position().unwrap_or(Tick::ZERO),
+            start: port.read.playhead.unwrap_or(Tick::ZERO),
         };
         if self
             .music
             .as_ref()
             .is_some_and(|state| state.cached(&intent.music).is_some())
         {
-            if let Err(error) = self.add_music_to_timeline(&intent) {
+            if let Err(error) = self.add_music_to_timeline(port, &intent) {
                 if let Some(state) = &mut self.music {
-                    state.add_failed(
-                        intent,
-                        super::super::sounds::music::MusicProblem::from_app(&error),
-                    );
+                    state.add_failed(intent, MusicProblem::from_app(&error));
                 }
-                self.desk().fail(error.to_string());
+                port.fail(error.to_string());
             }
         } else if let Some(state) = &mut self.music {
             state.request_add(intent);
         }
     }
 
-    fn add_music_to_timeline(&mut self, intent: &AddIntent) -> Result<()> {
+    fn add_music_to_timeline(&mut self, port: &mut Port<'_>, intent: &AddIntent) -> Result<()> {
         let cached = self
             .music
             .as_ref()
             .and_then(|state| state.cached(&intent.music))
             .ok_or(crate::Error::Invalid("music cache"))?;
-        let media = self.music_media_path();
+        let media = self.music_media_path(port);
         let outcome = libraries::music::add_to_timeline(
-            &mut self.session,
+            &mut *port.session,
             &intent.music,
             &cached,
             &media,
@@ -206,20 +197,19 @@ impl Editor {
             .find(|id| matches!(id, CreatedId::Item(_)))
             .copied()
         {
-            self.desk().select(std::collections::BTreeSet::from([item]));
-            self.selection_scopes = Default::default();
+            port.select(std::collections::BTreeSet::from([item]));
+            port.reset_selection(false);
         }
-        self.desk().sync();
-        let added =
-            crate::i18n::text(self.preferences.locale, crate::i18n::Text::MusicAdded).to_owned();
-        self.set_toast(&added, None);
+        port.sync();
+        let added = port.tr(crate::i18n::Text::MusicAdded);
+        port.toast(added, None);
         Ok(())
     }
 
-    fn music_media_path(&self) -> PathBuf {
+    fn music_media_path(&self, port: &Port<'_>) -> PathBuf {
         if let Some(directory) = &self.music_media_dir {
             return directory.clone();
         }
-        project::media_dir(self.session.saved_path())
+        project::media_dir(port.session.saved_path())
     }
 }

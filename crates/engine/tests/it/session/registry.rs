@@ -267,15 +267,8 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
                 source_range: range(200, 300),
                 start: Tick(100),
                 content: ItemParams::Video(VideoParams {
-                    fades: Default::default(),
                     source_audio_enabled: true,
-                    volume: 0.0,
-                    muted: false,
-                    crop: None,
-                    fit: Default::default(),
-                    cleanup: Default::default(),
-                    background: project::ClipBackground::None,
-                    reduce_noise: false,
+                    ..VideoParams::plain()
                 }),
             },
         })
@@ -309,13 +302,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
         },
         Command::SetItemParam {
             item: id,
-            content: ItemParams::Audio(AudioParams {
-                fades: Default::default(),
-                volume: 0.0,
-                muted: false,
-                source: Default::default(),
-                cleanup: Default::default(),
-            }),
+            content: ItemParams::Audio(AudioParams::default()),
         },
         Command::InsertItem {
             placement: engine::Placement::Track { track: TrackId(2) },
@@ -325,13 +312,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
                 source_asset: Some(AssetId(99)),
                 source_range: range(0, 10),
                 start: Tick(0),
-                content: ItemParams::Audio(AudioParams {
-                    fades: Default::default(),
-                    volume: 0.0,
-                    muted: false,
-                    source: Default::default(),
-                    cleanup: Default::default(),
-                }),
+                content: ItemParams::Audio(AudioParams::default()),
             },
         },
         Command::InsertItem {
@@ -343,11 +324,8 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
                 source_range: range(0, 10),
                 start: Tick(0),
                 content: ItemParams::Audio(AudioParams {
-                    fades: Default::default(),
                     volume: f32::NAN,
-                    muted: false,
-                    source: Default::default(),
-                    cleanup: Default::default(),
+                    ..AudioParams::default()
                 }),
             },
         },

@@ -5,7 +5,9 @@ Interface: `State`, `show`, `Action`, `prepare`, `media_panel`, `import`, `sound
 
 The area owns its navigation drafts, the media selection and thumbnail caches, the
 import batch and its last report, and the prepared workflow projection; `show` consumes
-the editor's read-only context and returns `Action` values the frame routes. `prepare`
+the editor's read-only context and returns `Action` values; `State::apply` handles them
+through the `Port` the frame lends, so the area never names `Editor` and owns Music state
+next to Sounds. Only cross-area intentions leave as `Request`s. `prepare`
 builds the read-only projection the view draws. Toast and clock deadlines stay in the
 editor core and are passed to the overlay renderers.
 
