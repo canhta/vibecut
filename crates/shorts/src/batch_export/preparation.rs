@@ -3,7 +3,8 @@ use super::{
     Arc, CaptionParams, ClipBatch, ClipBatchRequest, ClipPaths, ClipShort, ClipSubtitlePath,
     CueTrack, EngineError, Error, Item, ItemId, ItemParams, MAX_BATCH_CLIPS, MAX_BATCH_CUE_BYTES,
     MAX_CLIP_SEGMENTS, Mutex, NameSet, Options, PreparedClip, Project, ProjectData, Published,
-    Tick, Timeline, Track, TrackId, TrackKind, VideoParams, extension, job_key, name_base,
+    Tick, TimeRange, Timeline, Track, TrackId, TrackKind, VideoParams, extension, job_key,
+    name_base,
 };
 impl ClipBatch {
     /// Validate the batch and build one derived project per short without touching
@@ -30,6 +31,7 @@ impl ClipBatch {
         let options = Options {
             asset,
             cues: &request.cues,
+            shots: &request.shots,
             languages: &request.languages,
             formats: &request.subtitle_formats,
             directory: &request.directory,
@@ -69,6 +71,19 @@ fn validate_request(request: &ClipBatchRequest) -> Result<(), EngineError> {
     if !request.directory.is_dir() {
         return Err(EngineError::Edit(engine::EditError::Invalid(
             "clip output directory",
+        )));
+    }
+    // The analysis is a partition of the source in time order; the engine caps it
+    // at 4096 shots, so a longer list did not come from an analysis.
+    if request.shots.len() > MAX_SHOTS
+        || request.shots.windows(2).any(|pair| {
+            pair.first()
+                .zip(pair.get(1))
+                .is_none_or(|(a, b)| a.range.end() > b.range.start())
+        })
+    {
+        return Err(EngineError::Edit(engine::EditError::Invalid(
+            "clip shot analysis",
         )));
     }
     if request.max_output_bytes == 0 || request.max_output_bytes > (1 << 40) {
@@ -159,37 +174,82 @@ fn prepare_clip(
             return Err(refuse("segments overlap"));
         }
     }
+    if short
+        .layout
+        .segments
+        .keys()
+        .any(|segment| *segment >= short.segments.len())
+    {
+        return Err(refuse("layout segment outside short"));
+    }
     let base = names.unique(&name_base(short.title.as_str(), index));
+    // A short is a portrait project: layouts place items in canvas pixels, so the
+    // canvas is the output frame (`RenderSettings::portrait`).
+    let canvas = project::Canvas {
+        width: PORTRAIT[0],
+        height: PORTRAIT[1],
+        preset: Some(project::AspectPreset::Portrait),
+        ..source.data().canvas.clone()
+    };
+    let frame = source_frame(options.asset).ok_or(refuse("source frame size"))?;
+    let min_piece = canvas
+        .fps
+        .frame_duration()
+        .map_err(|_| refuse("frame rate"))?;
+    let layouts = crate::layout::plan(
+        &ranges,
+        &short.layout,
+        options.shots,
+        crate::layout::Geometry {
+            canvas: [f64::from(PORTRAIT[0]), f64::from(PORTRAIT[1])],
+            source: frame,
+        },
+        min_piece,
+    );
     let mut next_item = 1u64;
     let mut video_items = Vec::new();
-    video_items
-        .try_reserve_exact(ranges.len())
-        .map_err(|_| EngineError::Control(engine::control::ControlError::Limit))?;
-    for (range, start) in ranges.iter().zip(&starts) {
-        video_items.push(Item {
-            hidden: false,
-            blend_mode: Default::default(),
-            retime: Default::default(),
-            masks: Vec::new(),
-            effects: Vec::new(),
-            animations: Default::default(),
-            id: ItemId(next_item),
-            source_asset: Some(options.asset.id()),
-            source_range: *range,
-            start: *start,
-            content: ItemParams::Video(VideoParams {
-                fades: Default::default(),
-                source_audio_enabled: true,
-                volume: 0.0,
-                muted: false,
-                crop: None,
-                fit: Default::default(),
-                cleanup: Default::default(),
-            }),
-        });
-        next_item = next_item
-            .checked_add(1)
-            .ok_or(EngineError::Session(engine::SessionError::IdExhausted))?;
+    let mut slot_items: Vec<Vec<Item>> = Vec::new();
+    // Fill items whose crop the short's manual crop sets instead of the detected speaker.
+    let mut manual_crop = Vec::new();
+    for planned in &layouts {
+        let (Some(segment_start), Some(segment)) =
+            (starts.get(planned.segment), ranges.get(planned.segment))
+        else {
+            return Err(refuse("layout segment outside short"));
+        };
+        let start = planned
+            .range
+            .start()
+            .checked_sub(segment.start())
+            .and_then(|offset| segment_start.checked_add(offset))
+            .ok_or(EngineError::Control(engine::control::ControlError::Limit))?;
+        for (slot_number, slot) in planned.slots.iter().enumerate() {
+            let mut slot = *slot;
+            let manual = short.crop.is_some() && planned.layout == crate::Layout::Fill;
+            if manual {
+                slot.crop = None;
+            }
+            let id = ItemId(next_item);
+            if manual {
+                manual_crop.push(id);
+            }
+            let item = slot_item(id, options.asset.id(), planned.range, start, &slot)
+                .map_err(Error::engine)?;
+            match slot_number.checked_sub(1) {
+                None => video_items.push(item),
+                Some(extra) => {
+                    while slot_items.len() <= extra {
+                        slot_items.push(Vec::new());
+                    }
+                    if let Some(track) = slot_items.get_mut(extra) {
+                        track.push(item);
+                    }
+                }
+            }
+            next_item = next_item
+                .checked_add(1)
+                .ok_or(EngineError::Session(engine::SessionError::IdExhausted))?;
+        }
     }
     let mut caption_items = Vec::new();
     let mut sidecar_bytes = 0u64;
@@ -267,6 +327,18 @@ fn prepare_clip(
         locked: false,
         items: video_items,
     };
+    // Slots above the first stack on their own tracks, under the captions.
+    for (items, id) in slot_items.into_iter().zip(SLOT_TRACK_FIRST..) {
+        timeline.insert_track(Track {
+            id: TrackId(id),
+            name: format!("Layout slot {}", id - SLOT_TRACK_FIRST + 2).into(),
+            kind: TrackKind::Video,
+            muted: false,
+            hidden: false,
+            locked: false,
+            items,
+        });
+    }
     if caption_track.is_some() {
         timeline.insert_track(Track {
             id: TrackId(3),
@@ -281,7 +353,7 @@ fn prepare_clip(
     let project = Project::new(ProjectData {
         id: source.data().id,
         name: short.title.clone(),
-        canvas: source.data().canvas.clone(),
+        canvas,
         original_canvas_size: source.data().original_canvas_size,
         assets: vec![options.asset.clone()],
         luts: source.data().luts.clone(),
@@ -308,15 +380,8 @@ fn prepare_clip(
             crop,
             ..Default::default()
         };
-        for item in project
-            .data()
-            .scene()
-            .timeline
-            .iter()
-            .filter(|track| track.kind == TrackKind::Video)
-            .flat_map(|track| &track.items)
-        {
-            settings.render.placements.insert(item.id, placement);
+        for id in manual_crop {
+            settings.render.placements.insert(id, placement);
         }
     }
     settings.mode = render::ExportMode::Encode;
@@ -351,6 +416,7 @@ fn prepare_clip(
         settings,
         paths: ClipPaths { video, subtitles },
         caption_track,
+        layouts,
         languages: options.languages.to_vec(),
         input,
         duration: cursor,
@@ -359,6 +425,70 @@ fn prepare_clip(
         max_output_bytes: options.max_output_bytes,
         published,
         sources: sources.clone(),
+    })
+}
+
+/// Output frame of a short, as `render::RenderSettings::portrait` sets it.
+const PORTRAIT: [u32; 2] = [1080, 1920];
+/// Track id of the second layout slot; the first slot is the main track (2) and
+/// the captions are track 3.
+const SLOT_TRACK_FIRST: u64 = 4;
+/// The engine's cap on the shots of one analysis.
+const MAX_SHOTS: usize = 4096;
+
+/// Pixel size of the source's first video stream.
+fn source_frame(asset: &media::SourceAsset) -> Option<[f64; 2]> {
+    let shape = asset
+        .probe()
+        .streams
+        .iter()
+        .find_map(|stream| stream.video.as_ref())?;
+    Some([f64::from(shape.width), f64::from(shape.height)])
+}
+
+/// One layout slot as a video item: crop and fit in its params, scale and
+/// position as static transform channels. Only slot 0 plays the source audio.
+fn slot_item(
+    id: ItemId,
+    asset: media::AssetId,
+    range: TimeRange,
+    start: Tick,
+    slot: &crate::layout::Slot,
+) -> Result<Item, project::Error> {
+    let mut animations = project::Animations::default();
+    for (field, value) in [
+        (project::TransformField::ScaleX, slot.scale[0]),
+        (project::TransformField::ScaleY, slot.scale[1]),
+        (project::TransformField::PositionX, slot.offset[0]),
+        (project::TransformField::PositionY, slot.offset[1]),
+    ] {
+        if value != field.default_value() {
+            animations.set(
+                project::AnimationPath::from(field.builtin()),
+                project::Param::new(project::ParamValue::Scalar(field.clamp(value)?))?,
+            )?;
+        }
+    }
+    Ok(Item {
+        hidden: false,
+        blend_mode: Default::default(),
+        retime: Default::default(),
+        masks: Vec::new(),
+        effects: Vec::new(),
+        animations,
+        id,
+        source_asset: Some(asset),
+        source_range: range,
+        start,
+        content: ItemParams::Video(VideoParams {
+            fades: Default::default(),
+            source_audio_enabled: slot.audio,
+            volume: 0.0,
+            muted: false,
+            crop: slot.crop,
+            fit: slot.fit,
+            cleanup: Default::default(),
+        }),
     })
 }
 
