@@ -91,13 +91,6 @@ impl Editor {
     pub fn open_color_picker(&mut self, target: ColorTarget) -> Result<()> {
         self.with_properties(|state, port| state.open_color_picker(port, target))
     }
-    /// Inject the native capability boundary for an open picker.
-    pub fn set_eyedropper(
-        &mut self,
-        sampler: crate::services::color_picker::NativeEyedropper,
-    ) -> Result<()> {
-        self.properties.set_eyedropper(sampler)
-    }
     /// The inspector and automation use the same registered atomic field edit.
     pub fn set_shared_field(&mut self, field: &str, value: &str) -> Result<()> {
         self.with_properties(|_, port| properties::set_shared_field(port, field, value))
@@ -484,7 +477,6 @@ impl Editor {
             voiceover: self.dialogs.voiceover.view(),
             keybinding_issues: self.frame.keybinding_issues.clone(),
             color_preview: self.properties.color_preview(),
-            eyedropper: self.properties.eyedropper(),
             key_color_pick: self.player.key_color_pick.as_ref().map(|pick| pick.item),
             font_picker: self
                 .properties

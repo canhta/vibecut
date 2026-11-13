@@ -1,9 +1,9 @@
-//! Renders the target-free colour popover with its native sampler.
+//! Renders the target-free colour popover; its eyedropper samples the player.
 use crate::i18n;
 pub mod palette;
 
 use crate::{
-    Error, Result,
+    Result,
     egui::{self, Color32, Id, Vec2},
     i18n::{Locale, Text},
 };
@@ -26,111 +26,6 @@ const CHANNELS: [(&str, Text, f64); 4] = [
     ("a", Text::Alpha, 1.0),
 ];
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum EyedropperState {
-    Ready,
-    Pending,
-    Unavailable,
-    Cancelled,
-    Failed,
-}
-
-/// One screen-colour operation, fenced by the lifetime of its owning draft.
-pub struct NativeEyedropper {
-    child: Option<std::process::Child>,
-    started: Option<std::time::Instant>,
-    pub state: EyedropperState,
-}
-impl Default for NativeEyedropper {
-    fn default() -> Self {
-        Self {
-            child: None,
-            started: None,
-            state: if cfg!(target_os = "macos") {
-                EyedropperState::Ready
-            } else {
-                EyedropperState::Unavailable
-            },
-        }
-    }
-}
-impl NativeEyedropper {
-    /// Explicitly unavailable adapter, also used by deterministic UI hosts.
-    pub fn unavailable() -> Self {
-        Self {
-            child: None,
-            started: None,
-            state: EyedropperState::Unavailable,
-        }
-    }
-    pub fn start(&mut self) -> Result<()> {
-        if self.state == EyedropperState::Unavailable {
-            return Err(Error::Unsupported("native screen colour picker"));
-        }
-        if self.child.is_some() {
-            return Ok(());
-        }
-        #[cfg(target_os = "macos")]
-        {
-            // JXA is the system scripting bridge to AppKit; no browser or screen capture.
-            let script = include_str!("color_picker/color_sampler.js");
-            self.child = Some(
-                std::process::Command::new("/usr/bin/osascript")
-                    .args(["-l", "JavaScript", "-e", script])
-                    .stdout(std::process::Stdio::piped())
-                    .stderr(std::process::Stdio::null())
-                    .spawn()?,
-            );
-            self.started = Some(std::time::Instant::now());
-            self.state = EyedropperState::Pending;
-        }
-        Ok(())
-    }
-    pub fn poll(&mut self) -> Result<Option<Color>> {
-        use std::io::Read;
-        let Some(child) = &mut self.child else {
-            return Ok(None);
-        };
-        if self
-            .started
-            .is_some_and(|t| t.elapsed() > std::time::Duration::from_secs(120))
-        {
-            self.stop();
-            self.state = EyedropperState::Cancelled;
-            return Ok(None);
-        }
-        let Some(status) = child.try_wait()? else {
-            return Ok(None);
-        };
-        let mut bytes = String::new();
-        if let Some(stdout) = child.stdout.take() {
-            stdout.take(128).read_to_string(&mut bytes)?;
-        }
-        self.child = None;
-        if !status.success() {
-            self.state = EyedropperState::Failed;
-            return Err(Error::Unsupported("native screen colour picker failed"));
-        }
-        if bytes.trim().is_empty() {
-            self.state = EyedropperState::Cancelled;
-            return Ok(None);
-        }
-        self.state = EyedropperState::Ready;
-        Ok(Some(render::color::parse_hex(bytes.trim())?))
-    }
-    fn stop(&mut self) {
-        if let Some(mut child) = self.child.take() {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-    }
-}
-impl Drop for NativeEyedropper {
-    fn drop(&mut self) {
-        self.stop();
-    }
-}
-
 pub(crate) struct Picker {
     pub original: Color,
     pub color: Color,
@@ -139,7 +34,10 @@ pub(crate) struct Picker {
     hsva: [f64; 4],
     hex: String,
     entries: [String; 4],
-    pub native: NativeEyedropper,
+    /// The eyedropper is armed: the player's next click samples its frame pixel.
+    pub sampling: bool,
+    /// A player pixel the frame delivered; applied as a commit on the next pass.
+    pub sampled: Option<Color>,
     /// Top-right corner the popover hangs from, just under the control that opened it.
     pub anchor: Option<egui::Pos2>,
     invalid: bool,
@@ -159,7 +57,8 @@ impl Picker {
             hsva: [0.0; 4],
             hex: String::new(),
             entries: Default::default(),
-            native: NativeEyedropper::default(),
+            sampling: false,
+            sampled: None,
             anchor: None,
             invalid: false,
         };
@@ -200,8 +99,9 @@ impl Picker {
         Ok(())
     }
     /// The popover: a title, recent and eyedropper row, the recommended grid, then the
-    /// custom picker. It hangs under `anchor` (or at a fixed point without one); a press
-    /// outside it, or Escape, cancels the uncommitted draft.
+    /// custom picker. It hangs under `anchor` (or at a fixed point without one). A press
+    /// outside it, or Escape, cancels the uncommitted draft; while the eyedropper is armed
+    /// both leave the sampling mode instead, because the player is the target.
     pub fn ui(&mut self, ctx: &egui::Context, locale: Locale, recent: &[Color]) -> PickerEvent {
         if self.opaque {
             self.hex.truncate(7);
@@ -213,19 +113,21 @@ impl Picker {
             widgets: Vec::new(),
         };
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            event.cancel = true;
-            return event;
-        }
-        match self.native.poll() {
-            Ok(Some(color)) => {
-                let [r, g, b, _] = color.0;
-                let [_, _, _, a] = self.color.0;
-                self.set(Color([r, g, b, a]));
-                event.preview = true;
-                event.commit = true;
+            if self.sampling {
+                self.sampling = false;
+            } else {
+                event.cancel = true;
+                return event;
             }
-            Err(_) => self.native.state = EyedropperState::Failed,
-            _ => {}
+        }
+        if let Some(color) = self.sampled.take() {
+            // The player's pixel keeps the draft's alpha, as the sampler always did.
+            let [r, g, b, _] = color.0;
+            let [_, _, _, a] = self.color.0;
+            self.set(Color([r, g, b, a]));
+            self.sampling = false;
+            event.preview = true;
+            event.commit = true;
         }
         let (pivot, position) = match self.anchor {
             Some(anchor) => (egui::Align2::RIGHT_TOP, anchor),
@@ -252,7 +154,8 @@ impl Picker {
                     .interact_pos()
                     .is_some_and(|pos| !rect.contains(pos))
         });
-        if pressed_outside {
+        // The armed click lands on the player, outside the popover: it must not close it.
+        if pressed_outside && !self.sampling {
             event.cancel = true;
         }
         event
@@ -287,27 +190,20 @@ impl Picker {
                     .push((format!("color.recent.{index}"), response));
             }
         });
-        // The screen sampler row exists only where sampling can run.
-        if self.native.state != EyedropperState::Unavailable {
-            let response = ui.add(egui::Button::image_and_text(
-                crate::kit::tinted(crate::kit::Icon::Eye, 16.0, ui.visuals().text_color()),
-                i18n::text(locale, Text::Eyedropper),
-            ));
-            if response.clicked() && self.native.start().is_err() {
-                self.native.state = EyedropperState::Unavailable;
-            }
-            event.widgets.push(("color.eyedropper".into(), response));
-            let status = match self.native.state {
-                EyedropperState::Failed => Some(Text::EyedropperFailed),
-                EyedropperState::Pending => Some(Text::EyedropperPending),
-                _ => None,
-            };
-            if let Some(status) = status {
-                let response = ui.label(i18n::text(locale, status));
-                event
-                    .widgets
-                    .push(("color.eyedropper.status".into(), response));
-            }
+        // Armed, the next click on the player picks its frame pixel; Escape leaves the mode.
+        let response = ui.add(egui::Button::image_and_text(
+            crate::kit::tinted(crate::kit::Icon::Eye, 16.0, ui.visuals().text_color()),
+            i18n::text(locale, Text::Eyedropper),
+        ));
+        if response.clicked() {
+            self.sampling = true;
+        }
+        event.widgets.push(("color.eyedropper".into(), response));
+        if self.sampling {
+            let response = ui.label(i18n::text(locale, Text::EyedropperPending));
+            event
+                .widgets
+                .push(("color.eyedropper.status".into(), response));
         }
 
         ui.label(i18n::text(locale, Text::Recommended));

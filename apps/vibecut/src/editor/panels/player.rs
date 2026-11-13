@@ -100,6 +100,8 @@ pub(crate) enum Action {
     },
     /// A pixel of the rendered preview frame for the armed chroma-key eyedropper.
     PickKeyColor(project::Color),
+    /// A pixel of the rendered preview frame for the armed colour-popover eyedropper.
+    PickScreenColour(project::Color),
     /// One preview preference edit, recorded in the app's preference history.
     SetPreference {
         key: &'static str,

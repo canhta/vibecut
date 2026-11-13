@@ -72,10 +72,6 @@ impl PreferenceStore {
             value.keybindings = sanitized;
             issue = Some(PreferenceIssue::Keybindings);
         }
-        if value.recent_colors.len() > 16 {
-            value.recent_colors.clear();
-            issue = Some(PreferenceIssue::Layout);
-        }
         if value.timeline_lane_count() > MAX_TIMELINE_LANES {
             value.timeline_lanes.clear();
             issue = Some(PreferenceIssue::Layout);
@@ -223,10 +219,6 @@ mod tests {
                     "bindings": {"timeline.snap": ["Ctrl+Shift+N"]},
                     "isCustomized": ["timeline.snap"]
                 }),
-            ),
-            (
-                "recent_colors",
-                serde_json::json!([[10, 20, 30, 0], [255, 0, 100, 128]]),
             ),
             (
                 "sticker_recents",
@@ -640,25 +632,6 @@ mod tests {
         assert_eq!(store.load_with_warning().0, Preferences::default());
     }
 
-    #[test]
-    fn recent_colours_refuse_over_capacity_without_changing_preferences() {
-        let mut preferences = Preferences::default();
-        let recent = (0..16)
-            .map(|r| project::Color([r, 0, 0, r]))
-            .collect::<Vec<_>>();
-        preferences
-            .set("recent_colors", serde_json::to_value(&recent).unwrap())
-            .unwrap();
-        let before = preferences.clone();
-        let mut oversized = recent;
-        oversized.push(project::Color([255; 4]));
-        assert!(
-            preferences
-                .set("recent_colors", serde_json::to_value(oversized).unwrap())
-                .is_err()
-        );
-        assert_eq!(preferences, before);
-    }
 }
 
 #[cfg(test)]

@@ -1013,7 +1013,9 @@ fn canvas(
         );
     }
     overlays(cx, ui, stage, displayed);
-    if state.key_color_pick.is_some() {
+    // Either eyedropper samples the frame; the chroma key's pick and the colour popover's
+    // pick differ only in the action they report.
+    if state.key_color_pick.is_some() || cx.colour_sampling {
         if r.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
         }
@@ -1023,7 +1025,11 @@ fn canvas(
             && let Some(frame) = cx.playback.frame()
             && let Some(color) = preview::sample_color(&frame.image, displayed, pos)
         {
-            actions.push(Action::PickKeyColor(color));
+            actions.push(if state.key_color_pick.is_some() {
+                Action::PickKeyColor(color)
+            } else {
+                Action::PickScreenColour(color)
+            });
         }
     } else {
         super::transform::show(

@@ -21,8 +21,8 @@ pub(in crate::editor) use workflow::{
 };
 
 use crate::editor::{
-    Arc, BTreeSet, Color32, Context, Error, Icon, Id, ItemId, ItemParams, Rect, Result,
-    SelectionScope, StreamKind, Text, Tick, TrackKind, Vec2, egui, icons, theme,
+    Arc, BTreeSet, Color32, Context, Icon, Id, ItemId, ItemParams, Rect, SelectionScope,
+    StreamKind, Text, Tick, TrackKind, Vec2, egui, icons, theme,
 };
 use gesture::{
     AUDIO_GAIN_SCRUB, EffectReorder, GraphDrag, OPACITY_SCRUB, SPEED_SCRUB, ScrubDrag, ScrubSpec,
@@ -168,24 +168,23 @@ impl State {
         self.picker.as_ref().map(|draft| draft.picker.color)
     }
 
-    /// The armed screen sampler's state, for the automation read.
-    pub(in crate::editor) fn eyedropper(
-        &self,
-    ) -> Option<crate::services::color_picker::EyedropperState> {
-        self.picker.as_ref().map(|draft| draft.picker.native.state)
+    /// Whether the colour popover's eyedropper is armed: the player samples its next click.
+    pub(in crate::editor) fn sampling_colour(&self) -> bool {
+        self.picker.as_ref().is_some_and(|draft| draft.picker.sampling)
     }
 
-    /// Inject the native capability boundary for an open picker.
-    pub(in crate::editor) fn set_eyedropper(
-        &mut self,
-        sampler: crate::services::color_picker::NativeEyedropper,
-    ) -> Result<()> {
-        self.picker
-            .as_mut()
-            .ok_or(Error::Invalid("closed colour picker"))?
-            .picker
-            .native = sampler;
-        Ok(())
+    /// Hand the player's sampled pixel to the open popover, which applies it on its next pass.
+    pub(in crate::editor) fn sample_colour(&mut self, color: project::Color) {
+        if let Some(draft) = self.picker.as_mut() {
+            draft.picker.sampled = Some(color);
+        }
+    }
+
+    /// Leave the eyedropper's sampling mode without closing the popover.
+    pub(in crate::editor) fn stop_sampling(&mut self) {
+        if let Some(draft) = self.picker.as_mut() {
+            draft.picker.sampling = false;
+        }
     }
 }
 

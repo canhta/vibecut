@@ -107,6 +107,17 @@ pub(super) fn execute_set_background(
     data.canvas.background = color;
     Ok(data)
 }
+/// Moves `color` to the front of the recent colours, dropping its older entry and any
+/// overflow beyond the project bound.
+pub(super) fn execute_record_recent_colour(
+    mut data: ProjectData,
+    color: project::Color,
+) -> ProjectData {
+    data.recent_colors.retain(|candidate| *candidate != color);
+    data.recent_colors.insert(0, color);
+    data.recent_colors.truncate(project::MAX_RECENT_COLORS);
+    data
+}
 pub(super) fn execute_bookmark_add(
     mut data: ProjectData,
     start: Tick,

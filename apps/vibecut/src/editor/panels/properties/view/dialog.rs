@@ -29,7 +29,11 @@ impl Panel<'_, '_> {
             return;
         }
         let picker = &mut draft.picker;
-        let event = picker.ui(ctx, self.cx.locale, &self.cx.preferences.recent_colors);
+        let event = picker.ui(
+            ctx,
+            self.cx.locale,
+            &self.cx.session.project().data().recent_colors,
+        );
         for (id, response) in event.widgets {
             self.remember(id, &response);
         }
@@ -55,11 +59,10 @@ impl Panel<'_, '_> {
         {
             Ok(command) => {
                 if event.commit && picker.color != picker.original {
-                    let mut recent = self.cx.preferences.recent_colors.clone();
-                    recent.retain(|c| *c != picker.color);
-                    recent.insert(0, picker.color);
-                    recent.truncate(16);
-                    self.actions.push(Action::ColorCommit { command, recent });
+                    self.actions.push(Action::ColorCommit {
+                        command,
+                        record: Some(picker.color),
+                    });
                 } else if event.preview {
                     self.actions.push(Action::ColorPreview { command });
                 }

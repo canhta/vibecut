@@ -209,17 +209,28 @@ impl State {
         });
 
         if let Some(mut picker) = open.picker.take() {
-            let event = picker.ui(ctx, cx.locale, &cx.preferences.recent_colors);
+            let event = picker.ui(
+                ctx,
+                cx.locale,
+                &cx.session.project().data().recent_colors,
+            );
             for (id, response) in event.widgets {
                 record(&mut widgets, &id, &response);
             }
             if !event.cancel {
                 if event.commit && picker.color != picker.original {
-                    actions.push(Action::Command(Box::new(engine::Command::UpdateBookmark {
-                        bookmark: id,
-                        note: None,
-                        color: Some(picker.color),
-                        duration: None,
+                    actions.push(Action::Command(Box::new(engine::Command::Batch {
+                        commands: vec![
+                            engine::Command::UpdateBookmark {
+                                bookmark: id,
+                                note: None,
+                                color: Some(picker.color),
+                                duration: None,
+                            },
+                            engine::Command::RecordRecentColour {
+                                color: picker.color,
+                            },
+                        ],
                     })));
                     picker.original = picker.color;
                 }

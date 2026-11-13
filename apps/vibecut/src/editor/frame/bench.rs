@@ -375,12 +375,15 @@ mod tests {
             } else {
                 assert_ne!(bench.editor().session.project(), &before);
                 assert_eq!(bench.editor().session.history_len().0, history.0 + 1);
-                assert_eq!(bench.editor().preferences.recent_colors, [color]);
+                assert_eq!(
+                    bench.editor().session.project().data().recent_colors,
+                    [color]
+                );
                 bench.editor_mut().activate("edit.undo").unwrap();
                 assert_eq!(
                     bench.editor().session.project(),
                     &before,
-                    "recent colours must not insert a separate preference undo step"
+                    "undo restores the project, its recent colours included"
                 );
             }
         }

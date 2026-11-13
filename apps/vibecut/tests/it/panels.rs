@@ -1126,7 +1126,6 @@ fn color_drag_isolated_until_release_one_undo_and_escape_cancels() {
     assert_eq!(harness.state().session.project(), &before);
     assert_eq!(harness.state().inspect().unwrap().color_preview, None);
     let history = harness.state().session.history_len();
-    let recents = harness.state().preferences.recent_colors.clone();
     click(&mut harness, "inspector.text_color.picker");
     harness.run_steps(2);
     let slider = widget_rect(&harness, "color.v.slider");
@@ -1140,24 +1139,10 @@ fn color_drag_isolated_until_release_one_undo_and_escape_cancels() {
     harness.run_steps(2);
     assert_eq!(harness.state().session.project(), &before);
     assert_eq!(harness.state().session.history_len(), history);
-    assert_eq!(harness.state().preferences.recent_colors, recents);
 }
 
 #[test]
-fn picker_hex_hsv_recents_unavailable_and_screenshot() {
-    #[cfg(not(target_os = "macos"))]
-    {
-        let mut native = vibecut::services::color_picker::NativeEyedropper::default();
-        assert_eq!(
-            native.state,
-            vibecut::services::color_picker::EyedropperState::Unavailable
-        );
-        assert!(matches!(
-            native.start(),
-            Err(vibecut::Error::Unsupported(_))
-        ));
-        assert_eq!(native.poll().unwrap(), None);
-    }
+fn picker_hex_hsv_recents_and_screenshot() {
     let mut fixture = fixture();
     // A screenshot needs a healthy generated preview, not the offline media
     // deliberately retained by the general panel fixture.
@@ -1194,34 +1179,14 @@ fn picker_hex_hsv_recents_unavailable_and_screenshot() {
     assert!(
         matches!(item(&harness,fixture.text).content,ItemParams::Text(p) if p.color==Color([0,0,255,128]))
     );
-    harness
-        .state_mut()
-        .set_eyedropper(vibecut::services::color_picker::NativeEyedropper::unavailable())
-        .unwrap();
-    harness.run_steps(2);
     assert_eq!(
-        harness.state().inspect().unwrap().eyedropper,
-        Some(vibecut::services::color_picker::EyedropperState::Unavailable)
-    );
-    // Where sampling is impossible the row is absent, with no unavailable line.
-    assert!(
-        !harness
+        harness
             .state()
-            .inspect()
-            .unwrap()
-            .widgets
-            .iter()
-            .any(|widget| widget.id.starts_with("color.eyedropper"))
-    );
-    let dir = tempfile::tempdir().unwrap();
-    let store = PreferenceStore::new(dir.path().join("prefs.json"));
-    store.save(&harness.state().preferences).unwrap();
-    assert_eq!(
-        store.load_with_warning().0.recent_colors,
-        harness.state().preferences.recent_colors
-    );
-    assert_eq!(
-        harness.state().preferences.recent_colors.first(),
+            .session
+            .project()
+            .data()
+            .recent_colors
+            .first(),
         Some(&Color([0, 0, 255, 128]))
     );
     let path =
@@ -1327,7 +1292,6 @@ fn shared_picker_edits_background_graphic_and_canvas_through_commands() {
         }
         let committed = harness.state().session.project().clone();
         let history = harness.state().session.history_len();
-        let recents = harness.state().preferences.recent_colors.clone();
         let slider = widget_rect(&harness, "color.a.slider");
         harness.drag_at(slider.right_center());
         harness.run_steps(2);
@@ -1346,11 +1310,6 @@ fn shared_picker_edits_background_graphic_and_canvas_through_commands() {
         harness.run_steps(2);
         assert_eq!(harness.state().session.project(), &committed, "{button}");
         assert_eq!(harness.state().session.history_len(), history, "{button}");
-        assert_eq!(
-            harness.state().preferences.recent_colors,
-            recents,
-            "{button}"
-        );
         harness.drag_at(slider.right_center());
         harness.run_steps(2);
         harness.hover_at(slider.left_center());
@@ -1364,11 +1323,6 @@ fn shared_picker_edits_background_graphic_and_canvas_through_commands() {
         assert_eq!(
             harness.state().inspect().unwrap().color_preview,
             None,
-            "{button}"
-        );
-        assert_eq!(
-            harness.state().preferences.recent_colors,
-            recents,
             "{button}"
         );
         click(&mut harness, button);

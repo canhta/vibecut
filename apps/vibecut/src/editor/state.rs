@@ -6,7 +6,6 @@ use super::{
     PathBuf, Playback, Preferences, SelectionScope, SelectionScopes, Text, Tick, WidgetState,
     actions, egui, theme,
 };
-use crate::services::color_picker::EyedropperState;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AssetInspection {
@@ -180,7 +179,6 @@ pub struct Inspection {
     /// Unknown actions, invalid chords and conflicts from the persisted map.
     pub keybinding_issues: Vec<KeybindingIssue>,
     pub color_preview: Option<project::Color>,
-    pub eyedropper: Option<EyedropperState>,
     /// Clip whose chroma-key eyedropper is armed for the next player click.
     pub key_color_pick: Option<ItemId>,
     /// Present while the shortcuts dialog is open.

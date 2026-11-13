@@ -26,15 +26,20 @@ impl State {
         result
     }
 
-    /// Commit a released colour as one undoable command and remember it as recent.
+    /// Commit a released colour as one undo step; a picked colour also moves to the
+    /// front of the project's recent colours inside that same step.
     pub(super) fn commit_color(
         &mut self,
         port: &mut Port<'_>,
         command: engine::Command,
-        recent: Vec<project::Color>,
+        record: Option<project::Color>,
     ) -> Result<()> {
-        let mut preferences = port.view().preferences.clone();
-        preferences.set("recent_colors", serde_json::to_value(recent)?)?;
+        let command = match record {
+            Some(color) => engine::Command::Batch {
+                commands: vec![command, engine::Command::RecordRecentColour { color }],
+            },
+            None => command,
+        };
         if let Err(error) = port.apply_result(command) {
             // The engine refused: show the committed project again.
             port.sync();
@@ -47,7 +52,6 @@ impl State {
             .picker
             .as_ref()
             .map(|_| port.view().session.project().clone());
-        port.adopt_preferences(preferences);
         Ok(())
     }
 }

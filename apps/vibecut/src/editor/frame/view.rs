@@ -384,6 +384,7 @@ impl Editor {
                         self.fail(error.to_string());
                     }
                 }
+                Action::PickScreenColour(color) => self.properties.sample_colour(color),
                 Action::PickKeyColor(color) => {
                     if let Some(pick) = self.player.key_color_pick.take()
                         && let Err(error) =
