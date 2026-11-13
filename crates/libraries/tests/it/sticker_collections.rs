@@ -8,7 +8,7 @@
 //! download job, search and the provenance of bundled and cached files.
 
 use engine::{
-    ByteBudget, Failure, StickerError,
+    ByteBudget, StickerError,
     control::Error as EngineError,
     jobs::{Clock, JobId, JobRunner, JobState, RunnerConfig, SystemClock},
 };
@@ -35,7 +35,10 @@ const LICENSE: &[u8] = b"MIT License (test copy)\n";
 const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
 
 fn sha(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 fn clean(shape: &str) -> Vec<u8> {

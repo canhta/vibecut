@@ -503,7 +503,7 @@ pub(in crate::editor) fn element_kind(
         (ItemParams::Text(_) | ItemParams::Caption(_), _) => ElementKind::Text,
         (ItemParams::Audio(_), _) => ElementKind::Audio,
         (_, TrackKind::Sticker) => ElementKind::Sticker,
-        (_, TrackKind::Effect) => ElementKind::Effect,
+        (ItemParams::Effect(_), _) | (_, TrackKind::Effect) => ElementKind::Effect,
         (_, TrackKind::Filter | TrackKind::Adjustment) => ElementKind::Graphic,
         (ItemParams::Overlay(_) | ItemParams::Graphic(_), _) => ElementKind::Graphic,
         (ItemParams::Sticker(_), _) => ElementKind::Sticker,

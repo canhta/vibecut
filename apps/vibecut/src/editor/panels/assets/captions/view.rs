@@ -247,7 +247,7 @@ fn style_control(
 impl Subtitles {
     /// The assets-panel mount is one call. Engine edits remain in this module.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn ui(
+    pub(in crate::editor) fn ui(
         &mut self,
         ui: &mut egui::Ui,
         session: &mut Session,

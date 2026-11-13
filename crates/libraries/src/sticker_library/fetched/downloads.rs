@@ -8,7 +8,6 @@ use engine::control::{Error as EngineError, Result};
 use engine::jobs::{
     CancelToken, JobBytes, JobContext, JobId, JobKind, JobRunner, JobSpec, JobStage, ResourceClass,
 };
-use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeSet,
     fs,
@@ -279,7 +278,7 @@ impl Transfer<'_> {
                 (self.done as f32 / self.total as f32).min(1.0),
             )?;
         }
-        if bytes.len() as u64 != size || format!("{:x}", Sha256::digest(&bytes)) != sha256 {
+        if bytes.len() as u64 != size || super::sha256_hex(&bytes) != sha256 {
             return Err(StickerError::Integrity.into());
         }
         Ok(bytes)

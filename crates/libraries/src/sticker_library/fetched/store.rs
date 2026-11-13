@@ -4,7 +4,6 @@ use super::collections::{Collection, LICENSE_FILE};
 use super::sanitize::check_svg;
 use engine::StickerError;
 use engine::control::Result;
-use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeSet,
     fs, io,
@@ -150,7 +149,7 @@ impl StickerStore {
             Err(error) => return Err(error.into()),
         };
         if bytes.len() as u64 != entry.size
-            || format!("{:x}", Sha256::digest(&bytes)) != entry.sha256
+            || super::sha256_hex(&bytes) != entry.sha256
             || !has_sidecar(&file)
         {
             return Err(StickerError::Integrity.into());
