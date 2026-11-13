@@ -1,9 +1,9 @@
 //! Applies clips commands to a candidate project.
 use super::{
-    Arc, BTreeMap, BTreeSet, CreatedId, EditError, Item, ItemId, ItemParams, Move, NewItem,
-    Placement, ProjectData, Result, SourceRange, Tick, Track, TrackId, TrackKind, TrackPlacement,
-    TrimSources, alloc, fades_mut, item, placement_track, ratchet_fps, sub, take_item, track,
-    unlocked,
+    Arc, BTreeMap, BTreeSet, Command, CreatedId, EditError, Item, ItemId, ItemParams, Move,
+    NewItem, Placement, ProjectData, Result, SourceRange, Tick, Track, TrackId, TrackKind,
+    TrackPlacement, TrimSources, alloc, fades_mut, item, placement_track, ratchet_fps, sub,
+    take_item, track, unlocked,
 };
 
 pub(super) fn move_items(data: &mut ProjectData, moves: Vec<Move>) -> Result<()> {
@@ -1006,10 +1006,54 @@ pub(super) fn remove_output_ranges(
     Ok(data)
 }
 
-/// Close only same-track tails vacated by one complete edit candidate.
+/// Tracks whose vacated tails the main-track magnet closes for one edit, or `None` when the
+/// magnet does not apply. It applies when magnet is on, every leaf of the command is a delete
+/// or split-and-remove of listed items, and a listed item sits on the main track. The scope is
+/// every track holding a listed item, so a linked partner closes on its own track by the same
+/// rule; any other track is never shifted.
+pub(crate) fn magnet_scope(data: &ProjectData, command: &Command) -> Option<BTreeSet<TrackId>> {
+    if !data.scene().timeline.magnet {
+        return None;
+    }
+    let mut targets = Vec::new();
+    if !collect_removal_targets(command, &mut targets) || targets.is_empty() {
+        return None;
+    }
+    let mut tracks = BTreeSet::new();
+    for id in targets {
+        let track = data
+            .scene()
+            .timeline
+            .iter()
+            .find(|track| track.items.iter().any(|item| item.id == id))?;
+        tracks.insert(track.id);
+    }
+    tracks
+        .contains(&data.scene().timeline.main.id)
+        .then_some(tracks)
+}
+
+fn collect_removal_targets(command: &Command, targets: &mut Vec<ItemId>) -> bool {
+    match command {
+        Command::Delete { items }
+        | Command::TimelineSplitLeft { items, .. }
+        | Command::TimelineSplitRight { items, .. } => {
+            targets.extend(items.iter().copied());
+            true
+        }
+        Command::Batch { commands } => commands
+            .iter()
+            .all(|command| collect_removal_targets(command, targets)),
+        _ => false,
+    }
+}
+
+/// Close only same-track tails vacated by one complete edit candidate, on the tracks in
+/// `scope` (`None` means every track).
 pub(crate) fn close_vacated_tails(
     before: &ProjectData,
     after: project::Project,
+    scope: Option<&BTreeSet<TrackId>>,
 ) -> Result<project::Project> {
     let locations: BTreeMap<_, _> = after
         .data()
@@ -1025,6 +1069,9 @@ pub(crate) fn close_vacated_tails(
         .collect();
     let mut shifts = BTreeMap::new();
     for track in before.scene().timeline.iter() {
+        if scope.is_some_and(|scope| !scope.contains(&track.id)) {
+            continue;
+        }
         let Some(next_track) = after
             .data()
             .scene()

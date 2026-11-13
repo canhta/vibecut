@@ -76,9 +76,19 @@ replacement preview the policy; the wire refuses that shape like any session con
 batch. Nested policy wrappers refuse, and `timeline.set_ripple` sets the session default (off
 initially, no project or history entry, refused during a transaction). One post-command diff
 closes same-track tails vacated by delete, tail trim or leftward movement; it never shifts
-another track, and cross-track moves, splits and hide/mute leave followers unchanged. The edit
-and its shifts publish as one undo step ([`close_vacated_tails`](clips.rs),
-[session](../README.md#transactions-gestures-and-changes)).
+another track, and cross-track moves, splits and hide/mute leave followers unchanged.
+
+The main-track magnet (`timeline.magnet`, `track.set_magnet`; default on) runs the same pass
+without the session flag for a command whose leaves are only `delete`, `timeline.split_left` and
+`timeline.split_right` (a `Batch` of them included) and whose listed items include one on the
+main track ([`magnet_scope`](clips.rs)). The pass covers exactly the tracks those listed items
+sit on: a removed main item ripples main, and a listed partner on another track closes its own
+tail; unlisted tracks never shift. Magnet off, a command with no main-track target, or any other
+command leaves the gap as before. A split that keeps both pieces vacates nothing, so it is never
+closed, whatever the tracks: `split_at` and any split over every track keep their pieces in place
+with the magnet on. Splitting left drops the left piece and the right piece takes the cut start;
+splitting right keeps the left piece and the vacated right span closes. The edit and its shifts
+publish as one undo step ([`close_vacated_tails`](clips.rs), [session](../README.md#transactions-gestures-and-changes)).
 
 `EditError` and `AssetUsage` are declared in this owner and re-exported through Session
 and the crate. Its Result covers pure editing: safe-ID/static refusals and actual lower

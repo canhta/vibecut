@@ -617,6 +617,13 @@ impl Session {
         }
         edit::check_budget(&command)?;
         let mut command = command;
+        // The session ripple closes every track; without it, a main-track magnet closes
+        // only what this removal vacates, on the tracks it lists.
+        let magnet = if ripple {
+            None
+        } else {
+            edit::magnet_scope(self.state.project.data(), &command)
+        };
         if ripple {
             edit::lift_ripple_deletes(&mut command);
         }
@@ -643,7 +650,9 @@ impl Session {
             },
         )?;
         let next = if ripple {
-            edit::ripple(self.state.project.data(), next)?
+            edit::ripple(self.state.project.data(), next, None)?
+        } else if let Some(tracks) = &magnet {
+            edit::ripple(self.state.project.data(), next, Some(tracks))?
         } else {
             next
         };
