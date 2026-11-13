@@ -2903,6 +2903,42 @@ fn transcript_selection_follows_an_external_cut_and_undo_restores_the_view() {
     assert_eq!(transcript_words(h.state()), 4);
 }
 
+#[test]
+fn transcript_locked_track_marks_its_cues_and_refuses_a_merge() {
+    let mut h = harness(editor_with_cues("en", transcript_cues(false)), 1.0);
+    h.run_steps(3);
+    let track = h.state().session.transcript().unwrap().cues[0].track;
+    h.state_mut()
+        .session
+        .apply(Command::SetTrackLocked {
+            track,
+            locked: true,
+        })
+        .unwrap();
+    h.run_steps(3);
+    let item = panel(h.state()).item.unwrap().0;
+    let marker = format!("subtitles.transcript.locked.{item}.cue-0");
+    assert!(
+        h.query_all(By::new().predicate(|n| n.author_id() == Some(marker.as_str())))
+            .next()
+            .is_some(),
+        "the locked track marks its cue"
+    );
+    let first = transcript_cue(&h, "cue-0");
+    click(&mut h, &first);
+    let second = transcript_cue(&h, "cue-1");
+    h.input_mut().modifiers = egui::Modifiers::COMMAND;
+    click(&mut h, &second);
+    h.input_mut().modifiers = egui::Modifiers::default();
+    let before = h.state().session.project().clone();
+    let history = h.state().session.history_len();
+    click(&mut h, "subtitles.transcript.merge");
+    assert_eq!(transcript_refusal(&h), Some(Text::SubTranscriptLocked));
+    assert_eq!(h.state().session.project(), &before);
+    assert_eq!(h.state().session.history_len(), history);
+    assert_eq!(h.state().session.transcript().unwrap().cues.len(), 2);
+}
+
 /// Offscreen screenshot evidence; wgpu rendering stays out of CI.
 #[test]
 #[ignore = "renders through wgpu; run with --ignored to refresh target/p1-ai-03-transcript-edit.png"]

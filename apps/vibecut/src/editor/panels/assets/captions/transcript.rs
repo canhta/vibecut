@@ -13,14 +13,14 @@ use time::{TICKS_PER_SECOND, Tick};
 /// Cues per page; the pane pages like the cue list above it.
 const PAGE: usize = 50;
 
-/// The pane's read of the active scene and its own selection. The view is keyed by
-/// the project snapshot it was read from, so undo, redo and any edit rebuild it.
+/// The pane's read of the active scene and its word selection. Cue selection is the
+/// cue list's own (`Subtitles::selected`), so both views share one. The view is keyed
+/// by the project snapshot it was read from, so undo, redo and any edit rebuild it.
 #[derive(Default)]
 pub(super) struct Pane {
     view: Option<(Arc<project::Project>, Arc<TranscriptView>)>,
     words: BTreeSet<WordId>,
     anchor: Option<WordId>,
-    cues: BTreeSet<CueId>,
     page: usize,
     refusal: Option<Text>,
 }
@@ -34,17 +34,16 @@ impl Pane {
         self.refusal
     }
 
-    fn clear_selection(&mut self) {
+    fn clear_words(&mut self) {
         self.words.clear();
-        self.cues.clear();
         self.anchor = None;
     }
 }
 
 impl Subtitles {
-    /// Rebuild the view when the project snapshot changed. Selection survives only
-    /// while its words or cues still exist in the project; a scene switch keeps
-    /// selection from the other scene so a cut there is refused, not silent.
+    /// Rebuild the view when the project snapshot changed. Word selection survives
+    /// only while its words still exist in the project; a scene switch keeps words
+    /// from the other scene so a cut there is refused, not silent.
     fn transcript_refresh(&mut self, session: &Session) {
         let project = session.project();
         if self
@@ -67,20 +66,9 @@ impl Subtitles {
             .iter()
             .flat_map(|cue| cue.words.iter().map(|word| word.id.clone()))
             .collect();
-        let cues: BTreeSet<CueId> = view
-            .cues
-            .iter()
-            .map(|cue| CueId {
-                item: cue.item,
-                cue: cue.id.clone(),
-            })
-            .collect();
         self.transcript
             .words
             .retain(|id| words.contains(id) || elsewhere(id.item));
-        self.transcript
-            .cues
-            .retain(|id| cues.contains(id) || elsewhere(id.item));
         if self
             .transcript
             .anchor
@@ -118,6 +106,7 @@ impl Subtitles {
         let mut next = false;
         let mut clicked_word = None;
         let mut clicked_cue = None;
+        let current = self.item;
         ui.horizontal(|ui| {
             cut = icon_button(
                 ui,
@@ -134,7 +123,7 @@ impl Subtitles {
                 "subtitles.transcript.merge",
                 Text::SubMerge,
                 Icon::ArrowsInLineHorizontal,
-                ready && self.transcript.cues.len() > 1,
+                ready && self.item.is_some() && self.selected.len() > 1,
                 locale,
             );
         });
@@ -187,11 +176,8 @@ impl Subtitles {
             .skip(self.transcript.page * PAGE)
             .take(PAGE)
         {
-            let cue_id = CueId {
-                item: cue.item,
-                cue: cue.id.clone(),
-            };
-            let cue_selected = self.transcript.cues.contains(&cue_id);
+            // Cue selection is the cue list's: it belongs to one caption item at a time.
+            let cue_selected = current == Some(cue.item) && self.selected.contains(&cue.id);
             ui.horizontal_wrapped(|ui| {
                 let time = format!(
                     "{} – {}",
@@ -210,14 +196,25 @@ impl Subtitles {
                 );
                 if r.clicked() {
                     clicked_cue = Some((
-                        cue_id.clone(),
+                        cue.item,
+                        cue.id.clone(),
                         cue.output.start(),
                         ui.input(|i| i.modifiers),
                     ));
                 }
                 if cue.locked {
-                    ui.add(tinted(Icon::Lock, 16.0, theme::text(dark)))
+                    let r = ui
+                        .add(tinted(Icon::Lock, 16.0, theme::text(dark)))
                         .on_hover_text(i18n::text(locale, Text::SubTranscriptLocked));
+                    remember(
+                        widgets,
+                        format!(
+                            "subtitles.transcript.locked.{}.{}",
+                            cue.item.0,
+                            cue.id.as_str()
+                        ),
+                        &r,
+                    );
                 }
                 if cue.protected {
                     ui.label(i18n::text(locale, Text::SubEdited));
@@ -267,8 +264,8 @@ impl Subtitles {
         // Gestures apply after every row is drawn, so the snapshot cannot recreate stale rows.
         if let Some((id, at, modifiers)) = clicked_word {
             self.transcript_select_word(&view, id, at, modifiers);
-        } else if let Some((id, at, modifiers)) = clicked_cue {
-            self.transcript_select_cue(id, at, modifiers);
+        } else if let Some((item, cue, at, modifiers)) = clicked_cue {
+            self.transcript_select_cue(session, item, &cue, at, modifiers);
         }
         if cut {
             self.transcript_cut(session);
@@ -328,19 +325,41 @@ impl Subtitles {
         self.requested_seek = Some(at);
     }
 
-    /// Cmd/Ctrl toggles a cue for merging; a plain click selects only that cue.
-    fn transcript_select_cue(&mut self, id: CueId, at: Tick, modifiers: egui::Modifiers) {
-        let pane = &mut self.transcript;
-        pane.refusal = None;
-        if modifiers.command {
-            if !pane.cues.remove(&id) {
-                pane.cues.insert(id);
-            }
-        } else {
-            pane.cues.clear();
-            pane.cues.insert(id);
+    /// A cue pick is the cue list's own selection: its item becomes the current caption
+    /// item when needed, then `select_cue` applies Shift range and Cmd/Ctrl toggle exactly
+    /// as the cue list does. The playhead moves to the cue.
+    fn transcript_select_cue(
+        &mut self,
+        session: &mut Session,
+        item: ItemId,
+        cue: &captions::NfcText,
+        at: Tick,
+        modifiers: egui::Modifiers,
+    ) {
+        self.transcript.refusal = None;
+        if self.flush_drafts(session).is_err() {
+            self.transcript.refusal = Some(Text::SubEditFailed);
+            return;
         }
-        self.requested_seek = Some(at);
+        if self.item != Some(item) && self.select_item(session, item).is_err() {
+            self.transcript.refusal = Some(Text::SubEditFailed);
+            return;
+        }
+        let index = self.caption(session).and_then(|(_, params)| {
+            params
+                .cues
+                .cues
+                .iter()
+                .position(|candidate| candidate.id == *cue)
+        });
+        let Some(index) = index else {
+            self.transcript.refusal = Some(Text::SubEditFailed);
+            return;
+        };
+        match self.select_cue(session, index, modifiers.shift, modifiers.command) {
+            Ok(_) => self.requested_seek = Some(at),
+            Err(_) => self.transcript.refusal = Some(Text::SubEditFailed),
+        }
     }
 
     /// Cut the selected words as one engine command. A refusal keeps the selection
@@ -367,7 +386,7 @@ impl Subtitles {
             Ok(outcome) => {
                 self.transcript.refusal = None;
                 if outcome.changed {
-                    self.transcript.clear_selection();
+                    self.transcript.clear_words();
                     if let Some(at) = at {
                         self.requested_seek = Some(at);
                     }
@@ -377,20 +396,32 @@ impl Subtitles {
         }
     }
 
-    /// Merge the selected cues as one engine command; the selection is cleared on
-    /// success because merged cues renumber their words.
+    /// Merge the cue list's selected cues as one engine command. Success clears the
+    /// cue selection and the word selection, because merged cues renumber their words.
     fn transcript_merge(&mut self, session: &mut Session) {
         if self.flush_drafts(session).is_err() {
             self.transcript.refusal = Some(Text::SubEditFailed);
             return;
         }
         self.transcript_refresh(session);
-        let cue_ids: Vec<CueId> = self.transcript.cues.iter().cloned().collect();
+        let Some(item) = self.item else {
+            return;
+        };
+        let cue_ids: Vec<CueId> = self
+            .selected
+            .iter()
+            .map(|cue| CueId {
+                item,
+                cue: cue.clone(),
+            })
+            .collect();
         match session.apply(Command::TranscriptMergeCues { cue_ids }) {
             Ok(outcome) => {
                 self.transcript.refusal = None;
                 if outcome.changed {
-                    self.transcript.clear_selection();
+                    self.selected.clear();
+                    self.anchor = None;
+                    self.transcript.clear_words();
                 }
             }
             Err(error) => self.transcript.refusal = Some(refusal(&error)),
