@@ -509,7 +509,7 @@ fn proxied_editor(source: &std::path::Path) -> Editor {
     let session = Session::new(Project::new(data).unwrap(), 10).unwrap();
     let mut playback = Playback::new(
         &session,
-        ByteBudget::new(256 << 20).unwrap(),
+        ByteBudget::new(512 << 20).unwrap(),
         Arc::new(vibecut::services::playback::Proxied(
             engine::proxies::ProxyIndex::default(),
         )),
@@ -558,7 +558,12 @@ fn proxy_settings_toggle_generate_and_clear_degrade_to_the_source() {
             .value()
             .map(|value| value.to_string())
     };
+    // The cache controls sit below the fold of the scrolling Settings panel: bring the
+    // control into view first, as a person would, then click it with the pointer.
     let click = |h: &mut Harness<Workspace>, name: &str| {
+        h.get(By::new().predicate(|node| node.author_id() == Some(name)))
+            .scroll_to_me();
+        h.run_steps(3);
         h.get(By::new().predicate(|node| node.author_id() == Some(name)))
             .click();
         h.run_steps(3);
