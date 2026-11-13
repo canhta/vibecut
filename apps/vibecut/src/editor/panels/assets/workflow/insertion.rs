@@ -8,9 +8,9 @@ use super::super::{
     SourceAsset, SourceRange, TICKS_PER_SECOND, Text, Tick, TrackKind, asset_kind, egui,
     error_detail,
 };
-use crate::editor::context::MediaDrag;
 use super::State;
 use crate::editor::Port;
+use crate::editor::context::MediaDrag;
 use crate::i18n;
 
 /// New text sits in the lower third: its box centre is this fraction of the canvas height

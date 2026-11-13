@@ -68,13 +68,7 @@ impl DeEsser {
             frequency_hz,
             threshold_db: f64::from(threshold_db),
             reduction_db: f64::from(reduction_db),
-            detector: Coeffs::design(
-                FilterType::HighPass,
-                rate,
-                frequency_hz,
-                FRAC_1_SQRT_2,
-                0.0,
-            ),
+            detector: Coeffs::design(FilterType::HighPass, rate, frequency_hz, FRAC_1_SQRT_2, 0.0),
             shelf: Self::shelf_for(rate, frequency_hz, 0.0),
             shelf_db: 0.0,
             detect_pole: pole(DETECTOR_MS, rate),
@@ -125,12 +119,10 @@ impl DeEsser {
                 band += b * b;
                 full += x * x;
             }
-            self.band_power = flush(
-                self.detect_pole * self.band_power + (1.0 - self.detect_pole) * band,
-            );
-            self.full_power = flush(
-                self.detect_pole * self.full_power + (1.0 - self.detect_pole) * full,
-            );
+            self.band_power =
+                flush(self.detect_pole * self.band_power + (1.0 - self.detect_pole) * band);
+            self.full_power =
+                flush(self.detect_pole * self.full_power + (1.0 - self.detect_pole) * full);
             let band_db = power_db(self.band_power);
             let excess = band_db - power_db(self.full_power) - self.threshold_db;
             let target = if band_db > BAND_FLOOR_DB && excess > 0.0 {

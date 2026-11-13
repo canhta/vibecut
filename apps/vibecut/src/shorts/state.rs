@@ -446,7 +446,9 @@ impl State {
     /// Shorts the running suggestion has produced so far; the final count comes with its result.
     pub fn generation_count(&self) -> Option<u32> {
         let job = self.generating.as_ref()?;
-        self.runner.snapshot(job.id).map(|snapshot| snapshot.produced)
+        self.runner
+            .snapshot(job.id)
+            .map(|snapshot| snapshot.produced)
     }
     /// Replace the resolver; tests script the analysis here.
     pub fn with_shot_source(&mut self, source: ShotSource) {
@@ -470,7 +472,9 @@ impl State {
         // A busy answer clears when the download ends: ask again, a bounded number of times.
         let was_busy = self.shots_busy.is_some();
         self.shots_busy = if matches!(reason, Some(Reason::ModelsBusy)) {
-            let left = self.shots_busy.map_or(BUSY_ASKS, |(_, left)| left.saturating_sub(1));
+            let left = self
+                .shots_busy
+                .map_or(BUSY_ASKS, |(_, left)| left.saturating_sub(1));
             (left > 0).then(|| (std::time::Instant::now() + BUSY_RETRY, left))
         } else {
             None

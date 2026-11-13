@@ -237,11 +237,9 @@ pub(super) fn to_run(
         energy: energy
             .chunks(group)
             .filter_map(|windows| {
-                let range = SourceRange::new(
-                    windows.first()?.range.start(),
-                    windows.last()?.range.end(),
-                )
-                .ok()?;
+                let range =
+                    SourceRange::new(windows.first()?.range.start(), windows.last()?.range.end())
+                        .ok()?;
                 let rms = windows
                     .iter()
                     .map(|window| window.rms as f32)

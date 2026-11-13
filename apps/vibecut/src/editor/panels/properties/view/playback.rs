@@ -80,10 +80,8 @@ impl Panel<'_, '_> {
         );
         self.remember("inspector.voice_enhance.toggle", &response);
         if response.clicked() {
-            self.actions.push(Action::SetVoiceEnhancement {
-                item,
-                enabled: !on,
-            });
+            self.actions
+                .push(Action::SetVoiceEnhancement { item, enabled: !on });
         }
         if !on {
             return;

@@ -4,14 +4,14 @@
     clippy::indexing_slicing,
     reason = "integration fixtures"
 )]
+use crate::support::control::{Allow, media_access, ok, request, runner, seed};
+use engine::Session;
+use engine::control::{Caller, ControlResult, MediaAccess};
 use engine::{
     ByteBudget,
     cache::ArtifactCache,
     transcript::search::{Answer, Segment, Source, fold, query},
 };
-use crate::support::control::{Allow, media_access, ok, request, runner, seed};
-use engine::Session;
-use engine::control::{Caller, ControlResult, MediaAccess};
 use media::AssetId;
 use project::{ItemParams, Project};
 use serde_json::json;
@@ -78,10 +78,24 @@ fn query_matches_folded_text_and_returns_asset_time_and_snippet() {
     let accented = query(&mut cache, &sources, "HÔM NAY", 10).unwrap();
     assert_eq!(accented.hits.len(), 1);
     assert_eq!(accented.hits[0].start, Tick(2_000));
-    assert_eq!(query(&mut cache, &sources, "dep", 10).unwrap().hits.len(), 1);
-    assert_eq!(query(&mut cache, &sources, "đẹp", 10).unwrap().hits.len(), 1);
-    assert_eq!(query(&mut cache, &sources, "好世", 10).unwrap().hits[0].start, Tick(4_000));
-    assert!(query(&mut cache, &sources, "không", 10).unwrap().hits.is_empty());
+    assert_eq!(
+        query(&mut cache, &sources, "dep", 10).unwrap().hits.len(),
+        1
+    );
+    assert_eq!(
+        query(&mut cache, &sources, "đẹp", 10).unwrap().hits.len(),
+        1
+    );
+    assert_eq!(
+        query(&mut cache, &sources, "好世", 10).unwrap().hits[0].start,
+        Tick(4_000)
+    );
+    assert!(
+        query(&mut cache, &sources, "không", 10)
+            .unwrap()
+            .hits
+            .is_empty()
+    );
 }
 
 #[test]
@@ -106,13 +120,23 @@ fn stale_index_is_rebuilt_when_media_or_transcript_changes() {
     let first = query(&mut cache, &[vietnamese()], "chao", 10).unwrap();
     assert_eq!((first.rebuilt, first.stale), (1, false));
 
-    let replaced_media = query(&mut cache, &[source(2, Some(10_000), vietnamese().segments)], "chao", 10)
-        .unwrap();
+    let replaced_media = query(
+        &mut cache,
+        &[source(2, Some(10_000), vietnamese().segments)],
+        "chao",
+        10,
+    )
+    .unwrap();
     assert_eq!((replaced_media.rebuilt, replaced_media.stale), (1, true));
     assert_eq!(replaced_media.hits, first.hits);
 
-    let settled = query(&mut cache, &[source(2, Some(10_000), vietnamese().segments)], "chao", 10)
-        .unwrap();
+    let settled = query(
+        &mut cache,
+        &[source(2, Some(10_000), vietnamese().segments)],
+        "chao",
+        10,
+    )
+    .unwrap();
     assert_eq!((settled.rebuilt, settled.stale), (0, false));
 
     let edited = {
@@ -243,9 +267,8 @@ fn transcript_search_command_reports_hits_and_index_staleness() {
     assert_eq!((partial, stale, rebuilt), (false, false, 1));
 
     // Same media and transcript: the cached index answers without a rebuild.
-    let ControlResult::TranscriptSearch {
-        stale, rebuilt, ..
-    } = search(&mut s, &media, "search-repeat", "chao")
+    let ControlResult::TranscriptSearch { stale, rebuilt, .. } =
+        search(&mut s, &media, "search-repeat", "chao")
     else {
         panic!("transcript search result");
     };

@@ -4,11 +4,11 @@ mod index;
 use super::{Error, Result};
 use crate::cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs};
 use crate::{EditError, RuntimeError};
+pub use folding::fold;
 use media::AssetId;
 use project::{ItemParams, ProjectData};
 use std::collections::BTreeMap;
 use time::Tick;
-pub use folding::fold;
 /// Longest accepted query, in UTF-8 bytes before folding.
 pub const MAX_QUERY_BYTES: usize = 256;
 /// Most hits one query returns.
@@ -134,7 +134,11 @@ pub fn query(
             .map(|segment| segment.end.0)
             .max()
             .unwrap_or(0);
-        if source.duration.as_ref().is_some_and(|duration| covered < duration.0) {
+        if source
+            .duration
+            .as_ref()
+            .is_some_and(|duration| covered < duration.0)
+        {
             answer.partial = true;
         }
         if folded_needle.is_empty() {

@@ -88,7 +88,11 @@ pub(super) fn show(state: &mut State, ui: &mut egui::Ui, rect: egui::Rect, left:
                                 let Some(entry) = state.runs.entries.get(*at) else {
                                     continue;
                                 };
-                                (entry.source_name.clone(), entry.clips as u64, Some(entry.id))
+                                (
+                                    entry.source_name.clone(),
+                                    entry.clips as u64,
+                                    Some(entry.id),
+                                )
                             }
                         };
                         let slot = format!("shorts.run.{index}");
@@ -108,10 +112,7 @@ pub(super) fn show(state: &mut State, ui: &mut egui::Ui, rect: egui::Rect, left:
                             &[("count", &i18n::number(state.preferences.locale, count))],
                         );
                         ui.painter().text(
-                            pos2(
-                                thumb.left() + CHIP_INSET,
-                                thumb.bottom() - CHIP_FROM_BOTTOM,
-                            ),
+                            pos2(thumb.left() + CHIP_INSET, thumb.bottom() - CHIP_FROM_BOTTOM),
                             Align2::LEFT_CENTER,
                             chip,
                             egui::FontId::proportional(12.0),
@@ -184,10 +185,8 @@ fn paint_thumb(
             else {
                 return None;
             };
-            let image = egui::ColorImage::from_rgba_unmultiplied(
-                [*width as usize, *height as usize],
-                rgba,
-            );
+            let image =
+                egui::ColorImage::from_rgba_unmultiplied([*width as usize, *height as usize], rgba);
             let texture = ui.ctx().load_texture(
                 format!("shorts.run.poster.{}", id.0),
                 image,

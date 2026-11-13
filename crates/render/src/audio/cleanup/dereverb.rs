@@ -201,8 +201,8 @@ impl Dereverber {
         let hop = size / OVERLAP;
         let rate = f64::from(rate);
         let amount = amount_percent / 100.0;
-        let delay = ((LATE_DELAY_SECONDS * rate / hop as f64).round() as usize)
-            .clamp(1, MAX_DELAY_FRAMES);
+        let delay =
+            ((LATE_DELAY_SECONDS * rate / hop as f64).round() as usize).clamp(1, MAX_DELAY_FRAMES);
         let delta = 3.0 * LN_10 / f64::from(rt60_seconds);
         let late_seconds = delay as f64 * hop as f64 / rate;
         let window = (0..size)
@@ -245,10 +245,7 @@ impl Dereverber {
     /// Replaces each sample by the output that left with it, delayed by `latency`.
     pub(super) fn process(&mut self, planes: &mut [Vec<f32>]) {
         if self.channels.len() != planes.len() {
-            self.channels = planes
-                .iter()
-                .map(|_| Channel::new(&self.params))
-                .collect();
+            self.channels = planes.iter().map(|_| Channel::new(&self.params)).collect();
         }
         for (plane, channel) in planes.iter_mut().zip(&mut self.channels) {
             for sample in plane.iter_mut() {

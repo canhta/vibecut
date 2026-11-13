@@ -271,8 +271,7 @@ impl CleanupEffect {
                 amount_percent,
                 rt60_seconds,
             } => {
-                if !finite_in(*amount_percent, 0.0, 100.0) || !finite_in(*rt60_seconds, 0.1, 5.0)
-                {
+                if !finite_in(*amount_percent, 0.0, 100.0) || !finite_in(*rt60_seconds, 0.1, 5.0) {
                     return Err(Error::Invalid("dereverb parameters"));
                 }
             }

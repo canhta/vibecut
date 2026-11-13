@@ -906,10 +906,7 @@ impl Editor {
         self.show_import_overlay(ui.ctx());
     }
     /// Replace the OS file-clipboard reader that Paste consults; tests inject a fixture.
-    pub fn set_os_clipboard_files(
-        &mut self,
-        read: impl FnMut() -> Vec<PathBuf> + Send + 'static,
-    ) {
+    pub fn set_os_clipboard_files(&mut self, read: impl FnMut() -> Vec<PathBuf> + Send + 'static) {
         self.assets.os_files = crate::services::file_clipboard::FileClipboard::new(read);
     }
     /// Read the platform clipboard's files on Paste. The desktop wires this once per window.

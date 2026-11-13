@@ -1238,9 +1238,10 @@ impl ImportProbe for FreshProbe {
         path: PathBuf,
         _cancelled: Arc<AtomicBool>,
     ) -> media::Result<ImportedSource> {
-        let name = path
-            .file_name()
-            .map_or_else(|| "pasted.mp4".to_owned(), |name| name.to_string_lossy().into_owned());
+        let name = path.file_name().map_or_else(
+            || "pasted.mp4".to_owned(),
+            |name| name.to_string_lossy().into_owned(),
+        );
         Ok(imported(source_asset(id.0, &name, Some(Tick(4 * SECOND)))))
     }
 }
@@ -1293,7 +1294,10 @@ fn dragging_an_asset_onto_a_track_inserts_it_there_and_undo_redo_restore_it_exac
     drag_asset_to(&mut harness, AssetId(2), target);
     let inserted = placed(harness.state().session.project());
     assert_eq!(inserted.len(), 1);
-    assert_eq!((inserted[0].track, inserted[0].asset), (main, Some(AssetId(2))));
+    assert_eq!(
+        (inserted[0].track, inserted[0].asset),
+        (main, Some(AssetId(2)))
+    );
 
     harness.state_mut().activate("edit.undo").unwrap();
     harness.run_steps(2);
@@ -1388,7 +1392,10 @@ fn ctrl_v_with_files_while_a_text_field_is_focused_pastes_text_and_imports_nothi
     harness.event(egui::Event::Paste("zz".into()));
     harness.run_steps(3);
     for id in 1..=3 {
-        assert!(!has_widget(&harness, &format!("media.asset.{id}")), "asset {id}");
+        assert!(
+            !has_widget(&harness, &format!("media.asset.{id}")),
+            "asset {id}"
+        );
     }
 }
 

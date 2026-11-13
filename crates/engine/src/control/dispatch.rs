@@ -183,16 +183,16 @@ impl Session {
                 kit: (brand_access(caller)?.list)()?,
             }),
             Command::TranscriptSearch { query, limit } => {
-                let limit = limit.map_or(
-                    crate::transcript::search::DEFAULT_HITS,
-                    |limit| usize::try_from(limit).unwrap_or(usize::MAX),
-                );
+                let limit = limit.map_or(crate::transcript::search::DEFAULT_HITS, |limit| {
+                    usize::try_from(limit).unwrap_or(usize::MAX)
+                });
                 let sources = crate::transcript::search::sources(self.project().data());
-                let media = caller
-                    .media
-                    .ok_or(EngineError::Edit(crate::EditError::Unsupported(
-                        "transcript search cache unavailable",
-                    )))?;
+                let media =
+                    caller
+                        .media
+                        .ok_or(EngineError::Edit(crate::EditError::Unsupported(
+                            "transcript search cache unavailable",
+                        )))?;
                 let answer = media
                     .lock()
                     .map_err(|_| crate::RuntimeError::Poisoned)?

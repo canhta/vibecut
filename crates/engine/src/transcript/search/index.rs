@@ -32,7 +32,11 @@ pub(super) fn fingerprint(content: [u8; 32], segments: &[Segment]) -> [u8; 32] {
     for segment in segments {
         hasher.update(&segment.start.0.to_le_bytes());
         hasher.update(&segment.end.0.to_le_bytes());
-        hasher.update(&u64::try_from(segment.text.len()).unwrap_or(u64::MAX).to_le_bytes());
+        hasher.update(
+            &u64::try_from(segment.text.len())
+                .unwrap_or(u64::MAX)
+                .to_le_bytes(),
+        );
         hasher.update(segment.text.as_bytes());
     }
     *hasher.finalize().as_bytes()

@@ -41,7 +41,10 @@ pub fn source() -> ReviewSource {
 }
 /// The described source the fixture suggestions come from; no file is decoded.
 pub fn asset_at(offset: i64) -> SourceAsset {
-    asset_in(offset, std::env::temp_dir().join("vibecut-shorts-missing.mp4"))
+    asset_in(
+        offset,
+        std::env::temp_dir().join("vibecut-shorts-missing.mp4"),
+    )
 }
 /// The same described source at `path`, which a test may create as a real file.
 pub fn asset_in(offset: i64, path: std::path::PathBuf) -> SourceAsset {

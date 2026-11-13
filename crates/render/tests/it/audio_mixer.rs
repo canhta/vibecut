@@ -975,8 +975,7 @@ fn voice_enhancement_preset_lifts_speech_over_noise_without_pumping_and_bypass_i
     };
     let gain = ratio(&enhanced) - ratio(&plain);
     assert!(gain >= 6.0, "speech-to-noise ratio only rose {gain} dB");
-    let level = 20.0
-        * (rms(&gather(&enhanced, &speech)) / rms(&gather(&plain, &speech))).log10();
+    let level = 20.0 * (rms(&gather(&enhanced, &speech)) / rms(&gather(&plain, &speech))).log10();
     assert!(level.abs() < 3.0, "speech level moved {level} dB");
     let peak = enhanced.iter().fold(0.0f32, |m, x| m.max(x.abs()));
     assert!(peak < 0.9, "peak {peak}");

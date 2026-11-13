@@ -33,8 +33,7 @@ impl RunStore for CatalogRuns {
         })
     }
     fn save(&self, project: Project, poster: Thumbnail) -> Result<ProjectId> {
-        self.0
-            .with(|library| library.save_run(&project, poster))
+        self.0.with(|library| library.save_run(&project, poster))
     }
     fn load(&self, id: ProjectId) -> Result<Project> {
         self.0.with(|library| library.load_run(id))

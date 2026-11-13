@@ -40,9 +40,7 @@ impl Catalog {
             .ok_or(engine::EditError::Unsupported(
                 "project library is unavailable",
             ))?;
-        let mut library = library
-            .lock()
-            .map_err(|_| engine::RuntimeError::Poisoned)?;
+        let mut library = library.lock().map_err(|_| engine::RuntimeError::Poisoned)?;
         Ok(run(&mut library)?)
     }
     fn set(&self, library: Option<Arc<Mutex<ProjectLibrary>>>) {
