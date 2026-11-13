@@ -1,5 +1,7 @@
 //! Applies media commands to a candidate project.
-use super::{AssetUsage, BTreeMap, BTreeSet, EditError, ItemId, ProjectData, Result};
+use super::{
+    AssetUsage, BTreeMap, BTreeSet, EditError, ItemId, ItemParams, ProjectData, Result, item,
+};
 
 /// Remove unused asset records atomically. Every referenced asset refuses with
 /// the exact item list; no clip or scene is ever changed by a removal.
@@ -72,5 +74,57 @@ pub(super) fn execute_remove_assets(
     assets: Vec<media::AssetId>,
 ) -> Result<ProjectData> {
     remove_assets(&mut data, assets)?;
+    Ok(data)
+}
+
+/// Point each listed item at another registered source of its own stream kind. Trims,
+/// start, duration, retime and params stay as they are, so the new source must still
+/// cover the retained source window. Targets are checked in order on the candidate; a
+/// refusal discards it, so project and history stay unchanged. Linked partners are
+/// replaced only when the caller lists them.
+pub(super) fn execute_replace_media(
+    mut data: ProjectData,
+    items: Vec<ItemId>,
+    asset: media::AssetId,
+) -> Result<ProjectData> {
+    if items.is_empty() {
+        return Err(EditError::Invalid("empty item selection"));
+    }
+    let source = data
+        .assets
+        .iter()
+        .find(|record| record.id() == asset)
+        .cloned()
+        .ok_or(EditError::NoAsset(asset))?;
+    let mut seen = BTreeSet::new();
+    for id in items {
+        if !seen.insert(id) {
+            return Err(EditError::Invalid("duplicate replace item"));
+        }
+        let target = item(&mut data, id)?;
+        let needed = match target.content {
+            ItemParams::Video(_) => media::StreamKind::Video,
+            ItemParams::Audio(_) => media::StreamKind::Audio,
+            _ => return Err(EditError::Unsupported("replace media on non-media item")),
+        };
+        if !source
+            .probe()
+            .streams
+            .iter()
+            .any(|stream| stream.kind == needed)
+        {
+            return Err(EditError::Invalid("replacement media kind mismatch"));
+        }
+        if source.probe().duration.is_some_and(|duration| {
+            target.source_range.end() > duration
+                || target
+                    .retime
+                    .window
+                    .is_some_and(|window| window.source_range.end() > duration)
+        }) {
+            return Err(EditError::Invalid("replacement source too short"));
+        }
+        target.source_asset = Some(asset);
+    }
     Ok(data)
 }
