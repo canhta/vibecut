@@ -496,7 +496,7 @@ impl Subtitles {
         );
         self.commit(session, cues)
     }
-    fn commit(&mut self, session: &mut Session, cues: CueTrack) -> Result<()> {
+    pub(super) fn commit(&mut self, session: &mut Session, cues: CueTrack) -> Result<()> {
         self.refresh(session);
         if self.problem == Some(crate::i18n::Text::SubDraftConflict) {
             return Err(Error::Invalid("resolve caption draft conflict"));

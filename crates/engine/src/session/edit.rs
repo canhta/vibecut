@@ -270,8 +270,28 @@ pub(crate) fn apply(
         }
     };
     match command {
-        EditCommand::CaptionsApply { job, start } => {
-            let _ = (job, start);
+        EditCommand::CaptionsAddEmpty {
+            asset,
+            start,
+            duration,
+            track,
+            name,
+        } => {
+            data = text::add_empty_captions(
+                data,
+                asset,
+                start,
+                duration,
+                track,
+                name,
+                created,
+                next,
+                sources,
+                copied_text_bytes,
+            )?;
+        }
+        EditCommand::CaptionsApply { job, start, replace } => {
+            let _ = (job, start, replace);
             return Err(EditError::Unsupported(
                 "caption application requires control dispatch",
             ));

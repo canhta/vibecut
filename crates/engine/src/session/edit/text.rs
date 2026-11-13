@@ -406,7 +406,7 @@ pub(super) fn delete_caption_preset(
 /// one undo step. File parsing and asset probing stay with the adapter.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn import_captions(
-    mut data: ProjectData,
+    data: ProjectData,
     asset: media::SourceAsset,
     language: captions::LanguageTag,
     start: Tick,
@@ -435,7 +435,6 @@ pub(super) fn import_captions(
     if start < Tick::ZERO {
         return Err(EditError::Invalid("negative output start"));
     }
-    let asset_id = asset.id();
     let mut end = Tick::ZERO;
     let mut cue_track = captions::CueTrack {
         styles,
@@ -464,7 +463,38 @@ pub(super) fn import_captions(
         });
     }
     let source_range = SourceRange::new(Tick::ZERO, end)?;
+    add_caption_item(
+        data,
+        asset,
+        start,
+        track,
+        name,
+        source_range,
+        cue_track,
+        created,
+        next,
+        sources,
+        copied_text_bytes,
+    )
+}
 
+/// The ephemeral asset, the text track (existing or allocated) and the caption item over
+/// `source_range`, as one candidate. Import and manual entry share it.
+#[allow(clippy::too_many_arguments)]
+fn add_caption_item(
+    mut data: ProjectData,
+    asset: media::SourceAsset,
+    start: Tick,
+    track: Option<TrackId>,
+    name: Option<captions::NfcText>,
+    source_range: SourceRange,
+    cue_track: captions::CueTrack,
+    created: &mut Vec<CreatedId>,
+    next: &mut Option<u64>,
+    sources: &mut TrimSources,
+    copied_text_bytes: &mut usize,
+) -> Result<ProjectData> {
+    let asset_id = asset.id();
     data = apply(
         data,
         Command::AddAsset { asset },
@@ -546,6 +576,45 @@ pub(super) fn import_captions(
     project::encode(&project::Project::new(data.clone())?, false)
         .map_err(|_| EditError::Control(crate::session::wire::ControlError::Limit))?;
     Ok(data)
+}
+/// Manual entry: one caption item with no cues over `duration` from `start`, with its
+/// internal asset and optional new track, as one command and one undo step. Cues are added
+/// afterwards through the ordinary item-parameter edit.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn add_empty_captions(
+    data: ProjectData,
+    asset: media::SourceAsset,
+    start: Tick,
+    duration: Tick,
+    track: Option<TrackId>,
+    name: Option<captions::NfcText>,
+    created: &mut Vec<CreatedId>,
+    next: &mut Option<u64>,
+    sources: &mut TrimSources,
+    copied_text_bytes: &mut usize,
+) -> Result<ProjectData> {
+    if start < Tick::ZERO {
+        return Err(EditError::Invalid("negative output start"));
+    }
+    if duration <= Tick::ZERO {
+        return Err(EditError::Invalid("caption duration must be positive"));
+    }
+    if !asset.ephemeral() {
+        return Err(EditError::Invalid("manual captions need an internal asset"));
+    }
+    add_caption_item(
+        data,
+        asset,
+        start,
+        track,
+        name,
+        SourceRange::new(Tick::ZERO, duration)?,
+        captions::CueTrack::default(),
+        created,
+        next,
+        sources,
+        copied_text_bytes,
+    )
 }
 #[allow(clippy::too_many_arguments)]
 pub(super) fn execute_import_captions(

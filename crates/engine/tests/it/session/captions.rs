@@ -1439,6 +1439,71 @@ fn captions_import_is_one_undo_step_and_persists_style() {
     assert_eq!(params.cues.cues[0].style, Some(captions::CueStyleId(0)));
 }
 #[test]
+fn captions_add_empty_is_one_undo_step_and_refuses_bad_input_atomically() {
+    let mut s = session();
+    let before = s.project().clone();
+    let history = s.history_len();
+    let asset = SourceAsset::try_from(AssetData {
+        ephemeral: true,
+        id: AssetId(31),
+        path: std::env::temp_dir().join("manual.captions"),
+        content_hash: ContentHash::from_bytes(b"manual"),
+        probe: SourceProbe {
+            format: "manual".into(),
+            duration: Some(Tick(762_048_000_000)),
+            streams: Vec::new(),
+        },
+    })
+    .unwrap();
+    let params = json!({
+        "asset": serde_json::to_value(&asset).unwrap(),
+        "start": 100,
+        "duration": 762_048_000_000_i64,
+        "name": "Manual captions",
+    });
+    let outcome = crate::wire::run(&mut s, "captions.add_empty", params.clone()).unwrap();
+    assert!(outcome.changed);
+    assert_eq!(s.history_len(), (history.0 + 1, 0));
+    assert!(
+        outcome
+            .created
+            .iter()
+            .any(|id| matches!(id, CreatedId::Track(_)))
+    );
+    let item = s
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| matches!(item.content, ItemParams::Caption(_)))
+        .unwrap();
+    let ItemParams::Caption(caption) = &item.content else {
+        panic!("expected caption item")
+    };
+    assert!(caption.cues.cues.is_empty());
+    assert_eq!(item.start, Tick(100));
+    assert_eq!(item.source_range, range(0, 762_048_000_000));
+    let encoded = project::encode(s.project().as_ref(), false).unwrap();
+    assert_eq!(project::decode(&encoded).unwrap().project, **s.project());
+
+    let after = s.project().clone();
+    let mut zero = params.clone();
+    zero["duration"] = json!(0);
+    assert!(s.wire("captions.add_empty", zero).is_err());
+    let mut negative = params.clone();
+    negative["start"] = json!(-1);
+    assert!(s.wire("captions.add_empty", negative).is_err());
+    let mut library = params;
+    library["asset"]["ephemeral"] = json!(false);
+    assert!(s.wire("captions.add_empty", library).is_err());
+    assert_eq!(s.project(), &after);
+
+    s.apply(Command::Undo {}).unwrap();
+    assert_eq!(s.project(), &before);
+}
+#[test]
 fn captions_import_command_admits_json_and_rejects_bad_cues_atomically() {
     let mut s = session();
     let command = ass_import();

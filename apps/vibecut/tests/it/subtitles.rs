@@ -1938,6 +1938,37 @@ fn capabilities_locale_and_choices_persist_without_loading_models() {
     assert!(!has(&h, "subtitles.generate"));
     click(&mut h, "captions.section.add");
     assert!(has(&h, "subtitles.import") && !has(&h, "subtitles.translate"));
+    assert!(has(&h, "subtitles.manual") && has(&h, "subtitles.add_cue"));
+    // Manual entry: one command creates the empty item, typed text adds a cue at the
+    // playhead, and each is one undo step.
+    let items = |e: &Editor| {
+        e.session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|t| &t.items)
+            .filter(|i| matches!(i.content, ItemParams::Caption(_)))
+            .count()
+    };
+    let before = items(h.state());
+    let history = h.state().session.history_len();
+    click(&mut h, "subtitles.manual");
+    assert_eq!(items(h.state()), before + 1);
+    assert_eq!(h.state().session.history_len().0, history.0 + 1);
+    h.get(By::new().predicate(|n| n.author_id() == Some("subtitles.manual_text")))
+        .click();
+    h.run_steps(3);
+    h.get(By::new().predicate(|n| n.author_id() == Some("subtitles.manual_text")))
+        .type_text("Xin chào");
+    h.run_steps(3);
+    click(&mut h, "subtitles.add_cue");
+    assert_eq!(h.state().session.history_len().0, history.0 + 2);
+    assert_eq!(panel(h.state()).cue_count, 1);
+    h.state_mut().session.undo().unwrap();
+    h.state_mut().session.undo().unwrap();
+    assert_eq!(items(h.state()), before);
     click(&mut h, "captions.section.auto");
     assert!(has(&h, "subtitles.generate") && has(&h, "subtitles.delete_current"));
     h.state_mut().preferences.locale = Locale::Vi;
@@ -2177,6 +2208,36 @@ fn generate_explicit_choices_insert_once_and_missing_models_offer_setup_without_
                 .unwrap()
                 .contains(&count.to_string())
         );
+        h.state_mut().activate("edit.undo").unwrap();
+        h.run_steps(3);
+        assert_eq!(h.state().session.project(), &before);
+        // Delete current captions: generating replaces the selected item in one batch, so a
+        // single undo restores the project.
+        let caption_ids = |e: &Editor| {
+            e.session
+                .project()
+                .data()
+                .scene()
+                .timeline
+                .iter()
+                .flat_map(|t| &t.items)
+                .filter(|i| matches!(i.content, ItemParams::Caption(_)))
+                .map(|i| i.id)
+                .collect::<Vec<_>>()
+        };
+        let old = caption_ids(h.state());
+        let history = h.state().session.history_len();
+        click(&mut h, "subtitles.delete_current");
+        click(&mut h, "subtitles.generate");
+        if !option.local {
+            wait(&mut h, |e| panel(e).consent.is_some());
+            click(&mut h, "subtitles.consent.approve");
+        }
+        wait(&mut h, |e| !panel(e).busy);
+        let replaced = caption_ids(h.state());
+        assert_eq!(replaced.len(), old.len());
+        assert_ne!(replaced, old);
+        assert_eq!(h.state().session.history_len().0, history.0 + 1);
         h.state_mut().activate("edit.undo").unwrap();
         h.run_steps(3);
         assert_eq!(h.state().session.project(), &before);

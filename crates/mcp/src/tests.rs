@@ -585,6 +585,7 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("music.save", Effect::Read, false, false),
         ("music.search", Effect::Read, false, false),
         ("music.unsave", Effect::Read, false, false),
+        ("captions.add_empty", Effect::Edit, false, false),
         ("captions.import", Effect::Edit, false, false),
         ("captions.apply_style", Effect::Edit, true, true),
         ("captions.save_preset", Effect::Edit, true, true),
