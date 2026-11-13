@@ -217,6 +217,25 @@ struct View<'a> {
 }
 impl View<'_> {
     fn adjustment(&mut self, ui: &mut egui::Ui) {
+        let ready = self.cx.insertion_ready;
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new(self.tr(Text::AdjustmentAddLayer))
+                    .font(theme::label_font())
+                    .size(theme::type_size::BODY)
+                    .color(theme::text(self.cx.preferences.dark)),
+            );
+            if self.icon(
+                ui,
+                "adjustment.insert",
+                Icon::Plus,
+                Text::AdjustmentAddLayer,
+                ready,
+            ) {
+                self.actions.push(Action::InsertAdjustment);
+            }
+        });
+        ui.add_space(theme::space::SM);
         let presets = self.cx.preferences.adjustment_presets.clone();
         if presets.is_empty() {
             self.empty(

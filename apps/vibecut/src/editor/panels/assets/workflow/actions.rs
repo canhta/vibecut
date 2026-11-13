@@ -93,6 +93,7 @@ impl State {
                 }
                 Action::MusicKeyApply => self.music_key_apply(port),
                 Action::MusicKeyRemove => self.music_key_remove(port),
+                Action::InsertAdjustment => self.insert_adjustment_layer(port),
                 Action::ApplyAdjustment(index) => self.apply_adjustment_preset(port, index),
                 Action::DeleteAdjustment(index) => {
                     if let Err(error) = self.delete_adjustment_preset(port, index) {

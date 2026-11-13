@@ -78,10 +78,17 @@ pub(in crate::editor) fn effect_refusal(project: &project::Project, id: ItemId) 
     if kind == ElementKind::Audio {
         return Some(Text::EffectAudioUnsupported);
     }
-    if !matches!(
-        kind,
-        ElementKind::Video | ElementKind::Image | ElementKind::Sticker | ElementKind::Graphic
-    ) {
+    // An adjustment layer is an effect item on an Effect track; it takes a stack like a clip.
+    let adjustment = track.kind == project::TrackKind::Effect
+        && track.items.iter().any(|item| {
+            item.id == id && matches!(item.content, project::ItemParams::Effect(_))
+        });
+    if !adjustment
+        && !matches!(
+            kind,
+            ElementKind::Video | ElementKind::Image | ElementKind::Sticker | ElementKind::Graphic
+        )
+    {
         return Some(Text::EffectKindUnsupported);
     }
     None

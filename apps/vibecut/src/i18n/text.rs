@@ -1538,6 +1538,7 @@ catalog! {
     FillersUnsupported { key: "fillers_unsupported", en: "Not available for this language", vi: "Chưa hỗ trợ ngôn ngữ này" },
     FillersWorking { key: "fillers_working", en: "Finding fillers…", vi: "Đang tìm từ đệm…" },
     // Adjust basic set, HSL bands, tabs and footer.
+    AdjustmentAddLayer { key: "adjustment_add_layer", en: "Add adjustment layer", vi: "Thêm lớp điều chỉnh" },
     AdjustmentPresetsEmpty { key: "adjustment_presets_empty", en: "No presets", vi: "Chưa có mẫu" },
     ApplyToAll { key: "apply_to_all", en: "Apply to all", vi: "Áp dụng cho tất cả" },
     ClipBlurHeavy { key: "clip_blur_heavy", en: "Heavy", vi: "Mạnh" },

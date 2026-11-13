@@ -157,6 +157,8 @@ pub(in crate::editor) enum Action {
     MusicCredits,
     MusicKeyApply,
     MusicKeyRemove,
+    /// Insert an adjustment layer (an effect item) at the playhead.
+    InsertAdjustment,
     /// Apply or delete one app-owned adjustment preset.
     ApplyAdjustment(usize),
     DeleteAdjustment(usize),

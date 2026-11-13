@@ -22,7 +22,9 @@ selected clip. The tab's preview jobs and drag state live in [`effects`](effects
 
 ## Adjustment presets
 
-The Adjustment tab lists the app-owned `adjustment_presets` bank from preferences as named rows with an apply and a delete icon. Apply targets the selected video or image item and writes the saved `color_grade` parameter map through `effects.update_param`, or adds one instance when the clip has none, inside one `batch` command (one undo step); a locked track, non-visual selection or missing selection changes nothing. Delete rewrites the bounded preference bank and never touches project data. Empty is an icon and `No presets`.
+The Adjustment tab opens with `Add adjustment layer` (`adjustment.insert`): a label and a plus button in one row. The plus inserts an effect item (`ItemParams::Effect`, no media) at the playhead through `InsertItem` with auto placement, which finds or creates an Effect track. The layer is five seconds long, as text and graphics are, and is selected afterwards in one undo step. It is refused while insertion is unavailable and changes nothing then. The layer has no picture; its stack takes effects from the Effects tab (`+` or a tile drop), see the [properties owner](../properties/README.md#effects-tab). The label, row geometry and five-second length are proposed: the desktop Adjustment capture has no measured entry for this (ui-reference 07 G7), so only the tab's place in the feature strip is reference-backed.
+
+The tab then lists the app-owned `adjustment_presets` bank from preferences as named rows with an apply and a delete icon. Apply targets the selected video or image item and writes the saved `color_grade` parameter map through `effects.update_param`, or adds one instance when the clip has none, inside one `batch` command (one undo step); a locked track, non-visual selection or missing selection changes nothing. Delete rewrites the bounded preference bank and never touches project data. Empty is an icon and `No presets`.
 
 ## Transition catalog
 
