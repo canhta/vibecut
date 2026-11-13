@@ -647,6 +647,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
                 "timeline.duplicate",
                 "timeline.freeze_frame",
                 "timeline.move_items",
+                "timeline.paste_attributes",
                 "timeline.replace_media",
                 "timeline.set_background",
                 "timeline.set_flipped",

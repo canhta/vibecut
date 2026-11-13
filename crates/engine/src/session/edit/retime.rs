@@ -78,6 +78,54 @@ pub(super) fn set_speed(
     })
 }
 
+/// Give one video/audio item a whole `Retime` value through the same key stretch and
+/// ripple as a speed edit. A curve is rebuilt over this item's visible source span
+/// from its stretches; a retained window survives only while the constant speed is
+/// unchanged and neither side has a curve.
+pub(super) fn set_retime(
+    data: &mut ProjectData,
+    id: ItemId,
+    retime: project::Retime,
+) -> Result<()> {
+    retime_item(data, id, "retime on non-media item", |target| {
+        let old = target.retime;
+        let old_duration = target.duration()?;
+        let curve = match retime.curve {
+            Some(_) if retime.reverse => {
+                return Err(EditError::Invalid("speed curve on a reversed clip"));
+            }
+            Some(curve) => {
+                // A curve cannot be reversed, so the direction flips first.
+                target.set_reversed(false)?;
+                Some(project::SpeedCurve::from_segments(
+                    target.source_range.duration(),
+                    &curve.segments(),
+                )?)
+            }
+            None => None,
+        };
+        let curved = old.curve.is_some() || curve.is_some();
+        let keep_window = !curved && old.speed == retime.speed;
+        target.retime = project::Retime {
+            window: if keep_window {
+                target.retime.window
+            } else {
+                None
+            },
+            reverse: target.retime.reverse,
+            curve,
+            ..retime
+        };
+        // A direction flip mirrors a retained window, so it goes through the item's own rule.
+        target.set_reversed(retime.reverse)?;
+        if curved {
+            Ok((target.duration()?.0, old_duration.0))
+        } else {
+            Ok(old.speed.stretch_to(retime.speed))
+        }
+    })
+}
+
 /// Give one video/audio item a speed curve over its visible source range,
 /// replacing its constant rate. Keyframes stretch with the item.
 fn set_speed_curve(

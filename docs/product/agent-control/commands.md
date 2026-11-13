@@ -2464,6 +2464,21 @@ Effect: `Edit`. Fixture: `Timeline`.
 }
 ```
 
+## `timeline.paste_attributes` — Paste attributes
+
+Effect: `Edit`. Fixture: `Timeline`.
+
+```json
+{
+  "items": [
+    1
+  ],
+  "source": {
+    "kind": "stored"
+  }
+}
+```
+
 ## `timeline.pause_candidates` — List pause candidates
 
 Effect: `JobControl`. Fixture: `Timeline`.

@@ -158,7 +158,7 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
                     }
                 }
             }
-            Command::PasteMaskPoints { source, .. } => {
+            Command::PasteMaskPoints { source, .. } | Command::PasteAttributes { source, .. } => {
                 if let crate::ItemPasteSource::Payload { payload } = source {
                     item_clipboard_bytes = item_clipboard_bytes
                         .checked_add(payload.compact_bytes()?)
@@ -321,6 +321,13 @@ pub(crate) fn apply(
                 crate::ItemPasteSource::Payload { payload } => Some(payload),
             };
             data = clips::execute_paste_items(data, at, payload, created, next, sources)?;
+        }
+        EditCommand::PasteAttributes { items, source } => {
+            let payload = match &source {
+                crate::ItemPasteSource::Stored => clipboards.items,
+                crate::ItemPasteSource::Payload { payload } => Some(payload),
+            };
+            data = super::clipboard::paste_attributes(data, &items, payload, retime::set_retime)?;
         }
         EditCommand::PasteMaskPoints {
             item: id,

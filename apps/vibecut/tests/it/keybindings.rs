@@ -136,7 +136,13 @@ fn clipboard_actions_refuse_empty_scopes_without_mutating_project_or_history() {
     let project = editor.session.project().clone();
     let revision = editor.session.revision();
     let history = editor.session.history_len();
-    for action in ["edit.copy", "edit.cut", "edit.paste"] {
+    for action in [
+        "edit.copy",
+        "edit.cut",
+        "edit.paste",
+        "edit.copy_attributes",
+        "edit.paste_attributes",
+    ] {
         assert!(
             matches!(editor.activate(action),Err(vibecut::Error::ActionDisabled(id)) if id==action)
         );
@@ -144,6 +150,79 @@ fn clipboard_actions_refuse_empty_scopes_without_mutating_project_or_history() {
     assert_eq!(editor.session.project(), &project);
     assert_eq!(editor.session.revision(), revision);
     assert_eq!(editor.session.history_len(), history);
+}
+
+#[test]
+fn copy_and_paste_attributes_chords_copy_audio_groups_and_name_the_skipped_ones() {
+    let fixture = fixture();
+    let video = fixture.video_a;
+    let mut editor = fixture.editor;
+    let sound = editor
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .audio
+        .iter()
+        .flat_map(|track| track.items.iter())
+        .map(|item| item.id)
+        .next()
+        .unwrap();
+    editor
+        .session
+        .apply(Command::SetFade {
+            item: video,
+            edge: project::FadeEdge::In,
+            duration: Tick(SECOND),
+            curve: project::FadeCurve::Linear,
+        })
+        .unwrap();
+    let mut harness = harness(editor);
+    harness.run_steps(2);
+    let both = egui::Modifiers {
+        shift: true,
+        ..egui::Modifiers::COMMAND
+    };
+    harness
+        .state_mut()
+        .session
+        .set_selection([video].into())
+        .unwrap();
+    harness.run_steps(2);
+    harness.key_press_modifiers(both, egui::Key::C);
+    harness.run_steps(2);
+    assert!(harness.state().session.clipboard_has_entry());
+    harness
+        .state_mut()
+        .session
+        .set_selection([sound].into())
+        .unwrap();
+    harness.run_steps(2);
+    let before = harness.state().session.project().clone();
+    let history = harness.state().session.history_len().0;
+    harness.key_press_modifiers(both, egui::Key::V);
+    harness.run_steps(2);
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    let fades_of = |editor: &Editor, id| match &super::timeline::item(editor, id).content {
+        project::ItemParams::Video(p) => p.fades,
+        project::ItemParams::Audio(p) => p.fades,
+        _ => panic!("media item"),
+    };
+    let state = harness.state();
+    assert_eq!(fades_of(state, sound), fades_of(state, video));
+    assert_ne!(fades_of(state, sound), project::Fades::default());
+    let toast = state.inspect().unwrap().import_toast.unwrap();
+    for group in ["Transform", "Blend", "Effects", "Masks"] {
+        assert!(toast.contains(group), "{toast:?} missing {group}");
+    }
+    assert!(
+        !toast.contains("Audio") && !toast.contains("Speed"),
+        "{toast:?}"
+    );
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    harness.run_steps(2);
+    assert_eq!(harness.state().session.project(), &before);
 }
 
 #[test]
