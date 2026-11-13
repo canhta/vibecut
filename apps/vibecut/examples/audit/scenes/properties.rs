@@ -391,11 +391,11 @@ pub(super) fn text_item_locale(
     ] {
         editor.set_shared_field(field, value)?;
     }
-    // Move the box up with the Transform position (pixels), where the old text position
-    // reached about 70 % of the frame. The offset is unmeasured: re-check it in ui-audit.
+    // New text's lower-third placement: Transform Y at 34.5 % of the canvas height below centre.
+    let canvas_height = f64::from(editor.session.project().data().canvas.height);
     editor.session.apply(Command::SetItemField {
         item,
-        patch: ItemParamPatch::PositionY(-156.6),
+        patch: ItemParamPatch::PositionY(canvas_height * 0.345),
     })?;
     let mut app = harness_sized(App::Editor(Box::new(editor)), scale, [1440.0, 1440.0]);
     wait_for_presented(&mut app)?;

@@ -47,7 +47,7 @@ saved styles, background geometry), Opacity, the shared Transform section (Scale
 X/Y, Rotate, Arrange, flips; the same component as video items), Blending (blend mode) and
 Animation. Text has no hex colour field and no bare position fields: each colour is one
 swatch, and text position is the Transform Position row. The Style colour rows are
-`ColorTarget::Texts`, the same control for one text or many: a mixed value shows no swatch,
+`ColorTarget::Texts`, the same control for one text or many: texts that differ show a dash,
 and each commit is one `set_item_param_many` edit. Video and image items keep Transform and
 Blending under Basic, then Audio (see below) and Speed. Speed is a 0.01–5x scrub with a
 reset and, for items with audio, a `Change pitch` checkbox that is on while pitch
@@ -140,7 +140,8 @@ The Adjust tab appends three lift/gamma/gain wheels and one tone-curve editor in
 ## Blend and opacity
 
 Visual selections show a blend dropdown (`inspector.blendMode`, options
-`inspector.blendMode.<persisted-id>`) and a 0..=1 opacity entry (`inspector.opacity`),
+`inspector.blendMode.<persisted-id>`) and an opacity entry (`inspector.opacity`) stored 0..=1
+and shown 0–100 % through the shared scrub's `scale`,
 mixed values marked. Both dispatch the shared-field command: one atomic undo step,
 unrelated fields kept. Opacity displays and edits the real item-local playhead value.
 Keyed edits outside the half-open item range refuse; unkeyed bases remain editable.

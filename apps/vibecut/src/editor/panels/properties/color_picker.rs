@@ -120,6 +120,19 @@ impl ColorTarget {
             Self::Bookmark(_) | Self::Canvas => None,
         }
     }
+    /// Whether a text colour target spans selected texts whose values differ.
+    pub(crate) fn mixed(&self, project: &project::Project) -> bool {
+        let Self::Texts { items, part } = self else {
+            return false;
+        };
+        let mut colours = items
+            .iter()
+            .filter_map(|id| text_part_colour(project, *id, *part).ok());
+        colours
+            .next()
+            .is_some_and(|first| colours.any(|colour| colour != first))
+    }
+
     pub(crate) fn color(&self, project: &project::Project) -> Result<Color> {
         if *self == Self::Canvas {
             return Ok(project.data().canvas.background);

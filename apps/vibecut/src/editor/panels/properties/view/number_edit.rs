@@ -13,49 +13,26 @@ const SLIDER_ROW: f32 = 44.0;
 const SLIDER_FIELD: f32 = 54.0;
 
 /// Shared draft state for one numeric field; the model value stays in model units.
-fn percent(field: &str) -> bool {
-    matches!(
-        project::BuiltinPath::parse(field),
-        Some(
-            project::BuiltinPath::Opacity
-                | project::BuiltinPath::TransformScaleX
-                | project::BuiltinPath::TransformScaleY
-        )
-    )
-}
-
-fn unit(spec: ScrubSpec) -> &'static str {
-    if percent(spec.field) {
-        "%"
-    } else {
-        spec.suffix
-    }
-}
-
+/// The field's text: the model value scaled for display, in whole units when scaled.
 fn shown(spec: ScrubSpec, value: f64) -> String {
-    let factor = if percent(spec.field) { 100.0 } else { 1.0 };
-    let decimals = if percent(spec.field) {
-        0
-    } else {
-        spec.decimals
-    };
+    let decimals = if spec.scale == 1.0 { spec.decimals } else { 0 };
     format!(
         "{:.*}{}",
         decimals,
-        spec.quantize(value) * factor,
-        unit(spec)
+        spec.quantize(value) * spec.scale,
+        spec.suffix
     )
 }
 
+/// The model value a typed field text means, undoing the display scale.
 fn parse(spec: ScrubSpec, text: &str) -> Option<f64> {
-    let factor = if percent(spec.field) { 100.0 } else { 1.0 };
     let value = text
         .trim()
-        .trim_end_matches(unit(spec))
+        .trim_end_matches(spec.suffix)
         .trim()
         .parse::<f64>()
         .ok()?;
-    value.is_finite().then_some(value / factor)
+    value.is_finite().then_some(value / spec.scale)
 }
 
 /// Arrow steps move one displayed unit: a percent, a pixel, a degree.
@@ -235,7 +212,7 @@ impl Panel<'_, '_> {
                 ))
                 .layout(egui::Layout::left_to_right(egui::Align::Center)),
         );
-        let max = if percent(spec.field) && spec.max > 4.0 {
+        let max = if spec.scale != 1.0 && spec.max > 4.0 {
             4.0
         } else {
             spec.max

@@ -2293,6 +2293,28 @@ fn mixed_text_inspector_applies_one_field_and_restores_selected_items() {
             field.id
         );
     }
+    // One colour control for the selection: the texts' colours differ, so the Fill row shows
+    // a dash and no swatch; equal colours show the swatch again.
+    let has = |harness: &Harness<'_, Editor>, id: &str| {
+        harness
+            .state()
+            .inspect()
+            .unwrap()
+            .widgets
+            .iter()
+            .any(|widget| widget.id.as_str() == id)
+    };
+    assert!(!has(&harness, "inspector.text_color.picker"));
+    assert!(has(&harness, "inspector.text_color.picker.mixed"));
+    for id in [first, second] {
+        harness
+            .state_mut()
+            .set_item_field(id, "text_color", "#FFFFFFFF")
+            .unwrap();
+    }
+    harness.run_steps(3);
+    assert!(has(&harness, "inspector.text_color.picker"));
+    assert!(!has(&harness, "inspector.text_color.picker.mixed"));
     let before = harness.state().session.project().clone();
     let history = harness.state().session.history_len().0;
     harness
@@ -2447,6 +2469,13 @@ fn text_insert_and_style_controls_use_one_undo_step_per_edit() {
     assert_eq!(text.font.as_str(), "Inter");
     assert_eq!(text.font_size, 48.0);
     assert_eq!(text.background, None);
+    // New text lands in the lower third: Transform Y is 34.5 % of the canvas height below the
+    // centre, and X stays at the centre.
+    let canvas_height = f64::from(harness.state().session.project().data().canvas.height);
+    let offset =
+        |field: project::TransformField| field.value_at(&item_view.animations, Tick::ZERO).unwrap();
+    assert!((offset(project::TransformField::PositionY) - canvas_height * 0.345).abs() < 1e-6);
+    assert_eq!(offset(project::TransformField::PositionX), 0.0);
     let text_track_count = harness
         .state()
         .session

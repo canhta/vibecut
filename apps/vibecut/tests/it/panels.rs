@@ -1893,6 +1893,14 @@ fn opacity_and_audio_gain_scrub_through_their_tabs() {
     harness.run_steps(3);
     select(&mut harness, fixture.video);
     click(&mut harness, "inspector.tab.transform");
+    // Opacity is stored 0–1 and shown 0–100 %: the default full opacity reads 100 %.
+    assert_eq!(
+        harness
+            .get(By::new().predicate(|n| n.author_id() == Some("inspector.opacity")))
+            .value()
+            .as_deref(),
+        Some("100%")
+    );
     let history = harness.state().session.history_len();
     drag(
         &mut harness,

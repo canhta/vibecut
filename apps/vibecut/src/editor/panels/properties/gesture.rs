@@ -13,6 +13,9 @@ pub(super) struct ScrubSpec {
     pub(super) pixels_per_step: f32,
     pub(super) decimals: usize,
     pub(super) suffix: &'static str,
+    /// Shown value = model value × scale, in whole units, with `suffix`. Opacity and the
+    /// scale fields use 100 for 0–100 %. The model value, step and drag stay unscaled.
+    pub(super) scale: f64,
 }
 impl ScrubSpec {
     pub(in crate::editor) fn quantize(self, value: f64) -> f64 {
@@ -34,7 +37,8 @@ pub(super) const OPACITY_SCRUB: ScrubSpec = ScrubSpec {
     step: 0.01,
     pixels_per_step: 4.0,
     decimals: 2,
-    suffix: "",
+    suffix: "%",
+    scale: 100.0,
 };
 pub(super) const TEXT_SIZE_SCRUB: ScrubSpec = ScrubSpec {
     field: "text_size",
@@ -45,6 +49,7 @@ pub(super) const TEXT_SIZE_SCRUB: ScrubSpec = ScrubSpec {
     pixels_per_step: 2.0,
     decimals: 0,
     suffix: "",
+    scale: 1.0,
 };
 pub(super) const SPEED_SCRUB: ScrubSpec = ScrubSpec {
     field: "speed",
@@ -55,6 +60,7 @@ pub(super) const SPEED_SCRUB: ScrubSpec = ScrubSpec {
     pixels_per_step: 2.0,
     decimals: 2,
     suffix: "x",
+    scale: 1.0,
 };
 /// Transition duration, 0.1-5 s as the reference's field; the engine further
 /// clamps it to the handles of both neighbouring clips.
@@ -67,6 +73,7 @@ pub(super) const TRANSITION_DURATION_SCRUB: ScrubSpec = ScrubSpec {
     pixels_per_step: 8.0,
     decimals: 1,
     suffix: "s",
+    scale: 1.0,
 };
 pub(super) const AUDIO_GAIN_SCRUB: ScrubSpec = ScrubSpec {
     field: "audio_gain",
@@ -77,6 +84,7 @@ pub(super) const AUDIO_GAIN_SCRUB: ScrubSpec = ScrubSpec {
     pixels_per_step: 4.0,
     decimals: 2,
     suffix: "dB",
+    scale: 1.0,
 };
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum ScrubTarget {
@@ -147,5 +155,6 @@ pub(super) fn effect_scrub_spec(parameter: &project::EffectParamDefinition) -> S
         pixels_per_step: 2.0,
         decimals: if step < 1.0 { 2 } else { 0 },
         suffix: "",
+        scale: 1.0,
     }
 }

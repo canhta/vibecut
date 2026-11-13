@@ -18,6 +18,7 @@ const fn spec(field: &'static str, label: Text, min: f64, max: f64, decimals: us
         pixels_per_step: 2.0,
         decimals,
         suffix: "",
+        scale: 1.0,
     }
 }
 

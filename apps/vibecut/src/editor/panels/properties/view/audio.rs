@@ -48,6 +48,7 @@ impl Panel<'_, '_> {
             pixels_per_step: 8.0,
             decimals: 1,
             suffix: "s",
+            scale: 1.0,
         }
     }
 }

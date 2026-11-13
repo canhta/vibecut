@@ -1162,6 +1162,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                                     pixels_per_step: 2.,
                                     decimals: 0,
                                     suffix: "",
+                                    scale: 1.0,
                                 },
                             );
                             panel.graphic_align(ui, item);
@@ -1183,6 +1184,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                                             pixels_per_step: 2.,
                                             decimals: 0,
                                             suffix: "",
+                                            scale: 1.0,
                                         },
                                     );
                                     panel.scrub_field(
@@ -1197,6 +1199,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                                             pixels_per_step: 2.,
                                             decimals: 0,
                                             suffix: "%",
+                                            scale: 1.0,
                                         },
                                     );
                                 }
@@ -1215,6 +1218,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                                             pixels_per_step: 2.,
                                             decimals: 0,
                                             suffix: "",
+                                            scale: 1.0,
                                         },
                                     );
                                     panel.scrub_field(
@@ -1229,6 +1233,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                                             pixels_per_step: 2.,
                                             decimals: 0,
                                             suffix: "%",
+                                            scale: 1.0,
                                         },
                                     );
                                 }
@@ -1247,6 +1252,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                                             pixels_per_step: 2.,
                                             decimals: 0,
                                             suffix: "%",
+                                            scale: 1.0,
                                         },
                                     );
                                 }

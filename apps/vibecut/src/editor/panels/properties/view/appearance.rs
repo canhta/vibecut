@@ -89,6 +89,34 @@ impl Panel<'_, '_> {
         self.remember("inspector.blendMode", &response);
     }
 
+    /// A colour row whose selected texts differ: the label and a dash, with no swatch to open.
+    fn mixed_color_row(&mut self, ui: &mut egui::Ui, id: &str, label: Text) {
+        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        self.row_label(ui, row, self.tr(label));
+        let dark = self.cx.dark;
+        let (rect, response) = value_ui.allocate_exact_size(
+            Vec2::new(
+                value_ui.available_width().min(FIELD_COLUMN),
+                theme::size::FIELD,
+            ),
+            egui::Sense::hover(),
+        );
+        value_ui
+            .painter()
+            .rect_filled(rect, theme::radius::FIELD, theme::field(dark));
+        value_ui.painter().text(
+            egui::pos2(rect.left() + theme::space::MD, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            self.tr(Text::EmptyValue),
+            theme::label_font(),
+            theme::text(dark),
+        );
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::Role::Label, true, self.tr(Text::EmptyValue))
+        });
+        self.remember(format!("{id}.mixed"), &response);
+    }
+
     /// A colour row: the label left, a swatch with its hex right. Clicking opens
     /// the picker as a popover hanging off the panel's left edge.
     pub(super) fn color_row(
@@ -98,8 +126,13 @@ impl Panel<'_, '_> {
         label: Text,
         target: ColorTarget,
     ) {
-        let Ok(color) = target.color(self.cx.session.project()) else {
-            return;
+        let color = match target.color(self.cx.session.project()) {
+            Ok(color) => color,
+            Err(_) if target.mixed(self.cx.session.project()) => {
+                self.mixed_color_row(ui, id, label);
+                return;
+            }
+            Err(_) => return,
         };
         let [r, g, b, a] = color.0;
         let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);

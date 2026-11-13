@@ -48,6 +48,7 @@ pub(in crate::editor) fn transform_scrub(field: project::TransformField) -> Scru
     };
     let scale = matches!(field, F::ScaleX | F::ScaleY);
     ScrubSpec {
+        scale: if scale { 100.0 } else { 1.0 },
         field: field.builtin().as_str(),
         label,
         min,
@@ -61,6 +62,7 @@ pub(in crate::editor) fn transform_scrub(field: project::TransformField) -> Scru
         decimals: if scale || field == F::Rotate { 2 } else { 0 },
         suffix: match field {
             F::Rotate => "°",
+            F::ScaleX | F::ScaleY => "%",
             _ => "",
         },
     }
