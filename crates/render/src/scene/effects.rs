@@ -10,6 +10,7 @@ mod layers;
 pub mod lut;
 mod whole_image;
 pub use denoise::reduce_noise_passes;
+pub(crate) use layers::adjust_backdrop;
 pub use layers::{
     FrameLayer, MAX_FRAME_LAYERS, composite_layers, reference_layers, validate_layers,
 };

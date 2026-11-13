@@ -5505,3 +5505,241 @@ fn measure_reduce_noise() {
         eprintln!("NOISE_COST reduce_noise {ms:.3} ms/frame {width}x{height}");
     }
 }
+
+/// One adjustment layer on its own Effect track: `kind` effects over `[start, start + length)`
+/// frames at 30 fps.
+fn adjustment(
+    id: u64,
+    kind: &str,
+    start: i64,
+    length: i64,
+    animations: &[(project::BuiltinPath, f64)],
+) -> project::Track {
+    use project::*;
+    use time::Tick;
+    let mut keyed = Animations::default();
+    for (path, value) in animations {
+        keyed
+            .set(
+                AnimationPath::from(*path),
+                Param::new(ParamValue::Scalar(*value)).unwrap(),
+            )
+            .unwrap();
+    }
+    let effects = if kind.is_empty() {
+        Vec::new()
+    } else {
+        vec![effect_definition(kind).unwrap().instance("fx")]
+    };
+    Track {
+        id: TrackId(id),
+        name: "Adjustment".into(),
+        kind: TrackKind::Effect,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![
+            testkit::item::item(ItemId(id), ItemParams::Effect(EffectParams::default()))
+                .source(time::SourceRange::new(Tick::ZERO, tick(length, 30)).unwrap())
+                .start(tick(start, 30))
+                .effects(effects)
+                .animations(keyed)
+                .build(),
+        ],
+    }
+}
+/// A 64x36 blue canvas with a red overlay over its middle half (item 1) below the given
+/// adjustment tracks (bottom to top), and a green overlay over its left quarter (item 99) above.
+fn adjusted_scene(layers: Vec<project::Track>) -> (project::Project, RenderSettings) {
+    use project::*;
+    use time::Tick;
+    let mut data = Project::empty(ProjectId(1), "adjust".into())
+        .unwrap()
+        .into_data();
+    data.canvas.width = 64;
+    data.canvas.height = 36;
+    data.canvas.background = Color([0, 0, 255, 255]);
+    let overlay = |id: u64, color: [u8; 4]| Track {
+        id: TrackId(id + 100),
+        name: "Video".into(),
+        kind: TrackKind::Video,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![
+            testkit::item::item(
+                ItemId(id),
+                ItemParams::Overlay(OverlayParams {
+                    color: Color(color),
+                }),
+            )
+            .source(time::SourceRange::new(Tick::ZERO, tick(30, 30)).unwrap())
+            .build(),
+        ],
+    };
+    data.scene_mut()
+        .timeline
+        .insert_track(overlay(1, [255, 0, 0, 255]));
+    for layer in layers {
+        data.scene_mut().timeline.insert_track(layer);
+    }
+    data.scene_mut()
+        .timeline
+        .insert_track(overlay(99, [0, 255, 0, 255]));
+    let project = Project::new(data).unwrap();
+    let mut settings = RenderSettings::from_project(&project);
+    for (id, x, width) in [(1, 0.25, 0.5), (99, 0.0, 0.25)] {
+        settings.placements.insert(
+            ItemId(id),
+            Placement {
+                destination: Rect {
+                    x,
+                    y: 0.0,
+                    width,
+                    height: 1.0,
+                },
+                ..Default::default()
+            },
+        );
+    }
+    (project, settings)
+}
+fn frame(project: &project::Project, settings: &RenderSettings, number: i64) -> Image {
+    Renderer::new(project, settings.clone())
+        .unwrap()
+        .render_frame(
+            tick(number, 30),
+            &mut crate::support::Empty,
+            &Hooks::default(),
+        )
+        .unwrap()
+}
+const GREEN_TOP: (usize, usize) = (4, 18);
+const RED_MIDDLE: (usize, usize) = (32, 18);
+const CANVAS_RIGHT: (usize, usize) = (60, 18);
+fn at(image: &Image, (x, y): (usize, usize)) -> [f32; 4] {
+    image.pixels()[y * 64 + x]
+}
+fn assert_near(actual: [f32; 4], expected: [f64; 4], context: &str) {
+    for (channel, (actual, expected)) in actual.into_iter().zip(expected).enumerate() {
+        assert!(
+            (f64::from(actual) - expected).abs() <= 1e-4,
+            "{context} channel {channel}: {actual} != {expected}"
+        );
+    }
+}
+
+#[test]
+fn adjustment_layer_filters_only_what_is_below_it() {
+    let (plain, settings) = adjusted_scene(Vec::new());
+    let unadjusted = frame(&plain, &settings, 0);
+    assert_eq!(at(&unadjusted, RED_MIDDLE), [1.0, 0.0, 0.0, 1.0]);
+    let (project, settings) = adjusted_scene(vec![adjustment(2, "invert", 0, 30, &[])]);
+    let adjusted = frame(&project, &settings, 0);
+    // Below it, red and the bare canvas are inverted; above it, green is untouched.
+    assert_near(at(&adjusted, RED_MIDDLE), [0.0, 1.0, 1.0, 1.0], "red below");
+    assert_near(
+        at(&adjusted, CANVAS_RIGHT),
+        [1.0, 1.0, 0.0, 1.0],
+        "canvas below",
+    );
+    assert_eq!(at(&adjusted, GREEN_TOP), at(&unadjusted, GREEN_TOP));
+    assert_eq!(at(&adjusted, GREEN_TOP), [0.0, 1.0, 0.0, 1.0]);
+}
+
+#[test]
+fn adjustment_layer_follows_its_range_boundaries() {
+    let (project, settings) = adjusted_scene(vec![adjustment(2, "invert", 10, 10, &[])]);
+    // Half-open: the first frame of the range is adjusted, its end frame is not.
+    for (frame_at, adjusted) in [(9, false), (10, true), (19, true), (20, false)] {
+        let image = frame(&project, &settings, frame_at);
+        let expected = if adjusted {
+            [0.0, 1.0, 1.0, 1.0]
+        } else {
+            [1.0, 0.0, 0.0, 1.0]
+        };
+        assert_near(
+            at(&image, RED_MIDDLE),
+            expected,
+            &format!("frame {frame_at}"),
+        );
+    }
+}
+
+#[test]
+fn stacked_adjustment_layers_apply_once_each_in_track_order() {
+    let stacked = |lower: &str, upper: &str| {
+        let (project, settings) = adjusted_scene(vec![
+            adjustment(2, lower, 0, 30, &[]),
+            adjustment(3, upper, 0, 30, &[]),
+        ]);
+        at(&frame(&project, &settings, 0), RED_MIDDLE)
+    };
+    // Invert turns red to cyan, whose linear luma is 0.7152 + 0.0722.
+    assert_near(
+        stacked("invert", "black_white"),
+        [0.7874, 0.7874, 0.7874, 1.0],
+        "invert then black and white",
+    );
+    // Black and white turns red to luma 0.2126, which invert then flips in encoded space.
+    let encoded = |v: f64| {
+        if v <= 0.0031308 {
+            v * 12.92
+        } else {
+            1.055 * v.powf(1.0 / 2.4) - 0.055
+        }
+    };
+    let decoded = |v: f64| {
+        if v <= 0.04045 {
+            v / 12.92
+        } else {
+            ((v + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    let flipped = decoded(1.0 - encoded(0.2126));
+    assert_near(
+        stacked("black_white", "invert"),
+        [flipped, flipped, flipped, 1.0],
+        "black and white then invert",
+    );
+}
+
+#[test]
+fn empty_or_disabled_adjustment_layer_changes_nothing() {
+    let (plain, settings) = adjusted_scene(Vec::new());
+    let expected = frame(&plain, &settings, 0);
+    let (empty, settings) = adjusted_scene(vec![adjustment(2, "", 0, 30, &[])]);
+    assert_eq!(frame(&empty, &settings, 0).pixels(), expected.pixels());
+    let mut layer = adjustment(2, "invert", 0, 30, &[]);
+    layer.items[0].effects[0].enabled = false;
+    let (disabled, settings) = adjusted_scene(vec![layer]);
+    assert_eq!(frame(&disabled, &settings, 0).pixels(), expected.pixels());
+}
+
+#[test]
+fn adjustment_layer_transform_limits_its_region_and_opacity_mixes() {
+    use project::BuiltinPath::{Opacity, TransformScaleX, TransformScaleY};
+    let (project, settings) = adjusted_scene(vec![adjustment(
+        2,
+        "invert",
+        0,
+        30,
+        &[(TransformScaleX, 0.5), (TransformScaleY, 0.5)],
+    )]);
+    let image = frame(&project, &settings, 0);
+    // The layer's region shrinks to the middle of the canvas; the edges keep their pixels.
+    assert_near(
+        at(&image, RED_MIDDLE),
+        [0.0, 1.0, 1.0, 1.0],
+        "inside region",
+    );
+    assert_eq!(at(&image, CANVAS_RIGHT), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(at(&image, GREEN_TOP), [0.0, 1.0, 0.0, 1.0]);
+    let (project, settings) =
+        adjusted_scene(vec![adjustment(2, "invert", 0, 30, &[(Opacity, 0.5)])]);
+    assert_near(
+        at(&frame(&project, &settings, 0), RED_MIDDLE),
+        [0.5, 0.5, 0.5, 1.0],
+        "half opacity",
+    );
+}

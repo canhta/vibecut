@@ -20,8 +20,8 @@ pub use audio_cleanup::{
 };
 pub use item::{
     AudioParams, AudioSource, CaptionParams, CaptionWordWarning, CaptionWordWarnings,
-    ClipBackground, GraphicParams, Item, ItemId, ItemParams, LibraryMusic, LibrarySound,
-    MusicLicence, OverlayParams, StickerParams, TextAlign, TextBackground, TextCase,
+    ClipBackground, EffectParams, GraphicParams, Item, ItemId, ItemParams, LibraryMusic,
+    LibrarySound, MusicLicence, OverlayParams, StickerParams, TextAlign, TextBackground, TextCase,
     TextDecoration, TextParams, TextShadow, TextStroke, TextStyle, VOLUME_DB_RANGE, VideoParams,
     WordSpan, valid_volume,
 };

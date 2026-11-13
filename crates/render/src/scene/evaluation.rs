@@ -91,7 +91,8 @@ pub(super) fn saved_placement(data: &project::ProjectData, item: &Item) -> Optio
                 ..Default::default()
             }
         }
-        ItemParams::Overlay(_) => Placement::default(),
+        // An adjustment layer's region starts as the whole canvas; transform and masks narrow it.
+        ItemParams::Overlay(_) | ItemParams::Effect(_) => Placement::default(),
         ItemParams::Audio(_) | ItemParams::Caption(_) => return None,
     })
 }
@@ -384,6 +385,12 @@ impl<'a> Renderer<'a> {
                     )?);
                 }
                 let has_passes = runs.iter().any(|run| !run.is_empty());
+                // An adjustment layer has no picture: it filters the composite below it, so an
+                // empty stack changes nothing, whatever its masks, transform and blend.
+                let adjustment = matches!(item.content, ItemParams::Effect(_));
+                if adjustment && !has_passes {
+                    continue;
+                }
                 let graphic = matches!(
                     item.content,
                     ItemParams::Graphic(_) | ItemParams::Sticker(_)
@@ -433,6 +440,24 @@ impl<'a> Renderer<'a> {
                             && !self.sticker_errors.contains(&error)
                         {
                             self.sticker_errors.push(error);
+                        }
+                    }
+                    ItemParams::Effect(_) => {
+                        // The region the layer adjusts, as opaque coverage on the transparent
+                        // layer; masks and the transform reshape it below.
+                        let w = out.width;
+                        let h = out.height;
+                        let r = placement.destination;
+                        for (index, pixel) in out.pixels.iter_mut().enumerate() {
+                            let x = (index % w as usize) as f64 + 0.5;
+                            let y = (index / w as usize) as f64 + 0.5;
+                            if x >= r.x * f64::from(w)
+                                && x < (r.x + r.width) * f64::from(w)
+                                && y >= r.y * f64::from(h)
+                                && y < (r.y + r.height) * f64::from(h)
+                            {
+                                *pixel = [1.0; 4];
+                            }
                         }
                     }
                     ItemParams::Overlay(p) => {
@@ -673,13 +698,18 @@ impl<'a> Renderer<'a> {
                     ItemParams::Audio(_) => {}
                 }
                 if let Some(mut below) = below {
+                    // For an adjustment layer `out` is only its region; the stack runs on the
+                    // backdrop copy below instead.
                     let mut filtered = out;
-                    for run in &runs {
-                        if run.is_empty() {
-                            continue;
+                    if !adjustment {
+                        for run in &runs {
+                            if run.is_empty() {
+                                continue;
+                            }
+                            filtered = crate::effects::apply_effect(
+                                filtered, run, &below, adapter, hooks,
+                            )?;
                         }
-                        filtered =
-                            crate::effects::apply_effect(filtered, run, &below, adapter, hooks)?;
                     }
                     if filtered.width != below.width || filtered.height != below.height {
                         return Err(Error::Invalid("effect output dimensions"));
@@ -746,24 +776,42 @@ impl<'a> Renderer<'a> {
                             hooks,
                         )?;
                     }
-                    match adapter.composite(
-                        &mut below,
-                        &filtered,
-                        final_opacity,
-                        item.blend_mode,
-                        hooks,
-                    ) {
-                        Err(Error::Unsupported(_)) => {
-                            adapter.release_idle()?;
-                            crate::blend::composite(
-                                &mut below,
-                                &filtered,
-                                final_opacity,
-                                item.blend_mode,
-                                hooks,
+                    if adjustment {
+                        let mut adjusted = below.copy(hooks)?;
+                        for run in runs.iter().filter(|run| !run.is_empty()) {
+                            adjusted = crate::effects::apply_effect(
+                                adjusted, run, &below, adapter, hooks,
                             )?;
                         }
-                        result => result?,
+                        crate::effects::adjust_backdrop(
+                            &mut below,
+                            adjusted,
+                            &filtered,
+                            final_opacity,
+                            item.blend_mode,
+                            adapter,
+                            hooks,
+                        )?;
+                    } else {
+                        match adapter.composite(
+                            &mut below,
+                            &filtered,
+                            final_opacity,
+                            item.blend_mode,
+                            hooks,
+                        ) {
+                            Err(Error::Unsupported(_)) => {
+                                adapter.release_idle()?;
+                                crate::blend::composite(
+                                    &mut below,
+                                    &filtered,
+                                    final_opacity,
+                                    item.blend_mode,
+                                    hooks,
+                                )?;
+                            }
+                            result => result?,
+                        }
                     }
                     out = below;
                 }

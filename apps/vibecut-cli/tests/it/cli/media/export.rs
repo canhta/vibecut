@@ -1,6 +1,6 @@
 //! Verifies native export command behaviour.
-use crate::cli::fixtures::overlay_project;
 use crate::cli::fixtures::{decoded_rgb, exec, generate_audio};
+use crate::cli::fixtures::{overlay_project, overlay_project_color};
 use crate::cli::process::{cli, code, error_json, os, stdout_json};
 use crate::media_fixture::{ffmpeg, generate_av, media_project, tool_command, tools};
 use serde_json::{Value, json};
@@ -667,4 +667,72 @@ fn export_places_the_clip_under_each_fit_mode() {
         // The middle of the canvas is the clip under every mode.
         assert!(red(pixel(frame, 96, 96)), "{name} centre");
     }
+}
+
+#[test]
+fn export_applies_an_adjustment_layer_blur_to_what_is_below_it() {
+    if !tools() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("adjustment.vibecut");
+    overlay_project_color(
+        &project,
+        256,
+        256,
+        Tick(time::TICKS_PER_SECOND),
+        [255, 0, 0, 255],
+    );
+    // A red square (64..192) on the black canvas: the blur must spill past its edge.
+    for field in ["transform.scaleX", "transform.scaleY"] {
+        exec(
+            &project,
+            "timeline.set_item_param",
+            json!({"item":0,"patch":{"field":field,"value":0.5}}),
+        );
+    }
+    let probe = (128 * 256 + 62) * 3;
+    let export = |name: &str| {
+        let output_path = dir.path().join(name);
+        let output = cli(&[
+            os("export"),
+            project.as_os_str(),
+            os("--out"),
+            output_path.as_os_str(),
+            os("--json"),
+        ]);
+        assert_eq!(
+            code(&output),
+            0,
+            "{name}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        decoded_rgb(&output_path, 256, 256, &[0])[0][probe]
+    };
+    let sharp = export("sharp.mp4");
+    let inserted = exec(
+        &project,
+        "timeline.insert",
+        json!({
+            "placement": {"mode": "auto"},
+            "item": {
+                "animations": {},
+                "source_asset": null,
+                "source_range": {"start": 0, "end": time::TICKS_PER_SECOND},
+                "start": 0,
+                "content": {"kind": "effect", "params": {}}
+            }
+        }),
+    );
+    let layer = inserted["placements"][0]["item"].as_u64().unwrap();
+    exec(
+        &project,
+        "effects.add",
+        json!({"item":layer,"effect":{"id":"soften","kind":"blur","enabled":true,"params":{"intensity":{"kind":"scalar","value":100.0}}}}),
+    );
+    let blurred = export("blurred.mp4");
+    assert!(
+        sharp < 60 && blurred > sharp.saturating_add(30),
+        "outside the square: sharp {sharp}, blurred {blurred}"
+    );
 }

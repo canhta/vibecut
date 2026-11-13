@@ -512,3 +512,78 @@ fn audio_controls_are_atomic_undoable_persisted_and_strict() {
         Err(project::Error::TooOld { .. })
     ));
 }
+#[test]
+fn adjustment_layer_inserts_on_an_effect_track_moves_undoes_and_persists() {
+    let mut s = Session::new(Project::empty(ProjectId(34), "Layer".into()).unwrap(), 20).unwrap();
+    let empty = s.project().clone();
+    let outcome = crate::wire::run(
+        &mut s,
+        "timeline.insert",
+        json!({
+            "placement": {"mode": "auto"},
+            "item": {
+                "animations": {},
+                "source_asset": null,
+                "source_range": {"start": 0, "end": 300},
+                "start": 10,
+                "content": {"kind": "effect", "params": {}}
+            }
+        }),
+    )
+    .unwrap();
+    let [CreatedId::Track(track), CreatedId::Item(item)] = outcome.created[..] else {
+        panic!("created {:?}", outcome.created)
+    };
+    let inserted = s.project().clone();
+    let layer = &inserted.data().scene().timeline.overlays[0];
+    assert_eq!((layer.id, layer.kind), (track, TrackKind::Effect));
+    assert_eq!(layer.items[0].id, item);
+    assert_eq!(layer.items[0].start, Tick(10));
+    assert_eq!(
+        layer.items[0].content,
+        ItemParams::Effect(project::EffectParams::default())
+    );
+    // The layer's own stack is ordinary item effects.
+    s.apply(Command::AddEffect {
+        item,
+        effect: project::effect_definition("blur")
+            .unwrap()
+            .instance("blur1"),
+    })
+    .unwrap();
+    s.apply(Command::MoveItem {
+        item,
+        track,
+        start: Tick(50),
+    })
+    .unwrap();
+    let moved = s.project().clone();
+    let layer = &moved.data().scene().timeline.overlays[0].items[0];
+    assert_eq!((layer.start, layer.effects.len()), (Tick(50), 1));
+    // A video track is the wrong kind for the layer.
+    let main = moved.data().scene().timeline.main.id;
+    assert!(
+        s.apply(Command::MoveItem {
+            item,
+            track: main,
+            start: Tick(0)
+        })
+        .is_err()
+    );
+    assert_eq!(s.project(), &moved);
+
+    let loaded = project::decode(&project::encode(&moved, false).unwrap())
+        .unwrap()
+        .project;
+    assert_eq!(&loaded, moved.as_ref());
+
+    s.undo().unwrap();
+    s.undo().unwrap();
+    assert_eq!(s.project(), &inserted);
+    s.undo().unwrap();
+    assert_eq!(s.project(), &empty);
+    for _ in 0..3 {
+        s.redo().unwrap();
+    }
+    assert_eq!(s.project(), &moved);
+}

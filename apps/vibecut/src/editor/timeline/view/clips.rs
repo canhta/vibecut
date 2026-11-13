@@ -1250,6 +1250,7 @@ pub(in crate::editor::timeline) fn item_label(
         }
         ItemParams::Caption(_) => (i18n::text(locale, Text::Caption).to_owned(), None),
         ItemParams::Sticker(params) => (display_label(params.value(), LABEL_CHARS), None),
+        ItemParams::Effect(_) => (i18n::text(locale, Text::Effects).to_owned(), None),
         ItemParams::Graphic(params) => (
             i18n::text(
                 locale,

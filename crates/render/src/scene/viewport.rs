@@ -499,7 +499,11 @@ impl Renderer<'_> {
             .iter()
             .filter(|t| !t.hidden && !t.locked)
         {
-            for item in self.selectable_items(track, at)? {
+            // An adjustment layer has no picture to click; the timeline selects it.
+            for item in self
+                .selectable_items(track, at)?
+                .filter(|item| !matches!(item.content, ItemParams::Effect(_)))
+            {
                 if let Some(geometry) = self.geometry_at(item, at)?
                     && geometry.contains(canvas)
                 {

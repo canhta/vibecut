@@ -514,6 +514,7 @@ fn populated(path: PathBuf) -> Project {
             color: Color([40, 50, 60, 255]),
         }),
         ItemParams::Sticker(StickerParams::new("flags:vn", 640, 480)),
+        ItemParams::Effect(EffectParams::default()),
     ];
     for (i, content) in contents.into_iter().enumerate() {
         let source_asset = matches!(
@@ -553,7 +554,7 @@ fn populated(path: PathBuf) -> Project {
     .enumerate()
     {
         data.scene_mut().timeline.insert_track(Track {
-            id: TrackId(index as u64 + 7),
+            id: TrackId(index as u64 + 8),
             name: "Empty overlay".into(),
             kind,
             muted: false,
@@ -1098,6 +1099,22 @@ fn model_trust_boundaries() {
             (3, ItemParams::Sticker(p)) => p.width = 0,
             (4, ItemParams::Sticker(p)) => p.height = StickerParams::MAX_SIDE + 1,
             (_, _) => item.source_asset = Some(AssetId(3)),
+        }
+        cases.push(candidate);
+    }
+    // An adjustment layer draws nothing from media: a source reference or a retime refuses.
+    for edit in 0..2 {
+        let mut candidate = base.clone();
+        let item = candidate
+            .scene_mut()
+            .timeline
+            .iter_mut()
+            .flat_map(|track| &mut track.items)
+            .find(|item| matches!(item.content, ItemParams::Effect(_)))
+            .unwrap();
+        match edit {
+            0 => item.source_asset = Some(AssetId(3)),
+            _ => item.retime.speed = time::Speed::from_f64(2.0).unwrap(),
         }
         cases.push(candidate);
     }
