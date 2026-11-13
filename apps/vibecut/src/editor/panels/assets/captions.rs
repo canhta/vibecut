@@ -488,10 +488,7 @@ impl Subtitles {
         Ok(())
     }
     pub fn translate(&mut self, session: &mut Session, options: &Options) -> Result<()> {
-        engine::providers::choose_translation(
-            &options.translation,
-            Some(&options.translation_model),
-        )?;
+        engine::providers::choose_translation(&options.text_provider, Some(&options.text_model))?;
         let item = self.item.ok_or(Error::Invalid("select captions"))?;
         if self.selected.is_empty() {
             return Err(Error::Invalid("select cues"));
@@ -499,8 +496,8 @@ impl Subtitles {
         let (cancel, events) = self.begin(session)?;
         let access = (self.access)(
             Choice::Translate {
-                provider: &options.translation,
-                model: &options.translation_model,
+                provider: &options.text_provider,
+                model: &options.text_model,
             },
             events.clone(),
         )?;

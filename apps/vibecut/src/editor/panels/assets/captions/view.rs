@@ -301,9 +301,9 @@ impl Subtitles {
                 .model(&options.transcription, ai::Operation::Transcribe)
                 .into();
         }
-        options.translation_model = self
+        options.text_model = self
             .models
-            .model(&options.translation, ai::Operation::Translate)
+            .model(&options.text_provider, ai::Operation::Translate)
             .into();
         let previous_options = options.clone();
         let mut controls = Controls {
@@ -402,8 +402,8 @@ impl Subtitles {
                             controls.provider(
                                 ui,
                                 "subtitles.translator",
-                                &mut options.translation,
-                                &mut options.translation_model,
+                                &mut options.text_provider,
+                                &mut options.text_model,
                                 CatalogOperation::Translate,
                                 &options.source,
                             );

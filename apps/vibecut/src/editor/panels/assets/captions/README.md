@@ -61,7 +61,7 @@ The filler cut list ([fillers.rs](fillers.rs)) is a section after the cue list. 
 `timeline.filler_candidates` for the first cue language of the active scene's caption items (the read
 is scene-wide, and a word cut splits an item) and refuses with a word-timing message when no cue
 has measured words. Find with AI runs `fillers.classify` on a
-worker thread with the configured text provider (`translation` in the subtitle options), because
+worker thread with the configured text provider (`text_provider` in the subtitle options; its model is the same snapshot translation uses), because
 `submit` requests consent synchronously. The worker's [`TaskEvents`](../../../../services/ai_task.rs)
 is the captions panel's own upload sheet, so approval, refusal and cancellation use the same
 `approve_upload` path as every other upload; a refusal shows the declined line and sends nothing,

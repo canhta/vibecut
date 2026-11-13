@@ -17,9 +17,12 @@ pub struct Options {
     /// Transient workflow snapshot; remote choices persist only in AiPreferences.
     #[serde(skip)]
     pub transcription_model: String,
-    pub translation: String,
+    /// Text-task provider shared by translation and filler classification. Its model is
+    /// the Translate row of `AiPreferences` for this provider.
+    pub text_provider: String,
+    /// Transient workflow snapshot resolved from `AiPreferences`.
     #[serde(skip)]
-    pub translation_model: String,
+    pub text_model: String,
     pub bilingual: bool,
     /// Last spoken-language choice per project; absent means Auto.
     pub project_sources: BTreeMap<project::ProjectId, String>,
@@ -32,8 +35,8 @@ impl Default for Options {
             transcription: "whisper.cpp".into(),
             local_transcription_model: "whisper-large-v3-turbo".into(),
             transcription_model: "whisper-large-v3-turbo".into(),
-            translation: "openai".into(),
-            translation_model: ai::defaults::model("openai", ai::Operation::Translate).into(),
+            text_provider: "openai".into(),
+            text_model: ai::defaults::model("openai", ai::Operation::Translate).into(),
             bilingual: false,
             project_sources: BTreeMap::new(),
         }
@@ -61,8 +64,8 @@ impl Options {
             (!self.transcription_model.is_empty()).then_some(self.transcription_model.as_str()),
         )?;
         engine::providers::choose_translation(
-            &self.translation,
-            (!self.translation_model.is_empty()).then_some(self.translation_model.as_str()),
+            &self.text_provider,
+            (!self.text_model.is_empty()).then_some(self.text_model.as_str()),
         )?;
         Ok(())
     }

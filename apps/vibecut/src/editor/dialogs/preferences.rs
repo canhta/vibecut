@@ -32,18 +32,29 @@ struct Draft {
 }
 pub(in crate::editor) enum Action {
     Models(AiPreferences),
+    /// The one text-task provider shared by translation and filler classification.
+    TextProvider(String),
     Remember(String, egui::Response),
     Set(&'static str, serde_json::Value),
     ClearCache,
     Shortcuts(settings::Shortcuts),
 }
+/// Providers the text-task row offers; each one's text-task model is its Translate row.
+const TEXT_PROVIDERS: [&str; 2] = ["openai", "anthropic"];
+fn provider_name(provider: &str) -> &'static str {
+    match provider {
+        "openai" => "OpenAI",
+        "anthropic" => "Anthropic",
+        _ => "ElevenLabs",
+    }
+}
 fn feature_text(feature: Operation) -> Text {
     match feature {
         Operation::Transcribe => Text::ShortsTranscriber,
-        Operation::Translate => Text::SubTranslate,
+        // Filler classification has no row of its own: it runs on the text-task model.
+        Operation::Translate | Operation::ClassifyFillers => Text::ModelTextTasks,
         Operation::SuggestClips => Text::ShortsSuggester,
         Operation::GenerateChapters => Text::ModelRemoteChapters,
-        Operation::ClassifyFillers => Text::ModelRemoteFillers,
         Operation::SelectEmphasis => Text::ModelRemoteEmphasis,
         Operation::Synthesize => Text::ModelRemoteSpeech,
         Operation::Align => Text::ShortsTranscriber,
@@ -79,17 +90,41 @@ pub(super) fn show(
             ui.spacing_mut().interact_size.y = crate::kit::size::FIELD;
             crate::kit::dialog_title(ui, tr(Text::Settings));
             ui.label(tr(Text::ModelRemoteModels));
+            ui.horizontal(|ui| {
+                let label = ui.add_sized(
+                    egui::vec2(180.0, crate::kit::size::FIELD),
+                    egui::Label::new(tr(Text::ModelTextProvider)),
+                );
+                let current = cx.preferences.subtitles.text_provider.clone();
+                let combo = egui::ComboBox::from_id_salt("preferences.text.provider")
+                    .selected_text(provider_name(&current))
+                    .width(280.0)
+                    .show_ui(ui, |ui| {
+                        for provider in TEXT_PROVIDERS {
+                            let response =
+                                ui.selectable_label(provider == current, provider_name(provider));
+                            actions.push(Action::Remember(
+                                format!("preferences.text.provider.{provider}"),
+                                response.clone(),
+                            ));
+                            if response.clicked() {
+                                actions.push(Action::TextProvider(provider.into()));
+                                ui.close();
+                            }
+                        }
+                    });
+                actions.push(Action::Remember(
+                    "preferences.text.provider.combo".into(),
+                    combo.response.labelled_by(label.id),
+                ));
+            });
             egui::ScrollArea::vertical()
                 .max_height(500.0)
                 .show(ui, |ui| {
                     for provider in ["openai", "anthropic", "elevenlabs"] {
                         ui.separator();
                         ui.horizontal(|ui| {
-                            ui.strong(match provider {
-                                "openai" => "OpenAI",
-                                "anthropic" => "Anthropic",
-                                _ => "ElevenLabs",
-                            });
+                            ui.strong(provider_name(provider));
                             let Some(catalog) = state.catalogs.get_mut(provider) else {
                                 return;
                             };
@@ -142,10 +177,11 @@ pub(super) fn show(
                         if let Some(status) = status {
                             ui.label(tr(status));
                         }
-                        for row in ai::defaults::DEFAULTS
-                            .iter()
-                            .filter(|row| row.shipped_default && row.provider == provider)
-                        {
+                        for row in ai::defaults::DEFAULTS.iter().filter(|row| {
+                            row.shipped_default
+                                && row.provider == provider
+                                && row.feature != Operation::ClassifyFillers
+                        }) {
                             let id = format!("preferences.ai.{provider}.{:?}", row.feature)
                                 .to_lowercase();
                             ui.horizontal(|ui| {
@@ -251,6 +287,13 @@ pub(super) fn apply(port: &mut Port<'_>, action: Action) {
         Action::Models(models) => {
             if let Ok(value) = serde_json::to_value(models) {
                 port.set_preference("ai_models", value);
+            }
+        }
+        Action::TextProvider(provider) => {
+            let mut subtitles = port.read.preferences.subtitles.clone();
+            subtitles.text_provider = provider;
+            if let Ok(value) = serde_json::to_value(subtitles) {
+                port.set_preference("subtitles", value);
             }
         }
         Action::Remember(id, response) => port.widget(id, None, None, &response),
