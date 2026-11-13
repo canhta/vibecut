@@ -150,6 +150,15 @@ pub(in crate::editor) fn show(
                 |s| matches!(s.target, super::ScrubTarget::Item(f) if f.starts_with("params.")),
             );
         let visible = element_kind(panel.cx.session.project(), *item).is_some_and(|(kind, _)| {
+            // The tab that draws the field: graphic parameters on Graphic, a text item's
+            // Opacity row inside its Text tab, every other Opacity row on Transform.
+            let owner = if graphic_edit {
+                PropertiesTab::Graphic
+            } else if kind == ElementKind::Text {
+                PropertiesTab::Text
+            } else {
+                PropertiesTab::Transform
+            };
             panel
                 .cx
                 .preferences
@@ -157,7 +166,7 @@ pub(in crate::editor) fn show(
                 .get(kind.id())
                 .map(String::as_str)
                 .unwrap_or(kind.default_tab().id())
-                == if graphic_edit { "graphic" } else { "transform" }
+                == owner.id()
         });
         if !std::sync::Arc::ptr_eq(snapshot, panel.cx.session.project())
             || single(panel.cx.selection()) != Some(*item)
@@ -802,7 +811,7 @@ impl<'a, 'c> Panel<'a, 'c> {
             },
         );
         let toggle = match state.blocked.filter(|_| !state.can_toggle) {
-            Some(reason) => toggle.on_hover_text(reason),
+            Some(reason) => toggle.on_disabled_hover_text(reason),
             None => toggle,
         };
         self.remember(format!("{id}.previous"), &previous);
