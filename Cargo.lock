@@ -3152,6 +3152,7 @@ dependencies = [
  "fontdb",
  "media",
  "project",
+ "roxmltree",
  "serde",
  "serde_json",
  "sha2",

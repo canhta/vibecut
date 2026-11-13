@@ -29,7 +29,7 @@ Hand back a report under `.scratch/<milestone>/reports/` that starts with `## TL
 
 ## Review and merge
 
-1. The coordinator reads the diff, its callers and tests, and rejects invented values, weakened or retried tests, broad allows and dead code. Small problems it fixes itself; a design finding goes back to the worker once. There is no second review round.
+1. The coordinator reads the diff, its callers and tests, and rejects invented values, weakened or retried tests, broad allows, dead code, and any dual version: an old path kept beside the new one, a re-export or alias kept for old callers, a fallback for old ids, files or preferences, or migration code. Small problems it fixes itself; a design finding goes back to the worker once. There is no second review round.
 2. Rebase on `origin/main`, resolve conflicts keeping both sides' intent, and fast-forward `main`. Append `Merged unbuilt` with the SHA and the build's checks to the ticket.
 3. After a batch of merges, one combined-build worker runs the full gate on `main` and fixes failures at their root. Tickets resolve when that build is green; open items stay in the ticket or become new tickets.
 4. A found bug always gets a worker, even while new work is paused.
