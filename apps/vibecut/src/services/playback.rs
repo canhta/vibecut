@@ -462,6 +462,13 @@ impl Playback {
     pub fn can_play(&self) -> bool {
         self.device_available() && matches!(self.workers, Workers::Running)
     }
+    /// The render source seam this playback's workers read through; `export.clips` lends it too.
+    pub fn export_sources(
+        &self,
+    ) -> impl Fn() -> Box<dyn render::SourceProvider> + Send + Sync + 'static {
+        let sources = self.sources.clone();
+        move || sources.create()
+    }
     pub fn budget(&self) -> &ByteBudget {
         &self.budget
     }

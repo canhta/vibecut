@@ -27,7 +27,7 @@ use vibecut::{
     AppCommand, Editor, ImportProbe, MediaSort, MediaSortKey, MediaSortOrder, MediaView,
     ThumbnailSource, egui,
     preferences::{PreferenceStore, Preferences},
-    services::playback::{Files, Playback},
+    services::playback::{Files, Playback, Sources},
 };
 
 const SECOND: i64 = TICKS_PER_SECOND;
@@ -53,6 +53,14 @@ fn source_asset(id: u64, name: &str, duration: Option<Tick>) -> SourceAsset {
 }
 
 fn editor_with(preferences: Preferences, assets: &[(u64, &str)]) -> Editor {
+    editor_with_sources(preferences, assets, Arc::new(Files))
+}
+
+fn editor_with_sources(
+    preferences: Preferences,
+    assets: &[(u64, &str)],
+    sources: Arc<dyn Sources>,
+) -> Editor {
     let mut session =
         Session::new(Project::empty(ProjectId(90), "Media".into()).unwrap(), 50).unwrap();
     for (id, name) in assets {
@@ -62,12 +70,8 @@ fn editor_with(preferences: Preferences, assets: &[(u64, &str)]) -> Editor {
             })
             .unwrap();
     }
-    let mut playback = Playback::new(
-        &session,
-        ByteBudget::new(512 << 20).unwrap(),
-        Arc::new(Files),
-    )
-    .unwrap();
+    let mut playback =
+        Playback::new(&session, ByteBudget::new(512 << 20).unwrap(), sources).unwrap();
     playback.set_device_available(true);
     let records = session.project().data().assets.clone();
     let mut editor = Editor::new(session, playback, preferences);
@@ -751,11 +755,152 @@ fn search_no_matches_clear_restores_every_asset() {
     assert!(Arc::ptr_eq(&before, harness.state().session.project()));
 }
 
-/// Export clips from the Media tab: the menu refuses a non-video target and a busy export with
-/// its reason, a folder pick starts one engine job, and each outcome reports once as a toast.
+/// Export clips from the Media tab. The job's source is held on a gate, so the running window is
+/// deterministic: the strip and the busy reason show while it runs, Cancel ends it, and a
+/// missing folder refuses the start with no job. The non-video reason is carried on the item.
 #[test]
-fn clip_export_menu_refuses_with_reason_and_reports_each_outcome() {
-    let mut editor = editor();
+fn clip_export_menu_refuses_with_reason_and_cancel_ends_the_running_job() {
+    let gate = Arc::new(ExportGate::default());
+    let _release = ReleaseOnDrop(gate.clone());
+    let dir = tempfile::tempdir().unwrap();
+    let mut harness = build(gated_export_editor(gate.clone()));
+    harness.run_steps(3);
+    let before = harness.state().session.project().clone();
+
+    // A non-video target disables the item and carries its reason.
+    open_menu(&mut harness, "media.asset.9");
+    let (enabled, reason) = export_item(&harness);
+    assert!(!enabled);
+    assert_eq!(reason.as_deref(), Some("Select only video clips to export"));
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+
+    // A folder that does not exist refuses the start; no job runs.
+    queue_selection_export(&mut harness);
+    harness
+        .state_mut()
+        .export_clips_picked(dir.path().join("missing"))
+        .unwrap();
+    let refusal = harness.state().inspect().unwrap().import_toast.unwrap();
+    assert!(
+        refusal.starts_with("Clip export did not start"),
+        "{refusal}"
+    );
+    assert!(!has_widget(&harness, "media.export.cancel"));
+
+    // A real folder: the job starts and holds its source on the gate.
+    queue_selection_export(&mut harness);
+    gate.arm();
+    harness
+        .state_mut()
+        .export_clips_picked(dir.path().to_path_buf())
+        .unwrap();
+    gate.wait_entered();
+    harness.run_steps(2);
+    assert!(
+        has_widget(&harness, "media.export.cancel"),
+        "strip while running"
+    );
+    open_menu(&mut harness, "media.asset.1");
+    let (enabled, reason) = export_item(&harness);
+    assert!(!enabled);
+    assert_eq!(reason.as_deref(), Some("An export is already running"));
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+
+    // Cancel, then let the held source go: the job stops and reports cancelled.
+    click(&mut harness, "media.export.cancel");
+    harness.run_steps(1);
+    gate.release();
+    let toast = await_clip_outcome(&mut harness);
+    assert!(toast.starts_with("Clip export cancelled"), "{toast}");
+    assert!(Arc::ptr_eq(&before, harness.state().session.project()));
+}
+
+/// The same held job released without a cancel reports the failure copy, which names no
+/// per-clip count because the job snapshot carries no per-file results.
+#[test]
+fn clip_export_failure_reports_the_failure_copy() {
+    let gate = Arc::new(ExportGate::default());
+    let _release = ReleaseOnDrop(gate.clone());
+    let dir = tempfile::tempdir().unwrap();
+    let mut harness = build(gated_export_editor(gate.clone()));
+    harness.run_steps(3);
+    queue_selection_export(&mut harness);
+    gate.arm();
+    harness
+        .state_mut()
+        .export_clips_picked(dir.path().to_path_buf())
+        .unwrap();
+    gate.wait_entered();
+    gate.release();
+    let toast = await_clip_outcome(&mut harness);
+    assert!(toast.starts_with("Clip export failed"), "{toast}");
+    assert!(
+        toast.contains("per-clip results are not reported"),
+        "{toast}"
+    );
+}
+
+/// Holds the export job's render source once armed. Playback's own workers are unarmed and
+/// read the files directly, so only the export's source blocks.
+#[derive(Default)]
+struct ExportGate {
+    armed: AtomicBool,
+    /// (the export reached its source, the test released it)
+    state: Mutex<(bool, bool)>,
+    wake: Condvar,
+}
+impl ExportGate {
+    fn arm(&self) {
+        self.armed.store(true, Ordering::SeqCst);
+    }
+    fn wait_entered(&self) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut state = self.state.lock().unwrap();
+        while !state.0 {
+            assert!(Instant::now() < deadline, "export never reached its source");
+            state = self
+                .wake
+                .wait_timeout(state, Duration::from_millis(20))
+                .unwrap()
+                .0;
+        }
+    }
+    fn release(&self) {
+        self.state.lock().unwrap().1 = true;
+        self.wake.notify_all();
+    }
+}
+impl Sources for ExportGate {
+    fn create(&self) -> Box<dyn render::SourceProvider> {
+        if self.armed.load(Ordering::SeqCst) {
+            let mut state = self.state.lock().unwrap();
+            state.0 = true;
+            self.wake.notify_all();
+            while !state.1 {
+                state = self.wake.wait(state).unwrap();
+            }
+        }
+        Box::new(render::FileSources::default())
+    }
+}
+// Release a held source before Playback's joining Drop, including when an assertion fails.
+struct ReleaseOnDrop(Arc<ExportGate>);
+impl Drop for ReleaseOnDrop {
+    fn drop(&mut self) {
+        self.0.release();
+    }
+}
+
+/// Three video fixtures (ids 1..=3) and one audio-only asset (id 9), with the export's source
+/// read through `gate`.
+fn gated_export_editor(gate: Arc<ExportGate>) -> Editor {
+    let mut editor = editor_with_sources(
+        Preferences::default(),
+        &[(1, "Bravo.mp4"), (2, "alpha.mp4"), (3, "charlie.mp4")],
+        gate,
+    );
     let audio = testkit::source::asset(
         9,
         std::env::temp_dir()
@@ -771,84 +916,32 @@ fn clip_export_menu_refuses_with_reason_and_reports_each_outcome() {
         .session
         .apply(Command::AddAsset { asset: audio })
         .unwrap();
-    let dir = tempfile::tempdir().unwrap();
-    let mut harness = build(editor);
-    harness.run_steps(3);
-    let before = harness.state().session.project().clone();
+    editor
+}
 
-    // A non-video target disables the item and carries its reason.
-    open_menu(&mut harness, "media.asset.9");
-    let (enabled, reason) = export_item(&harness);
-    assert!(!enabled);
-    assert_eq!(reason.as_deref(), Some("Select only video clips to export"));
-    harness.key_press(egui::Key::Escape);
-    harness.run_steps(2);
-
-    // Two video targets: the menu queues the selection and asks for a folder.
-    click(&mut harness, "media.asset.1");
-    click_modifiers(&mut harness, "media.asset.2", egui::Modifiers::COMMAND);
-    open_menu(&mut harness, "media.asset.2");
-    let (enabled, _) = export_item(&harness);
+/// Select the two video fixtures, open the menu on one, and take its export request.
+fn queue_selection_export(harness: &mut Harness<Editor>) {
+    click(harness, "media.asset.1");
+    click_modifiers(harness, "media.asset.2", egui::Modifiers::COMMAND);
+    open_menu(harness, "media.asset.2");
+    let (enabled, _) = export_item(harness);
     assert!(enabled);
-    click(&mut harness, "media.export_clip");
+    click(harness, "media.export_clip");
     harness.run_steps(2);
     assert!(matches!(
         harness.state_mut().take_lifecycle_action(),
         Some(vibecut::services::lifecycle::EditorAction::ExportClips)
     ));
+}
 
-    // A folder that does not exist refuses the start; nothing runs.
-    harness
-        .state_mut()
-        .export_clips_picked(dir.path().join("missing"))
-        .unwrap();
-    let refusal = harness.state().inspect().unwrap().import_toast.unwrap();
-    assert!(
-        refusal.starts_with("Clip export did not start"),
-        "{refusal}"
-    );
-
-    // The same selection, a real folder: one job starts.
-    open_menu(&mut harness, "media.asset.2");
-    click(&mut harness, "media.export_clip");
-    harness.run_steps(2);
-    let _ = harness.state_mut().take_lifecycle_action();
-    harness
-        .state_mut()
-        .export_clips_picked(dir.path().to_path_buf())
-        .unwrap();
-
-    // While it runs, the strip is up and the menu item is disabled with the busy reason.
+/// Step until the export's outcome toast shows and its strip is gone.
+fn await_clip_outcome(harness: &mut Harness<Editor>) -> String {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         harness.run_steps(1);
-        if has_widget(&harness, "media.export.cancel") || clip_toast(&harness).is_some() {
-            break;
-        }
-        assert!(Instant::now() < deadline, "export neither ran nor finished");
-        std::thread::sleep(Duration::from_millis(2));
-    }
-    if has_widget(&harness, "media.export.cancel") {
-        open_menu(&mut harness, "media.asset.1");
-        let (enabled, reason) = export_item(&harness);
-        if has_widget(&harness, "media.export.cancel") {
-            assert!(!enabled);
-            assert_eq!(reason.as_deref(), Some("An export is already running"));
-        }
-        harness.key_press(egui::Key::Escape);
-        harness.run_steps(2);
-        if has_widget(&harness, "media.export.cancel") {
-            click(&mut harness, "media.export.cancel");
-        }
-    }
-
-    // Cancel or the failing source ends the job; the strip goes and one outcome toast remains.
-    let deadline = Instant::now() + Duration::from_secs(10);
-    let toast = loop {
-        harness.run_steps(1);
-        if !has_widget(&harness, "media.export.cancel") {
-            if let Some(toast) = clip_toast(&harness) {
-                break toast;
+        if !has_widget(harness, "media.export.cancel") {
+            if let Some(toast) = clip_toast(harness) {
+                return toast;
             }
         }
         assert!(
@@ -856,19 +949,7 @@ fn clip_export_menu_refuses_with_reason_and_reports_each_outcome() {
             "export never reported an outcome"
         );
         std::thread::sleep(Duration::from_millis(2));
-    };
-    assert!(
-        toast.starts_with("Clip export cancelled") || toast.starts_with("Clip export failed"),
-        "{toast}"
-    );
-    if toast.starts_with("Clip export failed") {
-        // The snapshot has no per-file results, so the copy says so and names no count.
-        assert!(
-            toast.contains("per-clip results are not reported"),
-            "{toast}"
-        );
     }
-    assert!(Arc::ptr_eq(&before, harness.state().session.project()));
 }
 
 fn open_menu(harness: &mut Harness<Editor>, id: &str) {

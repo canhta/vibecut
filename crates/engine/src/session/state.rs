@@ -75,8 +75,21 @@ pub struct Session {
     timeline_preview: bool,
     grouping: bool,
     ripple: bool,
+    /// The render source seam `export.clips` reads through. Unset, the job reads files directly.
+    pub(crate) asset_export_sources:
+        Option<Arc<dyn Fn() -> Box<dyn render::SourceProvider> + Send + Sync>>,
 }
 impl Session {
+    /// Lend the render source seam `export.clips` reads through. The desktop passes the sources
+    /// its playback uses; the CLI leaves it unset and reads files directly.
+    pub fn set_asset_export_sources(
+        &mut self,
+        sources: impl Fn() -> Box<dyn render::SourceProvider> + Send + Sync + 'static,
+    ) {
+        let sources: Arc<dyn Fn() -> Box<dyn render::SourceProvider> + Send + Sync> =
+            Arc::new(sources);
+        self.asset_export_sources = Some(sources);
+    }
     /// Retain 1..=1000 undo snapshots plus current/pending/active transaction snapshots.
     /// Candidates copy metadata; no media payload is copied.
     pub fn new(project: Project, history_limit: usize) -> Result<Self> {
@@ -131,6 +144,7 @@ impl Session {
             timeline_preview: false,
             grouping: false,
             ripple: false,
+            asset_export_sources: None,
         })
     }
     /// Create the default canvas/timeline through the registered lifecycle command.

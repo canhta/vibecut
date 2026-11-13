@@ -244,10 +244,11 @@ impl Editor {
         Self::new(session, playback, preferences)
     }
     fn with_session(
-        session: crate::services::lifecycle::EditorSession,
+        mut session: crate::services::lifecycle::EditorSession,
         playback: Playback,
         preferences: Preferences,
     ) -> Self {
+        session.set_asset_export_sources(playback.export_sources());
         let font_error = libraries::fonts::FontStore::native()
             .and_then(|store| store.load_project(session.project()))
             .err()

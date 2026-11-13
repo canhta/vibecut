@@ -510,6 +510,19 @@ pub fn submit_asset_exports(
     input: CacheKey,
     plan: Vec<AssetExport>,
 ) -> Result<(JobId, CancelToken)> {
+    submit_asset_exports_with_sources(runner, input, plan, || {
+        Box::new(render::FileSources::default())
+    })
+}
+
+/// [`submit_asset_exports`] with the caller's render source seam. Each output asks for its own
+/// provider, so the seam sees every file the job reads.
+pub fn submit_asset_exports_with_sources(
+    runner: &mut JobRunner,
+    input: CacheKey,
+    plan: Vec<AssetExport>,
+    sources: impl Fn() -> Box<dyn render::SourceProvider> + Send + Sync + 'static,
+) -> Result<(JobId, CancelToken)> {
     let count = plan.len();
     runner.submit::<RuntimeError>(
         JobSpec {
@@ -538,7 +551,7 @@ pub fn submit_asset_exports(
                     export.range,
                     &export.settings,
                     &export.path,
-                    &mut render::FileSources::default(),
+                    sources().as_mut(),
                     &hooks,
                 )?;
             }
