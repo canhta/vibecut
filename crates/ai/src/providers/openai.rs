@@ -16,7 +16,7 @@ use std::fmt;
 use std::sync::Arc;
 pub use translation::*;
 
-use crate::transport::{ApiKey, Multipart, wav};
+use crate::foundation::transport::{ApiKey, Multipart, wav};
 use ::transport::{HttpRequest, HttpResponse, HttpTransport, MAX_RESPONSE_BYTES};
 
 /// The only production model admitted here. Deprecated transcription models are refused.

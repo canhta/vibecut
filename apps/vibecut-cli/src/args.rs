@@ -209,7 +209,7 @@ mod exit_codes {
             ),
             row!(
                 E::Runtime(engine::RuntimeError::Transfer(ai::Error::Chapters(
-                    ai::chapters::ChapterRefusal::EmptyTranscript
+                    ai::text::chapters::ChapterRefusal::EmptyTranscript
                 ))),
                 "rejected",
                 5

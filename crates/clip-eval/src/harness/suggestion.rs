@@ -4,7 +4,7 @@ use super::{NoHooks, RangeReport, SuggestionReport};
 use crate::budget::Budget;
 use crate::label::ResolvedSettings;
 use crate::{Error, Result};
-use ai::clips::{ClipInput, ClipSource, ClipSuggester, suggest_clips};
+use ai::text::clips::{ClipInput, ClipSource, ClipSuggester, suggest_clips};
 use ai::{Consent, CostEstimate, Money, Request, Scope};
 use captions::{LanguageProfile, Transcript};
 use shorts::clip_boundaries::{ClipBoundarySettings, snap_clip_boundaries};
@@ -13,7 +13,7 @@ use std::sync::Arc;
 use time::{SourceRange, Tick};
 
 pub(super) struct ProviderRun {
-    pub(super) shorts: Vec<Vec<ai::clips::ClipSourceSegment>>,
+    pub(super) shorts: Vec<Vec<ai::text::clips::ClipSourceSegment>>,
     pub(super) report: Vec<SuggestionReport>,
     pub(super) snap_failures: usize,
 }

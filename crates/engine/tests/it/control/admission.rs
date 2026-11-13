@@ -885,7 +885,7 @@ fn owner_failures_classify_publication_receipts_and_events() {
         ),
         row!(
             E::Models(engine::models::Error::Ai(ai::Error::Chapters(
-                ai::chapters::ChapterRefusal::EmptyTranscript
+                ai::text::chapters::ChapterRefusal::EmptyTranscript
             ))),
             Refused,
             false
@@ -1304,7 +1304,7 @@ fn owner_failures_classify_publication_receipts_and_events() {
         ),
         row!(
             E::Ai(ai::Error::Chapters(
-                ai::chapters::ChapterRefusal::EmptyTranscript
+                ai::text::chapters::ChapterRefusal::EmptyTranscript
             )),
             Refused,
             false

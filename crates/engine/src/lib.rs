@@ -59,7 +59,7 @@ pub use artifacts::snapshot;
 pub use artifacts::thumbnail_strip;
 pub use artifacts::thumbnails;
 pub mod providers;
-pub use ai::clips::{
+pub use ai::text::clips::{
     ClipDropReason, ClipProposal, ClipRole, ClipSettings, ClipSource, ClipSourceSegment,
     DroppedClip,
 };

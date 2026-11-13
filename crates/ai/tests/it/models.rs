@@ -1,4 +1,4 @@
-use ai::{Error, ExecutionHooks, Stage, models::*};
+use ai::{Error, ExecutionHooks, Stage, foundation::models::*};
 use std::io::{self, Cursor, Read};
 struct Hooks(bool);
 impl ExecutionHooks for Hooks {

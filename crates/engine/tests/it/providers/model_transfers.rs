@@ -3,7 +3,7 @@
     clippy::panic,
     reason = "model transfer integration fixtures"
 )]
-use ai::models::{DownloadConsent, Model, ModelFile};
+use ai::foundation::models::{DownloadConsent, Model, ModelFile};
 use engine::{
     ByteBudget, ByteOwner,
     cache::ArtifactCache,

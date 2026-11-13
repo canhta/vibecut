@@ -1,7 +1,7 @@
 #![cfg(feature = "gipformer")]
 use ai::{
     AudioWindow, Error, ExecutionHooks, Operation, Request, SampleRange, Scope, Stage, Transcriber,
-    gipformer::{Device, Gipformer, MAX_SAMPLES, SAMPLE_RATE},
+    recognition::gipformer::{Device, Gipformer, MAX_SAMPLES, SAMPLE_RATE},
 };
 use std::{
     path::{Path, PathBuf},
@@ -32,7 +32,8 @@ fn real_gipformer_retains_untimed_tokens_reuses_and_cancels_isolated_native_work
         .map(|b| f32::from_le_bytes(*b))
         .collect::<Vec<_>>();
     let model =
-        ai::models::suggested_transcriber(&captions::LanguageTag::parse("vi").unwrap()).unwrap();
+        ai::foundation::models::suggested_transcriber(&captions::LanguageTag::parse("vi").unwrap())
+            .unwrap();
     let device = Device::Cpu;
     let adapter = Gipformer::load(
         &model,
@@ -165,7 +166,8 @@ fn real_gipformer_retains_untimed_tokens_reuses_and_cancels_isolated_native_work
 #[test]
 fn released_static_backend_refuses_coreml_instead_of_silent_cpu_fallback() {
     let model =
-        ai::models::suggested_transcriber(&captions::LanguageTag::parse("vi").unwrap()).unwrap();
+        ai::foundation::models::suggested_transcriber(&captions::LanguageTag::parse("vi").unwrap())
+            .unwrap();
     assert!(matches!(
         Gipformer::load(
             &model,

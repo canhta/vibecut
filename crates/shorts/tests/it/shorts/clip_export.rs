@@ -4,7 +4,7 @@
     clippy::indexing_slicing,
     reason = "validated synthetic and oracle fixtures"
 )]
-use ai::clips::{ClipRole, ClipSourceSegment};
+use ai::text::clips::{ClipRole, ClipSourceSegment};
 use captions::{Cue, CueText, CueTrack, Format, LanguageTag};
 use engine::jobs::{JobRunner, JobSnapshot, JobState, RunnerConfig, SystemClock};
 use engine::{ByteBudget, control::Error as EngineError};

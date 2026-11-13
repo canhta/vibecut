@@ -4,14 +4,14 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
-use ai::elevenlabs::speech::{
+use ai::foundation::transport::ApiKey;
+use ai::providers::elevenlabs::speech::{
     ElevenLabsSpeech, ElevenLabsSpeechSettings, LoggingMode, SAMPLE_RATE, SpeechSpeed,
 };
 use ai::speech::{
     SpeechAudio, SpeechFormat, SpeechLanguage, SpeechOutput, SpeechRequest, SpeechSynthesizer,
     SpeechVoice, SynthesisConsent, SynthesisEstimate, VoiceCategory, synthesize,
 };
-use ai::transport::ApiKey;
 use ai::{Error, ExecutionHooks, Money, ProviderConfig, Stage};
 use captions::{LanguageTag, NfcText};
 use serde_json::{Value, json};

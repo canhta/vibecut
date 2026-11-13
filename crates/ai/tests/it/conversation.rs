@@ -7,14 +7,14 @@
 //! Streamed tool-use conversations over both adapters. Every behaviour is a row
 //! over the two providers; the scripted transport panics on an unexpected request,
 //! so "refused before any network call" is proved by an empty script.
-use ai::anthropic::{ANTHROPIC_VERSION, ENDPOINT as ANTHROPIC_ENDPOINT};
-use ai::conversation::{
+use ai::foundation::transport::ApiKey;
+use ai::providers::anthropic::{ANTHROPIC_VERSION, ENDPOINT as ANTHROPIC_ENDPOINT};
+use ai::providers::openai::TRANSLATION_ENDPOINT as OPENAI_RESPONSES;
+use ai::text::conversation::{
     AgentChatConsent, AgentChatLimits, AgentChatScope, AnthropicChat, ChatEvent, ChatModel,
     ChatRequest, Conversation, DataKind, Message, OpenAiChat, ToolInput, ToolResult, ToolSpec,
     Usage, default_model, disclosure,
 };
-use ai::openai::TRANSLATION_ENDPOINT as OPENAI_RESPONSES;
-use ai::transport::ApiKey;
 use ai::{Error, ExecutionHooks, Money, ProviderConfig, Stage};
 use serde_json::{Value, json};
 use std::collections::{BTreeSet, VecDeque};

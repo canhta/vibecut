@@ -10,7 +10,7 @@ use crate::session::{
 };
 use crate::transfer::{header, response};
 use crate::{ByteBudget, ByteOwner};
-use ai::models::{DownloadConsent, Model};
+use ai::foundation::models::{DownloadConsent, Model};
 use std::{
     fs::{self, File},
     io::{self, Read, Seek, SeekFrom, Write},
@@ -481,7 +481,7 @@ fn download(
         }
         file.seek(SeekFrom::Start(0)).map_err(storage)?;
         ctx.progress(JobStage::Verify, 0.0)?;
-        if let Err(error) = ai::models::verify_file(&mut file, expected, ctx) {
+        if let Err(error) = ai::foundation::models::verify_file(&mut file, expected, ctx) {
             if matches!(error, ai::Error::ModelIntegrity) {
                 reset(&mut edit, &file, index)?;
             }

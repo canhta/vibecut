@@ -814,7 +814,7 @@ impl ai::Aligner for ProbeAligner {
     fn capabilities(&self, _: &Scope) -> Capabilities {
         Capabilities {
             model: self.config.model().clone(),
-            mode: ai::alignment::MODE.into(),
+            mode: ai::recognition::alignment::MODE.into(),
             operation: Operation::Align,
             languages: vec![lang("en")],
             target_languages: Vec::new(),
@@ -1185,7 +1185,7 @@ fn caption_submit(
 #[test]
 fn registry_maximum_models_require_scoped_unknown_price_for_generation_and_translation() {
     use crate::support::control::{Allow, caller, finish, ok};
-    use ai::transport::ApiKey;
+    use ai::foundation::transport::ApiKey;
     use engine::providers::{CatalogOperation, ConsentPrompt, Cost, UploadRequest};
     use serde_json::{Value, json};
     use std::sync::Mutex;
@@ -1196,7 +1196,7 @@ fn registry_maximum_models_require_scoped_unknown_price_for_generation_and_trans
     }
     impl HttpTransport for Transport {
         fn send(&self, request: HttpRequest) -> Result<HttpResponse, transport::Error> {
-            let body = if request.url == ai::elevenlabs::ENDPOINT {
+            let body = if request.url == ai::providers::elevenlabs::ENDPOINT {
                 assert!(
                     request
                         .body
@@ -1209,7 +1209,7 @@ fn registry_maximum_models_require_scoped_unknown_price_for_generation_and_trans
                     {"text":"world.","start":0.5,"end":1.5,"type":"word"}
                 ]})
             } else {
-                assert_eq!(request.url, ai::openai::TRANSLATION_ENDPOINT);
+                assert_eq!(request.url, ai::providers::openai::TRANSLATION_ENDPOINT);
                 let wire: Value = serde_json::from_slice(&request.body).unwrap();
                 assert_eq!(wire["model"], self.model);
                 self.calls.lock().unwrap().push(Operation::Translate);
@@ -1267,14 +1267,16 @@ fn registry_maximum_models_require_scoped_unknown_price_for_generation_and_trans
     let mut references = Vec::new();
     for suffix in ['a', 'b'] {
         let model = format!("{}{suffix}", "x".repeat(255));
-        let asr_config = ai::elevenlabs::ElevenLabsTranscriber::provider_config(&model).unwrap();
-        let translation_config = ai::openai::OpenAiTranslator::provider_config(&model).unwrap();
+        let asr_config =
+            ai::providers::elevenlabs::ElevenLabsTranscriber::provider_config(&model).unwrap();
+        let translation_config =
+            ai::providers::openai::OpenAiTranslator::provider_config(&model).unwrap();
         let transport = Arc::new(Transport {
             model: model.clone(),
             calls: Mutex::new(Vec::new()),
         });
         let asr = Arc::new(
-            ai::elevenlabs::ElevenLabsTranscriber::new(
+            ai::providers::elevenlabs::ElevenLabsTranscriber::new(
                 asr_config.clone(),
                 ApiKey::new("fixture").unwrap(),
                 transport.clone(),
@@ -1282,7 +1284,7 @@ fn registry_maximum_models_require_scoped_unknown_price_for_generation_and_trans
             .unwrap(),
         );
         let translator = Arc::new(
-            ai::openai::OpenAiTranslator::new(
+            ai::providers::openai::OpenAiTranslator::new(
                 translation_config.clone(),
                 ApiKey::new("fixture").unwrap(),
                 transport.clone(),
@@ -1294,7 +1296,7 @@ fn registry_maximum_models_require_scoped_unknown_price_for_generation_and_trans
                 TranscriptionProvider::ElevenLabs {
                     model: model.clone(),
                 },
-                ai::elevenlabs::MODE.into(),
+                ai::providers::elevenlabs::MODE.into(),
                 asr,
                 None,
                 Some(TranslationProvider::OpenAi {
@@ -1429,7 +1431,7 @@ fn registry_maximum_models_require_scoped_unknown_price_for_generation_and_trans
             .unwrap());
         let adapter = engine::transcript::SubtitleTranslator::from_parts(
             translator,
-            ai::openai::TRANSLATION_MODE.into(),
+            ai::providers::openai::TRANSLATION_MODE.into(),
         );
         engine::transcript::translate_selected(
             &mut session,

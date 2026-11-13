@@ -10,8 +10,8 @@ use super::{
     AssistantTurn, ChatEvent, ChatModel, ChatReply, ChatRequest, MAX_REPLY_BYTES, Message,
     PreparedRequest, Replay, ToolCall, ToolInput, Usage,
 };
+use crate::foundation::transport::ApiKey;
 use crate::remote;
-use crate::transport::ApiKey;
 use crate::{Error, ExecutionHooks, ProviderConfig};
 use ::transport::{HttpRequest, StreamTransport};
 use serde_json::{Value, json};
@@ -47,7 +47,7 @@ impl OpenAiChat {
             model,
             SETTINGS,
             BACKEND,
-            crate::openai::BASE_URL,
+            crate::providers::openai::BASE_URL,
             "openai",
             "OPENAI_API_KEY",
         )
@@ -61,7 +61,7 @@ impl OpenAiChat {
             &config,
             Some(SETTINGS),
             BACKEND,
-            crate::openai::BASE_URL,
+            crate::providers::openai::BASE_URL,
             None,
         )?;
         Ok(Self {
@@ -137,7 +137,7 @@ impl ChatModel for OpenAiChat {
             self.transport.as_ref(),
             HttpRequest {
                 method: "POST",
-                url: crate::openai::TRANSLATION_ENDPOINT.into(),
+                url: crate::providers::openai::TRANSLATION_ENDPOINT.into(),
                 headers: vec![
                     (
                         "Authorization".into(),
@@ -149,7 +149,7 @@ impl ChatModel for OpenAiChat {
                 body: request.body,
             },
             &self.config,
-            crate::openai::status_error,
+            crate::providers::openai::status_error,
         )?;
         read(&mut events, on_event, hooks)
     }

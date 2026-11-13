@@ -4,8 +4,8 @@
     reason = "offline fixtures and assertions"
 )]
 use ::transport::{HttpRequest, HttpResponse, HttpTransport, MAX_RESPONSE_BYTES};
-use ai::transport::ApiKey;
-use ai::{openai::*, *};
+use ai::foundation::transport::ApiKey;
+use ai::{providers::openai::*, *};
 use captions::{LanguageTag, NfcText};
 use serde_json::{Value, json};
 use std::sync::{
@@ -279,7 +279,7 @@ fn shared_parser_rejects_refusal_incomplete_malformed_oversize_and_extra_message
             headers: vec![],
             body: serde_json::to_vec(&body).unwrap(),
         };
-        let parsed = structured::parse::<Value>(&r);
+        let parsed = ai::text::structured::parse::<Value>(&r);
         match kind {
             0 => assert!(matches!(parsed, Err(Error::Incomplete))),
             1 => assert!(matches!(parsed, Err(Error::Refused))),
@@ -288,7 +288,7 @@ fn shared_parser_rejects_refusal_incomplete_malformed_oversize_and_extra_message
     }
     for body in [b"{truncated".to_vec(), vec![b'x'; MAX_RESPONSE_BYTES + 1]] {
         assert!(
-            structured::parse::<Value>(&HttpResponse {
+            ai::text::structured::parse::<Value>(&HttpResponse {
                 status: 200,
                 headers: vec![],
                 body
@@ -300,7 +300,7 @@ fn shared_parser_rejects_refusal_incomplete_malformed_oversize_and_extra_message
     let item = extra["output"][0].clone();
     extra["output"].as_array_mut().unwrap().push(item);
     assert!(matches!(
-        structured::parse::<Value>(&HttpResponse {
+        ai::text::structured::parse::<Value>(&HttpResponse {
             status: 200,
             headers: vec![],
             body: serde_json::to_vec(&extra).unwrap()

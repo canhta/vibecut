@@ -1023,14 +1023,14 @@ pub(crate) fn finish(r: &mut JobRunner, id: engine::jobs::JobId) {
 pub(crate) struct FixtureChapters {
     config: ai::ProviderConfig,
 }
-impl ai::chapters::ChapterGenerator for FixtureChapters {
+impl ai::text::chapters::ChapterGenerator for FixtureChapters {
     fn config(&self) -> &ai::ProviderConfig {
         &self.config
     }
     fn capabilities(&self, scope: &ai::Scope) -> ai::Capabilities {
         ai::Capabilities {
             model: self.config.model().clone(),
-            mode: ai::chapters::MODE.into(),
+            mode: ai::text::chapters::MODE.into(),
             operation: ai::Operation::GenerateChapters,
             languages: vec![scope.source_language.clone()],
             target_languages: Vec::new(),
@@ -1038,7 +1038,7 @@ impl ai::chapters::ChapterGenerator for FixtureChapters {
             diarization: ai::Support::Unsupported,
             live_audio_input: ai::Support::Unsupported,
             file_result_stream: ai::Support::Unsupported,
-            max_upload_bytes: Some(ai::chapters::MAX_WIRE),
+            max_upload_bytes: Some(ai::text::chapters::MAX_WIRE),
             max_duration_micros: None,
             evidence: ai::Evidence::Advertised,
             revision: "chapters-v1".into(),
@@ -1049,24 +1049,24 @@ impl ai::chapters::ChapterGenerator for FixtureChapters {
     }
     fn propose(
         &self,
-        input: &ai::chapters::ChapterInput,
+        input: &ai::text::chapters::ChapterInput,
         _: &ai::Request<'_>,
         _: &dyn ai::ExecutionHooks,
-    ) -> Result<ai::chapters::ChapterProposal, ai::Error> {
+    ) -> Result<ai::text::chapters::ChapterProposal, ai::Error> {
         let first = input.segments.first().ok_or(ai::Error::Schema)?;
-        let mut chapters = vec![ai::chapters::ChapterProposalEntry {
+        let mut chapters = vec![ai::text::chapters::ChapterProposalEntry {
             start_segment_id: first.id.clone(),
             title: "Opening".into(),
         }];
         if input.segments.len() > 1
             && let Some(last) = input.segments.last()
         {
-            chapters.push(ai::chapters::ChapterProposalEntry {
+            chapters.push(ai::text::chapters::ChapterProposalEntry {
                 start_segment_id: last.id.clone(),
                 title: "Closing".into(),
             });
         }
-        Ok(ai::chapters::ChapterProposal {
+        Ok(ai::text::chapters::ChapterProposal {
             title: "Chapters".into(),
             description: "Generated chapters.".into(),
             chapters,
@@ -1077,14 +1077,14 @@ impl ai::chapters::ChapterGenerator for FixtureChapters {
 pub(crate) struct FixtureFillers {
     config: ai::ProviderConfig,
 }
-impl ai::fillers::FillerClassifier for FixtureFillers {
+impl ai::text::fillers::FillerClassifier for FixtureFillers {
     fn config(&self) -> &ai::ProviderConfig {
         &self.config
     }
     fn capabilities(&self, scope: &ai::Scope) -> ai::Capabilities {
         ai::Capabilities {
             model: self.config.model().clone(),
-            mode: ai::fillers::MODE.into(),
+            mode: ai::text::fillers::MODE.into(),
             operation: ai::Operation::ClassifyFillers,
             languages: vec![scope.source_language.clone()],
             target_languages: Vec::new(),
@@ -1092,7 +1092,7 @@ impl ai::fillers::FillerClassifier for FixtureFillers {
             diarization: ai::Support::Unsupported,
             live_audio_input: ai::Support::Unsupported,
             file_result_stream: ai::Support::Unsupported,
-            max_upload_bytes: Some(ai::fillers::MAX_WIRE),
+            max_upload_bytes: Some(ai::text::fillers::MAX_WIRE),
             max_duration_micros: None,
             evidence: ai::Evidence::Advertised,
             revision: "fillers-v1".into(),
@@ -1103,34 +1103,34 @@ impl ai::fillers::FillerClassifier for FixtureFillers {
     }
     fn classify(
         &self,
-        input: &ai::fillers::FillerInput,
+        input: &ai::text::fillers::FillerInput,
         _: &ai::Request<'_>,
         _: &dyn ai::ExecutionHooks,
-    ) -> Result<ai::fillers::FillerProposal, ai::Error> {
+    ) -> Result<ai::text::fillers::FillerProposal, ai::Error> {
         let fillers = input
             .segments
             .iter()
             .filter_map(|segment| segment.words.last())
-            .map(|word| ai::fillers::FillerFinding {
+            .map(|word| ai::text::fillers::FillerFinding {
                 id: word.id.clone(),
                 kind: captions::FillerKind::FilledPause,
             })
             .collect();
-        Ok(ai::fillers::FillerProposal { fillers })
+        Ok(ai::text::fillers::FillerProposal { fillers })
     }
 }
 /// Offline emphasis adapter: picks the last word of every cue.
 pub(crate) struct FixtureEmphasis {
     config: ai::ProviderConfig,
 }
-impl ai::emphasis::EmphasisSelector for FixtureEmphasis {
+impl ai::text::emphasis::EmphasisSelector for FixtureEmphasis {
     fn config(&self) -> &ai::ProviderConfig {
         &self.config
     }
     fn capabilities(&self, scope: &ai::Scope) -> ai::Capabilities {
         ai::Capabilities {
             model: self.config.model().clone(),
-            mode: ai::emphasis::MODE.into(),
+            mode: ai::text::emphasis::MODE.into(),
             operation: ai::Operation::SelectEmphasis,
             languages: vec![scope.source_language.clone()],
             target_languages: Vec::new(),
@@ -1138,7 +1138,7 @@ impl ai::emphasis::EmphasisSelector for FixtureEmphasis {
             diarization: ai::Support::Unsupported,
             live_audio_input: ai::Support::Unsupported,
             file_result_stream: ai::Support::Unsupported,
-            max_upload_bytes: Some(ai::emphasis::MAX_WIRE),
+            max_upload_bytes: Some(ai::text::emphasis::MAX_WIRE),
             max_duration_micros: None,
             evidence: ai::Evidence::Advertised,
             revision: "emphasis-v1".into(),
@@ -1149,10 +1149,10 @@ impl ai::emphasis::EmphasisSelector for FixtureEmphasis {
     }
     fn select(
         &self,
-        input: &ai::emphasis::EmphasisInput,
+        input: &ai::text::emphasis::EmphasisInput,
         _: &ai::Request<'_>,
         _: &dyn ai::ExecutionHooks,
-    ) -> Result<ai::emphasis::EmphasisProposal, ai::Error> {
+    ) -> Result<ai::text::emphasis::EmphasisProposal, ai::Error> {
         let selections = input
             .segments
             .iter()
@@ -1160,19 +1160,21 @@ impl ai::emphasis::EmphasisSelector for FixtureEmphasis {
                 segment
                     .words
                     .last()
-                    .map(|word| ai::emphasis::EmphasisSelection {
+                    .map(|word| ai::text::emphasis::EmphasisSelection {
                         segment: segment.id.clone(),
                         positions: vec![word.position],
                     })
             })
             .collect();
-        Ok(ai::emphasis::EmphasisProposal { selections })
+        Ok(ai::text::emphasis::EmphasisProposal { selections })
     }
 }
 pub(crate) fn fixture_chapters() -> engine::providers::TextAccess {
-    let chapter = ai::chapters::OpenAiChapterGenerator::provider_config("gpt-6-luna").unwrap();
-    let filler = ai::fillers::OpenAiFillerClassifier::provider_config("gpt-6-luna").unwrap();
-    let emphasis = ai::emphasis::OpenAiEmphasisSelector::provider_config("gpt-6-luna").unwrap();
+    let chapter =
+        ai::text::chapters::OpenAiChapterGenerator::provider_config("gpt-6-luna").unwrap();
+    let filler = ai::text::fillers::OpenAiFillerClassifier::provider_config("gpt-6-luna").unwrap();
+    let emphasis =
+        ai::text::emphasis::OpenAiEmphasisSelector::provider_config("gpt-6-luna").unwrap();
     engine::providers::TextAccess::new(
         Arc::new(FixtureChapters {
             config: chapter.clone(),

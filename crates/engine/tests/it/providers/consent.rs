@@ -1,6 +1,6 @@
 //! Upload consent shows each provider's own disclosure, field by field.
 #![allow(clippy::unwrap_used, reason = "offline consent fixtures")]
-use ai::transport::ApiKey;
+use ai::foundation::transport::ApiKey;
 use ai::{
     Location, ProviderConfig, SampleRange, Scope, Transcriber, TranslationSegment,
     TranslationWindow, Translator,
@@ -95,28 +95,30 @@ fn every_provider_shows_its_own_disclosure_fields() {
     let key = || ApiKey::new("test").unwrap();
     let transport = || -> Arc<dyn HttpTransport> { Arc::new(NoTransport) };
 
-    let openai = ai::openai::OpenAiTranscriber::new(
-        ai::openai::OpenAiTranscriber::provider_config("gpt-transcribe").unwrap(),
+    let openai = ai::providers::openai::OpenAiTranscriber::new(
+        ai::providers::openai::OpenAiTranscriber::provider_config("gpt-transcribe").unwrap(),
         key(),
         transport(),
     )
     .unwrap();
-    let openai_scope = audio_scope(openai.config().clone(), ai::openai::MODE);
-    let elevenlabs = ai::elevenlabs::ElevenLabsTranscriber::new(
-        ai::elevenlabs::ElevenLabsTranscriber::provider_config("scribe_v2").unwrap(),
+    let openai_scope = audio_scope(openai.config().clone(), ai::providers::openai::MODE);
+    let elevenlabs = ai::providers::elevenlabs::ElevenLabsTranscriber::new(
+        ai::providers::elevenlabs::ElevenLabsTranscriber::provider_config("scribe_v2").unwrap(),
         key(),
         transport(),
     )
     .unwrap();
-    let elevenlabs_scope = audio_scope(elevenlabs.config().clone(), ai::elevenlabs::MODE);
-    let openai_translator = ai::openai::OpenAiTranslator::new(
-        ai::openai::OpenAiTranslator::provider_config("gpt-6.1-sol").unwrap(),
+    let elevenlabs_scope =
+        audio_scope(elevenlabs.config().clone(), ai::providers::elevenlabs::MODE);
+    let openai_translator = ai::providers::openai::OpenAiTranslator::new(
+        ai::providers::openai::OpenAiTranslator::provider_config("gpt-6.1-sol").unwrap(),
         key(),
         transport(),
     )
     .unwrap();
-    let anthropic_translator = ai::anthropic::AnthropicTranslator::new(
-        ai::anthropic::AnthropicTranslator::provider_config("claude-sonnet-5-5").unwrap(),
+    let anthropic_translator = ai::providers::anthropic::AnthropicTranslator::new(
+        ai::providers::anthropic::AnthropicTranslator::provider_config("claude-sonnet-5-5")
+            .unwrap(),
         key(),
         transport(),
     )
@@ -125,12 +127,12 @@ fn every_provider_shows_its_own_disclosure_fields() {
     let payload_bytes = to_en.consent_text().unwrap().as_str().len() as u64;
     let openai_translation = translation_scope(
         openai_translator.config(),
-        ai::openai::TRANSLATION_MODE,
+        ai::providers::openai::TRANSLATION_MODE,
         &to_en,
     );
     let anthropic_translation = translation_scope(
         anthropic_translator.config(),
-        ai::anthropic::TRANSLATION_MODE,
+        ai::providers::anthropic::TRANSLATION_MODE,
         &to_en,
     );
 
@@ -318,7 +320,7 @@ fn a_local_provider_has_no_upload_to_consent_to() {
 
 #[test]
 fn stored_consent_requires_exact_configuration_and_cost_ceiling() {
-    let config = ai::chapters::OpenAiChapterGenerator::provider_config("gpt-6-luna").unwrap();
+    let config = ai::text::chapters::OpenAiChapterGenerator::provider_config("gpt-6-luna").unwrap();
     let consent = StoredConsent::grant([(config.clone(), ai::Money::new("USD", 10).unwrap())]);
     for (field, value) in [
         ("settings_fingerprint", "different-settings"),
@@ -394,14 +396,15 @@ fn unknown_model_upload_requires_separate_acknowledgement_and_rejects_forged_dis
             Ok(())
         }
     }
-    let config = ai::openai::OpenAiTranscriber::provider_config("fixture-custom-asr").unwrap();
-    let adapter = ai::openai::OpenAiTranscriber::new(
+    let config =
+        ai::providers::openai::OpenAiTranscriber::provider_config("fixture-custom-asr").unwrap();
+    let adapter = ai::providers::openai::OpenAiTranscriber::new(
         config.clone(),
         ApiKey::new("synthetic").unwrap(),
         Arc::new(NoTransport),
     )
     .unwrap();
-    let scope = audio_scope(config.clone(), ai::openai::MODE);
+    let scope = audio_scope(config.clone(), ai::providers::openai::MODE);
     let estimate = adapter.estimate(&scope);
     assert_eq!(estimate, ai::CostEstimate::Unknown);
     let request = UploadRequest::for_scope(
@@ -451,6 +454,7 @@ fn unknown_model_upload_requires_separate_acknowledgement_and_rejects_forged_dis
         })
         .unwrap()
     };
-    let other = ai::openai::OpenAiTranscriber::provider_config("fixture-other-asr").unwrap();
+    let other =
+        ai::providers::openai::OpenAiTranscriber::provider_config("fixture-other-asr").unwrap();
     assert_ne!(key(&config), key(&other));
 }

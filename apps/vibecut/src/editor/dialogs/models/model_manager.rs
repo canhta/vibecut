@@ -8,7 +8,7 @@ use crate::{
     i18n::{Locale, Text},
     kit as theme,
 };
-use ai::models::{DownloadConsent, Model};
+use ai::foundation::models::{DownloadConsent, Model};
 use engine::{
     ByteBudget,
     control::Error as EngineError,
@@ -128,7 +128,7 @@ impl ModelManager {
             128,
             Arc::new(transport::UreqTransport::new()),
         )?;
-        Self::with_transfers(budget, ai::models::catalog()?, transfers)
+        Self::with_transfers(budget, ai::foundation::models::catalog()?, transfers)
     }
     /// Injection boundary for tests and composition: the caller owns cache/transport/IO.
     pub fn with_transfers(
@@ -148,7 +148,7 @@ impl ModelManager {
             let tag = captions::LanguageTag::parse(language).map_err(|error| {
                 Error::Engine(EngineError::Edit(engine::EditError::Captions(error)))
             })?;
-            if let Ok(model) = ai::models::suggested_transcriber(&tag) {
+            if let Ok(model) = ai::foundation::models::suggested_transcriber(&tag) {
                 suggested.insert(model.id);
             }
         }

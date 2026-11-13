@@ -4,7 +4,9 @@
     clippy::indexing_slicing,
     reason = "explicit local model fixture"
 )]
-use ai::{alignment::CandleAligner, *};
+use ai::foundation::models;
+use ai::recognition::alignment::{self, CandleAligner};
+use ai::*;
 use captions::{LanguageTag, NfcText};
 use std::{
     path::PathBuf,

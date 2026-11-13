@@ -5,7 +5,7 @@
 //! source coordinates and caches the resulting captions transcript.
 use crate::budget::Budget;
 use crate::{Error, Result};
-use ai::elevenlabs::ElevenLabsTranscriber;
+use ai::providers::elevenlabs::ElevenLabsTranscriber;
 use ai::{
     AudioWindow, Consent, CostEstimate, ExecutionHooks, Money, Request, SampleRange, Scope, Stage,
     Transcriber,
@@ -91,7 +91,7 @@ pub fn prepare(
                 }
                 let scope = Scope::transcription(
                     transcriber.config().clone(),
-                    ai::elevenlabs::MODE.into(),
+                    ai::providers::elevenlabs::MODE.into(),
                     language.clone(),
                     sample_range,
                     SAMPLE_RATE,

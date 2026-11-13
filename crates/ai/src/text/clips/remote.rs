@@ -3,8 +3,8 @@ use super::{
     ANTHROPIC_SETTINGS, ClipInput, ClipProposal, ClipSource, ClipSuggester, MAX_WIRE, MODE,
     OPENAI_SETTINGS, prepare, validate,
 };
+use crate::foundation::transport::ApiKey;
 use crate::remote::{self, UploadDisclosure};
-use crate::transport::ApiKey;
 use crate::{
     Capabilities, CostEstimate, Error, ExecutionHooks, Operation, ProviderConfig, Request, Scope,
     Stage,
@@ -25,7 +25,7 @@ enum Client {
         key: ApiKey,
         transport: Arc<dyn HttpTransport>,
     },
-    Anthropic(crate::anthropic::MessagesClient),
+    Anthropic(crate::providers::anthropic::MessagesClient),
 }
 struct Remote {
     config: ProviderConfig,
@@ -43,16 +43,16 @@ fn admission(
     if anthropic {
         (
             ANTHROPIC_SETTINGS,
-            crate::anthropic::BACKEND,
-            crate::anthropic::BASE_URL,
+            crate::providers::anthropic::BACKEND,
+            crate::providers::anthropic::BASE_URL,
             "anthropic",
             "ANTHROPIC_API_KEY",
         )
     } else {
         (
             OPENAI_SETTINGS,
-            crate::openai::BACKEND,
-            crate::openai::BASE_URL,
+            crate::providers::openai::BACKEND,
+            crate::providers::openai::BASE_URL,
             "openai",
             "OPENAI_API_KEY",
         )
@@ -68,7 +68,9 @@ impl Remote {
         let (settings, backend, base_url, _, _) = admission(anthropic);
         remote::admit(&config, Some(settings), backend, base_url, None)?;
         let client = if anthropic {
-            Client::Anthropic(crate::anthropic::MessagesClient::new(key, transport))
+            Client::Anthropic(crate::providers::anthropic::MessagesClient::new(
+                key, transport,
+            ))
         } else {
             Client::OpenAi { key, transport }
         };
@@ -77,12 +79,15 @@ impl Remote {
     fn links(&self) -> [(&'static str, &'static str); 2] {
         match self.client {
             Client::OpenAi { .. } => [
-                ("endpoint", crate::openai::TRANSLATION_ENDPOINT),
+                ("endpoint", crate::providers::openai::TRANSLATION_ENDPOINT),
                 ("retention_training_policy", OPENAI_POLICY_URL),
             ],
             Client::Anthropic(_) => [
-                ("endpoint", crate::anthropic::ENDPOINT),
-                ("retention_training_policy", crate::anthropic::POLICY_URL),
+                ("endpoint", crate::providers::anthropic::ENDPOINT),
+                (
+                    "retention_training_policy",
+                    crate::providers::anthropic::POLICY_URL,
+                ),
             ],
         }
     }
@@ -102,7 +107,7 @@ impl Remote {
         let payload = input.consent_text()?;
         let body = match self.client {
             Client::OpenAi { .. } => {
-                json!({"model":self.config.model().as_str(),"store":false,"background":false,"service_tier":"default","max_output_tokens":MAX_OUTPUT,"instructions":INSTRUCTIONS,"input":payload.as_str(),"text":{"format":crate::structured::format("clips",schema)}})
+                json!({"model":self.config.model().as_str(),"store":false,"background":false,"service_tier":"default","max_output_tokens":MAX_OUTPUT,"instructions":INSTRUCTIONS,"input":payload.as_str(),"text":{"format":crate::text::structured::format("clips",schema)}})
             }
             Client::Anthropic(_) => {
                 json!({"model":self.config.model().as_str(),"max_tokens":MAX_OUTPUT,"stream":false,"thinking":{"type":"between_tools"},"system":INSTRUCTIONS,"messages":[{"role":"user","content":payload.as_str()}],"output_config":{"format":{"type":"json_schema","schema":schema}}})
@@ -116,7 +121,7 @@ impl Remote {
         let response = match &self.client {
             Client::OpenAi { key, transport } => transport.send(HttpRequest {
                 method: "POST",
-                url: crate::openai::TRANSLATION_ENDPOINT.into(),
+                url: crate::providers::openai::TRANSLATION_ENDPOINT.into(),
                 headers: vec![
                     ("Authorization".into(), format!("Bearer {}", key.expose())),
                     ("Content-Type".into(), "application/json".into()),
@@ -133,9 +138,9 @@ impl Remote {
             clips: Vec<ClipProposal>,
         }
         let result: Output = match self.client {
-            Client::OpenAi { .. } => crate::structured::parse(&response)?,
+            Client::OpenAi { .. } => crate::text::structured::parse(&response)?,
             Client::Anthropic(_) => {
-                serde_json::from_str(&crate::anthropic::message_text(&response)?)
+                serde_json::from_str(&crate::providers::anthropic::message_text(&response)?)
                     .map_err(|_| Error::Schema)?
             }
         };

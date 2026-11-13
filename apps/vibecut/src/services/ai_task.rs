@@ -125,7 +125,7 @@ mod tests {
     use std::sync::Arc;
     fn upload(model: &str, operation: CatalogOperation) -> UploadRequest {
         UploadRequest {
-            config: ai::chapters::OpenAiChapterGenerator::provider_config(model).unwrap(),
+            config: ai::text::chapters::OpenAiChapterGenerator::provider_config(model).unwrap(),
             operation,
             provider: "OpenAI".into(),
             model: model.into(),

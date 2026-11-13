@@ -67,7 +67,7 @@ fn output_grant_rejects_unselected_parent_before_filesystem_resolution() {
             engine::control::ControlError::Permission
         ))
     ));
-    let document: ai::chapters::ChapterDocument = serde_json::from_value(
+    let document: ai::text::chapters::ChapterDocument = serde_json::from_value(
         engine::registry()
             .iter()
             .find(|entry| entry.id == "chapters.export_sidecars")
@@ -916,14 +916,14 @@ async fn desktop_project_routing_selects_explicit_or_focused_session_and_refuses
 struct NoChapters {
     config: ai::ProviderConfig,
 }
-impl ai::chapters::ChapterGenerator for NoChapters {
+impl ai::text::chapters::ChapterGenerator for NoChapters {
     fn config(&self) -> &ai::ProviderConfig {
         &self.config
     }
     fn capabilities(&self, scope: &ai::Scope) -> ai::Capabilities {
         ai::Capabilities {
             model: self.config.model().clone(),
-            mode: ai::chapters::MODE.into(),
+            mode: ai::text::chapters::MODE.into(),
             operation: ai::Operation::GenerateChapters,
             languages: vec![scope.source_language.clone()],
             target_languages: Vec::new(),
@@ -931,7 +931,7 @@ impl ai::chapters::ChapterGenerator for NoChapters {
             diarization: ai::Support::Unsupported,
             live_audio_input: ai::Support::Unsupported,
             file_result_stream: ai::Support::Unsupported,
-            max_upload_bytes: Some(ai::chapters::MAX_WIRE),
+            max_upload_bytes: Some(ai::text::chapters::MAX_WIRE),
             max_duration_micros: None,
             evidence: ai::Evidence::Advertised,
             revision: "chapters-v1".into(),
@@ -942,24 +942,24 @@ impl ai::chapters::ChapterGenerator for NoChapters {
     }
     fn propose(
         &self,
-        _: &ai::chapters::ChapterInput,
+        _: &ai::text::chapters::ChapterInput,
         _: &ai::Request<'_>,
         _: &dyn ai::ExecutionHooks,
-    ) -> Result<ai::chapters::ChapterProposal, ai::Error> {
+    ) -> Result<ai::text::chapters::ChapterProposal, ai::Error> {
         Err(ai::Error::Unsupported)
     }
 }
 struct NoFillers {
     config: ai::ProviderConfig,
 }
-impl ai::fillers::FillerClassifier for NoFillers {
+impl ai::text::fillers::FillerClassifier for NoFillers {
     fn config(&self) -> &ai::ProviderConfig {
         &self.config
     }
     fn capabilities(&self, scope: &ai::Scope) -> ai::Capabilities {
         ai::Capabilities {
             model: self.config.model().clone(),
-            mode: ai::fillers::MODE.into(),
+            mode: ai::text::fillers::MODE.into(),
             operation: ai::Operation::ClassifyFillers,
             languages: vec![scope.source_language.clone()],
             target_languages: Vec::new(),
@@ -967,7 +967,7 @@ impl ai::fillers::FillerClassifier for NoFillers {
             diarization: ai::Support::Unsupported,
             live_audio_input: ai::Support::Unsupported,
             file_result_stream: ai::Support::Unsupported,
-            max_upload_bytes: Some(ai::fillers::MAX_WIRE),
+            max_upload_bytes: Some(ai::text::fillers::MAX_WIRE),
             max_duration_micros: None,
             evidence: ai::Evidence::Advertised,
             revision: "fillers-v1".into(),
@@ -978,10 +978,10 @@ impl ai::fillers::FillerClassifier for NoFillers {
     }
     fn classify(
         &self,
-        _: &ai::fillers::FillerInput,
+        _: &ai::text::fillers::FillerInput,
         _: &ai::Request<'_>,
         _: &dyn ai::ExecutionHooks,
-    ) -> Result<ai::fillers::FillerProposal, ai::Error> {
+    ) -> Result<ai::text::fillers::FillerProposal, ai::Error> {
         Err(ai::Error::Unsupported)
     }
 }
@@ -994,7 +994,7 @@ fn chapters_generate_needs_the_lent_consent_gate_before_any_upload() {
         10,
     )
     .unwrap();
-    let config = ai::chapters::OpenAiChapterGenerator::provider_config(ai::defaults::model(
+    let config = ai::text::chapters::OpenAiChapterGenerator::provider_config(ai::defaults::model(
         "openai",
         ai::Operation::GenerateChapters,
     ))

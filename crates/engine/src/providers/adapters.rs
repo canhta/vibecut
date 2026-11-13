@@ -5,7 +5,7 @@ use super::catalog::{
 use super::consent::UploadRequest;
 use super::error::{Error, Result};
 use crate::cache::{ArtifactCache, ModelLease};
-use ai::transport::ApiKey;
+use ai::foundation::transport::ApiKey;
 use ai::{ExecutionHooks, SampleRange, Scope};
 use captions::LanguageTag;
 use captions::{LanguageProfile, LanguageRegistry, NfcText};
@@ -165,11 +165,11 @@ impl Providers {
                         .name,
                 )?;
                 let device = if runtime.use_gpu {
-                    ai::whisper::Device::Gpu
+                    ai::recognition::whisper::Device::Gpu
                 } else {
-                    ai::whisper::Device::Cpu
+                    ai::recognition::whisper::Device::Cpu
                 };
-                let value = ai::whisper::Whisper::load(
+                let value = ai::recognition::whisper::Whisper::load(
                     &metadata,
                     &path,
                     device,
@@ -192,11 +192,11 @@ impl Providers {
                     .gipformer_runner
                     .as_deref()
                     .ok_or(Error::RunnerMissing)?;
-                let value = ai::gipformer::Gipformer::load(
+                let value = ai::recognition::gipformer::Gipformer::load(
                     &metadata,
                     lease.directory(),
                     runner,
-                    ai::gipformer::Device::Cpu,
+                    ai::recognition::gipformer::Device::Cpu,
                     runtime.threads,
                     &IdleHooks,
                 )?;
@@ -208,27 +208,27 @@ impl Providers {
                 )
             }
             TranscriptionProvider::OpenAi { model } => {
-                let value = ai::openai::OpenAiTranscriber::new(
-                    ai::openai::OpenAiTranscriber::provider_config(model)?,
+                let value = ai::providers::openai::OpenAiTranscriber::new(
+                    ai::providers::openai::OpenAiTranscriber::provider_config(model)?,
                     credentials.openai()?,
                     Arc::new(UreqTransport::new()),
                 )?;
                 (
                     Arc::new(value) as Arc<dyn ai::Transcriber>,
                     true,
-                    ai::openai::MODE,
+                    ai::providers::openai::MODE,
                 )
             }
             TranscriptionProvider::ElevenLabs { model } => {
-                let value = ai::elevenlabs::ElevenLabsTranscriber::new(
-                    ai::elevenlabs::ElevenLabsTranscriber::provider_config(model)?,
+                let value = ai::providers::elevenlabs::ElevenLabsTranscriber::new(
+                    ai::providers::elevenlabs::ElevenLabsTranscriber::provider_config(model)?,
                     credentials.elevenlabs()?,
                     Arc::new(UreqTransport::new()),
                 )?;
                 (
                     Arc::new(value) as Arc<dyn ai::Transcriber>,
                     false,
-                    ai::elevenlabs::MODE,
+                    ai::providers::elevenlabs::MODE,
                 )
             }
         };
@@ -396,20 +396,26 @@ pub(crate) fn build_translator(
 ) -> Result<(Arc<dyn ai::Translator>, NfcText)> {
     match translation {
         TranslationProvider::OpenAi { model } => {
-            let value = ai::openai::OpenAiTranslator::new(
-                ai::openai::OpenAiTranslator::provider_config(model)?,
+            let value = ai::providers::openai::OpenAiTranslator::new(
+                ai::providers::openai::OpenAiTranslator::provider_config(model)?,
                 credentials.openai()?,
                 Arc::new(UreqTransport::new()),
             )?;
-            Ok((Arc::new(value), ai::openai::TRANSLATION_MODE.into()))
+            Ok((
+                Arc::new(value),
+                ai::providers::openai::TRANSLATION_MODE.into(),
+            ))
         }
         TranslationProvider::Anthropic { model } => {
-            let value = ai::anthropic::AnthropicTranslator::new(
-                ai::anthropic::AnthropicTranslator::provider_config(model)?,
+            let value = ai::providers::anthropic::AnthropicTranslator::new(
+                ai::providers::anthropic::AnthropicTranslator::provider_config(model)?,
                 credentials.anthropic()?,
                 Arc::new(UreqTransport::new()),
             )?;
-            Ok((Arc::new(value), ai::anthropic::TRANSLATION_MODE.into()))
+            Ok((
+                Arc::new(value),
+                ai::providers::anthropic::TRANSLATION_MODE.into(),
+            ))
         }
     }
 }
@@ -418,16 +424,18 @@ pub(crate) fn build_translator(
 pub(crate) fn open_chapter(
     chapter: &TextProvider,
     credentials: &Credentials,
-) -> Result<Arc<dyn ai::chapters::ChapterGenerator>> {
+) -> Result<Arc<dyn ai::text::chapters::ChapterGenerator>> {
     Ok(match chapter {
-        TextProvider::OpenAi { model } => Arc::new(ai::chapters::OpenAiChapterGenerator::new(
-            ai::chapters::OpenAiChapterGenerator::provider_config(model)?,
-            credentials.openai()?,
-            Arc::new(UreqTransport::new()),
-        )?),
+        TextProvider::OpenAi { model } => {
+            Arc::new(ai::text::chapters::OpenAiChapterGenerator::new(
+                ai::text::chapters::OpenAiChapterGenerator::provider_config(model)?,
+                credentials.openai()?,
+                Arc::new(UreqTransport::new()),
+            )?)
+        }
         TextProvider::Anthropic { model } => {
-            Arc::new(ai::chapters::AnthropicChapterGenerator::new(
-                ai::chapters::AnthropicChapterGenerator::provider_config(model)?,
+            Arc::new(ai::text::chapters::AnthropicChapterGenerator::new(
+                ai::text::chapters::AnthropicChapterGenerator::provider_config(model)?,
                 credentials.anthropic()?,
                 Arc::new(UreqTransport::new()),
             )?)
@@ -439,18 +447,20 @@ pub(crate) fn open_chapter(
 pub(crate) fn open_filler(
     filler: &TextProvider,
     credentials: &Credentials,
-) -> Result<Arc<dyn ai::fillers::FillerClassifier>> {
+) -> Result<Arc<dyn ai::text::fillers::FillerClassifier>> {
     Ok(match filler {
-        TextProvider::OpenAi { model } => Arc::new(ai::fillers::OpenAiFillerClassifier::new(
-            ai::fillers::OpenAiFillerClassifier::provider_config(model)?,
+        TextProvider::OpenAi { model } => Arc::new(ai::text::fillers::OpenAiFillerClassifier::new(
+            ai::text::fillers::OpenAiFillerClassifier::provider_config(model)?,
             credentials.openai()?,
             Arc::new(UreqTransport::new()),
         )?),
-        TextProvider::Anthropic { model } => Arc::new(ai::fillers::AnthropicFillerClassifier::new(
-            ai::fillers::AnthropicFillerClassifier::provider_config(model)?,
-            credentials.anthropic()?,
-            Arc::new(UreqTransport::new()),
-        )?),
+        TextProvider::Anthropic { model } => {
+            Arc::new(ai::text::fillers::AnthropicFillerClassifier::new(
+                ai::text::fillers::AnthropicFillerClassifier::provider_config(model)?,
+                credentials.anthropic()?,
+                Arc::new(UreqTransport::new()),
+            )?)
+        }
     })
 }
 /// Build the selected emphasis selector; it shares the approved text model, provider
@@ -458,16 +468,18 @@ pub(crate) fn open_filler(
 pub(crate) fn open_emphasis(
     emphasis: &TextProvider,
     credentials: &Credentials,
-) -> Result<Arc<dyn ai::emphasis::EmphasisSelector>> {
+) -> Result<Arc<dyn ai::text::emphasis::EmphasisSelector>> {
     Ok(match emphasis {
-        TextProvider::OpenAi { model } => Arc::new(ai::emphasis::OpenAiEmphasisSelector::new(
-            ai::emphasis::OpenAiEmphasisSelector::provider_config(model)?,
-            credentials.openai()?,
-            Arc::new(UreqTransport::new()),
-        )?),
+        TextProvider::OpenAi { model } => {
+            Arc::new(ai::text::emphasis::OpenAiEmphasisSelector::new(
+                ai::text::emphasis::OpenAiEmphasisSelector::provider_config(model)?,
+                credentials.openai()?,
+                Arc::new(UreqTransport::new()),
+            )?)
+        }
         TextProvider::Anthropic { model } => {
-            Arc::new(ai::emphasis::AnthropicEmphasisSelector::new(
-                ai::emphasis::AnthropicEmphasisSelector::provider_config(model)?,
+            Arc::new(ai::text::emphasis::AnthropicEmphasisSelector::new(
+                ai::text::emphasis::AnthropicEmphasisSelector::provider_config(model)?,
                 credentials.anthropic()?,
                 Arc::new(UreqTransport::new()),
             )?)
@@ -480,11 +492,15 @@ fn load_aligner(
 ) -> Result<Arc<dyn ai::Aligner>> {
     #[cfg(feature = "candle-align")]
     {
-        let metadata = ai::models::alignment_model()?;
+        let metadata = ai::foundation::models::alignment_model()?;
         let lease = cache
             .model(&metadata, &IdleHooks)?
             .ok_or(Error::ModelMissing("whisper-small-dtw"))?;
-        let value = ai::alignment::CandleAligner::load(&metadata, lease.directory(), &IdleHooks)?;
+        let value = ai::recognition::alignment::CandleAligner::load(
+            &metadata,
+            lease.directory(),
+            &IdleHooks,
+        )?;
         leases.push(lease);
         Ok(Arc::new(value))
     }

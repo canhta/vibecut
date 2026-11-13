@@ -4,7 +4,7 @@ use crate::{
     AudioWindow, Capabilities, CostEstimate, Error, Evidence, ExecutionHooks, Location, Operation,
     ProviderConfig, RecognitionSegment, Request, Scope, Stage, Support, Transcriber,
     contracts::checkpoint,
-    models::{Model, storage_error, verify_file},
+    foundation::models::{Model, storage_error, verify_file},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -194,7 +194,7 @@ impl Transcriber for Gipformer {
 }
 
 fn pinned_model() -> Result<Model, Error> {
-    crate::models::catalog()?
+    crate::foundation::models::catalog()?
         .into_iter()
         .find(|m| m.id == MODEL_ID)
         .ok_or(Error::Unsupported)

@@ -12,7 +12,7 @@ use crate::label::{LabelFile, ResolvedSettings, sha256_bytes, sha256_file, verif
 use crate::metrics::{Evaluation, Metrics, evaluate};
 use crate::transcript;
 use crate::{Error, Result};
-use ai::clips::{
+use ai::text::clips::{
     ClipInput, ClipSegment, ClipSettings, ClipSuggester, HeuristicClipSuggester,
     OpenAiClipSuggester,
 };
@@ -495,7 +495,7 @@ fn baseline_input(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ai::clips::{ClipSource, MAX_WIRE, MODE};
+    use ai::text::clips::{ClipSource, MAX_WIRE, MODE};
     use ai::{CostEstimate, Location, Money, Operation, ProviderConfig, Request, Scope};
     use time::{SourceRange, Tick};
 
@@ -548,7 +548,7 @@ mod tests {
             _: &ClipInput,
             _: &Request<'_>,
             _: &dyn ExecutionHooks,
-        ) -> std::result::Result<Vec<ai::clips::ClipProposal>, ai::Error> {
+        ) -> std::result::Result<Vec<ai::text::clips::ClipProposal>, ai::Error> {
             Ok(Vec::new())
         }
     }

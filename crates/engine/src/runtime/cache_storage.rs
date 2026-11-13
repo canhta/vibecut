@@ -838,7 +838,7 @@ mod tests {
             .unwrap();
             cache.put(key, &[n; 28]).unwrap();
         }
-        let model = ai::models::catalog().unwrap().remove(0);
+        let model = ai::foundation::models::catalog().unwrap().remove(0);
         let native = cache.edit_model(&model).unwrap();
         let marker = native.directory.join(".bundle");
         let model_bytes = std::fs::read(&marker).unwrap();

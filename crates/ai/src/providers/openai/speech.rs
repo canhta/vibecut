@@ -1,13 +1,13 @@
 //! Single-attempt OpenAI speech synthesis over Chat Completions.
 //! Consent, cost, cancellation and validation stay in `speech`; this adapter owns
 //! the exact wire schema, built-in voice gate and bounded WAV decoding.
+use crate::foundation::transport::ApiKey;
 use crate::remote::{self, UploadDisclosure};
 use crate::speech::{
     SpeechAudio, SpeechCapabilities, SpeechFormat, SpeechLanguage, SpeechOutput, SpeechPolicy,
     SpeechRequest, SpeechSynthesizer, SpeechUsage, SpeechVoice, SynthesisConsent,
     SynthesisEstimate, VoiceCategory, prepare_synthesis,
 };
-use crate::transport::ApiKey;
 use crate::{Error, ExecutionHooks, Money, Operation, ProviderConfig, Support};
 use ::transport::{HttpRequest, HttpResponse, HttpTransport};
 use base64::Engine as _;

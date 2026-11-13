@@ -1,7 +1,7 @@
 //! Owns shared remote provider admission.
 pub mod defaults;
 mod models;
-use crate::transport::wav_bytes;
+use crate::foundation::transport::wav_bytes;
 use crate::{Capabilities, CostEstimate, Error, Location, Operation, ProviderConfig, Scope};
 use ::transport::{HttpResponse, retry_after};
 use captions::NfcText;

@@ -4,8 +4,8 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
-use ai::openai::{MAX_UPLOAD_BYTES, OpenAiTranscriber};
-use ai::transport::ApiKey;
+use ai::foundation::transport::ApiKey;
+use ai::providers::openai::{MAX_UPLOAD_BYTES, OpenAiTranscriber};
 use ai::{
     AudioWindow, Consent, CostEstimate, Error, ExecutionHooks, Money, Operation, ProviderConfig,
     Request, Scope, Stage, TimingUnit, Transcriber,
@@ -90,7 +90,7 @@ fn config() -> ProviderConfig {
 }
 
 fn other_config() -> ProviderConfig {
-    ai::elevenlabs::ElevenLabsTranscriber::provider_config("scribe_v2").unwrap()
+    ai::providers::elevenlabs::ElevenLabsTranscriber::provider_config("scribe_v2").unwrap()
 }
 
 fn scope(provider: ProviderConfig) -> Scope {

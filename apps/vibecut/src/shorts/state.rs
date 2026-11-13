@@ -1164,7 +1164,7 @@ fn candidate_from_view(view: &engine::control::ClipCandidateView) -> Result<Cand
     };
     let mut pieces = Vec::with_capacity(view.pieces.len());
     for piece in &view.pieces {
-        pieces.push(ai::clips::ClipPiece {
+        pieces.push(ai::text::clips::ClipPiece {
             start_segment_id: piece.start_segment_id.clone(),
             end_segment_id: piece.end_segment_id.clone(),
             role: role(piece.role.as_str())?,

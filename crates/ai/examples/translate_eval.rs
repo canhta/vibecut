@@ -2,8 +2,8 @@
 use ai::{
     Consent, CostEstimate, Money, Operation, Request, SampleRange, Scope, Translation,
     TranslationWindow, Translator,
-    openai::{OpenAiTranslator, TRANSLATION_MODE},
-    transport::ApiKey,
+    foundation::transport::ApiKey,
+    providers::openai::{OpenAiTranslator, TRANSLATION_MODE},
 };
 use std::{io::Read, path::PathBuf, sync::Arc};
 use transport::UreqTransport;

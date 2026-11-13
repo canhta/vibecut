@@ -5,7 +5,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     use ai::{
         AudioWindow, Error, ExecutionHooks, Operation, Request, SampleRange, Scope, Stage,
         Transcriber,
-        gipformer::{Device, Gipformer, MAX_SAMPLES, SAMPLE_RATE},
+        recognition::gipformer::{Device, Gipformer, MAX_SAMPLES, SAMPLE_RATE},
     };
     use std::{io::Read, path::Path};
     struct Hooks;
@@ -33,7 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .filter(|inputs| !inputs.is_empty())
         .ok_or("missing mono 16k f32le audio")?;
     let language = captions::LanguageTag::parse("vi")?;
-    let model = ai::models::suggested_transcriber(&language)?;
+    let model = ai::foundation::models::suggested_transcriber(&language)?;
     let load = std::time::Instant::now();
     let adapter = Gipformer::load(
         &model,

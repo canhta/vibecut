@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
-use ai::chapters::{Chapter, ChapterDocument};
+use ai::text::chapters::{Chapter, ChapterDocument};
 use captions::{LanguageTag, NfcText};
 use engine::{ArtifactError, chapter_sidecars};
 use project::{Project, ProjectId};
@@ -63,7 +63,7 @@ fn document() -> ChapterDocument {
                 title: "Thói quen".into(),
             },
         ],
-        vec![ai::chapters::ChapterTranslation {
+        vec![ai::text::chapters::ChapterTranslation {
             language: LanguageTag::parse("en").unwrap(),
             title: "A learning journey".into(),
             description: "A conversation about habits.".into(),

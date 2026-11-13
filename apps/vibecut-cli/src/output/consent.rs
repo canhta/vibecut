@@ -91,7 +91,7 @@ mod tests {
         };
         assert_eq!(model, "fixture-cli-model");
         let request = UploadRequest {
-            config: ai::chapters::OpenAiChapterGenerator::provider_config(&model).unwrap(),
+            config: ai::text::chapters::OpenAiChapterGenerator::provider_config(&model).unwrap(),
             operation: CatalogOperation::GenerateChapters,
             provider: "OpenAI".into(),
             model,

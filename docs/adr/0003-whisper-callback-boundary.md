@@ -1,6 +1,6 @@
 # Whisper callback boundary
 
-Admit unsafe code only in `ai::whisper::callbacks` to install whisper-rs's raw
+Admit unsafe code only in `ai::recognition::whisper::callbacks` to install whisper-rs's raw
 abort/progress callbacks. Released safe setters have an invalid erased-closure
 cast and lose callback ownership; using them cannot provide reliable cancellation.
 Do not fork or vendor the binding. Replace this module with the safe binding API

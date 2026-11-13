@@ -133,11 +133,11 @@ with zero spans rather than refusing. Limits: one day and 96 MiB workspace per s
 
 `chapters::ChapterRequest::new(project, language, max_chapters)` reads every caption cue of the
 active scene that carries text in `language`, maps its range to output time and builds the
-validated `ai::chapters::ChapterInput` (segment id `<item>:<cue>`, cue text, output range) with
+validated `ai::text::chapters::ChapterInput` (segment id `<item>:<cue>`, cue text, output range) with
 the requested language, the 1..=50 chapter bound and the scene duration. Cues missing that
 language are skipped, so a project with only another language refuses `EmptyTranscript`. An
 unsupported language, an empty transcript, a zero or oversized bound, overlapping or blank cues
-and an oversized payload refuse through `ai::chapters::ChapterRefusal` before any job or
+and an oversized payload refuse through `ai::text::chapters::ChapterRefusal` before any job or
 provider work.
 
 `submit` asks the lent [`TextAccess`](../providers/README.md#transcript-text-generation) for the
@@ -152,7 +152,7 @@ the completed document in `JobView.output` (`chapters`). A caller without a lent
 `fillers::FillerRequest::new(project, language, include_markers)` reads every visible measured
 word of the active scene whose cue language has the requested primary subtag, builds each stable
 candidate ID (`filler:<item>:<cue>:<source word start>`) and sends the exact bounded
-`ai::fillers::FillerInput`. A transcript with no timed word in that language refuses
+`ai::text::fillers::FillerInput`. A transcript with no timed word in that language refuses
 `EmptyTranscript`, an unsupported language refuses `UnsupportedLanguage`, and lossy or duplicate
 word IDs refuse `InvalidSegments` before any job or provider work. The local
 `timeline.filler_candidates` command stays synchronous and lexicon-only; this job is the opt-in
@@ -169,7 +169,7 @@ fails the job with the typed `InvalidSegments` reason. `job_status` publishes `J
 
 `emphasis::EmphasisRequest::new(project, item, cues)` reads one caption item's cues that carry
 verified word timing (`captions::validate_selection`), builds the `<item>:<cue>` segments with one
-`{position, text}` per verified word and sends the exact bounded `ai::emphasis::EmphasisInput`.
+`{position, text}` per verified word and sends the exact bounded `ai::text::emphasis::EmphasisInput`.
 `cues` of `None` covers every eligible cue; a named cue that is missing or lacks verified timing
 refuses with `captions::Error::NoWordTiming` (or `Invalid`), and an item with no eligible cue
 refuses `EmptyTranscript`, all before any job or provider work. The local lexicon is

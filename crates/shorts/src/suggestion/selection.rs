@@ -46,7 +46,7 @@ pub fn suggestion_options() -> Vec<SuggestionOption> {
             label: "Anthropic (remote)",
             local: false,
             models: vec![ai::defaults::model("anthropic", ai::Operation::Translate)],
-            policy_url: Some(ai::anthropic::POLICY_URL),
+            policy_url: Some(ai::providers::anthropic::POLICY_URL),
         },
     ]
 }

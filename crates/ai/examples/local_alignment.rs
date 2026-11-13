@@ -1,6 +1,6 @@
 use ai::{
     Aligner, AudioWindow, ExecutionHooks, Operation, RecognitionSegment, Request, SampleRange,
-    Scope, Stage, alignment::CandleAligner, models,
+    Scope, Stage, foundation::models, recognition::alignment::CandleAligner,
 };
 use captions::LanguageTag;
 use std::{io::Read, path::PathBuf, time::Instant};
@@ -58,7 +58,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         provider: aligner.config().clone(),
         operation: Operation::Align,
         payload_fingerprint: "local-evaluation".into(),
-        mode: ai::alignment::MODE.into(),
+        mode: ai::recognition::alignment::MODE.into(),
         texts: segments.iter().map(|s| s.text.clone()).collect(),
         source_language: language,
         target_language: None,

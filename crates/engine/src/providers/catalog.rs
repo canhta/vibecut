@@ -143,7 +143,7 @@ pub fn provider_options() -> Vec<ProviderOption> {
             label: "Gipformer (local, Vietnamese)",
             operation: CatalogOperation::Transcribe,
             local: true,
-            models: vec![ai::gipformer::MODEL_ID.into()],
+            models: vec![ai::recognition::gipformer::MODEL_ID.into()],
             languages: tags(&["vi"]),
             target_languages: Vec::new(),
             native_timing: false,
@@ -154,7 +154,7 @@ pub fn provider_options() -> Vec<ProviderOption> {
             operation: CatalogOperation::Transcribe,
             local: false,
             models: vec![ai::defaults::model("openai", ai::Operation::Transcribe).into()],
-            languages: tags(&ai::openai::LANGUAGES),
+            languages: tags(&ai::providers::openai::LANGUAGES),
             target_languages: Vec::new(),
             native_timing: false,
         },
@@ -164,7 +164,7 @@ pub fn provider_options() -> Vec<ProviderOption> {
             operation: CatalogOperation::Transcribe,
             local: false,
             models: vec![ai::defaults::model("elevenlabs", ai::Operation::Transcribe).into()],
-            languages: tags(&ai::elevenlabs::LANGUAGES),
+            languages: tags(&ai::providers::elevenlabs::LANGUAGES),
             target_languages: Vec::new(),
             native_timing: true,
         },
@@ -174,8 +174,8 @@ pub fn provider_options() -> Vec<ProviderOption> {
             operation: CatalogOperation::Translate,
             local: false,
             models: vec![ai::defaults::model("openai", ai::Operation::Translate).into()],
-            languages: tags(&ai::openai::TRANSLATION_LANGUAGES),
-            target_languages: tags(&ai::openai::TRANSLATION_TARGET_LANGUAGES),
+            languages: tags(&ai::providers::openai::TRANSLATION_LANGUAGES),
+            target_languages: tags(&ai::providers::openai::TRANSLATION_TARGET_LANGUAGES),
             native_timing: false,
         },
         ProviderOption {
@@ -184,8 +184,8 @@ pub fn provider_options() -> Vec<ProviderOption> {
             operation: CatalogOperation::Translate,
             local: false,
             models: vec![ai::defaults::model("anthropic", ai::Operation::Translate).into()],
-            languages: tags(&ai::anthropic::TRANSLATION_LANGUAGES),
-            target_languages: tags(&ai::anthropic::TRANSLATION_TARGET_LANGUAGES),
+            languages: tags(&ai::providers::anthropic::TRANSLATION_LANGUAGES),
+            target_languages: tags(&ai::providers::anthropic::TRANSLATION_TARGET_LANGUAGES),
             native_timing: false,
         },
         ProviderOption {
@@ -375,7 +375,7 @@ fn choose_text(
     }
 }
 impl ModelInfo {
-    pub(crate) fn from_model(model: &ai::models::Model) -> Result<Self> {
+    pub(crate) fn from_model(model: &ai::foundation::models::Model) -> Result<Self> {
         let total_bytes = model
             .files
             .iter()
@@ -408,7 +408,7 @@ impl ModelInfo {
     }
 }
 pub fn model_infos() -> Result<Vec<ModelInfo>> {
-    ai::models::catalog()?
+    ai::foundation::models::catalog()?
         .iter()
         .map(ModelInfo::from_model)
         .collect()
@@ -418,8 +418,8 @@ pub fn model_info(id: &str) -> Result<ModelInfo> {
     ModelInfo::from_model(&model)
 }
 /// The catalog model with this id, as the model manager and the CLI download it.
-pub fn catalog_model(id: &str) -> Result<ai::models::Model> {
-    ai::models::catalog()?
+pub fn catalog_model(id: &str) -> Result<ai::foundation::models::Model> {
+    ai::foundation::models::catalog()?
         .into_iter()
         .find(|model| model.id == id)
         .ok_or(Error::Edit(crate::EditError::Unsupported("unknown model")))

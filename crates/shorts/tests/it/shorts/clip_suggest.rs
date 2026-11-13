@@ -419,8 +419,8 @@ fn heuristic_suggestion_snaps_inside_the_source() {
 }
 #[test]
 fn maximum_model_ids_run_shorts_asr_with_explicit_unknown_price_and_isolated_checkpoints() {
-    use ai::elevenlabs::ElevenLabsTranscriber;
-    use ai::transport::ApiKey;
+    use ai::foundation::transport::ApiKey;
+    use ai::providers::elevenlabs::ElevenLabsTranscriber;
     use engine::providers::{Cost, UploadRequest};
     use transport::{HttpRequest, HttpResponse, HttpTransport};
     struct Transport {
@@ -429,7 +429,7 @@ fn maximum_model_ids_run_shorts_asr_with_explicit_unknown_price_and_isolated_che
     }
     impl HttpTransport for Transport {
         fn send(&self, request: HttpRequest) -> Result<HttpResponse, transport::Error> {
-            assert_eq!(request.url, ai::elevenlabs::ENDPOINT);
+            assert_eq!(request.url, ai::providers::elevenlabs::ENDPOINT);
             assert!(
                 request
                     .body
@@ -478,7 +478,7 @@ fn maximum_model_ids_run_shorts_asr_with_explicit_unknown_price_and_isolated_che
         let providers = Arc::new(
             Providers::from_parts(
                 TranscriptionProvider::ElevenLabs { model },
-                ai::elevenlabs::MODE.into(),
+                ai::providers::elevenlabs::MODE.into(),
                 provider,
                 None,
                 None,

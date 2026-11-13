@@ -6,7 +6,9 @@
     reason = "offline provider fixtures"
 )]
 use ::transport::{HttpRequest, HttpResponse, HttpTransport};
-use ai::transport::ApiKey;
+use ai::foundation::transport::ApiKey;
+use ai::providers::{anthropic, elevenlabs, openai};
+use ai::text::{chapters, clips, fillers};
 use ai::{self, *};
 use captions::LanguageTag;
 use std::sync::{Arc, Mutex};

@@ -129,7 +129,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
 fn response_json(
     project: &std::path::Path,
     access: &TextAccess,
-    document: &ai::chapters::ChapterDocument,
+    document: &ai::text::chapters::ChapterDocument,
     sidecars: Option<&chapter_sidecars::ChapterSidecars>,
 ) -> Result<Value, CliError> {
     Ok(json!({

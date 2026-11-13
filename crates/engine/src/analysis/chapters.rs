@@ -11,7 +11,7 @@ use crate::{
     jobs::{CancelToken, JobBytes, JobId, JobKind, JobRunner, JobSpec, JobState},
     providers::TextAccess,
 };
-use ai::chapters::{
+use ai::text::chapters::{
     ChapterDocument, ChapterInput, ChapterRefusal, ChapterSegment, ChapterSettings, MAX_CHAPTERS,
 };
 use captions::LanguageTag;
@@ -119,7 +119,7 @@ impl ChapterRequest {
         let (id, cancel) = runner.submit(spec, move |context| {
             context.check_cancelled()?;
             context.progress(crate::jobs::JobStage::Process, 0.1)?;
-            let document = ai::chapters::generate_chapters(
+            let document = ai::text::chapters::generate_chapters(
                 prepared.generator.as_ref(),
                 &input,
                 &ai::Request {

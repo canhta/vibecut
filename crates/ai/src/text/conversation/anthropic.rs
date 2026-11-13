@@ -8,8 +8,8 @@ use super::{
     AssistantTurn, ChatEvent, ChatModel, ChatReply, ChatRequest, MAX_REPLY_BYTES, Message,
     PreparedRequest, Replay, ToolCall, ToolInput, Usage,
 };
+use crate::foundation::transport::ApiKey;
 use crate::remote;
-use crate::transport::ApiKey;
 use crate::{Error, ExecutionHooks, ProviderConfig};
 use ::transport::{HttpRequest, StreamTransport};
 use serde_json::{Map, Value, json};
@@ -21,7 +21,7 @@ const BACKEND: &str = "anthropic";
 const SETTINGS: &str = "anthropic-agent-chat-v1;messages;stream;tools;thinking=between_tools";
 const MAX_BLOCKS: usize = 64;
 const LINKS: &[(&str, &str)] = &[
-    ("policy", crate::anthropic::POLICY_URL),
+    ("policy", crate::providers::anthropic::POLICY_URL),
     (
         "pricing",
         "https://platform.claude.com/docs/en/about-claude/pricing",
@@ -45,7 +45,7 @@ impl AnthropicChat {
             model,
             SETTINGS,
             BACKEND,
-            crate::anthropic::BASE_URL,
+            crate::providers::anthropic::BASE_URL,
             "anthropic",
             "ANTHROPIC_API_KEY",
         )
@@ -59,7 +59,7 @@ impl AnthropicChat {
             &config,
             Some(SETTINGS),
             BACKEND,
-            crate::anthropic::BASE_URL,
+            crate::providers::anthropic::BASE_URL,
             None,
         )?;
         Ok(Self {
@@ -128,12 +128,12 @@ impl ChatModel for AnthropicChat {
             self.transport.as_ref(),
             HttpRequest {
                 method: "POST",
-                url: crate::anthropic::ENDPOINT.into(),
+                url: crate::providers::anthropic::ENDPOINT.into(),
                 headers: vec![
                     ("x-api-key".into(), self.key.expose().to_owned()),
                     (
                         "anthropic-version".into(),
-                        crate::anthropic::ANTHROPIC_VERSION.into(),
+                        crate::providers::anthropic::ANTHROPIC_VERSION.into(),
                     ),
                     ("Content-Type".into(), "application/json".into()),
                     ("Accept".into(), "text/event-stream".into()),
@@ -141,7 +141,7 @@ impl ChatModel for AnthropicChat {
                 body: request.body,
             },
             &self.config,
-            crate::anthropic::status_error,
+            crate::providers::anthropic::status_error,
         )?;
         read(&mut events, on_event, hooks)
     }

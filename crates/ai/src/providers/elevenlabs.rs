@@ -2,8 +2,8 @@
 //! is in `speech`.
 pub mod speech;
 use crate::contracts::checkpoint;
+use crate::foundation::transport::{ApiKey, Multipart, wav};
 use crate::remote::{self, UploadDisclosure};
-use crate::transport::{ApiKey, Multipart, wav};
 use crate::{
     AudioWindow, Capabilities, CostEstimate, Error, Evidence, ExecutionHooks, Operation,
     Provenance, ProviderConfig, RawToken, RecognitionSegment, Request, SampleRange, Scope, Stage,

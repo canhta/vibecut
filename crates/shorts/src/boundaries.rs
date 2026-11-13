@@ -1,6 +1,6 @@
 //! Independent source-edge snapping for ordered, potentially reordered shorts.
 use crate::error::{BoundaryFailure, Error, Result as ShortsResult};
-use ai::clips::{ClipRole, ClipSourceSegment};
+use ai::text::clips::{ClipRole, ClipSourceSegment};
 use captions::{LanguageProfile, Transcript};
 use engine::{control::Error as EngineError, control::Result};
 use media::SpeechEnergyWindow;

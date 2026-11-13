@@ -156,7 +156,8 @@ pub(super) fn models_locale(
         Arc::new(NoTransfer),
         Arc::new(engine::models::SystemModelIo),
     );
-    let manager = ModelManager::with_transfers(budget, ai::models::catalog()?, transfers)?;
+    let manager =
+        ModelManager::with_transfers(budget, ai::foundation::models::catalog()?, transfers)?;
     let mut editor = empty_editor(theme, locale)?;
     editor.set_model_manager(manager);
     editor.open_models()?;

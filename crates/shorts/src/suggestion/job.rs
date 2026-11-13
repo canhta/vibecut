@@ -5,7 +5,7 @@ use super::{
     ClipCandidate, RejectedClip, SnapSettings, SuggestionProvider, build_suggester,
     check_suggestion_credentials, choose_suggestion, fingerprint, upload_request,
 };
-use ai::clips::ClipSettings;
+use ai::text::clips::ClipSettings;
 use ai::{CostEstimate, Money, Scope};
 use captions::NfcText;
 use engine::cache::CacheKey;
@@ -218,7 +218,7 @@ pub(crate) fn submit_suggest(
                 })
                 .collect();
             let suggested =
-                ai::clips::suggest_clips(suggester.as_clip(), &clip_input, &requests, hooks)?;
+                ai::text::clips::suggest_clips(suggester.as_clip(), &clip_input, &requests, hooks)?;
             // Every attempted invocation is paid for, including transient failures.
             let mut suggestion_cost = Cost::Free;
             for _ in 0..ran {

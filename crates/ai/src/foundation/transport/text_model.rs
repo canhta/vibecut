@@ -3,7 +3,7 @@
 //! The owner supplies the operation prompt and schema; this module owns the provider
 //! identity check, the exact wire body, the bounded send and the shared response
 //! parsing. It never retries or switches provider.
-use crate::transport::ApiKey;
+use crate::foundation::transport::ApiKey;
 use crate::{Error, ExecutionHooks, ProviderConfig, Stage, contracts::checkpoint, remote};
 use ::transport::{HttpRequest, HttpResponse, HttpTransport};
 use captions::NfcText;
@@ -20,7 +20,7 @@ enum Client {
         key: ApiKey,
         transport: Arc<dyn HttpTransport>,
     },
-    Anthropic(crate::anthropic::MessagesClient),
+    Anthropic(crate::providers::anthropic::MessagesClient),
 }
 pub(crate) struct TextModel {
     config: ProviderConfig,
@@ -36,13 +36,21 @@ impl TextModel {
         settings: &str,
     ) -> Result<Self, Error> {
         let (backend, base) = if anthropic {
-            (crate::anthropic::BACKEND, crate::anthropic::BASE_URL)
+            (
+                crate::providers::anthropic::BACKEND,
+                crate::providers::anthropic::BASE_URL,
+            )
         } else {
-            (crate::openai::BACKEND, crate::openai::BASE_URL)
+            (
+                crate::providers::openai::BACKEND,
+                crate::providers::openai::BASE_URL,
+            )
         };
         remote::admit(&config, Some(settings), backend, base, None)?;
         let client = if anthropic {
-            Client::Anthropic(crate::anthropic::MessagesClient::new(key, transport))
+            Client::Anthropic(crate::providers::anthropic::MessagesClient::new(
+                key, transport,
+            ))
         } else {
             Client::OpenAi { key, transport }
         };
@@ -60,7 +68,7 @@ impl TextModel {
     pub(crate) fn policy_url(&self) -> &'static str {
         match self.client {
             Client::OpenAi { .. } => "https://developers.openai.com/api/docs/guides/your-data",
-            Client::Anthropic(_) => crate::anthropic::POLICY_URL,
+            Client::Anthropic(_) => crate::providers::anthropic::POLICY_URL,
         }
     }
     /// Send one structured request and return only the decoded JSON object.
@@ -76,7 +84,7 @@ impl TextModel {
         } = request;
         let body = match self.client {
             Client::OpenAi { .. } => {
-                json!({"model":self.config.model().as_str(),"store":false,"background":false,"service_tier":"default","max_output_tokens":MAX_OUTPUT,"instructions":instructions,"input":payload.as_str(),"text":{"format":crate::structured::format(name,schema)}})
+                json!({"model":self.config.model().as_str(),"store":false,"background":false,"service_tier":"default","max_output_tokens":MAX_OUTPUT,"instructions":instructions,"input":payload.as_str(),"text":{"format":crate::text::structured::format(name,schema)}})
             }
             Client::Anthropic(_) => {
                 json!({"model":self.config.model().as_str(),"max_tokens":MAX_OUTPUT,"stream":false,"thinking":{"type":"between_tools"},"system":instructions,"messages":[{"role":"user","content":payload.as_str()}],"output_config":{"format":{"type":"json_schema","schema":schema}}})
@@ -90,7 +98,7 @@ impl TextModel {
         let response = match &self.client {
             Client::OpenAi { key, transport } => transport.send(HttpRequest {
                 method: "POST",
-                url: crate::openai::TRANSLATION_ENDPOINT.into(),
+                url: crate::providers::openai::TRANSLATION_ENDPOINT.into(),
                 headers: vec![
                     ("Authorization".into(), format!("Bearer {}", key.expose())),
                     ("Content-Type".into(), "application/json".into()),
@@ -119,8 +127,9 @@ pub(crate) struct TextRequest<'a> {
     pub max_bytes: u64,
 }
 fn decode_openai(response: &HttpResponse) -> Result<Value, Error> {
-    crate::structured::parse(response)
+    crate::text::structured::parse(response)
 }
 fn decode_anthropic(response: &HttpResponse) -> Result<Value, Error> {
-    serde_json::from_str(&crate::anthropic::message_text(response)?).map_err(|_| Error::Schema)
+    serde_json::from_str(&crate::providers::anthropic::message_text(response)?)
+        .map_err(|_| Error::Schema)
 }

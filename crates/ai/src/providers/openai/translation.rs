@@ -1,6 +1,6 @@
 //! Single-attempt OpenAI Responses translation over the existing HTTPS transport.
+use crate::foundation::transport::ApiKey;
 use crate::remote::{self, UploadDisclosure};
-use crate::transport::ApiKey;
 use crate::{
     Capabilities, CostEstimate, Error, Evidence, ExecutionHooks, Operation, ProviderConfig,
     Request, Scope, Stage, Support, Translation, TranslationWindow, Translator,
@@ -114,7 +114,7 @@ impl Translator for OpenAiTranslator {
         crate::contracts::checkpoint(hooks, Stage::Translate)?;
         crate::translation::prepare(self, window, request)?;
         let schema = json!({"type":"object","properties":{"translations":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"text":{"type":"string"}},"required":["id","text"],"additionalProperties":false}}},"required":["translations"],"additionalProperties":false});
-        let body = serde_json::to_vec(&json!({"model":self.config.model().as_str(),"store":false,"background":false,"service_tier":"default","max_output_tokens":MAX_OUTPUT,"instructions":INSTRUCTIONS,"input":window.consent_text()?.as_str(),"text":{"format":crate::structured::format("translations",schema)}})).map_err(|_| Error::Payload)?;
+        let body = serde_json::to_vec(&json!({"model":self.config.model().as_str(),"store":false,"background":false,"service_tier":"default","max_output_tokens":MAX_OUTPUT,"instructions":INSTRUCTIONS,"input":window.consent_text()?.as_str(),"text":{"format":crate::text::structured::format("translations",schema)}})).map_err(|_| Error::Payload)?;
         if body.len() > MAX_WIRE || body.len() as u64 > request.scope.max_bytes {
             return Err(Error::Payload);
         }
@@ -144,7 +144,7 @@ impl Translator for OpenAiTranslator {
             text: NfcText,
         }
         remote::check_model_response(&response, &self.config)?;
-        let parsed: Output = crate::structured::parse(&response)?;
+        let parsed: Output = crate::text::structured::parse(&response)?;
         let mut texts = BTreeMap::new();
         for entry in parsed.translations {
             if texts.insert(entry.id, entry.text).is_some() {

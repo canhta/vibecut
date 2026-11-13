@@ -7,7 +7,7 @@
 use super::{Error as ArtifactError, Result as ArtifactResult};
 pub use crate::ChapterSidecars;
 
-use ai::chapters::ChapterDocument;
+use ai::text::chapters::ChapterDocument;
 use project::Project;
 use std::{
     io::Write,
@@ -154,7 +154,7 @@ fn write_with_fs(
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
-    use ai::chapters::{Chapter, ChapterDocument};
+    use ai::text::chapters::{Chapter, ChapterDocument};
     use captions::{LanguageTag, NfcText};
     use time::{TICKS_PER_SECOND, Tick};
 

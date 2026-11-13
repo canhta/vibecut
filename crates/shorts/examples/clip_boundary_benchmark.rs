@@ -1,5 +1,5 @@
 //! Bounded real/synthetic input measurement; transcript stays in local files.
-use ai::clips::{ClipRole, ClipSourceSegment};
+use ai::text::clips::{ClipRole, ClipSourceSegment};
 use captions::{LanguageRegistry, Transcript};
 use shorts::clip_boundaries::{ClipBoundarySettings, snap_clip_boundaries};
 use std::{

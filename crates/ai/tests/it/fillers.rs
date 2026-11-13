@@ -4,10 +4,10 @@
     clippy::panic,
     reason = "test fixtures"
 )]
-use ai::transport::ApiKey;
+use ai::foundation::transport::ApiKey;
 use ai::{
     Consent, CostEstimate, Error, ExecutionHooks, Money, Operation, ProviderConfig, Request,
-    SampleRange, Scope, Stage, fillers::*,
+    SampleRange, Scope, Stage, text::fillers::*,
 };
 use captions::{LanguageTag, NfcText};
 use serde_json::{Value, json};
@@ -50,9 +50,9 @@ fn input(include_markers: bool) -> FillerInput {
 }
 fn config(anthropic: bool) -> ProviderConfig {
     if anthropic {
-        ai::fillers::AnthropicFillerClassifier::provider_config("claude-sonnet-5-5").unwrap()
+        ai::text::fillers::AnthropicFillerClassifier::provider_config("claude-sonnet-5-5").unwrap()
     } else {
-        ai::fillers::OpenAiFillerClassifier::provider_config("gpt-6-luna").unwrap()
+        ai::text::fillers::OpenAiFillerClassifier::provider_config("gpt-6-luna").unwrap()
     }
 }
 fn scope(w: &FillerInput, p: &dyn FillerClassifier) -> Scope {
@@ -271,10 +271,10 @@ fn adapters_return_exact_ids_and_name_their_provider() {
         assert_eq!(wire["model"], p.config().model().as_str());
         assert!(wire["text"]["format"]["name"] == "fillers" || anthropic);
         if anthropic {
-            assert_eq!(requests[0].url, ai::anthropic::ENDPOINT);
+            assert_eq!(requests[0].url, ai::providers::anthropic::ENDPOINT);
             assert_eq!(wire["output_config"]["format"]["type"], "json_schema");
         } else {
-            assert_eq!(requests[0].url, ai::openai::TRANSLATION_ENDPOINT);
+            assert_eq!(requests[0].url, ai::providers::openai::TRANSLATION_ENDPOINT);
             assert_eq!(wire["store"], false);
             assert_eq!(wire["text"]["format"]["strict"], true);
         }

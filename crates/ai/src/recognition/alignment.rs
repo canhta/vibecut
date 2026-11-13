@@ -73,17 +73,20 @@ fn inference<T>(value: candle_core::Result<T>, hooks: &dyn ExecutionHooks) -> Re
 }
 fn read_verified(
     dir: &Path,
-    file: &crate::models::ModelFile,
+    file: &crate::foundation::models::ModelFile,
     hooks: &dyn ExecutionHooks,
 ) -> Result<Vec<u8>, Error> {
-    let mut reader = File::open(dir.join(&file.name)).map_err(crate::models::storage_error)?;
-    crate::models::verify_file(&mut reader, file, hooks)?;
-    reader.rewind().map_err(crate::models::storage_error)?;
+    let mut reader =
+        File::open(dir.join(&file.name)).map_err(crate::foundation::models::storage_error)?;
+    crate::foundation::models::verify_file(&mut reader, file, hooks)?;
+    reader
+        .rewind()
+        .map_err(crate::foundation::models::storage_error)?;
     let mut bytes = Vec::new();
     reader
         .take(file.size + 1)
         .read_to_end(&mut bytes)
-        .map_err(crate::models::storage_error)?;
+        .map_err(crate::foundation::models::storage_error)?;
     if bytes.len() as u64 != file.size {
         return Err(Error::ModelIntegrity);
     }
@@ -93,11 +96,11 @@ impl CandleAligner {
     /// Loads only the pinned catalog model from immutable verified files. No mmap,
     /// unsafe, downloads, private keys, remote IO or whisper.cpp runtime is used.
     pub fn load(
-        metadata: &crate::models::Model,
+        metadata: &crate::foundation::models::Model,
         dir: &Path,
         hooks: &dyn ExecutionHooks,
     ) -> Result<Self, Error> {
-        if metadata != &crate::models::alignment_model()? {
+        if metadata != &crate::foundation::models::alignment_model()? {
             return Err(Error::Unsupported);
         }
         checkpoint(hooks, Stage::Align)?;
@@ -553,13 +556,13 @@ mod tests {
     }
     #[test]
     fn metadata_mutation_is_refused_before_io() {
-        let mut metadata = crate::models::alignment_model().unwrap();
+        let mut metadata = crate::foundation::models::alignment_model().unwrap();
         metadata.files[0].sha256 = "0".repeat(64);
         assert!(matches!(
             CandleAligner::load(&metadata, Path::new("absent"), &hooks()),
             Err(Error::Unsupported)
         ));
-        let metadata = crate::models::alignment_model().unwrap();
+        let metadata = crate::foundation::models::alignment_model().unwrap();
         assert!(matches!(
             CandleAligner::load(
                 &metadata,

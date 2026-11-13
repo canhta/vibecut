@@ -1,6 +1,6 @@
 //! Metric definitions for the labelled clip pipeline.
 use crate::label::{LabelledClip, Priority, ResolvedSettings};
-use ai::clips::ClipSourceSegment;
+use ai::text::clips::ClipSourceSegment;
 use captions::{LanguageProfile, Transcript, source_speech_units};
 use serde::{Deserialize, Serialize};
 use time::{SourceRange, Tick};
@@ -313,7 +313,7 @@ mod tests {
 
     #[test]
     fn boundary_quality_scores_words_and_sentences() {
-        use ai::clips::{ClipRole, ClipSourceSegment};
+        use ai::text::clips::{ClipRole, ClipSourceSegment};
         use captions::{Fingerprint, LanguageRegistry, LanguageTag, NfcText, Segment, Word};
         let transcript = Transcript {
             source_lang: LanguageTag::parse("en").unwrap(),

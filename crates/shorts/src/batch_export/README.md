@@ -1,6 +1,6 @@
 # Clip batch export
 
-`ClipBatch::prepare(source_project, ClipBatchRequest)` builds one prepared export per accepted short; `submit` adds one job per short. Desktop and CLI use this same batch and add no renderer, cue mapper or retry loop. A short is an ordered `ai::clips::ClipSourceSegment` list in play order (`ClipShort::from_suggestion` keeps it), a title and an optional project-owned normalized crop. One request names the source asset, the source-timed `CueTrack`, the existing output directory, none or one or two distinct caption languages, any distinct SRT, WebVTT or TXT sidecar formats, overwrite and degraded consent, and a per-artifact byte ceiling.
+`ClipBatch::prepare(source_project, ClipBatchRequest)` builds one prepared export per accepted short; `submit` adds one job per short. Desktop and CLI use this same batch and add no renderer, cue mapper or retry loop. A short is an ordered `ai::text::clips::ClipSourceSegment` list in play order (`ClipShort::from_suggestion` keeps it), a title and an optional project-owned normalized crop. One request names the source asset, the source-timed `CueTrack`, the existing output directory, none or one or two distinct caption languages, any distinct SRT, WebVTT or TXT sidecar formats, overwrite and degraded consent, and a per-artifact byte ceiling.
 
 ## Preparation
 

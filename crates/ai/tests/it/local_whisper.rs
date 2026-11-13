@@ -1,7 +1,7 @@
 #![cfg(feature = "whisper")]
 use ai::{
     AudioWindow, Error, ExecutionHooks, Operation, Request, SampleRange, Scope, Stage, Transcriber,
-    whisper::{Device, SAMPLE_RATE, Whisper},
+    recognition::whisper::{Device, SAMPLE_RATE, Whisper},
 };
 use std::{
     path::PathBuf,
@@ -28,7 +28,7 @@ fn real_local_adapter_preserves_source_coordinates_raw_tokens_and_cancellation()
         .iter()
         .map(|b| f32::from_le_bytes(*b))
         .collect();
-    let model = ai::models::catalog().unwrap().remove(0);
+    let model = ai::foundation::models::catalog().unwrap().remove(0);
     let device = if std::env::var_os("VIBECUT_WHISPER_CPU").is_some() {
         Device::Cpu
     } else {
@@ -163,7 +163,7 @@ fn real_local_adapter_preserves_source_coordinates_raw_tokens_and_cancellation()
         .iter()
         .copied()
         .cycle()
-        .take(ai::whisper::MAX_SAMPLES as usize)
+        .take(ai::recognition::whisper::MAX_SAMPLES as usize)
         .collect();
     let long_range = SampleRange::new(160_000, 160_000 + long_pcm.len() as u64).unwrap();
     let long_scope = Scope {

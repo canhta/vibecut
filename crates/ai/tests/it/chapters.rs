@@ -5,10 +5,11 @@
     clippy::indexing_slicing,
     reason = "test fixtures"
 )]
-use ai::transport::ApiKey;
+use ai::foundation::transport::ApiKey;
 use ai::{
     Capabilities, Consent, CostEstimate, Error, ExecutionHooks, Money, Operation, ProviderConfig,
-    Request, SampleRange, Scope, Stage, Translation, TranslationWindow, Translator, chapters::*,
+    Request, SampleRange, Scope, Stage, Translation, TranslationWindow, Translator,
+    text::chapters::*,
 };
 use captions::{LanguageTag, NfcText};
 use serde_json::{Value, json};
@@ -55,9 +56,9 @@ fn input(language: &str, n: usize) -> ChapterInput {
 }
 fn config(anthropic: bool) -> ProviderConfig {
     if anthropic {
-        ai::chapters::AnthropicChapterGenerator::provider_config("claude-sonnet-5-5").unwrap()
+        ai::text::chapters::AnthropicChapterGenerator::provider_config("claude-sonnet-5-5").unwrap()
     } else {
-        ai::chapters::OpenAiChapterGenerator::provider_config("gpt-6-luna").unwrap()
+        ai::text::chapters::OpenAiChapterGenerator::provider_config("gpt-6-luna").unwrap()
     }
 }
 fn scope(w: &ChapterInput, p: &dyn ChapterGenerator) -> Scope {
@@ -570,18 +571,18 @@ fn adapter_wire_identity_and_disclosure_name_the_selected_provider() {
         let wire: Value = serde_json::from_slice(&requests[0].body).unwrap();
         assert_eq!(wire["model"], p.config().model().as_str());
         if anthropic {
-            assert_eq!(requests[0].url, ai::anthropic::ENDPOINT);
+            assert_eq!(requests[0].url, ai::providers::anthropic::ENDPOINT);
             assert_eq!(wire["output_config"]["format"]["type"], "json_schema");
             assert_eq!(wire["thinking"]["type"], "between_tools");
         } else {
-            assert_eq!(requests[0].url, ai::openai::TRANSLATION_ENDPOINT);
+            assert_eq!(requests[0].url, ai::providers::openai::TRANSLATION_ENDPOINT);
             assert_eq!(wire["store"], false);
             assert_eq!(wire["text"]["format"]["strict"], true);
         }
         assert!(!format!("{:?}", requests[0]).contains("synthetic-key"));
         drop(requests);
         let disclosure = if anthropic {
-            ai::chapters::AnthropicChapterGenerator::new(
+            ai::text::chapters::AnthropicChapterGenerator::new(
                 config(true),
                 ApiKey::new("synthetic-key").unwrap(),
                 Arc::new(Transport {
@@ -595,7 +596,7 @@ fn adapter_wire_identity_and_disclosure_name_the_selected_provider() {
             .unwrap()
             .disclosure(&scope)
         } else {
-            ai::chapters::OpenAiChapterGenerator::new(
+            ai::text::chapters::OpenAiChapterGenerator::new(
                 config(false),
                 ApiKey::new("synthetic-key").unwrap(),
                 Arc::new(Transport {
@@ -628,7 +629,7 @@ impl Translator for EchoTranslator {
     fn capabilities(&self, _: &Scope) -> Capabilities {
         Capabilities {
             model: self.0.model().clone(),
-            mode: ai::openai::TRANSLATION_MODE.into(),
+            mode: ai::providers::openai::TRANSLATION_MODE.into(),
             operation: Operation::Translate,
             languages: ["vi", "en"]
                 .into_iter()
@@ -726,12 +727,12 @@ fn optional_translation_reuses_the_shared_window_without_moving_chapters() {
         glossary: Vec::new(),
         style: style.clone(),
     };
-    let config = ai::openai::OpenAiTranslator::provider_config("gpt-6.1-sol").unwrap();
+    let config = ai::providers::openai::OpenAiTranslator::provider_config("gpt-6.1-sol").unwrap();
     let scope = Scope {
         provider: config.clone(),
         operation: Operation::Translate,
         payload_fingerprint: "synthetic".into(),
-        mode: ai::openai::TRANSLATION_MODE.into(),
+        mode: ai::providers::openai::TRANSLATION_MODE.into(),
         texts: vec![window.consent_text().unwrap()],
         source_language: source.clone(),
         target_language: Some(target.clone()),

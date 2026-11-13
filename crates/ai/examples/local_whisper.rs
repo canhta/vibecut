@@ -4,7 +4,7 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use ai::{
         AudioWindow, ExecutionHooks, Operation, Request, SampleRange, Scope, Stage, Transcriber,
-        whisper::{Device, MAX_SAMPLES, SAMPLE_RATE, Whisper},
+        recognition::whisper::{Device, MAX_SAMPLES, SAMPLE_RATE, Whisper},
     };
     use std::{io::Read, path::Path};
     struct Hooks;
@@ -26,7 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         Device::Gpu
     };
-    let model = ai::models::catalog()?.remove(0);
+    let model = ai::foundation::models::catalog()?.remove(0);
     let load = std::time::Instant::now();
     let adapter = Whisper::load(&model, Path::new(model_path), device, 4, &Hooks)?;
     eprintln!("load_seconds={:.3}", load.elapsed().as_secs_f64());

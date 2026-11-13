@@ -3,8 +3,8 @@ use super::{
     ANTHROPIC_SETTINGS, FillerClassifier, FillerInput, FillerProposal, MAX_WIRE, MODE,
     OPENAI_SETTINGS, prepare,
 };
+use crate::foundation::transport::{ApiKey, MAX_OUTPUT, TextModel};
 use crate::remote::{self, UploadDisclosure};
-use crate::transport::{ApiKey, MAX_OUTPUT, TextModel};
 use crate::{
     Capabilities, CostEstimate, Error, Evidence, ExecutionHooks, Operation, ProviderConfig,
     Request, Scope, Stage, Support,
@@ -30,16 +30,16 @@ fn admission(
     if anthropic {
         (
             ANTHROPIC_SETTINGS,
-            crate::anthropic::BACKEND,
-            crate::anthropic::BASE_URL,
+            crate::providers::anthropic::BACKEND,
+            crate::providers::anthropic::BASE_URL,
             "anthropic",
             "ANTHROPIC_API_KEY",
         )
     } else {
         (
             OPENAI_SETTINGS,
-            crate::openai::BACKEND,
-            crate::openai::BASE_URL,
+            crate::providers::openai::BACKEND,
+            crate::providers::openai::BASE_URL,
             "openai",
             "OPENAI_API_KEY",
         )
@@ -68,7 +68,7 @@ impl Remote {
         hooks: &dyn ExecutionHooks,
     ) -> Result<FillerProposal, Error> {
         let payload = input.consent_text()?;
-        let value = self.text.send(crate::transport::TextRequest {
+        let value = self.text.send(crate::foundation::transport::TextRequest {
             name: "fillers",
             instructions: INSTRUCTIONS,
             schema: schema(),

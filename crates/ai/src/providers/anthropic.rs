@@ -1,7 +1,7 @@
 //! Anthropic Messages translation: one context-window translator plus a reusable
 //! Messages transport for later LLM adapters. Endpoint and provider policy link stay here.
+use crate::foundation::transport::ApiKey;
 use crate::remote::{self, UploadDisclosure};
-use crate::transport::ApiKey;
 use crate::{
     Capabilities, CostEstimate, Error, Evidence, ExecutionHooks, Operation, ProviderConfig,
     Request, Scope, Stage, Support, Translation, TranslationWindow, Translator,

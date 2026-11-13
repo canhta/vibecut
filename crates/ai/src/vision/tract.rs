@@ -4,7 +4,7 @@ use super::{
     SpeakerChunk, VisionDetector, VisionFingerprint, classify_embedding, decisions::decode_faces,
     finite,
 };
-use crate::{Error, ExecutionHooks, Stage, contracts::checkpoint, models};
+use crate::{Error, ExecutionHooks, Stage, contracts::checkpoint, foundation::models};
 use prost::Message;
 use std::{collections::VecDeque, fs::File, path::Path, sync::Arc};
 use tract_linalg::multithread::Executor;

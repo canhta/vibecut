@@ -14,7 +14,7 @@ use crate::{
     providers::TextAccess,
     session::wire::EmphasisSuggestion,
 };
-use ai::emphasis::{
+use ai::text::emphasis::{
     EmphasisInput, EmphasisRefusal, EmphasisSegment, EmphasisSelection, EmphasisSettings,
     EmphasisWord,
 };
@@ -158,7 +158,7 @@ impl EmphasisRequest {
         let (id, cancel) = runner.submit(spec, move |context| {
             context.check_cancelled()?;
             context.progress(crate::jobs::JobStage::Process, 0.1)?;
-            let selections = ai::emphasis::select_emphasis(
+            let selections = ai::text::emphasis::select_emphasis(
                 prepared.selector.as_ref(),
                 &input,
                 &ai::Request {

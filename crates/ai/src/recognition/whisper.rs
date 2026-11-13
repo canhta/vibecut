@@ -4,7 +4,7 @@ use crate::{
     Provenance, ProviderConfig, RawToken, RecognitionSegment, Request, SampleRange, Scope, Stage,
     Support, TimingUnit, Transcriber,
     contracts::checkpoint,
-    models::{Model, storage_error, verify_file},
+    foundation::models::{Model, storage_error, verify_file},
 };
 use std::{collections::BTreeSet, path::Path, sync::Once};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
@@ -77,7 +77,7 @@ impl Whisper {
         hooks: &dyn ExecutionHooks,
     ) -> Result<Self, Error> {
         model.validate()?;
-        let default = crate::models::catalog()?
+        let default = crate::foundation::models::catalog()?
             .into_iter()
             .find(|m| m.id == "whisper-large-v3-turbo")
             .ok_or(Error::Unsupported)?;

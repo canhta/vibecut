@@ -1,20 +1,10 @@
 //! Offline provider policy and validated transcription/alignment/translation execution.
-mod foundation;
-mod providers;
-mod recognition;
+pub mod foundation;
+pub mod providers;
+pub mod recognition;
 pub mod speech;
-mod text;
+pub mod text;
 pub mod vision;
-
-pub use foundation::{models, transport};
-pub use providers::{anthropic, elevenlabs, openai};
-#[cfg(feature = "candle-align")]
-pub use recognition::alignment;
-#[cfg(feature = "gipformer")]
-pub use recognition::gipformer;
-#[cfg(feature = "whisper")]
-pub use recognition::whisper;
-pub use text::{chapters, clips, conversation, emphasis, fillers, structured};
 
 use foundation::{contracts, remote};
 use recognition::assembly;
@@ -104,11 +94,11 @@ pub enum Error {
     #[error("invalid caption output")]
     Captions(#[from] captions::Error),
     #[error("chapter generation refused: {0}")]
-    Chapters(#[from] chapters::ChapterRefusal),
+    Chapters(#[from] text::chapters::ChapterRefusal),
     #[error("filler classification refused: {0}")]
-    Fillers(#[from] fillers::FillerRefusal),
+    Fillers(#[from] text::fillers::FillerRefusal),
     #[error("caption emphasis refused: {0}")]
-    Emphasis(#[from] emphasis::EmphasisRefusal),
+    Emphasis(#[from] text::emphasis::EmphasisRefusal),
 }
 
 impl Error {

@@ -89,7 +89,7 @@ trusted `Policy::snapshot_overwrite` grants replacement (the CLI's `--allow-over
 
 ## Chapter sidecars
 
-`chapter_sidecars::write` takes a sidecar stem, a validated `ai::chapters::ChapterDocument`, the
+`chapter_sidecars::write` takes a sidecar stem, a validated `ai::text::chapters::ChapterDocument`, the
 captured project, protected active project and metadata paths, caller hooks and overwrite
 policy. It derives `<stem>.txt` and `<stem>.json` without touching the extension inside a native
 name, serializes both formats before admission, preflights both destinations against project

@@ -158,7 +158,7 @@ pub enum JobOutput {
     /// Reviewed-span candidates of `timeline.pause_candidates`.
     Pauses(PauseCandidates),
     /// The chapter document of `chapters.generate`.
-    Chapters(Box<ai::chapters::ChapterDocument>),
+    Chapters(Box<ai::text::chapters::ChapterDocument>),
     /// Classified occurrences of `fillers.classify`.
     Fillers {
         candidates: Vec<FillerCandidate>,

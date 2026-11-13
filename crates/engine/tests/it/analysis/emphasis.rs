@@ -121,15 +121,15 @@ fn project() -> Arc<Project> {
 }
 
 fn config() -> ai::ProviderConfig {
-    ai::emphasis::OpenAiEmphasisSelector::provider_config("gpt-6-luna").unwrap()
+    ai::text::emphasis::OpenAiEmphasisSelector::provider_config("gpt-6-luna").unwrap()
 }
 
 struct Selector {
-    proposal: Result<Vec<ai::emphasis::EmphasisSelection>, ()>,
+    proposal: Result<Vec<ai::text::emphasis::EmphasisSelection>, ()>,
     calls: AtomicUsize,
-    seen: Mutex<Option<ai::emphasis::EmphasisInput>>,
+    seen: Mutex<Option<ai::text::emphasis::EmphasisInput>>,
 }
-impl ai::emphasis::EmphasisSelector for Selector {
+impl ai::text::emphasis::EmphasisSelector for Selector {
     fn config(&self) -> &ai::ProviderConfig {
         static CONFIG: std::sync::OnceLock<ai::ProviderConfig> = std::sync::OnceLock::new();
         CONFIG.get_or_init(config)
@@ -137,7 +137,7 @@ impl ai::emphasis::EmphasisSelector for Selector {
     fn capabilities(&self, scope: &ai::Scope) -> ai::Capabilities {
         ai::Capabilities {
             model: self.config().model().clone(),
-            mode: ai::emphasis::MODE.into(),
+            mode: ai::text::emphasis::MODE.into(),
             operation: ai::Operation::SelectEmphasis,
             languages: vec![scope.source_language.clone()],
             target_languages: Vec::new(),
@@ -145,7 +145,7 @@ impl ai::emphasis::EmphasisSelector for Selector {
             diarization: ai::Support::Unsupported,
             live_audio_input: ai::Support::Unsupported,
             file_result_stream: ai::Support::Unsupported,
-            max_upload_bytes: Some(ai::emphasis::MAX_WIRE),
+            max_upload_bytes: Some(ai::text::emphasis::MAX_WIRE),
             max_duration_micros: None,
             evidence: ai::Evidence::Advertised,
             revision: "emphasis-v1".into(),
@@ -156,14 +156,14 @@ impl ai::emphasis::EmphasisSelector for Selector {
     }
     fn select(
         &self,
-        input: &ai::emphasis::EmphasisInput,
+        input: &ai::text::emphasis::EmphasisInput,
         _: &ai::Request<'_>,
         _: &dyn ai::ExecutionHooks,
-    ) -> Result<ai::emphasis::EmphasisProposal, ai::Error> {
+    ) -> Result<ai::text::emphasis::EmphasisProposal, ai::Error> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         *self.seen.lock().unwrap() = Some(input.clone());
         match &self.proposal {
-            Ok(selections) => Ok(ai::emphasis::EmphasisProposal {
+            Ok(selections) => Ok(ai::text::emphasis::EmphasisProposal {
                 selections: selections.clone(),
             }),
             Err(()) => Err(ai::Error::Server),
@@ -172,7 +172,7 @@ impl ai::emphasis::EmphasisSelector for Selector {
 }
 
 struct Unused;
-impl ai::chapters::ChapterGenerator for Unused {
+impl ai::text::chapters::ChapterGenerator for Unused {
     fn config(&self) -> &ai::ProviderConfig {
         static CONFIG: std::sync::OnceLock<ai::ProviderConfig> = std::sync::OnceLock::new();
         CONFIG.get_or_init(config)
@@ -185,14 +185,14 @@ impl ai::chapters::ChapterGenerator for Unused {
     }
     fn propose(
         &self,
-        _: &ai::chapters::ChapterInput,
+        _: &ai::text::chapters::ChapterInput,
         _: &ai::Request<'_>,
         _: &dyn ai::ExecutionHooks,
-    ) -> Result<ai::chapters::ChapterProposal, ai::Error> {
+    ) -> Result<ai::text::chapters::ChapterProposal, ai::Error> {
         Err(ai::Error::Unsupported)
     }
 }
-impl ai::fillers::FillerClassifier for Unused {
+impl ai::text::fillers::FillerClassifier for Unused {
     fn config(&self) -> &ai::ProviderConfig {
         static CONFIG: std::sync::OnceLock<ai::ProviderConfig> = std::sync::OnceLock::new();
         CONFIG.get_or_init(config)
@@ -205,10 +205,10 @@ impl ai::fillers::FillerClassifier for Unused {
     }
     fn classify(
         &self,
-        _: &ai::fillers::FillerInput,
+        _: &ai::text::fillers::FillerInput,
         _: &ai::Request<'_>,
         _: &dyn ai::ExecutionHooks,
-    ) -> Result<ai::fillers::FillerProposal, ai::Error> {
+    ) -> Result<ai::text::fillers::FillerProposal, ai::Error> {
         Err(ai::Error::Unsupported)
     }
 }
@@ -270,15 +270,15 @@ fn wait(runner: &mut JobRunner, job: &EmphasisJob) -> JobState {
     }
 }
 
-fn selector(proposal: Result<Vec<ai::emphasis::EmphasisSelection>, ()>) -> Arc<Selector> {
+fn selector(proposal: Result<Vec<ai::text::emphasis::EmphasisSelection>, ()>) -> Arc<Selector> {
     Arc::new(Selector {
         proposal,
         calls: AtomicUsize::new(0),
         seen: Mutex::new(None),
     })
 }
-fn choose(segment: &str, positions: Vec<u32>) -> ai::emphasis::EmphasisSelection {
-    ai::emphasis::EmphasisSelection {
+fn choose(segment: &str, positions: Vec<u32>) -> ai::text::emphasis::EmphasisSelection {
+    ai::text::emphasis::EmphasisSelection {
         segment: segment.into(),
         positions,
     }
@@ -329,7 +329,7 @@ fn model_positions_outside_the_cue_are_a_typed_refusal_not_a_clamp() {
         assert!(matches!(
             job.finish(&mut runner),
             Err(AnalysisError::Runtime(engine::RuntimeError::Failed(error)))
-                if matches!((error.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<AnalysisError>(), Some(AnalysisError::Ai(ai::Error::Emphasis(ai::emphasis::EmphasisRefusal::InvalidSegments))))
+                if matches!((error.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<AnalysisError>(), Some(AnalysisError::Ai(ai::Error::Emphasis(ai::text::emphasis::EmphasisRefusal::InvalidSegments))))
         ));
     }
 }
@@ -409,7 +409,7 @@ fn cues_without_verified_timing_or_a_caption_item_refuse_before_a_job() {
     assert!(matches!(
         EmphasisRequest::new(&untimed, ItemId(4), None),
         Err(AnalysisError::Ai(ai::Error::Emphasis(
-            ai::emphasis::EmphasisRefusal::EmptyTranscript
+            ai::text::emphasis::EmphasisRefusal::EmptyTranscript
         )))
     ));
 }

@@ -1,12 +1,12 @@
 //! ElevenLabs text-to-speech adapter: consent-gated HTTPS, per-model language
 //! capabilities, exact per-character cost and validated 24 kHz PCM.
+use crate::foundation::transport::ApiKey;
 use crate::remote::{self, UploadDisclosure};
 use crate::speech::{
     MAX_SPEECH_TEXT_BYTES, SpeechAudio, SpeechCapabilities, SpeechFormat, SpeechLanguage,
     SpeechOutput, SpeechPolicy, SpeechRequest, SpeechSynthesizer, SpeechUsage, SpeechVoice,
     SynthesisConsent, SynthesisEstimate, prepare_synthesis, validate_speech_audio,
 };
-use crate::transport::ApiKey;
 use crate::{Error, ExecutionHooks, MAX_PCM_BYTES, Money, Operation, ProviderConfig, Support};
 use ::transport::{HttpRequest, HttpResponse, HttpTransport, retry_after};
 use captions::{LanguageTag, NfcText, NormalizedText};

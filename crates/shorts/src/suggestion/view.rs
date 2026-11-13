@@ -2,7 +2,7 @@
 use super::{ClipCandidate, RejectedClip};
 use crate::clip_boundaries::{BoundaryAdjustment, BoundaryFailure, BoundaryKind};
 use crate::error::Error;
-use ai::clips::{ClipDropReason, ClipRole, ClipSource, ClipSourceSegment, DroppedClip};
+use ai::text::clips::{ClipDropReason, ClipRole, ClipSource, ClipSourceSegment, DroppedClip};
 use engine::control::{
     ClipAdjustment, ClipCandidateView, ClipEdge, ClipPieceRange, ClipPieceSpan, ClipRefusal,
     CostView,

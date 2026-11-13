@@ -1,5 +1,5 @@
 //! Fetches bounded remote model identifiers only on an explicit caller request.
-use crate::transport::ApiKey;
+use crate::foundation::transport::ApiKey;
 use crate::{Error, ExecutionHooks, defaults::validate_model};
 use ::transport::{HttpRequest, HttpTransport, MAX_RESPONSE_BYTES};
 use captions::NfcText;
@@ -26,7 +26,7 @@ pub fn list_remote_models(
                 ("x-api-key".into(), key.expose().into()),
                 (
                     "anthropic-version".into(),
-                    crate::anthropic::ANTHROPIC_VERSION.into(),
+                    crate::providers::anthropic::ANTHROPIC_VERSION.into(),
                 ),
             ],
         ),

@@ -5,10 +5,10 @@
     clippy::indexing_slicing,
     reason = "test fixtures"
 )]
-use ai::transport::ApiKey;
+use ai::foundation::transport::ApiKey;
 use ai::{
     Consent, CostEstimate, Error, ExecutionHooks, Money, Operation, ProviderConfig, Request,
-    SampleRange, Scope, Stage, clips::*,
+    SampleRange, Scope, Stage, text::clips::*,
 };
 use captions::LanguageTag;
 use serde_json::{Value, json};
@@ -57,9 +57,9 @@ fn input(language: &str, n: usize) -> ClipInput {
 }
 fn config(anthropic: bool) -> ProviderConfig {
     if anthropic {
-        ai::clips::AnthropicClipSuggester::provider_config("claude-sonnet-5-5").unwrap()
+        ai::text::clips::AnthropicClipSuggester::provider_config("claude-sonnet-5-5").unwrap()
     } else {
-        ai::clips::OpenAiClipSuggester::provider_config("gpt-6.1-sol").unwrap()
+        ai::text::clips::OpenAiClipSuggester::provider_config("gpt-6.1-sol").unwrap()
     }
 }
 fn scope(w: &ClipInput, p: &dyn ClipSuggester) -> Scope {
@@ -176,10 +176,10 @@ fn remote_contracts_share_id_duration_dedupe_and_wire_validation() {
         let wire: Value = serde_json::from_slice(&requests[0].body).unwrap();
         assert_eq!(wire["model"], p.config().model().as_str());
         if a {
-            assert_eq!(requests[0].url, ai::anthropic::ENDPOINT);
+            assert_eq!(requests[0].url, ai::providers::anthropic::ENDPOINT);
             assert_eq!(wire["output_config"]["format"]["type"], "json_schema");
         } else {
-            assert_eq!(requests[0].url, ai::openai::TRANSLATION_ENDPOINT);
+            assert_eq!(requests[0].url, ai::providers::openai::TRANSLATION_ENDPOINT);
             assert_eq!(wire["store"], false);
             assert_eq!(wire["text"]["format"]["strict"], true);
         }
@@ -438,7 +438,7 @@ fn provider_failures_are_typed() {
 #[ignore = "requires VIBECUT_LIVE_AI=1 and OPENAI_API_KEY; one bounded gpt-6-luna request"]
 fn live_clip_providers() {
     assert_eq!(std::env::var("VIBECUT_LIVE_AI").as_deref(), Ok("1"));
-    let cfg = ai::clips::OpenAiClipSuggester::provider_config("gpt-6-luna").unwrap();
+    let cfg = ai::text::clips::OpenAiClipSuggester::provider_config("gpt-6-luna").unwrap();
     let p = OpenAiClipSuggester::new(
         cfg,
         ApiKey::new(std::env::var("OPENAI_API_KEY").unwrap()).unwrap(),
@@ -999,7 +999,7 @@ fn luna_model_selection_disclosure_and_nested_schema_match_the_wire() {
         cancel: None,
         fail: false,
     });
-    let cfg = ai::clips::OpenAiClipSuggester::provider_config("gpt-6-luna").unwrap();
+    let cfg = ai::text::clips::OpenAiClipSuggester::provider_config("gpt-6-luna").unwrap();
     let p =
         OpenAiClipSuggester::new(cfg, ApiKey::new("synthetic-key").unwrap(), t.clone()).unwrap();
     let s = scope(&w, &p);

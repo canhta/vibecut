@@ -4,7 +4,7 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
-use ai::clips::{ClipRole, ClipSourceSegment};
+use ai::text::clips::{ClipRole, ClipSourceSegment};
 use captions::{Fingerprint, LanguageRegistry, LanguageTag, Segment, Transcript, Word};
 use media::SpeechEnergyWindow;
 use shorts::Error;

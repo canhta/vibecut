@@ -14,7 +14,7 @@ pub fn parse<T: DeserializeOwned>(response: &HttpResponse) -> Result<T, Error> {
         return Err(Error::Payload);
     }
     if !(200..=299).contains(&response.status) {
-        return Err(crate::openai::status_error(response));
+        return Err(crate::providers::openai::status_error(response));
     }
     let value: Value = serde_json::from_slice(&response.body).map_err(|_| Error::Schema)?;
     if value.get("status").and_then(Value::as_str) != Some("completed") {

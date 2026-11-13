@@ -34,12 +34,15 @@ const MAX_BASE_BYTES: usize = 200;
 pub struct ClipShort {
     pub title: NfcText,
     /// Canonical AI clip pieces in play order. Export reads each piece's range.
-    pub segments: Vec<ai::clips::ClipSourceSegment>,
+    pub segments: Vec<ai::text::clips::ClipSourceSegment>,
     /// Optional normalized source crop applied to every piece.
     pub crop: Option<project::Crop>,
 }
 impl ClipShort {
-    pub fn new(title: impl Into<NfcText>, segments: Vec<ai::clips::ClipSourceSegment>) -> Self {
+    pub fn new(
+        title: impl Into<NfcText>,
+        segments: Vec<ai::text::clips::ClipSourceSegment>,
+    ) -> Self {
         Self {
             title: title.into(),
             segments,
@@ -47,7 +50,7 @@ impl ClipShort {
         }
     }
     /// Preserve the accepted suggestion's play order and ranges; crop stays centered.
-    pub fn from_suggestion(suggestion: &ai::clips::ClipSuggestion) -> Self {
+    pub fn from_suggestion(suggestion: &ai::text::clips::ClipSuggestion) -> Self {
         Self {
             title: suggestion.proposal.title.clone(),
             segments: suggestion.segments.clone(),

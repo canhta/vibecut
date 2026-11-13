@@ -4,14 +4,14 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
-use ai::openai::{
+use ai::foundation::transport::ApiKey;
+use ai::providers::openai::{
     OpenAiSpeechSynthesizer, SPEECH_ENDPOINT, SPEECH_LANGUAGES, SPEECH_SAMPLE_RATE, SPEECH_VOICES,
 };
 use ai::speech::{
     SpeechFormat, SpeechLanguage, SpeechOutput, SpeechRequest, SpeechSynthesizer, SynthesisConsent,
     VoiceCategory, prepare_synthesis, synthesize,
 };
-use ai::transport::ApiKey;
 use ai::{Error, ExecutionHooks, Money, ProviderConfig, Stage};
 use base64::Engine as _;
 use captions::LanguageTag;

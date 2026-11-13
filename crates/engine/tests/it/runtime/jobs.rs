@@ -1914,7 +1914,7 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
         (
             || {
                 E::Models(engine::models::Error::Ai(ai::Error::Chapters(
-                    ai::chapters::ChapterRefusal::EmptyTranscript,
+                    ai::text::chapters::ChapterRefusal::EmptyTranscript,
                 )))
             },
             C::Refused,

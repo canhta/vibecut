@@ -4,8 +4,10 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
-use ai::elevenlabs::{ENDPOINT, ElevenLabsTranscriber, MAX_DURATION_MICROS, MAX_UPLOAD_BYTES};
-use ai::transport::ApiKey;
+use ai::foundation::transport::ApiKey;
+use ai::providers::elevenlabs::{
+    ENDPOINT, ElevenLabsTranscriber, MAX_DURATION_MICROS, MAX_UPLOAD_BYTES,
+};
 use ai::{
     AudioWindow, Consent, CostEstimate, Error, ExecutionHooks, Money, Operation, ProviderConfig,
     Request, Scope, Stage, TimingUnit, Transcriber,
@@ -90,7 +92,7 @@ fn config() -> ProviderConfig {
 }
 
 fn other_config() -> ProviderConfig {
-    ai::openai::OpenAiTranscriber::provider_config("gpt-transcribe").unwrap()
+    ai::providers::openai::OpenAiTranscriber::provider_config("gpt-transcribe").unwrap()
 }
 
 fn scope(provider: ProviderConfig) -> Scope {

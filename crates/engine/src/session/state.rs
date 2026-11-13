@@ -540,12 +540,7 @@ impl Session {
         }
     }
 
-    fn commit(
-        &mut self,
-        command: Command,
-        wire: bool,
-        ripple: bool,
-    ) -> Result<Outcome> {
+    fn commit(&mut self, command: Command, wire: bool, ripple: bool) -> Result<Outcome> {
         let (command, ripple) = match command {
             // In-process entries may give one replacement preview its ripple policy;
             // the wire keeps refusing a session control inside a batch.
@@ -837,11 +832,7 @@ mod tests {
                 // Metadata, revision and ledger events.
                 s.commit(view(3.0), false, false)?;
                 // Ripple policy.
-                s.commit(
-                    Command::TimelineSetRipple { enabled: true },
-                    false,
-                    false,
-                )?;
+                s.commit(Command::TimelineSetRipple { enabled: true }, false, false)?;
                 // Gesture entry and the staged preview flag.
                 s.commit(
                     Command::TimelinePreview {

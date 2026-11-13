@@ -5,8 +5,8 @@
     reason = "integration fixtures"
 )]
 use ::transport::{HttpRequest, HttpResponse, HttpTransport};
-use ai::transport::ApiKey;
-use ai::{openai::*, *};
+use ai::foundation::transport::ApiKey;
+use ai::{providers::openai::*, *};
 use captions::{Cue, CueText, CueTrack, LanguageTag};
 use engine::{
     ByteBudget, Command, Session,

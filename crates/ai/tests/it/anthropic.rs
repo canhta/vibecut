@@ -4,11 +4,11 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
-use ai::anthropic::{
+use ai::foundation::transport::ApiKey;
+use ai::providers::anthropic::{
     ANTHROPIC_VERSION, AnthropicTranslator, ENDPOINT, MessagesClient, TRANSLATION_MODE,
     message_text,
 };
-use ai::transport::ApiKey;
 use ai::{
     Consent, Error, ExecutionHooks, GlossaryTerm, Money, Operation, ProviderConfig, Request, Scope,
     Stage, Translation, TranslationSegment, TranslationWindow, Translator, translate,
@@ -210,7 +210,7 @@ fn six_directions_use_strict_messages_schema_and_context() {
         assert_eq!(disclosure.model.as_str(), "claude-sonnet-5-5");
         assert_eq!(
             disclosure.link("policy").unwrap().as_str(),
-            ai::anthropic::POLICY_URL
+            ai::providers::anthropic::POLICY_URL
         );
         assert!(
             disclosure

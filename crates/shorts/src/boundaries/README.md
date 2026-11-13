@@ -1,6 +1,6 @@
 # Clip boundary adjustment
 
-`clip_boundaries::snap_clip_boundaries` takes explicit shorts as vectors of `ai::clips::ClipSourceSegment` in play order, a source Transcript, its resolved LanguageProfile, media SpeechEnergyWindows and ClipBoundarySettings. Suggestion generation is optional. The caller can submit media energy decoding through the JobRunner with its cancellation token. Snapping performs no IO or project edits.
+`clip_boundaries::snap_clip_boundaries` takes explicit shorts as vectors of `ai::text::clips::ClipSourceSegment` in play order, a source Transcript, its resolved LanguageProfile, media SpeechEnergyWindows and ClipBoundarySettings. Suggestion generation is optional. The caller can submit media energy decoding through the JobRunner with its cancellation token. Snapping performs no IO or project edits.
 
 Every source edge is adjusted independently to an output-fps frame. Selection prefers a sentence gap with low RMS, then a sentence gap, then low RMS in another safe gap, then any word or segment gap. Within a word-gap tier, measured RMS ranks before distance and earlier time, even when every window exceeds the silence threshold. The threshold is an explicit amplitude ratio.
 

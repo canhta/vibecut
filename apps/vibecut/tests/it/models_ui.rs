@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 //! Model-manager evidence that needs a whole window, the app owner or the repo tree.
-use ai::models::{Model, ModelFile};
+use ai::foundation::models::{Model, ModelFile};
 use egui_kittest::kittest::{By, Queryable};
 use engine::{
     ByteBudget,
@@ -162,7 +162,7 @@ fn model_manager_screenshot_is_available_at_both_scales() {
     for scale in [1.0, 2.0] {
         let manager = manager(
             dir.path(),
-            ai::models::catalog().unwrap(),
+            ai::foundation::models::catalog().unwrap(),
             Arc::new(Http::default()),
             Arc::new(Io {
                 available: u64::MAX,
@@ -203,7 +203,7 @@ fn model_manager_screenshot_is_available_at_both_scales() {
 #[test]
 fn packaged_inputs_never_include_model_weights() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let names: std::collections::BTreeSet<String> = ai::models::catalog()
+    let names: std::collections::BTreeSet<String> = ai::foundation::models::catalog()
         .unwrap()
         .iter()
         .flat_map(|model| model.files.iter().map(|file| file.name.clone()))

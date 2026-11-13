@@ -5,7 +5,7 @@ use super::{
 };
 use crate::ByteOwner;
 use crate::runtime::{Error as RuntimeError, Result};
-use ai::models::Model;
+use ai::foundation::models::Model;
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -281,7 +281,7 @@ impl ArtifactCache {
             if !meta.file_type().is_file() || meta.len() != file.size {
                 return Err(RuntimeError::CacheCorrupt);
             }
-            ai::models::verify_file(&mut fs::File::open(path)?, file, hooks)
+            ai::foundation::models::verify_file(&mut fs::File::open(path)?, file, hooks)
                 .map_err(RuntimeError::Model)?;
         }
         Ok(Some(ModelLease {

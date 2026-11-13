@@ -1,6 +1,6 @@
 //! Owns remote model selection independently of any window.
 mod selection;
-use ai::transport::ApiKey;
+use ai::foundation::transport::ApiKey;
 use engine::providers::Credentials;
 pub use selection::{AiPreferences, MAX_RECENT_MODELS, ModelChoice};
 use std::sync::{

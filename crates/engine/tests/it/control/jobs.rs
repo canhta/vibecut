@@ -1091,7 +1091,7 @@ fn chapters_generate_uses_the_lent_consent_and_exports_sidecars() {
     assert_eq!(document.chapters()[0].start, Tick::ZERO);
     assert_eq!(serde_json::to_vec(s.project().data()).unwrap(), before);
 
-    let edited = ai::chapters::ChapterDocument::new(
+    let edited = ai::text::chapters::ChapterDocument::new(
         document.language().clone(),
         document.duration(),
         "Reviewed title".into(),
@@ -1137,7 +1137,7 @@ fn chapters_generate_uses_the_lent_consent_and_exports_sidecars() {
     assert!(paths.json.exists());
     let json = std::fs::read(&paths.json).unwrap();
     assert_eq!(
-        ai::chapters::ChapterDocument::from_json(&json)
+        ai::text::chapters::ChapterDocument::from_json(&json)
             .unwrap()
             .title()
             .as_str(),
@@ -1965,22 +1965,24 @@ fn chapters_control_preserves_resolved_custom_model_and_requires_unknown_price_a
     let wire = Arc::new(Wire(AtomicUsize::new(0)));
     let accepted = Arc::new(AtomicBool::new(false));
     let config =
-        ai::chapters::OpenAiChapterGenerator::provider_config("fixture-control-model").unwrap();
+        ai::text::chapters::OpenAiChapterGenerator::provider_config("fixture-control-model")
+            .unwrap();
     let filler =
-        ai::fillers::OpenAiFillerClassifier::provider_config("fixture-control-model").unwrap();
+        ai::text::fillers::OpenAiFillerClassifier::provider_config("fixture-control-model")
+            .unwrap();
     let access = TextAccess::new(
         Arc::new(
-            ai::chapters::OpenAiChapterGenerator::new(
+            ai::text::chapters::OpenAiChapterGenerator::new(
                 config,
-                ai::transport::ApiKey::new("synthetic").unwrap(),
+                ai::foundation::transport::ApiKey::new("synthetic").unwrap(),
                 wire.clone(),
             )
             .unwrap(),
         ),
         Arc::new(
-            ai::fillers::OpenAiFillerClassifier::new(
+            ai::text::fillers::OpenAiFillerClassifier::new(
                 filler,
-                ai::transport::ApiKey::new("synthetic").unwrap(),
+                ai::foundation::transport::ApiKey::new("synthetic").unwrap(),
                 wire.clone(),
             )
             .unwrap(),

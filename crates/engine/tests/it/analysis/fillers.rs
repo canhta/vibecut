@@ -93,16 +93,16 @@ fn project() -> Arc<Project> {
 }
 
 fn config() -> ai::ProviderConfig {
-    ai::fillers::OpenAiFillerClassifier::provider_config("gpt-6-luna").unwrap()
+    ai::text::fillers::OpenAiFillerClassifier::provider_config("gpt-6-luna").unwrap()
 }
 
 struct Fillers {
-    findings: Vec<ai::fillers::FillerFinding>,
+    findings: Vec<ai::text::fillers::FillerFinding>,
     calls: AtomicUsize,
-    seen: Mutex<Option<ai::fillers::FillerInput>>,
+    seen: Mutex<Option<ai::text::fillers::FillerInput>>,
     wait_for_cancel: bool,
 }
-impl ai::fillers::FillerClassifier for Fillers {
+impl ai::text::fillers::FillerClassifier for Fillers {
     fn config(&self) -> &ai::ProviderConfig {
         static CONFIG: std::sync::OnceLock<ai::ProviderConfig> = std::sync::OnceLock::new();
         CONFIG.get_or_init(config)
@@ -110,7 +110,7 @@ impl ai::fillers::FillerClassifier for Fillers {
     fn capabilities(&self, scope: &ai::Scope) -> ai::Capabilities {
         ai::Capabilities {
             model: self.config().model().clone(),
-            mode: ai::fillers::MODE.into(),
+            mode: ai::text::fillers::MODE.into(),
             operation: ai::Operation::ClassifyFillers,
             languages: vec![scope.source_language.clone()],
             target_languages: Vec::new(),
@@ -118,7 +118,7 @@ impl ai::fillers::FillerClassifier for Fillers {
             diarization: ai::Support::Unsupported,
             live_audio_input: ai::Support::Unsupported,
             file_result_stream: ai::Support::Unsupported,
-            max_upload_bytes: Some(ai::fillers::MAX_WIRE),
+            max_upload_bytes: Some(ai::text::fillers::MAX_WIRE),
             max_duration_micros: None,
             evidence: ai::Evidence::Advertised,
             revision: "fillers-v1".into(),
@@ -129,10 +129,10 @@ impl ai::fillers::FillerClassifier for Fillers {
     }
     fn classify(
         &self,
-        input: &ai::fillers::FillerInput,
+        input: &ai::text::fillers::FillerInput,
         _: &ai::Request<'_>,
         hooks: &dyn ai::ExecutionHooks,
-    ) -> Result<ai::fillers::FillerProposal, ai::Error> {
+    ) -> Result<ai::text::fillers::FillerProposal, ai::Error> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         *self.seen.lock().unwrap() = Some(input.clone());
         if self.wait_for_cancel {
@@ -141,14 +141,14 @@ impl ai::fillers::FillerClassifier for Fillers {
             }
             return Err(ai::Error::Cancelled);
         }
-        Ok(ai::fillers::FillerProposal {
+        Ok(ai::text::fillers::FillerProposal {
             fillers: self.findings.clone(),
         })
     }
 }
 
 struct UnusedChapters;
-impl ai::chapters::ChapterGenerator for UnusedChapters {
+impl ai::text::chapters::ChapterGenerator for UnusedChapters {
     fn config(&self) -> &ai::ProviderConfig {
         static CONFIG: std::sync::OnceLock<ai::ProviderConfig> = std::sync::OnceLock::new();
         CONFIG.get_or_init(config)
@@ -161,10 +161,10 @@ impl ai::chapters::ChapterGenerator for UnusedChapters {
     }
     fn propose(
         &self,
-        _: &ai::chapters::ChapterInput,
+        _: &ai::text::chapters::ChapterInput,
         _: &ai::Request<'_>,
         _: &dyn ai::ExecutionHooks,
-    ) -> Result<ai::chapters::ChapterProposal, ai::Error> {
+    ) -> Result<ai::text::chapters::ChapterProposal, ai::Error> {
         Err(ai::Error::Unsupported)
     }
 }
@@ -183,7 +183,7 @@ impl ConsentPrompt for Grant {
 }
 
 fn access(
-    classifier: Arc<dyn ai::fillers::FillerClassifier>,
+    classifier: Arc<dyn ai::text::fillers::FillerClassifier>,
     allowed: Arc<AtomicBool>,
 ) -> TextAccess {
     TextAccess::new(
@@ -230,11 +230,11 @@ fn classification_maps_exact_word_ids_to_output_candidates() {
     let project = project();
     let before = serde_json::to_vec(project.data()).unwrap();
     let findings = vec![
-        ai::fillers::FillerFinding {
+        ai::text::fillers::FillerFinding {
             id: "filler:4:cue-1:100".into(),
             kind: captions::FillerKind::FilledPause,
         },
-        ai::fillers::FillerFinding {
+        ai::text::fillers::FillerFinding {
             id: "filler:4:cue-2:200".into(),
             kind: captions::FillerKind::DiscourseMarker,
         },
@@ -279,21 +279,21 @@ fn classification_maps_exact_word_ids_to_output_candidates() {
 #[test]
 fn unknown_duplicate_and_disallowed_marker_ids_are_typed_refusals() {
     for findings in [
-        vec![ai::fillers::FillerFinding {
+        vec![ai::text::fillers::FillerFinding {
             id: "filler:4:cue-1:999".into(),
             kind: captions::FillerKind::FilledPause,
         }],
         vec![
-            ai::fillers::FillerFinding {
+            ai::text::fillers::FillerFinding {
                 id: "filler:4:cue-1:0".into(),
                 kind: captions::FillerKind::FilledPause,
             },
-            ai::fillers::FillerFinding {
+            ai::text::fillers::FillerFinding {
                 id: "filler:4:cue-1:0".into(),
                 kind: captions::FillerKind::FilledPause,
             },
         ],
-        vec![ai::fillers::FillerFinding {
+        vec![ai::text::fillers::FillerFinding {
             id: "filler:4:cue-1:0".into(),
             kind: captions::FillerKind::DiscourseMarker,
         }],
@@ -315,7 +315,7 @@ fn unknown_duplicate_and_disallowed_marker_ids_are_typed_refusals() {
         assert!(matches!(
             job.finish(&mut runner),
             Err(AnalysisError::Runtime(engine::RuntimeError::Failed(error)))
-                if matches!((error.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<AnalysisError>(), Some(AnalysisError::Ai(ai::Error::Fillers(ai::fillers::FillerRefusal::InvalidSegments))
+                if matches!((error.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<AnalysisError>(), Some(AnalysisError::Ai(ai::Error::Fillers(ai::text::fillers::FillerRefusal::InvalidSegments))
                 ))
         ));
     }
@@ -325,7 +325,7 @@ fn unknown_duplicate_and_disallowed_marker_ids_are_typed_refusals() {
 fn consent_is_required_before_the_adapter_and_cancel_discards_the_result() {
     let project = project();
     let classifier = Arc::new(Fillers {
-        findings: vec![ai::fillers::FillerFinding {
+        findings: vec![ai::text::fillers::FillerFinding {
             id: "filler:4:cue-1:0".into(),
             kind: captions::FillerKind::FilledPause,
         }],
@@ -362,20 +362,20 @@ fn empty_unsupported_and_untimed_transcripts_refuse_before_a_job() {
     assert!(matches!(
         FillerRequest::new(&empty, captions::LanguageTag::parse("en").unwrap(), false),
         Err(AnalysisError::Ai(ai::Error::Fillers(
-            ai::fillers::FillerRefusal::EmptyTranscript
+            ai::text::fillers::FillerRefusal::EmptyTranscript
         )))
     ));
     assert!(matches!(
         FillerRequest::new(&empty, captions::LanguageTag::parse("fr").unwrap(), false),
         Err(AnalysisError::Ai(ai::Error::Fillers(
-            ai::fillers::FillerRefusal::UnsupportedLanguage
+            ai::text::fillers::FillerRefusal::UnsupportedLanguage
         )))
     ));
     let project = project();
     assert!(matches!(
         FillerRequest::new(&project, captions::LanguageTag::parse("vi").unwrap(), false),
         Err(AnalysisError::Ai(ai::Error::Fillers(
-            ai::fillers::FillerRefusal::EmptyTranscript
+            ai::text::fillers::FillerRefusal::EmptyTranscript
         )))
     ));
 }

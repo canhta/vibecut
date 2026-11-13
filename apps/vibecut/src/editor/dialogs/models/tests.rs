@@ -5,7 +5,7 @@ use crate::editor::context::bench::Bench;
 use crate::editor::{Editor, egui};
 use crate::preferences::Preferences;
 use crate::services::playback::{Files, Playback};
-use ai::models::{Model, ModelFile};
+use ai::foundation::models::{Model, ModelFile};
 use egui_kittest::kittest::{By, NodeT, Queryable};
 use engine::{
     ByteBudget,
@@ -481,7 +481,7 @@ fn queued_transfer_refuses_download_as_busy_until_its_owner_releases() {
         .submit(
             &mut owner,
             fixture.clone(),
-            Some(ai::models::DownloadConsent::grant(&fixture).unwrap()),
+            Some(ai::foundation::models::DownloadConsent::grant(&fixture).unwrap()),
         )
         .unwrap();
     let bundle = dir

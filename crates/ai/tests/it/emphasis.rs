@@ -4,8 +4,8 @@
     clippy::panic,
     reason = "test fixtures"
 )]
-use ai::emphasis::*;
-use ai::transport::ApiKey;
+use ai::foundation::transport::ApiKey;
+use ai::text::emphasis::*;
 use ai::{
     Consent, CostEstimate, Error, ExecutionHooks, Money, Operation, ProviderConfig, Request,
     SampleRange, Scope, Stage,
@@ -276,10 +276,10 @@ fn recorded_replies_resolve_and_the_upload_discloses_its_provider() {
         assert_eq!(wire["model"], p.config().model().as_str());
         assert!(wire["text"]["format"]["name"] == "emphasis" || anthropic);
         if anthropic {
-            assert_eq!(requests[0].url, ai::anthropic::ENDPOINT);
+            assert_eq!(requests[0].url, ai::providers::anthropic::ENDPOINT);
             assert_eq!(wire["output_config"]["format"]["type"], "json_schema");
         } else {
-            assert_eq!(requests[0].url, ai::openai::TRANSLATION_ENDPOINT);
+            assert_eq!(requests[0].url, ai::providers::openai::TRANSLATION_ENDPOINT);
             assert_eq!(wire["store"], false);
             assert_eq!(wire["text"]["format"]["strict"], true);
         }

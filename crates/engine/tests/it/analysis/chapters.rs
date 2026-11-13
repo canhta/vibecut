@@ -109,13 +109,13 @@ fn runner() -> JobRunner {
 }
 
 fn config() -> ai::ProviderConfig {
-    ai::chapters::OpenAiChapterGenerator::provider_config("gpt-6-luna").unwrap()
+    ai::text::chapters::OpenAiChapterGenerator::provider_config("gpt-6-luna").unwrap()
 }
 
 fn capabilities(scope: &ai::Scope, config: &ai::ProviderConfig) -> ai::Capabilities {
     ai::Capabilities {
         model: config.model().clone(),
-        mode: ai::chapters::MODE.into(),
+        mode: ai::text::chapters::MODE.into(),
         operation: ai::Operation::GenerateChapters,
         languages: vec![scope.source_language.clone()],
         target_languages: Vec::new(),
@@ -123,7 +123,7 @@ fn capabilities(scope: &ai::Scope, config: &ai::ProviderConfig) -> ai::Capabilit
         diarization: ai::Support::Unsupported,
         live_audio_input: ai::Support::Unsupported,
         file_result_stream: ai::Support::Unsupported,
-        max_upload_bytes: Some(ai::chapters::MAX_WIRE),
+        max_upload_bytes: Some(ai::text::chapters::MAX_WIRE),
         max_duration_micros: None,
         evidence: ai::Evidence::Advertised,
         revision: "chapters-v1".into(),
@@ -133,10 +133,10 @@ fn capabilities(scope: &ai::Scope, config: &ai::ProviderConfig) -> ai::Capabilit
 /// Records the input it received and proposes the first and third cues.
 struct FixtureChapters {
     config: ai::ProviderConfig,
-    seen: Arc<Mutex<Option<ai::chapters::ChapterInput>>>,
+    seen: Arc<Mutex<Option<ai::text::chapters::ChapterInput>>>,
     calls: Arc<AtomicUsize>,
 }
-impl ai::chapters::ChapterGenerator for FixtureChapters {
+impl ai::text::chapters::ChapterGenerator for FixtureChapters {
     fn config(&self) -> &ai::ProviderConfig {
         &self.config
     }
@@ -148,23 +148,23 @@ impl ai::chapters::ChapterGenerator for FixtureChapters {
     }
     fn propose(
         &self,
-        input: &ai::chapters::ChapterInput,
+        input: &ai::text::chapters::ChapterInput,
         _: &ai::Request<'_>,
         _: &dyn ai::ExecutionHooks,
-    ) -> Result<ai::chapters::ChapterProposal, ai::Error> {
+    ) -> Result<ai::text::chapters::ChapterProposal, ai::Error> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         *self.seen.lock().unwrap() = Some(input.clone());
         let first = input.segments.first().ok_or(ai::Error::Schema)?;
         let last = input.segments.get(2).ok_or(ai::Error::Schema)?;
-        Ok(ai::chapters::ChapterProposal {
+        Ok(ai::text::chapters::ChapterProposal {
             title: "A journey".into(),
             description: "Three short chapters.".into(),
             chapters: vec![
-                ai::chapters::ChapterProposalEntry {
+                ai::text::chapters::ChapterProposalEntry {
                     start_segment_id: first.id.clone(),
                     title: "Opening".into(),
                 },
-                ai::chapters::ChapterProposalEntry {
+                ai::text::chapters::ChapterProposalEntry {
                     start_segment_id: last.id.clone(),
                     title: "Closing".into(),
                 },
@@ -174,7 +174,7 @@ impl ai::chapters::ChapterGenerator for FixtureChapters {
 }
 
 struct FixedError;
-impl ai::chapters::ChapterGenerator for FixedError {
+impl ai::text::chapters::ChapterGenerator for FixedError {
     fn config(&self) -> &ai::ProviderConfig {
         static CONFIG: std::sync::OnceLock<ai::ProviderConfig> = std::sync::OnceLock::new();
         CONFIG.get_or_init(config)
@@ -187,16 +187,16 @@ impl ai::chapters::ChapterGenerator for FixedError {
     }
     fn propose(
         &self,
-        _: &ai::chapters::ChapterInput,
+        _: &ai::text::chapters::ChapterInput,
         _: &ai::Request<'_>,
         _: &dyn ai::ExecutionHooks,
-    ) -> Result<ai::chapters::ChapterProposal, ai::Error> {
+    ) -> Result<ai::text::chapters::ChapterProposal, ai::Error> {
         Err(ai::Error::Auth)
     }
 }
 
 struct Waiting;
-impl ai::chapters::ChapterGenerator for Waiting {
+impl ai::text::chapters::ChapterGenerator for Waiting {
     fn config(&self) -> &ai::ProviderConfig {
         static CONFIG: std::sync::OnceLock<ai::ProviderConfig> = std::sync::OnceLock::new();
         CONFIG.get_or_init(config)
@@ -209,10 +209,10 @@ impl ai::chapters::ChapterGenerator for Waiting {
     }
     fn propose(
         &self,
-        _: &ai::chapters::ChapterInput,
+        _: &ai::text::chapters::ChapterInput,
         _: &ai::Request<'_>,
         hooks: &dyn ai::ExecutionHooks,
-    ) -> Result<ai::chapters::ChapterProposal, ai::Error> {
+    ) -> Result<ai::text::chapters::ChapterProposal, ai::Error> {
         while !hooks.cancelled() {
             std::thread::yield_now();
         }
@@ -237,14 +237,14 @@ impl ConsentPrompt for Grant {
 struct UnusedFillers {
     config: ai::ProviderConfig,
 }
-impl ai::fillers::FillerClassifier for UnusedFillers {
+impl ai::text::fillers::FillerClassifier for UnusedFillers {
     fn config(&self) -> &ai::ProviderConfig {
         &self.config
     }
     fn capabilities(&self, scope: &ai::Scope) -> ai::Capabilities {
         ai::Capabilities {
             model: self.config.model().clone(),
-            mode: ai::fillers::MODE.into(),
+            mode: ai::text::fillers::MODE.into(),
             operation: ai::Operation::ClassifyFillers,
             languages: vec![scope.source_language.clone()],
             target_languages: Vec::new(),
@@ -252,7 +252,7 @@ impl ai::fillers::FillerClassifier for UnusedFillers {
             diarization: ai::Support::Unsupported,
             live_audio_input: ai::Support::Unsupported,
             file_result_stream: ai::Support::Unsupported,
-            max_upload_bytes: Some(ai::fillers::MAX_WIRE),
+            max_upload_bytes: Some(ai::text::fillers::MAX_WIRE),
             max_duration_micros: None,
             evidence: ai::Evidence::Advertised,
             revision: "fillers-v1".into(),
@@ -263,19 +263,19 @@ impl ai::fillers::FillerClassifier for UnusedFillers {
     }
     fn classify(
         &self,
-        _: &ai::fillers::FillerInput,
+        _: &ai::text::fillers::FillerInput,
         _: &ai::Request<'_>,
         _: &dyn ai::ExecutionHooks,
-    ) -> Result<ai::fillers::FillerProposal, ai::Error> {
+    ) -> Result<ai::text::fillers::FillerProposal, ai::Error> {
         Err(ai::Error::Unsupported)
     }
 }
 
 fn access(
-    generator: Arc<dyn ai::chapters::ChapterGenerator>,
+    generator: Arc<dyn ai::text::chapters::ChapterGenerator>,
     allowed: Arc<AtomicBool>,
 ) -> TextAccess {
-    let config = ai::fillers::OpenAiFillerClassifier::provider_config("gpt-6-luna").unwrap();
+    let config = ai::text::fillers::OpenAiFillerClassifier::provider_config("gpt-6-luna").unwrap();
     TextAccess::new(
         generator,
         Arc::new(UnusedFillers { config }),
@@ -353,21 +353,21 @@ fn empty_unsupported_and_hostile_inputs_refuse_before_a_job() {
     assert!(matches!(
         ChapterRequest::new(&empty, en.clone(), 4),
         Err(AnalysisError::Ai(ai::Error::Chapters(
-            ai::chapters::ChapterRefusal::EmptyTranscript
+            ai::text::chapters::ChapterRefusal::EmptyTranscript
         )))
     ));
     let fr = captions::LanguageTag::parse("fr").unwrap();
     assert!(matches!(
         ChapterRequest::new(&empty, fr, 4),
         Err(AnalysisError::Ai(ai::Error::Chapters(
-            ai::chapters::ChapterRefusal::UnsupportedLanguage
+            ai::text::chapters::ChapterRefusal::UnsupportedLanguage
         )))
     ));
     for max in [0, 51] {
         assert!(matches!(
             ChapterRequest::new(&project(), en.clone(), max),
             Err(AnalysisError::Ai(ai::Error::Chapters(
-                ai::chapters::ChapterRefusal::InvalidSettings
+                ai::text::chapters::ChapterRefusal::InvalidSettings
             )))
         ));
     }
@@ -375,7 +375,7 @@ fn empty_unsupported_and_hostile_inputs_refuse_before_a_job() {
     assert!(matches!(
         ChapterRequest::new(&project(), vi, 4),
         Err(AnalysisError::Ai(ai::Error::Chapters(
-            ai::chapters::ChapterRefusal::EmptyTranscript
+            ai::text::chapters::ChapterRefusal::EmptyTranscript
         )))
     ));
 
@@ -397,7 +397,7 @@ fn empty_unsupported_and_hostile_inputs_refuse_before_a_job() {
     assert!(matches!(
         ChapterRequest::new(&hostile, en, 4),
         Err(AnalysisError::Ai(ai::Error::Chapters(
-            ai::chapters::ChapterRefusal::InvalidSegments
+            ai::text::chapters::ChapterRefusal::InvalidSegments
         )))
     ));
 }

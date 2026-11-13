@@ -13,7 +13,7 @@ use crate::{
     providers::TextAccess,
     session::wire::{FillerCandidate, OutputSpan},
 };
-use ai::fillers::{
+use ai::text::fillers::{
     FillerFinding, FillerInput, FillerRefusal, FillerSegment, FillerSettings, FillerWord,
 };
 use captions::{LanguageTag, NfcText};
@@ -183,7 +183,7 @@ impl FillerRequest {
         let (id, cancel) = runner.submit(spec, move |context| {
             context.check_cancelled()?;
             context.progress(crate::jobs::JobStage::Process, 0.1)?;
-            let findings = ai::fillers::classify_fillers(
+            let findings = ai::text::fillers::classify_fillers(
                 prepared.classifier.as_ref(),
                 &input,
                 &ai::Request {

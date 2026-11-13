@@ -4,7 +4,7 @@ use crate::clip_boundaries::{
 };
 use crate::error::Error;
 use ai::Scope;
-use ai::clips::{
+use ai::text::clips::{
     AnthropicClipSuggester, ClipInput, ClipProposal, ClipSegment, ClipSettings, ClipSource,
     ClipSourceSegment, ClipSuggester, ClipSuggestion, HeuristicClipSuggester, OpenAiClipSuggester,
 };
