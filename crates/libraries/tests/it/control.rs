@@ -584,3 +584,146 @@ fn music_commands_return_typed_results_and_never_edit_the_project() {
     );
     assert!(!s.can_undo());
 }
+
+// Sticker catalogs, search and recents: the bundled flag assets, the flag and shape search rows, and the recents list with its file round trip.
+fn flag_asset_dir() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/stickers/flags")
+}
+
+#[test]
+fn flag_assets_are_all_well_formed_svg_and_counted() {
+    let mut count = 0;
+    for entry in std::fs::read_dir(flag_asset_dir()).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("svg") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).unwrap();
+        let document = roxmltree::Document::parse(&text)
+            .unwrap_or_else(|error| panic!("{} does not parse: {error}", path.display()));
+        assert_eq!(document.root_element().tag_name().name(), "svg");
+        count += 1;
+    }
+    assert_eq!(count, 271, "every catalogued flag has one asset");
+}
+
+#[test]
+fn flag_search_matches_names_codes_regions_and_continents() {
+    use libraries::stickers::search_flags;
+    let codes = |query: &str| {
+        search_flags(query, 500)
+            .items
+            .iter()
+            .map(|item| item.code)
+            .collect::<Vec<_>>()
+    };
+
+    let everything = search_flags("", 100);
+    assert_eq!(
+        (everything.total, everything.items.len(), everything.has_more),
+        (271, 100, true),
+        "empty query returns every row, limited, with a total"
+    );
+    assert_eq!(codes(""), codes("   "), "whitespace is an empty query");
+    assert_eq!(codes("catalonia"), ["ES-CT"]);
+    assert_eq!(codes("  Saint Helena "), ["SH-HL"]);
+    assert_eq!(codes("ascension"), ["SH-AC"]);
+    assert_eq!(
+        codes("Organisations"),
+        ["ARAB", "ASEAN", "CEFTA", "EAC", "UN"],
+        "a region id matches case-insensitively, in catalog order"
+    );
+    assert_eq!(codes("subdivisions").len(), 12);
+    let middle_east = search_flags("west asia", 500);
+    assert!(!middle_east.items.is_empty());
+    assert!(
+        middle_east
+            .items
+            .iter()
+            .all(|item| item.region == Some("Middle East")),
+        "a region alias filters by region"
+    );
+    let europe = search_flags("europe", 500);
+    assert!(!europe.items.is_empty());
+    assert!(europe.items.iter().all(|item| {
+        matches!(
+            item.region,
+            Some("Western Europe" | "Eastern Europe" | "Northern Europe" | "Southern Europe")
+        )
+    }));
+    assert!(codes("zzzz-no-match").is_empty());
+}
+
+#[test]
+fn shape_search_keeps_catalog_order_and_matches_names() {
+    use libraries::stickers::search_shapes;
+    let values = |query: &str| {
+        search_shapes(query)
+            .iter()
+            .map(|shape| shape.value)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        values(""),
+        ["square", "circle", "triangle", "hexagon", "diamond", "star"]
+    );
+    assert_eq!(values("  TRI "), ["triangle"]);
+    assert!(values("zzz").is_empty());
+}
+
+#[test]
+fn recent_stickers_cap_order_dedupe_and_clear() {
+    use libraries::stickers::{FLAGS_PROVIDER, Recents, build_sticker_id, search_flags};
+    let ids: Vec<String> = search_flags("", 500)
+        .items
+        .iter()
+        .map(|item| build_sticker_id(FLAGS_PROVIDER, item.code))
+        .collect();
+    let mut recents = Recents::default();
+    for id in &ids {
+        assert!(recents.record(id));
+    }
+    assert_eq!(recents.ids().len(), 50, "the list keeps the newest 50");
+    assert_eq!(recents.ids()[0], ids[270], "newest first");
+    assert_eq!(recents.ids()[49], ids[221], "the oldest kept entry is last");
+
+    assert!(recents.record(&ids[221]));
+    assert_eq!(recents.ids().len(), 50, "re-recording does not grow the list");
+    assert_eq!(recents.ids()[0], ids[221], "re-recording moves the id to the front");
+    assert_eq!(recents.ids()[1], ids[270]);
+
+    assert!(recents.record(" flags:us "), "ids are trimmed and canonicalised");
+    assert_eq!(recents.ids()[0], "flags:US");
+    assert!(!recents.record("flags:ZZ"), "unknown flag codes are refused");
+    assert!(!recents.record("nope:x"), "unknown providers are refused");
+    assert!(!recents.record("shapes:pentagon"), "unknown shapes are refused");
+    assert_eq!(recents.ids().len(), 50);
+
+    let loaded = Recents::from_ids(
+        ["flags:ad", "flags:AD", "bad", "shapes:star"]
+            .map(str::to_owned)
+            .into_iter(),
+    );
+    assert_eq!(loaded.ids(), ["flags:AD", "shapes:star"], "dedupe keeps the first");
+
+    recents.clear();
+    assert!(recents.ids().is_empty());
+}
+
+#[test]
+fn recent_stickers_persist_round_trip_and_refuse_malformed_files() {
+    use libraries::stickers::Recents;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("stickers").join("recents.json");
+    assert!(Recents::load(&path).unwrap().ids().is_empty(), "a missing file is empty");
+
+    let mut recents = Recents::default();
+    recents.record("shapes:star");
+    recents.record("flags:US");
+    recents.save(&path).unwrap();
+    assert_eq!(Recents::load(&path).unwrap(), recents);
+
+    std::fs::write(&path, "{not a list").unwrap();
+    let error = Recents::load(&path).unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+}

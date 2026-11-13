@@ -6,4 +6,4 @@ Country and regional flags for the Stickers panel's Flags provider. Each SVG is 
 - Licence: MIT, see [LICENSE](LICENSE)
 - Added: 2026-11-13
 - Files: 271 unmodified `<code>.svg` files; each has a `<code>.svg.attribution` sidecar.
-- Catalogued: 254 country rows with metadata live in [libraries](../../../crates/libraries/src/sticker_library/README.md). The other 17 (`arab`, `asean`, `cefta`, `cp`, `dg`, `eac`, `es-ct`, `es-ga`, `es-pv`, `ic`, `pc`, `sh-ac`, `sh-hl`, `sh-ta`, `um`, `un`, `xx`) have no metadata row yet and are not searchable.
+- Catalogued: all 271 rows live in [libraries](../../../crates/libraries/src/sticker_library/README.md). 254 are countries with metadata; the 17 others are organisations (`arab`, `asean`, `cefta`, `eac`, `un`) and subdivisions or territories (`cp`, `dg`, `es-ct`, `es-ga`, `es-pv`, `ic`, `pc`, `sh-ac`, `sh-hl`, `sh-ta`, `um`, `xx`). Their metadata fields are empty.

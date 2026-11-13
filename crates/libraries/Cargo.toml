@@ -27,3 +27,4 @@ wuff = { version = "0.2.10", default-features = false, features = ["brotli"] }
 [dev-dependencies]
 tempfile.workspace = true
 brotli = "9.1.1"
+roxmltree = "0.20.0"

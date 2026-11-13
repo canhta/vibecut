@@ -34,6 +34,8 @@ pub(super) const REGIONS: &[Region] = &[
     Region { id: "Antarctica", aliases: &[] },
     Region { id: "Atlantic Ocean", aliases: &["atlantic"] },
     Region { id: "North Atlantic", aliases: &[] },
+    Region { id: "Organisations", aliases: &[] },
+    Region { id: "Subdivisions", aliases: &[] },
 ];
 
 /// Continent keyword to the region ids it covers.
@@ -299,4 +301,21 @@ pub(super) const COUNTRIES: &[Country] = &[
     Country { code: "ZA", name: "South Africa", region: Some("Sub-Saharan Africa"), languages: &["zulu", "xhosa", "afrikaans", "english"], flag_colors: &["red", "blue", "green", "yellow", "black", "white"] },
     Country { code: "ZM", name: "Zambia", region: Some("Sub-Saharan Africa"), languages: &["english"], flag_colors: &["green", "red", "black", "orange"] },
     Country { code: "ZW", name: "Zimbabwe", region: Some("Sub-Saharan Africa"), languages: &["english", "shona", "ndebele"], flag_colors: &["green", "yellow", "red", "black", "white"] },
+    Country { code: "ARAB", name: "Arab League", region: Some("Organisations"), languages: &[], flag_colors: &[] },
+    Country { code: "ASEAN", name: "ASEAN", region: Some("Organisations"), languages: &[], flag_colors: &[] },
+    Country { code: "CEFTA", name: "Central European Free Trade Agreement", region: Some("Organisations"), languages: &[], flag_colors: &[] },
+    Country { code: "EAC", name: "East African Community", region: Some("Organisations"), languages: &[], flag_colors: &[] },
+    Country { code: "UN", name: "United Nations", region: Some("Organisations"), languages: &[], flag_colors: &[] },
+    Country { code: "CP", name: "Clipperton Island", region: Some("Subdivisions"), languages: &[], flag_colors: &[] },
+    Country { code: "DG", name: "Diego Garcia", region: Some("Subdivisions"), languages: &[], flag_colors: &[] },
+    Country { code: "ES-CT", name: "Catalonia", region: Some("Subdivisions"), languages: &[], flag_colors: &[] },
+    Country { code: "ES-GA", name: "Galicia", region: Some("Subdivisions"), languages: &[], flag_colors: &[] },
+    Country { code: "ES-PV", name: "Basque Country", region: Some("Subdivisions"), languages: &[], flag_colors: &[] },
+    Country { code: "IC", name: "Canary Islands", region: Some("Subdivisions"), languages: &[], flag_colors: &[] },
+    Country { code: "PC", name: "Pitcairn Islands", region: Some("Subdivisions"), languages: &[], flag_colors: &[] },
+    Country { code: "SH-AC", name: "Ascension Island", region: Some("Subdivisions"), languages: &[], flag_colors: &[] },
+    Country { code: "SH-HL", name: "Saint Helena", region: Some("Subdivisions"), languages: &[], flag_colors: &[] },
+    Country { code: "SH-TA", name: "Tristan da Cunha", region: Some("Subdivisions"), languages: &[], flag_colors: &[] },
+    Country { code: "UM", name: "United States Minor Outlying Islands", region: Some("Subdivisions"), languages: &[], flag_colors: &[] },
+    Country { code: "XX", name: "Unknown", region: Some("Subdivisions"), languages: &[], flag_colors: &[] },
 ];
