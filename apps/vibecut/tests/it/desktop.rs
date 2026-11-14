@@ -710,6 +710,50 @@ fn failed_device_pauses_without_wall_clock_substitution() {
     assert_eq!(editor.playback.position().unwrap(), at);
     assert!(editor.activate("transport.play").is_err());
 }
+/// The clock is an anchor plus device frames since the last start, so the stream may stop while
+/// paused: no callback runs between the rows below, and the position never moves.
+#[test]
+fn the_clock_holds_while_paused_and_resumes_from_its_anchor_without_a_stream() {
+    let mut editor = editor();
+    let port = editor.playback.audio_port();
+    let rate = u64::from(editor.session.project().data().settings.audio_sample_rate);
+    let project = || editor.session.project().clone();
+    assert!(!port.stream_wanted(), "a paused editor wants no stream");
+    let anchor = Tick(2 * TICKS_PER_SECOND);
+    // Paused: the stopped stream's last callbacks cannot move the anchor.
+    editor.playback.seek(anchor, false, project()).unwrap();
+    port.fill(&mut vec![0.0; 2 * 4800], 0);
+    assert_eq!(editor.playback.position().unwrap(), anchor);
+    for _ in 0..3 {
+        editor.playback.poll(std::time::Instant::now()).unwrap();
+        assert_eq!(editor.playback.position().unwrap(), anchor);
+    }
+    // Play: the stream is wanted and the position starts at the anchor, before any callback.
+    editor.playback.seek(anchor, true, project()).unwrap();
+    assert!(port.stream_wanted());
+    assert_eq!(editor.playback.position().unwrap(), anchor);
+    // Device frames since the restart advance it by exactly their duration.
+    port.fill(&mut vec![0.0; 2 * rate as usize / 2], 0);
+    port.fill(&mut [0.0; 2], 0);
+    let played = editor.playback.position().unwrap();
+    assert_eq!(played, Tick(anchor.0 + TICKS_PER_SECOND / 2));
+    // Pause keeps that position with the stream stopped.
+    editor.playback.seek(played, false, project()).unwrap();
+    assert!(!port.stream_wanted());
+    assert_eq!(editor.playback.position().unwrap(), played);
+    // Seek while paused, then play: it starts at the seek point, not the old one.
+    let target = Tick(5 * TICKS_PER_SECOND);
+    editor.playback.seek(target, false, project()).unwrap();
+    assert_eq!(editor.playback.position().unwrap(), target);
+    editor.playback.seek(target, true, project()).unwrap();
+    assert_eq!(editor.playback.position().unwrap(), target);
+    port.fill(&mut vec![0.0; 2 * rate as usize / 4], 0);
+    port.fill(&mut [0.0; 2], 0);
+    assert_eq!(
+        editor.playback.position().unwrap(),
+        Tick(target.0 + TICKS_PER_SECOND / 4)
+    );
+}
 #[test]
 fn a_device_lost_while_paused_wakes_the_loop() {
     // The port keeps the wake bound when playback is built; the device thread has none.

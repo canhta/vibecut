@@ -19,8 +19,10 @@ pub(crate) use application::Failure;
 #[cfg(test)]
 pub(crate) use application::{App, Theme};
 pub(crate) use readme::readme_media;
+#[cfg(all(test, windows))]
+pub(crate) use readme::run_tool;
 #[cfg(test)]
-pub(crate) use readme::{finish_publication, publish_outputs, run_tool};
+pub(crate) use readme::{finish_publication, publish_outputs};
 #[cfg(test)]
 pub(super) use scenes::inspector_mixed_vi;
 

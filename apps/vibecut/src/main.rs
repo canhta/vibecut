@@ -16,6 +16,35 @@ use vibecut::{
     services::{gpu::capture::Capture, playback::AudioPort},
 };
 
+/// A device stream and whether it is running. It runs only while the transport plays: the
+/// playback clock is an anchor plus device frames since the last start, so a stopped stream
+/// leaves the paused position exactly where it was.
+struct Device {
+    stream: cpal::Stream,
+    running: bool,
+}
+impl Device {
+    fn new(stream: cpal::Stream) -> Self {
+        // `audio` returns a started stream.
+        Self {
+            stream,
+            running: true,
+        }
+    }
+    fn follow(&mut self, port: &AudioPort) {
+        let wanted = port.stream_wanted();
+        if wanted != self.running
+            && if wanted {
+                self.stream.play()
+            } else {
+                self.stream.pause()
+            }
+            .is_ok()
+        {
+            self.running = wanted;
+        }
+    }
+}
 fn audio(port: Arc<AudioPort>, rate: u32) -> Result<cpal::Stream> {
     let device = cpal::default_host()
         .default_output_device()
@@ -59,9 +88,9 @@ struct Native {
     effects: Option<Arc<vibecut::services::gpu::effects::GpuEffects>>,
     store: PreferenceStore,
     saved_preferences: Preferences,
-    _stream: Option<cpal::Stream>,
+    _stream: Option<Device>,
     audio_port: Option<Arc<AudioPort>>,
-    project_audio: BTreeMap<project::ProjectId, (Arc<AudioPort>, Option<cpal::Stream>)>,
+    project_audio: BTreeMap<project::ProjectId, (Arc<AudioPort>, Option<Device>)>,
     smoke: Option<Smoke>,
     capture: Option<Capture>,
     observe_create: bool,
@@ -141,7 +170,7 @@ impl eframe::App for Native {
             let stream = match audio(port.clone(), rate) {
                 Ok(stream) => {
                     editor.playback.set_device_available(true);
-                    Some(stream)
+                    Some(Device::new(stream))
                 }
                 Err(error) => {
                     tracing::warn!(category="audio_unavailable",error=%error,"Audio output unavailable");
@@ -168,11 +197,19 @@ impl eframe::App for Native {
                     if let Some(effects) = &self.effects {
                         let _ = playback.set_effects(effects.clone());
                     }
-                    self._stream = audio(port.clone(), rate).ok();
+                    self._stream = audio(port.clone(), rate).ok().map(Device::new);
                     playback.set_device_available(self._stream.is_some());
                     self.audio_port = Some(port);
                 }
             }
+        }
+        for (port, device) in self.project_audio.values_mut() {
+            if let Some(device) = device {
+                device.follow(port);
+            }
+        }
+        if let (Some(port), Some(device)) = (&self.audio_port, &mut self._stream) {
+            device.follow(port);
         }
         let Some(editor) = self.workspace.focused_editor() else {
             return;

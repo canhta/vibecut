@@ -64,6 +64,41 @@ impl Sources for Proxied {
         Some(&self.0)
     }
 }
+/// Where an idle worker blocks until the transport, the pointer or cancellation changes what
+/// it should do. A waker stores its change first, then calls `wake`.
+#[derive(Default)]
+struct Park(Mutex<()>, std::sync::Condvar, AtomicU32);
+impl Park {
+    fn wake(&self) {
+        drop(
+            self.0
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        );
+        self.1.notify_all();
+    }
+    /// Block while `idle` holds; the condition is re-read under the lock, so a `wake` between
+    /// the check and the wait cannot be lost.
+    fn wait_while(&self, mut idle: impl FnMut() -> bool) {
+        let mut guard = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        while idle() {
+            self.2.fetch_add(1, Ordering::AcqRel);
+            guard = self
+                .1
+                .wait(guard)
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            self.2.fetch_sub(1, Ordering::AcqRel);
+        }
+    }
+    /// How many workers are blocked here right now.
+    #[cfg(test)]
+    fn parked(&self) -> u32 {
+        self.2.load(Ordering::Acquire)
+    }
+}
 struct Slot {
     epoch: AtomicU64,
     index: AtomicU64,
@@ -85,6 +120,8 @@ pub struct AudioPort {
     /// The owner of the thread that built the port, woken when the device thread reports a
     /// failure: a paused editor shows the lost device only when woken.
     wake: Option<wake::Wake>,
+    /// Where both preview workers block while paused or pinned.
+    park: Park,
 }
 impl AudioPort {
     fn new(budget: &ByteBudget) -> Result<Self> {
@@ -112,6 +149,7 @@ impl AudioPort {
             underruns: AtomicU64::new(0),
             lease,
             wake: wake::current(),
+            park: Park::default(),
         }
     }
     /// Stereo f32 at the project's render-owned sample rate. `latency_frames`
@@ -152,6 +190,11 @@ impl AudioPort {
             start.saturating_add((output.len() / 2) as u64),
             Ordering::Release,
         );
+    }
+    /// Whether the device stream should run: only while the transport plays. The clock never
+    /// reads the device while paused, so the stream may stop and restart without moving it.
+    pub fn stream_wanted(&self) -> bool {
+        self.playing.load(Ordering::Acquire)
     }
     pub fn fail(&self) {
         if !self.failed.swap(true, Ordering::AcqRel)
@@ -548,10 +591,9 @@ impl Playback {
                                     out.error = Some(Arc::new(error));
                                 }
                             }
-                            while !hooks.cancelled() && generation.load(Ordering::Acquire) == epoch
-                            {
-                                std::thread::sleep(Duration::from_millis(2));
-                            }
+                            port.park.wait_while(|| {
+                                !hooks.cancelled() && generation.load(Ordering::Acquire) == epoch
+                            });
                         }
                     }
                     Ok(Vec::new())
@@ -562,9 +604,7 @@ impl Playback {
                     self.jobs.push(job);
                 }
                 Err(error) => {
-                    for cancel in &self.cancels {
-                        cancel.cancel();
-                    }
+                    self.cancel_workers();
                     let error = Arc::new(error);
                     self.workers = Workers::Failed(error.clone());
                     return Err(Error::Worker(error));
@@ -573,6 +613,13 @@ impl Playback {
         }
         self.workers = Workers::Running;
         Ok(())
+    }
+    /// Cancel both workers and wake any that is parked, so each sees it.
+    fn cancel_workers(&self) {
+        for cancel in &self.cancels {
+            cancel.cancel();
+        }
+        self.port.park.wake();
     }
     fn poll_workers(&mut self) -> Result<()> {
         // tick joins only finished handles; Retry must never wait on decoding IO.
@@ -603,9 +650,7 @@ impl Playback {
         if let Some(error) = error {
             let request = read_request(&self.request)?;
             self.seek(self.position()?, false, request.project)?;
-            for cancel in &self.cancels {
-                cancel.cancel();
-            }
+            self.cancel_workers();
             self.workers = Workers::Failed(error.clone());
             return Err(Error::Worker(error));
         }
@@ -787,6 +832,11 @@ impl Playback {
         self.port.epoch.store(epoch, Ordering::Release);
         self.preview_generation.store(generation, Ordering::Release);
         self.port.playing.store(playing, Ordering::Release);
+        self.port.park.wake();
+        // The device stream starts or stops on the next frame: a paused editor draws none unasked.
+        if let Some(wake) = &self.port.wake {
+            wake.wake();
+        }
         self.shown = None;
         output.frames.clear();
         output.error = None;
@@ -823,6 +873,7 @@ impl Playback {
         request.hover = at;
         request.generation = generation;
         self.preview_generation.store(generation, Ordering::Release);
+        self.port.park.wake();
         self.shown = None;
         output.frames.clear();
         output.error = None;
@@ -903,9 +954,7 @@ impl Playback {
 }
 impl Drop for Playback {
     fn drop(&mut self) {
-        for cancel in &self.cancels {
-            cancel.cancel();
-        }
+        self.cancel_workers();
         self.runner.shutdown();
     }
 }
@@ -1015,7 +1064,9 @@ fn audio_loop(
 ) -> Result<()> {
     let r = read_request(request)?;
     if !r.playing {
-        std::thread::sleep(Duration::from_millis(2));
+        // Paused: nothing to mix until a seek starts a new epoch or the job is cancelled.
+        port.park
+            .wait_while(|| !hooks.cancelled() && port.epoch.load(Ordering::Acquire) == r.epoch);
         return Ok(());
     }
     let mut sources = factory.create();
@@ -1136,9 +1187,14 @@ fn video_loop(
         }
         last = current;
         next = next.max(current);
-        if (pinned && next > current)
-            || output.lock().map_err(|_| Error::Poisoned)?.frames.len() >= MAX_FRAMES
-        {
+        if pinned && next > current {
+            // The held frame is rendered: wait for a new generation or cancellation.
+            port.park.wait_while(|| {
+                !hooks.cancelled() && generation.load(Ordering::Acquire) == preview_generation
+            });
+            continue;
+        }
+        if output.lock().map_err(|_| Error::Poisoned)?.frames.len() >= MAX_FRAMES {
             std::thread::sleep(Duration::from_millis(2));
             continue;
         }
@@ -1184,6 +1240,36 @@ mod tests {
     use engine::{ByteBudget, ByteOwner, Session};
     use std::sync::Arc;
     use time::{TICKS_PER_SECOND, Tick};
+
+    /// A paused preview holds no running worker: both block until the transport changes, and
+    /// dropping the preview releases them.
+    #[test]
+    fn paused_workers_park_instead_of_polling() {
+        let session = Session::new(
+            project::Project::empty(project::ProjectId(1), "idle".into()).unwrap(),
+            10,
+        )
+        .unwrap();
+        let mut playback = Playback::new(
+            &session,
+            ByteBudget::new(64 << 20).unwrap(),
+            Arc::new(Files),
+        )
+        .unwrap();
+        let settle = |playback: &Playback| {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            while playback.port.park.parked() < 2 {
+                assert!(std::time::Instant::now() < deadline, "workers never parked");
+                std::thread::yield_now();
+            }
+        };
+        settle(&playback);
+        playback
+            .seek(Tick::ZERO, false, session.project().clone())
+            .unwrap();
+        settle(&playback);
+        drop(playback);
+    }
 
     #[test]
     fn a_successor_opens_on_a_full_budget_and_shares_the_ring_bytes() {
