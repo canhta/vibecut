@@ -14,7 +14,7 @@ The five numeric transform channels evaluate through project's `TransformField`,
 
 ## Footage corrections
 
-Stabilization and the person matte are applied inside an item's own picture from derived data the
+Stabilization, the person matte and flicker removal are applied inside an item's own picture from derived data the
 caller resolves: [footage corrections](correction/README.md).
 
 ## Stabilization

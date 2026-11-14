@@ -1398,6 +1398,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                     }
                 }
                 self.stabilize_rows(ui, item);
+                self.flicker_rows(ui, item);
             }
             PropertiesTab::Graphic => {
                 self.panel_section(

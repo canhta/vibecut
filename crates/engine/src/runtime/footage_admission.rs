@@ -2,8 +2,8 @@
 use super::{Error, Result};
 use project::{ItemId, ItemParams, Project};
 
-/// Refuses naming each visible video item of the project's active scene that has stabilization
-/// or background removal switched on and no stored correction for it in `render`, so export never
+/// Refuses naming each visible video item of the project's active scene that has stabilization,
+/// background removal or flicker removal switched on and no stored correction for it in `render`, so export never
 /// differs silently from a preview that drew the correction.
 pub fn admit(project: &Project, render: &render::RenderSettings) -> Result<()> {
     let missing: Vec<ItemId> = project
@@ -20,6 +20,7 @@ pub fn admit(project: &Project, render: &render::RenderSettings) -> Result<()> {
                         (p.stabilize.is_some() && !render.stabilization.contains_key(&item.id))
                             || (p.background_removal.is_some()
                                 && !render.person_mattes.contains_key(&item.id))
+                            || (p.remove_flicker && !render.flicker.contains_key(&item.id))
                     }
                     _ => false,
                 }

@@ -297,8 +297,8 @@ struct Footage {
     /// epoch, the last read was for.
     resolved: Option<(Vec<Switched>, u64)>,
 }
-/// One clip with a footage correction on: its source hash and its stabilize and matte switches.
-type Switched = (project::ItemId, [u8; 32], [bool; 2]);
+/// One clip with a footage correction on: its source hash and its stabilize, matte and flicker switches.
+type Switched = (project::ItemId, [u8; 32], [bool; 3]);
 impl Playback {
     /// Read the stored footage corrections of the project from `media` at every seek, so preview
     /// draws a stabilized clip with the same lookup export uses.
@@ -323,8 +323,12 @@ impl Playback {
                 let project::ItemParams::Video(p) = &item.content else {
                     return None;
                 };
-                let switches = [p.stabilize.is_some(), p.background_removal.is_some()];
-                if switches == [false; 2] {
+                let switches = [
+                    p.stabilize.is_some(),
+                    p.background_removal.is_some(),
+                    p.remove_flicker,
+                ];
+                if switches == [false; 3] {
                     return None;
                 }
                 let hash = item

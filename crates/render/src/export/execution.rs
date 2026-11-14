@@ -147,12 +147,16 @@ pub(super) fn copy_plan<'a>(
     {
         return Ok(None);
     }
-    // Noise reduction, stabilization and background removal change pixels, so a switched-on item
-    // cannot be copied through.
+    // Noise reduction, stabilization, background removal and flicker removal change pixels, so a
+    // switched-on item cannot be copied through.
     let ItemParams::Video(params) = &item.content else {
         return Ok(None);
     };
-    if params.reduce_noise || params.stabilize.is_some() || params.background_removal.is_some() {
+    if params.reduce_noise
+        || params.stabilize.is_some()
+        || params.background_removal.is_some()
+        || params.remove_flicker
+    {
         return Ok(None);
     }
     let asset = project

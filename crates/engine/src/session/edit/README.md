@@ -40,7 +40,7 @@ allocation ([`placement_track`](tracks.rs), [`placement_start`](clips.rs)).
 
 ## Transient selection and shared fields
 
-`timeline.set_item_param` and `timeline.set_item_param_many` apply one typed `ItemParamPatch`, declared once in [`commands/item_params.rs`](../commands/README.md). `reduce_noise` (Boolean) sets `VideoParams.reduce_noise` on video items only; other kinds are left unchanged in a shared edit and refused in a single one.
+`timeline.set_item_param` and `timeline.set_item_param_many` apply one typed `ItemParamPatch`, declared once in [`commands/item_params.rs`](../commands/README.md). `reduce_noise` and `remove_flicker` (Boolean) set `VideoParams.reduce_noise` and `.remove_flicker` on video items only; other kinds are left unchanged in a shared edit and refused in a single one.
 Text content and font patches copy at most the control owner's `MAX_TEXT_BYTES` budget per
 command tree, including nested batches. The single-item command refuses an incompatible target;
 the many-item command skips incompatible kinds. Missing IDs, duplicates, invalid values and

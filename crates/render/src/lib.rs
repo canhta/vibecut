@@ -20,7 +20,9 @@ pub use scene::{
     StickerError, StickerFault, StickerRaster, StickerSource, lend_sticker_source,
     rasterize_sticker, style_from_cue,
 };
-pub use scene::{arrange, blend, color, effects, mask, matte, stabilize, transitions, viewport};
+pub use scene::{
+    arrange, blend, color, effects, flicker, mask, matte, stabilize, transitions, viewport,
+};
 pub use sources::{FileSources, SourceProvider};
 use time::SourceRange;
 

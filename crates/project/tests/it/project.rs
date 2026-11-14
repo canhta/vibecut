@@ -493,6 +493,7 @@ fn populated(path: PathBuf) -> Project {
                 radius: 0.05,
                 points: vec![[0.25, 0.5], [0.3, 0.55]],
             }],
+            remove_flicker: true,
             ..VideoParams::plain()
         }),
         ItemParams::Audio(AudioParams {

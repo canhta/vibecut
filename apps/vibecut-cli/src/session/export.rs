@@ -217,7 +217,7 @@ pub(crate) fn export_job_key(
 }
 
 /// Read the stored footage corrections of `project` into `settings` from the process media
-/// cache. A project with no stabilized or matted clip opens no cache; a clip whose analysis is
+/// cache. A project with no stabilized, matted or flicker-corrected clip opens no cache; a clip whose analysis is
 /// absent stays uncorrected and the export job refuses, naming it.
 pub(crate) fn attach_corrections(
     context: &Context,
@@ -232,7 +232,7 @@ pub(crate) fn attach_corrections(
         .flat_map(|track| &track.items)
         .any(|item| {
             matches!(&item.content, project::ItemParams::Video(p)
-                if p.stabilize.is_some() || p.background_removal.is_some())
+                if p.stabilize.is_some() || p.background_removal.is_some() || p.remove_flicker)
         });
     if corrected {
         let mut media = engine::control::MediaAccess::open(context.budget()?)?;

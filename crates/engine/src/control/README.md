@@ -187,7 +187,7 @@ completed job whose bytes were evicted refuses `job_not_retained`.
   `CorrectionMissing` naming any item that has none.
   `kind: person_matte` needs the local segmenter the root lends with
   `MediaAccess::set_segmentation(SegmentationAccess)`; a cold matte without it, or without
-  installed weights, refuses with the typed `ModelMissing`.
+  installed weights, refuses with the typed `ModelMissing`; `kind: flicker` needs no model.
 
 ## Asset-library commands
 

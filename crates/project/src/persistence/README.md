@@ -4,7 +4,7 @@ Versioned project JSON, the writer lease, atomic files, recovery snapshots, opti
 
 ## Envelope and limits
 
-`encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`, `project`. The current schema is `SCHEMA_VERSION` (50): 42 added `Retime.curve` speed curves, 43 added `recent_colors`, 44 added stabilize corrections, 45 added person-matte background removal, 46 added `shorts_run`, 47 added the de-reverb and de-esser cleanup kinds, 48 added `AudioSource::Narration`, 49 added `CueStyle.max_lines` and `CueStyle.word_highlight_color` and 50 added `VideoParams.matte_strokes`. Older schemas return `TooOld` and newer ones `TooNew`; nothing is migrated or defaulted. Unknown envelope or project fields are refused.
+`encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`, `project`. The current schema is `SCHEMA_VERSION` (51): 42 added `Retime.curve` speed curves, 43 added `recent_colors`, 44 added stabilize corrections, 45 added person-matte background removal, 46 added `shorts_run`, 47 added the de-reverb and de-esser cleanup kinds, 48 added `AudioSource::Narration`, 49 added `CueStyle.max_lines` and `CueStyle.word_highlight_color`, 50 added `VideoParams.matte_strokes` and 51 added `VideoParams.remove_flicker`. Older schemas return `TooOld` and newer ones `TooNew`; nothing is migrated or defaulted. Unknown envelope or project fields are refused.
 
 ProjectId is stored as a canonical decimal string to keep all u64 bits for control clients; other IDs are numeric. Leases, hashes and receipts are not persisted in the envelope.
 

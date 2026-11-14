@@ -995,6 +995,20 @@ item_params! {
             Ok(())
         },
     },
+    /// Flicker removal switch of a video item. The per-frame brightness measurements are not
+    /// stored here; render looks them up by source.
+    RemoveFlicker(bool) = "remove_flicker" {
+        targets: VIDEO,
+        bounds: ParamBounds::Free,
+        unit: ParamUnit::None,
+        path: None,
+        apply: |t, v, cx| {
+            if let ItemParams::Video(p) = &mut t.content {
+                p.remove_flicker = *v;
+            }
+            Ok(())
+        },
+    },
     /// Person background removal of a video item: a value switches it on with that edge
     /// feather, `None` off. The person matte is not stored here; render looks it up by source.
     BackgroundRemoval(Option<project::BackgroundRemoval>) = "background_removal" {

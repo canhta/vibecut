@@ -144,6 +144,17 @@ impl<'a> Renderer<'a> {
         );
         Some(stabilizer)
     }
+    /// The gain pass that removes the flicker of `item` at source time `at`: the stored gain of
+    /// the frame covering it, applied to the item's layer before every other pass. Empty when
+    /// the switch is off, no track is stored (the item renders uncorrected) or the gain is 1.
+    fn flicker_passes(&self, item: &Item, at: Tick) -> Result<Vec<crate::effects::EffectPass>> {
+        let removes = matches!(&item.content, ItemParams::Video(p) if p.remove_flicker);
+        let Some(track) = self.settings.flicker.get(&item.id).filter(|_| removes) else {
+            return Ok(Vec::new());
+        };
+        let percent = f64::from(track.gain_at(at)) * 100.0;
+        crate::effects::gain_passes(percent, percent, percent)
+    }
     /// Whether `item` has background removal on and a stored matte to remove it with.
     fn matted(&self, item: &Item) -> bool {
         matches!(&item.content, ItemParams::Video(p) if p.background_removal.is_some())
@@ -456,6 +467,9 @@ impl<'a> Renderer<'a> {
                 // Noise reduction is a per-item switch whose pass runs before every
                 // colour effect, on this item's own layer.
                 let reduce_noise = matches!(&item.content, ItemParams::Video(p) if p.reduce_noise);
+                // Flicker removal is one gain on the item's own layer, before noise reduction
+                // and every colour effect.
+                let flicker = self.flicker_passes(item, source_at)?;
                 // The blur channel of a Blur In or Blur Out look is one more pass list: the blur
                 // effect's own pass at the channel's intensity, after the item's effects.
                 let blur_intensity =
@@ -463,6 +477,7 @@ impl<'a> Renderer<'a> {
                         .clamp(0.0, 100.0);
                 let channel_blur = blur_intensity > 0.0;
                 let _plan = if reduce_noise
+                    || !flicker.is_empty()
                     || channel_blur
                     || item.effects.iter().any(|effect| effect.enabled)
                 {
@@ -470,6 +485,7 @@ impl<'a> Renderer<'a> {
                         MemoryKind::Compositor,
                         (item.effects.len() as u64
                             + u64::from(reduce_noise)
+                            + u64::from(!flicker.is_empty())
                             + u64::from(channel_blur))
                             * 512
                             * (std::mem::size_of::<crate::effects::EffectPass>() as u64 + 49 * 4),
@@ -480,6 +496,9 @@ impl<'a> Renderer<'a> {
                 // One pass list per effect instance, so a sample op's `input` is the
                 // image that instance started with, not the whole item's.
                 let mut runs = Vec::new();
+                if !flicker.is_empty() {
+                    runs.push(flicker);
+                }
                 if reduce_noise {
                     runs.push(crate::effects::reduce_noise_passes());
                 }

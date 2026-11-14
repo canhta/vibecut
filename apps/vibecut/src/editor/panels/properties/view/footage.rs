@@ -1,5 +1,5 @@
-//! Draws the footage-correction rows: the Stabilize switch with its level, and the analysis state
-//! row it shares with Auto removal.
+//! Draws the footage-correction rows: the Stabilize switch with its level, the Remove flicker
+//! switch, and the analysis state row they share with Auto removal.
 use super::Panel;
 use crate::editor::properties::{
     Action, ItemId, Text, egui, read, theme, workflow::jobs::footage::FootageStatus,
@@ -69,6 +69,46 @@ impl Panel<'_, '_> {
             }
         }
         self.correction_status(ui, item, CorrectionKind::Stabilize, "inspector.stabilize");
+    }
+
+    /// The Remove flicker switch row and, while it is on, the analysis state. Turning the switch
+    /// on starts the brightness measurement; a warm cache finishes at once. The reference shows
+    /// no level, so the row is the whole control.
+    pub(super) fn flicker_rows(&mut self, ui: &mut egui::Ui, item: ItemId) {
+        let Some(project::ItemParams::Video(params)) =
+            read::item(self.cx.session.project(), item).map(|item| &item.content)
+        else {
+            return;
+        };
+        let mut on = params.remove_flicker;
+        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        self.row_label(ui, row, self.tr(Text::RemoveFlicker));
+        let width = value_ui.available_width();
+        value_ui.add_space((width - theme::size::TOGGLE_WIDTH).max(0.0));
+        let response = kit::toggle(
+            &mut value_ui,
+            "inspector.remove_flicker",
+            &mut on,
+            self.tr(Text::RemoveFlicker),
+        );
+        self.remember("inspector.remove_flicker", &response);
+        if response.clicked() {
+            self.set_item_field(item, "remove_flicker", if on { "true" } else { "false" });
+            if on {
+                self.actions.push(Action::AnalyzeFootage {
+                    item,
+                    kind: CorrectionKind::Flicker,
+                });
+            }
+        }
+        if on {
+            self.correction_status(
+                ui,
+                item,
+                CorrectionKind::Flicker,
+                "inspector.remove_flicker",
+            );
+        }
     }
 
     /// The analysis state of one switched-on correction, under `prefix`: nothing when the

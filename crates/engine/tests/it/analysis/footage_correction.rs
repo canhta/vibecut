@@ -4,8 +4,8 @@
     clippy::indexing_slicing,
     reason = "synthetic fixtures and assertions"
 )]
-//! Footage correction: stabilize and the person matte measured once per source, looked up by
-//! key, applied at render.
+//! Footage correction: stabilize, the person matte and flicker removal measured once per source,
+//! looked up by key, applied at render.
 use crate::support::control::request;
 use engine::{
     ByteBudget, Command, CreatedId, RuntimeError, Session,
@@ -670,5 +670,284 @@ fn a_cover_of_a_stabilized_clip_draws_the_stored_correction() {
         cover(lent),
         cover(uncorrected()),
         "the cover draws the stored stabilize"
+    );
+}
+
+/// Linear light of one pixel of `shot` before any gain: two shots are two unrelated textures
+/// stretched to a wide contrast, scaled to leave headroom for the gain.
+fn shot_light(shot: usize, x: u32, y: u32) -> f64 {
+    let t = texture(
+        f64::from(x) + 300.0 * shot as f64,
+        f64::from(y) + 170.0 * shot as f64,
+    );
+    0.8 * (0.05 + 0.9 * ((t - 0.5) * 2.0 + 0.5).clamp(0.0, 1.0))
+}
+fn srgb_byte(light: f64) -> u8 {
+    let encoded = if light <= 0.003_130_8 {
+        12.92 * light
+    } else {
+        1.055 * light.powf(1.0 / 2.4) - 0.055
+    };
+    (encoded * 255.0).round().clamp(0.0, 255.0) as u8
+}
+/// A 160x90 lossless clip of `frames` frames: frame `n` shows `light(n) = (shot, multiplier)`.
+fn light_fixture(name: &str, frames: usize, light: impl Fn(usize) -> (usize, f64)) -> SourceAsset {
+    let (width, height) = (160u32, 90u32);
+    let dir = testkit::fixture::dir("footage-correction");
+    let path = testkit::fixture::publish(&dir, &format!("{name}.mkv"), |path| {
+        let mut child = testkit::oracle::command("ffmpeg")
+            .args([
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-f",
+                "rawvideo",
+                "-pixel_format",
+                "rgb24",
+                "-video_size",
+            ])
+            .arg(format!("{width}x{height}"))
+            .args([
+                "-framerate",
+                "30",
+                "-i",
+                "pipe:0",
+                "-c:v",
+                "ffv1",
+                "-pix_fmt",
+                "bgr0",
+            ])
+            .arg(path)
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut input = child.stdin.take().unwrap();
+        for n in 0..frames {
+            let (shot, gain) = light(n);
+            let mut pixels = Vec::with_capacity((width * height * 3) as usize);
+            for y in 0..height {
+                for x in 0..width {
+                    let byte = srgb_byte(shot_light(shot, x, y) * gain);
+                    pixels.extend_from_slice(&[byte; 3]);
+                }
+            }
+            input.write_all(&pixels).unwrap();
+        }
+        drop(input);
+        assert!(child.wait().unwrap().success());
+    });
+    SourceAsset::import(AssetId(1), path).unwrap()
+}
+fn analyze_flicker(asset: &SourceAsset) -> (Arc<render::flicker::FlickerTrack>, Vec<u8>) {
+    let (mut runner, mut cache, _dir) = setup();
+    let request = CorrectionRequest::new(asset.clone(), CorrectionKind::Flicker).unwrap();
+    assert_eq!(request.cached(&mut cache).unwrap(), None);
+    // Flicker needs no model: a cold analysis runs without a segmenter.
+    let job = request.submit(&mut runner, &mut cache, None).unwrap();
+    assert_eq!(
+        wait(&mut runner, &job),
+        JobState::Completed,
+        "{:?}",
+        runner.snapshot(job.id).and_then(|s| s.error)
+    );
+    let stored = job.finish(&mut runner, &mut cache).unwrap().unwrap();
+    assert_eq!(request.cached(&mut cache).unwrap(), Some(stored.clone()));
+    let Correction::Flicker(track) = stored else {
+        panic!("flicker track");
+    };
+    (track, runner.output_bytes(job.id).unwrap().to_vec())
+}
+/// Interior RMS and maximum, in percent, of `ln(observed * gain / truth)` with its constant
+/// removed, excluding one 31-frame window at each end: the recorded oracle's metric, taken over
+/// the means the analysis measured on the clean clip and on the flickering one.
+fn residual(
+    observed: &render::flicker::FlickerTrack,
+    truth: &render::flicker::FlickerTrack,
+    corrected: bool,
+) -> (f64, f64) {
+    let errors: Vec<f64> = (0..observed.len())
+        .map(|n| {
+            let gain = if corrected { observed.gain(n) } else { 1.0 };
+            (f64::from(observed.mean(n).unwrap()) * f64::from(gain)
+                / f64::from(truth.mean(n).unwrap()))
+            .ln()
+        })
+        .collect();
+    let interior = &errors[31..errors.len() - 31];
+    let mean = interior.iter().sum::<f64>() / interior.len() as f64;
+    let rms =
+        (interior.iter().map(|e| (e - mean).powi(2)).sum::<f64>() / interior.len() as f64).sqrt();
+    let max = interior
+        .iter()
+        .map(|e| (e - mean).abs())
+        .fold(0.0, f64::max);
+    (100.0 * rms, 100.0 * max)
+}
+fn flicker_gain(hertz: f64, n: usize) -> f64 {
+    1.0 + 0.08 * (std::f64::consts::TAU * hertz * n as f64 / FPS as f64).sin()
+}
+/// A shot whose brightness drifts slowly, as in the clean-up study's clean clip.
+fn drift(n: usize) -> f64 {
+    1.0 + 0.1428 * (std::f64::consts::TAU * n as f64 / FPS as f64 / 5.3).sin()
+}
+/// The recorded oracle bounds of the footage clean-up study (1 s Hann window): flicker fixtures
+/// interior RMS and maximum, fade RMS, hard cut with the reset RMS, in percent.
+const FLICKER_RMS: f64 = 0.6;
+const FLICKER_MAX: f64 = 2.0;
+const FADE_RMS: f64 = 0.6;
+const CUT_RMS: f64 = 0.5;
+
+#[test]
+fn flicker_falls_below_the_recorded_bound_a_fade_survives_and_a_cut_does_not_pump() {
+    let frames = 150;
+    let clean = analyze_flicker(&light_fixture("flicker-clean", frames, |n| (0, drift(n)))).0;
+    // 100 Hz mains aliased by 30 fps to a 2.97-frame period, and the 17.6-frame beat.
+    for (hertz, name) in [(10.09, "flicker-mains"), (1.7, "flicker-beat")] {
+        let asset = light_fixture(name, frames, |n| (0, drift(n) * flicker_gain(hertz, n)));
+        let (observed, _) = analyze_flicker(&asset);
+        let (rms, max) = residual(&observed, &clean, true);
+        let before = residual(&observed, &clean, false).0;
+        println!("FLICKER {hertz} Hz: rms {rms:.3} % max {max:.3} % (before {before:.2} %)");
+        assert!(
+            rms <= FLICKER_RMS && max <= FLICKER_MAX,
+            "{hertz} Hz {rms} {max}"
+        );
+        assert!(
+            (0..frames).all(|n| !observed.is_cut(n)),
+            "no cut in one shot"
+        );
+        // The frame-to-frame variation was an order of magnitude larger before the correction.
+        assert!(before > 10.0 * rms, "{hertz} Hz before {before}");
+    }
+    // A fade to 40 % under the mains flicker: the fade is not flattened.
+    let fade = |n: usize| drift(n) * (1.0 - 0.12 * n as f64 / FPS as f64);
+    let fade_clean = analyze_flicker(&light_fixture("flicker-fade-clean", frames, |n| {
+        (0, fade(n))
+    }))
+    .0;
+    let faded = light_fixture("flicker-fade", frames, |n| {
+        (0, fade(n) * flicker_gain(10.09, n))
+    });
+    let (fading, _) = analyze_flicker(&faded);
+    let (rms, max) = residual(&fading, &fade_clean, true);
+    println!("FLICKER fade: rms {rms:.3} % max {max:.3} %");
+    assert!(rms <= FADE_RMS, "fade {rms}");
+    let corrected = |n: usize| f64::from(fading.mean(n).unwrap()) * f64::from(fading.gain(n));
+    assert!(
+        corrected(120) < 0.7 * corrected(30),
+        "the fade survives the correction"
+    );
+    // Two shots of unrelated pictures and brightness, flickering at 10.09 Hz, cut at frame 75.
+    let level = |n: usize| {
+        let base = if n < 75 { 0.30 } else { 0.55 };
+        (base + 0.02 * (std::f64::consts::TAU * n as f64 / FPS as f64 / 6.0).sin()) / 0.55
+    };
+    let shot = |n: usize| usize::from(n >= 75);
+    let cut_clean = analyze_flicker(&light_fixture("flicker-cut-clean", frames, |n| {
+        (shot(n), level(n))
+    }))
+    .0;
+    let cut = light_fixture("flicker-cut", frames, |n| {
+        (shot(n), level(n) * flicker_gain(10.09, n))
+    });
+    let (cutting, _) = analyze_flicker(&cut);
+    // The shot change is found at its first frame and nowhere else, flicker or not.
+    assert!((0..frames).all(|n| cutting.is_cut(n) == (n == 75)));
+    assert!((0..frames).all(|n| cut_clean.is_cut(n) == (n == 75)));
+    let (rms, max) = residual(&cutting, &cut_clean, true);
+    println!("FLICKER cut: rms {rms:.3} % max {max:.3} %");
+    assert!(rms <= CUT_RMS, "cut {rms}");
+}
+
+#[test]
+fn two_uncached_flicker_runs_retain_the_same_bytes_and_the_kinds_never_share_a_key() {
+    let asset = light_fixture("flicker-mains", 150, |n| {
+        (0, drift(n) * flicker_gain(10.09, n))
+    });
+    let (first, first_bytes) = analyze_flicker(&asset);
+    let (second, second_bytes) = analyze_flicker(&asset);
+    assert_eq!(first_bytes, second_bytes);
+    assert_eq!(first_bytes, first.encode());
+    assert_eq!(
+        *second,
+        render::flicker::FlickerTrack::decode(&first_bytes).unwrap()
+    );
+    assert_eq!(first.len(), 150);
+    // The flicker really moves the measured means, so equal bytes are not equal constants.
+    assert!(first.mean(0) != first.mean(1));
+    let key = |kind| {
+        CorrectionRequest::new(asset.clone(), kind)
+            .unwrap()
+            .cache_key()
+    };
+    assert_ne!(key(CorrectionKind::Flicker), key(CorrectionKind::Stabilize));
+    assert_ne!(
+        key(CorrectionKind::Flicker),
+        key(CorrectionKind::PersonMatte)
+    );
+}
+
+#[test]
+fn a_cleared_cache_needs_flicker_analysis_and_export_refuses_but_split_keeps_the_track() {
+    let asset = light_fixture("flicker-mains", 150, |n| {
+        (0, drift(n) * flicker_gain(10.09, n))
+    });
+    let (mut s, item) = session_over(asset.clone(), 150);
+    s.apply(Command::SetItemField {
+        item,
+        patch: engine::ItemParamPatch::Stabilize(None),
+    })
+    .unwrap();
+    s.apply(Command::SetItemField {
+        item,
+        patch: engine::ItemParamPatch::RemoveFlicker(true),
+    })
+    .unwrap();
+    let (mut runner, mut cache, _dir) = setup();
+    let before = resolve(s.project(), &mut cache);
+    assert_eq!(before.missing, vec![(item, CorrectionKind::Flicker)]);
+    assert!(before.flicker.is_empty());
+    let project = s.project().clone();
+    let mut export = render::ExportSettings::from_project(&project);
+    before.attach(&mut export.render);
+    assert_export_refused(&project, export, &[item]);
+    let request = CorrectionRequest::new(asset, CorrectionKind::Flicker).unwrap();
+    let job = request.submit(&mut runner, &mut cache, None).unwrap();
+    assert_eq!(wait(&mut runner, &job), JobState::Completed);
+    job.finish(&mut runner, &mut cache).unwrap().unwrap();
+    let ready = resolve(s.project(), &mut cache);
+    assert!(ready.missing.is_empty());
+    assert!(ready.flicker.contains_key(&item));
+    // A split needs no new analysis: both halves find the same stored track.
+    s.apply(Command::SplitAt {
+        item,
+        at: Tick(TICKS_PER_SECOND),
+    })
+    .unwrap();
+    let ids: Vec<ItemId> = s
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .main
+        .items
+        .iter()
+        .map(|i| i.id)
+        .collect();
+    assert_eq!(ids.len(), 2);
+    let split = resolve(s.project(), &mut cache);
+    assert!(split.missing.is_empty(), "{:?}", split.missing);
+    assert!(Arc::ptr_eq(
+        &split.flicker[&ids[0]],
+        &split.flicker[&ids[1]]
+    ));
+    // A cleared cache is Needs analysis again for both halves.
+    let (_runner, mut empty, _other) = setup();
+    assert_eq!(
+        resolve(s.project(), &mut empty).missing,
+        ids.iter()
+            .map(|id| (*id, CorrectionKind::Flicker))
+            .collect::<Vec<_>>()
     );
 }

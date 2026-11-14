@@ -484,6 +484,7 @@ catalog! {
     ProxyReady { key: "proxy_ready", en: "{ready} of {total} clips have a proxy", vi: "{ready}/{total} video đã có proxy" },
     RecentColors { key: "recent_colors", en: "Recent colours", vi: "Màu gần đây" },
     ReduceImageNoise { key: "reduce_image_noise", en: "Reduce image noise", vi: "Giảm nhiễu hình ảnh" },
+    RemoveFlicker { key: "remove_flicker", en: "Remove flicker", vi: "Loại bỏ nhấp nháy" },
     ResetValue { key: "reset_value", en: "Reset value", vi: "Đặt lại giá trị" },
     Rotate { key: "rotate", en: "Rotate", vi: "Xoay" },
     Scale { key: "scale", en: "Scale", vi: "Tỷ lệ" },
