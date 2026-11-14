@@ -6775,6 +6775,8 @@ fn a_double_click_isolates_one_member_and_an_alt_click_selects_the_group() {
     let mut selected = h.state().inspect().unwrap().selection;
     selected.sort();
     assert_eq!(selected, vec![a, b], "an Alt-click selects every member");
+}
+
 /// A fixture harness with the first clip selected and the playhead at three seconds.
 fn selected_at_three_seconds() -> (Harness<'static, Editor>, ItemId) {
     let fixture = fixture();

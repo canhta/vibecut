@@ -566,7 +566,7 @@ fn webm_vp9_scaling_has_bt709_tags_and_complete_frames() {
     frames.extend(decoder.flush().unwrap());
     let mut settings =
         VideoEncoderSettings::h264(64, 48, stream.frame_rate.unwrap(), frames[0].color());
-    settings.codec = media::AudioCodec::Opus;
+    settings.webm = true;
     let mut encoder = VideoEncoder::new(settings, &frames[0]).unwrap();
     let path = testkit::fixture::dir("media").join("ffmpeg_scaled.webm");
     let mut mux = Muxer::create(&path, Container::WebM).unwrap();
