@@ -6,8 +6,7 @@
 
 use crate::editor::context::MediaDrag;
 use crate::editor::timeline::{
-    Action, Context, DropZone, ItemId, ItemView, State, Text, TimelineLayout, TrackRow, egui,
-    theme,
+    Action, Context, DropZone, ItemId, ItemView, State, Text, TimelineLayout, TrackRow, egui, theme,
 };
 use crate::i18n;
 

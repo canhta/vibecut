@@ -924,7 +924,14 @@ fn audio_only_export_writes_mp3_wav_and_flac_with_probe() {
         );
         assert_eq!(stdout_json(&output)["status"], "completed");
         let probe = tool_command("ffprobe")
-            .args(["-v", "error", "-show_streams", "-show_format", "-of", "json"])
+            .args([
+                "-v",
+                "error",
+                "-show_streams",
+                "-show_format",
+                "-of",
+                "json",
+            ])
             .arg(&destination)
             .output()
             .unwrap();
@@ -936,7 +943,11 @@ fn audio_only_export_writes_mp3_wav_and_flac_with_probe() {
         assert_eq!(streams[0]["codec_name"], codec);
         assert_eq!(streams[0]["sample_rate"], "48000");
         // One second, to within one MP3 frame of padding (1152 samples at 48 kHz).
-        let duration: f64 = value["format"]["duration"].as_str().unwrap().parse().unwrap();
+        let duration: f64 = value["format"]["duration"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
         assert!(
             (duration - 1.0).abs() <= 2.0 * 1152.0 / 48_000.0,
             "{extension} duration {duration}"

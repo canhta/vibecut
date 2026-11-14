@@ -1344,8 +1344,7 @@ fn audio_only_containers_encode_and_probe_as_their_codec() {
                 .collect();
             let planes = vec![plane; usize::from(channels)];
             let frame = media::AudioFrame::from_planar_f32(
-                Tick::from_units(written as i64, i64::from(RATE), time::Rounding::Nearest)
-                    .unwrap(),
+                Tick::from_units(written as i64, i64::from(RATE), time::Rounding::Nearest).unwrap(),
                 RATE,
                 &planes,
             )

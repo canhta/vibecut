@@ -538,7 +538,7 @@ impl State {
         let response = button.union(caret_hit);
         let enabled = ui.is_enabled();
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, label));
-        self.remember_icon("timeline.tool",Some(icon.name()), &response);
+        self.remember_icon("timeline.tool", Some(icon.name()), &response);
         icons::tinted(Icon::CaretDown, TOOL_CARET, ink.text()).paint_at(
             ui,
             Rect::from_center_size(caret.center(), Vec2::splat(TOOL_CARET)),

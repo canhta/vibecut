@@ -174,7 +174,10 @@ fn moving_a_member_moves_the_group_and_keeps_each_track() {
         start: Tick(5),
     })
     .unwrap();
-    assert_eq!(spans(&s).unwrap(), [(10, 5, 45), (11, 60, 100), (12, 15, 55)]);
+    assert_eq!(
+        spans(&s).unwrap(),
+        [(10, 5, 45), (11, 60, 100), (12, 15, 55)]
+    );
     s.apply(Command::MoveItems {
         moves: vec![Move {
             item: ItemId(12),
@@ -183,14 +186,20 @@ fn moving_a_member_moves_the_group_and_keeps_each_track() {
         }],
     })
     .unwrap();
-    assert_eq!(spans(&s).unwrap(), [(10, 10, 50), (11, 60, 100), (12, 20, 60)]);
+    assert_eq!(
+        spans(&s).unwrap(),
+        [(10, 10, 50), (11, 60, 100), (12, 20, 60)]
+    );
     s.apply(Command::TimelineMoveItems {
         items: vec![ItemId(10)],
         delta: Tick(3),
         placement: None,
     })
     .unwrap();
-    assert_eq!(spans(&s).unwrap(), [(10, 13, 53), (11, 60, 100), (12, 23, 63)]);
+    assert_eq!(
+        spans(&s).unwrap(),
+        [(10, 13, 53), (11, 60, 100), (12, 23, 63)]
+    );
     s.undo().unwrap();
     assert_eq!(spans(&s).unwrap()[0], (10, 10, 50));
 }
@@ -204,20 +213,29 @@ fn trimming_a_member_trims_the_group_as_a_set() {
         at: Tick(30),
     })
     .unwrap();
-    assert_eq!(spans(&s).unwrap(), [(10, 0, 30), (11, 60, 100), (12, 10, 40)]);
+    assert_eq!(
+        spans(&s).unwrap(),
+        [(10, 0, 30), (11, 60, 100), (12, 10, 40)]
+    );
     s.apply(Command::TrimStart {
         item: ItemId(12),
         at: Tick(15),
     })
     .unwrap();
-    assert_eq!(spans(&s).unwrap(), [(10, 5, 30), (11, 60, 100), (12, 15, 40)]);
+    assert_eq!(
+        spans(&s).unwrap(),
+        [(10, 5, 30), (11, 60, 100), (12, 15, 40)]
+    );
     s.apply(Command::TimelineTrim {
         items: vec![ItemId(12)],
         edge: TrimEdge::End,
         delta: Tick(-5),
     })
     .unwrap();
-    assert_eq!(spans(&s).unwrap(), [(10, 5, 25), (11, 60, 100), (12, 15, 35)]);
+    assert_eq!(
+        spans(&s).unwrap(),
+        [(10, 5, 25), (11, 60, 100), (12, 15, 35)]
+    );
     // A delta one member cannot take refuses the whole set.
     let before = s.project().clone();
     assert!(
@@ -421,7 +439,10 @@ fn magnet_closes_each_track_the_group_touches() {
             items: vec![ItemId(20)],
         })
         .unwrap();
-    assert_eq!(spans(&control).unwrap(), [(21, 0, 40), (22, 0, 40), (23, 40, 80)]);
+    assert_eq!(
+        spans(&control).unwrap(),
+        [(21, 0, 40), (22, 0, 40), (23, 40, 80)]
+    );
 }
 
 #[test]

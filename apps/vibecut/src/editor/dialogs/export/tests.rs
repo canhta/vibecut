@@ -344,10 +344,7 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
         if media::audio_export_container_available(media::Container::Mp3) {
             bench.click("export.audio.format");
             bench.click("export.audio.format.mp3");
-            assert_eq!(
-                bench.editor().preferences.export.format,
-                ExportFormat::Mp3
-            );
+            assert_eq!(bench.editor().preferences.export.format, ExportFormat::Mp3);
         }
         bench.click("export.audio.format");
         bench.click("export.audio.format.m4a");

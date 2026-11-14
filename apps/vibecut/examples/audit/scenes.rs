@@ -976,6 +976,5 @@ use timeline::{
     link_media, missing_media, placement, placement_line, preview_axis, preview_axis_ends,
     preview_axis_reference, scene_create, scene_delete, scene_rename, timeline_clip_menu,
     timeline_fades, timeline_group, timeline_main, timeline_multi, timeline_selection,
-    timeline_selection_vi,
-    timeline_zoom, tracks, tracks_kinds,
+    timeline_selection_vi, timeline_zoom, tracks, tracks_kinds,
 };

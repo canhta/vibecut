@@ -421,7 +421,11 @@ fn replace_media_keeps_every_attribute_and_plays_the_new_media_from_its_start() 
         );
         assert_eq!(session.history_len(), (history.0 + 1, 0), "one undo step");
         session.undo().unwrap();
-        assert_eq!(session.project(), &before, "undo restores the exact project");
+        assert_eq!(
+            session.project(),
+            &before,
+            "undo restores the exact project"
+        );
     }
 }
 

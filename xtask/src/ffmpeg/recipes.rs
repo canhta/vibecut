@@ -338,7 +338,10 @@ pub(super) fn build_source(
             "x86_64-apple-darwin"
         };
         lame.args([format!("--build={host}"), format!("--host={host}")])
-            .env("CFLAGS", format!("-O2 -arch {arch} -mmacosx-version-min=11.0"))
+            .env(
+                "CFLAGS",
+                format!("-O2 -arch {arch} -mmacosx-version-min=11.0"),
+            )
             .env("LDFLAGS", format!("-arch {arch}"));
     }
     run(&mut lame)?;
