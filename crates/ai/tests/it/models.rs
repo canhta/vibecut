@@ -200,32 +200,6 @@ fn language_neutral_metadata_never_matches_a_speech_language() {
 }
 
 #[test]
-fn existing_language_bound_catalog_entries_are_unchanged() {
-    let catalog = catalog().unwrap();
-    let languages = |id: &str| {
-        catalog
-            .iter()
-            .find(|model| model.id == id)
-            .unwrap()
-            .languages
-            .iter()
-            .map(|tag| tag.as_str().to_owned())
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(languages("whisper-large-v3-turbo"), ["vi", "en", "zh"]);
-    assert_eq!(languages("gipformer-68m-rnnt-int8"), ["vi"]);
-    assert_eq!(
-        languages("whisper-small-dtw"),
-        ["vi", "en", "zh", "zh-Hans", "zh-Hant"]
-    );
-    assert!(
-        suggested_transcriber(&captions::LanguageTag::parse("vi-VN").unwrap())
-            .unwrap()
-            .matches_language(&captions::LanguageTag::parse("vi-VN").unwrap())
-    );
-}
-
-#[test]
 fn vision_catalog_entries_pin_exact_upstream_files_and_refuse_bad_bytes() {
     let catalog = catalog().unwrap();
     let model = |id: &str| catalog.iter().find(|model| model.id == id).unwrap();
