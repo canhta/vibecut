@@ -1002,7 +1002,10 @@ fn failed_publication_sync_preserves_completed_input_and_previous_destination() 
     assert_eq!(raw.code(), engine::control::ErrorCode::Io);
     assert!(!raw.transient());
     assert!(!raw.job_policy().terminal_cancelled);
-    assert_eq!(raw.to_string(), "project candidate rejected");
+    assert_eq!(
+        raw.to_string(),
+        "project candidate rejected: project I/O failed"
+    );
     assert_eq!(raw.job_policy().retry_after_seconds, None);
     let Some(RuntimeError::Edit(engine::EditError::Project(project::Error::Io(io)))) =
         (raw.as_ref() as &(dyn std::error::Error + 'static)).downcast_ref::<RuntimeError>()

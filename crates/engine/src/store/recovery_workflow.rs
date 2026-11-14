@@ -36,7 +36,7 @@ pub enum Error {
     SaveAsRequired,
     #[error("session persistence failed")]
     PersistenceFailed(#[source] Arc<dyn Failure + 'static>),
-    #[error("project candidate rejected")]
+    #[error("project candidate rejected: {0}")]
     Project(#[from] project::Error),
     #[error("job/cache IO failed")]
     Io(#[from] std::io::Error),

@@ -55,7 +55,7 @@ pub enum EditError {
     Invalid(&'static str),
     #[error("unsupported edit: {0}")]
     Unsupported(&'static str),
-    #[error("project candidate rejected")]
+    #[error("project candidate rejected: {0}")]
     Project(#[from] project::Error),
     #[error("narration does not fit its cue")]
     DurationFit,

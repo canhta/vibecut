@@ -360,22 +360,22 @@ mod exit_codes {
             (
                 || engine::EditError::Project(project::Error::Io(io::Error::other("private"))),
                 ("io", 7),
-                "project candidate rejected",
+                "project candidate rejected: project I/O failed",
             ),
             (
                 || engine::EditError::Project(project::Error::Busy),
                 ("busy", 3),
-                "project candidate rejected",
+                "project candidate rejected: project writer is busy or acquisition was cancelled",
             ),
             (
                 || engine::EditError::Project(project::Error::Conflict),
                 ("conflict", 3),
-                "project candidate rejected",
+                "project candidate rejected: project data or writer lease changed on disk",
             ),
             (
                 || engine::EditError::Project(project::Error::Media(media::MediaError::Cancelled)),
                 ("media", 6),
-                "project candidate rejected",
+                "project candidate rejected: invalid source asset",
             ),
             (
                 || engine::EditError::Time(time::TimeError::Overflow),
