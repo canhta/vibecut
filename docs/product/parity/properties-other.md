@@ -51,7 +51,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | PTEXT-16 | Background | Done | Proposed | 103613 | Ours adds padding, radius |
 | PTEXT-17 | Glow | Done | Proposed | 103613 | Switch only |
 | PTEXT-18 | Shadow controls | Done | Matches | 095914-095917 | |
-| PTEXT-19 | Curve (bend text) | Done | Matches | 204153-204238 | Strength in degrees, -360..360, default 72, centre tick; arc angle is the text's span |
+| PTEXT-19 | Curve (bend text) | Done | Matches | 14e/204153, 204212, 204225, 204229 | Degrees -360..360, default 72, centre tick. Rendered "Default text" at 50, 72, -50 and 360 beside the shots: circle fits to the ink envelope span 80.4, 86.0, 78.1 degrees against the reference 80.2, 86.8, 82.1; 360 closes the circle in both |
 | PTEXT-20 | Colour picker popover | Done | Proposed | 095732-095751 | |
 | PTEXT-21 | Save as preset | Done | Proposed | 103808 | |
 

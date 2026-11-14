@@ -58,7 +58,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | EXP-21 | Captions section | Done | Differs | 14b/105557 | Tick joins the export's group, which shows the one toast; save buttons stay |
 | EXP-22 | Caption formats | Done | Proposed | 14b/105559 | Plus VTT, burned MP4 |
 | EXP-23 | Check copyright toggle | Missing | — | 14b/105555 | |
-| EXP-24 | Duration and size estimate | Done | Matches | 14b/105340 | Sum of the encoder-model estimate per ticked output; Windows writes 0.64x the estimate (holds the rate target); GIF has its own palette x frames x pixels model from one 1.25 MB per 3 s at 240P measurement, size and rate of that run unrecorded |
+| EXP-24 | Duration and size estimate | Done | Matches | 14b/105340 | Sum of the per-output estimate under the encoder's rate control; Windows wrote 1.05x the target-rate estimate (10 s 1080p30, 15.98 MB against 15.24 MB). GIF: palette x frames x pixels from 3 s of camera footage at 240P (426x240, 90 frames, 6.05 MB, 2026-11-14); flat content writes far less |
 | EXP-25 | Cancel, Export buttons | Done | Matches | 14b/105340 | Cancel left of Export |
 | EXP-26 | Progress state | Done | Not captured | 14b/105909 | |
 | EXP-27 | Finished share view | Out of scope | — | 14b/105909 | Sharing |
