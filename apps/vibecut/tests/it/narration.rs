@@ -14,7 +14,7 @@ use ai::{ExecutionHooks, Location, Money, ProviderConfig, Support};
 use captions::LanguageTag;
 use egui_kittest::{
     Harness,
-    kittest::{By, Queryable},
+    kittest::{By, NodeT, Queryable},
 };
 use engine::dubbing::SpeechOpener;
 use engine::{ByteBudget, Command, CreatedId, NewItem, Placement, Session};
@@ -292,7 +292,7 @@ fn bench(openai: Script, elevenlabs: Script) -> Bench {
     playback.set_device_available(true);
     // The playhead sits inside the original audio, so a take cannot land on that track.
     playback
-        .seek(Tick(SECOND), false, Arc::new(session.project().clone()))
+        .seek(Tick(SECOND), false, session.project().clone())
         .unwrap();
     let mut editor = Editor::new(session, playback, Preferences::default());
     let opener = Arc::new(Opener {

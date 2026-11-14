@@ -10,23 +10,8 @@ pub(super) enum Entry {
     Home,
 }
 
-/// Other platforms keep the in-window header menu only.
-#[cfg(not(target_os = "macos"))]
-#[derive(Default)]
-pub(super) struct Menu;
-
-#[cfg(not(target_os = "macos"))]
-impl Menu {
-    pub(super) fn sync(&mut self, _: Locale, _: &KeybindingPreferences) {}
-    pub(super) fn take(&mut self) -> Vec<Entry> {
-        Vec::new()
-    }
-}
-
-#[cfg(target_os = "macos")]
 pub(super) use mac::Menu;
 
-#[cfg(target_os = "macos")]
 mod mac {
     use super::{Entry, KeybindingPreferences, Locale};
     use crate::actions::{self, Chord, MENUS, MenuItem};

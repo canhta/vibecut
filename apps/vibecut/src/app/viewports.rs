@@ -1,5 +1,7 @@
 //! Draws Home, every project viewport and the Shorts viewport from the registry.
-use super::{geometry::remember_geometry, native_menu::Entry, registry::Workspace, work::Work};
+#[cfg(target_os = "macos")]
+use super::native_menu::Entry;
+use super::{geometry::remember_geometry, registry::Workspace, work::Work};
 use crate::{
     Editor, egui, home,
     i18n::{self, Text},
@@ -42,6 +44,7 @@ impl Workspace {
                 self.bring_home_forward(ui.ctx());
             }
         }
+        #[cfg(target_os = "macos")]
         if self.focused == Some(id) {
             self.run_menu(ui.ctx(), id);
         }
@@ -57,6 +60,7 @@ impl Workspace {
     }
     /// Run the native menu rows clicked since the last frame in the focused project, the
     /// way the same key press would; a row with no project window to take it is dropped.
+    #[cfg(target_os = "macos")]
     fn run_menu(&mut self, ctx: &egui::Context, project: project::ProjectId) {
         for entry in self.menu.take() {
             match entry {
@@ -102,11 +106,13 @@ impl Workspace {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.request_close();
         }
+        #[cfg(target_os = "macos")]
         self.menu
             .sync(self.preferences.locale, &self.preferences.keybindings);
         self.show_home(ui);
         self.show_projects(&ctx);
         // With no project window focused only the Window menu's Home row has a target.
+        #[cfg(target_os = "macos")]
         for entry in self.menu.take() {
             if entry == Entry::Home {
                 self.bring_home_forward(&ctx);
