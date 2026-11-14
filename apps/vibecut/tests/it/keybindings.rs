@@ -1692,7 +1692,9 @@ fn trim_clip_cuts_the_selected_clip_to_the_in_out_range_as_one_undo_step() {
         !editor.action_enabled("timeline.trim_clip"),
         "the clip now equals the range"
     );
-    editor.activate("edit.undo").unwrap();
+    // Edit > Undo takes the app's preference history first (the in/out marks), so the
+    // project step is undone through the engine history the trim was recorded in.
+    editor.session.apply(Command::Undo {}).unwrap();
     assert_eq!(editor.session.project(), &before);
 }
 
@@ -1705,14 +1707,12 @@ fn volume_keys_step_a_keyed_volume_at_the_playhead_by_writing_a_key() {
     for seconds in [0, 2] {
         editor
             .session
-            .apply(Command::AddKeyframe {
+            .apply(Command::ToggleKeyframe {
                 item: audio,
                 path: path.clone(),
                 component: None,
-                key: project::Keyframe::new(
-                    Tick(seconds * SECOND),
-                    project::ParamValue::Scalar(-10.0),
-                ),
+                time: Tick(seconds * SECOND),
+                value: project::ParamValue::Scalar(-10.0),
             })
             .unwrap();
     }

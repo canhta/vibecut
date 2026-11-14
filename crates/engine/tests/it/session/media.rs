@@ -364,11 +364,12 @@ fn dressed_clip(session: &mut Session) -> project::ItemId {
         })
         .unwrap();
     session
-        .apply(Command::AddKeyframe {
+        .apply(Command::ToggleKeyframe {
             item,
             path: project::BuiltinPath::Opacity.into(),
             component: None,
-            key: project::Keyframe::new(Tick(2), project::ParamValue::Scalar(0.5)),
+            time: Tick(2),
+            value: project::ParamValue::Scalar(0.5),
         })
         .unwrap();
     item

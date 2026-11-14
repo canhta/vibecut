@@ -1042,7 +1042,7 @@ mod tests {
             .unwrap();
         preferences
             .keybindings
-            .set_action("timeline.ripple", vec!["Ctrl+R".into()])
+            .set_action("timeline.ripple", vec!["Ctrl+Shift+Y".into()])
             .unwrap();
         preferences
             .keybindings
