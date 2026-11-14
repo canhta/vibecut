@@ -4,7 +4,7 @@ use super::super::application::{
     App, AppHarness, SECOND, Theme, harness, harness_sized, preferences,
 };
 use super::super::fixture::{
-    CompletedProbe, app_editor, empty_editor, insert, media_editor, range, wait_for_frame,
+    CompletedProbe, app_editor, empty_editor, insert, media_editor, range, track, wait_for_frame,
     wait_for_presented, widget_rect,
 };
 use egui_kittest::kittest::{By, Queryable};
@@ -397,6 +397,57 @@ pub(super) fn inspector_remove_background(theme: Theme, scale: f32) -> Result<Ap
     app.run_steps(3);
     app.get(By::new().predicate(|node| node.author_id() == Some("inspector.matte_brush.add")))
         .click();
+    app.run_steps(3);
+    Ok(app)
+}
+
+/// Video > Adjust with its Mask sub-tab open over a Circle Adjust mask, beside desktop shot
+/// 221802 (which shows the sub-tab bar only).
+pub(super) fn inspector_adjust_mask(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let (mut editor, item) = media_editor(theme, Locale::En)?;
+    capture_columns(&mut editor)?;
+    let mut mask = project::Mask::new("adjust1", project::MaskShape::Ellipse);
+    mask.scope = project::MaskScope::Adjust;
+    editor.session.apply(Command::AddMask { item, mask })?;
+    editor.select([item].into_iter().collect())?;
+    editor
+        .preferences
+        .set("properties_tabs", serde_json::json!({"video": "adjust"}))?;
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, CAPTURE_WINDOW);
+    wait_for_presented(&mut app)?;
+    app.run_steps(3);
+    app.get(
+        By::new().predicate(|node| node.author_id() == Some("effects.color_grade.tab.mask")),
+    )
+    .click();
+    app.run_steps(3);
+    Ok(app)
+}
+
+/// An adjustment layer's Mask tab over a Circle mask, beside desktop shot 105253 (an effect
+/// layer's Mask tab; the adjustment layer's tab is the same panel).
+pub(super) fn inspector_effect_mask(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let (mut editor, _) = media_editor(theme, Locale::En)?;
+    capture_columns(&mut editor)?;
+    let lane = track(&mut editor.session, "Adjustment", TrackKind::Effect)?;
+    let layer = insert(
+        &mut editor.session,
+        lane,
+        Tick::ZERO,
+        range(0, 6)?,
+        None,
+        ItemParams::Effect(project::EffectParams::default()),
+    )?;
+    editor.session.apply(Command::AddMask {
+        item: layer,
+        mask: project::Mask::new("mask1", project::MaskShape::Ellipse),
+    })?;
+    editor.select([layer].into_iter().collect())?;
+    editor
+        .preferences
+        .set("properties_tabs", serde_json::json!({"effect": "mask"}))?;
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, CAPTURE_WINDOW);
+    wait_for_presented(&mut app)?;
     app.run_steps(3);
     Ok(app)
 }

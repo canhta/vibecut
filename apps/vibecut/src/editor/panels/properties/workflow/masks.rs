@@ -1,9 +1,9 @@
 //! Applies the mask row's shape and field edits through the mask commands.
-use super::super::mask_picker::{Action, Choice};
+use super::super::mask_picker::{self, Action, Choice};
 use super::super::{State, read};
 use super::commands;
 use crate::editor::{ItemId, Port, Result};
-use project::MaskShape;
+use project::{MaskScope, MaskShape};
 
 /// The animation path of one mask field: `masks.<id>.params.<key>`.
 fn mask_path(mask: &str, key: &str) -> String {
@@ -17,7 +17,7 @@ impl State {
                 self.mask.close();
                 Ok(())
             }
-            Action::Choose { item, shape } => choose_mask(port, item, shape),
+            Action::Choose { item, shape } => choose_mask(port, item, self.mask.scope(), shape),
             Action::Update { item, mask } => {
                 port.apply_result(engine::Command::UpdateMask { item, mask })?;
                 Ok(())
@@ -63,11 +63,16 @@ impl State {
     }
 }
 
-/// One mask per clip from the panel: the first mask is the one the row
-/// shows, so adding fills an empty list and changing edits that mask.
-fn choose_mask(port: &mut Port<'_>, item: ItemId, shape: Option<MaskShape>) -> Result<()> {
+/// One mask per scope from the panel: the first mask of the open scope is the one the row
+/// shows, so adding fills an empty scope and changing edits that mask.
+fn choose_mask(
+    port: &mut Port<'_>,
+    item: ItemId,
+    scope: MaskScope,
+    shape: Option<MaskShape>,
+) -> Result<()> {
     let current = read::item(port.view().session.project(), item)
-        .and_then(|item| item.masks.first())
+        .and_then(|item| mask_picker::current(item, scope))
         .cloned();
     match (shape, current) {
         (None, None) => return Ok(()),
@@ -88,7 +93,12 @@ fn choose_mask(port: &mut Port<'_>, item: ItemId, shape: Option<MaskShape>) -> R
         }
         (Some(shape), None) => {
             let rotation = Choice::of(&shape).map_or(0.0, |choice| choice.default_rotation());
-            let mut mask = project::Mask::new("mask1", shape);
+            let id = match scope {
+                MaskScope::Clip => "mask1",
+                MaskScope::Adjust => "adjust1",
+            };
+            let mut mask = project::Mask::new(id, shape);
+            mask.scope = scope;
             mask.rotation = rotation;
             port.apply_result(engine::Command::AddMask { item, mask })?;
         }

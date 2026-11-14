@@ -187,6 +187,8 @@ pub(crate) struct Context<'a> {
     pub(crate) matte_brush_size: u32,
     /// The colour popover's eyedropper is armed; the player samples its next click.
     pub(crate) colour_sampling: bool,
+    /// The mask scope the open Properties tab edits; the player's mask gizmos bind to it.
+    pub(crate) mask_scope: project::MaskScope,
     /// Keyword emphasis of the selected caption item's cue, when one item is selected.
     pub(crate) keywords: Option<KeywordUi>,
 }

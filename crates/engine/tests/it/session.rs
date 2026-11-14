@@ -10,6 +10,7 @@ mod history;
 mod items;
 mod keyframes;
 mod lifecycle;
+mod mask_scopes;
 mod masks;
 mod media;
 mod pauses;

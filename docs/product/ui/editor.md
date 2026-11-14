@@ -8,7 +8,7 @@ Imported 3D cube LUT controls in Adjust are a newly adopted composition, not a m
 
 ## Adjust tabs, basic set, HSL, wheels and curves
 
-The Adjust tab follows the desktop reference composition (capcut-desktop-221802): a 24 px sub-tab bar with Basic, HSL, Curves and Color wheel, the panel body below, and an `Apply to all` / `Save as preset` footer. The reference's `Mask` sub-tab is not built here. The auto-adjust, colour-match and colour-correction rows are model features outside this ticket. Composition is [new]; labels and the four-tab order are the reference's.
+The Adjust tab follows the desktop reference composition (capcut-desktop-221802): a 24 px sub-tab bar with Basic, HSL, Curves, Color wheel and Mask, the panel body below, and an `Apply to all` / `Save as preset` footer. The five cells are equal width (221802); the Mask sub-tab is described under [Mask tabs](#mask-tabs). The auto-adjust, colour-match and colour-correction rows are model features outside this ticket. Composition is [new]; labels and the five-tab order are the reference's.
 
 Basic uses the reference's measured order and range: Color (Saturation, Temperature, Hue), Lightness (Brightness, Contrast, Shine, Highlight, Shadow), Effects (Sharpness, Vignette, Fade, Grain), each a -50…50 slider with 0 neutral (web capture `screens/18`). HSL shows the reference tab's eight hue bands — Red, Orange, Yellow, Green, Cyan, Blue, Purple, Magenta — as one 24 px band selector followed by Hue, Saturation and Lightness rows, each on the same -50…50 range; the band list itself is [new], because no capture opens the HSL tab. The 39 px property rows, 22 px fields and 12 px type are the measured ones.
 
@@ -326,6 +326,17 @@ Ours differs on purpose, with the reason:
 | Styles without a selection | Fills dim and the tooltip says `Select a text clip first` | A style applies to a selected text item |
 
 Not measurable from the frames, so [proposed] ("ours, unmeasured"): the 24 px chip height and its gaps, the page labels' placement, the dimmed fill, the star position and the six template names and words.
+
+## Mask tabs
+
+Three reference frames show a Mask page. Frame 105253 (an effect layer, 2x, logical px = px / 2) shows the layer's panel under its "Special effects" header as a two-cell segmented bar, Basic and Mask, with Mask selected. The page holds a `Mask` checkbox row with a caret, an `Add mask` button and the shape tiles Split, Filmstrip, Circle, Rectangle, Text, Brush and Pen, all grey until a mask is added. Frames 102732 (an adjustment layer) and 221802 (a video clip) show the Adjust panel's fifth sub-tab, `Mask`, in the 24 px bar after Color wheel; neither shows the Mask page itself.
+
+Built as the frames show it. An effect or adjustment layer (an effect item, filter clips excepted) nests Effects and Mask in a two-cell segmented bar under one group tab, the cells equal width, Effects labelled `Basic` (105253). A video or image clip's Adjust bar ends with a fifth equal cell, `Mask` (221802). Both open the same inline page, in this order: a `Mask` checkbox row at the 39 px property row pitch, an `Add mask` button of 103 x 27 logical px (112 x 29 of the 2000 px frame, times 0.92) and the shape tiles, which stay grey until a mask exists.
+
+- The checkbox switches the scope's mask on and off (`masks.update`, `enabled`) and is grey with no mask. Add mask runs `masks.add` and is grey once the scope has a mask; one mask per scope from the page. A tile runs `masks.update` (or `masks.remove` for None); a locked track greys everything.
+- Tiles lay out six to a row, as the reference does. The tile set (None, Horizontal, Mirror, Circle, Rectangle, Heart, Stars, Path), the 60 px tile and 8 px gap, the default Rectangle shape of Add mask and the fields under the tiles are ours, unmeasured: the reference shows its tiles (Split, Filmstrip, Circle, Rectangle, Text, Brush, Pen) only greyed. The reference's caret on the Mask row (collapse) and Pro gem are not built.
+- Adjust masks limit only the colour grade: the picture stays whole outside the mask, ungraded, and a grade keeps its place in the effect stack. The Basic tab's Mask row, a popover, edits the clip masks only. The Adjust Mask page shows no LUT row; that is ours, unmeasured.
+- The player's path gizmo binds to the mask of the scope the open tab edits: the Adjust sub-tab edits the Adjust mask, every other tab the clip mask.
 
 ## Font picker
 

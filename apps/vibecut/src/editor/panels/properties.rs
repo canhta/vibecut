@@ -40,16 +40,18 @@ pub(in crate::editor) enum AdjustTab {
     Hsl,
     Curves,
     Wheel,
+    Mask,
 }
 impl AdjustTab {
-    pub(in crate::editor) const ALL: [Self; 4] =
-        [Self::Basic, Self::Hsl, Self::Curves, Self::Wheel];
+    pub(in crate::editor) const ALL: [Self; 5] =
+        [Self::Basic, Self::Hsl, Self::Curves, Self::Wheel, Self::Mask];
     pub(in crate::editor) const fn id(self) -> &'static str {
         match self {
             Self::Basic => "basic",
             Self::Hsl => "hsl",
             Self::Curves => "curves",
             Self::Wheel => "wheel",
+            Self::Mask => "mask",
         }
     }
     pub(in crate::editor) const fn label(self) -> Text {
@@ -58,6 +60,7 @@ impl AdjustTab {
             Self::Hsl => Text::Hsl,
             Self::Curves => Text::Curves,
             Self::Wheel => Text::ColorWheel,
+            Self::Mask => Text::Mask,
         }
     }
 }
@@ -210,6 +213,25 @@ impl State {
     /// The open colour draft, for the automation read.
     pub(in crate::editor) fn color_preview(&self) -> Option<project::Color> {
         self.picker.as_ref().map(|draft| draft.picker.color)
+    }
+
+    /// The mask scope the open tab edits: Adjust only while the one selected clip shows its
+    /// Adjust tab's Mask sub-tab, Clip otherwise. The player binds its gizmos to this scope.
+    pub(in crate::editor) fn edited_mask_scope(
+        &self,
+        project: &project::Project,
+        selection: &BTreeSet<ItemId>,
+        preferences: &crate::preferences::Preferences,
+    ) -> project::MaskScope {
+        let adjust_tab = crate::editor::context::single(selection)
+            .and_then(|item| element_kind(project, item))
+            .and_then(|(kind, _)| preferences.properties_tabs.get(kind.id()))
+            .is_some_and(|tab| tab.as_str() == PropertiesTab::Adjust.id());
+        if adjust_tab && self.adjust_tab == AdjustTab::Mask {
+            project::MaskScope::Adjust
+        } else {
+            project::MaskScope::Clip
+        }
     }
 
     /// Whether the colour popover's eyedropper is armed: the player samples its next click.

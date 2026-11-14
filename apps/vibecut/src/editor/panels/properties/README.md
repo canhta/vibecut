@@ -209,7 +209,7 @@ items on any other track keep the unsupported-kind refusal.
 
 ## Adjust basic, HSL and the footer
 
-The Adjust tab opens with Basic, HSL, Curves and Color wheel sub-tabs. Basic lists the reference's twelve controls in measured order: saturation, temperature, hue, brightness, contrast, shine, highlight, shadow, sharpness, vignette, fade and grain. All twelve are registered `color_grade` parameters on -50..=50 with 0 neutral and scalar keyframe admission through `effects.<instance>.params.<id>`; the same ids carry the Effects tab rows. HSL lists eight hue bands (red, orange, yellow, green, cyan, blue, purple, magenta) and edits the selected band's `hsl_<band>_hue`, `_saturation` and `_lightness`; switching bands changes no project data. `effect_scrub_field` and its draft/gesture contract above apply unchanged, and every edit is one `effects.update_param` undo step.
+The Adjust tab opens with Basic, HSL, Curves, Color wheel and Mask sub-tabs (the last is described under [Mask](#mask)). Basic lists the reference's twelve controls in measured order: saturation, temperature, hue, brightness, contrast, shine, highlight, shadow, sharpness, vignette, fade and grain. All twelve are registered `color_grade` parameters on -50..=50 with 0 neutral and scalar keyframe admission through `effects.<instance>.params.<id>`; the same ids carry the Effects tab rows. HSL lists eight hue bands (red, orange, yellow, green, cyan, blue, purple, magenta) and edits the selected band's `hsl_<band>_hue`, `_saturation` and `_lightness`; switching bands changes no project data. `effect_scrub_field` and its draft/gesture contract above apply unchanged, and every edit is one `effects.update_param` undo step.
 
 The footer's `Apply to all` copies the selected item's complete grade (including LUT reference and curves) onto every unlocked video and image item as one `batch` command, so it is one undo step; items without a grade gain an instance. `Save as preset` stores the same parameter map as a named app preference (`adjustment_presets`, `Preset N`), never in project data, and the Adjustment assets tab lists each saved preset with an apply action for the selected clip and a delete action. Saving and deleting are preference edits with no project history entry; a preset applies through the same commands as one undo step.
 
@@ -311,13 +311,31 @@ volume steps 0.01 dB over -60..20 dB. `inspector.volume` and
 
 ## Mask
 
-The Basic tab of a video or image item opens with a `Mask` row showing the clip's
-current shape or `None`; audio, text, graphic and effect items have no row. It opens the
-[mask picker](mask_picker/README.md) sub-panel. The first mask is the one the row
-edits: a shape on an empty clip runs `masks.add`, another shape keeps centre, size and
-rotation through `masks.update`, and None runs `masks.remove`. One mask per clip from
-the panel; commands and agents keep the multi-mask engine. A locked track opens
-read-only.
+The Mask sub-tab of a video or image item's Basic tab opens with a `Mask` row showing the
+clip's current shape or `None`, which opens the [mask picker](mask_picker/README.md)
+popover. The first clip-scope mask is the one the row edits: a shape on an empty scope runs
+`masks.add` (id `mask1`), another shape keeps centre, size and rotation through
+`masks.update`, and None runs `masks.remove`. One mask per scope from the panel; commands and
+agents keep the multi-mask engine. A locked track opens read-only. Audio, text, graphic and
+sticker items have no Mask.
+
+An effect or adjustment layer (an effect item; a filter clip has none) shows Effects and Mask
+as the two cells of one segmented bar under a single group tab (`inspector.group.basic`,
+`inspector.tab.effects` labelled Basic, `inspector.tab.mask`). The Adjust tab's `Mask`
+sub-tab (`AdjustTab::Mask`, `effects.<instance>.tab.mask`) is the fifth cell of its bar.
+Both show the inline Mask page (`mask_page`) as the reference frames do: the `Mask`
+checkbox (`inspector.mask.enabled`, `masks.update` of `enabled`, grey with no mask), the
+`Add mask` button (`inspector.mask.add`, `masks.add` with a Rectangle, grey once the scope
+has a mask) and the shape tiles six to a row, grey until a mask exists, with the fields under
+them (the picker's `inline` page). The layer page edits `MaskScope::Clip` (id `mask1`); the
+Adjust page edits `MaskScope::Adjust` (id `adjust1`), which a clip mask stored before it
+never shadows and the Basic row never edits. The Adjust page shows no LUT row. The page sets
+the picker's scope each frame so its actions reach that scope's mask. Render limits the grade
+by an Adjust mask ([scene](../../../../../../crates/render/src/scene/README.md)). The player
+binds its path gizmo to the scope of the open tab: `State::edited_mask_scope` is Adjust only
+while the selected clip shows the Adjust tab's Mask sub-tab, and the frame passes it as
+`Context::mask_scope`. Layout: [Mask
+tabs](../../../../../../docs/product/ui/editor.md#mask-tabs).
 
 Panel design and measured controls: [editor window](../../../../../../docs/product/ui/editor.md).
 

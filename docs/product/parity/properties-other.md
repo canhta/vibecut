@@ -94,12 +94,12 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | POTHER-06 | Effect Details, Name | Partial | Differs | 105144 | Per-clip effect stack |
 | POTHER-07 | Effect param sliders 0-100 | Done | Proposed | 105209-105242 | |
 | POTHER-08 | Effect reset, keyframes | Done | Proposed | 105251 | |
-| POTHER-09 | Effect Mask tab | Missing | Not captured | 105253 | |
+| POTHER-09 | Effect Mask tab | Done | Differs | 105253; [ui/editor.md](../ui/editor.md#mask-tabs) | Nested Basic and Mask bar and inline page as shown; tile set and fields ours |
 | POTHER-10 | Effect stack reorder, toggle | Ours | Proposed | | |
 | POTHER-11 | Filter panel, Name | Done | Proposed | 105256 | |
 | POTHER-12 | Filter Intensity 0-100 | Done | Proposed | 105306-105317 | |
 | POTHER-13 | Filter reset, keyframe | Partial | Proposed | 105256 | Reset unverified |
 | POTHER-14 | Adjustment layer Adjust tab | Partial | Differs | 102732 | Grade rows in Effects stack |
 | POTHER-15 | Adjustment Basic, HSL, Curves, wheel | Partial | Differs | 102732 | |
-| POTHER-16 | Adjustment Mask tab | Missing | Not captured | 102732 | |
+| POTHER-16 | Adjustment Mask tab | Done | Differs | 102732; [ui/editor.md](../ui/editor.md#mask-tabs) | Same page as POTHER-09; reference puts it in the Adjust bar |
 | POTHER-17 | Missing media panel | Done | Proposed | 095550; [ui/editor.md](../ui/editor.md#missing-media) | |

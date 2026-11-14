@@ -982,16 +982,24 @@ pub(crate) struct MaskText<'a> {
     pub line_height: f32,
 }
 #[allow(clippy::too_many_arguments)]
+/// Scale `image` by the coverage of the item's masks of one `scope`, in vector order. The
+/// `Clip` scope also paints the enabled strokes; `Adjust` masks only limit, so their strokes
+/// never draw.
 pub(crate) fn apply(
     image: &mut Image,
     item: &project::Item,
+    scope: project::MaskScope,
     local: time::Tick,
     placement: crate::Placement,
     canvas: &project::Canvas,
     mut glyph: impl FnMut(MaskText<'_>, f32, Geometry) -> Result<std::sync::Arc<Image>>,
     hooks: &dyn ExecutionHooks,
 ) -> Result<()> {
-    let Some(first) = item.masks.iter().find(|m| m.active()) else {
+    let Some(first) = item
+        .masks
+        .iter()
+        .find(|m| m.active() && m.scope == scope)
+    else {
         return Ok(());
     };
     let w = image.width;
@@ -1001,7 +1009,11 @@ pub(crate) fn apply(
     let scale = (dw / canvas.width as f32).min(dh / canvas.height as f32);
     let mut combined = Image::new(w, h, [initial(first.mode); 4], hooks)?;
     let mut strokes: Option<Image> = None;
-    for mask in item.masks.iter().filter(|m| m.active()) {
+    for mask in item
+        .masks
+        .iter()
+        .filter(|m| m.active() && m.scope == scope)
+    {
         check(hooks)?;
         let extra = match &mask.shape {
             project::MaskShape::Text { content, .. } => content.as_str().len(),
@@ -1095,7 +1107,7 @@ pub(crate) fn apply(
         let coverage = prepared.coverage(&m, scale, w, h, hooks)?;
         combine(&mut combined, &coverage, m.mode, hooks)?;
         drop(coverage);
-        if m.stroke.width > 0. {
+        if m.stroke.width > 0. && scope == project::MaskScope::Clip {
             if strokes.is_none() {
                 strokes = Some(Image::new(w, h, [0.; 4], hooks)?);
             }

@@ -119,10 +119,20 @@ fn copy_animations(group: AttributeGroup, source: &Item, target: &mut Item) -> R
     for path in &stale {
         target.animations.remove(path);
     }
+    // A mask the target did not take (an Adjust mask on a non-video target) keeps no keys.
+    let masks: Vec<String> = target.masks.iter().map(|mask| mask.id.clone()).collect();
     for (path, param) in source
         .animations
         .iter()
         .filter(|(path, _)| group_of(path) == Some(group))
+        .filter(|(path, _)| {
+            group != AttributeGroup::Masks
+                || path
+                    .as_str()
+                    .strip_prefix("masks.")
+                    .and_then(|rest| rest.split_once(".params."))
+                    .is_some_and(|(id, _)| masks.iter().any(|mask| mask == id))
+        })
     {
         target.animations.set(path.clone(), param.clone())?;
     }
@@ -136,7 +146,16 @@ fn apply(group: AttributeGroup, source: &Item, target: &mut Item) -> Result<()> 
         AttributeGroup::Transform => {}
         AttributeGroup::Blend => target.blend_mode = source.blend_mode,
         AttributeGroup::Effects => target.effects.clone_from(&source.effects),
-        AttributeGroup::Masks => target.masks.clone_from(&source.masks),
+        // Adjust masks limit a clip's colour grade, so only a video or image target takes them.
+        AttributeGroup::Masks => {
+            let grade = matches!(target.content, ItemParams::Video(_));
+            target.masks = source
+                .masks
+                .iter()
+                .filter(|mask| grade || mask.scope == project::MaskScope::Clip)
+                .cloned()
+                .collect();
+        }
         AttributeGroup::Audio => {
             if let Some(audio) = audio_of(&source.content) {
                 set_audio(&mut target.content, audio);

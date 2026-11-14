@@ -1,11 +1,14 @@
 # Mask picker
 
-Interface: `State`, `Action`, `show`.
+Interface: `State`, `Action`, `Page`, `show`, `inline`.
 
-One popover over the first mask of the selected clip, owned by the properties area
-because the Basic Mask row is its only entry. `State` owns the seven shape choices and
-typed field drafts; `show` draws the grid and fields and returns actions for the
-properties owner.
+One popover over the first mask of one scope of the selected item, owned by the properties
+area. Its popover serves the video Mask row; the layer and Adjust pages draw the same
+tiles and fields inline (`inline`, `Page`). `State` owns the scope it was opened for
+(`open(item, scope)`, `set_scope`, `scope()`), the seven shape choices and typed field drafts;
+`current(item, scope)` is the
+first mask of that scope; `show` draws the grid and fields and returns actions for the
+properties owner, which creates a new mask with the open scope.
 
 The tile order is None, Horizontal, Mirror, Circle, Rectangle, Heart, Stars, Path.
 Horizontal is the engine split at a default -90° so it keeps the top half; Mirror is

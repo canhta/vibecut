@@ -182,36 +182,17 @@ pub fn show(
         ui.set_width(WIDTH);
         header(ui, tr, &mut event);
         ui.add_space(theme::space::XS);
-        grid(ui, tr, dark, locked, item, mask, &mut event);
-        if let Some(mask) = mask {
-            ui.add_space(theme::space::XS);
-            ui.separator();
-            ui.add_space(theme::space::XS);
-            ui.label(
-                egui::RichText::new(tr(Text::Adjust))
-                    .strong()
-                    .size(theme::type_size::BODY),
-            );
-            // Fields show the mask at the playhead; static edits still write the stored mask.
-            let shown = timing.map_or_else(
-                || mask.clone(),
-                |timing| {
-                    mask.at(timing.animations, timing.time)
-                        .unwrap_or_else(|_| mask.clone())
-                },
-            );
-            let keys = timing.map(|timing| Keys {
-                item,
-                timing,
-                mask,
-                shown: &shown,
-                locked,
-            });
-            fields(
-                ui, state, locale, tr, dark, locked, item, mask, &shown, keys, &mut event,
-            );
-            ui.add_space(theme::space::XS);
-        }
+        let page = Page {
+            locale,
+            dark,
+            item,
+            mask,
+            locked,
+            timing,
+            per_row: 4,
+            inline: false,
+        };
+        content(ui, state, &page, &mut event);
         ui.separator();
         ui.add_space(theme::space::XS);
         ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
@@ -236,6 +217,74 @@ pub fn show(
         );
     }
     event
+}
+
+/// One mask page: the item, its mask of the scope being edited and how the tiles lay out.
+pub struct Page<'a> {
+    pub locale: Locale,
+    pub dark: bool,
+    pub item: ItemId,
+    pub mask: Option<&'a Mask>,
+    pub locked: bool,
+    pub timing: Option<Timing<'a>>,
+    /// Tiles per grid row: 4 in the popover, the reference's 6 inline.
+    pub per_row: usize,
+    /// Drawn inline in the panel: the tiles stay grey until a mask exists.
+    pub inline: bool,
+}
+
+/// Draw the page inline in the panel body, without the popover's header and Done.
+pub fn inline(state: &mut State, ui: &mut egui::Ui, page: &Page<'_>) -> Event {
+    let mut event = Event {
+        widgets: Vec::new(),
+        actions: Vec::new(),
+        editing: false,
+    };
+    content(ui, state, page, &mut event);
+    event
+}
+
+/// The shape tiles, then, once a mask exists, its fields.
+fn content(ui: &mut egui::Ui, state: &mut State, page: &Page<'_>, event: &mut Event) {
+    let tr = |key| i18n::text(page.locale, key);
+    let (locale, dark, item, mask, locked, timing) = (
+        page.locale,
+        page.dark,
+        page.item,
+        page.mask,
+        page.locked,
+        page.timing,
+    );
+    grid(ui, tr, page, locked || (page.inline && mask.is_none()), event);
+    if let Some(mask) = mask {
+        ui.add_space(theme::space::XS);
+        ui.separator();
+        ui.add_space(theme::space::XS);
+        ui.label(
+            egui::RichText::new(tr(Text::Adjust))
+                .strong()
+                .size(theme::type_size::BODY),
+        );
+        // Fields show the mask at the playhead; static edits still write the stored mask.
+        let shown = timing.map_or_else(
+            || mask.clone(),
+            |timing| {
+                mask.at(timing.animations, timing.time)
+                    .unwrap_or_else(|_| mask.clone())
+            },
+        );
+        let keys = timing.map(|timing| Keys {
+            item,
+            timing,
+            mask,
+            shown: &shown,
+            locked,
+        });
+        fields(
+            ui, state, locale, tr, dark, locked, item, mask, &shown, keys, event,
+        );
+        ui.add_space(theme::space::XS);
+    }
 }
 
 fn header(ui: &mut egui::Ui, tr: impl Fn(Text) -> &'static str + Copy, event: &mut Event) {
@@ -275,14 +324,13 @@ fn header(ui: &mut egui::Ui, tr: impl Fn(Text) -> &'static str + Copy, event: &m
 fn grid(
     ui: &mut egui::Ui,
     tr: impl Fn(Text) -> &'static str + Copy,
-    dark: bool,
+    page: &Page<'_>,
     locked: bool,
-    item: ItemId,
-    mask: Option<&Mask>,
     event: &mut Event,
 ) {
+    let (dark, item, mask) = (page.dark, page.item, page.mask);
     let selected = mask.and_then(|mask| Choice::of(&mask.shape));
-    for row in Choice::ALL.chunks(4) {
+    for row in Choice::ALL.chunks(page.per_row) {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = TILE_GAP;
             for choice in row {

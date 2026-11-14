@@ -404,7 +404,15 @@ impl<'a> Renderer<'a> {
             let content = content_local(item, local, out.width, out.height)?;
             let mut placement = self.placement_at(item, local)?;
             if placement.opacity != 0.0 {
-                let masked = item.masks.iter().any(|m| m.active());
+                let masked = item
+                    .masks
+                    .iter()
+                    .any(|m| m.active() && m.scope == project::MaskScope::Clip);
+                // Adjust masks limit only the colour grade, on the clip's own picture.
+                let grade_masked = item
+                    .masks
+                    .iter()
+                    .any(|m| m.active() && m.scope == project::MaskScope::Adjust);
                 let transform = super::transform::Transform::at(item, local)?;
                 let blended = item.blend_mode != project::BlendMode::Normal;
                 let source_at = source_time(item, content_tick(item, content)?)?;
@@ -502,15 +510,22 @@ impl<'a> Renderer<'a> {
                 if reduce_noise {
                     runs.push(crate::effects::reduce_noise_passes());
                 }
+                // With an active Adjust mask each colour grade keeps its place in the stack;
+                // `grade_at` marks those runs so the mask limits them alone.
+                let mut grade_at = Vec::new();
                 for effect in item.effects.iter().filter(|effect| effect.enabled) {
-                    runs.push(crate::effects::evaluate_effect(
+                    let run = crate::effects::evaluate_effect(
                         &item.animations,
                         effect,
                         local,
                         geometry.ok_or(Error::Invalid("effect spatial geometry"))?,
                         !preview,
                         &lut_resources,
-                    )?);
+                    )?;
+                    if grade_masked && effect.kind == "color_grade" {
+                        grade_at.push(runs.len());
+                    }
+                    runs.push(run);
                 }
                 if channel_blur {
                     runs.push(crate::effects::blur_passes(
@@ -866,13 +881,55 @@ impl<'a> Renderer<'a> {
                         }
                     }
                     if !adjustment {
-                        for run in &runs {
+                        // The Adjust coverage, evaluated once for every masked grade step.
+                        let mut grade_coverage = None;
+                        if !grade_at.is_empty() {
+                            adapter.release_idle()?;
+                            let mut coverage =
+                                Image::new(filtered.width, filtered.height, [1.0; 4], hooks)?;
+                            crate::mask::apply(
+                                &mut coverage,
+                                item,
+                                project::MaskScope::Adjust,
+                                local,
+                                placement,
+                                &project.data().canvas,
+                                |mask, size, geometry| self.mask_glyph(mask, size, geometry, hooks),
+                                hooks,
+                            )?;
+                            grade_coverage = Some(coverage);
+                        }
+                        for (index, run) in runs.iter().enumerate() {
                             if run.is_empty() {
                                 continue;
                             }
+                            // A masked grade step mixes its result with the picture it started
+                            // from, so the grade keeps its place in the stack.
+                            let before = match &grade_coverage {
+                                Some(_) if grade_at.contains(&index) => {
+                                    Some(filtered.copy(hooks)?)
+                                }
+                                _ => None,
+                            };
                             filtered = crate::effects::apply_effect(
                                 filtered, run, &below, adapter, hooks,
                             )?;
+                            if let (Some(before), Some(coverage)) = (before, &grade_coverage) {
+                                let width = filtered.width as usize;
+                                for ((graded, start), cover) in filtered
+                                    .pixels
+                                    .chunks_mut(width)
+                                    .zip(before.pixels.chunks(width))
+                                    .zip(coverage.pixels.chunks(width))
+                                {
+                                    check(hooks)?;
+                                    for ((g, s), c) in graded.iter_mut().zip(start).zip(cover) {
+                                        for (gv, sv) in g.iter_mut().zip(s) {
+                                            *gv = sv + (*gv - sv) * c[3];
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     if filtered.width != below.width || filtered.height != below.height {
@@ -880,52 +937,14 @@ impl<'a> Renderer<'a> {
                     }
                     if masked {
                         adapter.release_idle()?;
-                        let width = self.settings.width;
-                        let height = self.settings.height;
                         crate::mask::apply(
                             &mut filtered,
                             item,
+                            project::MaskScope::Clip,
                             local,
                             placement,
                             &project.data().canvas,
-                            |mask, size, geometry| {
-                                let canvas_height = project.data().canvas.height as f32;
-                                let face_style = text::style_name(mask.weight, mask.italic);
-                                let style = CaptionStyle {
-                                    font_style: face_style.clone(),
-                                    outline: None,
-                                    background: None,
-                                    position: CaptionPosition::Middle,
-                                    max_lines: 64,
-                                    ..Default::default()
-                                };
-                                self.text(
-                                    mask.content,
-                                    size * 1080.0 / canvas_height,
-                                    [255; 4],
-                                    Placement {
-                                        destination: Rect {
-                                            x: 0.,
-                                            y: 0.,
-                                            width: f64::from(geometry.size[0]) / f64::from(width),
-                                            height: f64::from(geometry.size[1]) / f64::from(height),
-                                        },
-                                        ..Default::default()
-                                    },
-                                    Some(&style),
-                                    TextFace {
-                                        family: mask.font,
-                                        style: &face_style,
-                                        letter_spacing: mask.letter_spacing * 1080.0
-                                            / canvas_height,
-                                        line_height: mask.line_height * 1080.0 / canvas_height,
-                                        ..Default::default()
-                                    },
-                                    None,
-                                    None,
-                                    hooks,
-                                )
-                            },
+                            |mask, size, geometry| self.mask_glyph(mask, size, geometry, hooks),
                             hooks,
                         )?;
                     }
@@ -1074,6 +1093,52 @@ impl<'a> Renderer<'a> {
             })),
             (frame, _) => Ok(frame),
         }
+    }
+    /// Rasterize one text mask's glyphs at the mask box, as the mask engine asks.
+    fn mask_glyph(
+        &mut self,
+        mask: super::mask::MaskText<'_>,
+        size: f32,
+        geometry: super::mask::Geometry,
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<Arc<Image>> {
+        let width = self.settings.width;
+        let height = self.settings.height;
+        let canvas_height = self.project.data().canvas.height as f32;
+        let face_style = text::style_name(mask.weight, mask.italic);
+        let style = CaptionStyle {
+            font_style: face_style.clone(),
+            outline: None,
+            background: None,
+            position: CaptionPosition::Middle,
+            max_lines: 64,
+            ..Default::default()
+        };
+        self.text(
+            mask.content,
+            size * 1080.0 / canvas_height,
+            [255; 4],
+            Placement {
+                destination: Rect {
+                    x: 0.,
+                    y: 0.,
+                    width: f64::from(geometry.size[0]) / f64::from(width),
+                    height: f64::from(geometry.size[1]) / f64::from(height),
+                },
+                ..Default::default()
+            },
+            Some(&style),
+            TextFace {
+                family: mask.font,
+                style: &face_style,
+                letter_spacing: mask.letter_spacing * 1080.0 / canvas_height,
+                line_height: mask.line_height * 1080.0 / canvas_height,
+                ..Default::default()
+            },
+            None,
+            None,
+            hooks,
+        )
     }
     #[allow(clippy::too_many_arguments)]
     fn text(

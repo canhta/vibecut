@@ -1,6 +1,6 @@
 //! Owns the open mask sub-panel, its shape choices and typed field drafts.
 use crate::i18n::Text;
-use project::{ItemId, Mask, MaskShape};
+use project::{ItemId, Mask, MaskScope, MaskShape};
 use std::collections::BTreeMap;
 
 /// One choice in the reference's shape grid, in capture order.
@@ -109,9 +109,9 @@ impl Choice {
     }
 }
 
-/// The mask a row opens: the first mask the item carries, if any.
-pub fn current(item: &project::Item) -> Option<&Mask> {
-    item.masks.first()
+/// The mask a row opens: the first mask of its scope the item carries, if any.
+pub fn current(item: &project::Item, scope: MaskScope) -> Option<&Mask> {
+    item.masks.iter().find(|mask| mask.scope == scope)
 }
 
 /// Transient sub-panel state; the panel itself lives on the properties area.
@@ -119,6 +119,7 @@ pub fn current(item: &project::Item) -> Option<&Mask> {
 pub struct State {
     open: bool,
     item: Option<ItemId>,
+    scope: MaskScope,
     drafts: BTreeMap<&'static str, String>,
     feather: Option<f64>,
 }
@@ -132,9 +133,20 @@ impl State {
         self.item
     }
 
-    pub fn open(&mut self, item: ItemId) {
+    /// The scope of the mask the open or last-open panel edits.
+    pub fn scope(&self) -> MaskScope {
+        self.scope
+    }
+
+    /// Name the scope an inline page edits, so its actions reach that scope's mask.
+    pub fn set_scope(&mut self, scope: MaskScope) {
+        self.scope = scope;
+    }
+
+    pub fn open(&mut self, item: ItemId, scope: MaskScope) {
         self.open = true;
         self.item = Some(item);
+        self.scope = scope;
         self.drafts.clear();
         self.feather = None;
     }
@@ -173,7 +185,7 @@ impl State {
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::{Choice, current};
-    use project::{Mask, MaskShape};
+    use project::{Mask, MaskScope, MaskShape};
 
     #[test]
     fn the_capture_tiles_round_trip_through_the_engine_shapes() {
@@ -226,12 +238,32 @@ mod tests {
         )
         .masks(vec![Mask::new("mask1", MaskShape::Heart)])
         .build();
-        assert_eq!(current(&item).map(|mask| mask.id.as_str()), Some("mask1"));
+        assert_eq!(
+            current(&item, MaskScope::Clip).map(|mask| mask.id.as_str()),
+            Some("mask1")
+        );
+        assert!(
+            current(&item, MaskScope::Adjust).is_none(),
+            "a clip mask is not the Adjust mask"
+        );
+        let mut adjust = Mask::new("adjust1", MaskShape::Star);
+        adjust.scope = MaskScope::Adjust;
+        item.masks.insert(0, adjust);
+        assert_eq!(
+            current(&item, MaskScope::Clip).map(|mask| mask.id.as_str()),
+            Some("mask1"),
+            "the clip row skips an Adjust mask stored before it"
+        );
+        assert_eq!(
+            current(&item, MaskScope::Adjust).map(|mask| mask.id.as_str()),
+            Some("adjust1")
+        );
         item.masks.clear();
-        assert!(current(&item).is_none());
+        assert!(current(&item, MaskScope::Clip).is_none());
 
         let mut state = super::State::default();
-        state.open(project::ItemId(1));
+        state.open(project::ItemId(1), MaskScope::Adjust);
+        assert_eq!(state.scope(), MaskScope::Adjust);
         state.set_draft("feather", "10".into());
         state.close();
         assert!(!state.is_open());

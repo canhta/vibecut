@@ -379,6 +379,7 @@ impl Rig {
             matte_brush: None,
             matte_brush_size: 20,
             colour_sampling: false,
+            mask_scope: project::MaskScope::Clip,
             keywords: None,
         };
         if self.sheet {
