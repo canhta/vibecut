@@ -210,6 +210,9 @@ fn assert_still_import(path: &Path, codec: &str, width: u32, height: u32) {
     assert!(metadata.needs_thumbnail(), "{path:?}");
     assert_decodable(&capabilities, StreamKind::Video, codec);
     let asset = SourceAsset::import(AssetId(1), path.to_path_buf()).unwrap();
+    // A still has no length of its own, so insertion gives it the Image duration setting.
+    assert!(asset.is_image(), "{path:?}");
+    assert_eq!(asset.probe().duration, None, "{path:?}");
     let thumbnail = thumbnail(
         &asset,
         Tick::ZERO,

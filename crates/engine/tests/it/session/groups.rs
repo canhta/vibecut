@@ -316,6 +316,15 @@ fn deleting_a_member_deletes_the_group_and_a_lone_survivor_is_ungrouped() {
 }
 
 #[test]
+fn ripple_deleting_a_member_ripple_deletes_the_group_on_each_track() {
+    let (mut s, _, _) = fixture();
+    group(&mut s, &[10, 12]);
+    s.apply(Command::RippleDelete { item: ItemId(10) }).unwrap();
+    // 12 goes with 10; 11 closes the 40-tick span 10 left on its own track.
+    assert_eq!(spans(&s), [(11, 20, 60)]);
+}
+
+#[test]
 fn duplicating_a_member_duplicates_the_group_under_a_fresh_id() {
     let (mut s, _, _) = fixture();
     let g = group(&mut s, &[10, 12]);
@@ -359,6 +368,7 @@ fn copy_and_cut_carry_the_group_but_the_paste_is_ungrouped() {
         .apply(Command::PasteItems {
             at: Tick(200),
             source: ItemPasteSource::Stored,
+            track: None,
         })
         .unwrap();
     assert_eq!(out.created.len(), 2, "the whole group is copied");

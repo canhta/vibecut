@@ -997,7 +997,11 @@ mod tests {
                 .collect();
             preferences.set_action(spec.id, recorded).unwrap();
             assert!(preferences.bindings.is_empty(), "{} recorded", spec.id);
-            assert!(preferences.is_customized.is_empty(), "{} customized", spec.id);
+            assert!(
+                preferences.is_customized.is_empty(),
+                "{} customized",
+                spec.id
+            );
         }
     }
 

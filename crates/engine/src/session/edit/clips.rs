@@ -182,7 +182,7 @@ pub(super) fn execute_insert_item(
 pub(super) fn execute_paste_items(
     mut data: ProjectData,
     at: Tick,
-    track: Option<TrackId>,
+    onto: Option<TrackId>,
     payload: Option<&crate::ItemClipboard>,
     created: &mut Vec<CreatedId>,
     next: &mut Option<u64>,
@@ -191,7 +191,7 @@ pub(super) fn execute_paste_items(
     let Some(payload) = payload else {
         return Ok(data);
     };
-    let destinations = payload.destinations(&data, at, track)?;
+    let destinations = payload.destinations(&data, at, onto)?;
     if destinations.is_empty() {
         return Ok(data);
     }
@@ -956,7 +956,22 @@ pub(super) fn execute_recover_audio(
 
     Ok(data)
 }
+/// Ripple-delete an item with every member of its group, each closing its own span.
 pub(super) fn execute_ripple_delete(mut data: ProjectData, id: ItemId) -> Result<ProjectData> {
+    find_item(&data, id).ok_or(EditError::NoItem(id))?;
+    let mut members: Vec<(Tick, ItemId)> = with_group_members(&data, &[id])
+        .into_iter()
+        .filter_map(|member| find_item(&data, member).map(|(_, item)| (item.start, member)))
+        .collect();
+    // Latest first, so each removal closes its own span before an earlier one shifts it.
+    members.sort_by(|a, b| b.cmp(a));
+    for (_, member) in members {
+        data = ripple_delete_one(data, member)?;
+    }
+    Ok(data)
+}
+
+fn ripple_delete_one(mut data: ProjectData, id: ItemId) -> Result<ProjectData> {
     let t = data
         .scene_mut()
         .timeline

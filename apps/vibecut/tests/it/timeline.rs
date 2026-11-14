@@ -6730,3 +6730,35 @@ fn group_chords_select_the_whole_group_and_ungroup_keeps_the_selection() {
     h.run_steps(2);
     assert_eq!(item(h.state(), a).group, None);
 }
+
+#[test]
+fn a_double_click_isolates_one_member_and_an_alt_click_selects_the_group() {
+    let fixture = audible_editor();
+    let (a, b) = (fixture.video_a, fixture.video_b);
+    let mut h = harness(fixture.editor);
+    h.run_steps(3);
+    h.state_mut().select([a, b].into()).unwrap();
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::G);
+    h.run_steps(2);
+    assert!(item(h.state(), a).group.is_some());
+    h.state_mut().activate("timeline.deselect_all").unwrap();
+    h.run_steps(2);
+    // Two clicks in one frame are a double-click: only that member stays selected.
+    let member = move |id: ItemId| {
+        By::new().predicate(move |node| {
+            node.author_id() == Some(format!("timeline.item.{}", id.0).as_str())
+        })
+    };
+    h.get(member(a)).click();
+    h.get(member(a)).click();
+    h.run_steps(2);
+    assert_eq!(h.state().inspect().unwrap().selection, vec![a]);
+    // Alt does not isolate: an Alt-click on a member selects the whole group.
+    h.state_mut().activate("timeline.deselect_all").unwrap();
+    h.run_steps(2);
+    h.get(member(b)).click_modifiers(egui::Modifiers::ALT);
+    h.run_steps(2);
+    let mut selected = h.state().inspect().unwrap().selection;
+    selected.sort();
+    assert_eq!(selected, vec![a, b], "an Alt-click selects every member");
+}

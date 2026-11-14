@@ -1269,10 +1269,7 @@ fn reference_default_chords_run_their_actions_through_the_keymap() {
             "timeline zoom to fit",
             &[(egui::Modifiers::SHIFT, egui::Key::Z, "timeline.zoom_fit")],
         ),
-        (
-            "new project",
-            &[(command, egui::Key::N, "project.create")],
-        ),
+        ("new project", &[(command, egui::Key::N, "project.create")]),
     ];
     for (group, chords) in groups {
         for &(modifiers, key, action) in chords {
@@ -1297,13 +1294,40 @@ fn reference_default_chords_run_their_actions_through_the_keymap() {
 fn magnet_zoom_fit_and_new_project_chords_run_their_actions() {
     let mut harness = harness(fixture().editor);
     harness.run_steps(3);
-    assert!(harness.state().session.project().data().scene().timeline.magnet);
+    assert!(
+        harness
+            .state()
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .magnet
+    );
     harness.key_press(egui::Key::P);
     harness.run_steps(3);
-    assert!(!harness.state().session.project().data().scene().timeline.magnet);
+    assert!(
+        !harness
+            .state()
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .magnet
+    );
     harness.key_press(egui::Key::P);
     harness.run_steps(3);
-    assert!(harness.state().session.project().data().scene().timeline.magnet);
+    assert!(
+        harness
+            .state()
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .magnet
+    );
 
     for _ in 0..3 {
         harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Equals);
@@ -1316,7 +1340,11 @@ fn magnet_zoom_fit_and_new_project_chords_run_their_actions() {
     assert!(fit < zoomed, "fit {fit} is below the zoomed-in {zoomed}");
     harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::Z);
     harness.run_steps(3);
-    assert_eq!(harness.state().inspect().unwrap().zoom, fit, "fit is stable");
+    assert_eq!(
+        harness.state().inspect().unwrap().zoom,
+        fit,
+        "fit is stable"
+    );
 
     assert_eq!(harness.state_mut().take_lifecycle_action(), None);
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::N);

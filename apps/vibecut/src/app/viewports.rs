@@ -40,10 +40,11 @@ impl Workspace {
             if let Some((from, to)) = window.saved_as.take() {
                 self.preferences.copy_timeline_lanes(from, to);
             }
+            let create = std::mem::take(&mut window.create_requested);
             if std::mem::take(&mut window.focus_home) {
                 self.bring_home_forward(ui.ctx());
             }
-            if std::mem::take(&mut window.create_requested) {
+            if create {
                 self.create_project();
             }
         }
@@ -69,8 +70,8 @@ impl Workspace {
         if !typed || !self.home_focused {
             return;
         }
-        let keymap =
-            crate::actions::Keymap::resolve(&self.preferences.keybindings).only(&["project.create"]);
+        let keymap = crate::actions::Keymap::resolve(&self.preferences.keybindings)
+            .only(&["project.create"]);
         let context = crate::actions::DispatchContext {
             text_input: ctx.text_edit_focused(),
             ..Default::default()

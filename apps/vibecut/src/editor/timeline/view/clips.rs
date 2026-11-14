@@ -160,10 +160,9 @@ impl State {
         }
         if let (Some(rank), Some(label_y)) = (item.group, label_y) {
             // Group cue: a small group glyph then the group name after the clip label, in the
-            // label colour, cut at the clip edge. Measured by eye from the reference frame (about
-            // 11 pt glyph, 4 pt gaps); exact geometry stays open.
+            // label colour, cut at the clip edge (measured: `14e/203841`).
             let glyph = Rect::from_center_size(
-                egui::pos2(label_end + 4.0 + GROUP_GLYPH / 2.0, label_y),
+                egui::pos2(label_end + GROUP_LEAD + GROUP_GLYPH / 2.0, label_y),
                 Vec2::splat(GROUP_GLYPH),
             );
             let name = i18n::format(
@@ -174,7 +173,7 @@ impl State {
             if glyph.right() < visible.right() {
                 icons::tinted(Icon::LinkSimple, GROUP_GLYPH, text).paint_at(ui, glyph);
                 painter.with_clip_rect(visible).text(
-                    egui::pos2(glyph.right() + 4.0, label_y),
+                    egui::pos2(glyph.right() + GROUP_NAME_GAP, label_y),
                     Align2::LEFT_CENTER,
                     name,
                     FontId::proportional(theme::type_size::BODY),
@@ -635,7 +634,12 @@ impl State {
 }
 
 /// Side of the group glyph beside the group name on a grouped clip.
+/// Measured on `14e/203841` (Pillow, logical = px / 2): the glyph's ink is 11 pt wide.
 const GROUP_GLYPH: f32 = 11.0;
+/// From the clip label's last ink to the group glyph's first ink: 10.5 pt (21 px).
+const GROUP_LEAD: f32 = 10.5;
+/// From the group glyph's last ink to the group name's first ink: 4 pt (8 px).
+const GROUP_NAME_GAP: f32 = 4.0;
 
 /// Group names count in creation order: A, B, … Z, then A1, B1, ….
 fn group_letter(rank: usize) -> String {

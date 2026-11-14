@@ -3428,6 +3428,66 @@ fn transcript_locked_track_marks_its_cues_and_refuses_a_merge() {
     assert_eq!(h.state().session.transcript().unwrap().cues.len(), 2);
 }
 
+#[test]
+fn clip_menu_transcript_opens_the_pane_on_the_words_under_the_clip() {
+    let mut editor = editor_with_cues("en", transcript_cues(false));
+    // A 2-4 s clip overlaps the second word of each cue (2-3 s and 3-4 s) and only touches
+    // the first (1-2 s) and the last (4-5 s).
+    let out = editor
+        .session
+        .apply(Command::InsertItem {
+            placement: engine::Placement::Auto,
+            item: engine::NewItem {
+                retime: Default::default(),
+                animations: Default::default(),
+                source_asset: None,
+                source_range: time::SourceRange::new(Tick::ZERO, Tick(2 * TICKS_PER_SECOND))
+                    .unwrap(),
+                start: Tick(2 * TICKS_PER_SECOND),
+                content: ItemParams::Overlay(project::OverlayParams {
+                    color: project::Color([25, 50, 90, 255]),
+                }),
+            },
+        })
+        .unwrap();
+    let [engine::CreatedId::Item(clip)] = out.created.as_slice() else {
+        panic!("one inserted clip")
+    };
+    let clip = *clip;
+    // Start on another tab: the route itself must bring the Captions tab forward.
+    editor.preferences.assets_tab = AssetsTab::Media;
+    let mut h = harness(editor, 1.0);
+    h.run_steps(3);
+    h.get(
+        By::new().predicate(move |n| {
+            n.author_id() == Some(format!("timeline.item.{}", clip.0).as_str())
+        }),
+    )
+    .click_secondary();
+    h.run_steps(2);
+    let row = format!("timeline.item.{}.transcript", clip.0);
+    h.get(By::new().predicate(|n| n.author_id() == Some(row.as_str())))
+        .click();
+    h.run_steps(3);
+    assert_eq!(h.state().preferences.assets_tab, AssetsTab::Captions);
+    assert_eq!(panel(h.state()).transcript_selected, 2);
+    let selected = |cue: &str, word: usize| {
+        let id = transcript_word(&h, cue, word);
+        h.get(By::new().predicate(|n| n.author_id() == Some(id.as_str())))
+            .accesskit_node()
+            .is_selected()
+    };
+    assert_eq!(
+        [
+            selected("cue-0", 0),
+            selected("cue-0", 1),
+            selected("cue-1", 0),
+            selected("cue-1", 1)
+        ],
+        [Some(false), Some(true), Some(true), Some(false)]
+    );
+}
+
 /// Offscreen screenshot evidence; wgpu rendering stays out of CI.
 #[test]
 #[ignore = "renders through wgpu; run with --ignored to refresh target/p1-ai-03-transcript-edit.png"]
