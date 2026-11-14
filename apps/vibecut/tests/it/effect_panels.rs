@@ -3295,9 +3295,11 @@ fn auto_removal_enables_tunes_and_disables_with_one_undo_step_each() {
         auto.width() > 40.0 && custom.width() > 40.0,
         "{auto:?} {custom:?}"
     );
+    // Chroma key is a checkbox of the same form (104904-104926): its box at the same left edge.
+    let chroma = widget_rect(&harness, "inspector.chroma_key.toggle");
     assert!(
-        auto.right() < widget_rect(&harness, "inspector.chroma_key.toggle").left(),
-        "the checkbox and its label sit left of the Chroma key switch"
+        (auto.left() - chroma.left()).abs() < 0.5 && chroma.width() > 40.0,
+        "{auto:?} {chroma:?}"
     );
     // No weights are installed: the row links to the model manager and keeps a retry; the clip
     // renders unmatted meanwhile.
