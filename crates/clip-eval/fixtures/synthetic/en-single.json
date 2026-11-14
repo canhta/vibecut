@@ -16,7 +16,7 @@
     "frame_rate": 30.0,
     "snap_tolerance_seconds": 1.0,
     "silence_rms": 0.01,
-    "keywords": []
+    "keywords": ["focus", "saying", "everything"]
   },
   "clips": [
     {
