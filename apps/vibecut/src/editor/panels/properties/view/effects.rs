@@ -19,7 +19,15 @@ const CURVE_REACH: f32 = 9.0;
 fn spatial_effect(kind: &str) -> bool {
     matches!(
         kind,
-        "directional_blur" | "find_edges" | "color_emboss" | "sharpen" | "mosaic"
+        "directional_blur"
+            | "find_edges"
+            | "color_emboss"
+            | "sharpen"
+            | "mosaic"
+            | "unsharp_mask"
+            | "bokeh_blur"
+            | "mirror"
+            | "offset"
     )
 }
 
@@ -1153,6 +1161,7 @@ impl Panel<'_, '_> {
             "solid" => Text::EffectSolidColour,
             "invert" => Text::MaskInvert,
             "sharp" => Text::EffectSharp,
+            "shape" => Text::EffectShape,
             _ => return,
         };
         let id = format!("effects.{effect}.param.{}", parameter.id);
@@ -1228,6 +1237,12 @@ impl Panel<'_, '_> {
             "Green" => self.tr(Text::EffectGreen),
             "Blue" => self.tr(Text::EffectBlue),
             "Alpha" => self.tr(Text::Alpha),
+            "Circle" => self.tr(Text::MaskCircle),
+            "Triangle" => self.tr(Text::EffectShapeTriangle),
+            "Square" => self.tr(Text::EffectShapeSquare),
+            "Pentagon" => self.tr(Text::EffectShapePentagon),
+            "Hexagon" => self.tr(Text::EffectShapeHexagon),
+            "Octagon" => self.tr(Text::EffectShapeOctagon),
             _ => option,
         }
     }
@@ -1275,9 +1290,17 @@ impl Panel<'_, '_> {
             ""
         } else {
             match parameter.id {
-                "direction" => "\u{b0}",
-                "length" | "relief" => "px",
-                "contrast" | "blend" | "amount" | "softness" => "%",
+                "direction" | "angle" | "rotation" => "\u{b0}",
+                "length" | "relief" | "radius" => "px",
+                "contrast" | "blend" | "softness" | "highlight" | "center_x" | "center_y"
+                | "shift_x" | "shift_y" => "%",
+                "amount" => {
+                    if kind == "bokeh_blur" {
+                        "px"
+                    } else {
+                        "%"
+                    }
+                }
                 _ => "",
             }
         };

@@ -146,6 +146,9 @@ const BLUE: Color = Color([0, 0, 255, 255]);
 
 const INVERT_CHANNELS: &[&str] = &["RGB", "Red", "Green", "Blue", "Alpha"];
 const MAGNIFY_SHAPES: &[&str] = &["Circle", "Square"];
+const IRIS_SHAPES: &[&str] = &[
+    "Circle", "Triangle", "Square", "Pentagon", "Hexagon", "Octagon",
+];
 const TURBULENT_KINDS: &[&str] = &[
     "Turbulent",
     "Bulge",
@@ -350,6 +353,32 @@ static DEFINITIONS: &[EffectDefinition] = &[
         ],
     },
     EffectDefinition {
+        id: "bokeh_blur",
+        name: "Lens Blur",
+        shelf: EffectShelf::BlurDetail,
+        params: &[
+            // Source blur radius in clip pixels: hard 0-500, slider 0-60.
+            ranged(
+                "amount",
+                "Blur amount",
+                (0.0, 500.0),
+                (0.0, 60.0),
+                10.0,
+                true,
+            ),
+            choice("shape", "Iris shape", IRIS_SHAPES, 4),
+            angle("rotation", "Iris rotation", 0.0),
+            slider(
+                "highlight",
+                "Highlight brightness",
+                (0.0, 100.0),
+                50.0,
+                true,
+            ),
+            slider("threshold", "Highlight threshold", (0.0, 100.0), 80.0, true),
+        ],
+    },
+    EffectDefinition {
         id: "sharpen",
         name: "Sharpen",
         shelf: EffectShelf::BlurDetail,
@@ -357,6 +386,17 @@ static DEFINITIONS: &[EffectDefinition] = &[
             // Source amount is a percent gain: 100 keeps one unit of detail
             // difference, 4000 is the hard ceiling.
             ranged("amount", "Amount", (0.0, 4000.0), (0.0, 100.0), 0.0, true),
+        ],
+    },
+    EffectDefinition {
+        id: "unsharp_mask",
+        name: "Detail Boost",
+        shelf: EffectShelf::BlurDetail,
+        params: &[
+            slider("amount", "Amount", (0.0, 500.0), 50.0, true),
+            // Radius in clip pixels; the gaussian saturates at 64 output pixels.
+            slider("radius", "Radius", (0.1, 250.0), 1.0, true),
+            slider("threshold", "Threshold", (0.0, 255.0), 0.0, true),
         ],
     },
     EffectDefinition {
@@ -485,6 +525,29 @@ static DEFINITIONS: &[EffectDefinition] = &[
         ],
     },
     // Distort additions.
+    EffectDefinition {
+        id: "mirror",
+        name: "Mirror",
+        shelf: EffectShelf::Distort,
+        params: &[
+            // The reflection centre is two percent sliders because a Point has
+            // no edit or keyframe path.
+            slider("center_x", "Reflection centre X", (0.0, 100.0), 50.0, true),
+            slider("center_y", "Reflection centre Y", (0.0, 100.0), 50.0, true),
+            angle("angle", "Reflection angle", 0.0),
+        ],
+    },
+    EffectDefinition {
+        id: "offset",
+        name: "Wrap Shift",
+        shelf: EffectShelf::Distort,
+        params: &[
+            // Shift is a percent of each axis; 0 keeps the picture in place.
+            slider("shift_x", "Shift X", (-100.0, 100.0), 0.0, true),
+            slider("shift_y", "Shift Y", (-100.0, 100.0), 0.0, true),
+            slider("blend", "Blend with original", (0.0, 100.0), 0.0, true),
+        ],
+    },
     EffectDefinition {
         id: "twirl",
         name: "Twirl",

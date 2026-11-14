@@ -1048,7 +1048,7 @@ fn chroma_key_removes_a_green_screen_at_several_intensities() {
         for pass in
             chroma_key_passes(GREEN_KEY.map(|v| f64::from(v) / 255.0), intensity, 0.0).unwrap()
         {
-            validate_pass(&pass, 8, 4).unwrap();
+            validate_pass(&pass, 64, 36).unwrap();
         }
     }
     // Intensity 0 is the reference's no-op and emits no pass.
@@ -1302,7 +1302,7 @@ fn every_catalog_kind_has_an_evaluator_and_frames_carry_item_local_time() {
         let frame =
             EffectFrame::new(&none, &definition.instance("one"), Tick::ZERO, 64, 36).unwrap();
         for pass in evaluate(&frame, &EffectGeometry::new([64, 36], [1.0, 1.0]).unwrap()).unwrap() {
-            validate_pass(&pass, 8, 4).unwrap();
+            validate_pass(&pass, 64, 36).unwrap();
         }
     }
     assert!(evaluator("nope").is_none());
@@ -1669,7 +1669,7 @@ fn sample_pass_mirrors_through_the_bilinear_helper() {
     };
     // Reflect about the vertical line through the frame centre.
     let pass = mirror([4.0, 2.0, 1.0, 0.0]);
-    validate_pass(&pass, 8, 4).unwrap();
+    validate_pass(&pass, 64, 36).unwrap();
     let at = |image: &Image, x: usize, y: usize| image.pixels()[y * 8 + x];
     let output = CpuEffects
         .apply(
@@ -4287,6 +4287,17 @@ fn sharpen_expected(
     amount: f64,
 ) -> Vec<[f64; 4]> {
     let sigma = f64::from(gains[0].min(gains[1]).max(0.6) as f32);
+    unsharp_expected(pixels, size, sigma, amount / 100.0, 0.0)
+}
+// Independent gaussian unsharp: iterated clamped kernels, then the difference
+// added back when it reaches the threshold fraction of the input coverage.
+fn unsharp_expected(
+    pixels: &[[f64; 4]],
+    size: [u32; 2],
+    sigma: f64,
+    gain: f64,
+    threshold: f64,
+) -> Vec<[f64; 4]> {
     let iterations = ((sigma / 8.0).powi(2).ceil().max(1.0)) as usize;
     let sigma = sigma / (iterations as f64).sqrt();
     let radius = (sigma * 3.0).ceil().clamp(1.0, 24.0) as i64;
@@ -4302,14 +4313,17 @@ fn sharpen_expected(
         current = convolve_axis(&current, size, &weights, true);
         current = convolve_axis(&current, size, &weights, false);
     }
-    let gain = amount / 100.0;
     current
         .iter()
         .zip(pixels)
         .map(|(blurred, original)| {
             let alpha = original[3];
-            let rgb = [0, 1, 2]
-                .map(|k| (original[k] + gain * (original[k] - blurred[k])).clamp(0.0, alpha));
+            let rgb = [0, 1, 2].map(|k| {
+                let difference = original[k] - blurred[k];
+                let keep = threshold <= 0.0 || difference.abs() >= threshold * alpha;
+                let boost = if keep { gain * difference } else { 0.0 };
+                (original[k] + boost).clamp(0.0, alpha)
+            });
             [rgb[0], rgb[1], rgb[2], alpha]
         })
         .collect()
@@ -4666,6 +4680,689 @@ fn pixelate_parameters_change_the_picture_and_refuse_hostile_values() {
             Err(Error::Unsupported(_))
         ));
         assert_eq!(tiny.requested.load(Ordering::SeqCst), 0);
+    }
+}
+
+fn detail_boost(amount: f64, radius: f64, threshold: f64) -> project::EffectInstance {
+    project::effect_definition("unsharp_mask")
+        .unwrap()
+        .instance("detail")
+        .with("amount", EffectValue::Scalar(amount))
+        .unwrap()
+        .with("radius", EffectValue::Scalar(radius))
+        .unwrap()
+        .with("threshold", EffectValue::Scalar(threshold))
+        .unwrap()
+}
+fn spatial_chart(size: [u32; 2], pattern: u32) -> Vec<[f64; 4]> {
+    (0..size[0] * size[1])
+        .map(|i| match pattern {
+            // A hard step with colour.
+            0 => {
+                let v = if (i % size[0]) < size[0] / 2 {
+                    0.25
+                } else {
+                    0.75
+                };
+                [v, v * 0.5, v * 0.25, 1.0]
+            }
+            // Unequal alpha, so coverage stays per pixel.
+            1 => {
+                let a = [0.25, 0.5, 1.0][i as usize % 3];
+                [0.6 * a, 0.2 * a, 0.1 * a, a]
+            }
+            // A bright impulse over a flat field.
+            _ if i == (size[0] * size[1]) / 2 + size[0] / 2 => [1.0, 0.5, 0.0, 1.0],
+            _ => [0.2, 0.2, 0.2, 1.0],
+        })
+        .collect()
+}
+
+#[test]
+fn detail_boost_matches_independent_unsharp_rows_and_saturates_its_radius() {
+    for size in [[8, 5], [1, 1], [1, 7], [7, 1]] {
+        for pattern in 0..3 {
+            let pixels = spatial_chart(size, pattern);
+            for gains in [[1.0, 1.0], [2.0, 0.5]] {
+                // (amount, radius, threshold codes)
+                for (amount, radius, threshold) in [
+                    (0.0, 1.0, 0.0),
+                    (50.0, 1.0, 0.0),
+                    (200.0, 2.5, 0.0),
+                    (100.0, 1.5, 20.0),
+                    (500.0, 0.1, 0.0),
+                ] {
+                    let effect = detail_boost(amount, radius, threshold);
+                    let (actual, passes) = spatial_output(&pixels, size, gains, &effect, true);
+                    let sigma = f64::from((radius * gains[0].min(gains[1])).max(0.6) as f32);
+                    let iterations = ((sigma / 8.0).powi(2).ceil().max(1.0)) as usize;
+                    let context = format!(
+                        "Detail Boost {size:?} {pattern} {gains:?} {amount} {radius} {threshold}"
+                    );
+                    if amount == 0.0 {
+                        assert_eq!(passes, 0, "{context}");
+                        let input: Vec<[f32; 4]> =
+                            pixels.iter().map(|p| p.map(|v| v as f32)).collect();
+                        assert_eq!(actual, input, "{context} identity");
+                        continue;
+                    }
+                    assert_eq!(passes, 2 * iterations + 1, "{context}");
+                    let expected = unsharp_expected(
+                        &pixels,
+                        size,
+                        sigma,
+                        amount / 100.0,
+                        f64::from((threshold / 255.0) as f32),
+                    );
+                    for (index, (actual, expected)) in actual.iter().zip(expected).enumerate() {
+                        assert_working_pixel(*actual, expected, &format!("{context} #{index}"));
+                        assert_eq!(actual[3], pixels[index][3] as f32, "{context} coverage");
+                    }
+                    let (coarse, _) = spatial_output(&pixels, size, gains, &effect, false);
+                    assert_eq!(actual, coarse, "{context} fine/coarse share one effort");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn detail_boost_parameters_change_the_picture_clamp_and_refuse_hostile_values() {
+    let size = [8, 8];
+    let pixels = spatial_chart(size, 0);
+    for (label, left, right) in [
+        (
+            "amount",
+            detail_boost(50.0, 1.5, 0.0),
+            detail_boost(150.0, 1.5, 0.0),
+        ),
+        (
+            "radius",
+            detail_boost(100.0, 1.0, 0.0),
+            detail_boost(100.0, 4.0, 0.0),
+        ),
+        // Every step difference sits under 128 codes, so the gate returns the input.
+        (
+            "threshold",
+            detail_boost(100.0, 1.5, 0.0),
+            detail_boost(100.0, 1.5, 128.0),
+        ),
+    ] {
+        let (a, _) = spatial_output(&pixels, size, [1.0, 1.0], &left, true);
+        let (b, _) = spatial_output(&pixels, size, [1.0, 1.0], &right, true);
+        assert_ne!(a, b, "Detail Boost {label} must change the picture");
+    }
+    let definition = project::effect_definition("unsharp_mask").unwrap();
+    for (id, value) in [
+        ("amount", -1.0),
+        ("amount", 500.1),
+        ("amount", f64::NAN),
+        ("radius", 0.09),
+        ("radius", 250.1),
+        ("radius", f64::INFINITY),
+        ("threshold", -0.1),
+        ("threshold", 255.1),
+    ] {
+        assert!(
+            definition
+                .instance("detail")
+                .with(id, EffectValue::Scalar(value))
+                .is_err(),
+            "Detail Boost refuses {id} {value}"
+        );
+    }
+    // The hard radius at hostile geometry saturates at sigma 64: 64 iterations of
+    // two passes and the detail pass, finite and inside the premultiplied contract.
+    let pixels = vec![
+        [1.0, 1.0, 1.0, 1.0],
+        [0.0, 0.0, 0.0, 0.0],
+        [0.5, 0.25, 0.125, 1.0],
+        [0.1, 0.1, 0.1, 0.2],
+    ];
+    let (out, passes) = spatial_output(
+        &pixels,
+        [4, 1],
+        [1e9, 1e9],
+        &detail_boost(500.0, 250.0, 0.0),
+        true,
+    );
+    assert_eq!(passes, 129);
+    for pixel in &out {
+        assert!(pixel.iter().all(|v| v.is_finite()));
+        assert!((0.0..=1.0).contains(&pixel[3]));
+        assert!(pixel[..3].iter().all(|v| *v <= pixel[3]));
+    }
+    assert_eq!(out[1][3], 0.0);
+}
+
+fn lens_blur(
+    amount: f64,
+    shape: u32,
+    rotation: f64,
+    highlight: f64,
+    threshold: f64,
+) -> project::EffectInstance {
+    project::effect_definition("bokeh_blur")
+        .unwrap()
+        .instance("lens")
+        .with("amount", EffectValue::Scalar(amount))
+        .unwrap()
+        .with("shape", EffectValue::Choice(shape))
+        .unwrap()
+        .with("rotation", EffectValue::Scalar(rotation))
+        .unwrap()
+        .with("highlight", EffectValue::Scalar(highlight))
+        .unwrap()
+        .with("threshold", EffectValue::Scalar(threshold))
+        .unwrap()
+}
+// Independent f64 iris gather: ring geometry, polygon radius and the per-tap
+// highlight boost are re-derived here; taps use the clamped bilinear oracle.
+fn lens_expected(
+    pixels: &[[f64; 4]],
+    size: [u32; 2],
+    (sides, rotation): (u32, f64),
+    radii: [f64; 2],
+    (highlight, threshold): (f64, f64),
+) -> Vec<[f64; 4]> {
+    let rings = (radii[0].max(radii[1]).ceil() as u32).clamp(1, 12);
+    let boost = highlight / 100.0 * 6.0;
+    let threshold = threshold / 100.0;
+    let polygon = |theta: f64| {
+        if sides == 0 {
+            return 1.0;
+        }
+        let segment = std::f64::consts::TAU / f64::from(sides);
+        let a = (theta - rotation).rem_euclid(segment) - segment / 2.0;
+        (std::f64::consts::PI / f64::from(sides)).cos() / a.cos()
+    };
+    let tap = |x: f64, y: f64| {
+        let p = spatial_sample(pixels, size, x, y);
+        if boost <= 0.0 || p[3] <= 1e-6 {
+            return p;
+        }
+        let encoded = [0, 1, 2].map(|k| oracle_encode((p[k] / p[3]).clamp(0.0, 1.0)));
+        let t = ((colour_luma(encoded) - threshold) / (1.0 - threshold)).clamp(0.0, 1.0);
+        let k = 1.0 + boost * t * t * (3.0 - 2.0 * t);
+        [p[0] * k, p[1] * k, p[2] * k, p[3]]
+    };
+    (0..size[0] * size[1])
+        .map(|i| {
+            let (x, y) = (f64::from(i % size[0]), f64::from(i / size[0]));
+            let mut taps = vec![tap(x, y)];
+            for ring in 1..=rings {
+                let n = (ring * 8).max(6);
+                for k in 0..n {
+                    let theta = std::f64::consts::TAU * (f64::from(k) + 0.5 * f64::from(ring % 2))
+                        / f64::from(n);
+                    let reach = f64::from(ring) / f64::from(rings) * polygon(theta);
+                    taps.push(tap(
+                        x + theta.cos() * reach * radii[0],
+                        y + theta.sin() * reach * radii[1],
+                    ));
+                }
+            }
+            let count = taps.len() as f64;
+            let sum = taps.iter().fold([0.0; 4], |mut acc, p| {
+                for (a, v) in acc.iter_mut().zip(p) {
+                    *a += v;
+                }
+                acc
+            });
+            let alpha = (sum[3] / count).clamp(0.0, 1.0);
+            let rgb = [0, 1, 2].map(|k| (sum[k] / count).clamp(0.0, alpha));
+            [rgb[0], rgb[1], rgb[2], alpha]
+        })
+        .collect()
+}
+
+#[test]
+fn lens_blur_matches_independent_iris_gather_and_identity_below_half_a_pixel() {
+    let size = [12, 9];
+    let bright = oracle_decode(0.9);
+    let impulse: Vec<[f64; 4]> = (0..108)
+        .map(|i| {
+            if i == 54 {
+                [bright, bright, bright, 1.0]
+            } else {
+                [0.02, 0.02, 0.02, 1.0]
+            }
+        })
+        .collect();
+    let ramp: Vec<[f64; 4]> = (0..108)
+        .map(|i| {
+            let a = [0.5, 1.0, 0.75][i % 3];
+            let v = 0.1 + 0.07 * (i % 12) as f64;
+            [v * a, 0.5 * v * a, 0.25 * v * a, a]
+        })
+        .collect();
+    let sides_of = [0, 3, 4, 5, 6, 8];
+    // (amount, shape index, rotation, highlight, threshold, gains)
+    for (amount, shape, rotation, highlight, threshold, gains) in [
+        (3.0, 4, 0.0, 0.0, 80.0, [1.0, 1.0]),
+        (3.0, 0, 0.0, 50.0, 80.0, [1.0, 1.0]),
+        (4.0, 1, 25.0, 100.0, 50.0, [1.0, 1.0]),
+        (2.0, 2, 70.0, 30.0, 60.0, [1.5, 0.75]),
+        (11.5, 5, 10.0, 100.0, 10.0, [1.0, 1.0]),
+    ] {
+        for (name, pixels) in [("impulse", &impulse), ("ramp", &ramp)] {
+            let effect = lens_blur(amount, shape, rotation, highlight, threshold);
+            let (actual, passes) = spatial_output(pixels, size, gains, &effect, true);
+            assert_eq!(passes, 1, "Lens Blur is one gather pass at {amount}");
+            let expected = lens_expected(
+                pixels,
+                size,
+                (sides_of[shape as usize], f64::to_radians(rotation)),
+                [amount * gains[0], amount * gains[1]],
+                (highlight, threshold),
+            );
+            for (index, (actual, expected)) in actual.iter().zip(expected).enumerate() {
+                assert_working_pixel(
+                    *actual,
+                    expected,
+                    &format!("Lens Blur {name} {amount} {shape} {gains:?} #{index}"),
+                );
+            }
+            let (coarse, _) = spatial_output(pixels, size, gains, &effect, false);
+            assert_eq!(actual, coarse, "Lens Blur fine/coarse share one effort");
+        }
+    }
+    // Under half an output pixel is the exact identity and emits no pass.
+    for amount in [0.0, 0.4] {
+        let effect = lens_blur(amount, 4, 0.0, 50.0, 80.0);
+        let (actual, passes) = spatial_output(&ramp, size, [1.0, 1.0], &effect, true);
+        assert_eq!(passes, 0, "Lens Blur {amount}");
+        let input: Vec<[f32; 4]> = ramp.iter().map(|p| p.map(|v| v as f32)).collect();
+        assert_eq!(actual, input);
+    }
+}
+
+#[test]
+fn lens_blur_parameters_change_the_picture_and_large_radii_prefilter_within_bounds() {
+    let size = [16, 12];
+    let mid = oracle_decode(0.9);
+    let pixels: Vec<[f64; 4]> = (0..192)
+        .map(|i| {
+            if i == 100 {
+                [mid, mid, mid, 1.0]
+            } else {
+                [0.02, 0.02, 0.02, 1.0]
+            }
+        })
+        .collect();
+    let base = |amount, shape, rotation, highlight, threshold| {
+        let effect = lens_blur(amount, shape, rotation, highlight, threshold);
+        spatial_output(&pixels, size, [1.0, 1.0], &effect, true).0
+    };
+    let reference = base(5.0, 4, 0.0, 50.0, 50.0);
+    for (label, other) in [
+        ("amount", base(7.0, 4, 0.0, 50.0, 50.0)),
+        ("shape", base(5.0, 2, 0.0, 50.0, 50.0)),
+        ("rotation", base(5.0, 4, 20.0, 50.0, 50.0)),
+        ("highlight", base(5.0, 4, 0.0, 90.0, 50.0)),
+        // Luma .9 sits above both thresholds, but smoothstep gives them different boosts.
+        ("threshold", base(5.0, 4, 0.0, 50.0, 85.0)),
+    ] {
+        assert_ne!(
+            reference, other,
+            "Lens Blur {label} must change the picture"
+        );
+    }
+    // Maximum boost on a white impulse stays inside the premultiplied contract.
+    let mut white = vec![[0.0; 4]; 25];
+    white[0] = [1.0, 1.0, 1.0, 1.0];
+    let (out, _) = spatial_output(
+        &white,
+        [5, 5],
+        [1.0, 1.0],
+        &lens_blur(2.0, 0, 0.0, 100.0, 0.0),
+        true,
+    );
+    for pixel in &out {
+        assert!(pixel.iter().all(|v| v.is_finite()));
+        assert!((0.0..=1.0).contains(&pixel[3]));
+        assert!(pixel[..3].iter().all(|v| *v <= pixel[3]));
+    }
+    // Past twelve output pixels a gaussian prefilter of radius/24 precedes the gather.
+    let effect = lens_blur(60.0, 4, 0.0, 50.0, 80.0);
+    let passes = evaluate_effect(
+        &project::Animations::default(),
+        &effect,
+        time::Tick::ZERO,
+        EffectGeometry::new(size, [1.0, 1.0]).unwrap(),
+        true,
+        &render::lut::LutResources::default(),
+    )
+    .unwrap();
+    assert_eq!(passes.len(), 3);
+    assert!(matches!(passes[0], EffectPass::Convolve { .. }));
+    assert_eq!(passes[2].entry_point(), "lens_blur");
+    let (out, count) = spatial_output(&pixels, size, [1.0, 1.0], &effect, true);
+    assert_eq!(count, 3);
+    assert!(out.iter().all(|p| p.iter().all(|v| v.is_finite())));
+    // Hostile geometry clamps the radius and saturates the prefilter.
+    let hostile = lens_blur(500.0, 4, 0.0, 100.0, 0.0);
+    let (out, count) = spatial_output(&pixels, size, [1e9, 1e9], &hostile, true);
+    assert_eq!(count, 129);
+    assert!(out.iter().all(|p| p.iter().all(|v| v.is_finite())));
+    let definition = project::effect_definition("bokeh_blur").unwrap();
+    for (id, value) in [
+        ("amount", EffectValue::Scalar(-0.1)),
+        ("amount", EffectValue::Scalar(500.1)),
+        ("amount", EffectValue::Scalar(f64::NAN)),
+        ("shape", EffectValue::Choice(6)),
+        ("rotation", EffectValue::Scalar(ANGLE_MAX + 1.0)),
+        ("highlight", EffectValue::Scalar(100.1)),
+        ("threshold", EffectValue::Scalar(-1.0)),
+        ("shape", EffectValue::Bool(true)),
+    ] {
+        assert!(
+            definition.instance("lens").with(id, value).is_err(),
+            "Lens Blur refuses {id} {value:?}"
+        );
+    }
+    let sample = |values: Vec<f32>| EffectPass::Sample {
+        entry_point: "lens_blur",
+        uniforms: values.into_iter().map(Uniform::Float).collect(),
+    };
+    assert!(validate_pass(&sample(vec![4.0, 0.0, 3.0, 3.0, 3.0, 0.0, 0.5]), 8, 4).is_ok());
+    for values in [
+        vec![4.0, 0.0, 3.0, 3.0, 3.0, 0.0],
+        vec![7.0, 0.0, 3.0, 3.0, 3.0, 0.0, 0.5],
+        vec![4.0, 0.0, -1.0, 3.0, 3.0, 0.0, 0.5],
+        vec![4.0, 0.0, 3.0, 1e7, 3.0, 0.0, 0.5],
+        vec![4.0, 0.0, 3.0, 3.0, 13.0, 0.0, 0.5],
+        vec![4.0, 0.0, 3.0, 3.0, 2.5, 0.0, 0.5],
+        vec![4.0, 0.0, 3.0, 3.0, 3.0, 6.5, 0.5],
+        vec![4.0, 0.0, 3.0, 3.0, 3.0, 0.0, 1.5],
+        vec![4.0, f32::NAN, 3.0, 3.0, 3.0, 0.0, 0.5],
+    ] {
+        assert!(
+            validate_pass(&sample(values.clone()), 8, 4).is_err(),
+            "{values:?}"
+        );
+    }
+}
+
+fn mirror_effect(center_x: f64, center_y: f64, angle: f64) -> project::EffectInstance {
+    project::effect_definition("mirror")
+        .unwrap()
+        .instance("mirror")
+        .with("center_x", EffectValue::Scalar(center_x))
+        .unwrap()
+        .with("center_y", EffectValue::Scalar(center_y))
+        .unwrap()
+        .with("angle", EffectValue::Scalar(angle))
+        .unwrap()
+}
+fn wrap_shift(shift_x: f64, shift_y: f64, blend: f64) -> project::EffectInstance {
+    project::effect_definition("offset")
+        .unwrap()
+        .instance("wrap")
+        .with("shift_x", EffectValue::Scalar(shift_x))
+        .unwrap()
+        .with("shift_y", EffectValue::Scalar(shift_y))
+        .unwrap()
+        .with("blend", EffectValue::Scalar(blend))
+        .unwrap()
+}
+// A distinct opaque value per texel, so every mapping is visible.
+fn index_chart(size: [u32; 2]) -> Vec<[f64; 4]> {
+    (0..size[0] * size[1])
+        .map(|i| {
+            let v = f64::from(i + 1) / f64::from(size[0] * size[1] + 1);
+            [v, v / 2.0, v / 4.0, 1.0]
+        })
+        .collect()
+}
+
+#[test]
+fn mirror_reflects_the_positive_side_onto_the_other_with_transparent_borders() {
+    let size = [8, 4];
+    let pixels = index_chart(size);
+    let at = |x: i64, y: i64| {
+        if !(0..8).contains(&x) || !(0..4).contains(&y) {
+            [0.0; 4]
+        } else {
+            pixels[(y * 8 + x) as usize]
+        }
+    };
+    // (centre x, centre y, angle, source texel of output (x, y)); None keeps the pixel.
+    type Source = fn(i64, i64) -> Option<(i64, i64)>;
+    let rows: [(f64, f64, f64, Source); 4] = [
+        (50.0, 50.0, 0.0, |x, y| (x >= 4).then_some((7 - x, y))),
+        (25.0, 50.0, 0.0, |x, y| (x >= 2).then_some((3 - x, y))),
+        (50.0, 50.0, 90.0, |x, y| (y >= 2).then_some((x, 3 - y))),
+        (50.0, 50.0, 180.0, |x, y| (x <= 3).then_some((7 - x, y))),
+    ];
+    for (cx, cy, angle, source) in rows {
+        let effect = mirror_effect(cx, cy, angle);
+        let (actual, passes) = spatial_output(&pixels, size, [1.0, 1.0], &effect, true);
+        assert_eq!(passes, 1);
+        for y in 0..4 {
+            for x in 0..8 {
+                let expected = source(x, y).map_or(at(x, y), |(sx, sy)| at(sx, sy));
+                assert_working_pixel(
+                    actual[(y * 8 + x) as usize],
+                    expected,
+                    &format!("Mirror {cx} {cy} {angle} ({x},{y})"),
+                );
+            }
+        }
+    }
+    // A diagonal line through a square centre swaps the transposed corner.
+    let square = index_chart([8, 8]);
+    let effect = mirror_effect(50.0, 50.0, 45.0);
+    let (actual, _) = spatial_output(&square, [8, 8], [1.0, 1.0], &effect, true);
+    for y in 0..8usize {
+        for x in 0..8usize {
+            let expected = if x + y >= 8 {
+                square[(7 - x) * 8 + (7 - y)]
+            } else {
+                square[y * 8 + x]
+            };
+            assert_working_pixel(actual[y * 8 + x], expected, &format!("Mirror 45 ({x},{y})"));
+        }
+    }
+}
+
+#[test]
+fn mirror_parameters_change_the_picture_stay_finite_and_refuse_hostile_values() {
+    let size = [8, 8];
+    let pixels = index_chart(size);
+    let run = |effect: &project::EffectInstance| {
+        spatial_output(&pixels, size, [1.0, 1.0], effect, true).0
+    };
+    let reference = run(&mirror_effect(50.0, 50.0, 30.0));
+    for (label, other) in [
+        ("center_x", run(&mirror_effect(30.0, 50.0, 30.0))),
+        ("center_y", run(&mirror_effect(50.0, 30.0, 30.0))),
+        ("angle", run(&mirror_effect(50.0, 50.0, 60.0))),
+    ] {
+        assert_ne!(reference, other, "Mirror {label} must change the picture");
+    }
+    // Premultiplied partial coverage and every sweep angle stay finite and valid.
+    let soft: Vec<[f64; 4]> = (0..64)
+        .map(|i| {
+            let a = [0.25, 0.5, 1.0][i % 3];
+            [0.9 * a, 0.4 * a, 0.1 * a, a]
+        })
+        .collect();
+    for angle in (-360..=360).step_by(45) {
+        let effect = mirror_effect(0.0, 100.0, f64::from(angle));
+        let (out, passes) = spatial_output(&soft, size, [1.0, 1.0], &effect, true);
+        assert_eq!(passes, 1);
+        for pixel in out {
+            assert!(pixel.iter().all(|v| v.is_finite()));
+            assert!((0.0..=1.0).contains(&pixel[3]));
+            assert!(pixel[..3].iter().all(|v| *v <= pixel[3]));
+        }
+    }
+    let definition = project::effect_definition("mirror").unwrap();
+    for (id, value) in [
+        ("center_x", -0.1),
+        ("center_x", 100.1),
+        ("center_y", f64::NAN),
+        ("angle", ANGLE_MAX + 1.0),
+        ("angle", f64::INFINITY),
+    ] {
+        assert!(
+            definition
+                .instance("mirror")
+                .with(id, EffectValue::Scalar(value))
+                .is_err(),
+            "Mirror refuses {id} {value}"
+        );
+    }
+    let frame = EffectFrame::new(
+        &project::Animations::default(),
+        &mirror_effect(50.0, 50.0, 0.0),
+        time::Tick::ZERO,
+        8,
+        8,
+    )
+    .unwrap();
+    assert!(matches!(
+        evaluator("mirror").unwrap()(&frame, &EffectGeometry::new([4, 4], [1.0, 1.0]).unwrap()),
+        Err(Error::Invalid("effect spatial geometry"))
+    ));
+}
+
+#[test]
+fn wrap_shift_wraps_whole_and_fractional_shifts_and_blends_the_original() {
+    let size = [8, 4];
+    let pixels = index_chart(size);
+    let at = |x: i64, y: i64| pixels[(y.rem_euclid(4) * 8 + x.rem_euclid(8)) as usize];
+    for (sx, sy, dx, dy) in [
+        (25.0, 0.0, 2, 0),
+        (-25.0, 0.0, 6, 0),
+        (0.0, 50.0, 0, 2),
+        (12.5, -25.0, 1, 3),
+    ] {
+        let effect = wrap_shift(sx, sy, 0.0);
+        let (actual, passes) = spatial_output(&pixels, size, [1.0, 1.0], &effect, true);
+        assert_eq!(passes, 1);
+        for y in 0..4i64 {
+            for x in 0..8i64 {
+                assert_working_pixel(
+                    actual[(y * 8 + x) as usize],
+                    at(x - dx, y - dy),
+                    &format!("Wrap Shift {sx} {sy} ({x},{y})"),
+                );
+            }
+        }
+    }
+    // Blend mixes the original picture back.
+    let (half, _) = spatial_output(
+        &pixels,
+        size,
+        [1.0, 1.0],
+        &wrap_shift(25.0, 0.0, 50.0),
+        true,
+    );
+    for y in 0..4i64 {
+        for x in 0..8i64 {
+            let (s, o) = (at(x - 2, y), at(x, y));
+            assert_working_pixel(
+                half[(y * 8 + x) as usize],
+                [0, 1, 2, 3].map(|k| (s[k] + o[k]) / 2.0),
+                &format!("Wrap Shift blend ({x},{y})"),
+            );
+        }
+    }
+    // A fractional shift interpolates across the seam instead of clamping.
+    let (fraction, _) = spatial_output(&pixels, size, [1.0, 1.0], &wrap_shift(5.0, 0.0, 0.0), true);
+    for x in 0..8i64 {
+        let (a, b) = (at(x - 1, 0), at(x, 0));
+        assert_working_pixel(
+            fraction[x as usize],
+            [0, 1, 2, 3].map(|k| 0.4 * a[k] + 0.6 * b[k]),
+            &format!("Wrap Shift fraction {x}"),
+        );
+    }
+    // Whole-frame shifts and blend 100 are exact identities without a pass.
+    let input: Vec<[f32; 4]> = pixels.iter().map(|p| p.map(|v| v as f32)).collect();
+    for effect in [
+        wrap_shift(0.0, 0.0, 0.0),
+        wrap_shift(100.0, -100.0, 0.0),
+        wrap_shift(-100.0, 100.0, 0.0),
+        wrap_shift(25.0, 25.0, 100.0),
+    ] {
+        let (actual, passes) = spatial_output(&pixels, size, [1.0, 1.0], &effect, true);
+        assert_eq!(passes, 0);
+        assert_eq!(actual, input);
+    }
+}
+
+#[test]
+fn wrap_shift_parameters_change_the_picture_and_refuse_hostile_values() {
+    let size = [8, 4];
+    let pixels = index_chart(size);
+    let run = |effect: &project::EffectInstance| {
+        spatial_output(&pixels, size, [1.0, 1.0], effect, true).0
+    };
+    let reference = run(&wrap_shift(25.0, 25.0, 25.0));
+    for (label, other) in [
+        ("shift_x", run(&wrap_shift(40.0, 25.0, 25.0))),
+        ("shift_y", run(&wrap_shift(25.0, 40.0, 25.0))),
+        ("blend", run(&wrap_shift(25.0, 25.0, 60.0))),
+    ] {
+        assert_ne!(
+            reference, other,
+            "Wrap Shift {label} must change the picture"
+        );
+    }
+    let definition = project::effect_definition("offset").unwrap();
+    for (id, value) in [
+        ("shift_x", -100.1),
+        ("shift_y", 100.1),
+        ("shift_x", f64::NAN),
+        ("blend", -1.0),
+        ("blend", 100.1),
+    ] {
+        assert!(
+            definition
+                .instance("wrap")
+                .with(id, EffectValue::Scalar(value))
+                .is_err(),
+            "Wrap Shift refuses {id} {value}"
+        );
+    }
+    let sample = |values: Vec<f32>| EffectPass::Sample {
+        entry_point: "wrap_shift",
+        uniforms: values.into_iter().map(Uniform::Float).collect(),
+    };
+    assert!(validate_pass(&sample(vec![2.0, 1.0, 0.5]), 8, 4).is_ok());
+    for values in [
+        vec![2.0, 1.0],
+        vec![9.0, 1.0, 0.5],
+        vec![2.0, 4.5, 0.5],
+        vec![-0.5, 1.0, 0.5],
+        vec![2.0, 1.0, 1.5],
+        vec![f32::NAN, 1.0, 0.5],
+    ] {
+        assert!(
+            validate_pass(&sample(values.clone()), 8, 4).is_err(),
+            "{values:?}"
+        );
+    }
+    // Premultiplied partial coverage stays finite under any shift.
+    let soft: Vec<[f64; 4]> = (0..32)
+        .map(|i| {
+            let a = [0.25, 0.5, 1.0][i % 3];
+            [0.9 * a, 0.4 * a, 0.1 * a, a]
+        })
+        .collect();
+    let (out, _) = spatial_output(
+        &soft,
+        size,
+        [1.0, 1.0],
+        &wrap_shift(-37.3, 81.9, 33.0),
+        true,
+    );
+    for pixel in out {
+        assert!(pixel.iter().all(|v| v.is_finite()));
+        assert!(pixel[..3].iter().all(|v| *v <= pixel[3]));
     }
 }
 

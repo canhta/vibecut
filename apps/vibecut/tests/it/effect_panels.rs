@@ -83,6 +83,47 @@ fn bilingual_effect_tiles_search_headers_parameters_and_add_feedback_follow_loca
                 ("blend", "Blend with original", "Trộn với gốc"),
             ],
         ),
+        (
+            "unsharp_mask",
+            "Detail Boost",
+            "Tăng chi tiết",
+            &[
+                ("amount", "Amount", "Cường độ"),
+                ("radius", "Radius", "Bán kính"),
+                ("threshold", "Threshold", "Ngưỡng"),
+            ],
+        ),
+        (
+            "bokeh_blur",
+            "Lens Blur",
+            "Mờ ống kính",
+            &[
+                ("amount", "Blur amount", "Độ mờ"),
+                ("rotation", "Rotation", "Góc xoay"),
+                ("highlight", "Highlight brightness", "Độ sáng vùng sáng"),
+                ("threshold", "Highlight threshold", "Ngưỡng vùng sáng"),
+            ],
+        ),
+        (
+            "mirror",
+            "Mirror",
+            "Đối xứng gương",
+            &[
+                ("center_x", "Reflection centre X", "Tâm đối xứng X"),
+                ("center_y", "Reflection centre Y", "Tâm đối xứng Y"),
+                ("angle", "Reflection angle", "Góc đối xứng"),
+            ],
+        ),
+        (
+            "offset",
+            "Wrap Shift",
+            "Dịch vòng",
+            &[
+                ("shift_x", "Shift X", "Dịch ngang"),
+                ("shift_y", "Shift Y", "Dịch dọc"),
+                ("blend", "Blend with original", "Trộn với gốc"),
+            ],
+        ),
         ("black_white", "Black & white", "Đen trắng", &[]),
         (
             "channel_mix",
@@ -597,7 +638,7 @@ fn live_effect_clock_updates_real_textures_pauses_hidden_and_wraps_without_proje
         h.run_steps(1);
         h.state_mut().settle_previews(SETTLE_BUDGET).unwrap();
         h.run_steps(1);
-        assert_eq!(h.state().inspect().unwrap().effect_previews.len(), 43);
+        assert_eq!(h.state().inspect().unwrap().effect_previews.len(), 47);
         assert!(
             h.state()
                 .inspect()
@@ -1557,7 +1598,7 @@ fn effect_preview_queue_defers_then_renders_every_library_kind_without_retry() {
         .iter()
         .filter(|definition| definition.shelf.in_library())
         .collect();
-    assert_eq!(definitions.len(), 43);
+    assert_eq!(definitions.len(), 47);
     // Five is the smallest request set that exceeds the real four-entry queue.
     for count in [5, definitions.len()] {
         let mut previews = EffectPreviews::cpu().unwrap();
@@ -1659,7 +1700,7 @@ fn deferred_previews_timeout_retry_new_generation_and_drop_cancel_owned_jobs() {
                 .values()
                 .filter(|s| **s == EffectPreviewStatus::Pending)
                 .count(),
-            43
+            47
         );
         if retry {
             let replacement = blur
@@ -1675,7 +1716,7 @@ fn deferred_previews_timeout_retry_new_generation_and_drop_cancel_owned_jobs() {
             previews.ensure("blur", &replacement, &project::Animations::default());
             gate.release();
             previews.settle(SETTLE_BUDGET).unwrap();
-            assert_eq!(previews.statuses().len(), 43);
+            assert_eq!(previews.statuses().len(), 47);
             assert!(
                 previews
                     .statuses()
@@ -2000,7 +2041,7 @@ fn effect_preview_settle_waits_for_terminal_tiles_or_times_out() {
     click(&mut harness, "assets.tab.effects");
     harness.state_mut().settle_previews(SETTLE_BUDGET).unwrap();
     let statuses = harness.state().inspect().unwrap().effect_previews;
-    assert_eq!(statuses.len(), 43);
+    assert_eq!(statuses.len(), 47);
     assert!(
         statuses
             .values()
