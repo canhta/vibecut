@@ -488,7 +488,7 @@ fn integer_only_devices_record_the_same_take() {
 }
 
 #[test]
-fn the_dialog_reads_in_english_and_vietnamese_and_renders_a_recording() {
+fn recording_dialog_labels_and_elapsed_time_follow_the_locale() {
     let root = tempfile::tempdir().unwrap();
     let script = Script::new();
     let mut editor = editor(&script, &root.path().join("media"));

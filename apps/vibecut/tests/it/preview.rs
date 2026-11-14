@@ -712,7 +712,7 @@ fn drop_at(h: &mut Harness<Editor>, at: egui::Pos2) {
 }
 
 #[test]
-fn timecode_round_trips_at_every_supported_rate_and_invalid_text_is_restored() {
+fn timecode_field_seeks_at_integer_and_drop_frame_rates_and_restores_invalid_text() {
     // The time crate's frame_labels_round_trip owns every rate; the field only has to parse
     // at the project's rate, so one integer and one drop-frame rate stand for the rest.
     let rates = [FrameRate::FPS_25, FrameRate::FPS_29_97];

@@ -1388,27 +1388,8 @@ fn color_drag_isolated_until_release_one_undo_and_escape_cancels() {
 }
 
 #[test]
-fn picker_hex_hsv_recents_and_screenshot() {
-    let mut fixture = fixture();
-    // A screenshot needs a healthy generated preview, not the offline media
-    // deliberately retained by the general panel fixture.
-    fixture
-        .editor
-        .session
-        .apply(Command::Delete {
-            items: vec![
-                fixture.video,
-                fixture.silent_video,
-                fixture.image,
-                fixture.audio,
-            ],
-        })
-        .unwrap();
-    fixture
-        .editor
-        .playback
-        .seek(Tick::ZERO, false, fixture.editor.session.project().clone())
-        .unwrap();
+fn color_picker_hex_hsv_swatch_and_recent_entries_set_the_text_color() {
+    let fixture = fixture();
     let mut harness = build(fixture.editor);
     harness.run_steps(3);
     select(&mut harness, fixture.text);

@@ -72,268 +72,102 @@ fn paints_untruncated(h: &Harness<Editor>, expected: &str) -> bool {
     false
 }
 
+/// Fails if the effects panel keeps a stale search, tile name, add toast, Properties header or
+/// parameter label after a locale switch, or if switching the locale touches the project.
+/// The strings themselves are `i18n::format`'s table.
 #[test]
-fn bilingual_effect_tiles_search_headers_parameters_and_add_feedback_follow_locale() {
+fn effects_panel_search_tiles_toast_and_properties_follow_the_locale() {
     use vibecut::i18n::Locale;
-    type Row<'a> = (&'a str, &'a str, &'a str, &'a [(&'a str, &'a str, &'a str)]);
-    let rows: &[Row] = &[
-        (
-            "directional_blur",
-            "Streak Blur",
-            "Mờ theo hướng",
-            &[
-                ("direction", "Direction", "Hướng"),
-                ("length", "Length", "Độ dài"),
-            ],
-        ),
-        (
-            "find_edges",
-            "Edge Lines",
-            "Đường viền",
-            &[("blend", "Blend with original", "Trộn với gốc")],
-        ),
-        (
-            "color_emboss",
-            "Colour Relief",
-            "Phù điêu màu",
-            &[
-                ("direction", "Direction", "Hướng"),
-                ("relief", "Relief", "Độ nổi"),
-                ("contrast", "Contrast", "Độ tương phản"),
-                ("blend", "Blend with original", "Trộn với gốc"),
-            ],
-        ),
-        (
-            "unsharp_mask",
-            "Detail Boost",
-            "Tăng chi tiết",
-            &[
-                ("amount", "Amount", "Cường độ"),
-                ("radius", "Radius", "Bán kính"),
-                ("threshold", "Threshold", "Ngưỡng"),
-            ],
-        ),
-        (
-            "bokeh_blur",
-            "Lens Blur",
-            "Mờ ống kính",
-            &[
-                ("amount", "Blur amount", "Độ mờ"),
-                ("rotation", "Rotation", "Góc xoay"),
-                ("highlight", "Highlight brightness", "Độ sáng vùng sáng"),
-                ("threshold", "Highlight threshold", "Ngưỡng vùng sáng"),
-            ],
-        ),
-        (
-            "mirror",
-            "Mirror",
-            "Đối xứng gương",
-            &[
-                ("center_x", "Reflection centre X", "Tâm đối xứng X"),
-                ("center_y", "Reflection centre Y", "Tâm đối xứng Y"),
-                ("angle", "Reflection angle", "Góc đối xứng"),
-            ],
-        ),
-        (
-            "offset",
-            "Wrap Shift",
-            "Dịch vòng",
-            &[
-                ("shift_x", "Shift X", "Dịch ngang"),
-                ("shift_y", "Shift Y", "Dịch dọc"),
-                ("blend", "Blend with original", "Trộn với gốc"),
-            ],
-        ),
-        ("black_white", "Black & white", "Đen trắng", &[]),
-        (
-            "channel_mix",
-            "Channel mixer",
-            "Trộn kênh",
-            &[
-                ("rr", "Red from red", "Đỏ từ đỏ"),
-                ("rg", "Red from green", "Đỏ từ xanh lá"),
-                ("rb", "Red from blue", "Đỏ từ xanh dương"),
-                ("rc", "Red constant", "Hằng số đỏ"),
-                ("gr", "Green from red", "Xanh lá từ đỏ"),
-                ("gg", "Green from green", "Xanh lá từ xanh lá"),
-                ("gb", "Green from blue", "Xanh lá từ xanh dương"),
-                ("gc", "Green constant", "Hằng số xanh lá"),
-                ("br", "Blue from red", "Xanh dương từ đỏ"),
-                ("bg", "Blue from green", "Xanh dương từ xanh lá"),
-                ("bb", "Blue from blue", "Xanh dương từ xanh dương"),
-                ("bc", "Blue constant", "Hằng số xanh dương"),
-            ],
-        ),
-        (
-            "color_pass",
-            "Keep colour",
-            "Giữ màu",
-            &[("similarity", "Similarity", "Độ tương đồng")],
-        ),
-        (
-            "color_replace",
-            "Swap colour",
-            "Thay màu",
-            &[("similarity", "Similarity", "Độ tương đồng")],
-        ),
-        (
-            "extract",
-            "Threshold",
-            "Ngưỡng",
-            &[
-                ("black", "Black point", "Điểm đen"),
-                ("white", "White point", "Điểm trắng"),
-                ("softness", "Softness", "Độ mềm"),
-            ],
-        ),
-        (
-            "gamma_correction",
-            "Gamma",
-            "Gamma",
-            &[("gamma", "Gamma", "Gamma")],
-        ),
-        (
-            "invert",
-            "Invert",
-            "Đảo màu",
-            &[("blend", "Blend with original", "Trộn với gốc")],
-        ),
-        (
-            "levels",
-            "Levels",
-            "Mức màu",
-            &[
-                ("in_black", "Input black", "Điểm đen gốc"),
-                ("in_white", "Input white", "Điểm trắng gốc"),
-                ("out_black", "Output black", "Điểm đen sau chỉnh"),
-                ("out_white", "Output white", "Điểm trắng sau chỉnh"),
-                ("gamma", "Gamma", "Gamma"),
-            ],
-        ),
-        (
-            "posterize",
-            "Posterise",
-            "Giảm bậc màu",
-            &[("levels", "Levels", "Mức màu")],
-        ),
-        (
-            "strobe",
-            "Strobe",
-            "Chớp sáng",
-            &[
-                ("blend", "Blend with original", "Trộn với gốc"),
-                ("duration", "Duration", "Thời lượng"),
-                ("period", "Period", "Chu kỳ"),
-            ],
-        ),
-        (
-            "tint",
-            "Two-tone",
-            "Hai tông màu",
-            &[("amount", "Amount", "Cường độ")],
-        ),
+    let (kind, en, vi) = ("directional_blur", "Streak Blur", "Mờ theo hướng");
+    let parameters = [
+        ("direction", "Direction", "Hướng"),
+        ("length", "Length", "Độ dài"),
     ];
-    for &(kind, en, vi, parameters) in rows {
-        let f = fixture();
-        let video = f.video;
-        // Show the complete twelve-row mixer without substituting a test view.
-        let mut h = crate::gpu::builder()
-            .with_size(egui::vec2(1727.0, 1800.0))
-            .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), f.editor);
+    let f = fixture();
+    let video = f.video;
+    let mut h = crate::gpu::builder()
+        .with_size(egui::vec2(1727.0, 1800.0))
+        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), f.editor);
+    h.run_steps(3);
+    open_effect_tabs(&mut h, video);
+    let original = h.state().session.project().clone();
+    let history = h.state().session.history_len();
+    let tiles = |h: &Harness<Editor>| {
+        h.state()
+            .inspect()
+            .unwrap()
+            .widgets
+            .into_iter()
+            .filter_map(|w| {
+                w.id.strip_prefix("effects.tile.")
+                    .filter(|rest| !rest.contains('.'))
+                    .map(str::to_owned)
+            })
+            .collect::<Vec<_>>()
+    };
+    for (locale, name) in [(Locale::En, en), (Locale::Vi, vi)] {
+        // The undo that closes the English pass leaves a redo entry; compare against it.
+        let before_locale_history = h.state().session.history_len();
+        h.state_mut().preferences.locale = locale;
         h.run_steps(3);
-        open_effect_tabs(&mut h, video);
-        let original = h.state().session.project().clone();
-        let history = h.state().session.history_len();
-        for (locale, name) in [(Locale::En, en), (Locale::Vi, vi)] {
-            let before_locale_history = h.state().session.history_len();
-            h.state_mut().preferences.locale = locale;
-            h.run_steps(3);
-            if locale == Locale::Vi && en != vi {
-                assert!(
-                    !has_widget(&h, &format!("effects.tile.{kind}")),
-                    "stale search {kind}"
-                );
-            }
-            type_value(&mut h, "assets.search", name);
-            let tile = widget_rect(&h, &format!("effects.tile.{kind}"));
-            assert!(paints_text(&h, name, tile), "tile {kind} {locale:?}");
-            for &(other, _, _, _) in rows {
-                if other != kind {
-                    assert!(
-                        !has_widget(&h, &format!("effects.tile.{other}")),
-                        "search {kind} included {other}"
-                    );
-                }
-            }
-            assert_eq!(h.state().session.project(), &original);
-            assert_eq!(h.state().session.history_len(), before_locale_history);
-            click(&mut h, &format!("effects.add.{kind}"));
-            let added = h.state().session.project().clone();
-            let added_history = h.state().session.history_len();
-            assert_eq!(added_history.0, history.0 + 1, "one add {kind}");
-            assert_eq!(effects(&h, video)[0].kind, kind);
-            let toast = h.state().inspect().unwrap().import_toast.unwrap();
-            assert!(toast.contains(name), "toast {toast:?} missing {name}");
-            assert!(toast.contains(if locale == Locale::En {
-                "Effect added"
-            } else {
-                "Đã thêm hiệu ứng"
-            }));
-            // Locale switches must preserve every static/animated parameter and history.
-            for (display, title) in [(Locale::En, en), (Locale::Vi, vi)] {
-                h.state_mut().preferences.locale = display;
-                h.run_steps(3);
-                let left = widget_rect(&h, &format!("effects.row.{kind}.handle")).left();
-                let region =
-                    egui::Rect::from_min_max(egui::pos2(left, 0.0), egui::pos2(1727.0, 1800.0));
-                assert!(
-                    paints_text(&h, title, region),
-                    "Properties header {kind} {display:?}"
-                );
-                let definition = project::effect_definition(kind).unwrap();
-                let numeric: Vec<_> = definition
-                    .params
-                    .iter()
-                    .filter(|p| {
-                        matches!(
-                            p.kind,
-                            project::EffectParamKind::Float { .. }
-                                | project::EffectParamKind::Angle
-                        )
-                    })
-                    .map(|p| p.id)
-                    .collect();
-                assert_eq!(
-                    numeric,
-                    parameters.iter().map(|p| p.0).collect::<Vec<_>>(),
-                    "complete numeric census {kind}"
-                );
-                for &(key, english, vietnamese) in parameters {
-                    let expected = if display == Locale::En {
-                        english
-                    } else {
-                        vietnamese
-                    };
-                    let id = format!("effects.{kind}.param.{key}");
-                    h.get(
-                        By::new()
-                            .label(expected)
-                            .predicate(|node| node.author_id() == Some(id.as_str())),
-                    );
-                    assert!(
-                        paints_text(&h, expected, region),
-                        "painted numeric {kind}.{key} {display:?}"
-                    );
-                }
-                assert_eq!(h.state().session.project(), &added);
-                assert_eq!(h.state().session.history_len(), added_history);
-            }
-            h.state_mut().activate("edit.undo").unwrap();
-            h.run_steps(3);
-            assert_eq!(h.state().session.project(), &original, "undo {kind}");
-            // A fresh add clears the redo entry; compare the undo count independently.
-            assert_eq!(h.state().session.history_len().0, history.0);
+        if locale == Locale::Vi {
+            assert!(
+                tiles(&h).is_empty(),
+                "the English search is stale in Vietnamese"
+            );
         }
+        type_value(&mut h, "assets.search", name);
+        assert_eq!(tiles(&h), [kind], "search {name:?}");
+        let tile = widget_rect(&h, &format!("effects.tile.{kind}"));
+        assert!(paints_text(&h, name, tile), "tile {locale:?}");
+        assert_eq!(h.state().session.project(), &original);
+        assert_eq!(h.state().session.history_len(), before_locale_history);
+        click(&mut h, &format!("effects.add.{kind}"));
+        let added = h.state().session.project().clone();
+        let added_history = h.state().session.history_len();
+        assert_eq!(added_history.0, history.0 + 1, "one add");
+        assert_eq!(effects(&h, video)[0].kind, kind);
+        let toast = h.state().inspect().unwrap().import_toast.unwrap();
+        assert!(toast.contains(name), "toast {toast:?} missing {name}");
+        assert!(toast.contains(if locale == Locale::En {
+            "Effect added"
+        } else {
+            "Đã thêm hiệu ứng"
+        }));
+        for (display, title) in [(Locale::En, en), (Locale::Vi, vi)] {
+            h.state_mut().preferences.locale = display;
+            h.run_steps(3);
+            let left = widget_rect(&h, &format!("effects.row.{kind}.handle")).left();
+            let region =
+                egui::Rect::from_min_max(egui::pos2(left, 0.0), egui::pos2(1727.0, 1800.0));
+            assert!(
+                paints_text(&h, title, region),
+                "Properties header {display:?}"
+            );
+            for (key, english, vietnamese) in parameters {
+                let expected = if display == Locale::En {
+                    english
+                } else {
+                    vietnamese
+                };
+                let id = format!("effects.{kind}.param.{key}");
+                h.get(
+                    By::new()
+                        .label(expected)
+                        .predicate(|node| node.author_id() == Some(id.as_str())),
+                );
+                assert!(
+                    paints_text(&h, expected, region),
+                    "painted {key} {display:?}"
+                );
+            }
+            assert_eq!(h.state().session.project(), &added);
+            assert_eq!(h.state().session.history_len(), added_history);
+        }
+        h.state_mut().activate("edit.undo").unwrap();
+        h.run_steps(3);
+        assert_eq!(h.state().session.project(), &original, "undo");
+        assert_eq!(h.state().session.history_len().0, history.0);
     }
 }
 

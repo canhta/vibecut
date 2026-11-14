@@ -113,7 +113,7 @@ fn cut(h: &Harness<Editor>) -> egui::Pos2 {
 }
 
 #[test]
-fn every_definition_applies_once_and_round_trips_with_history() {
+fn every_transition_tile_adds_one_centred_transition_in_one_undo_step() {
     let mut h = build(editor(2 * SECOND));
     open(&mut h);
     select_pair(&mut h);

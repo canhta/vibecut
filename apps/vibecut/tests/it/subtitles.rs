@@ -1745,7 +1745,7 @@ fn consent_denial_provider_change_cancel_and_stale_results_never_apply() {
     }
 }
 #[test]
-fn capabilities_locale_and_choices_persist_without_loading_models() {
+fn caption_choices_sections_and_manual_cues_work_without_loading_models() {
     let mut h = harness(editor("vi"), 2.0);
     h.run_steps(3);
     click(&mut h, "subtitles.source");

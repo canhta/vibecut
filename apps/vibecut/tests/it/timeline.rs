@@ -361,7 +361,7 @@ fn blend_dropdown_and_opacity_field_dispatch_real_edits() {
 }
 
 #[test]
-fn fit_dropdown_sets_each_mode_with_undo_and_a_screenshot() {
+fn fit_dropdown_sets_each_mode_as_one_history_step() {
     fn fit_of(editor: &Editor, id: ItemId) -> project::FitMode {
         match &item(editor, id).content {
             project::ItemParams::Video(params) => params.fit,
@@ -2730,7 +2730,7 @@ fn mixed_audio_mute_shows_indeterminate_and_undo_restores_each_item() {
 }
 
 #[test]
-fn audio_mute_and_volume_controls_commit_one_step_and_persist() {
+fn audio_mute_menu_row_is_one_step_and_volume_and_mute_fields_refuse_invalid_text() {
     let fixture = fixture();
     let audio = fixture
         .editor
@@ -3993,7 +3993,7 @@ fn volume_line_drag_commits_a_tenth_db_step_and_keys_survive_reload() {
 }
 
 #[test]
-fn keyframe_lanes_and_volume_line_render_the_audit_screenshot() {
+fn lane_toggles_open_the_audio_volume_lane() {
     let fixture = fixture();
     let id = fixture.video_a;
     let audio = audio_item(&fixture.editor);

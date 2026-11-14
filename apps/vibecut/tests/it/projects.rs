@@ -180,7 +180,7 @@ fn home_hosts_the_about_dialog_the_app_menu_opens() {
 }
 
 #[test]
-fn search_sort_and_view_persist_through_the_preference_store() {
+fn projects_search_sort_and_view_update_the_list_and_preferences() {
     let fixture = Fixture::new(&[
         ("Alpha", missing()),
         ("Beta", missing()),
@@ -1104,7 +1104,7 @@ fn leaving_a_project_shows_its_new_cover_on_home_without_input_when_woken() {
 }
 
 #[test]
-fn welcome_runs_three_steps_once_and_the_flag_round_trips() {
+fn welcome_sets_its_seen_flag_only_on_start_after_two_steps() {
     let fixture = Fixture::new(&[]);
     let mut harness = fixture.build_with(Preferences::default());
     assert!(harness.query(by("welcome.dialog")).is_some());

@@ -630,6 +630,204 @@ mod tests {
         );
     }
 
+    /// Fails if an effect name or numeric parameter label loses its translation, falls back to
+    /// the English definition label in Vietnamese, or a numeric parameter is added unlabelled.
+    #[test]
+    fn effect_names_and_numeric_parameter_labels_follow_the_locale() {
+        type Row<'a> = (&'a str, &'a str, &'a str, &'a [(&'a str, &'a str, &'a str)]);
+        let rows: &[Row] = &[
+            (
+                "directional_blur",
+                "Streak Blur",
+                "Mờ theo hướng",
+                &[
+                    ("direction", "Direction", "Hướng"),
+                    ("length", "Length", "Độ dài"),
+                ],
+            ),
+            (
+                "find_edges",
+                "Edge Lines",
+                "Đường viền",
+                &[("blend", "Blend with original", "Trộn với gốc")],
+            ),
+            (
+                "color_emboss",
+                "Colour Relief",
+                "Phù điêu màu",
+                &[
+                    ("direction", "Direction", "Hướng"),
+                    ("relief", "Relief", "Độ nổi"),
+                    ("contrast", "Contrast", "Độ tương phản"),
+                    ("blend", "Blend with original", "Trộn với gốc"),
+                ],
+            ),
+            (
+                "unsharp_mask",
+                "Detail Boost",
+                "Tăng chi tiết",
+                &[
+                    ("amount", "Amount", "Cường độ"),
+                    ("radius", "Radius", "Bán kính"),
+                    ("threshold", "Threshold", "Ngưỡng"),
+                ],
+            ),
+            (
+                "bokeh_blur",
+                "Lens Blur",
+                "Mờ ống kính",
+                &[
+                    ("amount", "Blur amount", "Độ mờ"),
+                    ("rotation", "Rotation", "Góc xoay"),
+                    ("highlight", "Highlight brightness", "Độ sáng vùng sáng"),
+                    ("threshold", "Highlight threshold", "Ngưỡng vùng sáng"),
+                ],
+            ),
+            (
+                "mirror",
+                "Mirror",
+                "Đối xứng gương",
+                &[
+                    ("center_x", "Reflection centre X", "Tâm đối xứng X"),
+                    ("center_y", "Reflection centre Y", "Tâm đối xứng Y"),
+                    ("angle", "Reflection angle", "Góc đối xứng"),
+                ],
+            ),
+            (
+                "offset",
+                "Wrap Shift",
+                "Dịch vòng",
+                &[
+                    ("shift_x", "Shift X", "Dịch ngang"),
+                    ("shift_y", "Shift Y", "Dịch dọc"),
+                    ("blend", "Blend with original", "Trộn với gốc"),
+                ],
+            ),
+            ("black_white", "Black & white", "Đen trắng", &[]),
+            (
+                "channel_mix",
+                "Channel mixer",
+                "Trộn kênh",
+                &[
+                    ("rr", "Red from red", "Đỏ từ đỏ"),
+                    ("rg", "Red from green", "Đỏ từ xanh lá"),
+                    ("rb", "Red from blue", "Đỏ từ xanh dương"),
+                    ("rc", "Red constant", "Hằng số đỏ"),
+                    ("gr", "Green from red", "Xanh lá từ đỏ"),
+                    ("gg", "Green from green", "Xanh lá từ xanh lá"),
+                    ("gb", "Green from blue", "Xanh lá từ xanh dương"),
+                    ("gc", "Green constant", "Hằng số xanh lá"),
+                    ("br", "Blue from red", "Xanh dương từ đỏ"),
+                    ("bg", "Blue from green", "Xanh dương từ xanh lá"),
+                    ("bb", "Blue from blue", "Xanh dương từ xanh dương"),
+                    ("bc", "Blue constant", "Hằng số xanh dương"),
+                ],
+            ),
+            (
+                "color_pass",
+                "Keep colour",
+                "Giữ màu",
+                &[("similarity", "Similarity", "Độ tương đồng")],
+            ),
+            (
+                "color_replace",
+                "Swap colour",
+                "Thay màu",
+                &[("similarity", "Similarity", "Độ tương đồng")],
+            ),
+            (
+                "extract",
+                "Threshold",
+                "Ngưỡng",
+                &[
+                    ("black", "Black point", "Điểm đen"),
+                    ("white", "White point", "Điểm trắng"),
+                    ("softness", "Softness", "Độ mềm"),
+                ],
+            ),
+            (
+                "gamma_correction",
+                "Gamma",
+                "Gamma",
+                &[("gamma", "Gamma", "Gamma")],
+            ),
+            (
+                "invert",
+                "Invert",
+                "Đảo màu",
+                &[("blend", "Blend with original", "Trộn với gốc")],
+            ),
+            (
+                "levels",
+                "Levels",
+                "Mức màu",
+                &[
+                    ("in_black", "Input black", "Điểm đen gốc"),
+                    ("in_white", "Input white", "Điểm trắng gốc"),
+                    ("out_black", "Output black", "Điểm đen sau chỉnh"),
+                    ("out_white", "Output white", "Điểm trắng sau chỉnh"),
+                    ("gamma", "Gamma", "Gamma"),
+                ],
+            ),
+            (
+                "posterize",
+                "Posterise",
+                "Giảm bậc màu",
+                &[("levels", "Levels", "Mức màu")],
+            ),
+            (
+                "strobe",
+                "Strobe",
+                "Chớp sáng",
+                &[
+                    ("blend", "Blend with original", "Trộn với gốc"),
+                    ("duration", "Duration", "Thời lượng"),
+                    ("period", "Period", "Chu kỳ"),
+                ],
+            ),
+            (
+                "tint",
+                "Two-tone",
+                "Hai tông màu",
+                &[("amount", "Amount", "Cường độ")],
+            ),
+        ];
+        // The panels' resolution: the localized label, else the definition's own name.
+        fn shown(
+            locale: Locale,
+            kind: &str,
+            parameter: Option<&str>,
+            fallback: &'static str,
+        ) -> &'static str {
+            effect_label(kind, parameter).map_or(fallback, |key| text(locale, key))
+        }
+        for &(kind, en, vi, parameters) in rows {
+            let definition = project::effect_definition(kind).unwrap();
+            assert_eq!(shown(Locale::En, kind, None, definition.name), en, "{kind}");
+            assert_eq!(shown(Locale::Vi, kind, None, definition.name), vi, "{kind}");
+            let numeric: Vec<_> = definition
+                .params
+                .iter()
+                .filter(|p| {
+                    matches!(
+                        p.kind,
+                        project::EffectParamKind::Float { .. } | project::EffectParamKind::Angle
+                    )
+                })
+                .collect();
+            assert_eq!(
+                numeric.iter().map(|p| p.id).collect::<Vec<_>>(),
+                parameters.iter().map(|p| p.0).collect::<Vec<_>>(),
+                "complete numeric census {kind}"
+            );
+            for (parameter, &(key, english, vietnamese)) in numeric.iter().zip(parameters) {
+                let at = |locale| shown(locale, kind, Some(key), parameter.name);
+                assert_eq!(at(Locale::En), english, "{kind}.{key}");
+                assert_eq!(at(Locale::Vi), vietnamese, "{kind}.{key}");
+            }
+        }
+    }
+
     #[test]
     fn numbers_dates_and_plurals_follow_the_locale() {
         for (locale, input, expected) in [
