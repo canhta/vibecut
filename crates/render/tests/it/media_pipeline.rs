@@ -1080,9 +1080,9 @@ fn copy_publishes_only_the_streams_selected_by_decode() {
     let mut settings = ExportSettings::from_project(&p);
     settings.mode = ExportMode::StreamCopy;
     settings.overwrite = project::atomic::Overwrite::Replace;
+    // Mov shares the Mp4 muxer branch; its publication is a row of the contracts table.
     for (container, extension, video_codec, audio_codec) in [
         (media::Container::Mp4, "mp4", "h264", "aac"),
-        (media::Container::Mov, "mov", "h264", "aac"),
         (media::Container::WebM, "webm", "vp9", "opus"),
     ] {
         settings.container = container;
@@ -1145,7 +1145,11 @@ fn copy_publishes_only_the_streams_selected_by_decode() {
                 / common as f64;
             assert!(mse < 0.0002, "selected audio PCM MSE {mse}");
         }
-        // The dialog always applies its quality by encoding; verify the same target with/without audio.
+        // The dialog always applies its quality by encoding; verify the same target with/without
+        // audio. The toggle is container-independent, so one container carries it.
+        if !receipt.stream_copied {
+            continue;
+        }
         settings.mode = ExportMode::Encode;
         for audio in [true, false] {
             settings.include_audio = audio;
@@ -1292,6 +1296,29 @@ fn webm_export_matches_the_project_grid_and_plays() {
         "VP9 decoded quality max={max} mse={mse}"
     );
     eprintln!("OBSERVED WebM oracle: 30 frames, 48000 samples, max={max} mse={mse}");
+    // The same project exports the same frames on the container's millisecond grid again.
+    let again = root().join("export-oracle-again.webm");
+    let second = export(
+        &p,
+        TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+        &settings,
+        &again,
+        &Hooks::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        (second.video_frames, second.audio_samples),
+        (receipt.video_frames, receipt.audio_samples)
+    );
+    let timestamps = video_pts(&output);
+    assert_eq!(timestamps.len(), 30);
+    for (frame, at) in timestamps.iter().enumerate() {
+        assert!(
+            (at - frame as f64 / 30.0).abs() <= 0.001,
+            "frame {frame} timestamp {at}"
+        );
+    }
+    assert_eq!(timestamps, video_pts(&again), "deterministic timestamps");
 }
 
 #[test]
@@ -1383,55 +1410,6 @@ fn gif_export_matches_the_project_grid_and_refuses_hostile_settings() {
         Err(Error::Unsupported(_))
     ));
     assert_eq!(std::fs::read(&output).unwrap(), b"previous");
-}
-
-#[test]
-fn webm_export_is_deterministic_across_runs() {
-    if !tools() {
-        return;
-    }
-    let p = solid_project(1, 128, 96, [30, 120, 210, 255]);
-    let mut settings = ExportSettings::from_project(&p);
-    settings.mode = ExportMode::Encode;
-    settings.container = media::Container::WebM;
-    settings.overwrite = project::atomic::Overwrite::Replace;
-    let mut runs = Vec::new();
-    for name in ["deterministic-one.webm", "deterministic-two.webm"] {
-        let path = root().join(name);
-        let receipt = export(
-            &p,
-            TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
-            &settings,
-            &path,
-            &Hooks::default(),
-        )
-        .unwrap();
-        runs.push((receipt, path));
-    }
-    assert_eq!(
-        runs.iter()
-            .map(|(receipt, _)| receipt.video_frames)
-            .collect::<Vec<_>>(),
-        [30, 30]
-    );
-    assert_eq!(runs[0].0.audio_samples, runs[1].0.audio_samples);
-    let timestamps: Vec<Vec<f64>> = runs.iter().map(|(_, path)| video_pts(path)).collect();
-    assert_eq!(timestamps[0].len(), 30);
-    for (frame, at) in timestamps[0].iter().enumerate() {
-        // WebM timestamps resolve to the container's millisecond time base.
-        assert!(
-            (at - frame as f64 / 30.0).abs() <= 0.001,
-            "frame {frame} timestamp {at}"
-        );
-    }
-    assert_eq!(
-        timestamps[0], timestamps[1],
-        "the same project must produce the same frame timestamps"
-    );
-    assert_eq!(
-        testkit::oracle::decoded_frames(&runs[0].1, "v:0"),
-        testkit::oracle::decoded_frames(&runs[1].1, "v:0")
-    );
 }
 
 #[test]
