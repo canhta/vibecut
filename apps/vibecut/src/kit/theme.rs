@@ -359,6 +359,8 @@ pub(crate) mod size {
     pub const HEADER_CELL: f32 = 24.0;
     pub const SUBNAV: f32 = 120.0;
     pub const SUBNAV_BUTTON: f32 = 104.0;
+    /// Effects sub-navigation group header (221727 x 146-353 native, y 264-307: 104 x 22 logical).
+    pub const SUBNAV_GROUP: f32 = 22.0;
     pub const TAB_MIN: f32 = 48.0;
     pub const SEGMENT_WIDTH: f32 = 115.0;
     pub const STEPPER: f32 = 16.0;

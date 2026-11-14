@@ -564,6 +564,11 @@ pub(in crate::editor) fn preview_instance(
             instance.set_scalar("vertical", 6.0).ok()?;
             instance.set_scalar("softness", 50.0).ok()?;
         }
+        // The default 0..255 band passes nearly every pixel and read as a solid white tile.
+        "extract" => {
+            instance.set_scalar("black", 120.0).ok()?;
+            instance.set_scalar("white", 200.0).ok()?;
+        }
         "gamma_correction" => instance.set_scalar("gamma", 25.0).ok()?,
         "levels" => {
             instance.set_scalar("in_black", 40.0).ok()?;
