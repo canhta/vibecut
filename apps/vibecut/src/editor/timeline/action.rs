@@ -142,4 +142,6 @@ pub(in crate::editor) enum Action {
     CancelInteraction,
     /// Surface an error to the user.
     Fail(String),
+    /// Show a one-line creator-facing toast; nothing changed.
+    Toast(String),
 }

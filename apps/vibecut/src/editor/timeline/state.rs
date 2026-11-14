@@ -217,6 +217,8 @@ pub(in crate::editor) struct State {
     pub(in crate::editor::timeline) drag: Option<DragState>,
     /// Highlighted landing row or insertion line while a move drag is over the lanes.
     pub(in crate::editor::timeline) drop_zone: Option<DropZone>,
+    /// The occupied clip a Media drag is over: it wears the `Replace` label.
+    pub(in crate::editor::timeline) replace_hint: Option<ItemId>,
     /// Command of the candidate staged by the group preview contract.
     pub(in crate::editor::timeline) preview: Option<engine::CommandKind>,
     /// The last staged command leaves every member at its entry position.
@@ -272,6 +274,7 @@ impl State {
             pre_anchor_scroll: None,
             drag: None,
             drop_zone: None,
+            replace_hint: None,
             preview: None,
             preview_noop: false,
             preview_armed: false,
@@ -668,6 +671,10 @@ impl State {
     }
     pub(in crate::editor) fn refusal(&self) -> Option<&str> {
         self.refusal.as_deref()
+    }
+    /// The clip a Media drag would replace, for automation and tests.
+    pub(in crate::editor) fn replace_hint(&self) -> Option<ItemId> {
+        self.replace_hint
     }
     /// The last landing hint, as a stable automation string.
     pub(in crate::editor) fn drop_zone_label(&self) -> Option<String> {

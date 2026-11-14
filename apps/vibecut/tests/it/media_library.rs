@@ -61,12 +61,22 @@ fn editor_with_sources(
     assets: &[(u64, &str)],
     sources: Arc<dyn Sources>,
 ) -> Editor {
+    let lengths: Vec<(u64, &str, i64)> = assets.iter().map(|(id, name)| (*id, *name, 4)).collect();
+    editor_with_lengths(preferences, &lengths, sources)
+}
+
+/// Like `editor_with_sources`, each asset with its own length in seconds.
+fn editor_with_lengths(
+    preferences: Preferences,
+    assets: &[(u64, &str, i64)],
+    sources: Arc<dyn Sources>,
+) -> Editor {
     let mut session =
         Session::new(Project::empty(ProjectId(90), "Media".into()).unwrap(), 50).unwrap();
-    for (id, name) in assets {
+    for (id, name, seconds) in assets {
         session
             .apply(Command::AddAsset {
-                asset: source_asset(*id, name, Some(Tick(4 * SECOND))),
+                asset: source_asset(*id, name, Some(Tick(seconds * SECOND))),
             })
             .unwrap();
     }
@@ -216,6 +226,11 @@ fn widget_rect(harness: &Harness<Editor>, id: &str) -> egui::Rect {
 }
 
 fn insert_video(editor: &mut Editor, asset: AssetId) -> project::ItemId {
+    insert_video_span(editor, asset, 1)
+}
+
+/// A main-track clip of `seconds` of `asset`, at the start.
+fn insert_video_span(editor: &mut Editor, asset: AssetId, seconds: i64) -> project::ItemId {
     let main = editor.session.project().data().scene().timeline.main.id;
     let outcome = editor
         .session
@@ -225,7 +240,7 @@ fn insert_video(editor: &mut Editor, asset: AssetId) -> project::ItemId {
                 retime: Default::default(),
                 animations: Default::default(),
                 source_asset: Some(asset),
-                source_range: SourceRange::new(Tick::ZERO, Tick(SECOND)).unwrap(),
+                source_range: SourceRange::new(Tick::ZERO, Tick(seconds * SECOND)).unwrap(),
                 start: Tick::ZERO,
                 content: ItemParams::Video(project::VideoParams {
                     source_audio_enabled: true,
@@ -1650,4 +1665,102 @@ fn media_drag_and_plus_screenshot_for_the_combined_build() {
     click(&mut harness, "media.insert");
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-11-dnd.png");
     harness.render().unwrap().save(&path).unwrap();
+}
+
+const REPLACE_REFUSAL: &str =
+    "Can't replace. Media needs to be no shorter than the original material.";
+
+/// An 8 s clip on the main track, with a 2 s asset (shorter) and an 8 s asset (equal) to drop.
+fn replace_fixture() -> (Editor, project::ItemId) {
+    let mut editor = editor_with_lengths(
+        Preferences::default(),
+        &[(1, "long.mp4", 8), (2, "short.mp4", 2), (3, "equal.mp4", 8)],
+        Arc::new(Files),
+    );
+    let clip = insert_video_span(&mut editor, AssetId(1), 8);
+    (editor, clip)
+}
+
+/// Press on an asset card and move over `target` without releasing.
+fn hold_asset_over(harness: &mut Harness<Editor>, asset: AssetId, target: egui::Pos2) {
+    let card = widget_rect(harness, &format!("media.asset.{}", asset.0)).center();
+    harness.hover_at(card);
+    harness.drag_at(card);
+    harness.run_steps(1);
+    harness.hover_at(target);
+    harness.run_steps(2);
+}
+
+#[test]
+fn dropping_shorter_media_on_an_occupied_clip_toasts_and_changes_nothing() {
+    let (editor, clip) = replace_fixture();
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    let before = serde_json::to_vec(harness.state().session.project().data()).unwrap();
+    let target = lane_point(&harness, main_track(&harness));
+
+    hold_asset_over(&mut harness, AssetId(2), target);
+    assert_eq!(harness.state().inspect().unwrap().replace_hint, Some(clip));
+    harness.drop_at(target);
+    harness.run_steps(2);
+
+    let inspection = harness.state().inspect().unwrap();
+    assert_eq!(inspection.import_toast.as_deref(), Some(REPLACE_REFUSAL));
+    assert_eq!(inspection.replace_hint, None);
+    let after = serde_json::to_vec(harness.state().session.project().data()).unwrap();
+    assert_eq!(after, before, "a refused replace edits nothing");
+}
+
+#[test]
+fn dropping_equal_length_media_on_an_occupied_clip_keeps_the_placement_without_the_refusal() {
+    let (editor, clip) = replace_fixture();
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    let target = lane_point(&harness, main_track(&harness));
+
+    hold_asset_over(&mut harness, AssetId(3), target);
+    assert_eq!(
+        harness.state().inspect().unwrap().replace_hint,
+        Some(clip),
+        "the label shows for any single asset over an occupied clip"
+    );
+    harness.drop_at(target);
+    harness.run_steps(2);
+
+    let toast = harness.state().inspect().unwrap().import_toast;
+    assert!(
+        toast.is_none_or(|toast| toast != REPLACE_REFUSAL),
+        "an equal-length drop is not refused for length"
+    );
+}
+
+#[test]
+fn the_replace_label_follows_the_pointer_off_the_clip() {
+    let (editor, _) = replace_fixture();
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    let on_clip = lane_point(&harness, main_track(&harness));
+    hold_asset_over(&mut harness, AssetId(2), on_clip);
+    assert!(harness.state().inspect().unwrap().replace_hint.is_some());
+
+    // Past the clip's end (8 s at 40 px/s is 320 px right of the lane start).
+    let past = egui::pos2(on_clip.x + 400.0, on_clip.y);
+    harness.hover_at(past);
+    harness.run_steps(2);
+    assert_eq!(harness.state().inspect().unwrap().replace_hint, None);
+}
+
+/// Offscreen screenshot evidence of the `Replace` label; wgpu rendering stays out of CI.
+#[test]
+#[ignore = "renders through wgpu; run with --ignored to refresh target/p350-replace-label.png"]
+fn replace_label_screenshot() {
+    let (editor, _) = replace_fixture();
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    let target = lane_point(&harness, main_track(&harness));
+    hold_asset_over(&mut harness, AssetId(2), target);
+    let image = harness.render().expect("offscreen render");
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/p350-replace-label.png");
+    image.save(path).unwrap();
 }

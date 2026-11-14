@@ -156,6 +156,17 @@ impl State {
             );
         }
         self.paint_lane_toggle(cx, ui, item, visible, ink);
+        if self.replace_hint == Some(item.id) {
+            // A Media drag over this clip: its `Replace` label sits over the clip's own fill.
+            let galley = painter.layout_no_wrap(
+                tr(cx, Text::ReplaceDropLabel).to_owned(),
+                FontId::proportional(theme::type_size::BODY),
+                text,
+            );
+            let rect = Align2::CENTER_CENTER.anchor_size(visible.center(), galley.size());
+            painter.rect_filled(rect, 0.0, fill);
+            painter.galley(rect.min, galley, text);
+        }
         if self.drag.as_ref().is_some_and(|drag| {
             drag.mode == DragMode::Move && drag.origins.iter().any(|origin| origin.item == item.id)
         }) {
