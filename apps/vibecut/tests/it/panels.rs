@@ -6693,6 +6693,66 @@ fn assert_near(actual: egui::Pos2, expected: egui::Pos2, what: &str) {
 }
 
 #[test]
+fn freeform_point_diamond_keys_the_anchor_and_a_drag_writes_a_key_at_the_playhead() {
+    let (mut harness, video) = freeform_harness();
+    let mask = mask_of(&harness, video).unwrap();
+    let stored = path_of(&harness, video);
+    let keys = |harness: &Harness<Editor>, point: usize, field: &str| -> usize {
+        item(harness, video)
+            .animations
+            .get(&mask.point_path(point, field).unwrap())
+            .and_then(|param| param.channel(None).ok())
+            .map_or(0, |channel| channel.keys().len())
+    };
+    // No diamond until an anchor is selected.
+    assert!(!has_widget(&harness, "preview.mask.point.0.keyframe"));
+    point_target(
+        &mut harness,
+        "preview.mask.point.0",
+        egui::Modifiers::default(),
+    );
+    assert!(has_widget(&harness, "preview.mask.point.0.keyframe"));
+    assert!(!has_widget(&harness, "preview.mask.point.1.keyframe"));
+
+    // The diamond keys all six fields of that anchor at the playhead in one undo step.
+    let history = harness.state().session.history_len();
+    click(&mut harness, "preview.mask.point.0.keyframe");
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    for field in project::MASK_POINT_FIELDS {
+        assert_eq!(keys(&harness, 0, field), 1, "{field} keyed");
+        assert_eq!(keys(&harness, 1, field), 0, "the other anchors stay unkeyed");
+    }
+    assert_eq!(path_of(&harness, video), stored, "keys leave the stored path");
+
+    // A drag at a later playhead writes keys for the moved fields only, and keeps the base.
+    let start = item(&harness, video).start;
+    let later = Tick(start.0 + item(&harness, video).duration().unwrap().0 / 2);
+    let snapshot = harness.state().session.project().clone();
+    harness
+        .state_mut()
+        .playback
+        .seek(later, false, snapshot)
+        .unwrap();
+    harness.run_steps(2);
+    let history = harness.state().session.history_len();
+    let from = widget_rect(&harness, "preview.mask.point.0").center();
+    pointer_drag(&mut harness, from, from + egui::vec2(14.0, -9.0));
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    assert_eq!(keys(&harness, 0, "x"), 2);
+    assert_eq!(keys(&harness, 0, "y"), 2);
+    assert_eq!(keys(&harness, 0, "in_x"), 1, "an anchor drag leaves its tangents");
+    assert_eq!(path_of(&harness, video), stored, "the stored path keeps its base");
+
+    // The diamond is open here (four fields lack a key); it adds them, then removes all six.
+    click(&mut harness, "preview.mask.point.0.keyframe");
+    assert_eq!(keys(&harness, 0, "in_x"), 2);
+    click(&mut harness, "preview.mask.point.0.keyframe");
+    for field in project::MASK_POINT_FIELDS {
+        assert_eq!(keys(&harness, 0, field), 1, "{field} loses the key at this time");
+    }
+}
+
+#[test]
 fn whole_mask_gizmo_moves_resizes_and_rotates_one_undo_step_per_drag() {
     let (mut harness, video) = freeform_harness();
     harness.state_mut().preferences.snapping = false;

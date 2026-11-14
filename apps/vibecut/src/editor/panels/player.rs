@@ -22,6 +22,14 @@ pub(crate) use state::{KeyPick, MatteBrush, State};
 pub use state::{PreviewAxis, PreviewGuide, TextCaret};
 pub(in crate::editor) use workflow::format_timecode;
 
+/// One anchor field a path drag writes through its animation channel: a key at `at`,
+/// or the channel's base value when `at` is `None`.
+pub(crate) struct PointEdit {
+    pub path: project::AnimationPath,
+    pub value: f64,
+    pub at: Option<time::Tick>,
+}
+
 /// Requests are applied by the frame after rendering releases its read borrow.
 pub(crate) enum Action {
     Command(String),
@@ -80,11 +88,19 @@ pub(crate) enum Action {
         points: Vec<usize>,
         toggle: bool,
     },
-    /// Stage one absolute mask path candidate from a handle drag.
+    /// Stage one absolute mask path candidate from a handle drag: the stored path for
+    /// unanimated fields, and one write per moved animated field.
     MaskPathPreview {
         item: ItemId,
         mask: String,
         path: project::MaskPath,
+        edits: Vec<PointEdit>,
+    },
+    /// Toggle keys on the listed anchor fields at the item-relative `time`, one undo step.
+    MaskPointKey {
+        item: ItemId,
+        fields: Vec<(project::AnimationPath, f64)>,
+        time: time::Tick,
     },
     /// Stage one absolute whole-mask candidate (centre, scale or rotation) from a gizmo drag.
     MaskBoxPreview {

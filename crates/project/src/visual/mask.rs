@@ -53,6 +53,24 @@ pub struct MaskVertex {
     pub t_in: [f64; 2],
     pub t_out: [f64; 2],
 }
+impl MaskVertex {
+    /// One scalar of this anchor by its [`MASK_POINT_FIELDS`] name.
+    pub fn field_mut(&mut self, name: &str) -> Option<&mut f64> {
+        Some(match name {
+            "x" => &mut self.p[0],
+            "y" => &mut self.p[1],
+            "in_x" => &mut self.t_in[0],
+            "in_y" => &mut self.t_in[1],
+            "out_x" => &mut self.t_out[0],
+            "out_y" => &mut self.t_out[1],
+            _ => return None,
+        })
+    }
+    /// The value [`Self::field_mut`] names.
+    pub fn field(&self, name: &str) -> Option<f64> {
+        self.clone().field_mut(name).map(|slot| *slot)
+    }
+}
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MaskPath {
@@ -380,6 +398,89 @@ impl Mask {
         }
         Ok(())
     }
+    /// Split one segment of this `Path` mask at `t` and carry the anchor channels
+    /// with it. Later anchors' channels move up one index; the neighbours'
+    /// tangent keys on the split segment scale by `t` (outgoing of the first
+    /// anchor) and `1 - t` (incoming of the second), exactly as the stored
+    /// tangents do; and when any channel of the segment is keyed, the new anchor
+    /// is keyed on all six fields at every such key time with the split curve's
+    /// values. The curve of the segment is then unchanged at every key time.
+    pub fn split_point(
+        &mut self,
+        animations: &mut crate::Animations,
+        segment: usize,
+        t: f64,
+    ) -> Result<()> {
+        let MaskShape::Path { path } = &self.shape else {
+            return Err(Error::Invalid("mask is not a path"));
+        };
+        let next = path.split(segment, t)?;
+        let count = path.vertices.len();
+        let second = (segment + 1) % count;
+        let mut times = Vec::new();
+        for (index, fields) in [
+            (segment, ["x", "y", "out_x", "out_y"]),
+            (second, ["x", "y", "in_x", "in_y"]),
+        ] {
+            for field in fields {
+                if let Some(param) = animations.get(&self.point_path(index, field)?) {
+                    times.extend(param.channel(None)?.keys().iter().map(|key| key.time));
+                }
+            }
+        }
+        times.sort_unstable();
+        times.dedup();
+        let mut keyed = Vec::with_capacity(times.len());
+        for time in times {
+            let MaskShape::Path { path: at } = self.at(animations, time)?.shape else {
+                return Err(Error::Invalid("mask is not a path"));
+            };
+            let vertex = at
+                .split(segment, t)?
+                .vertices
+                .get(segment + 1)
+                .cloned()
+                .ok_or(Error::Invalid("mask path split"))?;
+            keyed.push((time, vertex));
+        }
+        let created = next
+            .vertices
+            .get(segment + 1)
+            .cloned()
+            .ok_or(Error::Invalid("mask path split"))?;
+        self.shape = MaskShape::Path { path: next };
+        self.remap_points(animations, |i| Some(if i > segment { i + 1 } else { i }))?;
+        let second = if second == 0 { 0 } else { segment + 2 };
+        for (index, fields, factor) in [
+            (segment, ["out_x", "out_y"], t),
+            (second, ["in_x", "in_y"], 1.0 - t),
+        ] {
+            for field in fields {
+                let channel = self.point_path(index, field)?;
+                if animations.get(&channel).is_some() {
+                    animations
+                        .get_mut(&channel)?
+                        .channel_mut(None)?
+                        .scale_values(factor)?;
+                }
+            }
+        }
+        if !keyed.is_empty() {
+            let missing = || Error::Invalid("mask point channel");
+            for field in MASK_POINT_FIELDS {
+                let base = created.field(field).ok_or_else(missing)?;
+                let mut param = crate::Param::new(crate::ParamValue::Scalar(base))?;
+                for (time, vertex) in &keyed {
+                    let value = vertex.field(field).ok_or_else(missing)?;
+                    param
+                        .channel_mut(None)?
+                        .put(crate::Keyframe::new(*time, crate::ParamValue::Scalar(value)))?;
+                }
+                animations.set(self.point_path(segment + 1, field)?, param)?;
+            }
+        }
+        Ok(())
+    }
     /// Override path anchors from their channels at `local`; overshoot clamps to
     /// the stored vertex bound.
     fn points_at(&mut self, animations: &crate::Animations, local: time::Tick) -> Result<()> {
@@ -397,15 +498,9 @@ impl Mask {
                 .vertices
                 .get_mut(index)
                 .ok_or(Error::Invalid("mask point channel"))?;
-            let slot = match field {
-                "x" => &mut vertex.p[0],
-                "y" => &mut vertex.p[1],
-                "in_x" => &mut vertex.t_in[0],
-                "in_y" => &mut vertex.t_in[1],
-                "out_x" => &mut vertex.t_out[0],
-                "out_y" => &mut vertex.t_out[1],
-                _ => return Err(Error::Invalid("mask point channel")),
-            };
+            let slot = vertex
+                .field_mut(field)
+                .ok_or(Error::Invalid("mask point channel"))?;
             *slot = value.clamp(-100., 100.);
         }
         Ok(())

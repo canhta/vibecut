@@ -193,6 +193,66 @@ pub(crate) struct KeyframeControl<'a> {
     pub has_next: bool,
 }
 
+/// The measured 11 px keyframe diamond centred in `area`: filled when keyed and
+/// usable, otherwise an outline in the text or disabled ink.
+fn paint_keyframe_glyph(ui: &Ui, area: Rect, keyed: bool, enabled: bool) {
+    let dark = ui.visuals().dark_mode;
+    let center = area.center();
+    let half = size::KEYFRAME_GLYPH / 2.0;
+    let points = vec![
+        center - egui::vec2(half, 0.0),
+        center - egui::vec2(0.0, half),
+        center + egui::vec2(half, 0.0),
+        center + egui::vec2(0.0, half),
+    ];
+    if keyed && enabled {
+        paint(ui).add(egui::Shape::convex_polygon(
+            points,
+            theme::accent(dark),
+            Stroke::NONE,
+        ));
+    } else {
+        let ink = if enabled {
+            theme::text(dark)
+        } else {
+            theme::disabled(dark)
+        };
+        paint(ui).add(egui::Shape::closed_line(
+            points,
+            Stroke::new(space::HAIRLINE, ink),
+        ));
+    }
+}
+
+/// What a lone keyframe diamond shows: whether the playhead owns a key, whether
+/// one can be added or removed there, and the tooltip.
+pub(crate) struct KeyframeToggle<'a> {
+    pub keyed: bool,
+    pub can_toggle: bool,
+    pub label: &'a str,
+}
+
+/// One keyframe diamond cell (`KEYFRAME_TOGGLE_CELL` wide) with the cluster's glyph,
+/// hover fill, focus ring and automation ID, for places without a row to put a cluster in.
+pub(crate) fn keyframe_toggle(
+    ui: &mut Ui,
+    id: &str,
+    area: Rect,
+    toggle: KeyframeToggle<'_>,
+) -> Response {
+    let response = keyframe_cell(ui, id, area, toggle.can_toggle);
+    paint_keyframe_glyph(ui, area, toggle.keyed, toggle.can_toggle);
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(
+            egui::Role::Button,
+            toggle.can_toggle,
+            toggle.keyed,
+            toggle.label,
+        )
+    });
+    response.on_hover_text(toggle.label)
+}
+
 /// One hit cell of the keyframe cluster: hover fill, automation ID and focus ring.
 fn keyframe_cell(ui: &mut Ui, id: &str, area: Rect, enabled: bool) -> Response {
     let cell = ui.make_persistent_id(id);
@@ -269,26 +329,7 @@ pub(crate) fn keyframe_cluster(
             Stroke::new(space::HAIRLINE, ink(enabled)),
         ));
     }
-    let center = toggle_area.center();
-    let half = size::KEYFRAME_GLYPH / 2.0;
-    let points = vec![
-        center - egui::vec2(half, 0.0),
-        center - egui::vec2(0.0, half),
-        center + egui::vec2(half, 0.0),
-        center + egui::vec2(0.0, half),
-    ];
-    if control.keyed && control.can_toggle {
-        paint(ui).add(egui::Shape::convex_polygon(
-            points,
-            theme::accent(dark),
-            Stroke::NONE,
-        ));
-    } else {
-        paint(ui).add(egui::Shape::closed_line(
-            points,
-            Stroke::new(space::HAIRLINE, ink(control.can_toggle)),
-        ));
-    }
+    paint_keyframe_glyph(ui, toggle_area, control.keyed, control.can_toggle);
     for (response, enabled, label, selected) in [
         (
             &previous,

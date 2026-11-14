@@ -762,7 +762,9 @@ fn freeform_anchor_keys_follow_point_edits_through_history_and_save() {
         t: 0.5,
     })
     .unwrap();
-    assert!(!has_channel(&s, &anchor(1, "x")));
+    // The new anchor is keyed at the split segment's key times; the keyed neighbour
+    // moved up with its keys.
+    assert_eq!(mask_keys(&s, &anchor(1, "x")), [0, 30]);
     assert_eq!(mask_keys(&s, &anchor(2, "x")), [0, 30]);
     assert_eq!(mask_keys(&s, &anchor(4, "out_y")), [0]);
     assert_eq!(mask_keys(&s, &mask.path("feather").unwrap()), [0]);
@@ -842,4 +844,131 @@ fn freeform_anchor_keys_follow_point_edits_through_history_and_save() {
     .unwrap();
     assert!(!has_channel(&s, &anchor(2, "x")));
     assert!(!has_channel(&s, &mask.path("feather").unwrap()));
+}
+
+fn evaluated(s: &Session, id: &str, time: i64) -> MaskPath {
+    let item = s
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| track.items.iter())
+        .find(|candidate| candidate.id == ItemId(2))
+        .unwrap();
+    let mask = item.masks.iter().find(|mask| mask.id == id).unwrap();
+    match mask.at(&item.animations, Tick(time)).unwrap().shape {
+        MaskShape::Path { path } => path,
+        other => panic!("{other:?}"),
+    }
+}
+
+fn cubic(a: &MaskVertex, b: &MaskVertex, u: f64) -> [f64; 2] {
+    let at = |axis: usize| {
+        let p = [
+            a.p[axis],
+            a.p[axis] + a.t_out[axis],
+            b.p[axis] + b.t_in[axis],
+            b.p[axis],
+        ];
+        let v = 1.0 - u;
+        v * v * v * p[0] + 3.0 * v * v * u * p[1] + 3.0 * v * u * u * p[2] + u * u * u * p[3]
+    };
+    [at(0), at(1)]
+}
+
+#[test]
+fn splitting_an_animated_segment_keeps_its_curve_at_every_key_time() {
+    let mut s = session();
+    let mask = Mask::new(
+        "p",
+        MaskShape::Path {
+            path: MaskPath::ellipse(),
+        },
+    );
+    s.apply(Command::AddMask {
+        item: ItemId(2),
+        mask: mask.clone(),
+    })
+    .unwrap();
+    let key = |index: usize, field: &str, time: i64, value: f64| Command::ToggleKeyframe {
+        item: ItemId(2),
+        path: mask.point_path(index, field).unwrap(),
+        component: None,
+        time: Tick(time),
+        value: ParamValue::Scalar(value),
+    };
+    for command in [
+        key(0, "out_x", 0, 0.1),
+        key(0, "out_x", 30, 0.3),
+        key(1, "in_y", 15, -0.25),
+        key(1, "x", 30, 0.9),
+        key(2, "out_x", 0, 0.5),
+    ] {
+        s.apply(command).unwrap();
+    }
+    let before: Vec<_> = [0, 15, 30]
+        .into_iter()
+        .map(|time| evaluated(&s, "p", time))
+        .collect();
+    let keyed = s.project().clone();
+    let t = 0.25;
+    s.apply(Command::AddMaskPoint {
+        item: ItemId(2),
+        mask: "p".into(),
+        segment: 0,
+        t,
+    })
+    .unwrap();
+
+    // The first anchor's outgoing keys scale by t; the second anchor's incoming key moves
+    // with its anchor and scales by 1 - t; the new anchor is keyed at every key time.
+    let value = |index: usize, field: &str, time: i64| -> f64 {
+        let item = s
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .overlays
+            .first()
+            .unwrap()
+            .items
+            .first()
+            .unwrap();
+        match item
+            .animations
+            .value_at(&mask.point_path(index, field).unwrap(), Tick(time))
+            .unwrap()
+        {
+            Some(ParamValue::Scalar(v)) => v,
+            other => panic!("{other:?}"),
+        }
+    };
+    assert!((value(0, "out_x", 0) - 0.025).abs() < 1e-12);
+    assert!((value(0, "out_x", 30) - 0.075).abs() < 1e-12);
+    assert!((value(2, "in_y", 15) - 0.75 * -0.25).abs() < 1e-12);
+    assert_eq!(
+        mask_keys(&s, &mask.point_path(1, "x").unwrap()),
+        [0, 15, 30]
+    );
+    assert_eq!(mask_keys(&s, &mask.point_path(3, "out_x").unwrap()), [0]);
+
+    // At every key time the two new sub-curves trace the original segment.
+    for (time, old) in [0, 15, 30].into_iter().zip(&before) {
+        let new = evaluated(&s, "p", time);
+        let (a, q, b) = (&old.vertices[0], &old.vertices[1], &new.vertices);
+        for step in 0..=8 {
+            let u = f64::from(step) / 8.0;
+            let whole = cubic(a, q, u * t);
+            let first = cubic(&b[0], &b[1], u);
+            assert!((whole[0] - first[0]).abs() < 1e-9 && (whole[1] - first[1]).abs() < 1e-9);
+            let whole = cubic(a, q, t + u * (1.0 - t));
+            let second = cubic(&b[1], &b[2], u);
+            assert!((whole[0] - second[0]).abs() < 1e-9 && (whole[1] - second[1]).abs() < 1e-9);
+        }
+    }
+
+    // One undo step restores the keys and channels.
+    s.apply(Command::Undo {}).unwrap();
+    assert_eq!(s.project(), &keyed);
 }

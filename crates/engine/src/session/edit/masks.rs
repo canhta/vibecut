@@ -107,14 +107,7 @@ pub(super) fn execute_add_mask_point(
         .iter_mut()
         .find(|m| m.id == mask_id)
         .ok_or(EditError::Invalid("missing mask"))?;
-    let project::MaskShape::Path { path } = &mask.shape else {
-        return Err(EditError::Invalid("mask is not a path"));
-    };
-    let next = path.split(segment, t)?;
-    mask.shape = project::MaskShape::Path { path: next };
-    mask.remap_points(&mut target.animations, |i| {
-        Some(if i > segment { i + 1 } else { i })
-    })?;
+    mask.split_point(&mut target.animations, segment, t)?;
 
     Ok(data)
 }

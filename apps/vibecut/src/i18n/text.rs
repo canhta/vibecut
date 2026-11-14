@@ -1124,6 +1124,7 @@ catalog! {
     LoudnessTruePeak { key: "loudness_true_peak", en: "True peak", vi: "Đỉnh thực" },
     LoudnessUnmeasured { key: "loudness_unmeasured", en: "Apply to measure the gain.", vi: "Áp dụng để đo độ tăng ích." },
     MaskPoints { key: "mask_points", en: "Mask points selected", vi: "Đã chọn điểm mặt nạ" },
+    MaskPointLane { key: "mask_point_lane", en: "Mask {mask} · point {point} {field}", vi: "Mặt nạ {mask} · điểm {point} {field}" },
     Metadata { key: "metadata", en: "Info", vi: "Thông tin" },
     ModifiedDate { key: "modified_date", en: "Modified {date}", vi: "Đã sửa {date}" },
     NoSharedFields { key: "no_shared_fields", en: "Nothing in common to edit", vi: "Không có gì chung để sửa" },

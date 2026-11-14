@@ -10,8 +10,9 @@ use crate::{
     egui::{self, CursorIcon, Pos2, Sense, Vec2},
     kit,
 };
-use project::{ItemId, MaskPath, MaskShape};
+use project::{ItemId, MASK_POINT_FIELDS, MaskPath, MaskShape};
 use render::viewport::{MaskGeometry, Viewport};
+use std::collections::BTreeSet;
 use time::Tick;
 
 /// A segment click within this many logical pixels inserts one point.
@@ -24,6 +25,9 @@ const SAMPLES: usize = 64;
 /// and 8 refinements, and the finer search here gives the same parameter within the
 /// pointer's pixel.
 const SPLIT_T: (f64, f64) = (0.001, 0.999);
+/// Where a selected anchor's keyframe diamond sits relative to the anchor, in logical
+/// pixels: up and to the right of it.
+const DIAMOND_OFFSET: Vec2 = Vec2::new(14.0, -14.0);
 /// Pointer travel before a press on empty canvas becomes a marquee; the same
 /// threshold as the media marquee.
 const MARQUEE_MOVE: f64 = 4.0;
@@ -53,11 +57,85 @@ struct Marquee {
     moved: bool,
 }
 
+/// One anchor field with an animation channel: `keyed` when the channel holds keys,
+/// otherwise it only carries a base value.
+#[derive(Clone, Copy)]
+struct Animated {
+    index: usize,
+    field: &'static str,
+    keyed: bool,
+}
+
 struct Target {
     item: ItemId,
     mask: String,
+    /// The mask as stored; anchor channels are named through it.
+    owner: project::Mask,
+    /// The path evaluated at the playhead: what is drawn, hit and dragged.
     path: MaskPath,
+    /// The stored path, which unanimated fields edit.
+    stored: MaskPath,
+    animated: Vec<Animated>,
+    /// Anchor fields that own a key exactly at the playhead.
+    keys_here: BTreeSet<(usize, &'static str)>,
+    /// The playhead relative to the item's start, and whether it lies inside the item.
+    time: Tick,
+    inside: bool,
     geometry: MaskGeometry,
+}
+
+impl Target {
+    /// Whether all six fields of anchor `index` own a key at the playhead.
+    fn keyed(&self, index: usize) -> bool {
+        MASK_POINT_FIELDS
+            .iter()
+            .all(|field| self.keys_here.contains(&(index, *field)))
+    }
+}
+
+/// The animated fields of mask `id`'s anchors, and those keyed exactly at `time`.
+fn channels(
+    animations: &project::Animations,
+    id: &str,
+    time: Tick,
+) -> (Vec<Animated>, BTreeSet<(usize, &'static str)>) {
+    let prefix = format!("masks.{id}.path.");
+    let mut animated = Vec::new();
+    let mut keys_here = BTreeSet::new();
+    for (path, param) in animations.iter() {
+        let Some((index, field)) = path
+            .as_str()
+            .strip_prefix(&prefix)
+            .and_then(|rest| rest.split_once('.'))
+            .and_then(|(index, field)| {
+                Some((
+                    index.parse::<usize>().ok()?,
+                    MASK_POINT_FIELDS
+                        .iter()
+                        .copied()
+                        .find(|name| *name == field)?,
+                ))
+            })
+        else {
+            continue;
+        };
+        let Ok(channel) = param.channel(None) else {
+            continue;
+        };
+        animated.push(Animated {
+            index,
+            field,
+            keyed: !channel.keys().is_empty(),
+        });
+        if channel
+            .keys()
+            .binary_search_by_key(&time, |key| key.time)
+            .is_ok()
+        {
+            keys_here.insert((index, field));
+        }
+    }
+    (animated, keys_here)
 }
 
 #[derive(Clone, Copy)]
@@ -69,7 +147,13 @@ enum Kind {
 struct Drag {
     item: ItemId,
     mask: String,
+    owner: project::Mask,
+    /// The evaluated path at the press; every candidate is absolute from it.
     start: MaskPath,
+    stored: MaskPath,
+    animated: Vec<Animated>,
+    time: Tick,
+    inside: bool,
     origin: [f64; 2],
     kind: Kind,
     /// Point indices moved together, captured at the press.
@@ -77,8 +161,27 @@ struct Drag {
     last: Option<MaskPath>,
 }
 
+impl Drag {
+    fn new(target: &Target, origin: [f64; 2], kind: Kind, points: Vec<usize>) -> Self {
+        Self {
+            item: target.item,
+            mask: target.mask.clone(),
+            owner: target.owner.clone(),
+            start: target.path.clone(),
+            stored: target.stored.clone(),
+            animated: target.animated.clone(),
+            time: target.time,
+            inside: target.inside,
+            origin,
+            kind,
+            points,
+            last: None,
+        }
+    }
+}
+
 /// The closed path mask the player can edit: the single selected item's first
-/// active path mask with at least three anchors.
+/// active path mask with at least three anchors, evaluated at the playhead.
 fn target(
     project: &project::Project,
     renderer: &render::Renderer<'_>,
@@ -96,16 +199,27 @@ fn target(
         .masks
         .iter()
         .find(|mask| mask.active() && matches!(mask.shape, MaskShape::Path { .. }))?;
-    let MaskShape::Path { path } = &mask.shape else {
+    let MaskShape::Path { path: stored } = &mask.shape else {
         return None;
     };
-    if !path.closed || path.vertices.len() < 3 {
+    if !stored.closed || stored.vertices.len() < 3 {
         return None;
     }
+    let time = at.checked_sub(source.start)?;
+    let MaskShape::Path { path } = mask.at(&source.animations, time).ok()?.shape else {
+        return None;
+    };
+    let (animated, keys_here) = channels(&source.animations, &mask.id, time);
     Some(Target {
         item,
         mask: mask.id.clone(),
-        path: path.clone(),
+        owner: mask.clone(),
+        path,
+        stored: stored.clone(),
+        animated,
+        keys_here,
+        time,
+        inside: time >= Tick::ZERO && source.duration().is_ok_and(|length| time < length),
         geometry: renderer.mask_geometry(item, &mask.id, at).ok().flatten()?,
     })
 }
@@ -162,14 +276,16 @@ pub(super) fn show(
                 && let Ok(local) = target
                     .geometry
                     .inverse(viewport, [f64::from(pointer.x), f64::from(pointer.y)])
-                && let Some(path) = moved(&drag, local)
-                && drag.last.as_ref() != Some(&path)
+                && let Some(candidate) = moved(&drag, local)
+                && drag.last.as_ref() != Some(&candidate)
             {
-                drag.last = Some(path.clone());
+                let (path, edits) = stage(&drag, &candidate);
+                drag.last = Some(candidate);
                 actions.push(Action::MaskPathPreview {
                     item: drag.item,
                     mask: drag.mask.clone(),
                     path,
+                    edits,
                 });
             }
             state.drag = Some(drag);
@@ -212,9 +328,14 @@ pub(super) fn show(
     }
 
     paint(ui, &target, viewport, &selected, cx.dark, None);
+    let diamonds = key_diamonds(ui, cx, &target, viewport, &selected, actions);
     let Some(pointer) = pointer else {
         return false;
     };
+    // A press on a keyframe diamond belongs to the diamond, not the canvas beneath it.
+    if diamonds.iter().any(|cell| cell.contains(pointer)) {
+        return false;
+    }
     if !pressed || !(canvas.is_pointer_button_down_on() || frame.contains(pointer)) {
         return false;
     }
@@ -254,15 +375,12 @@ pub(super) fn show(
                     });
                 }
                 if let Ok(origin) = target.geometry.inverse(viewport, screen) {
-                    state.drag = Some(Drag {
-                        item: target.item,
-                        mask: target.mask.clone(),
-                        start: target.path.clone(),
+                    state.drag = Some(Drag::new(
+                        &target,
                         origin,
-                        kind: Kind::Tangent { point, out },
-                        points: Vec::new(),
-                        last: None,
-                    });
+                        Kind::Tangent { point, out },
+                        Vec::new(),
+                    ));
                 }
             }
             Kind::Points => {
@@ -282,15 +400,7 @@ pub(super) fn show(
                         vec![index]
                     };
                     if let Ok(origin) = target.geometry.inverse(viewport, screen) {
-                        state.drag = Some(Drag {
-                            item: target.item,
-                            mask: target.mask.clone(),
-                            start: target.path.clone(),
-                            origin,
-                            kind: Kind::Points,
-                            points,
-                            last: None,
-                        });
+                        state.drag = Some(Drag::new(&target, origin, Kind::Points, points));
                     }
                 }
             }
@@ -445,6 +555,119 @@ fn moved(drag: &Drag, local: [f64; 2]) -> Option<MaskPath> {
         }
     }
     Some(path)
+}
+
+/// Split an evaluated drag candidate into what each moved field writes: unanimated
+/// fields edit the stored path, a field with keys writes a key at the playhead (only
+/// while the playhead is inside the item), and a field with just a base value sets it.
+fn stage(drag: &Drag, candidate: &MaskPath) -> (MaskPath, Vec<super::PointEdit>) {
+    let mut stored = drag.stored.clone();
+    let mut edits = Vec::new();
+    for (index, (from, to)) in drag
+        .start
+        .vertices
+        .iter()
+        .zip(&candidate.vertices)
+        .enumerate()
+    {
+        for field in MASK_POINT_FIELDS {
+            let (Some(old), Some(new)) = (from.field(field), to.field(field)) else {
+                continue;
+            };
+            if old == new {
+                continue;
+            }
+            let animated = drag
+                .animated
+                .iter()
+                .find(|channel| channel.index == index && channel.field == *field);
+            match animated {
+                Some(Animated { keyed: true, .. }) if !drag.inside => {}
+                Some(channel) => {
+                    if let Ok(path) = drag.owner.point_path(index, field) {
+                        edits.push(super::PointEdit {
+                            path,
+                            value: new,
+                            at: channel.keyed.then_some(drag.time),
+                        });
+                    }
+                }
+                None => {
+                    if let Some(slot) = stored
+                        .vertices
+                        .get_mut(index)
+                        .and_then(|vertex| vertex.field_mut(field))
+                    {
+                        *slot = new;
+                    }
+                }
+            }
+        }
+    }
+    (stored, edits)
+}
+
+/// One keyframe diamond beside each selected anchor: it keys all six fields of the
+/// anchor at the playhead, or removes those keys when every field has one. Returns
+/// the cells so a press on one is not read as a canvas press. Placement is ours,
+/// unmeasured; the glyph is the measured row-end diamond.
+fn key_diamonds(
+    ui: &mut egui::Ui,
+    cx: &Context<'_>,
+    target: &Target,
+    viewport: &Viewport,
+    selected: &impl Fn(usize) -> bool,
+    actions: &mut Vec<Action>,
+) -> Vec<egui::Rect> {
+    let mut cells = Vec::new();
+    for (index, vertex) in target.path.vertices.iter().enumerate() {
+        if !selected(index) {
+            continue;
+        }
+        let Ok([x, y]) = target.geometry.point(viewport, vertex.p) else {
+            continue;
+        };
+        let cell = egui::Rect::from_center_size(
+            egui::pos2(x as f32, y as f32) + DIAMOND_OFFSET,
+            Vec2::splat(kit::size::KEYFRAME_TOGGLE_CELL),
+        );
+        let keyed = target.keyed(index);
+        let label = crate::i18n::text(
+            cx.locale,
+            if keyed {
+                crate::i18n::Text::RemoveKeyframe
+            } else {
+                crate::i18n::Text::AddKeyframe
+            },
+        );
+        let response = kit::keyframe_toggle(
+            ui,
+            &format!("preview.mask.point.{index}.keyframe"),
+            cell,
+            kit::KeyframeToggle {
+                keyed,
+                can_toggle: target.inside,
+                label,
+            },
+        );
+        cells.push(cell);
+        if target.inside && response.clicked() {
+            // Adding keys only the fields without one here; removing drops all six.
+            let fields = MASK_POINT_FIELDS
+                .iter()
+                .filter(|field| keyed || !target.keys_here.contains(&(index, **field)))
+                .filter_map(|field| {
+                    Some((target.owner.point_path(index, field).ok()?, vertex.field(field)?))
+                })
+                .collect();
+            actions.push(Action::MaskPointKey {
+                item: target.item,
+                fields,
+                time: target.time,
+            });
+        }
+    }
+    cells
 }
 
 fn clamp(value: f64) -> f64 {

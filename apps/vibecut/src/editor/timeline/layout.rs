@@ -163,7 +163,7 @@ fn channels(item: &project::Item, kind: TrackKind, locale: Locale) -> Vec<Channe
             lanes.push(ChannelLane {
                 path: path.clone(),
                 component,
-                label: lane_label(path.as_str(), locale).to_owned(),
+                label: lane_label(path.as_str(), locale),
             });
         }
     }
@@ -197,10 +197,23 @@ fn component_of(param: &project::Param, index: usize) -> Option<project::ColorCo
         }
     })
 }
-/// Creator-facing lane labels; extension paths fall back to their last segment.
-fn lane_label(path: &str, locale: Locale) -> &str {
+/// Creator-facing lane labels; extension paths fall back to their last segment, and a
+/// freeform mask anchor channel reads "Mask <name> · point <n> <field>" with `n` counted
+/// from one.
+fn lane_label(path: &str, locale: Locale) -> String {
     use project::BuiltinPath as P;
-    match P::parse(path) {
+    if let Some((mask, point, field)) = mask_point_channel(path) {
+        return i18n::format(
+            locale,
+            Text::MaskPointLane,
+            &[
+                ("mask", mask),
+                ("point", &(point + 1).to_string()),
+                ("field", field),
+            ],
+        );
+    }
+    let label = match P::parse(path) {
         Some(P::TransformPositionX) => i18n::text(locale, Text::PositionX),
         Some(P::TransformPositionY) => i18n::text(locale, Text::PositionY),
         Some(P::TransformScaleX) => i18n::text(locale, Text::ScaleX),
@@ -210,7 +223,14 @@ fn lane_label(path: &str, locale: Locale) -> &str {
         Some(P::Blur) => i18n::text(locale, Text::EffectBlur),
         Some(P::Volume) => i18n::text(locale, Text::AudioGain),
         _ => path.rsplit('.').next().unwrap_or(path),
-    }
+    };
+    label.to_owned()
+}
+/// The mask id, anchor index and field of a `masks.<id>.path.<n>.<field>` channel.
+fn mask_point_channel(path: &str) -> Option<(&str, usize, &str)> {
+    let (mask, rest) = path.strip_prefix("masks.")?.split_once(".path.")?;
+    let (point, field) = rest.split_once('.')?;
+    Some((mask, point.parse().ok()?, field))
 }
 
 use crate::editor::timeline::{
@@ -383,5 +403,35 @@ impl State {
             duration,
             bookmarks,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_mask_anchor_lane_names_the_mask_the_point_from_one_and_the_field() {
+        assert_eq!(
+            lane_label("masks.mask1.path.0.x", Locale::En),
+            "Mask mask1 · point 1 x"
+        );
+        assert_eq!(
+            lane_label("masks.m2.path.3.out_y", Locale::En),
+            "Mask m2 · point 4 out_y"
+        );
+        assert_eq!(
+            lane_label("masks.mask1.path.0.x", Locale::Vi),
+            "Mặt nạ mask1 · điểm 1 x"
+        );
+        // Other channels keep their names.
+        assert_eq!(
+            lane_label("masks.mask1.params.feather", Locale::En),
+            "feather"
+        );
+        assert_eq!(
+            lane_label("opacity", Locale::En),
+            i18n::text(Locale::En, Text::Opacity)
+        );
     }
 }

@@ -341,13 +341,57 @@ impl Editor {
         item: ItemId,
         mask: &str,
         path: &project::MaskPath,
+        edits: &[crate::editor::panels::player::PointEdit],
     ) {
-        let commands = vec![Command::SetMaskPath {
+        let mut commands = vec![Command::SetMaskPath {
             item,
             mask: mask.to_owned(),
             path: path.clone(),
         }];
+        for edit in edits {
+            let value = project::ParamValue::Scalar(edit.value);
+            commands.push(match edit.at {
+                Some(time) => Command::AddKeyframe {
+                    item,
+                    path: edit.path.clone(),
+                    component: None,
+                    key: project::Keyframe::new(time, value),
+                },
+                None => {
+                    let Ok(param) = project::Param::new(value) else {
+                        continue;
+                    };
+                    Command::SetAnimatedParam {
+                        item,
+                        path: edit.path.clone(),
+                        param,
+                    }
+                }
+            });
+        }
         self.preview_command(Command::TimelinePreview { commands });
+    }
+    /// Toggle the given anchor-field keys at an item-relative time as one undo step.
+    pub(in crate::editor) fn toggle_mask_point_keys(
+        &mut self,
+        item: ItemId,
+        fields: &[(project::AnimationPath, f64)],
+        time: Tick,
+    ) {
+        if fields.is_empty() {
+            return;
+        }
+        let commands = fields
+            .iter()
+            .map(|(path, value)| Command::ToggleKeyframe {
+                item,
+                path: path.clone(),
+                component: None,
+                time,
+                value: project::ParamValue::Scalar(*value),
+            })
+            .collect();
+        let _ = self.apply_result(Command::Batch { commands });
     }
     /// Stage one absolute whole-mask candidate from a gizmo gesture origin.
     pub(in crate::editor) fn preview_mask_box(&mut self, item: ItemId, mask: project::Mask) {

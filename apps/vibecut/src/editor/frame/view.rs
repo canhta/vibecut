@@ -413,8 +413,14 @@ impl Editor {
                     points,
                     toggle,
                 } => self.select_mask_points(item, &mask, &points, toggle),
-                Action::MaskPathPreview { item, mask, path } => {
-                    self.preview_mask_path(item, &mask, &path)
+                Action::MaskPathPreview {
+                    item,
+                    mask,
+                    path,
+                    edits,
+                } => self.preview_mask_path(item, &mask, &path, &edits),
+                Action::MaskPointKey { item, fields, time } => {
+                    self.toggle_mask_point_keys(item, &fields, time)
                 }
                 Action::MaskBoxPreview { item, mask } => self.preview_mask_box(item, mask),
                 Action::MaskPathEnd { commit } => self.end_preview_transform(commit),

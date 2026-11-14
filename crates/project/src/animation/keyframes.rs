@@ -192,6 +192,28 @@ impl Channel {
         *self = next;
         Ok(())
     }
+    /// Multiply the base, every key value and every handle height of a scalar
+    /// channel by `factor`, keeping times, segments and extrapolation.
+    pub fn scale_values(&mut self, factor: f64) -> Result<()> {
+        let mut next = self.clone();
+        let scaled = |value: &mut ParamValue| match value {
+            ParamValue::Scalar(v) => {
+                *v *= factor;
+                Ok(())
+            }
+            _ => Err(Error::Invalid("scalar channel required")),
+        };
+        scaled(&mut next.value)?;
+        for key in &mut next.keys {
+            scaled(&mut key.value)?;
+            for handle in [&mut key.incoming, &mut key.outgoing].into_iter().flatten() {
+                handle.dv *= factor;
+            }
+        }
+        next.validate()?;
+        *self = next;
+        Ok(())
+    }
     /// Returns exact stored endpoint values; scalar interior handles use segment-relative f64 math.
     pub fn value_at(&self, time: Tick) -> ParamValue {
         let Some(first) = self.keys.first() else {
