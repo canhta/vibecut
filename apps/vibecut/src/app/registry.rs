@@ -48,18 +48,10 @@ pub struct Workspace {
     /// Workers ask the event loop to repaint through this; nothing else polls while idle.
     wake: wake::Wake,
     wake_attached: bool,
-    /// Home is owed follow-up wakes until this instant after a project window closed. The OS shows Home only once
-    /// the window is gone, and a pass that ran while Home was covered painted nothing, so
-    /// the relist that landed meanwhile needs a pass after the reveal.
-    home_reveal: Option<std::time::Instant>,
     /// The native menu bar.
     #[cfg(target_os = "macos")]
     pub(super) menu: super::native_menu::Menu,
 }
-
-/// How long Home keeps getting follow-up wakes after a project window closes, and how far apart.
-const HOME_REVEAL: Duration = Duration::from_millis(600);
-const HOME_REVEAL_GAP: Duration = Duration::from_millis(150);
 
 impl Workspace {
     pub fn new(root: PathBuf, preferences: Preferences, path: Option<PathBuf>) -> Result<Self> {
@@ -123,7 +115,6 @@ impl Workspace {
             agent_prompts: BTreeMap::new(),
             wake,
             wake_attached: false,
-            home_reveal: None,
             #[cfg(target_os = "macos")]
             menu: Default::default(),
         })
@@ -361,14 +352,6 @@ impl Workspace {
             .retain(|_, w| !(w.editor.is_none() && !w.busy() && w.error.is_none()));
         if count != self.windows.len() {
             self.projects.refresh();
-            self.home_reveal = Some(std::time::Instant::now() + HOME_REVEAL);
-        }
-        if let Some(until) = self.home_reveal {
-            if std::time::Instant::now() < until {
-                wake::notify_after(HOME_REVEAL_GAP);
-            } else {
-                self.home_reveal = None;
-            }
         }
         if self
             .focused
