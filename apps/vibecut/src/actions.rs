@@ -199,6 +199,18 @@ pub enum UiAction {
     PreviewZoomIn,
     PreviewZoomOut,
     PreviewZoomPreset,
+    /// `preview.rulers`: show or hide the player's top and left rulers.
+    PreviewRulers,
+    /// `preview.guides.visible`: show or hide the guide lines.
+    GuidesVisible,
+    /// `preview.guides.lock`: lock or unlock the guide lines against dragging.
+    GuidesLock,
+    /// `preview.guides.clear`: remove every guide line.
+    GuidesClear,
+    /// `preview.guides.add_horizontal` and `preview.guides.add_vertical`.
+    GuideAdd(crate::editor::LineAxis),
+    /// `preview.guides.move`: move one guide line to a canvas position.
+    GuideMove,
     Seek,
     JumpBookmark(BookmarkDirection),
     SetPreviewZoom,
@@ -346,6 +358,7 @@ impl ActionSpec {
                     | UiAction::SubtitleCue
                     | UiAction::RevealMedia
                     | UiAction::PreviewZoomPreset
+                    | UiAction::GuideMove
                     | UiAction::Seek
                     | UiAction::SetPreviewZoom
                     | UiAction::SetPreference

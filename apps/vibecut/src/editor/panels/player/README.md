@@ -1,7 +1,7 @@
 # Editor player
 
 Interface: `State`, `show`, `Action`, `PreviewAxis`, `PreviewGuide`, `TextCaret`, `Guide`,
-`OverlayVisibility`, `crop`.
+`OverlayVisibility`, `GuideLines`, `LineAxis`, `crop`.
 
 Owns the preview panel: its chrome, transport toolbar, timecode field, zoom controls,
 transform handles, inline text and the crop dialog. Transport, preview frames and the crop
@@ -94,6 +94,10 @@ control, locked to the selected ratio (Custom resizes freely, Original keeps the
 shape) and writes it with one `timeline.set_item_param` patch on Apply, so closing never
 mutates the project. The dialog reads the session, theme and error line through the frame's
 `Port` and never names `Editor`.
+
+## Rulers and guide lines
+
+`lines` owns the `GuideLines` model (rulers on or off, lines shown or hidden, locked, and up to 16 vertical and 16 horizontal positions in whole canvas pixels from the canvas centre, x to the right, y upward), the ruler tick maths, painting and the guide drag. The rulers are 16 px strips over the top and left edges of the stage; ticks are ten per labelled step, and the step is the smallest 1, 2 or 5 times a power of ten that keeps labels 64 px apart. Guide lines are 1 px accent lines over the displayed frame, painted and hit-tested after the transform box so a press on a line moves the line. Dragging drafts the position in `State::line_drag` (shown, not stored) and publishes one `preview.guides.move` when the drag ends. A locked guide cannot be dragged and the move command refuses. The `Guides and rulers` header submenu rows are the registered actions `preview.guides.add_horizontal`, `preview.guides.add_vertical`, `preview.guides.lock`, `preview.guides.visible`, `preview.guides.clear` and `preview.rulers`, so keys (`Cmd ;`, `Cmd Opt R`), menu and agents share one path. All of it is the `preview_lines` preference: one undoable app-history step per edit, never the project, never exported. Values and what the reference did not show are in [the editor UI doc](../../../../../../docs/product/ui/editor.md#player-rulers-and-guide-lines).
 
 ## Guides and overlays
 

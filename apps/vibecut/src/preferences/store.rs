@@ -154,6 +154,8 @@ mod tests {
         assert_eq!(Preferences::default().preview_guide, Guide::default());
         assert!(Preferences::default().preview_overlays.notes);
         assert!(!Preferences::default().preview_overlays.guide);
+        let lines = &Preferences::default().preview_lines;
+        assert!(!lines.rulers && lines.shown && !lines.locked && lines.is_empty());
         assert_eq!(Preferences::system().locale, Locale::from_system());
     }
 
@@ -262,6 +264,16 @@ mod tests {
             (
                 "preview_overlays",
                 serde_json::json!({"guide": true, "notes": false}),
+            ),
+            (
+                "preview_lines",
+                serde_json::json!({
+                    "rulers": true,
+                    "shown": false,
+                    "locked": true,
+                    "vertical": [0, -250],
+                    "horizontal": [1080]
+                }),
             ),
             (
                 "export",
@@ -473,6 +485,31 @@ mod tests {
             ),
             ("preview_guide", serde_json::json!({"kind": "spotlight"})),
             ("preview_overlays", serde_json::json!({"guide": true})),
+            (
+                "preview_lines",
+                serde_json::json!({"rulers": true, "shown": true, "locked": false, "vertical": []}),
+            ),
+            (
+                "preview_lines",
+                serde_json::json!({
+                    "rulers": true, "shown": true, "locked": false,
+                    "vertical": [100001], "horizontal": []
+                }),
+            ),
+            (
+                "preview_lines",
+                serde_json::json!({
+                    "rulers": true, "shown": true, "locked": false,
+                    "vertical": [], "horizontal": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+                }),
+            ),
+            (
+                "preview_lines",
+                serde_json::json!({
+                    "rulers": true, "shown": true, "locked": false,
+                    "vertical": [], "horizontal": [], "snap": true
+                }),
+            ),
             (
                 "preview_overlays",
                 serde_json::json!({"guide": true, "notes": true, "hud": false}),

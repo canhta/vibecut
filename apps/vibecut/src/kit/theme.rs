@@ -363,6 +363,18 @@ pub(crate) mod size {
     pub const SNAP_GUIDE: f32 = 1.0;
     pub const SNAP_GUIDE_DASH: f32 = 4.0;
     pub const SNAP_GUIDE_GAP: f32 = 3.0;
+    /// Player rulers (reference desktop 9.7.1, capture 2026-11-14 shot 100216, logical px): strip
+    /// thickness, minor and major tick heights, and the gap from a major tick to its label.
+    pub const PLAYER_RULER: f32 = 16.0;
+    pub const PLAYER_RULER_TICK: f32 = 4.0;
+    pub const PLAYER_RULER_TICK_MAJOR: f32 = 12.0;
+    pub const PLAYER_RULER_LABEL_GAP: f32 = 5.0;
+    /// Least screen distance between labelled ruler ticks. [proposed]: the capture shows one
+    /// zoom (70 px horizontal, 101 px vertical), so the adaptive rule is ours.
+    pub const PLAYER_RULER_MAJOR_MIN: f32 = 64.0;
+    /// Custom guide line stroke (capture: 1 px) and the pointer band around it. The band is [proposed].
+    pub const GUIDE_LINE: f32 = 1.0;
+    pub const GUIDE_LINE_HIT: f32 = 8.0;
     /// Inline text edit caret width and selection fill opacity. The web editor
     /// capture (2026-11-09) draws a 2 px caret and a ~38 % accent selection.
     pub const TEXT_EDIT_CARET: f32 = 2.0;

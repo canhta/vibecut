@@ -1,5 +1,6 @@
 //! Owns preview presentation state behind the player panel interface.
 pub mod crop;
+mod lines;
 mod mask_box;
 mod mask_path;
 mod matte_brush;
@@ -12,6 +13,7 @@ mod view;
 mod workflow;
 
 use crate::{editor::Context, egui};
+pub use lines::{GuideLines, LineAxis};
 pub use overlay::{Guide, OverlayVisibility};
 use project::ItemId;
 pub use snap::PREVIEW_SNAP_PIXELS;
@@ -108,6 +110,12 @@ pub(crate) enum Action {
     },
     /// A pixel of the rendered preview frame for the armed colour-popover eyedropper.
     PickScreenColour(project::Color),
+    /// A guide line dropped at a new canvas position (`preview.guides.move`).
+    MoveGuide {
+        axis: LineAxis,
+        index: usize,
+        position: i32,
+    },
     /// One preview preference edit, recorded in the app's preference history.
     SetPreference {
         key: &'static str,

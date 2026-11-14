@@ -100,6 +100,12 @@ pub(super) const SCENES: &[Scene] = &[
         build: |theme, scale| player_variant(theme, scale, "zoomed"),
     },
     Scene {
+        name: "player-guides",
+        reference_dark: Some("capcut-desktop-2026-11-14/capcut-desktop-100216.png"),
+        reference_light: None,
+        build: |theme, scale| player_variant(theme, scale, "guides"),
+    },
+    Scene {
         name: "player-vi",
         reference_dark: None,
         reference_light: None,

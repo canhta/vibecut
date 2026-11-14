@@ -264,6 +264,12 @@ pub(super) fn player_variant(
     if variant == "fullscreen" {
         editor.activate("preview.fullscreen")?;
     }
+    if variant == "guides" {
+        // The reference shot 100216: rulers on, one horizontal and one vertical guide.
+        editor.activate("preview.rulers")?;
+        editor.activate("preview.guides.add_horizontal")?;
+        editor.activate("preview.guides.add_vertical")?;
+    }
     let app_root = if variant == "fullscreen" {
         App::Editor(Box::new(editor))
     } else {

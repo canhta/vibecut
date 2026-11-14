@@ -29,6 +29,13 @@ pub enum AppCommand {
         id: String,
         favorite: bool,
     },
+    /// `preview.guides.move`: move one guide line to an absolute canvas position, in
+    /// canvas pixels from the canvas centre (x to the right, y upward).
+    MoveGuide {
+        axis: crate::editor::LineAxis,
+        index: usize,
+        position: i32,
+    },
     /// `media.reveal`: reveal one library asset.
     RevealMedia(AssetId),
 }
@@ -416,6 +423,11 @@ impl Editor {
                 id,
                 favorite,
             } => self.set_favorite(&family, &id, favorite),
+            AppCommand::MoveGuide {
+                axis,
+                index,
+                position,
+            } => self.edit_guide_lines(|lines| lines.with_moved(axis, index, position)),
             AppCommand::RevealMedia(asset) => self.activate(&format!("media.reveal.{}", asset.0)),
         }
     }
@@ -520,6 +532,10 @@ impl Editor {
                 self.frame.preference_history.can_redo()
                     || engine::CommandKind::Redo.enabled(&self.session)
             }
+            ActionTarget::Ui {
+                action: UiAction::GuidesLock | UiAction::GuidesVisible | UiAction::GuidesClear,
+                ..
+            } => !self.preferences.preview_lines.is_empty(),
             ActionTarget::Ui {
                 action: UiAction::Crop,
                 ..

@@ -10,6 +10,7 @@
 | Control boxes, rows, steppers, slider and media dimensions | `kit::size` | Player, properties, timeline and shortcuts |
 | Inline text edit caret width and selection opacity | `kit::size::TEXT_EDIT_*` | Live web editor observation (2026-11-09) |
 | Preview snap guide width, dash and gap | `kit::size::SNAP_GUIDE*` | Live web editor observation (2026-11-10) |
+| Player ruler strip, tick heights, caption gap and guide line stroke | `kit::size::PLAYER_RULER*`, `GUIDE_LINE*` | Reference desktop capture 2026-11-14 (shot 100216) |
 | Dense glyph boxes and play/layout glyphs | `kit::icon` | Feature tabs and toolbar measurements |
 | App surfaces and accents | Semantic colour functions | App palette |
 | Light surfaces and non-editor status colours | Semantic colour functions | Accessible ramp |
