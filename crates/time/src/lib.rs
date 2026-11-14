@@ -44,7 +44,7 @@ pub enum TimeError {
     Overflow,
     /// A representable intermediate result did not fit the return type.
     OutOfRange,
-    /// A playback speed was not finite or fell outside 0.01x..=5x.
+    /// A playback speed was not finite or fell outside 0.1x..=100x.
     InvalidSpeed,
 }
 
@@ -58,7 +58,7 @@ impl fmt::Display for TimeError {
             Self::EmptyRange => "range end must be greater than start",
             Self::Overflow => "time arithmetic overflowed",
             Self::OutOfRange => "time value is out of range",
-            Self::InvalidSpeed => "speed must be between 0.01x and 5x",
+            Self::InvalidSpeed => "speed must be between 0.1x and 100x",
         };
         formatter.write_str(message)
     }

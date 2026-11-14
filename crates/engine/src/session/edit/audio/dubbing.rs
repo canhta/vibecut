@@ -406,7 +406,7 @@ pub(in crate::session::edit) fn execute_set_fit(
     id: ItemId,
     speed: time::Speed,
 ) -> Result<ProjectData> {
-    let thousandths = speed.thousandths();
+    let thousandths = u16::try_from(speed.thousandths()).unwrap_or(u16::MAX);
     if thousandths != 1000
         && !(STRETCH_MIN_THOUSANDTHS..=STRETCH_MAX_THOUSANDTHS).contains(&thousandths)
     {

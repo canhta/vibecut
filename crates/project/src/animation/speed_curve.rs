@@ -64,7 +64,7 @@ impl SpeedPreset {
     ];
 
     /// The preset's `(span, speed in thousandths)` stretches.
-    fn table(self) -> &'static [(u16, u16)] {
+    fn table(self) -> &'static [(u16, u32)] {
         match self {
             Self::SlowInFastOut => &[(250, 500), (250, 800), (250, 1250), (250, 2000)],
             Self::FastInSlowOut => &[(250, 2000), (250, 1250), (250, 800), (250, 500)],
@@ -114,7 +114,7 @@ fn overflow() -> Error {
 
 impl SpeedCurve {
     /// Validate keys: the first is `(0, 0)`, both coordinates strictly
-    /// increase, and every stretch plays between 0.01x and 5x.
+    /// increase, and every stretch plays between 0.1x and 100x.
     ///
     /// # Errors
     ///

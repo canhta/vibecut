@@ -73,8 +73,8 @@ pub(super) const TEXT_SIZE_SCRUB: ScrubSpec =
 pub(super) const SPEED_SCRUB: ScrubSpec = ScrubSpec {
     field: "speed",
     label: Text::Speed,
-    min: 0.01,
-    max: 5.0,
+    min: 0.1,
+    max: 100.0,
     step: 0.01,
     pixels_per_step: 2.0,
     decimals: 2,

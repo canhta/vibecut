@@ -505,6 +505,10 @@ fn speed_edits_refuse_atomically_and_ripple_only_on_a_magnetic_main_track() {
     // 2 s of source at 5x is 0.4 s; faster leaves a gap on a free track.
     s.apply(set_speed(&[1], 5.0, false)).unwrap();
     assert_eq!(item(&s, 2).start, Tick(2 * SECOND));
+    // The fastest admitted speed: 2 s of source at 100x is 20 ms.
+    s.apply(set_speed(&[1], 100.0, false)).unwrap();
+    assert_eq!(item(&s, 1).duration().unwrap(), Tick(SECOND / 50));
+    assert_eq!(item(&s, 2).start, Tick(2 * SECOND));
     // A magnetic main track closes and opens gaps by the duration change.
     let mut s = session(
         vec![
@@ -529,7 +533,7 @@ fn speed_edits_refuse_atomically_and_ripple_only_on_a_magnetic_main_track() {
     s.undo().unwrap();
     assert_eq!(item(&s, 2).start, Tick(2 * SECOND));
     // Out-of-range speeds cannot be expressed on the wire.
-    for bad in [0.0, 0.009, 5.001, -1.0] {
+    for bad in [0.0, 0.01, 0.099, 100.001, 101.0, -1.0] {
         assert!(
             serde_json::from_value::<Command>(serde_json::json!({
                 "command": "timeline.set_speed",
@@ -537,6 +541,16 @@ fn speed_edits_refuse_atomically_and_ripple_only_on_a_magnetic_main_track() {
             }))
             .is_err(),
             "{bad}"
+        );
+    }
+    for good in [0.1, 100.0] {
+        assert!(
+            serde_json::from_value::<Command>(serde_json::json!({
+                "command": "timeline.set_speed",
+                "params": {"items": [1], "speed": good, "maintain_pitch": false}
+            }))
+            .is_ok(),
+            "{good}"
         );
     }
     // Four source ticks at 5x would play for no output tick.
@@ -1151,8 +1165,8 @@ fn invalid_speed_curves_are_refused_without_changing_the_project() {
         assert_eq!(*s.project(), before);
         assert_eq!(s.history_len(), history);
     }
-    // Speeds outside 0.01-5x cannot be expressed on the wire.
-    for value in [0.0, 0.009, 5.001, -1.0, 6.0] {
+    // Speeds outside 0.1-100x cannot be expressed on the wire.
+    for value in [0.0, 0.099, 100.001, -1.0, 101.0] {
         assert!(
             serde_json::from_value::<Command>(serde_json::json!({
                 "command": "timeline.set_speed_curve",
