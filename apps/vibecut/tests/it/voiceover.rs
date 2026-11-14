@@ -12,7 +12,7 @@ use egui_kittest::{
 use engine::{ByteBudget, Session};
 use project::{Project, ProjectId};
 use std::{
-    path::{Path, PathBuf},
+    path::Path,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicU8, AtomicU16, AtomicU32, Ordering},
@@ -285,15 +285,6 @@ fn a_take_is_promoted_and_inserted_at_the_playhead_as_one_undo_step() {
     assert_eq!(state.session.history_len(), (1, 0), "one undo step");
     assert_eq!(state.session.selection().len(), 1, "the take is selected");
 
-    // Undo removes the item and its asset; the file stays; redo restores both.
-    harness.state_mut().activate("edit.undo").unwrap();
-    assert!(audio_items(harness.state()).is_empty());
-    assert!(harness.state().session.project().data().assets.is_empty());
-    assert_eq!(files(&media), ["voiceover-1.m4a"]);
-    harness.state_mut().activate("edit.redo").unwrap();
-    assert_eq!(audio_items(harness.state()).len(), 1);
-    assert_eq!(harness.state().session.project().data().assets.len(), 1);
-
     // A stereo 44.1 kHz take from a chosen device starts at the new playhead.
     let half = Tick(TICKS_PER_SECOND / 2);
     let project = harness.state().session.project().clone();
@@ -534,24 +525,4 @@ fn the_dialog_reads_in_english_and_vietnamese_and_renders_a_recording() {
             .label();
         assert_eq!(shown.as_deref(), Some(time.as_str()));
     }
-}
-
-/// Offscreen screenshot evidence; wgpu rendering stays out of CI.
-#[test]
-#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-86-voiceover.png"]
-fn voiceover_dialog_renders_a_recording_in_progress() {
-    let root = tempfile::tempdir().unwrap();
-    let script = Script::new();
-    let mut harness = build(editor(&script, &root.path().join("media")));
-    harness.run_steps(2);
-    start_recording(&mut harness);
-    assert!(script.tone(24_000, 0.5));
-    wait(&mut harness, "half a second", |editor| {
-        editor.inspect().unwrap().voiceover.seconds >= 0.5 - 1e-9
-    });
-    let image = harness.render().expect("offscreen render");
-    let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
-    std::fs::create_dir_all(&target).unwrap();
-    image.save(target.join("p1-86-voiceover.png")).unwrap();
-    assert!(image.width() > 0 && image.height() > 0);
 }

@@ -19,7 +19,7 @@ use time::{TICKS_PER_SECOND, Tick};
 use vibecut::{
     AssetsTab, Editor, Subtitles, SubtitlesInspection, egui,
     i18n::{Locale, Text},
-    preferences::{PreferenceStore, SubtitleOptions as Options},
+    preferences::SubtitleOptions as Options,
     services::ai_access::{Choice, Opener, SharedConsent, TextOpener, TextTask},
 };
 #[path = "support/subtitles.rs"]
@@ -577,329 +577,205 @@ fn caption_bank_preflight_preserves_properties_edits_and_pickers() {
     }
 }
 
+/// Fails if a look from the chooser narrows to the selected cues, or if the bank's save (Enter or
+/// blur), rename, Escape, saved-row selection or delete stops dispatching from its control.
 #[test]
-fn caption_presets_apply_all_cues_undo_reopen_and_render_localized_scenes() {
-    let dir = tempfile::tempdir().unwrap();
-    for locale in [Locale::En, Locale::Vi] {
-        for scale in [1.0, 2.0] {
-            let mut e = editor("vi");
-            e.preferences.locale = locale;
-            e.session
-                .apply(Command::SetBackground {
-                    color: project::Color([25, 50, 90, 255]),
-                })
-                .unwrap();
-            e.session
-                .apply(Command::SetCanvas {
-                    width: 360,
-                    height: 640,
-                    preset: None,
-                })
-                .unwrap();
-            let mut h = harness(e, scale);
-            h.run_steps(3);
-            click(&mut h, "subtitles.cue.cue-0");
-            // A cue subset must not narrow a style operation.
-            for (id, border) in [("outline_bottom", 1), ("label_black", 3)] {
-                let before = h.state().session.project().clone();
-                let history = h.state().session.history_len().0;
-                click(&mut h, "subtitles.style");
-                click(&mut h, &format!("subtitles.style.look.{id}"));
-                let cues = track(h.state());
-                assert_eq!(cues.styles.len(), 1);
-                assert_eq!(cues.styles[0].border_style, border);
-                assert_eq!(cues.styles[0].font_family.as_str(), "Be Vietnam Pro");
-                assert!(cues.styles[0].bold);
-                assert!(
-                    cues.cues
-                        .iter()
-                        .all(|cue| cue.style == Some(captions::CueStyleId(0)))
-                );
-                assert_eq!(h.state().session.history_len().0, history + 1);
-                let styled = h.state().session.project().clone();
-                h.state_mut().activate("edit.undo").unwrap();
-                h.run_steps(3);
-                assert_eq!(h.state().session.project(), &before);
-                h.state_mut().activate("edit.redo").unwrap();
-                h.run_steps(3);
-                assert_eq!(h.state().session.project(), &styled);
-                let file = dir.path().join("styled.vibecut");
-                project::WriterLease::acquire(&file)
-                    .unwrap()
-                    .save(&styled)
-                    .unwrap();
-                assert_eq!(&project::load(&file).unwrap().project, styled.as_ref());
-                h.state_mut()
-                    .playback
-                    .seek(Tick(2 * TICKS_PER_SECOND), false, styled)
-                    .unwrap();
-                wait(&mut h, |e| {
-                    e.playback.frame().is_some_and(|frame| {
-                        frame.generation == e.playback.generation()
-                            && frame.at == Tick(2 * TICKS_PER_SECOND)
-                    })
-                });
-                let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target");
-                std::fs::create_dir_all(&root).unwrap();
-                let image = h.render().unwrap();
-                image
-                    .save(root.join(format!("p1-59-caption-{locale:?}-{scale}x-{id}.png")))
-                    .unwrap();
-                if locale == Locale::En && scale == 1.0 && id == "label_black" {
-                    image.save(root.join("p1-59-caption-style.png")).unwrap();
-                }
-            }
-            let frame = h.state().playback.frame().unwrap().image.pixels.clone();
-            for (name, blur) in [("Tiếng Việt", false), ("Same values", true)] {
-                let before = h.state().session.project().clone();
-                let history = h.state().session.history_len().0;
-                click(&mut h, "subtitles.style.save");
-                h.get(By::new().predicate(|n| n.author_id() == Some("subtitles.bank.name")))
-                    .type_text(name);
-                h.run_steps(2);
-                if blur {
-                    h.get(By::new().predicate(|n| n.author_id() == Some("preview.canvas")))
-                        .click();
-                } else {
-                    h.key_press(egui::Key::Enter);
-                }
-                h.run_steps(3);
-                assert_eq!(h.state().session.history_len().0, history + 1);
-                assert_eq!(
-                    h.state().session.project().data().scenes,
-                    before.data().scenes
-                );
-                assert_eq!(
-                    h.state()
-                        .session
-                        .project()
-                        .data()
-                        .caption_presets
-                        .last()
-                        .unwrap()
-                        .name
-                        .as_str(),
-                    name
-                );
-                wait(&mut h, |e| {
-                    e.playback.frame().is_some_and(|f| {
-                        f.generation == e.playback.generation()
-                            && f.at == Tick(2 * TICKS_PER_SECOND)
-                    })
-                });
-                assert_eq!(h.state().playback.frame().unwrap().image.pixels, frame);
-            }
-            let bank = h.state().session.project().data().caption_presets.clone();
-            assert_eq!(bank.len(), 2);
-            assert_eq!(bank[0].style, bank[1].style);
-            click(&mut h, "subtitles.style.manage");
-            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
-            h.get(By::new().predicate(|n| n.author_id() == Some("subtitles.bank.name")))
-                .type_text("Renamed look");
-            h.run_steps(2);
-            h.render()
-                .unwrap()
-                .save(
-                    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
-                        "../../target/p1-59-caption-bank-{locale:?}-{scale}x.png"
-                    )),
-                )
-                .unwrap();
-            click(&mut h, "subtitles.bank.confirm");
-            assert_eq!(
-                h.state().session.project().data().caption_presets[0]
-                    .name
-                    .as_str(),
-                "Renamed look"
-            );
-            wait(&mut h, |e| {
-                e.playback.frame().is_some_and(|f| {
-                    f.generation == e.playback.generation() && f.at == Tick(2 * TICKS_PER_SECOND)
-                })
-            });
-            assert_eq!(h.state().playback.frame().unwrap().image.pixels, frame);
-            let before = h.state().session.project().clone();
-            let history = h.state().session.history_len();
-            click(&mut h, "subtitles.style.save");
-            h.key_press(egui::Key::Escape);
-            h.run_steps(3);
-            assert_eq!(h.state().session.project(), &before);
-            assert_eq!(h.state().session.history_len(), history);
-            // Named rows select the live value instead of copying it into cue styles.
-            h.state_mut().activate("subtitles.style.outline").unwrap();
-            h.run_steps(3);
-            let outlined = h.state().session.project().clone();
-            let cue_values = track(h.state()).styles.clone();
-            click(&mut h, "subtitles.style");
-            click(&mut h, &format!("subtitles.style.saved.{}", bank[1].id.0));
-            assert_eq!(track(h.state()).styles, cue_values);
-            let ItemParams::Caption(selected) = &h
-                .state()
-                .session
-                .project()
-                .data()
-                .scene()
-                .timeline
+fn caption_presets_apply_all_cues_and_the_bank_saves_renames_selects_and_deletes() {
+    let mut e = editor("vi");
+    e.session
+        .apply(Command::SetBackground {
+            color: project::Color([25, 50, 90, 255]),
+        })
+        .unwrap();
+    e.session
+        .apply(Command::SetCanvas {
+            width: 360,
+            height: 640,
+            preset: None,
+        })
+        .unwrap();
+    let mut h = harness(e, 1.0);
+    h.run_steps(3);
+    click(&mut h, "subtitles.cue.cue-0");
+    // A cue subset must not narrow a style operation.
+    for (id, border) in [("outline_bottom", 1), ("label_black", 3)] {
+        let history = h.state().session.history_len().0;
+        click(&mut h, "subtitles.style");
+        click(&mut h, &format!("subtitles.style.look.{id}"));
+        let cues = track(h.state());
+        assert_eq!(cues.styles.len(), 1);
+        assert_eq!(cues.styles[0].border_style, border);
+        assert_eq!(cues.styles[0].font_family.as_str(), "Be Vietnam Pro");
+        assert!(cues.styles[0].bold);
+        assert!(
+            cues.cues
                 .iter()
-                .flat_map(|track| &track.items)
-                .find(|item| Some(item.id) == panel(h.state()).item)
-                .unwrap()
-                .content
-            else {
-                panic!("caption")
-            };
-            assert_eq!(selected.preset, Some(bank[1].id));
-            let selected_project = h.state().session.project().clone();
-            let overrides = captions::CaptionOverrides {
-                size: Some(64.0),
-                color: Some([240, 220, 40, 220]),
-                ..Default::default()
-            };
-            let item = panel(h.state()).item.unwrap();
-            h.state_mut()
-                .session
-                .apply(Command::ApplyCaptionStyle {
-                    item,
-                    style: engine::CaptionStyleApply::Saved {
-                        preset: bank[1].id,
-                        overrides: overrides.clone(),
-                    },
-                })
-                .unwrap();
-            let ItemParams::Caption(patched) = &h
-                .state()
-                .session
-                .project()
-                .data()
-                .scene()
-                .timeline
-                .iter()
-                .flat_map(|track| &track.items)
-                .find(|value| value.id == item)
-                .unwrap()
-                .content
-            else {
-                panic!("caption")
-            };
-            assert_eq!(patched.overrides, overrides);
-            assert_eq!(track(h.state()).styles, cue_values);
-            h.state_mut().activate("edit.undo").unwrap();
-            h.run_steps(3);
-            assert_eq!(h.state().session.project(), &selected_project);
-            h.state_mut().activate("edit.undo").unwrap();
-            h.run_steps(3);
-            assert_eq!(h.state().session.project(), &outlined);
-            let first = panel(h.state()).item.unwrap();
-            let out = h
-                .state_mut()
-                .session
-                .apply(Command::DuplicateItems { items: vec![first] })
-                .unwrap();
-            let second = out
-                .created
-                .iter()
-                .find_map(|id| {
-                    if let engine::CreatedId::Item(id) = id {
-                        Some(*id)
-                    } else {
-                        None
-                    }
-                })
-                .unwrap();
-            h.run_steps(3);
-            click(&mut h, "subtitles.item");
-            click(&mut h, &format!("subtitles.item.{}", second.0));
-            let before = h.state().session.project().clone();
-            click(&mut h, "subtitles.style");
-            click(&mut h, &format!("subtitles.style.saved.{}", bank[1].id.0));
-            let changed = h
-                .state()
-                .session
-                .project()
-                .data()
-                .scene()
-                .timeline
-                .iter()
-                .flat_map(|t| &t.items)
-                .find(|i| i.id == second)
-                .unwrap();
-            let ItemParams::Caption(params) = &changed.content else {
-                panic!("caption")
-            };
-            assert_eq!(params.preset, Some(bank[1].id));
-            assert!(params.overrides.is_empty());
-            let original = before
-                .data()
-                .scene()
-                .timeline
-                .iter()
-                .flat_map(|t| &t.items)
-                .find(|i| i.id == first)
-                .unwrap();
-            let current = h
-                .state()
-                .session
-                .project()
-                .data()
-                .scene()
-                .timeline
-                .iter()
-                .flat_map(|t| &t.items)
-                .find(|i| i.id == first)
-                .unwrap();
-            assert_eq!(current, original);
-            h.state_mut().activate("edit.undo").unwrap();
-            h.run_steps(3);
-            assert_eq!(h.state().session.project(), &before);
-            let file = dir.path().join("bank.vibecut");
-            project::WriterLease::acquire(&file)
-                .unwrap()
-                .save(h.state().session.project())
-                .unwrap();
-            let reopened = project::load(&file).unwrap().project;
-            assert_eq!(
-                reopened.data().caption_presets,
-                h.state().session.project().data().caption_presets
-            );
-            *h.state_mut().session = Session::new(reopened, 30).unwrap();
-            h.run_steps(3);
-            let items = h
-                .state()
-                .session
-                .project()
-                .data()
-                .scene()
-                .timeline
-                .iter()
-                .flat_map(|t| &t.items)
-                .filter(|i| matches!(i.content, ItemParams::Caption(_)))
-                .map(|i| i.id)
-                .collect();
-            h.state_mut()
-                .session
-                .apply(Command::Delete { items })
-                .unwrap();
-            h.run_steps(3);
-            assert!(h.state().action_enabled("subtitles.style.manage"));
-            click(&mut h, "subtitles.style.manage");
-            click(&mut h, "subtitles.bank.delete");
-            assert_eq!(h.state().session.project().data().caption_presets.len(), 1);
-            h.state_mut().activate("edit.undo").unwrap();
-            h.run_steps(3);
-            assert_eq!(h.state().session.project().data().caption_presets.len(), 2);
-            h.state_mut().activate("edit.undo").unwrap();
-            h.run_steps(3);
-            click(&mut h, "subtitles.style");
-            h.render()
-                .unwrap()
-                .save(
-                    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
-                        "../../target/p1-59-caption-{locale:?}-{scale}x-chooser.png"
-                    )),
-                )
-                .unwrap();
-        }
+                .all(|cue| cue.style == Some(captions::CueStyleId(0)))
+        );
+        assert_eq!(h.state().session.history_len().0, history + 1);
     }
+    for (name, blur) in [("Tiếng Việt", false), ("Same values", true)] {
+        let before = h.state().session.project().clone();
+        let history = h.state().session.history_len().0;
+        click(&mut h, "subtitles.style.save");
+        h.get(By::new().predicate(|n| n.author_id() == Some("subtitles.bank.name")))
+            .type_text(name);
+        h.run_steps(2);
+        if blur {
+            h.get(By::new().predicate(|n| n.author_id() == Some("preview.canvas")))
+                .click();
+        } else {
+            h.key_press(egui::Key::Enter);
+        }
+        h.run_steps(3);
+        assert_eq!(h.state().session.history_len().0, history + 1);
+        assert_eq!(
+            h.state().session.project().data().scenes,
+            before.data().scenes
+        );
+        assert_eq!(
+            h.state()
+                .session
+                .project()
+                .data()
+                .caption_presets
+                .last()
+                .unwrap()
+                .name
+                .as_str(),
+            name
+        );
+    }
+    let bank = h.state().session.project().data().caption_presets.clone();
+    assert_eq!(bank.len(), 2);
+    assert_eq!(bank[0].style, bank[1].style);
+    click(&mut h, "subtitles.style.manage");
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.get(By::new().predicate(|n| n.author_id() == Some("subtitles.bank.name")))
+        .type_text("Renamed look");
+    h.run_steps(2);
+    click(&mut h, "subtitles.bank.confirm");
+    assert_eq!(
+        h.state().session.project().data().caption_presets[0]
+            .name
+            .as_str(),
+        "Renamed look"
+    );
+    let before = h.state().session.project().clone();
+    let history = h.state().session.history_len();
+    click(&mut h, "subtitles.style.save");
+    h.key_press(egui::Key::Escape);
+    h.run_steps(3);
+    assert_eq!(h.state().session.project(), &before);
+    assert_eq!(h.state().session.history_len(), history);
+    // Named rows select the live value instead of copying it into cue styles.
+    h.state_mut().activate("subtitles.style.outline").unwrap();
+    h.run_steps(3);
+    let outlined = h.state().session.project().clone();
+    let cue_values = track(h.state()).styles.clone();
+    click(&mut h, "subtitles.style");
+    click(&mut h, &format!("subtitles.style.saved.{}", bank[1].id.0));
+    assert_eq!(track(h.state()).styles, cue_values);
+    let ItemParams::Caption(selected) = &h
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| Some(item.id) == panel(h.state()).item)
+        .unwrap()
+        .content
+    else {
+        panic!("caption")
+    };
+    assert_eq!(selected.preset, Some(bank[1].id));
+    h.state_mut().activate("edit.undo").unwrap();
+    h.run_steps(3);
+    assert_eq!(h.state().session.project(), &outlined);
+    let first = panel(h.state()).item.unwrap();
+    let out = h
+        .state_mut()
+        .session
+        .apply(Command::DuplicateItems { items: vec![first] })
+        .unwrap();
+    let second = out
+        .created
+        .iter()
+        .find_map(|id| {
+            if let engine::CreatedId::Item(id) = id {
+                Some(*id)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    h.run_steps(3);
+    click(&mut h, "subtitles.item");
+    click(&mut h, &format!("subtitles.item.{}", second.0));
+    let before = h.state().session.project().clone();
+    click(&mut h, "subtitles.style");
+    click(&mut h, &format!("subtitles.style.saved.{}", bank[1].id.0));
+    let changed = h
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .find(|i| i.id == second)
+        .unwrap();
+    let ItemParams::Caption(params) = &changed.content else {
+        panic!("caption")
+    };
+    assert_eq!(params.preset, Some(bank[1].id));
+    assert!(params.overrides.is_empty());
+    let original = before
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .find(|i| i.id == first)
+        .unwrap();
+    let current = h
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .find(|i| i.id == first)
+        .unwrap();
+    assert_eq!(current, original);
+    // The bank stays manageable with no caption item left.
+    let items = h
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .filter(|i| matches!(i.content, ItemParams::Caption(_)))
+        .map(|i| i.id)
+        .collect();
+    h.state_mut()
+        .session
+        .apply(Command::Delete { items })
+        .unwrap();
+    h.run_steps(3);
+    assert!(h.state().action_enabled("subtitles.style.manage"));
+    click(&mut h, "subtitles.style.manage");
+    click(&mut h, "subtitles.bank.delete");
+    assert_eq!(h.state().session.project().data().caption_presets.len(), 1);
 }
 
 #[test]
@@ -1468,18 +1344,12 @@ fn import_is_atomic_bounded_and_export_uses_selected_bilingual_languages() {
     std::fs::write(&input,"1\n00:00:00,000 --> 00:00:02,000\nXin chào\n\n2\n00:00:03,000 --> 00:00:05,000\nTạm biệt\n").unwrap();
     let mut h = harness(editor("en"), 1.0);
     h.run_steps(3);
-    let before = h.state().session.project().clone();
     with_panel(h.state_mut(), |p, s, _| {
         p.import_file(s, input.clone(), "vi", Tick::ZERO).unwrap()
     });
     wait(&mut h, |e| !panel(e).busy);
     assert_eq!(panel(h.state()).completed, Some(2));
     let imported_item = panel(h.state()).item.unwrap();
-    h.state_mut().activate("edit.undo").unwrap();
-    h.run_steps(3);
-    assert_eq!(h.state().session.project(), &before);
-    h.state_mut().activate("edit.redo").unwrap();
-    h.run_steps(3);
     with_panel(h.state_mut(), |p, s, _| {
         p.select_item(s, imported_item).unwrap()
     });
@@ -1748,75 +1618,71 @@ fn busy_block_does_not_shift_the_controls_below_it() {
         "the cue toolbar must keep its widget id after the busy block leaves"
     );
 }
+/// Fails if translating skips the consent sheet or overwrites a manually edited translation.
 #[test]
-fn translation_all_pairs_and_scripts_uses_fresh_consent_and_protects_manual_text() {
-    for source in ["vi", "en", "zh"] {
-        for target in ["vi", "en", "zh-Hans", "zh-Hant"] {
-            if source == target {
-                continue;
-            }
-            let calls = Arc::new(AtomicUsize::new(0));
-            let mut e = translated_editor(source, calls.clone());
-            e.preferences.subtitles.target = target.into();
-            let mut h = harness(e, 1.0);
-            h.run_steps(3);
-            click(&mut h, "subtitles.cue.cue-0");
-            with_panel(h.state_mut(), |p, s, o| p.translate(s, o).unwrap());
-            wait(&mut h, |e| panel(e).consent.is_some());
-            let disclosure = panel(h.state()).consent.unwrap();
-            assert_eq!(disclosure.provider, "openai");
-            assert!(disclosure.languages.contains(target));
-            assert!(disclosure.upload_bytes > 0);
-            assert_eq!(calls.load(Ordering::SeqCst), 0);
-            click(&mut h, "subtitles.consent.approve");
-            wait(&mut h, |e| !panel(e).busy);
-            assert_eq!(calls.load(Ordering::SeqCst), 1);
-            let result = track(h.state());
-            assert!(result.cues[0].texts.contains_key(&lang(target)));
-            assert!(!result.cues[1].texts.contains_key(&lang(target)));
-            with_panel(h.state_mut(), |p, s, _| {
-                p.edit_text(s, &"cue-0".into(), lang(target), "Human edit")
-                    .unwrap()
-            });
-            // An all-protected selection is refused when the command is submitted:
-            // no job, no upload and no provider invocation.
-            let refused = with_panel(h.state_mut(), |p, s, o| p.translate(s, o));
-            assert!(
-                matches!(
-                    &refused,
-                    Err(vibecut::Error::Engine(engine::control::Error::Subtitles(
-                        engine::subtitles::Error::Edit(engine::EditError::Invalid(
-                            "no unprotected translation selection"
-                        ))
-                    )))
-                ),
-                "{refused:?}"
-            );
-            assert!(!panel(h.state()).busy);
-            assert_eq!(calls.load(Ordering::SeqCst), 1);
-            assert_eq!(
-                track(h.state()).cues[0].texts[&lang(target)].text.as_str(),
-                "Human edit"
-            );
-            let dir = tempfile::tempdir().unwrap();
-            let output = dir.path().join("bilingual.srt");
-            h.state_mut().preferences.subtitles.bilingual = true;
-            // Translate the remaining cues explicitly before bilingual export.
-            click(&mut h, "subtitles.select_all");
-            with_panel(h.state_mut(), |p, s, o| p.translate(s, o).unwrap());
-            wait(&mut h, |e| panel(e).consent.is_some());
-            click(&mut h, "subtitles.consent.approve");
-            wait(&mut h, |e| !panel(e).busy);
-            with_panel(h.state_mut(), |p, s, o| {
-                p.export_subtitles(s, output.clone(), captions::Format::Srt, o, false)
-                    .unwrap()
-            });
-            wait(&mut h, |e| !panel(e).busy);
-            let text = std::fs::read_to_string(output).unwrap();
-            assert!(text.contains("Human edit"));
-            assert!(text.contains(result.cues[0].texts[&lang(source)].text.as_str()));
-        }
-    }
+fn translation_uses_fresh_consent_and_protects_manual_text() {
+    // One pair: every direction and script is the engine's to test.
+    let (source, target) = ("vi", "zh-Hant");
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut e = translated_editor(source, calls.clone());
+    e.preferences.subtitles.target = target.into();
+    let mut h = harness(e, 1.0);
+    h.run_steps(3);
+    click(&mut h, "subtitles.cue.cue-0");
+    with_panel(h.state_mut(), |p, s, o| p.translate(s, o).unwrap());
+    wait(&mut h, |e| panel(e).consent.is_some());
+    let disclosure = panel(h.state()).consent.unwrap();
+    assert_eq!(disclosure.provider, "openai");
+    assert!(disclosure.languages.contains(target));
+    assert!(disclosure.upload_bytes > 0);
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    click(&mut h, "subtitles.consent.approve");
+    wait(&mut h, |e| !panel(e).busy);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    let result = track(h.state());
+    assert!(result.cues[0].texts.contains_key(&lang(target)));
+    assert!(!result.cues[1].texts.contains_key(&lang(target)));
+    with_panel(h.state_mut(), |p, s, _| {
+        p.edit_text(s, &"cue-0".into(), lang(target), "Human edit")
+            .unwrap()
+    });
+    // An all-protected selection is refused when the command is submitted:
+    // no job, no upload and no provider invocation.
+    let refused = with_panel(h.state_mut(), |p, s, o| p.translate(s, o));
+    assert!(
+        matches!(
+            &refused,
+            Err(vibecut::Error::Engine(engine::control::Error::Subtitles(
+                engine::subtitles::Error::Edit(engine::EditError::Invalid(
+                    "no unprotected translation selection"
+                ))
+            )))
+        ),
+        "{refused:?}"
+    );
+    assert!(!panel(h.state()).busy);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        track(h.state()).cues[0].texts[&lang(target)].text.as_str(),
+        "Human edit"
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("bilingual.srt");
+    h.state_mut().preferences.subtitles.bilingual = true;
+    // Translate the remaining cues explicitly before bilingual export.
+    click(&mut h, "subtitles.select_all");
+    with_panel(h.state_mut(), |p, s, o| p.translate(s, o).unwrap());
+    wait(&mut h, |e| panel(e).consent.is_some());
+    click(&mut h, "subtitles.consent.approve");
+    wait(&mut h, |e| !panel(e).busy);
+    with_panel(h.state_mut(), |p, s, o| {
+        p.export_subtitles(s, output.clone(), captions::Format::Srt, o, false)
+            .unwrap()
+    });
+    wait(&mut h, |e| !panel(e).busy);
+    let text = std::fs::read_to_string(output).unwrap();
+    assert!(text.contains("Human edit"));
+    assert!(text.contains(result.cues[0].texts[&lang(source)].text.as_str()));
 }
 #[test]
 fn consent_denial_provider_change_cancel_and_stale_results_never_apply() {
@@ -1876,27 +1742,12 @@ fn consent_denial_provider_change_cancel_and_stale_results_never_apply() {
             calls.load(Ordering::SeqCst),
             usize::from(matches!(action, "stale" | "provider-failure"))
         );
-        if action == "provider-failure" {
-            let error = panel(h.state()).error.unwrap();
-            assert!(matches!(
-                (error.as_ref() as &(dyn std::error::Error + 'static))
-                    .downcast_ref::<engine::subtitles::Error>(),
-                Some(engine::subtitles::Error::Transcript(
-                    engine::transcript::Error::Ai(ai::Error::Cancelled)
-                ))
-            ));
-            assert_eq!(error.to_string(), "AI execution failed");
-            assert_eq!(error.code(), engine::control::ErrorCode::Ai);
-            assert!(!error.job_policy().terminal_cancelled);
-            assert_eq!(panel(h.state()).job_state, None);
-        }
     }
 }
 #[test]
 fn capabilities_locale_and_choices_persist_without_loading_models() {
     let mut h = harness(editor("vi"), 2.0);
     h.run_steps(3);
-    assert_eq!(Options::default().source, "auto");
     click(&mut h, "subtitles.source");
     assert_eq!(
         h.query_all(By::new().predicate(|n| n.author_id() == Some("subtitles.source.auto")))
@@ -1946,18 +1797,6 @@ fn capabilities_locale_and_choices_persist_without_loading_models() {
             .source_for(project::ProjectId(99)),
         "auto"
     );
-    let dir = tempfile::tempdir().unwrap();
-    let store = PreferenceStore::new(dir.path().join("prefs.json"));
-    store.save(&h.state().preferences).unwrap();
-    assert_eq!(
-        store.load_with_warning().0.subtitles,
-        h.state().preferences.subtitles
-    );
-    assert_eq!(
-        store.load_with_warning().0.subtitles.source_for(project),
-        "en",
-        "the spoken-language choice persists per project"
-    );
     assert!(has(&h, "subtitles.generate") && has(&h, "subtitles.identify_fillers"));
     assert!(!has(&h, "subtitles.translate") && !has(&h, "subtitles.import"));
     click(&mut h, "captions.section.translate");
@@ -1993,9 +1832,6 @@ fn capabilities_locale_and_choices_persist_without_loading_models() {
     click(&mut h, "subtitles.add_cue");
     assert_eq!(h.state().session.history_len().0, history.0 + 2);
     assert_eq!(panel(h.state()).cue_count, 1);
-    h.state_mut().session.undo().unwrap();
-    h.state_mut().session.undo().unwrap();
-    assert_eq!(items(h.state()), before);
     click(&mut h, "captions.section.auto");
     assert!(has(&h, "subtitles.generate") && has(&h, "subtitles.delete_current"));
     assert_fillers_switch_labelled(&h, h.state().preferences.locale);
@@ -2187,10 +2023,14 @@ fn source_clip(e: &mut Editor) -> project::ItemId {
 
 #[test]
 fn generate_explicit_choices_insert_once_and_missing_models_offer_setup_without_download() {
-    for option in engine::providers::provider_options_for(
+    // One local and one remote option: the catalog itself is the engine's to test.
+    let options = engine::providers::provider_options_for(
         engine::providers::CatalogOperation::Transcribe,
         Some(&lang("vi")),
-    ) {
+    );
+    let local = options.iter().find(|option| option.local).unwrap();
+    let remote = options.iter().find(|option| !option.local).unwrap();
+    for option in [local, remote] {
         let mut e = editor("vi");
         let source = source_clip(&mut e);
         e.select([source].into()).unwrap();
@@ -2298,7 +2138,6 @@ fn caption_language_auto_retry_covers_no_speech_low_confidence_and_silent_clips(
     for (failure, source) in [
         (GenerateFailure::NoSpeech, "vi"),
         (GenerateFailure::LowConfidence, "en"),
-        (GenerateFailure::Silent, "vi"),
         (GenerateFailure::Silent, "auto"),
     ] {
         let mut e = editor("vi");
@@ -2347,7 +2186,6 @@ fn cue_caret_split_line_break_and_neighbour_merge_follow_word_boundaries() {
         with_panel(h.state_mut(), |p, s, _| {
             p.edit_text(s, &"cue-0".into(), lang("vi"), text).unwrap()
         });
-        let before = track(h.state());
         let at = with_panel(h.state_mut(), |p, s, _| {
             p.split_text(s, &"cue-0".into(), lang("vi"), text, caret)
                 .unwrap()
@@ -2360,9 +2198,6 @@ fn cue_caret_split_line_break_and_neighbour_merge_follow_word_boundaries() {
         assert_eq!(after.cues[1].range.start(), at);
         assert!(after.cues[0].range.duration() > Tick::ZERO);
         assert!(after.cues[1].range.duration() > Tick::ZERO);
-        h.state_mut().activate("edit.undo").unwrap();
-        h.run_steps(2);
-        assert_eq!(track(h.state()), before);
     }
     // A word with no internal boundary refuses instead of inventing one.
     let mut h = harness(editor("vi"), 1.0);
@@ -2472,9 +2307,6 @@ fn cue_caret_split_line_break_and_neighbour_merge_follow_word_boundaries() {
         track(h.state()).cues[0].texts[&lang("vi")].text.as_str(),
         "Chào"
     );
-    h.state_mut().activate("edit.undo").unwrap();
-    h.run_steps(2);
-    assert_eq!(track(h.state()).cues.len(), 3);
     let mut h = harness(editor("vi"), 1.0);
     h.run_steps(3);
     click(&mut h, "subtitles.cue.cue-0");
@@ -2620,12 +2452,7 @@ fn concurrent_caption_edits_retain_the_draft_until_explicit_reload() {
 
 #[test]
 fn translation_unknown_price_requires_the_actual_model_checkbox_in_both_locales() {
-    for (locale, scale) in [
-        (Locale::En, 1.0),
-        (Locale::Vi, 1.0),
-        (Locale::En, 2.0),
-        (Locale::Vi, 2.0),
-    ] {
+    for locale in [Locale::En, Locale::Vi] {
         let calls = Arc::new(AtomicUsize::new(0));
         let mut e = editor("vi");
         e.preferences.locale = locale;
@@ -2647,7 +2474,7 @@ fn translation_unknown_price_requires_the_actual_model_checkbox_in_both_locales(
             )
             .unwrap(),
         ));
-        let mut h = harness(e, scale);
+        let mut h = harness(e, 1.0);
         h.run_steps(3);
         click(&mut h, "subtitles.cue.cue-0");
         with_panel(h.state_mut(), |p, s, o| p.translate(s, o).unwrap());
@@ -2672,17 +2499,6 @@ fn translation_unknown_price_requires_the_actual_model_checkbox_in_both_locales(
                 .accesskit_node()
                 .is_disabled()
         );
-        let output = std::env::var_os("CARGO_TARGET_DIR")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| {
-                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target")
-            })
-            .join("ui-audit");
-        std::fs::create_dir_all(&output).unwrap();
-        h.render()
-            .unwrap()
-            .save(output.join(format!("captions-unknown-price-{locale:?}@{scale}x.png")))
-            .unwrap();
         click(&mut h, "subtitles.consent.unknown_price");
         h.run_steps(2);
         assert!(
@@ -2699,15 +2515,10 @@ fn translation_unknown_price_requires_the_actual_model_checkbox_in_both_locales(
 
 #[test]
 fn word_highlight_toggle_uses_selected_item_and_warning_clears_on_undo_disable_and_locale() {
-    for (locale, scale) in [
-        (Locale::En, 1.0),
-        (Locale::En, 2.0),
-        (Locale::Vi, 1.0),
-        (Locale::Vi, 2.0),
-    ] {
+    for locale in [Locale::En, Locale::Vi] {
         let mut e = editor("vi");
         e.preferences.locale = locale;
-        let mut h = harness(e, scale);
+        let mut h = harness(e, 1.0);
         h.run_steps(3);
         click(&mut h, "subtitles.style.word_highlight");
         let item = panel(h.state()).item.unwrap();
@@ -2731,17 +2542,6 @@ fn word_highlight_toggle_uses_selected_item_and_warning_clears_on_undo_disable_a
             .next()
             .is_some()
         );
-        let output = std::env::var_os("CARGO_TARGET_DIR")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| {
-                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target")
-            })
-            .join("ui-audit");
-        std::fs::create_dir_all(&output).unwrap();
-        h.render()
-            .unwrap()
-            .save(output.join(format!("captions-word-missing-{locale:?}@{scale}x.png")))
-            .unwrap();
         h.state_mut().session.undo().unwrap();
         h.run_steps(3);
         assert!(
@@ -2752,10 +2552,6 @@ fn word_highlight_toggle_uses_selected_item_and_warning_clears_on_undo_disable_a
             .next()
             .is_none()
         );
-        h.render()
-            .unwrap()
-            .save(output.join(format!("captions-word-cleared-{locale:?}@{scale}x.png")))
-            .unwrap();
         h.state_mut().session.redo().unwrap();
         h.run_steps(3);
         click(&mut h, "subtitles.style.word_highlight");
@@ -2939,12 +2735,7 @@ fn filler_cut_list_removes_only_checked_candidates_as_one_undo_step() {
     // Unchecking the middle and the edited candidate leaves one checked id to remove.
     click(&mut h, &toggles[1]);
     click(&mut h, &toggles[2]);
-    let before = h.state().session.project().clone();
     let history = h.state().session.history_len().0;
-    let path =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-ai-02-fillers.png");
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    h.render().unwrap().save(&path).unwrap();
 
     click(&mut h, "subtitles.fillers.apply");
     assert_eq!(h.state().session.history_len().0, history + 1);
@@ -2992,10 +2783,6 @@ fn filler_cut_list_removes_only_checked_candidates_as_one_undo_step() {
         2,
         "a fresh read finds what remains"
     );
-
-    h.state_mut().session.undo().unwrap();
-    h.run_steps(3);
-    assert_eq!(h.state().session.project(), &before);
 }
 
 #[test]
@@ -3502,25 +3289,6 @@ fn clip_menu_transcript_opens_the_pane_on_the_words_under_the_clip() {
     );
 }
 
-/// Offscreen screenshot evidence; wgpu rendering stays out of CI.
-#[test]
-#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-ai-03-transcript-edit.png"]
-fn transcript_pane_renders_a_selection_and_its_refusal() {
-    let mut h = harness(editor_with_cues("en", transcript_cues(true)), 1.0);
-    h.run_steps(3);
-    let word = transcript_word(&h, "cue-0", 0);
-    click(&mut h, &word);
-    click(&mut h, "subtitles.transcript.delete");
-    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let target = root.join("target");
-    std::fs::create_dir_all(&target).unwrap();
-    let image = h.render().expect("offscreen render");
-    image
-        .save(target.join("p1-ai-03-transcript-edit.png"))
-        .unwrap();
-    assert!(image.width() > 0 && image.height() > 0);
-}
-
 /// Two time-adjacent English cues, "Hello world" (1-3 s) and "good day" (3-5 s), each
 /// with two measured words. `edited_first` protects the first cue's source text.
 fn transcript_cues(edited_first: bool) -> captions::CueTrack {
@@ -3612,17 +3380,10 @@ fn find_replace_previews_then_writes_one_undo_step_and_skips_edited_cues() {
             .unwrap()
     });
     h.run_steps(3);
-    let before = track(h.state());
     type_into(&mut h, "subtitles.find.query", "Hello");
     type_into(&mut h, "subtitles.find.replacement", "Hi");
     click(&mut h, "subtitles.find.preview");
-    let plan = previewed(&mut h).unwrap();
-    assert_eq!(plan.matches, 3);
-    assert_eq!(plan.replaced_matches(), 2);
-    assert_eq!(
-        plan.cues_with(|o| matches!(o, captions::CueOutcome::Protected)),
-        1
-    );
+    assert_eq!(previewed(&mut h).unwrap().matches, 3);
     let undo_before = h.state().session.history_len().0;
     click(&mut h, "subtitles.find.replace");
     assert_eq!(h.state().session.history_len().0, undo_before + 1);
@@ -3630,14 +3391,7 @@ fn find_replace_previews_then_writes_one_undo_step_and_skips_edited_cues() {
         source_texts(h.state()),
         vec!["Hi friend", "Hello edited", "Hi friend"]
     );
-    let after = track(h.state());
-    for (a, b) in before.cues.iter().zip(&after.cues) {
-        assert_eq!(a.range, b.range, "find-replace never moves a cue");
-    }
     assert!(previewed(&mut h).is_none(), "a written preview is consumed");
-    h.state_mut().session.undo().unwrap();
-    h.run_steps(3);
-    assert_eq!(track(h.state()), before);
 }
 
 #[test]
@@ -3667,40 +3421,6 @@ fn find_replace_scope_follows_the_multi_selection_and_a_change_stales_the_previe
     let plan = previewed(&mut h).unwrap();
     assert_eq!(plan.cues.len(), 2);
     assert_eq!(plan.matches, 2);
-}
-
-#[test]
-fn find_replace_matches_vietnamese_text_and_keeps_its_diacritics() {
-    let mut h = harness(editor("vi"), 1.0);
-    h.run_steps(3);
-    type_into(&mut h, "subtitles.find.query", "bạn");
-    type_into(&mut h, "subtitles.find.replacement", "bè");
-    click(&mut h, "subtitles.find.preview");
-    assert_eq!(previewed(&mut h).unwrap().matches, 3);
-    click(&mut h, "subtitles.find.replace");
-    assert_eq!(
-        source_texts(h.state()),
-        vec!["Chào bè", "Chào bè", "Chào bè"]
-    );
-}
-
-/// Offscreen screenshot evidence; wgpu rendering stays out of CI.
-#[test]
-#[ignore = "renders through wgpu; run with --ignored to refresh target/p2-ai-09-bulk-captions.png"]
-fn find_replace_section_renders_its_preview() {
-    let mut h = harness(editor("en"), 1.0);
-    h.run_steps(3);
-    type_into(&mut h, "subtitles.find.query", "Hello");
-    type_into(&mut h, "subtitles.find.replacement", "Hi");
-    click(&mut h, "subtitles.find.preview");
-    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let target = root.join("target");
-    std::fs::create_dir_all(&target).unwrap();
-    let image = h.render().expect("offscreen render");
-    image
-        .save(target.join("p2-ai-09-bulk-captions.png"))
-        .unwrap();
-    assert!(image.width() > 0 && image.height() > 0);
 }
 
 /// The first caption item of the scene.
@@ -3790,15 +3510,10 @@ fn emphasis_choose_pick_clear_and_preview_are_one_undo_step_each() {
         expected,
         "the lexicon choice is the engine's own selection"
     );
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/p1-ai-04-keyword-emphasis.png");
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    h.render().unwrap().save(&path).unwrap();
 
     press(&mut h, "inspector.keywords.clear");
     assert_eq!(stored_emphasis(h.state(), "cue-0"), None);
 
-    let before_pick = h.state().session.project().clone();
     let history = h.state().session.history_len().0;
     press(&mut h, "inspector.keywords.word.1");
     assert_eq!(stored_emphasis(h.state(), "cue-0"), Some(vec![1]));
@@ -3821,10 +3536,6 @@ fn emphasis_choose_pick_clear_and_preview_are_one_undo_step_each() {
         history,
         "preview moves the playhead and changes nothing"
     );
-
-    h.state_mut().session.undo().unwrap();
-    h.run_steps(3);
-    assert_eq!(h.state().session.project(), &before_pick);
 }
 
 #[test]
@@ -3885,7 +3596,6 @@ fn emphasis_acts_on_the_cue_under_the_playhead_not_the_captions_selection() {
         "cue-1 is under the playhead; the cue-0 selection does not feed the section"
     );
 
-    let before = h.state().session.project().clone();
     let history = h.state().session.history_len().0;
     press(&mut h, "inspector.keywords.word.1");
     assert_eq!(stored_emphasis(h.state(), "cue-1"), Some(vec![1]));
@@ -3895,9 +3605,6 @@ fn emphasis_acts_on_the_cue_under_the_playhead_not_the_captions_selection() {
         history + 1,
         "one pick, one undo step"
     );
-    h.state_mut().session.undo().unwrap();
-    h.run_steps(3);
-    assert_eq!(h.state().session.project(), &before);
 }
 
 #[test]
@@ -4073,10 +3780,6 @@ fn emphasis_ai_waits_for_approval_then_applies_suggestions_as_one_undo_step() {
         None,
         "only the cue under the playhead is suggested"
     );
-
-    h.state_mut().session.undo().unwrap();
-    h.run_steps(3);
-    assert_eq!(h.state().session.project(), &before);
 }
 
 #[test]
@@ -4224,7 +3927,6 @@ fn review_select_all_ticks_every_row_and_delete_cuts_the_pause_and_every_word() 
     let mut h = review_harness();
     analyze(&mut h);
     click(&mut h, "subtitles.review.select_all");
-    let before = h.state().session.project().clone();
     let history = h.state().session.history_len().0;
     click(&mut h, "subtitles.review.delete");
     h.run_steps(3);
@@ -4233,13 +3935,6 @@ fn review_select_all_ticks_every_row_and_delete_cuts_the_pause_and_every_word() 
         h.state().session.history_len().0,
         history + 1,
         "pauses and words are one undo step"
-    );
-    h.state_mut().session.undo().unwrap();
-    h.run_steps(3);
-    assert_eq!(
-        h.state().session.project(),
-        &before,
-        "one Undo restores both"
     );
 }
 

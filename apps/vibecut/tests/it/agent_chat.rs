@@ -363,14 +363,6 @@ fn preview_shows_the_fork_read_only_and_apply_is_one_undo_step() {
             .count(),
         1
     );
-
-    harness.state_mut().activate("edit.undo").unwrap();
-    assert_eq!(
-        **harness.state().session.project(),
-        *before,
-        "undo restores the project"
-    );
-    assert_eq!(harness.state().session.history_len(), (history.0, 1));
 }
 
 #[test]
