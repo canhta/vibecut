@@ -2915,14 +2915,22 @@ fn chroma_key_controls_clamp_animate_and_undo_once_per_gesture() {
     // The two edge sliders share the 0..=100 range and the one-step undo.
     for key in ["feather_edge", "clean_up_edge"] {
         let before = harness.state().session.history_len();
-        type_value(&mut harness, &format!("effects.chroma_key.param.{key}"), "999");
+        type_value(
+            &mut harness,
+            &format!("effects.chroma_key.param.{key}"),
+            "999",
+        );
         let edge = |harness: &Harness<Editor>| {
             chroma(harness, video)
                 .and_then(|effect| effect.value(key)?.scalar())
                 .unwrap()
         };
         assert_eq!(edge(&harness), 100.0, "{key}");
-        assert_eq!(harness.state().session.history_len().0, before.0 + 1, "{key}");
+        assert_eq!(
+            harness.state().session.history_len().0,
+            before.0 + 1,
+            "{key}"
+        );
         harness.state_mut().activate("edit.undo").unwrap();
         harness.run_steps(2);
         assert_eq!(edge(&harness), 0.0, "{key} undoes in one step");

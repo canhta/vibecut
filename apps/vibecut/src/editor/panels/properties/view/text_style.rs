@@ -299,7 +299,7 @@ impl Panel<'_, '_> {
         }
         let group = ui.interact(
             egui::Rect::from_min_max(value_ui.max_rect().min, row.max),
-            ui.id().with("inspector.text_case"),
+            ui.scope_id().with("inspector.text_case"),
             egui::Sense::hover(),
         );
         self.remember("inspector.text_case", &group);

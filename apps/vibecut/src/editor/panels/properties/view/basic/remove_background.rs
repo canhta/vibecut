@@ -224,8 +224,8 @@ impl Panel<'_, '_> {
                     .map_or(parameter.name, |key| self.tr(key));
                 let caption = ui.label(label);
                 let mut shown = default.to_string();
-                let field = egui::TextEdit::singleline(&mut shown)
-                    .background_color(self.control_fill());
+                let field =
+                    egui::TextEdit::singleline(&mut shown).background_color(self.control_fill());
                 let response = ui
                     .add_sized([ui.available_width().max(60.0), 26.0], field)
                     .labelled_by(caption.id)

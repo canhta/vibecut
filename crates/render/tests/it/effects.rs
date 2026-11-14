@@ -1217,7 +1217,10 @@ fn chroma_key_edge_stages_clean_then_feather_the_matte_on_the_cpu() {
         out
     };
     let base = alpha(&chroma_edge_effect(40.0, 0.0, 0.0));
-    assert!(base[5][3] < 1e-3 && base[6][3] > 0.99, "a vertical key edge");
+    assert!(
+        base[5][3] < 1e-3 && base[6][3] > 0.99,
+        "a vertical key edge"
+    );
     // Slider 25 and 12.5 give a one pixel radius: the four neighbours, the
     // horizontal pair read twice by the eight-tap ring.
     let at = |a: &[[f32; 4]], x: i64, y: i64| {
@@ -1248,8 +1251,14 @@ fn chroma_key_edge_stages_clean_then_feather_the_matte_on_the_cpu() {
     };
     let close = |actual: &[[f32; 4]], expected: &[f32], what: &str| {
         for (i, (pixel, alpha)) in actual.iter().zip(expected).enumerate() {
-            assert!((pixel[3] - alpha).abs() < 1e-5, "{what} {i}: {pixel:?} {alpha}");
-            assert!(pixel[..3].iter().all(|v| *v <= pixel[3] + 1e-6), "{what} {i}");
+            assert!(
+                (pixel[3] - alpha).abs() < 1e-5,
+                "{what} {i}: {pixel:?} {alpha}"
+            );
+            assert!(
+                pixel[..3].iter().all(|v| *v <= pixel[3] + 1e-6),
+                "{what} {i}"
+            );
         }
     };
     let cleaned = alpha(&chroma_edge_effect(40.0, 25.0, 0.0));
@@ -1258,8 +1267,14 @@ fn chroma_key_edge_stages_clean_then_feather_the_matte_on_the_cpu() {
     assert!(cleaned[7][3] > 0.99, "the next column stays");
     let feathered = alpha(&chroma_edge_effect(40.0, 0.0, 12.5));
     close(&feathered, &feather(&base), "feather");
-    assert!(feathered[5][3] < 1e-3, "feather never lifts removed coverage");
-    assert!(feathered[6][3] > 0.2 && feathered[6][3] < 0.9, "a soft edge");
+    assert!(
+        feathered[5][3] < 1e-3,
+        "feather never lifts removed coverage"
+    );
+    assert!(
+        feathered[6][3] > 0.2 && feathered[6][3] < 0.9,
+        "a soft edge"
+    );
     // Both: Clean up first, then Feather.
     let both = alpha(&chroma_edge_effect(40.0, 25.0, 12.5));
     let expected = feather(&alpha(&chroma_edge_effect(40.0, 25.0, 0.0)));
@@ -1278,14 +1293,22 @@ fn chroma_key_edge_passes_follow_the_keying_pass_scale_and_refuse_bad_input() {
     assert_eq!(entries(&chroma_edge_effect(20.0, 0.0, 0.0), 1.0).len(), 1);
     let full = entries(&chroma_edge_effect(20.0, 100.0, 100.0), 1.0);
     assert_eq!(
-        full.iter().map(|(entry, _)| entry.as_str()).collect::<Vec<_>>(),
+        full.iter()
+            .map(|(entry, _)| entry.as_str())
+            .collect::<Vec<_>>(),
         ["chroma_key", "matte_clean", "matte_feather"]
     );
     assert_eq!(full[1].1, [4.0]);
     assert_eq!(full[2].1, [8.0]);
     // The radius follows the clip-to-output pixel scale and saturates.
-    assert_eq!(entries(&chroma_edge_effect(20.0, 100.0, 0.0), 2.0)[1].1, [8.0]);
-    assert_eq!(entries(&chroma_edge_effect(20.0, 100.0, 100.0), 1e9)[2].1, [64.0]);
+    assert_eq!(
+        entries(&chroma_edge_effect(20.0, 100.0, 0.0), 2.0)[1].1,
+        [8.0]
+    );
+    assert_eq!(
+        entries(&chroma_edge_effect(20.0, 100.0, 100.0), 1e9)[2].1,
+        [64.0]
+    );
     // Under half an output pixel emits nothing; intensity 0 keys nothing, so no edge stage.
     assert_eq!(entries(&chroma_edge_effect(20.0, 10.0, 5.0), 1.0).len(), 1);
     assert!(entries(&chroma_edge_effect(0.0, 100.0, 100.0), 1.0).is_empty());
@@ -1308,8 +1331,17 @@ fn chroma_key_edge_passes_follow_the_keying_pass_scale_and_refuse_bad_input() {
             uniforms: values.into_iter().map(Uniform::Float).collect(),
         };
         assert!(validate_pass(&sample(vec![2.0]), 8, 4).is_ok(), "{entry}");
-        for values in [vec![], vec![0.4], vec![64.5], vec![f32::NAN], vec![1.0, 1.0]] {
-            assert!(validate_pass(&sample(values.clone()), 8, 4).is_err(), "{entry} {values:?}");
+        for values in [
+            vec![],
+            vec![0.4],
+            vec![64.5],
+            vec![f32::NAN],
+            vec![1.0, 1.0],
+        ] {
+            assert!(
+                validate_pass(&sample(values.clone()), 8, 4).is_err(),
+                "{entry} {values:?}"
+            );
         }
     }
 }
@@ -5244,14 +5276,15 @@ fn lens_reduced_expected(
     (0..size[0] * size[1])
         .map(|i| {
             let (x, y) = (f64::from(i % size[0]), f64::from(i / size[0]));
-            let p = spatial_sample(
-                &gathered,
-                dims,
-                (x + 0.5) * sx - 0.5,
-                (y + 0.5) * sy - 0.5,
-            );
+            let p = spatial_sample(&gathered, dims, (x + 0.5) * sx - 0.5, (y + 0.5) * sy - 0.5);
             let alpha = p[3].clamp(0.0, 1.0);
-            [0, 1, 2, 3].map(|k| if k == 3 { alpha } else { p[k].clamp(0.0, alpha) })
+            [0, 1, 2, 3].map(|k| {
+                if k == 3 {
+                    alpha
+                } else {
+                    p[k].clamp(0.0, alpha)
+                }
+            })
         })
         .collect()
 }

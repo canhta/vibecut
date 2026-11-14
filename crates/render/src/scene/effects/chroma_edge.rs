@@ -67,8 +67,7 @@ fn taps(radius: f32) -> impl Iterator<Item = (i64, i64)> {
         let reach = radius * ring as f32 / rings as f32;
         let count = (ring * 8).max(6);
         (0..count).map(move |i| {
-            let theta =
-                std::f32::consts::TAU * (i as f32 + 0.5 * (ring % 2) as f32) / count as f32;
+            let theta = std::f32::consts::TAU * (i as f32 + 0.5 * (ring % 2) as f32) / count as f32;
             (
                 (theta.cos() * reach).round() as i64,
                 (theta.sin() * reach).round() as i64,
@@ -79,9 +78,8 @@ fn taps(radius: f32) -> impl Iterator<Item = (i64, i64)> {
 
 /// Coverage of the current image at an offset, clamped to the picture edge.
 fn coverage(inputs: &SampleInputs<'_>, x: u32, y: u32, dx: i64, dy: i64) -> f32 {
-    let at = |v: u32, d: i64, size: u32| {
-        (i64::from(v) + d).clamp(0, i64::from(size.max(1)) - 1) as u32
-    };
+    let at =
+        |v: u32, d: i64, size: u32| (i64::from(v) + d).clamp(0, i64::from(size.max(1)) - 1) as u32;
     inputs.texel_current(
         at(x, dx, inputs.current.width()),
         at(y, dy, inputs.current.height()),
@@ -110,8 +108,9 @@ pub(super) fn clean(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f32]) -
 /// Feather edge: coverage becomes the disc mean, capped at the pixel's own.
 pub(super) fn feather(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f32]) -> [f32; 4] {
     let pixel = inputs.texel_current(x, y);
-    let (sum, count) = taps(uniform(values, 0)).fold((pixel[3], 1.0f32), |(sum, count), (dx, dy)| {
-        (sum + coverage(inputs, x, y, dx, dy), count + 1.0)
-    });
+    let (sum, count) = taps(uniform(values, 0))
+        .fold((pixel[3], 1.0f32), |(sum, count), (dx, dy)| {
+            (sum + coverage(inputs, x, y, dx, dy), count + 1.0)
+        });
     with_coverage(pixel, sum / count)
 }

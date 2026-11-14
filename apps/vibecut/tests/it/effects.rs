@@ -1722,9 +1722,7 @@ fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
                 below: &other,
                 coverage: None,
             };
-            let expected = CpuEffects
-                .apply(&start, &keyed, inputs(), &Hooks)
-                .unwrap();
+            let expected = CpuEffects.apply(&start, &keyed, inputs(), &Hooks).unwrap();
             let actual = gpu.apply(&start, &keyed, inputs(), &meter).unwrap();
             parity(&actual, &expected);
             assert_ne!(actual.pixels(), start.pixels());
