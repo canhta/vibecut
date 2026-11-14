@@ -1,22 +1,24 @@
-//! Runs one narration for the Text to speech tab: the provider form, the consent-gated
-//! synthesis on a worker thread, the fit decision and the placement of the take. The panel
-//! never writes project data itself; the take becomes an item through `dub.place`.
+//! Runs one narration for the Text to speech tab: the provider form, the `dub.generate` job
+//! that makes the take, the fit decision and the placement of the take. The panel submits the
+//! same registered command an agent or the CLI does; the take becomes an item through
+//! `dub.place`, and the panel never writes project data itself.
 use crate::editor::properties::{State, read};
 use crate::editor::{Command, CreatedId, Error, ItemId, Port, Result, SourceAsset, Tick};
-use crate::services::ai_task::TaskEvents;
+use crate::services::{ai_access, ai_task::TaskEvents};
 use captions::{LanguageTag, NfcText};
+use engine::Session;
+use engine::control::{Caller, ControlResult, ErrorCode};
 use engine::dubbing::{
-    CancelFlag, CredentialSpeech, DubTake, DurationFit, Fit, FitInput, Narrator, Prepared, Request,
-    SpeechOpener, SpeechOption, fit, speech_options, write_wav,
+    CredentialSpeech, DubTake, DurationFit, Fit, FitInput, SpeechOpener, SpeechOption, decode_take,
+    fit, speech_options, write_wav,
 };
-use engine::providers::{ConsentPrompt, Credentials, UploadRequest};
+use engine::jobs::{JobId, JobRunner, JobState};
+use engine::providers::{Credentials, UploadRequest};
+use engine::subtitles::CaptionAccess;
 use engine::transcript::Cancellation;
 use media::AssetId;
 use project::{ItemParams, NarrationDucking};
-use std::{
-    path::PathBuf,
-    sync::{Arc, mpsc},
-};
+use std::{path::PathBuf, sync::Arc};
 
 /// The spoken languages the speech adapters take. No other tag is offered.
 pub(in crate::editor) const LANGUAGES: [&str; 3] = ["vi", "en", "zh"];
@@ -93,19 +95,26 @@ pub(in crate::editor) enum Action {
     SetDucking(NarrationDucking),
 }
 
+/// The running `dub.generate` job and the consent slot its prompt waits on.
 struct Run {
     events: Arc<TaskEvents>,
     cancel: Cancellation,
-    flag: CancelFlag,
-    receive: mpsc::Receiver<std::result::Result<DubTake, Failed>>,
+    job: JobId,
     item: ItemId,
     cue: Tick,
 }
 impl Drop for Run {
-    /// A run that leaves the tab stops its consent wait and its provider call.
+    /// A run that leaves the tab stops the consent wait its job may be blocked in.
     fn drop(&mut self) {
         self.cancel.cancel();
-        self.flag.cancel();
+    }
+}
+
+/// The desktop is the trusted root of its own session: consent, not policy, guards the call.
+struct Human;
+impl engine::control::Policy for Human {
+    fn authorize(&self, _: &engine::Command, _: &project::Project) -> engine::control::Result<()> {
+        Ok(())
     }
 }
 
@@ -123,7 +132,11 @@ pub(in crate::editor) struct NarrationWorkflow {
     directory: Option<PathBuf>,
     /// The text to read, editable, bound to the text item it was read from.
     pub(in crate::editor) text: Option<(ItemId, String)>,
+    /// The runner `dub.generate` is submitted to; created on first use.
+    runner: Option<JobRunner>,
     run: Option<Run>,
+    /// A job whose run was dropped (another item was selected); `dub.cancel` stops it.
+    orphan: Option<JobId>,
     ready: Option<Ready>,
     placed: Option<ItemId>,
     failure: Option<Failed>,
@@ -146,7 +159,9 @@ impl Default for NarrationWorkflow {
             opener: None,
             directory: None,
             text: None,
+            runner: None,
             run: None,
+            orphan: None,
             ready: None,
             placed: None,
             failure: None,
@@ -184,18 +199,27 @@ fn failed_of(error: &engine::providers::Error) -> Failed {
     }
 }
 
-/// The worker body: ask the consent prompt, then run the single attempt.
-fn synthesize(
-    prepared: &Prepared,
-    prompt: &dyn ConsentPrompt,
-    flag: &CancelFlag,
-) -> std::result::Result<DubTake, Failed> {
-    let consent = prepared
-        .approve(prompt)
-        .map_err(|error| failed_of(&error))?;
-    prepared
-        .synthesize(&consent, flag)
-        .map_err(|error| Failed::Provider(cause_of(&error)))
+/// A refusal of `dub.generate` itself: language, voice, key and cue are checked before the job.
+fn failed_of_control(error: &engine::control::Error) -> Failed {
+    use engine::control::Error as Refusal;
+    match error {
+        Refusal::Providers(error) => failed_of(error),
+        Refusal::Ai(error) => Failed::Provider(cause_of(error)),
+        Refusal::Runtime(engine::RuntimeError::Cancelled) => Failed::Provider(Cause::Cancelled),
+        _ => Failed::Provider(Cause::Other),
+    }
+}
+
+/// How a failed job reads: the runner keeps its wire code, which is coarser than the AI cause.
+fn failed_of_code(code: ErrorCode) -> Failed {
+    match code {
+        ErrorCode::Permission => Failed::Declined,
+        ErrorCode::Cancelled => Failed::Provider(Cause::Cancelled),
+        ErrorCode::Setup | ErrorCode::Auth => Failed::Provider(Cause::Key),
+        ErrorCode::Quota | ErrorCode::RateLimit => Failed::Provider(Cause::Quota),
+        ErrorCode::Network => Failed::Provider(Cause::Network),
+        _ => Failed::Provider(Cause::Other),
+    }
 }
 
 /// Silent time after `cue_end` before the next audible item starts: the room an overflow may
@@ -252,13 +276,59 @@ impl NarrationWorkflow {
         if self.text.as_ref().is_some_and(|(bound, _)| *bound == item) {
             return;
         }
-        self.run = None;
+        if let Some(run) = self.run.take() {
+            self.orphan = Some(run.job);
+        }
         self.ready = None;
         self.placed = None;
         self.failure = None;
         self.rephrased = false;
         self.ducking_draft = None;
         self.text = Some((item, content.to_owned()));
+    }
+
+    /// Submit one registered command to this workflow's runner as the desktop person.
+    fn control(
+        &mut self,
+        session: &mut Session,
+        budget: &engine::ByteBudget,
+        command: engine::Command,
+        access: Option<&CaptionAccess>,
+    ) -> engine::control::Result<ControlResult> {
+        let runner = match self.runner.take() {
+            Some(runner) => runner,
+            None => JobRunner::new(
+                engine::jobs::RunnerConfig {
+                    concurrency: [1, 1, 1],
+                    queue: 1,
+                    retained: 4,
+                    network_attempts: 1,
+                    backoff: std::time::Duration::from_millis(100),
+                    progress_interval: std::time::Duration::from_millis(40),
+                },
+                budget.clone(),
+                Arc::new(engine::jobs::SystemClock::default()),
+            )?,
+        };
+        let runner = self.runner.insert(runner);
+        session.control_command(
+            command,
+            Caller {
+                principal: "vibecut-desktop",
+                external: false,
+                policy: &Human,
+                fonts: None,
+                sounds: None,
+                music: None,
+                stickers: None,
+                brand: None,
+                media: None,
+                chapters: None,
+                captions: access,
+                vision: None,
+            },
+            runner,
+        )
     }
 
     pub(in crate::editor) fn busy(&self) -> bool {
@@ -341,7 +411,10 @@ impl State {
                 None => Ok(()),
             },
             Action::Cancel => {
-                if self.narration.run.take().is_some() {
+                if let Some(run) = self.narration.run.take() {
+                    // The same `dub.cancel` an agent sends, and the consent wait it may be in.
+                    run.cancel.cancel();
+                    self.cancel_job(port, run.job);
                     self.narration.failure = Some(Failed::Provider(Cause::Cancelled));
                 }
                 Ok(())
@@ -355,7 +428,18 @@ impl State {
         }
     }
 
-    /// Validate the request with no IO, then run consent and synthesis on a worker.
+    /// Send `dub.cancel` for a job; a job that already ended refuses and that is fine.
+    fn cancel_job(&mut self, port: &mut Port<'_>, job: JobId) {
+        let budget = port.read.budget.clone();
+        let _ = port.with_session(|session| {
+            Ok(self
+                .narration
+                .control(session, &budget, Command::DubCancel { job }, None))
+        });
+    }
+
+    /// Submit `dub.generate` for the text item. Language, voice and key refusals come back
+    /// typed before any job exists; consent and the single provider attempt run inside it.
     fn start_narration(
         &mut self,
         port: &mut Port<'_>,
@@ -393,80 +477,112 @@ impl State {
             return Ok(());
         }
         let form = self.narration.form;
-        let request = {
+        let (provider, model, voice, language) = {
             let option = self
                 .narration
                 .option()
                 .ok_or(Error::Invalid("speech provider"))?;
-            Request {
-                provider: option.id.to_owned(),
-                model: option
+            (
+                option.id.to_owned(),
+                option
                     .models
                     .get(form.model)
                     .ok_or(Error::Invalid("speech model"))?
                     .clone(),
-                voice: option
+                option
                     .voices
                     .get(form.voice)
                     .ok_or(Error::Invalid("speech voice"))?
                     .0
                     .to_owned(),
-                language: LanguageTag::parse(
+                LanguageTag::parse(
                     LANGUAGES
                         .get(form.language)
                         .ok_or(Error::Invalid("speech language"))?,
                 )?,
-                text: NfcText::from(text.as_str()),
-                cue_duration: cue,
-                provider_speed_thousandths: speed,
-            }
+            )
         };
         let opener = self.narration.opener.clone().unwrap_or_else(|| {
             Arc::new(CredentialSpeech::new(Credentials::from_env())) as Arc<dyn SpeechOpener>
         });
-        let prepared = match Narrator::new(opener).prepare(&request) {
-            Ok(prepared) => prepared,
-            Err(error) => {
-                self.narration.failure = Some(failed_of(&error));
-                return Ok(());
-            }
-        };
         let cancel = Cancellation::new();
-        let flag = CancelFlag::new();
         let events = Arc::new(TaskEvents::new(cancel.clone()));
-        let (send, receive) = mpsc::channel();
-        let worker_events = events.clone();
-        let worker_flag = flag.clone();
-        std::thread::Builder::new()
-            .name("narration".into())
-            .spawn(move || {
-                let outcome = synthesize(&prepared, &*worker_events, &worker_flag);
-                let _ = send.send(outcome);
-            })?;
-        self.narration.run = Some(Run {
-            events,
-            cancel,
-            flag,
-            receive,
-            item,
-            cue,
-        });
+        let consent: ai_access::Consent = events.clone();
+        let access = ai_access::narration_access(consent, opener);
+        let budget = port.read.budget.clone();
+        let command = Command::DubGenerate {
+            provider,
+            model,
+            voice,
+            language,
+            text: NfcText::from(text.as_str()),
+            cue_duration: cue,
+            provider_speed_thousandths: speed,
+        };
+        let accepted = port.with_session(|session| {
+            Ok(self
+                .narration
+                .control(session, &budget, command, Some(&access)))
+        })?;
+        match accepted {
+            Ok(ControlResult::JobAccepted { job, .. }) => {
+                self.narration.run = Some(Run {
+                    events,
+                    cancel,
+                    job,
+                    item,
+                    cue,
+                });
+            }
+            Ok(_) => return Err(Error::Invalid("narration job")),
+            Err(error) => self.narration.failure = Some(failed_of_control(&error)),
+        }
         Ok(())
     }
 
-    /// Collect a finished worker once per frame and decide the take's fit.
+    /// Advance the `dub.generate` job once per frame and decide the finished take's fit.
     pub(in crate::editor) fn poll_narration(&mut self, port: &mut Port<'_>) {
-        let Some(run) = self.narration.run.as_ref() else {
+        if let Some(job) = self.narration.orphan.take() {
+            self.cancel_job(port, job);
+        }
+        let Some((job, item, cue)) = self
+            .narration
+            .run
+            .as_ref()
+            .map(|run| (run.job, run.item, run.cue))
+        else {
             return;
         };
-        let outcome = match run.receive.try_recv() {
-            Ok(outcome) => outcome,
-            Err(mpsc::TryRecvError::Empty) => return,
-            Err(mpsc::TryRecvError::Disconnected) => Err(Failed::Provider(Cause::Other)),
-        };
-        let Some(run) = self.narration.run.take() else {
+        let Some(runner) = self.narration.runner.as_mut() else {
+            self.narration.run = None;
             return;
         };
+        if runner.tick().is_err() {
+            self.narration.run = None;
+            self.narration.failure = Some(Failed::Provider(Cause::Other));
+            return;
+        }
+        runner.drain_events();
+        let Some(snapshot) = runner.snapshot(job) else {
+            self.narration.run = None;
+            self.narration.failure = Some(Failed::Provider(Cause::Other));
+            return;
+        };
+        let outcome = match snapshot.state {
+            JobState::Completed => match runner.output_bytes(job).map(decode_take) {
+                Some(Ok(take)) => Ok(take),
+                _ => Err(Failed::Provider(Cause::Other)),
+            },
+            JobState::Failed => Err(snapshot
+                .error
+                .as_ref()
+                .map_or(Failed::Provider(Cause::Other), |error| {
+                    failed_of_code(error.code())
+                })),
+            JobState::Cancelled => Err(Failed::Provider(Cause::Cancelled)),
+            _ => return,
+        };
+        self.narration.run = None;
         let take = match outcome {
             Ok(take) => take,
             Err(failed) => {
@@ -474,11 +590,11 @@ impl State {
                 return;
             }
         };
-        let Some((_, start, duration)) = text_facts(port.view().session.project(), run.item) else {
+        let Some((_, start, duration)) = text_facts(port.view().session.project(), item) else {
             self.narration.failure = Some(Failed::Stale);
             return;
         };
-        if duration != run.cue {
+        if duration != cue {
             self.narration.failure = Some(Failed::Stale);
             return;
         }
@@ -492,10 +608,10 @@ impl State {
             .iter()
             .any(|option| option.id == take.narration.provider.as_str() && option.speed)
             && take.narration.provider_speed_thousandths.is_none();
-        let cue_end = start.checked_add(run.cue).unwrap_or(start);
+        let cue_end = start.checked_add(cue).unwrap_or(start);
         let fitted = fit(FitInput {
             natural,
-            cue: run.cue,
+            cue,
             silent_after: silent_after(port.view().session.project(), cue_end),
             characters: take.narration.characters,
             provider_speed: speed_offered,
@@ -503,8 +619,8 @@ impl State {
         });
         self.narration.ready = Some(Ready {
             take,
-            item: run.item,
-            cue: run.cue,
+            item,
+            cue,
             fit: fitted,
         });
     }

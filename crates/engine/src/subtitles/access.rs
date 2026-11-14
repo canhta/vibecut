@@ -38,6 +38,23 @@ impl CaptionAccess {
             dubbing: None,
         }
     }
+    /// An access that carries only the human approval, for workflows that need no ASR provider
+    /// or checkpoint cache (narration). Caption commands report that nothing is lent.
+    pub fn consent_only(consent: Arc<dyn ConsentPrompt + Send + Sync>) -> Self {
+        Self {
+            resources: Err(Arc::new(
+                crate::session::EditError::Unsupported("captions are not lent to this access")
+                    .into(),
+            )),
+            consent,
+            clips: None,
+            dubbing: None,
+        }
+    }
+    /// The human approval this access asks, for workflows that run after admission.
+    pub fn consent(&self) -> Arc<dyn ConsentPrompt + Send + Sync> {
+        self.consent.clone()
+    }
     /// Retain an optional composition failure for caption commands; other commands stay usable.
     pub fn unavailable(error: SubtitleError) -> Self {
         Self {

@@ -12,9 +12,12 @@ pub use crate::dubbing::Request as DubGenerateRequest;
 /// [`CaptionAccess::with_dubbing`]. Admission, grants, receipts and revision checks run
 /// before it is invoked.
 pub trait DubWorkflow: Send + Sync {
-    /// Ask for consent through `access`, then submit one synthesis job onto `runner` and
-    /// return it. A refusal (unsupported language or voice, cost bound, denied consent) is
-    /// typed and leaves the runner untouched. The job output is an encoded take.
+    /// Validate the request with no IO, then submit one synthesis job onto `runner` and
+    /// return it. A refusal (unsupported language or voice, missing key, unusable cue) is
+    /// typed and leaves the runner untouched. The job asks the consent prompt of `access`
+    /// before any text leaves, so a caller whose prompt waits for a person never blocks
+    /// here; a denial ends the job as a permission failure with nothing sent. The job
+    /// output is an encoded take, read with `JobRunner::output_bytes` and `decode_take`.
     fn generate(
         &self,
         runner: &mut JobRunner,
@@ -32,9 +35,8 @@ impl DubWorkflow for Narrator {
         request: DubGenerateRequest,
         input: CacheKey,
     ) -> Result<JobId> {
-        let (_, prompt) = access.share()?;
+        let prompt = access.consent();
         let prepared = self.prepare(&request)?;
-        let consent = prepared.approve(prompt.as_ref())?;
         let spec = JobSpec {
             kind: JobKind::Synthesize,
             class: ResourceClass::Network,
@@ -44,20 +46,25 @@ impl DubWorkflow for Narrator {
                 ..Default::default()
             },
         };
-        let (id, _) = runner.submit(spec, move |context| {
-            context
-                .check_cancelled()
-                .map_err(|_| ai::Error::Cancelled)?;
-            let take = prepared.synthesize(&consent, context)?;
-            encode_take(&take)
-        })?;
+        let (id, _) = runner.submit(
+            spec,
+            move |context| -> std::result::Result<Vec<u8>, crate::providers::Error> {
+                context.check_cancelled().map_err(|_| {
+                    crate::providers::Error::Runtime(crate::RuntimeError::Cancelled)
+                })?;
+                let consent = prepared.approve(prompt.as_ref())?;
+                let take = prepared.synthesize(&consent, context)?;
+                Ok(encode_take(&take)?)
+            },
+        )?;
         Ok(id)
     }
 }
 
 impl CaptionAccess {
     /// Lend the narration workflow. It asks the consent prompt of this access, so no
-    /// second consent path exists.
+    /// second consent path exists; the access needs no other resource (see
+    /// [`CaptionAccess::consent_only`]).
     pub fn with_dubbing(mut self, dubbing: Arc<dyn DubWorkflow>) -> Self {
         self.dubbing = Some(Arc::new(dubbing));
         self

@@ -1626,8 +1626,6 @@ pub(super) use animation::Previews as AnimationPreviews;
 
 mod canvas;
 
-mod narration;
-
 mod playback;
 
 mod effects;

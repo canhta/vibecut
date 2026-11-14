@@ -1,6 +1,6 @@
 //! Renders the Text to speech tab of a text item and the consent sheet of its upload.
+use super::super::appearance::FIELD_COLUMN;
 use super::Panel;
-use super::appearance::FIELD_COLUMN;
 use crate::editor::properties::workflow::jobs::narration::{
     Action as NarrationAction, Cause, Failed, LANGUAGES, TakeView,
 };
@@ -44,7 +44,7 @@ fn placed_ducking(project: &project::Project, item: ItemId) -> Option<NarrationD
 
 impl Panel<'_, '_> {
     /// The Text to speech tab: voice, script, the generated take and its ducking.
-    pub(super) fn narration_tab(&mut self, ui: &mut egui::Ui, item: ItemId) {
+    pub(in super::super) fn narration_tab(&mut self, ui: &mut egui::Ui, item: ItemId) {
         let Some(content) =
             read::item(self.cx.session.project(), item).and_then(|found| match &found.content {
                 ItemParams::Text(params) => Some(params.content.as_str().to_owned()),
@@ -565,7 +565,7 @@ impl Panel<'_, '_> {
     }
 
     /// The exact-upload sheet: what is sent, to whom, at most what cost. The worker waits on it.
-    pub(super) fn narration_dialog(&mut self, ctx: &egui::Context) {
+    pub(in super::super) fn narration_dialog(&mut self, ctx: &egui::Context) {
         let Some((upload, price_acknowledged)) = self.state.narration.pending() else {
             return;
         };
