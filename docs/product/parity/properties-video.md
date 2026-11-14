@@ -1,6 +1,6 @@
 # Properties: video clip
 
-Snapshot of main `443181f4` on 2026-11-14. Legend, evidence names and update rule: [parity](README.md).
+Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rule: [parity](README.md).
 
 ## Video clip (PVID)
 
@@ -33,16 +33,16 @@ Snapshot of main `443181f4` on 2026-11-14. Legend, evidence names and update rul
 ### Remove BG
 | ID | Item | Function | UI/UX | Evidence | Gap / note |
 |---|---|---|---|---|---|
-| PVID-19 | Auto removal | Partial | Differs | 104613-104648 | Toggle, not checkbox |
+| PVID-19 | Auto removal | Partial | Proposed | 104613-104648, 100332 | Checkbox; Feather row is ours |
 | PVID-20 | Auto removal Stroke row | Missing | Not captured | 151551-151628 | |
 | PVID-21 | Custom removal Brush, Eraser | Done | Proposed | 104709 | |
 | PVID-22 | Smart brush, Smart eraser | Missing | Not captured | 104720-104726 | Model-backed |
 | PVID-23 | Custom removal Size 1-100 | Done | Matches | 100332-100347 | |
 | PVID-24 | Custom removal Apply | Partial | Differs | 100402-100407 | Ours paints live |
 | PVID-25 | Chroma key eyedropper | Done | Proposed | 104920-104926 | |
-| PVID-26 | Chroma Intensity, Shadow | Partial | Differs | 104911, 151402 | Default 40 vs 20 |
-| PVID-27 | Chroma Feather, Clean up edge | Missing | Not captured | 151342-151410 | |
-| PVID-28 | Chroma controls grey until pick | Partial | Differs | 104911 | Ours hides them |
+| PVID-26 | Chroma Intensity, Shadow | Done | Proposed | 104911, 151402 | |
+| PVID-27 | Chroma Feather, Clean up edge | Done | Proposed | 104926, 151342-151410 | Edge radii inferred, not measured |
+| PVID-28 | Chroma controls grey until pick | Done | Proposed | 104911 | |
 | PVID-29 | AI background option | Out of scope | — | 151402 | Generated media |
 
 ### Mask
@@ -69,8 +69,8 @@ Snapshot of main `443181f4` on 2026-11-14. Legend, evidence names and update rul
 | PVID-40 | Duration field | Done | Proposed | 100018 | |
 | PVID-41 | Change audio pitch | Done | Proposed | 100036 | |
 | PVID-42 | Reset button label | Done | Matches | 221757 | |
-| PVID-43 | Curve presets (8) | Done | Differs | 100057 | 4 per row, not 6 |
-| PVID-44 | Curve plot, points, Reset, + | Done | Differs | 100104-100108 | Plot below the fold |
+| PVID-43 | Curve presets (8) | Done | Proposed | 100057 | Six per row; long names crowd at 1440 px |
+| PVID-44 | Curve plot, points, Reset, + | Done | Proposed | 100104-100108 | |
 | PVID-45 | Smooth slow-mo | Missing | Not captured | 100036 | Optical flow |
 | PVID-46 | Reverse switch | Ours | Proposed | | |
 

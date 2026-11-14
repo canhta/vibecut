@@ -1,6 +1,6 @@
 # Effects, transitions, filters, adjustment
 
-Snapshot of main `443181f4` on 2026-11-14. Legend, evidence names and update rule: [parity](README.md).
+Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rule: [parity](README.md).
 
 ## Effects (FX)
 
@@ -8,8 +8,8 @@ Snapshot of main `443181f4` on 2026-11-14. Legend, evidence names and update rul
 | ID | Item | Function | UI/UX | Evidence | Gap / note |
 |---|---|---|---|---|---|
 | FX-01 | Effects feature tab | Done | Matches | 221727; [ui/editor.md](../ui/editor.md#effects) | |
-| FX-02 | Video effects group header | Done | Differs | 221727 | Truncates at 398 px |
-| FX-03 | Sub-nav shelf rows | Partial | Differs | web 08 | Own shelves; no Trending; row fill |
+| FX-02 | Video effects group header | Done | Proposed | 221727 | |
+| FX-03 | Sub-nav shelf rows | Partial | Differs | web 08 | Own shelves; no Trending |
 | FX-04 | Favorites sub-nav entry | Done | Proposed | web 08 | |
 | FX-05 | Body effects sub-tab | Missing | Not captured | web 08 | Needs local model |
 | FX-06 | Search field | Done | Proposed | web 15 | |

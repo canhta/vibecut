@@ -2,7 +2,7 @@
 
 One row per CapCut desktop item a user can see or use, mapped to VibeCut's state. This folder tracks progress and quality; it does not hold values or behaviour. Measured values live in [UI design](../ui/index.md) and its window files, scope in [requirements](../requirements.md), commands in [agent control](../agent-control/commands.md).
 
-Snapshot: main `443181f4`, 2026-11-14.
+Snapshot: main `d3be7568`, 2026-11-14.
 
 ## How to read a row
 
@@ -47,20 +47,20 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 | [Templates](assets.md#templates-tmpl) | 7 | 0 | 0 | 6 | 0 | 0 | 1 | 0 | 0 | 0 | 5 |
 | [Captions panel](captions.md#captions-panel-caps) | 42 | 20 | 11 | 7 | 0 | 4 | 0 | 4 | 5 | 18 | 14 |
 | [Transcript editing](captions.md#transcript-editing-transcript) | 16 | 1 | 5 | 9 | 1 | 0 | 0 | 0 | 1 | 5 | 1 |
-| [Effects](catalogues.md#effects-fx) | 17 | 9 | 4 | 2 | 0 | 0 | 2 | 3 | 4 | 5 | 2 |
+| [Effects](catalogues.md#effects-fx) | 17 | 9 | 4 | 2 | 0 | 0 | 2 | 3 | 3 | 6 | 2 |
 | [Transitions](catalogues.md#transitions-trans) | 16 | 9 | 2 | 1 | 0 | 3 | 1 | 2 | 1 | 9 | 1 |
 | [Filters](catalogues.md#filters-filt) | 9 | 7 | 1 | 0 | 0 | 0 | 1 | 1 | 1 | 4 | 0 |
 | [Adjustment](catalogues.md#adjustment-adj) | 6 | 2 | 3 | 0 | 0 | 1 | 0 | 1 | 3 | 2 | 0 |
-| [Video clip](properties-video.md#video-clip-pvid) | 52 | 29 | 8 | 9 | 0 | 3 | 3 | 6 | 8 | 26 | 8 |
+| [Video clip](properties-video.md#video-clip-pvid) | 52 | 32 | 6 | 8 | 0 | 3 | 3 | 6 | 3 | 32 | 7 |
 | [Audio clip](properties-other.md#audio-clip-paud) | 17 | 8 | 1 | 7 | 0 | 1 | 0 | 3 | 1 | 6 | 7 |
-| [Text item](properties-other.md#text-item-ptext) | 31 | 17 | 8 | 5 | 0 | 0 | 1 | 3 | 8 | 14 | 5 |
+| [Text item](properties-other.md#text-item-ptext) | 31 | 17 | 8 | 5 | 0 | 0 | 1 | 3 | 7 | 15 | 5 |
 | [Caption item](properties-other.md#caption-item-pcap) | 8 | 1 | 4 | 2 | 0 | 1 | 0 | 0 | 3 | 3 | 2 |
 | [Sticker, effect, filter and adjustment items](properties-other.md#sticker-effect-filter-and-adjustment-items-pother) | 17 | 7 | 6 | 3 | 0 | 1 | 0 | 0 | 5 | 9 | 3 |
 | [Timeline](timeline.md#timeline-tl) | 95 | 44 | 11 | 26 | 2 | 10 | 2 | 13 | 5 | 45 | 5 |
 | [Keyframes](timeline.md#keyframes-key) | 14 | 10 | 3 | 0 | 0 | 1 | 0 | 2 | 2 | 7 | 1 |
-| [Player](player-export.md#player-play) | 24 | 15 | 5 | 1 | 0 | 3 | 0 | 5 | 6 | 11 | 0 |
-| [Export](player-export.md#export-exp) | 31 | 10 | 10 | 7 | 0 | 1 | 3 | 2 | 11 | 6 | 3 |
+| [Player](player-export.md#player-play) | 24 | 16 | 4 | 1 | 0 | 3 | 0 | 5 | 5 | 12 | 0 |
+| [Export](player-export.md#export-exp) | 31 | 15 | 7 | 5 | 0 | 1 | 3 | 2 | 8 | 11 | 3 |
 | [AI chat](ai-shorts.md#ai-chat-agent) | 17 | 8 | 3 | 3 | 1 | 1 | 1 | 5 | 2 | 4 | 2 |
 | [Long video to shorts](ai-shorts.md#long-video-to-shorts-shorts) | 24 | 9 | 7 | 4 | 0 | 2 | 2 | 8 | 2 | 5 | 3 |
 | [States](states.md#states-state) | 12 | 7 | 3 | 0 | 1 | 0 | 1 | 2 | 2 | 4 | 3 |
-| **Total** | **667** | **307** | **125** | **134** | **7** | **53** | **41** | **98** | **82** | **247** | **105** |
+| **Total** | **667** | **316** | **119** | **131** | **7** | **53** | **41** | **98** | **71** | **261** | **104** |

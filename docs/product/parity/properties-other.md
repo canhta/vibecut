@@ -1,6 +1,6 @@
 # Properties: audio, text, caption and other items
 
-Snapshot of main `443181f4` on 2026-11-14. Legend, evidence names and update rule: [parity](README.md).
+Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rule: [parity](README.md).
 
 ## Audio clip (PAUD)
 
@@ -40,7 +40,7 @@ Snapshot of main `443181f4` on 2026-11-14. Legend, evidence names and update rul
 | PTEXT-05 | Font dropdown | Done | Proposed | 103657-103714; [ui/editor.md](../ui/editor.md#font-picker) | |
 | PTEXT-06 | Font size | Done | Proposed | 103613 | |
 | PTEXT-07 | Bold, underline, italic | Done | Proposed | 103613 | |
-| PTEXT-08 | Case TT, tt, Tt | Done | Differs | 103613 | Off the 120 px column |
+| PTEXT-08 | Case TT, tt, Tt | Done | Proposed | 103613 | |
 | PTEXT-09 | Fill colour | Done | Proposed | 103613 | |
 | PTEXT-10 | Character, line spacing | Done | Proposed | 103613 | |
 | PTEXT-11 | Alignment, six icons | Partial | Proposed | 103613 | No vertical text |

@@ -1,6 +1,6 @@
 # Player and export
 
-Snapshot of main `443181f4` on 2026-11-14. Legend, evidence names and update rule: [parity](README.md).
+Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rule: [parity](README.md).
 
 ## Player (PLAY)
 
@@ -10,13 +10,13 @@ Snapshot of main `443181f4` on 2026-11-14. Legend, evidence names and update rul
 | PLAY-02 | Player menu entry | Partial | Differs | 14/100123 | Header button |
 | PLAY-03 | Color oscilloscope | Missing | — | 14/100123 | |
 | PLAY-04 | Export still frames | Done | Proposed | 14/100123 | |
-| PLAY-05 | Add horizontal / vertical guide | Done | Proposed | 14/100216 | |
-| PLAY-06 | Drag guide from ruler | Partial | Differs | 14b/111304 | Pending |
-| PLAY-07 | Lock / unlock guides | Done | Proposed | 14b/111325 | Toast pending |
+| PLAY-05 | Add horizontal / vertical guide | Done | Proposed | 14/100216 | Teal guides |
+| PLAY-06 | Drag guide from ruler | Done | Proposed | 14b/111304 | |
+| PLAY-07 | Lock / unlock guides | Done | Proposed | 14b/111325 | |
 | PLAY-08 | Show / hide guides | Done | Proposed | 14/100219 | |
 | PLAY-09 | Clear guides | Done | Proposed | 14/100219 | |
 | PLAY-10 | Show / hide rulers | Done | Differs | 14/100133 | Rulers cover canvas only |
-| PLAY-11 | Guide and ruler geometry | Partial | Differs | 14/100216 | Pending |
+| PLAY-11 | Guide and ruler geometry | Partial | Differs | 14/100216 | Per-ruler label step; rulers still bound to the canvas |
 | PLAY-12 | Play / pause | Done | Matches | 14b/110531 | |
 | PLAY-13 | Timecode | Done | Matches | 05/221643 | |
 | PLAY-14 | Fit button | Done | Matches | 05/221643 | |
@@ -35,16 +35,16 @@ Snapshot of main `443181f4` on 2026-11-14. Legend, evidence names and update rul
 
 | ID | Item | Function | UI/UX | Evidence | Gap / note |
 |---|---|---|---|---|---|
-| EXP-01 | Dialog frame | Done | Differs | 14b/105340 | 900x820 vs 720x663 |
+| EXP-01 | Dialog frame | Done | Differs | 14b/105340 | 720x663; Export before Cancel |
 | EXP-02 | Cover preview, Edit cover | Missing | — | 14b/105340 | |
 | EXP-03 | Timeline select | Done | Proposed | 14b/105340 | |
 | EXP-04 | Name field | Done | Proposed | 14b/105340 | |
 | EXP-05 | Export-to path | Partial | Differs | 14b/105745 | Picker after render |
-| EXP-06 | Video section tick | Partial | Differs | 14b/105736 | Pending |
+| EXP-06 | Video section tick | Done | Proposed | 14b/105736 | |
 | EXP-07 | Remove watermark | Out of scope | — | 14b/105340 | Accounts |
 | EXP-08 | Resolution list | Partial | Differs | 14b/105418 | Ours adds 360P |
-| EXP-09 | Bit rate presets | Missing | — | 14b/105425 | Pending |
-| EXP-10 | Custom bit rate (Kbps) | Partial | Differs | 14b/105630 | Pending |
+| EXP-09 | Bit rate presets | Done | Proposed | 14b/105425 | 6, 12, 24 Mb/s are ours |
+| EXP-10 | Custom bit rate (Kbps) | Done | Proposed | 14b/105630 | |
 | EXP-11 | Codec list | Partial | Differs | 14b/105429 | H.264, VP9 only |
 | EXP-12 | Format list | Done | Proposed | 14b/105433 | Plus WebM |
 | EXP-13 | Frame rate list | Partial | Differs | 14b/105437 | No 29.97, 59.94, 120 |
@@ -52,9 +52,9 @@ Snapshot of main `443181f4` on 2026-11-14. Legend, evidence names and update rul
 | EXP-15 | Color space row | Missing | Not captured | 14b/105340 | |
 | EXP-16 | Sync to space | Out of scope | — | 14b/105348 | Cloud sync |
 | EXP-17 | Audio formats | Partial | Differs | 14b/105528 | No MP3, WAV, FLAC |
-| EXP-18 | Audio-only export | Done | Differs | 14b/105736 | Pending |
-| EXP-19 | GIF section | Partial | Differs | 14b/105532 | Pending |
-| EXP-20 | GIF resolution list | Missing | — | 14b/105549 | Pending |
+| EXP-18 | Audio-only export | Done | Proposed | 14b/105736 | |
+| EXP-19 | GIF section | Done | Differs | 14b/105532 | One section ticked at a time |
+| EXP-20 | GIF resolution list | Done | Proposed | 14b/105549 | |
 | EXP-21 | Captions section | Partial | Differs | 14b/105557 | Buttons, not a tick |
 | EXP-22 | Caption formats | Done | Proposed | 14b/105559 | Plus VTT, burned MP4 |
 | EXP-23 | Check copyright toggle | Missing | — | 14b/105555 | |
