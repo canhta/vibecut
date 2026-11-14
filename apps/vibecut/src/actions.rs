@@ -660,6 +660,11 @@ mod tests {
             Chord::parse("space").unwrap().parts(Platform::Mac),
             ["Space"]
         );
+        let bracket = Chord::parse("ctrl+[").unwrap();
+        assert_eq!(bracket.canonical(), "Ctrl+OpenBracket");
+        assert_eq!(bracket.parts(Platform::Mac), ["⌘", "["]);
+        assert_eq!(bracket.display(Platform::Mac), "⌘[");
+        assert_eq!(bracket.display(Platform::Windows), "Ctrl+[");
     }
 
     #[test]
