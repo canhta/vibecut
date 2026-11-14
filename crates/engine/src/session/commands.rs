@@ -28,8 +28,9 @@ pub enum AnimationSlot {
 }
 
 /// Built-in animation looks, named for creators. The first fourteen serve In and Out (Out
-/// plays the same motion towards the edge); the last ten are Combo looks that span the
-/// whole clip. A look expands once into ordinary editable keys and keeps no identity.
+/// plays the same motion towards the edge); Blur In is only an In look and Blur Out only an
+/// Out look; the last ten are Combo looks that span the whole clip. A look expands once into
+/// ordinary editable keys and keeps no identity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AnimationPreset {
@@ -47,6 +48,8 @@ pub enum AnimationPreset {
     Stretch,
     Swing,
     Shake,
+    BlurIn,
+    BlurOut,
     Pulse,
     Heartbeat,
     Sway,
@@ -66,8 +69,8 @@ pub enum AnimationShelf {
     Zoom,
 }
 impl AnimationPreset {
-    /// The looks the In and Out slots offer, in panel order.
-    pub const EDGE: [Self; 14] = [
+    /// The looks the In slot offers, in panel order.
+    pub const IN: [Self; 15] = [
         Self::Fade,
         Self::SlideLeft,
         Self::SlideRight,
@@ -82,6 +85,25 @@ impl AnimationPreset {
         Self::Stretch,
         Self::Swing,
         Self::Shake,
+        Self::BlurIn,
+    ];
+    /// The looks the Out slot offers, in panel order: the In set with Blur Out for Blur In.
+    pub const OUT: [Self; 15] = [
+        Self::Fade,
+        Self::SlideLeft,
+        Self::SlideRight,
+        Self::SlideUp,
+        Self::SlideDown,
+        Self::ZoomIn,
+        Self::ZoomOut,
+        Self::Spin,
+        Self::Drop,
+        Self::Rise,
+        Self::Pop,
+        Self::Stretch,
+        Self::Swing,
+        Self::Shake,
+        Self::BlurOut,
     ];
     /// The looks the Combo slot offers, in panel order.
     pub const COMBO: [Self; 10] = [
@@ -112,7 +134,9 @@ impl AnimationPreset {
             | Self::Float
             | Self::DriftLeft
             | Self::DriftRight
-            | Self::Turn => AnimationShelf::Basic,
+            | Self::Turn
+            | Self::BlurIn
+            | Self::BlurOut => AnimationShelf::Basic,
             Self::Shake | Self::Pulse | Self::Heartbeat | Self::Flicker => AnimationShelf::Vibrate,
             Self::ZoomIn
             | Self::ZoomOut
@@ -125,7 +149,8 @@ impl AnimationPreset {
     /// The looks one slot offers.
     pub fn for_slot(slot: AnimationSlot) -> &'static [Self] {
         match slot {
-            AnimationSlot::In | AnimationSlot::Out => &Self::EDGE,
+            AnimationSlot::In => &Self::IN,
+            AnimationSlot::Out => &Self::OUT,
             AnimationSlot::Combo => &Self::COMBO,
         }
     }
@@ -146,6 +171,8 @@ impl AnimationPreset {
             Self::Stretch => "stretch",
             Self::Swing => "swing",
             Self::Shake => "shake",
+            Self::BlurIn => "blur_in",
+            Self::BlurOut => "blur_out",
             Self::Pulse => "pulse",
             Self::Heartbeat => "heartbeat",
             Self::Sway => "sway",

@@ -272,6 +272,7 @@ fn independent_linear_rgba_components_and_discrete_fallback_hold() {
     );
     // The crop position is a scalar pair; the auto flag is a held bool and never interpolates.
     for (path, name) in [
+        (BuiltinPath::Blur, "blur.intensity"),
         (BuiltinPath::CropX, "crop.x"),
         (BuiltinPath::CropY, "crop.y"),
         (BuiltinPath::CropAuto, "crop.auto"),

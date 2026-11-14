@@ -15,11 +15,13 @@ pub const PREVIEW_EDGE: u32 = 64;
 /// Frames of one preview. They sit side by side in one strip, so a result is
 /// `PREVIEW_FRAMES * PREVIEW_EDGE` pixels wide and `PREVIEW_EDGE` high.
 pub const PREVIEW_FRAMES: u32 = 12;
-/// LRU entries: one per slot and look, 37 in all; at most 7.5 MiB of RGBA8.
+/// LRU entries: one per slot and look, 40 in all; at most 7.5 MiB of RGBA8.
 pub const MAX_PREVIEWS: usize = 40;
 const MAX_BYTES: u64 = PREVIEW_EDGE as u64 * PREVIEW_EDGE as u64 * PREVIEW_FRAMES as u64 * 4;
 /// The neutral sample is a square this many pixels from centre to edge.
 const SAMPLE_HALF: f64 = 16.0;
+/// Softness of a blurred sample edge, in pixels per point of blur intensity.
+const BLUR_SOFTNESS: f64 = 0.25;
 /// Every preview plays one second of the sample clip.
 const LENGTH: Tick = Tick(time::TICKS_PER_SECOND);
 /// Sample shades, light to dark along the local diagonal, so a turn reads.
@@ -43,13 +45,14 @@ fn invalid() -> ArtifactError {
     ArtifactError::Edit(EditError::Invalid("animation preview"))
 }
 
-/// The pose of the sample at `at`: position, scale, rotation and opacity.
+/// The pose of the sample at `at`: position, scale, rotation, opacity and blur intensity.
 struct Pose {
     x: f64,
     y: f64,
     scale: [f64; 2],
     rotate: f64,
     opacity: f64,
+    blur: f64,
 }
 fn pose(animations: &Animations, at: Tick) -> ArtifactResult<Pose> {
     let field = |field: TransformField| field.value_at(animations, at).map_err(|_| invalid());
@@ -61,6 +64,14 @@ fn pose(animations: &Animations, at: Tick) -> ArtifactResult<Pose> {
         Some(ParamValue::Scalar(value)) if value.is_finite() => value.clamp(0.0, 1.0),
         Some(_) => return Err(invalid()),
     };
+    let blur = match animations
+        .value_at(&BuiltinPath::Blur.into(), at)
+        .map_err(|_| invalid())?
+    {
+        None => 0.0,
+        Some(ParamValue::Scalar(value)) if value.is_finite() => value.clamp(0.0, 100.0),
+        Some(_) => return Err(invalid()),
+    };
     Ok(Pose {
         x: field(TransformField::PositionX)?,
         y: field(TransformField::PositionY)?,
@@ -70,13 +81,27 @@ fn pose(animations: &Animations, at: Tick) -> ArtifactResult<Pose> {
         ],
         rotate: field(TransformField::Rotate)?,
         opacity,
+        blur,
     })
 }
 
-/// Straight sRGB RGBA8 of one frame pixel: 2x2 samples of the rotated, scaled square.
+/// Coverage of one local axis: a hard edge at `SAMPLE_HALF` when unblurred, else a ramp
+/// `soft` pixels wide centred on the edge.
+fn edge_cover(local: f64, soft: f64) -> f64 {
+    if soft == 0.0 {
+        f64::from(u8::from(local.abs() <= SAMPLE_HALF))
+    } else {
+        ((SAMPLE_HALF - local.abs()) / soft + 0.5).clamp(0.0, 1.0)
+    }
+}
+
+/// Straight sRGB RGBA8 of one frame pixel: 2x2 samples of the rotated, scaled square. A blur
+/// softens the square's edge over `BLUR_SOFTNESS` pixels per intensity point; the render itself
+/// blurs with the blur effect pass.
 fn pixel(pose: &Pose, x: u32, y: u32) -> [u8; 4] {
     let (sin, cos) = pose.rotate.to_radians().sin_cos();
     let centre = f64::from(PREVIEW_EDGE) / 2.0;
+    let soft = pose.blur * BLUR_SOFTNESS;
     let (mut hits, mut shade) = (0.0_f64, 0.0_f64);
     for sub_y in 0..2 {
         for sub_x in 0..2 {
@@ -85,10 +110,11 @@ fn pixel(pose: &Pose, x: u32, y: u32) -> [u8; 4] {
             // Rotation is clockwise on a y-down canvas; undo it, then the scale.
             let local_x = (px * cos + py * sin) / pose.scale[0];
             let local_y = (-px * sin + py * cos) / pose.scale[1];
-            if local_x.abs() <= SAMPLE_HALF && local_y.abs() <= SAMPLE_HALF {
-                hits += 1.0;
+            let cover = edge_cover(local_x, soft) * edge_cover(local_y, soft);
+            if cover > 0.0 {
+                hits += cover;
                 let along = (local_x + local_y) / (4.0 * SAMPLE_HALF) + 0.5;
-                shade += LIGHT + (DARK - LIGHT) * along.clamp(0.0, 1.0);
+                shade += cover * (LIGHT + (DARK - LIGHT) * along.clamp(0.0, 1.0));
             }
         }
     }

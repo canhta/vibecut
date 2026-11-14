@@ -447,10 +447,21 @@ impl<'a> Renderer<'a> {
                 // Noise reduction is a per-item switch whose pass runs before every
                 // colour effect, on this item's own layer.
                 let reduce_noise = matches!(&item.content, ItemParams::Video(p) if p.reduce_noise);
-                let _plan = if reduce_noise || item.effects.iter().any(|effect| effect.enabled) {
+                // The blur channel of a Blur In or Blur Out look is one more pass list: the blur
+                // effect's own pass at the channel's intensity, after the item's effects.
+                let blur_intensity =
+                    f64::from(scalar_at(&item.animations, BuiltinPath::Blur, local, 0.0)?)
+                        .clamp(0.0, 100.0);
+                let channel_blur = blur_intensity > 0.0;
+                let _plan = if reduce_noise
+                    || channel_blur
+                    || item.effects.iter().any(|effect| effect.enabled)
+                {
                     Some(hooks.reserve(
                         MemoryKind::Compositor,
-                        (item.effects.len() as u64 + u64::from(reduce_noise))
+                        (item.effects.len() as u64
+                            + u64::from(reduce_noise)
+                            + u64::from(channel_blur))
                             * 512
                             * (std::mem::size_of::<crate::effects::EffectPass>() as u64 + 49 * 4),
                     )?)
@@ -471,6 +482,13 @@ impl<'a> Renderer<'a> {
                         geometry.ok_or(Error::Invalid("effect spatial geometry"))?,
                         !preview,
                         &lut_resources,
+                    )?);
+                }
+                if channel_blur {
+                    runs.push(crate::effects::blur_passes(
+                        blur_intensity,
+                        out.width,
+                        out.height,
                     )?);
                 }
                 let has_passes = matte.is_some() || runs.iter().any(|run| !run.is_empty());

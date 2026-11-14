@@ -73,6 +73,8 @@ fn look_text(look: Look) -> Text {
         Look::Heartbeat => Text::AnimationHeartbeat,
         Look::Sway => Text::AnimationSway,
         Look::Swing => Text::AnimationSwing,
+        Look::BlurIn => Text::AnimationBlurIn,
+        Look::BlurOut => Text::AnimationBlurOut,
         Look::Float => Text::AnimationFloat,
         Look::DriftLeft => Text::AnimationDriftLeft,
         Look::DriftRight => Text::AnimationDriftRight,

@@ -15,28 +15,34 @@ pub(crate) const DEFAULT_DURATION: Tick = Tick(127_008_000_000);
 const TRAVEL: f64 = 0.25;
 
 /// Channels the animations write; every other channel is user animation.
-const OWNED: [BuiltinPath; 6] = [
+const OWNED: [BuiltinPath; 7] = [
     BuiltinPath::Opacity,
     BuiltinPath::TransformPositionX,
     BuiltinPath::TransformPositionY,
     BuiltinPath::TransformScaleX,
     BuiltinPath::TransformScaleY,
     BuiltinPath::TransformRotate,
+    BuiltinPath::Blur,
 ];
 const OPACITY: usize = 0;
 const POSITION_X: usize = 1;
 const POSITION_Y: usize = 2;
 const SCALE_X: usize = 3;
 const SCALE_Y: usize = 4;
+const BLUR: usize = 6;
+/// Blur intensity a Blur In or Blur Out look reaches at its blurred end, on the blur
+/// effect's own scale (0 to 100).
+const BLUR_PEAK: f64 = 40.0;
 
 /// Time-ordered `(item-relative tick, value)` pairs of one channel.
 type Keys = Vec<(Tick, f64)>;
 
 /// The keys every owned channel should carry; `None` marks a channel left alone.
 #[derive(Debug, Default, PartialEq)]
-struct Plan([Option<Keys>; 6]);
+struct Plan([Option<Keys>; 7]);
 
-/// How far an In look starts, or an Out look ends, from the item's resting state.
+/// How far an In look starts, or an Out look ends, from the item's resting state. `blur` is
+/// the absolute blur intensity at that edge, zero for no blur.
 #[derive(Clone, Copy)]
 struct Look {
     x: f64,
@@ -45,6 +51,7 @@ struct Look {
     scale_y: f64,
     rotate: f64,
     fade: bool,
+    blur: f64,
 }
 const fn look(x: f64, y: f64, scale: f64, rotate: f64, fade: bool) -> Look {
     Look {
@@ -54,6 +61,7 @@ const fn look(x: f64, y: f64, scale: f64, rotate: f64, fade: bool) -> Look {
         scale_y: scale,
         rotate,
         fade,
+        blur: 0.0,
     }
 }
 /// A look that squashes or stretches the two axes by different factors.
@@ -65,6 +73,7 @@ const fn stretch(scale_x: f64, scale_y: f64, fade: bool) -> Look {
         scale_y,
         rotate: 0.0,
         fade,
+        blur: 0.0,
     }
 }
 
@@ -106,6 +115,12 @@ fn edge_look(preset: P) -> Option<Look> {
         // Narrow and tall as it arrives, settling to the resting proportions.
         P::Stretch => stretch(0.5, -0.5, true),
         P::Swing => look(0.0, 0.0, 0.0, 20.0, true),
+        // Blur In and Blur Out fade with the blur: the picture comes from or goes to a blurred,
+        // transparent state, with the blur rendered by the blur effect's own pass.
+        P::BlurIn | P::BlurOut => Look {
+            blur: BLUR_PEAK,
+            ..look(0.0, 0.0, 0.0, 0.0, true)
+        },
         _ => return None,
     })
 }
@@ -252,7 +267,7 @@ fn transform_field(index: usize) -> Option<TransformField> {
         POSITION_Y => Some(TransformField::PositionY),
         SCALE_X => Some(TransformField::ScaleX),
         SCALE_Y => Some(TransformField::ScaleY),
-        OPACITY => None,
+        OPACITY | BLUR => None,
         _ => Some(TransformField::Rotate),
     }
 }
@@ -277,8 +292,8 @@ fn scalar_base(target: &Item, path: BuiltinPath, default: f64) -> Result<f64> {
     }
 }
 
-fn resting(target: &Item) -> Result<[f64; 6]> {
-    let mut out = [0.0; 6];
+fn resting(target: &Item) -> Result<[f64; 7]> {
+    let mut out = [0.0; 7];
     for ((index, path), slot) in OWNED.into_iter().enumerate().zip(out.iter_mut()) {
         *slot = scalar_base(target, path, default_of(index))?;
     }
@@ -289,7 +304,7 @@ fn resting(target: &Item) -> Result<[f64; 6]> {
 }
 
 /// The scalar keys each owned channel carries now.
-fn keys_of(target: &Item) -> [Keys; 6] {
+fn keys_of(target: &Item) -> [Keys; 7] {
     OWNED.map(|path| match target.animations.get(&path.into()) {
         Some(Param::Value(channel)) => channel
             .keys()
@@ -315,6 +330,7 @@ fn edge_keys(
     let sign = if entering { -1.0 } else { 1.0 };
     let outer = match index {
         OPACITY => look.fade.then_some(0.0),
+        BLUR => (look.blur != 0.0).then_some(look.blur),
         POSITION_X => (look.x != 0.0).then(|| base + sign * look.x * f64::from(canvas.width)),
         POSITION_Y => (look.y != 0.0).then(|| base + sign * look.y * f64::from(canvas.height)),
         SCALE_X => (look.scale_x != 0.0).then_some(base * (1.0 + sign * look.scale_x)),
@@ -345,6 +361,8 @@ fn combo_keys(
     length: Tick,
 ) -> Result<Option<Keys>> {
     let touched = table.iter().any(|w| match index {
+        // Combo looks never blur: the blur channel is an edge-only look channel.
+        BLUR => false,
         OPACITY => w.opacity != 1.0,
         POSITION_X => w.x != 0.0,
         POSITION_Y => w.y != 0.0,
@@ -391,7 +409,7 @@ fn merge(parts: Vec<Keys>) -> Result<Keys> {
     Ok(out)
 }
 
-fn plan(anim: &ClipAnimations, bases: &[f64; 6], length: Tick, canvas: &Canvas) -> Result<Plan> {
+fn plan(anim: &ClipAnimations, bases: &[f64; 7], length: Tick, canvas: &Canvas) -> Result<Plan> {
     let mut out = Plan::default();
     for ((index, base), slot) in bases.iter().copied().enumerate().zip(out.0.iter_mut()) {
         let mut parts: Vec<Keys> = Vec::new();
@@ -443,7 +461,7 @@ fn param(base: f64, keys: &[(Tick, f64)]) -> Result<Param> {
 }
 
 /// Write the new keys; a channel only the old animations owned returns to its bare base.
-fn write(target: &mut Item, old: &Plan, new: &Plan, bases: &[f64; 6]) -> Result<()> {
+fn write(target: &mut Item, old: &Plan, new: &Plan, bases: &[f64; 7]) -> Result<()> {
     let rows = OWNED
         .into_iter()
         .enumerate()
@@ -498,7 +516,7 @@ pub(crate) fn sample_animations(
     {
         return Err(EditError::Invalid("clip animation duration"));
     }
-    let bases: [f64; 6] = std::array::from_fn(default_of);
+    let bases: [f64; 7] = std::array::from_fn(default_of);
     let planned = plan(&anim, &bases, length, canvas)?;
     let mut out = Animations::default();
     for ((path, keys), base) in OWNED.into_iter().zip(&planned.0).zip(bases) {
@@ -540,7 +558,7 @@ impl ClipAnimations {
         };
         let mut enters = vec![None];
         let mut exits = vec![None];
-        for preset in P::EDGE {
+        for preset in P::IN {
             for time in &times {
                 if *time > Tick::ZERO && *time <= length {
                     let enter = Self {
@@ -551,6 +569,10 @@ impl ClipAnimations {
                         enters.push(enter.enter);
                     }
                 }
+            }
+        }
+        for preset in P::OUT {
+            for time in &times {
                 if let Some(duration) = length.checked_sub(*time)
                     && duration > Tick::ZERO
                 {
@@ -635,8 +657,8 @@ pub(in super::super) fn execute_set_clip_animation(
             wanted.combo = None;
         }
         (edge, Some(preset)) => {
-            if !P::EDGE.contains(&preset) {
-                return Err(EditError::Invalid("In and Out take an edge look"));
+            if !P::for_slot(edge).contains(&preset) {
+                return Err(EditError::Invalid("the slot does not offer that look"));
             }
             let held = if edge == AnimationSlot::In {
                 current.enter

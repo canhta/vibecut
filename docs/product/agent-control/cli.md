@@ -170,7 +170,7 @@ Use inspected item IDs. `clip.set_animation` takes a `slot` (`in`, `out` or `com
 `preset` (null removes the slot) and an optional `duration` in ticks (0.5 s by default;
 In and Out only). In and Out looks are `fade`, `slide_left`, `slide_right`, `slide_up`,
 `slide_down`, `zoom_in`, `zoom_out`, `spin`, `drop`, `rise`, `pop`, `stretch`, `swing` and
-`shake`; Combo looks are `pulse`, `heartbeat`, `sway`, `float`, `drift_left`, `drift_right`,
+`shake`; `blur_in` is the In-only blur look and `blur_out` the Out-only one; Combo looks are `pulse`, `heartbeat`, `sway`, `float`, `drift_left`, `drift_right`,
 `push_in`, `pull_out`, `flicker` and `turn`. `text.save_preset` reports the new preset ID in
 `created`; `text.apply_preset` takes one or more Text item IDs and either a saved preset
 (`{"kind":"saved","preset":ID}`) or a built-in text look (`{"kind":"look","look":"clean_white"}`). The [edit owner](../../../crates/engine/src/session/edit/README.md#clip-animation)

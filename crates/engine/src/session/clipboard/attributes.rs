@@ -64,6 +64,7 @@ fn group_of(path: &AnimationPath) -> Option<AttributeGroup> {
             | BuiltinPath::TransformFlipY,
         ) => Some(AttributeGroup::Transform),
         Some(BuiltinPath::Opacity) => Some(AttributeGroup::Blend),
+        Some(BuiltinPath::Blur) => Some(AttributeGroup::Effects),
         Some(BuiltinPath::Volume | BuiltinPath::Muted) => Some(AttributeGroup::Audio),
         Some(
             BuiltinPath::Color

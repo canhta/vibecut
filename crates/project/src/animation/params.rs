@@ -25,6 +25,7 @@ pub enum BuiltinPath {
     TransformFlipX,
     TransformFlipY,
     Opacity,
+    Blur,
     Volume,
     Muted,
     Color,
@@ -40,7 +41,7 @@ pub enum BuiltinPath {
     CropAuto,
 }
 impl BuiltinPath {
-    pub const ALL: [Self; 21] = [
+    pub const ALL: [Self; 22] = [
         Self::TransformPositionX,
         Self::TransformPositionY,
         Self::TransformScaleX,
@@ -49,6 +50,7 @@ impl BuiltinPath {
         Self::TransformFlipX,
         Self::TransformFlipY,
         Self::Opacity,
+        Self::Blur,
         Self::Volume,
         Self::Muted,
         Self::Color,
@@ -73,6 +75,7 @@ impl BuiltinPath {
             Self::TransformFlipX => "transform.flipX",
             Self::TransformFlipY => "transform.flipY",
             Self::Opacity => "opacity",
+            Self::Blur => "blur.intensity",
             Self::Volume => "volume",
             Self::Muted => "muted",
             Self::Color => "color",
