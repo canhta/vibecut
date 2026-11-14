@@ -10,7 +10,14 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 
 use eframe::wgpu;
-use render::{effects::*, *};
+use render::effects::{
+    CpuEffects, EffectCompositor, EffectGeometry, EffectInputs, EffectPass, evaluate_effect,
+    grade_passes,
+};
+use render::{
+    Error, ExecutionHooks, ExportMode, ExportSettings, FileSources, Image, MemoryKind,
+    RenderSettings, Renderer, Reservation, Result, Stage,
+};
 use std::{
     path::PathBuf,
     sync::{
@@ -71,7 +78,7 @@ impl ExecutionHooks for Hooks {
                     std::thread::Builder::new()
                         .name("probe-pixel".into())
                         .stack_size(STACK)
-                        .spawn_scoped(scope, move || task())
+                        .spawn_scoped(scope, task)
                         .map_err(|_| Error::Invalid("probe thread"))?,
                 );
             }
@@ -293,7 +300,9 @@ fn adapter() -> (wgpu::Adapter, wgpu::Device, wgpu::Queue) {
         power_preference: wgpu::PowerPreference::HighPerformance,
         ..Default::default()
     }))
-    .expect("required native GPU unavailable: not a successful measurement");
+    .unwrap_or_else(|error| {
+        panic!("required native GPU unavailable: not a successful measurement: {error}")
+    });
     println!("REQUESTED_LIMITS {:?}", wgpu::Limits::default());
     let (device, queue) =
         pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap();
@@ -483,7 +492,7 @@ fn transfer() {
             }
             let start = Instant::now();
             let mut sum = 0.0f32;
-            for chunk in data.chunks_exact(16) {
+            for chunk in data.as_chunks::<16>().0 {
                 for k in 0..4 {
                     let at = k * 4;
                     sum += f32::from_le_bytes([
@@ -592,7 +601,7 @@ fn transfer() {
                 cpu_comp = cpu_comp.median(),
                 gpu_comp = gpu_comp.median(),
             );
-            transfer_only.report(&format!("passes=0"));
+            transfer_only.report("passes=0");
             cpu_stats.report(&format!("passes={}", passes.len()));
             gpu_stats.report(&format!("passes={}", passes.len()));
             cpu_comp.report("");

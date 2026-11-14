@@ -80,7 +80,8 @@ impl State {
                     &response,
                 );
                 self.lane_menu(cx, ui, item, lane, &response);
-                self.paint_lane_keys(cx, ui, layout, item, lane, &mut keyframe_rects, &mut hint);
+                let first = self.paint_lane_keys(cx, ui, layout, item, lane, &mut keyframe_rects);
+                hint = hint.or(first);
                 self.lane_marquee(cx, ui, layout, &response, &keyframe_rects, modifiers);
             }
         }
@@ -100,15 +101,12 @@ impl State {
         item: &ItemView,
         lane: &crate::editor::timeline::layout::ItemLane,
         keyframe_rects: &mut Vec<(KeyframeSelection, Rect)>,
-        hint: &mut Option<egui::Pos2>,
-    ) {
+    ) -> Option<egui::Pos2> {
         let ink = Ink::of(cx);
-        let Some(param) = item_param(cx, item.id, &lane.path) else {
-            return;
-        };
-        let Some(channel) = channel_of(param, lane.component) else {
-            return;
-        };
+        let param = item_param(cx, item.id, &lane.path)?;
+        let channel = channel_of(param, lane.component)?;
+        // The first diamond painted anchors the first-use hint.
+        let mut hint = None;
         for key in channel.keys() {
             let Some(at) = item.start.checked_add(key.time) else {
                 continue;
@@ -118,9 +116,7 @@ impl State {
                 continue;
             }
             let center = egui::pos2(x, lane.top + LANE_HEIGHT / 2.0);
-            if hint.is_none() {
-                *hint = Some(egui::pos2(center.x, lane.top + LANE_HEIGHT));
-            }
+            hint = hint.or(Some(egui::pos2(center.x, lane.top + LANE_HEIGHT)));
             let selection = KeyframeSelection {
                 item: item.id,
                 path: lane.path.clone(),
@@ -165,6 +161,7 @@ impl State {
             let anchor = egui::pos2(center.x, lane.top + LANE_HEIGHT + theme::space::XS);
             self.key_menu(cx, &response, channel, &selection, anchor);
         }
+        hint
     }
 
     /// Right-click menu for one diamond: the easing kinds of its outgoing segment, the

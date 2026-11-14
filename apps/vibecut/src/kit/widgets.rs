@@ -1005,7 +1005,9 @@ pub(crate) fn stop_fraction(stops: &[f64], value: f64) -> f64 {
         return 1.0;
     }
     let index = stops.iter().rposition(|&stop| stop <= value).unwrap_or(0);
-    let (low, high) = (stops[index], stops[index + 1]);
+    let (Some(&low), Some(&high)) = (stops.get(index), stops.get(index + 1)) else {
+        return 1.0;
+    };
     (index as f64 + (value - low) / (high - low)) / last as f64
 }
 
@@ -1020,7 +1022,9 @@ pub(crate) fn stop_value(stops: &[f64], fraction: f64) -> f64 {
     }
     let at = fraction.clamp(0.0, 1.0) * last as f64;
     let index = (at.floor() as usize).min(last - 1);
-    let (low, high) = (stops[index], stops[index + 1]);
+    let (Some(&low), Some(&high)) = (stops.get(index), stops.get(index + 1)) else {
+        return end;
+    };
     if fraction >= 1.0 {
         return end;
     }

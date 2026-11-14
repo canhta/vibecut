@@ -361,7 +361,7 @@ fn shortcut_preset(
     pending: &mut Vec<Action>,
 ) {
     let mut selected = preset;
-    let response = egui::ComboBox::from_id_salt("shortcuts.preset")
+    let response = egui::ComboBox::from_id_salt(egui::IdSalt::new("shortcuts.preset"))
         .selected_text(preset_label(cx.locale, preset))
         .width(180.0)
         .show_ui(ui, |ui| {

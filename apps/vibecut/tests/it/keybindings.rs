@@ -854,7 +854,7 @@ fn shortcuts_dialog_prompts_on_conflicts_and_overrides_or_keeps_the_edit_box() {
     assert!(shortcuts.error.is_none());
     assert!(shortcuts.changed);
     let row = |id: &str| shortcuts.rows.iter().find(|row| row.action == id).unwrap();
-    assert_eq!(row("timeline.snap").keys, [ctrl_b.clone()]);
+    assert_eq!(row("timeline.snap").keys, std::slice::from_ref(&ctrl_b));
     assert!(row("timeline.split").unbound);
     assert_eq!(harness.state().session.project(), &project);
 
@@ -1091,7 +1091,10 @@ fn shortcut_presets_keep_their_own_bindings_and_persist_the_choice() {
     click(&mut harness, "shortcuts.save");
     let keybindings = &harness.state().preferences.keybindings;
     assert_eq!(keybindings.active, one);
-    assert_eq!(keybindings.effective_chords(snap), [ctrl_shift_n.clone()]);
+    assert_eq!(
+        keybindings.effective_chords(snap),
+        std::slice::from_ref(&ctrl_shift_n)
+    );
 
     // Switching to preset 2 applies its own profile: snapping is back on N there.
     harness.state_mut().select_shortcut_preset(two).unwrap();
@@ -1101,7 +1104,7 @@ fn shortcut_presets_keep_their_own_bindings_and_persist_the_choice() {
     assert_eq!(keybindings.effective_chords(snap), ["N"]);
     assert_eq!(
         keybindings.profile(one).effective_chords(snap),
-        [ctrl_shift_n.clone()],
+        std::slice::from_ref(&ctrl_shift_n),
         "preset 1 keeps its chord while preset 2 is active"
     );
 
@@ -1124,7 +1127,7 @@ fn shortcut_presets_keep_their_own_bindings_and_persist_the_choice() {
     assert!(keybindings.effective_chords(split).is_empty());
     assert_eq!(
         keybindings.profile(one).effective_chords(snap),
-        [ctrl_shift_n.clone()]
+        std::slice::from_ref(&ctrl_shift_n)
     );
     assert_eq!(keybindings.profile(one).effective_chords(split), ["Ctrl+B"]);
     assert_eq!(harness.state().session.project(), &project);
@@ -1202,7 +1205,8 @@ fn reference_default_chords_run_their_actions_through_the_keymap() {
     let keymap = actions::Keymap::resolve(&actions::KeybindingPreferences::default());
     let command = egui::Modifiers::COMMAND;
     let alt_shift = egui::Modifiers::ALT.plus(egui::Modifiers::SHIFT);
-    let groups: [(&str, &[(egui::Modifiers, egui::Key, &str)]); 7] = [
+    type Chords<'a> = &'a [(egui::Modifiers, egui::Key, &'a str)];
+    let groups: [(&str, Chords); 7] = [
         (
             "extract audio",
             &[(

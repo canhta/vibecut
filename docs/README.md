@@ -6,6 +6,7 @@
 |---|---|---|
 | Scope, priority, providers, languages | [Requirements](product/requirements.md) | tickets as the source of truth |
 | UI principles, design language, reference evidence, geometry, copy rules, states, gaps | [UI design](product/ui/index.md) and its window files ([editor](product/ui/editor.md), [Home](product/ui/home.md), [shorts](product/ui/shorts.md)) | widget literals; ticket ids |
+| Parity with the reference, one row per item: function and UI state | [Parity](product/parity/README.md) and its area files ([Home](product/parity/home.md), [shell](product/parity/shell.md), [assets](product/parity/assets.md), [captions](product/parity/captions.md), [catalogues](product/parity/catalogues.md), [video properties](product/parity/properties-video.md), [other properties](product/parity/properties-other.md), [timeline](product/parity/timeline.md), [player and export](product/parity/player-export.md), [AI and shorts](product/parity/ai-shorts.md), [states](product/parity/states.md)) | measured values or behaviour |
 | Token contracts, Rust owners, measured sources | [UI tokens](product/ui/tokens.md); values in `kit/theme.rs` | - |
 | Agent-facing surfaces | [CLI](product/agent-control/cli.md), [MCP](product/agent-control/mcp.md), [In-app agent](product/agent-control/agent.md), [Keyboard](product/agent-control/keyboard.md), [Commands](product/agent-control/commands.md) | crate READMEs |
 | Rust safety, structural admission, errors, logging, time and text | [Standards](engineering/standards.md) | - |

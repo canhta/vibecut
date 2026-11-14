@@ -204,10 +204,10 @@ impl Editor {
                     }
                 )
             });
-            if let Some(index) = index {
-                if let egui::Event::Key { key, modifiers, .. } = input.events.remove(index) {
-                    pressed = Some((key, modifiers));
-                }
+            if let Some(index) = index
+                && let egui::Event::Key { key, modifiers, .. } = input.events.remove(index)
+            {
+                pressed = Some((key, modifiers));
             }
         });
         if let Some((key, modifiers)) = pressed {
