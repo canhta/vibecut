@@ -717,6 +717,57 @@ fn bilingual_fades_scale_glyphs_and_background_once_in_real_time() {
     }
 }
 
+/// Curve places each line's glyphs on an arc (positive arches the middle up, negative dips it),
+/// zero is the straight layout, and one deterministic path paints it for preview and export.
+#[test]
+fn text_curve_places_glyphs_on_an_arc_and_zero_is_identity() {
+    let line = |curve: Option<f32>| {
+        let mut text = TextParams::new("WWWWWWWWWW");
+        text.font_size = 36.0;
+        text.curve = curve;
+        export(&project_with(text, Default::default(), 1), Tick::ZERO)
+    };
+    let straight = line(None);
+    assert_eq!(line(Some(0.0)), straight, "curve 0 is identity");
+    let (up, down) = (line(Some(70.0)), line(Some(-70.0)));
+    assert_ne!(up, straight);
+    assert_ne!(down, straight);
+    assert_eq!(line(Some(70.0)), up, "deterministic");
+    // Mean glyph height in the outer thirds against the middle third of the inked width.
+    let profile = |frame: &[u8]| {
+        let points = bright(frame);
+        let (x0, _, x1, _) = bounds(&points);
+        let third = (x1 - x0) as f64 / 3.0;
+        let mean = |lo: f64, hi: f64| {
+            let part: Vec<_> = points
+                .iter()
+                .filter(|p| (p.0 as f64) >= x0 as f64 + lo && (p.0 as f64) < x0 as f64 + hi)
+                .collect();
+            part.iter().map(|p| p.1 as f64).sum::<f64>() / part.len() as f64
+        };
+        let ends = (mean(0.0, third) + mean(2.0 * third, 3.0 * third + 1.0)) / 2.0;
+        (ends, mean(third, 2.0 * third), bounds(&points))
+    };
+    let (flat_ends, flat_middle, flat) = profile(&straight);
+    assert!(
+        (flat_ends - flat_middle).abs() < 1.0,
+        "{flat_ends} {flat_middle}"
+    );
+    let (up_ends, up_middle, arched) = profile(&up);
+    let (down_ends, down_middle, dipped) = profile(&down);
+    // Image y grows downward: an arch has its ends lower than its middle.
+    assert!(up_ends > up_middle + 8.0, "{up_ends} {up_middle}");
+    assert!(down_ends < down_middle - 8.0, "{down_ends} {down_middle}");
+    // The arc grows the line's height and keeps it centred on the same column.
+    assert!(arched.3 - arched.1 > flat.3 - flat.1 + 8);
+    assert!(dipped.3 - dipped.1 > flat.3 - flat.1 + 8);
+    let centre = |b: (usize, usize, usize, usize)| (b.0 + b.2) as f64 / 2.0;
+    assert!((centre(arched) - centre(flat)).abs() < 3.0);
+    assert!((centre(dipped) - centre(flat)).abs() < 3.0);
+    // The arch and the dip reflect each other about the straight line's height.
+    assert!(((up_ends - flat_ends) + (down_ends - flat_ends)).abs() < 6.0);
+}
+
 const GOLDENS: &[(&str, u64)] = &[
     ("w400-upright-None", 0x6b077b473391f5c7),
     ("w400-upright-Underline", 0x77ed50e66a50f97f),

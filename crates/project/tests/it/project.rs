@@ -432,6 +432,7 @@ fn item(id: u64, start: i64) -> Item {
                 angle: -50.0,
             }),
             glow: true,
+            curve: Some(-35.0),
             background: Some(project::TextBackground {
                 color: Color([10, 20, 30, 40]),
                 padding_x: 14.0,
@@ -1056,7 +1057,7 @@ fn model_trust_boundaries() {
     });
     cases.push(d);
     type Corrupt = fn(&mut TextParams);
-    let text_style: [Corrupt; 19] = [
+    let text_style: [Corrupt; 21] = [
         |p| p.background.as_mut().unwrap().padding_x = -1.0,
         |p| p.background.as_mut().unwrap().padding_y = 128.5,
         |p| p.background.as_mut().unwrap().radius = f32::NAN,
@@ -1078,6 +1079,8 @@ fn model_trust_boundaries() {
                 project::TextStroke::MAX_THICKNESS + 1.0;
         },
         |p| p.shadow.get_or_insert_with(Default::default).distance = f32::NAN,
+        |p| p.curve = Some(f32::NAN),
+        |p| p.curve = Some(TextParams::MAX_CURVE + 0.5),
         |p| {
             p.shadow.get_or_insert_with(Default::default).blurriness =
                 project::TextShadow::MAX_PERCENT + 1.0;

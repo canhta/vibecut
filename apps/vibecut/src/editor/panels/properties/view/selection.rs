@@ -45,7 +45,7 @@ impl Panel<'_, '_> {
             // The text style rows own these: colour parts, toggles and glow.
             if matches!(
                 field.id,
-                "text_background" | "text_stroke" | "text_shadow" | "text_glow"
+                "text_background" | "text_stroke" | "text_shadow" | "text_glow" | "text_curve"
             ) {
                 continue;
             }

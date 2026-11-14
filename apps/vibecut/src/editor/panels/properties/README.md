@@ -288,6 +288,7 @@ Below the box rows, a stroke on shows Thickness (`inspector.text_stroke_thicknes
 shadow on shows Opacity (`inspector.text_shadow_opacity`), Bluriness
 (`inspector.text_shadow_blurriness`), Distance (`inspector.text_shadow_distance`) and Angle
 (`inspector.text_shadow_angle`, -180 to 180), the reference's controls and defaults.
+The Curve switch (`inspector.text_curve`, shared field `text_curve`: `none` or the percent) turns the bend on at 50 % and off again; while on, Bend (`inspector.text_curve_amount`, -100 to 100, typed values clamp) writes `text_curve` through `commands::text_effect_patch`. Both are one undo step. The amount is ours (open).
 These fields are not engine parameter rows. `write_field` sends them as `Action::SetField`, and
 `commands::text_effect_patch` builds one `TextStroke` or `TextShadow` patch from the item's
 current value with only that field replaced, so the colour and the other geometry survive.

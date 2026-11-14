@@ -577,6 +577,8 @@ fn validate(data: &ProjectData) -> Result<()> {
                         || !(1.0..=4096.0).contains(&p.font_size)
                         || p.stroke.as_ref().is_some_and(|s| !s.valid())
                         || p.shadow.as_ref().is_some_and(|s| !s.valid())
+                        || p.curve
+                            .is_some_and(|c| !super::item::TextParams::valid_curve(c))
                         || p.background.as_ref().is_some_and(|b| !b.valid())
                     {
                         return Err(Error::Invalid("text style"));

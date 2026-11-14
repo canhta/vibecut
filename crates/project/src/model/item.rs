@@ -768,6 +768,10 @@ pub struct TextParams {
     /// Paint a soft halo in the fill colour behind the glyphs.
     #[serde(default)]
     pub glow: bool,
+    /// Bend amount in percent, -100..=100, when the Curve switch is on: each line's glyphs sit
+    /// on a circular arc, a positive amount raising the middle of the line over its ends and a
+    /// negative one lowering it. `None` is the straight layout (Curve off).
+    pub curve: Option<f32>,
     pub background: Option<TextBackground>,
 }
 impl Default for TextParams {
@@ -793,8 +797,17 @@ impl TextParams {
             stroke: None,
             shadow: None,
             glow: false,
+            curve: None,
             background: None,
         }
+    }
+    /// Largest curve magnitude, in percent.
+    pub const MAX_CURVE: f32 = 100.0;
+    /// Amount a first Curve switch-on starts at (open: the reference's default is not measured).
+    pub const DEFAULT_CURVE: f32 = 50.0;
+    /// Whether `amount` is a finite percent within `-MAX_CURVE..=MAX_CURVE`.
+    pub fn valid_curve(amount: f32) -> bool {
+        amount.is_finite() && amount.abs() <= Self::MAX_CURVE
     }
 }
 /// Reusable text appearance copied from one item into ordinary text parameters.

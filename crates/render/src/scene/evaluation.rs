@@ -678,6 +678,16 @@ impl<'a> Renderer<'a> {
                                 fill.0,
                             )
                         });
+                        // The arc moves glyphs by at most its sagitta over the text area's width,
+                        // plus a glyph's own extent once turned.
+                        let curve = p.curve.filter(|percent| *percent != 0.0).map(|percent| {
+                            let area =
+                                self.settings.width as f32 * placement.destination.width as f32;
+                            (
+                                percent,
+                                text::curve_displacement(percent, area) + p.font_size * scale,
+                            )
+                        });
                         let background = match &p.background {
                             None => None,
                             Some(b) => {
@@ -734,6 +744,7 @@ impl<'a> Renderer<'a> {
                             outline,
                             shadow,
                             glow,
+                            curve,
                         };
                         // The raster grows by every decoration's margin on each side; the text keeps its place.
                         let margin = f64::from(face.decoration_margin(background));
@@ -1211,6 +1222,9 @@ impl<'a> Renderer<'a> {
                 .shadow
                 .map(|(x, y, blur, color)| (x.to_bits(), y.to_bits(), blur.to_bits(), color)),
             glow: face.glow.map(|(radius, color)| (radius.to_bits(), color)),
+            curve: face
+                .curve
+                .map(|(percent, extent)| (percent.to_bits(), extent.to_bits())),
             background: background.map(TextBox::key),
             align: face.align,
             decoration: face.decoration,

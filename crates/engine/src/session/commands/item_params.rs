@@ -229,6 +229,11 @@ impl Admit for Option<project::TextShadow> {
         self.as_ref().is_none_or(project::TextShadow::valid)
     }
 }
+impl Admit for Option<f32> {
+    fn admits(&self, _: &ParamBounds) -> bool {
+        self.is_none_or(project::TextParams::valid_curve)
+    }
+}
 
 /// A payload type's reading of the text an inspector field or a script holds.
 trait ParamText: Sized {
@@ -361,6 +366,22 @@ macro_rules! from_color {
 }
 from_color!(TextBackground, project::TextStroke, project::TextShadow);
 text_shape!(TextBackground, project::TextStroke, project::TextShadow);
+/// `none` or `off` switches the text curve off; a number switches it on at that percent,
+/// pulled into the model's range.
+impl ParamText for Option<f32> {
+    fn from_text(text: &str, _: &ParamBounds) -> Option<Self> {
+        let text = text.trim();
+        if text.eq_ignore_ascii_case("none") || text.eq_ignore_ascii_case("off") {
+            return Some(None);
+        }
+        let amount: f32 = text
+            .parse()
+            .ok()
+            .filter(|amount: &f32| amount.is_finite())?;
+        let max = project::TextParams::MAX_CURVE;
+        Some(Some(amount.clamp(-max, max)))
+    }
+}
 /// `none` or `off` switches stabilization off; a level word switches it on at that level.
 impl ParamText for Option<project::StabilizeLevel> {
     fn from_text(text: &str, _: &ParamBounds) -> Option<Self> {
@@ -930,6 +951,18 @@ item_params! {
         apply: |t, v, cx| {
             if let Some(p) = text(t) {
                 p.glow = *v;
+            }
+            Ok(())
+        },
+    },
+    TextCurve(Option<f32>) = "text_curve" {
+        targets: TEXT,
+        bounds: ParamBounds::Shape,
+        unit: ParamUnit::None,
+        path: None,
+        apply: |t, v, cx| {
+            if let Some(p) = text(t) {
+                p.curve = *v;
             }
             Ok(())
         },

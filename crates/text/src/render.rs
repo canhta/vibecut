@@ -10,6 +10,10 @@ use crate::layout::{Glyph, Layout, SYNTH_BOLD, SYNTH_ITALIC_SLANT};
 use crate::mask::{self, StrokeKind};
 use crate::raster::{Mask, Path, Xform, fill_into};
 
+mod curve;
+
+pub use curve::{MAX_CURVE, displacement as curve_displacement};
+
 /// Decoration bar thickness as a fraction of the font size.
 const DECORATION_THICKNESS: f32 = 0.07;
 /// Underline top below the baseline as a fraction of the font size.
@@ -176,6 +180,8 @@ pub enum RenderError {
     InvalidShadow,
     #[error("glow radius must be finite and not negative")]
     InvalidGlow,
+    #[error("curve must be finite and within 100 percent")]
+    InvalidCurve,
     #[error("filter radius must be finite and not negative")]
     InvalidFilter,
     #[error("background padding and radius must be finite and not negative")]
@@ -287,6 +293,23 @@ pub fn render(
     origin: (f32, f32),
     paint: &Paint,
 ) -> Result<Image, RenderError> {
+    render_on_arc(layout, canvas, origin, paint, 0.0)
+}
+
+/// [`render`] with every line's glyphs placed on a circular arc: `curve` is a percent in
+/// `-MAX_CURVE..=MAX_CURVE`, positive raising the middle of each line over its ends, zero the
+/// straight layout. Glow, shadow and outline follow the placed glyphs; the background box and
+/// decoration bars keep the straight layout.
+pub fn render_on_arc(
+    layout: &Layout,
+    canvas: Canvas,
+    origin: (f32, f32),
+    paint: &Paint,
+    curve: f32,
+) -> Result<Image, RenderError> {
+    if !(curve.is_finite() && curve.abs() <= MAX_CURVE) {
+        return Err(RenderError::InvalidCurve);
+    }
     let pixels = u64::from(canvas.width)
         .checked_mul(u64::from(canvas.height))
         .filter(|pixels| *pixels > 0 && *pixels <= MAX_CANVAS_PIXELS)
@@ -358,9 +381,18 @@ pub fn render(
     let mut fill_mask = Mask::new(width, height);
     let mut span_mask = paint.span_fill.map(|_| Mask::new(width, height));
     let mut emphasis_mask = paint.emphasis.map(|_| Mask::new(width, height));
-    for glyph in &layout.glyphs {
-        let path = glyph_path(glyph);
-        fill_into(&path, &mut fill_mask, ox + glyph.x, oy + glyph.y);
+    let arc = curve::placements(layout, curve);
+    for (index, glyph) in layout.glyphs.iter().enumerate() {
+        let mut path = glyph_path(glyph);
+        // A placed glyph's path already carries the layout origin; a straight one is offset.
+        let (gx, gy) = match arc.as_ref().and_then(|placed| placed.get(index)) {
+            Some(at) => {
+                curve::place(&mut path, at, (ox, oy));
+                (0.0, 0.0)
+            }
+            None => (ox + glyph.x, oy + glyph.y),
+        };
+        fill_into(&path, &mut fill_mask, gx, gy);
         if let (Some(emphasis), Some(mask)) = (paint.emphasis, emphasis_mask.as_mut())
             && emphasis
                 .used()
@@ -370,13 +402,13 @@ pub fn render(
                 .span_fill
                 .is_some_and(|span| glyph.cluster >= span.start && glyph.cluster_end <= span.end)
         {
-            fill_into(&path, mask, ox + glyph.x, oy + glyph.y);
+            fill_into(&path, mask, gx, gy);
         }
         if let (Some(span), Some(mask)) = (paint.span_fill, span_mask.as_mut())
             && glyph.cluster >= span.start
             && glyph.cluster_end <= span.end
         {
-            fill_into(&path, mask, ox + glyph.x, oy + glyph.y);
+            fill_into(&path, mask, gx, gy);
         }
     }
     if paint.decoration != Decoration::None {
@@ -774,5 +806,41 @@ mod tests {
             ),
             Err(RenderError::InvalidOutline)
         ));
+    }
+
+    #[test]
+    fn arc_is_identity_at_zero_moves_glyphs_and_refuses_out_of_range() {
+        let laid_out = layout(
+            "Arc",
+            &LayoutOptions {
+                size: 60.0,
+                max_width: 400.0,
+                ..LayoutOptions::default()
+            },
+        )
+        .expect("layout");
+        let canvas = Canvas {
+            width: 400,
+            height: 260,
+        };
+        let paint = Paint::default();
+        let straight = render(&laid_out, canvas, (20.0, 100.0), &paint).expect("straight");
+        let zero = render_on_arc(&laid_out, canvas, (20.0, 100.0), &paint, 0.0).expect("zero");
+        assert_eq!(straight, zero);
+        let up = render_on_arc(&laid_out, canvas, (20.0, 100.0), &paint, 80.0).expect("up");
+        let down = render_on_arc(&laid_out, canvas, (20.0, 100.0), &paint, -80.0).expect("down");
+        assert_ne!(straight, up);
+        assert_ne!(up, down);
+        // Deterministic: the same input paints the same pixels.
+        assert_eq!(
+            up,
+            render_on_arc(&laid_out, canvas, (20.0, 100.0), &paint, 80.0).expect("again")
+        );
+        for bad in [100.5, -101.0, f32::NAN, f32::INFINITY] {
+            assert!(matches!(
+                render_on_arc(&laid_out, canvas, (20.0, 100.0), &paint, bad),
+                Err(RenderError::InvalidCurve)
+            ));
+        }
     }
 }

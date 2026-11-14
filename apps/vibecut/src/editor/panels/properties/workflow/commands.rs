@@ -291,7 +291,8 @@ fn text_effect_patch(
 ) -> Result<Option<ItemParamPatch>> {
     if !matches!(
         field,
-        "text_stroke_thickness"
+        "text_curve_amount"
+            | "text_stroke_thickness"
             | "text_shadow_opacity"
             | "text_shadow_blurriness"
             | "text_shadow_distance"
@@ -311,6 +312,7 @@ fn text_effect_patch(
         return Err(Error::Invalid("text item"));
     };
     Ok(Some(match field {
+        "text_curve_amount" => ItemParamPatch::TextCurve(Some(number)),
         "text_stroke_thickness" => {
             let stroke = params.stroke.clone().unwrap_or_default();
             ItemParamPatch::TextStroke(Some(project::TextStroke {
