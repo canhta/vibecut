@@ -78,11 +78,12 @@ mod mac {
         }
     }
 
-    /// The action's first effective chord.
+    /// The action's first effective chord, when it may be a menu equivalent.
     fn chord(keys: &KeybindingPreferences, id: &str) -> Option<Chord> {
         actions::action(id)
             .and_then(|spec| keys.effective_chords(spec).into_iter().next())
             .and_then(|text| Chord::parse(&text).ok())
+            .and_then(actions::menu_equivalent)
     }
 
     /// `Cmd+Alt+Shift+K` as the accelerator it shows and matches; keys with no single

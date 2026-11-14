@@ -388,7 +388,7 @@ mod editor;
 mod menu;
 mod shell;
 
-pub use menu::{MENUS, Menu, MenuItem};
+pub use menu::{MENUS, Menu, MenuItem, menu_equivalent};
 
 use std::sync::OnceLock;
 
@@ -1178,18 +1178,27 @@ mod tests {
     }
 
     #[test]
-    fn menu_rows_are_registry_actions_whose_chords_need_command() {
+    fn menu_rows_are_registry_actions_whose_equivalents_need_command() {
         for menu in MENUS {
             for item in menu.items {
                 let MenuItem::Action(id) = item else { continue };
                 let spec = action(id).unwrap_or_else(|| panic!("{id} is not registered"));
                 for chord in spec.defaults {
                     let chord = Chord::parse(chord).unwrap();
-                    // A plain key as a menu equivalent would steal typing from text fields.
-                    assert!(chord.mods.command, "{id} {chord}");
+                    // A plain or Option key as a menu equivalent would steal typing from text
+                    // fields, so only a Command chord becomes one.
+                    assert_eq!(
+                        menu_equivalent(chord).is_some(),
+                        chord.mods.command,
+                        "{id} {chord}"
+                    );
                 }
             }
         }
+        let option = Chord::parse("Alt+Shift+Z").unwrap();
+        assert_eq!(menu_equivalent(option), None);
+        let save = Chord::parse("Ctrl+S").unwrap();
+        assert_eq!(menu_equivalent(save), Some(save));
     }
 
     #[test]

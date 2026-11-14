@@ -1,6 +1,7 @@
 //! The native menu bar's layout: which registry action sits in which menu.
 
 use crate::i18n::Text;
+use crate::input::Chord;
 
 /// One row of a menu. An action row runs the registry action with that id and shows
 /// its chord; the rest are window commands with no chord.
@@ -18,6 +19,13 @@ pub enum MenuItem {
 pub struct Menu {
     pub title: Text,
     pub items: &'static [MenuItem],
+}
+
+/// The chord a menu row shows and answers to. Only a Command chord: a menu equivalent takes
+/// the key before a focused text field, so a plain or Option chord would steal typing. The
+/// row's other chords still work in the window through the keymap.
+pub fn menu_equivalent(chord: Chord) -> Option<Chord> {
+    chord.mods.command.then_some(chord)
 }
 
 use MenuItem::{Action, Separator};

@@ -146,7 +146,7 @@
 | `file.import` — Import | File | Ctrl+I | — | workspace import picker |
 | `file.export` — Export | File | Ctrl+E | — | export dialog |
 | `project.save` — Save | File | Ctrl+S | — | workspace lifecycle |
-| `project.save_as` — Save as | File | Ctrl+Shift+S | — | workspace lifecycle |
+| `project.save_as` — Save as | File | — | — | workspace lifecycle |
 | `window.home` — Go to Home | File | — | — | workspace lifecycle |
 | `project.rename` — Rename project | File | — | — | project rename input |
 | `project.delete` — Delete project | File | — | — | project delete confirmation |
