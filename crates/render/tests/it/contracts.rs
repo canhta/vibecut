@@ -1214,51 +1214,6 @@ fn encoded_color_patch_uses_same_compositor_and_has_valid_audio_video() {
         }
         Err(other) => panic!("unexpected software encoder failure: {other:?}"),
     }
-    // Audio-only rows: the same mixer and audio encoder, one audio stream, no video.
-    for (container, extension, codec) in [
-        (media::Container::Mp4, "m4a", "aac"),
-        (media::Container::WebM, "webm", "opus"),
-        (media::Container::Mp3, "mp3", "mp3"),
-        (media::Container::Wav, "wav", "pcm_s16le"),
-        (media::Container::Flac, "flac", "flac"),
-    ] {
-        // The registry decides: a build without libmp3lame has no MP3 row.
-        if !media::audio_export_container_available(container) {
-            continue;
-        }
-        let path = root().join(format!("audio-only.{extension}"));
-        let mut s = ExportSettings::from_project(&p);
-        s.audio_only = true;
-        s.container = container;
-        s.overwrite = project::atomic::Overwrite::Replace;
-        let receipt = export(
-            &p,
-            TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
-            &s,
-            &path,
-            &h,
-        )
-        .unwrap();
-        assert_eq!(receipt.video_frames, 0);
-        assert_eq!(receipt.audio_samples, 48000);
-        let info = probe(&path);
-        let streams = info["streams"].as_array().unwrap();
-        assert_eq!(streams.len(), 1, "{extension}");
-        assert_eq!(streams[0]["codec_type"], "audio");
-        assert_eq!(streams[0]["codec_name"], codec);
-        assert_eq!(streams[0]["sample_rate"], "48000");
-        assert_eq!(streams[0]["channels"], 2);
-        let duration: f64 = info["format"]["duration"]
-            .as_str()
-            .unwrap()
-            .parse()
-            .unwrap();
-        assert!(
-            (duration - 1.0).abs() < 0.05,
-            "{extension} duration {duration}"
-        );
-        std::fs::remove_file(path).unwrap();
-    }
 }
 #[test]
 fn immutable_text_reuse_is_bounded_invalidates_and_matches_uncached_pixels() {

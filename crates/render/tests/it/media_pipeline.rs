@@ -1175,13 +1175,15 @@ fn heavy_copy_publishes_only_the_streams_selected_by_decode() {
     settings.audio_only = true;
     settings.include_audio = true;
     settings.mode = ExportMode::Encode;
-    for (container, extension) in [
-        (media::Container::Mp4, "m4a"),
-        (media::Container::WebM, "webm"),
-        (media::Container::Mp3, "mp3"),
-        (media::Container::Wav, "wav"),
-        (media::Container::Flac, "flac"),
+    // One audio stream of the container's codec at 48 kHz stereo, no video.
+    for (container, extension, codec) in [
+        (media::Container::Mp4, "m4a", "aac"),
+        (media::Container::WebM, "webm", "opus"),
+        (media::Container::Mp3, "mp3", "mp3"),
+        (media::Container::Wav, "wav", "pcm_s16le"),
+        (media::Container::Flac, "flac", "flac"),
     ] {
+        // The registry decides: a build without libmp3lame has no MP3 row.
         if !media::audio_export_container_available(container) {
             continue;
         }
@@ -1190,7 +1192,22 @@ fn heavy_copy_publishes_only_the_streams_selected_by_decode() {
         let h = Hooks::default();
         let receipt = export(&mastered, range, &settings, &output, &h).unwrap();
         assert_eq!(receipt.video_frames, 0);
-        assert_eq!(probe(&output)["streams"].as_array().unwrap().len(), 1);
+        let info = probe(&output);
+        let streams = info["streams"].as_array().unwrap();
+        assert_eq!(streams.len(), 1, "{extension}");
+        assert_eq!(streams[0]["codec_type"], "audio");
+        assert_eq!(streams[0]["codec_name"], codec);
+        assert_eq!(streams[0]["sample_rate"], "48000");
+        assert_eq!(streams[0]["channels"], 2);
+        let duration: f64 = info["format"]["duration"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(
+            (duration - 1.0).abs() < 0.05,
+            "{extension} duration {duration}"
+        );
         let mut sources = FileSources::default();
         sources.begin_audio(&[]);
         let mut mixer = AudioMixer::new(&mastered, 2, 0, &h).unwrap();
