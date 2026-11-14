@@ -487,6 +487,12 @@ fn populated(path: PathBuf) -> Project {
             reduce_noise: true,
             stabilize: Some(project::StabilizeLevel::Stable),
             background_removal: Some(project::BackgroundRemoval { feather: 25.0 }),
+            matte_strokes: vec![project::MatteStroke {
+                mode: project::MatteStrokeMode::Remove,
+                at: Tick(7),
+                radius: 0.05,
+                points: vec![[0.25, 0.5], [0.3, 0.55]],
+            }],
             ..VideoParams::plain()
         }),
         ItemParams::Audio(AudioParams {
@@ -869,6 +875,61 @@ fn model_trust_boundaries() {
             })
             .unwrap();
         video.background_removal = Some(project::BackgroundRemoval { feather });
+        cases.push(d);
+    }
+    let good = project::MatteStroke {
+        mode: project::MatteStrokeMode::Add,
+        at: Tick::ZERO,
+        radius: 0.1,
+        points: vec![[0.5, 0.5]],
+    };
+    let bad_strokes = [
+        project::MatteStroke {
+            radius: 0.0,
+            ..good.clone()
+        },
+        project::MatteStroke {
+            radius: 0.6,
+            ..good.clone()
+        },
+        project::MatteStroke {
+            radius: f32::NAN,
+            ..good.clone()
+        },
+        project::MatteStroke {
+            at: Tick(-1),
+            ..good.clone()
+        },
+        project::MatteStroke {
+            points: Vec::new(),
+            ..good.clone()
+        },
+        project::MatteStroke {
+            points: vec![[1.5, 0.5]],
+            ..good.clone()
+        },
+        project::MatteStroke {
+            points: vec![[f32::NAN, 0.5]],
+            ..good.clone()
+        },
+        project::MatteStroke {
+            points: vec![[0.5, 0.5]; project::MatteStroke::MAX_POINTS + 1],
+            ..good.clone()
+        },
+    ];
+    for bad in bad_strokes {
+        let mut d = base.clone();
+        let video = d
+            .scene_mut()
+            .timeline
+            .iter_mut()
+            .flat_map(|track| &mut track.items)
+            .find_map(|item| match &mut item.content {
+                ItemParams::Video(params) => Some(params),
+                _ => None,
+            })
+            .unwrap();
+        video.matte_strokes = vec![good.clone(), bad];
         cases.push(d);
     }
     let mut d = base.clone();

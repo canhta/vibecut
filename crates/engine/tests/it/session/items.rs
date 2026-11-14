@@ -1841,6 +1841,84 @@ fn background_removal_is_a_video_item_switch_whose_feather_is_one_undo_step() {
     assert!(!patch.compatible(&ItemParams::Audio(project::AudioParams::default())));
 }
 
+#[test]
+fn matte_strokes_are_a_video_item_list_with_one_undo_step_per_stroke() {
+    use engine::ItemParamPatch as P;
+    use project::{MatteStroke, MatteStrokeMode};
+    let (mut s, _video, _audio, clip) = audible_session();
+    let strokes = |s: &Session| match &get_id(s, clip).content {
+        ItemParams::Video(p) => p.matte_strokes.clone(),
+        _ => panic!("video item"),
+    };
+    let stroke = |mode, x: f32| MatteStroke {
+        mode,
+        at: time::Tick::ZERO,
+        radius: 0.1,
+        points: vec![[x, 0.5], [x, 0.6]],
+    };
+    assert!(strokes(&s).is_empty(), "none at creation");
+    let first = stroke(MatteStrokeMode::Add, 0.2);
+    let second = stroke(MatteStrokeMode::Remove, 0.7);
+    // Each stroke is the whole list plus itself, and one undo takes exactly that stroke back.
+    s.apply(Command::SetItemField {
+        item: clip,
+        patch: P::MatteStrokes(vec![first.clone()]),
+    })
+    .unwrap();
+    s.apply(Command::SetItemField {
+        item: clip,
+        patch: P::MatteStrokes(vec![first.clone(), second.clone()]),
+    })
+    .unwrap();
+    assert_eq!(strokes(&s), vec![first.clone(), second.clone()]);
+    s.undo().unwrap();
+    assert_eq!(strokes(&s), vec![first.clone()]);
+    s.redo().unwrap();
+    assert_eq!(strokes(&s), vec![first.clone(), second]);
+    s.undo().unwrap();
+    s.undo().unwrap();
+    assert!(strokes(&s).is_empty());
+    // A stroke outside the frame or the brush bounds never reaches the project.
+    for bad in [
+        MatteStroke {
+            radius: 0.0,
+            ..first.clone()
+        },
+        MatteStroke {
+            points: vec![[2.0, 0.5]],
+            ..first.clone()
+        },
+        MatteStroke {
+            points: Vec::new(),
+            ..first.clone()
+        },
+    ] {
+        assert!(
+            s.apply(Command::SetItemField {
+                item: clip,
+                patch: P::MatteStrokes(vec![bad]),
+            })
+            .is_err()
+        );
+    }
+    assert!(strokes(&s).is_empty());
+    // The text a script holds: the list as JSON, or `none` to clear it.
+    let json = serde_json::to_string(&vec![first.clone()]).unwrap();
+    assert_eq!(
+        P::parse("matte_strokes", &json).unwrap(),
+        P::MatteStrokes(vec![first])
+    );
+    assert_eq!(
+        P::parse("matte_strokes", "none").unwrap(),
+        P::MatteStrokes(Vec::new())
+    );
+    assert!(P::parse("matte_strokes", "1").is_err());
+    // It addresses video items only.
+    let patch = P::MatteStrokes(Vec::new());
+    assert!(patch.compatible(&get_id(&s, clip).content));
+    assert!(!patch.compatible(&ItemParams::Audio(project::AudioParams::default())));
+}
+
 /// The crop carried by a video item, `None` for any other item kind.
 fn crop_of(item: &Item) -> Option<project::Crop> {
     let ItemParams::Video(p) = &item.content else {

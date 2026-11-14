@@ -258,6 +258,27 @@ pub(in crate::editor) fn set_item_field(
     Ok(())
 }
 
+/// One finished matte refinement stroke: the item's stroke list plus this one, set as one
+/// command so one undo takes exactly this stroke back.
+pub(in crate::editor) fn paint_matte_stroke(
+    port: &mut Port<'_>,
+    item: ItemId,
+    stroke: project::MatteStroke,
+) -> Result<()> {
+    let mut strokes = read::item(port.view().session.project(), item)
+        .and_then(|found| match &found.content {
+            project::ItemParams::Video(params) => Some(params.matte_strokes.clone()),
+            _ => None,
+        })
+        .ok_or(Error::Invalid("matte brush target"))?;
+    strokes.push(stroke);
+    port.apply_result(engine::Command::SetItemField {
+        item,
+        patch: ItemParamPatch::MatteStrokes(strokes),
+    })?;
+    Ok(())
+}
+
 /// Outline width and shadow offset or blur. The engine's `text_stroke` and `text_shadow`
 /// patches carry the whole value, so the edit copies the item's current outline or shadow,
 /// replaces its one field and keeps the rest; an unset outline or shadow starts from its

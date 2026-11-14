@@ -3188,6 +3188,146 @@ fn auto_removal_enables_tunes_and_disables_with_one_undo_step_each() {
     );
 }
 
+fn matte_strokes(harness: &Harness<Editor>, id: ItemId) -> Vec<project::MatteStroke> {
+    harness
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| item.id == id)
+        .and_then(|item| match &item.content {
+            ItemParams::Video(params) => Some(params.matte_strokes.clone()),
+            _ => None,
+        })
+        .unwrap_or_default()
+}
+
+#[test]
+fn the_matte_brush_paints_one_stroke_per_drag_and_each_is_one_undo_step() {
+    use project::MatteStrokeMode as Mode;
+    let (mut editor, video) = chroma_frame_fixture();
+    // The brush row follows the removal switch, so it starts on.
+    editor
+        .session
+        .apply(Command::SetItemField {
+            item: video,
+            patch: engine::ItemParamPatch::BackgroundRemoval(Some(
+                project::BackgroundRemoval::default(),
+            )),
+        })
+        .unwrap();
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    open_remove_background(&mut harness, video);
+    // The video clip starts at 2 s, so the preview must sit inside it for a stroke to land.
+    let project = harness.state().session.project().clone();
+    harness
+        .state_mut()
+        .playback
+        .seek(Tick(3 * SECOND), false, project)
+        .unwrap();
+    harness.run_steps(3);
+    for id in [
+        "inspector.matte_brush.off",
+        "inspector.matte_brush.add",
+        "inspector.matte_brush.remove",
+    ] {
+        assert!(has_widget(&harness, id), "{id}");
+    }
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while harness.state().playback.frame().is_none() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "preview frame did not arrive"
+        );
+        harness.run_steps(1);
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    let stage = widget_rect(&harness, "preview.canvas");
+    let canvas = {
+        let canvas = &harness.state().session.project().data().canvas;
+        [canvas.width, canvas.height]
+    };
+    let scale = vibecut::services::preview::fit_scale(stage.size(), canvas);
+    let displayed = egui::Rect::from_center_size(
+        stage.center(),
+        egui::vec2(canvas[0] as f32, canvas[1] as f32) * scale,
+    );
+    let paint = |harness: &mut Harness<Editor>, from: egui::Pos2, to: egui::Pos2| {
+        harness.hover_at(from);
+        harness.run_steps(1);
+        harness.drag_at(from);
+        harness.run_steps(1);
+        harness.hover_at(to);
+        harness.run_steps(2);
+        harness.drop_at(to);
+        harness.run_steps(2);
+    };
+    let (start, end) = (
+        displayed.center() - egui::vec2(20.0, 10.0),
+        displayed.center() + egui::vec2(20.0, 10.0),
+    );
+
+    let history = harness.state().session.history_len();
+    assert_eq!(harness.state().inspect().unwrap().matte_brush, None);
+    assert!(matte_strokes(&harness, video).is_empty());
+
+    // Add: one drag is one stroke and one undo step.
+    click(&mut harness, "inspector.matte_brush.add");
+    assert_eq!(
+        harness.state().inspect().unwrap().matte_brush,
+        Some((video, Mode::Add))
+    );
+    paint(&mut harness, start, end);
+    let strokes = matte_strokes(&harness, video);
+    assert_eq!(strokes.len(), 1);
+    assert_eq!(strokes[0].mode, Mode::Add);
+    assert!(strokes[0].points.len() >= 2, "{:?}", strokes[0].points);
+    assert!(strokes[0].valid());
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    assert_eq!(
+        harness.state().inspect().unwrap().matte_brush,
+        Some((video, Mode::Add)),
+        "the brush stays armed for the next stroke"
+    );
+
+    // Remove: a second drag is a second stroke and a second step.
+    click(&mut harness, "inspector.matte_brush.remove");
+    assert_eq!(
+        harness.state().inspect().unwrap().matte_brush,
+        Some((video, Mode::Remove))
+    );
+    paint(&mut harness, end, start);
+    let strokes = matte_strokes(&harness, video);
+    assert_eq!(strokes.len(), 2);
+    assert_eq!(strokes[1].mode, Mode::Remove);
+    assert_eq!(harness.state().session.history_len().0, history.0 + 2);
+
+    // Each undo takes back exactly one stroke.
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert_eq!(matte_strokes(&harness, video).len(), 1);
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert!(matte_strokes(&harness, video).is_empty());
+
+    // Escape leaves the brush; Off does too, and a drag then paints nothing.
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+    assert_eq!(harness.state().inspect().unwrap().matte_brush, None);
+    click(&mut harness, "inspector.matte_brush.add");
+    click(&mut harness, "inspector.matte_brush.off");
+    assert_eq!(harness.state().inspect().unwrap().matte_brush, None);
+    let history = harness.state().session.history_len();
+    paint(&mut harness, start, end);
+    assert!(matte_strokes(&harness, video).is_empty());
+    assert_eq!(harness.state().session.history_len(), history);
+}
+
 /// Offscreen screenshot evidence; wgpu rendering stays out of CI.
 #[test]
 #[ignore = "renders through wgpu; run with --ignored to refresh target/p2-ai-01-bg-removal.png"]

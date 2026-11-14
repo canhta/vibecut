@@ -1138,6 +1138,17 @@ fn canvas(
                 Action::PickScreenColour(color)
             });
         }
+    } else if let Some(brush) = state.matte_brush {
+        super::matte_brush::show(
+            &mut state.brush_trail,
+            &brush,
+            cx,
+            ui,
+            displayed,
+            &r,
+            cx.playhead,
+            actions,
+        );
     } else {
         super::transform::show(
             &mut state.transform,

@@ -12,7 +12,7 @@ mod number_edit;
 mod speed;
 mod transition;
 
-pub(in crate::editor) use commands::{set_item_field, set_shared_field};
+pub(in crate::editor) use commands::{paint_matte_stroke, set_item_field, set_shared_field};
 pub(in crate::editor) use effects::{add_effect_to_item, effect_refusal};
 pub(super) use number_edit::transform_scrub;
 
@@ -196,6 +196,10 @@ fn route(state: &mut State, port: &mut Port<'_>, actions: Vec<Action>) {
                 time,
                 value,
             } => commands::set_keyframe_at(port, item, &field, time, value),
+            Action::SetMatteBrush(brush) => {
+                port.request(crate::editor::context::Request::ArmMatteBrush(brush));
+                Ok(())
+            }
             Action::SetKeyColorPick(pick) => {
                 port.request(crate::editor::context::Request::ArmKeyColor(pick));
                 Ok(())
@@ -304,6 +308,7 @@ impl State {
         tab: &'static str,
     ) -> Result<()> {
         port.request(crate::editor::context::Request::ArmKeyColor(None));
+        port.request(crate::editor::context::Request::ArmMatteBrush(None));
         self.cancel_font_import(port);
         self.font_picker.close();
         self.chroma_staged = None;

@@ -644,7 +644,7 @@ pub(super) fn paint_handle(ui: &egui::Ui, position: Pos2, radius: f32, dark: boo
     );
 }
 
-fn viewport(frame: Rect, canvas: [u32; 2]) -> Option<Viewport> {
+pub(super) fn viewport(frame: Rect, canvas: [u32; 2]) -> Option<Viewport> {
     Viewport::new(
         render::Rect {
             x: f64::from(frame.min.x),

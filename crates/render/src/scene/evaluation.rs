@@ -170,7 +170,16 @@ impl<'a> Renderer<'a> {
         let Some(track) = self.settings.person_mattes.get(&item.id).cloned() else {
             return Ok(None);
         };
-        let plane = super::matte::feathered(&track.plane(track.covering(at))?, removal.feather)?;
+        let index = track.covering(at);
+        let mut plane = super::matte::feathered(&track.plane(index)?, removal.feather)?;
+        let strokes: Vec<&project::MatteStroke> = params
+            .matte_strokes
+            .iter()
+            .filter(|stroke| track.covering(stroke.at) == index)
+            .collect();
+        if !strokes.is_empty() {
+            super::brush::refine(&mut plane, [image.width(), image.height()], &strokes)?;
+        }
         let frame = [image.width(), image.height()];
         let [ax, bx, ay, by] = source_map(layer, frame, placement)?;
         let warp = self

@@ -393,7 +393,7 @@ fn paint_marquee(ui: &egui::Ui, frame: egui::Rect, marquee: &Marquee, dark: bool
     );
 }
 
-fn renderer<'a>(cx: &'a Context<'_>) -> Option<render::Renderer<'a>> {
+pub(super) fn renderer<'a>(cx: &'a Context<'_>) -> Option<render::Renderer<'a>> {
     let project = cx.staged_project();
     let settings = cx
         .playback

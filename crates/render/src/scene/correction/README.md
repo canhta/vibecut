@@ -1,6 +1,6 @@
 # Footage corrections
 
-Interface: `stabilize`, `matte`.
+Interface: `stabilize`, `matte`, `brush`.
 
 What render applies inside one item's own picture from derived data the caller resolved from the
 engine's [footage correction](../../../../engine/src/analysis/correction/README.md) cache. Render
@@ -25,6 +25,8 @@ track. For the frame covering the source time, `feathered(plane, feather)` gives
 plane: the stored bytes / 255 exactly at feather 0 (the model's own edge), and above 0 two box
 passes of radius `ceil(feather / 100 * 8)` cells per axis with clamped edges (the 0..=100 scale,
 radius and box shape are our choices; the reference shows no feather).
+
+`brush::refine` applies `VideoParams.matte_strokes` over that coverage plane, after the feather and before the plane is sampled, so the CPU reference and the shader entry read the same refined plane and parity needs no row of its own. A stroke refines only the matte frame whose index equals `covering(stroke.at)` (strokes are keyed by source time, so trim, retime and split carry them). Points are decoded-frame units, the units of the stretched plane; the tip is a circle in frame pixels of radius `radius * min(width, height)`, antialiased over one plane cell (the larger cell axis in pixels). Add moves a cell to `c + (1 - c) w` and remove to `c (1 - w)` with `w` the tip weight, strokes in stored order, each stroke's own tip weight being the maximum over its segments, so overlapping segments of one stroke never apply twice. The brush is not part of the cached matte: the recipe and cache key do not change. A stabilized clip's strokes are placed on the unwarped frame, as the stored plane is. `Renderer::frame_point` (`scene/viewport.rs`) gives the player the same map backwards, from a screen point to the decoded-frame point under crop, fit and transform.
 
 The matte scales the item's layer before noise reduction and every effect, so effects, masks,
 transform, opacity and blend all see the cut-out picture and whatever is below shows through.
@@ -52,4 +54,4 @@ and the identity at the plane's own size; a feather widens the edge band; IoU of
 1280x720 and 160x90 meets the recorded floors 0.95 (feather 0 and 25) and 0.88 (feather 100),
 printed as `MATTE_IOU`; a matted scene keeps the clip where the plane is 255 and shows the canvas
 where it is 0, preview equals export, and a missing matte renders unmatted. The fixtures stand in
-for the model output; the model card's own mIoU is 0.9164.
+for the model output; the model card's own mIoU is 0.9164. `matte_strokes_add_and_remove_over_the_computed_matte_on_their_own_frame_only` renders add and remove strokes over a halves matte (clip inside the add tip, canvas inside the remove tip, nothing changes outside, later stroke wins, same bytes twice, a stroke on another matte frame changes nothing) and `a_screen_point_maps_back_to_the_decoded_frame_through_crop_and_fit` checks the screen-to-frame map.

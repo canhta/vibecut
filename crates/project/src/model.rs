@@ -24,9 +24,9 @@ pub use audio_cleanup::{
 pub use item::{
     AudioParams, AudioSource, BackgroundRemoval, CaptionParams, CaptionWordWarning,
     CaptionWordWarnings, ClipBackground, EffectParams, GraphicParams, Item, ItemId, ItemParams,
-    LibraryMusic, LibrarySound, MusicLicence, OverlayParams, StabilizeLevel, StickerParams,
-    TextAlign, TextBackground, TextCase, TextDecoration, TextParams, TextShadow, TextStroke,
-    TextStyle, VOLUME_DB_RANGE, VideoParams, WordSpan, valid_volume,
+    LibraryMusic, LibrarySound, MatteStroke, MatteStrokeMode, MusicLicence, OverlayParams,
+    StabilizeLevel, StickerParams, TextAlign, TextBackground, TextCase, TextDecoration, TextParams,
+    TextShadow, TextStroke, TextStyle, VOLUME_DB_RANGE, VideoParams, WordSpan, valid_volume,
 };
 pub use narration::{
     MAX_DUCK_MS, MAX_DUCK_TENTHS_DB, Narration, NarrationConsent, NarrationCost, NarrationDucking,

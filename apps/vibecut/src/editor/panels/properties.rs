@@ -17,7 +17,7 @@ pub use shared_field::{SharedField, shared_fields};
 pub(in crate::editor) use state::{ANIMATION_DRAFT, Action, Widget, element_kind};
 pub(in crate::editor) use view::show;
 pub(in crate::editor) use workflow::{
-    add_effect_to_item, apply, effect_refusal, set_item_field, set_shared_field,
+    add_effect_to_item, apply, effect_refusal, paint_matte_stroke, set_item_field, set_shared_field,
 };
 
 use crate::editor::{

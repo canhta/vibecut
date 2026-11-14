@@ -36,6 +36,7 @@ impl Editor {
             effect_targets: None,
             media_drag: self.assets.media_drag.clone(),
             key_color_pick: self.player.key_color_pick.clone(),
+            matte_brush: self.player.matte_brush,
             colour_sampling: self.properties.sampling_colour(),
             keywords: self.keyword_ui(playhead),
         }
@@ -673,6 +674,10 @@ impl Editor {
                     }
                     Request::Lifecycle(action) => self.lifecycle_action = Some(action),
                     Request::ArmKeyColor(pick) => self.player.key_color_pick = pick,
+                    Request::ArmMatteBrush(brush) => {
+                        self.player.matte_brush = brush;
+                        self.player.brush_trail = None;
+                    }
                     Request::ReplaceMedia(item) => self.timeline.request_replace(item),
                     Request::PruneSelection => self.prune_selection(),
                     Request::InsertShape(id) => {

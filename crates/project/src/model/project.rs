@@ -1,5 +1,5 @@
 //! The validated project snapshot, its editable candidate and whole-project invariants.
-use super::item::{AudioSource, ItemParams, TextStyle, valid_volume};
+use super::item::{AudioSource, ItemParams, MatteStroke, TextStyle, valid_volume};
 use super::scene::{Scene, SceneId, SceneScope, Scenes};
 use super::settings::{AspectPreset, Canvas, CanvasSize, Color, Settings};
 use super::track::TrackKind;
@@ -668,7 +668,8 @@ fn validate(data: &ProjectData) -> Result<()> {
                 && (!valid_volume(p.volume)
                     || p.crop.as_ref().is_some_and(|crop| !crop.valid())
                     || !p.background.valid()
-                    || p.background_removal.is_some_and(|removal| !removal.valid()))
+                    || p.background_removal.is_some_and(|removal| !removal.valid())
+                    || !MatteStroke::valid_list(&p.matte_strokes))
             {
                 return Err(Error::Invalid("video parameters"));
             }
