@@ -283,6 +283,8 @@ pub(crate) fn with_caption_presets(seed: &Session) -> Session {
         italic: false,
         underline: false,
         strikeout: false,
+        max_lines: None,
+        word_highlight_color: None,
     };
     for item in data
         .scene_mut()

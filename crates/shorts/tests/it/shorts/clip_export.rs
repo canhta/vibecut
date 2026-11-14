@@ -201,6 +201,8 @@ fn joins_play_order_excludes_gaps_and_matches_one_concatenated_mapping() {
         italic: false,
         underline: false,
         strikeout: false,
+        max_lines: None,
+        word_highlight_color: None,
     };
     data.caption_presets.push(project::SavedCaptionPreset {
         id: project::CaptionPresetId(100),

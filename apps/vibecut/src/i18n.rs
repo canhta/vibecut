@@ -5,6 +5,7 @@
 //! empty rows, duplicate keys and keys no frontend code uses.
 mod format;
 mod locale;
+mod looks;
 mod text;
 
 pub use format::{
@@ -12,4 +13,5 @@ pub use format::{
     format, format_count, number, parse_decimal, signed, transition_label,
 };
 pub use locale::Locale;
+pub use looks::{caption_look, text_look};
 pub use text::{Text, text};

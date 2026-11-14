@@ -293,9 +293,8 @@ impl CaptionLook {
         *style == self.cue_style()
     }
 
-    /// The cue value a look materializes into on one caption item. Cues have no field for the
-    /// look's max lines or word-highlight colour, so those are not carried; an absent outline
-    /// or box is a transparent colour, not a border.
+    /// The cue value a look materializes into on one caption item, including its max lines and
+    /// word-highlight colour; an absent outline or box is a transparent colour, not a border.
     pub fn cue_style(self) -> captions::CueStyle {
         use captions::{CueAlignment, HorizontalAlignment, VerticalAlignment};
         let style = self.style();
@@ -330,6 +329,8 @@ impl CaptionLook {
             italic: false,
             underline: false,
             strikeout: false,
+            max_lines: u8::try_from(style.max_lines).ok(),
+            word_highlight_color: Some(style.word_highlight_color),
         }
     }
 }
