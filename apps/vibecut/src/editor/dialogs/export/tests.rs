@@ -253,14 +253,14 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
         assert!(!enabled(&bench, "export.run"));
         bench.click("export.format");
         bench.click("export.format.webm");
-        bench.click("export.quality");
-        bench.click("export.quality.very_high");
+        bench.click("export.bitrate");
+        bench.click("export.bitrate.higher");
         bench.click("export.audio.include");
         assert_eq!(
             bench.editor().inspect().unwrap().export_options,
             ExportOptions {
                 format: ExportFormat::Webm,
-                quality: ExportQuality::VeryHigh,
+                quality: ExportQuality::Higher,
                 include_audio: false,
                 ..Default::default()
             }
@@ -274,9 +274,11 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
             store.load_with_warning().0.export,
             bench.editor().preferences.export
         );
-        // Audio-only formats are admitted rows of the same format control.
-        bench.click("export.format");
-        bench.click("export.format.m4a");
+        // Audio-only is Audio ticked alone: Video is unticked, its block greys (listed, not
+        // hidden) and the Audio Format row comes alive.
+        bench.click("export.audio.include");
+        assert!(bench.editor().preferences.export.include_audio);
+        bench.click("export.video.include");
         assert!(
             bench
                 .editor()
@@ -286,15 +288,30 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
                 .format
                 .audio_only()
         );
-        assert!(
-            bench
-                .editor()
-                .inspect()
-                .unwrap()
-                .widgets
-                .iter()
-                .all(|w| w.id != "export.codec")
+        bench.harness_mut().run_steps(2);
+        for id in [
+            "export.resolution",
+            "export.bitrate",
+            "export.codec",
+            "export.format",
+            "export.fps",
+            "export.profile",
+            "export.custom.size",
+            "export.video.include",
+            "export.audio.include",
+        ] {
+            assert!(!enabled(&bench, id), "{id} applies to audio-only output");
+        }
+        assert!(enabled(&bench, "export.audio.format"));
+        bench.click("export.audio.format");
+        bench.click("export.audio.format.opus");
+        assert_eq!(
+            bench.editor().preferences.export.format,
+            ExportFormat::AudioWebm
         );
+        bench.click("export.audio.format");
+        bench.click("export.audio.format.m4a");
+        assert_eq!(bench.editor().preferences.export.format, ExportFormat::M4a);
         let screenshot =
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/84-export-m4a.png");
         std::fs::create_dir_all(screenshot.parent().unwrap()).unwrap();
@@ -304,28 +321,68 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
             .unwrap()
             .save(&screenshot)
             .unwrap();
-        bench.click("export.format");
-        bench.click("export.format.webm");
-        // GIF swaps the bitrate for Colors and Dithering and clears a custom rate.
+        // Ticking Video again returns to the video format it left.
+        bench.click("export.video.include");
+        bench.harness_mut().run_steps(2);
+        assert_eq!(bench.editor().preferences.export.format, ExportFormat::Webm);
+        assert!(enabled(&bench, "export.resolution"));
+        assert!(!enabled(&bench, "export.audio.format"));
+        // Bit rate presets and Custom: Custom starts at 12000 Kbps and shows the Kbps field;
+        // a preset clears it again.
+        bench.click("export.bitrate");
+        bench.click("export.bitrate.custom");
+        assert_eq!(
+            bench.editor().preferences.export.output.bit_rate,
+            Some(12_000_000)
+        );
+        bench.harness_mut().run_steps(2);
+        assert!(enabled(&bench, "export.bitrate.kbps"));
+        bench.click("export.bitrate");
+        bench.click("export.bitrate.lower");
+        assert_eq!(bench.editor().preferences.export.output.bit_rate, None);
+        assert_eq!(
+            bench.editor().preferences.export.quality,
+            ExportQuality::Lower
+        );
+        bench.click("export.bitrate");
+        bench.click("export.bitrate.recommended");
+        // GIF is its own section with Resolution only: ticking it clears a custom rate,
+        // sets 240P and greys the Video block.
         bench.editor_mut().preferences.export.output.bit_rate = Some(100_000);
-        bench.click("export.format");
-        bench.click("export.format.gif");
+        bench.click("export.gif.include");
         bench.harness_mut().run_steps(2);
         let gif = bench.editor().preferences.export;
         assert_eq!((gif.format, gif.output.bit_rate), (ExportFormat::Gif, None));
         assert_eq!(gif.output.gif, media::GifOptions::default());
-        assert!(enabled(&bench, "export.gif.colors"));
-        assert!(enabled(&bench, "export.gif.dither"));
-        assert!(!enabled(&bench, "export.bitrate.custom"));
-        // GIF leaves the encoder rows unused: they stay listed but disabled.
+        assert_eq!(gif.output.resolution, Some([240, 240]));
+        assert!(enabled(&bench, "export.gif.resolution"));
+        assert!(!enabled(&bench, "export.gif.include"));
         for id in [
+            "export.resolution",
+            "export.bitrate",
             "export.codec",
-            "export.quality",
+            "export.format",
             "export.profile",
-            "export.audio.include",
         ] {
             assert!(!enabled(&bench, id), "{id} applies to GIF");
         }
+        // GIF's rate is capped, so the frame rate stays live; Audio and Video switch sections.
+        assert!(enabled(&bench, "export.fps"));
+        assert!(enabled(&bench, "export.audio.include"));
+        assert!(enabled(&bench, "export.video.include"));
+        bench.click("export.gif.resolution");
+        bench.click("export.gif.resolution.320");
+        assert_eq!(
+            bench.editor().preferences.export.output.resolution,
+            Some([320, 320])
+        );
+        // Leaving GIF restores the project size and the video format.
+        bench.click("export.video.include");
+        bench.harness_mut().run_steps(2);
+        let video = bench.editor().preferences.export;
+        assert_eq!(video.format, ExportFormat::Webm);
+        assert_eq!(video.output.resolution, None);
+        assert!(!enabled(&bench, "export.gif.resolution"));
         // A PNG sequence has no codec rate: the same bitrate row is disabled and cleared, and
         // the finished output is named without an extension. Codec, profile and the all-scenes
         // choice are reset to the values the export accepts.
@@ -349,11 +406,11 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
         assert!(sequence.output.profile == media::H264Profile::Automatic);
         assert!(sequence.output.scene == render::SceneChoice::Active);
         for id in [
-            "export.bitrate.custom",
+            "export.bitrate",
             "export.codec",
-            "export.quality",
             "export.profile",
             "export.audio.include",
+            "export.video.include",
         ] {
             assert!(!enabled(&bench, id), "{id} applies to a PNG sequence");
         }
@@ -386,9 +443,10 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
         // Leaving the silent format re-enables the rows it had disabled.
         for id in [
             "export.codec",
-            "export.quality",
+            "export.bitrate",
             "export.profile",
             "export.audio.include",
+            "export.video.include",
         ] {
             assert!(enabled(&bench, id), "{id} applies to WebM");
         }
@@ -410,11 +468,11 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
             Err(Error::EmptyTimeline)
         ));
     }
+    // The Bit rate presets and their encoder settings; a Custom Kbps rate replaces the rate.
     for (quality, q, b) in [
-        (ExportQuality::Low, 55, 3_000_000),
-        (ExportQuality::Medium, 70, 6_000_000),
-        (ExportQuality::High, 85, 12_000_000),
-        (ExportQuality::VeryHigh, 95, 24_000_000),
+        (ExportQuality::Lower, 70, 6_000_000),
+        (ExportQuality::Recommended, 85, 12_000_000),
+        (ExportQuality::Higher, 95, 24_000_000),
     ] {
         let settings = ExportOptions {
             quality,
@@ -424,6 +482,16 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
         assert_eq!((settings.quality, settings.bit_rate), (q, b));
         assert!(matches!(settings.mode, render::ExportMode::Encode));
     }
+    let custom = ExportOptions {
+        output: render::OutputOptions {
+            bit_rate: Some(50_000_000),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let mut settings = custom.settings(&project(false, false));
+    custom.output.apply(&mut settings).unwrap();
+    assert_eq!(settings.bit_rate, 50_000_000);
 }
 
 #[test]
@@ -549,8 +617,8 @@ fn export_failure_panel_copies_only_diagnostics_and_retry_keeps_settings() {
         .unwrap();
     bench.click("export.format");
     bench.click("export.format.webm");
-    bench.click("export.quality");
-    bench.click("export.quality.very_high");
+    bench.click("export.bitrate");
+    bench.click("export.bitrate.higher");
     bench.click("export.audio.include");
     bench.click("export.run");
     assert_eq!(wait(&mut bench), super::ExportPhase::Failed);
@@ -559,7 +627,7 @@ fn export_failure_panel_copies_only_diagnostics_and_retry_keeps_settings() {
         state.attempt,
         Some(ExportOptions {
             format: ExportFormat::Webm,
-            quality: ExportQuality::VeryHigh,
+            quality: ExportQuality::Higher,
             include_audio: false,
             ..Default::default()
         })
@@ -613,7 +681,7 @@ fn export_failure_panel_copies_only_diagnostics_and_retry_keeps_settings() {
         bench.editor().export_state().unwrap().inspect().attempt,
         Some(ExportOptions {
             format: ExportFormat::Webm,
-            quality: ExportQuality::VeryHigh,
+            quality: ExportQuality::Higher,
             include_audio: false,
             ..Default::default()
         })
@@ -922,7 +990,7 @@ fn filenames_are_sanitized_and_export_preferences_roundtrip() {
     );
     let options = ExportOptions {
         format: ExportFormat::Webm,
-        quality: ExportQuality::VeryHigh,
+        quality: ExportQuality::Higher,
         include_audio: false,
         ..Default::default()
     };

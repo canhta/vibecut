@@ -34,7 +34,7 @@ bounded custom IDs and four recent IDs per pair, using AI's shipped table for de
 The Captions and Shorts provider pickers resolve their transient request snapshots
 from this map. Downloaded local weight choices remain in their local owner. Keys,
 fetched lists and price acknowledgements are never serialized. A document whose version is not
-`PREFERENCES_VERSION` is refused through the version refusal; there is no migration.
+`PREFERENCES_VERSION` is refused through the version refusal; there is no migration. Version 23 replaced the export `quality` values (`low`, `medium`, `high`, `very_high`) with the Bit rate presets `lower`, `recommended` and `higher`.
 Version 14 removed `recent_colors`; the colour popover's recents live in the project.
 Version 19 removed the font picker's persisted `tab` (the picker has no tabs); `font_picker` keeps only `favorites`.
 Version 22 replaced the single keybinding delta map with `KeybindingPresets`: five named profiles and the active one (`input`), with no migration.

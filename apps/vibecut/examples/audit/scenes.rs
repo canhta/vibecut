@@ -713,6 +713,24 @@ pub(super) const SCENES: &[Scene] = &[
         build: export_resolution,
     },
     Scene {
+        name: "export-audio-only",
+        reference_dark: Some("capcut-desktop-2026-11-14b/capcut-desktop-105736.png"),
+        reference_light: Some("capcut-desktop-2026-11-14b/capcut-desktop-105736.png"),
+        build: export_audio_only,
+    },
+    Scene {
+        name: "export-gif",
+        reference_dark: Some("capcut-desktop-2026-11-14b/capcut-desktop-105532.png"),
+        reference_light: Some("capcut-desktop-2026-11-14b/capcut-desktop-105532.png"),
+        build: export_gif,
+    },
+    Scene {
+        name: "export-custom-bit-rate",
+        reference_dark: Some("capcut-desktop-2026-11-14b/capcut-desktop-105630.png"),
+        reference_light: Some("capcut-desktop-2026-11-14b/capcut-desktop-105630.png"),
+        build: export_custom_bit_rate,
+    },
+    Scene {
         name: "close-prompt",
         reference_dark: Some("capcut/illustrations/capcut-desktop-ui.png"),
         reference_light: Some("capcut/illustrations/capcut-desktop-ui.png"),
@@ -909,8 +927,9 @@ mod timeline;
 use assets::assets_scene;
 use editor::{
     caption_word_scene, captions_scene, editor_empty, editor_frame_state, editor_media,
-    editor_transitions, export_dialog, export_resolution, import_progress, models, models_vi,
-    player_scene, player_variant, settings_dialog,
+    editor_transitions, export_audio_only, export_custom_bit_rate, export_dialog, export_gif,
+    export_resolution, import_progress, models, models_vi, player_scene, player_variant,
+    settings_dialog,
 };
 use home::{home, home_projects, projects_scene, projects_trash};
 pub(crate) use properties::inspector_mixed_vi;

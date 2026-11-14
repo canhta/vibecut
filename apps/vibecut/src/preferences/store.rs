@@ -319,7 +319,7 @@ mod tests {
                 "export",
                 serde_json::json!({
                     "format": "webm",
-                    "quality": "very_high",
+                    "quality": "higher",
                     "include_audio": false,
                     "output": {
                         "audio_only": false,
