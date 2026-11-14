@@ -131,8 +131,12 @@ impl<A: 'static, M: 'static> Bench<A, M> {
         self.harness.run_steps(1);
     }
 
-    /// Click one automation control by its author id.
+    /// Scroll one automation control into view, as a person would, and click it.
     pub(crate) fn click(&mut self, id: &str) {
+        self.harness
+            .get(By::new().predicate(|node| node.author_id() == Some(id)))
+            .scroll_to_me();
+        self.harness.run_steps(3);
         self.harness
             .get(By::new().predicate(|node| node.author_id() == Some(id)))
             .click();

@@ -1191,8 +1191,8 @@ fn await_clip_outcome(harness: &mut Harness<Editor>) -> String {
 fn reveal_tile(harness: &mut Harness<Editor>, id: &str) {
     for _ in 0..24 {
         let panel = harness.state().panels()["media"];
-        // The list starts under the tab strip, toolbar and filter rows.
-        let top = panel.top() + 170.0;
+        // The list starts under the filter row.
+        let top = widget_rect(harness, "assets.filter").bottom();
         let target = widget_rect(harness, id);
         if target.top() >= top && target.bottom() <= panel.bottom() {
             return;

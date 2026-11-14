@@ -740,8 +740,11 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
         &Hooks,
     )
     .unwrap();
-    let passes = blur_passes(100.0, 3840, 2160).unwrap();
-    assert!(passes.len() > 2);
+    // Two identical gaussian pairs run pass by pass on both executors; from three
+    // pairs on the CPU reduces the run and the dispatcher keeps it off the device.
+    let long = blur_passes(100.0, 3840, 2160).unwrap();
+    assert!(long.len() > 6);
+    let passes = long[..4].to_vec();
     let out = gpu
         .apply(
             &image,
@@ -774,6 +777,11 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
         .fold(0.0_f32, f32::max);
     eprintln!("repeated-pass max_abs={max} passes={}", passes.len());
     assert!(max <= 2e-5);
+    let item = || Image::from_working_pixels(31, 17, image.pixels().iter().copied(), &Hooks);
+    let reduced = apply_effect(item().unwrap(), &long, &image, &CpuEffects, &Hooks).unwrap();
+    let dispatched = apply_effect(item().unwrap(), &long, &image, gpu.as_ref(), &Hooks).unwrap();
+    let max = max_error(&reduced, &dispatched);
+    assert!(max <= 2e-5, "long gaussian run through the GPU adapter {max}");
     // The public thumbnail seam schedules real offscreen GPU work and reuses it.
     let budget = engine::ByteBudget::new(64 << 20).unwrap();
     let thumbnails = gpu.thumbnails(budget.clone());
@@ -1717,13 +1725,11 @@ fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
             let mut keyed = chroma_key_passes([0.0, 1.0, 0.0, 1.0], 40.0, 0.0).unwrap();
             keyed.push(edge("matte_clean", 1.0));
             keyed.push(edge("matte_feather", 2.0));
-            let inputs = || EffectInputs {
-                input: &input,
-                below: &other,
-                coverage: None,
+            let item = || {
+                Image::from_working_pixels(w, h, start.pixels().iter().copied(), &Hooks).unwrap()
             };
-            let expected = CpuEffects.apply(&start, &keyed, inputs(), &Hooks).unwrap();
-            let actual = gpu.apply(&start, &keyed, inputs(), &meter).unwrap();
+            let expected = apply_effect(item(), &keyed, &other, &CpuEffects, &Hooks).unwrap();
+            let actual = apply_effect(item(), &keyed, &other, gpu.as_ref(), &meter).unwrap();
             parity(&actual, &expected);
             assert_ne!(actual.pixels(), start.pixels());
             drop(actual);

@@ -254,6 +254,10 @@ pub(super) fn hardware_decoder(ctx: &mut ff::codec::context::Context) {
             {
                 (*ptr).hw_device_ctx = device;
                 (*ptr).get_format = Some(choose_format);
+                // A device decoder keeps FFmpeg's automatic thread count: D3D11VA with
+                // the fixed software count fails its first frame ("Invalid data"), and
+                // its pictures live in device surfaces, not the CPU lease.
+                (*ptr).thread_count = 0;
                 return;
             }
         }

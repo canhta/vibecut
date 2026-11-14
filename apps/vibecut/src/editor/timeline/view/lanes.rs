@@ -262,7 +262,10 @@ impl State {
     /// card passes clicks through to the lanes beneath it; only OK takes them.
     fn keyframe_hint(&mut self, cx: &Context<'_>, ui: &egui::Ui, anchor: egui::Pos2) {
         let locale = cx.locale;
-        let area = egui::Area::new(egui::Id::unique("timeline.keyframe_hint"))
+        let ok = i18n::text(locale, Text::Ok);
+        // The card's layer takes no input, so OK lives in its own small layer above the
+        // slot the card leaves for it.
+        let card = egui::Area::new(egui::Id::new("timeline.keyframe_hint"))
             .order(egui::Order::Foreground)
             .interactable(false)
             .pivot(Align2::LEFT_CENTER)
@@ -276,14 +279,19 @@ impl State {
                                     .size(theme::type_size::BODY)
                                     .color(theme::text(cx.dark)),
                             );
-                            ui.button(i18n::text(locale, Text::Ok))
+                            ui.add_visible(false, egui::Button::new(ok)).rect
                         })
                         .inner
                     })
                     .inner
             });
-        self.remember("timeline.keyframe_hint.ok".to_owned(), &area.inner);
-        if area.inner.clicked() {
+        let button = egui::Area::new(egui::Id::new("timeline.keyframe_hint.ok"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(card.inner.min)
+            .show(ui.ctx(), |ui| ui.button(ok));
+        ui.ctx().move_to_top(button.response.layer_id);
+        self.remember("timeline.keyframe_hint.ok".to_owned(), &button.inner);
+        if button.inner.clicked() {
             self.push(Action::DismissKeyframeHint);
         }
     }

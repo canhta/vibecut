@@ -311,11 +311,14 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
             "export.fps",
             "export.profile",
             "export.custom.size",
-            "export.video.include",
             "export.audio.include",
         ] {
             assert!(!enabled(&bench, id), "{id} applies to audio-only output");
         }
+        assert!(
+            enabled(&bench, "export.video.include"),
+            "unticked Video can be ticked again"
+        );
         assert!(enabled(&bench, "export.audio.format"));
         bench.click("export.audio.format");
         bench.click("export.audio.format.opus");
