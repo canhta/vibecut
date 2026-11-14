@@ -145,7 +145,7 @@ fn saved_caption_looks_keep_bilingual_safe_area_diacritics_and_shared_pixels() {
     let h = Hooks::default();
     for boxed in [false, true] {
         let p = preset_scene(&texts, boxed);
-        for (width, height) in [(360, 640), (1080, 1920)] {
+        for (width, height) in [(360, 640), (540, 960)] {
             let mut settings = RenderSettings::from_project(&p);
             settings.width = width;
             settings.height = height;

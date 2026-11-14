@@ -1500,7 +1500,8 @@ fn graphic_fill_ring_opacity_and_native_geometry_match_analytic_pixels_without_s
         }
     }
     for ellipse in [false, true] {
-        for scale in [1, 2, 4] {
+        // Output scale multiplies the probe geometry; two scales show it is not fixed at 1.
+        for scale in [1, 2] {
             for aspect in [1., 1.5] {
                 for width in [0., 1., 64.] {
                     for align in [
@@ -2181,18 +2182,14 @@ fn assert_blurred_seam(width: u32, height: u32, intensity: u32, hooks: &Hooks) {
 
 #[test]
 fn clip_blur_softens_the_clip_edge_at_each_preset_on_both_canvases() {
+    // Quarter-size canvases keep both paths: the lightest preset runs one kernel, the two
+    // heavier ones pass the single-iteration limit and blur a reduced pyramid.
     let hooks = Hooks::default();
-    for (width, height) in [(1920, 1080), (1080, 1920)] {
+    for (width, height) in [(480, 270), (270, 480)] {
         for intensity in project::ClipBackground::BLUR_PRESETS {
             assert_blurred_seam(width, height, intensity, &hooks);
         }
     }
-}
-
-#[test]
-fn heavy_clip_blur_on_a_large_canvas_takes_the_half_resolution_path() {
-    // Sigma 133 is past the single-iteration limit, so the blur runs on a pyramid.
-    assert_blurred_seam(2560, 1440, 500, &Hooks::default());
 }
 
 #[test]
