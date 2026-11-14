@@ -8,6 +8,7 @@ use crate::{
 };
 use captions::Format;
 
+/// The reference lists SRT and TXT; VTT and the burned-in MP4 follow as ours.
 const OUTPUTS: [(&str, Text, CaptionOutput); 4] = [
     (
         "export.captions.srt",
@@ -15,14 +16,14 @@ const OUTPUTS: [(&str, Text, CaptionOutput); 4] = [
         CaptionOutput::File(Format::Srt),
     ),
     (
-        "export.captions.vtt",
-        Text::SubVtt,
-        CaptionOutput::File(Format::WebVtt),
-    ),
-    (
         "export.captions.txt",
         Text::SubTxt,
         CaptionOutput::File(Format::Txt),
+    ),
+    (
+        "export.captions.vtt",
+        Text::SubVtt,
+        CaptionOutput::File(Format::WebVtt),
     ),
     ("export.captions.burn", Text::SubMp4, CaptionOutput::Burned),
 ];

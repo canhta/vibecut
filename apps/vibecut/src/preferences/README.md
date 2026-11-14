@@ -34,7 +34,7 @@ bounded custom IDs and four recent IDs per pair, using AI's shipped table for de
 The Captions and Shorts provider pickers resolve their transient request snapshots
 from this map. Downloaded local weight choices remain in their local owner. Keys,
 fetched lists and price acknowledgements are never serialized. A document whose version is not
-`PREFERENCES_VERSION` is refused through the version refusal; there is no migration.
+`PREFERENCES_VERSION` is refused through the version refusal; there is no migration. Version 18 replaced the export `quality` values (`low`, `medium`, `high`, `very_high`) with the Bit rate presets `lower`, `recommended` and `higher`.
 Version 14 removed `recent_colors`; the colour popover's recents live in the project.
 
 The text-task provider is one persisted choice, `subtitles.text_provider`, shared by

@@ -71,15 +71,19 @@ impl ExportFormat {
     pub fn audio_only(self) -> bool {
         matches!(self, Self::M4a | Self::AudioWebm)
     }
-    /// Why the encoder rows (bit rate, codec, quality, H.264 profile and the audio
-    /// switch) do not apply to this format, or `None` when they do. Silent image
-    /// outputs disable those rows, with this reason on hover.
+    /// Why the video encoder rows (bit rate, codec and H.264 profile) do not apply to
+    /// this format, or `None` when they do. Silent image outputs and audio-only output
+    /// disable those rows, with this reason on hover.
     pub(super) fn unused_encoder_reason(self) -> Option<Text> {
         match self {
             Self::Gif => Some(Text::ExportNotForGif),
             Self::PngSequence => Some(Text::ExportNotForSequence),
-            Self::Mp4 | Self::Mov | Self::Webm | Self::M4a | Self::AudioWebm => None,
+            Self::M4a | Self::AudioWebm => Some(Text::ExportNotForAudio),
+            Self::Mp4 | Self::Mov | Self::Webm => None,
         }
+    }
+    pub fn is_gif(self) -> bool {
+        self == Self::Gif
     }
     pub(super) fn label(self) -> Text {
         match self {
@@ -96,27 +100,28 @@ impl ExportFormat {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExportQuality {
-    Low,
-    Medium,
+    Lower,
     #[default]
-    High,
-    VeryHigh,
+    Recommended,
+    Higher,
 }
 impl ExportQuality {
     pub(super) fn label(self) -> Text {
         match self {
-            Self::Low => Text::QualityLow,
-            Self::Medium => Text::QualityMedium,
-            Self::High => Text::QualityHigh,
-            Self::VeryHigh => Text::QualityVeryHigh,
+            Self::Lower => Text::ExportBitRateLower,
+            Self::Recommended => Text::ExportBitRateRecommended,
+            Self::Higher => Text::ExportBitRateHigher,
         }
     }
+    /// The Bit rate preset's encoder settings: the encoder quality scalar and the
+    /// target rate in bits per second. A Custom rate (`OutputOptions::bit_rate`)
+    /// replaces the rate and keeps the last preset's scalar. This is the one mapping;
+    /// the command declaration and the CLI carry only `OutputOptions`.
     pub fn value(self) -> (u8, usize) {
         match self {
-            Self::Low => (55, 3_000_000),
-            Self::Medium => (70, 6_000_000),
-            Self::High => (85, 12_000_000),
-            Self::VeryHigh => (95, 24_000_000),
+            Self::Lower => (70, 6_000_000),
+            Self::Recommended => (85, 12_000_000),
+            Self::Higher => (95, 24_000_000),
         }
     }
 }
@@ -133,7 +138,7 @@ impl Default for ExportOptions {
     fn default() -> Self {
         Self {
             format: ExportFormat::Mp4,
-            quality: ExportQuality::High,
+            quality: ExportQuality::Recommended,
             include_audio: true,
             output: OutputOptions::default(),
         }
@@ -683,6 +688,8 @@ pub(crate) enum DialogAction {
     Start,
     Caption(crate::services::lifecycle::CaptionOutput),
 }
+/// The export window: 720 x 663 as in the reference capture (row 12 of the 2026-11-14b round).
+const DIALOG_SIZE: [f32; 2] = [720.0, 663.0];
 pub(crate) struct DialogUi {
     pub widgets: Vec<(&'static str, egui::Response)>,
     pub action: Option<DialogAction>,
@@ -752,9 +759,9 @@ impl ExportDialog {
             .show(ctx, |ui| {
                 ui.style_mut().override_font_id = Some(egui::FontId::proportional(14.0));
                 ui.set_width(
-                    900.0_f32.min(ctx.content_rect().width() - 48.0) - frame_margin.sum().x,
+                    DIALOG_SIZE[0].min(ctx.content_rect().width() - 48.0) - frame_margin.sum().x,
                 );
-                let dialog_height = 820.0_f32.min(ctx.content_rect().height() - 48.0);
+                let dialog_height = DIALOG_SIZE[1].min(ctx.content_rect().height() - 48.0);
                 ui.set_height(dialog_height - frame_margin.sum().y);
                 crate::kit::dialog_title(ui, tr(Text::ExportTitle));
                 ui.add_space(12.0);
@@ -949,11 +956,8 @@ impl ExportDialog {
                         let body_height = ui.available_height().max(0.0);
                         ui.horizontal_top(|ui| {
                             ui.spacing_mut().item_spacing.x = 0.0;
-                            let wide = ui.available_width() >= 800.0;
-                            let leading = if wide { 108.0 - frame_margin.left } else { 0.0 };
-                            let gap = if wide { 114.0 } else { 20.0 };
-                            let settings_width = ui.available_width() - leading - 227.0 - gap;
-                            ui.add_space(leading);
+                            let gap = 20.0;
+                            let settings_width = ui.available_width() - 227.0 - gap;
                             ui.allocate_ui_with_layout(
                                 egui::vec2(227.0, body_height),
                                 egui::Layout::top_down(egui::Align::Center),

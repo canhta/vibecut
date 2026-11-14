@@ -367,6 +367,32 @@ pub(super) fn export_resolution(theme: Theme, scale: f32) -> Result<AppHarness, 
     Ok(app)
 }
 
+/// The export dialog after clicking the listed widgets in order, one frame burst each.
+fn export_clicks(theme: Theme, scale: f32, ids: &[&str]) -> Result<AppHarness, Failure> {
+    let mut app = export_dialog(theme, scale)?;
+    for id in ids {
+        app.get(By::new().predicate(|node| node.author_id() == Some(*id)))
+            .click();
+        app.run_steps(12);
+    }
+    Ok(app)
+}
+
+/// Video unticked: its block greys and Audio Format comes alive (reference 105736).
+pub(super) fn export_audio_only(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    export_clicks(theme, scale, &["export.video.include"])
+}
+
+/// The GIF section ticked with its Resolution only (reference 105532).
+pub(super) fn export_gif(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    export_clicks(theme, scale, &["export.gif.include"])
+}
+
+/// Bit rate set to Custom, showing the Kbps field (reference 105630).
+pub(super) fn export_custom_bit_rate(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    export_clicks(theme, scale, &["export.bitrate", "export.bitrate.custom"])
+}
+
 pub(super) fn import_progress(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     let mut editor = empty_editor(theme, Locale::En)?;
     editor.set_import_probe(Arc::new(ProgressProbe::new()))?;
