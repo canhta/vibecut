@@ -62,7 +62,14 @@ impl State {
         ui: &egui::Ui,
         layout: &TimelineLayout,
     ) {
-        self.hover = if cx.preferences.preview_axis {
+        if self.hover_held
+            && ui.ctx().input(|input| {
+                input.pointer.delta() != egui::Vec2::ZERO || input.pointer.any_pressed()
+            })
+        {
+            self.hover_held = false;
+        }
+        self.hover = if cx.preferences.preview_axis && !self.hover_held {
             ui.ctx()
                 .input(|input| input.pointer.hover_pos())
                 .filter(|pos| layout.ruler.contains(*pos) || layout.body.contains(*pos))
