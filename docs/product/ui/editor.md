@@ -375,3 +375,26 @@ failed and stale-key states are explicit. Unknown-price upload sheets require a
 separate checkbox naming the exact model already disclosed above it. These new
 compositions use the existing 22 px fields and are unmeasured against desktop
 reference; `settings` and `settings-vi` (the Settings modal) are the audit scenes.
+
+## Agent chat
+
+The agent chat is docked right of the timeline, in the row below the properties panel; the timeline gives it the width and never lies under it. Measured on 221910 (3680 px original, logical = native / 2) and the second reference shot `editpilot/editor-editpilot.png` (empty state), on the 1840 px-wide window:
+
+- Panel 484 px wide and as tall as the timeline row (444 px in the shot, y 615-1059), x 1291-1775. The gap to the timeline on its left and to the properties panel above is 6 px (`space::SM`). Token `size::AGENT_PANEL`.
+- Title strip 40 px high with a 1 px divider (`size::AGENT_HEADER`): the product name and a smaller secondary `Beta` tag at the left, controls at the right (the reference shows expand and close, 8 px from the edge).
+- Messages sit 12 px in from both edges (`space::LG`). A user message is a right-aligned bubble (35 px for one line, 12 px from the right edge) and an answer a left-aligned bubble that stops 28 px short of the right edge. Tool steps and progress are one secondary line each.
+- Input box 84 px high, 8 px in from both edges and 10 px above the bottom (`size::AGENT_INPUT`), a filled box with a 1 px outline that turns accent while a turn is running: placeholder at the top left, a button row under it with the send control at the right (a filled circle; while a turn runs it becomes a stop square in the same circle).
+- Empty state: a glyph with a headline, then suggestion chips 34 px high, 8 px apart and 16 px from the left edge, pill-shaped (`size::AGENT_CHIP`).
+- Home's prompt card is in [Home](home.md#measured-frame).
+
+What is built follows these values with our own palette. Everything below is composed by us and stays open until a capture shows it:
+
+- The agent button that opens the panel: the shots show only the open panel. It is a 24 px icon button 8 px from the timeline's right edge and above its scrollbar strip; its place, size and glyph are open.
+- The send control is a 64×24 text button, not the reference's circle with an arrow; the stop control is a text button too. The attach-clip and voice buttons of the reference input are not built (`@` picks a clip by name; there is no voice input). The expand control is not built.
+- The changes card (summary counts, `Preview`, `Apply`, `Discard`, `Retry`) has no capture: the live turn of gap G-EP-LIVE was not granted, so the card follows the in-app agent ticket. Its layout, the 90×34 dialog buttons it reuses, the count lines and the partial and stale notes are [new].
+- The consent sheet (service, version, the data that leaves the machine, spend limit, `Accept and continue`, `Not now`) and the `Data and spend` line above the input are [new].
+- The `@` list above the input (at most six rows, the name and where it lives) is [new].
+- The read-only mark that Preview puts on the player and the timeline (an accent tag, 8 px from their top left corner) and the disabled media, properties and timeline areas are [new].
+- The reference sets its empty-state headline in an italic face; ours is the regular strong face.
+
+`agent-chat` and `agent-chat-vi` are the audit scenes (the consent sheet in the dock, rendered beside 221910).

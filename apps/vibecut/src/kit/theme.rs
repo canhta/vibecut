@@ -284,6 +284,8 @@ pub(crate) mod space {
     pub const PANEL_GUTTER: f32 = 7.0;
     pub const MD: f32 = 8.0;
     pub const ROW_INSET: f32 = 10.0;
+    /// Agent chat: message bubbles sit 12 px in from the panel edge (221910), the input box
+    /// 8 px in and 10 px above the bottom edge.
     pub const LG: f32 = 12.0;
     pub const GRID: f32 = 15.0;
     pub const XL: f32 = 16.0;
@@ -428,6 +430,13 @@ pub(crate) mod size {
     /// capture (2026-11-09) draws a 2 px caret and a ~38 % accent selection.
     pub const TEXT_EDIT_CARET: f32 = 2.0;
     pub const TEXT_EDIT_SELECTION: f32 = 0.38;
+    /// Agent chat panel, measured on 221910 (3680 px original, logical = native / 2): 484 px wide
+    /// and as tall as the timeline row, a 40 px title strip, an 84 px input box and 34 px
+    /// suggestion chips (editpilot/editor-editpilot.png, 8 px apart).
+    pub const AGENT_PANEL: f32 = 484.0;
+    pub const AGENT_HEADER: f32 = 40.0;
+    pub const AGENT_INPUT: f32 = 84.0;
+    pub const AGENT_CHIP: f32 = 34.0;
     /// Dialog footer button (export capture: 90x34).
     pub const DIALOG_BUTTON_WIDTH: f32 = 90.0;
     /// Link media dialog (capture 095518, logical px): 556 wide, 16 px inset, 524 px list

@@ -7,6 +7,7 @@ pub(crate) mod dialogs;
 mod frame;
 pub use frame::{AppCommand, PreviewZoom};
 pub(crate) mod panels;
+pub use panels::agent::{AgentView, Backend as AgentBackend, Environment as AgentEnvironment};
 pub(crate) use panels::assets;
 pub(crate) use panels::assets::media_panel;
 pub use panels::player::crop::{CropAspect, CropInspection};
@@ -335,6 +336,7 @@ impl Editor {
             toast: None,
             assets: asset_state,
             dialogs: dialogs::State::default(),
+            agent: panels::agent::State::default(),
             copy_snapshot_requested: false,
             requests: Vec::new(),
             clip_downloads: None,
@@ -500,6 +502,7 @@ impl Editor {
             models: self.dialogs.models.inspect(),
             voiceover: self.dialogs.voiceover.view(),
             link_media: self.dialogs.link_media.view(self.session.project()),
+            agent: self.agent.view(),
             keybinding_issues: self.frame.keybinding_issues.clone(),
             color_preview: self.properties.color_preview(),
             key_color_pick: self.player.key_color_pick.as_ref().map(|pick| pick.item),
@@ -767,6 +770,24 @@ impl Editor {
         directory: PathBuf,
     ) {
         self.properties.set_narration(opener, directory);
+    }
+    /// Lend the agent chat its provider seam. The shipped one reads the key from the
+    /// environment; tests lend a scripted model.
+    pub fn set_agent_backend(&mut self, backend: Arc<dyn AgentBackend>) {
+        self.agent.set_backend(backend);
+    }
+    /// Keep this project's agent chat history under `dir`, and show what it holds.
+    pub fn set_agent_history(&mut self, dir: PathBuf) {
+        let project = self.session.project().data().id.0;
+        self.agent.set_history(dir, project);
+    }
+    /// Open the agent chat.
+    pub fn open_agent(&mut self) {
+        self.agent.open();
+    }
+    /// Open the agent chat and send `prompt` as soon as the consent allows: Home's agent card.
+    pub fn agent_prompt(&mut self, prompt: String) {
+        self.agent.queue_prompt(prompt);
     }
     /// Instantiate the one shared model cache on first use; it never fetches then.
     pub fn open_models(&mut self) -> Result<()> {

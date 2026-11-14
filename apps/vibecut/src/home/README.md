@@ -17,6 +17,8 @@ and the selection actions, and Delete forever passes through its own confirmatio
 the Projects grid is the move to Trash, so a creator can always undo an accidental removal for
 the retention the engine states.
 
+The agent card in the tool row takes a prompt: sending it asks the catalog worker for a new project like the banner does, and the resulting `Action::OpenWithPrompt` carries the prompt to the composition root, which hands it to the editor that registers for that path; the editor opens its agent chat and starts the first turn once the creator accepts the consent sheet.
+
 A project path supplied at startup acquires the writer lease before loading and stays
 pending until recovery discovery and the managed catalog are both idle. Opening a card
 and the new-project entry use the same lifecycle and autosave path as external files. A

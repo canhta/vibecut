@@ -1,5 +1,5 @@
 //! Lends areas their ports and applies the notes they leave behind.
-use crate::editor::panels::player;
+use crate::editor::panels::{agent, player};
 use crate::editor::{Editor, SelectionScopes, dialogs, properties};
 use crate::editor::{Note, Port, Read, Rect, Vec2, assets, egui, timeline};
 
@@ -177,6 +177,36 @@ impl Editor {
         );
         let result = run(&mut self.dialogs, &mut port);
         let notes = port.into_notes();
+        self.apply_notes(notes);
+        result
+    }
+
+    /// Lend the agent chat's state and a port to one step, then apply the notes it left.
+    pub(in crate::editor) fn with_agent<T>(
+        &mut self,
+        run: impl FnOnce(&mut agent::State, &mut Port<'_>) -> T,
+    ) -> T {
+        let insertion_available = self.insertion_available();
+        let caption_bank_ready = self.caption_bank_ready();
+        let edit_ready = self.edit_ready();
+        let mut state = std::mem::take(&mut self.agent);
+        let mut port = Port::new(
+            &mut self.session,
+            Read {
+                budget: self.playback.budget(),
+                preferences: &self.preferences,
+                playhead: self.playback.position().ok(),
+                item_rects: self.timeline.item_rects(),
+                now: self.clock.now(),
+                insertion_available,
+                caption_bank_ready,
+                edit_ready,
+                transition: self.selection_scopes.transition,
+            },
+        );
+        let result = run(&mut state, &mut port);
+        let notes = port.into_notes();
+        self.agent = state;
         self.apply_notes(notes);
         result
     }

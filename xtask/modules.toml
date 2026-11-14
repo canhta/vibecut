@@ -345,7 +345,11 @@ path = "src/editor/panels"
 
 [[crate.folder.layer]]
 name = "areas"
-groups = ["assets", "panels", "properties"]
+groups = ["agent", "assets", "panels", "properties"]
+
+[[crate.folder.module]]
+name = "agent"
+group = "agent"
 
 [[crate.folder.module]]
 name = "assets"

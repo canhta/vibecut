@@ -23,6 +23,8 @@ use std::{
 #[derive(Debug, PartialEq, Eq)]
 pub enum Action {
     Open(PathBuf),
+    /// Open a new project and start the agent's first turn with this prompt.
+    OpenWithPrompt(PathBuf, String),
     OpenFile,
     Shorts,
 }
@@ -65,6 +67,9 @@ pub struct State {
     pub(super) ready: bool,
     pub(super) pending: usize,
     pub(super) creating: bool,
+    /// What the agent card has typed, and the prompt its creation request carries.
+    pub(super) agent_prompt: String,
+    pub(super) creating_prompt: Option<String>,
 
     pub(super) default_fps: u32,
     pub(super) duplicate: Option<(usize, usize)>,
@@ -98,6 +103,8 @@ impl State {
             ready: false,
             pending: 0,
             creating: false,
+            agent_prompt: String::new(),
+            creating_prompt: None,
 
             default_fps: crate::services::lifecycle::DEFAULT_PROJECT_FPS,
             duplicate: None,
@@ -358,7 +365,8 @@ impl State {
         }
     }
 
-    pub(super) fn request_create(&mut self, base_name: String) {
+    /// Create a project; with a prompt the editor opens on it and starts the agent.
+    pub(super) fn request_create(&mut self, base_name: String, prompt: Option<String>) {
         if self.send(Request::Create {
             id: next_id(),
             base_name,
@@ -366,6 +374,7 @@ impl State {
         }) {
             self.pending += 1;
             self.creating = true;
+            self.creating_prompt = prompt;
         }
     }
 
@@ -434,6 +443,7 @@ impl State {
                     self.pending = 0;
                     self.duplicate = None;
                     self.creating = false;
+                    self.creating_prompt = None;
                     self.list_error.get_or_insert_with(String::new);
                     if let Some(worker) = self.worker.take() {
                         let _ = worker.join();
@@ -492,9 +502,15 @@ impl State {
                     Ok((path, entries)) => {
                         self.notice = None;
                         self.set_entries(entries);
-                        self.action = Some(Action::Open(path));
+                        self.action = Some(match self.creating_prompt.take() {
+                            Some(prompt) => Action::OpenWithPrompt(path, prompt),
+                            None => Action::Open(path),
+                        });
                     }
-                    Err(error) => self.notice = Some((Text::ProjectError, Some(error))),
+                    Err(error) => {
+                        self.creating_prompt = None;
+                        self.notice = Some((Text::ProjectError, Some(error)));
+                    }
                 }
             }
             Event::Renamed(result) => {

@@ -168,7 +168,8 @@ impl Editor {
     /// Whether no frame-owned surface (text edit, caption edit, save, import, dialog)
     /// blocks an edit the properties area would start.
     pub(in crate::editor) fn edit_ready(&self) -> bool {
-        !self.player.transform.text_edit_open()
+        !self.agent.previewing()
+            && !self.player.transform.text_edit_open()
             && self
                 .assets
                 .captions
