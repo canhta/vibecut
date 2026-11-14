@@ -85,7 +85,7 @@ Providers are Anthropic and OpenAI, chosen by the user; there is no local model 
 | Spend per conversation | the consent's limit | ledger |
 | Tool result | 32 KiB | tools |
 
-Reaching a limit ends the turn with a typed reason: `step_limit`, `spend_limit` or `context_limit`. The other reasons are `cancelled`, `consent_required` and `provider` with a safe category (`auth`, `quota`, `rate_limit`, `network`, `server`, `model_unavailable`, `refused`, `incomplete`, `failed`); no provider message is kept.
+Reaching a limit ends the turn with a typed reason: `step_limit`, `spend_limit` or `context_limit`. The other reasons are `cancelled`, `consent_required` and `provider` with a safe category (`auth`, `quota`, `plan_required`, `rate_limit`, `network`, `server`, `model_unavailable`, `refused`, `incomplete`, `failed`); no provider message is kept.
 
 ## Events
 

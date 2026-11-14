@@ -31,6 +31,7 @@ cargo test -p ai --test it \
 | `cancellation.json` | cancellation between split chunks |
 | `error-auth.json`, `error-auth-400.json` | invalid key at 401 and 400 |
 | `error-quota.json`, `error-quota-400.json`, `error-quota-401.json` | payment required and `quota_exceeded` at 402/400/401 |
+| `error-paid-plan.json` | library voice on a free plan: 402 `paid_plan_required`, typed `PaidPlanRequired` (not quota). Its message is the documented wording, not yet a verbatim capture; re-record from the live check before relying on the text |
 | `error-rate-limit.json` | 429 with `Retry-After` |
 | `error-content-policy.json`, `error-payload.json` | content policy versus generic bad input |
 

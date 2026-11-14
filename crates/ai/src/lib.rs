@@ -61,6 +61,9 @@ pub enum Error {
     Auth,
     #[error("quota exhausted")]
     Quota,
+    /// The provider keeps this voice behind a paid plan; a different voice is the remedy.
+    #[error("voice requires a paid plan")]
+    PaidPlanRequired,
     #[error("rate limited; retry after {retry_after_seconds:?} seconds")]
     RateLimit { retry_after_seconds: Option<u32> },
     #[error("network request failed")]

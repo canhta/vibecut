@@ -387,6 +387,7 @@ fn error_for(code: ErrorCode) -> EngineError {
         | ErrorCode::Ai
         | ErrorCode::Job
         | ErrorCode::Quota
+        | ErrorCode::PlanRequired
         | ErrorCode::RateLimit
         | ErrorCode::Network
         | ErrorCode::AudioDevice

@@ -956,6 +956,7 @@ fn errors_are_typed_and_never_retried() {
         ("error-quota.json", "quota"),
         ("error-quota-400.json", "quota"),
         ("error-quota-401.json", "quota"),
+        ("error-paid-plan.json", "paid_plan"),
         ("error-rate-limit.json", "rate"),
         ("error-content-policy.json", "content"),
         ("error-payload.json", "payload"),
@@ -976,6 +977,7 @@ fn errors_are_typed_and_never_retried() {
         match kind {
             "auth" => assert!(matches!(error, Error::Auth)),
             "quota" => assert!(matches!(error, Error::Quota)),
+            "paid_plan" => assert!(matches!(error, Error::PaidPlanRequired)),
             "rate" => assert!(matches!(
                 error,
                 Error::RateLimit {

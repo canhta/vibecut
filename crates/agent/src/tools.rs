@@ -642,6 +642,11 @@ fn code_name(code: ErrorCode) -> &'static str {
         ErrorCode::Unavailable => "unavailable",
         ErrorCode::Conflict => "conflict",
         ErrorCode::StaleResult => "stale_result",
+        ErrorCode::Auth => "auth",
+        ErrorCode::Quota => "quota",
+        ErrorCode::PlanRequired => "plan_required",
+        ErrorCode::RateLimit => "rate_limit",
+        ErrorCode::Network => "network",
         _ => "failed",
     }
 }

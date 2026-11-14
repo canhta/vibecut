@@ -54,6 +54,7 @@ pub enum ErrorCode {
     Ai,
     Job,
     Quota,
+    PlanRequired,
     RateLimit,
     Network,
     AudioDevice,

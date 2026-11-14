@@ -54,6 +54,8 @@ pub(in crate::editor) enum Failed {
     Provider(Cause),
     /// The person declined the upload; nothing was sent.
     Declined,
+    /// The provider keeps this voice behind a paid plan; the voice is named in the line.
+    PaidPlan(&'static str),
     EmptyText,
     /// The text item changed while the take was made.
     Stale,
@@ -91,8 +93,13 @@ pub(in crate::editor) enum Action {
         item: ItemId,
     },
     Discard,
-    /// Ducking of the pending take, or of the placed one through `dub.set_ducking`.
+    /// Ducking of the pending take; placed items are changed by `SetPlacedDucking`.
     SetDucking(NarrationDucking),
+    /// Ducking of a placed narration item, through `dub.set_ducking` (one undo step).
+    SetPlacedDucking {
+        item: ItemId,
+        ducking: NarrationDucking,
+    },
 }
 
 /// The running `dub.generate` job and the consent slot its prompt waits on.
@@ -102,6 +109,8 @@ struct Run {
     job: JobId,
     item: ItemId,
     cue: Tick,
+    /// The voice's display label, named in the paid-plan line.
+    voice: &'static str,
 }
 impl Drop for Run {
     /// A run that leaves the tab stops the consent wait its job may be blocked in.
@@ -144,6 +153,8 @@ pub(in crate::editor) struct NarrationWorkflow {
     rephrased: bool,
     /// Ducking values being edited; committed when the field is released.
     pub(in crate::editor) ducking_draft: Option<NarrationDucking>,
+    /// The voice grid's All/Commercial filter: on lists only the stock voices.
+    pub(in crate::editor) commercial_only: bool,
 }
 
 impl Default for NarrationWorkflow {
@@ -167,6 +178,7 @@ impl Default for NarrationWorkflow {
             failure: None,
             rephrased: false,
             ducking_draft: None,
+            commercial_only: false,
         }
     }
 }
@@ -220,14 +232,33 @@ fn failed_of_control(error: &engine::control::Error) -> Failed {
 }
 
 /// How a failed job reads: the runner keeps its wire code, which is coarser than the AI cause.
-fn failed_of_code(code: ErrorCode) -> Failed {
+fn failed_of_code(code: ErrorCode, voice: &'static str) -> Failed {
     match code {
         ErrorCode::Permission => Failed::Declined,
         ErrorCode::Cancelled => Failed::Provider(Cause::Cancelled),
         ErrorCode::Setup | ErrorCode::Auth => Failed::Provider(Cause::Key),
+        ErrorCode::PlanRequired => Failed::PaidPlan(voice),
         ErrorCode::Quota | ErrorCode::RateLimit => Failed::Provider(Cause::Quota),
         ErrorCode::Network => Failed::Provider(Cause::Network),
         _ => Failed::Provider(Cause::Other),
+    }
+}
+
+/// Where a take lands: the lowest audio track at the playhead when it is free for the take's
+/// span, and a new audio track below it when not. Without any audio track, the engine adds one.
+fn lowest_audio(project: &project::Project, at: Tick, span: Tick) -> engine::Placement {
+    let end = at.checked_add(span).unwrap_or(at);
+    let Some(track) = project.data().scene().timeline.audio.last() else {
+        return engine::Placement::Auto;
+    };
+    let free = track.items.iter().all(|item| {
+        item.end()
+            .is_ok_and(|item_end| item_end <= at || item.start >= end)
+    });
+    if free {
+        engine::Placement::Track { track: track.id }
+    } else {
+        engine::Placement::Below { track: track.id }
     }
 }
 
@@ -433,7 +464,10 @@ impl State {
                 self.narration.discard();
                 Ok(())
             }
-            Action::SetDucking(ducking) => self.set_narration_ducking(port, ducking),
+            Action::SetDucking(ducking) => self.set_narration_ducking(ducking),
+            Action::SetPlacedDucking { item, ducking } => {
+                self.set_placed_ducking(port, item, ducking)
+            }
         }
     }
 
@@ -486,11 +520,15 @@ impl State {
             return Ok(());
         }
         let form = self.narration.form;
-        let (provider, model, voice, language) = {
+        let (provider, model, voice, voice_label, language) = {
             let option = self
                 .narration
                 .option()
                 .ok_or(Error::Invalid("speech provider"))?;
+            let voice_entry = option
+                .voices
+                .get(form.voice)
+                .ok_or(Error::Invalid("speech voice"))?;
             (
                 option.id.to_owned(),
                 option
@@ -498,12 +536,8 @@ impl State {
                     .get(form.model)
                     .ok_or(Error::Invalid("speech model"))?
                     .clone(),
-                option
-                    .voices
-                    .get(form.voice)
-                    .ok_or(Error::Invalid("speech voice"))?
-                    .0
-                    .to_owned(),
+                voice_entry.0.to_owned(),
+                voice_entry.1,
                 LanguageTag::parse(
                     LANGUAGES
                         .get(form.language)
@@ -541,6 +575,7 @@ impl State {
                     job,
                     item,
                     cue,
+                    voice: voice_label,
                 });
             }
             Ok(_) => return Err(Error::Invalid("narration job")),
@@ -554,11 +589,11 @@ impl State {
         if let Some(job) = self.narration.orphan.take() {
             self.cancel_job(port, job);
         }
-        let Some((job, item, cue)) = self
+        let Some((job, item, cue, voice)) = self
             .narration
             .run
             .as_ref()
-            .map(|run| (run.job, run.item, run.cue))
+            .map(|run| (run.job, run.item, run.cue, run.voice))
         else {
             return;
         };
@@ -586,7 +621,7 @@ impl State {
                 .error
                 .as_ref()
                 .map_or(Failed::Provider(Cause::Other), |error| {
-                    failed_of_code(error.code())
+                    failed_of_code(error.code(), voice)
                 })),
             JobState::Cancelled => Err(Failed::Provider(Cause::Cancelled)),
             _ => return,
@@ -635,6 +670,7 @@ impl State {
     }
 
     /// Place the take through `dub.place`: asset, item, stretch and ducking in one undo step.
+    /// The take starts at the playhead on the lowest audio track, and the new item is selected.
     fn place_narration(&mut self, port: &mut Port<'_>, item: ItemId) -> Result<()> {
         let Some(ready) = self.narration.ready.as_ref() else {
             return Ok(());
@@ -645,8 +681,10 @@ impl State {
             // A take that needs regeneration or cannot fit has no placement.
             _ => return Err(Error::Invalid("narration fit")),
         };
+        let at = port.playhead()?;
+        let placement = lowest_audio(port.view().session.project(), at, ready.cue);
         let current = text_facts(port.view().session.project(), item);
-        let Some((_, start, _)) = current.filter(|facts| facts.2 == ready.cue) else {
+        let Some(_) = current.filter(|facts| facts.2 == ready.cue) else {
             self.narration.failure = Some(Failed::Stale);
             return Ok(());
         };
@@ -678,8 +716,8 @@ impl State {
         let speed = time::Speed::from_thousandths(u32::from(thousandths))?;
         let narration = ready.take.narration.clone();
         let outcome = port.apply_result(Command::DubPlace {
-            placement: engine::Placement::Auto,
-            start,
+            placement,
+            start: at,
             asset,
             narration,
             speed,
@@ -694,25 +732,33 @@ impl State {
                 self.narration.rephrased = false;
                 self.narration.failure = None;
                 self.narration.ducking_draft = None;
+                // The properties move to the new clip: its Audio tab carries its ducking.
+                if let Some(placed) = self.narration.placed {
+                    port.select(std::collections::BTreeSet::from([placed]));
+                }
             }
             Err(_) => self.narration.failure = Some(Failed::Placement),
         }
         Ok(())
     }
 
-    /// Ducking edits the pending take before placement, and the placed item after it.
-    fn set_narration_ducking(
-        &mut self,
-        port: &mut Port<'_>,
-        ducking: NarrationDucking,
-    ) -> Result<()> {
+    /// Ducking of the pending take, before placement.
+    fn set_narration_ducking(&mut self, ducking: NarrationDucking) -> Result<()> {
         if let Some(ready) = self.narration.ready.as_mut() {
             ready.take.narration.ducking = ducking;
-            return Ok(());
         }
-        if let Some(item) = self.narration.placed {
-            port.apply_result(Command::DubSetDucking { item, ducking })?;
-        }
+        Ok(())
+    }
+
+    /// Ducking of a placed narration item: one `dub.set_ducking`, one undo step.
+    fn set_placed_ducking(
+        &mut self,
+        port: &mut Port<'_>,
+        item: ItemId,
+        ducking: NarrationDucking,
+    ) -> Result<()> {
+        port.apply_result(Command::DubSetDucking { item, ducking })?;
+        self.narration.ducking_draft = None;
         Ok(())
     }
 }

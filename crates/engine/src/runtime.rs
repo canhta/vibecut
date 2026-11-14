@@ -74,7 +74,7 @@ impl Failure for Error {
             Self::Render(error) => error.code(),
             Self::Media(error) => error.code(),
             Self::Edit(error) => error.code(),
-            Self::Model(_) => ErrorCode::Ai,
+            Self::Model(error) => error.code(),
             Self::Cancelled => ErrorCode::Cancelled,
             Self::JobNotRetained => ErrorCode::JobNotRetained,
             Self::QueueFull => ErrorCode::QueueFull,

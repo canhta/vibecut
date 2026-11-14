@@ -240,3 +240,12 @@ work or retained pixel pool; default hooks outside engine are sequential. Each j
 most seven additional row workers during a batch. Native FFmpeg conversion gets the same
 concurrency bound and holds its separately charged worker allowance for the converter/encoder
 lifetime.
+
+## AI execution
+
+`verified_transfer.rs` implements the local Failure contract for `ai::Error` once; every job and
+command path that wraps a provider error (`Runtime::Model` and `Transfer`, providers, analysis,
+artifacts, subtitles, transcript, control) delegates to it. `Auth`, `Quota`, `PaidPlanRequired`
+(`plan_required`) and `RateLimit` keep their own wire codes, `Network`, `Server` and `Timeout`
+are `Network`, chapter refusals are `Refused`, and every other kind is `Ai`. Panels and the CLI
+read these codes; no wrapper keeps its own table.

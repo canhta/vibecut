@@ -7,6 +7,7 @@ use crate::editor::properties::workflow::jobs::narration::{
 use crate::editor::properties::{Action, Id, ItemId, Text, egui, read, theme};
 use crate::i18n;
 use crate::kit;
+use ai::speech::VoiceCategory;
 use engine::dubbing::Fit;
 use engine::providers::Cost;
 use project::{AudioSource, ItemParams, NarrationDucking};
@@ -27,6 +28,21 @@ fn language_label(tag: &str) -> Text {
         "vi" => Text::NarrationLangVi,
         "zh" => Text::NarrationLangZh,
         _ => Text::NarrationLangEn,
+    }
+}
+
+fn category_label(category: VoiceCategory) -> Text {
+    match category {
+        VoiceCategory::BuiltIn => Text::NarrationCategoryBuiltIn,
+        VoiceCategory::Stock => Text::NarrationCategoryStock,
+    }
+}
+
+/// The action that stores a ducking value: the pending take's, or a placed item's own.
+fn ducking_action(target: Option<ItemId>, ducking: NarrationDucking) -> Action {
+    match target {
+        Some(item) => Action::Narration(NarrationAction::SetPlacedDucking { item, ducking }),
+        None => Action::Narration(NarrationAction::SetDucking(ducking)),
     }
 }
 
@@ -110,9 +126,31 @@ impl Panel<'_, '_> {
                 Text::NarrationDucking,
                 true,
                 false,
-                |panel, ui| panel.narration_ducking_rows(ui, ducking, enabled),
+                |panel, ui| panel.narration_ducking_rows(ui, ducking, enabled, None),
             );
         }
+    }
+
+    /// The Ducking section of a placed narration item on its Audio tab, where the selection
+    /// lands after placement. Other audio items have no such section.
+    pub(in super::super) fn narration_audio_ducking(
+        &mut self,
+        ui: &mut egui::Ui,
+        item: ItemId,
+        enabled: bool,
+    ) {
+        let Some(ducking) = placed_ducking(self.cx.session.project(), item) else {
+            return;
+        };
+        self.panel_section(
+            ui,
+            "inspector.section.narration_ducking",
+            "inspector.narration_ducking",
+            Text::NarrationDucking,
+            true,
+            false,
+            |panel, ui| panel.narration_ducking_rows(ui, ducking, enabled, Some(item)),
+        );
     }
 
     /// One dropdown row of the voice section; the chosen index, when the person picked one.
@@ -153,46 +191,50 @@ impl Panel<'_, '_> {
         chosen
     }
 
-    /// Provider, model, voice and language: each an explicit choice, none defaulted by us.
+    /// Model and language dropdowns, then the voice section: category chips, the All/Commercial
+    /// filter and the grid of voice tiles. A chip chooses its category's first provider, a tile
+    /// chooses its provider and voice; nothing is chosen for the person.
     fn narration_voice_rows(&mut self, ui: &mut egui::Ui, enabled: bool) {
         let form = self.state.narration.form;
-        let providers: Vec<String> = self
+        // Each provider's category and the labels of its voices, in the order the adapter lists them.
+        let options: Vec<(VoiceCategory, Vec<&'static str>)> = self
             .state
             .narration
             .options()
             .iter()
-            .map(|option| option.label.to_owned())
+            .map(|option| {
+                (
+                    option.category,
+                    option.voices.iter().map(|(_, label)| *label).collect(),
+                )
+            })
             .collect();
-        let Some((models, voices)) = self.state.narration.option().map(|option| {
-            (
-                option.models.clone(),
-                option
-                    .voices
-                    .iter()
-                    .map(|(_, label)| (*label).to_owned())
-                    .collect::<Vec<_>>(),
-            )
-        }) else {
+        let Some(models) = self
+            .state
+            .narration
+            .option()
+            .map(|option| option.models.clone())
+        else {
             return;
         };
+        let mut categories: Vec<VoiceCategory> = Vec::new();
+        for (category, _) in &options {
+            if !categories.contains(category) {
+                categories.push(*category);
+            }
+        }
+        let chosen = options.get(form.provider).map(|(category, _)| *category);
         let languages: Vec<String> = LANGUAGES
             .iter()
             .map(|tag| self.tr(language_label(tag)).to_owned())
             .collect();
+        let filters = [
+            self.tr(Text::NarrationVoiceAll).to_owned(),
+            self.tr(Text::NarrationVoiceCommercial).to_owned(),
+        ];
+        let commercial = self.state.narration.commercial_only;
         let busy = self.state.narration.busy();
         ui.add_enabled_ui(enabled && !busy, |ui| {
-            if let Some(index) = self.narration_choice(
-                ui,
-                "inspector.narration.provider",
-                Text::NarrationProvider,
-                &providers,
-                form.provider,
-            ) {
-                let narration = &mut self.state.narration.form;
-                narration.provider = index;
-                narration.model = 0;
-                narration.voice = 0;
-            }
             if let Some(index) = self.narration_choice(
                 ui,
                 "inspector.narration.model",
@@ -204,21 +246,73 @@ impl Panel<'_, '_> {
             }
             if let Some(index) = self.narration_choice(
                 ui,
-                "inspector.narration.voice",
-                Text::NarrationVoice,
-                &voices,
-                form.voice,
-            ) {
-                self.state.narration.form.voice = index;
-            }
-            if let Some(index) = self.narration_choice(
-                ui,
                 "inspector.narration.language",
                 Text::NarrationLanguage,
                 &languages,
                 form.language,
             ) {
                 self.state.narration.form.language = index;
+            }
+            ui.horizontal_wrapped(|ui| {
+                for (index, category) in categories.iter().enumerate() {
+                    let label = self.tr(category_label(*category));
+                    let response = ui.selectable_label(chosen == Some(*category), label);
+                    self.remember(format!("inspector.narration.category.{index}"), &response);
+                    if response.clicked()
+                        && let Some(first) = options.iter().position(|(owner, _)| owner == category)
+                    {
+                        let narration = &mut self.state.narration.form;
+                        narration.provider = first;
+                        narration.model = 0;
+                        narration.voice = 0;
+                    }
+                }
+            });
+            let selected = usize::from(commercial);
+            if let Some(index) = self.narration_choice(
+                ui,
+                "inspector.narration.voice_filter",
+                Text::NarrationVoiceFilter,
+                &filters,
+                selected,
+            ) {
+                self.state.narration.commercial_only = index == 1;
+            }
+            let mut picked = None;
+            let mut shown = 0usize;
+            ui.horizontal_wrapped(|ui| {
+                for (provider, (category, labels)) in options.iter().enumerate() {
+                    // Commercial lists the stock voices only; the chosen category is the chip.
+                    if Some(*category) != chosen
+                        || (commercial && *category != VoiceCategory::Stock)
+                    {
+                        continue;
+                    }
+                    for (voice, label) in labels.iter().enumerate() {
+                        let response = ui.selectable_label(
+                            form.provider == provider && form.voice == voice,
+                            *label,
+                        );
+                        self.remember(
+                            format!("inspector.narration.voice.{provider}.{voice}"),
+                            &response,
+                        );
+                        if response.clicked() {
+                            picked = Some((provider, voice));
+                        }
+                        shown += 1;
+                    }
+                }
+            });
+            if let Some((provider, voice)) = picked {
+                let narration = &mut self.state.narration.form;
+                narration.provider = provider;
+                narration.model = 0;
+                narration.voice = voice;
+            }
+            if shown == 0 {
+                let text = self.tr(Text::NarrationNoVoice);
+                self.narration_line(ui, "inspector.narration.voice_empty", text, false);
             }
         });
     }
@@ -333,8 +427,14 @@ impl Panel<'_, '_> {
             }
         }
         if let Some(failed) = self.state.narration.failure() {
-            let text = self.tr(failure_text(failed));
-            self.narration_line(ui, "inspector.narration.failure", text, true);
+            let locale = self.cx.locale;
+            let text = match failed {
+                Failed::PaidPlan(voice) => {
+                    i18n::format(locale, Text::NarrationFailPaidPlan, &[("voice", voice)])
+                }
+                other => self.tr(failure_text(other)).to_owned(),
+            };
+            self.narration_line(ui, "inspector.narration.failure", &text, true);
         }
     }
 
@@ -454,11 +554,13 @@ impl Panel<'_, '_> {
 
     /// Ducking of the original audio under the take: switch, depth, attack and release. Values
     /// commit when a field is released, so a drag is one edit.
+    /// The ducking rows. `target` is the placed item they change, or `None` for the pending take.
     fn narration_ducking_rows(
         &mut self,
         ui: &mut egui::Ui,
         current: NarrationDucking,
         enabled: bool,
+        target: Option<ItemId>,
     ) {
         let shown = self.state.narration.ducking_draft.unwrap_or(current);
         ui.add_enabled_ui(enabled, |ui| {
@@ -475,13 +577,13 @@ impl Panel<'_, '_> {
             );
             self.remember("inspector.narration.ducking.enabled", &toggle);
             if toggle.clicked() {
-                self.actions
-                    .push(Action::Narration(NarrationAction::SetDucking(
-                        NarrationDucking {
-                            enabled: on,
-                            ..shown
-                        },
-                    )));
+                self.actions.push(ducking_action(
+                    target,
+                    NarrationDucking {
+                        enabled: on,
+                        ..shown
+                    },
+                ));
             }
             let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
             self.row_label(ui, row, self.tr(Text::NarrationDuckDepth));
@@ -500,6 +602,7 @@ impl Panel<'_, '_> {
                     depth_tenths_db: (depth * 10.0).round() as u16,
                     ..shown
                 },
+                target,
             );
             let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
             self.row_label(ui, row, self.tr(Text::NarrationDuckAttack));
@@ -516,6 +619,7 @@ impl Panel<'_, '_> {
                     attack_ms: attack,
                     ..shown
                 },
+                target,
             );
             let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
             self.row_label(ui, row, self.tr(Text::NarrationDuckRelease));
@@ -532,20 +636,25 @@ impl Panel<'_, '_> {
                     release_ms: release,
                     ..shown
                 },
+                target,
             );
         });
     }
 
     /// Keep an edited ducking value as a draft and commit it once the field is released.
-    fn ducking_edit(&mut self, response: &egui::Response, next: NarrationDucking) {
+    fn ducking_edit(
+        &mut self,
+        response: &egui::Response,
+        next: NarrationDucking,
+        target: Option<ItemId>,
+    ) {
         if response.changed() {
             self.state.narration.ducking_draft = Some(next);
         }
         if (response.drag_stopped() || response.lost_focus())
             && let Some(draft) = self.state.narration.ducking_draft.take()
         {
-            self.actions
-                .push(Action::Narration(NarrationAction::SetDucking(draft)));
+            self.actions.push(ducking_action(target, draft));
         }
     }
 
@@ -677,6 +786,7 @@ fn failure_text(failed: Failed) -> Text {
         Failed::Provider(Cause::Voice) => Text::NarrationFailVoice,
         Failed::Provider(Cause::Key) => Text::NarrationFailKey,
         Failed::Provider(Cause::Quota) => Text::NarrationFailQuota,
+        Failed::PaidPlan(_) => Text::NarrationFailPaidPlan,
         Failed::Provider(Cause::Policy) => Text::NarrationFailPolicy,
         Failed::Provider(Cause::Rejected) => Text::NarrationFailRejected,
         Failed::Provider(Cause::Cost) => Text::NarrationFailCost,

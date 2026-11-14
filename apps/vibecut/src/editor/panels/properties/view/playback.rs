@@ -88,6 +88,7 @@ impl Panel<'_, '_> {
                 panel.loudness_rows(ui, editable);
             },
         );
+        self.narration_audio_ducking(ui, item, editable);
     }
 
     /// Normalize loudness: a switch per scope, the shared target fields, Apply, and one status

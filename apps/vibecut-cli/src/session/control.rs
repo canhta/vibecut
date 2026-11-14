@@ -281,6 +281,7 @@ fn control_exit(code: ErrorCode) -> u8 {
         | ErrorCode::Ai
         | ErrorCode::Job
         | ErrorCode::Quota
+        | ErrorCode::PlanRequired
         | ErrorCode::RateLimit
         | ErrorCode::Network
         | ErrorCode::AudioDevice
