@@ -103,14 +103,13 @@ fn a_lost_clip_empties_the_panel_reddens_the_canvas_and_the_tile_then_relinking_
     let (editor, _) = missing_editor(root.path());
     let mut harness = harness(editor);
     harness.run_steps(4);
-    // Properties: one grey line and our Link media button, no tab strip of sub-tabs.
-    assert!(
-        harness
-            .query_all_by_label("Clips on this timeline are missing their media")
-            .next()
-            .is_some(),
-        "the panel names the lost clips"
-    );
+    // Properties: two grey lines and our Link media button, no tab strip of sub-tabs.
+    for line in ["Clips on this timeline", "are missing their media"] {
+        assert!(
+            harness.query_all_by_label(line).next().is_some(),
+            "the panel names the lost clips: {line}"
+        );
+    }
     assert!(has_widget(&harness, "inspector.link_media"));
     assert!(
         !has_widget(&harness, "inspector.tab.transform"),

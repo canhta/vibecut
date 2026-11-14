@@ -1754,7 +1754,8 @@ catalog! {
     LinkMediaName { key: "link_media_name", en: "Name", vi: "Tên" },
     LinkMediaNoMatch { key: "link_media_no_match", en: "No file there matches the missing media.", vi: "Không có tệp nào ở đó khớp với media bị thiếu." },
     LinkMediaTitle { key: "link_media_title", en: "Link media", vi: "Liên kết media" },
-    MissingClipsPanel { key: "missing_clips_panel", en: "Clips on this timeline are missing their media", vi: "Clip trên timeline này đang thiếu media" },
+    MissingClipsPanelFirst { key: "missing_clips_panel_first", en: "Clips on this timeline", vi: "Clip trên timeline này" },
+    MissingClipsPanelSecond { key: "missing_clips_panel_second", en: "are missing their media", vi: "đang thiếu media" },
 
     // Timeline clip visuals.
     MediaMissing { key: "media_missing", en: "Media missing. Use Link media to find the file", vi: "Thiếu media. Dùng Liên kết media để tìm tệp" },
