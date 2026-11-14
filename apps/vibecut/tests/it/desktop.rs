@@ -711,6 +711,23 @@ fn failed_device_pauses_without_wall_clock_substitution() {
     assert!(editor.activate("transport.play").is_err());
 }
 #[test]
+fn a_device_lost_while_paused_wakes_the_loop() {
+    // The port keeps the wake bound when playback is built; the device thread has none.
+    let woken = crate::woken::Woken::bind();
+    let mut editor = editor();
+    let mut lost = None;
+    woken.until("the lost output device", || {
+        editor.tick();
+        if !editor.playback.device_available() {
+            return Some(());
+        }
+        let port = editor.playback.audio_port();
+        lost.get_or_insert_with(|| std::thread::spawn(move || port.fail()));
+        None
+    });
+    assert!(editor.activate("transport.play").is_err());
+}
+#[test]
 fn repeated_forward_backward_seeks_and_clears_retain_no_unbounded_frames() {
     let mut editor = editor();
     for n in 0..200 {

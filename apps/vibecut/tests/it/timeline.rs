@@ -6516,3 +6516,80 @@ fn diamond_menu_sets_easing_kinds_and_the_first_use_hint_is_dismissed_once() {
         "Linear returns the segment to the straight line"
     );
 }
+
+#[test]
+fn a_clips_filmstrip_and_waveform_show_when_their_jobs_wake_the_loop() {
+    // Bound before playback and the timeline start any worker: each keeps this wake.
+    let woken = crate::woken::Woken::bind();
+    let Some(path) = testkit::oracle::generate(
+        &testkit::fixture::dir("timeline-visuals"),
+        "filmstrip and waveform when woken",
+        "clip.mkv",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=s=64x36:r=10:d=10",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000:duration=10",
+            "-c:v",
+            "ffv1",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "pcm_s16le",
+        ],
+    ) else {
+        return;
+    };
+    let mut session =
+        Session::new(Project::empty(ProjectId(96), "Visuals".into()).unwrap(), 50).unwrap();
+    session
+        .apply(Command::AddAsset {
+            asset: SourceAsset::import(AssetId(3), path).unwrap(),
+        })
+        .unwrap();
+    let video = track(&mut session, "Video", TrackKind::Video);
+    let item = insert(
+        &mut session,
+        video,
+        Tick::ZERO,
+        SourceRange::new(Tick::ZERO, Tick(10 * SECOND)).unwrap(),
+        Some(AssetId(3)),
+        ItemParams::Video(project::VideoParams {
+            source_audio_enabled: true,
+            ..project::VideoParams::plain()
+        }),
+    );
+    let playback = Playback::new(
+        &session,
+        ByteBudget::new(512 << 20).unwrap(),
+        Arc::new(Files),
+    )
+    .unwrap();
+    let mut editor = Editor::new(session, playback, Preferences::default());
+    let cache = tempfile::tempdir().unwrap();
+    let media =
+        engine::control::MediaAccess::open_in(cache.path(), ByteBudget::new(256 << 20).unwrap())
+            .unwrap();
+    editor.set_media(Arc::new(std::sync::Mutex::new(media)));
+    let mut h = harness(editor);
+    woken.attach(&h.ctx);
+    // The bands ask for their jobs on the first paint; a frame runs only when a job wakes it.
+    let label = |editor: &Editor, band: &str| {
+        let id = format!("timeline.item.{}.{band}", item.0);
+        editor
+            .inspect()
+            .unwrap()
+            .widgets
+            .into_iter()
+            .find(|widget| widget.id == id)
+            .and_then(|widget| widget.tooltip)
+    };
+    woken.step_until(&mut h, "the filmstrip and the waveform", |editor| {
+        label(editor, "filmstrip").as_deref() == Some("Thumbnails")
+            && label(editor, "waveform").is_some_and(|label| label.starts_with("Waveform"))
+    });
+}

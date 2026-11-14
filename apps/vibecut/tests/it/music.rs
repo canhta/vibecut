@@ -406,6 +406,7 @@ fn music_count(editor: &Editor) -> usize {
 
 #[test]
 fn section_switches_between_music_and_sound_effects_and_loads_a_tag_page() {
+    let woken = crate::woken::Woken::bind();
     let root = tempfile::tempdir().unwrap();
     let library = library(root.path());
     let (client, transport) = json_client(200, Vec::new(), page(vec![result("one")], 1));
@@ -421,6 +422,7 @@ fn section_switches_between_music_and_sound_effects_and_loads_a_tag_page() {
     );
     editor.preferences.assets_tab = vibecut::AssetsTab::Sounds;
     let mut harness = build(editor);
+    woken.attach(&harness.ctx);
     harness.run_steps(3);
     assert!(has_widget(&harness, "audio.section.music"));
     assert!(has_widget(&harness, "audio.section.sounds"));
@@ -431,7 +433,8 @@ fn section_switches_between_music_and_sound_effects_and_loads_a_tag_page() {
     open_music(&mut harness);
     assert!(!has_widget(&harness, "sounds.search"));
     assert!(has_widget(&harness, "music.search"));
-    wait(&mut harness, "first tag page", |editor| {
+    // The search thread's page reaches the panel on the wake it sends, with no frame between.
+    woken.step_until(&mut harness, "first tag page", |editor| {
         editor
             .inspect()
             .unwrap()

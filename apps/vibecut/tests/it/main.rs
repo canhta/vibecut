@@ -33,3 +33,7 @@ mod mcp_control;
 mod media_probe;
 mod missing_media;
 mod subtitles;
+
+/// Runs the app loop only when woken, so a result published without a wake fails.
+#[path = "support/woken.rs"]
+mod woken;

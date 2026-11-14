@@ -2777,12 +2777,11 @@ fn master_mute_is_one_undo_step_per_click_and_loop_is_app_state_only() {
     h.render().unwrap().save(&path).unwrap();
 }
 
-/// A paused project of one real ten-second clip, and the wake events the preview worker
-/// sends the loop that owns it.
+/// A paused project of one real ten-second clip, and the loop that owns it.
 struct Paused {
     playback: Playback,
     project: Arc<Project>,
-    woken: std::sync::mpsc::Receiver<()>,
+    woken: crate::woken::Woken,
 }
 
 fn paused_clip(name: &str) -> Option<Paused> {
@@ -2828,14 +2827,8 @@ fn paused_clip(name: &str) -> Option<Paused> {
             },
         })
         .unwrap();
-    // The event loop's side: every wake the preview worker sends lands here.
-    let (send, woken) = std::sync::mpsc::channel();
-    let wake = wake::Wake::new();
-    let send = std::sync::Mutex::new(send);
-    wake.set(move |_| {
-        let _ = send.lock().unwrap().send(());
-    });
-    wake.bind();
+    // The event loop's side: bound before the preview workers start, which keep its wake.
+    let woken = crate::woken::Woken::bind();
     let playback = Playback::new(
         &session,
         ByteBudget::new(512 << 20).unwrap(),
@@ -2853,24 +2846,20 @@ impl Paused {
     /// Run the loop as the app does: poll only when woken, and fail when the worker's frame
     /// for the current request never wakes it. Returns the frame's tick and whether it is lit.
     fn frame_when_woken(&mut self, what: &str) -> (Tick, bool) {
-        loop {
-            self.playback.poll(std::time::Instant::now()).unwrap();
-            if let Some(frame) = self.playback.frame()
-                && frame.generation == self.playback.generation()
-            {
-                let lit = frame
-                    .image
-                    .pixels
-                    .iter()
-                    .any(|p| p.r() > 20 || p.g() > 20 || p.b() > 20);
-                return (frame.at, lit);
-            }
-            self.woken
-                .recv_timeout(std::time::Duration::from_secs(5))
-                .unwrap_or_else(|_| {
-                    panic!("{what}: the frame was never shown, nothing woke the loop")
-                });
-        }
+        let playback = &mut self.playback;
+        self.woken.until(what, || {
+            playback.poll(std::time::Instant::now()).unwrap();
+            let generation = playback.generation();
+            let frame = playback
+                .frame()
+                .filter(|frame| frame.generation == generation)?;
+            let lit = frame
+                .image
+                .pixels
+                .iter()
+                .any(|p| p.r() > 20 || p.g() > 20 || p.b() > 20);
+            Some((frame.at, lit))
+        })
     }
 }
 
