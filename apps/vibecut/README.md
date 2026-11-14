@@ -139,3 +139,4 @@ The runtime PNG supplies the window and Dock icon; Windows resources embed the
 committed ICO through embed-resource. [Native distribution](../../packaging/README.md)
 owns both installers, source receipts, signing, replacement and runtime verification.
 The shared FFmpeg dependency is LGPL ([distribution rules](../../docs/engineering/open-source.md#ffmpeg-distribution)).
+The macOS menu bar uses `muda` 0.21.2 (Apache-2.0 OR MIT, an admitted [licence](../../docs/engineering/open-source.md#licensing)), declared for macOS only and without default features, so Windows and Linux builds do not link it or GTK; its safe API keeps the workspace `unsafe_code = "forbid"`.
