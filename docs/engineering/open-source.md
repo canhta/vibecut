@@ -2,7 +2,7 @@
 
 ## Licensing
 
-Contributions are [GPL-3.0-only](../../LICENSE). Admitted dependency licences: MIT, Apache-2.0, BSD, ISC, Zlib, Unicode, Unlicense, WTFPL, CDLA-Permissive-2.0, unmodified MPL-2.0, LGPL-2.1-or-later for shared FFmpeg, and GPL-3.0 for FFmpeg with libx264. Any other licence needs an ADR.
+Contributions are [GPL-3.0-only](../../LICENSE). Admitted dependency licences: MIT, Apache-2.0, BSD, ISC, Zlib, Unicode, Unlicense, WTFPL, CDLA-Permissive-2.0, unmodified MPL-2.0, LGPL-2.1-or-later for shared FFmpeg, and GPL-3.0 for FFmpeg with libx264. [ADR 0008](../adr/0008-permissive-dependency-licences.md) admits MIT-0, BSL-1.0, 0BSD, bzip2-1.0.6 and CC0-1.0 as per-crate exceptions in `deny.toml`. Any other licence needs an ADR.
 
 ## FFmpeg distribution
 

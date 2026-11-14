@@ -141,8 +141,8 @@ confidence-threshold = 0.9
 unused-allowed-license = "allow"
 # Workspace crates (publish = false) are our own GPL-3.0-only code.
 private = { ignore = true }
-# Permissive licences outside the admitted list; each stays a per-crate exception
-# until a licence ADR admits it (the policy sends every other licence to an ADR).
+# Permissive licences admitted by docs/adr/0008-permissive-dependency-licences.md;
+# each stays a per-crate exception so a new crate under one of them is still read.
 exceptions = [
     # MIT-0 (MIT without the notice requirement): fluent-uri.
     { allow = ["MIT-0"], crate = "borrow-or-share" },

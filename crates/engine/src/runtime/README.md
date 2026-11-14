@@ -41,7 +41,8 @@ is `clamp(min(total / 4, available / 2), 1 GiB, 8 GiB)`, read once at start.
   no measured export speed.
 - Rows (total/available): 8 GB/4 GB gives 2 GiB, 8/2 gives 1 GiB; 16/10 gives 4 GiB, 16/2
   gives 1 GiB; 64/50 and larger give 8 GiB. An unreadable probe (zero) gives the floor.
-- `SystemMemory` reads macOS, Windows and Linux through `sysinfo` (no `unsafe` of ours);
+- `SystemMemory` reads macOS, Windows and Linux through `sysinfo` 0.40 (MIT, an
+  [admitted licence](../../../../docs/engineering/open-source.md#licensing); no `unsafe` of ours);
   tests inject a `MemoryProbe`.
 
 ## Cache result boundary
