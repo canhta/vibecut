@@ -10,8 +10,8 @@ mod quantize;
 pub use audio_file::{AUDIO_FILE_BLOCK, AudioFileWriter};
 pub use encode::{
     AudioEncoder, AudioEncoderSettings, EncodePreference, H264Profile, VideoEncoder,
-    VideoEncoderSettings, audio_export_container_available, export_container_available,
-    h264_encoder_available,
+    VideoEncoderSettings, audio_export_container_available, default_encoder_threads,
+    export_container_available, h264_encoder_available, video_encode_bytes,
 };
 pub use gif::{
     GIF_MAX_COLORS, GIF_MAX_EDGE, GIF_MAX_FPS, GIF_MAX_FRAMES, GIF_MAX_PIXELS, GIF_MAX_SECONDS,

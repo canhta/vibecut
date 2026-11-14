@@ -4,7 +4,7 @@ Container reading, packet decoding and bounded thumbnails over the one shared FF
 
 ## Demux
 
-`probe(path)` and `PacketReader` open native `File` paths through seekable AVIO (32 KiB buffers), detect the format, and report optional presentation duration, stream start and time base, codec parameters, dimensions and color, audio format and priming, and optional counts. Unknown frame counts and VFR stay unknown; capabilities are never guessed from filenames. Probing reads at most 32 MiB.
+`probe(path)` and `PacketReader` open native `File` paths through seekable AVIO (32 KiB buffers), detect the format, and report optional presentation duration, stream start and time base, codec parameters, dimensions and color, audio format and priming, and optional counts. Unknown frame counts and VFR stay unknown; capabilities are never guessed from filenames. Probing reads at most `PROBE_BYTES` (32 MiB) and holds at most `PROBE_MEMORY_BYTES` (twice that; a 4K probe measures 22 MiB).
 
 The cancellation token interrupts probing and every packet read. A packet read after exhaustion returns `MediaError::TooLarge("input read bytes")`. `PacketReader::seek` seeks backward to the keyframe at or before a presentation time; `VideoReader::seek` resets its decoder and suppresses presentation ticks before the target. Packets are capped at 64 MiB.
 
@@ -13,6 +13,8 @@ The cancellation token interrupts probing and every packet read. A packet read a
 `VideoDecoder` and `AudioDecoder` take whole access units in decode order and drain with `flush`. `push_packet`, `pull_frame` and `finish_input` support single-frame consumption; batch APIs keep the 64-frame cap. Native image and sample ceilings are installed before codecs open.
 
 `VideoFrame` holds CPU or GPU buffers; CPU access needs an explicit `download`. `with_pts` assigns an output tick without copying pixels. `from_rgba8` checks allocation and assigns straight-alpha metadata. `RgbaConverter` preserves frame transfer, primaries and alpha convention for the compositor boundary. Plane access supplies checked indexes and strides; negative strides require normalization. No raw hardware pointers leave the crate.
+
+Video decoders open with `decoder_threads()` frame threads (host cores, capped at 8). `video_decode_bytes(stream, conversion_threads)` sizes a reader plus its converter from the stream's dimensions and pixel format and that thread count; the execution owner reserves it before opening (a 1080p 4:2:0 stream is 88 MiB, measured 70).
 
 `VideoReader` gives hardware-preferred sequential frames, a preceding-keyframe seek plus decode-forward selection, and one software recovery after a decode error. Recovery seeks and suppresses already emitted PTS rather than duplicating frames. `open_with_cancel` interrupts buffered frame delivery, packet reads and recovery; cancellation is terminal. Only native decoder errors trigger the software retry; I/O, cancellation, bounds and metadata errors keep their category.
 

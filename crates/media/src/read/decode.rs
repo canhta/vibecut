@@ -12,6 +12,38 @@ use std::sync::{
 };
 use time::Tick;
 
+const MAX_VIDEO_DECODER_THREADS: usize = 8;
+/// Reference pictures a decoder keeps at HD and above: the 8 slots of VP9 and AV1 bound
+/// H.264 and HEVC at those sizes (levels allow 4-6).
+const DECODER_REFERENCE_FRAMES: u64 = 8;
+
+/// Frame-thread count every video decoder opens with: the host's cores, capped.
+pub fn decoder_threads() -> u8 {
+    std::thread::available_parallelism().map_or(1, |n| n.get().min(MAX_VIDEO_DECODER_THREADS)) as u8
+}
+
+/// Bytes one [`VideoReader`] plus its [`RgbaConverter`] with `conversion_threads` workers hold
+/// for a video stream: a decoded picture per decoder thread and reference slot, one for the
+/// packet being decoded (an intra packet never exceeds its raw picture) and two for the
+/// cursor's current and next pictures, the RGBA frame being converted, and each extra
+/// conversion worker's slice scratch. Zero-size or non-video streams are refused.
+pub fn video_decode_bytes(stream: &StreamInfo, conversion_threads: u8) -> Result<u64> {
+    let info = stream
+        .video
+        .as_ref()
+        .ok_or(MediaError::Invalid("video stream"))?;
+    let pixels = u64::from(info.width) * u64::from(info.height);
+    if pixels == 0 {
+        return Err(MediaError::Invalid("video dimensions"));
+    }
+    let picture = pixels * ffi::video_bits_per_pixel(&stream.parameters.0) / 8;
+    Ok(
+        picture * (u64::from(decoder_threads()) + DECODER_REFERENCE_FRAMES + 3)
+            + pixels * 4
+            + u64::from(conversion_threads.saturating_sub(1)) * pixels,
+    )
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum DecodePreference {
     #[default]

@@ -268,6 +268,9 @@ pub(super) fn frame_offset(dt: Tick, n: u64) -> Result<Tick> {
             .ok_or(Error::Invalid("output frame tick"))?,
     ))
 }
+/// Full-canvas working images the compositor holds at once (a 4K frame measures three, plus
+/// scratch smaller than one more).
+const COMPOSITOR_FRAMES: u64 = 4;
 #[allow(clippy::too_many_arguments)]
 pub(super) fn encoded_export(
     project: &Project,
@@ -279,27 +282,42 @@ pub(super) fn encoded_export(
     hooks: &dyn ExecutionHooks,
     count: u64,
 ) -> Result<ExportReceipt> {
-    let (threads, _encode) = crate::conversion_reservation(
-        hooks,
-        MemoryKind::Export,
-        Image::bytes(settings.render.width, settings.render.height)? * 4 + (64 << 20),
+    // Render the first frame before sizing the encoder so the decoders it opens are already
+    // charged; its working image is gone once packed, and the packed RGBA serves frame zero.
+    let mut first = Some(
+        renderer
+            .render_frame(range.start(), sources, hooks)?
+            .video_rgba8(1, hooks)?,
+    );
+    // Each later frame needs the compositor's peak working set on top of the encoder, so the
+    // encoder takes the most workers that leave that headroom, not whatever is free now.
+    let headroom = hooks.reserve(
+        MemoryKind::Compositor,
+        Image::bytes(settings.render.width, settings.render.height)? * COMPOSITOR_FRAMES,
     )?;
-    let mut first = renderer.render_frame(range.start(), sources, hooks)?;
-    let rgba = first.video_rgba8(1, hooks)?;
+    let (threads, _encode) = crate::conversion_reservation(hooks, MemoryKind::Export, |t| {
+        Ok(media::video_encode_bytes(
+            settings.render.width,
+            settings.render.height,
+            t,
+            t,
+        ))
+    })?;
+    drop(headroom);
     let first_frame = media::VideoFrame::from_rgba8(
         settings.render.width,
         settings.render.height,
         Tick::ZERO,
         media::ColorInfo::default(),
-        &rgba.bytes,
+        &first.as_ref().ok_or(Error::Invalid("first frame"))?.bytes,
     )?;
-    drop(rgba);
     let video_settings = VideoEncoderSettings {
         webm: matches!(settings.container, Container::WebM),
         bit_rate: settings.bit_rate,
         quality: settings.quality,
         profile: settings.profile,
         conversion_threads: threads,
+        encoder_threads: threads,
         ..VideoEncoderSettings::h264(
             settings.render.width,
             settings.render.height,
@@ -342,17 +360,19 @@ pub(super) fn encoded_export(
         check(hooks)?;
         hooks.progress(Stage::Render, n as f32 / count as f32)?;
         let offset = frame_offset(dt, n)?;
-        if n > 0 {
-            first = renderer.render_frame(
-                range
-                    .start()
-                    .checked_add(offset)
-                    .ok_or(Error::Invalid("render tick"))?,
-                sources,
-                hooks,
-            )?;
-        }
-        let rgba = first.video_rgba8(1, hooks)?;
+        let rgba = match first.take() {
+            Some(rgba) => rgba,
+            None => renderer
+                .render_frame(
+                    range
+                        .start()
+                        .checked_add(offset)
+                        .ok_or(Error::Invalid("render tick"))?,
+                    sources,
+                    hooks,
+                )?
+                .video_rgba8(1, hooks)?,
+        };
         let frame = media::VideoFrame::from_rgba8(
             settings.render.width,
             settings.render.height,
