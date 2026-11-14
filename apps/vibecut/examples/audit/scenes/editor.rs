@@ -75,7 +75,7 @@ pub(super) fn editor_frame_state(
         editor.open_agent();
     }
     let size = if state == "minimum" {
-        [1280.0, 800.0]
+        vibecut::preferences::WINDOW_MIN
     } else {
         [1727.0, 1029.0]
     };

@@ -162,6 +162,18 @@ mod tests {
     #[test]
     fn splitter_drags_clamp_each_region_to_its_documented_limits() {
         let start = DEFAULT_PANELS;
+        assert!(validate_panels(start).is_ok());
+        assert_eq!(crate::preferences::WINDOW_MIN, [1268.0, 650.0]);
+        // Measured pixel rows at 1840 x 1142: 1809 pt columns, 1091 pt timeline row.
+        assert_eq!((start[0] * 1809.0).round(), 398.0);
+        assert_eq!((start[1] * 1809.0).round(), 381.0);
+        assert_eq!((start[2] * 1091.0).round(), 498.0);
+        let timeline_one_row = drag_panel(start, 2, 10.0);
+        assert_eq!(timeline_one_row[2], TIMELINE_MIN);
+        assert_eq!((TIMELINE_MIN * 1091.0).round(), 204.0);
+        let timeline_full = drag_panel(start, 2, -10.0);
+        assert_eq!(timeline_full[2], TIMELINE_MAX);
+        assert_eq!((TIMELINE_MAX * 1091.0).round(), 835.0);
         let far_right = drag_panel(start, 0, 10.0);
         assert_eq!(far_right[0], PANEL_MAX);
         assert!(valid_preview(far_right));

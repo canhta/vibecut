@@ -36,10 +36,17 @@ pub const PANEL_MIN: f32 = 0.15;
 pub const PANEL_MAX: f32 = 0.40;
 pub const PREVIEW_MIN: f32 = 0.30;
 pub const PREVIEW_MAX: f32 = 0.85;
-pub const TIMELINE_MIN: f32 = 0.15;
-pub const TIMELINE_MAX: f32 = 0.70;
+// Timeline limits from CapCut 9.7.1 frames 111948 (one track row, 408 native px of a
+// 2182 px row height, 204 pt) and 111942 (full height, 1670 px, 835 pt), sampled at
+// native resolution (logical = px / 2). Row height is 1091 pt at 1840 x 1142.
+pub const TIMELINE_MIN: f32 = 0.187;
+pub const TIMELINE_MAX: f32 = 0.765;
 // Widths exclude both gutters; row fractions include the area-owned strips.
-pub const DEFAULT_PANELS: [f32; 3] = [582.0 / 1696.0, 486.0 / 1696.0, 447.0 / 979.0];
+/// Restored layout at 1840 x 1142 (frame 112001, byte-identical to 112003), sampled at
+/// native resolution: media 796 px (398 pt, x 18-813), player x 828-2885, properties
+/// 762 px (381 pt, x 2900-3661). Columns are 1809 pt (layout.rs: 1823 pt body minus two
+/// 7 pt gutters). Timeline 498 pt of 1091 pt (frame 112001, x=300 scan), i.e. 447 / 979.
+pub const DEFAULT_PANELS: [f32; 3] = [398.0 / 1809.0, 381.0 / 1809.0, 447.0 / 979.0];
 
 /// Every user-visible preference key in the one versioned document.
 pub const PREFERENCE_KEYS: &[&str] = &[
