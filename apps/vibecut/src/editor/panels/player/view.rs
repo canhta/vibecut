@@ -2,6 +2,7 @@
 use super::{
     Action, Context, State, lines,
     overlay::{GRID_MAX, GRID_MIN, Guide, Overlay, OverlayVisibility, PLANES, custom_from_draft},
+    scope,
     state::{GridDraft, TimecodeEdit},
 };
 use crate::{
@@ -123,6 +124,7 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
                     None,
                 );
                 ui.separator();
+                scope::submenu(ui, cx, &mut actions);
                 guide_menu(ui, cx, state, &mut actions);
                 lines::submenu(ui, cx, &mut actions);
             });
@@ -1097,6 +1099,7 @@ fn canvas(
     remember(cx, actions, "preview.canvas", r.clone());
     if empty {
         state.texture.clear();
+        state.scope.clear();
         return;
     }
     let scale = state.view.scale(stage.size(), size);
@@ -1145,6 +1148,12 @@ fn canvas(
         );
     }
     overlays(cx, ui, stage, displayed);
+    let scoped = if source_missing_at_playhead(cx) {
+        None
+    } else {
+        cx.playback.frame()
+    };
+    scope::show(&mut state.scope, cx, ui, stage, scoped, actions);
     // Either eyedropper samples the frame; the chroma key's pick and the colour popover's
     // pick differ only in the action they report.
     if state.key_color_pick.is_some() || cx.colour_sampling {

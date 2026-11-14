@@ -5,6 +5,7 @@ mod mask_box;
 mod mask_path;
 mod matte_brush;
 mod overlay;
+mod scope;
 mod snap;
 mod state;
 mod text;

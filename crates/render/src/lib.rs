@@ -3,6 +3,7 @@ mod audio;
 mod export;
 mod image;
 mod scene;
+mod scopes;
 mod sources;
 
 pub use audio::{AudioBlock, AudioMixer, LoudnessReport, Measurement, measure_loudness, mix_audio};
@@ -23,6 +24,7 @@ pub use scene::{
 pub use scene::{
     arrange, blend, color, effects, flicker, mask, matte, outline, stabilize, transitions, viewport,
 };
+pub use scopes::{Plot, SCOPE_SIDE, ScopeKind, plot as plot_scope};
 pub use sources::{FileSources, SourceProvider};
 use time::SourceRange;
 

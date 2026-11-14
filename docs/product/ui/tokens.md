@@ -11,6 +11,7 @@
 | Inline text edit caret width and selection opacity | `kit::size::TEXT_EDIT_*` | Live web editor observation (2026-11-09) |
 | Preview snap guide width, dash and gap | `kit::size::SNAP_GUIDE*` | Live web editor observation (2026-11-10) |
 | Player ruler strip, tick heights, caption gap, guide line stroke and colour | `kit::size::PLAYER_RULER*`, `GUIDE_LINE*`, `kit::guide_line` | Reference desktop captures 2026-11-14 (shots 100216, 111304) |
+| Colour scope panel side | `kit::size::SCOPE_PANEL` | None: the reference's scope window was not captured ([Player colour scopes](editor.md#player-colour-scopes)); [proposed] |
 | Agent chat panel, expanded column, title strip, input box and suggestion chip sizes | `kit::size::AGENT_*` | Desktop captures 221910 and 151706 and the second reference shot ([Agent chat](editor.md#agent-chat)) |
 | Dense glyph boxes and play/layout glyphs | `kit::icon` | Feature tabs and toolbar measurements |
 | App surfaces and accents | Semantic colour functions | App palette |

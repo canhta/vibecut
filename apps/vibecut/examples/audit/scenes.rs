@@ -106,6 +106,12 @@ pub(super) const SCENES: &[Scene] = &[
         build: |theme, scale| player_variant(theme, scale, "guides"),
     },
     Scene {
+        name: "player-scope",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| player_variant(theme, scale, "scope"),
+    },
+    Scene {
         name: "player-vi",
         reference_dark: None,
         reference_light: None,

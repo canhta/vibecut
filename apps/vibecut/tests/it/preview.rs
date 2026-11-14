@@ -1889,6 +1889,123 @@ fn player_footer_stays_on_one_row_in_both_languages() {
     }
 }
 
+fn scope(h: &Harness<Editor>) -> Option<render::ScopeKind> {
+    h.state().preferences.preview_scope
+}
+
+#[test]
+fn colour_scope_rows_run_as_registered_commands_and_undo_without_touching_the_project() {
+    let fresh = || Project::new(project(FrameRate::FPS_30, 640, 360, false).into_data()).unwrap();
+    let mut h = build(editor(fresh(), Preferences::default()));
+    let committed = h.state().session.project().clone();
+    assert_eq!(scope(&h), None);
+    for (id, kind) in [
+        ("preview.scope.waveform", render::ScopeKind::Waveform),
+        ("preview.scope.vectorscope", render::ScopeKind::Vectorscope),
+        ("preview.scope.histogram", render::ScopeKind::Histogram),
+    ] {
+        let spec = vibecut::actions::action(id).unwrap_or_else(|| panic!("unregistered {id}"));
+        assert!(spec.defaults.is_empty(), "{id}");
+        assert!(h.state().action_enabled(id), "{id}");
+        h.state_mut().activate(id).unwrap();
+        assert_eq!(scope(&h), Some(kind), "{id} shows its scope");
+    }
+    // Choosing the scope that is shown hides it; each choice is one app-history step.
+    h.state_mut().activate("preview.scope.histogram").unwrap();
+    assert_eq!(scope(&h), None);
+    h.state_mut().activate("edit.undo").unwrap();
+    assert_eq!(scope(&h), Some(render::ScopeKind::Histogram));
+    h.state_mut().activate("edit.undo").unwrap();
+    assert_eq!(scope(&h), Some(render::ScopeKind::Vectorscope));
+    h.state_mut().activate("edit.redo").unwrap();
+    assert_eq!(scope(&h), Some(render::ScopeKind::Histogram));
+    assert!(
+        Arc::ptr_eq(&committed, h.state().session.project()),
+        "the scope never touches the project"
+    );
+    // The choice survives a restart.
+    let saved = h.state().preferences.clone();
+    let restarted = build(editor(fresh(), saved));
+    assert_eq!(scope(&restarted), Some(render::ScopeKind::Histogram));
+}
+
+#[test]
+fn the_player_menu_lists_the_colour_scopes_and_a_row_shows_that_scope() {
+    let mut h = build(editor(
+        project(FrameRate::FPS_30, 640, 360, false),
+        Preferences::default(),
+    ));
+    click(&mut h, "preview.menu.scope");
+    h.run_steps(3);
+    for id in [
+        "preview.menu.scope.waveform",
+        "preview.menu.scope.vectorscope",
+        "preview.menu.scope.histogram",
+    ] {
+        assert!(
+            h.query_all(By::new().predicate(|node| node.author_id() == Some(id)))
+                .next()
+                .is_some(),
+            "missing menu row {id}"
+        );
+    }
+    h.get(By::new().predicate(|node| node.author_id() == Some("preview.menu.scope.vectorscope")))
+        .click();
+    h.run_steps(3);
+    assert_eq!(scope(&h), Some(render::ScopeKind::Vectorscope));
+}
+
+#[test]
+fn a_shown_scope_is_plotted_off_the_ui_thread_and_shows_on_the_workers_wake() {
+    let woken = crate::woken::Woken::bind();
+    let mut h = build(editor(
+        project(FrameRate::FPS_30, 640, 360, false),
+        Preferences::default(),
+    ));
+    woken.attach(&h.ctx);
+    woken.step_until(&mut h, "the preview frame", |editor| {
+        editor.playback.frame().is_some()
+    });
+    assert!(
+        !crate::woken::shows(h.state(), "preview.scope"),
+        "no scope panel while the scope is off"
+    );
+
+    h.state_mut().activate("preview.scope.waveform").unwrap();
+    h.step();
+    assert!(crate::woken::shows(h.state(), "preview.scope"));
+    assert!(
+        !crate::woken::shows(h.state(), "preview.scope.ready"),
+        "the first pass only starts the plot: it shows the pending panel"
+    );
+    woken.step_until(&mut h, "the waveform plot", |editor| {
+        crate::woken::shows(editor, "preview.scope.ready")
+    });
+    assert!(!crate::woken::shows(h.state(), "preview.scope.failed"));
+    let stage = widget(&h, "preview.canvas").rect;
+    let panel = widget(&h, "preview.scope").rect;
+    assert_eq!(panel.width(), panel.height(), "the plot is square");
+    assert!(panel.width() <= 256.0 && panel.width() > 0.0);
+    assert!(stage.contains_rect(panel), "{panel:?} inside {stage:?}");
+    assert!(
+        panel.left() >= stage.left() + 16.0,
+        "the panel clears the left ruler strip"
+    );
+
+    // Another kind plots again for the same frame; the old plot is not shown as the new one.
+    h.state_mut().activate("preview.scope.histogram").unwrap();
+    h.step();
+    assert!(!crate::woken::shows(h.state(), "preview.scope.ready"));
+    woken.step_until(&mut h, "the histogram plot", |editor| {
+        crate::woken::shows(editor, "preview.scope.ready")
+    });
+
+    // Turning the scope off removes the panel and drops the plot.
+    h.state_mut().activate("preview.scope.histogram").unwrap();
+    h.step();
+    assert!(!crate::woken::shows(h.state(), "preview.scope"));
+}
+
 #[test]
 fn pending_preview_invalidates_presented_readiness_until_the_replacement_is_polled() {
     let mut model = editor(

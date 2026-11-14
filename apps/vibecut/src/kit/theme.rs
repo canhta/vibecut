@@ -473,6 +473,10 @@ pub(crate) mod size {
     /// 700) and 700 over 71 px on a 442 px ruler (6.2 spans). The count sits between 6.2 and
     /// 7.5, so 7 is [proposed].
     pub const PLAYER_RULER_MAX_SPANS: f32 = 7.0;
+    /// Colour scope panel side over the player: the plot's 256 cells at one logical px each.
+    /// The reference's scope window was not captured (14/100123 shows only the menu row), so
+    /// the size is [proposed].
+    pub const SCOPE_PANEL: f32 = 256.0;
     /// Custom guide line stroke (capture: 1 px) and the pointer band around it. The band is [proposed].
     pub const GUIDE_LINE: f32 = 1.0;
     pub const GUIDE_LINE_HIT: f32 = 8.0;

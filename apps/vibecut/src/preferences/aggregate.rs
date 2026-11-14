@@ -20,7 +20,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 /// Bumped when the local preference document changes incompatibly.
-pub const PREFERENCES_VERSION: u32 = 25;
+pub const PREFERENCES_VERSION: u32 = 26;
 /// Room for every provider/feature choice and its bounded recent IDs.
 pub const MAX_PREFERENCES_BYTES: u64 = 32 * 1024;
 /// Total open-lane entries across every project; keeps the document bounded.
@@ -80,6 +80,7 @@ pub const PREFERENCE_KEYS: &[&str] = &[
     "preview_guide",
     "preview_overlays",
     "preview_lines",
+    "preview_scope",
     "track_height",
     "waveform_size",
 ];
@@ -226,6 +227,8 @@ pub struct Preferences {
     pub preview_overlays: OverlayVisibility,
     /// The player's rulers and custom guide lines; drawn by the app, never exported.
     pub preview_lines: GuideLines,
+    /// The colour scope shown over the player, if any; drawn by the app, never exported.
+    pub preview_scope: Option<render::ScopeKind>,
     /// Timeline row height choice (track header menu); presentation only.
     pub track_height: super::TrackHeight,
     /// Audio waveform size in percent, one of `WAVEFORM_SIZES`; presentation only.
@@ -270,6 +273,7 @@ impl Default for Preferences {
             preview_guide: Guide::default(),
             preview_overlays: OverlayVisibility::default(),
             preview_lines: GuideLines::default(),
+            preview_scope: None,
             track_height: super::TrackHeight::default(),
             waveform_size: super::DEFAULT_WAVEFORM_SIZE,
         }
@@ -440,6 +444,7 @@ impl Preferences {
             "preview_guide" => Ok(serde_json::to_value(self.preview_guide)?),
             "preview_overlays" => Ok(serde_json::to_value(self.preview_overlays)?),
             "preview_lines" => Ok(serde_json::to_value(&self.preview_lines)?),
+            "preview_scope" => Ok(serde_json::to_value(self.preview_scope)?),
             "track_height" => Ok(serde_json::to_value(self.track_height)?),
             "waveform_size" => Ok(serde_json::json!(self.waveform_size)),
             _ => Err(Error::Unsupported("preference key")),
@@ -492,6 +497,7 @@ impl Preferences {
             "preview_guide" => self.preview_guide = serde_json::from_value(value)?,
             "preview_overlays" => self.preview_overlays = serde_json::from_value(value)?,
             "preview_lines" => self.preview_lines = serde_json::from_value(value)?,
+            "preview_scope" => self.preview_scope = serde_json::from_value(value)?,
             "track_height" => self.track_height = serde_json::from_value(value)?,
             "waveform_size" => self.waveform_size = serde_json::from_value(value)?,
             _ => return Err(Error::Unsupported("preference key")),

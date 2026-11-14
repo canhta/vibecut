@@ -162,6 +162,7 @@ mod tests {
         assert!(!Preferences::default().preview_overlays.guide);
         let lines = &Preferences::default().preview_lines;
         assert!(!lines.rulers && lines.shown && !lines.locked && lines.is_empty());
+        assert_eq!(Preferences::default().preview_scope, None);
         assert_eq!(Preferences::system().locale, Locale::from_system());
     }
 
@@ -303,6 +304,7 @@ mod tests {
                 "preview_overlays",
                 serde_json::json!({"guide": true, "notes": false}),
             ),
+            ("preview_scope", serde_json::json!("vectorscope")),
             ("track_height", serde_json::json!("tall")),
             ("waveform_size", serde_json::json!(100)),
             (
@@ -488,6 +490,7 @@ mod tests {
             ("hardware_acceleration", serde_json::json!("maybe")),
             ("cache_limit_bytes", serde_json::json!((256u64 << 20) - 1)),
             ("cache_limit_bytes", serde_json::json!((8u64 << 30) + 1)),
+            ("preview_scope", serde_json::json!("spectrum")),
             ("track_height", serde_json::json!("huge")),
             ("waveform_size", serde_json::json!(45)),
             ("waveform_size", serde_json::json!("60")),

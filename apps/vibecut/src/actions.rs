@@ -220,6 +220,9 @@ pub enum UiAction {
     GuideAdd(crate::editor::LineAxis),
     /// `preview.guides.move`: move one guide line to a canvas position.
     GuideMove,
+    /// `preview.scope.waveform`, `preview.scope.vectorscope` and `preview.scope.histogram`: show
+    /// that colour scope over the player, or hide it when it is already the one shown.
+    PreviewScope(render::ScopeKind),
     Seek,
     JumpBookmark(BookmarkDirection),
     SetPreviewZoom,
