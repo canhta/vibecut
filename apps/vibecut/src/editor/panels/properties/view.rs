@@ -334,10 +334,7 @@ impl<'a, 'c> Panel<'a, 'c> {
         body.vertical_centered(|ui| {
             // Two grey lines on a 23 px pitch, centred in the body under the 42 px strip
             // (capture 095550: the lines centre on the body's x).
-            let lines = [
-                Text::MissingClipsPanelFirst,
-                Text::MissingClipsPanelSecond,
-            ];
+            let lines = [Text::MissingClipsPanelFirst, Text::MissingClipsPanelSecond];
             let block = theme::size::MISSING_PANEL_LINE * lines.len() as f32;
             ui.add_space(((height - block) / 2.0).max(0.0));
             for text in lines {

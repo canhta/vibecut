@@ -92,9 +92,10 @@ impl ExecutionHooks for Hooks {
         match &self.budget {
             Some(budget) => {
                 let result = engine::ByteBudgetHooks::new(budget, None).reserve(kind, bytes);
-                self.peak.fetch_max(budget.snapshot().unwrap().used, Ordering::Relaxed);
+                self.peak
+                    .fetch_max(budget.snapshot().unwrap().used, Ordering::Relaxed);
                 result
-            },
+            }
             None => Ok(Box::new(Lease)),
         }
     }
@@ -117,7 +118,11 @@ impl Hooks {
     fn drained(&self) {
         if let Some(budget) = &self.budget {
             let used = budget.snapshot().unwrap().used;
-            println!("BUDGET limit={} retained_bytes={used} observed_logical_peak={}", 768 << 20, self.peak.load(Ordering::Relaxed));
+            println!(
+                "BUDGET limit={} retained_bytes={used} observed_logical_peak={}",
+                768 << 20,
+                self.peak.load(Ordering::Relaxed)
+            );
             assert_eq!(used, 0);
         }
     }
@@ -145,7 +150,10 @@ impl Counted {
     }
     fn report(&self, label: &str) {
         let frames = self.frames.each_ref().map(|n| n.swap(0, Ordering::Relaxed));
-        println!("GPU_SCOPES {label} outcomes={frames:?} idle_calls={}", self.idle.swap(0, Ordering::Relaxed));
+        println!(
+            "GPU_SCOPES {label} outcomes={frames:?} idle_calls={}",
+            self.idle.swap(0, Ordering::Relaxed)
+        );
         let a = self.apply.each_ref().map(|n| n.swap(0, Ordering::Relaxed));
         let c = self
             .composite
@@ -175,12 +183,21 @@ impl Counted {
     }
 }
 impl EffectCompositor for Counted {
-    fn frame<'a>(&'a self, hooks: &'a dyn ExecutionHooks) -> Result<Option<Box<dyn EffectCompositor + 'a>>> {
+    fn frame<'a>(
+        &'a self,
+        hooks: &'a dyn ExecutionHooks,
+    ) -> Result<Option<Box<dyn EffectCompositor + 'a>>> {
         let result = self.gpu.frame(hooks);
         Self::record(&self.frames, &result);
-        result.map(|scope| scope.map(|frame| Box::new(CountedFrame { owner: self, frame }) as Box<dyn EffectCompositor>))
+        result.map(|scope| {
+            scope.map(|frame| {
+                Box::new(CountedFrame { owner: self, frame }) as Box<dyn EffectCompositor>
+            })
+        })
     }
-    fn release_idle(&self) -> Result<()> { self.gpu.release_idle() }
+    fn release_idle(&self) -> Result<()> {
+        self.gpu.release_idle()
+    }
     fn supports(&self, entry: &str) -> bool {
         let supported = self.gpu.supports(entry);
         if !supported {
@@ -218,7 +235,10 @@ struct CountedFrame<'a> {
     frame: Box<dyn EffectCompositor + 'a>,
 }
 impl EffectCompositor for CountedFrame<'_> {
-    fn frame<'a>(&'a self, hooks: &'a dyn ExecutionHooks) -> Result<Option<Box<dyn EffectCompositor + 'a>>> {
+    fn frame<'a>(
+        &'a self,
+        hooks: &'a dyn ExecutionHooks,
+    ) -> Result<Option<Box<dyn EffectCompositor + 'a>>> {
         self.frame.frame(hooks)
     }
     fn release_idle(&self) -> Result<()> {
@@ -227,15 +247,32 @@ impl EffectCompositor for CountedFrame<'_> {
     }
     fn supports(&self, entry: &str) -> bool {
         let supported = self.frame.supports(entry);
-        if !supported { self.owner.unsupported_queries.fetch_add(1, Ordering::Relaxed); }
+        if !supported {
+            self.owner
+                .unsupported_queries
+                .fetch_add(1, Ordering::Relaxed);
+        }
         supported
     }
-    fn apply(&self, image: &Image, passes: &[EffectPass], inputs: EffectInputs<'_>, hooks: &dyn ExecutionHooks) -> Result<Image> {
+    fn apply(
+        &self,
+        image: &Image,
+        passes: &[EffectPass],
+        inputs: EffectInputs<'_>,
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<Image> {
         let result = self.frame.apply(image, passes, inputs, hooks);
         Counted::record(&self.owner.apply, &result);
         result
     }
-    fn composite(&self, below: &mut Image, image: &Image, opacity: f32, mode: project::BlendMode, hooks: &dyn ExecutionHooks) -> Result<()> {
+    fn composite(
+        &self,
+        below: &mut Image,
+        image: &Image,
+        opacity: f32,
+        mode: project::BlendMode,
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<()> {
         let result = self.frame.composite(below, image, opacity, mode, hooks);
         Counted::record(&self.owner.composite, &result);
         result
@@ -477,7 +514,15 @@ fn transfer() {
                 .effects
                 .iter()
                 .flat_map(|effect| {
-                    evaluate_effect(&item.animations, effect, time::Tick::ZERO, EffectGeometry::new([w, h], [1.0, 1.0]).unwrap(), true, &Default::default()).unwrap()
+                    evaluate_effect(
+                        &item.animations,
+                        effect,
+                        time::Tick::ZERO,
+                        EffectGeometry::new([w, h], [1.0, 1.0]).unwrap(),
+                        true,
+                        &Default::default(),
+                    )
+                    .unwrap()
                 })
                 .collect();
             let inputs = || EffectInputs {
@@ -602,6 +647,8 @@ fn project_at(path: &std::path::Path, effects: Vec<project::EffectInstance>) -> 
             reduce_noise: false,
             stabilize: None,
             background_removal: None,
+            matte_strokes: Vec::new(),
+            remove_flicker: false,
         }),
     });
     project::Project::new(d).unwrap()
@@ -904,22 +951,31 @@ fn rss_now() -> u64 {
         .args(["-o", "rss=", "-p", &std::process::id().to_string()])
         .output()
         .ok()
-        .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<u64>().ok())
+        .and_then(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .trim()
+                .parse::<u64>()
+                .ok()
+        })
         .map_or(0, |kib| kib * 1024)
 }
 
 fn start_peak_sampler() {
     if cfg!(target_os = "macos") {
-        std::thread::spawn(|| loop {
-            SAMPLED_PEAK.fetch_max(rss_now(), Ordering::Relaxed);
-            std::thread::sleep(Duration::from_millis(100));
+        std::thread::spawn(|| {
+            loop {
+                SAMPLED_PEAK.fetch_max(rss_now(), Ordering::Relaxed);
+                std::thread::sleep(Duration::from_millis(100));
+            }
         });
     }
 }
 
 fn peak() -> u64 {
     if cfg!(target_os = "macos") {
-        return SAMPLED_PEAK.fetch_max(rss_now(), Ordering::Relaxed).max(rss_now());
+        return SAMPLED_PEAK
+            .fetch_max(rss_now(), Ordering::Relaxed)
+            .max(rss_now());
     }
     let output = std::process::Command::new("powershell")
         .args([
@@ -1023,8 +1079,12 @@ fn pooled() {
 fn main() {
     use tracing_subscriber::prelude::*;
     start_peak_sampler();
-    let log = tracing_subscriber::fmt::layer().without_time().with_ansi(false)
-        .with_filter(tracing_subscriber::filter::filter_fn(|meta| meta.target() == "vibecut::effects"));
+    let log = tracing_subscriber::fmt::layer()
+        .without_time()
+        .with_ansi(false)
+        .with_filter(tracing_subscriber::filter::filter_fn(|meta| {
+            meta.target() == "vibecut::effects"
+        }));
     let _log = tracing::subscriber::set_default(tracing_subscriber::registry().with(log));
     let sha = std::process::Command::new("git")
         .args(["rev-parse", "HEAD"])

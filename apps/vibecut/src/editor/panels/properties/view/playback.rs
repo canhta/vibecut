@@ -4,8 +4,8 @@ use super::Panel;
 use super::number_edit::{WholeEdit, WholeSlider};
 use crate::editor::properties::workflow::jobs::loudness::{Cause, Failed, scope_target};
 use crate::editor::properties::{
-    AUDIO_GAIN_SCRUB, Action, Color32, ItemId, Rect, SPEED_PITCH_LIMIT,
-    SPEED_SCRUB, ScrubSpec, Text, Vec2, egui, read, theme,
+    AUDIO_GAIN_SCRUB, Action, Color32, ItemId, Rect, SPEED_PITCH_LIMIT, SPEED_SCRUB, ScrubSpec,
+    Text, Vec2, egui, read, theme,
 };
 use crate::i18n;
 use crate::kit;

@@ -11,7 +11,7 @@ Interface: `Preferences`, `PreferenceStore`, `PreferenceIssue`, `PREFERENCES_VER
 The composition root of the one versioned local preference document, persisted in a
 bounded JSON file. It names feature-owned section types rather than redefining them:
 export options, caption options, media view and sort, panel tabs and sections, preview
-fit, zoom, preview axis and snapshot directory, projects view and sort (`home`), keybinding deltas
+fit, zoom, preview axis and snapshot directory, projects view and sort (`home`), keybinding presets
 (`input`), window geometry and panel ratios.
 
 The document is validated on load and before save. A damaged layout falls back to
@@ -21,7 +21,7 @@ keys are refused, and the lane map, colour list, section map, window map (64 ent
 and panel ratios are bounded. `ui.prefs.set` edits carry app-owned undo and redo and
 never touch project JSON. Ripple mode and keyframe lane visibility persist outside
 undo history, so entering an editing mode or opening its lanes cannot shadow the
-project edit's next Undo. The first-use keyframe hint is one flag, `keyframe_hint_seen`.
+project edit's next Undo. The first-use keyframe hint is one flag, `keyframe_hint_seen`; version 21 added it, with no migration.
 
 `EasingPreferences` stores the keyframe graph popover's tab (`presets` or `saved`) and up to
 64 saved easing curves, each a unique name of at most 64 bytes with a normalized
@@ -37,6 +37,7 @@ fetched lists and price acknowledgements are never serialized. A document whose 
 `PREFERENCES_VERSION` is refused through the version refusal; there is no migration.
 Version 14 removed `recent_colors`; the colour popover's recents live in the project.
 Version 19 removed the font picker's persisted `tab` (the picker has no tabs); `font_picker` keeps only `favorites`.
+Version 22 replaced the single keybinding delta map with `KeybindingPresets`: five named profiles and the active one (`input`), with no migration.
 
 The text-task provider is one persisted choice, `subtitles.text_provider`, shared by
 translation, `fillers.classify` and `chapters.generate`. The models are not shared: each task takes its own
@@ -48,7 +49,7 @@ these; there is no migration.
 
 `track_height` (`short`, `default`, `tall`) and `waveform_size` (30, 60 or 100) are the timeline
 track header menu's choices; presentation only, each an app-history `ui.prefs.set` step.
-Version 18 introduced them, with no migration.
+Version 20 introduced them, with no migration.
 
 `preview_guide` and `preview_overlays` store the preview guide choice (none, a grid with
 rows and columns 1–24, validated on load and set, one of the platform guides TikTok, Instagram Reels and YouTube Shorts, or a custom set of four margins) and the per-overlay visibility. Both are presentation only;

@@ -68,7 +68,7 @@ Short, Default (checked) and Tall, and Audio waveform size with 30 %, 60 % and 1
 Tall scale each row by 0.75 and 1.5 with the 24 px small-kind row as the floor, and 30, 60
 and 100 % let audio bars reach 70, 85 and 100 % of the clip height [proposed]. Both
 choices are app-wide presentation preferences, not project data: `track_height` and
-`waveform_size` in the preference document (version 18), set by the commands
+`waveform_size` in the preference document (version 20), set by the commands
 `timeline.track_height.short|default|tall` and `timeline.waveform_size.30|60|100`.
 
 The main track's Cover button is not built (the project has no cover). Its place is
@@ -376,7 +376,7 @@ Built (ours): the dark values above are not app tokens as colours (`tokens.md`);
 ## Gaps
 
 - Multi-track timeline geometry: only one video track is captured, so audio, text, sticker and effect track heights, clip colours and vertical stacking are unmeasured.
-- Menus, context menus, the keyframe lane, selected text and caption properties, and error, offline and import-failure states are not captured.
+- Menus, context menus, selected text and caption properties, and error, offline and import-failure states are not captured.
 - The preset dropdown's popup list is not captured (CapCut shows Shortcut 1 to 5; ours uses the same labels), and the conflict prompt's layout and the Save-close behaviour are not captured. The conflict prompt copy follows frames 110641, 110650, 110656 and 110703 of `capcut-desktop-2026-11-14b`.
 - Media tab export: the clear-search row placement, the export progress strip (token height and gap from `kit::size::CONTROL` and `kit::space::MD`) and the export refusal and outcome toast copy are new compositions without a captured reference; their placement against CapCut is unverified.
 
@@ -399,7 +399,15 @@ adopt the current menu pattern, localized labels, existing icons and 20 px lanes
 composition. Copy uses the active scope: selected items or selected keys; Paste targets
 the playhead, an existing zero-key Param or the relative item track. Scope/draft admission:
 [frame input](../../../apps/vibecut/src/editor/frame/input/README.md#clipboard-actions).
-No comparable captured menu reference exists; product/native parity remains unverified.
+The keyframe diamond's right-click menu follows `.spikes/ui-reference/capcut-desktop-2026-11-14b/`
+rows 3 and 4 (103437, 103405): the reference lists Ease in, Ease out, Easing, Linear (checked),
+Show all presets, Show variable speed animation (Opt K), a separator, Copy and Delete. The
+adopted order is Ease in, Ease out, Easing, Linear (checked while the segment leaving the key is
+straight), Show all presets, Copy, Delete; Show variable speed animation is the `Alt+K` lane
+toggle (`timeline.keyframe_lanes`) instead of a menu row, and Paste stays on the lane menu. The
+first diamond draws the first-use hint the reference shows in 103405 once, until its OK.
+Behaviour: [timeline](../../../apps/vibecut/src/editor/timeline/README.md). The lane menu's
+Copy/Paste composition has no captured reference; its parity remains unverified.
 
 ## AI preferences
 

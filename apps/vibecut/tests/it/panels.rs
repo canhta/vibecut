@@ -3906,11 +3906,18 @@ fn speed_tab_scrubs_resets_and_toggles_pitch_through_one_command() {
     let history = harness.state().session.history_len();
     click(&mut harness, "inspector.speed.slider");
     assert_eq!(harness.state().session.history_len().0, history.0 + 1);
-    assert_eq!(item(&harness, fixture.video).retime.speed.thousandths(), 3500);
+    assert_eq!(
+        item(&harness, fixture.video).retime.speed.thousandths(),
+        3500
+    );
     enter_field(&mut harness, "inspector.speed", "5");
     let history = harness.state().session.history_len();
     click(&mut harness, "inspector.speed.pitch");
-    assert_eq!(harness.state().session.history_len(), history, "pitch is off from 5x");
+    assert_eq!(
+        harness.state().session.history_len(),
+        history,
+        "pitch is off from 5x"
+    );
     harness.state_mut().session.undo().unwrap();
     harness.state_mut().session.undo().unwrap();
     assert_eq!(

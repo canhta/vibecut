@@ -34,8 +34,7 @@ pub use panels::player::{
     TextCaret,
 };
 pub use state::{
-    AssetInspection, Editor, Inspection, ShortcutConflict, ShortcutRow, ShortcutTab,
-    ShortcutsInspection,
+    AssetInspection, Editor, Inspection, ShortcutRow, ShortcutTab, ShortcutsInspection,
 };
 use state::{
     AssetRow, PreferenceCommand, SHORTCUT_CONTROL_HEIGHT, SHORTCUT_ROW_HEIGHT, SHORTCUT_TEXT_SIZE,

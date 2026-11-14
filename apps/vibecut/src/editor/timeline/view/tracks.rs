@@ -218,9 +218,7 @@ impl State {
                             ("track", &row.name),
                         ],
                     );
-                    more.widget_info(|| {
-                        egui::WidgetInfo::labeled(egui::Role::Button, true, &hint)
-                    });
+                    more.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &hint));
                     self.remember_with(
                         format!("track.{}.more", row.id.0),
                         Some(Icon::DotsThree.name()),
@@ -456,7 +454,7 @@ impl State {
                 painter.rect_filled(line, 0.0, theme::video_fill(ink.dark()));
                 let response = ui.interact(
                     line,
-                    Id::new(("timeline.drop.line", track.0)),
+                    Id::unique(("timeline.drop.line", track.0)),
                     egui::Sense::hover(),
                 );
                 self.remember("timeline.drop.line", &response);
@@ -487,7 +485,7 @@ impl State {
             egui::Stroke::new(1.0, edge),
             egui::StrokeKind::Inside,
         );
-        let response = ui.interact(rect, Id::new(name), egui::Sense::hover());
+        let response = ui.interact(rect, Id::unique(name), egui::Sense::hover());
         self.remember(name, &response);
     }
     /// Show the engine's refusal for a staged move/trim over the lanes.
@@ -557,10 +555,8 @@ impl State {
                     "timeline.track_height.tall",
                 ),
             ] {
-                let response = ui.selectable_label(
-                    cx.preferences.track_height == height,
-                    tr(cx, text),
-                );
+                let response =
+                    ui.selectable_label(cx.preferences.track_height == height, tr(cx, text));
                 let key = id.rsplit('.').next().unwrap_or(id);
                 self.remember(format!("track.{}.height.{key}", row.id.0), &response);
                 if response.clicked() {
@@ -577,7 +573,9 @@ impl State {
                 );
                 self.remember(format!("track.{}.waveform.{percent}", row.id.0), &response);
                 if response.clicked() {
-                    self.push(Action::Activate(format!("timeline.waveform_size.{percent}")));
+                    self.push(Action::Activate(format!(
+                        "timeline.waveform_size.{percent}"
+                    )));
                     ui.close();
                 }
             }
@@ -876,7 +874,11 @@ mod tests {
         .into_iter()
         .enumerate()
         {
-            assert_eq!(track_height(kind, main, density), expected, "row case {index}");
+            assert_eq!(
+                track_height(kind, main, density),
+                expected,
+                "row case {index}"
+            );
         }
     }
 

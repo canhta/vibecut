@@ -264,7 +264,7 @@ impl State {
     /// The first-use hint, drawn beside the first diamond until it is dismissed.
     fn keyframe_hint(&mut self, cx: &Context<'_>, ui: &egui::Ui, anchor: egui::Pos2) {
         let locale = cx.locale;
-        let area = egui::Area::new(egui::Id::new("timeline.keyframe_hint"))
+        let area = egui::Area::new(egui::Id::unique("timeline.keyframe_hint"))
             .order(egui::Order::Foreground)
             .fixed_pos(anchor)
             .show(ui.ctx(), |ui| {

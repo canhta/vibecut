@@ -3369,7 +3369,7 @@ fn a_main_track_item_at_the_origin_is_not_pinned_and_leaves_a_placeholder_when_m
     playback.set_device_available(true);
     let mut editor = Editor::new(session, playback, Preferences::default());
     editor.select([item_id].into()).unwrap();
-    let history = editor.session.history_len();
+    let history = editor.session.history_len().0;
     let mut h = harness(editor);
     h.run_steps(3);
     let body = widget(&h, &format!("timeline.item.{}", item_id.0));
@@ -3387,7 +3387,7 @@ fn a_main_track_item_at_the_origin_is_not_pinned_and_leaves_a_placeholder_when_m
         item(h.state(), item_id).start > Tick::ZERO,
         "the first main-track item leaves 0 and the gap stays"
     );
-    assert_eq!(h.state().session.history_len(), history + 1);
+    assert_eq!(h.state().session.history_len().0, history + 1);
     h.state_mut().session.undo().unwrap();
     h.run_steps(2);
     let body = widget(&h, &format!("timeline.item.{}", item_id.0));
@@ -3401,7 +3401,7 @@ fn a_main_track_item_at_the_origin_is_not_pinned_and_leaves_a_placeholder_when_m
         Tick::ZERO,
         "no item moves before the timeline origin"
     );
-    assert_eq!(h.state().session.history_len(), history);
+    assert_eq!(h.state().session.history_len().0, history);
 }
 
 #[test]

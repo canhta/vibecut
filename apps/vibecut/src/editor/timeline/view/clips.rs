@@ -1463,10 +1463,16 @@ mod tests {
         // Inside the 1 px border: main 72 = 17 + 39 + 16, overlay 48 = 17 + 20 + 11.
         let main = Rect::from_min_size(egui::pos2(0.0, 0.0), Vec2::new(100.0, 72.0));
         let (strip, wave) = video_bands(main, true);
-        assert_eq!((strip.top(), strip.height(), wave.height()), (17.0, 39.0, 16.0));
+        assert_eq!(
+            (strip.top(), strip.height(), wave.height()),
+            (17.0, 39.0, 16.0)
+        );
         let overlay = Rect::from_min_size(egui::pos2(0.0, 0.0), Vec2::new(100.0, 48.0));
         let (strip, wave) = video_bands(overlay, false);
-        assert_eq!((strip.top(), strip.height(), wave.height()), (17.0, 20.0, 11.0));
+        assert_eq!(
+            (strip.top(), strip.height(), wave.height()),
+            (17.0, 20.0, 11.0)
+        );
         // A short row keeps the bands inside the clip.
         let short = Rect::from_min_size(egui::pos2(0.0, 0.0), Vec2::new(100.0, 20.0));
         let (strip, wave) = video_bands(short, true);

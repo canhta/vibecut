@@ -73,7 +73,12 @@ fn track_headers_remain_operable_at_display_density() {
             };
             let sound = matches!(track.kind, TrackKind::Video | TrackKind::Audio);
             assert!(has("lock"), "{:?} lock", track.kind);
-            assert_eq!(has("hidden"), track.kind != TrackKind::Audio, "{:?} eye", track.kind);
+            assert_eq!(
+                has("hidden"),
+                track.kind != TrackKind::Audio,
+                "{:?} eye",
+                track.kind
+            );
             assert_eq!(has("muted"), sound, "{:?} speaker", track.kind);
             assert_eq!(has("more"), sound, "{:?} settings", track.kind);
             let tooltip = |suffix: &str| {
