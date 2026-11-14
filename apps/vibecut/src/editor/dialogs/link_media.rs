@@ -12,6 +12,7 @@ use crate::{
     editor::{Context, Port, egui, media_panel},
     i18n::Text,
     kit,
+    services::progress,
 };
 use engine::Command;
 use media::{AssetAvailability, AssetId, SourceAsset};
@@ -19,6 +20,12 @@ use std::{
     collections::VecDeque,
     ffi::OsStr,
     path::{Path, PathBuf},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
+    time::Duration,
 };
 use time::TICKS_PER_SECOND;
 
@@ -33,6 +40,8 @@ const PATH_CHARS: usize = 34;
 /// A folder pick searches this deep and looks at no more than this many entries.
 const SEARCH_DEPTH: usize = 4;
 const SEARCH_ENTRIES: usize = 20_000;
+/// The worker reports hashing progress at most once per this many bytes.
+const PROGRESS_STEP: u64 = 4 << 20;
 
 /// What the native picker is asked for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -51,8 +60,72 @@ struct Row {
     seconds: Option<u64>,
 }
 
+/// What hashing one candidate file concluded.
+pub(in crate::editor) enum Hashed {
+    /// The file has the recorded content hash: the relinked record.
+    Match(SourceAsset),
+    /// Not the file (other content, unreadable).
+    Miss,
+    /// The cancel flag stopped the read.
+    Cancelled,
+}
+
+/// Hashes `candidate` against the asset's recorded content, checking the flag before each
+/// read and reporting `(bytes hashed, file length)`. The desktop uses
+/// `SourceAsset::relink_with_cancel`; tests inject a slow or gated one.
+pub(in crate::editor) type Hasher = Arc<
+    dyn Fn(&SourceAsset, PathBuf, &AtomicBool, &mut dyn FnMut(u64, u64)) -> Hashed + Send + Sync,
+>;
+
+fn real_hasher() -> Hasher {
+    Arc::new(
+        |asset: &SourceAsset,
+         path: PathBuf,
+         cancelled: &AtomicBool,
+         progress: &mut dyn FnMut(u64, u64)| {
+            match asset.relink_with_cancel(
+                path,
+                || cancelled.load(Ordering::Relaxed),
+                |done, total| progress(done, total),
+            ) {
+                Ok(relinked) => Hashed::Match(relinked),
+                Err(media::MediaError::Cancelled) => Hashed::Cancelled,
+                Err(_) => Hashed::Miss,
+            }
+        },
+    )
+}
+
+/// What the worker thread tells the dialog.
+enum Event {
+    /// The worker starts hashing the file for this source name.
+    Start(String),
+    Progress(u64, u64),
+    Matched(SourceAsset),
+    Done,
+}
+
+/// One background match: a worker thread hashing candidates one file at a time. The
+/// project is untouched until the worker is done and the dialog commits the hits.
+struct Job {
+    cancel: Arc<AtomicBool>,
+    events: mpsc::Receiver<Event>,
+    /// Name, bytes hashed and file length of the file being read.
+    current: Option<(String, u64, u64)>,
+    matched: Vec<SourceAsset>,
+}
+
+impl Drop for Job {
+    /// Leaving the dialog or the project stops the read at its next 64 KiB.
+    fn drop(&mut self) {
+        self.cancel.store(true, Ordering::Relaxed);
+    }
+}
+
 /// The dialog's state across frames.
 pub(in crate::editor) struct State {
+    job: Option<Job>,
+    hasher: Hasher,
     open: bool,
     /// The folder pick links every asset it finds; off, the button picks one file.
     folder: bool,
@@ -66,6 +139,8 @@ impl Default for State {
         Self {
             open: false,
             folder: true,
+            job: None,
+            hasher: real_hasher(),
             rows: Vec::new(),
             notice: None,
             request: None,
@@ -80,11 +155,18 @@ pub struct LinkMediaView {
     pub names: Vec<String>,
     pub linked: usize,
     pub folder: bool,
+    /// A background match is running, and the file it is reading with its progress.
+    pub matching: bool,
+    pub progress: Option<(String, u64, u64)>,
 }
 
 pub(in crate::editor) enum Action {
     Remember(String, egui::Response),
     Pick(Pick),
+    /// Advance the background match: progress, and the commit once it is done.
+    Poll,
+    /// Stop the background match; nothing is linked.
+    CancelJob,
     Close,
 }
 
@@ -97,6 +179,12 @@ fn missing(assets: &[SourceAsset]) -> impl Iterator<Item = &SourceAsset> {
 impl State {
     pub(in crate::editor) fn is_open(&self) -> bool {
         self.open
+    }
+
+    /// Replace the hasher; tests gate or slow it deterministically.
+    #[cfg(test)]
+    pub(in crate::editor) fn set_hasher(&mut self, hasher: Hasher) {
+        self.hasher = hasher;
     }
 
     /// Open on the sources that are missing now. Nothing missing leaves it closed.
@@ -114,6 +202,7 @@ impl State {
             .collect();
         self.notice = None;
         self.request = None;
+        self.job = None;
         self.open = !self.rows.is_empty();
     }
 
@@ -128,6 +217,8 @@ impl State {
             names: self.rows.iter().map(|row| row.name.clone()).collect(),
             linked: self.linked(project),
             folder: self.folder,
+            matching: self.job.is_some(),
+            progress: self.job.as_ref().and_then(|job| job.current.clone()),
         }
     }
 
@@ -173,6 +264,10 @@ pub(in crate::editor) fn show(
         });
     if modal.should_close() {
         actions.push(Action::Close);
+    }
+    if state.job.is_some() {
+        actions.push(Action::Poll);
+        ui.ctx().request_repaint_after(Duration::from_millis(33));
     }
     actions
 }
@@ -296,7 +391,7 @@ fn list(state: &State, cx: &Context<'_>, ui: &mut egui::Ui, actions: &mut Vec<Ac
                     let response = ui.interact(
                         cell,
                         egui::Id::new(("link_media.row", row.id.0)),
-                        if done {
+                        if done || state.job.is_some() {
                             egui::Sense::hover()
                         } else {
                             egui::Sense::click()
@@ -316,16 +411,41 @@ fn footer(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui, actions: &mut 
         ui.colored_label(kit::error_text(cx.dark), notice.text(cx.locale));
         ui.add_space(kit::space::MD);
     }
+    let busy = state.job.is_some();
+    if let Some(job) = &state.job {
+        let checking = Text::LinkMediaChecking.text(cx.locale);
+        match &job.current {
+            Some((name, done, total)) => progress::line(
+                ui,
+                "link_media.progress",
+                cx.locale,
+                &format!("{checking} {name}"),
+                *done as f32 / (*total).max(1) as f32,
+            ),
+            None => {
+                ui.label(checking);
+            }
+        }
+        ui.add_space(kit::space::MD);
+    }
     ui.horizontal(|ui| {
-        let response = kit::checkbox(
-            ui,
-            "link_media.folder",
-            &mut state.folder,
-            Text::LinkMediaFolder.text(cx.locale),
-        );
+        let response = ui
+            .add_enabled_ui(!busy, |ui| {
+                kit::checkbox(
+                    ui,
+                    "link_media.folder",
+                    &mut state.folder,
+                    Text::LinkMediaFolder.text(cx.locale),
+                )
+            })
+            .inner;
         actions.push(Action::Remember("link_media.folder".to_owned(), response));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let link = footer_button(ui, cx, "link_media.link", Text::LinkMediaAction, true);
+            let link = ui
+                .add_enabled_ui(!busy, |ui| {
+                    footer_button(ui, cx, "link_media.link", Text::LinkMediaAction, true)
+                })
+                .inner;
             if link.clicked() {
                 let first = state
                     .rows
@@ -339,9 +459,14 @@ fn footer(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui, actions: &mut 
             }
             actions.push(Action::Remember("link_media.link".to_owned(), link));
             ui.add_space(kit::space::LG);
+            // While a match runs Cancel stops it and links nothing; otherwise it closes.
             let cancel = footer_button(ui, cx, "link_media.cancel", Text::Cancel, false);
             if cancel.clicked() {
-                actions.push(Action::Close);
+                actions.push(if busy {
+                    Action::CancelJob
+                } else {
+                    Action::Close
+                });
             }
             actions.push(Action::Remember("link_media.cancel".to_owned(), cancel));
         });
@@ -388,7 +513,17 @@ pub(in crate::editor) fn apply(state: &mut State, port: &mut Port<'_>, action: A
     match action {
         Action::Remember(id, response) => port.widget(id, None, None, &response),
         Action::Pick(pick) => state.request = Some(pick),
-        Action::Close => state.open = false,
+        Action::Poll => poll(state, port),
+        Action::CancelJob => {
+            if let Some(job) = &state.job {
+                job.cancel.store(true, Ordering::Relaxed);
+            }
+        }
+        Action::Close => {
+            // Dropping the job raises its cancel flag.
+            state.job = None;
+            state.open = false;
+        }
     }
 }
 
@@ -420,36 +555,114 @@ fn find_by_name(folder: &Path, name: &OsStr) -> Option<PathBuf> {
     None
 }
 
-/// Relink what the native pick found. A file relinks the asset it was asked for, a folder
-/// every missing asset whose file name it holds; only a file with the recorded content
-/// hash links. All hits are one undo step. Nothing found leaves a line in the dialog.
+/// Start matching what the native pick found, off the UI thread. A file is checked against
+/// the asset it was asked for, a folder is searched for every missing asset's file name and
+/// each candidate is hashed one file at a time; only a file with the recorded content hash
+/// links. Nothing changes until the worker is done (`poll`), then all hits are one undo step.
 pub(in crate::editor) fn picked(state: &mut State, port: &mut Port<'_>, pick: Pick, path: PathBuf) {
-    let assets = port.session.project().data().assets.clone();
-    let mut found = Vec::new();
-    match pick {
-        Pick::File(id) => {
-            if let Some(asset) = missing(&assets).find(|asset| asset.id() == id)
-                && let Ok(relinked) = asset.relink(path)
-            {
-                found.push(relinked);
+    if state.job.is_some() {
+        return;
+    }
+    let assets: Vec<SourceAsset> = missing(&port.session.project().data().assets)
+        .filter(|asset| match pick {
+            Pick::File(id) => asset.id() == id,
+            Pick::Folder => true,
+        })
+        .cloned()
+        .collect();
+    state.notice = None;
+    state.job = Some(spawn(assets, pick, path, state.hasher.clone()));
+}
+
+fn spawn(assets: Vec<SourceAsset>, pick: Pick, path: PathBuf, hasher: Hasher) -> Job {
+    let cancel = Arc::new(AtomicBool::new(false));
+    let (send, events) = mpsc::channel();
+    let flag = cancel.clone();
+    std::thread::spawn(move || {
+        for asset in &assets {
+            if flag.load(Ordering::Relaxed) {
+                break;
+            }
+            let candidate = match pick {
+                Pick::File(_) => Some(path.clone()),
+                Pick::Folder => asset
+                    .path()
+                    .file_name()
+                    .and_then(|name| find_by_name(&path, name)),
+            };
+            let Some(candidate) = candidate else {
+                continue;
+            };
+            let _ = send.send(Event::Start(media_panel::asset_name(asset)));
+            let mut last = 0_u64;
+            let outcome = hasher(asset, candidate, flag.as_ref(), &mut |done, total| {
+                if done >= total || done.saturating_sub(last) >= PROGRESS_STEP {
+                    last = done;
+                    let _ = send.send(Event::Progress(done, total));
+                }
+            });
+            match outcome {
+                Hashed::Match(relinked) => {
+                    let _ = send.send(Event::Matched(relinked));
+                }
+                Hashed::Miss => {}
+                Hashed::Cancelled => break,
             }
         }
-        Pick::Folder => {
-            for asset in missing(&assets) {
-                if let Some(name) = asset.path().file_name()
-                    && let Some(hit) = find_by_name(&path, name)
-                    && let Ok(relinked) = asset.relink(hit)
-                {
-                    found.push(relinked);
+        let _ = send.send(Event::Done);
+    });
+    Job {
+        cancel,
+        events,
+        current: None,
+        matched: Vec::new(),
+    }
+}
+
+/// Drain the worker's events; once it is done, commit the hits.
+fn poll(state: &mut State, port: &mut Port<'_>) {
+    let Some(job) = state.job.as_mut() else {
+        return;
+    };
+    let mut done = false;
+    loop {
+        match job.events.try_recv() {
+            Ok(Event::Start(name)) => job.current = Some((name, 0, 1)),
+            Ok(Event::Progress(hashed, total)) => {
+                if let Some(current) = job.current.as_mut() {
+                    current.1 = hashed;
+                    current.2 = total.max(1);
                 }
             }
+            Ok(Event::Matched(asset)) => job.matched.push(asset),
+            Ok(Event::Done) | Err(mpsc::TryRecvError::Disconnected) => {
+                done = true;
+                break;
+            }
+            Err(mpsc::TryRecvError::Empty) => break,
         }
     }
+    if !done {
+        return;
+    }
+    let Some(mut job) = state.job.take() else {
+        return;
+    };
+    let cancelled = job.cancel.load(Ordering::Relaxed);
+    let found = std::mem::take(&mut job.matched);
+    if cancelled {
+        state.notice = Some(Text::LinkMediaCancelled);
+        return;
+    }
+    commit(state, port, found);
+}
+
+/// Relink every hit in one transaction.
+fn commit(state: &mut State, port: &mut Port<'_>, found: Vec<SourceAsset>) {
     if found.is_empty() {
         state.notice = Some(Text::LinkMediaNoMatch);
         return;
     }
-    state.notice = None;
     let result = port
         .session
         .transaction(|session| -> Result<(), engine::EditError> {

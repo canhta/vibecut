@@ -1709,6 +1709,8 @@ catalog! {
     // Missing media: panel line and the Link media dialog.
     LinkMediaAction { key: "link_media_action", en: "Link media", vi: "Liên kết media" },
     LinkMediaBody { key: "link_media_body", en: "Some media files could not be found. Point to where they are now, then keep editing.", vi: "Không tìm thấy một số tệp media. Chỉ đến nơi chúng đang nằm rồi tiếp tục dựng." },
+    LinkMediaCancelled { key: "link_media_cancelled", en: "Cancelled. Nothing was linked.", vi: "Đã hủy. Chưa liên kết gì." },
+    LinkMediaChecking { key: "link_media_checking", en: "Checking", vi: "Đang kiểm tra" },
     LinkMediaDone { key: "link_media_done", en: "Media linked", vi: "Đã liên kết media" },
     LinkMediaDuration { key: "link_media_duration", en: "Duration", vi: "Thời lượng" },
     LinkMediaFolder { key: "link_media_folder", en: "Search the folder I pick", vi: "Tìm trong thư mục tôi chọn" },

@@ -314,8 +314,19 @@ impl SourceAsset {
     }
     /// A successful relink preserves identity and only accepts identical content.
     pub fn relink(&self, path: PathBuf) -> Result<Self> {
+        self.relink_with_cancel(path, || false, |_, _| {})
+    }
+    /// [`Self::relink`] for a caller off the UI thread: `cancelled` is checked before every
+    /// 64 KiB hash read (a cancel returns `MediaError::Cancelled`) and `progress` receives
+    /// the bytes hashed and the file length.
+    pub fn relink_with_cancel(
+        &self,
+        path: PathBuf,
+        cancelled: impl Fn() -> bool,
+        progress: impl FnMut(u64, u64),
+    ) -> Result<Self> {
         let path = std::fs::canonicalize(path)?;
-        if ContentHash::read(&path)? != self.content_hash() {
+        if ContentHash::read_with_cancel(&path, cancelled, progress)? != self.content_hash() {
             return Err(MediaError::Invalid("relink content differs"));
         }
         let mut data = self.0.clone();

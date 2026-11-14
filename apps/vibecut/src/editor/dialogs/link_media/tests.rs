@@ -1,7 +1,7 @@
 //! Drives the Link media dialog alone over the one-area bench: the rows, the footer picks
 //! and the relink a pick produces, through the real `media.relink` command.
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
-use super::{Action, Pick, State, apply, ellipsize, find_by_name, picked, show};
+use super::{Action, Hashed, Hasher, Pick, State, apply, ellipsize, find_by_name, picked, show};
 use crate::editor::frame::bench::Bench;
 use crate::editor::{Editor, egui};
 use crate::preferences::Preferences;
@@ -10,7 +10,14 @@ use egui_kittest::kittest::{By, Queryable};
 use engine::{ByteBudget, Command, Session};
 use media::{AssetId, ContentHash, SourceAsset};
 use project::{Project, ProjectId};
-use std::{path::Path, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant},
+};
 use time::{TICKS_PER_SECOND, Tick};
 
 type Mounted = Bench<State, Action>;
@@ -68,6 +75,20 @@ fn open(bench: &mut Mounted) {
     editor.dialogs.link_media.open(editor.session.project());
     // A modal's first frame only sizes it; its widgets reach the tree on the next.
     bench.harness_mut().run_steps(2);
+}
+
+/// Frames until the background match has finished and its result was committed or refused.
+fn settle(bench: &mut Mounted) {
+    let started = Instant::now();
+    while bench.editor().dialogs.link_media.job.is_some() {
+        assert!(
+            started.elapsed() < Duration::from_secs(30),
+            "the match did not finish"
+        );
+        bench.step();
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    bench.step();
 }
 
 fn recorded_path(bench: &Mounted) -> std::path::PathBuf {
@@ -164,6 +185,7 @@ fn a_folder_pick_relinks_by_name_and_content_in_one_undo_step() {
             root.path().join("search"),
         )
     });
+    settle(&mut bench);
     assert_eq!(
         bench.editor().dialogs.link_media.notice,
         Some(crate::i18n::Text::LinkMediaNoMatch)
@@ -181,6 +203,7 @@ fn a_folder_pick_relinks_by_name_and_content_in_one_undo_step() {
             root.path().join("search"),
         )
     });
+    settle(&mut bench);
     let found = std::fs::canonicalize(root.path().join("search").join("clip.mp4")).unwrap();
     assert_eq!(recorded_path(&bench), found);
     assert_eq!(bench.editor().session.history_len(), history + 1);
@@ -203,6 +226,7 @@ fn a_file_pick_links_only_the_row_it_was_asked_for() {
     editor.with_dialogs(|state, port| {
         picked(&mut state.link_media, port, Pick::File(AssetId(1)), wrong)
     });
+    settle(&mut bench);
     assert!(bench.editor().dialogs.link_media.notice.is_some());
     let right = root.path().join("renamed.mp4");
     std::fs::write(&right, BYTES).unwrap();
@@ -215,6 +239,7 @@ fn a_file_pick_links_only_the_row_it_was_asked_for() {
             right.clone(),
         )
     });
+    settle(&mut bench);
     assert_eq!(recorded_path(&bench), std::fs::canonicalize(right).unwrap());
 }
 
@@ -241,4 +266,109 @@ fn the_folder_search_is_bounded_in_depth() {
     std::fs::write(root.path().join("d0").join("near.mp4"), b"x").unwrap();
     assert!(find_by_name(root.path(), "near.mp4".as_ref()).is_some());
     assert!(find_by_name(root.path(), "far.mp4".as_ref()).is_none());
+}
+
+#[test]
+fn the_match_runs_in_the_background_with_progress_and_cancel_links_nothing() {
+    let root = tempfile::tempdir().unwrap();
+    let mut bench = mounted(root.path());
+    open(&mut bench);
+    // A hasher that reports half way, then waits on a gate the test never opens, so the
+    // only way out is the dialog's own Cancel.
+    let started = Arc::new(AtomicBool::new(false));
+    let gate = Arc::new(AtomicBool::new(false));
+    let hasher: Hasher = {
+        let (started, gate) = (started.clone(), gate.clone());
+        Arc::new(
+            move |_: &SourceAsset,
+                  _: PathBuf,
+                  cancelled: &AtomicBool,
+                  progress: &mut dyn FnMut(u64, u64)|
+                  -> Hashed {
+                progress(4 << 20, 8 << 20);
+                started.store(true, Ordering::SeqCst);
+                while !gate.load(Ordering::SeqCst) {
+                    if cancelled.load(Ordering::SeqCst) {
+                        return Hashed::Cancelled;
+                    }
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                Hashed::Miss
+            },
+        )
+    };
+    bench.editor_mut().dialogs.link_media.set_hasher(hasher);
+    let file = root.path().join("candidate.mp4");
+    std::fs::write(&file, BYTES).unwrap();
+    let before = recorded_path(&bench);
+    let history = bench.editor().session.history_len();
+    let editor = bench.editor_mut();
+    editor.with_dialogs(|state, port| {
+        picked(&mut state.link_media, port, Pick::File(AssetId(1)), file)
+    });
+    let waited = Instant::now();
+    while !started.load(Ordering::SeqCst) {
+        assert!(
+            waited.elapsed() < Duration::from_secs(30),
+            "worker never ran"
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    // The dialog keeps painting while the worker holds the file: progress shows per file.
+    for _ in 0..200 {
+        bench.step();
+        let editor = bench.editor();
+        if editor
+            .dialogs
+            .link_media
+            .view(editor.session.project())
+            .progress
+            .is_some()
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let view = {
+        let editor = bench.editor();
+        editor.dialogs.link_media.view(editor.session.project())
+    };
+    assert!(view.matching);
+    assert_eq!(
+        view.progress,
+        Some(("clip.mp4".to_owned(), 4 << 20, 8 << 20))
+    );
+    assert!(
+        bench
+            .harness_mut()
+            .query_all_by_label_contains("Checking clip.mp4")
+            .next()
+            .is_some(),
+        "the dialog names the file being read"
+    );
+    assert_eq!(
+        recorded_path(&bench),
+        before,
+        "nothing links before the match is done"
+    );
+    bench.click("link_media.cancel");
+    settle(&mut bench);
+    let editor = bench.editor();
+    assert!(
+        !editor
+            .dialogs
+            .link_media
+            .view(editor.session.project())
+            .matching
+    );
+    assert_eq!(
+        editor.dialogs.link_media.notice,
+        Some(crate::i18n::Text::LinkMediaCancelled)
+    );
+    assert!(
+        editor.dialogs.link_media.is_open(),
+        "Cancel stops the match, not the dialog"
+    );
+    assert_eq!(recorded_path(&bench), before);
+    assert_eq!(bench.editor().session.history_len(), history);
 }
