@@ -392,30 +392,62 @@ pub(super) fn export_resolution(theme: Theme, scale: f32) -> Result<AppHarness, 
     Ok(app)
 }
 
-/// The export dialog after clicking the listed widgets in order, one frame burst each.
-fn export_clicks(theme: Theme, scale: f32, ids: &[&str]) -> Result<AppHarness, Failure> {
+/// The export dialog after clicking the listed widgets in order, one frame burst each, then
+/// scrolled to `section` when one is named.
+fn export_clicks(
+    theme: Theme,
+    scale: f32,
+    ids: &[&str],
+    section: Option<&str>,
+) -> Result<AppHarness, Failure> {
     let mut app = export_dialog(theme, scale)?;
     for id in ids {
         app.get(By::new().predicate(|node| node.author_id() == Some(*id)))
             .click();
         app.run_steps(12);
     }
+    if let Some(section) = section {
+        app.get(By::new().predicate(|node| node.author_id() == Some(section)))
+            .scroll_to_me();
+        app.run_steps(3);
+    }
     Ok(app)
 }
 
-/// Video unticked: its block greys and Audio Format comes alive (reference 105736).
+/// Audio and GIF ticked, Video unticked, scrolled to the Audio Format row (reference
+/// 105736: Video unticked with Audio and GIF ticked).
 pub(super) fn export_audio_only(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
-    export_clicks(theme, scale, &["export.video.include"])
+    export_clicks(
+        theme,
+        scale,
+        &[
+            "export.audio.include",
+            "export.gif.include",
+            "export.video.include",
+        ],
+        Some("export.audio.format"),
+    )
 }
 
-/// The GIF section ticked with its Resolution only (reference 105532).
+/// Video, Audio and GIF ticked together, scrolled to the GIF Resolution row (reference
+/// 105532: GIF ticked beside the default Video and Audio).
 pub(super) fn export_gif(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
-    export_clicks(theme, scale, &["export.gif.include"])
+    export_clicks(
+        theme,
+        scale,
+        &["export.audio.include", "export.gif.include"],
+        Some("export.gif.resolution"),
+    )
 }
 
 /// Bit rate set to Custom, showing the Kbps field (reference 105630).
 pub(super) fn export_custom_bit_rate(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
-    export_clicks(theme, scale, &["export.bitrate", "export.bitrate.custom"])
+    export_clicks(
+        theme,
+        scale,
+        &["export.bitrate", "export.bitrate.custom"],
+        None,
+    )
 }
 
 pub(super) fn import_progress(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {

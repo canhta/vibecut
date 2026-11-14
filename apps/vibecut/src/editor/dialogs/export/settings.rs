@@ -1,5 +1,5 @@
 //! Renders output settings over the portable export contract.
-use super::dialog::{DialogUi, ExportFormat, ExportOptions, RangeChoice, SceneChoice};
+use super::dialog::{AlsoOutputs, DialogUi, ExportFormat, ExportOptions, RangeChoice, SceneChoice};
 use crate::i18n;
 use crate::{
     egui,
@@ -33,13 +33,12 @@ fn resolution_size(project: &project::Project, height: u32) -> [u32; 2] {
     }
 }
 
-/// Which tickable section the saved format selects. One export job writes one file, so
-/// the three sections are exclusive: ticking one unticks the others.
+/// The tickable sections. The saved format is the primary output's section; a ticked
+/// section beside it is in `ExportOptions::also`. Each ticked section is one export job.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Section {
-    /// Video, with its audio track when Audio is ticked, or a PNG sequence.
+    /// Video, or a PNG sequence.
     Video,
-    /// Audio only: Video unticked, Audio ticked.
     Audio,
     Gif,
 }
@@ -53,6 +52,23 @@ impl Section {
             Self::Video
         }
     }
+    fn index(self) -> usize {
+        match self {
+            Self::Video => 0,
+            Self::Audio => 1,
+            Self::Gif => 2,
+        }
+    }
+}
+/// Which of Video, Audio and GIF are ticked: the primary output's section, plus the others
+/// kept in `also`.
+fn ticked(options: &ExportOptions) -> [bool; 3] {
+    let primary = Section::of(options.format);
+    [
+        primary == Section::Video,
+        primary == Section::Audio || options.also.audio.is_some(),
+        primary == Section::Gif || options.also.gif.is_some(),
+    ]
 }
 
 const GIF_RESOLUTIONS: [(u32, &str, &str); 3] = [
@@ -90,33 +106,78 @@ fn select_format(options: &mut ExportOptions, format: ExportFormat) {
     if format.unused_encoder_reason().is_some() {
         options.output.bit_rate = None;
     }
-    if format.is_sequence() && options.output.scene == SceneChoice::All {
-        options.output.scene = SceneChoice::Active;
+    if format.is_sequence() {
+        // Frames carry no sound, and one directory holds one scene.
+        options.also.audio = None;
+        if options.output.scene == SceneChoice::All {
+            options.output.scene = SceneChoice::Active;
+        }
     }
 }
 
-/// Moves to `to`. GIF carries its own resolution list, so entering or leaving it resets the
-/// shared size (240P entering, the project canvas leaving).
-fn select_section(
+/// The GIF section's size when it was never chosen: the first entry of its list.
+fn gif_default(project: &project::Project) -> [u32; 2] {
+    resolution_size(project, GIF_RESOLUTIONS[0].0)
+}
+
+/// Ticks or unticks `section`. The first ticked of Video, Audio and GIF becomes the primary
+/// output (`format`); the others move to `also`, each keeping the format and size it had.
+/// GIF carries its own resolution list, so it holds its size in `output.resolution` as the
+/// primary output and in `also.gif` otherwise; leaving the primary restores the project size.
+fn toggle_section(
     ui: &egui::Ui,
     options: &mut ExportOptions,
     project: &project::Project,
-    to: Section,
+    section: Section,
 ) {
+    let mut on = ticked(options);
+    on[section.index()] = !on[section.index()];
+    let Some(primary) = [Section::Video, Section::Audio, Section::Gif]
+        .into_iter()
+        .find(|section| on[section.index()])
+    else {
+        // One output stays ticked.
+        return;
+    };
     let from = Section::of(options.format);
-    match to {
-        Section::Video => select_format(options, last_format(ui, false)),
-        Section::Audio => {
-            select_format(options, last_format(ui, true));
-            options.include_audio = true;
+    let video_format = if from == Section::Video {
+        options.format
+    } else {
+        last_format(ui, false)
+    };
+    let audio_format = if from == Section::Audio {
+        options.format
+    } else {
+        options.also.audio.unwrap_or_else(|| last_format(ui, true))
+    };
+    let gif_size = if from == Section::Gif {
+        options.output.resolution
+    } else {
+        options.also.gif
+    }
+    .unwrap_or_else(|| gif_default(project));
+    options.also = AlsoOutputs::default();
+    if primary != from {
+        match primary {
+            Section::Video => select_format(options, video_format),
+            Section::Audio => {
+                select_format(options, audio_format);
+                options.include_audio = true;
+            }
+            Section::Gif => select_format(options, ExportFormat::Gif),
         }
-        Section::Gif => {
-            select_format(options, ExportFormat::Gif);
-            options.output.resolution = Some(resolution_size(project, GIF_RESOLUTIONS[0].0));
+        if from == Section::Gif {
+            options.output.resolution = None;
+        }
+        if primary == Section::Gif {
+            options.output.resolution = Some(gif_size);
         }
     }
-    if from == Section::Gif && to != Section::Gif {
-        options.output.resolution = None;
+    if primary != Section::Audio && on[Section::Audio.index()] && !options.format.is_sequence() {
+        options.also.audio = Some(audio_format);
+    }
+    if primary != Section::Gif && on[Section::Gif.index()] {
+        options.also.gif = Some(gif_size);
     }
 }
 
@@ -155,6 +216,9 @@ pub(super) fn show(
     } else if !options.format.is_gif() {
         ui.data_mut(|data| data.insert_temp(last_format_key(false), options.format));
     }
+    if let Some(format) = options.also.audio {
+        ui.data_mut(|data| data.insert_temp(last_format_key(true), format));
+    }
     egui::Grid::new("export.identity")
         .min_col_width(84.0)
         .spacing([16.0, if spacious { 24.0 } else { 12.0 }])
@@ -183,33 +247,29 @@ pub(super) fn show(
             }
         });
     ui.add_space(if spacious { 44.0 } else { 12.0 });
-    // Video: ticked unless Audio or GIF was chosen. Its block is greyed, not hidden, otherwise.
-    let section = Section::of(options.format);
-    let video_alone =
-        section == Section::Video && (!options.include_audio || options.format.is_sequence());
+    // Video, Audio and GIF tick independently, one file each; one stays ticked. The Video
+    // block is greyed, not hidden, while Video is unticked.
+    let on = ticked(options);
+    let only = on.iter().filter(|ticked| **ticked).count() == 1;
     let (changed, r) = section_header(
         ui,
         locale,
-        section == Section::Video,
+        on[Section::Video.index()],
         Text::Video,
-        video_alone.then_some(Text::ExportKeepOne),
+        (on[Section::Video.index()] && only).then_some(Text::ExportKeepOne),
     );
     result.widgets.push(("export.video.include", r));
     if changed {
-        let to = if section == Section::Video {
-            Section::Audio
-        } else {
-            Section::Video
-        };
-        select_section(ui, options, project, to);
+        toggle_section(ui, options, project, Section::Video);
     }
     ui.add_space(if spacious { 26.0 } else { 8.0 });
     let section = Section::of(options.format);
-    // The reason the video rows are off for the current section, if they are.
+    let on = ticked(options);
+    // The reason the video rows are off while Video is unticked.
     let video_off = match section {
-        Section::Video => None,
+        _ if on[Section::Video.index()] => None,
         Section::Audio => Some(Text::ExportNotForAudio),
-        Section::Gif => Some(Text::ExportNotForGif),
+        _ => Some(Text::ExportNotForGif),
     };
     egui::Grid::new("export.output")
         .num_columns(2)
@@ -407,7 +467,9 @@ pub(super) fn show(
                 || tr(Text::ExportProjectCanvas).to_owned(),
                 |fps| format!("{}", fps.as_f64()),
             );
-            let fps_off = (section == Section::Audio).then_some(Text::ExportNotForAudio);
+            // The rate is the video's and, capped, the GIF's.
+            let fps_off = (!on[Section::Video.index()] && !on[Section::Gif.index()])
+                .then_some(Text::ExportNotForAudio);
             let combo = gated(ui, locale, fps_off, |ui| {
                 egui::ComboBox::from_id_salt(egui::IdSalt::new("export.fps"))
                     .width(field_width)
@@ -478,7 +540,7 @@ pub(super) fn show(
             ui.end_row();
         });
     let custom = ui
-        .add_enabled_ui(section != Section::Audio, |ui| {
+        .add_enabled_ui(video_off.is_none(), |ui| {
             egui::CollapsingHeader::new(tr(Text::ExportCustomSize))
                 .id_salt("export.custom.size")
                 .show(ui, |ui| {
@@ -509,22 +571,17 @@ pub(super) fn show(
                 .header_response
         })
         .inner;
-    let custom = if section == Section::Audio {
-        custom.on_disabled_hover_text(tr(Text::ExportNotForAudio))
-    } else {
-        custom
+    let custom = match video_off {
+        Some(reason) => custom.on_disabled_hover_text(tr(reason)),
+        None => custom,
     };
     result.widgets.push(("export.custom.size", custom));
     ui.add_space(12.0);
-    // Audio: with Video ticked it is the video's own track; alone it is an audio file.
-    let audio_ticked = match section {
-        Section::Video => options.include_audio,
-        Section::Audio => true,
-        Section::Gif => false,
-    };
+    // Audio: a file of its own, beside the video or alone.
+    let audio_ticked = on[Section::Audio.index()];
     let audio_refused = if options.format.is_sequence() {
         Some(Text::ExportNotForSequence)
-    } else if section == Section::Audio {
+    } else if audio_ticked && only {
         Some(Text::ExportKeepOne)
     } else {
         None
@@ -532,11 +589,7 @@ pub(super) fn show(
     let (changed, r) = section_header(ui, locale, audio_ticked, Text::IncludeAudio, audio_refused);
     result.widgets.push(("export.audio.include", r));
     if changed {
-        if section == Section::Video {
-            options.include_audio = !options.include_audio;
-        } else {
-            select_section(ui, options, project, Section::Audio);
-        }
+        toggle_section(ui, options, project, Section::Audio);
     }
     ui.add_space(8.0);
     egui::Grid::new("export.audio")
@@ -548,10 +601,9 @@ pub(super) fn show(
             let shown = if options.format.audio_only() {
                 options.format
             } else {
-                last_format(ui, true)
+                options.also.audio.unwrap_or_else(|| last_format(ui, true))
             };
-            let off = (Section::of(options.format) != Section::Audio)
-                .then_some(Text::ExportAudioFormatOff);
+            let off = (!audio_ticked).then_some(Text::ExportTickAudio);
             let combo = gated(ui, locale, off, |ui| {
                 egui::ComboBox::from_id_salt(egui::IdSalt::new("export.audio.format"))
                     .width(field_width)
@@ -566,10 +618,13 @@ pub(super) fn show(
                             if !media::audio_export_container_available(format.container()) {
                                 continue;
                             }
-                            let r =
-                                ui.selectable_label(options.format == format, tr(format.label()));
-                            if r.clicked() && options.format != format {
-                                select_format(options, format);
+                            let r = ui.selectable_label(shown == format, tr(format.label()));
+                            if r.clicked() && shown != format {
+                                if options.format.audio_only() {
+                                    select_format(options, format);
+                                } else {
+                                    options.also.audio = Some(format);
+                                }
                             }
                             result.widgets.push((id, r));
                         }
@@ -583,23 +638,18 @@ pub(super) fn show(
         });
     ui.add_space(12.0);
     let gif_missing = !media::export_container_available(media::Container::Gif);
-    let gif_refused = if section == Section::Gif {
+    let gif_ticked = on[Section::Gif.index()];
+    let gif_refused = if gif_ticked && only {
         Some(Text::ExportKeepOne)
     } else if gif_missing {
         Some(Text::ExportCapability)
     } else {
         None
     };
-    let (changed, r) = section_header(
-        ui,
-        locale,
-        section == Section::Gif,
-        Text::ExportGif,
-        gif_refused,
-    );
+    let (changed, r) = section_header(ui, locale, gif_ticked, Text::ExportGif, gif_refused);
     result.widgets.push(("export.gif.include", r));
     if changed {
-        select_section(ui, options, project, Section::Gif);
+        toggle_section(ui, options, project, Section::Gif);
     }
     ui.add_space(8.0);
     egui::Grid::new("export.gif")
@@ -608,10 +658,17 @@ pub(super) fn show(
         .spacing([16.0, 16.0])
         .show(ui, |ui| {
             let row_label = ui.label(tr(Text::ExportResolution));
-            let in_gif = Section::of(options.format) == Section::Gif;
-            let label = options.output.resolution.map_or_else(
+            // The primary GIF keeps its size with the output; one beside another output in `also`.
+            let in_gif = gif_ticked;
+            let primary_gif = Section::of(options.format) == Section::Gif;
+            let label = (if primary_gif {
+                options.output.resolution
+            } else {
+                options.also.gif
+            })
+            .map_or_else(
                 || {
-                    if in_gif {
+                    if primary_gif {
                         tr(Text::ExportProjectCanvas).to_owned()
                     } else {
                         GIF_RESOLUTIONS[0].1.to_owned()
@@ -635,13 +692,14 @@ pub(super) fn show(
                     .width(field_width)
                     .selected_text(label)
                     .show_ui(ui, |ui| {
+                        let slot = if primary_gif {
+                            &mut options.output.resolution
+                        } else {
+                            &mut options.also.gif
+                        };
                         for (h, label, id) in GIF_RESOLUTIONS {
                             let size = resolution_size(project, h);
-                            let r = ui.selectable_value(
-                                &mut options.output.resolution,
-                                Some(size),
-                                label,
-                            );
+                            let r = ui.selectable_value(slot, Some(size), label);
                             result.widgets.push((id, r));
                         }
                     })
@@ -826,7 +884,14 @@ fn gated(
     }
 }
 
+/// Every file the export writes passes its own admission.
 pub(super) fn valid(options: &ExportOptions, project: &project::Project) -> bool {
+    options
+        .outputs()
+        .iter()
+        .all(|output| output_valid(output, project))
+}
+fn output_valid(options: &ExportOptions, project: &project::Project) -> bool {
     let mut settings = options.settings(project);
     options.output.ranges(project).is_ok()
         && options.output.apply(&mut settings).is_ok()

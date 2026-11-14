@@ -332,7 +332,8 @@ mod tests {
                         "resolution": null,
                         "scene": {"kind": "active"},
                         "version": 1
-                    }
+                    },
+                    "also": {"audio": "m4a", "gif": [240, 240]}
                 }),
             ),
         ] {

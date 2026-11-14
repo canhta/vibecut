@@ -12,6 +12,8 @@ filesystem failure while publishing several outputs can leave earlier complete o
 a partial file. The caller owns project-file protection and the output grant authorizes every
 generated path.
 
+One call is one output kind: a scene export writes one container, so several outputs of a project (a video, an audio file, a GIF) are several submissions, each its own job with its own staging, admission and receipt. A caller that wants them under one progress, as the desktop Export dialog does, runs them one after the other and treats a failure or cancel of one as the end of the group; the `export` command is declared the same way, one output kind per command.
+
 | Folder | Responsibility | Contract |
 |---|---|---|
 | `session/` | Owns editable project state and the wire contract. | [Session](src/session/README.md) |

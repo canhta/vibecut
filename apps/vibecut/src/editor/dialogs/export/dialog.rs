@@ -125,6 +125,16 @@ impl ExportQuality {
         }
     }
 }
+/// The files ticked beside the primary output (`ExportOptions::format`): the dialog's
+/// Audio and GIF sections whenever they are not the one holding the primary.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AlsoOutputs {
+    /// A separate audio file in this audio format.
+    pub audio: Option<ExportFormat>,
+    /// A GIF at this size, the GIF section's own resolution.
+    pub gif: Option<[u32; 2]>,
+}
 /// Saved app choices. Consent, overwrite authorization and destination are transient.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -133,6 +143,7 @@ pub struct ExportOptions {
     pub quality: ExportQuality,
     pub include_audio: bool,
     pub output: OutputOptions,
+    pub also: AlsoOutputs,
 }
 impl Default for ExportOptions {
     fn default() -> Self {
@@ -141,10 +152,61 @@ impl Default for ExportOptions {
             quality: ExportQuality::Recommended,
             include_audio: true,
             output: OutputOptions::default(),
+            also: AlsoOutputs::default(),
         }
     }
 }
 impl ExportOptions {
+    /// One single-output choice per file kind this export writes: the primary output,
+    /// then the Audio file, then the GIF. Each runs as its own engine export job; scene
+    /// and range are shared, and the video-only fields stay with the primary output.
+    pub fn outputs(self) -> Vec<Self> {
+        let primary = Self {
+            also: AlsoOutputs::default(),
+            ..self
+        };
+        let mut all = vec![primary];
+        if let Some(format) = self.also.audio
+            && !self.format.audio_only()
+            && !self.format.is_sequence()
+        {
+            all.push(Self {
+                format,
+                include_audio: true,
+                output: OutputOptions {
+                    resolution: None,
+                    fps: None,
+                    bit_rate: None,
+                    codec: render::VideoCodec::Automatic,
+                    profile: media::H264Profile::Automatic,
+                    ..self.output
+                },
+                ..primary
+            });
+        }
+        if let Some(size) = self.also.gif
+            && !self.format.is_gif()
+        {
+            all.push(Self {
+                format: ExportFormat::Gif,
+                output: OutputOptions {
+                    resolution: Some(size),
+                    // The Frame rate row is the video's; an audio-only primary has none.
+                    fps: if self.format.audio_only() {
+                        None
+                    } else {
+                        self.output.fps
+                    },
+                    bit_rate: None,
+                    codec: render::VideoCodec::Automatic,
+                    profile: media::H264Profile::Automatic,
+                    ..self.output
+                },
+                ..primary
+            });
+        }
+        all
+    }
     pub fn settings(self, project: &project::Project) -> render::ExportSettings {
         let mut settings = render::ExportSettings::from_project(project);
         settings.container = self.format.container();
@@ -175,7 +237,8 @@ pub struct ExportInspection {
     pub error: Option<Arc<Error>>,
     pub finished: Option<PathBuf>,
     pub diagnostics: Option<String>,
-    pub saved: Option<PathBuf>,
+    /// Every file published since the export started, in save order.
+    pub saved: Vec<PathBuf>,
     pub attempt: Option<ExportOptions>,
 }
 #[derive(Clone, Debug)]
@@ -191,6 +254,21 @@ type WordWarnings = (
     std::result::Result<project::CaptionWordWarnings, Arc<Error>>,
 );
 
+/// One rendered file, or image-sequence directory, and what it holds.
+struct Rendered {
+    path: PathBuf,
+    format: ExportFormat,
+    /// The scene an all-scenes export rendered it for.
+    scene: Option<project::SceneId>,
+}
+/// One engine export job: a single output kind, ready to submit.
+struct Queued {
+    options: ExportOptions,
+    paths: Vec<PathBuf>,
+    settings: render::ExportSettings,
+    key: CacheKey,
+}
+
 pub struct ExportDialog {
     pub(crate) open: bool,
     consent: bool,
@@ -205,17 +283,21 @@ pub struct ExportDialog {
     job: Option<(JobId, CancelToken)>,
     snapshot: Option<JobSnapshot>,
     cancelling: bool,
-    temp: Option<PathBuf>,
-    scene_outputs: std::collections::VecDeque<PathBuf>,
+    temp: Option<Rendered>,
+    /// Outputs after the first, of every job of this export, saved in order.
+    scene_outputs: std::collections::VecDeque<Rendered>,
+    /// The jobs still to run after the current one, one per further output kind.
+    waiting: std::collections::VecDeque<Queued>,
+    job_total: usize,
+    job_done: usize,
     attempt_project: Option<Arc<project::Project>>,
     attempt_encoder: EncodePreference,
     pub(crate) selection_range: Option<time::TimeRange>,
-    save_index: usize,
-    finished: Option<PathBuf>,
+    finished: Option<Rendered>,
     pending_save: bool,
     attempt: Option<ExportOptions>,
     diagnostics: Option<String>,
-    saved: Option<PathBuf>,
+    saved: Vec<PathBuf>,
     publishing: Option<PathBuf>,
     input: Option<CacheKey>,
     publication_fs: Arc<dyn project::atomic::AtomicFs + Send + Sync>,
@@ -254,15 +336,17 @@ impl ExportDialog {
             cancelling: false,
             temp: None,
             scene_outputs: Default::default(),
+            waiting: Default::default(),
+            job_total: 0,
+            job_done: 0,
             attempt_project: None,
             attempt_encoder: EncodePreference::default(),
             selection_range: None,
-            save_index: 0,
             finished: None,
             pending_save: false,
             attempt: None,
             diagnostics: None,
-            saved: None,
+            saved: Vec::new(),
             publishing: None,
             input: None,
             publication_fs: Arc::new(project::atomic::Fs),
@@ -315,7 +399,7 @@ impl ExportDialog {
             consent: self.consent,
             empty: self.empty,
             error: self.error.clone(),
-            finished: self.finished.clone(),
+            finished: self.finished.as_ref().map(|file| file.path.clone()),
             diagnostics: self.diagnostics.clone(),
             saved: self.saved.clone(),
             attempt: self.attempt,
@@ -368,13 +452,12 @@ impl ExportDialog {
             .and_then(|snapshot| snapshot.error.clone());
         match state {
             Some(JobState::Completed) => {
-                self.cancelling = false;
+                let cancelled = std::mem::take(&mut self.cancelling);
                 if let Some(path) = self.publishing.take() {
                     if let Some(finished) = self.finished.take() {
-                        remove_output(&finished);
+                        remove_output(&finished.path);
                     }
-                    self.saved = Some(path);
-                    self.save_index = self.save_index.saturating_add(1);
+                    self.saved.push(path);
                     self.finished = self.scene_outputs.pop_front();
                     self.pending_save = self.finished.is_some();
                     self.open = self.finished.is_some();
@@ -383,19 +466,29 @@ impl ExportDialog {
                     self.diagnostics = None;
                     return Ok(());
                 }
+                // One job renders one output kind; the next starts when this one is done,
+                // unless the user cancelled meanwhile.
+                if !self.waiting.is_empty() {
+                    if cancelled {
+                        self.abandon();
+                        return Ok(());
+                    }
+                    return self.start_next();
+                }
                 if self.finished.is_none() {
                     self.finished = self.temp.take();
                     self.pending_save = self.finished.is_some();
                 }
             }
             Some(JobState::Failed) => {
+                self.waiting.clear();
                 if self.publishing.is_none() {
                     self.discard_scene_outputs();
                 }
                 if self.publishing.is_none()
-                    && let Some(path) = self.temp.take()
+                    && let Some(file) = self.temp.take()
                 {
-                    remove_output(&path);
+                    remove_output(&file.path);
                 }
                 self.cancelling = false;
                 let unavailable = failure.as_deref().and_then(|error| {
@@ -424,11 +517,12 @@ impl ExportDialog {
                     .map(|error| diagnostics(error.as_ref(), &self.unavailable));
             }
             Some(JobState::Cancelled) => {
+                self.waiting.clear();
                 if self.publishing.is_none() {
                     self.discard_scene_outputs();
                 }
                 if let Some(temp) = self.temp.take() {
-                    remove_output(&temp);
+                    remove_output(&temp.path);
                 }
                 self.cancelling = false;
                 self.snapshot = None;
@@ -444,6 +538,133 @@ impl ExportDialog {
         }
         Ok(())
     }
+    /// A cancel that arrived while a later job was still waiting: drop what rendered.
+    fn abandon(&mut self) {
+        self.waiting.clear();
+        self.discard_scene_outputs();
+        if let Some(temp) = self.temp.take() {
+            remove_output(&temp.path);
+        }
+        self.cancelling = false;
+        self.snapshot = None;
+        self.job = None;
+        self.finished = None;
+        self.pending_save = false;
+        self.diagnostics = None;
+        self.error = None;
+    }
+    /// Submits the next output kind's job; a refusal ends the export and drops what rendered.
+    fn start_next(&mut self) -> Result<()> {
+        let project = self
+            .attempt_project
+            .clone()
+            .ok_or(Error::Invalid("no export snapshot"))?;
+        let Some(next) = self.waiting.pop_front() else {
+            return Ok(());
+        };
+        self.job_done += 1;
+        if let Err(error) = self.submit(&project, next, false) {
+            self.waiting.clear();
+            self.discard_scene_outputs();
+            if let Some(temp) = self.temp.take() {
+                remove_output(&temp.path);
+            }
+            return Err(error);
+        }
+        Ok(())
+    }
+    /// One output kind's job: its settings, scene files and cache key, built before any
+    /// job of the export is submitted so a refusal leaves nothing running.
+    fn prepare(
+        &self,
+        project: &Arc<project::Project>,
+        options: ExportOptions,
+        encoder: EncodePreference,
+        ordinal: usize,
+    ) -> Result<Queued> {
+        let path = temp_output(options.format, ordinal);
+        let paths = options.output.paths(project, &path)?;
+        let mut settings = options.settings(project);
+        settings.encoder = encoder;
+        settings.render = self.render_state.settings(project)?;
+        options.output.apply(&mut settings)?;
+        settings.overwrite = project::atomic::Overwrite::Replace;
+        let same = self
+            .refused
+            .as_ref()
+            .is_some_and(|(p, a)| Arc::ptr_eq(p, project) && *a == options.include_audio);
+        settings.allow_degraded = self.consent && same && !self.unavailable.is_empty();
+        if settings.allow_degraded {
+            settings.degraded_consent = Some(self.unavailable.clone());
+        }
+        let key = CacheKey::new(KeyInputs {
+            kind: ArtifactKind::Preview,
+            source: [0; 32],
+            provider: "desktop",
+            model: "export",
+            version: "1",
+            settings: &serde_json::to_vec(&options)?,
+            transcript: [0; 32],
+            cues: [0; 32],
+            clip_range: [0; 32],
+            translation: [0; 32],
+        })?;
+        Ok(Queued {
+            options,
+            paths,
+            settings,
+            key,
+        })
+    }
+    /// Submits one prepared job. The first job of an export replaces the previous
+    /// export's files; later ones add their files after it.
+    fn submit(
+        &mut self,
+        project: &Arc<project::Project>,
+        queued: Queued,
+        first: bool,
+    ) -> Result<()> {
+        let Queued {
+            options,
+            paths,
+            settings,
+            key,
+        } = queued;
+        let scenes: Vec<_> = options
+            .output
+            .ranges(project)?
+            .into_iter()
+            .map(|(id, _)| (options.output.scene == SceneChoice::All).then_some(id))
+            .collect();
+        let sources = self.sources.clone();
+        let job = engine::submit_scene_exports_with_sources(
+            &mut self.runner,
+            key,
+            project.clone(),
+            options.output,
+            settings,
+            paths.clone(),
+            move || sources.create(),
+        )?;
+        self.snapshot = self.runner.snapshot(job.0);
+        self.job = Some(job);
+        self.input = Some(key);
+        let mut files = paths.into_iter().zip(scenes).map(|(path, scene)| Rendered {
+            path,
+            format: options.format,
+            scene,
+        });
+        if first {
+            self.discard_finished();
+            self.temp = files.next();
+            self.scene_outputs = files.collect();
+        } else {
+            self.scene_outputs.extend(files);
+        }
+        Ok(())
+    }
+    /// Starts the export: one engine job per ticked output kind, run one after the other
+    /// under one progress. Every job is prepared first, so a refusal starts none.
     pub fn start(
         &mut self,
         project: Arc<project::Project>,
@@ -468,64 +689,33 @@ impl ExportDialog {
         if self.empty {
             return Err(Error::EmptyTimeline);
         }
-        let path = temp_output(options.format);
-        let paths = options.output.paths(&project, &path)?;
-        let mut settings = options.settings(&project);
-        settings.encoder = encoder;
-        settings.render = self.render_state.settings(&project)?;
-        options.output.apply(&mut settings)?;
-        settings.overwrite = project::atomic::Overwrite::Replace;
-        let same = self
-            .refused
-            .as_ref()
-            .is_some_and(|(p, a)| Arc::ptr_eq(p, &project) && *a == options.include_audio);
-        settings.allow_degraded = self.consent && same && !self.unavailable.is_empty();
-        if settings.allow_degraded {
-            settings.degraded_consent = Some(self.unavailable.clone());
-        }
-        let strict = !settings.allow_degraded;
-        let key = CacheKey::new(KeyInputs {
-            kind: ArtifactKind::Preview,
-            source: [0; 32],
-            provider: "desktop",
-            model: "export",
-            version: "1",
-            settings: &serde_json::to_vec(&options)?,
-            transcript: [0; 32],
-            cues: [0; 32],
-            clip_range: [0; 32],
-            translation: [0; 32],
-        })?;
-        let sources = self.sources.clone();
-        let job = engine::submit_scene_exports_with_sources(
-            &mut self.runner,
-            key,
-            project.clone(),
-            options.output,
-            settings,
-            paths.clone(),
-            move || sources.create(),
-        )?;
+        let mut queue = options
+            .outputs()
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, output)| self.prepare(&project, output, encoder, ordinal))
+            .collect::<Result<std::collections::VecDeque<_>>>()?;
+        let first = queue
+            .pop_front()
+            .ok_or(Error::Invalid("no export output"))?;
+        let strict = !first.settings.allow_degraded;
+        self.submit(&project, first, true)?;
         if strict {
             self.consent = false;
             self.unavailable.clear();
         }
-        self.snapshot = self.runner.snapshot(job.0);
-        self.job = Some(job);
+        self.job_total = queue.len() + 1;
+        self.job_done = 0;
+        self.waiting = queue;
         self.cancelling = false;
         self.error = None;
-        self.discard_finished();
-        let mut paths = std::collections::VecDeque::from(paths);
-        self.temp = paths.pop_front();
-        self.scene_outputs = paths;
         self.attempt_project = Some(project.clone());
         self.attempt_encoder = encoder;
-        self.save_index = 0;
+        self.saved.clear();
         self.finished = None;
         self.pending_save = false;
         self.diagnostics = None;
         self.attempt = Some(options);
-        self.input = Some(key);
         self.publishing = None;
         self.refused = Some((project, options.include_audio));
         Ok(())
@@ -566,25 +756,38 @@ impl ExportDialog {
             name: self.save_name(project, options),
         })
     }
+    /// The default name of the file the next save writes: the project's name, the scene of
+    /// an all-scenes export, and `-audio` for an audio file saved beside a video.
     pub fn save_name(&self, project: &project::Project, options: ExportOptions) -> String {
         let options = self.attempt.unwrap_or(options);
         let project = self.attempt_project.as_deref().unwrap_or(project);
+        let (format, scene) = self
+            .finished
+            .as_ref()
+            .map_or((options.format, None), |file| (file.format, file.scene));
         let mut name = project.data().name.as_str().to_owned();
-        if options.output.scene == SceneChoice::All
-            && let Some(scene) = project.data().scenes.iter().nth(self.save_index)
-        {
-            name.push_str(&format!("-scene-{}", scene.id.0));
+        if let Some(scene) = scene {
+            name.push_str(&format!("-scene-{}", scene.0));
         }
-        options.format.file_name(&name)
+        if format.audio_only() && !options.format.audio_only() {
+            name.push_str("-audio");
+        }
+        format.file_name(&name)
+    }
+    /// The format of the file the next save writes, once one has rendered.
+    pub fn save_format(&self) -> Option<ExportFormat> {
+        self.finished.as_ref().map(|file| file.format)
     }
     pub fn save_to(&mut self, path: PathBuf, protected: Vec<PathBuf>) -> Result<()> {
         if self.active() {
             return Err(Error::Invalid("export in progress"));
         }
-        let source = self
+        let finished = self
             .finished
-            .clone()
+            .as_ref()
             .ok_or(Error::Invalid("no finished export"))?;
+        let source = finished.path.clone();
+        let sequence = finished.format.is_sequence();
         let project = self
             .refused
             .as_ref()
@@ -592,9 +795,6 @@ impl ExportDialog {
             .0
             .clone();
         let key = self.input.ok_or(Error::Invalid("no export job"))?;
-        let sequence = self
-            .attempt
-            .is_some_and(|attempt| attempt.format.is_sequence());
         let job = if sequence {
             engine::submit_sequence_publication(
                 &mut self.runner,
@@ -627,28 +827,33 @@ impl ExportDialog {
     pub fn save_cancelled(&mut self) {
         self.pending_save = false;
     }
-    pub fn take_saved(&mut self) -> Option<PathBuf> {
-        self.saved.take()
+    /// Every file this export saved, once the last one is: the caller toasts them together.
+    pub fn take_saved(&mut self) -> Option<Vec<PathBuf>> {
+        if self.finished.is_some() || self.saved.is_empty() {
+            return None;
+        }
+        Some(std::mem::take(&mut self.saved))
     }
     pub fn discard_finished(&mut self) {
         self.discard_scene_outputs();
-        if let Some(path) = self.finished.take() {
-            remove_output(&path);
+        if let Some(file) = self.finished.take() {
+            remove_output(&file.path);
         }
         self.pending_save = false;
     }
     fn discard_scene_outputs(&mut self) {
-        for path in self.scene_outputs.drain(..) {
-            remove_output(&path);
+        for file in self.scene_outputs.drain(..) {
+            remove_output(&file.path);
         }
     }
 }
 
-fn temp_output(format: ExportFormat) -> PathBuf {
+/// The unique name of one job's staged output; `ordinal` separates the jobs of one export.
+fn temp_output(format: ExportFormat, ordinal: usize) -> PathBuf {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_nanos());
-    let name = format!("vibecut-export-{}-{nanos}", std::process::id());
+    let name = format!("vibecut-export-{}-{nanos}-{ordinal}", std::process::id());
     std::env::temp_dir().join(if format.is_sequence() {
         name
     } else {
@@ -662,6 +867,21 @@ fn remove_output(path: &std::path::Path) {
     } else {
         let _ = std::fs::remove_file(path);
     }
+}
+/// The footer's size estimate for one output, in megabytes, from its bit rate and the
+/// audio rate over `duration` seconds.
+fn output_megabytes(output: ExportOptions, duration: f64) -> f64 {
+    let audio = if output.format.audio_only() || output.include_audio {
+        192_000.0
+    } else {
+        0.0
+    };
+    let video = if output.format.audio_only() {
+        0.0
+    } else {
+        output.output.bit_rate.unwrap_or(output.quality.value().1) as f64
+    };
+    duration * (video + audio) / 8_000_000.0
 }
 fn diagnostics(
     error: &(dyn std::error::Error + 'static),
@@ -779,17 +999,17 @@ impl ExportDialog {
                                 .map(|(_, range)| range.duration().seconds())
                                 .sum()
                         });
-                        let rate = options.output.bit_rate.unwrap_or(options.quality.value().1) as f64
-                            + if options.include_audio {
-                                192_000.0
-                            } else {
-                                0.0
-                            };
+                        // The files of one export add up: one estimate per output kind.
+                        let megabytes: f64 = options
+                            .outputs()
+                            .into_iter()
+                            .map(|output| output_megabytes(output, duration))
+                            .sum();
                         ui.label(format!(
                             "{} | {} {} MB",
                             i18n::export_duration(locale, duration),
                             tr(Text::ExportEstimatedSize),
-                            i18n::decimal(locale, duration * rate / 8_000_000.0, 1)
+                            i18n::decimal(locale, megabytes, 1)
                         ));
                         ui.with_layout(
                             egui::Layout::right_to_left(egui::Align::Center),
@@ -868,16 +1088,7 @@ impl ExportDialog {
                                     result.widgets.push(("export.close", r));
                                 }
                                 ExportPhase::Settings => {
-                                    let r = crate::kit::dialog_button(
-                                        ui,
-                                        "export.close",
-                                        tr(Text::Cancel),
-                                        false,
-                                    );
-                                    if r.clicked() {
-                                        self.open = false;
-                                    }
-                                    result.widgets.push(("export.close", r));
+                                    // Added first, so it sits rightmost: Cancel, then Export.
                                     let r = ui
                                         .add_enabled_ui(settings::valid(options, project), |ui| {
                                             crate::kit::dialog_button(
@@ -892,6 +1103,16 @@ impl ExportDialog {
                                         result.action = Some(DialogAction::Start);
                                     }
                                     result.widgets.push(("export.run", r));
+                                    let r = crate::kit::dialog_button(
+                                        ui,
+                                        "export.close",
+                                        tr(Text::Cancel),
+                                        false,
+                                    );
+                                    if r.clicked() {
+                                        self.open = false;
+                                    }
+                                    result.widgets.push(("export.close", r));
                                 }
                             },
                         );
@@ -912,12 +1133,31 @@ impl ExportDialog {
                         match self.phase() {
                             ExportPhase::Running => {
                                 if let Some(snapshot) = &self.snapshot {
-                                    ui.label(tr(if self.cancelling {
-                                        Text::ExportCancelling
+                                    let total = self.job_total.max(1);
+                                    let number = |count: usize| i18n::number(locale, count as u64);
+                                    let label = if self.cancelling {
+                                        tr(Text::ExportCancelling).to_owned()
+                                    } else if total > 1 {
+                                        i18n::format(
+                                            locale,
+                                            Text::ExportProgressFiles,
+                                            &[
+                                                ("n", &number(self.job_done + 1)),
+                                                ("total", &number(total)),
+                                            ],
+                                        )
                                     } else {
-                                        Text::ExportProgress
-                                    }));
-                                    job_progress(ui, "export.progress", snapshot, locale);
+                                        tr(Text::ExportProgress).to_owned()
+                                    };
+                                    ui.label(label);
+                                    // One progress over every job of the export.
+                                    let mut overall = snapshot.clone();
+                                    if total > 1 && self.publishing.is_none() {
+                                        overall.progress = (self.job_done as f32
+                                            + snapshot.progress.clamp(0.0, 1.0))
+                                            / total as f32;
+                                    }
+                                    job_progress(ui, "export.progress", &overall, locale);
                                 }
                             }
                             ExportPhase::Failed => {
@@ -1168,8 +1408,8 @@ impl Drop for ExportDialog {
     fn drop(&mut self) {
         self.runner.shutdown();
         self.discard_finished();
-        if let Some(path) = self.temp.take() {
-            remove_output(&path);
+        if let Some(file) = self.temp.take() {
+            remove_output(&file.path);
         }
     }
 }

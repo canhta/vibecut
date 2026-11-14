@@ -79,10 +79,18 @@ pub(super) fn apply(state: &mut State, port: &mut Port<'_>, action: Action) {
         }
         Action::Saved(saved) => {
             let mut preferences = port.read.preferences.clone();
-            preferences.export_directory = saved.parent().map(|path| path.to_owned());
+            preferences.export_directory = saved
+                .last()
+                .and_then(|path| path.parent())
+                .map(|path| path.to_owned());
             port.adopt_preferences(preferences);
             let text = port.tr(Text::ExportSaved);
-            port.toast(text, Some(saved.to_string_lossy().into_owned()));
+            // One toast names every file the export wrote, one path per line.
+            let files: Vec<_> = saved
+                .iter()
+                .map(|path| path.to_string_lossy().into_owned())
+                .collect();
+            port.toast(text, Some(files.join("\n")));
         }
         Action::Remember { id, response } => port.widget(id, None, None, &response),
     }
