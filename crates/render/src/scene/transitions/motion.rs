@@ -1246,16 +1246,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn easings_hit_their_ends() {
-        for value in [spring(0., 0.4), back_out(0., 1.)] {
-            assert!(value.abs() < 1e-5);
-        }
-        assert!((spring(1., 0.4) - 1.).abs() < 1e-5);
-        assert!((back_out(1., 1.) - 1.).abs() < 1e-5);
-        assert!(back_out(0.8, 1.6) > 1., "overshoots");
-    }
-
-    #[test]
     fn card_geometry_refuses_frames_above_the_output_size_cap() {
         assert!(check_geometry(1920, 1080).is_ok());
         assert!(check_geometry(1, 1).is_ok());

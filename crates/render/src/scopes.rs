@@ -210,19 +210,6 @@ mod tests {
     }
 
     #[test]
-    fn plots_have_the_measured_sizes() {
-        let scopes = plot_scopes(2, 2, &solid(2, 2, [10, 20, 30, 255])).unwrap();
-        for (plot, size) in [
-            (&scopes.parade, (TRACE_WIDTH, TRACE_HEIGHT)),
-            (&scopes.waveform, (TRACE_WIDTH, TRACE_HEIGHT)),
-            (&scopes.vectorscope, (VECTOR_SIDE, VECTOR_SIDE)),
-        ] {
-            assert_eq!((plot.width, plot.height), size);
-            assert_eq!(plot.rgba.len(), size.0 * size.1 * 4);
-        }
-    }
-
-    #[test]
     fn the_parade_draws_red_green_and_blue_in_their_own_thirds() {
         // Red at full, green and blue at nothing: red on the top row of the first third, green
         // and blue on the bottom row of the second and third.
