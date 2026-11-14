@@ -25,6 +25,17 @@ use std::{
     time::Duration,
 };
 
+/// Projects that can save at once; each save scope is this share of the persistence allowance.
+const CONCURRENT_SAVES: u64 = 2;
+
+/// The persistence allowance: a quarter of the host-sized budget
+/// ([`engine::host_budget_limit`], 1 to 8 GiB). Each save scope then holds the job's work, a
+/// decoder probe and the frames a video clip's cover draws even on the smallest host; a fixed
+/// 64 MiB scope refused the cover of every video project.
+pub(super) fn persistence_limit(host: &dyn engine::MemoryProbe) -> u64 {
+    engine::host_budget_limit(host) / 4
+}
+
 pub(super) type EditorSlot = Arc<Mutex<Option<Box<Editor>>>>;
 pub(super) struct WorkingEditor {
     pub(super) slot: EditorSlot,
@@ -91,7 +102,9 @@ impl EditorWindow {
         } else {
             self.budget.clone()
         };
-        let persistence = self.persistence.child(64 << 20)?;
+        let persistence = self
+            .persistence
+            .child(self.persistence.snapshot()?.limit / CONCURRENT_SAVES)?;
         let corrections = self.corrections.clone();
         let input = Arc::new(Mutex::new(Some(work)));
         let preferences = self.preferences.clone();

@@ -42,8 +42,9 @@ joined.
 
 The app shares catalog, preferences, model presentation, lifecycle runner and aggregate
 media accounting. Each project's media scope may use the whole aggregate, which is the
-[host-sized default](../../../../crates/engine/src/runtime/README.md#host-sized-default-budget) unless the user sets a limit; autosave uses separate 64 MiB project children of a 256 MiB persistence
-allowance, so export cannot consume journal or save admission. Model transfers stay
+[host-sized default](../../../../crates/engine/src/runtime/README.md#host-sized-default-budget) unless the user sets a limit; autosave and save use separate project children, each half of a persistence
+allowance that is a quarter of the host-sized budget (256 MiB to 2 GiB), so a save holds a
+video cover's decoder probe and frames, and export cannot consume journal or save admission. Model transfers stay
 app-owned across project saves and closes. `lending` opens the process stores once and
 is the only place an editor receives them: the saved-sound library, the music session, the
 brand kit (opened and held; `Workspace::brand_kit` hands it out, no request reads it yet),

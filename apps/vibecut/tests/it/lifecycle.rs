@@ -1340,3 +1340,56 @@ fn header_save_confirms_with_a_toast_and_home_leaves_the_saved_project() {
         "the saved project closes"
     );
 }
+
+/// A video clip's cover decodes a 1080p-class source, so the save scope must admit the
+/// decoder's probe allowance; a refusal leaves the card on its film-strip placeholder.
+#[test]
+fn saving_a_project_with_a_video_clip_writes_a_ready_cover_for_the_home_card() {
+    let Some(source) = testkit::oracle::generate(
+        &testkit::fixture::dir("saved-video-cover"),
+        "saved video cover",
+        "source.mkv",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=s=128x72:r=10:d=2",
+            "-c:v",
+            "ffv1",
+            "-pix_fmt",
+            "yuv420p",
+        ],
+    ) else {
+        return;
+    };
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("clip.vibecut");
+    let mut app = app(root.path());
+    app.create().unwrap();
+    idle(&mut app);
+    let session = &mut app.focused_editor_mut().unwrap().session;
+    let asset = media::SourceAsset::import(media::AssetId(1), source).unwrap();
+    let duration = asset.probe().duration.unwrap();
+    session.apply(Command::AddAsset { asset }).unwrap();
+    session
+        .apply(Command::InsertItem {
+            placement: Placement::Auto,
+            item: NewItem {
+                retime: Default::default(),
+                animations: Default::default(),
+                source_asset: Some(media::AssetId(1)),
+                source_range: SourceRange::new(Tick::ZERO, duration).unwrap(),
+                start: Tick::ZERO,
+                content: ItemParams::Video(project::VideoParams::plain()),
+            },
+        })
+        .unwrap();
+    app.persist(Some(path.clone()), false, false, false)
+        .unwrap();
+    idle(&mut app);
+    assert!(app.error().is_none(), "{:?}", app.error());
+    assert!(matches!(
+        project::read_metadata(&path).thumbnail,
+        project::Thumbnail::Ready { .. }
+    ));
+}

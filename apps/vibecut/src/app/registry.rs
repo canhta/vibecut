@@ -71,7 +71,7 @@ impl Workspace {
             Some(bytes) => ByteBudget::new(bytes)?,
             None => ByteBudget::for_host(&engine::SystemMemory)?,
         };
-        let persistence = ByteBudget::new(256 << 20)?;
+        let persistence = ByteBudget::new(super::work::persistence_limit(&engine::SystemMemory))?;
         let lending = Lending::open(&root, &budget);
         let corrections = lending.footage();
         let runner = std::rc::Rc::new(std::cell::RefCell::new(JobRunner::new(
