@@ -37,7 +37,7 @@ linear luma and shot starts of every frame, reused by every trim and split. See
 ## Loudness normalization
 
 `audio.set_loudness {scope: clip|master, target_lufs, true_peak_db}` stores an EBU R128 target
-(-50..-5 LUFS, -20..0 dBTP; default -14/-1) and drops stale gains; `audio.clear_loudness` removes
+(-50..-5 LUFS, -20..0 dBTP; default -23/-1) and drops stale gains; `audio.clear_loudness` removes
 it. Measured gains arrive through `audio.apply_loudness {gains}`, which validates range and
 ordering only ([`LoudnessTarget`](../../../project/src/model/settings.rs)).
 

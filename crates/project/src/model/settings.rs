@@ -188,9 +188,9 @@ pub struct LoudnessTarget {
     pub true_peak_db: f32,
 }
 impl LoudnessTarget {
-    /// EBU R128 streaming default: -14 LUFS integrated, -1 dBTP.
+    /// Default target: -23 LUFS integrated (EBU R128 broadcast; the reference editor's default), -1 dBTP.
     pub const DEFAULT: Self = Self {
-        target_lufs: -14.0,
+        target_lufs: -23.0,
         true_peak_db: -1.0,
     };
     /// Finite, on the hundredth grid: LUFS -50..=-5, true peak -20..=0 dBTP.

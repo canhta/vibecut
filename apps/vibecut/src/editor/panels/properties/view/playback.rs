@@ -10,8 +10,6 @@ use crate::kit;
 use engine::loudness::LoudnessResult;
 use project::{LoudnessScope, LoudnessTarget};
 
-/// The reference's fade range, in seconds.
-const FADE_MAX_SECONDS: f64 = 10.0;
 /// Drafts of the two loudness target fields, by field key.
 const LUFS_DRAFT: &str = "loudness_target";
 const PEAK_DRAFT: &str = "loudness_true_peak";
@@ -403,10 +401,10 @@ impl Panel<'_, '_> {
         }
     }
 
-    /// Voice enhancement: one switch over the preset's cleanup effects, and while it is on a
-    /// Strength row of three dry/wet mixes. The row is [new]: the reference capture has no
-    /// equivalent. The preset's parameters stay ordinary chain effects reachable through
-    /// `audio.*_cleanup_effect`.
+    /// Voice enhancement: one switch over the preset's cleanup effects, and while it is on an
+    /// Intensity row of five dry/wet mixes (0 to 100 in steps of 25, as the reference's slider
+    /// ticks; new effects start at 75). The preset's parameters stay ordinary chain effects
+    /// reachable through `audio.*_cleanup_effect`.
     fn voice_enhancement_rows(&mut self, ui: &mut egui::Ui, item: ItemId) {
         let project = self.cx.session.project();
         let on = read::voice_enhancement_on(project, item);
@@ -432,22 +430,25 @@ impl Panel<'_, '_> {
         }
         let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
         self.row_label(ui, row, self.tr(Text::VoiceEnhancementStrength));
-        let levels = [
-            ("light", Text::VoiceEnhancementLight, 40.0),
-            ("medium", Text::VoiceEnhancementMedium, 70.0),
-            ("full", Text::VoiceEnhancementFull, 100.0),
+        // The reference's Intensity slider has ticks every 25 from 0 to 100.
+        let levels: [(&str, f32); 5] = [
+            ("0", 0.0),
+            ("25", 25.0),
+            ("50", 50.0),
+            ("75", 75.0),
+            ("100", 100.0),
         ];
         let ids: Vec<String> = levels
             .iter()
-            .map(|(name, _, _)| format!("inspector.voice_enhance.strength.{name}"))
+            .map(|(name, _)| format!("inspector.voice_enhance.strength.{name}"))
             .collect();
-        let labels: Vec<&str> = levels.iter().map(|(_, text, _)| self.tr(*text)).collect();
+        let labels: Vec<&str> = levels.iter().map(|(name, _)| *name).collect();
         let selected = levels
             .iter()
-            .position(|(_, _, wet)| strength.is_some_and(|mix| (mix - wet).abs() < 0.5))
+            .position(|(_, wet)| strength.is_some_and(|mix| (mix - wet).abs() < 0.5))
             .unwrap_or(usize::MAX);
         let cells = kit::segmented(&mut value_ui, &ids, &labels, selected);
-        for (index, ((id, cell), (_, _, wet_percent))) in
+        for (index, ((id, cell), (_, wet_percent))) in
             ids.iter().zip(&cells).zip(&levels).enumerate()
         {
             self.remember(id.clone(), cell);
@@ -464,7 +465,7 @@ impl Panel<'_, '_> {
     /// leaves beside the other fade.
     fn fade_scrub(&self, item: ItemId, edge: project::FadeEdge) -> ScrubSpec {
         let room = read::fade_room_seconds(self.cx.session.project(), item, edge)
-            .unwrap_or(FADE_MAX_SECONDS);
+            .unwrap_or(project::MAX_FADE.seconds());
         let (field, label) = match edge {
             project::FadeEdge::In => ("audio_fade_in", Text::FadeIn),
             project::FadeEdge::Out => ("audio_fade_out", Text::FadeOut),
@@ -473,7 +474,7 @@ impl Panel<'_, '_> {
             field,
             label,
             min: 0.0,
-            max: room.min(FADE_MAX_SECONDS),
+            max: room.min(project::MAX_FADE.seconds()),
             step: 0.1,
             pixels_per_step: 8.0,
             decimals: 1,

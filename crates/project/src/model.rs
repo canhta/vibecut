@@ -19,7 +19,8 @@ mod track;
 pub use audio_cleanup::{
     AudioCleanup, CleanupEffect, CleanupKind, CleanupPreset, EqBand, EqBandKind,
     GRAPHIC_EQ_FREQUENCIES_HZ, MAX_CLEANUP_EFFECTS, MAX_EQ_BANDS, MAX_HUM_HARMONICS,
-    MainsFrequency, NOISE_REDUCTION_DEFAULT, VOICE_ENHANCEMENT_EFFECTS, voice_enhancement_effects,
+    MainsFrequency, NOISE_REDUCTION_DEFAULT, VOICE_ENHANCEMENT_EFFECTS,
+    VOICE_ENHANCEMENT_INTENSITY_DEFAULT, voice_enhancement_effects,
 };
 pub use item::{
     AudioParams, AudioSource, BackgroundRemoval, CaptionParams, CaptionWordWarning,
@@ -27,6 +28,7 @@ pub use item::{
     LibraryMusic, LibrarySound, MatteStroke, MatteStrokeMode, MusicLicence, OverlayParams,
     StabilizeLevel, StickerParams, TextAlign, TextBackground, TextCase, TextDecoration, TextParams,
     TextShadow, TextStroke, TextStyle, VOLUME_DB_RANGE, VideoParams, WordSpan, valid_volume,
+    volume_gain, volume_is_silent,
 };
 pub use narration::{
     MAX_DUCK_MS, MAX_DUCK_TENTHS_DB, Narration, NarrationConsent, NarrationCost, NarrationDucking,

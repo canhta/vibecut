@@ -105,7 +105,7 @@ fn normalize_stores_gains_that_export_applies_without_changing_duration() {
     let report = stdout_json(&output);
     let gain = report["master"]["gain_db"].as_f64().unwrap();
     assert!(
-        (gain + plain_lufs + 14.0).abs() < 0.5,
+        (gain + plain_lufs + 23.0).abs() < 0.5,
         "gain {gain} from {plain_lufs}"
     );
     let settings = project::load(&project)
@@ -116,8 +116,8 @@ fn normalize_stores_gains_that_export_applies_without_changing_duration() {
     assert!(settings.loudness.master.is_some() && settings.loudness.measured.is_some());
 
     let (lufs, duration) = exported_audio(&export("normalized.mp4"));
-    // -14 LUFS target; the always-on master chain adds its fixed 0.18 dB trim.
-    assert!((lufs + 14.0).abs() <= 0.5, "exported {lufs} LUFS");
+    // -23 LUFS default target; the always-on master chain adds its fixed 0.18 dB trim.
+    assert!((lufs + 23.0).abs() <= 0.5, "exported {lufs} LUFS");
     assert!(
         (duration - plain_duration).abs() < 0.001,
         "{duration} vs {plain_duration}"

@@ -125,6 +125,22 @@ fn set_fade_clamps_to_clip_without_overlapping_the_other_edge() {
     set(&mut s, FadeEdge::In, 0, FadeCurve::Linear).unwrap();
     set(&mut s, FadeEdge::Out, MAX_JSON, FadeCurve::Linear).unwrap();
     assert_eq!(fades(&s, 20).fade_out.duration, Tick(1000));
+
+    // One edge never holds more than 10 s, however long the clip: a 30 s clip takes 10 s,
+    // an exact 10 s and a 3 s request unchanged, and the other-edge room still applies.
+    let second = time::TICKS_PER_SECOND;
+    let mut long = session_len(30 * second);
+    set(&mut long, FadeEdge::In, 99 * second, FadeCurve::Linear).unwrap();
+    assert_eq!(fades(&long, 20).fade_in.duration, project::MAX_FADE);
+    assert_eq!(project::MAX_FADE, Tick(10 * second));
+    set(&mut long, FadeEdge::In, 3 * second, FadeCurve::Linear).unwrap();
+    assert_eq!(fades(&long, 20).fade_in.duration, Tick(3 * second));
+    set(&mut long, FadeEdge::Out, 10 * second, FadeCurve::Linear).unwrap();
+    assert_eq!(fades(&long, 20).fade_out.duration, Tick(10 * second));
+    let mut short = session_len(15 * second);
+    set(&mut short, FadeEdge::In, 10 * second, FadeCurve::Linear).unwrap();
+    set(&mut short, FadeEdge::Out, 99 * second, FadeCurve::Linear).unwrap();
+    assert_eq!(fades(&short, 20).fade_out.duration, Tick(5 * second));
 }
 
 #[test]
