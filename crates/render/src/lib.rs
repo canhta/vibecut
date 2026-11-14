@@ -24,7 +24,7 @@ pub use scene::{
 pub use scene::{
     arrange, blend, color, effects, flicker, mask, matte, outline, stabilize, transitions, viewport,
 };
-pub use scopes::{Plot, SCOPE_SIDE, ScopeKind, plot as plot_scope};
+pub use scopes::{Plot, Scopes, TRACE_HEIGHT, TRACE_WIDTH, VECTOR_SIDE, plot_scopes};
 pub use sources::{FileSources, SourceProvider};
 use time::SourceRange;
 

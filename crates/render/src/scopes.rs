@@ -1,48 +1,45 @@
 //! Plots the colour scopes of one displayed frame.
 
 use crate::{Error, Result};
-use serde::{Deserialize, Serialize};
 
-/// Width and height of every plot, in pixels: one cell per 8-bit level.
-pub const SCOPE_SIDE: usize = 256;
+/// Columns of the parade and waveform plots: three channel groups of [`GROUP`] columns.
+pub const TRACE_WIDTH: usize = 111;
+/// Rows of the parade and waveform plots.
+pub const TRACE_HEIGHT: usize = 144;
+/// Width and height of the vectorscope plot.
+pub const VECTOR_SIDE: usize = 119;
+/// Columns of one parade channel.
+const GROUP: usize = TRACE_WIDTH / 3;
 
-/// Which scope to plot.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ScopeKind {
-    /// Luma level (rows, white at the top) against horizontal position (columns).
-    Waveform,
-    /// Blue difference (columns) against red difference (rows, up) of every pixel.
-    Vectorscope,
-    /// Count of each red, green and blue level, drawn as three additive channel columns.
-    Histogram,
-}
-
-impl ScopeKind {
-    /// Every kind, in menu order.
-    pub const ALL: [Self; 3] = [Self::Waveform, Self::Vectorscope, Self::Histogram];
-
-    /// Whether the plot is a single-colour density the caller tints; the histogram carries its
-    /// own channel colours.
-    pub fn tinted(self) -> bool {
-        !matches!(self, Self::Histogram)
-    }
-}
-
-/// A square RGBA plot, straight alpha, row-major, [`SCOPE_SIDE`] cells a side. Cells with
-/// nothing plotted are fully transparent.
+/// A straight-alpha RGBA plot, row-major. Cells with nothing plotted are fully transparent.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Plot {
+    pub width: usize,
+    pub height: usize,
     pub rgba: Vec<u8>,
 }
 
-/// Plot `kind` for a frame of straight-alpha 8-bit `rgba` pixels, `width` by `height`.
+/// The three scopes of one frame.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Scopes {
+    /// Red, green and blue levels side by side, each channel in its own colour.
+    pub parade: Plot,
+    /// Luma-scale level (rows, high at the top) against horizontal position, each cell in the
+    /// mean colour of the pixels it holds.
+    pub waveform: Plot,
+    /// Blue difference (columns) against red difference (rows, up), each cell in the hue of its
+    /// pixels at full brightness.
+    pub vectorscope: Plot,
+}
+
+/// Plot the parade, waveform and vectorscope of a frame of straight-alpha 8-bit `rgba` pixels,
+/// `width` by `height`.
 ///
-/// One pass over the pixels, bounded by the input length; the plot is a fixed 256 KiB.
-/// A zero size or a length other than `width * height * 4` is [`Error::Invalid`]. Alpha is
-/// ignored: the preview frame is opaque. A frame narrower than 256 pixels leaves the waveform
-/// columns it does not reach empty.
-pub fn plot(kind: ScopeKind, width: usize, height: usize, rgba: &[u8]) -> Result<Plot> {
+/// One pass over the pixels, bounded by the input length; the plots are a fixed size. A zero size
+/// or a length other than `width * height * 4` is [`Error::Invalid`]. Alpha is ignored: the
+/// preview frame is opaque. A frame narrower than a plot leaves the columns it does not reach
+/// empty.
+pub fn plot_scopes(width: usize, height: usize, rgba: &[u8]) -> Result<Scopes> {
     let expected = width
         .checked_mul(height)
         .and_then(|pixels| pixels.checked_mul(4))
@@ -50,39 +47,42 @@ pub fn plot(kind: ScopeKind, width: usize, height: usize, rgba: &[u8]) -> Result
     if width == 0 || height == 0 || rgba.len() != expected {
         return Err(Error::Invalid("scope frame size"));
     }
-    let pixels = rgba.chunks_exact(4).map(|pixel| match pixel {
-        [r, g, b, _] => (*r, *g, *b),
-        _ => (0, 0, 0),
-    });
-    match kind {
-        ScopeKind::Waveform => {
-            let mut cells = Cells::new()?;
-            for (n, (r, g, b)) in pixels.enumerate() {
-                let column = (n % width) * SCOPE_SIDE / width;
-                cells.bump(row_of(luma(r, g, b)) * SCOPE_SIDE + column);
-            }
-            cells.density()
+    let mut parade = Grid::new(TRACE_WIDTH, TRACE_HEIGHT)?;
+    let mut waveform = Grid::new(TRACE_WIDTH, TRACE_HEIGHT)?;
+    let mut vectorscope = Grid::new(VECTOR_SIDE, VECTOR_SIDE)?;
+    for (n, pixel) in rgba.chunks_exact(4).enumerate() {
+        let &[r, g, b, _] = pixel else {
+            continue;
+        };
+        let x = n % width;
+        let within = x * GROUP / width;
+        for (channel, (level, colour)) in [
+            (r, [255, 0, 0]),
+            (g, [0, 255, 0]),
+            (b, [0, 0, 255]),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            parade.add(channel * GROUP + within, row_of(level, TRACE_HEIGHT), colour);
         }
-        ScopeKind::Vectorscope => {
-            let mut cells = Cells::new()?;
-            for (r, g, b) in pixels {
-                let (cb, cr) = chroma(r, g, b);
-                cells.bump(row_of(cr) * SCOPE_SIDE + usize::from(cb));
-            }
-            cells.density()
-        }
-        ScopeKind::Histogram => {
-            let mut bins = [[0_u32; SCOPE_SIDE]; 3];
-            for (r, g, b) in pixels {
-                for (bin, level) in bins.iter_mut().zip([r, g, b]) {
-                    if let Some(count) = bin.get_mut(usize::from(level)) {
-                        *count += 1;
-                    }
-                }
-            }
-            histogram(&bins)
-        }
+        waveform.add(
+            x * TRACE_WIDTH / width,
+            row_of(luma(r, g, b), TRACE_HEIGHT),
+            [r, g, b],
+        );
+        let (cb, cr) = chroma(r, g, b);
+        vectorscope.add(
+            usize::from(cb) * (VECTOR_SIDE - 1) / 255,
+            row_of(cr, VECTOR_SIDE),
+            [r, g, b],
+        );
     }
+    Ok(Scopes {
+        parade: parade.finish(false)?,
+        waveform: waveform.finish(false)?,
+        vectorscope: vectorscope.finish(true)?,
+    })
 }
 
 /// Rec. 709 luma of an 8-bit pixel, integer weights summing to 256.
@@ -103,86 +103,78 @@ fn clamp_level(value: i32) -> u8 {
     u8::try_from(value.clamp(0, 255)).unwrap_or(u8::MAX)
 }
 
-/// Plot row of a level: the highest level is the top row.
-fn row_of(level: u8) -> usize {
-    SCOPE_SIDE - 1 - usize::from(level)
+/// Plot row of an 8-bit level in `rows` rows: the highest level is the top row.
+fn row_of(level: u8, rows: usize) -> usize {
+    (255 - usize::from(level)) * (rows - 1) / 255
 }
 
-struct Cells(Vec<u32>);
-
-impl Cells {
-    fn new() -> Result<Self> {
-        let mut cells = Vec::new();
-        cells.try_reserve_exact(SCOPE_SIDE * SCOPE_SIDE)?;
-        cells.resize(SCOPE_SIDE * SCOPE_SIDE, 0);
-        Ok(Self(cells))
-    }
-    fn bump(&mut self, index: usize) {
-        if let Some(cell) = self.0.get_mut(index) {
-            *cell += 1;
-        }
-    }
-    /// White cells whose alpha follows the square root of the count against the busiest cell,
-    /// so a lone pixel stays visible beside a dense one.
-    fn density(&self) -> Result<Plot> {
-        let peak = self.0.iter().copied().max().unwrap_or(0).max(1);
-        let mut rgba = Vec::new();
-        rgba.try_reserve_exact(self.0.len() * 4)?;
-        for &count in &self.0 {
-            let alpha = if count == 0 {
-                0
-            } else {
-                let ratio = f64::from(count) / f64::from(peak);
-                // ceil keeps any occupied cell at alpha 1 or more.
-                (ratio.sqrt() * 255.0).ceil().clamp(1.0, 255.0) as u8
-            };
-            rgba.extend_from_slice(&[255, 255, 255, alpha]);
-        }
-        Ok(Plot { rgba })
-    }
+/// Pixel counts and colour sums per plot cell.
+struct Grid {
+    width: usize,
+    height: usize,
+    count: Vec<u32>,
+    sum: Vec<[u64; 3]>,
 }
 
-/// Three channel bars per level, scaled to the tallest bin, each pixel the sum of the
-/// channels whose bar reaches it.
-fn histogram(bins: &[[u32; SCOPE_SIDE]; 3]) -> Result<Plot> {
-    let peak = bins
-        .iter()
-        .flat_map(|bin| bin.iter().copied())
-        .max()
-        .unwrap_or(0)
-        .max(1);
-    let heights: Vec<[usize; 3]> = (0..SCOPE_SIDE)
-        .map(|level| {
-            let mut out = [0_usize; 3];
-            for (height, bin) in out.iter_mut().zip(bins) {
-                let count = bin.get(level).copied().unwrap_or(0);
-                if count > 0 {
-                    let scaled = u64::from(count) * SCOPE_SIDE as u64 / u64::from(peak);
-                    *height = usize::try_from(scaled).unwrap_or(SCOPE_SIDE).max(1);
-                }
-            }
-            out
+impl Grid {
+    fn new(width: usize, height: usize) -> Result<Self> {
+        let cells = width * height;
+        let mut count = Vec::new();
+        count.try_reserve_exact(cells)?;
+        count.resize(cells, 0);
+        let mut sum = Vec::new();
+        sum.try_reserve_exact(cells)?;
+        sum.resize(cells, [0; 3]);
+        Ok(Self {
+            width,
+            height,
+            count,
+            sum,
         })
-        .collect();
-    let mut rgba = Vec::new();
-    rgba.try_reserve_exact(SCOPE_SIDE * SCOPE_SIDE * 4)?;
-    for row in 0..SCOPE_SIDE {
-        // A bar reaches this row when it is at least as tall as the row's distance from the bottom.
-        let needed = SCOPE_SIDE - row;
-        for column in &heights {
-            let mut pixel = [0_u8; 3];
-            let mut reached = false;
-            for (value, height) in pixel.iter_mut().zip(column) {
-                if *height >= needed {
-                    *value = 255;
-                    reached = true;
-                }
+    }
+
+    fn add(&mut self, column: usize, row: usize, colour: [u8; 3]) {
+        let index = row * self.width + column;
+        if let (Some(count), Some(sum)) = (self.count.get_mut(index), self.sum.get_mut(index)) {
+            *count += 1;
+            for (total, value) in sum.iter_mut().zip(colour) {
+                *total += u64::from(value);
             }
-            let [r, g, b] = pixel;
-            rgba.extend_from_slice(&[r, g, b, if reached { 255 } else { 0 }]);
         }
     }
-    Ok(Plot { rgba })
+
+    /// Cells in the mean colour of their pixels (scaled to full brightness when `bright`), their
+    /// alpha following the square root of the count against the busiest cell, so a lone pixel
+    /// stays visible beside a dense one.
+    fn finish(&self, bright: bool) -> Result<Plot> {
+        let peak = self.count.iter().copied().max().unwrap_or(0).max(1);
+        let mut rgba = Vec::new();
+        rgba.try_reserve_exact(self.count.len() * 4)?;
+        for (&count, sum) in self.count.iter().zip(&self.sum) {
+            if count == 0 {
+                rgba.extend_from_slice(&[0, 0, 0, 0]);
+                continue;
+            }
+            let mean = sum.map(|total| u8::try_from(total / u64::from(count)).unwrap_or(u8::MAX));
+            let top = mean.iter().copied().max().unwrap_or(0);
+            let [r, g, b] = if bright && top == 0 {
+                [255; 3]
+            } else if bright {
+                mean.map(|value| u8::try_from(u32::from(value) * 255 / u32::from(top)).unwrap_or(255))
+            } else {
+                mean
+            };
+            let ratio = f64::from(count) / f64::from(peak);
+            // ceil keeps any occupied cell at alpha 1 or more.
+            let alpha = (ratio.sqrt() * 255.0).ceil().clamp(1.0, 255.0) as u8;
+            rgba.extend_from_slice(&[r, g, b, alpha]);
+        }
+        Ok(Plot {
+            width: self.width,
+            height: self.height,
+            rgba,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -195,7 +187,7 @@ mod tests {
     }
 
     fn cell(plot: &Plot, row: usize, column: usize) -> [u8; 4] {
-        let at = (row * SCOPE_SIDE + column) * 4;
+        let at = (row * plot.width + column) * 4;
         [
             plot.rgba[at],
             plot.rgba[at + 1],
@@ -204,62 +196,67 @@ mod tests {
         ]
     }
 
-    #[test]
-    fn a_wrong_length_or_empty_frame_is_refused() {
-        assert!(plot(ScopeKind::Waveform, 0, 4, &[]).is_err());
-        assert!(plot(ScopeKind::Vectorscope, 2, 2, &[0; 15]).is_err());
-        assert!(plot(ScopeKind::Histogram, usize::MAX, 2, &[0; 4]).is_err());
+    fn occupied(plot: &Plot) -> Vec<(usize, usize)> {
+        (0..plot.width * plot.height)
+            .filter(|n| plot.rgba[n * 4 + 3] > 0)
+            .map(|n| (n / plot.width, n % plot.width))
+            .collect()
     }
 
     #[test]
-    fn a_white_frame_fills_the_top_row_of_the_waveform() {
-        let frame = solid(256, 4, [255, 255, 255, 255]);
-        let made = plot(ScopeKind::Waveform, 256, 4, &frame).unwrap();
-        assert_eq!(made.rgba.len(), SCOPE_SIDE * SCOPE_SIDE * 4);
-        for column in 0..SCOPE_SIDE {
-            assert_eq!(cell(&made, 0, column), [255, 255, 255, 255]);
-            assert_eq!(cell(&made, 1, column)[3], 0);
+    fn a_wrong_length_or_empty_frame_is_refused() {
+        assert!(plot_scopes(0, 4, &[]).is_err());
+        assert!(plot_scopes(2, 2, &[0; 15]).is_err());
+        assert!(plot_scopes(usize::MAX, 2, &[0; 4]).is_err());
+    }
+
+    #[test]
+    fn plots_have_the_measured_sizes() {
+        let scopes = plot_scopes(2, 2, &solid(2, 2, [10, 20, 30, 255])).unwrap();
+        for (plot, size) in [
+            (&scopes.parade, (TRACE_WIDTH, TRACE_HEIGHT)),
+            (&scopes.waveform, (TRACE_WIDTH, TRACE_HEIGHT)),
+            (&scopes.vectorscope, (VECTOR_SIDE, VECTOR_SIDE)),
+        ] {
+            assert_eq!((plot.width, plot.height), size);
+            assert_eq!(plot.rgba.len(), size.0 * size.1 * 4);
         }
     }
 
     #[test]
-    fn mid_grey_sits_at_the_vectorscope_centre_and_red_up_and_left() {
-        let grey = plot(ScopeKind::Vectorscope, 2, 2, &solid(2, 2, [128, 128, 128, 255])).unwrap();
-        // Chroma 128, 128 lands on row 255 - 128 = 127, column 128.
-        assert_eq!(cell(&grey, 127, 128)[3], 255);
-        let red = plot(ScopeKind::Vectorscope, 2, 2, &solid(2, 2, [255, 0, 0, 255])).unwrap();
-        let occupied: Vec<usize> = (0..SCOPE_SIDE * SCOPE_SIDE)
-            .filter(|n| red.rgba[n * 4 + 3] > 0)
-            .collect();
-        assert_eq!(occupied.len(), 1);
-        let (row, column) = (occupied[0] / SCOPE_SIDE, occupied[0] % SCOPE_SIDE);
-        assert!(row < 127, "red has a red difference above grey");
-        assert!(column < 128, "red has a blue difference below grey");
+    fn the_parade_draws_red_green_and_blue_in_their_own_thirds() {
+        // Red at full, green and blue at nothing: red on the top row of the first third, green
+        // and blue on the bottom row of the second and third.
+        let frame = solid(111, 2, [255, 0, 0, 255]);
+        let scopes = plot_scopes(111, 2, &frame).unwrap();
+        let bottom = TRACE_HEIGHT - 1;
+        assert_eq!(cell(&scopes.parade, 0, 0), [255, 0, 0, 255]);
+        assert_eq!(cell(&scopes.parade, bottom, 37), [0, 255, 0, 255]);
+        assert_eq!(cell(&scopes.parade, bottom, 74), [0, 0, 255, 255]);
+        assert_eq!(cell(&scopes.parade, 0, 37)[3], 0);
     }
 
     #[test]
-    fn the_histogram_draws_each_channel_at_its_own_level() {
-        // Red at 255, green and blue at 0 over the whole frame.
-        let made = plot(ScopeKind::Histogram, 2, 2, &solid(2, 2, [255, 0, 0, 255])).unwrap();
-        let bottom = SCOPE_SIDE - 1;
-        assert_eq!(cell(&made, bottom, 255), [255, 0, 0, 255]);
-        assert_eq!(cell(&made, bottom, 0), [0, 255, 255, 255]);
-        assert_eq!(cell(&made, bottom, 128)[3], 0);
-        assert_eq!(cell(&made, 0, 255), [255, 0, 0, 255]);
+    fn a_white_frame_fills_the_top_row_of_the_waveform_in_white() {
+        let frame = solid(111, 4, [255, 255, 255, 255]);
+        let scopes = plot_scopes(111, 4, &frame).unwrap();
+        for column in 0..TRACE_WIDTH {
+            assert_eq!(cell(&scopes.waveform, 0, column), [255, 255, 255, 255]);
+            assert_eq!(cell(&scopes.waveform, 1, column)[3], 0);
+        }
     }
 
     #[test]
-    fn only_the_histogram_carries_its_own_colours() {
-        assert!(ScopeKind::Waveform.tinted());
-        assert!(ScopeKind::Vectorscope.tinted());
-        assert!(!ScopeKind::Histogram.tinted());
-    }
-
-    #[test]
-    fn kinds_round_trip_as_snake_case() {
-        let text = serde_json::to_string(&ScopeKind::Vectorscope).unwrap();
-        assert_eq!(text, "\"vectorscope\"");
-        let back: ScopeKind = serde_json::from_str(&text).unwrap();
-        assert_eq!(back, ScopeKind::Vectorscope);
+    fn grey_sits_at_the_vectorscope_centre_and_red_up_and_left_in_its_own_hue() {
+        let grey = plot_scopes(2, 2, &solid(2, 2, [128, 128, 128, 255])).unwrap();
+        let centre = VECTOR_SIDE / 2;
+        assert_eq!(occupied(&grey.vectorscope), vec![(centre - 1, centre)]);
+        let red = plot_scopes(2, 2, &solid(2, 2, [255, 0, 0, 255])).unwrap();
+        let cells = occupied(&red.vectorscope);
+        assert_eq!(cells.len(), 1);
+        let (row, column) = cells[0];
+        assert!(row < centre - 1, "red has a red difference above grey");
+        assert!(column < centre, "red has a blue difference below grey");
+        assert_eq!(cell(&red.vectorscope, row, column), [255, 0, 0, 255]);
     }
 }

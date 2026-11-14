@@ -107,7 +107,7 @@ pub(super) const SCENES: &[Scene] = &[
     },
     Scene {
         name: "player-scope",
-        reference_dark: None,
+        reference_dark: Some("capcut-desktop-2026-11-14f/scopes/04-player-with-scopes.png"),
         reference_light: None,
         build: |theme, scale| player_variant(theme, scale, "scope"),
     },

@@ -295,9 +295,9 @@ pub(super) fn player_variant(
         editor.activate("preview.guides.add_vertical")?;
     }
     if variant == "scope" {
-        // The reference menu offers a colour oscilloscope (100123) but no capture shows one:
-        // the panel and its plot are ours, so the scene has no reference to set beside it.
-        editor.activate("preview.scope.vectorscope")?;
+        // The reference's strip: parade, waveform and vectorscope under the video
+        // (capcut-desktop-2026-11-14f/scopes/04-player-with-scopes.png).
+        editor.activate("preview.scopes")?;
     }
     let app_root = if variant == "fullscreen" {
         App::Editor(Box::new(editor))

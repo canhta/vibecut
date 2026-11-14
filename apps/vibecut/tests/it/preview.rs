@@ -1889,74 +1889,75 @@ fn player_footer_stays_on_one_row_in_both_languages() {
     }
 }
 
-fn scope(h: &Harness<Editor>) -> Option<render::ScopeKind> {
-    h.state().preferences.preview_scope
+fn scopes_shown(h: &Harness<Editor>) -> bool {
+    h.state().preferences.preview_scopes
 }
 
 #[test]
-fn colour_scope_rows_run_as_registered_commands_and_undo_without_touching_the_project() {
+fn colour_scopes_run_as_one_registered_command_and_undo_without_touching_the_project() {
     let fresh = || Project::new(project(FrameRate::FPS_30, 640, 360, false).into_data()).unwrap();
     let mut h = build(editor(fresh(), Preferences::default()));
     let committed = h.state().session.project().clone();
-    assert_eq!(scope(&h), None);
-    for (id, kind) in [
-        ("preview.scope.waveform", render::ScopeKind::Waveform),
-        ("preview.scope.vectorscope", render::ScopeKind::Vectorscope),
-        ("preview.scope.histogram", render::ScopeKind::Histogram),
+    assert!(!scopes_shown(&h), "the scopes start hidden");
+    let spec = vibecut::actions::action("preview.scopes").expect("registered");
+    assert!(spec.defaults.is_empty());
+    for old in [
+        "preview.scope.waveform",
+        "preview.scope.vectorscope",
+        "preview.scope.histogram",
     ] {
-        let spec = vibecut::actions::action(id).unwrap_or_else(|| panic!("unregistered {id}"));
-        assert!(spec.defaults.is_empty(), "{id}");
-        assert!(h.state().action_enabled(id), "{id}");
-        h.state_mut().activate(id).unwrap();
-        assert_eq!(scope(&h), Some(kind), "{id} shows its scope");
+        assert!(vibecut::actions::action(old).is_none(), "{old}");
     }
-    // Choosing the scope that is shown hides it; each choice is one app-history step.
-    h.state_mut().activate("preview.scope.histogram").unwrap();
-    assert_eq!(scope(&h), None);
+    assert!(h.state().action_enabled("preview.scopes"));
+    h.state_mut().activate("preview.scopes").unwrap();
+    assert!(scopes_shown(&h));
+    h.state_mut().activate("preview.scopes").unwrap();
+    assert!(!scopes_shown(&h));
+    // Each toggle is one app-history step.
     h.state_mut().activate("edit.undo").unwrap();
-    assert_eq!(scope(&h), Some(render::ScopeKind::Histogram));
-    h.state_mut().activate("edit.undo").unwrap();
-    assert_eq!(scope(&h), Some(render::ScopeKind::Vectorscope));
+    assert!(scopes_shown(&h));
     h.state_mut().activate("edit.redo").unwrap();
-    assert_eq!(scope(&h), Some(render::ScopeKind::Histogram));
+    assert!(!scopes_shown(&h));
     assert!(
         Arc::ptr_eq(&committed, h.state().session.project()),
-        "the scope never touches the project"
+        "the scopes never touch the project"
     );
     // The choice survives a restart.
+    h.state_mut().activate("preview.scopes").unwrap();
     let saved = h.state().preferences.clone();
     let restarted = build(editor(fresh(), saved));
-    assert_eq!(scope(&restarted), Some(render::ScopeKind::Histogram));
+    assert!(scopes_shown(&restarted));
+}
+
+/// Opens the Color oscilloscope submenu and clicks one of its rows.
+fn row(h: &mut Harness<Editor>, id: &str) {
+    click(h, "preview.menu.scope");
+    h.run_steps(3);
+    h.get(By::new().predicate(|node| node.author_id() == Some(id)))
+        .click();
+    h.run_steps(3);
 }
 
 #[test]
-fn the_player_menu_lists_the_colour_scopes_and_a_row_shows_that_scope() {
+fn the_color_oscilloscope_submenu_offers_show_and_hide() {
     let mut h = build(editor(
         project(FrameRate::FPS_30, 640, 360, false),
         Preferences::default(),
     ));
-    click(&mut h, "preview.menu.scope");
-    h.run_steps(3);
-    for id in [
-        "preview.menu.scope.waveform",
-        "preview.menu.scope.vectorscope",
-        "preview.menu.scope.histogram",
-    ] {
-        assert!(
-            h.query_all(By::new().predicate(|node| node.author_id() == Some(id)))
-                .next()
-                .is_some(),
-            "missing menu row {id}"
-        );
-    }
-    h.get(By::new().predicate(|node| node.author_id() == Some("preview.menu.scope.vectorscope")))
-        .click();
-    h.run_steps(3);
-    assert_eq!(scope(&h), Some(render::ScopeKind::Vectorscope));
+    row(&mut h, "preview.menu.scopes.show");
+    assert!(scopes_shown(&h));
+    // Show while shown changes nothing and records nothing.
+    row(&mut h, "preview.menu.scopes.show");
+    assert!(scopes_shown(&h));
+    h.state_mut().activate("edit.undo").unwrap();
+    assert!(!scopes_shown(&h), "the second Show added no step");
+    h.state_mut().activate("edit.redo").unwrap();
+    row(&mut h, "preview.menu.scopes.hide");
+    assert!(!scopes_shown(&h));
 }
 
 #[test]
-fn a_shown_scope_is_plotted_off_the_ui_thread_and_shows_on_the_workers_wake() {
+fn shown_scopes_take_a_strip_under_the_video_plotted_off_the_ui_thread() {
     let woken = crate::woken::Woken::bind();
     let mut h = build(editor(
         project(FrameRate::FPS_30, 640, 360, false),
@@ -1966,44 +1967,55 @@ fn a_shown_scope_is_plotted_off_the_ui_thread_and_shows_on_the_workers_wake() {
     woken.step_until(&mut h, "the preview frame", |editor| {
         editor.playback.frame().is_some()
     });
-    assert!(
-        !crate::woken::shows(h.state(), "preview.scope"),
-        "no scope panel while the scope is off"
-    );
+    assert!(!crate::woken::shows(h.state(), "preview.scopes"));
+    let video_before = widget(&h, "preview.canvas").rect;
 
-    h.state_mut().activate("preview.scope.waveform").unwrap();
+    h.state_mut().activate("preview.scopes").unwrap();
     h.step();
-    assert!(crate::woken::shows(h.state(), "preview.scope"));
+    assert!(crate::woken::shows(h.state(), "preview.scopes"));
     assert!(
-        !crate::woken::shows(h.state(), "preview.scope.ready"),
-        "the first pass only starts the plot: it shows the pending panel"
+        !crate::woken::shows(h.state(), "preview.scopes.ready"),
+        "the first pass only starts the plot: the panels show their axes without a trace"
     );
-    woken.step_until(&mut h, "the waveform plot", |editor| {
-        crate::woken::shows(editor, "preview.scope.ready")
+    woken.step_until(&mut h, "the scope plots", |editor| {
+        crate::woken::shows(editor, "preview.scopes.ready")
     });
-    assert!(!crate::woken::shows(h.state(), "preview.scope.failed"));
+    assert!(!crate::woken::shows(h.state(), "preview.scopes.failed"));
+
+    // Three panels in a row, 159 tall with a 5 gap: RGB parade, waveform, vectorscope (04).
     let stage = widget(&h, "preview.canvas").rect;
-    let panel = widget(&h, "preview.scope").rect;
-    assert_eq!(panel.width(), panel.height(), "the plot is square");
-    assert!(panel.width() <= 256.0 && panel.width() > 0.0);
-    assert!(stage.contains_rect(panel), "{panel:?} inside {stage:?}");
+    let strip = widget(&h, "preview.scopes").rect;
+    let panels = [
+        widget(&h, "preview.scopes.parade").rect,
+        widget(&h, "preview.scopes.waveform").rect,
+        widget(&h, "preview.scopes.vectorscope").rect,
+    ];
+    let near = |a: f32, b: f32, what: &str| assert!((a - b).abs() <= 0.5, "{what}: {a} vs {b}");
+    near(strip.left(), stage.left(), "the strip is inset like the video area");
+    for panel in panels {
+        near(panel.height(), 159.0, "panel height");
+        near(panel.top(), strip.top(), "panel top");
+        near(panel.width(), panels[0].width(), "equal panels");
+    }
+    near(panels[1].left() - panels[0].right(), 5.0, "gap one");
+    near(panels[2].left() - panels[1].right(), 5.0, "gap two");
+    near(panels[2].right(), strip.right(), "the strip is filled");
+    // The video area shrinks to make room, and the strip sits below it.
     assert!(
-        panel.left() >= stage.left() + 16.0,
-        "the panel clears the left ruler strip"
+        stage.height() <= video_before.height() - 159.0,
+        "{stage:?} vs {video_before:?}"
     );
+    assert!(stage.bottom() <= strip.top());
 
-    // Another kind plots again for the same frame; the old plot is not shown as the new one.
-    h.state_mut().activate("preview.scope.histogram").unwrap();
+    // Hiding returns the room and drops the plots.
+    h.state_mut().activate("preview.scopes").unwrap();
     h.step();
-    assert!(!crate::woken::shows(h.state(), "preview.scope.ready"));
-    woken.step_until(&mut h, "the histogram plot", |editor| {
-        crate::woken::shows(editor, "preview.scope.ready")
-    });
-
-    // Turning the scope off removes the panel and drops the plot.
-    h.state_mut().activate("preview.scope.histogram").unwrap();
-    h.step();
-    assert!(!crate::woken::shows(h.state(), "preview.scope"));
+    assert!(!crate::woken::shows(h.state(), "preview.scopes"));
+    near(
+        widget(&h, "preview.canvas").rect.height(),
+        video_before.height(),
+        "the video area returns",
+    );
 }
 
 #[test]

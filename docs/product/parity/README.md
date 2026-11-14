@@ -23,6 +23,7 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 | `14b/104709`, bare `1025xx`-`1121xx` | `ui-reference/capcut-desktop-2026-11-14b/` |
 | `14c` | `ui-reference/capcut-desktop-2026-11-14c/` |
 | `14d/151656`, bare `151xxx` | `ui-reference/capcut-desktop-2026-11-14d/` |
+| `14f/scopes/NN` | `ui-reference/capcut-desktop-2026-11-14f/scopes/` |
 | `web screens/NN`, `web flows/NN` | `web-editors/capcut-web/` (function only, never layout) |
 
 ## Update rule
@@ -58,9 +59,9 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 | [Sticker, effect, filter and adjustment items](properties-other.md#sticker-effect-filter-and-adjustment-items-pother) | 17 | 7 | 6 | 3 | 0 | 1 | 0 | 0 | 5 | 9 | 3 |
 | [Timeline](timeline.md#timeline-tl) | 95 | 44 | 11 | 26 | 2 | 10 | 2 | 13 | 5 | 45 | 5 |
 | [Keyframes](timeline.md#keyframes-key) | 14 | 10 | 3 | 0 | 0 | 1 | 0 | 2 | 2 | 7 | 1 |
-| [Player](player-export.md#player-play) | 24 | 16 | 5 | 0 | 0 | 3 | 0 | 5 | 5 | 13 | 0 |
+| [Player](player-export.md#player-play) | 24 | 17 | 4 | 0 | 0 | 3 | 0 | 6 | 5 | 12 | 0 |
 | [Export](player-export.md#export-exp) | 33 | 18 | 6 | 5 | 0 | 1 | 3 | 2 | 8 | 12 | 4 |
 | [AI chat](ai-shorts.md#ai-chat-agent) | 17 | 9 | 3 | 2 | 1 | 1 | 1 | 5 | 3 | 4 | 1 |
 | [Long video to shorts](ai-shorts.md#long-video-to-shorts-shorts) | 24 | 9 | 7 | 4 | 0 | 2 | 2 | 8 | 2 | 5 | 3 |
 | [States](states.md#states-state) | 12 | 7 | 3 | 0 | 1 | 0 | 1 | 2 | 2 | 4 | 3 |
-| **Total** | **669** | **319** | **121** | **128** | **7** | **53** | **41** | **98** | **72** | **264** | **103** |
+| **Total** | **669** | **320** | **120** | **128** | **7** | **53** | **41** | **99** | **72** | **263** | **103** |

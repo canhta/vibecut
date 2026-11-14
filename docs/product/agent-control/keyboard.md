@@ -139,9 +139,7 @@
 | `preview.guides.lock` — Lock or unlock guides | View | — | — | preview guide lines |
 | `preview.guides.clear` — Clear guides | View | — | — | preview guide lines |
 | `preview.guides.move` — Move a guide | View | — | — | preview guide lines |
-| `preview.scope.waveform` — Waveform | View | — | — | preview colour scope |
-| `preview.scope.vectorscope` — Vectorscope | View | — | — | preview colour scope |
-| `preview.scope.histogram` — Histogram | View | — | — | preview colour scope |
+| `preview.scopes` — Show or hide color scopes | View | — | — | preview colour scopes |
 | `preview.zoom.fit` — Fit preview | View | Alt+Shift+Z | — | preview view |
 | `preview.zoom.in` — Zoom preview in | View | Alt+Shift+Plus | — | preview view |
 | `preview.zoom.out` — Zoom preview out | View | Alt+Shift+Minus | — | preview view |
