@@ -305,6 +305,7 @@ mod tests {
                 serde_json::json!({"guide": true, "notes": false}),
             ),
             ("preview_scopes", serde_json::json!(true)),
+            ("welcome_seen", serde_json::json!(false)),
             ("track_height", serde_json::json!("tall")),
             ("waveform_size", serde_json::json!(100)),
             ("frame_step", serde_json::json!(25)),

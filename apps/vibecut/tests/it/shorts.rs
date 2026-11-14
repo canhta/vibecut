@@ -642,6 +642,8 @@ fn home_card_opens_a_dedicated_viewport_and_native_drop_selects_one_video() {
     let mut app =
         vibecut::app::Workspace::new(directory.path().join("recovery"), Default::default(), None)
             .unwrap();
+    // A returning user: the welcome would cover Home.
+    app.preferences.welcome_seen = true;
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     while app.busy() {
         app.tick();

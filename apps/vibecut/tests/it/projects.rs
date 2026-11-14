@@ -72,7 +72,13 @@ impl Fixture {
         self.directory.path().join("recovery")
     }
 
-    fn build(&self, preferences: Preferences) -> Harness<'static, Workspace> {
+    /// A returning user: the welcome is already finished.
+    fn build(&self, mut preferences: Preferences) -> Harness<'static, Workspace> {
+        preferences.welcome_seen = true;
+        self.build_with(preferences)
+    }
+
+    fn build_with(&self, preferences: Preferences) -> Harness<'static, Workspace> {
         let app =
             Workspace::with_projects(self.recovery(), self.projects.clone(), preferences, None)
                 .unwrap();
@@ -1189,4 +1195,63 @@ fn leaving_a_project_shows_its_new_cover_on_home_without_input_when_woken() {
             && matches!(app.projects.entries()[0].thumbnail, Thumbnail::Ready { .. })
     });
     assert!(harness.state().home_open());
+}
+
+#[test]
+fn welcome_runs_three_steps_once_and_the_flag_round_trips() {
+    let fixture = Fixture::new(&[]);
+    let mut harness = fixture.build_with(Preferences::default());
+    assert!(harness.query(by("welcome.dialog")).is_some());
+    for id in ["welcome.next", "welcome.next"] {
+        harness.get(by(id)).click();
+        harness.run_steps(2);
+        assert!(!harness.state().preferences.welcome_seen);
+    }
+    harness.get(by("welcome.start")).click();
+    harness.run_steps(2);
+    assert!(harness.query(by("welcome.dialog")).is_none());
+    assert!(harness.state().preferences.welcome_seen);
+
+    let directory = tempfile::tempdir().unwrap();
+    let store = vibecut::preferences::PreferenceStore::new(directory.path().join("prefs.json"));
+    store.save(&harness.state().preferences).unwrap();
+    let loaded = store.load_with_warning().0;
+    assert!(loaded.welcome_seen, "a finished welcome never returns");
+    drop(harness);
+    let mut again = fixture.build(loaded);
+    again.run_steps(2);
+    assert!(again.query(by("welcome.dialog")).is_none());
+}
+
+#[test]
+fn first_run_empty_and_no_results_states_name_themselves_and_clear_search_restores_the_list() {
+    let empty = Fixture::new(&[]);
+    let harness = empty.build(Preferences::default());
+    assert!(harness.query(by("projects.state")).is_some());
+    assert!(harness.query_by_label("No projects yet").is_some());
+    assert!(harness.query(by("projects.search.clear")).is_none());
+
+    let fixture = Fixture::new(&[("Alpha", missing()), ("Beta", missing())]);
+    let mut harness = fixture.build(Preferences::default());
+    harness.get(by("projects.search")).click();
+    harness.run_steps(1);
+    harness.get(by("projects.search")).type_text("zzz");
+    harness.run_steps(2);
+    assert!(harness.query_by_label("No matches").is_some());
+    harness.get(by("projects.search.clear")).click();
+    harness.run_steps(2);
+    assert!(harness.query(by("projects.search.clear")).is_none());
+    assert_eq!(
+        harness
+            .state()
+            .projects
+            .displayed_ids(harness.state().preferences.projects)
+            .len(),
+        2,
+        "Clear search restores the full list"
+    );
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-08-empty.png");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    harness.render().unwrap().save(&path).unwrap();
 }

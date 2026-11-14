@@ -432,15 +432,30 @@ impl View<'_> {
             area.min,
             Vec2::new(area.width(), (area.height() - 121.0).max(24.0)),
         );
+        // Files held over the window: this zone is the target, so it takes the accent.
+        let over = ui.input(|input| !input.raw.hovered_files.is_empty());
+        if over {
+            self.state.drop_zone_pass = ui.ctx().cumulative_pass_nr();
+        }
+        let dark = self.cx.preferences.dark;
         ui.painter().rect_filled(
             drop,
             theme::radius::UPLOAD,
-            theme::field(self.cx.preferences.dark),
+            if over {
+                theme::accent(dark).gamma_multiply(0.2)
+            } else {
+                theme::field(dark)
+            },
         );
         let response = ui
             .interact(drop, Id::unique("file.import"), egui::Sense::click())
             .on_hover_text(self.tr(Text::Import));
-        crate::kit::dashed_outline(ui, drop, theme::radius::UPLOAD, response.has_focus());
+        crate::kit::dashed_outline(
+            ui,
+            drop,
+            theme::radius::UPLOAD,
+            over || response.has_focus(),
+        );
         response.widget_info(|| {
             egui::WidgetInfo::labeled(egui::Role::Button, true, self.tr(Text::Import))
         });
@@ -454,7 +469,11 @@ impl View<'_> {
         ui.painter().text(
             drop.center() + Vec2::new(14.0, -13.0),
             Align2::CENTER_CENTER,
-            self.tr(Text::Import),
+            self.tr(if over {
+                Text::MediaDropNow
+            } else {
+                Text::Import
+            }),
             title_font,
             theme::text(self.cx.preferences.dark),
         );

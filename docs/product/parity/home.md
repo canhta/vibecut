@@ -42,7 +42,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | HOME-25 | Card menu (open, rename, duplicate) | Done | Not captured | web 01-home.md | |
 | HOME-26 | Rename, info, delete dialogs | Done | Not captured | [ui/home.md](../ui/home.md) | |
 | HOME-27 | Multi-select | Done | Not captured | web flows/11 | |
-| HOME-28 | Empty, loading, error states | Done | Proposed | `apps/vibecut/src/home/view/projects.rs` | |
+| HOME-28 | Empty, loading, error states | Done | Proposed | `apps/vibecut/src/home/view/projects.rs` | First run, no results with Clear search, card skeleton while loading; values unmeasured |
 | HOME-29 | Open project from file | Ours | Proposed | `apps/vibecut/src/home/view/chrome.rs` | |
 | HOME-30 | Unreadable project handling | Done | Proposed | smoke 2026-11-14 | Listed apart with reason |
 
@@ -52,4 +52,4 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | HOME-31 | Brand kit page | Partial | Not captured | 111111 | Store done, page open |
 | HOME-32 | Brand kit sections | Missing | Not captured | 111111 | Videos, images, fonts, music |
 | HOME-33 | Brand kit intro banner | Missing | Not captured | 111111 | |
-| HOME-34 | Onboarding and tour | Ours | — | | Welcome not built |
+| HOME-34 | Onboarding and tour | Ours | Proposed | `apps/vibecut/src/home/view/welcome.rs` | Three-step welcome shown once (`ui.onboarding.reset` shows it again); no tour |

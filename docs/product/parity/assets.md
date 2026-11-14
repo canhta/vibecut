@@ -10,7 +10,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | MEDIA-01 | Import button | Done | Proposed | 110316 | |
 | MEDIA-02 | Import menu: From device | Done | Differs | 110322 | Direct picker, no menu |
 | MEDIA-03 | Import menu: From library | Out of scope | — | 110322 | Online assets |
-| MEDIA-04 | Drag and drop import | Done | Proposed | web 12-editor-media-import.md | |
+| MEDIA-04 | Drag and drop import | Done | Proposed | web 12-editor-media-import.md | Empty drop zone takes the accent while files are held over it |
 | MEDIA-05 | Import progress overlay | Done | Proposed | [ui/index.md](../ui/index.md) | |
 | MEDIA-06 | Corrupt file toast | Done | Proposed | 110341 | Width unmeasured |
 | MEDIA-07 | Empty media state | Done | Proposed | 221513 | |

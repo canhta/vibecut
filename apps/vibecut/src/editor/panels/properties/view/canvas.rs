@@ -24,7 +24,28 @@ impl Panel<'_, '_> {
     pub(super) fn settings(&mut self, ui: &mut egui::Ui) {
         egui::ScrollArea::vertical()
             .id_salt("inspector.settings")
-            .show(ui, |ui| self.settings_sections(ui));
+            .show(ui, |ui| {
+                self.settings_sections(ui);
+                self.select_hint(ui);
+            });
+    }
+    /// With nothing selected the panel shows the project; this line says how to edit a clip.
+    fn select_hint(&mut self, ui: &mut egui::Ui) {
+        ui.add_space(theme::space::LG);
+        ui.horizontal(|ui| {
+            ui.add_space(theme::space::MD);
+            ui.add(kit::tinted(
+                kit::Icon::Cursor,
+                theme::icon::DENSE,
+                self.secondary(),
+            ));
+            let response = ui.label(
+                egui::RichText::new(self.tr(Text::SubSelectMedia))
+                    .size(theme::type_size::BODY)
+                    .color(self.secondary()),
+            );
+            self.remember("inspector.select_hint", &response);
+        });
     }
     fn settings_sections(&mut self, ui: &mut egui::Ui) {
         self.panel_section(

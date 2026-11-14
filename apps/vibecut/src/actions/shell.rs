@@ -133,6 +133,14 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         &[],
     ),
     ActionSpec::ui(
+        "ui.onboarding.reset",
+        Text::ActionOnboardingReset,
+        ActionCategory::View,
+        "preference store",
+        UiAction::ResetOnboarding,
+        &[],
+    ),
+    ActionSpec::ui(
         "shortcuts.open",
         Text::ActionShortcutsOpen,
         ActionCategory::View,

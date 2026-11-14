@@ -8,6 +8,7 @@ mod chrome;
 mod create;
 mod dialogs;
 mod projects;
+mod welcome;
 mod widgets;
 
 use super::ProjectsPreferences;
@@ -47,6 +48,7 @@ pub(super) fn show(
     look: Look,
     projects: &mut ProjectsPreferences,
     status: Option<Text>,
+    welcome_seen: &mut bool,
 ) {
     let locale = look.locale;
     let full = ui.max_rect();
@@ -80,4 +82,5 @@ pub(super) fn show(
             projects::section(ui, state, look, projects);
         });
     dialogs::show(state, ui.ctx(), look);
+    welcome::show(state, ui.ctx(), look, welcome_seen);
 }

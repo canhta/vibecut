@@ -63,6 +63,8 @@ pub(in crate::editor) enum Action {
         item: ItemId,
         snapshot: Arc<project::Project>,
     },
+    /// Show the Effects catalogue: the same `assets_tab` write the Effects tab makes.
+    ShowEffects,
     /// Switch the Project/Details strip through the action registry.
     Activate(&'static str),
     Cache(crate::editor::context::CacheAction),

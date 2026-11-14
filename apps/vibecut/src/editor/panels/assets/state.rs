@@ -59,6 +59,9 @@ pub(in crate::editor) struct State {
     pub(in crate::editor) effect_drag: Option<String>,
     /// Media panel: the asset drag in flight, resolved by the timeline's lanes.
     pub(in crate::editor) media_drag: Option<crate::editor::context::MediaDrag>,
+    /// The pass in which the empty Media drop zone was drawn; it is the drag-over feedback,
+    /// so the window-wide drop overlay stands down for that pass.
+    pub(in crate::editor) drop_zone_pass: u64,
     /// The OS clipboard's file list, read on paste; tests inject a fixture reader.
     pub(in crate::editor) os_files: crate::services::clipboard::FileClipboard,
     /// A paste import in flight: the playhead its probed files insert at.
@@ -168,6 +171,7 @@ impl Default for State {
             effect_previews: None,
             effect_drag: None,
             media_drag: None,
+            drop_zone_pass: 0,
             os_files: Default::default(),
             paste_at: None,
             import_added: Vec::new(),

@@ -867,12 +867,16 @@ impl Panel<'_, '_> {
         let effects = read::item(self.cx.session.project(), item)
             .map_or_else(Vec::new, |candidate| candidate.effects.clone());
         if effects.is_empty() {
-            let response = ui.label(
-                egui::RichText::new(self.tr(Text::EffectEmptyStack))
-                    .small()
-                    .color(self.secondary()),
-            );
-            self.remember("effects.stack.empty", &response);
+            // The call-to-action does what picking the Effects tab does: show the catalogue.
+            if self.empty_cta(
+                ui,
+                "effects.stack.empty",
+                Icon::Sparkle,
+                Text::EffectEmptyStack,
+                ("effects.stack.add", Icon::Plus, Text::EffectAdd),
+            ) {
+                self.actions.push(Action::ShowEffects);
+            }
             return;
         }
         let mut rows: Vec<(String, Rect)> = Vec::new();

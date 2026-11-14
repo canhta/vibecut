@@ -8131,3 +8131,43 @@ fn text_library_search_finds_templates_and_the_vietnamese_names() {
     assert!(has_widget(&h, "text.template.neon_sign"));
     assert!(!has_widget(&h, "text.template.big_title"));
 }
+
+#[test]
+fn empty_effects_and_masks_offer_the_same_add_paths_as_the_normal_ui() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    assert!(
+        has_widget(&harness, "inspector.select_hint"),
+        "nothing selected: the panel says how to pick a clip"
+    );
+    select(&mut harness, fixture.video);
+    assert!(!has_widget(&harness, "inspector.select_hint"));
+    let project = harness.state().session.project().clone();
+
+    open_mask(&mut harness);
+    assert!(has_widget(&harness, "inspector.mask.empty"));
+    click(&mut harness, "inspector.mask.add");
+    assert!(
+        has_widget(&harness, "inspector.mask.shape.none"),
+        "the call-to-action opens the picker the Mask row opens"
+    );
+    click(&mut harness, "inspector.mask.shape.none");
+
+    click(&mut harness, "inspector.tab.effects");
+    assert!(has_widget(&harness, "effects.stack.empty"));
+    assert_ne!(
+        harness.state().preferences.assets_tab,
+        vibecut::AssetsTab::Effects
+    );
+    click(&mut harness, "effects.stack.add");
+    assert_eq!(
+        harness.state().preferences.assets_tab,
+        vibecut::AssetsTab::Effects
+    );
+    assert_eq!(
+        harness.state().session.project(),
+        &project,
+        "both call-to-actions only navigate"
+    );
+}

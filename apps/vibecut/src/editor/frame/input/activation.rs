@@ -555,6 +555,9 @@ impl Editor {
                         serde_json::to_value(Preferences::default().panels)?,
                     )?;
                 }
+                UiAction::ResetOnboarding => {
+                    self.set_preference("welcome_seen", serde_json::json!(false))?;
+                }
                 UiAction::OpenPreferences => self.dialogs.preferences.open = true,
                 UiAction::OpenModels => self.open_models()?,
                 UiAction::OpenVoiceover => self.dialogs.voiceover.open(),
