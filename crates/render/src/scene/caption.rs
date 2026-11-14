@@ -43,7 +43,9 @@ pub(crate) fn for_cue(base: &CaptionStyle, cue: Option<&CueStyle>) -> CaptionSty
         },
         safe_area_percent: base.safe_area_percent,
         max_lines: cue.max_lines.map_or(base.max_lines, usize::from),
-        word_highlight_color: cue.word_highlight_color.unwrap_or(base.word_highlight_color),
+        word_highlight_color: cue
+            .word_highlight_color
+            .unwrap_or(base.word_highlight_color),
     }
 }
 

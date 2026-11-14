@@ -454,21 +454,20 @@ impl EditorWindow {
 /// The shorts window's dialog, built for `kind` in the language the window shows. The
 /// workspace keeps it in its own picker slot because the window is not an editor.
 pub(super) fn shorts_picker(ctx: &egui::Context, kind: shorts::Pick, locale: Locale) -> Picker {
-    let future: std::pin::Pin<
-        Box<dyn std::future::Future<Output = Option<Vec<rfd::FileHandle>>>>,
-    > = match kind {
-        shorts::Pick::Video => {
-            let dialog = rfd::AsyncFileDialog::new().add_filter(
-                i18n::text(locale, Text::Video),
-                &["mp4", "mov", "mkv", "webm", "m4v"],
-            );
-            Box::pin(async move { dialog.pick_file().await.map(|file| vec![file]) })
-        }
-        shorts::Pick::Export => {
-            let dialog = rfd::AsyncFileDialog::new();
-            Box::pin(async move { dialog.pick_folder().await.map(|folder| vec![folder]) })
-        }
-    };
+    let future: std::pin::Pin<Box<dyn std::future::Future<Output = Option<Vec<rfd::FileHandle>>>>> =
+        match kind {
+            shorts::Pick::Video => {
+                let dialog = rfd::AsyncFileDialog::new().add_filter(
+                    i18n::text(locale, Text::Video),
+                    &["mp4", "mov", "mkv", "webm", "m4v"],
+                );
+                Box::pin(async move { dialog.pick_file().await.map(|file| vec![file]) })
+            }
+            shorts::Pick::Export => {
+                let dialog = rfd::AsyncFileDialog::new();
+                Box::pin(async move { dialog.pick_folder().await.map(|folder| vec![folder]) })
+            }
+        };
     Picker {
         future,
         action: PickerAction::Shorts(kind),

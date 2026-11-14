@@ -124,7 +124,12 @@ fn every_caption_look_is_a_valid_style_and_its_shelf_carries_its_feature() {
         assert!(style.is_valid(), "{} is a valid caption style", look.name());
         let cue = look.cue_style();
         assert!(cue.is_valid(), "{} is a valid cue style", look.name());
-        assert_eq!(cue.max_lines, Some(style.max_lines as u8), "{}", look.name());
+        assert_eq!(
+            cue.max_lines,
+            Some(style.max_lines as u8),
+            "{}",
+            look.name()
+        );
         assert_eq!(
             cue.word_highlight_color,
             Some(style.word_highlight_color),

@@ -801,9 +801,9 @@ fn paint_checkbox(ui: &Ui, rect: Rect, checked: bool, dark: bool) {
 /// owns the value; the response carries the click.
 pub(crate) fn checkbox(ui: &mut Ui, id: &str, value: &mut bool, label: &str) -> Response {
     let dark = ui.visuals().dark_mode;
-    let galley = ui
-        .painter()
-        .layout_no_wrap(label.to_owned(), theme::label_font(), theme::text(dark));
+    let galley =
+        ui.painter()
+            .layout_no_wrap(label.to_owned(), theme::label_font(), theme::text(dark));
     let width = size::CHECKBOX + space::MD + galley.size().x;
     let (rect, mut response) =
         ui.allocate_exact_size(Vec2::new(width, size::FIELD), Sense::click());

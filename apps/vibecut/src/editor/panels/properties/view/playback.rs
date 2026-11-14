@@ -247,14 +247,7 @@ impl Panel<'_, '_> {
             .get(draft)
             .cloned()
             .unwrap_or_else(|| format!("{shown}{suffix}"));
-        let response = kit::value_field(
-            &mut value_ui,
-            id,
-            &mut next,
-            width,
-            None,
-            self.tr(label),
-        );
+        let response = kit::value_field(&mut value_ui, id, &mut next, width, None, self.tr(label));
         self.remember(id, &response);
         if response.has_focus() {
             self.state.focus = Some(draft.to_owned());
@@ -359,7 +352,10 @@ impl Panel<'_, '_> {
                 Text::LoudnessClipSummary,
                 &[("total", &total), ("silent", &silent)],
             );
-            lines.push((loudness_line(locale, Text::LoudnessClip, &detail), secondary));
+            lines.push((
+                loudness_line(locale, Text::LoudnessClip, &detail),
+                secondary,
+            ));
         }
         if let (true, Some(measured)) = (frame.master_on, result.master) {
             let detail = match (measured.integrated_lufs, measured.true_peak_db) {
@@ -375,7 +371,10 @@ impl Panel<'_, '_> {
                 }
                 _ => tr(Text::LoudnessSilent),
             };
-            lines.push((loudness_line(locale, Text::LoudnessMaster, &detail), secondary));
+            lines.push((
+                loudness_line(locale, Text::LoudnessMaster, &detail),
+                secondary,
+            ));
         }
         lines
     }

@@ -2584,7 +2584,10 @@ fn loudness_controls_switch_target_and_apply_through_commands() {
         "inspector.loudness.true_peak",
         "inspector.loudness.apply",
     ] {
-        assert!((widget_rect(&harness, id).right() - edge).abs() < 0.5, "{id}");
+        assert!(
+            (widget_rect(&harness, id).right() - edge).abs() < 0.5,
+            "{id}"
+        );
     }
 
     // A scope switch is one undo step: on sets the shown default target, off clears it.
