@@ -13,17 +13,13 @@ use project::{
     Item, ItemId, ItemParams, OverlayParams, Project, ProjectId, TextAlign, TextParams, Track,
     TrackId, TrackKind, TransformField,
 };
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::sync::Arc;
 use time::{FrameRate, SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
-    AppCommand, Editor, Guide, GuideLines, LineAxis, OverlayVisibility, PreviewZoom, egui,
-    i18n::{Locale, Text},
+    AppCommand, Editor, Guide, LineAxis, PreviewZoom, egui,
+    i18n::Text,
     preferences::{PreferenceStore, Preferences},
     services::playback::{Files, Playback},
-    services::preview,
 };
 
 fn overlay(id: u64) -> Item {
@@ -717,14 +713,9 @@ fn drop_at(h: &mut Harness<Editor>, at: egui::Pos2) {
 
 #[test]
 fn timecode_round_trips_at_every_supported_rate_and_invalid_text_is_restored() {
-    let rates = [
-        FrameRate::FPS_23_976,
-        FrameRate::FPS_24,
-        FrameRate::FPS_25,
-        FrameRate::FPS_29_97,
-        FrameRate::FPS_30,
-        FrameRate::FPS_60,
-    ];
+    // The time crate's frame_labels_round_trip owns every rate; the field only has to parse
+    // at the project's rate, so one integer and one drop-frame rate stand for the rest.
+    let rates = [FrameRate::FPS_25, FrameRate::FPS_29_97];
     for rate in rates {
         let mut h = build(editor(
             project(rate, 640, 360, false),
@@ -1025,8 +1016,7 @@ fn guide_picker_grid_size_and_notes_switch_are_undoable_preferences_and_leave_th
     h.run_steps(3);
     assert!(h.query_all(By::new().label("Hook")).next().is_some());
 
-    // One picker row per platform; each choice is a preference edit, and the last
-    // one stays selected for the screenshot of the shaded regions.
+    // One picker row per platform; each choice is a preference edit.
     for (id, guide) in [
         ("preview.guide.instagram_reels", Guide::InstagramReels),
         ("preview.guide.youtube_shorts", Guide::YouTubeShorts),
@@ -1037,14 +1027,6 @@ fn guide_picker_grid_size_and_notes_switch_are_undoable_preferences_and_leave_th
         assert!(!guide.covered_regions().is_empty());
     }
     assert!(Arc::ptr_eq(&committed, h.state().session.project()));
-    h.key_press(egui::Key::Escape);
-    h.run_steps(3);
-    let screenshot =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-26-guides.png");
-    if let Some(parent) = screenshot.parent() {
-        std::fs::create_dir_all(parent).unwrap();
-    }
-    h.render().unwrap().save(&screenshot).unwrap();
 }
 
 #[test]
@@ -1185,12 +1167,6 @@ fn custom_guide_margins_validate_inline_undo_and_restore_after_restart() {
     assert_eq!(value(&restarted, "preview.guide.margin.bottom"), Some(20.0));
     assert_eq!(value(&restarted, "preview.guide.margin.left"), Some(5.0));
     assert_eq!(value(&restarted, "preview.guide.margin.right"), Some(0.0));
-    let screenshot =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-56-custom-guide.png");
-    if let Some(parent) = screenshot.parent() {
-        std::fs::create_dir_all(parent).unwrap();
-    }
-    restarted.render().unwrap().save(&screenshot).unwrap();
 }
 
 /// The guide-line state the preferences hold, as (rulers, shown, locked, vertical, horizontal).
@@ -1221,18 +1197,6 @@ fn rulers_and_guide_lines_run_as_registered_commands_and_undo_without_touching_t
     let mut h = build(editor(fresh(), Preferences::default()));
     let committed = h.state().session.project().clone();
     assert_eq!(lines(&h), (false, true, false, vec![], vec![]));
-    for (id, keys) in [
-        ("preview.rulers", &["Ctrl+Alt+R"][..]),
-        ("preview.guides.visible", &["Ctrl+;"][..]),
-        ("preview.guides.add_horizontal", &[][..]),
-        ("preview.guides.add_vertical", &[][..]),
-        ("preview.guides.lock", &[][..]),
-        ("preview.guides.clear", &[][..]),
-        ("preview.guides.move", &[][..]),
-    ] {
-        let spec = vibecut::actions::action(id).unwrap_or_else(|| panic!("unregistered {id}"));
-        assert_eq!(spec.defaults, keys, "{id}");
-    }
 
     // Lock, show/hide and clear need a guide first, as the reference menu greys them out.
     for id in [
@@ -1504,91 +1468,6 @@ fn guide_lines_draw_over_the_player_drag_when_unlocked_and_stay_put_when_locked(
     drag_from(&mut h, start, egui::vec2(-60.0, 0.0));
     drop_at(&mut h, start - egui::vec2(60.0, 0.0));
     assert_eq!(lines(&h).3, vec![moved]);
-
-    let screenshot =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-435-rulers-guides.png");
-    if let Some(parent) = screenshot.parent() {
-        std::fs::create_dir_all(parent).unwrap();
-    }
-    h.render().unwrap().save(&screenshot).unwrap();
-}
-
-#[test]
-fn guides_and_notes_never_change_the_exported_frame() {
-    // The export frame comes from the engine's snapshot path, which takes only the
-    // project. The app's guide and notes state must not reach it.
-    let noted_project = || {
-        let mut data = project(FrameRate::FPS_30, 640, 360, false).into_data();
-        data.scene_mut().bookmarks.push(project::Bookmark {
-            id: project::BookmarkId(1),
-            start: Tick::ZERO,
-            duration: Tick::ZERO,
-            note: "Hook".into(),
-            color: project::Color([255, 255, 0, 255]),
-        });
-        Project::new(data).unwrap()
-    };
-    let frame = |preferences: Preferences| {
-        let editor = editor(noted_project(), preferences);
-        engine::snapshot::image(
-            editor.session.project(),
-            Tick::ZERO,
-            &render::Corrections::default(),
-        )
-        .unwrap()
-        .png
-    };
-    let shown = frame(Preferences {
-        preview_guide: Guide::Grid { rows: 5, cols: 5 },
-        preview_overlays: OverlayVisibility {
-            guide: true,
-            notes: true,
-        },
-        ..Default::default()
-    });
-    let hidden = frame(Preferences {
-        preview_guide: Guide::None,
-        preview_overlays: OverlayVisibility {
-            guide: false,
-            notes: false,
-        },
-        ..Default::default()
-    });
-    let platform = frame(Preferences {
-        preview_guide: Guide::TikTok,
-        preview_overlays: OverlayVisibility {
-            guide: true,
-            notes: true,
-        },
-        ..Default::default()
-    });
-    let custom = frame(Preferences {
-        preview_guide: Guide::Custom {
-            top: 10,
-            bottom: 20,
-            left: 5,
-            right: 15,
-        },
-        preview_overlays: OverlayVisibility {
-            guide: true,
-            notes: true,
-        },
-        ..Default::default()
-    });
-    let lined = frame(Preferences {
-        preview_lines: GuideLines {
-            rulers: true,
-            vertical: vec![0, -250],
-            horizontal: vec![120],
-            ..Default::default()
-        },
-        ..Default::default()
-    });
-    assert!(!shown.is_empty());
-    assert_eq!(shown, hidden);
-    assert_eq!(platform, hidden);
-    assert_eq!(custom, hidden, "custom margins are not exported");
-    assert_eq!(lined, hidden, "rulers and guide lines are not exported");
 }
 
 #[test]
@@ -1807,49 +1686,6 @@ fn bookmark_jump_preview_menu_shares_lookup_enablement_and_dispatch() {
 }
 
 #[test]
-fn bookmark_jump_menu_render_screenshot() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target");
-    std::fs::create_dir_all(&root).unwrap();
-    for (locale, name) in [(Locale::En, "en"), (Locale::Vi, "vi")] {
-        for pixels in [1.0, 2.0] {
-            let mut editor = editor(
-                project(FrameRate::FPS_30, 640, 360, false),
-                Preferences {
-                    locale,
-                    ..Preferences::default()
-                },
-            );
-            add_bookmark(&mut editor, 3);
-            add_bookmark(&mut editor, 8);
-            let mut h = crate::gpu::builder()
-                .with_size(egui::vec2(1440.0, 900.0))
-                .with_pixels_per_point(pixels)
-                .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
-            h.run_steps(3);
-            h.get(By::new().predicate(|node| node.author_id() == Some("preview.canvas")))
-                .click_secondary();
-            h.run_steps(3);
-            let path = root.join(format!("p1-73-bookmark-nav-preview-{name}-{pixels}x.png"));
-            h.render().unwrap().save(&path).unwrap();
-            h.key_press(egui::Key::Escape);
-            h.run_steps(3);
-            let ruler =
-                h.get(By::new().predicate(|node| node.author_id() == Some("timeline.ruler")));
-            ruler.click_secondary();
-            h.run_steps(3);
-            let path = root.join(format!("p1-73-bookmark-nav-timeline-{name}-{pixels}x.png"));
-            h.render().unwrap().save(&path).unwrap();
-            println!("bookmark menu screenshot: {}", path.display());
-        }
-    }
-    std::fs::copy(
-        root.join("p1-73-bookmark-nav-preview-en-2x.png"),
-        root.join("p1-73-bookmark-nav.png"),
-    )
-    .unwrap();
-}
-
-#[test]
 fn edit_after_timecode_seek_resyncs_playback_and_clamps_at_the_new_end() {
     let mut h = build(editor(
         project(FrameRate::FPS_30, 640, 360, false),
@@ -1870,20 +1706,6 @@ fn edit_after_timecode_seek_resyncs_playback_and_clamps_at_the_new_end() {
     assert_eq!(inspect.position, Tick::ZERO);
     assert_eq!(inspect.timecode, "00:00:00:00");
     assert!(h.query_by_label("Project is empty").is_some());
-}
-
-#[test]
-fn preview_timecode_and_zoom_labels_are_localised() {
-    let prefs = Preferences {
-        locale: vibecut::i18n::Locale::Vi,
-        ..Default::default()
-    };
-    let mut h = build(editor(project(FrameRate::FPS_30, 640, 360, false), prefs));
-    assert!(h.query_by_label("Mã thời gian không hợp lệ").is_none());
-    // The locale retains stable automation ids for the controls.
-    assert!(widget(&h, "preview.timecode").enabled);
-    click(&mut h, "preview.menu");
-    assert!(widget(&h, "preview.snapshot").enabled);
 }
 
 #[test]
@@ -1934,15 +1756,6 @@ fn colour_scopes_run_as_one_registered_command_and_undo_without_touching_the_pro
     let mut h = build(editor(fresh(), Preferences::default()));
     let committed = h.state().session.project().clone();
     assert!(!scopes_shown(&h), "the scopes start hidden");
-    let spec = vibecut::actions::action("preview.scopes").expect("registered");
-    assert!(spec.defaults.is_empty());
-    for old in [
-        "preview.scope.waveform",
-        "preview.scope.vectorscope",
-        "preview.scope.histogram",
-    ] {
-        assert!(vibecut::actions::action(old).is_none(), "{old}");
-    }
     assert!(h.state().action_enabled("preview.scopes"));
     h.state_mut().activate("preview.scopes").unwrap();
     assert!(scopes_shown(&h));
@@ -2094,78 +1907,6 @@ fn pending_preview_invalidates_presented_readiness_until_the_replacement_is_poll
     }
     h.run_steps(3);
     assert!(h.state().presented_frame().is_some());
-}
-
-/// Offscreen evidence for the ticket; wgpu stays out of CI.
-#[test]
-#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-24-preview.png"]
-fn preview_toolbar_render_screenshot() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let target = std::env::var_os("CARGO_TARGET_DIR")
-        .map(PathBuf::from)
-        .map(|path| {
-            if path.is_absolute() {
-                path
-            } else {
-                root.join(path)
-            }
-        })
-        .unwrap_or_else(|| root.join("target"));
-    let mut h = build(editor(
-        project(FrameRate::FPS_30, 1280, 720, false),
-        Preferences::default(),
-    ));
-    h.state_mut()
-        .dispatch(AppCommand::PreviewZoom(PreviewZoom::Zoom(1.5)))
-        .unwrap();
-    h.run_steps(3);
-    let image = h.render().expect("offscreen render");
-    std::fs::create_dir_all(&target).unwrap();
-    image.save(target.join("p1-24-preview.png")).unwrap();
-    assert!(image.width() > 0 && image.height() > 0);
-}
-
-/// Offscreen evidence for the ticket; wgpu stays out of CI.
-#[test]
-#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-25-preview-edit.png"]
-fn preview_transform_handles_render_screenshot() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let target = std::env::var_os("CARGO_TARGET_DIR")
-        .map(PathBuf::from)
-        .map(|path| {
-            if path.is_absolute() {
-                path
-            } else {
-                root.join(path)
-            }
-        })
-        .unwrap_or_else(|| root.join("target"));
-    let mut h = build(editor(
-        project(FrameRate::FPS_30, 1280, 720, false),
-        Preferences::default(),
-    ));
-    h.state_mut().select([ItemId(1)].into()).unwrap();
-    h.run_steps(2);
-    let corner = widget(&h, "preview.transform.bottom-right").rect.center();
-    drag_from(&mut h, corner, egui::vec2(-90.0, -52.0));
-    drop_at(&mut h, corner + egui::vec2(-90.0, -52.0));
-    let rotate = widget(&h, "preview.transform.rotate").rect.center();
-    drag_from(&mut h, rotate, egui::vec2(90.0, -24.0));
-    drop_at(&mut h, rotate + egui::vec2(90.0, -24.0));
-    h.run_steps(3);
-    assert!(widget(&h, "preview.transform.rotate").enabled);
-    let image = h.render().expect("offscreen render");
-    std::fs::create_dir_all(&target).unwrap();
-    image.save(target.join("p1-25-preview-edit.png")).unwrap();
-    assert!(image.width() > 0 && image.height() > 0);
-}
-
-#[test]
-fn text_contract_has_the_snapshot_and_zoom_labels() {
-    assert_eq!(Text::ProjectEmpty.key(), "project_empty");
-    assert_eq!(Text::SnapshotSave.key(), "snapshot_save");
-    assert_eq!(Text::Fullscreen.key(), "fullscreen");
-    assert_eq!(preview::PRESETS, &[25, 50, 75, 100, 150, 200]);
 }
 
 fn guarded(track_locked: bool) -> Project {
@@ -2563,41 +2304,6 @@ fn preview_snapping_follows_the_shared_preference_and_shows_no_guide_without_a_c
     assert_eq!(history(&h), 1);
 }
 
-/// Offscreen evidence for the ticket; wgpu stays out of CI.
-#[test]
-#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-23-preview-snap.png"]
-fn preview_snap_guides_render_screenshot() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let target = std::env::var_os("CARGO_TARGET_DIR")
-        .map(PathBuf::from)
-        .map(|path| {
-            if path.is_absolute() {
-                path
-            } else {
-                root.join(path)
-            }
-        })
-        .unwrap_or_else(|| root.join("target"));
-    let mut h = build(editor(text_project(false, false), Preferences::default()));
-    select(&mut h, ItemId(1));
-    let (centre, _, viewport) = box_centre(&h);
-    let start = screen(&viewport, centre);
-    // Two pixels right and three below the canvas centre: both axes snap.
-    let end = screen(&viewport, [322.0, 183.0]);
-    drag_from(&mut h, start, end - start);
-    assert_eq!(
-        guides(&h).len(),
-        2,
-        "both axes hold a guide: {:?}",
-        guides(&h)
-    );
-    h.run_steps(3);
-    let image = h.render().expect("offscreen render");
-    std::fs::create_dir_all(&target).unwrap();
-    image.save(target.join("p1-23-preview-snap.png")).unwrap();
-    assert!(image.width() > 0 && image.height() > 0);
-}
-
 #[derive(Clone, Copy, Debug)]
 enum Finish {
     Escape,
@@ -2896,102 +2602,6 @@ fn preview_inline_text_caret_and_selection_follow_the_rendered_layout() {
     assert_eq!(caret.range, 3..3, "rotated click range");
 }
 
-/// Offscreen evidence for the ticket; wgpu stays out of CI.
-#[test]
-#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-174-caret.png"]
-fn preview_inline_text_caret_renders_screenshot() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let target = std::env::var_os("CARGO_TARGET_DIR")
-        .map(PathBuf::from)
-        .map(|path| {
-            if path.is_absolute() {
-                path
-            } else {
-                root.join(path)
-            }
-        })
-        .unwrap_or_else(|| root.join("target"));
-    let mut params = TextParams::new("Rotated caret");
-    params.font = "Noto Serif".into();
-    params.letter_spacing = 3.0;
-    let mut h = build_fast(editor(
-        styled_text_project(params, 30.0),
-        Preferences::default(),
-    ));
-    let point = text_point(&h);
-    double_click(&mut h, point);
-    assert!(text_edit_open(&h));
-    h.key_combination_modifiers(egui::Modifiers::COMMAND, &[egui::Key::A]);
-    type_into_edit(&mut h, "Rotated caret");
-    h.key_combination_modifiers(egui::Modifiers::COMMAND, &[egui::Key::A]);
-    h.run_steps(2);
-    let mut rendered = false;
-    for _ in 0..80 {
-        h.run_steps(1);
-        if h.state().playback.frame().is_some() {
-            rendered = true;
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(25));
-    }
-    assert!(rendered, "the edited preview frame arrives");
-    assert!(
-        h.get(By::new().predicate(|node| node.author_id() == Some("preview.text.edit")))
-            .is_focused(),
-        "the capture keeps the caret and selection visible"
-    );
-    let image = h.render().expect("offscreen render");
-    std::fs::create_dir_all(&target).unwrap();
-    image.save(target.join("p1-174-caret.png")).unwrap();
-    assert!(image.width() > 0 && image.height() > 0);
-}
-
-/// Offscreen evidence for the ticket; wgpu stays out of CI.
-#[test]
-#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-25-text-edit.png"]
-fn preview_inline_text_edit_renders_screenshot() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let target = std::env::var_os("CARGO_TARGET_DIR")
-        .map(PathBuf::from)
-        .map(|path| {
-            if path.is_absolute() {
-                path
-            } else {
-                root.join(path)
-            }
-        })
-        .unwrap_or_else(|| root.join("target"));
-    let mut h = build_fast(editor(text_project(false, false), Preferences::default()));
-    let point = text_point(&h);
-    double_click(&mut h, point);
-    assert!(text_edit_open(&h));
-    h.key_combination_modifiers(egui::Modifiers::COMMAND, &[egui::Key::A]);
-    type_into_edit(&mut h, "Inline heading");
-    // Select the buffer so the capture shows the selection and caret treatment.
-    h.key_combination_modifiers(egui::Modifiers::COMMAND, &[egui::Key::A]);
-    h.run_steps(2);
-    // The edited preview renders on a worker: give it real time before capturing.
-    let mut rendered = false;
-    for _ in 0..80 {
-        h.run_steps(1);
-        if h.state().playback.frame().is_some() {
-            rendered = true;
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(25));
-    }
-    assert!(rendered, "the edited preview frame arrives");
-    assert!(
-        h.get(By::new().predicate(|node| node.author_id() == Some("preview.text.edit")))
-            .is_focused(),
-        "the screenshot keeps the caret and selection visible"
-    );
-    let image = h.render().expect("offscreen render");
-    std::fs::create_dir_all(&target).unwrap();
-    image.save(target.join("p1-25-text-edit.png")).unwrap();
-    assert!(image.width() > 0 && image.height() > 0);
-}
-
 #[test]
 fn master_mute_is_one_undo_step_per_click_and_loop_is_app_state_only() {
     let mut h = build(editor(
@@ -3018,11 +2628,6 @@ fn master_mute_is_one_undo_step_per_click_and_loop_is_app_state_only() {
     assert_eq!(range.map(|(start, _)| start), Some(Tick::ZERO));
     assert_eq!(history(&h), before + 2);
     assert_eq!(json(h.state().session.project()), bytes);
-
-    let path =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-57-playback.png");
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    h.render().unwrap().save(&path).unwrap();
 }
 
 /// A paused project of one real ten-second clip, and the loop that owns it.

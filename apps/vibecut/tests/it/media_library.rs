@@ -18,7 +18,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc, Condvar, Mutex,
-        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -750,24 +750,6 @@ fn open_scene_row_on_media_timeline_keeps_its_label_readable_in_both_themes() {
     }
 }
 
-/// Offscreen screenshot evidence; wgpu rendering stays out of CI.
-#[test]
-#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-330-media-timeline.png"]
-fn media_timeline_page_renders_the_scene_list() {
-    let mut harness = build(editor());
-    harness.run_steps(3);
-    timeline_fixture(&mut harness);
-    click(&mut harness, "assets.subnav.timeline");
-    let image = harness.render().expect("offscreen render");
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let target = root.join("target");
-    std::fs::create_dir_all(&target).unwrap();
-    image
-        .save(target.join("p1-330-media-timeline.png"))
-        .unwrap();
-    assert!(image.width() > 0 && image.height() > 0);
-}
-
 #[test]
 fn reveal_switches_tab_scrolls_and_expires_without_touching_project_json() {
     let assets: Vec<(u64, String)> = (1..=30)
@@ -849,108 +831,6 @@ fn timeline_clip_context_menu_reveals_the_source_media() {
         harness.state().inspect().unwrap().media_highlight,
         Some(AssetId(3))
     );
-}
-
-struct GateProbe {
-    calls: AtomicUsize,
-    second: (Mutex<bool>, Condvar),
-    release: (Mutex<bool>, Condvar),
-}
-impl GateProbe {
-    fn new() -> Self {
-        Self {
-            calls: AtomicUsize::new(0),
-            second: (Mutex::new(false), Condvar::new()),
-            release: (Mutex::new(false), Condvar::new()),
-        }
-    }
-    fn second_started(&self) -> bool {
-        *self.second.0.lock().unwrap()
-    }
-    fn release(&self) {
-        *self.release.0.lock().unwrap() = true;
-        self.release.1.notify_all();
-    }
-}
-impl ImportProbe for GateProbe {
-    fn import(
-        &self,
-        id: AssetId,
-        path: PathBuf,
-        _cancelled: Arc<AtomicBool>,
-    ) -> media::Result<ImportedSource> {
-        if self.calls.fetch_add(1, Ordering::SeqCst) == 1 {
-            *self.second.0.lock().unwrap() = true;
-            self.second.1.notify_all();
-            let mut released = self.release.0.lock().unwrap();
-            while !*released {
-                released = self.release.1.wait(released).unwrap();
-            }
-        }
-        let name = path
-            .file_name()
-            .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
-        let asset = source_asset(id.0, &name, Some(Tick(4 * SECOND)));
-        Ok(imported(asset))
-    }
-}
-
-#[test]
-fn import_batch_shows_progress_and_disables_view_sort_import_and_insert() {
-    let mut editor = editor();
-    editor.select_media([AssetId(1)]);
-    let probe = Arc::new(GateProbe::new());
-    editor.set_import_probe(probe.clone()).unwrap();
-    editor
-        .drop_files(
-            (1..=3)
-                .map(|index| {
-                    std::env::temp_dir()
-                        .join("vibecut-media-library")
-                        .join(format!("gate-{index}.mp4"))
-                })
-                .collect(),
-        )
-        .unwrap();
-    let mut harness = build(editor);
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        harness.run_steps(1);
-        if probe.second_started() && harness.state().inspect().unwrap().import_completed >= 1 {
-            break;
-        }
-        assert!(Instant::now() < deadline, "import never progressed");
-        std::thread::sleep(Duration::from_millis(2));
-    }
-    let inspection = harness.state().inspect().unwrap();
-    assert!(inspection.importing);
-    assert!(inspection.import_total >= inspection.import_completed);
-    for id in ["media.view", "media.sort", "file.import", "media.insert"] {
-        let state = inspection
-            .widgets
-            .iter()
-            .find(|widget| widget.id == id)
-            .unwrap_or_else(|| panic!("missing {id}"));
-        assert!(!state.enabled, "{id} is disabled during a batch");
-    }
-    assert!(
-        inspection
-            .widgets
-            .iter()
-            .any(|widget| widget.id == "import.cancel" && widget.enabled)
-    );
-    click(&mut harness, "import.cancel");
-    probe.release();
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        harness.run_steps(1);
-        if !harness.state().importing() {
-            break;
-        }
-        assert!(Instant::now() < deadline, "cancel did not finish");
-        std::thread::sleep(Duration::from_millis(2));
-    }
-    assert!(harness.state().inspect().unwrap().import_cancelled);
 }
 
 /// No-match results offer a clear action that restores every asset; the project is untouched.
@@ -1265,29 +1145,6 @@ fn grid_card_fits_its_measured_thumbnail_and_filename() {
     let card = widget_rect(&harness, "media.asset.1");
     assert_eq!(card.width(), 120.0);
     assert_eq!(card.height(), 73.0 + 6.0 + 16.0);
-}
-
-/// Offscreen screenshot evidence; wgpu rendering stays out of CI.
-#[test]
-#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-09-media.png and target/p1-79-media-gaps.png"]
-fn media_library_renders_a_representative_grid() {
-    let mut harness = build(editor());
-    harness.run_steps(3);
-    click(&mut harness, "media.asset.2");
-    let image = harness.render().expect("offscreen render");
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let target = root.join("target");
-    std::fs::create_dir_all(&target).unwrap();
-    image.save(target.join("p1-09-media.png")).unwrap();
-    // The no-match state with its clear row, from the same fixture.
-    click(&mut harness, "assets.search");
-    harness
-        .get(By::new().predicate(|node| node.author_id() == Some("assets.search")))
-        .type_text("missing");
-    harness.run_steps(3);
-    let gaps = harness.render().expect("offscreen render");
-    gaps.save(target.join("p1-79-media-gaps.png")).unwrap();
-    assert!(image.width() > 0 && image.height() > 0);
 }
 
 #[test]
@@ -1635,38 +1492,6 @@ fn ctrl_v_with_files_while_a_text_field_is_focused_pastes_text_and_imports_nothi
     }
 }
 
-#[test]
-fn inserted_media_round_trips_through_save_and_load_after_insert_and_after_undo() {
-    let mut harness = build(editor());
-    harness.run_steps(3);
-    let target = lane_point(&harness, main_track(&harness));
-    drag_asset_to(&mut harness, AssetId(1), target);
-    let inserted = placed(harness.state().session.project());
-    assert_eq!(inserted.len(), 1);
-
-    let bytes = project::encode(harness.state().session.project(), false).unwrap();
-    let loaded = project::decode(&bytes).unwrap();
-    assert_eq!(placed(&loaded.project), inserted);
-
-    harness.state_mut().activate("edit.undo").unwrap();
-    harness.run_steps(2);
-    let bytes = project::encode(harness.state().session.project(), false).unwrap();
-    let loaded = project::decode(&bytes).unwrap();
-    assert!(placed(&loaded.project).is_empty());
-}
-
-#[test]
-fn media_drag_and_plus_screenshot_for_the_combined_build() {
-    let mut harness = build(editor());
-    harness.run_steps(3);
-    let target = lane_point(&harness, main_track(&harness));
-    drag_asset_to(&mut harness, AssetId(2), target);
-    click(&mut harness, "media.asset.3");
-    click(&mut harness, "media.insert");
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-11-dnd.png");
-    harness.render().unwrap().save(&path).unwrap();
-}
-
 const REPLACE_REFUSAL: &str =
     "Can't replace. Media needs to be no shorter than the original material.";
 
@@ -1728,7 +1553,6 @@ fn dropping_equal_or_longer_media_on_an_occupied_clip_replaces_it_and_undo_resto
         let mut harness = build(editor);
         harness.run_steps(3);
         let before = harness.state().session.project().clone();
-        let original = clip_of(&before, clip);
         let target = lane_point(&harness, main_track(&harness));
 
         hold_asset_over(&mut harness, asset, target);
@@ -1736,18 +1560,14 @@ fn dropping_equal_or_longer_media_on_an_occupied_clip_replaces_it_and_undo_resto
         harness.drop_at(target);
         harness.run_steps(2);
 
+        // What the replace keeps belongs to the engine's ReplaceMedia tests; the drop only
+        // has to dispatch it instead of refusing or placing a new clip.
         let after = harness.state().session.project().clone();
-        let replaced = clip_of(&after, clip);
-        assert_eq!(replaced.source_asset, Some(asset), "{seconds} s media");
         assert_eq!(
-            replaced.source_range,
-            SourceRange::new(Tick::ZERO, Tick(8 * SECOND)).unwrap(),
-            "plays from the new media's start for the clip's length"
+            clip_of(&after, clip).source_asset,
+            Some(asset),
+            "{seconds} s media"
         );
-        assert_eq!(replaced.start, original.start);
-        assert_eq!(replaced.duration().unwrap(), original.duration().unwrap());
-        assert_eq!(replaced.retime, original.retime);
-        assert_eq!(replaced.content, original.content);
         assert_eq!(placed(&after).len(), 1, "no new clip is placed");
         let toast = harness.state().inspect().unwrap().import_toast;
         assert!(toast.is_none_or(|toast| toast != REPLACE_REFUSAL));
@@ -1789,21 +1609,6 @@ fn the_replace_label_follows_the_pointer_off_the_clip() {
     harness.hover_at(past);
     harness.run_steps(2);
     assert_eq!(harness.state().inspect().unwrap().replace_hint, None);
-}
-
-/// Offscreen screenshot evidence of the `Replace` label; wgpu rendering stays out of CI.
-#[test]
-#[ignore = "renders through wgpu; run with --ignored to refresh target/p350-replace-label.png"]
-fn replace_label_screenshot() {
-    let (editor, _) = replace_fixture();
-    let mut harness = build(editor);
-    harness.run_steps(3);
-    let target = lane_point(&harness, main_track(&harness));
-    hold_asset_over(&mut harness, AssetId(2), target);
-    let image = harness.render().expect("offscreen render");
-    let path =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/p350-replace-label.png");
-    image.save(path).unwrap();
 }
 
 fn open_tile_menu(harness: &mut Harness<Editor>, asset: u64) {

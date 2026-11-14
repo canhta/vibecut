@@ -446,44 +446,6 @@ fn picker_result_imports_through_workspace_and_real_editor_widgets() {
 }
 
 #[test]
-fn cancel_mid_batch_keeps_completed_assets_and_stops_the_rest() {
-    let mut editor = editor();
-    let probe = Arc::new(GateProbe::new());
-    editor.set_import_probe(probe.clone()).unwrap();
-    editor
-        .drop_files(
-            (1..=4)
-                .map(|index| path(format!("slow-{index}.mp4")))
-                .collect(),
-        )
-        .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        editor.tick();
-        if probe.second_started() && editor.inspect().unwrap().import_imported >= 1 {
-            break;
-        }
-        assert!(Instant::now() < deadline, "first asset never imported");
-        std::thread::sleep(Duration::from_millis(2));
-    }
-    editor.activate("import.cancel").unwrap();
-    probe.release();
-    let inspection = wait_import(&mut editor);
-    assert!(inspection.import_cancelled);
-    assert!(inspection.import_imported >= 1);
-    assert!(
-        inspection.import_imported < 4,
-        "cancel must stop later files: {inspection:?}"
-    );
-    assert_eq!(
-        editor.session.project().data().assets.len(),
-        inspection.import_imported,
-        "every reported import is retained"
-    );
-    assert!(inspection.import_toast.unwrap().contains("cancelled"));
-}
-
-#[test]
 fn import_batches_are_capped_and_require_shared_budget_admission() {
     let budget = ByteBudget::new(512 << 20).unwrap();
     let mut queue = ImportQueue::new(budget).unwrap();
@@ -835,7 +797,9 @@ fn import_overlay_disables_import_and_insert_and_cancel_stops_batch() {
             .find(|widget| widget.id == id)
             .unwrap_or_else(|| panic!("missing {id}"))
     };
-    assert!(!widget_state("file.import").enabled);
+    for id in ["file.import", "media.view", "media.sort"] {
+        assert!(!widget_state(id).enabled, "{id} is disabled during a batch");
+    }
     assert!(
         !widget_state("media.insert").enabled,
         "insert is disabled while the batch runs even with a selection"

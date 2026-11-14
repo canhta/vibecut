@@ -12,7 +12,7 @@ use media::{
 };
 use project::{Project, ProjectId};
 use std::{
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -425,10 +425,6 @@ fn media_panel_renders_probing_ready_and_unsupported_badges() {
             );
         }
     }
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-10-media.png");
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    harness.render().unwrap().save(&path).unwrap();
-    println!("media screenshot: {}", path.display());
 }
 
 struct ProbeGate {

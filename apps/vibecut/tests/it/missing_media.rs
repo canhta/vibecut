@@ -149,10 +149,6 @@ fn a_lost_clip_empties_the_panel_reddens_the_canvas_and_the_tile_then_relinking_
         close(sample, [0x3E, 0x13, 0x16]),
         "{sample:?} is not the missing tile fill"
     );
-    let screenshot =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/425-missing-surfaces.png");
-    std::fs::create_dir_all(screenshot.parent().unwrap()).unwrap();
-    image.save(&screenshot).unwrap();
     // The panel's button opens the dialog through the one request path.
     harness
         .get(By::new().predicate(|node| node.author_id() == Some("inspector.link_media")))
