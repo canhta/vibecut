@@ -2776,3 +2776,129 @@ fn master_mute_is_one_undo_step_per_click_and_loop_is_app_state_only() {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     h.render().unwrap().save(&path).unwrap();
 }
+
+/// A paused project of one real ten-second clip, and the wake events the preview worker
+/// sends the loop that owns it.
+struct Paused {
+    playback: Playback,
+    project: Arc<Project>,
+    woken: std::sync::mpsc::Receiver<()>,
+}
+
+fn paused_clip(name: &str) -> Option<Paused> {
+    let path = testkit::oracle::generate(
+        &testkit::fixture::dir("preview-paused"),
+        name,
+        "clip.mkv",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=s=64x36:r=10:d=10",
+            "-c:v",
+            "ffv1",
+            "-pix_fmt",
+            "yuv420p",
+        ],
+    )?;
+    let asset = media::SourceAsset::import(media::AssetId(3), path).unwrap();
+    let mut session =
+        Session::new(Project::empty(ProjectId(95), name.into()).unwrap(), 10).unwrap();
+    session.apply(engine::Command::AddAsset { asset }).unwrap();
+    let outcome = session
+        .apply(engine::Command::AddTrack {
+            placement: engine::TrackPlacement::Auto,
+            name: "Video".into(),
+            kind: TrackKind::Video,
+        })
+        .unwrap();
+    let Some(engine::CreatedId::Track(track)) = outcome.created.first().copied() else {
+        panic!("track")
+    };
+    session
+        .apply(engine::Command::InsertItem {
+            placement: engine::Placement::Track { track },
+            item: engine::NewItem {
+                retime: Default::default(),
+                animations: Default::default(),
+                source_asset: Some(media::AssetId(3)),
+                source_range: SourceRange::new(Tick::ZERO, Tick(10 * TICKS_PER_SECOND)).unwrap(),
+                start: Tick::ZERO,
+                content: ItemParams::Video(project::VideoParams::plain()),
+            },
+        })
+        .unwrap();
+    // The event loop's side: every wake the preview worker sends lands here.
+    let (send, woken) = std::sync::mpsc::channel();
+    let wake = wake::Wake::new();
+    let send = std::sync::Mutex::new(send);
+    wake.set(move |_| {
+        let _ = send.lock().unwrap().send(());
+    });
+    wake.bind();
+    let playback = Playback::new(
+        &session,
+        ByteBudget::new(512 << 20).unwrap(),
+        Arc::new(Files),
+    )
+    .unwrap();
+    Some(Paused {
+        playback,
+        project: session.project().clone(),
+        woken,
+    })
+}
+
+impl Paused {
+    /// Run the loop as the app does: poll only when woken, and fail when the worker's frame
+    /// for the current request never wakes it. Returns the frame's tick and whether it is lit.
+    fn frame_when_woken(&mut self, what: &str) -> (Tick, bool) {
+        loop {
+            self.playback.poll(std::time::Instant::now()).unwrap();
+            if let Some(frame) = self.playback.frame()
+                && frame.generation == self.playback.generation()
+            {
+                let lit = frame
+                    .image
+                    .pixels
+                    .iter()
+                    .any(|p| p.r() > 20 || p.g() > 20 || p.b() > 20);
+                return (frame.at, lit);
+            }
+            self.woken
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap_or_else(|_| {
+                    panic!("{what}: the frame was never shown, nothing woke the loop")
+                });
+        }
+    }
+}
+
+#[test]
+fn a_paused_start_seek_and_frame_step_show_their_frames_when_the_worker_wakes_the_loop() {
+    use vibecut::services::playback::Transport;
+    let Some(mut p) = paused_clip("paused preview frames") else {
+        return;
+    };
+    let (at, lit) = p.frame_when_woken("start");
+    assert_eq!(at, Tick::ZERO);
+    assert!(lit, "the first frame is black");
+
+    let target = Tick(3 * TICKS_PER_SECOND);
+    p.playback
+        .transport(Transport::Seek(target), p.project.clone())
+        .unwrap();
+    let (at, lit) = p.frame_when_woken("seek");
+    assert_eq!(at, target);
+    assert!(lit, "the sought frame is black");
+
+    p.playback
+        .transport(Transport::FrameForward, p.project.clone())
+        .unwrap();
+    let (at, lit) = p.frame_when_woken("frame step");
+    assert_eq!(
+        at,
+        target + p.project.data().canvas.fps.frame_duration().unwrap()
+    );
+    assert!(lit, "the stepped frame is black");
+}

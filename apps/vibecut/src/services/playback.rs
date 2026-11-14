@@ -1148,6 +1148,8 @@ fn video_loop(
         let mut out = output.lock().map_err(|_| Error::Poisoned)?;
         if generation.load(Ordering::Acquire) == preview_generation {
             out.frames.push_back(frame);
+            // A paused editor repaints only when woken: tell it the frame is ready to show.
+            wake::notify();
         }
         next = next
             .checked_add(1)
