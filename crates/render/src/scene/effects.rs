@@ -197,16 +197,30 @@ pub fn apply_effect(
     let input = image;
     let mut image = input.copy(hooks)?;
     let cpu = CpuEffects;
+    // A long gaussian run is reduced on the CPU (see `gaussian_run`); no shader
+    // takes it, so the GPU and CPU paths render the same pixels.
+    let mut on_adapter: Vec<bool> = passes
+        .iter()
+        .map(|pass| adapter.supports(pass.entry_point()))
+        .collect();
+    let mut start = 0;
+    while let Some(rest) = passes.get(start..).filter(|rest| !rest.is_empty()) {
+        match gaussian_run(rest, input.width, input.height) {
+            Some((len, _)) => {
+                on_adapter
+                    .get_mut(start..start + len)
+                    .ok_or(Error::Invalid("effect run"))?
+                    .fill(false);
+                start += len;
+            }
+            None => start += 1,
+        }
+    }
     let mut index = 0;
     while index < passes.len() {
-        let first = passes.get(index).ok_or(Error::Invalid("effect run"))?;
-        let supported = adapter.supports(first.entry_point());
+        let supported = *on_adapter.get(index).ok_or(Error::Invalid("effect run"))?;
         let mut end = index + 1;
-        while end < passes.len() {
-            let next = passes.get(end).ok_or(Error::Invalid("effect run"))?;
-            if adapter.supports(next.entry_point()) != supported {
-                break;
-            }
+        while on_adapter.get(end).is_some_and(|next| *next == supported) {
             end += 1;
         }
         let run = passes.get(index..end).ok_or(Error::Invalid("effect run"))?;
@@ -2310,7 +2324,8 @@ impl EffectCompositor for CpuEffects {
                 EffectPass::Sample { entry_point, .. } => {
                     let op = sample_op(entry_point).ok_or(Error::Unsupported("effect pass"))?;
                     let values = pass.values();
-                    if let Some(reduced) = spatial::reduced_sample(entry_point, &a, &values, hooks)? {
+                    if let Some(reduced) = spatial::reduced_sample(entry_point, &a, &values, hooks)?
+                    {
                         a = reduced;
                         continue;
                     }
@@ -2390,7 +2405,8 @@ impl EffectCompositor for CpuEffects {
                                 }
                             } else {
                                 for (tap, weight) in weights.iter().enumerate() {
-                                    let sx = (x as i64 + tap as i64 - radius).clamp(0, w as i64 - 1);
+                                    let sx =
+                                        (x as i64 + tap as i64 - radius).clamp(0, w as i64 - 1);
                                     let s = source
                                         .get(sx as usize)
                                         .ok_or(Error::Invalid("effect pixel"))?;

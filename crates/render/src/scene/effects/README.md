@@ -158,7 +158,7 @@ is the source's halve-and-upsample scheme and replaces the former twelve-ring ga
 full resolution plus gaussian prefilter; it is a named approximation, as is the radius
 clamp at 1e6 pixels. The CPU executor also replaces a run of at least three identical
 horizontal/vertical gaussian pairs (what `sigma_passes` emits above sigma 11.3, up to 64
-pairs for Detail Boost at 64 pixels) by one gaussian of the combined sigma
+pairs for Detail Boost at 64 pixels; the dispatcher never hands such a run to a GPU adapter, so GPU and CPU frames agree) by one gaussian of the combined sigma
 (`sqrt(pairs * kernel variance)`) taken on halved copies until one kernel iteration covers
 it, then upsampled; the pass list, and so the reserved kernel slots, is unchanged, and
 shorter runs and pictures of two pixels or fewer on a side keep the exact passes. Per
