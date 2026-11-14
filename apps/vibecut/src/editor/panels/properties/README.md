@@ -59,13 +59,13 @@ Animation (the shared control below). Text has no hex colour field and no bare p
 swatch, and text position is the Transform Position row. The Style colour rows are
 `ColorTarget::Texts`, the same control for one text or many: texts that differ show a dash,
 and each commit is one `set_item_param_many` edit. Video and image items keep Transform and
-Blending under Basic, then Audio (see below) and Speed. Speed is a 0.01–5x scrub with a
+Blending under Basic, then Audio (see below) and Speed. Speed is a 0.1–100x scrub with a
 reset and, for items with audio, a `Change pitch` checkbox that is on while pitch
 follows speed (`maintain_pitch` off). A `Reverse` switch (video and audio) uses `timeline.set_reverse`, one undo step, and keeps the span. Speed edits use `timeline.set_speed`, one undo
 step per commit; trim bounds extend by the retimed output length. A `Standard` / `Curve` bar
 tops the tab: Curve shows four ramp presets (`timeline.apply_speed_preset`) and, for a curved
 item, one speed field per stretch (`timeline.set_speed_curve`, whole curve per commit, one undo
-step, speeds outside 0.01-5x refuse); `Standard` on a curved item resets to a constant 1x. Caption generation
+step, speeds outside 0.1-100x refuse); `Standard` on a curved item resets to a constant 1x. Caption generation
 refuses a retimed source item. The text button inserts a five-second title at the
 playhead in one undo step.
 

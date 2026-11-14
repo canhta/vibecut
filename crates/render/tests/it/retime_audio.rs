@@ -59,7 +59,7 @@ impl SourceProvider for Tone {
 }
 
 /// One audio item that plays `output_seconds` of a long tone at `thousandths` speed.
-fn fixture(thousandths: u16, maintain_pitch: bool, output_seconds: f64) -> project::Project {
+fn fixture(thousandths: u32, maintain_pitch: bool, output_seconds: f64) -> project::Project {
     let speed = Speed::from_thousandths(thousandths).unwrap();
     let source_ticks = (output_seconds * speed.as_f64() * time::TICKS_PER_SECOND as f64) as i64;
     let long = tick(60 * RATE, RATE);
@@ -291,6 +291,47 @@ fn block_boundaries_do_not_change_or_click_the_retimed_audio() {
 }
 
 #[test]
+fn bound_speeds_render_the_exact_length_and_block_partitions_agree() {
+    // 0.1x and 100x with and without pitch preservation: the output is the exact
+    // length, split blocks match one block, and source reads only move forward.
+    for (speed, maintain, seconds) in [
+        (100, true, 1.0),
+        (100, false, 1.0),
+        (100_000, true, 0.5),
+        (100_000, false, 0.5),
+    ] {
+        let p = fixture(speed, maintain, seconds);
+        let tone = || Tone {
+            hertz: TONE,
+            sweep: 0.0,
+            cancel: None,
+            requests: Vec::new(),
+        };
+        let whole = render(&p, &mut tone(), &[65536]);
+        assert_eq!(
+            whole.len(),
+            (RATE as f64 * seconds) as usize,
+            "speed {speed} maintain {maintain}"
+        );
+        assert!(
+            whole.iter().all(|v| v.is_finite()),
+            "speed {speed} maintain {maintain}"
+        );
+        let mut cut = tone();
+        let pieces = render(&p, &mut cut, &[1, 960, 13, 4096, 1023, 7777]);
+        assert_eq!(
+            whole, pieces,
+            "speed {speed} maintain {maintain}: block partition changed the audio"
+        );
+        let mut next = 0;
+        for (start, frames) in &cut.requests {
+            assert!(*start >= next, "speed {speed} maintain {maintain}");
+            next = start + *frames as i64;
+        }
+    }
+}
+
+#[test]
 fn a_seek_replays_to_the_same_audio_and_item_edges_keep_unity_gain() {
     let p = fixture(2000, true, 1.0);
     let whole = render(
@@ -463,7 +504,7 @@ fn reversed_audio_is_the_reversed_source_and_keeps_pitch() {
 fn ramp_fixture(maintain_pitch: bool) -> project::Project {
     let source_ticks = 4 * time::TICKS_PER_SECOND;
     let segments =
-        [(500u16, 2000u16), (500, 500)].map(|(span, thousandths)| project::SpeedSegment {
+        [(500u16, 2000u32), (500, 500)].map(|(span, thousandths)| project::SpeedSegment {
             span,
             speed: Speed::from_thousandths(thousandths).unwrap(),
         });

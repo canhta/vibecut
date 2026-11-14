@@ -4,12 +4,14 @@ use project::*;
 use proptest::prelude::*;
 use time::{Speed, TICKS_PER_SECOND, Tick};
 
-const SPEEDS: [u16; 5] = [10, 500, 1000, 2000, 5000];
+const SPEEDS: [u32; 5] = [100, 500, 1000, 2000, 5000];
+/// The bound speeds, 0.1x and 100x, with the whole-number rates between.
+const BOUND_SPEEDS: [u32; 6] = [100, 500, 1000, 2000, 5000, 100_000];
 
 #[test]
 fn rate_duration_and_source_range_agree_at_every_boundary_speed() {
     let second = TICKS_PER_SECOND;
-    for thousandths in SPEEDS {
+    for thousandths in BOUND_SPEEDS {
         let item = testkit::item::item(
             ItemId(1),
             ItemParams::Video(VideoParams {
@@ -50,7 +52,7 @@ fn rate_duration_and_source_range_agree_at_every_boundary_speed() {
             let at = item.output_time_of(Tick(7 * second + offset)).unwrap();
             let back = item.source_time_at(at).unwrap();
             assert!(
-                (back.0 - 7 * second - offset).abs() <= 5,
+                (back.0 - 7 * second - offset).abs() <= 5.max(i64::from(thousandths.div_ceil(1000))),
                 "{speed} {offset}"
             );
         }
@@ -238,7 +240,7 @@ fn split_and_trim_respect_retime_at_boundary_and_odd_cuts() {
 proptest! {
     #[test]
     fn split_pieces_partition_the_source_without_overlap(
-        thousandths in 10u16..=5000,
+        thousandths in 100u32..=100_000,
         source_ticks in 20i64..4_000_000_000_000,
         cut in 1i64..4_000_000_000_000,
         start in 0i64..1_000_000_000,
@@ -399,7 +401,7 @@ fn persistence_roundtrips_speed_and_pitch_and_refuses_invalid_retime() {
 #[test]
 fn long_retime_mapping_keeps_audio_and_video_within_one_sample_grid() {
     use time::Rounding;
-    for thousandths in [10, 333, 500, 1000, 2000, 5000] {
+    for thousandths in [100, 333, 500, 1000, 2000, 5000, 100_000] {
         let item = testkit::item::item(
             ItemId(1),
             ItemParams::Video(VideoParams {
@@ -580,7 +582,7 @@ fn reversed_clip_plays_its_source_backwards_and_cuts_keep_the_mapping() {
     }
 }
 
-fn segments(table: &[(u16, u16)]) -> Vec<SpeedSegment> {
+fn segments(table: &[(u16, u32)]) -> Vec<SpeedSegment> {
     table
         .iter()
         .map(|&(span, thousandths)| SpeedSegment {
@@ -840,12 +842,20 @@ fn curve_persists_and_invalid_curves_are_refused() {
         "backwards"
     );
     assert!(
-        SpeedCurve::new(&[key(0, 0), key(10, 60)]).is_err(),
-        "above 5x"
+        SpeedCurve::new(&[key(0, 0), key(10, 1010)]).is_err(),
+        "above 100x"
     );
     assert!(
-        SpeedCurve::new(&[key(0, 0), key(1000, 9)]).is_err(),
-        "below 0.01x"
+        SpeedCurve::new(&[key(0, 0), key(10, 1000)]).is_ok(),
+        "exactly 100x"
+    );
+    assert!(
+        SpeedCurve::new(&[key(0, 0), key(1000, 99)]).is_err(),
+        "below 0.1x"
+    );
+    assert!(
+        SpeedCurve::new(&[key(0, 0), key(1000, 100)]).is_ok(),
+        "exactly 0.1x"
     );
     let nine: Vec<_> = (0..9).map(|n| key(n * 10, n * 10)).collect();
     assert!(SpeedCurve::new(&nine).is_err(), "nine keys");
@@ -855,7 +865,7 @@ fn curve_persists_and_invalid_curves_are_refused() {
     );
     assert!(
         serde_json::from_str::<SpeedCurve>(
-            r#"[{"output":0,"source":0},{"output":10,"source":60}]"#
+            r#"[{"output":0,"source":0},{"output":10,"source":1010}]"#
         )
         .is_err()
     );
@@ -864,6 +874,8 @@ fn curve_persists_and_invalid_curves_are_refused() {
     assert_eq!(serde_json::to_string(&good).unwrap(), wire);
     // Edited stretches: spans must sum to 1000 and each needs a source tick.
     assert!(SpeedCurve::from_segments(Tick(1000), &segments(&[(1000, 2000)])).is_ok());
+    assert!(SpeedCurve::from_segments(Tick(1000), &segments(&[(1000, 100_000)])).is_ok());
+    assert!(SpeedCurve::from_segments(Tick(1000), &segments(&[(500, 100_000), (500, 100)])).is_ok());
     assert!(SpeedCurve::from_segments(Tick(1000), &segments(&[(500, 1000)])).is_err());
     assert!(SpeedCurve::from_segments(Tick(1000), &[]).is_err());
     assert!(SpeedCurve::from_segments(Tick(1), &segments(&[(500, 1000), (500, 1000)])).is_err());

@@ -651,7 +651,7 @@ impl Panel<'_, '_> {
             let mut value = before;
             let response = value_ui.add(
                 egui::DragValue::new(&mut value)
-                    .range(0.0..=10.0)
+                    .range(0.1..=100.0)
                     .speed(0.01)
                     .max_decimals(3),
             );

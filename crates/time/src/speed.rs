@@ -3,7 +3,7 @@
 use crate::{Rounding, Tick, TimeError};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-/// Constant playback speed on a 0.001 grid, from 0.01x to 5x.
+/// Constant playback speed on a 0.001 grid, from 0.1x to 100x.
 ///
 /// Speed is stored as integer thousandths, so every admitted value is an exact
 /// rational and no timeline duration is ever accumulated in floating point. A
@@ -11,22 +11,22 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// floor keeps adjacent pieces of a split or trim from overlapping their
 /// neighbour. JSON carries the decimal value (`1.5`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Speed(u16);
+pub struct Speed(u32);
 
 impl Speed {
     /// Normal speed (1x).
     pub const UNITY: Self = Self(1000);
-    /// Slowest admitted speed (0.01x), in thousandths.
-    pub const MIN_THOUSANDTHS: u16 = 10;
-    /// Fastest admitted speed (5x), in thousandths.
-    pub const MAX_THOUSANDTHS: u16 = 5000;
+    /// Slowest admitted speed (0.1x), in thousandths.
+    pub const MIN_THOUSANDTHS: u32 = 100;
+    /// Fastest admitted speed (100x), in thousandths.
+    pub const MAX_THOUSANDTHS: u32 = 100_000;
 
     /// Construct from integer thousandths of normal speed.
     ///
     /// # Errors
     ///
-    /// Returns [`TimeError::InvalidSpeed`] outside 10..=5000.
-    pub fn from_thousandths(thousandths: u16) -> Result<Self, TimeError> {
+    /// Returns [`TimeError::InvalidSpeed`] outside 100..=100000.
+    pub fn from_thousandths(thousandths: u32) -> Result<Self, TimeError> {
         if (Self::MIN_THOUSANDTHS..=Self::MAX_THOUSANDTHS).contains(&thousandths) {
             Ok(Self(thousandths))
         } else {
@@ -40,7 +40,7 @@ impl Speed {
     /// # Errors
     ///
     /// Returns [`TimeError::InvalidSpeed`] for NaN, infinity or a value outside
-    /// 0.01..=5 after rounding.
+    /// 0.1..=100 after rounding.
     pub fn from_f64(speed: f64) -> Result<Self, TimeError> {
         if !speed.is_finite() {
             return Err(TimeError::InvalidSpeed);
@@ -50,11 +50,11 @@ impl Speed {
         {
             return Err(TimeError::InvalidSpeed);
         }
-        Self::from_thousandths(scaled as u16)
+        Self::from_thousandths(scaled as u32)
     }
 
     /// Integer thousandths of normal speed.
-    pub fn thousandths(self) -> u16 {
+    pub fn thousandths(self) -> u32 {
         self.0
     }
 
@@ -70,7 +70,7 @@ impl Speed {
 
     /// The reduced ratio `(num, den)` with `speed = num / den`.
     pub fn ratio(self) -> (i64, i64) {
-        let divisor = i64::from(crate::rounding::gcd(u64::from(self.0), 1000) as u16);
+        let divisor = i64::from(crate::rounding::gcd(u64::from(self.0), 1000) as u32);
         (i64::from(self.0) / divisor, 1000 / divisor)
     }
 
@@ -165,8 +165,8 @@ impl schemars::JsonSchema for Speed {
     fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
         schemars::json_schema!({
             "type": "number",
-            "minimum": 0.01,
-            "maximum": 5.0,
+            "minimum": 0.1,
+            "maximum": 100.0,
             "description": "Constant playback speed, rounded to the nearest 0.001."
         })
     }
@@ -186,13 +186,17 @@ mod tests {
     #[test]
     fn grid_bounds_and_rounding() {
         for (input, expected) in [
-            (0.01, Some(10)),
-            (0.0104, Some(10)),
-            (0.0105, Some(11)),
+            (0.1, Some(100)),
+            (0.0996, Some(100)),
+            (0.1004, Some(100)),
             (1.0, Some(1000)),
             (5.0, Some(5000)),
-            (0.0094, None),
-            (5.0006, None),
+            (100.0, Some(100_000)),
+            (100.0004, Some(100_000)),
+            (0.0994, None),
+            (0.01, None),
+            (100.0006, None),
+            (100.1, None),
             (0.0, None),
             (-1.0, None),
             (f64::NAN, None),
@@ -209,12 +213,13 @@ mod tests {
     #[test]
     fn ratio_is_reduced_and_exact() {
         for (thousandths, ratio) in [
-            (10, (1, 100)),
+            (100, (1, 10)),
             (500, (1, 2)),
             (1000, (1, 1)),
             (1500, (3, 2)),
             (2000, (2, 1)),
             (5000, (5, 1)),
+            (100_000, (100, 1)),
             (333, (333, 1000)),
         ] {
             assert_eq!(Speed::from_thousandths(thousandths).unwrap().ratio(), ratio);
@@ -225,11 +230,12 @@ mod tests {
     fn duration_mapping_table() {
         let second = Tick(crate::TICKS_PER_SECOND);
         for (thousandths, output) in [
-            (10, 100 * second.0),
+            (100, 10 * second.0),
             (500, 2 * second.0),
             (1000, second.0),
             (2000, second.0 / 2),
             (5000, second.0 / 5),
+            (100_000, second.0 / 100),
         ] {
             let speed = Speed::from_thousandths(thousandths).unwrap();
             assert_eq!(speed.output_duration(second).unwrap(), Tick(output));
@@ -247,13 +253,14 @@ mod tests {
         let speed: Speed = serde_json::from_str("0.25").unwrap();
         assert_eq!(speed.thousandths(), 250);
         assert_eq!(serde_json::to_string(&speed).unwrap(), "0.25");
-        assert!(serde_json::from_str::<Speed>("6").is_err());
+        assert!(serde_json::from_str::<Speed>("100.1").is_err());
+        assert!(serde_json::from_str::<Speed>("0.05").is_err());
         assert!(serde_json::from_str::<Speed>("\"2\"").is_err());
     }
 
     proptest! {
         #[test]
-        fn source_within_fits_and_is_exact_from_unity_up(thousandths in 10u16..=5000, output in 0i64..1_000_000_000_000) {
+        fn source_within_fits_and_is_exact_from_unity_up(thousandths in 100u32..=100_000, output in 0i64..1_000_000_000_000) {
             let speed = Speed::from_thousandths(thousandths).unwrap();
             let span = speed.source_within(Tick(output)).unwrap();
             prop_assert!(speed.output_duration(span).unwrap() <= Tick(output));
@@ -269,7 +276,7 @@ mod tests {
 
         #[test]
         fn split_pieces_never_outgrow_the_whole(
-            thousandths in 10u16..=5000,
+            thousandths in 100u32..=100_000,
             source in 2i64..1_000_000_000_000,
             cut in 1i64..1_000_000_000_000,
         ) {

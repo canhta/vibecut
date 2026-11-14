@@ -26,7 +26,7 @@ pub(super) fn set_speed(
 }
 
 /// One item's whole speed curve through `timeline.set_speed_curve`: one undo step.
-/// A speed outside 0.01-5x refuses before the command runs.
+/// A speed outside 0.1-100x refuses before the command runs.
 pub(super) fn set_speed_curve(
     port: &mut Port<'_>,
     item: ItemId,

@@ -3696,6 +3696,26 @@ fn speed_tab_scrubs_resets_and_toggles_pitch_through_one_command() {
         project::Retime::default()
     );
 
+    // The typed field takes the bounds 0.1x and 100x and clamps beyond them.
+    for (typed, thousandths) in [("100", 100_000), ("0.1", 100), ("101", 100_000), ("0.01", 100)] {
+        enter(&mut harness, "inspector.speed.scrub", typed);
+        let bounded = item(&harness, fixture.video);
+        assert_eq!(bounded.retime.speed.thousandths(), thousandths, "{typed}");
+        assert_eq!(
+            bounded.duration().unwrap(),
+            Tick(2 * SECOND * 1000 / i64::from(thousandths)),
+            "{typed}"
+        );
+    }
+    harness.state_mut().session.undo().unwrap();
+    harness.state_mut().session.undo().unwrap();
+    harness.state_mut().session.undo().unwrap();
+    harness.state_mut().session.undo().unwrap();
+    assert_eq!(
+        item(&harness, fixture.video).retime,
+        project::Retime::default()
+    );
+
     // Reverse is one undo step that keeps the span; the switch reads back from the item.
     let history = harness.state().session.history_len();
     let span = item(&harness, fixture.video).duration().unwrap();
@@ -6741,11 +6761,19 @@ fn speed_curve_tab_applies_presets_edits_a_stretch_and_refuses_invalid_curves() 
         "other stretches keep their speed"
     );
 
-    // A speed outside 0.01-5x is refused and changes nothing.
-    let before = harness.state().session.project().clone();
-    enter(&mut harness, "inspector.speed.segment.1", "9");
+    // The field takes the bounds 0.1x and 100x and clamps a value beyond them, so a
+    // speed outside the range never reaches the command.
+    for (typed, expected) in [("100", 100.0), ("101", 100.0), ("0.1", 0.1), ("0.01", 0.1)] {
+        let before = harness.state().session.project().clone();
+        enter(&mut harness, "inspector.speed.segment.1", typed);
+        let bounded = item(&harness, fixture.video).retime.curve.unwrap().segments();
+        assert_eq!(bounded.get(1).unwrap().speed.as_f64(), expected, "{typed}");
+        if *harness.state().session.project() != before {
+            harness.state_mut().session.undo().unwrap();
+        }
+        assert_eq!(*harness.state().session.project(), before, "{typed}");
+    }
     assert_eq!(steps(&harness), history + 2);
-    assert_eq!(*harness.state().session.project(), before);
 
     // The pitch policy keeps the curve.
     click(&mut harness, "inspector.speed.pitch");

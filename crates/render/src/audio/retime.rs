@@ -136,11 +136,12 @@ impl Retimer {
             return Err(Error::Invalid("retime parameters"));
         }
         let stretch = Stretch::new(rate);
-        // Fast resampling holds up to five source frames per output frame,
+        // Fast resampling holds up to one source frame per unit of speed (at most 100) per output frame,
         // in stereo plus mono, with a chunk of read-ahead and filter margins.
         // Allow amortized Vec capacity growth for that source storage; also cover
         // the pull block, overlap-add rows/weights and output staging.
-        let max_speed = usize::from(time::Speed::MAX_THOUSANDTHS).div_ceil(1000);
+        // Sized by this map's fastest stretch, so 1x items do not reserve the 100x worst case.
+        let max_speed = usize::try_from(map.max_taps()).unwrap_or(1).max(1);
         let source_samples = MAX_BLOCK * max_speed + CHUNK + 32;
         let samples = 6 * source_samples + 7 * MAX_BLOCK + stretch.grain * 32;
         let lease = hooks.reserve(MemoryKind::Compositor, samples as u64 * 4)?;
