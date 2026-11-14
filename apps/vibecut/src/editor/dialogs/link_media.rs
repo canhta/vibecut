@@ -347,7 +347,11 @@ fn list(state: &State, cx: &Context<'_>, ui: &mut egui::Ui, actions: &mut Vec<Ac
         egui::pos2(rect.left(), rect.top() + HEADER_HEIGHT + 1.0),
         egui::pos2(rect.right(), foot_y),
     );
-    ui.scope_builder(egui::UiBuilder::new().max_rect(rows), |ui| {
+    // A child, not a scope: a scope would move the dialog's cursor back up to the footer
+    // rule, and the checkbox row would paint over the list's count.
+    let mut rows_ui = ui.new_child(egui::UiBuilder::new().max_rect(rows));
+    {
+        let ui = &mut rows_ui;
         egui::ScrollArea::vertical()
             .id_salt("link_media.rows")
             .auto_shrink([false, false])
@@ -405,7 +409,7 @@ fn list(state: &State, cx: &Context<'_>, ui: &mut egui::Ui, actions: &mut Vec<Ac
                     actions.push(Action::Remember(id, response));
                 }
             });
-    });
+    }
 }
 
 fn footer(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
