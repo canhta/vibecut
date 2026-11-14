@@ -87,7 +87,7 @@ impl EditorWindow {
             &work,
             Work::Open(_) | Work::New | Work::Recover(_) | Work::Short(..)
         ) {
-            self.budget.child(512 << 20)?
+            self.budget.project_scope()?
         } else {
             self.budget.clone()
         };
