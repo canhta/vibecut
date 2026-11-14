@@ -751,10 +751,10 @@ pub(crate) fn apply(
         }
         EditCommand::SetSpeedCurve {
             items,
-            segments,
+            points,
             maintain_pitch,
         } => {
-            data = retime::execute_set_speed_curve(data, items, segments, maintain_pitch)?;
+            data = retime::execute_set_speed_curve(data, items, points, maintain_pitch)?;
         }
         EditCommand::ApplySpeedPreset {
             items,

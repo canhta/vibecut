@@ -30,21 +30,21 @@ pub(super) fn set_speed(
 pub(super) fn set_speed_curve(
     port: &mut Port<'_>,
     item: ItemId,
-    segments: &[(u16, f64)],
+    points: &[(u16, f64)],
     maintain_pitch: bool,
 ) -> Result<()> {
-    let segments = segments
+    let points = points
         .iter()
-        .map(|&(span, speed)| {
-            Ok(project::SpeedSegment {
-                span,
+        .map(|&(at, speed)| {
+            Ok(project::SpeedPoint {
+                at,
                 speed: time::Speed::from_f64(speed)?,
             })
         })
         .collect::<Result<Vec<_>>>()?;
     port.apply_result(engine::Command::SetSpeedCurve {
         items: vec![item],
-        segments,
+        points,
         maintain_pitch,
     })?;
     Ok(())

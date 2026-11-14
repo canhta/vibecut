@@ -6818,7 +6818,7 @@ fn ctrl_x_cuts_mask_points_in_one_undo_step_and_keeps_the_item_selected() {
 }
 
 #[test]
-fn speed_curve_tab_applies_presets_edits_a_stretch_and_refuses_invalid_curves() {
+fn speed_curve_tab_applies_presets_and_edits_the_plot_points() {
     let fixture = fixture();
     let mut harness = build(fixture.editor);
     harness.run_steps(3);
@@ -6846,93 +6846,269 @@ fn speed_curve_tab_applies_presets_edits_a_stretch_and_refuses_invalid_curves() 
         Some(egui::accesskit::Toggled::True)
     );
     assert!(!has_widget(&harness, "inspector.speed.scrub"));
-    assert!(has_widget(
-        &harness,
-        "inspector.speed.preset.slow_in_fast_out"
-    ));
-    // The four preset buttons share one width and line up in columns across the two rows.
-    let presets = [
-        "slow_in_fast_out",
-        "fast_in_slow_out",
-        "slow_middle",
-        "fast_middle",
-    ]
-    .map(|word| widget_rect(&harness, &format!("inspector.speed.preset.{word}")));
-    for rect in &presets {
+
+    // Eight 62 px tiles in the reference order, 16 px apart along a row; None is selected, so
+    // there is no plot yet.
+    let words = [
+        "none",
+        "custom",
+        "montage",
+        "hero",
+        "bullet",
+        "jump_cut",
+        "flash_in",
+        "flash_out",
+    ];
+    let mut tiles: Vec<(&str, egui::Rect)> = words
+        .iter()
+        .map(|word| {
+            (
+                *word,
+                widget_rect(&harness, &format!("inspector.speed.preset.{word}")),
+            )
+        })
+        .collect();
+    for (word, rect) in &tiles {
         assert!(
-            (rect.width() - presets[0].width()).abs() < 0.01,
-            "preset widths differ: {presets:?}"
+            (rect.width() - 62.0).abs() < 0.01 && (rect.height() - 62.0).abs() < 0.01,
+            "{word}: {rect:?}"
         );
     }
-    assert!((presets[0].left() - presets[2].left()).abs() < 0.01);
-    assert!((presets[1].left() - presets[3].left()).abs() < 0.01);
-    assert!(presets[1].left() > presets[0].right());
+    tiles.sort_by(|a, b| {
+        (a.1.top(), a.1.left())
+            .partial_cmp(&(b.1.top(), b.1.left()))
+            .unwrap()
+    });
+    assert_eq!(tiles.iter().map(|tile| tile.0).collect::<Vec<_>>(), words);
+    for pair in tiles.windows(2) {
+        if (pair[0].1.top() - pair[1].1.top()).abs() < 0.01 {
+            assert!(
+                (pair[1].1.left() - pair[0].1.right() - 16.0).abs() < 0.01,
+                "{pair:?}"
+            );
+        }
+    }
+    assert!(!has_widget(&harness, "inspector.speed.plot"));
     assert_eq!(
         item(&harness, fixture.video).retime,
         project::Retime::default()
     );
     let steps = |harness: &Harness<Editor>| harness.state().session.history_len().0;
-
-    // A preset is one undo step and shows its four stretches as editable fields.
-    let history = steps(&harness);
-    click(&mut harness, "inspector.speed.preset.slow_in_fast_out");
-    harness.run_steps(2);
-    assert_eq!(steps(&harness), history + 1);
-    let ramped = item(&harness, fixture.video);
-    let curve = ramped.retime.curve.expect("preset sets a curve");
-    assert_eq!(
-        curve.segments(),
-        project::SpeedPreset::SlowInFastOut.segments()
-    );
-    assert!(has_widget(&harness, "inspector.speed.segment.3"));
-    assert!(!has_widget(&harness, "inspector.speed.segment.4"));
-
-    // Editing one stretch rewrites the curve in one step.
-    enter(&mut harness, "inspector.speed.segment.0", "1.5");
-    assert_eq!(steps(&harness), history + 2);
-    let edited = item(&harness, fixture.video);
-    let segments = edited.retime.curve.unwrap().segments();
-    assert_eq!(segments.first().unwrap().speed.as_f64(), 1.5);
-    assert_eq!(
-        segments.get(1).unwrap().speed.as_f64(),
-        0.8,
-        "other stretches keep their speed"
-    );
-
-    // The field takes the bounds 0.1x and 100x and clamps a value beyond them, so a
-    // speed outside the range never reaches the command.
-    for (typed, expected) in [("100", 100.0), ("101", 100.0), ("0.1", 0.1), ("0.01", 0.1)] {
-        let before = harness.state().session.project().clone();
-        enter(&mut harness, "inspector.speed.segment.1", typed);
-        let bounded = item(&harness, fixture.video)
+    let points = |harness: &Harness<Editor>| {
+        item(harness, fixture.video)
             .retime
             .curve
-            .unwrap()
-            .segments();
-        assert_eq!(bounded.get(1).unwrap().speed.as_f64(), expected, "{typed}");
-        if *harness.state().session.project() != before {
-            harness.state_mut().session.undo().unwrap();
-        }
-        assert_eq!(*harness.state().session.project(), before, "{typed}");
+            .expect("a curve")
+            .points()
+            .to_vec()
+    };
+
+    // Montage is one undo step: the plot shows its six points and the Duration line reads
+    // the clip's two seconds as about 1.5.
+    let history = steps(&harness);
+    click(&mut harness, "inspector.speed.preset.montage");
+    harness.run_steps(2);
+    assert_eq!(steps(&harness), history + 1);
+    assert_eq!(points(&harness), project::SpeedPreset::Montage.points());
+    assert!(has_widget(&harness, "inspector.speed.plot"));
+    assert!(has_widget(&harness, "inspector.speed.point.5"));
+    assert!(!has_widget(&harness, "inspector.speed.point.6"));
+    assert!(has_widget(&harness, "inspector.speed.curve.reset"));
+    let shown = item(&harness, fixture.video).duration().unwrap().seconds();
+    assert!(shown > 1.3 && shown < 1.7, "{shown}");
+
+    // Dragging the crest sideways moves its position only, in one undo step.
+    let before = points(&harness);
+    drag(
+        &mut harness,
+        "inspector.speed.point.2",
+        egui::vec2(30.0, 0.0),
+    );
+    assert_eq!(steps(&harness), history + 2);
+    let after = points(&harness);
+    assert!(after[2].at > before[2].at, "{after:?}");
+    assert!((after[2].speed.as_f64() - 2.69).abs() < 0.1, "{after:?}");
+    for index in [0, 1, 3, 4, 5] {
+        assert_eq!(after[index], before[index], "point {index}");
     }
+
+    // An end keeps its position, so a sideways drag of it changes nothing.
+    drag(
+        &mut harness,
+        "inspector.speed.point.0",
+        egui::vec2(25.0, 0.0),
+    );
     assert_eq!(steps(&harness), history + 2);
 
-    // The pitch policy keeps the curve.
+    // Dragging the trough up raises its speed; a drag past the plot pins it to the 0.1x edge.
+    let trough = points(&harness)[3];
+    drag(
+        &mut harness,
+        "inspector.speed.point.3",
+        egui::vec2(0.0, -20.0),
+    );
+    assert_eq!(steps(&harness), history + 3);
+    let raised = points(&harness)[3];
+    assert_eq!(raised.at, trough.at);
+    assert!(
+        raised.speed.as_f64() > trough.speed.as_f64() * 1.4,
+        "{raised:?}"
+    );
+    drag(
+        &mut harness,
+        "inspector.speed.point.3",
+        egui::vec2(0.0, 300.0),
+    );
+    assert_eq!(points(&harness)[3].speed.as_f64(), 0.1);
+    assert_eq!(steps(&harness), history + 4);
+    drag(
+        &mut harness,
+        "inspector.speed.point.3",
+        egui::vec2(0.0, -300.0),
+    );
+    assert_eq!(points(&harness)[3].speed.as_f64(), 10.0);
+    assert_eq!(steps(&harness), history + 5);
+
+    // The selected point reads "-" and removes itself; with nothing selected "+" adds a point
+    // at the playhead that lies on the curve and takes the selection.
+    assert!(has_widget(&harness, "inspector.speed.curve.remove"));
+    click(&mut harness, "inspector.speed.curve.remove");
+    assert_eq!(points(&harness).len(), 5);
+    assert_eq!(steps(&harness), history + 6);
+    assert!(!has_widget(&harness, "inspector.speed.curve.remove"));
+    let project = harness.state().session.project().clone();
+    harness
+        .state_mut()
+        .playback
+        .seek(Tick(SECOND / 2), false, project)
+        .unwrap();
+    harness.run_steps(3);
+    let before = points(&harness);
+    click(&mut harness, "inspector.speed.curve.add");
+    assert_eq!(steps(&harness), history + 7);
+    let after = points(&harness);
+    assert_eq!(after.len(), 6);
+    assert!(after.windows(2).all(|pair| pair[0].at < pair[1].at));
+    let added = after
+        .iter()
+        .find(|point| !before.contains(point))
+        .expect("a new point");
+    assert!(added.at > 150 && added.at < 500, "{added:?}");
+    let on_curve = project::SpeedPoint::interpolate(&before, f64::from(added.at) / 1000.0);
+    assert!((added.speed.as_f64() - on_curve).abs() < 0.002, "{added:?}");
+    assert!(has_widget(&harness, "inspector.speed.curve.remove"));
+
+    // Reset restores the flat 1x shape in one step; Custom is that same shape.
+    click(&mut harness, "inspector.speed.curve.reset");
+    assert_eq!(points(&harness), project::SpeedPreset::Custom.points());
+    assert_eq!(steps(&harness), history + 8);
+
+    // The pitch policy keeps the shape.
+    click(&mut harness, "inspector.speed.preset.hero");
+    let curve = item(&harness, fixture.video).retime.curve.unwrap();
     click(&mut harness, "inspector.speed.pitch");
     let kept = item(&harness, fixture.video);
     assert!(!kept.retime.maintain_pitch);
-    assert_eq!(kept.retime.curve, edited.retime.curve);
+    assert_eq!(kept.retime.curve.unwrap().points(), curve.points());
 
-    // Undo walks back through the edits; Standard returns to a constant 1x as one step.
-    harness.state_mut().session.undo().unwrap();
-    harness.state_mut().session.undo().unwrap();
-    assert_eq!(item(&harness, fixture.video).retime.curve, Some(curve));
+    // None removes the curve and stays on the Curve view; Standard returns to a constant 1x.
+    click(&mut harness, "inspector.speed.preset.none");
+    harness.run_steps(2);
+    let constant = item(&harness, fixture.video);
+    assert_eq!(constant.retime.curve, None);
+    assert_eq!(constant.retime.speed, time::Speed::UNITY);
+    assert!(!has_widget(&harness, "inspector.speed.plot"));
+    assert!(!has_widget(&harness, "inspector.speed.scrub"));
+    click(&mut harness, "inspector.speed.preset.flash_out");
+    assert_eq!(
+        points(&harness),
+        project::SpeedPreset::FlashOut.points(),
+        "a named shape is applied as its points"
+    );
     click(&mut harness, "inspector.speed.tab.standard");
     harness.run_steps(2);
     let constant = item(&harness, fixture.video);
     assert_eq!(constant.retime.curve, None);
     assert_eq!(constant.retime.speed, time::Speed::UNITY);
     assert!(has_widget(&harness, "inspector.speed.scrub"));
+}
+
+#[test]
+fn speed_plot_of_a_split_piece_shows_and_edits_only_its_own_part() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    harness
+        .state_mut()
+        .session
+        .apply(Command::ApplySpeedPreset {
+            items: vec![fixture.video],
+            preset: project::SpeedPreset::Montage,
+            maintain_pitch: true,
+        })
+        .unwrap();
+    let whole = item(&harness, fixture.video);
+    let at = Tick(whole.duration().unwrap().0 * 2 / 5);
+    harness
+        .state_mut()
+        .session
+        .apply(Command::SplitAt {
+            item: fixture.video,
+            at,
+        })
+        .unwrap();
+    let pieces: Vec<project::Item> = harness
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .main
+        .items
+        .iter()
+        .filter(|piece| piece.retime.curve.is_some())
+        .cloned()
+        .collect();
+    assert_eq!(pieces.len(), 2);
+    let (first, second) = (pieces[0].clone(), pieces[1].clone());
+    let window = second
+        .retime
+        .window
+        .expect("a split piece keeps its window");
+    let slice = second
+        .retime
+        .curve
+        .unwrap()
+        .slice_points(window.offset, window.duration);
+    assert_ne!(slice, project::SpeedPreset::Montage.points());
+
+    // The plot of the second piece shows its slice of the shape, not the whole of it.
+    select(&mut harness, second.id);
+    click(&mut harness, "inspector.tab.speed");
+    assert!(has_widget(&harness, "inspector.speed.plot"));
+    assert!(has_widget(
+        &harness,
+        &format!("inspector.speed.point.{}", slice.len() - 1)
+    ));
+    assert!(!has_widget(
+        &harness,
+        &format!("inspector.speed.point.{}", slice.len())
+    ));
+
+    // An edit gives that piece its own shape and leaves the other piece alone.
+    drag(
+        &mut harness,
+        "inspector.speed.point.1",
+        egui::vec2(0.0, -15.0),
+    );
+    let edited = item(&harness, second.id);
+    assert_eq!(edited.retime.window, None);
+    let own = edited.retime.curve.unwrap().points().to_vec();
+    assert_eq!(own.len(), slice.len());
+    assert_eq!(own[0], slice[0]);
+    assert_ne!(own[1].speed, slice[1].speed);
+    assert_eq!(item(&harness, first.id).retime, first.retime);
 }
 
 #[test]
@@ -6944,7 +7120,7 @@ fn speed_curve_tab_renders_the_ramp_editor() {
     select(&mut harness, fixture.video);
     click(&mut harness, "inspector.tab.speed");
     click(&mut harness, "inspector.speed.tab.curve");
-    click(&mut harness, "inspector.speed.preset.slow_in_fast_out");
+    click(&mut harness, "inspector.speed.preset.montage");
     harness.run_steps(3);
     let image = harness.render().expect("offscreen render");
     let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");

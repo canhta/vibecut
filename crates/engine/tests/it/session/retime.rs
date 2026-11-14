@@ -1025,10 +1025,10 @@ fn preset(items: &[u64], preset: project::SpeedPreset, maintain_pitch: bool) -> 
 fn curve(items: &[u64], table: &[(u16, f64)], maintain_pitch: bool) -> Command {
     Command::SetSpeedCurve {
         items: items.iter().map(|id| ItemId(*id)).collect(),
-        segments: table
+        points: table
             .iter()
-            .map(|&(span, value)| project::SpeedSegment {
-                span,
+            .map(|&(at, value)| project::SpeedPoint {
+                at,
                 speed: speed(value),
             })
             .collect(),
@@ -1054,13 +1054,18 @@ fn speed_presets_and_curves_apply_stretch_keys_undo_and_survive_a_split() {
         false,
     );
     let before = s.project().clone();
-    s.apply(preset(&[1, 2], project::SpeedPreset::SlowInFastOut, true))
+    s.apply(preset(&[1, 2], project::SpeedPreset::Montage, true))
         .unwrap();
-    // 5 s source stretches at 0.5x, 0.8x, 1.25x and 2x play for 10 + 6.25 + 4 + 2.5 s.
-    let total = Tick(22 * SECOND + 3 * SECOND / 4);
+    // The Montage shape is baked over the 20 s of source into one curve per item.
+    let total = item(&s, 1).duration().unwrap();
+    assert_ne!(total, Tick(20 * SECOND));
     for id in [1, 2] {
         let ramped = item(&s, id);
         assert_eq!(ramped.duration().unwrap(), total);
+        assert_eq!(
+            ramped.retime.curve.unwrap().points(),
+            project::SpeedPreset::Montage.points()
+        );
         assert_eq!(ramped.source_range, range(10 * SECOND, 30 * SECOND));
         assert_eq!(ramped.retime.speed, Speed::UNITY);
         assert!(ramped.retime.curve.is_some() && ramped.retime.maintain_pitch);
@@ -1077,7 +1082,12 @@ fn speed_presets_and_curves_apply_stretch_keys_undo_and_survive_a_split() {
             .map(|k| k.time)
             .collect()
     };
-    assert_eq!(keys(&item(&s, 1)), vec![Tick(total.0 / 4)]);
+    let followed = keys(&item(&s, 1));
+    assert_eq!(followed.len(), 1);
+    assert!(
+        (followed.first().unwrap().0 - total.0 / 4).abs() <= 1,
+        "{followed:?}"
+    );
     // One undo step restores both items; redo reproduces the ramp.
     s.undo().unwrap();
     assert_eq!(*s.project(), before);
@@ -1085,14 +1095,11 @@ fn speed_presets_and_curves_apply_stretch_keys_undo_and_survive_a_split() {
     let ramped = item(&s, 1);
     let curve_after_redo = ramped.retime.curve.unwrap();
 
-    // Editing the stretches replaces the curve in one step: 0..50% at 1x, 50..100% at 4x.
-    s.apply(curve(&[1], &[(500, 1.0), (500, 4.0)], false))
+    // Editing the points replaces the curve in one step: a flat 2x plays 20 s of source in 10 s.
+    s.apply(curve(&[1], &[(0, 2.0), (1000, 2.0)], false))
         .unwrap();
     let edited = item(&s, 1);
-    assert_eq!(
-        edited.duration().unwrap(),
-        Tick(10 * SECOND + 10 * SECOND / 4)
-    );
+    assert_eq!(edited.duration().unwrap(), Tick(10 * SECOND));
     assert!(!edited.retime.maintain_pitch);
     s.undo().unwrap();
     assert_eq!(item(&s, 1).retime.curve, Some(curve_after_redo));
@@ -1147,19 +1154,24 @@ fn invalid_speed_curves_are_refused_without_changing_the_project() {
     let before = s.project().clone();
     let history = s.history_len();
     let bad = [
-        // Spans must sum to 1000.
-        curve(&[1], &[(500, 1.0), (400, 2.0)], true),
-        curve(&[1], &[(600, 1.0), (500, 2.0)], true),
-        // At least one and at most seven stretches.
+        // The shape must run from 0 to 1000.
+        curve(&[1], &[(0, 1.0), (900, 2.0)], true),
+        curve(&[1], &[(100, 1.0), (1000, 2.0)], true),
+        // At least two and at most twelve points, strictly increasing.
         curve(&[1], &[], true),
-        curve(&[1], &[(125, 1.0); 8], true),
-        // A stretch without a source tick.
-        curve(&[1], &[(0, 1.0), (1000, 1.0)], true),
+        curve(&[1], &[(0, 1.0)], true),
+        curve(&[1], &[(0, 1.0), (600, 1.0), (500, 2.0), (1000, 1.0)], true),
+        curve(&[1], &[(0, 1.0), (500, 1.0), (500, 2.0), (1000, 1.0)], true),
+        curve(
+            &[1],
+            &(0..13u16).map(|n| (n * 1000 / 12, 1.0)).collect::<Vec<_>>(),
+            true,
+        ),
         // Selection errors.
-        curve(&[], &[(1000, 2.0)], true),
-        curve(&[1, 1], &[(1000, 2.0)], true),
-        curve(&[999], &[(1000, 2.0)], true),
-        preset(&[999], project::SpeedPreset::FastMiddle, true),
+        curve(&[], &[(0, 2.0), (1000, 2.0)], true),
+        curve(&[1, 1], &[(0, 2.0), (1000, 2.0)], true),
+        curve(&[999], &[(0, 2.0), (1000, 2.0)], true),
+        preset(&[999], project::SpeedPreset::Hero, true),
     ];
     for command in bad {
         assert!(s.apply(command).is_err());
@@ -1171,7 +1183,7 @@ fn invalid_speed_curves_are_refused_without_changing_the_project() {
         assert!(
             serde_json::from_value::<Command>(serde_json::json!({
                 "command": "timeline.set_speed_curve",
-                "params": {"items": [1], "segments": [{"span": 1000, "speed": value}], "maintain_pitch": true}
+                "params": {"items": [1], "points": [{"at": 0, "speed": value}, {"at": 1000, "speed": 1.0}], "maintain_pitch": true}
             }))
             .is_err(),
             "{value}"
@@ -1187,11 +1199,11 @@ fn invalid_speed_curves_are_refused_without_changing_the_project() {
     // A reversed clip refuses a curve, and a curved clip refuses to reverse.
     s.apply(set_reverse(&[1], true)).unwrap();
     assert!(
-        s.apply(preset(&[1], project::SpeedPreset::SlowMiddle, true))
+        s.apply(preset(&[1], project::SpeedPreset::Montage, true))
             .is_err()
     );
     s.undo().unwrap();
-    s.apply(preset(&[1], project::SpeedPreset::SlowMiddle, true))
+    s.apply(preset(&[1], project::SpeedPreset::Montage, true))
         .unwrap();
     assert!(s.apply(set_reverse(&[1], true)).is_err());
     // Extending a curved clip's edge past its curve refuses.

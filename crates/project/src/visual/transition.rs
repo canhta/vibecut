@@ -761,14 +761,8 @@ mod tests {
         }
         // A curved clip is bounded by its curve: a whole curve has no handle before it, and a
         // sliced one only the unplayed tail of its window after it.
-        let curve = crate::SpeedCurve::from_segments(
-            Tick(100),
-            &[crate::SpeedSegment {
-                span: 1000,
-                speed: time::Speed::UNITY,
-            }],
-        )
-        .unwrap();
+        let curve = crate::SpeedCurve::from_points(Tick(100), &crate::SpeedPreset::Custom.points())
+            .unwrap();
         let mut curved = d.clone();
         for i in &mut curved.scene_mut().timeline.main.items {
             i.retime.curve = Some(curve);

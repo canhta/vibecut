@@ -2656,7 +2656,7 @@ Effect: `Edit`. Fixture: `Timeline`.
     5
   ],
   "maintain_pitch": true,
-  "preset": "slow_in_fast_out"
+  "preset": "montage"
 }
 ```
 
@@ -3040,13 +3040,13 @@ Effect: `Edit`. Fixture: `Timeline`.
     5
   ],
   "maintain_pitch": true,
-  "segments": [
+  "points": [
     {
-      "span": 500,
+      "at": 0,
       "speed": 0.5
     },
     {
-      "span": 500,
+      "at": 1000,
       "speed": 2.0
     }
   ]

@@ -499,16 +499,18 @@ fn reversed_audio_is_the_reversed_source_and_keeps_pitch() {
     }
 }
 
-/// One audio item over 4 s of a long tone that plays its first half at 2x and its
-/// second half at 0.5x: 1 s then 4 s of output.
+/// One audio item over 4 s of a long tone whose shape plays 2x for the first fifth of its
+/// output, eases down to 0.5x over the next three fifths and stays there: about 3.2 s out.
 fn ramp_fixture(maintain_pitch: bool) -> project::Project {
     let source_ticks = 4 * time::TICKS_PER_SECOND;
-    let segments =
-        [(500u16, 2000u32), (500, 500)].map(|(span, thousandths)| project::SpeedSegment {
-            span,
-            speed: Speed::from_thousandths(thousandths).unwrap(),
+    let points =
+        [(0u16, 2000u32), (200, 2000), (800, 500), (1000, 500)].map(|(at, thousandths)| {
+            project::SpeedPoint {
+                at,
+                speed: Speed::from_thousandths(thousandths).unwrap(),
+            }
         });
-    let curve = project::SpeedCurve::from_segments(Tick(source_ticks), &segments).unwrap();
+    let curve = project::SpeedCurve::from_points(Tick(source_ticks), &points).unwrap();
     let long = tick(60 * RATE, RATE);
     let mut data = project::Project::empty(project::ProjectId(1), "".into())
         .unwrap()
@@ -566,14 +568,18 @@ fn ramped_clip_keeps_pitch_when_enabled_and_follows_each_stretch_when_not() {
     for (maintain, fast, slow) in [(true, 1000.0, 1000.0), (false, 2000.0, 500.0)] {
         let p = ramp_fixture(maintain);
         let out = render(&p, &mut tone(), &[65536]);
-        assert_eq!(
-            out.len(),
-            5 * RATE as usize,
-            "the curve's exact output length"
+        let expected_len = p
+            .duration()
+            .to_units(i64::from(RATE), time::Rounding::Nearest)
+            .unwrap() as usize;
+        assert!(
+            out.len().abs_diff(expected_len) <= 1,
+            "the curve's output length {} vs {expected_len}",
+            out.len()
         );
         for (label, from, expected) in [
-            ("2x stretch", 8192, fast),
-            ("0.5x stretch", RATE as usize + 8192 + 24000, slow),
+            ("2x plateau", 8192, fast),
+            ("0.5x plateau", out.len() - 8192 - 16384, slow),
         ] {
             let (hertz, clean) = peak(&out[from..from + 16384]);
             assert!(

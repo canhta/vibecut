@@ -63,9 +63,12 @@ Blending under Basic, then Audio (see below) and Speed. Speed is a 0.1–100x sc
 reset and, for items with audio, a `Change audio pitch` switch that is on while pitch
 follows speed (`maintain_pitch` off). A `Reverse` switch (video and audio) uses `timeline.set_reverse`, one undo step, and keeps the span. Speed edits use `timeline.set_speed`, one undo
 step per commit; trim bounds extend by the retimed output length. A `Standard` / `Curve` bar
-tops the tab: Curve shows four ramp presets (`timeline.apply_speed_preset`) and, for a curved
-item, one speed field per stretch (`timeline.set_speed_curve`, whole curve per commit, one undo
-step, speeds outside 0.1-100x refuse); `Standard` on a curved item resets to a constant 1x. Caption generation
+tops the tab: Curve shows eight preset tiles (None, Custom, Montage, Hero, Bullet, Jump cut,
+Flash in, Flash out; `timeline.apply_speed_preset`, None is a constant 1x) and, for a curved
+item, the speed plot (`view/playback/curve.rs`): a log 0.1x-10x axis with draggable points, the
+Duration line, Reset and an add/remove point button. A drag commits the whole shape through
+`timeline.set_speed_curve` on release, one undo step; `Standard` on a curved item resets to a
+constant 1x. Caption generation
 refuses a retimed source item. The text button inserts a five-second title at the
 playhead in one undo step.
 

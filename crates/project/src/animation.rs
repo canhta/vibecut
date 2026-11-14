@@ -21,5 +21,6 @@ pub use params::{
 };
 pub use retime::{Cut, Retime, RetimeWindow};
 pub use speed_curve::{
-    MAX_SPEED_KEYS, SPEED_SPAN_TOTAL, SpeedCurve, SpeedKey, SpeedPreset, SpeedSegment,
+    MAX_SPEED_KEYS, MAX_SPEED_POINTS, SPEED_SPAN_TOTAL, SpeedCurve, SpeedKey, SpeedPoint,
+    SpeedPreset,
 };

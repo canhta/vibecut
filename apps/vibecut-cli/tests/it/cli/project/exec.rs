@@ -1949,30 +1949,30 @@ fn cli_applies_a_speed_ramp_to_linked_clips_and_the_export_follows_the_curve() {
     generate_av(&video, 1);
     generate_audio(&audio);
     media_project(&project, &video, Some(&audio));
-    // 1 s of source in four 0.25 s stretches at 0.5x, 0.8x, 1.25x and 2x plays for
-    // 0.5 + 0.3125 + 0.2 + 0.125 = 1.1375 s.
+    // The Montage shape over 1 s of source: forty output stretches at the shape's midpoint
+    // speeds (mean 1.3298x) play for 0.75202 s.
     exec(
         &project,
         "timeline.apply_speed_preset",
-        json!({"items":[0,1],"preset":"slow_in_fast_out","maintain_pitch":true}),
+        json!({"items":[0,1],"preset":"montage","maintain_pitch":true}),
     );
     let seconds = info(&project)["duration"]["seconds"].as_f64().unwrap();
-    assert!((seconds - 1.1375).abs() < 1e-6, "ramp duration {seconds}");
-    // An edited curve replaces it: half the source at 1x, half at 4x is 0.5 + 0.125 s.
+    assert!((seconds - 0.75202).abs() < 1e-4, "ramp duration {seconds}");
+    // An edited curve replaces it: a smoothstep from 1x to 4x averages 2.5x, so 0.4 s.
     exec(
         &project,
         "timeline.set_speed_curve",
-        json!({"items":[0,1],"segments":[{"span":500,"speed":1.0},{"span":500,"speed":4.0}],"maintain_pitch":true}),
+        json!({"items":[0,1],"points":[{"at":0,"speed":1.0},{"at":1000,"speed":4.0}],"maintain_pitch":true}),
     );
     let seconds = info(&project)["duration"]["seconds"].as_f64().unwrap();
     assert!(
-        (seconds - 0.625).abs() < 1e-6,
+        (seconds - 0.4).abs() < 1e-4,
         "edited ramp duration {seconds}"
     );
     exec(
         &project,
         "timeline.apply_speed_preset",
-        json!({"items":[0,1],"preset":"slow_in_fast_out","maintain_pitch":true}),
+        json!({"items":[0,1],"preset":"montage","maintain_pitch":true}),
     );
     let output = cli(&[
         os("export"),
@@ -2004,10 +2004,10 @@ fn cli_applies_a_speed_ramp_to_linked_clips_and_the_export_follows_the_curve() {
     let video_stream = streams.iter().find(|s| s["codec_type"] == "video").unwrap();
     let frames: i64 = video_stream["nb_frames"].as_str().unwrap().parse().unwrap();
     assert!(
-        (34..=35).contains(&frames),
-        "1.1375 s at 30 fps is about 34 frames, got {frames}"
+        (22..=23).contains(&frames),
+        "0.752 s at 30 fps is about 23 frames, got {frames}"
     );
     let audio_stream = streams.iter().find(|s| s["codec_type"] == "audio").unwrap();
     let length: f64 = audio_stream["duration"].as_str().unwrap().parse().unwrap();
-    assert!((length - 1.1375).abs() < 0.06, "audio lasts {length} s");
+    assert!((length - 0.752).abs() < 0.06, "audio lasts {length} s");
 }
