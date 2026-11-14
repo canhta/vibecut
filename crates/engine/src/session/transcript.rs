@@ -1,11 +1,15 @@
 //! Reads caption cues and measured words in output time.
 use crate::Session;
+use crate::session::wire::OutputSpan;
 use crate::session::{EditError, Result};
 use captions::{CueText, LanguageTag, NfcText};
 use project::{ItemId, ItemParams, ProjectData, SceneId, TrackId, WordSpan};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
-use time::SourceRange;
+use time::{SourceRange, Tick};
+
+/// Longest run of words that counts as one repeated phrase.
+const REPEAT_MAX_WORDS: usize = 3;
 
 /// Stable address of one caption cue: its caption item and retained cue identity.
 /// Text and timing are never part of an address.
@@ -73,6 +77,111 @@ impl Session {
     pub fn transcript(&self) -> Result<TranscriptView> {
         view(self.project().data())
     }
+}
+
+/// A silence between two measured words, in output time.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, schemars::JsonSchema)]
+pub struct TranscriptGap {
+    /// The silence itself, from the end of `before` to the start of `after`.
+    pub span: OutputSpan,
+    pub before: WordId,
+    pub after: WordId,
+}
+
+/// A phrase spoken twice in a row. `words` is the first occurrence, the one a cut removes.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, schemars::JsonSchema)]
+pub struct TranscriptRepeat {
+    pub words: Vec<WordId>,
+    pub text: NfcText,
+    pub span: OutputSpan,
+}
+
+/// Pauses and repeats read from a transcript view. Nothing is edited.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, schemars::JsonSchema)]
+pub struct TranscriptAnalysis {
+    pub gaps: Vec<TranscriptGap>,
+    pub repeats: Vec<TranscriptRepeat>,
+}
+
+/// Letters and digits of `text`, lowercased, so punctuation and case never hide a repeat.
+fn fold(text: &str) -> String {
+    text.chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+/// Silences of at least `min_gap` between consecutive measured words, and immediate
+/// repeats of one to three words, over every caption item of the view's scene. Words are
+/// ordered by output start; a word that overlaps an earlier one never opens a gap.
+#[must_use]
+pub fn analyze(view: &TranscriptView, min_gap: Tick) -> TranscriptAnalysis {
+    let mut words: Vec<&TranscriptWord> =
+        view.cues.iter().flat_map(|cue| cue.words.iter()).collect();
+    words.sort_by_key(|word| (word.output.start(), word.id.clone()));
+    let mut gaps = Vec::new();
+    let mut reach: Option<(&TranscriptWord, Tick)> = None;
+    for &word in &words {
+        if let Some((before, end)) = reach {
+            let start = word.output.start();
+            let width = start.0.saturating_sub(end.0);
+            if width > 0 && width >= min_gap.0 {
+                gaps.push(TranscriptGap {
+                    span: OutputSpan { start: end, end: start },
+                    before: before.id.clone(),
+                    after: word.id.clone(),
+                });
+            }
+        }
+        let end = word.output.end();
+        if reach.is_none_or(|(_, farthest)| end > farthest) {
+            reach = Some((word, end));
+        }
+    }
+    let keys: Vec<String> = words
+        .iter()
+        .map(|word| {
+            word.text
+                .as_ref()
+                .map(|text| fold(text.as_str()))
+                .unwrap_or_default()
+        })
+        .collect();
+    let mut repeats = Vec::new();
+    let mut at = 0;
+    while at < words.len() {
+        let size = (1..=REPEAT_MAX_WORDS).rev().find(|size| {
+            let first = keys.get(at..at + size);
+            let second = keys.get(at + size..at + 2 * size);
+            matches!(
+                (first, second),
+                (Some(a), Some(b)) if a == b && a.iter().all(|key| !key.is_empty())
+            )
+        });
+        let Some(size) = size else {
+            at += 1;
+            continue;
+        };
+        if let Some(group) = words.get(at..at + size)
+            && let (Some(first), Some(last)) = (group.first(), group.last())
+        {
+            let text = group
+                .iter()
+                .filter_map(|word| word.text.as_ref().map(NfcText::as_str))
+                .collect::<Vec<_>>()
+                .join(" ");
+            repeats.push(TranscriptRepeat {
+                words: group.iter().map(|word| word.id.clone()).collect(),
+                text: NfcText::from(text),
+                span: OutputSpan {
+                    start: first.output.start(),
+                    end: last.output.end(),
+                },
+            });
+        }
+        at += size;
+    }
+    TranscriptAnalysis { gaps, repeats }
 }
 
 /// Cues and measured words of the active scene in output time, for owners that

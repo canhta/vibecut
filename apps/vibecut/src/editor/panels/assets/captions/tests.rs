@@ -54,6 +54,7 @@ impl Rig {
             false,
             CaptionsSection::Auto,
         );
+        let _widgets = self.captions.dialogs(ui.ctx(), Locale::En);
     }
 }
 
@@ -164,4 +165,37 @@ fn find_and_replace_scroll_above_the_auto_footer() {
             "{id} is not reachable above the footer: {rect:?} footer {footer}"
         );
     }
+}
+
+#[test]
+fn analyzing_modal_shows_while_a_run_is_open_and_cancel_drops_the_run() {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(PANEL_WIDTH, PANEL_HEIGHT))
+        .build_ui_state(|ui, rig: &mut Rig| rig.paint(ui), rig());
+    harness.run_steps(3);
+    let (send, receive) = std::sync::mpsc::sync_channel(1);
+    {
+        let rig = harness.state_mut();
+        let view = std::sync::Arc::new(rig.session.transcript().unwrap());
+        let project = rig.session.project().clone();
+        rig.captions.review.run = Some(super::review::Run {
+            receive,
+            project,
+            view,
+        });
+    }
+    harness.run_steps(3);
+    harness.get_by_label("Analyzing…");
+    harness.get_by_label("Identifying repeats…");
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("subtitles.review.cancel")))
+        .click_accesskit();
+    harness.run_steps(3);
+    assert!(harness.state().captions.review.run.is_none());
+    let late = engine::TranscriptAnalysis {
+        gaps: Vec::new(),
+        repeats: Vec::new(),
+    };
+    assert!(send.send(late).is_err(), "a cancelled run has no receiver");
+    assert!(harness.query_by_label("Analyzing…").is_none());
 }

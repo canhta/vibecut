@@ -29,7 +29,10 @@ pub use commands::{
 mod edit;
 pub(crate) mod filler;
 pub(crate) mod transcript;
-pub use transcript::{CueId, TranscriptCue, TranscriptView, TranscriptWord, WordId};
+pub use transcript::{
+    CueId, TranscriptAnalysis, TranscriptCue, TranscriptGap, TranscriptRepeat, TranscriptView,
+    TranscriptWord, WordId, analyze as analyze_transcript,
+};
 mod transition_rules;
 pub(crate) mod transitions {
     //! Maintains video transitions across candidate edits.

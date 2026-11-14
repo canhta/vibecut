@@ -310,6 +310,7 @@ pub const TABLE: &[(&str, Verdict)] = &[
     ("track.set_locked", Verdict::Allow),
     ("track.set_magnet", Verdict::Allow),
     ("track.set_muted", Verdict::Allow),
+    ("transcript.analyze", Verdict::Allow),
     ("transcript.delete_range", Verdict::Allow),
     ("transcript.merge_cues", Verdict::Allow),
     ("transcript.search", Verdict::Allow),

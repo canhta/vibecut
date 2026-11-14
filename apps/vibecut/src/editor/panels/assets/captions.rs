@@ -6,6 +6,7 @@ mod fillers;
 mod find;
 mod import;
 mod manual;
+mod review;
 mod tab;
 #[cfg(test)]
 mod tests;
@@ -165,6 +166,7 @@ pub struct Subtitles {
     emphasis: emphasis::Panel,
     suggest: Option<emphasis::Suggest>,
     chapters: chapters::Panel,
+    review: review::Panel,
 }
 impl Drop for Subtitles {
     fn drop(&mut self) {
@@ -223,6 +225,7 @@ impl Subtitles {
             emphasis: Default::default(),
             suggest: None,
             chapters: Default::default(),
+            review: Default::default(),
         })
     }
     /// Tests inject the text-provider opener for the filler cut list.
@@ -236,6 +239,7 @@ impl Subtitles {
             || self.classify.is_some()
             || self.suggest.is_some()
             || self.chapters.run.is_some()
+            || self.review_busy()
     }
     /// The run whose consent sheet is open: the active job, the filler classification, the
     /// keyword suggestion or the chapter generation.
@@ -337,6 +341,7 @@ impl Subtitles {
         if let Some(run) = &self.chapters.run {
             run.cancel.cancel();
         }
+        self.review_cancel();
     }
     pub fn approve_upload(&mut self, approved: bool) -> Result<()> {
         self.consent_events()
@@ -557,6 +562,7 @@ impl Subtitles {
         self.poll_classify();
         self.poll_suggest();
         self.tick_chapters(session);
+        self.review_tick(session);
         let mut changed = false;
         if self.active.as_ref().is_some_and(|a| {
             self.runner

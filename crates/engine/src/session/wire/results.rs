@@ -71,6 +71,11 @@ pub enum ControlResult {
         stale: bool,
         rebuilt: usize,
     },
+    /// Silences and immediate repeats of the active scene's transcript, in output time.
+    TranscriptAnalysis {
+        gaps: Vec<crate::session::transcript::TranscriptGap>,
+        repeats: Vec<crate::session::transcript::TranscriptRepeat>,
+    },
     ChapterSidecars {
         paths: super::ChapterSidecars,
     },
@@ -150,6 +155,7 @@ pub enum ResultKind {
     MusicUnsaved,
     Fillers,
     TranscriptSearch,
+    TranscriptAnalysis,
     ChapterSidecars,
     JobAccepted,
     ClipExports,
@@ -179,6 +185,7 @@ impl ResultKind {
             Self::MusicUnsaved => "music_unsaved",
             Self::Fillers => "fillers",
             Self::TranscriptSearch => "transcript_search",
+            Self::TranscriptAnalysis => "transcript_analysis",
             Self::ChapterSidecars => "chapter_sidecars",
             Self::JobAccepted => "job_accepted",
             Self::ClipExports => "clip_exports",
@@ -209,6 +216,7 @@ impl ControlResult {
             Self::MusicUnsaved { .. } => ResultKind::MusicUnsaved,
             Self::Fillers { .. } => ResultKind::Fillers,
             Self::TranscriptSearch { .. } => ResultKind::TranscriptSearch,
+            Self::TranscriptAnalysis { .. } => ResultKind::TranscriptAnalysis,
             Self::ChapterSidecars { .. } => ResultKind::ChapterSidecars,
             Self::JobAccepted { .. } => ResultKind::JobAccepted,
             Self::ClipExports { .. } => ResultKind::ClipExports,

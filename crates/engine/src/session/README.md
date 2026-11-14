@@ -146,6 +146,14 @@ and repeated source spans produce one entry per occurrence. It changes no projec
 history. A `WordId` or `CueId` from another scene is refused with `SceneBoundary` by the command
 path rather than cutting two timelines.
 
+`transcript.analyze {min_gap_ms}` (1 to 10 000) and `analyze_transcript(view, min_gap)` read two
+lists from that view without editing: `gaps`, the silences of at least the minimum between
+consecutive measured words (a word overlapping an earlier one never opens one; each names its
+`before` and `after` word), and `repeats`, immediate repeats of one to three words compared by
+lowercase letters and digits, each naming its first occurrence, the one a cut removes. Words
+without paired text never match. Removal uses the existing `timeline.remove_pauses` (gap spans)
+and `transcript.delete_range` (repeat words).
+
 ## Filler candidate read model
 
 `timeline.filler_candidates {language, include_markers}` runs the captions lexicon detector over

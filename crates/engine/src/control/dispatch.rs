@@ -214,6 +214,20 @@ impl Session {
                     rebuilt: answer.rebuilt,
                 })
             }
+            Command::TranscriptAnalyze { min_gap_ms } => {
+                if !(1..=crate::session::wire::MAX_PAUSE_MS).contains(&min_gap_ms) {
+                    return Err(EngineError::Edit(crate::EditError::Invalid(
+                        "transcript gap",
+                    )));
+                }
+                let min_gap = time::Tick::from_units(min_gap_ms, 1000, time::Rounding::Nearest)
+                    .map_err(crate::EditError::from)?;
+                let analysis = crate::analyze_transcript(&self.transcript()?, min_gap);
+                Ok(ControlResult::TranscriptAnalysis {
+                    gaps: analysis.gaps,
+                    repeats: analysis.repeats,
+                })
+            }
             Command::FillerCandidates {
                 language,
                 include_markers,

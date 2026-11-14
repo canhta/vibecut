@@ -192,6 +192,7 @@ API version: 19. Registry digest: `7f5eb6c5be35bdb042de78f37e739caa3fe54ad2458d1
 | `track.set_locked` | `Edit` | Lock track |
 | `track.set_magnet` | `Edit` | Main track magnet |
 | `track.set_muted` | `Edit` | Mute track |
+| `transcript.analyze` | `Read` | Analyze transcript pauses and repeats |
 | `transcript.delete_range` | `Edit` | Delete transcript words |
 | `transcript.merge_cues` | `Edit` | Merge transcript cues |
 | `transcript.search` | `Read` | Search transcript text |

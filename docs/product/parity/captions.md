@@ -49,12 +49,12 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | CAPS-32 | Glossary, replace-edited | Ours | Proposed | | |
 | CAPS-33 | Export SRT, TXT, VTT | Done | Proposed | web captions export | In export dialog |
 | CAPS-34 | Transcript entry (clip menu) | Partial | Differs | 110011 | Pane in Captions tab |
-| CAPS-35 | Analyzing modal | Missing | Not captured | 110018 | |
+| CAPS-35 | Analyzing modal | Done | Differs | 110018; [ui/editor.md](../ui/editor.md#transcript-pane) | Spinner for the logo |
 | CAPS-36 | Transcript view, sentence rows | Partial | Differs | 110059; [ui/editor.md](../ui/editor.md#transcript-pane) | Word level |
-| CAPS-37 | Tabs: All, Pauses, Repeats, Fillers | Partial | Not captured | 110106, 110110 | No Repeats, no tabs |
-| CAPS-38 | Pause chips, remove pauses | Partial | Not captured | 110059 | Engine done, card open |
-| CAPS-39 | Select all, total duration | Missing | Not captured | 110122 | |
-| CAPS-40 | Create compound clip option | Missing | Not captured | 110059 | |
+| CAPS-37 | Tabs: All, Pauses, Repeats, Fillers | Partial | Proposed | 110106, 110110 | No Filler words tab |
+| CAPS-38 | Pause chips, remove pauses | Done | Proposed | 110059; [ui/editor.md](../ui/editor.md#transcript-pane) | Gap card removes all |
+| CAPS-39 | Select all, total duration | Done | Proposed | 110122; [ui/editor.md](../ui/editor.md#transcript-pane) | |
+| CAPS-40 | Create compound clip option | Partial | Proposed | 110059; [ui/editor.md](../ui/editor.md#transcript-pane) | Disabled until 533 |
 | CAPS-41 | Delete, Cancel footer | Partial | Not captured | 110059 | |
 | CAPS-42 | Chapters page | Ours | Proposed | [ui/editor.md](../ui/editor.md#chapters-section) | |
 
@@ -63,18 +63,18 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | ID | Item | Function | UI/UX | Evidence | Gap / note |
 |---|---|---|---|---|---|
 | TRANSCRIPT-01 | Entry from clip menu | Missing | — | 14b/110011 | |
-| TRANSCRIPT-02 | Analyzing modal, Cancel | Missing | — | 14b/110018 | |
+| TRANSCRIPT-02 | Analyzing modal, Cancel | Done | Differs | 14b/110018 | Spinner for the logo |
 | TRANSCRIPT-03 | Separate result window | Differs | Differs | 14b/110059 | Ours: Captions-tab pane |
-| TRANSCRIPT-04 | Tabs All, Pauses, Repeats, Fillers | Partial | Not captured | 14b/110059 | Filler list only |
+| TRANSCRIPT-04 | Tabs All, Pauses, Repeats, Fillers | Partial | Proposed | 14b/110059 | No Filler words tab |
 | TRANSCRIPT-05 | Sentence rows, checkboxes | Partial | Proposed | 14b/110059 | Word level |
-| TRANSCRIPT-06 | Pause pills | Missing | — | 14b/110059 | Engine done, no UI |
-| TRANSCRIPT-07 | Repeat detection | Missing | — | 14b/110108 | |
-| TRANSCRIPT-08 | Select all, total duration | Missing | — | 14b/110122 | |
+| TRANSCRIPT-06 | Pause pills | Done | Proposed | 14b/110059 | Word gaps, not audio |
+| TRANSCRIPT-07 | Repeat detection | Done | Proposed | 14b/110108 | One to three words |
+| TRANSCRIPT-08 | Select all, total duration | Done | Proposed | 14b/110122 | |
 | TRANSCRIPT-09 | Preview player, row seek | Partial | Proposed | 14b/110130 | |
-| TRANSCRIPT-10 | Mini timeline in window | Missing | — | 14b/110059 | |
-| TRANSCRIPT-11 | Create compound option | Missing | — | 14b/110059 | |
+| TRANSCRIPT-10 | Mini timeline in window | Partial | Differs | 14b/110059 | No ruler or zoom, click seeks |
+| TRANSCRIPT-11 | Create compound option | Partial | Proposed | 14b/110059 | Disabled until 533 |
 | TRANSCRIPT-12 | Cancel, Delete | Partial | Proposed | 14b/110136 | |
 | TRANSCRIPT-13 | Find box | Done | Proposed | web screens/17 | |
-| TRANSCRIPT-14 | Gap card, remove gaps | Missing | — | web screens/17 | |
-| TRANSCRIPT-15 | Show deleted words | Missing | — | web screens/17 | |
+| TRANSCRIPT-14 | Gap card, remove gaps | Done | Proposed | web screens/17 | Function only |
+| TRANSCRIPT-15 | Show deleted words | Partial | Proposed | web screens/17 | List only, restore is Undo |
 | TRANSCRIPT-16 | Language and track select | Partial | Proposed | web screens/17 | Language only |

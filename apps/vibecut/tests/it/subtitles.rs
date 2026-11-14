@@ -24,7 +24,7 @@ use vibecut::{
 };
 #[path = "support/subtitles.rs"]
 pub(crate) mod fixture;
-use fixture::{editor, editor_with_cues, lang};
+use fixture::{editor, editor_with_cues, lang, review_cues};
 fn harness(editor: Editor, scale: f32) -> Harness<'static, Editor> {
     crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 1000.0))
@@ -4098,4 +4098,115 @@ fn emphasis_selected_chip_uses_the_selected_style_with_readable_label_in_both_th
             "selected keyword label contrast {best:.2} is below 4.5 (dark={dark})"
         );
     }
+}
+
+/// Press Identify pauses and repeats and step until the review list is on screen.
+fn analyze(h: &mut Harness<'_, Editor>) {
+    click(h, "subtitles.review.analyze");
+    let until = Instant::now() + Duration::from_secs(20);
+    while !has(h, "subtitles.review.tab.all") {
+        assert!(Instant::now() < until, "the analysis never finished");
+        h.run_steps(1);
+    }
+}
+
+fn review_harness() -> Harness<'static, Editor> {
+    let mut h = harness(editor_with_cues("en", review_cues()), 1.0);
+    h.run_steps(3);
+    h
+}
+
+#[test]
+fn review_lists_the_pause_and_the_repeat_on_their_tabs_with_the_compound_option_off() {
+    let mut h = review_harness();
+    let before = h.state().session.project().clone();
+    analyze(&mut h);
+    assert!(has(&h, "subtitles.review.pause.0"), "All shows the pause");
+    assert!(!has(&h, "subtitles.review.repeat.0"), "repeats have a tab");
+    assert!(has(&h, "subtitles.review.gap_card"));
+    assert!(has(&h, "subtitles.review.timeline"));
+    h.get_by_label("Create compound clip");
+    assert!(
+        h.get(By::new().predicate(|n| n.author_id() == Some("subtitles.review.compound")))
+            .accesskit_node()
+            .is_disabled(),
+        "compound clips are not built yet"
+    );
+    click(&mut h, "subtitles.review.tab.repeats");
+    assert!(has(&h, "subtitles.review.repeat.0"));
+    assert!(!has(&h, "subtitles.review.pause.0"));
+    click(&mut h, "subtitles.review.tab.pauses");
+    assert!(has(&h, "subtitles.review.pause.0"));
+    assert!(!has(&h, "subtitles.review.repeat.0"));
+    assert_eq!(
+        h.state().session.project(),
+        &before,
+        "reviewing edits nothing"
+    );
+}
+
+#[test]
+fn review_select_all_ticks_every_row_and_delete_cuts_the_pause_and_every_word() {
+    let mut h = review_harness();
+    analyze(&mut h);
+    click(&mut h, "subtitles.review.select_all");
+    let history = h.state().session.history_len().0;
+    click(&mut h, "subtitles.review.delete");
+    h.run_steps(3);
+    assert_eq!(transcript_words(h.state()), 0);
+    assert_eq!(
+        h.state().session.history_len().0,
+        history + 2,
+        "pauses and words are one undo step each"
+    );
+}
+
+#[test]
+fn review_remove_gaps_is_one_undo_step_and_the_card_then_reports_none() {
+    let mut h = review_harness();
+    analyze(&mut h);
+    let before = h.state().session.project().clone();
+    let history = h.state().session.history_len().0;
+    click(&mut h, "subtitles.review.gap_remove");
+    h.run_steps(3);
+    assert_eq!(h.state().session.history_len().0, history + 1);
+    assert_ne!(h.state().session.project(), &before);
+    assert!(
+        !has(&h, "subtitles.review.pause.0"),
+        "the pause is gone after the list is read again"
+    );
+    h.get_by_label("No speech gaps longer than 0.5 s. Change the duration to look for shorter ones.");
+    click(&mut h, "subtitles.review.undo");
+    h.run_steps(3);
+    assert_eq!(h.state().session.project(), &before);
+}
+
+#[test]
+fn review_deletes_a_ticked_repeat_and_shows_it_under_deleted_words_until_undone() {
+    let mut h = review_harness();
+    analyze(&mut h);
+    click(&mut h, "subtitles.review.tab.repeats");
+    click(&mut h, "subtitles.review.repeat.0");
+    let words = transcript_words(h.state());
+    let history = h.state().session.history_len().0;
+    click(&mut h, "subtitles.review.delete");
+    h.run_steps(3);
+    assert_eq!(transcript_words(h.state()), words - 1);
+    assert_eq!(h.state().session.history_len().0, history + 1);
+    click(&mut h, "subtitles.review.deleted");
+    assert!(has(&h, "subtitles.review.deleted.0"));
+    h.state_mut().session.undo().unwrap();
+    h.run_steps(3);
+    assert!(!has(&h, "subtitles.review.deleted.0"));
+    assert!(has(&h, "subtitles.review.deleted.none"));
+}
+
+#[test]
+fn review_cancel_closes_the_list_without_editing() {
+    let mut h = review_harness();
+    analyze(&mut h);
+    let before = h.state().session.project().clone();
+    click(&mut h, "subtitles.review.close");
+    assert!(!has(&h, "subtitles.review.tab.all"));
+    assert_eq!(h.state().session.project(), &before);
 }

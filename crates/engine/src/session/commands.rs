@@ -857,6 +857,7 @@ commands! {
     SetTrackLocked, "track.set_locked", "Lock track", Edit { track: TrackId, locked: bool } => Timeline, serde_json::json!({"track":3,"locked":true});
     SetTrackMagnet, "track.set_magnet", "Main track magnet", Edit { enabled: bool } => Timeline, serde_json::json!({"enabled":false});
     SetTrackMuted, "track.set_muted", "Mute track", Edit { track: TrackId, muted: bool } => Timeline, serde_json::json!({"track":3,"muted":true});
+    TranscriptAnalyze, "transcript.analyze", "Analyze transcript pauses and repeats", Read { min_gap_ms: i64 } => Words, serde_json::json!({"min_gap_ms":500}), available = CaptionItem, idle = true, returns = [TranscriptAnalysis];
     TranscriptDeleteRange, "transcript.delete_range", "Delete transcript words", Edit { word_ids: Vec<WordId> } => Words, serde_json::json!({"word_ids":[{"item":4,"cue":"cue-1","word":0}]}), available = CaptionItem, idle = true, collections = [word_ids];
     TranscriptMergeCues, "transcript.merge_cues", "Merge transcript cues", Edit { cue_ids: Vec<CueId> } => Words, serde_json::json!({"cue_ids":[{"item":4,"cue":"cue-1"},{"item":4,"cue":"cue-2"}]}), available = CaptionItem, idle = true, collections = [cue_ids];
     TranscriptSearch, "transcript.search", "Search transcript text", Read { query: NfcText, #[serde(default)] limit: Option<u32> } => Words, serde_json::json!({"query":"chao","limit":20}), idle = true, returns = [TranscriptSearch];

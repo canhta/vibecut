@@ -11,8 +11,9 @@ pub use session::{
     EmphasisMode, Example, Fixture, GrantClass, ITEM_PARAMS, ItemClipboard, ItemParam,
     ItemParamPatch, ItemPasteSource, ItemPlacement, KeyframeClipboard, KeyframePasteSource,
     KeyframeRef, Lifecycle, Move, NewItem, Outcome, ParamBounds, ParamParseError, ParamTarget,
-    ParamUnit, Placement, TextPresetApply, TrackPlacement, TranscriptCue, TranscriptView,
-    TranscriptWord, TrimEdge, WordId, declaration_order_error, item_param, lifecycle, registry,
+    ParamUnit, Placement, TextPresetApply, TrackPlacement, TranscriptAnalysis, TranscriptCue,
+    TranscriptGap, TranscriptRepeat, TranscriptView, TranscriptWord, TrimEdge, WordId,
+    analyze_transcript, declaration_order_error, item_param, lifecycle, registry,
 };
 pub use session::{
     AssetUsage, BrandKitError, ChangeSummary, EditError, FontError, Fork, JobTarget, MusicError,
