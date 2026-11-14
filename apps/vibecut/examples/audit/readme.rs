@@ -412,7 +412,7 @@ mod project;
 mod publication;
 mod source;
 use media::{encode_gif, encode_jpg};
-#[cfg(test)]
+#[cfg(all(test, windows))]
 pub(crate) use process::run_tool;
 use process::{free_bytes, git_head, tool_identity};
 use project::{

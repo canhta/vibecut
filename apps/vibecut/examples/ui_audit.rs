@@ -20,11 +20,14 @@ fn main() -> Result<(), Failure> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(windows)]
+    use super::audit::run_tool;
     use super::audit::{
-        App, Theme, finish_publication, inspector_mixed_vi, publish_outputs, readme_media, run_tool,
+        App, Theme, finish_publication, inspector_mixed_vi, publish_outputs, readme_media,
     };
     use super::*;
     use std::fs;
+    #[cfg(windows)]
     use std::time::{Duration, Instant};
     use vibecut::egui;
 
