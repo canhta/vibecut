@@ -358,7 +358,8 @@ impl State {
         }
     }
 
-    /// Re-read the catalog after a workspace edit changed a project's metadata.
+    /// Re-read the catalog after a workspace edit changed a project's metadata, or when
+    /// Home comes back to the front after an editor saved.
     pub(crate) fn refresh(&mut self) {
         if self.ready {
             self.request_list();
@@ -972,5 +973,57 @@ mod tests {
             page.set_entries(entries);
             assert_eq!(page.textures.contains_key(&ProjectId(1)), !changed);
         }
+    }
+
+    #[test]
+    fn returning_to_home_relists_a_cover_saved_in_an_editor() {
+        let root = tempfile::tempdir().expect("directory");
+        {
+            // A one-byte budget renders no cover, so the card starts as a placeholder.
+            let mut catalog = ProjectLibrary::open(
+                root.path(),
+                ByteBudget::new(1).expect("budget"),
+                engine::footage::uncorrected(),
+            )
+            .expect("library");
+            catalog
+                .execute(
+                    ProjectId(1),
+                    Command::CreateProject {
+                        id: ProjectId(1),
+                        name: "Alpha".into(),
+                        fps: 30,
+                    },
+                )
+                .expect("create");
+        }
+        let mut page = State::new(
+            root.path().to_owned(),
+            ByteBudget::new(64 << 20).unwrap(),
+            engine::footage::uncorrected(),
+        );
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while page.busy() {
+            page.tick();
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        assert_eq!(page.entries()[0].thumbnail, Thumbnail::Unavailable);
+        // An editor's save renders the cover through the lent library while Home is not
+        // listing; Home keeps its last listing until it is asked again.
+        page.catalog()
+            .with(|library| library.execute(ProjectId(1), Command::ThumbnailProject {}))
+            .expect("cover");
+        assert_eq!(page.entries()[0].thumbnail, Thumbnail::Unavailable);
+        page.refresh();
+        while page.busy() {
+            page.tick();
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        assert!(matches!(
+            page.entries()[0].thumbnail,
+            Thumbnail::Ready { .. }
+        ));
     }
 }

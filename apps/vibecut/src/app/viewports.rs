@@ -56,6 +56,13 @@ impl Workspace {
     }
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         self.tick();
+        // Coming back to Home re-reads the catalog: an editor save may have published a new
+        // cover since Home last listed the project.
+        let focused = ui.input(|input| input.viewport().focused).unwrap_or(false);
+        if focused && !self.home_focused {
+            self.projects.refresh();
+        }
+        self.home_focused = focused;
         if !self.home.configured {
             Editor::fonts(ui.ctx());
             icons::install(ui.ctx());

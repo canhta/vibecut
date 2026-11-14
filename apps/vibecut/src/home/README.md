@@ -25,7 +25,9 @@ and the new-project entry use the same lifecycle and autosave path as external f
 failed catalog refresh keeps the last listing and Retry restarts the worker. Catalog-only
 operations retain the library-owned result; mixed composition converts through engine Error
 at its actual boundary, preserving safe messages and the original cause. Engine
-lifecycle hooks backfill and refresh thumbnails, including on close without saving.
+lifecycle hooks backfill and refresh thumbnails, including on close without saving. Home
+re-reads the catalog each time its viewport regains focus, so a cover an editor saved shows on
+return.
 
 View, sort key and direction persist in [preferences](../preferences/README.md).
 Geometry: [Home window](../../../../docs/product/ui/home.md).
