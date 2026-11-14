@@ -404,12 +404,14 @@ impl Mask {
     /// anchor) and `1 - t` (incoming of the second), exactly as the stored
     /// tangents do; and when any channel of the segment is keyed, the new anchor
     /// is keyed on all six fields at every such key time with the split curve's
-    /// values. The curve of the segment is then unchanged at every key time.
+    /// values. The curve of the segment is then unchanged at every key time, and at
+    /// `at` (item-relative) when given and the segment is animated.
     pub fn split_point(
         &mut self,
         animations: &mut crate::Animations,
         segment: usize,
         t: f64,
+        at: Option<time::Tick>,
     ) -> Result<()> {
         let MaskShape::Path { path } = &self.shape else {
             return Err(Error::Invalid("mask is not a path"));
@@ -418,15 +420,22 @@ impl Mask {
         let count = path.vertices.len();
         let second = (segment + 1) % count;
         let mut times = Vec::new();
+        let mut animated = false;
         for (index, fields) in [
             (segment, ["x", "y", "out_x", "out_y"]),
             (second, ["x", "y", "in_x", "in_y"]),
         ] {
             for field in fields {
                 if let Some(param) = animations.get(&self.point_path(index, field)?) {
+                    animated = true;
                     times.extend(param.channel(None)?.keys().iter().map(|key| key.time));
                 }
             }
+        }
+        // `segment` and `t` were read on the path evaluated at `at`: key the new anchor
+        // there too, so it lies exactly on that curve between the other key times.
+        if let Some(at) = at.filter(|_| animated) {
+            times.push(at);
         }
         times.sort_unstable();
         times.dedup();

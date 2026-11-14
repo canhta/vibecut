@@ -260,6 +260,7 @@ fn freeform_mask_path_commands_split_remove_and_restore_history_atomically() {
         mask: "p".into(),
         segment: 1,
         t: 0.5,
+        at: None,
     })
     .unwrap();
     let split = path_of(&s, ItemId(2), "p");
@@ -301,6 +302,7 @@ fn freeform_mask_path_commands_split_remove_and_restore_history_atomically() {
                 mask: "p".into(),
                 segment: 99,
                 t: 0.5,
+                at: None,
             },
             "segment",
         ),
@@ -310,6 +312,7 @@ fn freeform_mask_path_commands_split_remove_and_restore_history_atomically() {
                 mask: "p".into(),
                 segment: 0,
                 t: 0.0,
+                at: None,
             },
             "t low",
         ),
@@ -319,6 +322,7 @@ fn freeform_mask_path_commands_split_remove_and_restore_history_atomically() {
                 mask: "missing".into(),
                 segment: 0,
                 t: 0.5,
+                at: None,
             },
             "mask",
         ),
@@ -359,6 +363,7 @@ fn freeform_mask_path_commands_split_remove_and_restore_history_atomically() {
             mask: "open".into(),
             segment: 0,
             t: 0.5,
+            at: None,
         })
         .is_err()
     );
@@ -760,6 +765,7 @@ fn freeform_anchor_keys_follow_point_edits_through_history_and_save() {
         mask: "p".into(),
         segment: 0,
         t: 0.5,
+        at: None,
     })
     .unwrap();
     // The new anchor is keyed at the split segment's key times; the keyed neighbour
@@ -918,6 +924,7 @@ fn splitting_an_animated_segment_keeps_its_curve_at_every_key_time() {
         mask: "p".into(),
         segment: 0,
         t,
+        at: None,
     })
     .unwrap();
 
@@ -971,4 +978,54 @@ fn splitting_an_animated_segment_keeps_its_curve_at_every_key_time() {
     // One undo step restores the keys and channels.
     s.apply(Command::Undo {}).unwrap();
     assert_eq!(s.project(), &keyed);
+}
+
+#[test]
+fn adding_a_point_at_a_mid_key_tick_lands_on_the_curve_evaluated_there() {
+    let mut s = session();
+    let mask = Mask::new(
+        "p",
+        MaskShape::Path {
+            path: MaskPath::ellipse(),
+        },
+    );
+    s.apply(Command::AddMask {
+        item: ItemId(2),
+        mask: mask.clone(),
+    })
+    .unwrap();
+    for (index, field, time, value) in [
+        (0, "out_x", 0, 0.1),
+        (0, "out_x", 30, 0.4),
+        (1, "x", 0, 1.0),
+        (1, "x", 30, 0.8),
+    ] {
+        s.apply(Command::ToggleKeyframe {
+            item: ItemId(2),
+            path: mask.point_path(index, field).unwrap(),
+            component: None,
+            time: Tick(time),
+            value: ParamValue::Scalar(value),
+        })
+        .unwrap();
+    }
+    let (middle, t) = (12, 0.4);
+    let old = evaluated(&s, "p", middle);
+    let expected = cubic(&old.vertices[0], &old.vertices[1], t);
+    s.apply(Command::AddMaskPoint {
+        item: ItemId(2),
+        mask: "p".into(),
+        segment: 0,
+        t,
+        at: Some(Tick(middle)),
+    })
+    .unwrap();
+    let new = evaluated(&s, "p", middle);
+    assert_eq!(new.vertices.len(), 5);
+    assert!((new.vertices[1].p[0] - expected[0]).abs() < 1e-9);
+    assert!((new.vertices[1].p[1] - expected[1]).abs() < 1e-9);
+    assert_eq!(
+        mask_keys(&s, &mask.point_path(1, "x").unwrap()),
+        [0, 12, 30]
+    );
 }

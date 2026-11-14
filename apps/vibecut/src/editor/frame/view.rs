@@ -429,7 +429,8 @@ impl Editor {
                     mask,
                     segment,
                     t,
-                } => self.add_mask_point(item, &mask, segment, t),
+                    at,
+                } => self.add_mask_point(item, &mask, segment, t, at),
                 Action::CommitTimecode => self.commit_timecode(),
                 Action::Retry => {
                     self.player.timecode_error = None;

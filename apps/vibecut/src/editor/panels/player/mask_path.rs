@@ -438,6 +438,7 @@ pub(super) fn show(
             mask: target.mask.clone(),
             segment,
             t,
+            at: target.time,
         });
         return true;
     }

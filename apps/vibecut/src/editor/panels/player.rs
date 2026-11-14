@@ -117,6 +117,8 @@ pub(crate) enum Action {
         mask: String,
         segment: usize,
         t: f64,
+        /// The playhead relative to the item's start, where `segment` and `t` were read.
+        at: time::Tick,
     },
     /// A pixel of the rendered preview frame for the armed chroma-key eyedropper.
     PickKeyColor(project::Color),

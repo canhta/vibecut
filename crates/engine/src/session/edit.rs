@@ -793,8 +793,9 @@ pub(crate) fn apply(
             mask,
             segment,
             t,
+            at,
         } => {
-            data = masks::execute_add_mask_point(data, id, mask, segment, t)?;
+            data = masks::execute_add_mask_point(data, id, mask, segment, t, at)?;
         }
         EditCommand::RemoveMaskPoint {
             item: id,

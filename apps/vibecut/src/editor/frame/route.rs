@@ -418,6 +418,7 @@ impl Editor {
         mask: &str,
         segment: usize,
         t: f64,
+        at: Tick,
     ) {
         if self.session.gesture_active() {
             self.end_preview_transform(false);
@@ -427,6 +428,7 @@ impl Editor {
             mask: mask.to_owned(),
             segment,
             t,
+            at: Some(at),
         };
         match self.apply_result(command) {
             Ok(outcome) if outcome.changed => {
