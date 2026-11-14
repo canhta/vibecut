@@ -627,16 +627,16 @@ fn size_estimate_follows_the_encoder_settings_of_every_preset() {
     };
     audio.output.audio_only = true;
     assert!((mb(&audio) - 9.58 * 192_000.0 / 8_000_000.0).abs() < 1e-9);
-    // GIF has its own model: the measured 3 s at 240P wrote 1.25 MB (the video model said
-    // about 15 MB per 10 s), it is silent, and a smaller palette writes less.
+    // GIF has its own model: the measured 3 s of camera footage at 240P (426x240, 29.97 fps)
+    // wrote 6.05 MB, it is silent, and a smaller palette writes less.
     let mut gif = ExportOptions {
         format: ExportFormat::Gif,
         ..Default::default()
     };
     gif.output.resolution = Some([426, 240]);
-    gif.output.fps = Some(time::FrameRate::new(30, 1).unwrap());
+    gif.output.fps = Some(time::FrameRate::new(30_000, 1_001).unwrap());
     let three = super::settings::estimated_megabytes(&gif, &project, 3.0);
-    assert!((three - 1.25).abs() < 0.01, "{three}");
+    assert!((three - 6.05).abs() < 0.01, "{three}");
     gif.include_audio = true;
     assert_eq!(
         super::settings::estimated_megabytes(&gif, &project, 3.0),

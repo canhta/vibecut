@@ -56,8 +56,7 @@ impl ExportSettings {
     /// Expected output bytes for `seconds` of output: video (none for audio-only output)
     /// plus the audio track when it is included, at the project's `sample_rate`.
     pub fn estimated_bytes(&self, seconds: f64, sample_rate: u32) -> f64 {
-        // Reconcile point with the per-encoder-mode estimate (518): GIF has its own model in
-        // `gif.rs`, so it stays a branch on the container, ahead of any video-mode split.
+        // GIF has its own model (`gif.rs`): no encoder rate control applies to it.
         if self.container == media::Container::Gif {
             return super::gif::estimated_bytes(self, seconds);
         }

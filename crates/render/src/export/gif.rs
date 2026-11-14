@@ -89,11 +89,11 @@ pub(super) fn gif_export(
     })
 }
 
-/// Encoded bytes per pixel per frame at a 256-colour palette: one measurement, a 3 s GIF at
-/// 240P wrote 1.25 MB. The run's frame size and rate were not recorded, so the constant
-/// assumes the 16:9 426x240 canvas at 30 fps (9.2 M pixel-frames); re-measure with those
-/// recorded before trusting it for other content.
-const BYTES_PER_PIXEL_FRAME_AT_256: f64 = 1_250_000.0 / (426.0 * 240.0 * 90.0);
+/// Encoded bytes per pixel per frame at a 256-colour palette and the default dither: one
+/// measurement (Windows, 2026-11-14), 3 s of 1080p29.97 camera footage at the 240P default
+/// (426x240, 90 frames) wrote 6,053,178 bytes. Busier footage writes more (another 3 s of the
+/// same source wrote 6,994,691 bytes) and flat graphics far less.
+const BYTES_PER_PIXEL_FRAME_AT_256: f64 = 6_053_178.0 / (426.0 * 240.0 * 90.0);
 
 /// Expected bytes of a GIF of `seconds`: pixels x frames x a measured ratio, scaled by the
 /// palette's code width (`log2(colors) / 8`, since LZW codes are that many bits). GIF is
