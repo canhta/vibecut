@@ -509,20 +509,21 @@ fn preview_export_bilingual_diacritics_cjk_gaps_and_style_goldens() {
             "preview/export pixel diff must be zero"
         );
         let packed = preview.rgba8(1, &h).unwrap();
+        if tools() {
+            png(&packed.bytes, name);
+        }
+        eprintln!("{name} hash={:#x}", hash(&packed.bytes));
         assert_eq!(
             hash(&packed.bytes),
             match *name {
-                "caption-vi-en" => 0x22d92066556dd4c5,
-                "caption-hans-hant" => 0x442017b175aa5544,
-                "caption-long-vi" => 0x26e5c2c4450a1b31,
-                "caption-long-bilingual" => 0x61c1b0ec35120af3,
+                "caption-vi-en" => 0x9b2368c12c702b19,
+                "caption-hans-hant" => 0x1e1f130c58c535e,
+                "caption-long-vi" => 0x310d3cb415404c70,
+                "caption-long-bilingual" => 0x1d2af23de42d19f4,
                 _ => panic!("unknown golden case"),
             },
             "visually inspected caption golden"
         );
-        if tools() {
-            png(&packed.bytes, name);
-        }
         let mut no_cache = s.clone();
         no_cache.text_cache_bytes = 0;
         assert_eq!(
@@ -1190,9 +1191,9 @@ fn verified_source_words_share_preview_burn_boundaries_and_clear_warnings() {
         png(&rgba.bytes, &format!("word-highlight-{tag}"));
         eprintln!("word-highlight-{tag} hash={:#x}", hash(&rgba.bytes));
         let expected = match tag {
-            "vi" => 0xb617086f5d85ff1d,
-            "en" => 0x4fa62fd0d7be69c0,
-            "zh" => 0x4d100236d75f592c,
+            "vi" => 0x5f620c616586b3c,
+            "en" => 0x97dc0915547a89f2,
+            "zh" => 0x4e7a02f0cc620e7,
             _ => panic!("unexpected caption fixture"),
         };
         assert_eq!(

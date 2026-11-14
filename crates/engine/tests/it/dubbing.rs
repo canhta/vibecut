@@ -882,3 +882,72 @@ fn dub_generate_on_a_text_item_runs_consent_in_the_job_and_returns_the_take_the_
 fn fx_voice() -> Arc<Voice> {
     voice(Script::Samples(24_000))
 }
+
+// ----- live: one short take per provider through the shipped credential opener -----
+
+/// One `dub.generate` through `CredentialSpeech` with the production transport and the
+/// provider's default model; the take must decode and last a plausible time for its text.
+fn live_take(provider: &str, voice: &str) {
+    use crate::support::control::{Allow, caller, finish, ok, request, runner, with_text};
+    use engine::control::ControlResult;
+    use engine::dubbing::{CredentialSpeech, decode_take};
+    use engine::jobs::JobState;
+    use engine::providers::Credentials;
+    use engine::subtitles::CaptionAccess;
+
+    if std::env::var("VIBECUT_LIVE_AI").as_deref() != Ok("1") {
+        eprintln!("live test skipped: set VIBECUT_LIVE_AI=1 to run");
+        return;
+    }
+    let credentials = Credentials::new(
+        std::env::var("OPENAI_API_KEY").ok(),
+        std::env::var("ELEVENLABS_API_KEY").ok(),
+        None,
+    );
+    let model = ai::defaults::model(provider, ai::Operation::Synthesize);
+    let text = "Welcome back. This is a short narration test.";
+    let cue = Tick(3 * SECOND);
+    let prompt = Arc::new(Prompt::new(true, true));
+    let access = CaptionAccess::consent_only(prompt.clone()).with_dubbing(Arc::new(Narrator::new(
+        Arc::new(CredentialSpeech::new(credentials)),
+    )));
+    let mut s = with_text(&seed());
+    let mut r = runner();
+    let mut c = caller(&Allow);
+    c.captions = Some(&access);
+    let params = serde_json::json!({
+        "provider": provider, "model": model, "voice": voice,
+        "language": "en", "text": text, "cue_duration": cue.0,
+    });
+    let response = s
+        .control_request(request(&s, "dub.generate", params, "live"), c, &mut r)
+        .unwrap();
+    let ControlResult::JobAccepted { job, .. } = ok(response) else {
+        panic!("dub.generate starts a job");
+    };
+    finish(&mut r, job);
+    let snapshot = r.snapshot(job).unwrap();
+    assert_eq!(snapshot.state, JobState::Completed, "{:?}", snapshot.error);
+    let take = decode_take(r.output_bytes(job).unwrap()).unwrap();
+    let natural = take.natural().unwrap();
+    assert!(
+        (Tick(SECOND)..=Tick(12 * SECOND)).contains(&natural),
+        "{provider}: {natural:?} for {} characters",
+        text.len()
+    );
+    assert!(take.pcm.iter().any(|sample| sample.unsigned_abs() > 1_000));
+    assert_eq!(take.narration.provider.as_str(), provider);
+    assert_eq!(prompt.count(), 1);
+}
+
+#[test]
+#[ignore = "requires VIBECUT_LIVE_AI=1 and OPENAI_API_KEY; one short paid speech request"]
+fn live_openai_take_through_the_credential_opener() {
+    live_take("openai", "alloy");
+}
+
+#[test]
+#[ignore = "requires VIBECUT_LIVE_AI=1 and ELEVENLABS_API_KEY; one short paid speech request"]
+fn live_elevenlabs_take_through_the_credential_opener() {
+    live_take("elevenlabs", "21m00Tcm4TlvDq8ikWAM");
+}

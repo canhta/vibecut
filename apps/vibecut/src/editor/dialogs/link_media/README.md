@@ -5,8 +5,8 @@ Interface: `State`, `Action`, `Pick`, `LinkMediaView`, `show`, `apply`, `picked`
 The modal that reconnects sources whose file is gone. The window opens it once when a project
 opens with missing sources (`Editor::offer_link_media`, called by the app's store lending); the
 properties panel's `Link media` button opens it again through `Request::LinkMedia`. Opening lists
-the missing sources (name, last path, duration) in project order and stays closed when none is
-missing. A row is linked when its asset's path is no longer the one listed.
+the missing library sources (name, last path, duration) in project order and stays closed when
+none is missing; internal (ephemeral) assets are not library media and are never listed. A row is linked when its asset's path is no longer the one listed.
 
 Layout is measured on the reference's Link media dialog: [Missing media](../../../../../../docs/product/ui/editor.md#missing-media).
 The footer's `Link media` button asks the window for a native pick through `Pick`: a folder while the

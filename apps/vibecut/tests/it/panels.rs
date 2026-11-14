@@ -55,6 +55,8 @@ fn lut_picker_applies_real_job_and_discards_stale_completion() {
         .iter_mut()
         .find(|a| a.id() == AssetId(3))
         .unwrap() = SourceAsset::import(AssetId(3), picture).unwrap();
+    // Only the picture is on disk; the fixture's other sources would open Link media.
+    data.assets.retain(|asset| asset.id() == AssetId(3));
     data.scene_mut().timeline.iter_mut().for_each(|track| {
         track.items.retain(|i| i.id == video);
         for item in &mut track.items {
@@ -1774,10 +1776,15 @@ fn active_tab_is_remembered_per_element_kind_across_reselection() {
     click(&mut harness, "inspector.tab.mask");
     assert!(has_widget(&harness, "inspector.mask.row"));
     select(&mut harness, fixture.text);
-    // The strip lists the text tab and effects; each kind reopens the tab it last showed.
+    // The strip lists the text, text to speech and effects tabs; each kind reopens the tab it
+    // last showed.
     assert_eq!(
         visible_tabs(&harness),
-        ["inspector.tab.text", "inspector.tab.effects"],
+        [
+            "inspector.tab.text",
+            "inspector.tab.text_to_speech",
+            "inspector.tab.effects"
+        ],
         "text keeps its own tab, not the video's"
     );
     assert!(!has_widget(&harness, "inspector.text_size"));

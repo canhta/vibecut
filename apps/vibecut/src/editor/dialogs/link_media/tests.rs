@@ -129,7 +129,10 @@ fn the_dialog_lists_the_missing_source_in_the_measured_columns() {
         .harness()
         .get(By::new().predicate(|node| node.author_id() == Some("link_media.link")))
         .rect();
-    assert!((link.width() - 72.0).abs() < 1.0 && (link.height() - 22.0).abs() < 1.0);
+    assert!(
+        (link.width() - 72.0).abs() < 1.0 && (link.height() - 22.0).abs() < 1.0,
+        "link button {link:?}"
+    );
     let screenshot =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/425-link-media-dialog.png");
     std::fs::create_dir_all(screenshot.parent().unwrap()).unwrap();
@@ -329,6 +332,8 @@ fn the_match_runs_in_the_background_with_progress_and_cancel_links_nothing() {
         }
         std::thread::sleep(Duration::from_millis(5));
     }
+    // The poll that read the progress runs after the frame's paint; the next frame shows it.
+    bench.step();
     let view = {
         let editor = bench.editor();
         editor.dialogs.link_media.view(editor.session.project())

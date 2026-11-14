@@ -12,7 +12,7 @@ use ai::text::conversation::{
 };
 use egui_kittest::{
     Harness,
-    kittest::{By, Queryable},
+    kittest::{By, NodeT, Queryable},
 };
 use engine::{ByteBudget, Session};
 use serde_json::{Value, json};
@@ -234,6 +234,7 @@ fn declining_the_consent_sends_nothing() {
     let backend = Scripted::new(vec![hide_first_turn()]);
     let dir = tempfile::tempdir().unwrap();
     let mut editor = editor(&backend, dir.path());
+    let history = editor.session.history_len();
     editor.agent_prompt("hide the first clip".into());
     let mut harness = build(editor);
     harness.run_steps(3);
@@ -252,7 +253,7 @@ fn declining_the_consent_sends_nothing() {
     assert!(!after.open && !after.queued);
     assert_eq!(backend.opened(), 0, "no model was opened");
     assert_eq!(after.history, 0);
-    assert_eq!(harness.state().session.history_len(), (0, 0));
+    assert_eq!(harness.state().session.history_len(), history);
     assert_eq!(hidden(harness.state()), [false, false]);
 }
 
@@ -275,6 +276,8 @@ fn a_scripted_turn_shows_its_steps_and_the_card_and_discard_changes_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let mut harness = build(editor(&backend, dir.path()));
     let before = harness.state().session.project().clone();
+    // The fixture's own inserts are on the undo stack already.
+    let history = harness.state().session.history_len();
 
     ask(&mut harness, "hide the first clip");
     wait_for(&mut harness, "the changes card", |view| {
@@ -296,7 +299,7 @@ fn a_scripted_turn_shows_its_steps_and_the_card_and_discard_changes_nothing() {
         assert!(has(&harness, id), "{id}");
     }
     assert!(
-        !has(&harness, "agent.send"),
+        node(&harness, "agent.send").accesskit_node().is_disabled(),
         "the next message waits for Apply or Discard"
     );
     assert_eq!(
@@ -304,12 +307,12 @@ fn a_scripted_turn_shows_its_steps_and_the_card_and_discard_changes_nothing() {
         *before,
         "the fork is not the project"
     );
-    assert_eq!(harness.state().session.history_len(), (0, 0));
+    assert_eq!(harness.state().session.history_len(), history);
 
     click(&mut harness, "agent.discard");
     assert_eq!(view(&harness).stage, "ready");
     assert_eq!(**harness.state().session.project(), *before);
-    assert_eq!(harness.state().session.history_len(), (0, 0));
+    assert_eq!(harness.state().session.history_len(), history);
     assert_eq!(hidden(harness.state()), [false, false]);
 }
 
@@ -319,6 +322,8 @@ fn preview_shows_the_fork_read_only_and_apply_is_one_undo_step() {
     let dir = tempfile::tempdir().unwrap();
     let mut harness = build(editor(&backend, dir.path()));
     let before = harness.state().session.project().clone();
+    // The fixture's own inserts are on the undo stack already.
+    let history = harness.state().session.history_len();
 
     ask(&mut harness, "hide the first clip");
     wait_for(&mut harness, "the changes card", |view| {
@@ -344,7 +349,7 @@ fn preview_shows_the_fork_read_only_and_apply_is_one_undo_step() {
     assert_eq!(view(&harness).stage, "ready");
     assert_eq!(
         harness.state().session.history_len(),
-        (1, 0),
+        (history.0 + 1, 0),
         "one undo entry"
     );
     assert_eq!(
@@ -361,7 +366,7 @@ fn preview_shows_the_fork_read_only_and_apply_is_one_undo_step() {
         *before,
         "undo restores the project"
     );
-    assert_eq!(harness.state().session.history_len(), (0, 1));
+    assert_eq!(harness.state().session.history_len(), (history.0, 1));
 }
 
 #[test]
@@ -378,6 +383,8 @@ fn stop_ends_a_running_turn_and_leaves_the_project_alone() {
     let dir = tempfile::tempdir().unwrap();
     let mut harness = build(editor(&backend, dir.path()));
     let before = harness.state().session.project().clone();
+    // The fixture's own inserts are on the undo stack already.
+    let history = harness.state().session.history_len();
 
     ask(&mut harness, "hide the first clip");
     wait_for(&mut harness, "the running turn", |view| {
@@ -396,7 +403,7 @@ fn stop_ends_a_running_turn_and_leaves_the_project_alone() {
     assert_eq!(shown.ended.as_deref(), Some("cancelled"));
     assert_eq!(shown.changed, None);
     assert_eq!(**harness.state().session.project(), *before);
-    assert_eq!(harness.state().session.history_len(), (0, 0));
+    assert_eq!(harness.state().session.history_len(), history);
 }
 
 #[test]

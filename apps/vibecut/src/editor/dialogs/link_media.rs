@@ -170,10 +170,12 @@ pub(in crate::editor) enum Action {
     Close,
 }
 
+/// The library's lost sources. Internal (ephemeral) assets are not in the library, so the
+/// media panel never marks them missing and the dialog never asks for them.
 fn missing(assets: &[SourceAsset]) -> impl Iterator<Item = &SourceAsset> {
-    assets
-        .iter()
-        .filter(|asset| asset.availability().ok() == Some(AssetAvailability::Missing))
+    assets.iter().filter(|asset| {
+        !asset.ephemeral() && asset.availability().ok() == Some(AssetAvailability::Missing)
+    })
 }
 
 impl State {
@@ -481,17 +483,22 @@ fn footer_button(
     text: Text,
     primary: bool,
 ) -> egui::Response {
-    let label = text.text(cx.locale);
+    let label = egui::RichText::new(text.text(cx.locale)).size(kit::type_size::BODY);
     let button = if primary {
-        egui::Button::new(egui::RichText::new(label).color(kit::on_accent(cx.dark)))
-            .fill(kit::accent(cx.dark))
+        egui::Button::new(label.color(kit::on_accent(cx.dark))).fill(kit::accent(cx.dark))
     } else {
         egui::Button::new(label)
     };
-    ui.add_sized(
-        egui::vec2(kit::size::LINK_BUTTON_WIDTH, kit::size::LINK_BUTTON_HEIGHT),
-        button,
-    )
+    // The measured 72 px holds the body-size label only with a narrow inset; the default
+    // button text and padding would widen it past the measurement.
+    ui.scope(|ui| {
+        ui.spacing_mut().button_padding.x = kit::space::XS;
+        ui.add_sized(
+            egui::vec2(kit::size::LINK_BUTTON_WIDTH, kit::size::LINK_BUTTON_HEIGHT),
+            button,
+        )
+    })
+    .inner
 }
 
 /// Keep the head and tail of a long path with an ellipsis between them.

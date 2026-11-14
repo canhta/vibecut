@@ -556,3 +556,16 @@ fn a_take_too_long_for_its_cue_asks_for_a_shorter_text_and_places_nothing() {
     assert_eq!(h.state().session.project(), &before);
     let _ = bench.text;
 }
+
+#[test]
+fn closing_the_editor_while_consent_is_asked_stops_the_job_and_sends_nothing() {
+    // The job waits in the consent sheet; dropping the editor must end that wait before the
+    // runner joins the job, or the drop never returns.
+    let mut bench = bench(Script::Samples(48_000), Script::Samples(48_000));
+    let h = &mut bench.harness;
+    click(h, "inspector.narration.generate");
+    wait_for(h, "narration.consent.send");
+    let opener = bench.opener.clone();
+    drop(bench);
+    assert_eq!(opener.openai.calls(), 0);
+}

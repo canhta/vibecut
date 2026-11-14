@@ -171,6 +171,15 @@ impl Default for NarrationWorkflow {
     }
 }
 
+impl Drop for NarrationWorkflow {
+    /// Stop the run's consent wait before the runner joins its worker: the job may be
+    /// blocked in that wait, which watches the run's cancellation, not the job's. Field
+    /// order would drop the runner first and join a worker that never returns.
+    fn drop(&mut self) {
+        self.run = None;
+    }
+}
+
 /// An AI failure as the creator-facing cause.
 fn cause_of(error: &ai::Error) -> Cause {
     match error {

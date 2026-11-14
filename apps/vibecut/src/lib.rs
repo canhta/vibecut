@@ -20,11 +20,11 @@ pub use editor::{
     AgentBackend, AgentEnvironment, AgentView, AppCommand, AssetsTab, Client, CropAspect,
     CropInspection, Editor, EffectPreviewStatus, EffectPreviews, Guide, GuideLines, ImportEvent,
     ImportProbe, ImportQueue, Inspection, KeyframeSelection, LibraryProblem, LibraryStore,
-    LineAxis, MAX_IMPORT_FILES,
-    MaskPointSelection, MediaSort, MediaSortKey, MediaSortOrder, MediaView, Music, MusicMode,
-    MusicProblem, OverlayVisibility, PREVIEW_SCALE, PREVIEW_SIZE, PREVIEW_SNAP_PIXELS, PreviewAxis,
-    PreviewGuide, PreviewZoom, SETTLE_BUDGET, SelectionScope, ShortcutTab, Sounds, SoundsMode,
-    SoundsProblem, Subtitles, SubtitlesInspection, TextCaret, ThumbnailSource, WidgetState,
+    LineAxis, MAX_IMPORT_FILES, MaskPointSelection, MediaSort, MediaSortKey, MediaSortOrder,
+    MediaView, Music, MusicMode, MusicProblem, OverlayVisibility, PREVIEW_SCALE, PREVIEW_SIZE,
+    PREVIEW_SNAP_PIXELS, PreviewAxis, PreviewGuide, PreviewZoom, SETTLE_BUDGET, SelectionScope,
+    ShortcutTab, Sounds, SoundsMode, SoundsProblem, Subtitles, SubtitlesInspection, TextCaret,
+    ThumbnailSource, WidgetState,
 };
 pub use eframe::egui;
 pub use kit::Look;

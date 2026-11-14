@@ -200,7 +200,7 @@ fn sheet(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui, actions: &mut V
                     );
                     ui.label(cx.tr(Text::AgentConsentIntro));
                     ui.horizontal(|ui| {
-                        ui.label(cx.tr(Text::AgentService));
+                        let service = ui.label(cx.tr(Text::AgentService));
                         let combo = egui::ComboBox::from_id_salt(PROVIDER_ID)
                             .selected_text(provider_name(state.settings.provider))
                             .show_ui(ui, |ui| {
@@ -217,7 +217,11 @@ fn sheet(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui, actions: &mut V
                                     );
                                 }
                             });
-                        note(actions, PROVIDER_ID, &combo.response);
+                        note(
+                            actions,
+                            PROVIDER_ID,
+                            &combo.response.labelled_by(service.id),
+                        );
                     });
                     ui.horizontal(|ui| {
                         ui.label(cx.tr(Text::AgentVersion));
@@ -244,13 +248,15 @@ fn sheet(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui, actions: &mut V
                         ui.checkbox(&mut state.settings.frames, cx.tr(Text::AgentDataFrames));
                     note(actions, "agent.consent.frames", &frames);
                     ui.horizontal(|ui| {
-                        ui.label(cx.tr(Text::AgentLimit));
-                        let limit = ui.add(
-                            egui::DragValue::new(&mut state.settings.limit_usd)
-                                .range(0.1..=100.0)
-                                .speed(0.05)
-                                .fixed_decimals(2),
-                        );
+                        let caption = ui.label(cx.tr(Text::AgentLimit));
+                        let limit = ui
+                            .add(
+                                egui::DragValue::new(&mut state.settings.limit_usd)
+                                    .range(0.1..=100.0)
+                                    .speed(0.05)
+                                    .fixed_decimals(2),
+                            )
+                            .labelled_by(caption.id);
                         note(actions, "agent.consent.limit", &limit);
                     });
                     ui.label(
@@ -742,15 +748,13 @@ fn input(
     } else {
         let ready = typing && !state.input.trim().is_empty();
         let label = egui::RichText::new(cx.tr(Text::AgentSend)).color(theme::on_accent(dark));
-        let send = ui.put(
-            button,
+        // Off while the input is empty or off, as while a changes card waits.
+        let mut send_ui = ui.new_child(egui::UiBuilder::new().max_rect(button));
+        let send = send_ui.add_enabled(
+            ready,
             egui::Button::new(label)
                 .fill(theme::accent(dark))
-                .sense(if ready {
-                    egui::Sense::click()
-                } else {
-                    egui::Sense::hover()
-                }),
+                .min_size(button.size()),
         );
         note(actions, "agent.send", &send);
         if (send.clicked() || (enter && pick.is_none())) && ready {
