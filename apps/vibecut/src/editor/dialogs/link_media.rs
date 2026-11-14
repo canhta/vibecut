@@ -619,7 +619,8 @@ pub(in crate::editor) fn picked(state: &mut State, port: &mut Port<'_>, pick: Pi
 
 fn spawn(assets: Vec<SourceAsset>, pick: Pick, path: PathBuf, hasher: Hasher) -> Job {
     let cancel = Arc::new(AtomicBool::new(false));
-    let (send, events) = mpsc::channel();
+    // Each start, progress step and match wakes the loop that shows it.
+    let (send, events) = wake::channel();
     let flag = cancel.clone();
     wake::spawn(move || {
         for asset in &assets {

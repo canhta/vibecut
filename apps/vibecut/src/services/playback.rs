@@ -79,6 +79,9 @@ pub struct AudioPort {
     underruns: AtomicU64,
     /// The ring's bytes; a successor port over the same budget shares them.
     lease: Arc<ByteLease>,
+    /// The owner of the thread that built the port, woken when the device thread reports a
+    /// failure: a paused editor shows the lost device only when woken.
+    wake: Option<wake::Wake>,
 }
 impl AudioPort {
     fn new(budget: &ByteBudget) -> Result<Self> {
@@ -105,6 +108,7 @@ impl AudioPort {
             failed: AtomicBool::new(false),
             underruns: AtomicU64::new(0),
             lease,
+            wake: wake::current(),
         }
     }
     /// Stereo f32 at the project's render-owned sample rate. `latency_frames`
@@ -147,7 +151,11 @@ impl AudioPort {
         );
     }
     pub fn fail(&self) {
-        self.failed.store(true, Ordering::Release);
+        if !self.failed.swap(true, Ordering::AcqRel)
+            && let Some(wake) = &self.wake
+        {
+            wake.wake();
+        }
     }
     pub fn failed(&self) -> bool {
         self.failed.load(Ordering::Acquire)

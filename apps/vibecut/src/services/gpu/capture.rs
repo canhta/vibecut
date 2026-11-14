@@ -28,8 +28,12 @@ impl Capture {
             return Err(Error::Invalid("capture region"));
         }
         let (tx, rx) = mpsc::sync_channel(1);
+        // The integration hands the image over after painting, outside a pass: wake the loop
+        // so `poll` sees it.
+        let woken = ctx.clone();
         ctx.request_screenshot(move |image| {
             let _ = tx.try_send(image);
+            woken.request_repaint();
         });
         ctx.request_repaint();
         Ok(Self {
