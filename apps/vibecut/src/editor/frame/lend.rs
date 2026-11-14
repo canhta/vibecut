@@ -131,11 +131,16 @@ impl Editor {
         for action in actions {
             match action {
                 properties::Action::Keywords(keyword) => {
+                    let playhead = self
+                        .playback
+                        .position()
+                        .unwrap_or(crate::editor::Tick::ZERO);
                     if let Some(captions) = &mut self.assets.captions {
                         captions.keyword_action(
                             &mut self.session,
                             &self.preferences.subtitles,
                             keyword,
+                            playhead,
                         );
                     }
                 }

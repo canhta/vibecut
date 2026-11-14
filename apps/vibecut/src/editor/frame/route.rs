@@ -4,6 +4,7 @@ use crate::editor::{Command, Context, Editor, ItemId, Request, Tick, egui, timel
 impl Editor {
     /// The read-only services every area receives.
     pub(in crate::editor) fn context(&self) -> Context<'_> {
+        let playhead = self.playback.position().unwrap_or(Tick::ZERO);
         Context {
             session: &self.session,
             project_path: match &self.session {
@@ -15,7 +16,7 @@ impl Editor {
             locale: self.preferences.locale,
             dark: self.preferences.dark,
             save_status: self.save_status(),
-            playhead: self.playback.position().unwrap_or(Tick::ZERO),
+            playhead,
             hover: self.playback.hover(),
             ripple: self.preferences.ripple,
             preferences: &self.preferences,
@@ -36,12 +37,12 @@ impl Editor {
             media_drag: self.assets.media_drag.clone(),
             key_color_pick: self.player.key_color_pick.clone(),
             colour_sampling: self.properties.sampling_colour(),
-            keywords: self.keyword_ui(),
+            keywords: self.keyword_ui(playhead),
         }
     }
 
-    /// The keyword section's read for the one selected caption item.
-    fn keyword_ui(&self) -> Option<crate::editor::context::KeywordUi> {
+    /// The keyword section's read for the one selected caption item, at the playhead.
+    fn keyword_ui(&self, playhead: Tick) -> Option<crate::editor::context::KeywordUi> {
         let selection = self.session.selection();
         if selection.len() != 1 {
             return None;
@@ -50,7 +51,7 @@ impl Editor {
         self.assets
             .captions
             .as_ref()?
-            .keyword_ui(&self.session, item)
+            .keyword_ui(&self.session, item, playhead)
     }
     /// Run `paint` with the timeline state and its context, then apply what it returns.
     fn paint_timeline(

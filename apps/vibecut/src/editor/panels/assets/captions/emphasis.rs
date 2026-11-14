@@ -1,7 +1,7 @@
-//! Keyword emphasis of the selected caption cue: manual word picks, the lexicon choice,
-//! preview, clear and the consented AI suggestion. The properties area draws the section from
-//! `keyword_ui` and sends `keyword_action`s back through the frame. Each gesture is one engine
-//! command, so it is one undo step; AI suggestions apply as one batch.
+//! Keyword emphasis of the caption cue under the playhead: manual word picks, the lexicon
+//! choice, preview, clear and the consented AI suggestion. The properties area draws the section
+//! from `keyword_ui` and sends `keyword_action`s back through the frame. Each gesture is one
+//! engine command, so it is one undo step; AI suggestions apply as one batch.
 use super::Subtitles;
 use crate::{
     editor::context::{KeywordAction, KeywordRun, KeywordUi},
@@ -17,11 +17,12 @@ use engine::{
     AnalysisError, ByteBudget, Command, EditError, EmphasisMode, Session,
     emphasis::EmphasisRequest, transcript::Cancellation,
 };
-use project::{ItemId, Project};
+use project::{CaptionParams, Item, ItemId, Project};
 use std::{
     sync::{Arc, mpsc},
     time::Duration,
 };
+use time::Tick;
 
 /// The section's state. It resets when the caption item changes.
 #[derive(Default)]
@@ -65,23 +66,41 @@ struct Input {
     cancel: Cancellation,
 }
 
-/// What the section shows for one frame, read from the caption item.
+/// What the section shows for one frame, read from the caption item at the playhead.
 struct View {
     item: ItemId,
-    selected: Vec<NfcText>,
-    /// The single selected cue, when exactly one is selected.
-    target: Option<captions::Cue>,
-    /// Every selected cue carries verified word timing.
+    /// The caption cue under the playhead, if one is.
+    cue: Option<captions::Cue>,
+    /// The cue under the playhead carries verified word timing.
     timed: bool,
-    /// Timed words of the target cue: word id and text.
+    /// Timed words of the cue: word id and text.
     words: Vec<(u32, String)>,
-    /// Most words the target cue may emphasise.
+    /// Most words the cue may emphasise.
     limit: usize,
-    /// The target's emphasis that still validates against its current source text.
+    /// The cue's emphasis that still validates against its current source text.
     shown: Vec<u32>,
     /// A stored selection no longer validates, for example after its source text changed.
     stale: bool,
     highlight: bool,
+}
+
+/// The timeline start and end of a caption cue: the mapping the cue list seeks by.
+fn cue_span(item: &Item, cue: &captions::Cue) -> Option<(Tick, Tick)> {
+    let at = |source: Tick| {
+        source
+            .checked_sub(item.source_range.start())
+            .and_then(|offset| item.start.checked_add(offset))
+    };
+    Some((at(cue.range.start())?, at(cue.range.end())?))
+}
+
+/// The cue whose timeline span holds the playhead. Its end is open, so a playhead between two
+/// cues, or past the last one, is under no cue.
+fn cue_at(item: &Item, params: &CaptionParams, playhead: Tick) -> Option<captions::Cue> {
+    params.cues.cues.iter().find_map(|cue| {
+        let (start, end) = cue_span(item, cue)?;
+        (start <= playhead && playhead < end).then(|| cue.clone())
+    })
 }
 
 fn outcome(error: AnalysisError) -> Outcome {
@@ -133,22 +152,12 @@ fn refusal(error: &EditError) -> Text {
 }
 
 impl Subtitles {
-    /// What the section shows for the selected cues of the caption item.
-    fn emphasis_view(&self, session: &Session) -> Option<View> {
+    /// What the section shows for the cue under the playhead.
+    fn emphasis_view(&self, session: &Session, playhead: Tick) -> Option<View> {
         let item = self.item?;
-        let (_, params) = self.caption(session)?;
-        let selected: Vec<NfcText> = self.selected.iter().cloned().collect();
-        let mut target = None;
-        let mut timed = !selected.is_empty();
-        for cue in &params.cues.cues {
-            if self.selected.contains(&cue.id) {
-                timed &= !cue.words().is_empty();
-                if selected.len() == 1 {
-                    target = Some(cue.clone());
-                }
-            }
-        }
-        let (words, limit, shown, stale) = match &target {
+        let (caption, params) = self.caption(session)?;
+        let cue = cue_at(caption, params, playhead);
+        let (words, limit, shown, stale) = match &cue {
             Some(cue) => {
                 let timed_words = cue.words();
                 let words = timed_words
@@ -170,9 +179,8 @@ impl Subtitles {
         };
         Some(View {
             item,
-            selected,
-            target,
-            timed,
+            timed: cue.as_ref().is_some_and(|cue| !cue.words().is_empty()),
+            cue,
             words,
             limit,
             shown,
@@ -181,13 +189,18 @@ impl Subtitles {
         })
     }
 
-    /// The keyword section's read for the caption item the properties area shows. `None`
-    /// unless that item is the Captions panel's current item.
-    pub(crate) fn keyword_ui(&self, session: &Session, item: ItemId) -> Option<KeywordUi> {
+    /// The keyword section's read for the caption item the properties area shows, with the
+    /// cue under `playhead`. `None` unless that item is the Captions panel's current item.
+    pub(crate) fn keyword_ui(
+        &self,
+        session: &Session,
+        item: ItemId,
+        playhead: Tick,
+    ) -> Option<KeywordUi> {
         if self.item != Some(item) {
             return None;
         }
-        let view = self.emphasis_view(session)?;
+        let view = self.emphasis_view(session, playhead)?;
         let owned = self.emphasis.item == Some(item);
         let run = match &self.suggest {
             None => KeywordRun::Idle,
@@ -196,8 +209,7 @@ impl Subtitles {
         };
         Some(KeywordUi {
             item,
-            cue: view.target.as_ref().map(|cue| cue.id.clone()),
-            selected: view.selected.len(),
+            cue: view.cue.as_ref().map(|cue| cue.id.clone()),
             timed: view.timed,
             words: view.words,
             shown: view.shown,
@@ -215,13 +227,14 @@ impl Subtitles {
         })
     }
 
-    /// Apply one keyword intention from the properties area. Edits wait while other subtitle
-    /// work runs; cancelling stops only the suggestion run.
+    /// Apply one keyword intention from the properties area to the cue under `playhead`. Edits
+    /// wait while other subtitle work runs; cancelling stops only the suggestion run.
     pub(crate) fn keyword_action(
         &mut self,
         session: &mut Session,
         options: &Options,
         action: KeywordAction,
+        playhead: Tick,
     ) {
         if self.emphasis.item != self.item {
             self.emphasis = Panel {
@@ -238,20 +251,24 @@ impl Subtitles {
         if self.busy() {
             return;
         }
-        let Some(view) = self.emphasis_view(session) else {
+        let Some(view) = self.emphasis_view(session, playhead) else {
             return;
         };
         match action {
-            KeywordAction::Choose => self.commit_emphasis(
-                session,
-                Command::SelectCaptionEmphasis {
-                    item: view.item,
-                    cue_ids: view.selected.clone(),
-                    mode: EmphasisMode::Lexicon,
-                },
-            ),
+            KeywordAction::Choose => {
+                if let Some(cue) = &view.cue {
+                    self.commit_emphasis(
+                        session,
+                        Command::SelectCaptionEmphasis {
+                            item: view.item,
+                            cue_ids: vec![cue.id.clone()],
+                            mode: EmphasisMode::Lexicon,
+                        },
+                    );
+                }
+            }
             KeywordAction::Clear => {
-                if let Some(cue) = &view.target {
+                if let Some(cue) = &view.cue {
                     self.commit_emphasis(
                         session,
                         Command::SetCaptionEmphasis {
@@ -263,7 +280,7 @@ impl Subtitles {
                 }
             }
             KeywordAction::Pick(word_ids) => {
-                if let Some(cue) = &view.target {
+                if let Some(cue) = &view.cue {
                     self.commit_emphasis(
                         session,
                         Command::SetCaptionEmphasis {
@@ -275,12 +292,14 @@ impl Subtitles {
                 }
             }
             KeywordAction::Preview => {
-                if let Some(cue) = &view.target {
-                    self.preview_emphasis(session, &cue.id);
+                if let Some(cue) = &view.cue {
+                    self.preview_emphasis(session, cue);
                 }
             }
             KeywordAction::Suggest => {
-                self.suggest_emphasis(session, options, view.item, view.selected.clone());
+                if let Some(cue) = &view.cue {
+                    self.suggest_emphasis(session, options, view.item, vec![cue.id.clone()]);
+                }
             }
             KeywordAction::Apply => self.apply_suggestions(session),
             KeywordAction::Cancel => {}
@@ -309,31 +328,22 @@ impl Subtitles {
         }
     }
 
-    /// Select the cue and move the playhead to it, where the player shows its keywords.
-    fn preview_emphasis(&mut self, session: &mut Session, cue: &NfcText) {
+    /// Move the playhead to the start of the cue, where the player shows its keywords. The
+    /// Captions panel's cue selection is left alone.
+    fn preview_emphasis(&mut self, session: &Session, cue: &captions::Cue) {
         self.emphasis.problem = None;
-        if self.flush_drafts(session).is_err() {
-            self.emphasis.problem = Some(Text::SubEditFailed);
-            return;
-        }
-        let index = self.caption(session).and_then(|(_, params)| {
-            params
-                .cues
-                .cues
-                .iter()
-                .position(|candidate| candidate.id == *cue)
-        });
-        let Some(index) = index else {
-            return;
-        };
-        match self.select_cue(session, index, false, false) {
-            Ok(at) => self.requested_seek = Some(at),
-            Err(_) => self.emphasis.problem = Some(Text::SubEditFailed),
+        let start = self
+            .caption(session)
+            .and_then(|(item, _)| cue_span(item, cue))
+            .map(|(start, _)| start);
+        match start {
+            Some(start) => self.requested_seek = Some(start),
+            None => self.emphasis.problem = Some(Text::SubEditFailed),
         }
     }
 
-    /// Start one consented suggestion for the selected cues, with the model the preferences
-    /// snapshot resolved for the provider's keyword selection.
+    /// Start one consented suggestion for the cue under the playhead, with the model the
+    /// preferences snapshot resolved for the provider's keyword selection.
     fn suggest_emphasis(
         &mut self,
         session: &mut Session,

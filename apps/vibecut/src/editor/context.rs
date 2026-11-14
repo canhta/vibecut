@@ -186,20 +186,18 @@ pub(crate) struct Context<'a> {
     /// Keyword emphasis of the selected caption item's cue, when one item is selected.
     pub(crate) keywords: Option<KeywordUi>,
 }
-/// Keyword emphasis as the caption item's Text tab shows it. Plain values only: the Captions
-/// panel owns the cue selection and the suggestion run, and the frame routes `KeywordAction`s
-/// back to it.
+/// Keyword emphasis as the caption item's Text tab shows it. Plain values only: the playhead
+/// picks the cue, the Captions panel owns the suggestion run, and the frame routes
+/// `KeywordAction`s back to it.
 #[derive(Clone)]
 pub(crate) struct KeywordUi {
     /// The caption item this section acts on.
     pub(crate) item: project::ItemId,
-    /// The one cue selected in the Captions panel, if exactly one is.
+    /// The caption cue under the playhead, if one is.
     pub(crate) cue: Option<captions::NfcText>,
-    /// Cues selected in the Captions panel.
-    pub(crate) selected: usize,
-    /// Every selected cue carries verified word timing.
+    /// The cue under the playhead carries verified word timing.
     pub(crate) timed: bool,
-    /// Timed words of the selected cue: word id and text.
+    /// Timed words of the cue under the playhead: word id and text.
     pub(crate) words: Vec<(u32, String)>,
     /// Word ids the cue emphasises now, after validation.
     pub(crate) shown: Vec<u32>,

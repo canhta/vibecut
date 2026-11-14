@@ -3681,15 +3681,25 @@ fn press(h: &mut Harness<'_, Editor>, id: &str) {
     click_modifiers(h, id, egui::Modifiers::default());
 }
 
+/// Moves the playhead to `at`, where the keyword section reads its cue.
+fn seek(h: &mut Harness<'_, Editor>, at: Tick) {
+    let snapshot = h.state().session.project().clone();
+    h.state_mut().playback.seek(at, false, snapshot).unwrap();
+    h.run_steps(3);
+}
+
+/// Moves the playhead to the start of cue `index` of the caption item.
+fn seek_to_cue(h: &mut Harness<'_, Editor>, index: usize) {
+    let start = scene_cues(h.state())[index].range.start();
+    seek(h, start);
+}
+
 #[test]
 fn emphasis_choose_pick_clear_and_preview_are_one_undo_step_each() {
     let mut h = harness(editor_with_cues("vi", filler_cues()), 1.0);
     h.run_steps(3);
     open_keywords(&mut h);
-    with_panel(h.state_mut(), |panel, session, _| {
-        panel.select_cue(session, 0, false, false).unwrap();
-    });
-    h.run_steps(3);
+    seek(&mut h, Tick(3 * TICKS_PER_SECOND / 2));
     assert_eq!(emphasis_chips(&h).len(), 2, "only timed words are offered");
 
     let cue0 = scene_cues(h.state())[0].clone();
@@ -3725,6 +3735,12 @@ fn emphasis_choose_pick_clear_and_preview_are_one_undo_step_each() {
 
     let history = h.state().session.history_len().0;
     press(&mut h, "inspector.keywords.preview");
+    h.run_steps(3);
+    assert_eq!(
+        h.state().playback.position().unwrap(),
+        Tick(TICKS_PER_SECOND),
+        "preview moves the playhead to the start of cue-0"
+    );
     assert_eq!(
         h.state().session.history_len().0,
         history,
@@ -3741,10 +3757,7 @@ fn emphasis_untimed_cue_warns_and_changes_nothing() {
     let mut h = harness(editor("vi"), 1.0);
     h.run_steps(3);
     open_keywords(&mut h);
-    with_panel(h.state_mut(), |panel, session, _| {
-        panel.select_cue(session, 0, false, false).unwrap();
-    });
-    h.run_steps(3);
+    seek_to_cue(&mut h, 0);
     h.get_by_label("Word timings needed");
     assert!(
         emphasis_chips(&h).is_empty(),
@@ -3762,10 +3775,7 @@ fn emphasis_selection_goes_stale_when_the_source_text_changes() {
     let mut h = harness(editor_with_cues("vi", filler_cues()), 1.0);
     h.run_steps(3);
     open_keywords(&mut h);
-    with_panel(h.state_mut(), |panel, session, _| {
-        panel.select_cue(session, 0, false, false).unwrap();
-    });
-    h.run_steps(3);
+    seek_to_cue(&mut h, 0);
     press(&mut h, "inspector.keywords.word.1");
     assert_eq!(stored_emphasis(h.state(), "cue-0"), Some(vec![1]));
 
@@ -3783,6 +3793,67 @@ fn emphasis_selection_goes_stale_when_the_source_text_changes() {
 
     press(&mut h, "inspector.keywords.clear");
     assert_eq!(stored_emphasis(h.state(), "cue-0"), None);
+}
+
+#[test]
+fn emphasis_acts_on_the_cue_under_the_playhead_not_the_captions_selection() {
+    let mut h = harness(editor_with_cues("vi", filler_cues()), 1.0);
+    h.run_steps(3);
+    open_keywords(&mut h);
+    with_panel(h.state_mut(), |panel, session, _| {
+        panel.select_cue(session, 0, false, false).unwrap();
+    });
+    seek_to_cue(&mut h, 1);
+    assert_eq!(
+        emphasis_chips(&h).len(),
+        2,
+        "cue-1 is under the playhead; the cue-0 selection does not feed the section"
+    );
+
+    let before = h.state().session.project().clone();
+    let history = h.state().session.history_len().0;
+    press(&mut h, "inspector.keywords.word.1");
+    assert_eq!(stored_emphasis(h.state(), "cue-1"), Some(vec![1]));
+    assert_eq!(stored_emphasis(h.state(), "cue-0"), None);
+    assert_eq!(
+        h.state().session.history_len().0,
+        history + 1,
+        "one pick, one undo step"
+    );
+    h.state_mut().session.undo().unwrap();
+    h.run_steps(3);
+    assert_eq!(h.state().session.project(), &before);
+}
+
+#[test]
+fn emphasis_playhead_between_cues_shows_the_empty_state() {
+    let track = CueTrack {
+        styles: Vec::new(),
+        cues: vec![
+            timed_cue("cue-0", 1, "ừm chào", "ừm", false),
+            timed_cue("cue-1", 5, "chào ừm", "chào", false),
+        ],
+    };
+    let mut h = harness(editor_with_cues("vi", track), 1.0);
+    h.run_steps(3);
+    open_keywords(&mut h);
+    seek(&mut h, Tick(4 * TICKS_PER_SECOND));
+    h.get_by_label("No caption under the playhead.");
+    assert!(emphasis_chips(&h).is_empty(), "no cue, no chips");
+
+    let before = h.state().session.project().clone();
+    let history = h.state().session.history_len().0;
+    press(&mut h, "inspector.keywords.choose");
+    press(&mut h, "inspector.keywords.suggest");
+    assert_eq!(h.state().session.project(), &before);
+    assert_eq!(h.state().session.history_len().0, history);
+
+    seek_to_cue(&mut h, 1);
+    assert_eq!(
+        emphasis_chips(&h).len(),
+        2,
+        "the chips return once a cue is under the playhead"
+    );
 }
 
 /// A keyword suggester that never reaches the network: it picks every word spelled "chào",
@@ -3875,8 +3946,8 @@ fn emphasis_text_opener(fail: bool, calls: Arc<AtomicUsize>) -> TextOpener {
     })
 }
 
-/// Opens the keyword section on the timed fixture with cue-0 and cue-1 selected and the
-/// scripted suggester injected.
+/// Opens the keyword section on the timed fixture with the playhead on cue-0 and the scripted
+/// suggester injected.
 fn ai_emphasis_harness(fail: bool, calls: Arc<AtomicUsize>) -> Harness<'static, Editor> {
     let mut e = editor_with_cues("vi", filler_cues());
     let panel = Subtitles::with_access(e.playback.budget().clone(), generate_opener(false, None))
@@ -3886,11 +3957,7 @@ fn ai_emphasis_harness(fail: bool, calls: Arc<AtomicUsize>) -> Harness<'static, 
     let mut h = harness(e, 1.0);
     h.run_steps(3);
     open_keywords(&mut h);
-    with_panel(h.state_mut(), |panel, session, _| {
-        panel.select_cue(session, 0, false, false).unwrap();
-        panel.select_cue(session, 1, true, false).unwrap();
-    });
-    h.run_steps(3);
+    seek_to_cue(&mut h, 0);
     h
 }
 
@@ -3926,7 +3993,11 @@ fn emphasis_ai_waits_for_approval_then_applies_suggestions_as_one_undo_step() {
         "one batch, one undo step"
     );
     assert_eq!(stored_emphasis(h.state(), "cue-0"), Some(vec![1]));
-    assert_eq!(stored_emphasis(h.state(), "cue-1"), Some(vec![0]));
+    assert_eq!(
+        stored_emphasis(h.state(), "cue-1"),
+        None,
+        "only the cue under the playhead is suggested"
+    );
 
     h.state_mut().session.undo().unwrap();
     h.run_steps(3);
@@ -4004,10 +4075,7 @@ fn emphasis_selected_chip_uses_the_selected_style_with_readable_label_in_both_th
         h.state_mut().preferences.dark = dark;
         h.run_steps(3);
         open_keywords(&mut h);
-        with_panel(h.state_mut(), |panel, session, _| {
-            panel.select_cue(session, 0, false, false).unwrap();
-        });
-        h.run_steps(3);
+        seek_to_cue(&mut h, 0);
         press(&mut h, "inspector.keywords.word.1");
         h.run_steps(3);
         let chip = widget_rect(&h, "inspector.keywords.word.1");
