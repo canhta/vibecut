@@ -22,7 +22,10 @@ pub use persistence::{
     Thumbnail, ViewState, WriterLease, atomic_write, decode, encode, load, media_dir,
     metadata_path, read_metadata,
 };
-pub use preset::{CaptionLook, CaptionShelf, TextLook, TextShelf};
+pub use preset::{
+    CaptionLook, CaptionShelf, TEXT_LIBRARY_LICENSE, TextLook, TextShelf, TextTemplate,
+    is_commercial_license, search_text_looks, search_text_templates,
+};
 pub use visual::{
     ANGLE_MAX, BlendMode, CHROMA_KEY_COLOR_DEFAULT, CHROMA_KEY_INTENSITY_DEFAULT, CHROMA_KEY_MAX,
     CHROMA_KEY_MIN, CURVE_GRID, CURVE_MAX_POINTS, CURVE_MIN_POINTS, Crop, DEFAULT_WEIGHT,

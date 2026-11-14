@@ -10,6 +10,7 @@ mod rows;
 mod selection;
 mod sounds;
 mod stickers;
+mod text;
 mod transition;
 pub(super) use transition::{cuts, refusal, selected_cut};
 

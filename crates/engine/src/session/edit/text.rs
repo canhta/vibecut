@@ -300,6 +300,41 @@ pub(super) fn save_text_preset(
     Ok(data)
 }
 
+/// Insert one new text item from a built-in template: its look's style, its words (or the
+/// caller's), at its vertical position on the canvas. The item is created by the ordinary
+/// insert, so placement, locks and overlap follow `InsertItem`; the whole insert is one edit.
+pub(super) fn insert_text_template(
+    data: ProjectData,
+    placement: Placement,
+    template: project::TextTemplate,
+    content: Option<captions::NfcText>,
+    start: Tick,
+    duration: Tick,
+    created: &mut Vec<CreatedId>,
+    next: &mut Option<u64>,
+) -> Result<ProjectData> {
+    let mut animations = project::Animations::default();
+    if template.shift() != 0.0 {
+        animations.set(
+            project::AnimationPath::from(project::BuiltinPath::TransformPositionY),
+            project::Param::new(project::ParamValue::Scalar(
+                f64::from(data.canvas.height) * template.shift(),
+            ))?,
+        )?;
+    }
+    let mut params = project::TextParams::new(content.unwrap_or_else(|| template.sample().into()));
+    template.style().apply_to(&mut params);
+    let new = NewItem {
+        animations,
+        source_asset: None,
+        source_range: SourceRange::new(Tick::ZERO, duration).map_err(EditError::from)?,
+        start,
+        retime: Default::default(),
+        content: ItemParams::Text(params),
+    };
+    super::clips::execute_insert_item(data, placement, new, created, next)
+}
+
 fn check_text_preset_name(
     presets: &[project::SavedTextPreset],
     name: &captions::NfcText,

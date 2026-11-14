@@ -118,6 +118,84 @@ fn applying_a_text_look_keeps_the_item_content_and_copies_its_style() {
 }
 
 #[test]
+fn look_and_template_ids_are_their_wire_ids() {
+    for look in TextLook::ALL {
+        assert_eq!(
+            serde_json::to_string(&look).unwrap(),
+            format!("\"{}\"", look.id())
+        );
+    }
+    for template in TextTemplate::ALL {
+        assert_eq!(
+            serde_json::to_string(&template).unwrap(),
+            format!("\"{}\"", template.id())
+        );
+    }
+    let ids: BTreeSet<String> = TextTemplate::ALL.iter().map(|t| t.id()).collect();
+    assert_eq!(ids.len(), TextTemplate::ALL.len());
+}
+
+#[test]
+fn text_library_search_matches_names_and_shelves() {
+    assert_eq!(
+        search_text_looks("", None, false),
+        TextLook::ALL.to_vec(),
+        "an empty query lists every look in catalogue order"
+    );
+    assert_eq!(
+        search_text_looks("  NEON ", None, false),
+        vec![TextLook::NeonCyan, TextLook::NeonPink]
+    );
+    assert!(search_text_looks("no such look", None, false).is_empty());
+    for shelf in TextShelf::ALL {
+        let found = search_text_looks("", Some(shelf), false);
+        assert!(!found.is_empty());
+        assert!(found.iter().all(|look| look.shelf() == shelf));
+    }
+    assert!(search_text_looks("label", Some(TextShelf::Glow), false).is_empty());
+    assert_eq!(
+        search_text_templates("lower", None, false),
+        vec![TextTemplate::LowerThird]
+    );
+    for shelf in TextShelf::ALL {
+        assert!(
+            search_text_templates("", Some(shelf), false)
+                .iter()
+                .all(|template| template.shelf() == shelf)
+        );
+    }
+}
+
+#[test]
+fn commercial_filter_follows_the_recorded_licence() {
+    assert!(is_commercial_license(TEXT_LIBRARY_LICENSE));
+    assert!(!is_commercial_license("CC-BY-NC-4.0"));
+    assert!(!is_commercial_license(""));
+    for look in TextLook::ALL {
+        assert_eq!(look.license(), TEXT_LIBRARY_LICENSE);
+        assert!(look.commercial(), "{}", look.name());
+    }
+    assert_eq!(
+        search_text_looks("", None, true),
+        search_text_looks("", None, false)
+    );
+    assert_eq!(
+        search_text_templates("", None, true),
+        search_text_templates("", None, false)
+    );
+}
+
+#[test]
+fn templates_copy_their_looks_style_and_stay_on_the_canvas() {
+    for template in TextTemplate::ALL {
+        assert_eq!(template.style(), template.look().style());
+        assert!(template.style().valid(), "{}", template.name());
+        assert!(!template.sample().is_empty());
+        assert!(template.shift().abs() < 0.5, "{}", template.name());
+    }
+}
+
+#[test]
 fn every_caption_look_is_a_valid_style_and_its_shelf_carries_its_feature() {
     for look in CaptionLook::ALL {
         let style = look.style();

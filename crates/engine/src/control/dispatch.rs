@@ -319,6 +319,47 @@ impl Session {
                     limit,
                 })?,
             }),
+            Command::TextSearch {
+                query,
+                shelf,
+                commercial_only,
+            } => {
+                let entry = |id: String, name: &str, shelf, license: &str, commercial| {
+                    crate::session::wire::TextLibraryEntry {
+                        id,
+                        name: name.to_owned(),
+                        shelf,
+                        license: license.to_owned(),
+                        commercial,
+                    }
+                };
+                Ok(ControlResult::TextLibrary {
+                    looks: project::search_text_looks(&query, shelf, commercial_only)
+                        .into_iter()
+                        .map(|look| {
+                            entry(
+                                look.id(),
+                                look.name(),
+                                look.shelf(),
+                                look.license(),
+                                look.commercial(),
+                            )
+                        })
+                        .collect(),
+                    templates: project::search_text_templates(&query, shelf, commercial_only)
+                        .into_iter()
+                        .map(|template| {
+                            entry(
+                                template.id(),
+                                template.name(),
+                                template.shelf(),
+                                template.license(),
+                                template.commercial(),
+                            )
+                        })
+                        .collect(),
+                })
+            }
             Command::StickersInsert {
                 placement,
                 sticker,

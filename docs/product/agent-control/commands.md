@@ -2617,6 +2617,21 @@ Effect: `Edit`. Fixture: `TextPresetBank`.
 }
 ```
 
+## `text.insert_template` — Insert text template
+
+Effect: `Edit`. Fixture: `Timeline`.
+
+```json
+{
+  "duration": 127008000000,
+  "placement": {
+    "mode": "auto"
+  },
+  "start": 0,
+  "template": "big_title"
+}
+```
+
 ## `text.save_preset` — Save text preset
 
 Effect: `Edit`. Fixture: `TextPresetBank`.
@@ -2625,6 +2640,18 @@ Effect: `Edit`. Fixture: `TextPresetBank`.
 {
   "item": 3,
   "name": "Style 1"
+}
+```
+
+## `text.search` — Search text library
+
+Effect: `Read`. Fixture: `Timeline`.
+
+```json
+{
+  "commercial_only": true,
+  "query": "neon",
+  "shelf": "glow"
 }
 ```
 

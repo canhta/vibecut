@@ -32,5 +32,6 @@ pub use views::{
     JobStage, JobState, LoudnessResult, Measured, MusicEntry, MusicPage, MusicSource, OutputSpan,
     PauseCandidates, PreviewFrame, PreviewResult, ReframeReason, ReframeReport, ReframeShotReport,
     ReframeTarget, SavedMusicEntry, SavedSoundEntry, SceneCandidate, SnapshotResult, SoundEntry,
-    SoundPage, SoundSource, StickerCategory, StickerEntry, StickerPage, TranslationsResult,
+    SoundPage, SoundSource, StickerCategory, StickerEntry, StickerPage, TextLibraryEntry,
+    TranslationsResult,
 };

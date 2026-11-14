@@ -149,7 +149,9 @@ API version: 27. Registry digest: `88daf14c14a94ec07b5e7fb35c8a759ca2b4724f3f6e6
 | `stickers.insert` | `Edit` | Insert sticker |
 | `stickers.search` | `Read` | Search stickers |
 | `text.apply_preset` | `Edit` | Apply text preset |
+| `text.insert_template` | `Edit` | Insert text template |
 | `text.save_preset` | `Edit` | Save text preset |
+| `text.search` | `Read` | Search text library |
 | `timeline.add_track` | `Edit` | Add track |
 | `timeline.align_items` | `Edit` | Align items |
 | `timeline.apply_speed_preset` | `Edit` | Apply speed ramp preset |

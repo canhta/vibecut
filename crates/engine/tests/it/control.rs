@@ -5,3 +5,4 @@ mod clip_shots;
 mod fillers;
 mod jobs;
 mod lifecycle;
+mod text_library;

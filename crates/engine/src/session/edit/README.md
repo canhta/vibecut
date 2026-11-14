@@ -173,6 +173,13 @@ save action `Style N` (the first free N); command callers pass any valid name.
 Preset names and values are new product behaviour, not reference parity. See
 [model](../../../../project/src/model/README.md#saved-text-styles) for validation.
 
+`text.insert_template` inserts one new Text item from a built-in `TextTemplate`: its look's
+style, the caller's words (or the template's English sample) and a vertical offset of the
+template's fraction of the canvas height, through the ordinary insert, so placement, locks and
+overlap follow `InsertItem` and the insert is one undo step. `text.search` is a read of the
+bundled looks and templates by name, shelf and commercial licence (`project::search_text_looks`,
+`search_text_templates`); it never edits.
+
 ## Caption styles
 
 `captions.apply_style` chooses the whole appearance of one active-scene caption item. A built-in

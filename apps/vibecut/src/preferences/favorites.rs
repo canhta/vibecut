@@ -5,13 +5,15 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The catalogue families whose tiles can be starred.
-pub const CATALOG_FAMILIES: [&str; 6] = [
+pub const CATALOG_FAMILIES: [&str; 8] = [
     "effects",
     "transitions",
     "filters",
     "animations",
     "stickers",
     "sounds",
+    "text_looks",
+    "text_templates",
 ];
 /// Starred items across every family; keeps the preference document bounded.
 pub const MAX_CATALOG_FAVORITES: usize = 256;
@@ -218,6 +220,22 @@ mod tests {
                 .expect("within bound");
         }
         assert!(full.with("effects", "overflow", true).is_err());
+    }
+
+    #[test]
+    fn text_looks_and_templates_are_starred_in_their_own_families() {
+        let starred = CatalogFavorites::default()
+            .with("text_looks", "neon_pink", true)
+            .and_then(|next| next.with("text_templates", "neon_pink", true))
+            .and_then(|next| next.with("text_looks", "clean_white", true))
+            .expect("valid stars");
+        assert_eq!(starred.list("text_looks"), ["neon_pink", "clean_white"]);
+        assert_eq!(starred.list("text_templates"), ["neon_pink"]);
+        let unstarred = starred
+            .with("text_looks", "neon_pink", false)
+            .expect("unstar is valid");
+        assert!(!unstarred.contains("text_looks", "neon_pink"));
+        assert!(unstarred.contains("text_templates", "neon_pink"));
     }
 
     #[test]

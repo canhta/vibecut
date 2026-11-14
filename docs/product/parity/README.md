@@ -43,7 +43,7 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 | [Keyboard shortcuts](shell.md#keyboard-shortcuts-shortcut) | 26 | 20 | 2 | 2 | 1 | 1 | 0 | 2 | 0 | 11 | 0 |
 | [Media](assets.md#media-media) | 35 | 15 | 6 | 7 | 0 | 2 | 5 | 2 | 1 | 11 | 16 |
 | [Audio](assets.md#audio-audio) | 21 | 13 | 4 | 2 | 0 | 1 | 1 | 5 | 6 | 6 | 3 |
-| [Text library](assets.md#text-library-textlib) | 10 | 2 | 2 | 4 | 0 | 1 | 1 | 0 | 0 | 2 | 6 |
+| [Text library](assets.md#text-library-textlib) | 10 | 6 | 2 | 0 | 0 | 1 | 1 | 0 | 5 | 2 | 1 |
 | [Stickers](assets.md#stickers-stick) | 12 | 4 | 1 | 1 | 0 | 4 | 2 | 1 | 1 | 7 | 0 |
 | [Templates](assets.md#templates-tmpl) | 7 | 0 | 0 | 6 | 0 | 0 | 1 | 0 | 0 | 0 | 5 |
 | [Captions panel](captions.md#captions-panel-caps) | 42 | 21 | 10 | 7 | 0 | 4 | 0 | 4 | 5 | 18 | 14 |

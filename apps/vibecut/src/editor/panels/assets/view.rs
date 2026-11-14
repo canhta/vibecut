@@ -9,6 +9,7 @@ mod filters;
 mod music;
 mod sounds;
 mod stickers;
+mod text;
 mod transition;
 
 pub(in crate::editor) use deletion::show as delete_dialog;
@@ -217,12 +218,7 @@ pub(in crate::editor) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) 
                 {
                     view.actions.push(Action::Command("text.insert".into()));
                 }
-                view.empty(
-                    ui,
-                    Icon::TextT,
-                    Text::AssetsNoStyles,
-                    crate::kit::Tone::Quiet,
-                );
+                view.text_library(ui);
             }
             tab => {
                 let _ = tab;
@@ -544,6 +540,7 @@ impl View<'_> {
             AssetsTab::Effects => Text::EffectSearch,
             AssetsTab::Filters => Text::FilterSearch,
             AssetsTab::Stickers => Text::StickerSearch,
+            AssetsTab::Text => self.state.text_page.search_hint(),
             _ => Text::AssetsSearch,
         });
         let draft = self

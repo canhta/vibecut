@@ -405,6 +405,17 @@ pub(crate) fn apply(
         EditCommand::ApplyTextPreset { items, preset } => {
             data = text::apply_text_preset(data, items, preset)?;
         }
+        EditCommand::InsertTextTemplate {
+            placement,
+            template,
+            content,
+            start,
+            duration,
+        } => {
+            data = text::insert_text_template(
+                data, placement, template, content, start, duration, created, next,
+            )?;
+        }
         EditCommand::SaveTextPreset { item, name } => {
             data = text::save_text_preset(data, item, name, next, created)?;
         }

@@ -1,14 +1,173 @@
 //! Built-in text looks: thirty style bundles over the curated OFL families, applied as values.
 use crate::{Color, TextBackground, TextParams, TextShadow, TextStroke, TextStyle};
 
-/// The text look shelves in panel order.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// The text look shelves in panel order. They are also the library's category chips and the
+/// shelves of the templates.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
 pub enum TextShelf {
     Plain,
     Outline,
     Shadow,
     Glow,
     Label,
+}
+
+impl TextShelf {
+    /// Every shelf in panel order.
+    pub const ALL: [Self; 5] = [
+        Self::Plain,
+        Self::Outline,
+        Self::Shadow,
+        Self::Glow,
+        Self::Label,
+    ];
+}
+
+/// The licence the built-in looks and templates carry: every one uses only the curated
+/// SIL OFL-1.1 families (the libraries crate checks the families against its curated table).
+pub const TEXT_LIBRARY_LICENSE: &str = "OFL-1.1";
+
+/// Whether a recorded SPDX licence id allows commercial use. The Commercial filter of the text
+/// library keeps the entries whose licence passes.
+pub fn is_commercial_license(spdx: &str) -> bool {
+    matches!(spdx, "OFL-1.1" | "CC0-1.0" | "MIT" | "Apache-2.0")
+}
+
+/// A case-insensitive substring test of one display name; an empty query matches everything.
+fn name_matches(name: &str, query: &str) -> bool {
+    let query = query.trim().to_lowercase();
+    query.is_empty() || name.to_lowercase().contains(&query)
+}
+
+/// The looks whose name contains `query`, optionally on one shelf and only those licensed for
+/// commercial use, in catalogue order.
+pub fn search_text_looks(
+    query: &str,
+    shelf: Option<TextShelf>,
+    commercial_only: bool,
+) -> Vec<TextLook> {
+    TextLook::ALL
+        .into_iter()
+        .filter(|look| shelf.is_none_or(|shelf| look.shelf() == shelf))
+        .filter(|look| !commercial_only || look.commercial())
+        .filter(|look| name_matches(look.name(), query))
+        .collect()
+}
+
+/// The templates whose name contains `query`, filtered like [`search_text_looks`].
+pub fn search_text_templates(
+    query: &str,
+    shelf: Option<TextShelf>,
+    commercial_only: bool,
+) -> Vec<TextTemplate> {
+    TextTemplate::ALL
+        .into_iter()
+        .filter(|template| shelf.is_none_or(|shelf| template.shelf() == shelf))
+        .filter(|template| !commercial_only || template.commercial())
+        .filter(|template| name_matches(template.name(), query))
+        .collect()
+}
+
+/// A built-in text template: a look with its own sample words and a vertical position, inserted
+/// as one new text item. Wire ids are stable snake_case.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum TextTemplate {
+    BigTitle,
+    LowerThird,
+    CaptionPop,
+    Quote,
+    NeonSign,
+    SaleTag,
+}
+
+impl TextTemplate {
+    /// Every template in shelf order.
+    pub const ALL: [Self; 6] = [
+        Self::BigTitle,
+        Self::CaptionPop,
+        Self::Quote,
+        Self::NeonSign,
+        Self::LowerThird,
+        Self::SaleTag,
+    ];
+
+    /// The look whose style the template copies.
+    pub const fn look(self) -> TextLook {
+        match self {
+            Self::BigTitle => TextLook::PosterAnton,
+            Self::LowerThird => TextLook::LabelBlack,
+            Self::CaptionPop => TextLook::OutlineBlack,
+            Self::Quote => TextLook::ScriptCream,
+            Self::NeonSign => TextLook::NeonPink,
+            Self::SaleTag => TextLook::LabelRed,
+        }
+    }
+
+    /// The shelf of the template: its look's shelf.
+    pub const fn shelf(self) -> TextShelf {
+        self.look().shelf()
+    }
+
+    /// Our own display name.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::BigTitle => "Big Title",
+            Self::LowerThird => "Lower Third",
+            Self::CaptionPop => "Caption Pop",
+            Self::Quote => "Quote",
+            Self::NeonSign => "Neon Sign",
+            Self::SaleTag => "Sale Tag",
+        }
+    }
+
+    /// The words a new item holds when the caller gives none.
+    pub const fn sample(self) -> &'static str {
+        match self {
+            Self::BigTitle => "Big title",
+            Self::LowerThird => "Name and role",
+            Self::CaptionPop => "Say it",
+            Self::Quote => "A quote to remember",
+            Self::NeonSign => "Open",
+            Self::SaleTag => "Sale",
+        }
+    }
+
+    /// The item's vertical offset from the canvas centre as a fraction of the canvas height;
+    /// positive is lower.
+    pub const fn shift(self) -> f64 {
+        match self {
+            Self::BigTitle | Self::Quote | Self::NeonSign => 0.0,
+            Self::CaptionPop => 0.3,
+            Self::LowerThird => 0.345,
+            Self::SaleTag => -0.3,
+        }
+    }
+
+    /// The style a new item copies.
+    pub fn style(self) -> TextStyle {
+        self.look().style()
+    }
+
+    /// The licence the template carries.
+    pub const fn license(self) -> &'static str {
+        TEXT_LIBRARY_LICENSE
+    }
+
+    /// Whether the template's licence allows commercial use.
+    pub fn commercial(self) -> bool {
+        is_commercial_license(self.license())
+    }
+
+    /// The wire id: the name in snake_case.
+    pub fn id(self) -> String {
+        self.name().to_lowercase().replace(' ', "_")
+    }
 }
 
 /// A built-in text look, by stable snake_case wire id. Applying one copies its style onto
@@ -117,6 +276,21 @@ impl TextLook {
             | Self::LabelMint
             | Self::LabelShifted => TextShelf::Label,
         }
+    }
+
+    /// The licence of the look's font family.
+    pub const fn license(self) -> &'static str {
+        TEXT_LIBRARY_LICENSE
+    }
+
+    /// Whether the look's licence allows commercial use.
+    pub fn commercial(self) -> bool {
+        is_commercial_license(self.license())
+    }
+
+    /// The wire id: the name in snake_case.
+    pub fn id(self) -> String {
+        self.name().to_lowercase().replace(' ', "_")
     }
 
     /// Our own display name.

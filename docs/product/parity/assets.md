@@ -88,12 +88,12 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 |---|---|---|---|---|---|
 | TEXTLIB-01 | Text sub-nav | Done | Proposed | 221716 | One Add text row |
 | TEXTLIB-02 | Add text button | Done | Proposed | 221716 | |
-| TEXTLIB-03 | Text preset grid | Partial | Not captured | 221716 | Presets live in Properties |
-| TEXTLIB-04 | Text effects grid | Partial | Not captured | 103727 | |
-| TEXTLIB-05 | Search and category chips | Missing | Not captured | 103727 | |
-| TEXTLIB-06 | Favorites chip and list | Missing | Not captured | 103727 | |
-| TEXTLIB-07 | All/Commercial filter | Missing | Not captured | web 05-editor-text-library.md | |
-| TEXTLIB-08 | Text templates shelf | Missing | Not captured | 104218 | |
+| TEXTLIB-03 | Text preset grid | Partial | Not captured | 221716 | Basic page not built; looks also stay in Properties |
+| TEXTLIB-04 | Text effects grid | Done | Differs | 103727; [ui/editor.md](../ui/editor.md#text-library) | Styles page: measured tiles on the reference backing; no preview image |
+| TEXTLIB-05 | Search and category chips | Done | Differs | 103727; [ui/editor.md](../ui/editor.md#text-library) | Chip scroll behaviour matches; our shelves and chip row are unmeasured |
+| TEXTLIB-06 | Favorites chip and list | Done | Differs | 104218; [ui/editor.md](../ui/editor.md#text-library) | First section, as the reference; our empty wording |
+| TEXTLIB-07 | All/Commercial filter | Done | Differs | web 05-editor-text-library.md; [ui/editor.md](../ui/editor.md#text-library) | Two chips; follows the licence record, hides nothing while all are OFL |
+| TEXTLIB-08 | Text templates shelf | Partial | Differs | 104218; [ui/editor.md](../ui/editor.md#text-library) | Six bundled templates (look, words, position); no animation |
 | TEXTLIB-09 | Download and Pro marks | Out of scope | — | 103727 | Online assets |
 | TEXTLIB-10 | Font import | Ours | — | | |
 

@@ -2,7 +2,7 @@
 use super::{
     BrandKitView, EmphasisSuggestion, ErrorCode, FillerCandidate, FontEntry, FontLoad, JobId,
     JobKind, JobStage, JobState, MusicPage, PauseCandidates, PreviewResult, Revision,
-    SavedMusicEntry, SavedSoundEntry, SnapshotResult, SoundPage, StickerPage,
+    SavedMusicEntry, SavedSoundEntry, SnapshotResult, SoundPage, StickerPage, TextLibraryEntry,
 };
 use crate::{CommandSpec, Outcome};
 use serde::Serialize;
@@ -48,6 +48,11 @@ pub enum ControlResult {
     },
     StickerSearch {
         page: StickerPage,
+    },
+    /// The built-in text looks and templates matching `text.search`, in catalogue order.
+    TextLibrary {
+        looks: Vec<TextLibraryEntry>,
+        templates: Vec<TextLibraryEntry>,
     },
     MusicSearch {
         page: MusicPage,
@@ -150,6 +155,7 @@ pub enum ResultKind {
     SoundSaved,
     SoundUnsaved,
     StickerSearch,
+    TextLibrary,
     MusicSearch,
     MusicSaved,
     MusicUnsaved,
@@ -180,6 +186,7 @@ impl ResultKind {
             Self::SoundSaved => "sound_saved",
             Self::SoundUnsaved => "sound_unsaved",
             Self::StickerSearch => "sticker_search",
+            Self::TextLibrary => "text_library",
             Self::MusicSearch => "music_search",
             Self::MusicSaved => "music_saved",
             Self::MusicUnsaved => "music_unsaved",
@@ -211,6 +218,7 @@ impl ControlResult {
             Self::SoundSaved { .. } => ResultKind::SoundSaved,
             Self::SoundUnsaved { .. } => ResultKind::SoundUnsaved,
             Self::StickerSearch { .. } => ResultKind::StickerSearch,
+            Self::TextLibrary { .. } => ResultKind::TextLibrary,
             Self::MusicSearch { .. } => ResultKind::MusicSearch,
             Self::MusicSaved { .. } => ResultKind::MusicSaved,
             Self::MusicUnsaved { .. } => ResultKind::MusicUnsaved,
