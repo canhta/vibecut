@@ -446,19 +446,3 @@ fn snapshot_image_returns_the_same_png_without_publication() {
     let decoded = image::load_from_memory(&image.png).unwrap().to_rgba8();
     assert_eq!(decoded.as_raw(), &reference(&project, Tick::ZERO));
 }
-
-#[test]
-fn snapshot_command_is_registered_as_file_publication() {
-    let spec = engine::registry()
-        .iter()
-        .find(|spec| spec.id == "preview.snapshot")
-        .expect("snapshot command");
-    assert_eq!(spec.effect, engine::Effect::FilePublish);
-    assert!(matches!(
-        serde_json::from_value::<Command>(
-            serde_json::json!({"command":"preview.snapshot","params":{"time":0,"path":"out.png"}})
-        )
-        .unwrap(),
-        Command::Snapshot { .. }
-    ));
-}

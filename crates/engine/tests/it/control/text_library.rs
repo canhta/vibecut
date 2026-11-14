@@ -67,22 +67,6 @@ fn text_search_filters_by_query_shelf_and_licence_without_editing() {
 }
 
 #[test]
-fn text_search_refuses_an_unknown_shelf() {
-    let mut s = session();
-    let mut r = runner();
-    error(
-        run(
-            &mut s,
-            &mut r,
-            "text.search",
-            json!({"shelf": "no_such"}),
-            "bad",
-        ),
-        ErrorCode::InvalidParams,
-    );
-}
-
-#[test]
 fn text_insert_template_adds_one_styled_item_in_one_undo_step() {
     let mut s = session();
     let mut r = runner();

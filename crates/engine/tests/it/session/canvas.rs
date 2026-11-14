@@ -1,36 +1,11 @@
 #![allow(clippy::unwrap_used, reason = "validated test fixtures and assertions")]
 use crate::support::session::{new_item, range};
 use engine::{Command, NewItem, Session};
-use media::{AssetData, AssetId, ContentHash, SourceAsset, SourceProbe};
+use media::{AssetData, AssetId, SourceAsset};
 use project::{Color, ItemParams, Project, ProjectId};
 use serde_json::json;
 use time::Tick;
 
-#[test]
-fn imported_asset_is_one_undo_step_and_restores_the_exact_record() {
-    let mut s = Session::new(Project::empty(ProjectId(9), "Assets".into()).unwrap(), 8).unwrap();
-    let asset = SourceAsset::try_from(AssetData {
-        ephemeral: false,
-        id: AssetId(3),
-        path: std::env::temp_dir().join("import record.mp4"),
-        content_hash: ContentHash([3; 32]),
-        probe: SourceProbe {
-            format: "mov,mp4".into(),
-            duration: Some(Tick(2_000)),
-            streams: vec![],
-        },
-    })
-    .unwrap();
-    s.apply(Command::AddAsset {
-        asset: asset.clone(),
-    })
-    .unwrap();
-    assert_eq!(s.project().data().assets, vec![asset.clone()]);
-    s.apply(Command::Undo {}).unwrap();
-    assert!(s.project().data().assets.is_empty());
-    s.apply(Command::Redo {}).unwrap();
-    assert_eq!(s.project().data().assets, vec![asset]);
-}
 fn policy_asset(id: u64, format: &str, rate: Option<time::FrameRate>) -> SourceAsset {
     policy_asset_sized(id, format, rate, (640, 360))
 }

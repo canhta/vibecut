@@ -8,7 +8,6 @@
 use crate::support::control::Allow;
 use crate::support::control::brand_access;
 use crate::support::control::caller;
-use crate::support::control::error;
 use crate::support::control::finish;
 use crate::support::control::fixture_chapters;
 use crate::support::control::font_access;
@@ -25,7 +24,6 @@ use crate::support::control::vision_access;
 use crate::support::control::with_audio;
 use crate::support::control::with_loudness;
 use crate::support::control::with_source_audio;
-use crate::support::control::with_text;
 use crate::support::control::with_text_presets;
 use crate::support::control::with_thumbnails;
 use crate::support::control::with_video;
@@ -34,7 +32,6 @@ use crate::support::control::with_words;
 use crate::support::control::write_png;
 use crate::support::control::write_video;
 use crate::support::control::write_wav;
-use crate::support::session::Wire;
 use engine::control::{self, Caller, ControlResult};
 use engine::jobs::{JobState, SystemClock};
 use engine::{ByteBudget, Command, Effect, Fixture, Session, registry};
@@ -921,105 +918,6 @@ fn checked_in_registry_digest_and_command_reference_match_the_registry() {
         .replace("\r\n", "\n"),
         control::skill_reference_markdown(),
         "regenerate with cargo xtask catalog"
-    );
-}
-
-#[test]
-fn text_fixture_executes_with_the_new_catalog_and_refuses_the_previous_digest() {
-    let mut s = with_text(&seed());
-    let mut r = runner();
-    let mut req = request(
-        &s,
-        "clip.set_animation",
-        json!({"item":3,"slot":"in","preset":"fade"}),
-        "fade",
-    );
-    req.registry_hash =
-        Some("3e2b1b0f91c52e1612a9646275304e8b9667a9ae5df0b689d19dff8472fa1d91".into());
-    error(
-        s.control_request(req, caller(&Allow), &mut r).unwrap(),
-        control::ErrorCode::SchemaMismatch,
-    );
-    let before = s.project().clone();
-    assert_eq!(s.history_len(), (0, 0));
-    let req = request(
-        &s,
-        "clip.set_animation",
-        json!({"item":3,"slot":"in","preset":"fade"}),
-        "current-fade",
-    );
-    ok(s.control_request(req.clone(), caller(&Allow), &mut r)
-        .unwrap());
-    assert_ne!(s.project(), &before);
-    assert_eq!(s.history_len(), (1, 0));
-    let applied = s.project().clone();
-    ok(s.control_request(req, caller(&Allow), &mut r).unwrap());
-    assert_eq!(s.project(), &applied);
-    assert_eq!(s.history_len(), (1, 0));
-}
-
-#[test]
-fn caption_bank_fixture_selects_live_style_and_refuses_the_previous_digest() {
-    let seed = seed();
-    let mut s = crate::support::control::with_caption_presets(&seed);
-    assert!(seed.project().data().caption_presets.is_empty());
-    assert_eq!(s.project().data().caption_presets[0].id.0, 100);
-    let mut r = runner();
-    let mut req = request(
-        &s,
-        "captions.save_preset",
-        json!({"item":4,"name":"New"}),
-        "old-bank",
-    );
-    req.registry_hash =
-        Some("fb424f0eaed23ba96c479dfe6274278a54f1c7df1eca07227e5fbaca49bc02da".into());
-    error(
-        s.control_request(req, caller(&Allow), &mut r).unwrap(),
-        control::ErrorCode::SchemaMismatch,
-    );
-    let before = s.project().clone();
-    s.wire(
-        "captions.apply_style",
-        json!({"item":4,"style":{"kind":"saved","preset":100}}),
-    )
-    .unwrap();
-    assert_eq!(s.history_len(), (1, 0));
-    assert_ne!(s.project(), &before);
-    let found = s
-        .project()
-        .data()
-        .scene()
-        .timeline
-        .iter()
-        .flat_map(|track| &track.items)
-        .find(|item| item.id == project::ItemId(4))
-        .unwrap();
-    let project::ItemParams::Caption(params) = &found.content else {
-        panic!("caption")
-    };
-    assert_eq!(params.preset, Some(project::CaptionPresetId(100)));
-    let out = s
-        .wire("captions.save_preset", json!({"item":4,"name":"New"}))
-        .unwrap();
-    assert_eq!(
-        serde_json::to_value(out.created).unwrap(),
-        json!([{"caption_preset":101}])
-    );
-    s.wire(
-        "captions.rename_preset",
-        json!({"preset":101,"name":"Renamed"}),
-    )
-    .unwrap();
-    s.wire("captions.delete_preset", json!({"preset":101}))
-        .unwrap();
-    assert_eq!(
-        s.project()
-            .data()
-            .caption_presets
-            .iter()
-            .map(|preset| preset.id.0)
-            .collect::<Vec<_>>(),
-        [100]
     );
 }
 

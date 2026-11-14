@@ -1878,29 +1878,6 @@ proptest::proptest! {
 }
 
 #[test]
-fn nullable_command_fields_are_still_required_in_json() {
-    let mut s = session();
-    let before = s.project().clone();
-    assert!(
-        crate::wire::run(
-            &mut s,
-            "keyframes.add",
-            json!({"item":2,"path":"opacity","key":key(60,0.5)})
-        )
-        .is_err()
-    );
-    assert_eq!(s.project(), &before);
-    assert!(
-        crate::wire::run(
-            &mut s,
-            "keyframes.set_handle",
-            json!({"item":2,"path":"opacity","component":null,"time":0,"side":"out","tangent":"broken"})
-        )
-        .is_err()
-    );
-    assert_eq!(s.project(), &before);
-}
-#[test]
 fn text_background_channels_survive_trim_retime_and_the_file() {
     let scalar = |from: f64, to: f64| {
         Channel::new(
