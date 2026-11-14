@@ -66,6 +66,7 @@ The [token contract](tokens.md) links to the executable value owner, `theme.rs`.
 - Panel state (empty, loading, offline, error): one 24 px glyph over one 12 px line of at most four words, centred in the panel; secondary ink, error ink for a failure. Kit: `panel_state`.
 - Progress bar: 2 px accent over the field track, full width, percentage in the line above. Kit: `progress_bar`.
 - Toast: 320 px wide on the modal surface, bottom-right, 16 px from both edges, 12 px corners and inset (the import toast's values, unmeasured). Kit: `toast`.
+- Damaged-import toast: CapCut 9.7.1 shows one white line at the top of the media panel for about 3 s and adds no tile (round 2, row 15, frames 110341-110347). We use the kit toast surface (`toast_top`) with our own copy, 3 s and top-centre under the tab strip; CapCut's toast measures about 246 logical px wide, so its width and offset stay open until measured against the 320 px token.
 - Dialog: 12 px corners, 24 px inset, 18 px title and 90×34 footer buttons come from the export capture and apply to every modal (a decision, not a proposal); the primary button is filled with the accent. Kit: `dialog_frame`, `dialog_title`, `dialog_button`.
 
 ### Gaps

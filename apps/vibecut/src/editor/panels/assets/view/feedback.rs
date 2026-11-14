@@ -1,6 +1,7 @@
 //! Renders asset feedback.
 
 use super::super::{Action, Icon, Id, Recorded, Rect, State, Text, Vec2, egui, theme};
+use crate::editor::state::ToastPlacement;
 use crate::editor::{Context, Toast};
 use crate::i18n;
 
@@ -109,11 +110,16 @@ pub(in crate::editor) fn drop_overlay(
         });
 }
 
-pub(in crate::editor) fn toast(toast: Option<&Toast>, cx: &Context<'_>, ctx: &egui::Context) {
+pub(in crate::editor) fn toast(
+    toast: Option<&Toast>,
+    media: Rect,
+    cx: &Context<'_>,
+    ctx: &egui::Context,
+) {
     let Some(toast) = toast else {
         return;
     };
-    crate::kit::toast(ctx, "import.toast", |ui| {
+    let rows = |ui: &mut egui::Ui| {
         let response = ui.label(
             egui::RichText::new(toast.text.as_str())
                 .size(theme::type_size::CHROME)
@@ -129,7 +135,16 @@ pub(in crate::editor) fn toast(toast: Option<&Toast>, cx: &Context<'_>, ctx: &eg
                     .color(theme::secondary(cx.dark)),
             );
         }
-    });
+    };
+    match toast.placement {
+        ToastPlacement::Corner => crate::kit::toast(ctx, "import.toast", rows),
+        ToastPlacement::MediaPanel => crate::kit::toast_top(
+            ctx,
+            "import.toast",
+            media.center_top() + Vec2::new(0.0, theme::size::TAB_STRIP + 12.0),
+            rows,
+        ),
+    }
 }
 
 fn remember(actions: &mut Vec<Action>, id: &str, response: &egui::Response, glyph: Option<Icon>) {

@@ -339,6 +339,26 @@ fn drag_drop_imports_good_files_and_reports_typed_partial_failure() {
         inspection.import_notice.is_none(),
         "partial failure is not an insert/preview failure"
     );
+
+    // A batch that admits nothing and fails every file is a damaged-file refusal:
+    // one short media-panel toast, the typed failure kept, and no tile added.
+    harness
+        .input_mut()
+        .dropped_files
+        .push(drop_file(path("bad-clip-2.mp4")));
+    let inspection = wait_harness_import(&mut harness);
+    harness.run_steps(2);
+    assert_eq!(inspection.import_total, 1);
+    assert_eq!(inspection.import_imported, 0);
+    assert_eq!(inspection.import_failures.len(), 1);
+    assert!(inspection.import_failures[0].contains("bad-clip-2.mp4"));
+    assert!(inspection.import_failures[0].contains("test codec"));
+    assert_eq!(
+        inspection.import_toast.as_deref(),
+        Some("Couldn't import this file. It may be damaged.")
+    );
+    widget(&harness, "import.toast");
+    assert_eq!(harness.state().session.project().data().assets.len(), 2);
 }
 
 #[test]

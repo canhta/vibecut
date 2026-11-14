@@ -34,7 +34,7 @@ pub use state::{
 };
 use state::{
     AssetRow, PreferenceCommand, SHORTCUT_CONTROL_HEIGHT, SHORTCUT_ROW_HEIGHT, SHORTCUT_TEXT_SIZE,
-    SHORTCUT_TITLE_SIZE, Toast,
+    SHORTCUT_TITLE_SIZE, Toast, ToastPlacement,
 };
 pub use widgets::WidgetState;
 
@@ -559,6 +559,16 @@ impl Editor {
             text: text.to_owned(),
             detail,
             until: self.clock.now() + Duration::from_secs(5),
+            placement: ToastPlacement::Corner,
+        });
+    }
+    /// Show a short toast at the top of the media panel for three seconds.
+    pub(in crate::editor) fn set_media_toast(&mut self, text: &str) {
+        self.toast = Some(Toast {
+            text: text.to_owned(),
+            detail: None,
+            until: self.clock.now() + Duration::from_secs(3),
+            placement: ToastPlacement::MediaPanel,
         });
     }
     pub(in crate::editor) fn truncate_toast(&mut self) {

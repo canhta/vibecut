@@ -15,7 +15,10 @@ terminal runner failure is a typed error, never success.
 While a batch runs, an overlay shows completed over total, the probe job's within-file
 fraction and a 2 px accent bar; it disables import and insert, and offers Cancel.
 Partial failures use short recovery copy and a concise toast; typed probe details stay
-in diagnostics.
+in diagnostics. A batch that admits nothing and fails every file shows one line,
+"Couldn't import this file. It may be damaged.", as a 3 s toast at the top of the media
+panel, and adds no tile. The command itself returns once the batch is admitted; the typed
+probe error arrives as that batch's `ImportFailure`.
 
 Cards, sorting and insertion: [media library](../media_panel/README.md).
 

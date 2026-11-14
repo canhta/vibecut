@@ -961,6 +961,7 @@ catalog! {
     ImportBusy { key: "import_busy", en: "Import in progress", vi: "Đang nhập" },
     ImportCancelled { key: "import_cancelled", en: "Import cancelled", vi: "Đã hủy nhập" },
     ImportComplete { key: "import_complete", en: "Import complete", vi: "Nhập hoàn tất" },
+    ImportDamaged { key: "import_damaged", en: "Couldn't import this file. It may be damaged.", vi: "Không nhập được tệp này. Tệp có thể bị hỏng." },
     ImportFailed { key: "import_failed", en: "Import failed; try again.", vi: "Không nhập được; hãy thử lại." },
     ImportPartial { key: "import_partial", en: "Some files were not imported; try another.", vi: "Có tệp không nhập được; hãy thử tệp khác." },
     ImportProgress { key: "import_progress", en: "{done} / {total}", vi: "{done} / {total}" },
