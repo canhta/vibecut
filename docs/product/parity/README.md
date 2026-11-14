@@ -51,7 +51,7 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 | [Transitions](catalogues.md#transitions-trans) | 16 | 9 | 2 | 1 | 0 | 3 | 1 | 2 | 1 | 9 | 1 |
 | [Filters](catalogues.md#filters-filt) | 9 | 7 | 1 | 0 | 0 | 0 | 1 | 1 | 1 | 4 | 0 |
 | [Adjustment](catalogues.md#adjustment-adj) | 6 | 2 | 3 | 0 | 0 | 1 | 0 | 1 | 3 | 2 | 0 |
-| [Video clip](properties-video.md#video-clip-pvid) | 52 | 31 | 8 | 7 | 0 | 3 | 3 | 6 | 3 | 33 | 6 |
+| [Video clip](properties-video.md#video-clip-pvid) | 52 | 31 | 9 | 6 | 0 | 3 | 3 | 6 | 3 | 33 | 6 |
 | [Audio clip](properties-other.md#audio-clip-paud) | 17 | 8 | 1 | 7 | 0 | 1 | 0 | 3 | 1 | 6 | 7 |
 | [Text item](properties-other.md#text-item-ptext) | 31 | 17 | 8 | 5 | 0 | 0 | 1 | 3 | 7 | 15 | 5 |
 | [Caption item](properties-other.md#caption-item-pcap) | 8 | 1 | 4 | 2 | 0 | 1 | 0 | 0 | 3 | 3 | 2 |
@@ -63,4 +63,4 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 | [AI chat](ai-shorts.md#ai-chat-agent) | 17 | 9 | 3 | 2 | 1 | 1 | 1 | 5 | 3 | 4 | 1 |
 | [Long video to shorts](ai-shorts.md#long-video-to-shorts-shorts) | 24 | 9 | 7 | 4 | 0 | 2 | 2 | 8 | 2 | 5 | 3 |
 | [States](states.md#states-state) | 12 | 7 | 3 | 0 | 1 | 0 | 1 | 2 | 2 | 4 | 3 |
-| **Total** | **669** | **319** | **120** | **129** | **7** | **53** | **41** | **98** | **72** | **263** | **103** |
+| **Total** | **669** | **319** | **121** | **128** | **7** | **53** | **41** | **98** | **72** | **263** | **103** |

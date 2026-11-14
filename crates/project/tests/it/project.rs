@@ -1155,6 +1155,84 @@ fn model_trust_boundaries() {
             cases.push(d);
         }
     }
+    // Anchor paths name a field of an anchor the mask's path shape carries.
+    for (shape, path, value, accepted) in [
+        (
+            MaskShape::Path {
+                path: MaskPath::rectangle(),
+            },
+            "masks.m.path.3.out_y",
+            ParamValue::Scalar(0.1),
+            true,
+        ),
+        (
+            MaskShape::Path {
+                path: MaskPath::rectangle(),
+            },
+            "masks.m.path.0.x",
+            ParamValue::Scalar(0.1),
+            true,
+        ),
+        (
+            MaskShape::Path {
+                path: MaskPath::rectangle(),
+            },
+            "masks.m.path.4.x",
+            ParamValue::Scalar(0.1),
+            false,
+        ),
+        (
+            MaskShape::Path {
+                path: MaskPath::rectangle(),
+            },
+            "masks.m.path.0.z",
+            ParamValue::Scalar(0.1),
+            false,
+        ),
+        (
+            MaskShape::Path {
+                path: MaskPath::rectangle(),
+            },
+            "masks.ghost.path.0.x",
+            ParamValue::Scalar(0.1),
+            false,
+        ),
+        (
+            MaskShape::Path {
+                path: MaskPath::rectangle(),
+            },
+            "masks.m.path.0.x",
+            ParamValue::Bool(true),
+            false,
+        ),
+        (
+            MaskShape::Rectangle,
+            "masks.m.path.0.x",
+            ParamValue::Scalar(0.1),
+            false,
+        ),
+    ] {
+        let mut d = base.clone();
+        let item = d
+            .scene_mut()
+            .timeline
+            .iter_mut()
+            .flat_map(|track| &mut track.items)
+            .find(|item| matches!(item.content, ItemParams::Text(_)))
+            .unwrap();
+        item.masks.push(Mask::new("m", shape));
+        item.animations
+            .set(
+                AnimationPath::new(path).unwrap(),
+                Param::new(value).unwrap(),
+            )
+            .unwrap();
+        if accepted {
+            assert!(Project::new(d).is_ok(), "{path}");
+        } else {
+            cases.push(d);
+        }
+    }
     let mut d = base.clone();
     d.scene_mut().timeline.main.kind = TrackKind::Audio;
     cases.push(d);

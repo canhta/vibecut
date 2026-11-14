@@ -26,7 +26,8 @@ pub use effects::{
     packed_color,
 };
 pub use mask::{
-    MASK_SCALARS, Mask, MaskMode, MaskPath, MaskShape, MaskStroke, MaskVertex, StrokeAlign,
+    MASK_POINT_FIELDS, MASK_SCALARS, Mask, MaskMode, MaskPath, MaskShape, MaskStroke, MaskVertex,
+    StrokeAlign,
 };
 pub use transform::{DistributionAxis, FlipAxis, ItemAlignment, TransformField};
 pub use transition::{Transition, TransitionAlignment, TransitionId};
