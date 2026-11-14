@@ -6,10 +6,7 @@ use egui_kittest::{
 use engine::{ByteBudget, Session};
 use media::{AssetData, AssetId, ContentHash, SourceAsset, SourceProbe};
 use project::{AspectPreset, CanvasSize, Project, ProjectId};
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::sync::Arc;
 use time::FrameRate;
 use vibecut::{
     Editor, egui,
@@ -423,25 +420,6 @@ fn details_rows_and_info_section_collapse_and_persist() {
     harness.get_by_label("Path:");
     harness.get_by_label(&shown);
 
-    // The light and dark screenshots of the Details view; dark also goes to the ticket name.
-    for (dark, name) in [(true, "dark"), (false, "light")] {
-        let mut harness = build(editor(Preferences {
-            dark,
-            ..Default::default()
-        }));
-        harness.run_steps(3);
-        click(&mut harness, "inspector.details");
-        let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target");
-        std::fs::create_dir_all(&target).unwrap();
-        let image = harness.render().unwrap();
-        image
-            .save(target.join(format!("p1-320-details-{name}.png")))
-            .unwrap();
-        if dark {
-            image.save(target.join("p1-320-details.png")).unwrap();
-        }
-    }
-
     // Modify opens the Settings tab and focuses the canvas width, expanding a collapsed
     // canvas section first.
     for canvas_open in [true, false] {
@@ -617,38 +595,6 @@ fn splitter_commit_refuses_an_edit_that_would_exceed_the_store_budget() {
     harness.run_steps(3);
     drag(&mut harness, "layout.media", egui::vec2(137.0, 0.0));
     assert_eq!(harness.state().preferences, preferences);
-}
-
-/// Offscreen screenshot evidence for the ticket; wgpu rendering stays out of CI.
-#[test]
-#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-05-*.png"]
-fn layout_preferences_render_light_and_dark_screenshots() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let target = std::env::var_os("CARGO_TARGET_DIR")
-        .map(PathBuf::from)
-        .map(|path| {
-            if path.is_absolute() {
-                path
-            } else {
-                root.join(path)
-            }
-        })
-        .unwrap_or_else(|| root.join("target"));
-    for (dark, name) in [(true, "dark"), (false, "light")] {
-        let mut harness = build(editor(Preferences {
-            dark,
-            panels: [0.30, 0.20, 0.55],
-            ..Default::default()
-        }));
-        harness.run_steps(3);
-        click(&mut harness, "inspector.details");
-        let image = harness.render().expect("offscreen render");
-        std::fs::create_dir_all(&target).unwrap();
-        image
-            .save(target.join(format!("p1-05-{name}.png")))
-            .unwrap();
-        assert!(image.width() > 0 && image.height() > 0);
-    }
 }
 
 #[test]

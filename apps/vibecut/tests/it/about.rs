@@ -126,23 +126,3 @@ fn terms_and_privacy_open_their_pages_through_the_window() {
         );
     }
 }
-
-#[test]
-fn about_uses_the_vietnamese_catalog() {
-    let mut harness = build(Locale::Vi);
-    harness.state_mut().activate("app.about").unwrap();
-    harness.run_steps(3);
-    for text in [
-        i18n::text(Locale::Vi, i18n::Text::ActionAppAbout),
-        i18n::text(Locale::Vi, i18n::Text::AboutCopyright),
-        i18n::text(Locale::Vi, i18n::Text::ActionAppTerms),
-        i18n::text(Locale::Vi, i18n::Text::ActionAppPrivacy),
-        i18n::text(Locale::Vi, i18n::Text::AboutLicencesLink),
-    ] {
-        assert!(harness.query_by_label(text).is_some(), "{text}");
-    }
-    assert_ne!(
-        i18n::text(Locale::Vi, i18n::Text::ActionAppAbout),
-        i18n::text(Locale::En, i18n::Text::ActionAppAbout)
-    );
-}

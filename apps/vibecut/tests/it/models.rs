@@ -157,50 +157,6 @@ fn editor_header_opens_the_manager_without_a_transfer() {
 }
 
 #[test]
-fn model_manager_screenshot_is_available_at_both_scales() {
-    let dir = tempfile::tempdir().unwrap();
-    for scale in [1.0, 2.0] {
-        let manager = manager(
-            dir.path(),
-            ai::foundation::models::catalog().unwrap(),
-            Arc::new(Http::default()),
-            Arc::new(Io {
-                available: u64::MAX,
-            }),
-        );
-        let mut editor = editor();
-        editor.set_model_manager(manager);
-        editor.open_models().unwrap();
-        let mut harness = crate::gpu::builder()
-            .with_size(egui::vec2(1280.0, 800.0))
-            .with_pixels_per_point(scale)
-            .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
-        let deadline = Instant::now() + Duration::from_secs(20);
-        loop {
-            harness.run_steps(1);
-            if !harness
-                .state()
-                .inspect()
-                .unwrap()
-                .models
-                .as_ref()
-                .is_some_and(|models| models.checking)
-            {
-                break;
-            }
-            assert!(Instant::now() < deadline, "model check did not finish");
-            std::thread::sleep(Duration::from_millis(2));
-        }
-        harness.run_steps(4);
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join(format!("../../target/p0-23-model-manager-{scale}x.png"));
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        harness.render().unwrap().save(&path).unwrap();
-        println!("model manager screenshot: {}", path.display());
-    }
-}
-
-#[test]
 fn packaged_inputs_never_include_model_weights() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let names: std::collections::BTreeSet<String> = ai::foundation::models::catalog()

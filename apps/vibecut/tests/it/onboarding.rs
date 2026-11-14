@@ -83,10 +83,6 @@ fn empty_media_invites_a_drop_and_files_held_over_it_get_their_own_state() {
         !paints(&harness, "Drop media here to import"),
         "the window-wide overlay stands down while the zone shows"
     );
-    let path =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-08-media-drop.png");
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    harness.render().unwrap().save(&path).unwrap();
 
     harness.run_steps(2);
     assert!(paints(&harness, "Import"), "the state ends with the drag");

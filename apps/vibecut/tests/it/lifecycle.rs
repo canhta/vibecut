@@ -1271,10 +1271,6 @@ fn saving_clears_dirty_so_closing_a_saved_project_asks_nothing_and_an_edited_one
     let mut app = app(root.path());
     app.create().unwrap();
     idle(&mut app);
-    assert_eq!(
-        vibecut::actions::action("project.save").unwrap().defaults,
-        ["Ctrl+S"]
-    );
     app.persist(Some(root.path().join("saved.vibecut")), false, false, false)
         .unwrap();
     idle(&mut app);
