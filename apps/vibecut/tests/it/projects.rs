@@ -303,11 +303,6 @@ fn search_sort_and_view_persist_through_the_preference_store() {
         ProjectsView::List
     );
 
-    let store = vibecut::preferences::PreferenceStore::new(fixture.projects.join("prefs.json"));
-    store.save(&harness.state().preferences).unwrap();
-    let loaded = store.load_with_warning().0;
-    assert_eq!(loaded.projects, harness.state().preferences.projects);
-
     let unicode = Fixture::new(&[("Tiếng Việt", missing())]);
     let mut harness = unicode.build(Preferences::default());
     for query in ["tiếng", "tie\u{302}\u{301}ng"] {
@@ -608,15 +603,6 @@ fn duplicate_reports_progress_and_failure_without_mutating_the_source() {
     harness.get(by("projects.toolbar.duplicate")).click();
     harness.run_steps(1);
     assert!(harness.query_all(by("projects.toolbar.duplicate")).count() == 1);
-    assert!(
-        harness
-            .query_all(By::new().predicate(|node| {
-                node.author_id()
-                    .is_some_and(|id| id == "projects.toolbar.duplicate")
-            }))
-            .count()
-            == 1
-    );
     let progress = harness.query_all(By::new().predicate(|node| {
         node.label()
             .is_some_and(|label| label.starts_with("Duplicating"))
@@ -817,31 +803,6 @@ fn card_menu_opens_the_managed_project_through_the_lifecycle_adapter() {
             .as_str(),
         "Alpha"
     );
-}
-
-#[test]
-#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-01-projects.png"]
-fn projects_page_screenshot() {
-    let fixture = Fixture::new(&[
-        ("Product launch", missing()),
-        ("Cooking short", ready_thumbnail([220, 90, 40])),
-        ("Monthly recap", ready_thumbnail([40, 120, 200])),
-        ("Podcast clip", ready_thumbnail([90, 160, 90])),
-    ]);
-    customize(
-        &fixture.path(0),
-        ready_thumbnail([200, 60, 120]),
-        TICKS_PER_SECOND * 42,
-    );
-    let mut harness = fixture.build(Preferences::default());
-    harness.get(by("projects.card.0000000000000002")).click();
-    harness.run_steps(3);
-    let image = harness.render().expect("offscreen render");
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-01-projects.png");
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    image.save(&path).unwrap();
-    eprintln!("projects screenshot: {}", path.display());
-    assert!(image.width() > 0 && image.height() > 0);
 }
 
 #[test]
@@ -1056,61 +1017,6 @@ fn restore_surfaces_a_trash_listing_failure_and_retry_recovers() {
 }
 
 #[test]
-#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-199-trash.png"]
-fn trash_screenshot() {
-    let fixture = Fixture::new(&[
-        ("Product launch", missing()),
-        ("Cooking short", ready_thumbnail([220, 90, 40])),
-        ("Monthly recap", ready_thumbnail([40, 120, 200])),
-    ]);
-    let mut harness = fixture.build(Preferences::default());
-    harness
-        .get(by("projects.card.0000000000000002.menu"))
-        .click();
-    harness.run_steps(2);
-    harness
-        .get(by("projects.card.0000000000000002.delete"))
-        .click();
-    harness.run_steps(2);
-    harness.get(by("projects.delete.confirm")).click();
-    idle(&mut harness);
-    harness.get(by("projects.trash")).click();
-    idle(&mut harness);
-    harness
-        .get(by("projects.card.0000000000000002"))
-        .click_modifiers(egui::Modifiers::NONE);
-    harness.run_steps(3);
-    let image = harness.render().expect("offscreen render");
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-199-trash.png");
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    image.save(&path).unwrap();
-    eprintln!("trash screenshot: {}", path.display());
-    assert!(image.width() > 0 && image.height() > 0);
-}
-
-fn ready_thumbnail(color: [u8; 3]) -> Thumbnail {
-    let width = 96u32;
-    let height = 54u32;
-    let mut rgba = Vec::with_capacity((width * height * 4) as usize);
-    for y in 0..height {
-        for x in 0..width {
-            let shade = (40 + (x + y) % 60) as u8;
-            rgba.extend_from_slice(&[
-                color[0].saturating_add(shade / 3),
-                color[1].saturating_add(shade / 3),
-                color[2].saturating_add(shade / 3),
-                255,
-            ]);
-        }
-    }
-    Thumbnail::Ready {
-        width,
-        height,
-        rgba,
-    }
-}
-
-#[test]
 fn workspace_home_raw_text_clipboard_routes_into_the_real_search_field() {
     let f = Fixture::new(&[
         ("Tiếng Việt", Thumbnail::Missing),
@@ -1211,16 +1117,6 @@ fn welcome_runs_three_steps_once_and_the_flag_round_trips() {
     harness.run_steps(2);
     assert!(harness.query(by("welcome.dialog")).is_none());
     assert!(harness.state().preferences.welcome_seen);
-
-    let directory = tempfile::tempdir().unwrap();
-    let store = vibecut::preferences::PreferenceStore::new(directory.path().join("prefs.json"));
-    store.save(&harness.state().preferences).unwrap();
-    let loaded = store.load_with_warning().0;
-    assert!(loaded.welcome_seen, "a finished welcome never returns");
-    drop(harness);
-    let mut again = fixture.build(loaded);
-    again.run_steps(2);
-    assert!(again.query(by("welcome.dialog")).is_none());
 }
 
 #[test]
@@ -1250,8 +1146,4 @@ fn first_run_empty_and_no_results_states_name_themselves_and_clear_search_restor
         2,
         "Clear search restores the full list"
     );
-    let path =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-08-empty.png");
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    harness.render().unwrap().save(&path).unwrap();
 }

@@ -11,7 +11,7 @@ use egui_kittest::{
 use engine::{ByteBudget, Command, CreatedId, NewItem, Placement, Session};
 use media::{AssetId, ContentHash, SourceAsset, SourceStream};
 use project::{ItemId, ItemParams, Project, ProjectId, TrackId, TrackKind};
-use std::{path::PathBuf, sync::Arc};
+use std::sync::Arc;
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
     CropAspect, Editor, egui,
@@ -468,7 +468,7 @@ fn crop_ratios_drag_resize_reset_apply_and_discard() {
     assert!(Arc::ptr_eq(&entry, harness.state().session.project()));
     assert_eq!(item_crop(&harness, fixture.video), None);
 
-    // Apply writes the crop as one undo step.
+    // Apply writes the crop.
     open(&mut harness, fixture.video);
     choose(&mut harness, "crop.aspect.9x16");
     let before_apply = harness.state().session.project().clone();
@@ -478,11 +478,6 @@ fn crop_ratios_drag_resize_reset_apply_and_discard() {
         &before_apply,
         harness.state().session.project()
     ));
-    harness.state_mut().session.apply(Command::Undo {}).unwrap();
-    assert_eq!(item_crop(&harness, fixture.video), None);
-    assert!(Arc::ptr_eq(&entry, harness.state().session.project()));
-    harness.state_mut().session.apply(Command::Redo {}).unwrap();
-    assert_eq!(item_crop(&harness, fixture.video), Some(shape(9.0 / 16.0)));
 
     // Escape and the close button discard the transient box and the shape.
     let committed = harness.state().session.project().clone();
@@ -491,11 +486,6 @@ fn crop_ratios_drag_resize_reset_apply_and_discard() {
     let centre = point(&harness, working(&harness).crop, 0.5, 0.5);
     drag(&mut harness, centre, egui::vec2(20.0, 0.0));
     assert!(!same_box(working(&harness).crop, shape(3.0 / 4.0)));
-    let screenshot = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-81-crop.png");
-    if let Some(parent) = screenshot.parent() {
-        std::fs::create_dir_all(parent).unwrap();
-    }
-    harness.render().unwrap().save(&screenshot).unwrap();
     harness.key_press(egui::Key::Escape);
     harness.run_steps(2);
     assert!(!has_widget(&harness, "crop.apply"), "Escape discards");

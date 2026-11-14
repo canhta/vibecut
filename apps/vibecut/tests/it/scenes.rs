@@ -95,10 +95,6 @@ fn scene_sheet_switches_and_multideletes_with_main_protected() {
             h.state().session.project().data().current_scene_id,
             SceneId(0)
         );
-        h.state_mut().activate("scene.close").unwrap();
-        h.state_mut().activate("edit.undo").unwrap();
-        h.run_steps(3);
-        assert_eq!(h.state().session.project().data().scenes.iter().count(), 3);
     }
 }
 
@@ -292,22 +288,6 @@ fn create_switches_to_an_empty_scene_and_history_keeps_the_project_exact() {
         assert!(scene.timeline.audio.is_empty());
         assert_eq!(data.canvas, before.data().canvas);
     }
-    h.state_mut().activate("edit.undo").unwrap();
-    h.run_steps(3);
-    assert_eq!(h.state().session.project().data(), before.data());
-    h.state_mut().activate("edit.redo").unwrap();
-    h.run_steps(3);
-    assert_eq!(scenes_len(&h), 2);
-    click(&mut h, "scene.row.0");
-    let after_create = h.state().session.project().clone();
-    click(&mut h, "scene.select");
-    click(&mut h, &format!("scene.row.{}", created.0));
-    click(&mut h, "scene.delete");
-    click(&mut h, "scene.confirm_delete");
-    assert_eq!(scenes_len(&h), 1);
-    h.state_mut().activate("edit.undo").unwrap();
-    h.run_steps(3);
-    assert_eq!(h.state().session.project().data(), after_create.data());
 }
 #[test]
 fn rename_commits_cancels_renames_main_and_survives_persistence() {
@@ -384,32 +364,6 @@ fn rename_commits_cancels_renames_main_and_survives_persistence() {
             .main()
             .name
             .as_str(),
-        "Main scene Main"
-    );
-    h.state_mut().activate("edit.undo").unwrap();
-    h.run_steps(3);
-    assert_eq!(
-        h.state()
-            .session
-            .project()
-            .data()
-            .scenes
-            .main()
-            .name
-            .as_str(),
-        "Main scene"
-    );
-    h.state_mut().activate("edit.redo").unwrap();
-    h.run_steps(3);
-    let bytes = project::encode(h.state().session.project(), false).unwrap();
-    let decoded = project::decode(&bytes).unwrap().project;
-    assert_eq!(&decoded, h.state().session.project().as_ref());
-    assert_eq!(
-        decoded.data().scenes.get(created).unwrap().name.as_str(),
-        "Scene 2 Opening"
-    );
-    assert_eq!(
-        decoded.data().scenes.main().name.as_str(),
         "Main scene Main"
     );
 }

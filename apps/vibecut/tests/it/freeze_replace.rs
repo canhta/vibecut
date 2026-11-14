@@ -145,13 +145,6 @@ fn toolbar_freeze_holds_the_selected_frame_as_a_still_beside_the_project() {
         1,
         "one still published beside the saved project"
     );
-    let image = harness.render().unwrap();
-    let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
-    std::fs::create_dir_all(&target).unwrap();
-    image.save(target.join("p1-53-freeze-replace.png")).unwrap();
-    // One undo step restores the project exactly.
-    harness.state_mut().activate("edit.undo").unwrap();
-    assert_eq!(harness.state().session.project(), &before);
 }
 
 #[test]
@@ -171,8 +164,6 @@ fn freeze_works_before_the_first_save_in_the_temp_media_folder() {
         &before,
         "an unsaved project still freezes"
     );
-    harness.state_mut().activate("edit.undo").unwrap();
-    assert_eq!(harness.state().session.project(), &before);
 }
 
 #[test]

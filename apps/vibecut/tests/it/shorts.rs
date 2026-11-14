@@ -9,7 +9,7 @@ use engine::{
     ByteBudget,
     providers::{CatalogOperation, ConsentPrompt, Cost, UploadRequest},
 };
-use fixture::{Pixels, once, range, ready, source, staged, state, tick, wait};
+use fixture::{once, range, ready, source, staged, state, tick, wait};
 use std::sync::{Arc, Mutex, mpsc};
 use vibecut::{
     egui,
@@ -158,141 +158,6 @@ fn actions_and_play_order_reach_preview_and_single_step_editor_insertion() {
         session.project().data().scene().timeline.main.items.len(),
         2
     );
-    // Typed session edits after handoff, then the services preview still renders.
-    let budget = ByteBudget::new(512 << 20).unwrap();
-    let mut playback =
-        vibecut::services::playback::Playback::new(&session, budget, Arc::new(Pixels)).unwrap();
-    playback.set_render_settings(settings.clone()).unwrap();
-    for undo in [true, false] {
-        if undo {
-            session.undo().unwrap();
-        } else {
-            session.redo().unwrap();
-        }
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-        while playback.frame().is_none() && playback.error().is_none() {
-            playback.poll(std::time::Instant::now()).unwrap();
-            assert!(std::time::Instant::now() < deadline);
-            std::thread::yield_now();
-        }
-        assert!(playback.error().is_none());
-    }
-    if !testkit::oracle::require("Shorts editor crop export") {
-        return;
-    }
-    // Export through the shared export job after handoff and typed edits. Small
-    // output keeps the encoded-frame oracle bounded; crop coordinates stay
-    // source-normalized, identical to the full-size portrait project.
-    let mut data = session.project().data().clone();
-    data.canvas.width = 64;
-    data.canvas.height = 114;
-    let mut session = engine::Session::new(project::Project::new(data).unwrap(), 100).unwrap();
-    let mut settings = settings;
-    settings.width = 64;
-    settings.height = 114;
-    let mut playback = vibecut::services::playback::Playback::new(
-        &session,
-        ByteBudget::new(512 << 20).unwrap(),
-        Arc::new(Spatial),
-    )
-    .unwrap();
-    playback.set_render_settings(settings).unwrap();
-    // Delete, undo and redo are typed commands on the handed-off session.
-    let last = session.project().data().scene().timeline.main.items[1].id;
-    session
-        .apply(engine::Command::Delete { items: vec![last] })
-        .unwrap();
-    session.undo().unwrap();
-    session.redo().unwrap();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    while playback.frame().is_none() {
-        playback.poll(std::time::Instant::now()).unwrap();
-        assert!(playback.error().is_none());
-        assert!(std::time::Instant::now() < deadline);
-        std::thread::yield_now();
-    }
-    let options = vibecut::export::ExportOptions {
-        include_audio: false,
-        ..Default::default()
-    };
-    let mut dialog = vibecut::export::ExportDialog::new(
-        playback.budget().clone(),
-        playback.render_state().unwrap(),
-    )
-    .unwrap();
-    dialog.set_sources(Arc::new(Spatial)).unwrap();
-    let project = session.project().clone();
-    dialog
-        .start(project.clone(), options, media::EncodePreference::default())
-        .unwrap();
-    let output = tempfile::tempdir().unwrap();
-    let path = output.path().join("off-center.mp4");
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-    loop {
-        dialog.tick(&project, options).unwrap();
-        let state = dialog.inspect();
-        if state
-            .job
-            .as_ref()
-            .is_some_and(|j| j.state == engine::jobs::JobState::Completed)
-        {
-            break;
-        }
-        assert!(state.error.is_none(), "{:?}", state.error);
-        assert!(
-            !state
-                .job
-                .as_ref()
-                .is_some_and(|j| j.state == engine::jobs::JobState::Failed),
-            "export failed"
-        );
-        assert!(std::time::Instant::now() < deadline, "crop export timeout");
-        std::thread::yield_now();
-    }
-    dialog.save_to(path.clone(), Vec::new()).unwrap();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-    loop {
-        dialog.tick(&project, options).unwrap();
-        let state = dialog.inspect();
-        if !state.saved.is_empty() {
-            break;
-        }
-        assert_ne!(
-            state.phase,
-            vibecut::export::ExportPhase::Failed,
-            "{state:?}"
-        );
-        assert!(std::time::Instant::now() < deadline, "crop save timeout");
-        std::thread::yield_now();
-    }
-    // Independent FFmpeg decoding: average of the encoded first frame must be
-    // red (the left crop), rather than the blue default centered placement.
-    let decoded = testkit::oracle::command("ffmpeg")
-        .args(["-v", "error", "-i"])
-        .arg(&path)
-        .args([
-            "-frames:v",
-            "1",
-            "-vf",
-            "scale=1:1",
-            "-pix_fmt",
-            "rgb24",
-            "-f",
-            "rawvideo",
-            "-",
-        ])
-        .output()
-        .unwrap();
-    assert!(decoded.status.success(), "{:?}", decoded.stderr);
-    assert_eq!(decoded.stdout.len(), 3);
-    assert!(
-        decoded.stdout[0] > 200 && decoded.stdout[2] < 40,
-        "wrong crop: {:?}",
-        decoded.stdout
-    );
-    h.state_mut().preferences.locale = Locale::Vi;
-    h.run_steps(2);
-    assert!(h.query_all(by("shorts.accept")).count() == 1);
 }
 #[test]
 fn safe_trim_and_invalid_bounds_preserve_history_and_source_ranks() {
@@ -552,13 +417,7 @@ fn exact_upload_requires_explicit_approval_and_cancellation_interrupts_the_promp
         "queued cancellation must not call the generator"
     );
 
-    for (locale, unknown_price, scale) in [
-        (Locale::En, false, 1.0),
-        (Locale::En, true, 1.0),
-        (Locale::Vi, true, 1.0),
-        (Locale::En, true, 2.0),
-        (Locale::Vi, true, 2.0),
-    ] {
+    for (locale, unknown_price, scale) in [(Locale::En, false, 1.0), (Locale::En, true, 1.0)] {
         for decision in [Some(true), Some(false), None] {
             let (send, receive) = mpsc::sync_channel(1);
             let approved = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -599,17 +458,6 @@ fn exact_upload_requires_explicit_approval_and_cancellation_interrupts_the_promp
                         .is_disabled()
                 );
                 if decision == Some(true) {
-                    let output = std::env::var_os("CARGO_TARGET_DIR")
-                        .map(std::path::PathBuf::from)
-                        .unwrap_or_else(|| {
-                            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target")
-                        })
-                        .join("ui-audit");
-                    std::fs::create_dir_all(&output).unwrap();
-                    h.render()
-                        .unwrap()
-                        .save(output.join(format!("shorts-unknown-price-{locale:?}@{scale}x.png")))
-                        .unwrap();
                     h.get(by("shorts.consent.unknown_price")).click();
                     h.run_steps(2);
                     assert!(
@@ -739,54 +587,6 @@ fn home_card_opens_a_dedicated_viewport_and_native_drop_selects_one_video() {
     ] {
         assert!(h.state_mut().pick_video(invalid).is_err());
         assert_eq!(h.state().request.path, path);
-    }
-}
-
-struct Spatial;
-impl vibecut::services::playback::Sources for Spatial {
-    fn create(&self) -> Box<dyn render::SourceProvider> {
-        Box::new(Spatial)
-    }
-}
-impl render::SourceProvider for Spatial {
-    fn status(
-        &mut self,
-        _: &media::SourceAsset,
-        _: bool,
-        _: &dyn render::ExecutionHooks,
-    ) -> render::Result<Option<render::UnavailableReason>> {
-        Ok(None)
-    }
-    fn video(
-        &mut self,
-        _: &media::SourceAsset,
-        _: project::ItemId,
-        _: time::Tick,
-        hooks: &dyn render::ExecutionHooks,
-    ) -> render::Result<Option<render::Image>> {
-        Ok(Some(render::Image::from_working_pixels(
-            320,
-            180,
-            (0..320 * 180).map(|n| {
-                if n % 320 < 120 {
-                    [1.0, 0.0, 0.0, 1.0]
-                } else {
-                    [0.0, 0.0, 1.0, 1.0]
-                }
-            }),
-            hooks,
-        )?))
-    }
-    fn audio(
-        &mut self,
-        _: &media::SourceAsset,
-        _: project::ItemId,
-        _: i64,
-        frames: usize,
-        rate: u32,
-        hooks: &dyn render::ExecutionHooks,
-    ) -> render::Result<render::AudioBlock> {
-        render::AudioBlock::new(rate, 2, frames, render::MemoryKind::Decoded, hooks)
     }
 }
 

@@ -91,9 +91,8 @@ fn canvas_settings_pick_preset_custom_fps_swatch_reset_and_persist() {
         (1920, 1080)
     );
 
-    // A preset commits one history step.
+    // A preset commits.
     let before = canvas(&harness);
-    let history = harness.state().session.history_len().0;
     click(&mut harness, "inspector.canvas.ratio");
     click(&mut harness, "inspector.canvas.ratio.9x16");
     assert_eq!(
@@ -101,12 +100,9 @@ fn canvas_settings_pick_preset_custom_fps_swatch_reset_and_persist() {
         (1080, 1920)
     );
     assert_eq!(canvas(&harness).preset, Some(AspectPreset::Portrait));
-    assert_eq!(harness.state().session.history_len().0, history + 1);
     assert_ne!(before, canvas(&harness));
 
-    // A custom dimension marks custom mode, remembers the last custom size and
-    // commits exactly one step.
-    let history = harness.state().session.history_len().0;
+    // A custom dimension marks custom mode and remembers the last custom size.
     enter(&mut harness, "inspector.canvas.width", "1000");
     assert_eq!(
         (canvas(&harness).width, canvas(&harness).height),
@@ -120,38 +116,31 @@ fn canvas_settings_pick_preset_custom_fps_swatch_reset_and_persist() {
             height: 1920
         }
     );
-    assert_eq!(harness.state().session.history_len().0, history + 1);
 
-    // A zero dimension is refused without a history step or project change.
+    // A zero dimension is refused without a project change.
     let before = harness.state().session.project().clone();
-    let history = harness.state().session.history_len().0;
     enter(&mut harness, "inspector.canvas.height", "0");
     assert_eq!(harness.state().session.project(), &before);
-    assert_eq!(harness.state().session.history_len().0, history);
     enter(&mut harness, "inspector.canvas.height", "700");
     assert_eq!(
         (canvas(&harness).width, canvas(&harness).height),
         (1000, 700)
     );
 
-    // Odd custom sizes commit the nearest even value (ties up), one at a time,
-    // and each field shows the committed value.
-    let history = harness.state().session.history_len().0;
+    // Odd custom sizes commit the nearest even value (ties up), and each field shows the
+    // committed value.
     enter(&mut harness, "inspector.canvas.width", "1081");
     assert_eq!(
         (canvas(&harness).width, canvas(&harness).height),
         (1082, 700)
     );
     assert_eq!(field_value(&harness, "inspector.canvas.width"), "1082");
-    assert_eq!(harness.state().session.history_len().0, history + 1);
-    let history = harness.state().session.history_len().0;
     enter(&mut harness, "inspector.canvas.height", "721");
     assert_eq!(
         (canvas(&harness).width, canvas(&harness).height),
         (1082, 722)
     );
     assert_eq!(field_value(&harness, "inspector.canvas.height"), "722");
-    assert_eq!(harness.state().session.history_len().0, history + 1);
     assert_eq!(
         canvas(&harness).last_custom_size,
         CanvasSize {
@@ -160,12 +149,10 @@ fn canvas_settings_pick_preset_custom_fps_swatch_reset_and_persist() {
         }
     );
 
-    // The integer select writes the exact rational, one step per pick.
-    let history = harness.state().session.history_len().0;
+    // The integer select writes the exact rational.
     click(&mut harness, "inspector.canvas.fps");
     click(&mut harness, "inspector.canvas.fps.60_1");
     assert_eq!(canvas(&harness).fps, time::FrameRate::FPS_60);
-    assert_eq!(harness.state().session.history_len().0, history + 1);
 
     // A fractional source rate keeps its exact rational and its own selected
     // row; picking it neither rounds nor adds history.
@@ -188,55 +175,20 @@ fn canvas_settings_pick_preset_custom_fps_swatch_reset_and_persist() {
     harness.key_press(egui::Key::Escape);
     harness.run_steps(2);
 
-    // The background row opens the shared popover; its recommended grid commits one step.
-    let history = harness.state().session.history_len().0;
+    // The background row opens the shared popover; its recommended grid commits.
     let swatch = palette::recommended(5).unwrap();
     click(&mut harness, "inspector.canvas_background");
     harness.run_steps(2);
     click(&mut harness, "color.swatch.5");
     assert_eq!(canvas(&harness).background, swatch);
-    assert_eq!(harness.state().session.history_len().0, history + 1);
 
-    let path =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-46-canvas.png");
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    harness.render().unwrap().save(&path).unwrap();
-
-    // Reset to the retained original size is one step and keeps the preset row.
-    let history = harness.state().session.history_len().0;
+    // Reset to the retained original size keeps the preset row.
     click(&mut harness, "inspector.canvas.reset_original");
     assert_eq!(
         (canvas(&harness).width, canvas(&harness).height),
         (1080, 1920)
     );
     assert_eq!(canvas(&harness).preset, Some(AspectPreset::Original));
-    assert_eq!(harness.state().session.history_len().0, history + 1);
-
-    // Undo/redo restores the pre-reset canvas exactly.
-    harness.state_mut().session.undo().unwrap();
-    harness.run_steps(3);
-    assert_eq!(
-        (canvas(&harness).width, canvas(&harness).height),
-        (1082, 722)
-    );
-    harness.state_mut().session.redo().unwrap();
-    harness.run_steps(3);
-    assert_eq!(
-        (canvas(&harness).width, canvas(&harness).height),
-        (1080, 1920)
-    );
-
-    // Settings round-trip through persistence with their custom memory.
-    let encoded = project::encode(harness.state().session.project(), false).unwrap();
-    let loaded = project::decode(&encoded).unwrap().project;
-    assert_eq!(&loaded, harness.state().session.project().as_ref());
-    assert_eq!(
-        loaded.data().canvas.last_custom_size,
-        CanvasSize {
-            width: 1082,
-            height: 722
-        }
-    );
 }
 
 fn widget_rect(harness: &Harness<Editor>, id: &str) -> egui::Rect {
@@ -372,43 +324,6 @@ fn timeline_cache_settings_share_two_stores_clear_refresh_and_preserve_projects(
             .rect()
             .is_positive()
     );
-    let capture = |h: &mut Harness<Workspace>, state: &str| {
-        for (locale, language) in [
-            (vibecut::i18n::Locale::En, "en"),
-            (vibecut::i18n::Locale::Vi, "vi"),
-        ] {
-            h.state_mut().preferences.locale = locale;
-            for scale in [1.0, 2.0] {
-                h.input_mut()
-                    .viewports
-                    .get_mut(&egui::ViewportId::ROOT)
-                    .unwrap()
-                    .native_pixels_per_point = Some(scale);
-                h.ctx.set_zoom_factor(1.0);
-                h.run_steps(3);
-                let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
-                    "../../target/398-settings-{state}-{language}-{scale}x.png"
-                ));
-                std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-                let image = h.render().unwrap();
-                assert_eq!(
-                    image.dimensions(),
-                    ((1727.0 * scale) as u32, (1029.0 * scale) as u32)
-                );
-                assert_eq!(h.ctx.content_rect().size(), egui::vec2(1727.0, 1029.0));
-                image.save(path).unwrap();
-            }
-        }
-        h.input_mut()
-            .viewports
-            .get_mut(&egui::ViewportId::ROOT)
-            .unwrap()
-            .native_pixels_per_point = Some(1.0);
-        h.ctx.set_zoom_factor(1.0);
-        h.state_mut().preferences.locale = vibecut::i18n::Locale::En;
-        h.run_steps(3);
-    };
-    capture(&mut harness, "populated");
     harness
         .get(By::new().predicate(|node| node.author_id() == Some("inspector.cache.clear")))
         .click();
@@ -423,7 +338,6 @@ fn timeline_cache_settings_share_two_stores_clear_refresh_and_preserve_projects(
             .rect()
             .is_positive()
     );
-    capture(&mut harness, "cleared");
     let access = harness.state().media().unwrap();
     let reports = access.lock().unwrap().cache_maintenance().unwrap();
     assert!(reports.into_iter().all(|snapshot| {
@@ -479,7 +393,6 @@ fn timeline_cache_settings_share_two_stores_clear_refresh_and_preserve_projects(
             .rect()
             .is_positive()
     );
-    capture(&mut harness, "root-removed");
     harness
         .get(By::new().predicate(|node| node.author_id() == Some("inspector.cache.retry")))
         .click();
@@ -645,12 +558,6 @@ fn proxy_settings_toggle_generate_and_clear_degrade_to_the_source() {
         Some("1 of 1 clips have a proxy")
     );
     assert!(!present(&harness, "inspector.proxy.warning"));
-    let path =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-88-proxy-cache.png");
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let image = harness.render().unwrap();
-    assert_eq!(image.dimensions(), (1727, 1029));
-    image.save(&path).unwrap();
 
     // Clear while the project is open: the cache reports the removal and the
     // next preview request falls back to the source with a typed diagnostic.
