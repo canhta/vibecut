@@ -54,6 +54,7 @@ pub(in crate::editor) fn apply(
             Action::Preview(command) => preview_gesture(port, *command),
             Action::EndGesture => end_drag_gesture(port),
             Action::DiscardGesture => discard_gesture(port),
+            Action::Toast(text) => port.toast(&text, None),
             Action::SetEasingTab(tab) => {
                 let mut easing = port.read.preferences.easing.clone();
                 easing.tab = tab;

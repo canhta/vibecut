@@ -1340,6 +1340,8 @@ catalog! {
     DownloadClipDuration { key: "download_clip_duration", en: "Download all content from selected duration ({start} - {end})", vi: "Tải xuống toàn bộ nội dung trong khoảng đã chọn ({start} - {end})" },
     DownloadSelectedClip { key: "download_selected_clip", en: "Download selected clip ({start} - {end})", vi: "Tải xuống clip đã chọn ({start} - {end})" },
     Duplicate { key: "duplicate", en: "Duplicate", vi: "Nhân bản" },
+    ReplaceDropLabel { key: "replace_drop_label", en: "Replace", vi: "Thay thế" },
+    ReplaceTooShort { key: "replace_too_short", en: "Can't replace. Media needs to be no shorter than the original material.", vi: "Không thể thay thế. Tư liệu phải không ngắn hơn tư liệu gốc." },
     ExtractAudio { key: "extract_audio", en: "Extract audio", vi: "Tách âm thanh" },
     Group { key: "group", en: "Group", vi: "Nhóm" },
     GroupName { key: "group_name", en: "Group {letter}", vi: "Nhóm {letter}" },

@@ -383,6 +383,7 @@ impl Editor {
             preview: self.timeline.preview_command(),
             timeline_refusal: self.timeline.refusal().map(str::to_owned),
             drop_zone: self.timeline.drop_zone_label(),
+            replace_hint: self.timeline.replace_hint(),
             ripple: self.preferences.ripple,
             preview_zoom: self.player.view.zoom,
             preview_fit: self.player.view.fit,
