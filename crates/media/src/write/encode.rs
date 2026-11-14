@@ -128,6 +128,40 @@ fn videotoolbox_quality_attempts(qscale_supported: bool, software: bool) -> &'st
     }
 }
 
+/// How an export's video encoder spends bits, which decides what size the file reaches.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RateControl {
+    /// The encoder holds `bit_rate` (average, or a cap for VP9): the file is the target.
+    Target,
+    /// The encoder follows the quality scalar and ignores `bit_rate` (VideoToolbox QSCALE).
+    Quality,
+}
+
+/// The rate control the encoder selection will open for `preference`, decided before any
+/// encoder exists so a size estimate can ask. A VideoToolbox quality session the host then
+/// rejects reopens in bitrate mode; that reopen is the only case this prediction misses.
+pub fn expected_rate_control(preference: EncodePreference, webm: bool) -> RateControl {
+    rate_control_for(
+        cfg!(target_os = "macos"),
+        cfg!(target_arch = "aarch64"),
+        matches!(preference, EncodePreference::Software),
+        webm,
+    )
+}
+
+fn rate_control_for(
+    macos: bool,
+    qscale_supported: bool,
+    software: bool,
+    webm: bool,
+) -> RateControl {
+    if macos && !webm && videotoolbox_quality_attempts(qscale_supported, software)[0] {
+        RateControl::Quality
+    } else {
+        RateControl::Target
+    }
+}
+
 // NVENC reserves zero for automatic CQ; QSV disables ICQ at zero.
 // Both backends need a positive level to retain an explicit quality request.
 fn explicit_quality_quantizer(quality: u8) -> u32 {
@@ -864,6 +898,25 @@ mod tests {
         assert_eq!(videotoolbox_quality_attempts(true, true), &[false]);
         assert_eq!(videotoolbox_quality_attempts(false, false), &[false]);
         assert_eq!(videotoolbox_quality_attempts(false, true), &[false]);
+    }
+
+    #[test]
+    fn rate_control_is_quality_only_for_videotoolbox_qscale_on_hardware() {
+        // (macos, qscale supported, software preference, webm)
+        for (row, expected) in [
+            ((true, true, false, false), RateControl::Quality),
+            ((true, true, true, false), RateControl::Target),
+            ((true, false, false, false), RateControl::Target),
+            ((true, true, false, true), RateControl::Target),
+            ((false, true, false, false), RateControl::Target),
+            ((false, false, true, false), RateControl::Target),
+        ] {
+            assert_eq!(
+                rate_control_for(row.0, row.1, row.2, row.3),
+                expected,
+                "{row:?}"
+            );
+        }
     }
 
     #[test]

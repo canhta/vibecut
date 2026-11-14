@@ -28,7 +28,14 @@ Auto copies unchanged video when a single visible source covers the output with 
 
 ## Size estimate
 
-`ExportSettings::estimated_bytes(seconds)` and `estimated_video_bit_rate` (`estimate.rs`) give the dialog's size from the same settings the encoder receives, so the estimate and the encode cannot drift apart. The encoders are given the quality scalar and `bit_rate` as a target only, and the measured output (VideoToolbox in quality mode) is far above the target, so video bits per second are `pixels * fps * 0.3156 * 2^e` with `e = (quality - 85) / 15` below quality 85 and `/ 10` above, never below `bit_rate`. The constant is one measurement: 1080p60 at quality 85 wrote 47.25 MB in 9.58 s (39.46 Mb/s with 192 kb/s audio). The slopes put quality 70 and 95 at half and double the rate, the spacing of the dialog presets, and are not measured. Audio is `AUDIO_BIT_RATE` (192 kb/s), the value the audio encoder is given, and is the only stream of audio-only output. VP9, GIF and PNG sequence use the same model and are not measured.
+`ExportSettings::estimated_bytes(seconds)` and `estimated_video_bit_rate` (`estimate.rs`) give the dialog's size from the same settings the encoder receives, so the estimate and the encode cannot drift apart. The video rate depends on the rate control the encoder selection will use (`media::expected_rate_control`, [decision](../../../media/src/write/README.md#encoding)); `estimated_video_bit_rate_in(mode)` takes it explicitly.
+
+| Mode | Encoders | Video bits per second |
+|---|---|---|
+| `Target` | Windows (Media Foundation, NVENC, QSV, AMF), Linux, Intel or software VideoToolbox, VP9 | `bit_rate` |
+| `Quality` | VideoToolbox QSCALE (arm64, hardware) | `pixels * fps * 0.3156 * 2^e`, `e = (quality - 85) / 15` below quality 85 and `/ 10` above, never below `bit_rate` |
+
+Measured: Windows (2026-11-14) 10 s 1080p30 camera footage at the defaults wrote 15.98 MB, video 12.77 Mb/s against the 12 Mb/s target (about 6 % over; the old quality model read 24.78 MB, 55 % high). macOS (VideoToolbox quality mode) 1080p60 at quality 85 wrote 47.25 MB in 9.58 s (39.46 Mb/s with 192 kb/s audio), which sets the quality constant; its slopes put quality 70 and 95 at half and double the rate, the spacing of the dialog presets, and are not measured. A Target estimate does not model rate-control overshoot or a static picture undershooting. Audio is `AUDIO_BIT_RATE` (192 kb/s), the value the audio encoder is given, and is the only stream of audio-only output. VP9, GIF and PNG sequence use the same split and are not measured.
 
 ## Publication
 

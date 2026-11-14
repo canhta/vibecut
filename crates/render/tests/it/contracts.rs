@@ -2203,3 +2203,45 @@ fn a_covering_clip_paints_no_background() {
         assert_eq!(image.pixels(), plain.pixels());
     }
 }
+
+#[test]
+fn size_estimate_follows_the_rate_control_mode_of_the_encoder() {
+    let p = solid_project(1, 1920, 1080, [0, 0, 0, 255]);
+    let mut settings = ExportSettings::from_project(&p);
+    settings.fps = time::FrameRate::new(60, 1).unwrap();
+    settings.quality = 85;
+    settings.bit_rate = 12_000_000;
+    // Quality mode ignores the target: 1080p60 at 85 is the measured 39.3 Mb/s.
+    let quality = settings.estimated_video_bit_rate_in(media::RateControl::Quality);
+    assert!(
+        (quality - 1920.0 * 1080.0 * 60.0 * 0.3156).abs() < 1.0,
+        "{quality}"
+    );
+    // Target mode is the target, whatever the picture, frame rate or quality scalar.
+    for (quality_scalar, width, height, fps) in [
+        (85, 1920, 1080, 60),
+        (95, 3840, 2160, 30),
+        (70, 960, 540, 24),
+    ] {
+        settings.quality = quality_scalar;
+        settings.render.width = width;
+        settings.render.height = height;
+        settings.fps = time::FrameRate::new(fps, 1).unwrap();
+        assert_eq!(
+            settings.estimated_video_bit_rate_in(media::RateControl::Target),
+            12_000_000.0
+        );
+    }
+    // A custom rate is the target in one mode and a floor in the other.
+    settings.bit_rate = 80_000_000;
+    assert_eq!(
+        settings.estimated_video_bit_rate_in(media::RateControl::Target),
+        80_000_000.0
+    );
+    assert!(settings.estimated_video_bit_rate_in(media::RateControl::Quality) >= 80_000_000.0);
+    // The public estimate asks the encoder selection.
+    assert_eq!(
+        settings.estimated_video_bit_rate(),
+        settings.estimated_video_bit_rate_in(media::expected_rate_control(settings.encoder, false))
+    );
+}

@@ -556,10 +556,11 @@ fn size_estimate_follows_the_encoder_settings_of_every_preset() {
     };
     let mb =
         |options: &ExportOptions| super::settings::estimated_megabytes(options, &project, 9.58);
-    // The measured export: 1080p60 at the default preset wrote 47.25 MB, not 14.6 MB.
+    let quality_mode = media::expected_rate_control(
+        render::ExportSettings::from_project(&project).encoder,
+        false,
+    ) == media::RateControl::Quality;
     let default = mb(&hd60(ExportQuality::Recommended, true));
-    assert!((default - 47.25).abs() < 1.0, "{default}");
-    // Higher presets never estimate smaller, and each estimate is above its target rate.
     let sizes: Vec<f64> = [
         ExportQuality::Lower,
         ExportQuality::Recommended,
@@ -568,20 +569,36 @@ fn size_estimate_follows_the_encoder_settings_of_every_preset() {
     .into_iter()
     .map(|quality| {
         let size = mb(&hd60(quality, true));
-        assert!(
-            size >= 9.58 * quality.value().1 as f64 / 8_000_000.0,
-            "{size}"
-        );
+        let target = 9.58 * (quality.value().1 as f64 + 192_000.0) / 8_000_000.0;
+        if quality_mode {
+            // Quality-mode encoder (macOS VideoToolbox): never below the target rate.
+            assert!(size >= target - 1e-9, "{size}");
+        } else {
+            // Bit-rate encoder (Windows): the target rate plus the audio track.
+            assert!((size - target).abs() < 1e-9, "{size} {target}");
+        }
         size
     })
     .collect();
+    if quality_mode {
+        // The measured export: 1080p60 at the default preset wrote 47.25 MB, not 14.6 MB.
+        assert!((default - 47.25).abs() < 1.0, "{default}");
+    } else {
+        // Windows, 10 s 1080p30 at the defaults wrote 15.98 MB against the 12 Mb/s target.
+        assert!((default - 9.58 * 12_192_000.0 / 8_000_000.0).abs() < 1e-9);
+    }
     assert!(sizes.windows(2).all(|pair| pair[0] < pair[1]), "{sizes:?}");
     // Audio adds its track, resolution and frame rate scale the video, a custom rate is a floor.
     let silent = mb(&hd60(ExportQuality::Recommended, false));
     assert!((default - silent - 9.58 * 192_000.0 / 8_000_000.0).abs() < 1e-9);
     let mut small = hd60(ExportQuality::Recommended, true);
     small.output.resolution = Some([960, 540]);
-    assert!(mb(&small) < default / 3.0);
+    if quality_mode {
+        assert!(mb(&small) < default / 3.0);
+    } else {
+        // A bit-rate encoder writes the target at any resolution.
+        assert!((mb(&small) - default).abs() < 1e-9);
+    }
     let mut custom = hd60(ExportQuality::Lower, true);
     custom.output.bit_rate = Some(50_000_000);
     assert!(mb(&custom) >= 9.58 * 50_192_000.0 / 8_000_000.0 - 1e-9);
