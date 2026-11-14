@@ -17,8 +17,8 @@ downloads; a missing bundle becomes the typed setup refusal naming `model downlo
 The one-shot and control adapters and the headless MCP inbox lend the same access object,
 so the command family exists only once in the registry.
 
-The control and headless MCP roots lend optional local `CaptionAccess` with `DenyUploads`.
-Their setup closure returns the Subtitles result and retains its typed setup refusal.
+The control root lends optional local `CaptionAccess` with the session's `CliConsent` (`--yes-upload`, `--accept-unknown-price`; refusing by default) and the headless MCP root with `DenyUploads`. Both also lend the narrator (`dub.generate`) over `CredentialSpeech` and the process credentials, even when the caption resources are unavailable; the access then keeps the setup refusal for caption commands and the caller's prompt for narration (`lend_narration`).
+The setup closure returns the Subtitles result and retains its typed setup refusal.
 Shared runtime construction retains setup refusals for caption commands without stopping
 ordinary control work; provider setup and checkpoint ownership follow the
 [caption contract](../../../../crates/engine/src/subtitles/README.md#caption-workflow-commands).

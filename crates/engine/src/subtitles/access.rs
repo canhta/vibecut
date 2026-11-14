@@ -51,6 +51,12 @@ impl CaptionAccess {
             dubbing: None,
         }
     }
+    /// Replace the human approval, so an access that retains a caption setup refusal still
+    /// carries the caller's prompt for workflows that need no caption resource (narration).
+    pub fn with_consent(mut self, consent: Arc<dyn ConsentPrompt + Send + Sync>) -> Self {
+        self.consent = consent;
+        self
+    }
     /// The human approval this access asks, for workflows that run after admission.
     pub fn consent(&self) -> Arc<dyn ConsentPrompt + Send + Sync> {
         self.consent.clone()

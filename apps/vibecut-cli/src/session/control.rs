@@ -47,6 +47,7 @@ pub(crate) fn control(
     project_path: PathBuf,
     allow_overwrite: bool,
     save: bool,
+    consent: Arc<dyn engine::providers::ConsentPrompt + Send + Sync>,
 ) -> Result<Output, CliError> {
     with_fonts(|fonts| {
         with_stickers(|stickers| {
@@ -57,6 +58,7 @@ pub(crate) fn control(
                 save,
                 fonts,
                 stickers,
+                consent,
             )
         })
     })
@@ -69,6 +71,7 @@ fn control_with(
     save: bool,
     fonts: Option<&FontAccess<'_>>,
     stickers: &StickerAccess<'_>,
+    consent: Arc<dyn engine::providers::ConsentPrompt + Send + Sync>,
 ) -> Result<Output, CliError> {
     // One process is one engine Session. The lease is held from load to the
     // final save, so no other writer can interleave during the stream.
@@ -93,7 +96,7 @@ fn control_with(
         context.budget()?,
         Arc::new(SystemClock::default()),
     )?;
-    let captions = super::caption_access(context.budget()?);
+    let captions = super::caption_access(context.budget()?, consent);
     let (vision, segmentation) =
         super::vision_and_segmentation(context.budget()?, captions.cache().ok().cloned());
     // Without a usable media cache the generation commands refuse; edits still run.
