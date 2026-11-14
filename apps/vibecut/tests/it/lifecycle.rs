@@ -908,7 +908,10 @@ fn export_memory_pressure_cannot_consume_another_windows_autosave_allowance() {
             snapshot.limit - snapshot.used,
         )
         .unwrap();
-    assert_eq!(app.control_budget().snapshot().unwrap().used, 768 << 20);
+    assert_eq!(
+        app.control_budget().snapshot().unwrap().used,
+        snapshot.limit
+    );
     let path = root.path().join("autosave.vibecut");
     app.windows
         .get_mut(&second)

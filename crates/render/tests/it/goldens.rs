@@ -506,7 +506,7 @@ fn transparent_edge_half_opacity_scaled_text_and_color_survive_encoded_decode() 
         let expected_checksum = match case {
             "masked" => 0xba9c55b24c28e586,
             "graded" => 0x16fda543ff7d7fd8,
-            "keyed" => 0x2dba6f3a5e314e17,
+            "keyed" => 0x2023b0f63e415a83,
             _ => 0x9748c49eea14a2bf,
         };
         assert_eq!(

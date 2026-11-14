@@ -1719,12 +1719,13 @@ fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
         }
         // The chroma key's two edge stages have no shader entry: the device runs
         // the keying pass and the run splitter hands the spill and feather passes to the
-        // CPU, so the result must equal the all-CPU reference.
+        // CPU, so the result must equal the all-CPU reference. The key is blue, the
+        // fixture's dominant channel, so even a one-pixel picture is keyed.
         {
-            let mut keyed = chroma_key_passes([0.0, 1.0, 0.0, 1.0], 40.0, 0.0).unwrap();
+            let mut keyed = chroma_key_passes([0.0, 0.0, 1.0, 1.0], 40.0, 0.0).unwrap();
             keyed.push(EffectPass::Pixel {
                 entry_point: "spill_clean",
-                uniforms: vec![Uniform::Color([0.0, 1.0, 0.0]), Uniform::Float(0.6)],
+                uniforms: vec![Uniform::Color([0.0, 0.0, 1.0]), Uniform::Float(0.6)],
             });
             keyed.push(EffectPass::Sample {
                 entry_point: "matte_feather",

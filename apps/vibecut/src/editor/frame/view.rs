@@ -507,16 +507,19 @@ impl Editor {
             }
         }
     }
-    /// Stamp the local time whenever the journal takes a new revision.
+    /// Stamp the local time whenever the journal takes a new revision. Revision 0 is a
+    /// cleared journal (a clean open or a finished save), not a write, so it stamps nothing
+    /// and keeps the last write's clock.
     fn note_autosave(&mut self) {
         let crate::services::lifecycle::EditorSession::Persistent(autosave) = &self.session else {
             return;
         };
         let journaled = autosave.journaled_revision();
-        if self
-            .autosaved
-            .as_ref()
-            .is_none_or(|(seen, _)| *seen != journaled)
+        if journaled != 0
+            && self
+                .autosaved
+                .as_ref()
+                .is_none_or(|(seen, _)| *seen != journaled)
         {
             let clock = chrono::Local::now().format("%H:%M:%S").to_string();
             self.autosaved = Some((journaled, clock));
