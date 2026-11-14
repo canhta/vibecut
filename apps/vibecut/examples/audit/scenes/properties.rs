@@ -495,6 +495,47 @@ pub(super) fn inspector_text(theme: Theme, scale: f32) -> Result<AppHarness, Fai
     Ok(app)
 }
 
+/// The Text tab's Bubble (`text-bubble`) or Effects (`text-effects`) sub-tab with one look
+/// chosen; the grid is four columns of 62 px tiles with 16 px gaps.
+pub(super) fn text_look(
+    theme: Theme,
+    scale: f32,
+    locale: Locale,
+    effects: bool,
+) -> Result<AppHarness, Failure> {
+    let (mut editor, _) = media_editor(theme, locale)?;
+    let item = editor
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| matches!(item.content, ItemParams::Text(_)))
+        .ok_or("text item")?
+        .id;
+    capture_columns(&mut editor)?;
+    editor.select([item].into_iter().collect())?;
+    let (field, value) = if effects {
+        ("text_effect", "neon")
+    } else {
+        ("text_bubble", "speech_down")
+    };
+    editor.set_item_field(item, field, value)?;
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, CAPTURE_WINDOW);
+    wait_for_presented(&mut app)?;
+    let id = if effects {
+        "inspector.text_sub.effects"
+    } else {
+        "inspector.text_sub.bubble"
+    };
+    app.get(By::new().predicate(|node| node.author_id() == Some(id)))
+        .click();
+    app.run_steps(4);
+    Ok(app)
+}
+
 /// The Text tab's Basic controls with the Case row in view (`text-basic`), or with the Font
 /// dropdown open over it (`font-dropdown`); the reference is capture 2026-11-14b, frames
 /// 103613, 103657 and 103714.
@@ -564,7 +605,7 @@ pub(super) fn text_item_locale(
         ("text_font", "Noto Serif"),
         ("text_background", "#000000A0"),
     ] {
-        editor.set_shared_field(field, value)?;
+        editor.set_item_field(item, field, value)?;
     }
     // New text's lower-third placement: Transform Y at 34.5 % of the canvas height below centre.
     let canvas_height = f64::from(editor.session.project().data().canvas.height);

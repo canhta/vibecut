@@ -328,6 +328,8 @@ fn prepare_clip(
                 start: *start,
                 content: ItemParams::Caption(CaptionParams {
                     emphasis: Default::default(),
+                    bubble: None,
+                    effect: None,
                     word_highlight: false,
                     preset: None,
                     overrides: captions::CaptionOverrides::default(),

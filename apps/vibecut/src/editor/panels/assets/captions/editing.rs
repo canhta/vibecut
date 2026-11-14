@@ -520,7 +520,7 @@ impl Subtitles {
         }
         // Stored emphasis is kept: a selection whose words no longer validate shows as stale
         // and is never drawn, so an edit loses no other cue's keywords.
-        let (word_highlight, preset, overrides, emphasis) = {
+        let (word_highlight, preset, overrides, emphasis, bubble, effect) = {
             let params = &self
                 .caption(session)
                 .ok_or(Error::Invalid("caption item"))?
@@ -530,12 +530,16 @@ impl Subtitles {
                 params.preset,
                 params.overrides.clone(),
                 params.emphasis.clone(),
+                params.bubble,
+                params.effect,
             )
         };
         session.apply(Command::SetItemParam {
             item: self.item.ok_or(Error::Invalid("caption item"))?,
             content: ItemParams::Caption(project::CaptionParams {
                 emphasis,
+                bubble,
+                effect,
                 word_highlight,
                 preset,
                 overrides,

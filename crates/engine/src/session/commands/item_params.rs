@@ -202,6 +202,16 @@ impl Admit for Option<project::Crop> {
         self.as_ref().is_none_or(|crop| crop.valid())
     }
 }
+impl Admit for Option<project::TextBubble> {
+    fn admits(&self, _: &ParamBounds) -> bool {
+        true
+    }
+}
+impl Admit for Option<project::TextEffect> {
+    fn admits(&self, _: &ParamBounds) -> bool {
+        true
+    }
+}
 impl Admit for Option<project::StabilizeLevel> {
     fn admits(&self, _: &ParamBounds) -> bool {
         true
@@ -322,6 +332,23 @@ text_word!(
     project::StrokePreset,
     StrokeAlign,
 );
+/// `none` clears the look; otherwise its wire word.
+macro_rules! text_look_word {
+    ($($ty:ty),* $(,)?) => {$(
+        impl ParamText for Option<$ty> {
+            fn from_text(text: &str, _: &ParamBounds) -> Option<Self> {
+                let text = text.trim();
+                if text.eq_ignore_ascii_case("none") {
+                    return Some(None);
+                }
+                serde_json::from_value(serde_json::Value::String(text.to_owned()))
+                    .ok()
+                    .map(Some)
+            }
+        }
+    )*};
+}
+text_look_word!(project::TextBubble, project::TextEffect);
 impl ParamText for Color {
     fn from_text(text: &str, _: &ParamBounds) -> Option<Self> {
         render::color::parse_hex(text).ok()
@@ -969,6 +996,30 @@ item_params! {
         apply: |t, v, cx| {
             if let Some(p) = text(t) {
                 p.curve = *v;
+            }
+            Ok(())
+        },
+    },
+    TextBubble(Option<project::TextBubble>) = "text_bubble" {
+        targets: TEXT,
+        bounds: ParamBounds::Free,
+        unit: ParamUnit::None,
+        path: None,
+        apply: |t, v, cx| {
+            if let Some(p) = text(t) {
+                p.bubble = *v;
+            }
+            Ok(())
+        },
+    },
+    TextEffect(Option<project::TextEffect>) = "text_effect" {
+        targets: TEXT,
+        bounds: ParamBounds::Free,
+        unit: ParamUnit::None,
+        path: None,
+        apply: |t, v, cx| {
+            if let Some(p) = text(t) {
+                p.effect = *v;
             }
             Ok(())
         },

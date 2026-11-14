@@ -8,6 +8,7 @@ mod mapping;
 mod segment;
 mod span;
 mod style;
+mod text_look;
 mod timing;
 pub use emphasis::{
     EmphasisLexicon, MAX_EMPHASIS_WORDS, emphasis_limit, resolve_selection, select_lexicon,
@@ -31,6 +32,7 @@ pub use style::{
     CaptionBackground, CaptionOutline, CaptionOverrides, CaptionPosition, CaptionStyle,
     MAX_THICKNESS, THICKNESS_FONT_RATIO, outline_width,
 };
+pub use text_look::{TextBubble, TextEffect};
 use time::{SourceRange, Tick};
 pub use timing::{
     CueWordTiming, DisplayReplacement, DisplayVariant, MappedTiming, SpanTiming, TimingGroup,

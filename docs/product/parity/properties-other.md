@@ -30,7 +30,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | ID | Item | Function | UI/UX | Evidence | Gap / note |
 |---|---|---|---|---|---|
 | PTEXT-01 | Top tabs | Partial | Differs | 103613 | No Animation, Tracking tabs |
-| PTEXT-02 | Sub-tabs Basic, Bubble, Effects | Missing | Not captured | 103723-103727 | |
+| PTEXT-02 | Sub-tabs Basic, Bubble, Effects | Done | Matches | 103723-103727; 14f/07-09; [ui/editor.md](../ui/editor.md#text-bubble-and-effects) | |
 | PTEXT-03 | AI avatars tab | Out of scope | — | 103755 | AI avatars |
 
 ### Basic
@@ -58,9 +58,9 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 ### Bubble, Effects, Animation, Tracking, TTS
 | ID | Item | Function | UI/UX | Evidence | Gap / note |
 |---|---|---|---|---|---|
-| PTEXT-22 | Bubble grid | Missing | Not captured | 103723 | |
+| PTEXT-22 | Bubble grid | Partial | Matches | 103723; 14f/08; [ui/editor.md](../ui/editor.md#text-bubble-and-effects) | 11 own-drawn shapes; no filter, no downloads |
 | PTEXT-23 | Text effects grid | Partial | Differs | 103727 | In Basic style row |
-| PTEXT-24 | Text effects Reset | Missing | Not captured | 103727 | |
+| PTEXT-24 | Text effects Reset | Done | Proposed | 103727; 14f/09 | Button under the grid, not a footer |
 | PTEXT-25 | Animation In, Out | Done | Proposed | 103738 | |
 | PTEXT-26 | Animation Loop | Partial | Differs | 103738 | Combo slot instead |
 | PTEXT-27 | Animation tile grid | Partial | Proposed | 103738 | 15 / 15 / 10 looks |
@@ -74,10 +74,10 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | ID | Item | Function | UI/UX | Evidence | Gap / note |
 |---|---|---|---|---|---|
 | PCAP-01 | Caption top tabs | Partial | Differs | 104149 | No Captions, Animation tab |
-| PCAP-02 | Apply to all main captions | Missing | Not captured | 104149 | |
+| PCAP-02 | Apply to all main captions | Done | Proposed | 104149; 14f/10-11 | Bubble and Effects only |
 | PCAP-03 | Caption Basic, as text | Done | Proposed | 104149-104210 | |
 | PCAP-04 | Caption Templates sub-tab | Partial | Differs | 104218 | Styles in Captions panel |
-| PCAP-05 | Caption Bubble, Effects | Missing | Not captured | 104149 | |
+| PCAP-05 | Caption Bubble, Effects | Done | Matches | 104149; 14f/10-11 | Own looks on every cue |
 | PCAP-06 | Animation Captions sub-tab | Partial | Differs | 104230 | Word-highlight styles |
 | PCAP-07 | Keywords section | Ours | Proposed | | |
 | PCAP-08 | Caption Save as preset | Partial | Proposed | 104210 | |

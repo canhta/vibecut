@@ -408,6 +408,12 @@ pub(crate) fn apply(
         } => {
             data = text::set_emphasis(data, item, &cue_id, word_ids)?;
         }
+        EditCommand::SetCaptionBubble { items, bubble } => {
+            data = text::set_caption_look(data, &items, |params| params.bubble = bubble)?;
+        }
+        EditCommand::SetCaptionEffect { items, effect } => {
+            data = text::set_caption_look(data, &items, |params| params.effect = effect)?;
+        }
         EditCommand::SetCaptionWordHighlight { item, enabled } => {
             data = text::set_word_highlight(data, item, enabled)?;
         }

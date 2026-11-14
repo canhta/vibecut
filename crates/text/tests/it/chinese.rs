@@ -91,6 +91,7 @@ fn simplified_and_traditional_chinese_wrap_and_render() -> Result<(), Box<dyn Er
             24.0,
             16.0,
         )),
+        bubble: None,
         decoration: text::Decoration::None,
     };
     let canvas = Canvas {

@@ -227,6 +227,8 @@ pub(super) fn readme_project(source: &Path) -> Result<(Editor, ItemId, ItemId), 
         Some(asset_id),
         ItemParams::Caption(CaptionParams {
             emphasis: Default::default(),
+            bubble: None,
+            effect: None,
             word_highlight: false,
             preset: None,
             overrides: captions::CaptionOverrides::default(),

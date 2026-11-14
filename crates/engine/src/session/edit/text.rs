@@ -22,6 +22,21 @@ pub(super) fn set_word_highlight(
     Ok(data)
 }
 
+/// Set one caption look field on every named caption item, all or none.
+pub(super) fn set_caption_look(
+    mut data: ProjectData,
+    items: &[ItemId],
+    set: impl Fn(&mut project::CaptionParams),
+) -> Result<ProjectData> {
+    if items.is_empty() {
+        return Err(EditError::Invalid("caption look needs an item"));
+    }
+    for id in items {
+        set(caption_params(&mut data, *id)?);
+    }
+    Ok(data)
+}
+
 /// Upper bound on cues one selection may name.
 const MAX_EMPHASIS_CUES: usize = 4096;
 
@@ -609,6 +624,8 @@ fn add_caption_item(
                 start,
                 content: ItemParams::Caption(project::CaptionParams {
                     emphasis: Default::default(),
+                    bubble: None,
+                    effect: None,
                     word_highlight: false,
                     preset: None,
                     overrides: captions::CaptionOverrides::default(),

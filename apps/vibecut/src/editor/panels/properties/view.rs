@@ -1479,6 +1479,13 @@ impl<'a, 'c> Panel<'a, 'c> {
         kind: ElementKind,
         tab: PropertiesTab,
     ) {
+        if tab == PropertiesTab::Text && kind == ElementKind::Text {
+            let sub = self.text_sub_tabs(ui);
+            if sub != super::TextSub::Basic {
+                self.text_look_tab(ui, item, sub);
+                return;
+            }
+        }
         match tab {
             PropertiesTab::Text
                 if self

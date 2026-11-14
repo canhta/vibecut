@@ -3028,6 +3028,128 @@ fn text_look_tiles_apply_one_look_per_shelf_as_one_undo_step_keeping_content() {
 }
 
 #[test]
+fn text_bubble_and_effects_sub_tabs_pick_one_look_per_undo_step_and_reset() {
+    use project::{TextBubble, TextEffect};
+    let mut f = fixture();
+    f.editor
+        .session
+        .apply(Command::Delete {
+            items: vec![f.video, f.silent_video, f.image, f.graphic, f.audio],
+        })
+        .unwrap();
+    f.editor.prepare_subtitles().unwrap();
+    let mut h = crate::gpu::builder()
+        .with_size(egui::vec2(1440.0, 1000.0))
+        .build_ui_state(|ui, e: &mut Editor| e.ui(ui), f.editor);
+    h.run_steps(3);
+    select(&mut h, f.text);
+    let content = text_params(&h, f.text).content.clone();
+    click(&mut h, "inspector.text_sub.bubble");
+    h.run_steps(3);
+    // The measured grid: four columns on a 78 px pitch, tiles 62 px, the empty tile first.
+    let first = widget_rect(&h, "inspector.text_bubble.none");
+    let second = widget_rect(&h, "inspector.text_bubble.round");
+    let fourth = widget_rect(&h, "inspector.text_bubble.oval");
+    let next_row = widget_rect(&h, "inspector.text_bubble.speech_down");
+    assert_eq!((first.width(), first.height()), (62.0, 62.0));
+    assert!(((second.left() - first.left()) - 78.0).abs() < 0.5);
+    assert!(((fourth.left() - first.left()) - 234.0).abs() < 0.5);
+    assert!((next_row.left() - first.left()).abs() < 0.5);
+    assert!(((next_row.top() - first.top()) - 78.0).abs() < 0.5);
+    for (word, bubble) in [("pill", TextBubble::Pill), ("frame", TextBubble::Frame)] {
+        let history = h.state().session.history_len().0;
+        click(&mut h, &format!("inspector.text_bubble.{word}"));
+        assert_eq!(h.state().session.history_len().0, history + 1, "{word}");
+        let params = text_params(&h, f.text);
+        assert_eq!(params.bubble, Some(bubble));
+        assert_eq!(params.content, content);
+    }
+    let history = h.state().session.history_len().0;
+    click(&mut h, "inspector.text_look.reset");
+    assert_eq!(h.state().session.history_len().0, history + 1);
+    assert_eq!(text_params(&h, f.text).bubble, None);
+    h.state_mut().session.undo().unwrap();
+    h.run_steps(2);
+    assert_eq!(text_params(&h, f.text).bubble, Some(TextBubble::Frame));
+
+    click(&mut h, "inspector.text_sub.effects");
+    h.run_steps(3);
+    let history = h.state().session.history_len().0;
+    click(&mut h, "inspector.text_effect.neon");
+    assert_eq!(h.state().session.history_len().0, history + 1);
+    assert_eq!(text_params(&h, f.text).effect, Some(TextEffect::Neon));
+    click(&mut h, "inspector.text_look.reset");
+    assert_eq!(text_params(&h, f.text).effect, None);
+    // The bubble survives an effect reset.
+    assert_eq!(text_params(&h, f.text).bubble, Some(TextBubble::Frame));
+}
+
+#[test]
+fn caption_bubble_and_effects_apply_to_one_item_or_to_all_in_one_undo_step() {
+    use project::{TextBubble, TextEffect};
+    let mut f = fixture();
+    let cues = captions::parse(
+        b"1\n00:00:00,000 --> 00:00:02,000\nCaption\n",
+        captions::Format::Srt,
+        captions::LanguageTag::parse("en").unwrap(),
+    )
+    .unwrap()
+    .track;
+    let mut ids = Vec::new();
+    for name in ["Captions A", "Captions B"] {
+        let track = add_track(&mut f.editor.session, name, TrackKind::Text);
+        ids.push(insert(
+            &mut f.editor.session,
+            track,
+            Tick::ZERO,
+            Tick(2 * SECOND),
+            Some(AssetId(1)),
+            ItemParams::Caption(project::CaptionParams {
+                emphasis: Default::default(),
+                bubble: None,
+                effect: None,
+                word_highlight: false,
+                preset: None,
+                overrides: captions::CaptionOverrides::default(),
+                cues: cues.clone(),
+            }),
+        ));
+    }
+    let mut h = build(f.editor);
+    h.run_steps(3);
+    select(&mut h, ids[0]);
+    let look = |h: &Harness<Editor>, id: ItemId| {
+        let ItemParams::Caption(p) = item(h, id).content else {
+            panic!("caption")
+        };
+        (p.bubble, p.effect)
+    };
+    click(&mut h, "inspector.text_sub.bubble");
+    h.run_steps(3);
+    assert!(has_widget(&h, "inspector.caption_apply_all"));
+    let history = h.state().session.history_len().0;
+    click(&mut h, "inspector.text_bubble.pill");
+    assert_eq!(h.state().session.history_len().0, history + 1);
+    assert_eq!(look(&h, ids[0]).0, Some(TextBubble::Pill));
+    assert_eq!(look(&h, ids[1]).0, None, "one item without Apply to all");
+    click(&mut h, "inspector.caption_apply_all");
+    click(&mut h, "inspector.text_bubble.banner");
+    assert_eq!(h.state().session.history_len().0, history + 2);
+    assert_eq!(look(&h, ids[0]).0, Some(TextBubble::Banner));
+    assert_eq!(look(&h, ids[1]).0, Some(TextBubble::Banner));
+    click(&mut h, "inspector.text_sub.effects");
+    h.run_steps(3);
+    click(&mut h, "inspector.text_effect.gold");
+    assert_eq!(look(&h, ids[1]).1, Some(TextEffect::Gold));
+    click(&mut h, "inspector.text_look.reset");
+    assert_eq!(look(&h, ids[0]).1, None);
+    assert_eq!(look(&h, ids[1]).1, None);
+    h.state_mut().session.undo().unwrap();
+    h.run_steps(2);
+    assert_eq!(look(&h, ids[1]).1, Some(TextEffect::Gold));
+}
+
+#[test]
 fn loudness_controls_switch_target_and_apply_through_commands() {
     let woken = crate::woken::Woken::bind();
     let fixture = fixture();
@@ -3794,6 +3916,8 @@ fn text_fade_preflight_preserves_focused_and_unfocused_caption_and_properties_dr
         Some(AssetId(1)),
         ItemParams::Caption(project::CaptionParams {
             emphasis: Default::default(),
+            bubble: None,
+            effect: None,
             word_highlight: false,
             preset: None,
             overrides: captions::CaptionOverrides::default(),

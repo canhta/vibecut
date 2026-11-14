@@ -3,6 +3,7 @@
 pub(super) mod sticker;
 mod sticker_flags;
 pub(super) mod sticker_source;
+pub(super) mod text_look;
 
 use crate::{CaptionPosition, Error, ExecutionHooks, Image, MemoryKind, Result, check};
 use project::{TextAlign, TextCase, TextDecoration};
@@ -35,6 +36,7 @@ pub(super) struct TextKey {
     /// Curve degrees and the extra margin it needs (float bits).
     pub(super) curve: Option<(u32, u32)>,
     pub(super) background: Option<BoxKey>,
+    pub(super) bubble: Option<captions::TextBubble>,
     pub(super) align: TextAlign,
     pub(super) decoration: TextDecoration,
     pub(super) case: TextCase,
@@ -87,6 +89,10 @@ impl TextKey {
             .max(shadow)
             .max(glow)
             .max(self.background.map_or(0.0, BoxKey::margin))
+            .max(
+                self.bubble
+                    .map_or(0.0, |_| f32::from_bits(self.size) * text::BUBBLE_MARGIN),
+            )
             .ceil()
             + curve.ceil()
     }
@@ -135,6 +141,7 @@ pub(super) struct TextFace<'a> {
     pub(super) glow: Option<(f32, [u8; 4])>,
     /// Curve degrees and the margin in output pixels its arc needs around the text area.
     pub(super) curve: Option<(f32, f32)>,
+    pub(super) bubble: Option<captions::TextBubble>,
 }
 impl TextFace<'_> {
     /// Pixels the raster grows beyond the text area on every side for these
@@ -168,6 +175,7 @@ impl Default for TextFace<'_> {
             shadow: None,
             glow: None,
             curve: None,
+            bubble: None,
         }
     }
 }
@@ -264,6 +272,11 @@ pub(super) fn raster_text(key: &TextKey, hooks: &dyn ExecutionHooks) -> Result<I
             shadow,
             glow,
             background,
+            bubble: key.bubble.map(|shape| text::Bubble {
+                shape: bubble_shape(shape),
+                color: rgba(text_look::bubble_color(key.fill)),
+                unit: size,
+            }),
             decoration: match key.decoration {
                 TextDecoration::None => text::Decoration::None,
                 TextDecoration::Underline => text::Decoration::Underline,
@@ -274,6 +287,23 @@ pub(super) fn raster_text(key: &TextKey, hooks: &dyn ExecutionHooks) -> Result<I
             .map_or(0.0, |(percent, _)| f32::from_bits(percent)),
     )?;
     Image::from_rgba8(w, h, &image.pixels, true, 13, hooks)
+}
+pub(super) fn bubble_shape(shape: captions::TextBubble) -> text::BubbleShape {
+    use captions::TextBubble as B;
+    use text::BubbleShape as S;
+    match shape {
+        B::Round => S::Round,
+        B::Pill => S::Pill,
+        B::Oval => S::Oval,
+        B::SpeechDown => S::SpeechDown,
+        B::SpeechLeft => S::SpeechLeft,
+        B::Banner => S::Banner,
+        B::Tag => S::Tag,
+        B::Burst => S::Burst,
+        B::Cloud => S::Cloud,
+        B::Ticket => S::Ticket,
+        B::Frame => S::Frame,
+    }
 }
 fn rgba(value: [u8; 4]) -> text::Color {
     let [r, g, b, a] = value;

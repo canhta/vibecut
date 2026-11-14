@@ -111,6 +111,12 @@ fn route(state: &mut State, port: &mut Port<'_>, actions: Vec<Action>) {
             Action::SetField { item, field, value } => {
                 commands::set_item_field(port, item, &field, &value)
             }
+            Action::SetCaptionBubble { items, bubble } => port
+                .apply_result(engine::Command::SetCaptionBubble { items, bubble })
+                .map(|_| ()),
+            Action::SetCaptionEffect { items, effect } => port
+                .apply_result(engine::Command::SetCaptionEffect { items, effect })
+                .map(|_| ()),
             Action::SetShared { field, value } => commands::set_shared_field(port, &field, &value),
             Action::SetSpeed {
                 item,

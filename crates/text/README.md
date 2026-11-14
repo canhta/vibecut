@@ -6,6 +6,7 @@ Unicode shaping, line layout and CPU rasterization for overlay titles and burn-i
 |---|---|---|
 | `layout/` | Lays out a paragraph from normalized text into positioned lines. | [Layout](src/layout/README.md) |
 | `fonts` | Owns the bundled font database and deterministic family/style resolution. | [Fonts](src/fonts/README.md) |
+| `bubble` | Draws own-authored bubble shapes behind a layout. | [source](src/bubble.rs) |
 | `color` | Owns the small sRGB colour type text drawing needs. | [source](src/color.rs) |
 | `mask` | Computes outlines from an exact Euclidean distance transform. | [Mask coverage](src/mask/README.md) |
 | `raster` | Rasterizes glyph outlines and boxes with anti-aliasing. | [source](src/raster.rs) |

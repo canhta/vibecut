@@ -433,6 +433,8 @@ fn item(id: u64, start: i64) -> Item {
             }),
             glow: true,
             curve: Some(-35.0),
+            bubble: Some(project::TextBubble::Pill),
+            effect: Some(project::TextEffect::Neon),
             background: Some(project::TextBackground {
                 color: Color([10, 20, 30, 40]),
                 padding_x: 14.0,
@@ -540,6 +542,8 @@ fn populated(path: PathBuf) -> Project {
         item(0, 0).content,
         ItemParams::Caption(CaptionParams {
             emphasis: Default::default(),
+            bubble: None,
+            effect: None,
             word_highlight: false,
             preset: None,
             overrides: captions::CaptionOverrides::default(),

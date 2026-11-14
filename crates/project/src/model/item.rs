@@ -5,6 +5,7 @@ use super::track::TrackKind;
 use crate::visual::DEFAULT_WEIGHT;
 use crate::{Error, Result};
 use captions::{CueTrack, NfcText};
+pub use captions::{TextBubble, TextEffect};
 use media::AssetId;
 use serde::{Deserialize, Serialize};
 use time::{SourceRange, Tick};
@@ -773,6 +774,12 @@ pub struct TextParams {
     /// middle of the line over its ends and a negative one lowering it. `None` is the straight layout (Curve off).
     pub curve: Option<f32>,
     pub background: Option<TextBackground>,
+    /// Own-drawn bubble painted behind the text; absent draws none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bubble: Option<TextBubble>,
+    /// Own-authored effect that replaces fill, stroke, shadow and glow while set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effect: Option<TextEffect>,
 }
 impl Default for TextParams {
     fn default() -> Self {
@@ -799,6 +806,8 @@ impl TextParams {
             glow: false,
             curve: None,
             background: None,
+            bubble: None,
+            effect: None,
         }
     }
     /// Largest curve magnitude, in degrees (the angle a line's arc spans; 360 is a full circle).
@@ -828,6 +837,10 @@ pub struct TextStyle {
     pub shadow: Option<TextShadow>,
     pub glow: bool,
     pub background: Option<TextBackground>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bubble: Option<TextBubble>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effect: Option<TextEffect>,
 }
 impl TextStyle {
     /// The style of `params`, leaving its content behind.
@@ -846,6 +859,8 @@ impl TextStyle {
             shadow: params.shadow.clone(),
             glow: params.glow,
             background: params.background.clone(),
+            bubble: params.bubble,
+            effect: params.effect,
         }
     }
     /// Copy this style over `params`, keeping its content.
@@ -863,6 +878,8 @@ impl TextStyle {
         params.shadow = self.shadow.clone();
         params.glow = self.glow;
         params.background = self.background.clone();
+        params.bubble = self.bubble;
+        params.effect = self.effect;
     }
     /// Whether every stored field satisfies the text-item bounds.
     pub fn valid(&self) -> bool {
@@ -894,6 +911,12 @@ pub struct CaptionParams {
     /// `captions::resolve_selection`; ids that no longer match the cue's words are ignored.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub emphasis: std::collections::BTreeMap<captions::NfcText, Vec<u32>>,
+    /// Own-drawn bubble behind every cue; absent draws none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bubble: Option<TextBubble>,
+    /// Own-authored effect that replaces the caption fill, outline and glow while set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effect: Option<TextEffect>,
     pub cues: CueTrack,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]

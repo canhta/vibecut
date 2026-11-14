@@ -66,6 +66,8 @@ fn project() -> Arc<Project> {
                 ItemId(4),
                 ItemParams::Caption(CaptionParams {
                     emphasis: Default::default(),
+                    bubble: None,
+                    effect: None,
                     word_highlight: false,
                     preset: None,
                     overrides: captions::CaptionOverrides::default(),

@@ -139,6 +139,8 @@ pub fn insert(track: CueTrack) -> Command {
             start: Tick::ZERO,
             content: ItemParams::Caption(project::CaptionParams {
                 emphasis: Default::default(),
+                bubble: None,
+                effect: None,
                 word_highlight: false,
                 preset: None,
                 overrides: captions::CaptionOverrides::default(),

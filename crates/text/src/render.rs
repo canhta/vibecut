@@ -135,6 +135,8 @@ pub struct Paint {
     pub shadow: Option<Shadow>,
     pub glow: Option<Glow>,
     pub background: Option<Rectangle>,
+    /// Own-drawn bubble, painted over the background box and under the glyphs.
+    pub bubble: Option<crate::Bubble>,
     pub decoration: Decoration,
 }
 
@@ -148,6 +150,7 @@ impl Default for Paint {
             shadow: None,
             glow: None,
             background: None,
+            bubble: None,
             decoration: Decoration::None,
         }
     }
@@ -378,6 +381,14 @@ pub fn render_on_arc(
         blend(&mut image, &mask, background.color);
     }
 
+    if let Some(bubble) = paint.bubble {
+        let b = layout.bounds;
+        let path = crate::bubble::path(&bubble, ox + b.x0, oy + b.y0, ox + b.x1, oy + b.y1);
+        let mut mask = Mask::new(width, height);
+        fill_into(&path, &mut mask, 0.0, 0.0);
+        blend(&mut image, &mask, bubble.color);
+    }
+
     let mut fill_mask = Mask::new(width, height);
     let mut span_mask = paint.span_fill.map(|_| Mask::new(width, height));
     let mut emphasis_mask = paint.emphasis.map(|_| Mask::new(width, height));
@@ -597,6 +608,7 @@ mod tests {
                     radius: 6.0,
                 }),
                 background: Some(Rectangle::uniform(Color::rgba(0, 0, 0, 160), 12.0, 6.0)),
+                bubble: None,
                 decoration: Decoration::None,
             },
         )
@@ -639,6 +651,7 @@ mod tests {
                 shadow: None,
                 glow: None,
                 background: None,
+                bubble: None,
                 decoration: Decoration::None,
             },
         )
@@ -659,6 +672,7 @@ mod tests {
                 shadow: None,
                 glow: None,
                 background: None,
+                bubble: None,
                 decoration: Decoration::None,
             },
         )

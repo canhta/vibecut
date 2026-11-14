@@ -30,8 +30,8 @@ pub use item::{
     CaptionWordWarnings, ClipBackground, CutoutStroke, EffectParams, GraphicParams, GroupId, Item,
     ItemId, ItemParams, LibraryMusic, LibrarySound, MatteStroke, MatteStrokeMode, MusicLicence,
     OverlayParams, StabilizeLevel, StickerParams, StrokePreset, TextAlign, TextBackground,
-    TextCase, TextDecoration, TextParams, TextShadow, TextStroke, TextStyle, VOLUME_DB_RANGE,
-    VideoParams, WordSpan, valid_volume, volume_gain, volume_is_silent,
+    TextBubble, TextCase, TextDecoration, TextEffect, TextParams, TextShadow, TextStroke,
+    TextStyle, VOLUME_DB_RANGE, VideoParams, WordSpan, valid_volume, volume_gain, volume_is_silent,
 };
 pub use media_library::{
     AssetName, MAX_MEDIA_FOLDERS, MAX_MEDIA_NAME_BYTES, MediaFolder, MediaFolderId, MediaLibrary,

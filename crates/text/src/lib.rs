@@ -12,6 +12,7 @@
 //! clock, network or filesystem input. Callers that own a font catalog hand it font bytes
 //! through [`register`]; the registry only grows, so earlier results never change.
 
+mod bubble;
 mod color;
 mod fonts;
 mod layout;
@@ -19,6 +20,7 @@ mod mask;
 mod raster;
 mod render;
 
+pub use bubble::{BUBBLE_MARGIN, Bubble, BubbleShape};
 pub use color::Color;
 pub use fonts::{
     DEFAULT_FAMILY, Face, FaceId, FontData, FontError, MAX_FONT_BYTES, MAX_REGISTERED_BYTES,

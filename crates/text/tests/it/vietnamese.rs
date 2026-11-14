@@ -57,6 +57,7 @@ fn nfc_and_nfd_shapes_render_identically_without_tofu() {
         shadow: None,
         glow: None,
         background: None,
+        bubble: None,
         decoration: text::Decoration::None,
     };
     let canvas = Canvas {

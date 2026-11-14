@@ -374,6 +374,8 @@ fn interview_filler_candidates_match_the_manual_read() {
                 ItemId(40),
                 ItemParams::Caption(project::CaptionParams {
                     emphasis: Default::default(),
+                    bubble: None,
+                    effect: None,
                     word_highlight: false,
                     preset: None,
                     overrides: captions::CaptionOverrides::default(),
