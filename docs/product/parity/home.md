@@ -37,14 +37,14 @@ Snapshot of main `66512fec` on 2026-11-14. Legend, evidence names and update rul
 | HOME-20 | Trash view | Done | Matches | 221432 | |
 | HOME-21 | Sync toggle | Out of scope | — | 221432 | Cloud sync |
 | HOME-22 | Sort control | Ours | Proposed | `apps/vibecut/src/home/view/projects.rs` | |
-| HOME-23 | Project thumbnail card | Partial | Matches | 221432 | Thumbnail can stay a placeholder |
+| HOME-23 | Project thumbnail card | Done | Matches | 221432 | Relists on Home focus |
 | HOME-24 | Card name and detail line | Done | Matches | 221432 | |
 | HOME-25 | Card menu (open, rename, duplicate) | Done | Not captured | web 01-home.md | |
 | HOME-26 | Rename, info, delete dialogs | Done | Not captured | [ui/home.md](../ui/home.md) | |
 | HOME-27 | Multi-select | Done | Not captured | web flows/11 | |
 | HOME-28 | Empty, loading, error states | Done | Proposed | `apps/vibecut/src/home/view/projects.rs` | |
 | HOME-29 | Open project from file | Ours | Proposed | `apps/vibecut/src/home/view/chrome.rs` | |
-| HOME-30 | Unreadable project handling | Partial | — | smoke 2026-11-14 | One bad project breaks the list |
+| HOME-30 | Unreadable project handling | Done | Proposed | smoke 2026-11-14 | Listed apart with reason |
 
 ### Brand kit and onboarding
 | ID | Item | Function | UI/UX | Evidence | Gap / note |

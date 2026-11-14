@@ -17,4 +17,4 @@ Snapshot of main `66512fec` on 2026-11-14. Legend, evidence names and update rul
 | STATE-09 | Microphone access state | Partial | Not captured | 14b/102609 | |
 | STATE-10 | Over-trim silence | Differs | Differs | 14b/103033 | Ours shows a pill |
 | STATE-11 | Export failure | Done | Proposed | | |
-| STATE-12 | Preview unavailable, empty | Done | Proposed | | First-clip black pending |
+| STATE-12 | Preview unavailable, empty | Done | Proposed | | Last frame held at end |

@@ -65,9 +65,9 @@ Snapshot of main `66512fec` on 2026-11-14. Legend, evidence names and update rul
 | PTEXT-26 | Animation Loop | Partial | Differs | 103738 | Combo slot instead |
 | PTEXT-27 | Animation tile grid | Partial | Proposed | 103738 | 15 / 15 / 10 looks |
 | PTEXT-28 | Tracking, Motion tracking | Missing | Not captured | 103742 | |
-| PTEXT-29 | Text to speech tab | Partial | Differs | 103836-103930; [ui/editor.md](../ui/editor.md#text-to-speech) | Provider pickers, not grid |
-| PTEXT-30 | Generate speech to clip | Partial | Differs | 103921-103930 | Preview then Place |
-| PTEXT-31 | TTS voice chips, filter | Missing | Not captured | 103843-103849 | |
+| PTEXT-29 | Text to speech tab | Partial | Differs | 103836-103930; [ui/editor.md](../ui/editor.md#text-to-speech) | Model, language stay dropdowns |
+| PTEXT-30 | Generate speech to clip | Partial | Differs | 103921-103930 | Preview then Place at playhead |
+| PTEXT-31 | TTS voice chips, filter | Done | Differs | 103843-103849 | Chips are provider categories |
 
 ## Caption item (PCAP)
 

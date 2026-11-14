@@ -11,14 +11,15 @@ Snapshot of main `66512fec` on 2026-11-14. Legend, evidence names and update rul
 | SHELL-02 | Autosave status line | Done | Matches | 2026-11-14b row 17 | |
 | SHELL-03 | Export button | Done | Matches | 221513 | |
 | SHELL-04 | Shortcuts button | Done | Proposed | 110515 | |
-| SHELL-05 | Menu: Back to home | Partial | Proposed | 2026-11-14b row 19 | Editor stays open (macOS) |
+| SHELL-05 | Menu: Back to home | Done | Proposed | 2026-11-14b row 19 | Closes the saved project |
 | SHELL-06 | Menu: Settings | Done | Proposed | 110747 | |
 | SHELL-07 | Menu: Layout presets | Partial | Differs | 111918 | Only Reset layout |
 | SHELL-08 | Menu: About, terms | Missing | Not captured | 100436 | No About dialog |
 | SHELL-09 | Menu: Help | Done | Not captured | | |
 | SHELL-10 | Feedback, theme, language, models | Ours | Proposed | | Reference has no light theme |
-| SHELL-11 | Project save, save as, delete | Ours | Proposed | web 02-editor-shell.md | |
+| SHELL-11 | Project save, save as, delete | Ours | Proposed | web 02-editor-shell.md | Ctrl+S with a Saved toast |
 | SHELL-12 | Scene switcher | Ours | Proposed | | |
+| SHELL-37 | macOS menu bar | Done | Not captured | | From the action registry |
 
 ### Feature tab strip
 | ID | Item | Function | UI/UX | Evidence | Gap / note |

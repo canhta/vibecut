@@ -36,6 +36,7 @@ Snapshot of main `66512fec` on 2026-11-14. Legend, evidence names and update rul
 | TL-27 | Ripple toggle | Ours | Proposed | | |
 | TL-28 | Scene switcher | Ours | Proposed | | |
 | TL-29 | Narrow-width toolbar scroll | Ours | Proposed | | Wraps at 398 px |
+| TL-95 | Playhead follow in playback | Done | Not captured | [ui/editor.md](../ui/editor.md) | Page-style, rule ours |
 
 ### Tracks and headers
 | ID | Item | Function | UI/UX | Evidence | Gap / note |

@@ -76,10 +76,10 @@ Snapshot of main `66512fec` on 2026-11-14. Legend, evidence names and update rul
 | AUDIO-14 | Volume, echo, mute project | Missing | Differs | 102535 | |
 | AUDIO-15 | Enhance voice option | Partial | Not captured | 102535 | In clip properties only |
 | AUDIO-16 | Microphone access notice | Partial | Not captured | 102609 | OS prompt only |
-| AUDIO-17 | TTS voice grid, chips | Partial | Differs | 103836 | In Text properties |
-| AUDIO-18 | TTS language and filter chips | Partial | Differs | 103843, 103849 | |
+| AUDIO-17 | TTS voice grid, chips | Done | Differs | 103836 | Chips are provider categories |
+| AUDIO-18 | TTS language and filter chips | Partial | Differs | 103843, 103849 | Filter done, language a dropdown |
 | AUDIO-19 | Generate speech | Done | Differs | 103921 | Via dub.generate |
-| AUDIO-20 | TTS result clip on timeline | Partial | Not captured | 103930 | Lowest-track placement pending |
+| AUDIO-20 | TTS result clip on timeline | Done | Matches | 103930 | |
 | AUDIO-21 | Voice changer presets | Missing | Not captured | 104508 | After v1.0 |
 
 ## Text library (TEXTLIB)
