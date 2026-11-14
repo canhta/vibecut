@@ -2894,17 +2894,6 @@ Effect: `Edit`. Fixture: `Timeline`.
 }
 ```
 
-## `timeline.replace_clip` — Replace clip
-
-Effect: `Edit`. Fixture: `Timeline`.
-
-```json
-{
-  "asset": 98,
-  "item": 5
-}
-```
-
 ## `timeline.replace_media` — Replace media
 
 Effect: `Edit`. Fixture: `Timeline`.

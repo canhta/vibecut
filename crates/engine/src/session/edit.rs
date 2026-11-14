@@ -457,9 +457,6 @@ pub(crate) fn apply(
         EditCommand::RemoveAssets { assets } => {
             data = media_edits::execute_remove_assets(data, assets)?;
         }
-        EditCommand::ReplaceClip { item: id, asset } => {
-            data = media_edits::execute_replace_clip(data, id, asset)?;
-        }
         EditCommand::ReplaceMedia { items, asset } => {
             data = media_edits::execute_replace_media(data, items, asset)?;
         }

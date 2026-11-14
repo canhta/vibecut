@@ -97,10 +97,16 @@ pub(super) fn execute_remove_assets(
     Ok(data)
 }
 
-/// Point each listed item at another registered source of its own stream kind. Trims,
-/// start, duration, retime and params stay as they are, so the new source must still
-/// cover the retained source window. Targets are checked in order on the candidate; a
-/// refusal discards it, so project and history stay unchanged. Linked partners are
+/// Replace each listed clip with another registered source, the way the reference's Replace
+/// clip does: a clip keeps its place, output length, speed, pitch and reverse flags, params
+/// (volume included), effects, masks, keyframes and transitions, and plays the new source from
+/// its start (source in point zero) for the length it already has, so a clip trimmed into the
+/// middle of the old media starts at the head of the new one. The retained cut window is dropped
+/// because the source window it described no longer exists. The new source must carry the item's
+/// stream kind and cover the window the clip needs when its duration is known. A clip under a
+/// speed curve, or whose length the constant speed cannot reproduce from whole source ticks,
+/// refuses. Targets are checked in order on the candidate; a refusal discards it, so project and
+/// history stay unchanged. Partners (for example the audio extracted from a video clip) are
 /// replaced only when the caller lists them.
 pub(super) fn execute_replace_media(
     mut data: ProjectData,
@@ -135,75 +141,28 @@ pub(super) fn execute_replace_media(
         {
             return Err(EditError::Invalid("replacement media kind mismatch"));
         }
-        if source.probe().duration.is_some_and(|duration| {
-            target.source_range.end() > duration
-                || target
-                    .retime
-                    .window
-                    .is_some_and(|window| window.source_range.end() > duration)
-        }) {
+        if target.retime.curve.is_some() {
+            return Err(EditError::Unsupported("replace media under a speed curve"));
+        }
+        let length = target.duration()?;
+        let span = target
+            .retime
+            .speed
+            .source_offset(length, time::Rounding::Ceil)?;
+        if target.retime.speed.output_duration(span)? != length {
+            return Err(EditError::Invalid("clip length not representable"));
+        }
+        if source
+            .probe()
+            .duration
+            .is_some_and(|duration| span > duration)
+        {
             return Err(EditError::Invalid("replacement source too short"));
         }
+        target.source_range = time::SourceRange::new(time::Tick::ZERO, span)
+            .map_err(|_| EditError::Invalid("replacement source window"))?;
+        target.retime.window = None;
         target.source_asset = Some(asset);
     }
-    Ok(data)
-}
-
-/// Replace one clip with another registered source, the way the reference's Replace clip
-/// does: the clip keeps its place, output length, speed, pitch and reverse flags, volume,
-/// effects, masks, keyframes, params and transitions, and plays the new source from its start
-/// (source in point zero) for the length the clip already has. Unlike
-/// [`execute_replace_media`] the source window is rebuilt, so a clip trimmed to the middle of
-/// the old media starts at the head of the new one. The new source must carry the item's stream
-/// kind and cover the window the clip needs when its duration is known. A clip under a speed
-/// curve, or whose length the constant speed cannot reproduce from whole source ticks, refuses.
-/// The retained cut window is dropped because the source window it described no longer exists.
-pub(super) fn execute_replace_clip(
-    mut data: ProjectData,
-    id: ItemId,
-    asset: media::AssetId,
-) -> Result<ProjectData> {
-    let source = data
-        .assets
-        .iter()
-        .find(|record| record.id() == asset)
-        .cloned()
-        .ok_or(EditError::NoAsset(asset))?;
-    let target = item(&mut data, id)?;
-    let needed = match target.content {
-        ItemParams::Video(_) => media::StreamKind::Video,
-        ItemParams::Audio(_) => media::StreamKind::Audio,
-        _ => return Err(EditError::Unsupported("replace clip on non-media item")),
-    };
-    if !source
-        .probe()
-        .streams
-        .iter()
-        .any(|stream| stream.kind == needed)
-    {
-        return Err(EditError::Invalid("replacement media kind mismatch"));
-    }
-    if target.retime.curve.is_some() {
-        return Err(EditError::Unsupported("replace clip under a speed curve"));
-    }
-    let length = target.duration()?;
-    let span = target
-        .retime
-        .speed
-        .source_offset(length, time::Rounding::Ceil)?;
-    if target.retime.speed.output_duration(span)? != length {
-        return Err(EditError::Invalid("clip length not representable"));
-    }
-    if source
-        .probe()
-        .duration
-        .is_some_and(|duration| span > duration)
-    {
-        return Err(EditError::Invalid("replacement source too short"));
-    }
-    target.source_range = time::SourceRange::new(time::Tick::ZERO, span)
-        .map_err(|_| EditError::Invalid("replacement source window"))?;
-    target.retime.window = None;
-    target.source_asset = Some(asset);
     Ok(data)
 }

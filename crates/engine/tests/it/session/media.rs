@@ -240,44 +240,11 @@ fn item_of(session: &Session, id: project::ItemId) -> project::Item {
 }
 
 #[test]
-fn replace_keeps_trims_timing_and_params_and_undoes_exactly() {
-    let mut session = session();
-    let window = SourceRange::new(Tick(200), Tick(1_200)).unwrap();
-    let item = insert_video_range(&mut session, AssetId(1), window);
-    let original = item_of(&session, item);
-    let before = session.project().clone();
-    let history = session.history_len();
-    session
-        .apply(Command::ReplaceMedia {
-            items: vec![item],
-            asset: AssetId(2),
-        })
-        .unwrap();
-    let replaced = item_of(&session, item);
-    assert_eq!(replaced.source_asset, Some(AssetId(2)));
-    assert_eq!(replaced.source_range, original.source_range, "trims kept");
-    assert_eq!(replaced.start, original.start);
-    assert_eq!(replaced.duration().unwrap(), original.duration().unwrap());
-    assert_eq!(replaced.retime, original.retime);
-    assert_eq!(replaced.content, original.content, "params kept");
-    assert_eq!(session.history_len(), (history.0 + 1, 0));
-    let changed = session.project().clone();
-    session.undo().unwrap();
-    assert_eq!(
-        session.project(),
-        &before,
-        "undo restores the exact project"
-    );
-    session.redo().unwrap();
-    assert_eq!(session.project(), &changed, "redo restores the replacement");
-}
-
-#[test]
 fn replace_refuses_short_kind_mismatched_and_hostile_targets_atomically() {
     let mut session = session();
     session
         .apply(Command::AddAsset {
-            asset: asset_with(3, "media-short.mp4", Tick(1_000), true),
+            asset: asset_with(3, "media-short.mp4", Tick(500), true),
         })
         .unwrap();
     session
@@ -408,7 +375,7 @@ fn dressed_clip(session: &mut Session) -> project::ItemId {
 }
 
 #[test]
-fn replace_clip_keeps_every_attribute_and_plays_the_new_media_from_its_start() {
+fn replace_media_keeps_every_attribute_and_plays_the_new_media_from_its_start() {
     let mut session = session();
     session
         .apply(Command::AddAsset {
@@ -423,7 +390,10 @@ fn replace_clip_keeps_every_attribute_and_plays_the_new_media_from_its_start() {
     let history = session.history_len();
     for asset in [AssetId(2), AssetId(3)] {
         session
-            .apply(Command::ReplaceClip { item, asset })
+            .apply(Command::ReplaceMedia {
+                items: vec![item],
+                asset,
+            })
             .unwrap();
         let replaced = item_of(&session, item);
         assert_eq!(replaced.source_asset, Some(asset), "asset reference");
@@ -455,61 +425,43 @@ fn replace_clip_keeps_every_attribute_and_plays_the_new_media_from_its_start() {
 }
 
 #[test]
-fn replace_clip_refuses_short_mismatched_and_hostile_targets_atomically() {
+fn replace_media_replaces_a_clip_and_its_extracted_audio_together_in_one_step() {
     let mut session = session();
-    for asset in [
-        asset_with(3, "media-short.mp4", Tick(1_000), true),
-        asset_with(4, "media-audio.m4a", Tick(20_000), false),
-    ] {
-        session.apply(Command::AddAsset { asset }).unwrap();
-    }
-    let item = dressed_clip(&mut session);
-    let main = session.project().data().scene().timeline.main.id;
-    let before = session.project().clone();
-    let history = session.history_len();
-    for (target, asset, expected) in [
-        (
-            item,
-            AssetId(3),
-            EditError::Invalid("replacement source too short"),
-        ),
-        (
-            item,
-            AssetId(4),
-            EditError::Invalid("replacement media kind mismatch"),
-        ),
-        (item, AssetId(9), EditError::NoAsset(AssetId(9))),
-        (
-            project::ItemId(99),
-            AssetId(2),
-            EditError::NoItem(project::ItemId(99)),
-        ),
-    ] {
-        let error = session
-            .apply(Command::ReplaceClip {
-                item: target,
-                asset,
-            })
-            .unwrap_err();
-        assert_eq!(format!("{error:?}"), format!("{expected:?}"));
-        assert_eq!(session.project(), &before, "refusal changes nothing");
-        assert_eq!(session.history_len(), history);
-    }
-    session
-        .apply(Command::SetTrackLocked {
-            track: main,
-            locked: true,
+    let video = insert_video_range(
+        &mut session,
+        AssetId(1),
+        SourceRange::new(Tick(200), Tick(1_200)).unwrap(),
+    );
+    let created = session
+        .apply(Command::ExtractAudio { items: vec![video] })
+        .unwrap()
+        .created;
+    let audio = created
+        .iter()
+        .find_map(|id| match id {
+            engine::CreatedId::Item(id) => Some(*id),
+            _ => None,
         })
         .unwrap();
-    let locked = session.project().clone();
-    let error = session
-        .apply(Command::ReplaceClip {
-            item,
+    let before = session.project().clone();
+    let history = session.history_len();
+    session
+        .apply(Command::ReplaceMedia {
+            items: vec![video, audio],
             asset: AssetId(2),
         })
-        .unwrap_err();
-    assert!(matches!(error, EditError::Locked(track) if track == main));
-    assert_eq!(session.project(), &locked);
+        .unwrap();
+    for id in [video, audio] {
+        let replaced = item_of(&session, id);
+        assert_eq!(replaced.source_asset, Some(AssetId(2)));
+        assert_eq!(
+            replaced.source_range,
+            SourceRange::new(Tick::ZERO, Tick(1_000)).unwrap()
+        );
+    }
+    assert_eq!(session.history_len(), (history.0 + 1, 0), "one undo step");
+    session.undo().unwrap();
+    assert_eq!(session.project(), &before);
 }
 
 #[test]

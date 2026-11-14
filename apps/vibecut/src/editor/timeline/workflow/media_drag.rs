@@ -2,7 +2,7 @@
 //! is down, and a release over the lanes inserts the dragged assets. A single asset over an
 //! occupied clip of its kind labels the clip `Replace`; releasing it shorter than that clip
 //! changes nothing and toasts why, and releasing it equal or longer replaces the clip with
-//! `timeline.replace_clip`.
+//! `timeline.replace_media`.
 
 use crate::editor::context::MediaDrag;
 use crate::editor::timeline::{
@@ -58,8 +58,8 @@ impl State {
                             i18n::text(cx.locale, Text::ReplaceTooShort).to_owned(),
                         ));
                     } else {
-                        self.push(Action::Command(Box::new(engine::Command::ReplaceClip {
-                            item: occupied.item,
+                        self.push(Action::Command(Box::new(engine::Command::ReplaceMedia {
+                            items: vec![occupied.item],
                             asset: *asset,
                         })));
                     }

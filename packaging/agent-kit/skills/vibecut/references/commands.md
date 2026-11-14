@@ -169,7 +169,6 @@ API version: 20. Registry digest: `7f5eb6c5be35bdb042de78f37e739caa3fe54ad2458d1
 | `timeline.recover_audio` | `Edit` | Recover source audio |
 | `timeline.remove_fillers` | `Edit` | Remove reviewed fillers |
 | `timeline.remove_pauses` | `Edit` | Remove reviewed pauses |
-| `timeline.replace_clip` | `Edit` | Replace clip |
 | `timeline.replace_media` | `Edit` | Replace media |
 | `timeline.set_background` | `Edit` | Set clip background |
 | `timeline.set_flipped` | `Edit` | Flip items |
