@@ -42,6 +42,11 @@ pub struct VideoParams {
     /// per source and looked up at render, never stored here; only the edge feather is item content.
     #[serde(default)]
     pub background_removal: Option<BackgroundRemoval>,
+    /// Flicker removal: off leaves the picture untouched. The per-frame brightness measurements
+    /// are derived data computed once per source and looked up at render, never stored here; the
+    /// reference toggle shows no level, so the switch is all the item carries.
+    #[serde(default)]
+    pub remove_flicker: bool,
 }
 /// The item's side of person background removal: how far the matte edge is softened.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -94,8 +99,8 @@ impl StabilizeLevel {
 }
 impl VideoParams {
     /// A plain clip: its own audio off, unity volume, not muted, the full frame, default
-    /// fit, no fades, no cleanup, no background, no noise reduction, no stabilization and no
-    /// background removal. `Default` would
+    /// fit, no fades, no cleanup, no background, no noise reduction, no stabilization, no
+    /// background removal and no flicker removal. `Default` would
     /// need a neutral `source_audio_enabled`, which has none: a clip with its audio on and
     /// one without are both ordinary, so sites that want audio set it as a field update.
     pub fn plain() -> Self {
@@ -111,6 +116,7 @@ impl VideoParams {
             reduce_noise: false,
             stabilize: None,
             background_removal: None,
+            remove_flicker: false,
         }
     }
 }

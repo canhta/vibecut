@@ -25,7 +25,8 @@ Job progress, cancellation and byte admission belong to the [job runner](../runt
 `footage.analyze {item, kind}` runs it as a local CPU `AnalyzeFootage` job and edits nothing.
 Stabilize is the first kind: per-frame camera poses measured once per source, reused by every item,
 trim, split, retime and level over that source. The person matte is the second: the local
-segmenter's person plane of every frame, reused by every feather. See
+segmenter's person plane of every frame, reused by every feather. Flicker is the third: the mean
+linear luma and shot starts of every frame, reused by every trim and split. See
 [footage correction](correction/README.md).
 
 ## Reframe

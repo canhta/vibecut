@@ -64,6 +64,7 @@ Language for the editor's privacy and execution boundaries.
 - **Mask**: An item-relative shape that limits where the item draws, with feather, expansion, stroke and an ordered add/subtract list.
 - **Mask path**: A mask's closed cubic contour: anchors in normalized mask-box coordinates with anchor-relative incoming and outgoing tangents; saved exactly and flattened only for rendering.
 - **Person matte**: The per-cell person probability plane local segmentation produces for each decoded frame of a source, stored once per source as a footage correction; render scales a clip's own picture by it, softened by the clip's edge feather, to remove the background. It is derived data, never an edit of the source, and it is distinct from a mask, which is an authored shape.
+- **Flicker track**: The per-frame mean linear luma and shot starts of a source, stored once as a footage correction; render derives each frame's gain from a one-second Hann reference within the shot and multiplies the clip's picture by it before colour adjustment.
 - **Mask point**: One indexed anchor of a mask path, identified by the mask's stable id and its position in that path.
 - **Revision**: An opaque Session-local token that advances on every accepted mutation and that effectful control requests must supply as `base_rev`.
 - **Receipt**: The stored terminal outcome of an effectful control request, keyed by principal, Session and idempotency key, replayed instead of re-executing a retry.

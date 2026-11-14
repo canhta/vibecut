@@ -1736,6 +1736,28 @@ fn reduce_noise_is_a_video_item_switch_with_one_undo_step() {
     assert!(noise(&s));
     s.undo().unwrap();
     assert!(!noise(&s));
+    // Flicker removal is the same kind of switch: video items only, one undo step.
+    let flicker = |s: &Session| match &get_id(s, clip).content {
+        ItemParams::Video(p) => p.remove_flicker,
+        _ => panic!("video item"),
+    };
+    assert!(!flicker(&s), "off at creation");
+    s.apply(Command::SetItemField {
+        item: clip,
+        patch: engine::ItemParamPatch::RemoveFlicker(true),
+    })
+    .unwrap();
+    assert!(flicker(&s));
+    s.undo().unwrap();
+    assert!(!flicker(&s));
+    assert_eq!(
+        engine::ItemParamPatch::parse("remove_flicker", "true").unwrap(),
+        engine::ItemParamPatch::RemoveFlicker(true)
+    );
+    assert!(
+        !engine::ItemParamPatch::RemoveFlicker(true)
+            .compatible(&ItemParams::Audio(project::AudioParams::default()))
+    );
 }
 
 #[test]

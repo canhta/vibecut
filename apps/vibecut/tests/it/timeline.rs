@@ -355,6 +355,21 @@ fn blend_dropdown_and_opacity_field_dispatch_real_edits() {
     harness.state_mut().activate("edit.undo").unwrap();
     harness.run_steps(2);
     assert_eq!(stabilize(&harness), Some(project::StabilizeLevel::Normal));
+    // The Remove flicker switch sets the video item's flag as one undo step; it has no level.
+    let flicker = |harness: &Harness<'_, Editor>| match &item(harness.state(), id).content {
+        project::ItemParams::Video(params) => params.remove_flicker,
+        _ => panic!("video item"),
+    };
+    assert!(!flicker(&harness));
+    crate::panels::reveal(&mut harness, "inspector.remove_flicker");
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.remove_flicker")))
+        .click();
+    harness.run_steps(3);
+    assert!(flicker(&harness));
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert!(!flicker(&harness));
 }
 
 #[test]

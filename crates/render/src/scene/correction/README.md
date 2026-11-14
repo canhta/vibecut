@@ -1,12 +1,56 @@
 # Footage corrections
 
-Interface: `stabilize`, `matte`.
+Interface: `stabilize`, `matte`, `flicker`.
 
 What render applies inside one item's own picture from derived data the caller resolved from the
 engine's [footage correction](../../../../engine/src/analysis/correction/README.md) cache. Render
 reads no cache and opens no media for either; an item with its switch on and no entry in
 `RenderSettings` renders without that correction and never fails the frame, and the engine's
 export admission refuses instead. Stabilization: [scene](../README.md#stabilization).
+
+## Flicker
+
+`FlickerTrack` holds one source's brightness per frame: the mean linear luma (Rec. 709 weights on
+the decoded frame's sRGB values taken to linear light), a shot-start flag and the frame time, in
+strictly increasing source time (at most 262,144 frames, 13 bytes each). `encode`/`decode` are
+deterministic versioned little-endian bytes (`VCFL` v1: frame count, the i64 times, the f32 means,
+one flag byte per frame); `decode` refuses a bad length, order, a mean outside `0..=1`, a flag other
+than 0 or 1 and a flag on the first frame. `RECIPE` names this storage and the application; the
+engine puts it in the cache key.
+
+The gain of a frame is derived from the track when it is built, so the stored bytes carry no level
+(the reference's `Remove flicker` toggle shows none). The reference is the Hann-weighted mean
+(`0.5 (1 + cos(pi k / (h + 1)))`, `k` in `-h..=h`) of the means in a window of one second of
+frames, `W = round(fps)` made odd (31 at 30 fps, `h = (W - 1) / 2`), clipped to the frame's own
+shot, so a cut resets it and a frame at a shot edge takes the one-sided window; the gain is that
+reference over the frame's own mean, clamped to 0.5..2 (our choice, unmeasured). A dark frame
+(mean under 1e-4) takes gain 1. `fps` is read from the track's own frame times. A long window
+flattens genuine slow changes and a short one leaves slow flicker: the study found a 1 s Hann window
+removes flicker down to 1.7 Hz and keeps a 6 s fade; flicker below about 1 Hz cannot be told from a
+real brightness change.
+
+`RenderSettings.flicker` maps an item with `VideoParams.remove_flicker` on to its track. The item's
+layer takes one `gain` pass of the frame covering the source time, the same factor on red, green and
+blue, before noise reduction and every effect (the gain pass is the linear-light `straight * gain`
+stage in [effects](../effects/README.md), native on the desktop adapter and a CPU reference
+elsewhere, so preview and export take the one path). Trims and splits read the same track and the
+same frame gain, whatever part of the source an item shows. An item with the switch on and no stored
+track renders uncorrected and never fails the frame; the engine's export admission refuses instead,
+and the stream-copy export path refuses an item with the switch on.
+
+Evidence (`tests/it/flicker.rs`, and the engine's `footage_correction.rs` on lossless clips): the
+bounds recorded by the footage clean-up study for a 1 s window: mains flicker (the 10.09 Hz alias
+and the 1.7 Hz beat, 8 % deep) leaves interior RMS at most 0.6 % and maximum at most 2 %; a fade
+under flicker is held to 0.6 % RMS; a hard cut with flicker to 0.5 % RMS with the reset, where
+without it the error is over 5 %. The study measured 0.27/1.32, 0.39/1.46, 0.37 and 0.24 on its
+film clip. The fixtures here model the measured series (and in the engine, 160x90 clips whose linear
+light is modulated), not that clip, and their brightness drift is a test input: a shot whose
+brightness moves fast next to a cut is biased by the one-sided window (0.52 % RMS and 2.6 % maximum
+at a drift of 17 to 20 %/s on both sides of a cut, against the recorded 0.5 % RMS), so the cut
+fixtures drift at most 7 %/s. The
+study did not record the drift of its own clip. Not measured: rolling-shutter banding (a frame gain
+cannot remove per-row flicker), real footage, flicker below 1.7 Hz, and fast real brightness
+changes such as a light switched on (partly flattened).
 
 ## Person matte
 

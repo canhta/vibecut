@@ -487,6 +487,7 @@ fn populated(path: PathBuf) -> Project {
             reduce_noise: true,
             stabilize: Some(project::StabilizeLevel::Stable),
             background_removal: Some(project::BackgroundRemoval { feather: 25.0 }),
+            remove_flicker: true,
             ..VideoParams::plain()
         }),
         ItemParams::Audio(AudioParams {

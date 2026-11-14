@@ -198,6 +198,16 @@ A video item's Basic tab ends with the `Reduce image noise` toggle row (`inspect
 
 A video item's Basic tab shows the `Stabilize` toggle row (`inspector.stabilize`) under `Reduce image noise`. Switching on sends one `timeline.set_item_param` with field `stabilize` and `normal`, then `footage.analyze` for the clip; switching off sends `off`. While on, a `Level` row (`inspector.stabilize.level.<flexible|normal|stable>`) sets the level through the same field, one undo step each, and needs no analysis. A status row follows: nothing when the stored correction is present; `Needs analysis` with an `Analyze` button (`inspector.stabilize.analyze`) when the clip's source has none; `Analyzing` with a progress bar (`inspector.stabilize.progress`) and a `Cancel` button (`inspector.stabilize.cancel`) while the job runs. The row's state comes from `State::footage_status(item, kind)`, which [workflow/footage.rs](workflow/README.md) refreshes once per frame from the process media cache only when the project snapshot or the cache epoch changed. A clip without a correction renders uncorrected and export refuses to start naming it; a correction that finishes resyncs the preview, which reads the same cache. Layout and the unmeasured parts: [editor design](../../../../../../docs/product/ui/editor.md).
 
+## Remove flicker
+
+A video item's Basic tab shows the `Remove flicker` toggle row (`inspector.remove_flicker`) under
+the Stabilize rows. A click sends one `timeline.set_item_param` with field `remove_flicker` and
+`true` or `false`, one undo step; switching on also sends `footage.analyze {kind: flicker}` for the
+clip. There is no level or strength row: the reference shows none. While on, the shared analysis
+status row (`inspector.remove_flicker.analyze`, `.progress`, `.cancel`) shows `Needs analysis` with
+an `Analyze` button, or progress with `Cancel`, and nothing once the track is stored. The analysis
+needs no model. Layout: [editor design](../../../../../../docs/product/ui/editor.md).
+
 ## Blend and opacity
 
 Visual selections show a blend dropdown (`inspector.blendMode`, options

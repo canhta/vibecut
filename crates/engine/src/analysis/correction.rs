@@ -1,4 +1,5 @@
 //! Computes footage corrections once per source and looks them up by key.
+mod flicker;
 mod motion;
 mod person;
 
@@ -14,18 +15,23 @@ use crate::{
 use media::{SourceAsset, StreamKind, VisionPrepLimits};
 use motion::Motion;
 use project::{ItemId, ItemParams, Project};
-use render::{matte::MatteTrack, stabilize::Track};
+use render::{flicker::FlickerTrack, matte::MatteTrack, stabilize::Track};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 
 /// Versioned recipe of the stabilize correction; part of every stabilize cache key.
 pub(crate) const RECIPE: &str = "stabilize-v1:luma480-block32-r8-sad-parabola:sim4-irls:chain";
+/// Versioned recipe of the flicker measurement; part of every flicker cache key. The window,
+/// cut threshold and gain range live in [`render::flicker::RECIPE`].
+pub(crate) const FLICKER_RECIPE: &str = "flicker-v1:linear-luma709-mean:grid80x45-cut0.25";
 /// The pinned segmentation weights behind the person matte.
 pub const PERSON_MODEL: &str = "pphumanseg-2023mar";
 /// Inference threads of the person segmenter. It is fixed, and part of the matte key, so the
 /// same source always gives the same matte.
 pub const SEGMENTATION_THREADS: usize = 2;
+/// The retained flicker result: the largest track the render crate admits.
+const MAX_FLICKER_BYTES: usize = 13 * render::flicker::MAX_FRAMES + 12;
 /// Largest decoded frame the analysis admits: 16 Mi pixels.
 const MAX_PIXELS: u64 = 1 << 24;
 /// The retained stabilize result: the largest track the render crate admits.
@@ -48,6 +54,8 @@ pub enum Correction {
     Stabilize(Arc<Track>),
     /// The person probability plane of every frame.
     PersonMatte(Arc<MatteTrack>),
+    /// The mean brightness and shot starts of every frame.
+    Flicker(Arc<FlickerTrack>),
 }
 
 /// One source's correction request. The key binds the source content, the whole-source range,
@@ -120,6 +128,11 @@ impl CorrectionRequest {
                         .map_err(|_| settings_error())?,
                 )
             }
+            CorrectionKind::Flicker => (
+                "luma-mean",
+                format!("{FLICKER_RECIPE}|{}", render::flicker::RECIPE),
+                serde_json::to_vec(&(kind, range)).map_err(|_| settings_error())?,
+            ),
         };
         let key = CacheKey::new(KeyInputs {
             kind: ArtifactKind::FootageCorrection,
@@ -204,6 +217,7 @@ impl CorrectionRequest {
                 }
                 let bytes = match request.kind {
                     CorrectionKind::Stabilize => request.analyze(ctx)?.encode(),
+                    CorrectionKind::Flicker => request.analyze_flicker(ctx)?.encode(),
                     CorrectionKind::PersonMatte => {
                         let mut segmenter = segmenter
                             .as_ref()
@@ -230,6 +244,7 @@ impl CorrectionRequest {
         match self.kind {
             CorrectionKind::Stabilize => MAX_TRACK_BYTES,
             CorrectionKind::PersonMatte => render::matte::MAX_BYTES,
+            CorrectionKind::Flicker => MAX_FLICKER_BYTES,
         }
     }
 
@@ -243,6 +258,9 @@ impl CorrectionRequest {
                 .map_err(|_| crate::RuntimeError::CacheCorrupt),
             CorrectionKind::PersonMatte => MatteTrack::decode(bytes)
                 .map(|matte| Correction::PersonMatte(Arc::new(matte)))
+                .map_err(|_| crate::RuntimeError::CacheCorrupt),
+            CorrectionKind::Flicker => FlickerTrack::decode(bytes)
+                .map(|track| Correction::Flicker(Arc::new(track)))
                 .map_err(|_| crate::RuntimeError::CacheCorrupt),
         }
     }
@@ -356,6 +374,8 @@ pub struct Resolution {
     pub tracks: render::stabilize::Tracks,
     /// The stored matte of each item with background removal on that has one.
     pub mattes: render::matte::Mattes,
+    /// The stored brightness track of each item with flicker removal on that has one.
+    pub flicker: render::flicker::Tracks,
     /// Switched-on corrections with nothing stored, in item order: the item renders without
     /// that correction, its properties row shows `Needs analysis` and export refuses to start
     /// naming it.
@@ -366,6 +386,7 @@ impl Resolution {
     pub fn attach(self, settings: &mut render::RenderSettings) {
         settings.stabilization = self.tracks;
         settings.person_mattes = self.mattes;
+        settings.flicker = self.flicker;
     }
 }
 
@@ -391,6 +412,7 @@ pub fn resolve(project: &Project, cache: &mut ArtifactCache) -> Resolution {
                 CorrectionKind::PersonMatte,
                 params.background_removal.is_some(),
             ),
+            (CorrectionKind::Flicker, params.remove_flicker),
         ];
         for (kind, on) in kinds {
             if !on {
@@ -412,6 +434,9 @@ pub fn resolve(project: &Project, cache: &mut ArtifactCache) -> Resolution {
                 }
                 Some(Correction::PersonMatte(matte)) => {
                     resolution.mattes.insert(item.id, matte);
+                }
+                Some(Correction::Flicker(track)) => {
+                    resolution.flicker.insert(item.id, track);
                 }
                 None => resolution.missing.push((item.id, kind)),
             }

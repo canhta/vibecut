@@ -6,6 +6,7 @@ mod captions;
 mod color;
 mod contracts;
 mod effects;
+mod flicker;
 mod goldens;
 mod loudness;
 mod masks;

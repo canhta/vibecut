@@ -482,6 +482,8 @@ pub enum CorrectionKind {
     Stabilize,
     /// Per-frame person probability that `background_removal` keeps.
     PersonMatte,
+    /// Per-frame brightness that `remove_flicker` evens out.
+    Flicker,
 }
 
 /// Output aspect of a constant auto-reframe crop window.

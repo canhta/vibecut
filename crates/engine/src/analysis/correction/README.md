@@ -6,9 +6,9 @@ Interface: `CorrectionRequest`, `CorrectionJob`, `Correction`, `resolve`, `Resol
 A correction is derived data per source frame, computed once by an engine job and kept in the
 artifact cache. It is not project data and not keyframes: it is dense and reproducible. The item
 carries only the switch and its setting (`VideoParams.stabilize` with its level,
-`VideoParams.background_removal` with its feather); render looks the correction up and applies it
-inside the item's own picture ([render](../../../../render/src/scene/correction/README.md)). Two
-kinds exist, stabilize and the person matte; a kind is added by a recipe and a render
+`VideoParams.background_removal` with its feather, `VideoParams.remove_flicker`); render looks the correction up and applies it
+inside the item's own picture ([render](../../../../render/src/scene/correction/README.md)). Three
+kinds exist, stabilize, the person matte and flicker; a kind is added by a recipe and a render
 application, not by a new store.
 
 ## Contract
@@ -68,6 +68,24 @@ re-anchoring and is not built).
 Levels map to the Gaussian width of the smoothing: Flexible 0.13 s, Normal 0.4 s, Stable 1.2 s
 (4, 12 and 36 frames at 30 fps from the study's measurements). The reference names the three levels and
 shows no numbers, so the widths are our choices, not parity.
+
+## Flicker
+
+`flicker.rs` decodes every frame once, in slices of at most 300 s, and stores per frame the mean
+linear luma and whether the frame starts a new shot (13 bytes per frame with its time, about 2.3 MB
+per hour at 30 fps). The mean is an integer sum of Rec. 709 weights (54, 183, 19 of 256) over a
+table of 16-bit linear samples of the 256 sRGB values, so a frame always gives the same mean. The
+shot change score is the mean absolute difference of two consecutive frames' 80x45 box-averaged
+luma grids, each divided by its own mean, so a pure gain change never scores; above 0.25 (the
+study measured 0.49-0.68 on cuts and at most 0.10 elsewhere) the frame starts a shot, and black next to a lit
+frame counts as a cut while two black frames do not. The gain, its window and its clamp are applied
+at lookup from the stored means, so no level or window setting needs a new analysis; the method and
+its oracles are in [render](../../../../render/src/scene/correction/README.md#flicker). The key
+binds the source content hash, the kind, the whole-source range and the two recipes; it needs no
+model. A flicker source of more than 262,144 frames fails the job. Memory is one decoded frame and
+two grids. Measured oracles, the recorded bounds and what is not measured:
+`tests/it/analysis/footage_correction.rs`. Not measured here: time per minute of 1080p (the study
+estimated 6 s per minute on its host, decode-bound), real footage.
 
 ## Person matte
 
