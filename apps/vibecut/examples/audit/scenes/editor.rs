@@ -129,16 +129,23 @@ pub(super) fn captions_review_scene(
     editor.preferences = preferences(theme, locale);
     editor.preferences.assets_tab = vibecut::AssetsTab::Captions;
     editor.prepare_subtitles()?;
-    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, [1280.0, 800.0]);
+    // The window the review test drives: tall enough that Identify is on screen to press.
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, [1440.0, 1000.0]);
     app.run_steps(4);
     app.get(By::new().predicate(|node| node.author_id() == Some("subtitles.review.analyze")))
         .click();
+    // The review tabs register with the editor once the analysis has finished.
+    let listed = |app: &AppHarness| match &app.state().app {
+        App::Editor(editor) => editor.inspect().is_ok_and(|inspection| {
+            inspection
+                .widgets
+                .iter()
+                .any(|widget| widget.id == "subtitles.review.tab.all")
+        }),
+        _ => false,
+    };
     let deadline = Instant::now() + Duration::from_secs(20);
-    while app
-        .query_all(By::new().predicate(|node| node.author_id() == Some("subtitles.review.tab.all")))
-        .next()
-        .is_none()
-    {
+    while !listed(&app) {
         if Instant::now() > deadline {
             return Err("the transcript analysis did not finish".into());
         }
