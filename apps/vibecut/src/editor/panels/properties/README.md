@@ -134,7 +134,7 @@ Video and image items get a `Remove BG` cell in the Basic sub-tab bar. It opens 
 `Auto removal` toggle row (`inspector.auto_removal`) above Chroma key. Switching it on sends one
 `timeline.set_item_param` with field `background_removal` and `on` (feather 0), then
 `footage.analyze {kind: person_matte}` for the clip; switching off sends `off`. While on, a
-`Feather` slider row (`inspector.background_removal_feather`, field
+`Feather` slider row (ours: the reference has no such row; `inspector.background_removal_feather`, field
 `background_removal_feather`, 0–100, one undo step per gesture, no new analysis) and the
 analysis status row under `inspector.auto_removal` follow: the same states as Stabilize's, plus
 `Person data missing` with a `Download` button (`inspector.auto_removal.models`) that opens the
@@ -150,12 +150,13 @@ never project data. Each finished drag reaches `paint_matte_stroke`, which sets 
 is one undo step; there is no Apply step because strokes render live. The values and the
 Size-to-radius mapping are in
 [Remove background](../../../../../../docs/product/ui/editor.md#remove-background). Switching
-`Chroma key` on only stages the panel in app state and shows the eyedropper and a
-disabled reset. Switching
-`Chroma key` on only stages the panel in app state and shows the eyedropper and a
-disabled reset. The first eyedropper pick adds the clip's `chroma_key` effect carrying
-that colour and the catalog's Intensity 40 and Shadow 0 in one undo step; the
-key-colour field, the reset and the two effect scrub rows then appear. Switching it off
+`Chroma key` on only stages the panel in app state and shows the eyedropper, a
+disabled reset and the four keyed fields (Intensity, Shadow, Feather edge, Clean up edge)
+at their catalog defaults in the kit's disabled state with the hover reason
+`Pick a colour first` (`effects.chroma_key.param.<id>`; no keyframe cluster, nothing writes).
+The first eyedropper pick adds the clip's `chroma_key` effect carrying
+that colour and the catalog's Intensity 20 and Shadow, Feather edge and Clean up edge 0 in
+one undo step; the key-colour field, the reset and the four live effect scrub rows then replace them. Switching it off
 removes the effect in one undo step; with nothing picked yet it just clears the staged
 switch. The eyedropper arms on one clip and the player's next click samples the
 retained rendered preview frame (no second decode); Escape or the button again leaves

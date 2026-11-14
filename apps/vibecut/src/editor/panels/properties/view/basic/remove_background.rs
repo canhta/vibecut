@@ -130,6 +130,7 @@ impl Panel<'_, '_> {
             if staged {
                 ui.add_space(theme::space::MD);
                 self.eyedropper_row(ui, item, None, false);
+                self.waiting_key_rows(ui);
             }
             return;
         };
@@ -179,6 +180,41 @@ impl Panel<'_, '_> {
             };
             self.effect_scrub_field(ui, item, &effect, "chroma_key", parameter, current);
         }
+    }
+
+    /// The four keyed controls at their catalog defaults in the kit's disabled state,
+    /// as the reference draws them before a colour is picked. Nothing here writes: the
+    /// first eyedropper pick adds the effect and the live rows replace these.
+    fn waiting_key_rows(&mut self, ui: &mut egui::Ui) {
+        let Some(definition) = project::effect_definitions()
+            .iter()
+            .find(|definition| definition.id == "chroma_key")
+        else {
+            return;
+        };
+        let reason = self.tr(Text::PickKeyColorFirst);
+        ui.add_enabled_ui(false, |ui| {
+            for parameter in definition.params {
+                let Some(default) = parameter.default.scalar() else {
+                    continue;
+                };
+                ui.add_space(theme::space::MD);
+                let label = crate::i18n::effect_label("chroma_key", Some(parameter.id))
+                    .map_or(parameter.name, |key| self.tr(key));
+                let caption = ui.label(label);
+                let mut shown = default.to_string();
+                let field = egui::TextEdit::singleline(&mut shown)
+                    .background_color(self.control_fill());
+                let response = ui
+                    .add_sized([ui.available_width().max(60.0), 26.0], field)
+                    .labelled_by(caption.id)
+                    .on_disabled_hover_text(reason);
+                self.remember(
+                    format!("effects.chroma_key.param.{}", parameter.id),
+                    &response,
+                );
+            }
+        });
     }
 
     /// The reference's eyedropper and reset row; it is the only control while

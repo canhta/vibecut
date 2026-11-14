@@ -4,6 +4,7 @@ use project::{Animations, EffectInstance, EffectParamKind, EffectValue, Item, Pa
 use std::{borrow::Cow, collections::BTreeMap};
 use time::{Rounding, Tick};
 
+mod chroma_edge;
 mod denoise;
 mod image_ops;
 mod layers;
@@ -1345,6 +1346,24 @@ static OPS: &[EffectOp] = &[
             len: 5,
             valid: |v| v.iter().all(|c| (0.0..=1.0).contains(c)),
             apply: chroma_key_pixel,
+        }),
+    },
+    EffectOp {
+        entry_point: chroma_edge::CLEAN,
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 1,
+            valid: chroma_edge::valid,
+            apply: chroma_edge::clean,
+        }),
+    },
+    EffectOp {
+        entry_point: chroma_edge::FEATHER,
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 1,
+            valid: chroma_edge::valid,
+            apply: chroma_edge::feather,
         }),
     },
     EffectOp {
@@ -2769,12 +2788,18 @@ fn color_grade(frame: &EffectFrame, geometry: &EffectGeometry) -> Result<Vec<Eff
     }
     Ok(passes)
 }
-fn chroma_key(frame: &EffectFrame, _: &EffectGeometry) -> Result<Vec<EffectPass>> {
-    chroma_key_passes(
+/// The keying pass, then the Clean up and Feather edge stages. Intensity 0 keys
+/// nothing, so it leaves the edge stages out too.
+fn chroma_key(frame: &EffectFrame, geometry: &EffectGeometry) -> Result<Vec<EffectPass>> {
+    let mut passes = chroma_key_passes(
         frame.color("key_color")?,
         frame.scalar("intensity")?,
         frame.scalar("shadow")?,
-    )
+    )?;
+    if !passes.is_empty() {
+        passes.extend(chroma_edge::passes(frame, geometry)?);
+    }
+    Ok(passes)
 }
 /// Test kind paired with project's `test-kinds` feature: holds the item's content
 /// at `rate` frames per second, as Low Frame Rate does.

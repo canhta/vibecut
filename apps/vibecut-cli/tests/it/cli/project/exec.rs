@@ -721,7 +721,7 @@ fn cli_pixel_modifiers_execute_and_export_instead_of_copying() {
                 exec(
                     &project,
                     "effects.add",
-                    json!({"item":0,"effect":{"id":"chroma_key","kind":"chroma_key","enabled":true,"params":{"key_color":{"kind":"color","value":[0,255,0,255]},"intensity":{"kind":"scalar","value":40.0},"shadow":{"kind":"scalar","value":0.0}}}}),
+                    json!({"item":0,"effect":{"id":"chroma_key","kind":"chroma_key","enabled":true,"params":{"key_color":{"kind":"color","value":[0,255,0,255]},"intensity":{"kind":"scalar","value":20.0},"shadow":{"kind":"scalar","value":0.0},"feather_edge":{"kind":"scalar","value":0.0},"clean_up_edge":{"kind":"scalar","value":0.0}}}}),
                 );
                 exec(
                     &project,

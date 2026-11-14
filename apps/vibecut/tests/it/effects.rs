@@ -1706,6 +1706,31 @@ fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
                 }
             }
         }
+        // The chroma key's two edge stages have no shader entry: the device runs
+        // the keying pass and the run splitter hands both edge samples to the
+        // CPU, so the result must equal the all-CPU reference.
+        {
+            let edge = |entry_point, radius: f32| EffectPass::Sample {
+                entry_point,
+                uniforms: vec![Uniform::Float(radius)],
+            };
+            let mut keyed = chroma_key_passes([0.0, 1.0, 0.0, 1.0], 40.0, 0.0).unwrap();
+            keyed.push(edge("matte_clean", 1.0));
+            keyed.push(edge("matte_feather", 2.0));
+            let inputs = || EffectInputs {
+                input: &input,
+                below: &other,
+                coverage: None,
+            };
+            let expected = CpuEffects
+                .apply(&start, &keyed, inputs(), &Hooks)
+                .unwrap();
+            let actual = gpu.apply(&start, &keyed, inputs(), &meter).unwrap();
+            parity(&actual, &expected);
+            assert_ne!(actual.pixels(), start.pixels());
+            drop(actual);
+            meter.take();
+        }
         let mut below =
             Image::from_working_pixels(w, h, other.pixels().iter().copied(), &Hooks).unwrap();
         let mut expected =

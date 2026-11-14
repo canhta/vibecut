@@ -1171,6 +1171,149 @@ fn chroma_key_refuses_hostile_values_and_bad_passes() {
     }
 }
 
+fn chroma_edge_effect(intensity: f64, clean: f64, feather: f64) -> project::EffectInstance {
+    project::effect_definition("chroma_key")
+        .unwrap()
+        .instance("key")
+        .with("key_color", EffectValue::Color(Color(GREEN_KEY)))
+        .unwrap()
+        .with("intensity", EffectValue::Scalar(intensity))
+        .unwrap()
+        .with("clean_up_edge", EffectValue::Scalar(clean))
+        .unwrap()
+        .with("feather_edge", EffectValue::Scalar(feather))
+        .unwrap()
+}
+fn chroma_edge_passes(effect: &project::EffectInstance, gain: f64) -> Vec<EffectPass> {
+    evaluate_effect(
+        &project::Animations::default(),
+        effect,
+        time::Tick::ZERO,
+        EffectGeometry::new([12, 5], [gain, gain]).unwrap(),
+        true,
+        &render::lut::LutResources::default(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn chroma_key_edge_stages_clean_then_feather_the_matte_on_the_cpu() {
+    // Reference rows: Feather edge and Clean up edge are inferred from the
+    // controls' names (the capture shows no picture of either), so the rows pin
+    // our reading: Clean up takes the minimum coverage over a disc, Feather the
+    // disc mean capped at the pixel's own coverage, Clean up first.
+    let (w, h) = (12usize, 5usize);
+    let green = srgb_pixel([0.0, 1.0, 0.0], 1.0);
+    let skin = srgb_pixel([0.76, 0.55, 0.42], 1.0);
+    let pixels: Vec<[f64; 4]> = (0..w * h)
+        .map(|i| {
+            let pixel = if i % w < 6 { green } else { skin };
+            pixel.map(f64::from)
+        })
+        .collect();
+    let size = [w as u32, h as u32];
+    let alpha = |effect: &project::EffectInstance| {
+        let (out, _) = spatial_output(&pixels, size, [1.0, 1.0], effect, true);
+        out
+    };
+    let base = alpha(&chroma_edge_effect(40.0, 0.0, 0.0));
+    assert!(base[5][3] < 1e-3 && base[6][3] > 0.99, "a vertical key edge");
+    // Slider 25 and 12.5 give a one pixel radius: the four neighbours, the
+    // horizontal pair read twice by the eight-tap ring.
+    let at = |a: &[[f32; 4]], x: i64, y: i64| {
+        a[y.clamp(0, h as i64 - 1) as usize * w + x.clamp(0, w as i64 - 1) as usize][3]
+    };
+    let clean = |a: &[[f32; 4]]| -> Vec<f32> {
+        (0..h * w)
+            .map(|i| {
+                let (x, y) = ((i % w) as i64, (i / w) as i64);
+                [(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)]
+                    .iter()
+                    .map(|(dx, dy)| at(a, x + dx, y + dy))
+                    .fold(f32::MAX, f32::min)
+            })
+            .collect()
+    };
+    let feather = |a: &[[f32; 4]]| -> Vec<f32> {
+        (0..h * w)
+            .map(|i| {
+                let (x, y) = ((i % w) as i64, (i / w) as i64);
+                let ring: f32 = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                    .iter()
+                    .map(|(dx, dy)| 2.0 * at(a, x + dx, y + dy))
+                    .sum();
+                a[i][3].min((a[i][3] + ring) / 9.0)
+            })
+            .collect()
+    };
+    let close = |actual: &[[f32; 4]], expected: &[f32], what: &str| {
+        for (i, (pixel, alpha)) in actual.iter().zip(expected).enumerate() {
+            assert!((pixel[3] - alpha).abs() < 1e-5, "{what} {i}: {pixel:?} {alpha}");
+            assert!(pixel[..3].iter().all(|v| *v <= pixel[3] + 1e-6), "{what} {i}");
+        }
+    };
+    let cleaned = alpha(&chroma_edge_effect(40.0, 25.0, 0.0));
+    close(&cleaned, &clean(&base), "clean");
+    assert!(cleaned[6][3] < 1e-3, "the first opaque column is cut");
+    assert!(cleaned[7][3] > 0.99, "the next column stays");
+    let feathered = alpha(&chroma_edge_effect(40.0, 0.0, 12.5));
+    close(&feathered, &feather(&base), "feather");
+    assert!(feathered[5][3] < 1e-3, "feather never lifts removed coverage");
+    assert!(feathered[6][3] > 0.2 && feathered[6][3] < 0.9, "a soft edge");
+    // Both: Clean up first, then Feather.
+    let both = alpha(&chroma_edge_effect(40.0, 25.0, 12.5));
+    let expected = feather(&alpha(&chroma_edge_effect(40.0, 25.0, 0.0)));
+    close(&both, &expected, "both");
+}
+
+#[test]
+fn chroma_key_edge_passes_follow_the_keying_pass_scale_and_refuse_bad_input() {
+    let entries = |effect: &project::EffectInstance, gain: f64| {
+        chroma_edge_passes(effect, gain)
+            .iter()
+            .map(|pass| (pass.entry_point().to_owned(), pass.values().into_owned()))
+            .collect::<Vec<_>>()
+    };
+    // Defaults add no edge pass; both sliders add clean up, then feather.
+    assert_eq!(entries(&chroma_edge_effect(20.0, 0.0, 0.0), 1.0).len(), 1);
+    let full = entries(&chroma_edge_effect(20.0, 100.0, 100.0), 1.0);
+    assert_eq!(
+        full.iter().map(|(entry, _)| entry.as_str()).collect::<Vec<_>>(),
+        ["chroma_key", "matte_clean", "matte_feather"]
+    );
+    assert_eq!(full[1].1, [4.0]);
+    assert_eq!(full[2].1, [8.0]);
+    // The radius follows the clip-to-output pixel scale and saturates.
+    assert_eq!(entries(&chroma_edge_effect(20.0, 100.0, 0.0), 2.0)[1].1, [8.0]);
+    assert_eq!(entries(&chroma_edge_effect(20.0, 100.0, 100.0), 1e9)[2].1, [64.0]);
+    // Under half an output pixel emits nothing; intensity 0 keys nothing, so no edge stage.
+    assert_eq!(entries(&chroma_edge_effect(20.0, 10.0, 5.0), 1.0).len(), 1);
+    assert!(entries(&chroma_edge_effect(0.0, 100.0, 100.0), 1.0).is_empty());
+    // Hostile parameter values never reach a pass, and a bad pass never validates.
+    let definition = project::effect_definition("chroma_key").unwrap();
+    for id in ["feather_edge", "clean_up_edge"] {
+        for bad in [-0.1, 100.1, f64::NAN] {
+            assert!(
+                definition
+                    .instance("key")
+                    .with(id, EffectValue::Scalar(bad))
+                    .is_err(),
+                "{id} {bad}"
+            );
+        }
+    }
+    for entry in ["matte_clean", "matte_feather"] {
+        let sample = |values: Vec<f32>| EffectPass::Sample {
+            entry_point: entry,
+            uniforms: values.into_iter().map(Uniform::Float).collect(),
+        };
+        assert!(validate_pass(&sample(vec![2.0]), 8, 4).is_ok(), "{entry}");
+        for values in [vec![], vec![0.4], vec![64.5], vec![f32::NAN], vec![1.0, 1.0]] {
+            assert!(validate_pass(&sample(values.clone()), 8, 4).is_err(), "{entry} {values:?}");
+        }
+    }
+}
+
 #[test]
 fn masked_item_chroma_key_composes_with_track_below() {
     use project::*;

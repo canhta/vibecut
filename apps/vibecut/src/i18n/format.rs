@@ -54,6 +54,8 @@ pub fn effect_label(kind: &str, parameter: Option<&str>) -> Option<Text> {
         ("tint", None) => Text::EffectTwoTone,
         ("blur" | "chroma_key", Some("intensity")) => Text::EffectIntensity,
         ("chroma_key", Some("shadow")) => Text::EffectShadow,
+        ("chroma_key", Some("feather_edge")) => Text::EffectFeatherEdge,
+        ("chroma_key", Some("clean_up_edge")) => Text::EffectCleanUpEdge,
         ("color_grade", Some(parameter)) if parameter.starts_with("hsl_") => {
             if parameter.ends_with("_hue") {
                 Text::Hue
