@@ -42,7 +42,7 @@ pub fn dir(area: &str) -> PathBuf {
 }
 
 /// Publishes `dir/name` by writing a temporary sibling through `write` and
-/// renaming it into place, so readers never observe a partial file. Returns an
+/// linking it into place, so readers never observe a partial file. Returns an
 /// existing non-empty fixture without running `write`.
 pub fn publish(dir: &Path, name: &str, write: impl FnOnce(&Path)) -> PathBuf {
     std::fs::create_dir_all(dir).unwrap();
@@ -57,13 +57,14 @@ pub fn publish(dir: &Path, name: &str, write: impl FnOnce(&Path)) -> PathBuf {
     ));
     let _ = std::fs::remove_file(&temp);
     write(&temp);
-    match std::fs::rename(&temp, &path) {
+    // A hard link never replaces an existing file, on every OS: a rename over it would
+    // swap bytes (encoders embed random IDs) under a reader that already hashed them.
+    match std::fs::hard_link(&temp, &path) {
         Ok(()) => {}
-        Err(_) if nonempty(&path) => {
-            let _ = std::fs::remove_file(&temp);
-        }
+        Err(_) if nonempty(&path) => {}
         Err(error) => panic!("publish fixture {name}: {error}"),
     }
+    let _ = std::fs::remove_file(&temp);
     path
 }
 

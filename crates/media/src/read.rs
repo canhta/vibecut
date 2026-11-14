@@ -4,6 +4,8 @@ mod decode;
 mod demux;
 mod thumbnail;
 
+#[cfg(test)]
+pub(crate) use decode::recovery_tests;
 pub use decode::{
     AudioDecoder, AudioFrame, DecodePreference, RgbaConverter, VideoDecoder, VideoFrame,
     VideoReader,

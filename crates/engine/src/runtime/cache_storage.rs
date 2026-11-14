@@ -1016,9 +1016,11 @@ mod tests {
             keys.push(key);
         }
         let entry = 28 + super::HEADER as u64;
-        let pinned = cache.get(keys[0]).unwrap().unwrap();
         let before = budget.snapshot().unwrap().used;
         assert_eq!(before, 3 * entry);
+        let pinned = cache.get(keys[0]).unwrap().unwrap();
+        // The reader lease charges the pinned bytes a second time, as CacheReads.
+        assert_eq!(budget.snapshot().unwrap().used, before + entry);
         let report = cache
             .maintenance()
             .unwrap()
@@ -1027,7 +1029,7 @@ mod tests {
             (report.removed_bytes, report.in_use, report.failed),
             (2 * entry, 1, 0),
         );
-        assert_eq!(budget.snapshot().unwrap().used, before - 2 * entry);
+        assert_eq!(budget.snapshot().unwrap().used, before + entry - 2 * entry);
         assert_eq!(
             pinned.bytes(),
             [1u8; 28].as_slice(),

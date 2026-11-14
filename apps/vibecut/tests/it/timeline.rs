@@ -1841,9 +1841,15 @@ fn every_editor_button_reports_its_embedded_icon() {
             .unwrap()
             .display(vibecut::actions::Platform::current())
     );
+    let split = format!(
+        "Split ({})",
+        vibecut::actions::Chord::parse("Ctrl+B")
+            .unwrap()
+            .display(vibecut::actions::Platform::current())
+    );
     for (id, text) in [
         ("edit.undo", undo.as_str()),
-        ("timeline.split", "Split (Ctrl+B)"),
+        ("timeline.split", split.as_str()),
         ("timeline.snap", "Snap (N)"),
         ("timeline.preview_axis", "Turn off preview axis (S)"),
         ("timeline.zoom_in", "Zoom +"),
