@@ -188,6 +188,11 @@ impl AudioPort {
             Ordering::Release,
         );
     }
+    /// Whether the device stream should run: only while the transport plays. The clock never
+    /// reads the device while paused, so the stream may stop and restart without moving it.
+    pub fn stream_wanted(&self) -> bool {
+        self.playing.load(Ordering::Acquire)
+    }
     pub fn fail(&self) {
         if !self.failed.swap(true, Ordering::AcqRel)
             && let Some(wake) = &self.wake
@@ -817,6 +822,10 @@ impl Playback {
         self.preview_generation.store(generation, Ordering::Release);
         self.port.playing.store(playing, Ordering::Release);
         self.port.park.wake();
+        // The device stream starts or stops on the next frame: a paused editor draws none unasked.
+        if let Some(wake) = &self.port.wake {
+            wake.wake();
+        }
         self.shown = None;
         output.frames.clear();
         output.error = None;
