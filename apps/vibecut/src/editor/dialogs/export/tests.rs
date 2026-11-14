@@ -512,6 +512,56 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
 }
 
 #[test]
+fn size_estimate_follows_the_encoder_settings_of_every_preset() {
+    let project = project(false, false);
+    let hd60 = |quality, include_audio| {
+        let mut options = ExportOptions {
+            quality,
+            include_audio,
+            ..Default::default()
+        };
+        options.output.resolution = Some([1920, 1080]);
+        options.output.fps = Some(time::FrameRate::new(60, 1).unwrap());
+        options
+    };
+    let mb = |options: &ExportOptions| super::settings::estimated_megabytes(options, &project, 9.58);
+    // The measured export: 1080p60 at the default preset wrote 47.25 MB, not 14.6 MB.
+    let default = mb(&hd60(ExportQuality::High, true));
+    assert!((default - 47.25).abs() < 1.0, "{default}");
+    // Higher presets never estimate smaller, and each estimate is above its target rate.
+    let sizes: Vec<f64> = [
+        ExportQuality::Low,
+        ExportQuality::Medium,
+        ExportQuality::High,
+        ExportQuality::VeryHigh,
+    ]
+    .into_iter()
+    .map(|quality| {
+        let size = mb(&hd60(quality, true));
+        assert!(size >= 9.58 * quality.value().1 as f64 / 8_000_000.0, "{size}");
+        size
+    })
+    .collect();
+    assert!(sizes.windows(2).all(|pair| pair[0] < pair[1]), "{sizes:?}");
+    // Audio adds its track, resolution and frame rate scale the video, a custom rate is a floor.
+    let silent = mb(&hd60(ExportQuality::High, false));
+    assert!((default - silent - 9.58 * 192_000.0 / 8_000_000.0).abs() < 1e-9);
+    let mut small = hd60(ExportQuality::High, true);
+    small.output.resolution = Some([960, 540]);
+    assert!(mb(&small) < default / 3.0);
+    let mut custom = hd60(ExportQuality::Low, true);
+    custom.output.bit_rate = Some(50_000_000);
+    assert!(mb(&custom) >= 9.58 * 50_192_000.0 / 8_000_000.0 - 1e-9);
+    // Audio-only output estimates the audio track alone.
+    let mut audio = ExportOptions {
+        format: ExportFormat::M4a,
+        ..Default::default()
+    };
+    audio.output.audio_only = true;
+    assert!((mb(&audio) - 9.58 * 192_000.0 / 8_000_000.0).abs() < 1e-9);
+}
+
+#[test]
 fn export_progress_then_save_writes_toast_and_closes_without_an_extra_screen() {
     let dir = tempfile::tempdir().unwrap();
     let destination = dir.path().join("My Project.mp4");

@@ -21,6 +21,7 @@ mod narration;
 mod panels;
 mod preview;
 mod projects;
+mod save_status;
 mod scenes;
 mod shorts;
 mod sounds;

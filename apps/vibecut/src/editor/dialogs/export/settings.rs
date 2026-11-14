@@ -826,6 +826,19 @@ fn gated(
     }
 }
 
+/// The footer's size estimate in megabytes: the settings the job would run with
+/// (preset, custom rate, resolution, frame rate, audio), through the encoder-side model.
+pub(super) fn estimated_megabytes(
+    options: &ExportOptions,
+    project: &project::Project,
+    seconds: f64,
+) -> f64 {
+    let mut settings = options.settings(project);
+    // A refused choice leaves the preset's settings; Export is disabled for it anyway.
+    let _ = options.output.apply(&mut settings);
+    settings.estimated_bytes(seconds) / 1_000_000.0
+}
+
 pub(super) fn valid(options: &ExportOptions, project: &project::Project) -> bool {
     let mut settings = options.settings(project);
     options.output.ranges(project).is_ok()

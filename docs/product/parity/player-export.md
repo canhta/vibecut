@@ -58,7 +58,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | EXP-21 | Captions section | Partial | Differs | 14b/105557 | Buttons, not a tick |
 | EXP-22 | Caption formats | Done | Proposed | 14b/105559 | Plus VTT, burned MP4 |
 | EXP-23 | Check copyright toggle | Missing | — | 14b/105555 | |
-| EXP-24 | Duration and size estimate | Done | Matches | 14b/105340 | |
+| EXP-24 | Duration and size estimate | Done | Matches | 14b/105340 | Size from the encoder's quality model plus audio; recheck on the Mac |
 | EXP-25 | Export, Cancel buttons | Done | Matches | 14b/105340 | |
 | EXP-26 | Progress state | Done | Not captured | 14b/105909 | |
 | EXP-27 | Finished share view | Out of scope | — | 14b/105909 | Sharing |

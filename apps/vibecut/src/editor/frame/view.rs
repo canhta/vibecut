@@ -482,6 +482,10 @@ impl Editor {
             self.fail(error.to_string());
         }
     }
+    /// The header's save text as painted (the painter text has no accessibility node).
+    pub fn save_status_text(&self) -> String {
+        super::topbar::save_label(self.preferences.locale, &self.save_status())
+    }
     pub(super) fn save_status(&self) -> SaveStatus {
         if self.persistence_error.is_some() {
             SaveStatus::Failed
@@ -489,7 +493,10 @@ impl Editor {
             match &self.session {
                 crate::services::lifecycle::EditorSession::Memory(_) => SaveStatus::Unsaved,
                 crate::services::lifecycle::EditorSession::Persistent(autosave) => {
-                    if autosave.saving() || autosave.journaled_revision() < autosave.revision() {
+                    // Saving lasts exactly while a write is queued or in flight. A clean
+                    // session whose journal was cleared (journaled revision 0) or a freshly
+                    // opened project has nothing to write and is saved.
+                    if autosave.pending() {
                         SaveStatus::Saving
                     } else {
                         SaveStatus::Saved {

@@ -8,7 +8,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | ID | Item | Function | UI/UX | Evidence | Gap / note |
 |---|---|---|---|---|---|
 | SHELL-01 | Project title | Done | Proposed | 221513 | Inline rename |
-| SHELL-02 | Autosave status line | Done | Matches | 2026-11-14b row 17 | |
+| SHELL-02 | Autosave status line | Done | Matches | 2026-11-14b row 17 | Saving lasts only while a write is pending; recheck on the Mac |
 | SHELL-03 | Export button | Done | Matches | 221513 | |
 | SHELL-04 | Shortcuts button | Done | Proposed | 110515 | |
 | SHELL-05 | Menu: Back to home | Done | Proposed | 2026-11-14b row 19 | Closes the saved project |
