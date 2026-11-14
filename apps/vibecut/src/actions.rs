@@ -219,6 +219,8 @@ pub enum UiAction {
     ResetLayout,
     /// `ui.onboarding.reset`: show the first-launch welcome dialog again.
     ResetOnboarding,
+    /// A named layout from the title-bar menu; also sets the panel fractions.
+    SetLayoutPreset(crate::preferences::LayoutPreset),
     ProjectInspector,
     DetailsInspector,
     RetryPreview,

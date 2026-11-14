@@ -119,12 +119,13 @@ impl Editor {
         let super::layout::Layout {
             top,
             body,
-            upper,
             left,
             player: preview,
             right,
             timeline,
             agent,
+            columns,
+            splits,
         } = super::layout::Layout::new(
             rect,
             self.preferences.panels,
@@ -137,6 +138,7 @@ impl Editor {
                 }
             },
             self.timeline.hidden,
+            self.preferences.layout_preset,
         );
         for (id, area) in [
             ("header", top),
@@ -176,31 +178,13 @@ impl Editor {
         }
         self.show_agent(ui, agent, timeline, preview);
         for (id, area, axis) in [
-            (
-                "layout.media",
-                Rect::from_center_size(
-                    egui::pos2((left.right() + preview.left()) / 2.0, upper.center().y),
-                    Vec2::new(theme::space::PANEL_GUTTER, upper.height()),
-                ),
-                0,
-            ),
-            (
-                "layout.inspector",
-                Rect::from_center_size(
-                    egui::pos2((preview.right() + right.left()) / 2.0, upper.center().y),
-                    Vec2::new(theme::space::PANEL_GUTTER, upper.height()),
-                ),
-                1,
-            ),
-            (
-                "layout.timeline",
-                Rect::from_center_size(
-                    egui::pos2(timeline.center().x, (upper.bottom() + timeline.top()) / 2.0),
-                    Vec2::new(timeline.width(), theme::space::SM),
-                ),
-                2,
-            ),
-        ] {
+            ("layout.media", splits[0], 0),
+            ("layout.inspector", splits[1], 1),
+            ("layout.timeline", splits[2], 2),
+        ]
+        .into_iter()
+        .filter_map(|(id, area, axis)| Some((id, area?, axis)))
+        {
             // The collapsed timeline has a fixed height, so its gutter is not a handle.
             if axis == 2 && self.timeline.hidden {
                 continue;
@@ -212,7 +196,7 @@ impl Editor {
             }
             if response.dragged() {
                 let delta = response.drag_delta();
-                let columns = (left.width() + preview.width() + right.width()).max(1.0);
+                let columns = columns.max(1.0);
                 let fraction = match axis {
                     0 | 1 => delta.x / columns,
                     _ => delta.y / (body.height() - theme::space::SM).max(1.0),

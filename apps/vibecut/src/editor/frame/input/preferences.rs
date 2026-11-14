@@ -28,6 +28,25 @@ impl Editor {
         }
         Ok(())
     }
+    /// Several preference keys as one history step, so one Undo restores them together.
+    pub fn set_preferences(&mut self, edits: &[(&str, serde_json::Value)]) -> Result<()> {
+        let mut command = PreferenceCommand {
+            edits: Vec::new(),
+            at: self.session.history_position(),
+        };
+        for (key, value) in edits {
+            let before = self.preferences.get(key)?;
+            self.preferences.set(key, value.clone())?;
+            let after = self.preferences.get(key)?;
+            if before != after {
+                command.edits.push(((*key).to_owned(), before, after));
+            }
+        }
+        if !command.edits.is_empty() {
+            self.frame.preference_history.record(command);
+        }
+        Ok(())
+    }
     /// One guide-line edit (rulers, lines, lock, visibility) as one preference step in
     /// app history; never project JSON.
     pub(in crate::editor) fn edit_guide_lines(

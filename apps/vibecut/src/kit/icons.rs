@@ -14,6 +14,8 @@ use std::{
 /// Every icon the application uses. Unknown names cannot reach a widget.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Icon {
+    Check,
+    Layout,
     AlignBottom,
     AlignCenterHorizontal,
     AlignCenterVertical,
@@ -95,6 +97,8 @@ pub(crate) enum Icon {
 impl Icon {
     #[allow(dead_code)] // complete catalog list, used by the icon tests and future pickers.
     pub(crate) const ALL: &'static [Self] = &[
+        Self::Check,
+        Self::Layout,
         Self::AlignBottom,
         Self::AlignCenterHorizontal,
         Self::AlignCenterVertical,
@@ -238,6 +242,8 @@ impl Icon {
             Self::Snowflake => "snowflake",
             Self::Sparkle => "sparkle",
             Self::SquaresFour => "squares-four",
+            Self::Check => "check",
+            Self::Layout => "layout",
             Self::SpeakerHigh => "speaker-high",
             Self::SpeakerSlash => "speaker-slash",
             Self::Star => "star",
@@ -262,6 +268,14 @@ impl Icon {
 
 /// Phosphor `regular` 2.1.1, unmodified. The last entry wins for duplicates.
 const ICONS: &[(&str, &[u8])] = &[
+    (
+        "check",
+        include_bytes!("../../../../assets/icons/phosphor/regular/check.svg"),
+    ),
+    (
+        "layout",
+        include_bytes!("../../../../assets/icons/phosphor/regular/layout.svg"),
+    ),
     (
         "align-bottom",
         include_bytes!("../../../../assets/icons/phosphor/regular/align-bottom.svg"),

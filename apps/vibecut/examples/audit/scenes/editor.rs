@@ -70,6 +70,13 @@ pub(super) fn editor_frame_state(
     if state == "rename" {
         editor.activate("project.rename")?;
     }
+    if let Some(preset) = vibecut::preferences::LayoutPreset::ALL
+        .into_iter()
+        .find(|preset| state == format!("layout-{}", preset.id()))
+    {
+        editor.preferences.layout_preset = preset;
+        editor.preferences.panels = preset.panels();
+    }
     if state.starts_with("agent") {
         editor.set_agent_backend(Arc::new(KeyedBackend));
         editor.open_agent();
@@ -85,6 +92,11 @@ pub(super) fn editor_frame_state(
         app.get(By::new().predicate(|node| node.author_id() == Some("agent.expand")))
             .click();
         app.run_steps(3);
+    }
+    if state == "layout-menu" {
+        app.get(By::new().predicate(|node| node.author_id() == Some("layout.menu")))
+            .click();
+        app.run_steps(2);
     }
     if state == "menu" {
         app.get(By::new().predicate(|node| node.author_id() == Some("window.menu")))

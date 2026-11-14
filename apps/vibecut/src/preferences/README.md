@@ -6,7 +6,7 @@ Interface: `Preferences`, `PreferenceStore`, `PreferenceIssue`, `PREFERENCES_VER
 `DEFAULT_PANELS`, `drag_panel`, `validate_panels`, `WINDOW_MIN`, `WindowGeometry`,
 `FontPickerPreferences`, `AdjustmentPreset`, `MAX_ADJUSTMENT_PRESETS`,
 `MAX_ADJUSTMENT_PRESET_NAME`, `validate_adjustment_presets`, `EasingPreferences`, `EasingTab`,
-`SavedEasing`, `MAX_SAVED_EASINGS`, `SubtitleOptions`, `SOURCE_LANGUAGES`.
+`SavedEasing`, `MAX_SAVED_EASINGS`, `SubtitleOptions`, `SOURCE_LANGUAGES`, `LayoutPreset`.
 
 The composition root of the one versioned local preference document, persisted in a
 bounded JSON file. It names feature-owned section types rather than redefining them:
@@ -34,7 +34,7 @@ bounded custom IDs and four recent IDs per pair, using AI's shipped table for de
 The Captions and Shorts provider pickers resolve their transient request snapshots
 from this map. Downloaded local weight choices remain in their local owner. Keys,
 fetched lists and price acknowledgements are never serialized. A document whose version is not
-`PREFERENCES_VERSION` is refused through the version refusal; there is no migration. Version 23 replaced the export `quality` values (`low`, `medium`, `high`, `very_high`) with the Bit rate presets `lower`, `recommended` and `higher`. Version 24 made `cache_limit_bytes` optional: absent is Automatic, sized from host memory. Version 25 added the export `also` object (`audio`, `gif`, `captions`): the files ticked beside the primary output. Version 26 added `group_tip_seen`. Version 27 added the Settings Edit tab choices (`frame_step`, `value_step`, `image_duration_ms`, `loudness_target_lufs`, `audio_scrub`, `export_sound`). Version 28 replaced `loudness_target_lufs` with `loudness_preset` and added `image_duration_unit` and `time_code`. Version 29 added `preview_scopes`. Version 30 added `welcome_seen`, set once the first-launch welcome dialog is finished (the default is unset: a fresh profile is a first launch, so the welcome shows once); `ui.onboarding.reset` clears it.
+`PREFERENCES_VERSION` is refused through the version refusal; there is no migration. Version 23 replaced the export `quality` values (`low`, `medium`, `high`, `very_high`) with the Bit rate presets `lower`, `recommended` and `higher`. Version 24 made `cache_limit_bytes` optional: absent is Automatic, sized from host memory. Version 25 added the export `also` object (`audio`, `gif`, `captions`): the files ticked beside the primary output. Version 26 added `group_tip_seen`. Version 27 added the Settings Edit tab choices (`frame_step`, `value_step`, `image_duration_ms`, `loudness_target_lufs`, `audio_scrub`, `export_sound`). Version 28 replaced `loudness_target_lufs` with `loudness_preset` and added `image_duration_unit` and `time_code`. Version 29 added `preview_scopes`. Version 30 added `welcome_seen`, set once the first-launch welcome dialog is finished (the default is unset: a fresh profile is a first launch, so the welcome shows once); `ui.onboarding.reset` clears it. Version 31 added `layout_preset` (`default`, `media`, `generative`, `attributes`, `vertical`), the named editor arrangement; the app sets it together with `panels` in one history step, and a drag keeps the preset.
 Version 14 removed `recent_colors`; the colour popover's recents live in the project.
 Version 19 removed the font picker's persisted `tab` (the picker has no tabs); `font_picker` keeps only `favorites`.
 Version 22 replaced the single keybinding delta map with `KeybindingPresets`: five named profiles and the active one (`input`), with no migration.

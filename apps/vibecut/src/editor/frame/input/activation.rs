@@ -1,8 +1,8 @@
 //! Routes editor actions through the facade.
 
 use crate::editor::{
-    ActionTarget, Arc, AssetId, BTreeSet, Editor, Error, ItemId, Locale, MediaView, Preferences,
-    Result, SelectionScopes, Text, UiAction, actions, media_panel,
+    ActionTarget, Arc, AssetId, BTreeSet, Editor, Error, ItemId, Locale, MediaView, Result,
+    SelectionScopes, Text, UiAction, actions, media_panel,
 };
 use crate::services::playback::Transport;
 use crate::services::preview;
@@ -560,14 +560,16 @@ impl Editor {
                     self.set_preference("locale", serde_json::to_value(after)?)?;
                 }
                 UiAction::ResetLayout => {
-                    self.set_preference(
-                        "panels",
-                        serde_json::to_value(Preferences::default().panels)?,
-                    )?;
+                    let panels = self.preferences.layout_preset.panels();
+                    self.set_preference("panels", serde_json::to_value(panels)?)?;
                 }
                 UiAction::ResetOnboarding => {
                     self.set_preference("welcome_seen", serde_json::json!(false))?;
                 }
+                UiAction::SetLayoutPreset(preset) => self.set_preferences(&[
+                    ("layout_preset", serde_json::to_value(preset)?),
+                    ("panels", serde_json::to_value(preset.panels())?),
+                ])?,
                 UiAction::OpenPreferences => self.dialogs.preferences.open = true,
                 UiAction::OpenModels => self.open_models()?,
                 UiAction::OpenVoiceover => self.dialogs.voiceover.open(),

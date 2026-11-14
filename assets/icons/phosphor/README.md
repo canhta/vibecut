@@ -91,6 +91,8 @@ SHA-256 of each embedded file:
 | `upload-simple.svg` | `d2b22b75affd718a4a24d71ee71586b277cf48ddb7d52b7d7d0a85b47f8b12d1` |
 | `waveform.svg` | `8f6a47cff9b0fb3a8f25fe411b9cc1b24d063d6577c8d07cc53b0e9b080afaa0` |
 | `x.svg` | `7397b15e1fa66eaf6ff9b59fe91d483cb5c3bcf75b2fe052097ab6f0593b513a` |
+| `layout.svg` | `7436c160d3f420240b3efa5b2c156ee7e8ca850222b2f98d26c50418b1921b0c` |
+| `check.svg` | `cbb89a8c42f283d4f846eb935e05d88c1be04462f16480e068c0f82b9ce40b12` |
 
 Regenerate by extracting the pinned npm tarball and copying the listed
 `package/assets/regular/*.svg` files without modification.

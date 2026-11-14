@@ -9,6 +9,7 @@ mod edit;
 mod favorites;
 mod font_picker;
 mod geometry;
+mod layout_preset;
 mod performance;
 mod store;
 mod subtitles;
@@ -33,6 +34,7 @@ pub use favorites::{
 };
 pub use font_picker::FontPickerPreferences;
 pub use geometry::{WINDOW_MIN, WindowGeometry};
+pub use layout_preset::LayoutPreset;
 pub use performance::{
     DEFAULT_PROJECT_FPS, HardwareAcceleration, MAX_CACHE_LIMIT, MIN_CACHE_LIMIT, PROJECT_FPS,
 };

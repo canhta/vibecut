@@ -20,7 +20,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 /// Bumped when the local preference document changes incompatibly.
-pub const PREFERENCES_VERSION: u32 = 30;
+pub const PREFERENCES_VERSION: u32 = 31;
 /// Room for every provider/feature choice and its bounded recent IDs.
 pub const MAX_PREFERENCES_BYTES: u64 = 32 * 1024;
 /// Total open-lane entries across every project; keeps the document bounded.
@@ -93,6 +93,7 @@ pub const PREFERENCE_KEYS: &[&str] = &[
     "time_code",
     "audio_scrub",
     "export_sound",
+    "layout_preset",
 ];
 
 /// Media, player and properties widths in px for `columns` px of room: the stored
@@ -263,6 +264,8 @@ pub struct Preferences {
     pub audio_scrub: bool,
     /// A finished export plays a notification sound.
     pub export_sound: bool,
+    /// The named editor layout; choosing one also sets `panels`.
+    pub layout_preset: super::LayoutPreset,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -316,6 +319,7 @@ impl Default for Preferences {
             time_code: super::edit::TimeCode::default(),
             audio_scrub: false,
             export_sound: false,
+            layout_preset: super::LayoutPreset::default(),
         }
     }
 }
@@ -508,6 +512,7 @@ impl Preferences {
             "time_code" => Ok(serde_json::to_value(self.time_code)?),
             "audio_scrub" => Ok(serde_json::Value::Bool(self.audio_scrub)),
             "export_sound" => Ok(serde_json::Value::Bool(self.export_sound)),
+            "layout_preset" => Ok(serde_json::to_value(self.layout_preset)?),
             _ => Err(Error::Unsupported("preference key")),
         }
     }
@@ -571,6 +576,7 @@ impl Preferences {
             "time_code" => self.time_code = serde_json::from_value(value)?,
             "audio_scrub" => self.audio_scrub = serde_json::from_value(value)?,
             "export_sound" => self.export_sound = serde_json::from_value(value)?,
+            "layout_preset" => self.layout_preset = serde_json::from_value(value)?,
             _ => return Err(Error::Unsupported("preference key")),
         }
         Ok(())
