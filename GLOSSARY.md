@@ -57,6 +57,7 @@ Language for the editor's privacy and execution boundaries.
 - **Track**: An ordered lane of items of one kind: Video, Audio, Text, Sticker, Effect, Filter or Adjustment; the main Video track always exists.
 - **Item**: One object on a timeline track: content or a source reference, start, duration, animated parameters, effects and masks, with an identity unique across the project.
 - **Clip**: A video or audio item, the kinds the timeline draws with a filmstrip and waveform; [project](crates/project/README.md) calls every timeline object an item, and clip names those two kinds.
+- **Compound clip**: A video-track clip whose source is the nested timeline of its members it owns: trimmed, split, retimed and styled like any clip, rendered in isolation; undo compound clip puts the members back ([ADR 0009](docs/adr/0009-compound-clip.md)).
 - **Short**: A suggested vertical clip: a source range with a title, role and play order that a user accepts for batch export from Long video to shorts.
 - **Effect**: One entry in an item's ordered effect stack, with a kind, typed parameters and an enabled flag; the effect owner declares it, `project` stores and validates it, and rendering executes it.
 - **Filter**: A named look from the filter catalogue, stored as one `color_grade` effect instance; a filter clip is an effect item (adjustment layer) on an Effect track holding that instance, and its Intensity is the item's opacity.

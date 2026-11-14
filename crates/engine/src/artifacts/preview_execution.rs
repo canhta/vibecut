@@ -129,11 +129,9 @@ pub(crate) fn preview(
                 let next = data
                     .scenes
                     .iter()
-                    .flat_map(|scene| {
-                        scene.timeline.iter().flat_map(|track| {
-                            std::iter::once(track.id.0)
-                                .chain(track.items.iter().map(|item| item.id.0))
-                        })
+                    .flat_map(|scene| scene.timeline.all_tracks())
+                    .flat_map(|track| {
+                        std::iter::once(track.id.0).chain(track.items.iter().map(|item| item.id.0))
                     })
                     .max()
                     .unwrap_or(0)

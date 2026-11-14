@@ -49,6 +49,8 @@ pub(super) struct ItemView {
     pub(super) locked: bool,
     /// Creation-order rank of the item's group among the scene's groups: 0 is A, 1 is B.
     pub(super) group: Option<usize>,
+    /// A compound clip: its menu offers Undo compound clip.
+    pub(super) compound: bool,
     pub(super) label: String,
     pub(super) overlay: Option<[u8; 4]>,
     pub(super) source_asset: Option<AssetId>,
@@ -137,6 +139,7 @@ struct RawItem {
     end: Tick,
     locked: bool,
     group: Option<project::GroupId>,
+    compound: bool,
     label: String,
     overlay: Option<[u8; 4]>,
     source_asset: Option<AssetId>,
@@ -317,6 +320,7 @@ impl State {
                     end,
                     locked: track.locked,
                     group: item.group,
+                    compound: matches!(item.content, project::ItemParams::Compound(_)),
                     label,
                     overlay,
                     source_asset: item.source_asset,
@@ -402,6 +406,7 @@ impl State {
                 group: raw
                     .group
                     .and_then(|group| group_ids.iter().position(|id| *id == group)),
+                compound: raw.compound,
                 label: raw.label,
                 overlay: raw.overlay,
                 source_asset: raw.source_asset,

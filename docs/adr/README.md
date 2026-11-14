@@ -11,3 +11,4 @@ ADRs record consequential choices and their rationale. Current contracts live in
 - [0006 Closed command catalog](0006-closed-command-catalog.md)
 - [0007 Big Buck Bunny documentation and fixture use](0007-big-buck-bunny-documentation.md)
 - [0008 Permissive dependency licences](0008-permissive-dependency-licences.md)
+- [0009 Compound clip is a clip whose source is a nested timeline](0009-compound-clip.md)

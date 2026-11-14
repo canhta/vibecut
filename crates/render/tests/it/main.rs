@@ -4,6 +4,7 @@ mod audio_mixer;
 mod blend;
 mod captions;
 mod color;
+mod compound;
 mod contracts;
 mod effects;
 mod flicker;

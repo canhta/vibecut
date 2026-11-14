@@ -182,7 +182,8 @@ impl Project {
             .0
             .scenes
             .iter()
-            .flat_map(|scene| scene.timeline.iter().flat_map(|track| track.items.iter()))
+            .flat_map(|scene| scene.timeline.all_tracks())
+            .flat_map(|track| track.items.iter())
         {
             if let ItemParams::Audio(params) = &item.content
                 && let AudioSource::Music { music } = &params.source
@@ -352,7 +353,8 @@ fn validate(data: &ProjectData) -> Result<()> {
         || data
             .scenes
             .iter()
-            .map(|s| s.timeline.track_count())
+            .flat_map(|s| s.timeline.timelines())
+            .map(super::track::Timeline::track_count)
             .sum::<usize>()
             > 256
         || data.scenes.iter().map(|s| s.bookmarks.len()).sum::<usize>() > 100000
@@ -390,31 +392,27 @@ fn validate(data: &ProjectData) -> Result<()> {
         if !scene_ids.insert(scene.id) {
             return Err(Error::Invalid("duplicate scene ID"));
         }
-        if scene.timeline.main.kind != TrackKind::Video
-            || scene
-                .timeline
-                .overlays
-                .iter()
-                .any(|t| t.kind == TrackKind::Audio)
-            || scene
-                .timeline
-                .audio
-                .iter()
-                .any(|t| t.kind != TrackKind::Audio)
-        {
-            return Err(Error::Invalid("track layout"));
+        super::compound::validate_depth(&scene.timeline)?;
+        for timeline in scene.timeline.timelines() {
+            if timeline.main.kind != TrackKind::Video
+                || timeline.overlays.iter().any(|t| t.kind == TrackKind::Audio)
+                || timeline.audio.iter().any(|t| t.kind != TrackKind::Audio)
+            {
+                return Err(Error::Invalid("track layout"));
+            }
         }
     }
     let mut transition_ids = BTreeSet::new();
-    for scene in data.scenes.iter() {
-        let transitions = &scene.timeline.transitions;
+    // A compound clip's nested timeline holds its own transitions, checked against that timeline.
+    for timeline in data.scenes.iter().flat_map(|s| s.timeline.timelines()) {
+        let transitions = &timeline.transitions;
         if transition_ids.len().saturating_add(transitions.len()) > 100_000 {
             return Err(Error::TooLarge("transitions"));
         }
         let mut cuts = BTreeSet::new();
         let mut spans = Vec::with_capacity(transitions.len());
         for tr in transitions {
-            tr.validate(&scene.timeline, data)?;
+            tr.validate(timeline, data)?;
             if !cuts.insert((tr.track, tr.from, tr.to)) {
                 return Err(Error::Invalid("duplicate transition cut"));
             }
@@ -435,7 +433,7 @@ fn validate(data: &ProjectData) -> Result<()> {
     let mut track_ids = BTreeSet::new();
     let mut item_ids = BTreeSet::new();
     let mut keys = 0usize;
-    for track in data.scenes.iter().flat_map(|s| s.timeline.iter()) {
+    for track in data.scenes.iter().flat_map(|s| s.timeline.all_tracks()) {
         text(&track.name)?;
         if !track_ids.insert(track.id) {
             return Err(Error::Invalid("duplicate track ID"));
@@ -509,6 +507,7 @@ fn validate(data: &ProjectData) -> Result<()> {
             crate::Crop::validate_animations(
                 match &item.content {
                     ItemParams::Video(p) => p.crop.as_ref(),
+                    ItemParams::Compound(p) => p.clip.crop.as_ref(),
                     _ => None,
                 },
                 &item.animations,
@@ -532,7 +531,10 @@ fn validate(data: &ProjectData) -> Result<()> {
             if item.source_range.start() < Tick::ZERO || item.content.kind() != track.kind {
                 return Err(Error::Invalid("source range or track kind"));
             }
-            if matches!(item.content, ItemParams::Video(_) | ItemParams::Audio(_)) {
+            if matches!(
+                item.content,
+                ItemParams::Video(_) | ItemParams::Audio(_) | ItemParams::Compound(_)
+            ) {
                 item.validate_retime_window()?;
                 if item.duration()? <= Tick::ZERO {
                     return Err(Error::Invalid("retimed item shorter than one tick"));
@@ -649,6 +651,7 @@ fn validate(data: &ProjectData) -> Result<()> {
                     }
                 }
                 ItemParams::Overlay(_) | ItemParams::Effect(_) => {}
+                ItemParams::Compound(p) => super::compound::validate_item(item, p)?,
                 ItemParams::Graphic(p) => p.validate(&item.animations)?,
                 ItemParams::Sticker(p) => {
                     p.validate()?;
@@ -664,11 +667,18 @@ fn validate(data: &ProjectData) -> Result<()> {
                     | ItemParams::Graphic(_)
                     | ItemParams::Sticker(_)
                     | ItemParams::Effect(_)
+                    | ItemParams::Compound(_)
             ) && asset.is_some()
             {
                 return Err(Error::Invalid("generated item cannot reference media"));
             }
-            if let ItemParams::Video(p) = &item.content
+            // A compound clip's own settings are a video clip's and validate the same way.
+            let video = match &item.content {
+                ItemParams::Video(p) => Some(p),
+                ItemParams::Compound(p) => Some(&p.clip),
+                _ => None,
+            };
+            if let Some(p) = video
                 && (!valid_volume(p.volume)
                     || p.crop.as_ref().is_some_and(|crop| !crop.valid())
                     || !p.background.valid()
@@ -677,7 +687,7 @@ fn validate(data: &ProjectData) -> Result<()> {
             {
                 return Err(Error::Invalid("video parameters"));
             }
-            if let ItemParams::Video(p) = &item.content {
+            if let Some(p) = video {
                 p.fades.validate()?;
                 p.cleanup.validate()?;
             }

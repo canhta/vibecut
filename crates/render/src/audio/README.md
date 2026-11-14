@@ -18,6 +18,10 @@ Output depends only on the item, speed and source, so block partitions and seeks
 
 Stream copy is refused for retimed items. Video frames use the nearest earlier source frame at the mapped source time. Perceptual quality on speech or music is unmeasured.
 
+## Compound clips
+
+A compound clip's source audio is the mix of its nested timeline (`mix_raw` at depth + 1 with no gains, fader or solo, `MixState::nested` keeping each level's retimers and cleanup chains across blocks), read at the clip's source samples. Its own window, retime (speed, curve, reverse, pitch), cleanup, volume, mute, fades and loudness gain then apply exactly as for a video clip's audio. Only the scene level calls `begin_audio`, naming the members too.
+
 ## Source cleanup
 
 An audio or video item's `cleanup` chain (`project::AudioCleanup`, at most 8 effects) runs on its source samples after retime and before item volume, fades and automation, so preview and export share it. Source media is never changed. Effects run in list order; each keeps `wet_percent` of its processed signal and the rest of its input. A disabled effect or a zero mix is skipped, and an all-bypassed chain is bit-identical to no chain.

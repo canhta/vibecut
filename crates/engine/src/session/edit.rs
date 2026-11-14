@@ -55,6 +55,12 @@ pub enum EditError {
     AlreadyGrouped,
     #[error("item {0:?} is not in a group")]
     NotGrouped(project::ItemId),
+    #[error("item {0:?} is not a compound clip")]
+    NotCompound(project::ItemId),
+    #[error("compound clip {0:?} has its own trim, speed, look or sound; releasing would lose it")]
+    CompoundHasOwnEdits(project::ItemId),
+    #[error("transition {0:?} joins a compound member to an item outside it")]
+    CompoundSplitsTransition(project::TransitionId),
     #[error("items overlap on track {0:?}")]
     Overlap(project::TrackId),
     #[error("invalid edit: {0}")]
@@ -93,6 +99,9 @@ impl Failure for EditError {
             | Self::GroupTooSmall
             | Self::AlreadyGrouped
             | Self::NotGrouped(_)
+            | Self::NotCompound(_)
+            | Self::CompoundHasOwnEdits(_)
+            | Self::CompoundSplitsTransition(_)
             | Self::Overlap(_)
             | Self::DurationFit
             | Self::Invalid(_)
@@ -639,6 +648,7 @@ pub(crate) fn apply(
             placement,
             item: new,
         } => {
+            clips::admit_content(&new.content)?;
             data = clips::execute_insert_item(data, placement, new, created, next)?;
         }
         EditCommand::MoveItem { item, track, start } => {
@@ -716,6 +726,14 @@ pub(crate) fn apply(
         EditCommand::DuplicateItems { items } => {
             data = clips::execute_duplicate(data, items, created, next)?;
         }
+        EditCommand::TimelineCompound { items } => {
+            // A grouped item compounds with its whole group.
+            let items = clips::with_group_members(&data, &items);
+            data = clips::execute_compound(data, items, created, next)?;
+        }
+        EditCommand::TimelineUncompound { items } => {
+            data = clips::execute_uncompound(data, items)?;
+        }
         EditCommand::SetItemsHidden { items, hidden } => {
             data = clips::execute_set_items_hidden(data, items, hidden)?;
         }
@@ -762,6 +780,7 @@ pub(crate) fn apply(
             data = clips::execute_ripple_delete(data, id)?;
         }
         EditCommand::SetItemParam { item: id, content } => {
+            clips::admit_content(&content)?;
             data = parameters::execute_set_item_param(data, id, content, sources)?;
         }
         EditCommand::SetItemField { item: id, patch } => {

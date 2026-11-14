@@ -371,7 +371,7 @@ impl Playback {
         let key: Vec<Switched> = data
             .scenes
             .iter()
-            .flat_map(|scene| scene.timeline.iter())
+            .flat_map(|scene| scene.timeline.all_tracks())
             .flat_map(|track| &track.items)
             .filter_map(|item| {
                 let project::ItemParams::Video(p) = &item.content else {

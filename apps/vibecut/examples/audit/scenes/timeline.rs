@@ -61,6 +61,33 @@ pub(super) fn timeline_selection_locale(
     Ok(app)
 }
 
+/// The first main clip moved into a compound clip, with the compound clip's menu open:
+/// the tinted block, its label and the Create and Undo compound clip rows.
+pub(super) fn timeline_compound(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let (mut editor, item) = media_editor(theme, Locale::En)?;
+    let created = editor
+        .session
+        .apply(Command::TimelineCompound { items: vec![item] })?
+        .created;
+    let compound = created
+        .iter()
+        .find_map(|id| match id {
+            CreatedId::Item(item) => Some(*item),
+            _ => None,
+        })
+        .ok_or("compound clip not created")?;
+    let mut app = app_editor(editor, scale);
+    wait_for_presented(&mut app)?;
+    app.run_steps(2);
+    let id = format!("timeline.item.{}", compound.0);
+    app.query_all(By::new().predicate(|node| node.author_id() == Some(id.as_str())))
+        .next()
+        .ok_or_else(|| format!("missing automation id {id}"))?
+        .click_secondary();
+    app.run_steps(3);
+    Ok(app)
+}
+
 pub(super) fn timeline_selection(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     timeline_selection_locale(theme, scale, Locale::En)
 }

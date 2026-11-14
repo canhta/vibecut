@@ -82,6 +82,8 @@ fn editing_commands_are_allowed_and_frames_open_only_the_preview() {
     for id in [
         "batch",
         "timeline.trim",
+        "timeline.compound",
+        "timeline.uncompound",
         "timeline.add_track",
         "project.rename",
         "split_at",

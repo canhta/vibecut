@@ -18,7 +18,12 @@ impl FontStore {
         }
         let mut requested = std::collections::BTreeSet::new();
         for scene in project.data().scenes.iter() {
-            for item in scene.timeline.iter().flat_map(|track| &track.items) {
+            for item in scene
+                .timeline
+                .all_tracks()
+                .into_iter()
+                .flat_map(|track| &track.items)
+            {
                 match &item.content {
                     project::ItemParams::Text(text) => {
                         requested.insert(text.font.as_str().to_owned());

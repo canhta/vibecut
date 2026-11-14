@@ -2749,6 +2749,19 @@ Effect: `SessionControl`. Fixture: `Gesture`.
 {}
 ```
 
+## `timeline.compound` — Create compound clip
+
+Effect: `Edit`. Fixture: `Timeline`.
+
+```json
+{
+  "items": [
+    1,
+    5
+  ]
+}
+```
+
 ## `timeline.discard_preview` — Discard timeline preview
 
 Effect: `SessionControl`. Fixture: `Gesture`.
@@ -3193,6 +3206,18 @@ Effect: `Edit`. Fixture: `Timeline`.
   "edge": "end",
   "items": [
     1
+  ]
+}
+```
+
+## `timeline.uncompound` — Undo compound clip
+
+Effect: `Edit`. Fixture: `Compound`.
+
+```json
+{
+  "items": [
+    6
   ]
 }
 ```

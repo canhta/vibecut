@@ -131,13 +131,21 @@ impl Session {
             .scenes
             .iter()
             .flat_map(|s| {
+                // Compound clips nest tracks, items and transitions that share the counter.
+                let timelines = s.timeline.timelines();
                 std::iter::once(s.id.0)
-                    .chain(s.timeline.transitions.iter().map(|t| t.id.0))
-                    .chain(s.timeline.iter().map(|t| t.id.0))
                     .chain(
-                        s.timeline
+                        timelines
                             .iter()
-                            .flat_map(|t| t.items.iter().map(|i| i.id.0)),
+                            .flat_map(|timeline| timeline.transitions.iter().map(|t| t.id.0)),
+                    )
+                    .chain(
+                        timelines
+                            .iter()
+                            .flat_map(|timeline| timeline.iter())
+                            .flat_map(|t| {
+                                std::iter::once(t.id.0).chain(t.items.iter().map(|i| i.id.0))
+                            }),
                     )
                     .chain(s.bookmarks.iter().map(|b| b.id.0))
                     .chain(
@@ -145,6 +153,7 @@ impl Session {
                             .iter()
                             .flat_map(|t| t.items.iter().filter_map(|i| i.group.map(|g| g.0))),
                     )
+                    .collect::<Vec<_>>()
             })
             .chain(data.caption_presets.iter().map(|preset| preset.id.0))
             .max()

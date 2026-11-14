@@ -531,6 +531,18 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         &["Ctrl+D"],
     ),
     ActionSpec::engine(
+        "timeline.compound",
+        Text::ActionTimelineCompound,
+        ActionCategory::Edit,
+        EngineAction::Compound,
+        &["Alt+G"],
+    ),
+    ActionSpec::engine(
+        "timeline.uncompound",
+        Text::ActionTimelineUncompound,
+        ActionCategory::Edit,
+        EngineAction::Uncompound,
+        &["Alt+Shift+G"],
         "timeline.group",
         Text::ActionTimelineGroup,
         ActionCategory::Selection,

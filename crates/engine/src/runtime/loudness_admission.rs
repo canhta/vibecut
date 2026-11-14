@@ -27,7 +27,8 @@ pub fn content_key(data: &ProjectData) -> [u8; 32] {
         }
     }
     hash.update(&data.scene().id.0.to_le_bytes());
-    for track in data.scene().timeline.iter() {
+    // Compound members are mixed, so they are measured; their nested tracks count too.
+    for track in data.scene().timeline.all_tracks() {
         hash.update(&track.id.0.to_le_bytes());
         hash.update(&[u8::from(track.muted)]);
         for item in &track.items {

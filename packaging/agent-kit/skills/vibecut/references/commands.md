@@ -160,6 +160,7 @@ API version: 27. Registry digest: `88daf14c14a94ec07b5e7fb35c8a759ca2b4724f3f6e6
 | `timeline.close_all_gaps` | `Edit` | Close all gaps |
 | `timeline.close_gap` | `Edit` | Close gap |
 | `timeline.commit_preview` | `SessionControl` | Commit timeline preview |
+| `timeline.compound` | `Edit` | Create compound clip |
 | `timeline.discard_preview` | `SessionControl` | Discard timeline preview |
 | `timeline.distribute_items` | `Edit` | Distribute items evenly |
 | `timeline.duplicate` | `Edit` | Duplicate items on new tracks |
@@ -191,6 +192,7 @@ API version: 27. Registry digest: `88daf14c14a94ec07b5e7fb35c8a759ca2b4724f3f6e6
 | `timeline.split_left` | `Edit` | Split items and remove the left part |
 | `timeline.split_right` | `Edit` | Split items and remove the right part |
 | `timeline.trim` | `Edit` | Trim timeline group |
+| `timeline.uncompound` | `Edit` | Undo compound clip |
 | `timeline.ungroup` | `Edit` | Ungroup items |
 | `track.remove` | `Edit` | Remove track |
 | `track.rename` | `Edit` | Rename track |

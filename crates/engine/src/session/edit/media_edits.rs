@@ -26,7 +26,7 @@ pub(super) fn remove_assets(data: &mut ProjectData, assets: Vec<media::AssetId>)
     }
     let mut usage: BTreeMap<media::AssetId, Vec<ItemId>> = BTreeMap::new();
     for scene in data.scenes.iter() {
-        for track in scene.timeline.iter() {
+        for track in scene.timeline.all_tracks() {
             for item in &track.items {
                 if let Some(asset) = item.source_asset
                     && unique.contains(&asset)

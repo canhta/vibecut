@@ -93,6 +93,11 @@ pub(super) fn saved_placement(data: &project::ProjectData, item: &Item) -> Optio
         }
         // An adjustment layer's region starts as the whole canvas; transform and masks narrow it.
         ItemParams::Overlay(_) | ItemParams::Effect(_) => Placement::default(),
+        // A compound clip's source is a canvas-sized frame, so it fills the canvas unscaled.
+        ItemParams::Compound(_) => Placement {
+            fit: Fit::Stretch,
+            ..Default::default()
+        },
         ItemParams::Audio(_) | ItemParams::Caption(_) => return None,
     })
 }
@@ -270,12 +275,35 @@ impl<'a> Renderer<'a> {
         hooks: &dyn ExecutionHooks,
         preview: bool,
     ) -> Result<Image> {
+        let project = self.project;
+        let timeline = &project.data().scene().timeline;
+        self.composite(timeline, at, 0, sources, hooks, preview)
+    }
+    /// Every visible item of `timeline` active at `at`. Depth 0 is the scene, over the canvas
+    /// background; a compound clip's source is its nested timeline at depth + 1 over a
+    /// transparent base, isolated from everything outside it.
+    fn composite(
+        &mut self,
+        timeline: &'a project::Timeline,
+        at: Tick,
+        depth: usize,
+        sources: &mut dyn SourceProvider,
+        hooks: &dyn ExecutionHooks,
+        preview: bool,
+    ) -> Result<Image> {
         check(hooks)?;
         if at < Tick::ZERO {
             return Err(Error::Invalid("negative frame time"));
         }
+        if depth > project::MAX_COMPOUND_DEPTH {
+            return Err(Error::Invalid("compound nesting"));
+        }
         let project = self.project;
-        let timeline = &project.data().scene().timeline;
+        let base = if depth == 0 {
+            color(project.data().canvas.background.0)
+        } else {
+            [0.0; 4]
+        };
         let transitions: BTreeMap<_, _> = timeline
             .transitions
             .iter()
@@ -325,10 +353,22 @@ impl<'a> Renderer<'a> {
             active.iter().flat_map(|item| item.effects.iter()),
             hooks,
         )?;
+        // Compound members keep their decoders: every video item a compound clip nests counts
+        // as active while the clip is.
         let video: Vec<_> = active
             .iter()
-            .filter(|i| matches!(i.content, ItemParams::Video(_)))
-            .map(|i| i.id)
+            .flat_map(|item| match &item.content {
+                ItemParams::Video(_) => vec![item.id],
+                ItemParams::Compound(params) => params
+                    .timeline
+                    .all_tracks()
+                    .into_iter()
+                    .flat_map(|track| &track.items)
+                    .filter(|member| matches!(member.content, ItemParams::Video(_)))
+                    .map(|member| member.id)
+                    .collect(),
+                _ => Vec::new(),
+            })
             .collect();
         let configured = self.settings.effects.clone();
         let cpu = crate::effects::CpuEffects;
@@ -343,27 +383,20 @@ impl<'a> Renderer<'a> {
         } else {
             scoped.as_deref().unwrap_or(original)
         };
-        sources.begin_video(&video);
-        let output = Image::new(
-            self.settings.width,
-            self.settings.height,
-            color(self.project.data().canvas.background.0),
-            hooks,
-        );
+        // The scene frame names the decoders it keeps; a nested frame reads within that set.
+        if depth == 0 {
+            sources.begin_video(&video);
+        }
+        let output = Image::new(self.settings.width, self.settings.height, base, hooks);
         let mut out = match output {
             Err(Error::Budget { .. }) if !self.text_cache.is_empty() => {
                 self.clear_text_cache();
-                Image::new(
-                    self.settings.width,
-                    self.settings.height,
-                    color(self.project.data().canvas.background.0),
-                    hooks,
-                )?
+                Image::new(self.settings.width, self.settings.height, base, hooks)?
             }
             result => result?,
         };
         let mut prepared = None;
-        if let Some(radius) = self.settings.background_blur {
+        if let Some(radius) = self.settings.background_blur.filter(|_| depth == 0) {
             for item in active
                 .iter()
                 .filter(|i| matches!(i.content, ItemParams::Video(_)))
@@ -432,34 +465,50 @@ impl<'a> Renderer<'a> {
                             preview,
                         )?
                     }
+                } else if let ItemParams::Compound(params) = &item.content {
+                    // The compound clip's decoded frame: its nested timeline at the clip's
+                    // source time, alone on a transparent canvas-sized raster.
+                    Some(self.composite(
+                        &params.timeline,
+                        source_at,
+                        depth + 1,
+                        sources,
+                        hooks,
+                        preview,
+                    )?)
                 } else {
                     None
                 };
                 let geometry = if item.effects.iter().any(|e| e.enabled) {
                     let working = [out.width, out.height];
-                    let gains = if matches!(item.content, ItemParams::Video(_)) {
-                        let shape = video
-                            .as_ref()
-                            .map(|image| [image.width(), image.height()])
-                            .or_else(|| {
-                                project
-                                    .data()
-                                    .assets
-                                    .iter()
-                                    .find(|asset| Some(asset.id()) == item.source_asset)
-                                    .and_then(|asset| {
-                                        asset.probe().streams.iter().find_map(|s| s.video.as_ref())
-                                    })
-                                    .map(|v| [v.width, v.height])
-                            })
-                            .ok_or(Error::Invalid("effect spatial geometry"))?;
-                        super::draw::clip_pixel_scale(working, shape, placement)?
-                    } else {
-                        [
-                            f64::from(out.width) / f64::from(project.data().canvas.width),
-                            f64::from(out.height) / f64::from(project.data().canvas.height),
-                        ]
-                    };
+                    let gains =
+                        if matches!(item.content, ItemParams::Video(_) | ItemParams::Compound(_)) {
+                            let shape = video
+                                .as_ref()
+                                .map(|image| [image.width(), image.height()])
+                                .or_else(|| {
+                                    project
+                                        .data()
+                                        .assets
+                                        .iter()
+                                        .find(|asset| Some(asset.id()) == item.source_asset)
+                                        .and_then(|asset| {
+                                            asset
+                                                .probe()
+                                                .streams
+                                                .iter()
+                                                .find_map(|s| s.video.as_ref())
+                                        })
+                                        .map(|v| [v.width, v.height])
+                                })
+                                .ok_or(Error::Invalid("effect spatial geometry"))?;
+                            super::draw::clip_pixel_scale(working, shape, placement)?
+                        } else {
+                            [
+                                f64::from(out.width) / f64::from(project.data().canvas.width),
+                                f64::from(out.height) / f64::from(project.data().canvas.height),
+                            ]
+                        };
                     Some(crate::effects::EffectGeometry::new(working, gains)?)
                 } else {
                     None
@@ -557,7 +606,7 @@ impl<'a> Renderer<'a> {
                 // layer, so the clip's opacity, blend, transform and effects leave it alone.
                 if let ItemParams::Video(params) = &item.content
                     && params.background != project::ClipBackground::None
-                    && !super::transform::arrange::covers_canvas(self.project.data(), item, at)?
+                    && !super::transform::arrange::covers_canvas(project.data(), item, at)?
                 {
                     paint_clip_background(
                         &mut out,
@@ -649,8 +698,7 @@ impl<'a> Renderer<'a> {
                         }
                     }
                     ItemParams::Text(p) => {
-                        let scale =
-                            self.settings.width as f32 / self.project.data().canvas.width as f32;
+                        let scale = self.settings.width as f32 / project.data().canvas.width as f32;
                         // Style animations share the item clock; unkeyed fields keep the stored value.
                         let fill = crate::color::at(
                             &item.animations,
@@ -817,7 +865,7 @@ impl<'a> Renderer<'a> {
                                 hooks,
                             )?;
                             if !value.is_empty() {
-                                let selected = super::caption::item_style(self.project.data(), p);
+                                let selected = super::caption::item_style(project.data(), p);
                                 let cue_style = p.cues.style_of(cue);
                                 let placement_style =
                                     if selected.is_some() { None } else { cue_style };
@@ -861,6 +909,13 @@ impl<'a> Renderer<'a> {
                                 )?;
                                 draw(&mut out, &image, caption_placement, hooks)?;
                             }
+                        }
+                    }
+                    // A compound clip draws its nested frame exactly as a video clip draws
+                    // its decoded frame.
+                    ItemParams::Compound(_) => {
+                        if let Some(image) = video {
+                            draw(&mut out, &image, placement, hooks)?;
                         }
                     }
                     ItemParams::Audio(_) => {}
@@ -1014,7 +1069,7 @@ impl<'a> Renderer<'a> {
                         .checked_sub(tr.start)
                         .ok_or(Error::Invalid("transition time"))?;
                     let progress = elapsed.0 as f64 / tr.duration.0 as f64;
-                    let canvas = self.project.data().canvas.width.max(1);
+                    let canvas = project.data().canvas.width.max(1);
                     out = super::transitions::apply(
                         &tr.kind,
                         &tr.params,
@@ -1422,9 +1477,12 @@ impl<'a> Renderer<'a> {
 /// time, clamped into the frame by `project::Crop::at`; preview and export both
 /// reach it through `placement_at`.
 fn item_crop(item: &Item, mut placement: Placement, local: Tick) -> Result<Placement> {
-    if let ItemParams::Video(p) = &item.content
-        && let Some(crop) = p.crop
-    {
+    let crop = match &item.content {
+        ItemParams::Video(p) => p.crop,
+        ItemParams::Compound(p) => p.clip.crop,
+        _ => None,
+    };
+    if let Some(crop) = crop {
         let crop = crop.at(&item.animations, local)?;
         let base = placement.crop;
         placement.crop = project::Crop {

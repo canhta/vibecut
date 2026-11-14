@@ -118,7 +118,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | SHORTCUT-12 | Activate / deactivate V | Done | — | 14b/110530 | `V` runs `timeline.set_hidden` |
 | SHORTCUT-13 | Extract audio key | Done | — | 14b/110530 | Restore has no chord |
 | SHORTCUT-14 | Marker keys | Done | — | 14b/110530 | `Alt+M` adds a new-colour marker |
-| SHORTCUT-15 | Group, compound, speed keys | Partial | — | 14b/110530; 14e/203822 | Ctrl+G, Ctrl+Shift+G and the speed keys done; compound missing |
+| SHORTCUT-15 | Group, compound, speed keys | Done | — | 14b/110530; 14e/203822 | Ctrl+G, Ctrl+Shift+G, Alt+G, Alt+Shift+G and the speed keys |
 | SHORTCUT-16 | Shuttle J, K, L | Partial | Proposed | 14b/110530 | Ours seeks 1 s |
 | SHORTCUT-17 | Step back many frames | Done | Proposed | 14b/110530 | Shift+Left, count from Settings Edit |
 | SHORTCUT-18 | Select by clip Shift X | Differs | — | 14b/110530 | Ours: export in/out |

@@ -656,6 +656,8 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("timeline.duplicate", Effect::Edit, true, true),
         ("timeline.group", Effect::Edit, true, true),
         ("timeline.ungroup", Effect::Edit, true, true),
+        ("timeline.compound", Effect::Edit, true, true),
+        ("timeline.uncompound", Effect::Edit, true, true),
         ("timeline.freeze_frame", Effect::FilePublish, true, false),
         ("timeline.replace_media", Effect::Edit, true, true),
         ("timeline.set_flipped", Effect::Edit, true, true),

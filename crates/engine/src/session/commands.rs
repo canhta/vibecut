@@ -369,6 +369,8 @@ pub enum Fixture {
     MaskPath,
     /// Timeline plus one audible clip, item 5.
     Audio,
+    /// Timeline whose overlay item 1 is moved into compound clip 6 by `timeline.compound`.
+    Compound,
     /// The `Audio` fixture plus narration item 6, one second long, after item 5.
     Narration,
     /// The `Audio` fixture with cleanup effect 1 (hum removal) already on item 5.
@@ -829,6 +831,7 @@ commands! {
     CloseAllGaps, "timeline.close_all_gaps", "Close all gaps", Edit { track: TrackId } => Gap, serde_json::json!({"track":3});
     CloseGap, "timeline.close_gap", "Close gap", Edit { track: TrackId, at: Tick } => Gap, serde_json::json!({"track":3,"at":381024000000_i64});
     TimelineCommitPreview, "timeline.commit_preview", "Commit timeline preview", SessionControl {} => Gesture, serde_json::json!({}), available = GestureActive, grant = Human;
+    TimelineCompound, "timeline.compound", "Create compound clip", Edit { items: Vec<ItemId> } => Timeline, serde_json::json!({"items":[1,5]}), available = UnlockedItem, collections = [items];
     TimelineDiscardPreview, "timeline.discard_preview", "Discard timeline preview", SessionControl {} => Gesture, serde_json::json!({}), available = GestureActive, grant = Human;
     DistributeItems, "timeline.distribute_items", "Distribute items evenly", Edit { items: Vec<ItemId>, axis: project::DistributionAxis, at: Tick } => Arrange, serde_json::json!({"items":[1,3,5],"axis":"horizontal","at":0}), available = UnlockedItem, collections = [items];
     DuplicateItems, "timeline.duplicate", "Duplicate items on new tracks", Edit { items: Vec<ItemId> } => Timeline, serde_json::json!({"items":[5]}), available = UnlockedItem, collections = [items];
@@ -860,6 +863,7 @@ commands! {
     TimelineSplitLeft, "timeline.split_left", "Split items and remove the left part", Edit { items: Vec<ItemId>, at: Tick } => Timeline, serde_json::json!({"items":[5],"at":381024000000_i64}), available = UnlockedItem, collections = [items];
     TimelineSplitRight, "timeline.split_right", "Split items and remove the right part", Edit { items: Vec<ItemId>, at: Tick } => Timeline, serde_json::json!({"items":[5],"at":381024000000_i64}), available = UnlockedItem, collections = [items];
     TimelineTrim, "timeline.trim", "Trim timeline group", Edit { items: Vec<ItemId>, edge: TrimEdge, delta: Tick } => Timeline, serde_json::json!({"items":[1],"edge":"end","delta":-1}), available = UnlockedItem, collections = [items];
+    TimelineUncompound, "timeline.uncompound", "Undo compound clip", Edit { items: Vec<ItemId> } => Compound, serde_json::json!({"items":[6]}), available = UnlockedItem, collections = [items];
     TimelineUngroup, "timeline.ungroup", "Ungroup items", Edit { items: Vec<ItemId> } => Group, serde_json::json!({"items":[5]}), available = UnlockedItem, collections = [items];
     RemoveTrack, "track.remove", "Remove track", Edit { track: TrackId } => Timeline, serde_json::json!({"track":3}), available = RemovableTrack;
     RenameTrack, "track.rename", "Rename track", Edit { track: TrackId, name: NfcText } => Timeline, serde_json::json!({"track":3,"name":"Renamed"});
