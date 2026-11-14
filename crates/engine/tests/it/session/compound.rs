@@ -368,6 +368,7 @@ fn copies_of_a_compound_clip_nest_fresh_ids() {
         .apply(Command::PasteItems {
             at: Tick(400),
             source: ItemPasteSource::Stored,
+            track: None,
         })
         .unwrap();
     let CreatedId::Item(paste) = *pasted

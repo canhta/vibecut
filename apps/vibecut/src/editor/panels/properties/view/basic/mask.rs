@@ -42,7 +42,7 @@ impl Panel<'_, '_> {
                 ("inspector.mask.add", kit::Icon::Plus, Text::MaskAdd),
             )
         {
-            self.state.mask.open(item);
+            self.state.mask.open(item, scope);
         }
         let (row, _) = ui.allocate_exact_size(
             egui::Vec2::new(ui.available_width(), theme::size::PROPERTY_ROW),
@@ -185,6 +185,11 @@ impl Panel<'_, '_> {
                 item,
                 shape: mask_picker::Choice::Rectangle.shape(),
             }));
+        }
+        // No mask yet: the page says so above its grey tiles; Add mask is its call-to-action.
+        if mask.is_none() {
+            ui.add_space(theme::space::MD);
+            self.empty_face(ui, "inspector.mask.empty", kit::Icon::CircleHalf, Text::MaskNone);
         }
         ui.add_space(theme::space::MD);
         let timing = read::item(project, item).and_then(|found| {

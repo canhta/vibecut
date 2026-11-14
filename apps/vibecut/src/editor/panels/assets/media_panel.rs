@@ -106,12 +106,6 @@ pub fn next_sort(current: MediaSort, key: MediaSortKey) -> MediaSort {
     }
 }
 
-/// The name a tile shows: the library name the user gave the asset, else its file name. It is
-/// `MediaLibrary::display_name`, the one accessor every surface reads.
-pub fn display_name(asset: &SourceAsset, library: &project::MediaLibrary) -> String {
-    library.display_name(asset)
-}
-
 /// Stable project-order-preserving sort. Equal keys keep their asset-vector
 /// order, which makes repeated sorts deterministic and independent of locale.
 pub fn ordered_assets(
@@ -123,9 +117,9 @@ pub fn ordered_assets(
     let mut ordered: Vec<&SourceAsset> = assets.iter().filter(|asset| !asset.ephemeral()).collect();
     ordered.sort_by(|a, b| {
         let ordering = match sort.key {
-            MediaSortKey::Name => display_name(a, library)
+            MediaSortKey::Name => library.display_name(a)
                 .to_lowercase()
-                .cmp(&display_name(b, library).to_lowercase()),
+                .cmp(&library.display_name(b).to_lowercase()),
             MediaSortKey::Type => MediaKind::of(a).cmp(&MediaKind::of(b)),
             MediaSortKey::Duration => a
                 .probe()
@@ -211,8 +205,8 @@ mod tests {
             name: "Zulu".into(),
         });
         let [first, second] = &assets;
-        assert_eq!(display_name(first, &library), "Zulu");
-        assert_eq!(display_name(second, &library), "bravo.mp4");
+        assert_eq!(library.display_name(first), "Zulu");
+        assert_eq!(library.display_name(second), "bravo.mp4");
         assert_eq!(
             ordered_assets(
                 &assets,

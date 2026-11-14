@@ -123,7 +123,7 @@ impl View<'_> {
             });
         let area = ui.interact(
             out.inner_rect,
-            egui::Id::new("text.list.area"),
+            egui::Id::unique("text.list.area"),
             egui::Sense::hover(),
         );
         self.remember("text.list", &area, None);
@@ -180,7 +180,6 @@ impl View<'_> {
     }
 
     fn text_tile(&mut self, ui: &mut egui::Ui, page: TextPage, tile: &Tile, favorites: bool) {
-        let dark = self.cx.preferences.dark;
         // The Favorites section repeats tiles of the shelves, so its widget ids differ.
         let scope = if favorites { "text.favorites" } else { "text" };
         let (frame, response) = ui.allocate_exact_size(Vec2::splat(TILE), egui::Sense::click());

@@ -364,7 +364,7 @@ impl Rig {
             ripple: false,
             preferences: &self.preferences,
             playback: &self.playback,
-            preview: None,
+            cover_editable: false,
             keybindings: &self.preferences.keybindings,
             scope: crate::editor::selection::SelectionScope::None,
             keyframes: &keyframes,

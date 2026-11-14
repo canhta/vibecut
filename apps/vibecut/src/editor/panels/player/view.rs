@@ -144,11 +144,11 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
     );
     // The scopes strip sits above the footer and the video area gives it the room, with a gap
     // above it; with too little room the scopes stay hidden.
-    let strip = (cx.preferences.preview_scopes
+    let scopes = (cx.preferences.preview_scopes
         && !empty
         && footer.top() - kit::scope::PANEL_HEIGHT - kit::scope::ABOVE >= header.bottom())
     .then(|| scope::strip(panel, footer.top()));
-    let lower = strip.map_or(footer.top(), |strip| strip.top() - kit::scope::ABOVE);
+    let lower = scopes.map_or(footer.top(), |scopes| scopes.top() - kit::scope::ABOVE);
     let stage = Rect::from_min_max(
         egui::pos2(panel.left() + kit::space::MD, header.bottom()),
         egui::pos2(
@@ -203,13 +203,13 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
             remember(cx, &mut actions, "preview.zoom.fit", r);
         });
     }
-    if let Some(strip) = strip {
+    if let Some(scopes) = scopes {
         let scoped = if source_missing_at_playhead(cx) {
             None
         } else {
             cx.playback.frame()
         };
-        scope::show(&mut state.scope, cx, ui, strip, scoped, &mut actions);
+        scope::show(&mut state.scope, cx, ui, scopes, scoped, &mut actions);
     } else {
         state.scope.clear();
     }

@@ -6,7 +6,7 @@
 )]
 use egui_kittest::{
     Harness,
-    kittest::{By, Queryable},
+    kittest::{By, NodeT, Queryable},
 };
 use engine::{ByteBudget, Command, Session, jobs::Clock};
 use media::{
@@ -1896,6 +1896,7 @@ fn a_renamed_asset_names_its_timeline_clip_everywhere_it_shows() {
     let label = |harness: &Harness<Editor>| {
         harness
             .get(By::new().predicate(|node| node.author_id() == Some(clip.as_str())))
+            .accesskit_node()
             .label()
             .unwrap_or_default()
     };

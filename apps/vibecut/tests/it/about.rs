@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 use egui_kittest::{
     Harness,
-    kittest::{By, NodeT, Queryable},
+    kittest::{By, Queryable},
 };
 use engine::{ByteBudget, Session};
 use project::{Project, ProjectId};

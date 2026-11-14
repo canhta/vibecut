@@ -475,7 +475,7 @@ pub(crate) fn scrim_chip(
     );
     let width = space::ICON_LABEL * 3.0 + icon::PLAY + text.size().x;
     let rect = Rect::from_min_size(min, Vec2::new(width, SCRIM_CHIP_HEIGHT));
-    let response = ui.interact(rect, ui.id().with(id), Sense::click());
+    let response = ui.interact(rect, ui.scope_id().with(id), Sense::click());
     paint(ui).rect_filled(rect, radius::CONTROL, theme::scrim());
     let glyph_rect = Rect::from_min_size(
         egui::pos2(

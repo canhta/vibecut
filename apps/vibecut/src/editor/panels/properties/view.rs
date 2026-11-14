@@ -702,16 +702,8 @@ impl<'a, 'c> Panel<'a, 'c> {
     fn fail(&mut self, error: impl ToString) {
         self.actions.push(Action::Error(error.to_string()));
     }
-    /// An empty face (24 px glyph over one line) with one call-to-action under it. Returns
-    /// whether the call-to-action was clicked.
-    fn empty_cta(
-        &mut self,
-        ui: &mut egui::Ui,
-        id: &str,
-        glyph: kit::Icon,
-        line: Text,
-        cta: (&str, kit::Icon, Text),
-    ) -> bool {
+    /// An empty face: a 24 px glyph over one line.
+    fn empty_face(&mut self, ui: &mut egui::Ui, id: &str, glyph: kit::Icon, line: Text) {
         let (rect, _) = ui.allocate_exact_size(
             Vec2::new(
                 ui.available_width(),
@@ -721,6 +713,18 @@ impl<'a, 'c> Panel<'a, 'c> {
         );
         let face = kit::panel_state(ui, id, rect, glyph, self.tr(line), kit::Tone::Quiet);
         self.remember(id, &face);
+    }
+    /// An empty face with one call-to-action under it. Returns whether the call-to-action was
+    /// clicked.
+    fn empty_cta(
+        &mut self,
+        ui: &mut egui::Ui,
+        id: &str,
+        glyph: kit::Icon,
+        line: Text,
+        cta: (&str, kit::Icon, Text),
+    ) -> bool {
+        self.empty_face(ui, id, glyph, line);
         let (button, icon, label) = cta;
         let mut clicked = false;
         ui.vertical_centered(|ui| {

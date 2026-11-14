@@ -4,7 +4,6 @@ use super::stickers;
 use super::{
     AssetId, AssetRow, AssetState, AssetsTab, BTreeMap, BTreeSet, EffectRow, FilterRow, FolderRow,
     Icon, MediaKind, MediaSection, Model, Row, SceneRow, State, Text, asset_row, egui, file_name,
-    media_panel,
 };
 use crate::editor::Context;
 
@@ -66,7 +65,7 @@ pub(in crate::editor) fn prepare(
                 // Caption and other generated assets carry no file to lose.
                 display.missing = !asset.ephemeral()
                     && cx.visuals.availability(asset) == media::AssetAvailability::Missing;
-                display.name = media_panel::display_name(asset, library);
+                display.name = library.display_name(asset);
                 display.added = used.contains(&id);
                 Some(Row {
                     display,

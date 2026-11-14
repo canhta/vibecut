@@ -1030,7 +1030,7 @@ impl State {
             })
             .collect();
         // Admission validates all candidates before changing the current review.
-        for (candidate, review) in source.candidates.iter().zip(&reviews) {
+        for review in &reviews {
             let req = ClipBatchRequest::new(
                 source.asset,
                 vec![

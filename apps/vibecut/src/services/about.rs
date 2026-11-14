@@ -83,7 +83,7 @@ const ICON_PNG: &[u8] = include_bytes!("../../../../assets/app-icon/vibecut-1024
 pub(crate) fn show(ctx: &egui::Context, page: Page, locale: Locale, dark: bool) -> Vec<Click> {
     let texture = app_icon(ctx);
     let mut painted: Vec<Click> = Vec::new();
-    egui::Modal::new(egui::Id::new("about.dialog"))
+    egui::Modal::new(egui::Id::unique("about.dialog"))
         .frame(kit::dialog_frame(ctx).inner_margin(egui::Margin::ZERO))
         .show(ctx, |ui| {
             let (rect, _) = ui.allocate_exact_size(
@@ -363,7 +363,7 @@ fn licence_page(ui: &mut egui::Ui, rect: egui::Rect, dark: bool) {
 
 /// The app tile as a texture, decoded on first use and kept in the context.
 fn app_icon(ctx: &egui::Context) -> Option<egui::TextureHandle> {
-    let key = egui::Id::new("about.icon");
+    let key = egui::Id::unique("about.icon");
     if let Some(texture) = ctx.data(|data| data.get_temp::<egui::TextureHandle>(key)) {
         return Some(texture);
     }

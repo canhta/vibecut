@@ -372,7 +372,7 @@ impl Subtitles {
             return;
         }
         let mut cancel = false;
-        egui::Modal::new(egui::Id::new("subtitles.review.analyzing"))
+        egui::Modal::new(egui::Id::unique("subtitles.review.analyzing"))
             .frame(crate::kit::dialog_frame(ctx))
             .show(ctx, |ui| {
                 ui.set_width(MODAL_BUTTON.x);
@@ -416,6 +416,7 @@ impl Subtitles {
         }
         let ready = self.edit_ready(session);
         let rate = session.project().data().canvas.fps;
+        let code = self.time_code;
         let history = session.history_len();
         let scene_end = session.project().data().scene().duration();
         let no_text = i18n::text(locale, Text::SubTranscriptNoText);
@@ -592,7 +593,7 @@ impl Subtitles {
                     let stamp = cell.painter().text(
                         egui::pos2(rect.right(), rect.center().y),
                         egui::Align2::RIGHT_CENTER,
-                        time_text(row.start, rate, locale),
+                        time_text(row.start, rate, code),
                         theme::label_font(),
                         theme::text(dark),
                     );
@@ -660,7 +661,7 @@ impl Subtitles {
         let total = i18n::format(
             locale,
             Text::SubReviewTotal,
-            &[("time", &time_text(after, rate, locale))],
+            &[("time", &time_text(after, rate, code))],
         );
         let r = ui.label(total);
         remember(widgets, "subtitles.review.total".into(), &r);
@@ -856,6 +857,7 @@ impl Subtitles {
         widgets: &mut Vec<(String, egui::Response)>,
     ) {
         let rate = session.project().data().canvas.fps;
+        let code = self.time_code;
         if self.review.deleted.is_empty() {
             let r = ui.label(i18n::text(locale, Text::SubReviewDeletedNone));
             remember(widgets, "subtitles.review.deleted.none".into(), &r);
@@ -863,7 +865,7 @@ impl Subtitles {
         }
         for (index, deleted) in self.review.deleted.iter().enumerate() {
             ui.horizontal_wrapped(|ui| {
-                ui.label(time_text(deleted.at, rate, locale));
+                ui.label(time_text(deleted.at, rate, code));
                 let r = ui.label(egui::RichText::new(&deleted.text).strikethrough());
                 remember(widgets, format!("subtitles.review.deleted.{index}"), &r);
             });

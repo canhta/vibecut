@@ -543,6 +543,8 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         ActionCategory::Edit,
         EngineAction::Uncompound,
         &["Alt+Shift+G"],
+    ),
+    ActionSpec::engine(
         "timeline.group",
         Text::ActionTimelineGroup,
         ActionCategory::Selection,

@@ -1,5 +1,4 @@
 //! Applies the media tile menu's Rename and New folder requests.
-use super::display_name;
 use crate::editor::{Port, error_detail};
 use crate::editor::panels::assets::State;
 use crate::editor::panels::assets::state::MediaRename;
@@ -26,7 +25,7 @@ impl State {
         };
         self.media_rename = Some(MediaRename {
             asset,
-            draft: media_panel::display_name(record, &data.media_library),
+            draft: data.media_library.display_name(record),
         });
     }
     pub(in crate::editor) fn cancel_media_rename(&mut self) {
