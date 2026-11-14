@@ -20,6 +20,10 @@ pub mod recovery {
     };
 }
 mod cover_image;
+pub mod cover {
+    //! Renders a project cover frame at the size an adapter asks for.
+    pub use super::cover_image::{Image, render};
+}
 pub(crate) mod project_cover {
     //! Captures a managed project cover image.
     pub(crate) use super::cover_image::capture;

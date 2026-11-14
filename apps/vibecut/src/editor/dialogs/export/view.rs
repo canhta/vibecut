@@ -25,8 +25,17 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ctx: &egui::Context) -> 
         .zip(items.iter().filter_map(|item| item.end().ok()).max())
         .and_then(|(start, end)| time::TimeRange::new(start, end).ok());
     let mut options = preferred;
+    let corrections = || {
+        cx.playback
+            .footage_corrections(project)
+            .unwrap_or_default()
+            .corrections()
+    };
     let cover = super::cover::Cover {
         thumbnail: &cx.session.metadata().thumbnail,
+        tick: cx.session.metadata().cover_tick,
+        project,
+        corrections: &corrections,
         editable: cx.cover_editable,
     };
     let output = dialog.ui(ctx, cx.locale, cx.dark, &mut options, project, cover);

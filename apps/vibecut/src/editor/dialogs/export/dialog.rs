@@ -243,6 +243,8 @@ pub struct ExportInspection {
     /// Every file published since the export started, in save order.
     pub saved: Vec<PathBuf>,
     pub attempt: Option<ExportOptions>,
+    /// The pixel size of the sized cover render when it is the image on screen.
+    pub cover: Option<[usize; 2]>,
 }
 #[derive(Clone, Debug)]
 pub struct SaveRequest {
@@ -426,6 +428,7 @@ impl ExportDialog {
             diagnostics: self.diagnostics.clone(),
             saved: self.saved.clone(),
             attempt: self.attempt,
+            cover: self.cover.sharp_size(),
         }
     }
     pub fn active(&self) -> bool {
@@ -1322,6 +1325,7 @@ impl ExportDialog {
                                             height: body_height,
                                             empty: self.empty,
                                             busy: active,
+                                            budget: self.runner.memory_budget(),
                                         },
                                         &mut result,
                                     );

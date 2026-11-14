@@ -374,3 +374,35 @@ fn the_cover_tick_picks_the_cover_frame_and_survives_refreshes() {
     // The cover edit is outside content history.
     assert_eq!(autosave.session().history_len(), (0, 0));
 }
+
+#[test]
+fn the_cover_renders_at_the_size_an_adapter_asks_for() {
+    let mut data = project::Project::empty(ProjectId(93), "Sized".into())
+        .unwrap()
+        .into_data();
+    let frame = data.canvas.fps.tick_of(1).unwrap();
+    data.scene_mut().timeline.main.items.push(
+        testkit::item::item(
+            project::ItemId(6),
+            project::ItemParams::Overlay(project::OverlayParams {
+                color: project::Color([255, 0, 0, 255]),
+            }),
+        )
+        .source(time::SourceRange::new(Tick::ZERO, frame).unwrap())
+        .build(),
+    );
+    let project = project::Project::new(data).unwrap();
+    let budget = engine::ByteBudget::new(64 << 20).unwrap();
+    let hooks = engine::ByteBudgetHooks::new(&budget, None);
+    let image = engine::cover::render(
+        &project,
+        Tick::ZERO,
+        [454, 255],
+        &hooks,
+        &Default::default(),
+    )
+    .unwrap();
+    assert_eq!((image.width, image.height), (454, 255));
+    assert_eq!(image.rgba.len(), 454 * 255 * 4);
+    assert!(image.rgba[0] > 245 && image.rgba[1] < 10 && image.rgba[2] < 10);
+}

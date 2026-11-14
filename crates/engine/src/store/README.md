@@ -109,6 +109,7 @@ failure, including a denied allocation, stores Unavailable, for which adapters s
 placeholder. Autosave backfills Missing on open, refreshes on saves, and accepts the same command
 outside content history. Desktop exit invokes it even for a journal-only close. The project
 sidecar owns the bounded raw RGBA bytes; no compressed image decoder runs during catalog reads.
+`cover::render(project, tick, [width, height], hooks, corrections)` draws the same cover frame at any size for adapters that show it larger than the stored thumbnail (the export dialog's cover column); the stored thumbnail is that render at 128 pixels.
 The command's optional `tick` sets `cover_tick` first (negative is refused and changes nothing), so a chosen
 cover frame survives every later refresh, save and duplicate; a `cover_tick` at or past the project end
 captures output zero and stays stored. The agent policy refuses the command, as before.
