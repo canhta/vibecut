@@ -18,6 +18,7 @@ Read the owner before changing its area. Each fact lives in one owner; link to i
 | start, research, copy, upgrade or commit | [workflows](docs/engineering/workflows.md) |
 | test, benchmark or report | [verification](docs/engineering/verification.md) |
 | add a dependency, asset, model weight or remote AI call; handle private data | [open-source policy](docs/engineering/open-source.md) |
+| track progress against CapCut, or land a change that moves an item | [parity](docs/product/parity/README.md) |
 | claim or update a ticket | [issue tracker](docs/agents/issue-tracker.md) |
 | dispatch, review or merge agent work | [orchestration](docs/agents/orchestration.md) |
 | name a domain concept or revisit a decision | [domain docs](docs/agents/domain.md) |
