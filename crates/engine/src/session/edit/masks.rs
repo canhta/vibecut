@@ -21,7 +21,7 @@ pub(super) fn execute_remove_mask(
         .position(|m| m.id == mask)
         .ok_or(EditError::Invalid("missing mask"))?;
     target.masks.remove(index);
-    let prefix = format!("masks.{mask}.params.");
+    let prefix = format!("masks.{mask}.");
     let paths: Vec<_> = target
         .animations
         .iter()
@@ -45,12 +45,30 @@ pub(super) fn execute_update_mask(
         .iter_mut()
         .find(|m| m.id == mask.id)
         .ok_or(EditError::Invalid("missing mask"))?;
+    let mask_id = mask.id.clone();
     *previous = mask;
+    prune_points(target, &mask_id)?;
 
     Ok(data)
 }
+/// Drop the anchor channels of `mask_id` that its current shape no longer
+/// carries: all of them off a `Path` shape, those past its last anchor on one.
+fn prune_points(target: &mut project::Item, mask_id: &str) -> Result<()> {
+    let mask = target
+        .masks
+        .iter()
+        .find(|m| m.id == mask_id)
+        .ok_or(EditError::Invalid("missing mask"))?;
+    let count = match &mask.shape {
+        project::MaskShape::Path { path } => path.vertices.len(),
+        _ => 0,
+    };
+    mask.remap_points(&mut target.animations, |i| (i < count).then_some(i))?;
+    Ok(())
+}
 /// Replace one mask's shape with an editable closed path, preserving every
-/// other field and its animations. An equal path is a silent no-op.
+/// other field and its animations, except anchor channels past the new last
+/// anchor. An equal path is a silent no-op.
 pub(super) fn execute_set_mask_path(
     mut data: ProjectData,
     id: ItemId,
@@ -70,10 +88,12 @@ pub(super) fn execute_set_mask_path(
         return Ok(data);
     }
     mask.shape = project::MaskShape::Path { path };
+    prune_points(target, &mask_id)?;
 
     Ok(data)
 }
-/// Insert one anchor into an editable closed path at parameter `t`.
+/// Insert one anchor into an editable closed path at parameter `t`; anchor
+/// channels after the split segment move up one index with their keys.
 pub(super) fn execute_add_mask_point(
     mut data: ProjectData,
     id: ItemId,
@@ -92,10 +112,14 @@ pub(super) fn execute_add_mask_point(
     };
     let next = path.split(segment, t)?;
     mask.shape = project::MaskShape::Path { path: next };
+    mask.remap_points(&mut target.animations, |i| {
+        Some(if i > segment { i + 1 } else { i })
+    })?;
 
     Ok(data)
 }
 /// Remove the given anchors from an editable closed path in one undo step.
+/// Their channels drop; later anchors' channels move down with their keys.
 pub(super) fn execute_remove_mask_point(
     mut data: ProjectData,
     id: ItemId,
@@ -113,11 +137,19 @@ pub(super) fn execute_remove_mask_point(
     };
     let next = path.without(&points)?;
     mask.shape = project::MaskShape::Path { path: next };
+    mask.remap_points(&mut target.animations, |i| {
+        if points.contains(&i) {
+            None
+        } else {
+            Some(i - points.iter().filter(|p| **p < i).count())
+        }
+    })?;
 
     Ok(data)
 }
 /// Insert the clipboard's anchors after anchor `after` of an editable closed path in
-/// one step. An empty clipboard is a silent no-op; an item snapshot refuses.
+/// one step; later anchors' channels move up by the pasted count, and the pasted
+/// anchors carry no keys. An empty clipboard is a silent no-op; an item snapshot refuses.
 pub(super) fn execute_paste_mask_points(
     mut data: ProjectData,
     id: ItemId,
@@ -140,6 +172,10 @@ pub(super) fn execute_paste_mask_points(
     };
     let next = path.with_inserted(after, vertices)?;
     mask.shape = project::MaskShape::Path { path: next };
+    let count = vertices.len();
+    mask.remap_points(&mut target.animations, |i| {
+        Some(if i > after { i + count } else { i })
+    })?;
 
     Ok(data)
 }

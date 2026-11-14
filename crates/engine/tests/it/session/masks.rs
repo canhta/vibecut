@@ -684,3 +684,163 @@ fn mask_keys_toggle_undo_retime_and_survive_a_shape_change_and_refuse_ghosts() {
     );
     assert_eq!(s.project(), &before_ghost);
 }
+
+fn has_channel(s: &Session, path: &AnimationPath) -> bool {
+    s.project()
+        .data()
+        .scene()
+        .timeline
+        .overlays
+        .first()
+        .unwrap()
+        .items
+        .first()
+        .unwrap()
+        .animations
+        .get(path)
+        .is_some()
+}
+
+#[test]
+fn freeform_anchor_keys_follow_point_edits_through_history_and_save() {
+    use engine::{ItemClipboard, ItemPasteSource};
+    let mut s = session();
+    let mask = Mask::new(
+        "p",
+        MaskShape::Path {
+            path: MaskPath::rectangle(),
+        },
+    );
+    s.apply(Command::AddMask {
+        item: ItemId(2),
+        mask: mask.clone(),
+    })
+    .unwrap();
+    let anchor = |index: usize, field: &str| mask.point_path(index, field).unwrap();
+    let toggle = |path: AnimationPath, time: i64, value: f64| Command::ToggleKeyframe {
+        item: ItemId(2),
+        path,
+        component: None,
+        time: Tick(time),
+        value: ParamValue::Scalar(value),
+    };
+    s.apply(toggle(anchor(1, "x"), 0, 1.0)).unwrap();
+    s.apply(toggle(anchor(1, "x"), 30, 0.6)).unwrap();
+    s.apply(toggle(anchor(3, "out_y"), 0, 0.2)).unwrap();
+    s.apply(toggle(mask.path("feather").unwrap(), 0, 4.0))
+        .unwrap();
+    let keyed = s.project().clone();
+    assert_eq!(mask_keys(&s, &anchor(1, "x")), [0, 30]);
+
+    // Each anchor key is one undo step; redo restores them.
+    s.apply(Command::Undo {}).unwrap();
+    s.apply(Command::Undo {}).unwrap();
+    assert!(!has_channel(&s, &anchor(3, "out_y")));
+    s.apply(Command::Undo {}).unwrap();
+    assert_eq!(mask_keys(&s, &anchor(1, "x")), [0]);
+    for _ in 0..3 {
+        s.apply(Command::Redo {}).unwrap();
+    }
+    assert_eq!(s.project(), &keyed);
+    // Removing an anchor key is one step too.
+    s.apply(toggle(anchor(1, "x"), 30, 0.6)).unwrap();
+    assert_eq!(mask_keys(&s, &anchor(1, "x")), [0]);
+    s.apply(Command::Undo {}).unwrap();
+    assert_eq!(s.project(), &keyed);
+
+    // Anchor keys survive save and reopen unchanged.
+    let saved = project::encode(s.project(), false).unwrap();
+    assert_eq!(
+        &project::decode(&saved).unwrap().project,
+        s.project().as_ref()
+    );
+
+    // A split of segment 0 inserts anchor 1: later channels move up with their keys.
+    s.apply(Command::AddMaskPoint {
+        item: ItemId(2),
+        mask: "p".into(),
+        segment: 0,
+        t: 0.5,
+    })
+    .unwrap();
+    assert!(!has_channel(&s, &anchor(1, "x")));
+    assert_eq!(mask_keys(&s, &anchor(2, "x")), [0, 30]);
+    assert_eq!(mask_keys(&s, &anchor(4, "out_y")), [0]);
+    assert_eq!(mask_keys(&s, &mask.path("feather").unwrap()), [0]);
+    let split = s.project().clone();
+    s.apply(Command::Undo {}).unwrap();
+    assert_eq!(s.project(), &keyed);
+    s.apply(Command::Redo {}).unwrap();
+    assert_eq!(s.project(), &split);
+
+    // Removing the keyed anchor drops its channel; the later one moves down.
+    s.apply(Command::RemoveMaskPoint {
+        item: ItemId(2),
+        mask: "p".into(),
+        points: vec![2],
+    })
+    .unwrap();
+    assert!(!has_channel(&s, &anchor(2, "x")));
+    assert!(!has_channel(&s, &anchor(4, "out_y")));
+    assert_eq!(mask_keys(&s, &anchor(3, "out_y")), [0]);
+    s.apply(Command::Undo {}).unwrap();
+    assert_eq!(s.project(), &split);
+
+    // Two anchors pasted after anchor 0 move every later channel up by two.
+    let wire = serde_json::json!({"version":1,"items":[],"span":0,"maskPoints":[
+        {"p":[0.1,0.0],"t_in":[0.0,0.0],"t_out":[0.0,0.0]},
+        {"p":[0.2,0.0],"t_in":[0.0,0.0],"t_out":[0.0,0.0]}]});
+    let payload: ItemClipboard = serde_json::from_value(wire).unwrap();
+    s.apply(Command::PasteMaskPoints {
+        item: ItemId(2),
+        mask: "p".into(),
+        after: 0,
+        source: ItemPasteSource::Payload { payload },
+    })
+    .unwrap();
+    assert!(!has_channel(&s, &anchor(2, "x")));
+    assert_eq!(mask_keys(&s, &anchor(4, "x")), [0, 30]);
+    assert_eq!(mask_keys(&s, &anchor(6, "out_y")), [0]);
+    s.apply(Command::Undo {}).unwrap();
+    assert_eq!(s.project(), &split);
+
+    // A key on an anchor the path lacks refuses and changes nothing.
+    let history = s.history_len();
+    assert!(s.apply(toggle(anchor(5, "x"), 1, 1.0)).is_err());
+    assert_eq!(s.project(), &split);
+    assert_eq!(s.history_len(), history);
+
+    // A shorter path keeps the channels it still carries; a non-path shape drops
+    // them all while the scalar keys stay. Undo restores both.
+    s.apply(Command::SetMaskPath {
+        item: ItemId(2),
+        mask: "p".into(),
+        path: MaskPath::rectangle(),
+    })
+    .unwrap();
+    assert_eq!(mask_keys(&s, &anchor(2, "x")), [0, 30]);
+    assert!(!has_channel(&s, &anchor(4, "out_y")));
+    s.apply(Command::Undo {}).unwrap();
+    assert_eq!(s.project(), &split);
+    let mut rectangle = mask.clone();
+    rectangle.shape = MaskShape::Rectangle;
+    s.apply(Command::UpdateMask {
+        item: ItemId(2),
+        mask: rectangle,
+    })
+    .unwrap();
+    assert!(!has_channel(&s, &anchor(2, "x")));
+    assert!(!has_channel(&s, &anchor(4, "out_y")));
+    assert_eq!(mask_keys(&s, &mask.path("feather").unwrap()), [0]);
+    s.apply(Command::Undo {}).unwrap();
+    assert_eq!(s.project(), &split);
+
+    // Removing the mask drops its anchor channels with its scalar ones.
+    s.apply(Command::RemoveMask {
+        item: ItemId(2),
+        mask: "p".into(),
+    })
+    .unwrap();
+    assert!(!has_channel(&s, &anchor(2, "x")));
+    assert!(!has_channel(&s, &mask.path("feather").unwrap()));
+}

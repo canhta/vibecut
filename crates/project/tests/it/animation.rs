@@ -347,12 +347,22 @@ fn hostile_inputs_and_mutation_failures_are_bounded_and_atomic() {
         "effects.id.params.",
         "params.a.b",
         "../opacity",
+        "masks.m.path.01.x",
+        "masks.m.path.4096.x",
+        "masks.m.path.-1.x",
+        "masks.m.path.+1.x",
+        "masks.m.path..x",
+        "masks.m.path.0.",
+        "masks.m.path.0",
+        "effects.m.path.0.x",
     ] {
-        assert!(AnimationPath::new(name).is_err());
+        assert!(AnimationPath::new(name).is_err(), "{name}");
     }
     assert!(AnimationPath::new(".".repeat(1 << 20)).is_err());
     for name in [
         "params.custom",
+        "masks.m.path.0.x",
+        "masks.m.path.4095.out_y",
         "effects.id-1.params.amount",
         "background.color",
         "volume",
@@ -976,4 +986,157 @@ fn crossed_handles_resolve_single_ticks_near_stationary_time_midpoint() {
         let actual = value(c.value_at(t));
         assert!((actual - expected).abs() < 2e-8, "{actual} != {expected}");
     }
+}
+
+fn anchors(mask: &Mask) -> Vec<MaskVertex> {
+    match &mask.shape {
+        MaskShape::Path { path } => path.vertices.clone(),
+        _ => panic!("path mask expected"),
+    }
+}
+
+#[test]
+fn mask_anchor_channels_evaluate_per_frame_exact_at_key_endpoints() {
+    let mask = Mask::new(
+        "m",
+        MaskShape::Path {
+            path: MaskPath::rectangle(),
+        },
+    );
+    let stored = anchors(&mask);
+    let mut animations = Animations::default();
+    animations
+        .set(
+            mask.point_path(1, "x").unwrap(),
+            param(vec![
+                key(0, 1.0, Segment::Linear),
+                key(1000, 0.7, Segment::Linear),
+            ]),
+        )
+        .unwrap();
+    animations
+        .set(
+            mask.point_path(2, "out_y").unwrap(),
+            param(vec![
+                key(0, 0.0, Segment::Linear),
+                key(1000, 0.25, Segment::Linear),
+            ]),
+        )
+        .unwrap();
+    // Overshoot clamps to the stored vertex bound.
+    animations
+        .set(
+            mask.point_path(3, "in_x").unwrap(),
+            param(vec![
+                key(0, 0.0, Segment::Linear),
+                key(1000, 250.0, Segment::Linear),
+            ]),
+        )
+        .unwrap();
+    let at = |t: i64| anchors(&mask.at(&animations, Tick(t)).unwrap());
+    let start = at(0);
+    let end = at(1000);
+    assert_eq!(start.get(1).unwrap().p, [1.0, 0.0]);
+    assert_eq!(end.get(1).unwrap().p, [0.7, 0.0]);
+    assert_eq!(start.get(2).unwrap().t_out, [0.0, 0.0]);
+    assert_eq!(end.get(2).unwrap().t_out, [0.0, 0.25]);
+    assert_eq!(end.get(3).unwrap().t_in, [100.0, 0.0]);
+    let middle = at(500);
+    near(middle.get(1).unwrap().p[0], 0.85);
+    near(middle.get(2).unwrap().t_out[1], 0.125);
+    // Unkeyed anchors and fields keep the stored path; the stored mask is untouched.
+    assert_eq!(middle.first(), stored.first());
+    assert_eq!(middle.get(1).unwrap().p[1], 0.0);
+    assert_eq!(anchors(&mask), stored);
+    // A non-path shape has no anchors to override or admit.
+    let rect = Mask::new("m", MaskShape::Rectangle);
+    assert_eq!(
+        rect.at(&animations, Tick(500)).unwrap().shape,
+        MaskShape::Rectangle
+    );
+    assert!(mask.animates(&mask.point_path(3, "out_y").unwrap()));
+    assert!(!mask.animates(&mask.point_path(4, "x").unwrap()));
+    assert!(!mask.animates(&mask.point_path(0, "z").unwrap()));
+    assert!(!rect.animates(&mask.point_path(0, "x").unwrap()));
+    assert!(mask.animates(&mask.path("feather").unwrap()));
+}
+
+#[test]
+fn mask_anchor_channels_follow_inserted_and_removed_anchors() {
+    let mask = Mask::new(
+        "m",
+        MaskShape::Path {
+            path: MaskPath::rectangle(),
+        },
+    );
+    let other = Mask::new("mm", MaskShape::Rectangle);
+    let keyed = |v: f64| {
+        param(vec![
+            key(0, v, Segment::Linear),
+            key(10, v + 0.5, Segment::Step),
+        ])
+    };
+    let mut animations = Animations::default();
+    for (index, v) in [(0, 0.0), (1, 1.0), (3, 3.0)] {
+        animations
+            .set(mask.point_path(index, "x").unwrap(), keyed(v))
+            .unwrap();
+    }
+    animations
+        .set(mask.path("feather").unwrap(), keyed(5.0))
+        .unwrap();
+    animations
+        .set(other.path("feather").unwrap(), keyed(6.0))
+        .unwrap();
+    let names = |a: &Animations| {
+        a.iter()
+            .map(|(p, _)| p.as_str().to_owned())
+            .collect::<Vec<_>>()
+    };
+    // Two anchors inserted after anchor 0: later channels move up by two with their keys.
+    let mut inserted = animations.clone();
+    mask.remap_points(&mut inserted, |i| Some(if i > 0 { i + 2 } else { i }))
+        .unwrap();
+    assert_eq!(
+        names(&inserted),
+        [
+            "masks.m.params.feather",
+            "masks.m.path.0.x",
+            "masks.m.path.3.x",
+            "masks.m.path.5.x",
+            "masks.mm.params.feather",
+        ]
+    );
+    assert_eq!(
+        inserted.get(&mask.point_path(3, "x").unwrap()),
+        animations.get(&mask.point_path(1, "x").unwrap())
+    );
+    assert_eq!(
+        inserted.get(&mask.point_path(5, "x").unwrap()),
+        animations.get(&mask.point_path(3, "x").unwrap())
+    );
+    // Removing anchor 1 drops its channel; anchor 3 becomes 2.
+    let mut removed = animations.clone();
+    mask.remap_points(&mut removed, |i| match i {
+        1 => None,
+        i if i > 1 => Some(i - 1),
+        i => Some(i),
+    })
+    .unwrap();
+    assert_eq!(
+        names(&removed),
+        [
+            "masks.m.params.feather",
+            "masks.m.path.0.x",
+            "masks.m.path.2.x",
+            "masks.mm.params.feather",
+        ]
+    );
+    assert_eq!(
+        removed.get(&mask.point_path(2, "x").unwrap()),
+        animations.get(&mask.point_path(3, "x").unwrap())
+    );
+    // Two anchors mapped to one index refuse.
+    let mut collided = animations.clone();
+    assert!(mask.remap_points(&mut collided, |_| Some(0)).is_err());
 }

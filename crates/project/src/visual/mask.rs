@@ -326,6 +326,90 @@ impl Mask {
     pub fn path(&self, key: &str) -> Result<AnimationPath> {
         AnimationPath::new(format!("masks.{}.params.{key}", self.id))
     }
+    /// The channel of one anchor field: `masks.<id>.path.<index>.<field>`, with
+    /// `field` one of [`MASK_POINT_FIELDS`] and `index` below 4096.
+    pub fn point_path(&self, index: usize, field: &str) -> Result<AnimationPath> {
+        AnimationPath::new(format!("masks.{}.path.{index}.{field}", self.id))
+    }
+    /// Whether `path` is one of this mask's channels: a [`MASK_SCALARS`] key, or a
+    /// [`MASK_POINT_FIELDS`] field of an anchor its `Path` shape carries.
+    pub fn animates(&self, path: &AnimationPath) -> bool {
+        let own = path
+            .as_str()
+            .strip_prefix("masks.")
+            .and_then(|rest| rest.strip_prefix(self.id.as_str()));
+        if let Some(key) = own.and_then(|rest| rest.strip_prefix(".params.")) {
+            return MASK_SCALARS.contains(&key);
+        }
+        match (point_key(&self.id, path), &self.shape) {
+            (Some((index, field)), MaskShape::Path { path: shape }) => {
+                index < shape.vertices.len() && MASK_POINT_FIELDS.contains(&field)
+            }
+            _ => false,
+        }
+    }
+    /// Move this mask's anchor channels after an anchor edit, keeping their keys.
+    /// `map(old)` is the anchor's new index, or `None` to drop its channels; two
+    /// anchors mapped to one index refuse.
+    pub fn remap_points(
+        &self,
+        animations: &mut crate::Animations,
+        map: impl Fn(usize) -> Option<usize>,
+    ) -> Result<()> {
+        let owned: Vec<_> = animations
+            .iter()
+            .filter_map(|(path, _)| {
+                point_key(&self.id, path)
+                    .map(|(index, field)| (path.clone(), index, field.to_owned()))
+            })
+            .collect();
+        let mut moved = Vec::with_capacity(owned.len());
+        for (path, index, field) in owned {
+            let param = animations
+                .remove(&path)
+                .ok_or(Error::Invalid("mask point channel"))?;
+            if let Some(next) = map(index) {
+                moved.push((self.point_path(next, &field)?, param));
+            }
+        }
+        for (path, param) in moved {
+            if animations.get(&path).is_some() {
+                return Err(Error::Invalid("mask point remap"));
+            }
+            animations.set(path, param)?;
+        }
+        Ok(())
+    }
+    /// Override path anchors from their channels at `local`; overshoot clamps to
+    /// the stored vertex bound.
+    fn points_at(&mut self, animations: &crate::Animations, local: time::Tick) -> Result<()> {
+        let MaskShape::Path { path } = &mut self.shape else {
+            return Ok(());
+        };
+        for (channel, param) in animations.iter() {
+            let Some((index, field)) = point_key(&self.id, channel) else {
+                continue;
+            };
+            let crate::ParamValue::Scalar(value) = param.value_at(local)? else {
+                return Err(Error::Invalid("mask animation must be scalar"));
+            };
+            let vertex = path
+                .vertices
+                .get_mut(index)
+                .ok_or(Error::Invalid("mask point channel"))?;
+            let slot = match field {
+                "x" => &mut vertex.p[0],
+                "y" => &mut vertex.p[1],
+                "in_x" => &mut vertex.t_in[0],
+                "in_y" => &mut vertex.t_in[1],
+                "out_x" => &mut vertex.t_out[0],
+                "out_y" => &mut vertex.t_out[1],
+                _ => return Err(Error::Invalid("mask point channel")),
+            };
+            *slot = value.clamp(-100., 100.);
+        }
+        Ok(())
+    }
     pub fn active(&self) -> bool {
         self.enabled
             && self.mode != MaskMode::None
@@ -375,6 +459,20 @@ impl Mask {
         Ok(())
     }
 }
+/// Anchor fields a `masks.<id>.path.<index>.<field>` channel may key: the anchor
+/// position (`x`, `y`) and its tangent offsets (`in_*`, `out_*`), in the vertex's
+/// normalized mask-box units.
+pub const MASK_POINT_FIELDS: &[&str] = &["x", "y", "in_x", "in_y", "out_x", "out_y"];
+/// The anchor index and field of a channel in mask `id`'s point namespace.
+fn point_key<'a>(id: &str, path: &'a AnimationPath) -> Option<(usize, &'a str)> {
+    let rest = path
+        .as_str()
+        .strip_prefix("masks.")?
+        .strip_prefix(id)?
+        .strip_prefix(".path.")?;
+    let (index, field) = rest.split_once('.')?;
+    Some((crate::animation::point_index(index)?, field))
+}
 macro_rules! mask_scalars {
     ($($key:literal => $field:ident $(.$member:ident)? : ($lo:expr,$hi:expr)),* $(,)?)=>{
         pub const MASK_SCALARS:&[&str]=&[$($key),*];
@@ -384,7 +482,7 @@ macro_rules! mask_scalars {
                 if !value.is_finite() || !($lo..=$hi).contains(&value) {return Err(Error::Invalid("mask parameter"));})*
                 Ok(())
             }
-            /// Resolve item-local scalar overrides through the one animation
+            /// Resolve item-local scalar and anchor overrides through the one animation
             /// evaluator; animated overshoot clamps to each static parameter range.
             pub fn at(&self,animations:&crate::Animations,local:time::Tick)->Result<Self> {
                 let mut mask=self.clone();
@@ -393,6 +491,7 @@ macro_rules! mask_scalars {
                     Some(_)=>return Err(Error::Invalid("mask animation must be scalar")),
                     None=>{}
                 })*
+                mask.points_at(animations,local)?;
                 Ok(mask)
             }
         }

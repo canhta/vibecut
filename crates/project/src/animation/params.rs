@@ -108,6 +108,17 @@ pub(crate) fn identifier(s: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
+/// A mask anchor index as spelled in a path: canonical decimal below 4096.
+pub(crate) fn point_index(s: &str) -> Option<usize> {
+    if s.is_empty() || s.len() > 4 || (s.len() > 1 && s.starts_with('0')) {
+        return None;
+    }
+    if !s.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    s.parse::<usize>().ok().filter(|i| *i < 4096)
+}
+
 #[derive(
     Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, schemars::JsonSchema,
 )]
@@ -137,6 +148,9 @@ impl AnimationPath {
         let extension = match parts.as_slice() {
             ["params", name] => identifier(name),
             ["effects" | "masks", id, "params", name] => identifier(id) && identifier(name),
+            ["masks", id, "path", index, field] => {
+                identifier(id) && point_index(index).is_some() && identifier(field)
+            }
             _ => false,
         };
         if !extension {

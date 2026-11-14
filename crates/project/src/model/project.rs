@@ -476,23 +476,16 @@ fn validate(data: &ProjectData) -> Result<()> {
                 if !mask_ids.insert(&mask.id) {
                     return Err(Error::Invalid("duplicate mask id"));
                 }
-                for key in crate::MASK_SCALARS {
-                    if let Some(param) = item.animations.get(&mask.path(key)?)
-                        && !matches!(param.value_at(Tick::ZERO)?, crate::ParamValue::Scalar(_))
-                    {
-                        return Err(Error::Invalid("mask animation must be scalar"));
-                    }
-                }
             }
-            for (path, _) in item.animations.iter() {
-                let Some(rest) = path.as_str().strip_prefix("masks.") else {
+            for (path, param) in item.animations.iter() {
+                if !path.as_str().starts_with("masks.") {
                     continue;
-                };
-                let known = rest.split_once(".params.").is_some_and(|(id, key)| {
-                    crate::MASK_SCALARS.contains(&key) && item.masks.iter().any(|m| m.id == id)
-                });
-                if !known {
+                }
+                if !item.masks.iter().any(|m| m.animates(path)) {
                     return Err(Error::Invalid("mask animation path"));
+                }
+                if !matches!(param.value_at(Tick::ZERO)?, crate::ParamValue::Scalar(_)) {
+                    return Err(Error::Invalid("mask animation must be scalar"));
                 }
             }
             item.animations.validate()?;

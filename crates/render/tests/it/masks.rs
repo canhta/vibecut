@@ -631,58 +631,104 @@ fn ordered_modes_and_unclipped_strokes_keep_premultiplied_channels() {
     }
 }
 
+fn frame(n: i64) -> time::Tick {
+    time::FrameRate::FPS_30.tick_of(n).unwrap()
+}
+
+/// One 40x40 masked overlay starting at frame 5 (local time is the timeline
+/// frame minus 5), with `path` keyed linearly from `from` at local 0 to `to`
+/// at local frame 10.
+fn keyed_mask_scene(
+    mask: project::Mask,
+    keys: Option<(project::AnimationPath, f64, f64)>,
+) -> project::Project {
+    let mut data = masked_scene(40, 40, vec![mask]).into_data();
+    let item = data.scene_mut().timeline.main.items.first_mut().unwrap();
+    item.start = frame(5);
+    if let Some((path, from, to)) = keys {
+        let mut param = project::Param::new(project::ParamValue::Scalar(from)).unwrap();
+        let channel = param.channel_mut(Option::None).unwrap();
+        channel
+            .put(project::Keyframe::new(
+                time::Tick::ZERO,
+                project::ParamValue::Scalar(from),
+            ))
+            .unwrap();
+        channel
+            .put(project::Keyframe::new(
+                frame(10),
+                project::ParamValue::Scalar(to),
+            ))
+            .unwrap();
+        item.animations.set(path, param).unwrap();
+    }
+    project::Project::new(data).unwrap()
+}
+
+fn alpha_grid(project: &project::Project, at: i64) -> Vec<f32> {
+    let h = Hooks::default();
+    let mut renderer =
+        render::Renderer::new(project, render::RenderSettings::from_project(project)).unwrap();
+    let image = renderer
+        .render_frame(frame(at), &mut crate::support::Empty, &h)
+        .unwrap();
+    (0..40)
+        .flat_map(|y| (0..40).map(move |x| (x, y)))
+        .map(|(x, y)| alpha(&image, x, y))
+        .collect()
+}
+
 #[test]
 fn animated_mask_centre_matches_its_static_twin_only_at_key_times() {
     use project::{Mask, MaskShape};
-    let h = Hooks::default();
-    let frame = |n| time::FrameRate::FPS_30.tick_of(n).unwrap();
-    // The item starts at frame 5, so local time is timeline frame minus 5.
-    let scene = |mask: Mask, keys: Option<(f64, f64)>| {
-        let mut data = masked_scene(40, 40, vec![mask.clone()]).into_data();
-        let item = data.scene_mut().timeline.main.items.first_mut().unwrap();
-        item.start = frame(5);
-        if let Some((from, to)) = keys {
-            let mut param = project::Param::new(project::ParamValue::Scalar(from)).unwrap();
-            let channel = param.channel_mut(Option::None).unwrap();
-            channel
-                .put(project::Keyframe::new(
-                    time::Tick::ZERO,
-                    project::ParamValue::Scalar(from),
-                ))
-                .unwrap();
-            channel
-                .put(project::Keyframe::new(
-                    frame(10),
-                    project::ParamValue::Scalar(to),
-                ))
-                .unwrap();
-            item.animations
-                .set(mask.path("center_x").unwrap(), param)
-                .unwrap();
-        }
-        project::Project::new(data).unwrap()
-    };
-    let grid = |project: &project::Project, at: i64| {
-        let mut renderer =
-            render::Renderer::new(project, render::RenderSettings::from_project(project)).unwrap();
-        let image = renderer
-            .render_frame(frame(at), &mut crate::support::Empty, &h)
-            .unwrap();
-        (0..40)
-            .flat_map(|y| (0..40).map(move |x| (x, y)))
-            .map(|(x, y)| alpha(&image, x, y))
-            .collect::<Vec<f32>>()
-    };
     let plain = Mask::new("moving", MaskShape::Rectangle);
     let mut twin = plain.clone();
     twin.center_x = 0.2;
-    let static_start = grid(&scene(plain.clone(), None), 5);
-    let static_end = grid(&scene(twin, None), 15);
-    let animated = scene(plain, Some((0., 0.2)));
-    assert_eq!(grid(&animated, 5), static_start, "key at local 0");
-    assert_eq!(grid(&animated, 15), static_end, "key at local 10");
-    assert_ne!(grid(&animated, 10), static_start, "between keys it moves");
-    assert_ne!(grid(&animated, 10), static_end, "between keys it moves");
+    let static_start = alpha_grid(&keyed_mask_scene(plain.clone(), None), 5);
+    let static_end = alpha_grid(&keyed_mask_scene(twin, None), 15);
+    let keys = (plain.path("center_x").unwrap(), 0., 0.2);
+    let animated = keyed_mask_scene(plain, Some(keys));
+    assert_eq!(alpha_grid(&animated, 5), static_start, "key at local 0");
+    assert_eq!(alpha_grid(&animated, 15), static_end, "key at local 10");
+    assert_ne!(
+        alpha_grid(&animated, 10),
+        static_start,
+        "between keys it moves"
+    );
+    assert_ne!(
+        alpha_grid(&animated, 10),
+        static_end,
+        "between keys it moves"
+    );
+}
+
+#[test]
+fn animated_freeform_anchor_matches_its_static_twin_only_at_key_times() {
+    use project::{Mask, MaskPath, MaskShape};
+    // A rectangle path whose top-right anchor sits at `x` across the mask box.
+    let free = |x: f64| {
+        let mut path = MaskPath::rectangle();
+        path.vertices.get_mut(1).unwrap().p = [x, 0.0];
+        Mask::new("free", MaskShape::Path { path })
+    };
+    let static_start = alpha_grid(&keyed_mask_scene(free(1.0), None), 5);
+    let static_end = alpha_grid(&keyed_mask_scene(free(0.25), None), 15);
+    assert_ne!(static_start, static_end, "the twins differ");
+    let keys = (free(1.0).point_path(1, "x").unwrap(), 1.0, 0.25);
+    let animated = keyed_mask_scene(free(1.0), Some(keys));
+    // Render evaluates the path at each frame: exact at both keys, moving between.
+    assert_eq!(alpha_grid(&animated, 5), static_start, "key at local 0");
+    assert_eq!(alpha_grid(&animated, 15), static_end, "key at local 10");
+    assert_ne!(
+        alpha_grid(&animated, 10),
+        static_start,
+        "between keys it moves"
+    );
+    assert_ne!(
+        alpha_grid(&animated, 10),
+        static_end,
+        "between keys it moves"
+    );
 }
 
 #[test]
