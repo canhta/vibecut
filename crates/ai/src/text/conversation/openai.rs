@@ -2,7 +2,8 @@
 //! Sources checked 2026-11-12: Responses streaming events (`response.output_item.added`,
 //! `response.output_text.delta`, `response.function_call_arguments.delta|done`,
 //! `response.output_item.done`, `response.completed|incomplete|failed`, `error`),
-//! `function_call_output` input items keyed by `call_id`, and stateless use with
+//! `function_call_output` input items keyed by `call_id` (an array of `input_text` and
+//! `input_image` data-URL parts when the output shows frames), and stateless use with
 //! `store=false` plus `include: reasoning.encrypted_content` so reasoning items can
 //! be passed back (OpenAI function-calling and streaming guides, GPT-6.1 Sol model page).
 use super::sse::{self, Sse};
@@ -171,6 +172,22 @@ fn input(history: &[Message]) -> Result<Vec<Value>, Error> {
                         format!("error: {}", result.content)
                     } else {
                         result.content.clone()
+                    };
+                    let output = if result.images.is_empty() {
+                        Value::String(output)
+                    } else {
+                        let mut parts = vec![json!({"type": "input_text", "text": output})];
+                        parts.extend(result.images.iter().map(|image| {
+                            json!({
+                                "type": "input_image",
+                                "image_url": format!(
+                                    "data:{};base64,{}",
+                                    image.image_type().media_type(),
+                                    image.base64()
+                                ),
+                            })
+                        }));
+                        Value::Array(parts)
                     };
                     items.push(json!({
                         "type": "function_call_output",

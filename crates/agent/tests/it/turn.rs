@@ -3,8 +3,10 @@ use crate::support::{
     all_kinds, call, calls, conversation, conversation_with, drive, job_key, results, run_command,
     runner, say, then,
 };
-use agent::{AgentEvent, CancelFlag, EndReason, TurnEnd, TurnLimits, fixture};
-use ai::text::conversation::{DataKind, ScriptedReply, ScriptedStep, ToolCall, ToolInput};
+use agent::{AgentEvent, CancelFlag, EndReason, TurnEnd, TurnLimits, fixture, tool_specs};
+use ai::text::conversation::{
+    DataKind, ImageType, Message, ScriptedReply, ScriptedStep, ToolCall, ToolInput,
+};
 use engine::jobs::{JobBytes, JobKind, JobSpec, JobState, ResourceClass};
 use engine::{Command, Session};
 use serde_json::json;
@@ -460,4 +462,135 @@ fn data_the_conversation_does_not_share_is_withheld_from_the_model() {
     let held = results(&conversation);
     assert!(held[0].1);
     assert_eq!(held[0].0["error"], "not_shared");
+}
+
+fn tool_results(
+    conversation: &ai::text::conversation::Conversation,
+) -> Vec<ai::text::conversation::ToolResult> {
+    conversation
+        .history()
+        .iter()
+        .filter_map(|message| match message {
+            Message::ToolResults(results) => Some(results.clone()),
+            _ => None,
+        })
+        .flatten()
+        .collect()
+}
+
+#[test]
+fn preview_frame_shows_the_model_one_frame_of_the_fork_and_refuses_bad_input() {
+    let session = fixture().unwrap();
+    let mut kinds = all_kinds();
+    kinds.insert(DataKind::Frames);
+    let mut conversation = conversation_with(
+        vec![
+            calls(vec![
+                call("f1", "preview_frame", json!({"frame": 0})),
+                call("f2", "preview_frame", json!({})),
+                call("f3", "preview_frame", json!({"frame": 0, "extra": 1})),
+                call("f4", "preview_frame", json!({"frame": 1_000_000})),
+                run_command("f5", "preview", json!({"frames": [0]})),
+            ]),
+            say("I saw the frame."),
+        ],
+        kinds,
+        5_000_000,
+    );
+    let mut runner = runner();
+    let (turn, events) = drive(
+        &session,
+        &mut conversation,
+        &mut runner,
+        TurnLimits::default(),
+        &CancelFlag::new(),
+        |_| {},
+    );
+
+    assert_eq!(turn.end, TurnEnd::Done);
+    assert_eq!(turn.refusals, 1, "preview through command_run is refused");
+    assert!(turn.fork.is_empty(), "a frame is not an edit");
+    assert!(events.iter().any(|event| matches!(
+        event,
+        AgentEvent::ToolFinished { id, ok: true, .. } if id == "f1"
+    )));
+    let held = tool_results(&conversation);
+    assert_eq!(held.len(), 5);
+    let shown = &held[0];
+    assert!(!shown.is_error, "{}", shown.content);
+    assert!(shown.kinds.contains(&DataKind::Frames));
+    assert_eq!(shown.images.len(), 1);
+    assert_eq!(shown.images[0].image_type(), ImageType::Jpeg);
+    let described: serde_json::Value = serde_json::from_str(&shown.content).unwrap();
+    assert_eq!(described["frame"], 0);
+    assert!(described["width"].as_u64().unwrap() <= 640);
+    assert!(!described["clips"].as_array().unwrap().is_empty());
+    for refused in &held[1..] {
+        assert!(refused.is_error);
+        assert!(refused.images.is_empty());
+        assert!(refused.kinds.is_empty());
+    }
+    let codes: Vec<String> = held[1..4]
+        .iter()
+        .map(|r| {
+            let value: serde_json::Value = serde_json::from_str(&r.content).unwrap();
+            value["error"].as_str().unwrap().to_owned()
+        })
+        .collect();
+    assert_eq!(codes[0], "invalid_input");
+    assert_eq!(codes[1], "invalid_input");
+    assert!(
+        codes[2] == "invalid_params" || codes[2] == "limit",
+        "{codes:?}"
+    );
+    let reason: serde_json::Value = serde_json::from_str(&held[4].content).unwrap();
+    assert_eq!(reason["reason"], "use_tool");
+    runner.shutdown();
+}
+
+#[test]
+fn preview_frame_is_offered_only_when_frames_are_shared() {
+    let names = |frames: bool| -> Vec<String> {
+        tool_specs(frames)
+            .into_iter()
+            .map(|spec| spec.name)
+            .collect()
+    };
+    assert!(!names(false).contains(&"preview_frame".to_owned()));
+    assert!(names(true).contains(&"preview_frame".to_owned()));
+    for frames in [false, true] {
+        let specs = tool_specs(frames);
+        let run = specs
+            .iter()
+            .find(|spec| spec.name == "command_run")
+            .unwrap();
+        let offered = run.input_schema["properties"]["command"]["enum"]
+            .as_array()
+            .unwrap();
+        assert!(
+            !offered.iter().any(|id| id == "preview"),
+            "command_run never runs preview; preview_frame does"
+        );
+    }
+
+    // A conversation that does not share frames never offers the tool, so the call is
+    // answered as an unknown tool and nothing is rendered.
+    let session = fixture().unwrap();
+    let mut conversation = conversation(vec![
+        calls(vec![call("f1", "preview_frame", json!({"frame": 0}))]),
+        say("No frame."),
+    ]);
+    let mut runner = runner();
+    let (turn, _) = drive(
+        &session,
+        &mut conversation,
+        &mut runner,
+        TurnLimits::default(),
+        &CancelFlag::new(),
+        |_| {},
+    );
+    assert_eq!(turn.end, TurnEnd::Done);
+    let held = tool_results(&conversation);
+    assert!(held[0].is_error && held[0].images.is_empty());
+    runner.shutdown();
 }

@@ -4,8 +4,8 @@ use crate::error::Error;
 use crate::event::{AgentEvent, EndReason};
 use crate::tools::{Toolbox, tool_specs};
 use ai::text::conversation::{
-    AgentChatConsent, AgentChatLimits, ChatEvent, ChatModel, Conversation, Reply, ToolInput,
-    ToolResult,
+    AgentChatConsent, AgentChatLimits, ChatEvent, ChatModel, Conversation, DataKind, Reply,
+    ToolInput, ToolResult,
 };
 use engine::jobs::JobRunner;
 use engine::{Fork, Session};
@@ -53,7 +53,7 @@ pub fn new_conversation(
         model,
         Some(consent),
         SYSTEM,
-        tool_specs(),
+        tool_specs(consent.scope().kinds.contains(&DataKind::Frames)),
         limits,
     )?)
 }
@@ -200,6 +200,7 @@ fn run_calls(
             content: output.content,
             is_error: output.is_error,
             kinds: output.kinds,
+            images: output.images,
         });
     }
     Ok(results)

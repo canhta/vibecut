@@ -12,6 +12,7 @@ mod sse;
 
 use crate::{Error, ExecutionHooks, Money, ProviderConfig};
 pub use anthropic::AnthropicChat;
+use base64::Engine as _;
 use captions::NfcText;
 pub use ledger::{Ledger, default_model};
 pub use openai::OpenAiChat;
@@ -19,6 +20,7 @@ pub use openai::OpenAiChat;
 pub use scripted::{Compose, ScriptedChat, ScriptedReply, ScriptedStep};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
@@ -159,14 +161,65 @@ impl fmt::Debug for ToolCall {
             .finish_non_exhaustive()
     }
 }
+/// Encoding of a [`ToolImage`], one both providers accept as an image input.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageType {
+    Jpeg,
+    Png,
+}
+impl ImageType {
+    /// The IANA media type the providers name.
+    pub const fn media_type(self) -> &'static str {
+        match self {
+            Self::Jpeg => "image/jpeg",
+            Self::Png => "image/png",
+        }
+    }
+}
+
+/// One image a tool result shows the model, kept as base64 so the chat history the app
+/// stores stays plain text. A result that carries one must name [`DataKind::Frames`].
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct ToolImage {
+    image_type: ImageType,
+    base64: String,
+}
+impl ToolImage {
+    pub fn new(image_type: ImageType, bytes: &[u8]) -> Self {
+        Self {
+            image_type,
+            base64: base64::engine::general_purpose::STANDARD.encode(bytes),
+        }
+    }
+    pub fn image_type(&self) -> ImageType {
+        self.image_type
+    }
+    pub(crate) fn base64(&self) -> &str {
+        &self.base64
+    }
+}
+impl fmt::Debug for ToolImage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ToolImage")
+            .field("image_type", &self.image_type)
+            .field("base64_bytes", &self.base64.len())
+            .finish()
+    }
+}
+
 /// The outcome of one tool call. Content is data for the model, never instructions.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolResult {
     pub call_id: String,
     pub content: String,
     pub is_error: bool,
-    /// Kinds of project data inside `content`; each must be inside the consent.
+    /// Kinds of project data inside `content` and `images`; each must be inside the consent.
     pub kinds: BTreeSet<DataKind>,
+    /// Images shown to the model after `content`. Only the latest tool-result message of
+    /// a conversation carries its images into a request; older ones are left out so one
+    /// frame, not every frame, counts against the context ceiling.
+    pub images: Vec<ToolImage>,
 }
 impl fmt::Debug for ToolResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -485,10 +538,10 @@ impl Conversation {
         if !given.is_empty() {
             return Err(Error::Invalid("tool results do not match the calls"));
         }
-        if merged
-            .iter()
-            .any(|result| !result.kinds.is_subset(&self.scope.kinds))
-        {
+        if merged.iter().any(|result| {
+            !result.kinds.is_subset(&self.scope.kinds)
+                || (!result.images.is_empty() && !self.scope.kinds.contains(&DataKind::Frames))
+        }) {
             return Err(Error::ConsentRequired);
         }
         self.step(Message::ToolResults(merged), on_event, hooks)
@@ -521,10 +574,11 @@ impl Conversation {
         on_event: &mut dyn FnMut(ChatEvent<'_>),
         hooks: &dyn ExecutionHooks,
     ) -> Result<Reply, Error> {
+        let messages = latest_images_only(&self.history);
         let prepared = self.model.prepare(&ChatRequest {
             system: &self.system,
             tools: &self.tools,
-            messages: &self.history,
+            messages: &messages,
             max_output_tokens: self.limits.max_output_tokens,
         })?;
         let body_bytes = u64::try_from(prepared.len()).map_err(|_| Error::Payload)?;
@@ -575,6 +629,7 @@ impl Conversation {
                             content: content.to_owned(),
                             is_error: true,
                             kinds: BTreeSet::new(),
+                            images: Vec::new(),
                         },
                     );
                 }
@@ -596,6 +651,37 @@ impl Conversation {
             spent_micros: self.ledger.spent_micros(),
         })
     }
+}
+
+/// The history as a request carries it: images of every tool-result message but the last
+/// are dropped (their text stays), so a frame costs context only until the model has
+/// answered it.
+fn latest_images_only(history: &[Message]) -> Cow<'_, [Message]> {
+    let older = history.len().saturating_sub(1);
+    let stale = history.iter().take(older).any(|message| {
+        matches!(message, Message::ToolResults(results) if results.iter().any(|r| !r.images.is_empty()))
+    });
+    if !stale {
+        return Cow::Borrowed(history);
+    }
+    Cow::Owned(
+        history
+            .iter()
+            .enumerate()
+            .map(|(index, message)| match message {
+                Message::ToolResults(results) if index < older => Message::ToolResults(
+                    results
+                        .iter()
+                        .map(|result| ToolResult {
+                            images: Vec::new(),
+                            ..result.clone()
+                        })
+                        .collect(),
+                ),
+                other => other.clone(),
+            })
+            .collect(),
+    )
 }
 
 /// Whether a failed attempt is charged at its reservation. A request the provider

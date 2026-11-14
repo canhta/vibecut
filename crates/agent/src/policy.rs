@@ -46,7 +46,9 @@ impl Reason {
             Self::ViewState => "View state is not an edit; the agent cannot change it.",
             Self::Library => "The agent cannot use the user's sound or music library.",
             Self::Download => "The agent cannot download models or fonts.",
-            Self::UseTool => "Use project_summary, timeline_read or command_list instead.",
+            Self::UseTool => {
+                "Use project_summary, timeline_read, command_list or preview_frame instead."
+            }
             Self::Frames => "Frames are not enabled for this conversation.",
             Self::HumanOnly => "Only the user can run this command.",
             Self::Unlisted => "This command has no agent policy and is refused.",
@@ -86,6 +88,17 @@ impl AgentPolicy {
             Some(Verdict::Frames) if self.frames => Ok(()),
             Some(Verdict::Frames) => Err(Reason::Frames),
         }
+    }
+}
+impl AgentPolicy {
+    /// Whether `command_run` and `command_list` offer the command `id`. A command the
+    /// policy opens only for frames (`preview`) has a dedicated tool, so it is not run here:
+    /// its job output would never reach the model as an image.
+    pub fn check_command(&self, id: &str) -> Result<(), Reason> {
+        if verdict(id) == Some(Verdict::Frames) {
+            return Err(Reason::UseTool);
+        }
+        self.check(id)
     }
 }
 impl Policy for AgentPolicy {
