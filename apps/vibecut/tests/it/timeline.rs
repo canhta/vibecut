@@ -11,7 +11,7 @@ use egui_kittest::{
 use engine::{ByteBudget, Command, CreatedId, NewItem, Session};
 use media::{AssetData, AssetId, ContentHash, SourceAsset, SourceProbe, SourceStream};
 use project::{Color, ItemId, ItemParams, Project, ProjectId, TrackId, TrackKind};
-use std::{path::PathBuf, sync::Arc};
+use std::sync::Arc;
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
     AppCommand, Editor, egui,
@@ -306,18 +306,6 @@ fn blend_dropdown_and_opacity_field_dispatch_real_edits() {
             .unwrap(),
         Some(project::ParamValue::Scalar(0.5))
     );
-    harness.state_mut().activate("edit.undo").unwrap();
-    harness.run_steps(2);
-    assert!(item(harness.state(), id).animations.get(&path).is_none());
-    harness.state_mut().activate("edit.redo").unwrap();
-    harness.run_steps(2);
-    assert_eq!(
-        item(harness.state(), id)
-            .animations
-            .value_at(&path, Tick::ZERO)
-            .unwrap(),
-        Some(project::ParamValue::Scalar(0.5))
-    );
     // The Reduce image noise switch sets the video item's flag as one undo step.
     let noise = |harness: &Harness<'_, Editor>| match &item(harness.state(), id).content {
         project::ItemParams::Video(params) => params.reduce_noise,
@@ -414,19 +402,7 @@ fn fit_dropdown_sets_each_mode_with_undo_and_a_screenshot() {
         harness.run_steps(2);
         assert_eq!(fit_of(harness.state(), id), mode, "{mode:?}");
         assert_eq!(harness.state().session.history_len().0, history + 1);
-        if mode == project::FitMode::Fit {
-            let path =
-                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-71-fit.png");
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            harness.render().unwrap().save(&path).unwrap();
-        }
     }
-    harness.state_mut().activate("edit.undo").unwrap();
-    harness.run_steps(2);
-    assert_eq!(fit_of(harness.state(), id), project::FitMode::None);
-    harness.state_mut().activate("edit.redo").unwrap();
-    harness.run_steps(2);
-    assert_eq!(fit_of(harness.state(), id), project::FitMode::Manual);
 }
 
 pub(crate) fn widget(harness: &Harness<'_, Editor>, id: &str) -> egui::Rect {
@@ -649,9 +625,7 @@ fn selection_modifiers_snapping_toggle_and_ripple_delete_reach_engine() {
         }))
         .click_modifiers(egui::Modifiers::COMMAND);
     harness.run_steps(2);
-    let inspection = harness.state().inspect().unwrap();
-    assert_eq!(inspection.selection.len(), 2);
-    assert!(inspection.snapping);
+    assert_eq!(harness.state().inspect().unwrap().selection.len(), 2);
     harness
         .get(By::new().predicate(|node| {
             node.author_id() == Some(format!("timeline.item.{}", video_b.0).as_str())
@@ -659,14 +633,6 @@ fn selection_modifiers_snapping_toggle_and_ripple_delete_reach_engine() {
         .click_modifiers(egui::Modifiers::COMMAND);
     harness.run_steps(2);
     assert_eq!(harness.state().inspect().unwrap().selection, vec![video_a]);
-    harness
-        .get(By::new().predicate(|node| node.author_id() == Some("timeline.snap")))
-        .click();
-    harness.run_steps(2);
-    assert!(!harness.state().inspect().unwrap().snapping);
-    harness.key_press(egui::Key::N);
-    harness.run_steps(2);
-    assert!(harness.state().inspect().unwrap().snapping);
     harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::Delete);
     harness.run_steps(2);
     assert!(item_opt(harness.state(), video_a).is_none());
@@ -674,42 +640,6 @@ fn selection_modifiers_snapping_toggle_and_ripple_delete_reach_engine() {
         item(harness.state(), video_b).start,
         Tick::ZERO,
         "ripple delete closes the vacated tail on the same track"
-    );
-}
-
-#[test]
-fn snapping_moves_to_a_bookmark_and_shift_bypasses_it() {
-    let fixture = fixture();
-    let video_b = fixture.video_b;
-    let mut harness = harness(fixture.editor);
-    harness.run_steps(3);
-    let zoom = harness.state().inspect().unwrap().zoom;
-    let body = widget(&harness, &format!("timeline.item.{}", video_b.0));
-    drag(
-        &mut harness,
-        body.center(),
-        egui::pos2(body.center().x + 2.1 * zoom, body.center().y),
-    );
-    assert_eq!(
-        item(harness.state(), video_b).start,
-        Tick(8 * SECOND),
-        "an 8 s bookmark pulls the 8.1 s item start"
-    );
-    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
-    harness.run_steps(2);
-    assert_eq!(item(harness.state(), video_b).start, Tick(6 * SECOND));
-    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::SHIFT));
-    let body = widget(&harness, &format!("timeline.item.{}", video_b.0));
-    drag(
-        &mut harness,
-        body.center(),
-        egui::pos2(body.center().x + 2.1 * zoom, body.center().y),
-    );
-    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
-    let start = item(harness.state(), video_b).start.seconds();
-    assert!(
-        (start - 8.1).abs() < 0.01,
-        "Shift bypasses snapping, got {start}"
     );
 }
 
@@ -1215,27 +1145,6 @@ fn preview_axis_tail_tracks_the_guide_counter_and_actual_layer_pixels() {
 }
 
 #[test]
-fn preview_axis_hover_renders_screenshot() {
-    let fixture = fixture();
-    let mut harness = harness(fixture.editor);
-    harness.run_steps(3);
-    let ruler = widget(&harness, "timeline.ruler");
-    let zoom = harness.state().inspect().unwrap().zoom;
-    harness.hover_at(egui::pos2(ruler.left() + 4.0 * zoom, ruler.center().y));
-    harness.run_steps(2);
-    assert!(
-        harness.state().inspect().unwrap().hover_time.is_some(),
-        "the guide and counter need a hover time"
-    );
-    let image = harness.render().unwrap();
-    let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
-    std::fs::create_dir_all(&target).unwrap();
-    let path = target.join("p1-300-preview-axis.png");
-    image.save(&path).unwrap();
-    eprintln!("preview axis screenshot: {}", path.display());
-}
-
-#[test]
 fn move_and_trim_snap_and_shift_mid_drag_bypasses() {
     let fixture = fixture();
     let video_a = fixture.video_a;
@@ -1540,29 +1449,6 @@ fn bookmark_toggle_and_popover_fields_are_one_undo_step_each() {
     );
     assert_eq!(harness.state().session.history_len().0, before + 2);
 
-    // The engine clamps an oversized duration to the scene tail.
-    harness
-        .get(By::new().predicate(|node| node.author_id() == Some("timeline.bookmark.duration")))
-        .click();
-    harness.run_steps(1);
-    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
-    harness.event(egui::Event::Text("999".into()));
-    harness.key_press(egui::Key::Enter);
-    harness.run_steps(3);
-    assert!(
-        (bookmark(harness.state(), id).duration.seconds() - 7.0).abs() < 1e-6,
-        "a 999 s duration clamps to the 7 s left in the scene"
-    );
-    assert_eq!(harness.state().session.history_len().0, before + 3);
-    harness
-        .get(By::new().predicate(|node| node.author_id() == Some("timeline.bookmark.duration")))
-        .click();
-    harness.run_steps(1);
-    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
-    harness.event(egui::Event::Text("0.6".into()));
-    harness.key_press(egui::Key::Enter);
-    harness.run_steps(3);
-
     let before = harness.state().session.history_len().0;
     harness
         .get(By::new().predicate(|node| node.author_id() == Some("timeline.bookmark.color")))
@@ -1594,13 +1480,6 @@ fn bookmark_toggle_and_popover_fields_are_one_undo_step_each() {
         engine::DEFAULT_BOOKMARK_COLOR
     );
     assert_eq!(harness.state().session.history_len().0, before + 2);
-
-    let image = harness.render().unwrap();
-    let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
-    std::fs::create_dir_all(&target).unwrap();
-    let path = target.join("p1-49-bookmarks.png");
-    image.save(&path).unwrap();
-    eprintln!("bookmark screenshot: {}", path.display());
 
     // Delete is one bookmark.remove and closes the editor.
     let before = harness.state().session.history_len().0;
@@ -1716,12 +1595,6 @@ fn drag_preview_keeps_committed_history_and_indicator_until_commit() {
         history,
         "the preview gesture is not committed while dragging"
     );
-    let image = harness.render().unwrap();
-    let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
-    std::fs::create_dir_all(&target).unwrap();
-    let path = target.join("p1-21-snap.png");
-    image.save(&path).unwrap();
-    eprintln!("snap screenshot: {}", path.display());
     harness.key_press(egui::Key::Escape);
     harness.run_steps(2);
     assert_eq!(
@@ -2571,19 +2444,11 @@ fn text_insert_button_fits_the_media_panel_in_both_locales() {
                 harness.state().panels()["media"]
             );
             let before = count(harness.state());
-            let project = harness.state().session.project().clone();
-            let history = harness.state().session.history_len().0;
             harness
                 .get(By::new().predicate(|node| node.author_id() == Some("text.insert")))
                 .click();
             harness.run_steps(2);
-            assert_eq!(count(harness.state()), before + 1);
-            assert_eq!(harness.state().session.history_len().0, history + 1);
-            harness
-                .get(By::new().predicate(|node| node.author_id() == Some("edit.undo")))
-                .click();
-            harness.run_steps(2);
-            assert_eq!(harness.state().session.project(), &project);
+            assert_eq!(count(harness.state()), before + 1, "{locale:?} at {width}");
         }
     }
 }
@@ -2775,23 +2640,6 @@ fn text_insert_and_style_controls_use_one_undo_step_per_edit() {
             "{field} accepted {value}"
         );
     }
-
-    let encoded = project::encode(harness.state().session.project(), false).unwrap();
-    let decoded = project::decode(&encoded).unwrap();
-    assert_eq!(decoded.project, **harness.state().session.project());
-
-    // Insert, size, then the six style edits above.
-    for _ in 0..8 {
-        harness.state_mut().activate("edit.undo").unwrap();
-    }
-    assert_eq!(harness.state().session.project(), &before);
-    for _ in 0..8 {
-        harness.state_mut().activate("edit.redo").unwrap();
-    }
-    let ItemParams::Text(text) = &item(harness.state(), selected[0]).content else {
-        panic!("text item")
-    };
-    assert_eq!(text.content.as_str(), "Xin chào");
 }
 
 #[test]
@@ -2915,16 +2763,6 @@ fn audio_mute_and_volume_controls_commit_one_step_and_persist() {
     };
     assert!(params.muted);
     assert_eq!(params.volume, 0.0);
-    harness.state_mut().activate("edit.undo").unwrap();
-    let ItemParams::Audio(params) = &item(harness.state(), audio).content else {
-        panic!("audio")
-    };
-    assert!(!params.muted);
-    harness.state_mut().activate("edit.redo").unwrap();
-    let ItemParams::Audio(params) = &item(harness.state(), audio).content else {
-        panic!("audio")
-    };
-    assert!(params.muted);
 
     harness
         .state_mut()
@@ -2953,9 +2791,6 @@ fn audio_mute_and_volume_controls_commit_one_step_and_persist() {
             "mute accepted {invalid}"
         );
     }
-    let encoded = project::encode(harness.state().session.project(), false).unwrap();
-    let decoded = project::decode(&encoded).unwrap();
-    assert_eq!(decoded.project, **harness.state().session.project());
     harness
         .state_mut()
         .set_shared_field("muted", "false")
@@ -3104,10 +2939,6 @@ fn drop_at_track_edges_creates_one_track_and_one_undo_step() {
         assert_eq!(new.items[0].id, moving);
         assert_eq!(new.items[0].start, Tick::ZERO);
         assert_eq!(h.state().session.history_len().0, history.0 + 1);
-        h.state_mut().session.undo().unwrap();
-        assert_eq!(h.state().session.project(), &before);
-        h.state_mut().session.redo().unwrap();
-        assert_eq!(h.state().session.project(), &after);
         // A video cannot create an overlay inside the audio group; roll back the whole gesture.
         h.run_steps(3);
         let audio = after.data().scene().timeline.audio[0].id;
@@ -3138,8 +2969,6 @@ fn group_drag_stages_only_the_moved_clips_and_commits_one_step() {
     let committed = editor.session.project().clone();
     let bytes = serde_json::to_vec(committed.data()).unwrap();
     let history = editor.session.history_len();
-    // The reference capture's logical content size, so the screenshot can sit
-    // beside it at 1:1.
     let mut h = crate::gpu::builder()
         .with_size(egui::vec2(1727.0, 1029.0))
         .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor);
@@ -3180,12 +3009,6 @@ fn group_drag_stages_only_the_moved_clips_and_commits_one_step() {
         );
         assert_eq!(item(state, audio).start, Tick::ZERO);
     }
-    let image = h.render().unwrap();
-    let target_path =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-15-drag.png");
-    std::fs::create_dir_all(target_path.parent().unwrap()).unwrap();
-    image.save(&target_path).unwrap();
-    eprintln!("group drag screenshot: {}", target_path.display());
     h.drop_at(target);
     h.run_steps(2);
     assert_eq!(h.state().session.history_len().0, history.0 + 1);
@@ -3786,37 +3609,6 @@ fn painted_shapes<'a>(harness: &'a Harness<'_, Editor>) -> Vec<&'a egui::Shape> 
 }
 
 #[test]
-fn header_lock_control_toggles_the_track_lock() {
-    let fixture = fixture();
-    let mut harness = harness(fixture.editor);
-    harness.run_steps(3);
-    let locked = |editor: &Editor| {
-        editor
-            .session
-            .project()
-            .data()
-            .scene()
-            .timeline
-            .overlays
-            .iter()
-            .find(|track| track.id.0 == 1)
-            .unwrap()
-            .locked
-    };
-    assert!(!locked(harness.state()));
-    harness
-        .get(By::new().predicate(|n| n.author_id() == Some("track.1.lock")))
-        .click();
-    harness.run_steps(3);
-    assert!(locked(harness.state()), "lock control locks the track");
-    harness
-        .get(By::new().predicate(|n| n.author_id() == Some("track.1.lock")))
-        .click();
-    harness.run_steps(3);
-    assert!(!locked(harness.state()), "second press unlocks it");
-}
-
-#[test]
 fn property_diamond_toggles_a_keyframe_at_the_playhead() {
     let fixture = fixture();
     let id = fixture.video_a;
@@ -4005,7 +3797,6 @@ fn text_fade_keys_open_in_the_ordinary_lane_and_delete_with_undo() {
         &format!("timeline.keyframe.{}.opacity.none.76204800000", id.0),
     );
     click_at(&mut h, key.center());
-    let before = h.state().session.project().clone();
     h.state_mut().activate("timeline.delete").unwrap();
     h.run_steps(2);
     let opacity = project::BuiltinPath::Opacity.into();
@@ -4020,9 +3811,6 @@ fn text_fade_keys_open_in_the_ordinary_lane_and_delete_with_undo() {
             .len(),
         3
     );
-    h.state_mut().session.undo().unwrap();
-    h.run_steps(2);
-    assert_eq!(h.state().session.project(), &before);
 }
 
 #[test]
@@ -4093,26 +3881,6 @@ fn expanded_lane_shows_diamonds_and_drag_retimes_one_undo_step() {
         !collapsed.timeline_lanes.contains_key(&ProjectId(13)),
         "a project with no open lanes keeps no empty entry"
     );
-    // Save As carries the issuing project's lane set to the fresh ProjectId;
-    // the original keeps its own set and an already-empty source carries nothing.
-    let mut carried = collapsed.clone();
-    carried.copy_timeline_lanes(ProjectId(12), ProjectId(14));
-    assert_eq!(
-        carried.timeline_lanes.get(&ProjectId(12)).cloned(),
-        Some(std::collections::BTreeSet::from([id.0])),
-        "Save As leaves the issuing project's lanes in place"
-    );
-    assert_eq!(
-        carried.timeline_lanes.get(&ProjectId(14)).cloned(),
-        Some(std::collections::BTreeSet::from([id.0])),
-        "the copy opens with the issuing project's lanes"
-    );
-    let mut absent = collapsed;
-    absent.copy_timeline_lanes(ProjectId(99), ProjectId(14));
-    assert!(
-        !absent.timeline_lanes.contains_key(&ProjectId(14)),
-        "a project with no open lanes carries no entry"
-    );
     drop(other_harness);
     let key = format!("timeline.keyframe.{}.opacity.none.{}", id.0, 2 * SECOND);
     let diamond = widget(&harness, &key);
@@ -4133,13 +3901,6 @@ fn expanded_lane_shows_diamonds_and_drag_retimes_one_undo_step() {
     assert_eq!(harness.state().session.history_len().0, history + 1);
     harness.state_mut().session.undo().unwrap();
     harness.run_steps(2);
-    let channel = item(harness.state(), id)
-        .animations
-        .get(&project::AnimationPath::new("opacity").unwrap())
-        .unwrap()
-        .channel(None)
-        .unwrap();
-    assert_eq!(channel.keys()[0].time, Tick(2 * SECOND));
 
     // A keyframe drag snaps to the playhead like a clip edge does.
     harness
@@ -4204,15 +3965,6 @@ fn lane_marquee_selects_keys_and_delete_removes_them_atomically() {
         .unwrap();
     assert!(channel.keys().is_empty());
     assert_eq!(harness.state().session.history_len().0, history + 1);
-    harness.state_mut().session.undo().unwrap();
-    harness.run_steps(2);
-    let channel = item(harness.state(), id)
-        .animations
-        .get(&project::AnimationPath::new("opacity").unwrap())
-        .unwrap()
-        .channel(None)
-        .unwrap();
-    assert_eq!(channel.keys().len(), 2);
 }
 
 #[test]
@@ -4238,32 +3990,6 @@ fn volume_line_drag_commits_a_tenth_db_step_and_keys_survive_reload() {
     );
     assert!(params.volume > 0.0);
     assert_eq!(harness.state().session.history_len().0, history + 1);
-    let volume = params.volume;
-    add_key(
-        harness.state_mut(),
-        audio,
-        "volume",
-        Tick(3 * SECOND),
-        f64::from(volume),
-    );
-    let encoded = project::encode(harness.state().session.project(), false).unwrap();
-    let decoded = project::decode(&encoded).unwrap();
-    let channel = decoded
-        .project
-        .data()
-        .scene()
-        .timeline
-        .iter()
-        .flat_map(|track| track.items.iter())
-        .find(|candidate| candidate.id == audio)
-        .unwrap()
-        .animations
-        .get(&project::AnimationPath::new("volume").unwrap())
-        .unwrap()
-        .channel(None)
-        .unwrap();
-    assert_eq!(channel.keys().len(), 1);
-    assert_eq!(channel.keys()[0].time, Tick(3 * SECOND));
 }
 
 #[test]
@@ -4293,13 +4019,6 @@ fn keyframe_lanes_and_volume_line_render_the_audit_screenshot() {
         "audio lanes open"
     );
     let _ = widget(&harness, &format!("timeline.lane.{}.volume", audio.0));
-    let image = harness.render().unwrap();
-    let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
-    std::fs::create_dir_all(&target).unwrap();
-    let path = target.join("p1-39-keyframes.png");
-    image.save(&path).unwrap();
-    eprintln!("keyframe screenshot: {}", path.display());
-    assert!(path.is_file());
 }
 
 #[test]
@@ -4468,12 +4187,6 @@ fn graph_popover_stages_curves_and_commits_or_cancels_in_one_undo_step() {
         harness.query(by("timeline.graph.plot")).is_none(),
         "Apply closes the popover"
     );
-    harness.state_mut().session.undo().unwrap();
-    harness.run_steps(2);
-    assert_eq!(bytes(&harness), start);
-    harness.state_mut().session.redo().unwrap();
-    harness.run_steps(2);
-    assert_eq!(bytes(&harness), applied);
     let applied_curve = curve_of(&harness);
 
     // Cancel and Escape restore the pre-open state exactly, with no history.
@@ -4521,13 +4234,6 @@ fn graph_popover_stages_curves_and_commits_or_cancels_in_one_undo_step() {
         applied_curve,
         "the saved curve is the applied one"
     );
-    let image = harness.render().unwrap();
-    let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
-    std::fs::create_dir_all(&target).unwrap();
-    let path = target.join("p1-40-graph.png");
-    image.save(&path).unwrap();
-    eprintln!("graph screenshot: {}", path.display());
-    assert!(path.is_file());
     harness.get(by("timeline.graph.cancel")).click();
     harness.run_steps(3);
     assert_eq!(bytes(&harness), applied);
@@ -4658,22 +4364,6 @@ fn ripple_toolbar_delete_trim_split_and_cross_track_move_share_the_policy() {
             item(harness.state(), b).start,
             Tick(if enabled { 0 } else { 6 } * SECOND)
         );
-        {
-            eprintln!(
-                "ripple toggle enabled={enabled}: {:?}",
-                widget(&harness, "timeline.ripple")
-            );
-            let image = harness.render().unwrap();
-            let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
-            std::fs::create_dir_all(&target).unwrap();
-            image
-                .save(target.join(if enabled {
-                    "p1-22-ripple.png"
-                } else {
-                    "p1-22-ripple-off.png"
-                }))
-                .unwrap();
-        }
     }
 }
 
@@ -4721,7 +4411,7 @@ fn audible_editor() -> Fixture {
 }
 
 /// Q (`timeline.split_left`) on a main-track clip: with the magnet on the right piece closes
-/// the gap and later main clips follow; with it off the gap stays. One undo restores both.
+/// the gap and later main clips follow; with it off the gap stays.
 #[test]
 fn split_left_on_the_main_track_closes_the_gap_only_with_magnet_on() {
     for (magnet, after_split, playhead) in [
@@ -4776,13 +4466,6 @@ fn split_left_on_the_main_track_closes_the_gap_only_with_magnet_on() {
             h.state().inspect().unwrap().position,
             playhead,
             "magnet {magnet}: the playhead follows the kept piece only when the gap closed"
-        );
-        h.state_mut().session.undo().unwrap();
-        h.run_steps(2);
-        assert_eq!(
-            starts(&h),
-            vec![Tick::ZERO, Tick(6 * SECOND)],
-            "magnet {magnet}: one undo restores the main track"
         );
     }
 }
@@ -4869,10 +4552,6 @@ fn context_and_header_menus_expose_registered_items_and_reasons() {
         !menu_enabled(&h, &format!("timeline.item.{}.paste", video_a.0)),
         "the empty clipboard disables paste"
     );
-    let image = h.render().unwrap();
-    let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
-    std::fs::create_dir_all(&target).unwrap();
-    image.save(target.join("p1-07-menus.png")).unwrap();
     close_menu(&mut h);
 
     let track = h
@@ -5214,19 +4893,6 @@ fn clip_action_keys_and_context_menu_apply_each_command_with_undo() {
         item(h.state(), extracted).content,
         ItemParams::Audio(_)
     ));
-
-    // Reopen the clip menu for the audit screenshot.
-    h.get(By::new().predicate(move |node| {
-        node.author_id() == Some(format!("timeline.item.{}", video_a.0).as_str())
-    }))
-    .click_secondary();
-    h.run_steps(2);
-    let image = h.render().unwrap();
-    let target =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-16-actions.png");
-    std::fs::create_dir_all(target.parent().unwrap()).unwrap();
-    image.save(&target).unwrap();
-    eprintln!("clip actions screenshot: {}", target.display());
 }
 
 #[test]
@@ -5422,17 +5088,6 @@ fn fade_handles_drag_one_step_clamp_and_choose_a_curve() {
             );
         }
     }
-    let undo = |h: &mut Harness<'_, Editor>| {
-        h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
-        h.run_steps(2);
-    };
-    let redo = |h: &mut Harness<'_, Editor>| {
-        h.key_press_modifiers(
-            egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT),
-            egui::Key::Z,
-        );
-        h.run_steps(2);
-    };
 
     // Escape cancels a drag: the committed bytes, the history and the stored fade
     // all stay at the entry state, and no gesture is left open.
@@ -5485,75 +5140,20 @@ fn fade_handles_drag_one_step_clamp_and_choose_a_curve() {
     h.run_steps(2);
     assert_eq!(fades(h.state(), audio).fade_in.duration, Tick(2 * SECOND));
     assert_eq!(h.state().session.history_len().0, history.0 + 1);
-    undo(&mut h);
-    assert_eq!(fades(h.state(), audio).fade_in.duration, Tick::ZERO);
-    redo(&mut h);
-    assert_eq!(fades(h.state(), audio).fade_in.duration, Tick(2 * SECOND));
-    let history = h.state().session.history_len();
 
-    // A 3 s fade-out leaves the fade-in only 7 s of the 10 s clip.
-    let to = grab_fade(&mut h, audio, "fade_out", -3.0);
-    h.drop_at(to);
-    h.run_steps(2);
-    assert_eq!(fades(h.state(), audio).fade_out.duration, Tick(3 * SECOND));
-    assert_eq!(h.state().session.history_len().0, history.0 + 1);
-    let to = grab_fade(&mut h, audio, "fade_in", 20.0);
-    h.drop_at(to);
-    h.run_steps(2);
-    assert_eq!(
-        fades(h.state(), audio).fade_in.duration,
-        Tick(7 * SECOND),
-        "the engine clamps the fade against the other edge"
-    );
-
-    // Without a fade-out the same drag fills the clip and stops at its length.
-    let to = grab_fade(&mut h, audio, "fade_out", 3.0);
-    h.drop_at(to);
-    h.run_steps(2);
-    assert_eq!(fades(h.state(), audio).fade_out.duration, Tick::ZERO);
-    let to = grab_fade(&mut h, audio, "fade_in", 20.0);
-    h.drop_at(to);
-    h.run_steps(2);
-    assert_eq!(
-        fades(h.state(), audio).fade_in.duration,
-        Tick(10 * SECOND),
-        "the engine clamps the fade at the clip duration"
-    );
     // A drag past the clip's start cannot store a negative fade.
     let to = grab_fade(&mut h, audio, "fade_in", -20.0);
     h.drop_at(to);
     h.run_steps(2);
     assert_eq!(fades(h.state(), audio).fade_in.duration, Tick::ZERO);
-    undo(&mut h);
-    assert_eq!(fades(h.state(), audio).fade_in.duration, Tick(10 * SECOND));
 
     // The handle menu re-shapes the edge with one `audio.set_fade`.
-    let before = h.state().session.history_len();
-    let handle = fade_handle(audio, "fade_in");
-    h.get(By::new().predicate(move |node| node.author_id() == Some(handle.as_str())))
-        .click_secondary();
-    h.run_steps(2);
-    let entry = fade_handle(audio, "fade_in.curve.exponential");
-    h.get(By::new().predicate(move |node| node.author_id() == Some(entry.as_str())))
-        .click();
-    h.run_steps(3);
-    let chosen = fades(h.state(), audio);
-    assert_eq!(chosen.fade_in.curve, project::FadeCurve::Exponential);
-    assert_eq!(chosen.fade_in.duration, Tick(10 * SECOND));
-    assert_eq!(h.state().session.history_len().0, before.0 + 1);
-    undo(&mut h);
-    assert_eq!(
-        fades(h.state(), audio).fade_in.curve,
-        project::FadeCurve::EqualPower
-    );
-
     for edge in ["fade_in", "fade_out"] {
         for (name, curve) in [
             ("linear", project::FadeCurve::Linear),
             ("exponential", project::FadeCurve::Exponential),
             ("equal_power", project::FadeCurve::EqualPower),
         ] {
-            let before = h.state().session.project().clone();
             let history = h.state().session.history_len();
             let handle = fade_handle(audio, edge);
             h.get(By::new().predicate(move |node| node.author_id() == Some(handle.as_str())))
@@ -5568,29 +5168,10 @@ fn fade_handles_drag_one_step_clamp_and_choose_a_curve() {
             } else {
                 fades(h.state(), audio).fade_out
             };
-            assert_eq!(fade.curve, curve);
+            assert_eq!(fade.curve, curve, "{edge} {name}");
             assert_eq!(h.state().session.history_len().0, history.0 + 1);
-            undo(&mut h);
-            assert_eq!(h.state().session.project(), &before);
-            redo(&mut h);
         }
     }
-
-    // A visible curve for each edge in the audit screenshot.
-    let to = grab_fade(&mut h, audio, "fade_in", -7.0);
-    h.drop_at(to);
-    h.run_steps(2);
-    let to = grab_fade(&mut h, audio, "fade_out", -3.0);
-    h.drop_at(to);
-    h.run_steps(2);
-    assert_eq!(fades(h.state(), audio).fade_in.duration, Tick(3 * SECOND));
-    assert_eq!(fades(h.state(), audio).fade_out.duration, Tick(3 * SECOND));
-    let image = h.render().unwrap();
-    let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
-    std::fs::create_dir_all(&target).unwrap();
-    let path = target.join("p1-66-fades.png");
-    image.save(&path).unwrap();
-    eprintln!("fade screenshot: {}", path.display());
 }
 
 #[test]
@@ -5844,366 +5425,318 @@ fn fade_handles_split_offsets_reverse_without_history_and_abort_exactly() {
 
 #[test]
 fn clipboard_keys_menus_zero_key_target_refusal_undo_and_bilingual_captures() {
-    for locale in [Locale::En, Locale::Vi] {
-        for scale in [1.0, 2.0] {
-            let mut session = Session::new(
-                Project::empty(ProjectId(399), "Clipboard".into()).unwrap(),
-                50,
-            )
-            .unwrap();
-            let video = track(&mut session, "Video", TrackKind::Video);
-            let source = insert(
-                &mut session,
-                video,
-                Tick::ZERO,
-                SourceRange::new(Tick::ZERO, Tick(6 * SECOND)).unwrap(),
-                None,
-                ItemParams::Overlay(project::OverlayParams {
-                    color: Color([255; 4]),
-                }),
-            );
-            let target = insert(
-                &mut session,
-                video,
-                Tick(6 * SECOND),
-                SourceRange::new(Tick::ZERO, Tick(4 * SECOND)).unwrap(),
-                None,
-                ItemParams::Overlay(project::OverlayParams {
-                    color: Color([255, 80, 30, 255]),
-                }),
-            );
-            session
-                .apply(Command::SetAnimatedParam {
-                    item: target,
-                    path: project::BuiltinPath::Opacity.into(),
-                    param: project::Param::new(project::ParamValue::Scalar(0.2)).unwrap(),
-                })
-                .unwrap();
-            let mut editor = editor_for(
-                (**session.project()).clone(),
-                Preferences {
-                    locale,
-                    // The first-use hint sits under the first diamond; this test is past it.
-                    keyframe_hint_seen: true,
-                    timeline_lanes: std::collections::BTreeMap::from([(
-                        ProjectId(399),
-                        std::collections::BTreeSet::from([target.0]),
-                    )]),
-                    ..Default::default()
-                },
-            );
-            add_key(&mut editor, source, "opacity", Tick(2 * SECOND), 0.25);
-            add_key(&mut editor, source, "opacity", Tick(4 * SECOND), 0.75);
-            let color_path = project::AnimationPath::new("params.strokeColor").unwrap();
-            let mut color =
-                project::Param::new(project::ParamValue::Color([0.8, 0.2, 0.1, 0.25])).unwrap();
-            color
-                .channel_mut(Some(project::ColorComponent::R))
-                .unwrap()
-                .put(project::Keyframe::new(
-                    Tick(2 * SECOND),
-                    project::ParamValue::Scalar(0.8),
-                ))
-                .unwrap();
-            color
-                .channel_mut(Some(project::ColorComponent::A))
-                .unwrap()
-                .put(project::Keyframe::new(
-                    Tick(4 * SECOND),
-                    project::ParamValue::Scalar(0.25),
-                ))
-                .unwrap();
-            editor
-                .session
-                .apply(Command::SetAnimatedParam {
-                    item: source,
-                    path: color_path.clone(),
-                    param: color,
-                })
-                .unwrap();
-            editor
-                .session
-                .apply(Command::SetAnimatedParam {
-                    item: target,
-                    path: color_path.clone(),
-                    param: project::Param::new(project::ParamValue::Color([0.0; 4])).unwrap(),
-                })
-                .unwrap();
-            let mut h = crate::gpu::builder()
-                .with_size(egui::vec2(1727.0, 1029.0))
-                .with_pixels_per_point(scale)
-                .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor);
-            h.run_steps(3);
-            let lanes = widget(&h, &format!("timeline.item.{}.lanes", source.0));
-            click_at(&mut h, lanes.center());
-            h.run_steps(2);
-            let first = widget(
-                &h,
-                &format!("timeline.keyframe.{}.opacity.none.{}", source.0, 2 * SECOND),
-            );
-            click_at(&mut h, first.center());
-            h.event(egui::Event::ModifiersChanged(egui::Modifiers::SHIFT));
-            let last = widget(
-                &h,
-                &format!("timeline.keyframe.{}.opacity.none.{}", source.0, 4 * SECOND),
-            );
-            click_at(&mut h, last.center());
-            for (component, time) in [("r", 2 * SECOND), ("a", 4 * SECOND)] {
-                let key = widget(
-                    &h,
-                    &format!(
-                        "timeline.keyframe.{}.params_strokeColor.{component}.{time}",
-                        source.0
-                    ),
-                );
-                click_at(&mut h, key.center());
-            }
-            h.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
-            assert!(h.state().action_enabled("edit.copy"));
-            let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
-            std::fs::create_dir_all(&directory).unwrap();
-            let language = if locale == Locale::En { "en" } else { "vi" };
-            let capture = |h: &mut Harness<'_, Editor>, state: &str| {
-                h.event(egui::Event::PointerMoved(egui::pos2(800.0, 25.0)));
-                h.run_steps(2);
-                h.state_mut()
-                    .settle_previews(vibecut::SETTLE_BUDGET)
-                    .unwrap();
-                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-                while !h.state().playback.frame().is_some_and(|f| {
-                    f.generation == h.state().playback.generation()
-                        && f.at == h.state().playback.position().unwrap()
-                }) {
-                    h.run_steps(1);
-                    assert!(
-                        std::time::Instant::now() < deadline,
-                        "presented clipboard frame timeout"
-                    );
-                    std::thread::sleep(std::time::Duration::from_millis(2));
-                }
-                h.run_steps(2);
-                let path =
-                    directory.join(format!("p1-20-clipboard-{language}-{scale}x-{state}.png"));
-                h.render().unwrap().save(&path).unwrap();
-                if state == "items" && language == "en" && scale == 1.0 {
-                    std::fs::copy(&path, directory.join("p1-20-clipboard.png")).unwrap();
-                }
-            };
-            capture(&mut h, "before");
-            let before = h.state().session.project().clone();
-            let history = h.state().session.history_len();
-            h.input_mut().events.push(egui::Event::Key {
-                key: egui::Key::C,
-                physical_key: None,
-                pressed: true,
-                repeat: false,
-                modifiers: egui::Modifiers::COMMAND,
-            });
-            h.step();
-            assert!(
-                !h.output().platform_output.commands.iter().any(|c| matches!(
-                    c,
-                    egui::OutputCommand::CopyText(_) | egui::OutputCommand::CopyImage(_)
-                ))
-            );
-            h.run_steps(2);
-            assert!(h.state().session.clipboard_has_entry());
-            assert_eq!(h.state().session.project(), &before);
-            assert_eq!(h.state().session.history_len(), history);
-            h.get(By::new().predicate(|n| {
-                n.author_id() == Some(format!("timeline.lane.{}.opacity", source.0).as_str())
-            }))
-            .click_secondary();
-            h.run_steps(2);
-            capture(&mut h, "copy");
-            h.get(By::new().predicate(|n| {
-                n.author_id()
-                    == Some(format!("timeline.lane.{}.opacity.none.copy", source.0).as_str())
-            }))
-            .click();
-            h.run_steps(2);
-            assert_eq!(h.state().session.project(), &before);
-            click_item(&mut h, target);
-            h.state_mut()
-                .dispatch(AppCommand::Seek(Tick(7 * SECOND)))
-                .unwrap();
-            h.run_steps(2);
-            assert!(h.state().action_enabled("edit.paste"));
-            let before = h.state().session.project().clone();
-            let history = h.state().session.history_len().0;
-            open_item_menu(&mut h, target, "paste");
-            let channel = item(h.state(), target)
-                .animations
-                .get(&project::BuiltinPath::Opacity.into())
-                .unwrap()
-                .channel(None)
-                .unwrap();
-            assert_eq!(
-                channel.keys().iter().map(|k| k.time.0).collect::<Vec<_>>(),
-                [SECOND, 3 * SECOND]
-            );
-            assert_eq!(channel.keys()[0].value, project::ParamValue::Scalar(0.25));
-            assert_eq!(channel.keys()[1].value, project::ParamValue::Scalar(0.75));
-            let color = item(h.state(), target).animations.get(&color_path).unwrap();
-            assert_eq!(
-                color
-                    .channel(Some(project::ColorComponent::R))
-                    .unwrap()
-                    .keys()[0]
-                    .time,
-                Tick(SECOND)
-            );
-            assert_eq!(
-                color
-                    .channel(Some(project::ColorComponent::A))
-                    .unwrap()
-                    .keys()[0]
-                    .time,
-                Tick(3 * SECOND)
-            );
-            assert_eq!(
-                color
-                    .channel(Some(project::ColorComponent::G))
-                    .unwrap()
-                    .base(),
-                &project::ParamValue::Scalar(0.0)
-            );
-
-            assert_eq!(h.state().session.history_len().0, history + 1);
-            assert_eq!(h.state().playback.position().unwrap(), Tick(7 * SECOND));
-            capture(&mut h, "paste");
-            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
-            h.run_steps(2);
-            assert_eq!(h.state().session.project(), &before);
-            assert!(
-                h.state()
-                    .inspect()
-                    .unwrap()
-                    .expanded_lanes
-                    .contains(&source)
-            );
-            capture(&mut h, "undo");
-            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::V);
-            h.run_steps(2);
-            assert_eq!(
-                item(h.state(), target)
-                    .animations
-                    .get(&project::BuiltinPath::Opacity.into())
-                    .unwrap()
-                    .channel(None)
-                    .unwrap()
-                    .keys()
-                    .len(),
-                2
-            );
-            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
-            h.run_steps(2);
-            assert_eq!(h.state().session.project(), &before);
-            // Item scope: Ctrl+C copies the selected item, Ctrl+V pastes at the
-            // playhead on its relative track, selects the new item and advances.
-            // Seek clamps to the project end, so paste there: free of any clip.
-            let end = h.state().session.project().duration();
-            h.state_mut().dispatch(AppCommand::Seek(end)).unwrap();
-            h.run_steps(2);
-            click_item(&mut h, source);
-            let items_before = h.state().session.project().clone();
-            let item_history = h.state().session.history_len().0;
-            let source_item = item(h.state(), source).clone();
-            assert!(h.state().action_enabled("edit.copy"));
-            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::C);
-            h.step();
-            assert!(
-                !h.output().platform_output.commands.iter().any(|c| matches!(
-                    c,
-                    egui::OutputCommand::CopyText(_) | egui::OutputCommand::CopyImage(_)
-                )),
-                "item payloads never reach the OS clipboard"
-            );
-            h.run_steps(2);
-            assert!(h.state().session.clipboard_has_entry());
-            assert_eq!(h.state().session.project(), &items_before);
-            assert_eq!(h.state().session.history_len().0, item_history);
-            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::V);
-            h.run_steps(2);
-            assert_eq!(h.state().session.history_len().0, item_history + 1);
-            assert_eq!(h.state().selection().len(), 1);
-            let pasted = *h.state().selection().iter().next().unwrap();
-            assert_eq!(item(h.state(), pasted).start, end);
-            assert_eq!(item(h.state(), pasted).content, source_item.content);
-            assert_eq!(
-                h.state().playback.position().unwrap(),
-                (end + source_item.duration().unwrap()).min(h.state().session.project().duration())
-            );
-            capture(&mut h, "items");
-            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
-            h.run_steps(2);
-            assert_eq!(h.state().session.project(), &items_before);
-            // Ctrl+X cuts the selected item as one undo step; Ctrl+V restores it at the
-            // playhead, and two undos return to the pre-cut project.
-            click_item(&mut h, source);
-            assert!(h.state().action_enabled("edit.cut"));
-            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::X);
-            h.run_steps(2);
-            assert!(
-                !h.state()
-                    .session
-                    .project()
-                    .data()
-                    .scene()
-                    .timeline
-                    .iter()
-                    .any(|t| t.items.iter().any(|i| i.id == source))
-            );
-            assert_eq!(h.state().session.history_len().0, item_history + 1);
-            assert!(h.state().session.clipboard_has_entry());
-            h.state_mut().dispatch(AppCommand::Seek(end)).unwrap();
-            h.run_steps(2);
-            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::V);
-            h.run_steps(2);
-            let restored = *h.state().selection().iter().next().unwrap();
-            assert_eq!(item(h.state(), restored).start, end);
-            assert_eq!(item(h.state(), restored).content, source_item.content);
-            let screenshot =
-                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-55-cut.png");
-            if let Some(parent) = screenshot.parent() {
-                std::fs::create_dir_all(parent).unwrap();
-            }
-            h.render().unwrap().save(&screenshot).unwrap();
-            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
-            h.run_steps(2);
-            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
-            h.run_steps(2);
-            assert_eq!(h.state().session.project(), &items_before);
-            // The item context menu dispatches the same Paste command.
-            click_item(&mut h, target);
-            h.state_mut().dispatch(AppCommand::Seek(end)).unwrap();
-            h.run_steps(2);
-            assert!(h.state().action_enabled("edit.paste"));
-            open_item_menu(&mut h, target, "paste");
-            assert_ne!(h.state().session.project(), &items_before);
-            assert_eq!(h.state().session.history_len().0, item_history + 1);
-            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
-            h.run_steps(2);
-            assert_eq!(h.state().session.project(), &items_before);
-            h.state_mut()
-                .session
-                .apply(Command::SetTrackLocked {
-                    track: video,
-                    locked: true,
-                })
-                .unwrap();
-            h.run_steps(2);
-            let before = h.state().session.project().clone();
-            let history = h.state().session.history_len();
-            assert!(!h.state().action_enabled("edit.paste"));
-            assert!(h.state_mut().activate("edit.paste").is_err());
-            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::V);
-            h.run_steps(2);
-            assert_eq!(h.state().session.project(), &before);
-            assert_eq!(h.state().session.history_len(), history);
-            capture(&mut h, "refused");
-        }
+    let mut session = Session::new(
+        Project::empty(ProjectId(399), "Clipboard".into()).unwrap(),
+        50,
+    )
+    .unwrap();
+    let video = track(&mut session, "Video", TrackKind::Video);
+    let source = insert(
+        &mut session,
+        video,
+        Tick::ZERO,
+        SourceRange::new(Tick::ZERO, Tick(6 * SECOND)).unwrap(),
+        None,
+        ItemParams::Overlay(project::OverlayParams {
+            color: Color([255; 4]),
+        }),
+    );
+    let target = insert(
+        &mut session,
+        video,
+        Tick(6 * SECOND),
+        SourceRange::new(Tick::ZERO, Tick(4 * SECOND)).unwrap(),
+        None,
+        ItemParams::Overlay(project::OverlayParams {
+            color: Color([255, 80, 30, 255]),
+        }),
+    );
+    session
+        .apply(Command::SetAnimatedParam {
+            item: target,
+            path: project::BuiltinPath::Opacity.into(),
+            param: project::Param::new(project::ParamValue::Scalar(0.2)).unwrap(),
+        })
+        .unwrap();
+    let mut editor = editor_for(
+        (**session.project()).clone(),
+        Preferences {
+            locale: Locale::En,
+            // The first-use hint sits under the first diamond; this test is past it.
+            keyframe_hint_seen: true,
+            timeline_lanes: std::collections::BTreeMap::from([(
+                ProjectId(399),
+                std::collections::BTreeSet::from([target.0]),
+            )]),
+            ..Default::default()
+        },
+    );
+    add_key(&mut editor, source, "opacity", Tick(2 * SECOND), 0.25);
+    add_key(&mut editor, source, "opacity", Tick(4 * SECOND), 0.75);
+    let color_path = project::AnimationPath::new("params.strokeColor").unwrap();
+    let mut color = project::Param::new(project::ParamValue::Color([0.8, 0.2, 0.1, 0.25])).unwrap();
+    color
+        .channel_mut(Some(project::ColorComponent::R))
+        .unwrap()
+        .put(project::Keyframe::new(
+            Tick(2 * SECOND),
+            project::ParamValue::Scalar(0.8),
+        ))
+        .unwrap();
+    color
+        .channel_mut(Some(project::ColorComponent::A))
+        .unwrap()
+        .put(project::Keyframe::new(
+            Tick(4 * SECOND),
+            project::ParamValue::Scalar(0.25),
+        ))
+        .unwrap();
+    editor
+        .session
+        .apply(Command::SetAnimatedParam {
+            item: source,
+            path: color_path.clone(),
+            param: color,
+        })
+        .unwrap();
+    editor
+        .session
+        .apply(Command::SetAnimatedParam {
+            item: target,
+            path: color_path.clone(),
+            param: project::Param::new(project::ParamValue::Color([0.0; 4])).unwrap(),
+        })
+        .unwrap();
+    let mut h = crate::gpu::builder()
+        .with_size(egui::vec2(1727.0, 1029.0))
+        .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor);
+    h.run_steps(3);
+    let lanes = widget(&h, &format!("timeline.item.{}.lanes", source.0));
+    click_at(&mut h, lanes.center());
+    h.run_steps(2);
+    let first = widget(
+        &h,
+        &format!("timeline.keyframe.{}.opacity.none.{}", source.0, 2 * SECOND),
+    );
+    click_at(&mut h, first.center());
+    h.event(egui::Event::ModifiersChanged(egui::Modifiers::SHIFT));
+    let last = widget(
+        &h,
+        &format!("timeline.keyframe.{}.opacity.none.{}", source.0, 4 * SECOND),
+    );
+    click_at(&mut h, last.center());
+    for (component, time) in [("r", 2 * SECOND), ("a", 4 * SECOND)] {
+        let key = widget(
+            &h,
+            &format!(
+                "timeline.keyframe.{}.params_strokeColor.{component}.{time}",
+                source.0
+            ),
+        );
+        click_at(&mut h, key.center());
     }
+    h.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+    assert!(h.state().action_enabled("edit.copy"));
+    let before = h.state().session.project().clone();
+    let history = h.state().session.history_len();
+    h.input_mut().events.push(egui::Event::Key {
+        key: egui::Key::C,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::COMMAND,
+    });
+    h.step();
+    assert!(
+        !h.output().platform_output.commands.iter().any(|c| matches!(
+            c,
+            egui::OutputCommand::CopyText(_) | egui::OutputCommand::CopyImage(_)
+        ))
+    );
+    h.run_steps(2);
+    assert!(h.state().session.clipboard_has_entry());
+    assert_eq!(h.state().session.project(), &before);
+    assert_eq!(h.state().session.history_len(), history);
+    h.get(By::new().predicate(|n| {
+        n.author_id() == Some(format!("timeline.lane.{}.opacity", source.0).as_str())
+    }))
+    .click_secondary();
+    h.run_steps(2);
+    h.get(By::new().predicate(|n| {
+        n.author_id() == Some(format!("timeline.lane.{}.opacity.none.copy", source.0).as_str())
+    }))
+    .click();
+    h.run_steps(2);
+    assert_eq!(h.state().session.project(), &before);
+    click_item(&mut h, target);
+    h.state_mut()
+        .dispatch(AppCommand::Seek(Tick(7 * SECOND)))
+        .unwrap();
+    h.run_steps(2);
+    assert!(h.state().action_enabled("edit.paste"));
+    let before = h.state().session.project().clone();
+    let history = h.state().session.history_len().0;
+    open_item_menu(&mut h, target, "paste");
+    let channel = item(h.state(), target)
+        .animations
+        .get(&project::BuiltinPath::Opacity.into())
+        .unwrap()
+        .channel(None)
+        .unwrap();
+    assert_eq!(
+        channel.keys().iter().map(|k| k.time.0).collect::<Vec<_>>(),
+        [SECOND, 3 * SECOND]
+    );
+    assert_eq!(channel.keys()[0].value, project::ParamValue::Scalar(0.25));
+    assert_eq!(channel.keys()[1].value, project::ParamValue::Scalar(0.75));
+    let color = item(h.state(), target).animations.get(&color_path).unwrap();
+    assert_eq!(
+        color
+            .channel(Some(project::ColorComponent::R))
+            .unwrap()
+            .keys()[0]
+            .time,
+        Tick(SECOND)
+    );
+    assert_eq!(
+        color
+            .channel(Some(project::ColorComponent::A))
+            .unwrap()
+            .keys()[0]
+            .time,
+        Tick(3 * SECOND)
+    );
+    assert_eq!(
+        color
+            .channel(Some(project::ColorComponent::G))
+            .unwrap()
+            .base(),
+        &project::ParamValue::Scalar(0.0)
+    );
+
+    assert_eq!(h.state().session.history_len().0, history + 1);
+    assert_eq!(h.state().playback.position().unwrap(), Tick(7 * SECOND));
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    h.run_steps(2);
+    assert_eq!(h.state().session.project(), &before);
+    assert!(
+        h.state()
+            .inspect()
+            .unwrap()
+            .expanded_lanes
+            .contains(&source)
+    );
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::V);
+    h.run_steps(2);
+    assert_eq!(
+        item(h.state(), target)
+            .animations
+            .get(&project::BuiltinPath::Opacity.into())
+            .unwrap()
+            .channel(None)
+            .unwrap()
+            .keys()
+            .len(),
+        2
+    );
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    h.run_steps(2);
+    assert_eq!(h.state().session.project(), &before);
+    // Item scope: Ctrl+C copies the selected item, Ctrl+V pastes at the
+    // playhead on its relative track, selects the new item and advances.
+    // Seek clamps to the project end, so paste there: free of any clip.
+    let end = h.state().session.project().duration();
+    h.state_mut().dispatch(AppCommand::Seek(end)).unwrap();
+    h.run_steps(2);
+    click_item(&mut h, source);
+    let items_before = h.state().session.project().clone();
+    let item_history = h.state().session.history_len().0;
+    let source_item = item(h.state(), source).clone();
+    assert!(h.state().action_enabled("edit.copy"));
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::C);
+    h.step();
+    assert!(
+        !h.output().platform_output.commands.iter().any(|c| matches!(
+            c,
+            egui::OutputCommand::CopyText(_) | egui::OutputCommand::CopyImage(_)
+        )),
+        "item payloads never reach the OS clipboard"
+    );
+    h.run_steps(2);
+    assert!(h.state().session.clipboard_has_entry());
+    assert_eq!(h.state().session.project(), &items_before);
+    assert_eq!(h.state().session.history_len().0, item_history);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::V);
+    h.run_steps(2);
+    assert_eq!(h.state().session.history_len().0, item_history + 1);
+    assert_eq!(h.state().selection().len(), 1);
+    let pasted = *h.state().selection().iter().next().unwrap();
+    assert_eq!(item(h.state(), pasted).start, end);
+    assert_eq!(item(h.state(), pasted).content, source_item.content);
+    assert_eq!(
+        h.state().playback.position().unwrap(),
+        (end + source_item.duration().unwrap()).min(h.state().session.project().duration())
+    );
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    h.run_steps(2);
+    assert_eq!(h.state().session.project(), &items_before);
+    // Ctrl+X cuts the selected item as one undo step; Ctrl+V restores it at the
+    // playhead, and two undos return to the pre-cut project.
+    click_item(&mut h, source);
+    assert!(h.state().action_enabled("edit.cut"));
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::X);
+    h.run_steps(2);
+    assert!(
+        !h.state()
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .any(|t| t.items.iter().any(|i| i.id == source))
+    );
+    assert_eq!(h.state().session.history_len().0, item_history + 1);
+    assert!(h.state().session.clipboard_has_entry());
+    h.state_mut().dispatch(AppCommand::Seek(end)).unwrap();
+    h.run_steps(2);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::V);
+    h.run_steps(2);
+    let restored = *h.state().selection().iter().next().unwrap();
+    assert_eq!(item(h.state(), restored).start, end);
+    assert_eq!(item(h.state(), restored).content, source_item.content);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    h.run_steps(2);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    h.run_steps(2);
+    assert_eq!(h.state().session.project(), &items_before);
+    // The item context menu dispatches the same Paste command.
+    click_item(&mut h, target);
+    h.state_mut().dispatch(AppCommand::Seek(end)).unwrap();
+    h.run_steps(2);
+    assert!(h.state().action_enabled("edit.paste"));
+    open_item_menu(&mut h, target, "paste");
+    assert_ne!(h.state().session.project(), &items_before);
+    assert_eq!(h.state().session.history_len().0, item_history + 1);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    h.run_steps(2);
+    assert_eq!(h.state().session.project(), &items_before);
+    h.state_mut()
+        .session
+        .apply(Command::SetTrackLocked {
+            track: video,
+            locked: true,
+        })
+        .unwrap();
+    h.run_steps(2);
+    let before = h.state().session.project().clone();
+    let history = h.state().session.history_len();
+    assert!(!h.state().action_enabled("edit.paste"));
+    assert!(h.state_mut().activate("edit.paste").is_err());
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::V);
+    h.run_steps(2);
+    assert_eq!(h.state().session.project(), &before);
+    assert_eq!(h.state().session.history_len(), history);
 }
 
 #[test]

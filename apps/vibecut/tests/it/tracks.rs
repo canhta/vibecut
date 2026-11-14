@@ -699,11 +699,6 @@ fn lock_refuses_structural_edits_and_add_track_uses_the_active_kind() {
     assert_eq!(tracks.len(), old_ids.len() + 1);
     assert_eq!(tracks.last().unwrap().kind, TrackKind::Video);
     assert!(!old_ids.contains(&tracks.last().unwrap().id));
-    let path =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-54-track-mgmt.png");
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    h.render().unwrap().save(&path).unwrap();
-    println!("track management screenshot: {}", path.display());
 }
 
 #[test]
