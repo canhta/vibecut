@@ -666,14 +666,6 @@ pub fn read_lut(
     hooks: &dyn ExecutionHooks,
 ) -> Result<(Cube3d, media::ContentHash)> {
     let limit = limit.min(MAX_CUBE_SOURCE);
-    for ancestor in path.ancestors() {
-        if std::fs::symlink_metadata(ancestor)?
-            .file_type()
-            .is_symlink()
-        {
-            return Err(invalid(0, LutInvalidReason::Metadata));
-        }
-    }
     let meta = std::fs::symlink_metadata(path)?;
     if !meta.is_file() || meta.file_type().is_symlink() || meta.len() > limit {
         return Err(invalid(0, LutInvalidReason::Size));

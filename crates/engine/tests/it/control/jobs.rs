@@ -2027,3 +2027,16 @@ fn chapters_control_preserves_resolved_custom_model_and_requires_unknown_price_a
     assert_eq!(wire.0.load(Ordering::SeqCst), 1);
     runner.shutdown();
 }
+
+#[cfg(unix)]
+#[test]
+fn lut_store_opens_under_a_symlinked_ancestor_but_refuses_a_symlink_inside_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let real = dir.path().join("real");
+    std::fs::create_dir(&real).unwrap();
+    let link = dir.path().join("link");
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+    drop(engine::luts::LutStore::open(&link.join("store")).unwrap());
+    std::os::unix::fs::symlink(dir.path(), real.join("store").join("planted")).unwrap();
+    assert!(engine::luts::LutStore::open(&link.join("store")).is_err());
+}

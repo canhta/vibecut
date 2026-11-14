@@ -180,9 +180,9 @@ impl LutStore {
     /// Open one exclusive source store. Admission enumerates at most 4096 entries;
     /// foreign entries are retained and counted, never interpreted as disposable.
     pub fn open(root: &Path) -> Result<Self> {
-        parents(root)?;
+        // Resolve the application-controlled ancestors once; `parents` then refuses
+        // any symlink planted at or below the canonical root.
         fs::create_dir_all(root)?;
-        parents(root)?;
         let root = fs::canonicalize(root)?;
         let lease = project::WriterLease::acquire(&root.join("store.vibecut"))?;
         let (bytes, _, bundles) = usage(&root)?;
@@ -247,7 +247,8 @@ impl LutStore {
         let format = render::lut::LutFormat::from_path(source).ok_or(
             render::Error::Unsupported("only 3D cube and 3dl LUTs are supported"),
         )?;
-        parents(source)?;
+        // The source is the caller's own path (system ancestors such as macOS /var are
+        // symlinks); only a symlinked final component is refused.
         let metadata = plain(source)?;
         if !metadata.is_file() || metadata.len() > render::lut::MAX_CUBE_SOURCE {
             return Err(Error::Edit(EditError::Control(
