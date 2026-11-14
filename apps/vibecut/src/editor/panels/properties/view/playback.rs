@@ -3,7 +3,8 @@
 use super::Panel;
 use crate::editor::properties::workflow::jobs::loudness::{Cause, Failed, scope_target};
 use crate::editor::properties::{
-    AUDIO_GAIN_SCRUB, Action, ItemId, SPEED_SCRUB, ScrubSpec, Text, egui, read, theme,
+    AUDIO_GAIN_SCRUB, Action, Color32, ItemId, Rect, SPEED_SCRUB, ScrubSpec, Text, Vec2, egui,
+    read, theme,
 };
 use crate::i18n;
 use crate::kit;
@@ -513,10 +514,12 @@ impl Panel<'_, '_> {
         if has_audio {
             let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
             self.row_label(ui, row, self.tr(Text::ChangePitch));
-            // "Change pitch" on lets pitch follow speed, so it is the inverse of maintain_pitch.
-            // The reference shows it as a switch.
+            // "Change audio pitch" on lets pitch follow speed, so it is the inverse of
+            // maintain_pitch. The switch sits at the row's right edge, as in the Audio tab.
             let mut follows = !maintain_pitch;
             let name = self.tr(Text::ChangePitch);
+            let width = value_ui.available_width();
+            value_ui.add_space((width - theme::size::TOGGLE_WIDTH).max(0.0));
             let response = kit::toggle(&mut value_ui, "inspector.speed.pitch", &mut follows, name);
             self.remember("inspector.speed.pitch", &response);
             if response.clicked() {
@@ -526,9 +529,11 @@ impl Panel<'_, '_> {
         self.speed_reset_row(ui, item, current, maintain_pitch);
     }
 
-    /// The Standard view's Duration row: the source length, an arrow, then the retimed length
-    /// as an editable field. A typed length sets the speed to source / typed, one undo step;
-    /// the speed clamps to the slider's range. Escape drops the draft.
+    /// The Standard view's Duration rows, laid out like the Speed slider above: the label on
+    /// its own line, then the source length, a dashed arrow and the editable length. The
+    /// length field and its stepper share the slider field's width and right edge. A typed
+    /// length, or a stepper step of `SPEED_DURATION_STEP`, sets the speed to source over the
+    /// length, one undo step; the speed clamps to the slider's range. Escape drops the draft.
     fn speed_duration_row(
         &mut self,
         ui: &mut egui::Ui,
@@ -539,14 +544,43 @@ impl Panel<'_, '_> {
         let Some((source, output)) = read::retime_seconds(self.cx.session.project(), item) else {
             return;
         };
-        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
-        self.row_label(ui, row, self.tr(Text::SpeedDuration));
-        let response = value_ui.label(
-            egui::RichText::new(format!("{source:.2}s →"))
+        let (row, _) = ui.allocate_exact_size(
+            Vec2::new(ui.available_width(), SPEED_DURATION_ROW),
+            egui::Sense::hover(),
+        );
+        let label_line = Rect::from_min_size(row.min, Vec2::new(row.width(), SPEED_DURATION_LABEL));
+        self.row_label(ui, label_line, self.tr(Text::SpeedDuration));
+        let line = Rect::from_min_size(
+            egui::pos2(row.left(), row.top() + SPEED_DURATION_LINE),
+            Vec2::new(row.width(), theme::size::FIELD),
+        );
+        // The Speed field's right edge: the keyframe cluster's reserve sits to its right.
+        let group_right = line.right() - super::keyframe_reserve(&[SPEED_SCRUB]);
+        let group = Rect::from_min_max(
+            egui::pos2(group_right - SPEED_DURATION_GROUP, line.top()),
+            egui::pos2(group_right, line.bottom()),
+        );
+        let mut source_ui = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(line)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
+        let source_text = source_ui.label(
+            egui::RichText::new(format!("{source:.2}s"))
                 .size(theme::type_size::BODY)
                 .color(self.secondary()),
         );
-        self.remember("inspector.speed.duration", &response);
+        self.remember("inspector.speed.duration", &source_text);
+        let arrow_from = source_text.rect.right() + theme::space::XS;
+        let arrow_to = group.left() - theme::space::XS;
+        draw_dashed_arrow(
+            ui.painter(),
+            arrow_from,
+            arrow_to,
+            line.center().y,
+            self.secondary(),
+        );
+
         let key = SPEED_DURATION_DRAFT;
         let mut text = self
             .state
@@ -554,8 +588,14 @@ impl Panel<'_, '_> {
             .get(key)
             .cloned()
             .unwrap_or_else(|| format!("{output:.2}s"));
+        let mut group_ui = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(group)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
+        group_ui.spacing_mut().item_spacing.x = theme::space::XXS;
         let field = kit::value_field(
-            &mut value_ui,
+            &mut group_ui,
             "inspector.speed.duration.field",
             &mut text,
             SPEED_DURATION_WIDTH,
@@ -563,6 +603,13 @@ impl Panel<'_, '_> {
             self.tr(Text::SpeedDuration),
         );
         self.remember("inspector.speed.duration.field", &field);
+        let (up, down) = kit::stepper(
+            &mut group_ui,
+            "inspector.speed.duration.field",
+            self.tr(Text::SpeedDuration),
+        );
+        self.remember("inspector.speed.duration.field.increase", &up);
+        self.remember("inspector.speed.duration.field.decrease", &down);
         if field.has_focus() {
             self.state.focus = Some(key.to_owned());
         }
@@ -570,6 +617,24 @@ impl Panel<'_, '_> {
             self.state.drafts.remove(key);
             self.state.focus = None;
             field.surrender_focus();
+            return;
+        }
+        // The stepper lengthens (up) or shortens (down) the shown length from its committed
+        // value; it wins over a pending draft, which it discards.
+        let step = if up.clicked() {
+            SPEED_DURATION_STEP
+        } else if down.clicked() {
+            -SPEED_DURATION_STEP
+        } else {
+            0.0
+        };
+        if step != 0.0 {
+            self.state.focus = None;
+            self.state.drafts.remove(key);
+            let seconds = output + step;
+            if seconds > 0.0 {
+                self.commit_duration(item, source, seconds, current, maintain_pitch);
+            }
             return;
         }
         if field.changed() {
@@ -580,15 +645,29 @@ impl Panel<'_, '_> {
             self.state.focus = None;
             self.state.drafts.remove(key);
             if let Some(seconds) = parse_seconds(&text) {
-                let speed = SPEED_SCRUB.quantize(source / seconds);
-                if (speed - current).abs() > f64::EPSILON {
-                    self.set_speed(item, speed, maintain_pitch);
-                }
+                self.commit_duration(item, source, seconds, current, maintain_pitch);
             }
         }
     }
 
-    /// Reset at the panel's bottom right: back to a constant 1x, one undo step.
+    /// Sets the speed that plays the source in `seconds`, when that differs from `current`.
+    fn commit_duration(
+        &mut self,
+        item: ItemId,
+        source: f64,
+        seconds: f64,
+        current: f64,
+        maintain_pitch: bool,
+    ) {
+        let speed = SPEED_SCRUB.quantize(source / seconds);
+        if (speed - current).abs() > f64::EPSILON {
+            self.set_speed(item, speed, maintain_pitch);
+        }
+    }
+
+    /// Reset in the panel's bottom-right corner: back to a constant 1x, one undo step. It sits
+    /// on the visible bottom of the panel when the rows leave room, and right after the last
+    /// row when they fill it.
     fn speed_reset_row(
         &mut self,
         ui: &mut egui::Ui,
@@ -596,6 +675,11 @@ impl Panel<'_, '_> {
         current: f64,
         maintain_pitch: bool,
     ) {
+        let footer_top = ui.clip_rect().bottom() - SPEED_FOOTER_INSET - theme::size::FIELD;
+        let room = footer_top - ui.next_widget_position().y;
+        if room > 0.0 {
+            ui.add_space(room);
+        }
         let label = self.tr(Text::SpeedReset);
         let reset = ui
             .with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -609,9 +693,41 @@ impl Panel<'_, '_> {
     }
 }
 
-/// The Duration field's draft key and width (the loudness fields' 96 px).
+/// The Duration rows: a label line, then a value line 14 px lower, as the Speed slider. The
+/// length field keeps the slider field's 54 px width, 2 px gap and 16 px stepper.
+const SPEED_DURATION_ROW: f32 = 44.0;
+const SPEED_DURATION_LABEL: f32 = 18.0;
+const SPEED_DURATION_LINE: f32 = 14.0;
+const SPEED_DURATION_WIDTH: f32 = 54.0;
+const SPEED_DURATION_GROUP: f32 = SPEED_DURATION_WIDTH + theme::space::XXS + theme::size::STEPPER;
+/// The Duration field's draft key.
 const SPEED_DURATION_DRAFT: &str = "speed_duration";
-const SPEED_DURATION_WIDTH: f32 = 96.0;
+/// One stepper click in seconds. The reference shows no step, so this is a proposed value.
+const SPEED_DURATION_STEP: f64 = 0.1;
+/// The gap between the Reset footer and the panel's bottom edge. Proposed: unmeasured.
+const SPEED_FOOTER_INSET: f32 = theme::space::SM;
+
+/// A dashed line from `from` to `to` at height `y`, ending in a small open arrowhead. The dash,
+/// gap and head sizes are proposed: the reference's arrow is not measured.
+fn draw_dashed_arrow(painter: &egui::Painter, from: f32, to: f32, y: f32, color: Color32) {
+    const DASH: f32 = 3.0;
+    const GAP: f32 = 3.0;
+    const HEAD: f32 = 4.0;
+    let stroke = egui::Stroke::new(1.0, color);
+    let mut x = from;
+    while x + DASH <= to - HEAD {
+        painter.line_segment([egui::pos2(x, y), egui::pos2(x + DASH, y)], stroke);
+        x += DASH + GAP;
+    }
+    painter.line_segment(
+        [egui::pos2(to - HEAD, y - HEAD / 2.0), egui::pos2(to, y)],
+        stroke,
+    );
+    painter.line_segment(
+        [egui::pos2(to - HEAD, y + HEAD / 2.0), egui::pos2(to, y)],
+        stroke,
+    );
+}
 
 /// A typed duration such as `4703.2s` in seconds; `None` for anything not a positive length.
 fn parse_seconds(text: &str) -> Option<f64> {

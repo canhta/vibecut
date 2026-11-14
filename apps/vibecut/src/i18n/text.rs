@@ -1057,7 +1057,7 @@ catalog! {
     CaseLower { key: "case_lower", en: "lower", vi: "chữ thường" },
     CaseTitle { key: "case_title", en: "Title", vi: "Viết hoa đầu từ" },
     CaseUpper { key: "case_upper", en: "UPPER", vi: "CHỮ HOA" },
-    ChangePitch { key: "change_pitch", en: "Change pitch", vi: "Đổi cao độ" },
+    ChangePitch { key: "change_pitch", en: "Change audio pitch", vi: "Đổi cao độ âm thanh" },
     CompatibleCount { key: "compatible_count", en: "Applies to {compatible} of {total}", vi: "Áp dụng cho {compatible}/{total}" },
     CreatedDate { key: "created_date", en: "Created {date}", vi: "Đã tạo {date}" },
     DecorationNone { key: "decoration_none", en: "None", vi: "Không" },

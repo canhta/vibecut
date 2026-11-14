@@ -389,6 +389,11 @@ pub(crate) fn strip(dark: bool) -> Color32 {
 pub(crate) fn bright(dark: bool) -> Color32 {
     text(dark)
 }
+/// The resting knob of a switch: white in both modes. Light text would be dark on the light
+/// grey rest track, which reads as the on state.
+pub(crate) const fn toggle_knob(dark: bool) -> Color32 {
+    if dark { TEXT_DARK } else { PANEL_LIGHT }
+}
 pub(crate) fn track_rest(dark: bool) -> Color32 {
     border(dark)
 }

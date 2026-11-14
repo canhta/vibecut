@@ -3705,6 +3705,25 @@ fn speed_tab_scrubs_resets_and_toggles_pitch_through_one_command() {
         project::Retime::default()
     );
 
+    // Standard layout: the Duration field and its stepper share the Speed field's width and
+    // right edge; the length line sits under the slider; the pitch switch is at the right
+    // edge; Reset is the last row, at the same right edge, below the pitch switch.
+    let speed = widget_rect(&harness, "inspector.speed");
+    let speed_step = widget_rect(&harness, "inspector.speed.decrease");
+    let duration = widget_rect(&harness, "inspector.speed.duration.field");
+    let duration_step = widget_rect(&harness, "inspector.speed.duration.field.decrease");
+    assert!((duration.width() - speed.width()).abs() < 0.5);
+    assert!((duration_step.right() - speed_step.right()).abs() < 0.5);
+    assert!(widget_rect(&harness, "inspector.speed.duration").top() > speed.bottom());
+    let pitch = widget_rect(&harness, "inspector.speed.pitch");
+    assert!(pitch.right() >= speed_step.right());
+    let reset = widget_rect(&harness, "inspector.speed.reset");
+    assert!(
+        reset.top() >= pitch.bottom(),
+        "reset sits below the last row"
+    );
+    assert!((reset.right() - pitch.right()).abs() < 1.0);
+
     // 100 px at 2 px per 0.01 step is +0.5x, one undo step; the clip shortens to match.
     let history = harness.state().session.history_len();
     drag(
@@ -3796,6 +3815,17 @@ fn speed_tab_scrubs_resets_and_toggles_pitch_through_one_command() {
     harness.state_mut().session.undo().unwrap();
     enter(&mut harness, "inspector.speed.duration.field", "0.001s");
     assert_eq!(item(&harness, fixture.video).retime.speed.as_f64(), 100.0);
+    harness.state_mut().session.undo().unwrap();
+
+    // The Duration stepper moves the shown length by one step from the committed value: up
+    // lengthens it (slower, below 1x), down shortens it (faster, above 1x), one undo step each.
+    let history = harness.state().session.history_len();
+    click(&mut harness, "inspector.speed.duration.field.increase");
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    assert!(item(&harness, fixture.video).retime.speed.as_f64() < 1.0);
+    harness.state_mut().session.undo().unwrap();
+    click(&mut harness, "inspector.speed.duration.field.decrease");
+    assert!(item(&harness, fixture.video).retime.speed.as_f64() > 1.0);
     harness.state_mut().session.undo().unwrap();
 
     // Audio items get the same controls; a video without audio has nothing to pitch-shift.
