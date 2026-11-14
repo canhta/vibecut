@@ -67,7 +67,7 @@ impl Editor {
         let disabled = timeline::TOOLBAR_ACTIONS
             .iter()
             .copied()
-            .chain(["edit.copy", "edit.cut", "edit.paste"])
+            .chain(["edit.copy", "edit.cut", "edit.paste", "timeline.trim_clip"])
             .filter(|id| crate::actions::action(id).is_some() && !self.action_enabled(id))
             .collect();
         let mut state = std::mem::take(&mut self.timeline);

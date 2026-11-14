@@ -59,7 +59,9 @@ fn bookmark_toggle_snaps_adds_defaults_removes_and_undoes_every_step() {
 
     // One off-frame tick snaps to the nearest frame and adds a default bookmark.
     let at = Tick(frame.0 * 2 + 1);
-    let outcome = s.apply(Command::ToggleBookmark { at }).unwrap();
+    let outcome = s
+        .apply(Command::ToggleBookmark { at, color: None })
+        .unwrap();
     assert!(outcome.changed);
     let CreatedId::Bookmark(bookmark) = *outcome.created.first().unwrap() else {
         panic!("bookmark id")
@@ -73,7 +75,9 @@ fn bookmark_toggle_snaps_adds_defaults_removes_and_undoes_every_step() {
     assert_eq!(s.history_len(), (1, 0));
 
     // The same frame toggles it off; undo and redo restore each side exactly.
-    let outcome = s.apply(Command::ToggleBookmark { at }).unwrap();
+    let outcome = s
+        .apply(Command::ToggleBookmark { at, color: None })
+        .unwrap();
     assert!(outcome.changed);
     assert!(outcome.created.is_empty());
     assert!(s.project().data().scene().bookmarks.is_empty());
@@ -94,7 +98,10 @@ fn bookmark_toggle_snaps_adds_defaults_removes_and_undoes_every_step() {
     .enumerate()
     {
         let outcome = s
-            .apply(Command::ToggleBookmark { at: Tick(input) })
+            .apply(Command::ToggleBookmark {
+                at: Tick(input),
+                color: None,
+            })
             .unwrap();
         let CreatedId::Bookmark(id) = *outcome.created.first().unwrap() else {
             panic!("bookmark id")
@@ -251,7 +258,10 @@ fn bookmark_commands_refuse_hostile_inputs_without_history() {
     let before = s.project().clone();
     let history = s.history_len();
     for (index, command) in [
-        Command::ToggleBookmark { at: Tick(-1) },
+        Command::ToggleBookmark {
+            at: Tick(-1),
+            color: None,
+        },
         Command::UpdateBookmark {
             bookmark: project::BookmarkId(999),
             note: Some("x".into()),
@@ -352,6 +362,25 @@ fn bookmark_commands_refuse_hostile_inputs_without_history() {
         locked: true,
     })
     .unwrap();
-    s.apply(Command::ToggleBookmark { at: frame }).unwrap();
+    s.apply(Command::ToggleBookmark {
+        at: frame,
+        color: None,
+    })
+    .unwrap();
     assert_eq!(s.project().data().scene().bookmarks.len(), 2);
+}
+
+#[test]
+fn bookmark_toggle_names_the_colour_of_the_marker_it_adds() {
+    let mut s = Session::new(Project::empty(ProjectId(36), "Marks".into()).unwrap(), 20).unwrap();
+    let red = Color([226, 103, 94, 255]);
+    s.apply(Command::ToggleBookmark {
+        at: Tick(0),
+        color: Some(red),
+    })
+    .unwrap();
+    assert_eq!(s.project().data().scene().bookmarks[0].color, red);
+    assert_eq!(s.history_len(), (1, 0));
+    s.undo().unwrap();
+    assert!(s.project().data().scene().bookmarks.is_empty());
 }

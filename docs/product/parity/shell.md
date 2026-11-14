@@ -115,10 +115,10 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | SHORTCUT-09 | Matching timeline defaults | Done | Proposed | 14b/110530; [keyboard.md](../agent-control/keyboard.md) | |
 | SHORTCUT-10 | Main track magnet P | Missing | — | 14b/110530 | |
 | SHORTCUT-11 | Timeline zoom keys | Done | — | 14b/110530 | |
-| SHORTCUT-12 | Activate / deactivate V | Missing | — | 14b/110530 | |
+| SHORTCUT-12 | Activate / deactivate V | Done | — | 14b/110530 | `V` runs `timeline.set_hidden` |
 | SHORTCUT-13 | Extract audio key | Done | — | 14b/110530 | Restore has no chord |
-| SHORTCUT-14 | Marker keys | Partial | — | 14b/110530 | No new-colour marker key |
-| SHORTCUT-15 | Group, compound, speed keys | Missing | — | 14b/110530 | |
+| SHORTCUT-14 | Marker keys | Done | — | 14b/110530 | `Alt+M` adds a new-colour marker |
+| SHORTCUT-15 | Group, compound, speed keys | Partial | — | 14b/110530 | Speed keys only; group and compound pending |
 | SHORTCUT-16 | Shuttle J, K, L | Partial | Proposed | 14b/110530 | Ours seeks 1 s |
 | SHORTCUT-17 | Step back many frames | Differs | Proposed | 14b/110530 | Shift+Left jumps 1 s |
 | SHORTCUT-18 | Select by clip Shift X | Differs | — | 14b/110530 | Ours: export in/out |

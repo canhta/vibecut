@@ -227,7 +227,13 @@ Effect: `Edit`. Fixture: `Timeline`.
 
 ```json
 {
-  "at": 0
+  "at": 0,
+  "color": [
+    0,
+    157,
+    255,
+    255
+  ]
 }
 ```
 

@@ -17,7 +17,7 @@ pub(in crate::editor) use effects::{add_effect_to_item, effect_refusal};
 pub(super) use number_edit::transform_scrub;
 
 use super::{Action, State};
-use crate::editor::{Port, Result};
+use crate::editor::{Error, ItemId, Port, Result};
 
 /// Star or unstar one animation look through the shared catalogue favourites; the
 /// preference is validated before the write and never enters project history.
@@ -293,6 +293,20 @@ impl State {
     ) -> Result<()> {
         let actions = self.open_picker(port.view().session.project(), target, None)?;
         route(self, port, actions);
+        Ok(())
+    }
+
+    /// Open the Speed tab of one clip as one preference edit, on its Standard or Curve view.
+    pub(in crate::editor) fn show_speed(
+        &mut self,
+        port: &mut Port<'_>,
+        item: ItemId,
+        curve: bool,
+    ) -> Result<()> {
+        let (kind, _) = super::element_kind(port.view().session.project(), item)
+            .ok_or(Error::Invalid("speed panel target"))?;
+        self.set_tab(port, kind.id(), super::PropertiesTab::Speed.id())?;
+        self.speed_curve_view = curve;
         Ok(())
     }
 
