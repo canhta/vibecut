@@ -50,7 +50,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 |---|---|---|---|---|---|
 | PVID-30 | Mask shape list | Done | Proposed | web 18 | Adds Path shape |
 | PVID-31 | Feather, size, position, invert | Done | Proposed | | Corner radius unbuilt |
-| PVID-32 | Freeform path keyframes | Partial | — | | Anchors key through `keyframes.*`; no point-editor diamonds |
+| PVID-32 | Freeform path keyframes | Done | Proposed | | Diamond beside each selected anchor keys its six fields; diamond placement unmeasured |
 
 ### Adjust
 | ID | Item | Function | UI/UX | Evidence | Gap / note |

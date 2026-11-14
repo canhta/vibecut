@@ -22,7 +22,8 @@ fresh ProjectId; a refused Save As changes neither. Projects removed from the li
 pruned at the next preferences save.
 
 A lane is 20 px high, one per nonempty animation channel (audio always offers volume), and
-shows the channel's diamonds. Click selects, Cmd/Ctrl/Shift toggles, a lane marquee
+shows the channel's diamonds. A freeform mask anchor channel is named "Mask <id> · point <n>
+<field>" with `n` counted from one (`Text::MaskPointLane`). Click selects, Cmd/Ctrl/Shift toggles, a lane marquee
 selects, drag retimes with the clips' snapping candidates in one engine gesture, and
 Delete removes selected diamonds through `keyframes.delete_selection` in one undo step.
 Right-click offers before/after Hold or Linear through `keyframes.set_extrapolation`.

@@ -49,6 +49,19 @@ deletes the item. Escape cancels a live drag, then clears the point scope, then 
 through to the item scope. A completed drag stages `masks.set_path` inside
 `timeline.preview` and publishes one undo step.
 
+Anchors and handles show the mask evaluated at the playhead, so keyed anchors move with the
+frame. Each selected anchor carries one keyframe diamond up and to its right (a 16 px cell,
+the row-end diamond glyph; the placement is ours, unmeasured, and a press on it never reaches the
+canvas): it keys all six fields of the anchor (`x`, `y`, `in_x`, `in_y`, `out_x`, `out_y`,
+channels `masks.<id>.path.<n>.<field>`) at the playhead through `keyframes.toggle`, or removes
+those keys when all six have one, as one undo step; it is disabled outside the item. A drag
+splits each moved field by its channel: a field with keys writes a key at the playhead
+(`keyframes.add`; outside the item it is left alone), a channel with only a base value sets
+that base (`keyframes.set_param`), and any other field edits the stored path, all in the same
+`timeline.preview` and one undo step. Automation target: `preview.mask.point.<n>.keyframe`.
+Clicking the curve inserts through `masks.add_point`, which rescales the neighbours' tangent
+keys and keys the new anchor at the segment's key times.
+
 `mask_box` adds the whole-mask gizmo to the same target: the mask box is outlined with
 four corner handles and a rotation grip, all mapped through `MaskGeometry`. Dragging a
 corner scales the mask uniformly about its centre (`scale`, the freeform path's own uniform
