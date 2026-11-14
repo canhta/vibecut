@@ -71,6 +71,16 @@ impl ExportFormat {
     pub fn audio_only(self) -> bool {
         matches!(self, Self::M4a | Self::AudioWebm)
     }
+    /// Why the encoder rows (bit rate, codec, quality, H.264 profile and the audio
+    /// switch) do not apply to this format, or `None` when they do. Silent image
+    /// outputs disable those rows, with this reason on hover.
+    pub(super) fn unused_encoder_reason(self) -> Option<Text> {
+        match self {
+            Self::Gif => Some(Text::ExportNotForGif),
+            Self::PngSequence => Some(Text::ExportNotForSequence),
+            Self::Mp4 | Self::Mov | Self::Webm | Self::M4a | Self::AudioWebm => None,
+        }
+    }
     pub(super) fn label(self) -> Text {
         match self {
             Self::Mp4 => Text::ExportMp4,

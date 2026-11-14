@@ -129,10 +129,9 @@ pub(super) fn show(
                 let row_label = ui.label(tr(Text::ExportBitRate));
                 ui.horizontal(|ui| {
                     let mut custom = options.output.bit_rate.is_some();
-                    let r = ui.add_enabled(
-                        options.format != super::ExportFormat::Gif && !options.format.is_sequence(),
-                        egui::Checkbox::new(&mut custom, tr(Text::ExportCustom)),
-                    );
+                    let r = gated(ui, locale, options.format.unused_encoder_reason(), |ui| {
+                        ui.checkbox(&mut custom, tr(Text::ExportCustom))
+                    });
                     if r.changed() {
                         options.output.bit_rate = custom.then_some(options.quality.value().1);
                     }
@@ -158,36 +157,34 @@ pub(super) fn show(
                     render::VideoCodec::H264 => "H.264",
                     render::VideoCodec::Vp9 => "VP9",
                 };
-                let combo = egui::ComboBox::from_id_salt(egui::IdSalt::new("export.codec"))
-                    .width(field_width)
-                    .selected_text(codec_label(options.output.codec))
-                    .show_ui(ui, |ui| {
-                        for (codec, id) in [
-                            (render::VideoCodec::Automatic, "export.codec.auto"),
-                            (render::VideoCodec::H264, "export.codec.h264"),
-                            (render::VideoCodec::Vp9, "export.codec.vp9"),
-                        ] {
-                            let allowed = if options.format.is_sequence() {
-                                codec == render::VideoCodec::Automatic
-                            } else {
-                                codec.fits(options.format.container())
-                            };
-                            let r = ui.add_enabled(
-                                allowed,
-                                egui::Button::selectable(
-                                    options.output.codec == codec,
-                                    codec_label(codec),
-                                ),
-                            );
-                            if r.clicked() {
-                                options.output.codec = codec;
+                let combo = gated(ui, locale, options.format.unused_encoder_reason(), |ui| {
+                    egui::ComboBox::from_id_salt(egui::IdSalt::new("export.codec"))
+                        .width(field_width)
+                        .selected_text(codec_label(options.output.codec))
+                        .show_ui(ui, |ui| {
+                            for (codec, id) in [
+                                (render::VideoCodec::Automatic, "export.codec.auto"),
+                                (render::VideoCodec::H264, "export.codec.h264"),
+                                (render::VideoCodec::Vp9, "export.codec.vp9"),
+                            ] {
+                                let r = ui.add_enabled(
+                                    codec.fits(options.format.container()),
+                                    egui::Button::selectable(
+                                        options.output.codec == codec,
+                                        codec_label(codec),
+                                    ),
+                                );
+                                if r.clicked() {
+                                    options.output.codec = codec;
+                                }
+                                result.widgets.push((id, r));
                             }
-                            result.widgets.push((id, r));
-                        }
-                    });
+                        })
+                        .response
+                });
                 result
                     .widgets
-                    .push(("export.codec", combo.response.labelled_by(row_label.id)));
+                    .push(("export.codec", combo.labelled_by(row_label.id)));
                 ui.end_row();
             }
             let row_label = ui.label(tr(Text::ExportFormat));
@@ -221,10 +218,14 @@ pub(super) fn show(
                         let r =
                             ui.selectable_value(&mut options.format, format, tr(format.label()));
                         if r.changed() {
+                            // Reset to the values every silent or video export accepts.
                             options.output.codec = render::VideoCodec::Automatic;
                             options.output.profile = media::H264Profile::Automatic;
-                            if format == super::ExportFormat::Gif || format.is_sequence() {
+                            if format.unused_encoder_reason().is_some() {
                                 options.output.bit_rate = None;
+                            }
+                            if format.is_sequence() && options.output.scene == SceneChoice::All {
+                                options.output.scene = SceneChoice::Active;
                             }
                         }
                         result.widgets.push((id, r));
@@ -269,27 +270,30 @@ pub(super) fn show(
                     .push(("export.fps", combo.response.labelled_by(row_label.id)));
                 ui.end_row();
                 let row_label = ui.label(tr(Text::ExportQuality));
-                let combo = egui::ComboBox::from_id_salt(egui::IdSalt::new("export.quality"))
-                    .width(field_width)
-                    .selected_text(tr(options.quality.label()))
-                    .show_ui(ui, |ui| {
-                        for (quality, id) in [
-                            (super::ExportQuality::Low, "export.quality.low"),
-                            (super::ExportQuality::Medium, "export.quality.medium"),
-                            (super::ExportQuality::High, "export.quality.high"),
-                            (super::ExportQuality::VeryHigh, "export.quality.very_high"),
-                        ] {
-                            let r = ui.selectable_value(
-                                &mut options.quality,
-                                quality,
-                                tr(quality.label()),
-                            );
-                            result.widgets.push((id, r));
-                        }
-                    });
+                let combo = gated(ui, locale, options.format.unused_encoder_reason(), |ui| {
+                    egui::ComboBox::from_id_salt(egui::IdSalt::new("export.quality"))
+                        .width(field_width)
+                        .selected_text(tr(options.quality.label()))
+                        .show_ui(ui, |ui| {
+                            for (quality, id) in [
+                                (super::ExportQuality::Low, "export.quality.low"),
+                                (super::ExportQuality::Medium, "export.quality.medium"),
+                                (super::ExportQuality::High, "export.quality.high"),
+                                (super::ExportQuality::VeryHigh, "export.quality.very_high"),
+                            ] {
+                                let r = ui.selectable_value(
+                                    &mut options.quality,
+                                    quality,
+                                    tr(quality.label()),
+                                );
+                                result.widgets.push((id, r));
+                            }
+                        })
+                        .response
+                });
                 result
                     .widgets
-                    .push(("export.quality", combo.response.labelled_by(row_label.id)));
+                    .push(("export.quality", combo.labelled_by(row_label.id)));
                 ui.end_row();
                 let row_label = ui.label(tr(Text::ExportProfile));
                 let label = |profile| match profile {
@@ -297,34 +301,36 @@ pub(super) fn show(
                     media::H264Profile::Main => "Main",
                     media::H264Profile::High => "High",
                 };
-                let combo = egui::ComboBox::from_id_salt(egui::IdSalt::new("export.profile"))
-                    .width(field_width)
-                    .selected_text(label(options.output.profile))
-                    .show_ui(ui, |ui| {
-                        for profile in [
-                            media::H264Profile::Automatic,
-                            media::H264Profile::Main,
-                            media::H264Profile::High,
-                        ] {
-                            ui.add_enabled_ui(
-                                render::OutputOptions::profile_fits(
-                                    profile,
-                                    options.format.container(),
-                                ) && (!options.format.is_sequence()
-                                    || profile == media::H264Profile::Automatic),
-                                |ui| {
-                                    ui.selectable_value(
-                                        &mut options.output.profile,
+                let combo = gated(ui, locale, options.format.unused_encoder_reason(), |ui| {
+                    egui::ComboBox::from_id_salt(egui::IdSalt::new("export.profile"))
+                        .width(field_width)
+                        .selected_text(label(options.output.profile))
+                        .show_ui(ui, |ui| {
+                            for profile in [
+                                media::H264Profile::Automatic,
+                                media::H264Profile::Main,
+                                media::H264Profile::High,
+                            ] {
+                                ui.add_enabled_ui(
+                                    render::OutputOptions::profile_fits(
                                         profile,
-                                        label(profile),
-                                    );
-                                },
-                            );
-                        }
-                    });
+                                        options.format.container(),
+                                    ),
+                                    |ui| {
+                                        ui.selectable_value(
+                                            &mut options.output.profile,
+                                            profile,
+                                            label(profile),
+                                        );
+                                    },
+                                );
+                            }
+                        })
+                        .response
+                });
                 result
                     .widgets
-                    .push(("export.profile", combo.response.labelled_by(row_label.id)));
+                    .push(("export.profile", combo.labelled_by(row_label.id)));
                 ui.end_row();
             }
             if options.format == super::ExportFormat::Gif {
@@ -357,7 +363,12 @@ pub(super) fn show(
                             "export.scene.all",
                         ),
                     ] {
-                        let r = ui.selectable_value(&mut options.output.scene, value, label);
+                        // One PNG sequence directory cannot hold several scenes.
+                        let refused = (value == SceneChoice::All && options.format.is_sequence())
+                            .then_some(Text::ExportOneSceneOnly);
+                        let r = gated(ui, locale, refused, |ui| {
+                            ui.selectable_value(&mut options.output.scene, value, label)
+                        });
                         result.widgets.push((id, r));
                     }
                     for scene in project.data().scenes.iter() {
@@ -491,10 +502,27 @@ pub(super) fn show(
         .widgets
         .push(("export.custom.size", custom.header_response));
     ui.add_space(12.0);
-    let r = ui.checkbox(&mut options.include_audio, tr(Text::IncludeAudio));
+    let r = gated(ui, locale, options.format.unused_encoder_reason(), |ui| {
+        ui.checkbox(&mut options.include_audio, tr(Text::IncludeAudio))
+    });
     result.widgets.push(("export.audio.include", r));
     if !valid(options, project) {
         ui.colored_label(ui.visuals().error_fg_color, tr(Text::ExportInvalidRange));
+    }
+}
+
+/// Adds a row control, disabled when the format leaves the row unused. Hovering the
+/// disabled control names the reason.
+fn gated(
+    ui: &mut egui::Ui,
+    locale: Locale,
+    unused: Option<Text>,
+    add: impl FnOnce(&mut egui::Ui) -> egui::Response,
+) -> egui::Response {
+    let response = ui.add_enabled_ui(unused.is_none(), add).inner;
+    match unused {
+        Some(reason) => response.on_disabled_hover_text(i18n::text(locale, reason)),
+        None => response,
     }
 }
 
