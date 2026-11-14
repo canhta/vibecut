@@ -520,10 +520,26 @@ pub(super) fn chroma_key_color(
         .color()
 }
 
-/// The item's speed curve as editable stretches; `None` for a constant rate.
-pub(super) fn speed_segments(
+/// The item's speed curve; `None` for a constant rate.
+pub(super) fn speed_curve(project: &project::Project, item: ItemId) -> Option<project::SpeedCurve> {
+    find(project, item)?.retime.curve
+}
+
+/// Where `playhead` sits along the item's curve, in thousandths of the curve's output span;
+/// `None` for a constant rate or a playhead outside the item.
+pub(super) fn speed_playhead(
     project: &project::Project,
     item: ItemId,
-) -> Option<Vec<project::SpeedSegment>> {
-    Some(find(project, item)?.retime.curve?.segments())
+    playhead: Tick,
+) -> Option<u16> {
+    let found = find(project, item)?;
+    let curve = found.retime.curve?;
+    let local = playhead.0.checked_sub(found.start.0)?;
+    let offset = found.retime.window.map_or(0, |window| window.offset.0);
+    let total = curve.total_output().0;
+    if local < 0 || local > found.duration().ok()?.0 || total <= 0 {
+        return None;
+    }
+    let thousandths = i128::from(local + offset) * 1000 / i128::from(total);
+    u16::try_from(thousandths).ok()
 }

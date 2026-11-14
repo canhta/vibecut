@@ -97,10 +97,7 @@ pub(super) fn set_retime(
             Some(curve) => {
                 // A curve cannot be reversed, so the direction flips first.
                 target.set_reversed(false)?;
-                Some(project::SpeedCurve::from_segments(
-                    target.source_range.duration(),
-                    &curve.segments(),
-                )?)
+                Some(curve.over(target.source_range.duration())?)
             }
             None => None,
         };
@@ -131,7 +128,7 @@ pub(super) fn set_retime(
 fn set_speed_curve(
     data: &mut ProjectData,
     id: ItemId,
-    segments: &[project::SpeedSegment],
+    points: &[project::SpeedPoint],
     maintain_pitch: bool,
 ) -> Result<()> {
     retime_item(data, id, "speed curve on non-media item", |target| {
@@ -139,7 +136,7 @@ fn set_speed_curve(
             return Err(EditError::Invalid("speed curve on a reversed clip"));
         }
         let old_duration = target.duration()?;
-        let curve = project::SpeedCurve::from_segments(target.source_range.duration(), segments)?;
+        let curve = project::SpeedCurve::from_points(target.source_range.duration(), points)?;
         target.retime = project::Retime {
             window: None,
             speed: time::Speed::UNITY,
@@ -154,7 +151,7 @@ fn set_speed_curve(
 pub(super) fn execute_set_speed_curve(
     mut data: ProjectData,
     items: Vec<ItemId>,
-    segments: Vec<project::SpeedSegment>,
+    points: Vec<project::SpeedPoint>,
     maintain_pitch: bool,
 ) -> Result<ProjectData> {
     if items.is_empty() {
@@ -165,7 +162,7 @@ pub(super) fn execute_set_speed_curve(
         if !seen.insert(id) {
             return Err(EditError::Invalid("duplicate speed item"));
         }
-        set_speed_curve(&mut data, id, &segments, maintain_pitch)?;
+        set_speed_curve(&mut data, id, &points, maintain_pitch)?;
     }
     Ok(data)
 }
@@ -176,7 +173,7 @@ pub(super) fn execute_apply_speed_preset(
     preset: project::SpeedPreset,
     maintain_pitch: bool,
 ) -> Result<ProjectData> {
-    execute_set_speed_curve(data, items, preset.segments(), maintain_pitch)
+    execute_set_speed_curve(data, items, preset.points(), maintain_pitch)
 }
 
 /// Flip one video/audio item's traversal direction. Its timeline span is kept:

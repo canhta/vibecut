@@ -2451,10 +2451,10 @@ fn clipboard_attributes_copy_whole_groups_and_skip_what_the_target_kind_cannot_h
     assert_eq!(audio_params.volume, video_params.volume);
     assert_eq!(audio_params.muted, video_params.muted);
 
-    // A speed curve travels as its stretches, rebuilt over the target's own source span.
+    // A speed curve travels as its control points, rebuilt over the target's own source span.
     s.apply(Command::ApplySpeedPreset {
         items: vec![clip],
-        preset: project::SpeedPreset::SlowMiddle,
+        preset: project::SpeedPreset::Montage,
         maintain_pitch: true,
     })
     .unwrap();
@@ -2465,7 +2465,8 @@ fn clipboard_attributes_copy_whole_groups_and_skip_what_the_target_kind_cannot_h
         .retime
         .curve
         .expect("the pasted retime carries the curve");
-    assert_eq!(curve.segments(), from.retime.curve.unwrap().segments());
+    assert_eq!(curve.points(), from.retime.curve.unwrap().points());
+    assert_eq!(curve.points(), project::SpeedPreset::Montage.points());
     assert_eq!(curve.total_source(), to.source_range.duration());
     assert_eq!(to.duration().unwrap(), curve.total_output());
     assert!(to.retime.maintain_pitch);

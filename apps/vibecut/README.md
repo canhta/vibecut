@@ -43,6 +43,7 @@ Each module's contract is its README.
 | `editor/panels/properties/view/animation/` | [Animation tile previews](src/editor/panels/properties/view/animation/README.md) |
 | `editor/panels/properties/view/basic/` | [Basic sub-tabs](src/editor/panels/properties/view/basic/README.md) |
 | `editor/panels/properties/view/effects/` | [Colour wheels and curves](src/editor/panels/properties/view/effects/README.md) |
+| `editor/panels/properties/view/playback/` | [Speed curve view](src/editor/panels/properties/view/playback/README.md) |
 | `editor/panels/properties/view/text_style/` | [Text style sections](src/editor/panels/properties/view/text_style/README.md) |
 | `editor/panels/properties/workflow/` | [Properties workflow](src/editor/panels/properties/workflow/README.md) |
 | `editor/panels/properties/workflow/jobs/` | [Properties jobs](src/editor/panels/properties/workflow/jobs/README.md) |

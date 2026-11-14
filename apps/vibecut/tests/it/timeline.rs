@@ -609,10 +609,12 @@ fn trim_and_move_drag_commit_one_undo_step_each() {
         .session
         .apply(Command::SetSpeedCurve {
             items: vec![video_a],
-            segments: vec![project::SpeedSegment {
-                span: 1000,
-                speed: time::Speed::from_f64(2.0).unwrap(),
-            }],
+            points: [0, 1000]
+                .map(|at| project::SpeedPoint {
+                    at,
+                    speed: time::Speed::from_f64(2.0).unwrap(),
+                })
+                .to_vec(),
             maintain_pitch: true,
         })
         .unwrap();

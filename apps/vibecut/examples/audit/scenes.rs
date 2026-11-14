@@ -370,6 +370,12 @@ pub(super) const SCENES: &[Scene] = &[
         build: inspector_speed,
     },
     Scene {
+        name: "inspector-speed-curve",
+        reference_dark: Some("capcut-desktop-2026-11-14/capcut-desktop-100104.png"),
+        reference_light: None,
+        build: inspector_speed_curve,
+    },
+    Scene {
         name: "inspector-audio",
         reference_dark: Some("capcut/illustrations/capcut-desktop-ui.png"),
         reference_light: Some("capcut/illustrations/capcut-desktop-ui.png"),
@@ -850,8 +856,9 @@ pub(crate) use properties::inspector_mixed_vi;
 use properties::{
     close_prompt, close_prompt_vi, import_complete_vi, inspector_audio, inspector_audio_vi,
     inspector_blend, inspector_blend_vi, inspector_color, inspector_mixed, inspector_project,
-    inspector_project_vi, inspector_speed, inspector_text, inspector_transform, inspector_video,
-    inspector_video_keyframes, inspector_video_tab, text_item, text_item_vi,
+    inspector_project_vi, inspector_speed, inspector_speed_curve, inspector_text,
+    inspector_transform, inspector_video, inspector_video_keyframes, inspector_video_tab,
+    text_item, text_item_vi,
 };
 use shorts::shorts_scene;
 use timeline::{

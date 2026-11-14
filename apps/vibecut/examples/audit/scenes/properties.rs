@@ -48,6 +48,26 @@ pub(super) fn inspector_speed(theme: Theme, scale: f32) -> Result<AppHarness, Fa
     Ok(app)
 }
 
+/// The Speed tab's Curve view with the Montage shape applied, beside capture 100104.
+pub(super) fn inspector_speed_curve(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let (mut editor, item) = media_editor(theme, Locale::En)?;
+    editor.select([item].into_iter().collect())?;
+    editor.session.apply(Command::ApplySpeedPreset {
+        items: vec![item],
+        preset: project::SpeedPreset::Montage,
+        maintain_pitch: true,
+    })?;
+    editor
+        .preferences
+        .set("properties_tabs", serde_json::json!({"video":"speed"}))?;
+    let mut app = app_editor(editor, scale);
+    wait_for_presented(&mut app)?;
+    app.run_steps(3);
+    widget_rect(&app, "inspector.speed.plot")?;
+    widget_rect(&app, "inspector.speed.preset.montage")?;
+    Ok(app)
+}
+
 pub(super) fn inspector_audio_locale(
     theme: Theme,
     scale: f32,

@@ -90,11 +90,11 @@ pub(in crate::editor) enum Action {
         item: ItemId,
         enabled: bool,
     },
-    /// The Speed tab's curve editor: the whole curve as `(span in thousandths, speed)`
-    /// stretches, through `timeline.set_speed_curve`.
+    /// The Speed tab's curve editor: the whole shape as `(position in thousandths of the
+    /// output, speed)` points, through `timeline.set_speed_curve`.
     SetSpeedCurve {
         item: ItemId,
-        segments: Vec<(u16, f64)>,
+        points: Vec<(u16, f64)>,
         maintain_pitch: bool,
     },
     /// A speed ramp preset, through `timeline.apply_speed_preset`.
