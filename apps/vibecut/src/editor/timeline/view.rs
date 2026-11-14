@@ -16,6 +16,8 @@ use crate::editor::timeline::{
 };
 
 pub(super) use clips::item_label;
+#[cfg(test)]
+pub(super) use clips::missing_rows;
 pub(in crate::editor) use scenes::show_scenes;
 pub(in crate::editor) use toolbar::TOOLBAR_ACTIONS;
 pub(in crate::editor) use tracks::add_track_command;

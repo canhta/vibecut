@@ -405,7 +405,8 @@ Show all presets, Show variable speed animation (Opt K), a separator, Copy and D
 adopted order is Ease in, Ease out, Easing, Linear (checked while the segment leaving the key is
 straight), Show all presets, Copy, Delete; Show variable speed animation is the `Alt+K` lane
 toggle (`timeline.keyframe_lanes`) instead of a menu row, and Paste stays on the lane menu. The
-first diamond draws the first-use hint the reference shows in 103405 once, until its OK.
+first diamond draws the first-use hint the reference shows in 103405 once, until its OK; it sits on
+that diamond's row and passes clicks through to the lanes below, only OK takes them.
 Behaviour: [timeline](../../../apps/vibecut/src/editor/timeline/README.md). The lane menu's
 Copy/Paste composition has no captured reference; its parity remains unverified.
 

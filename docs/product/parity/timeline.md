@@ -120,7 +120,7 @@ Snapshot of main `66512fec` on 2026-11-14. Legend, evidence names and update rul
 | TL-91 | Audio clip: link, open location | Done | Proposed | 14b/103343 | |
 | TL-92 | Media tile menu | Partial | Not captured | 14b/103259 | See MEDIA |
 | TL-93 | Player right-click | Differs | Not captured | 14b/103250 | Reference has none |
-| TL-94 | Missing-media clip | Done | Proposed | 14/095554 | |
+| TL-94 | Missing-media clip | Done | Proposed | 14/095554 | Name sits in a top band and the two lines centre beneath; below 43 px the name yields, below 26 px the lines yield |
 
 ## Keyframes (KEY)
 
@@ -129,7 +129,7 @@ Snapshot of main `66512fec` on 2026-11-14. Legend, evidence names and update rul
 | KEY-01 | Diamond per property | Done | Matches | 14b/103405 | |
 | KEY-02 | Prev / next key arrows | Done | Matches | 14b/103419 | |
 | KEY-03 | Typing a value adds a key | Done | Not captured | 14b/103419 | |
-| KEY-04 | First-use key hint | Done | Differs | 14b/103405 | One-line hint under the first lane diamond |
+| KEY-04 | First-use key hint | Done | Differs | 14b/103405 | One-line hint on the first diamond's row; the card passes clicks through, only OK takes them |
 | KEY-05 | Interpolated value | Done | — | 14b/103429 | |
 | KEY-06 | Diamonds on timeline clip | Partial | Proposed | 14b/103419 | |
 | KEY-07 | Key menu: Ease in / out / Easing | Done | Proposed | 14b/103437 | |

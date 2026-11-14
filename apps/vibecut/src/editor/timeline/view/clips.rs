@@ -136,15 +136,17 @@ impl State {
             egui::Stroke::new(1.0, border),
             egui::StrokeKind::Inside,
         );
-        if !label.is_empty() {
-            // A missing video clip names its file in the top band, as the reference does.
-            let band_label =
-                missing_asset.is_some() && item.kind == TrackKind::Video && item.overlay.is_none();
-            let label_y = if band_label {
-                inner.top() + theme::size::CLIP_BAND / 2.0
-            } else {
-                visible.center().y
-            };
+        // A missing clip lays its name and the two relink lines out together so they never
+        // overlap; every other clip centres its name.
+        let rows = missing_asset.is_some().then(|| {
+            let band_label = item.kind == TrackKind::Video && item.overlay.is_none();
+            missing_rows(inner, inner.intersect(visible), band_label)
+        });
+        let label_y = match rows {
+            Some(rows) => rows.name,
+            None => Some(visible.center().y),
+        };
+        if let (false, Some(label_y)) = (label.is_empty(), label_y) {
             painter.text(
                 egui::pos2(visible.left() + 22.0, label_y),
                 Align2::LEFT_CENTER,
@@ -1109,19 +1111,20 @@ impl State {
             _ => vec![("missing", inner)],
         };
         let shown = inner.intersect(painter.clip_rect());
-        if shown.width() > 40.0 && shown.height() > 24.0 {
+        let band_label = item.kind == TrackKind::Video && item.overlay.is_none();
+        if let Some(centre) = missing_rows(inner, shown, band_label).lines {
             let ink = theme::on_missing(dark);
             let font = FontId::proportional(theme::type_size::BODY);
-            let line = theme::type_size::BODY + 1.0;
+            let line = MISSING_LINE;
             painter.text(
-                egui::pos2(shown.center().x, shown.center().y - line / 2.0),
+                egui::pos2(shown.center().x, centre - line / 2.0),
                 Align2::CENTER_CENTER,
                 tr(cx, Text::MissingClipTitle),
                 font.clone(),
                 ink,
             );
             painter.text(
-                egui::pos2(shown.center().x, shown.center().y + line / 2.0),
+                egui::pos2(shown.center().x, centre + line / 2.0),
                 Align2::CENTER_CENTER,
                 tr(cx, Text::MissingClipHint),
                 font,
@@ -1485,5 +1488,55 @@ mod tests {
     fn waveform_size_widens_the_bars() {
         assert!(audio_reach(30) < audio_reach(60) && audio_reach(60) < audio_reach(100));
         assert_eq!(audio_reach(100), 1.0);
+    }
+}
+
+/// Height of one of the two relink lines.
+const MISSING_LINE: f32 = theme::type_size::BODY + 1.0;
+
+/// Vertical centres, in screen y, of a missing clip's name and its two-line relink block.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(in crate::editor::timeline) struct MissingRows {
+    pub(in crate::editor::timeline) name: Option<f32>,
+    pub(in crate::editor::timeline) lines: Option<f32>,
+}
+
+/// Lays the name and the two relink lines out without overlap at every clip height.
+/// A video clip names its file in the top band. Any other clip puts the name in a top
+/// band and centres the lines under it when both fit; when they do not fit, the name
+/// yields to the lines, and below the lines' own minimum the name alone is centred.
+pub(in crate::editor::timeline) fn missing_rows(
+    inner: Rect,
+    shown: Rect,
+    band_label: bool,
+) -> MissingRows {
+    let lines_fit = shown.width() > 40.0 && shown.height() >= 2.0 * MISSING_LINE;
+    let band_y = inner.top() + theme::size::CLIP_BAND / 2.0;
+    if band_label {
+        return MissingRows {
+            name: Some(band_y),
+            lines: lines_fit.then(|| shown.center().y),
+        };
+    }
+    if !lines_fit {
+        return MissingRows {
+            name: Some(shown.center().y),
+            lines: None,
+        };
+    }
+    let below = Rect::from_min_max(
+        egui::pos2(shown.left(), shown.top() + theme::size::CLIP_BAND),
+        shown.right_bottom(),
+    );
+    if below.height() >= 2.0 * MISSING_LINE {
+        MissingRows {
+            name: Some(band_y),
+            lines: Some(below.center().y),
+        }
+    } else {
+        MissingRows {
+            name: None,
+            lines: Some(shown.center().y),
+        }
     }
 }
