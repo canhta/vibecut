@@ -331,6 +331,24 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
             bench.editor().preferences.export.format,
             ExportFormat::AudioWebm
         );
+        // WAV and FLAC have built-in encoders, so they are always listed; MP3 follows
+        // the registry.
+        for (format, id) in [
+            (ExportFormat::Wav, "export.audio.format.wav"),
+            (ExportFormat::Flac, "export.audio.format.flac"),
+        ] {
+            bench.click("export.audio.format");
+            bench.click(id);
+            assert_eq!(bench.editor().preferences.export.format, format);
+        }
+        if media::audio_export_container_available(media::Container::Mp3) {
+            bench.click("export.audio.format");
+            bench.click("export.audio.format.mp3");
+            assert_eq!(
+                bench.editor().preferences.export.format,
+                ExportFormat::Mp3
+            );
+        }
         bench.click("export.audio.format");
         bench.click("export.audio.format.m4a");
         assert_eq!(bench.editor().preferences.export.format, ExportFormat::M4a);
@@ -1752,4 +1770,46 @@ fn ticked_captions_write_their_file_beside_the_media_without_opening_the_panel()
         .unwrap_or_default();
     assert!(toast.contains("out.mp4"), "{toast}");
     assert!(!toast.contains("Done"), "{toast}");
+}
+
+#[test]
+fn audio_formats_list_in_the_reference_order_and_map_to_their_containers() {
+    let listed: Vec<_> = super::settings::AUDIO_FORMATS
+        .iter()
+        .map(|(format, _)| *format)
+        .collect();
+    // The reference's order is MP3, WAV, AAC, FLAC; Opus is ours, after them.
+    assert_eq!(
+        listed,
+        [
+            ExportFormat::Mp3,
+            ExportFormat::Wav,
+            ExportFormat::M4a,
+            ExportFormat::Flac,
+            ExportFormat::AudioWebm,
+        ]
+    );
+    for (format, extension, container) in [
+        (ExportFormat::Mp3, "mp3", media::Container::Mp3),
+        (ExportFormat::Wav, "wav", media::Container::Wav),
+        (ExportFormat::Flac, "flac", media::Container::Flac),
+    ] {
+        assert_eq!(format.extension(), extension);
+        assert!(format.audio_only());
+        assert!(!format.is_sequence() && !format.is_gif());
+        assert!(format.unused_encoder_reason().is_some());
+        assert_eq!(media::Container::from_extension(extension), Some(container));
+        assert_eq!(
+            serde_json::to_string(&format).unwrap(),
+            format!("\"{extension}\"")
+        );
+        let built = project(false, false);
+        let settings = ExportOptions {
+            format,
+            ..Default::default()
+        }
+        .settings(&built);
+        assert_eq!(settings.container, container);
+        assert!(settings.audio_only);
+    }
 }

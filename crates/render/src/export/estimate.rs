@@ -40,9 +40,22 @@ impl ExportSettings {
         }
     }
 
+    /// The audio track's bit rate in bits per second at `sample_rate`. WAV is exact
+    /// (16-bit PCM). FLAC is lossless and its size depends on the signal, so it is
+    /// estimated at its PCM size, an upper bound. The lossy codecs follow the target
+    /// the encoder receives.
+    pub fn estimated_audio_bit_rate(&self, sample_rate: u32) -> f64 {
+        match self.container {
+            Container::Wav | Container::Flac => {
+                f64::from(sample_rate) * f64::from(self.channels) * 16.0
+            }
+            _ => AUDIO_BIT_RATE as f64,
+        }
+    }
+
     /// Expected output bytes for `seconds` of output: video (none for audio-only output)
-    /// plus the audio track when it is included.
-    pub fn estimated_bytes(&self, seconds: f64) -> f64 {
+    /// plus the audio track when it is included, at the project's `sample_rate`.
+    pub fn estimated_bytes(&self, seconds: f64, sample_rate: u32) -> f64 {
         // Reconcile point with the per-encoder-mode estimate (518): GIF has its own model in
         // `gif.rs`, so it stays a branch on the container, ahead of any video-mode split.
         if self.container == media::Container::Gif {
@@ -54,7 +67,7 @@ impl ExportSettings {
             self.estimated_video_bit_rate()
         };
         let audio = if self.include_audio || self.audio_only {
-            AUDIO_BIT_RATE as f64
+            self.estimated_audio_bit_rate(sample_rate)
         } else {
             0.0
         };

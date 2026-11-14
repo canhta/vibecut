@@ -240,7 +240,8 @@ impl OutputOptions {
         Ok(TimeRange::new(start, end)?)
     }
     /// Container an output path selects. Audio-only admits `m4a` (AAC in MP4) plus
-    /// `mp4` and `webm`; video admits `mp4`, `mov` and `webm`. MOV is video-only.
+    /// `mp4`, `webm`, `mp3`, `wav` and `flac`; video admits `mp4`, `mov`, `webm` and
+    /// `gif`. MOV and GIF are video-only, and MP3, WAV and FLAC are audio-only.
     pub fn container_for_path(
         path: &std::path::Path,
         audio_only: bool,
@@ -256,6 +257,9 @@ impl OutputOptions {
         };
         if audio_only && matches!(container, media::Container::Mov | media::Container::Gif) {
             return Err(Error::Unsupported("audio-only container"));
+        }
+        if !audio_only && container.is_audio_only() {
+            return Err(Error::Unsupported("audio container for video export"));
         }
         Ok(container)
     }
@@ -328,6 +332,8 @@ impl OutputOptions {
                 return Err(Error::Unsupported("audio-only container"));
             }
             settings.audio_only = true;
+        } else if settings.container.is_audio_only() && !settings.audio_only {
+            return Err(Error::Unsupported("audio container for video export"));
         }
         if settings.container == media::Container::Gif {
             if self.bit_rate.is_some() {

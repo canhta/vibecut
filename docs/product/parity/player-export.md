@@ -51,7 +51,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | EXP-14 | Optical flow | Missing | — | 14b/105340 | |
 | EXP-15 | Color space row | Missing | Not captured | 14b/105340 | |
 | EXP-16 | Sync to space | Out of scope | — | 14b/105348 | Cloud sync |
-| EXP-17 | Audio formats | Partial | Differs | 14b/105528 | No MP3, WAV, FLAC |
+| EXP-17 | Audio formats | Done | Proposed | 14b/105528 | MP3, WAV, AAC, FLAC in the reference order; Opus is ours, last |
 | EXP-18 | Audio-only export | Done | Proposed | 14b/105736 | |
 | EXP-19 | GIF section | Done | Proposed | 14b/105532 | Ticks beside Video and Audio |
 | EXP-20 | GIF resolution list | Done | Proposed | 14b/105549 | |

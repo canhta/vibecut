@@ -1,8 +1,8 @@
-//! Platform FFmpeg, zlib, opus, libvpx and x264 configure and build recipes.
+//! Platform FFmpeg, zlib, opus, libvpx, LAME and x264 configure and build recipes.
 use super::{
     archives::sha256,
     command::{capture, run},
-    fetch::{X264_URL, X264_VERSION, source, zlib_source},
+    fetch::{LAME_URL, LAME_VERSION, X264_URL, X264_VERSION, source, zlib_source},
 };
 use sha2::{Digest, Sha256};
 use std::{
@@ -34,6 +34,10 @@ pub(super) fn ffmpeg_configure_flags(
         "--disable-ffplay".into(),
         "--enable-libvpx".into(),
         "--enable-libopus".into(),
+        // LAME is static and ships no pkg-config file; point configure at its prefix.
+        "--enable-libmp3lame".into(),
+        format!("--extra-cflags=-I{}", shell_path(&prefix.join("include"))?),
+        format!("--extra-ldflags=-L{}", shell_path(&prefix.join("lib"))?),
         // Static zlib is built from verified source; --disable-autodetect keeps
         // this the only compression library the recipe links.
         "--enable-zlib".into(),
@@ -159,7 +163,7 @@ pub(super) fn build_source(
     let patches = patches()?;
     let patch_id = patch_id(&patches)?;
     let prefix = base.join(format!(
-        "{version}-opus{opus}-vpx{vpx}-zlib{zlib}-{patch_id}"
+        "{version}-opus{opus}-vpx{vpx}-zlib{zlib}-lame{LAME_VERSION}-{patch_id}"
     ));
     if prefix.join("BUILD.txt").exists() {
         record_patches(&prefix, &patches)?;
@@ -225,6 +229,7 @@ pub(super) fn build_source(
         &format!("https://github.com/webmproject/libvpx/archive/refs/tags/v{vpx}.tar.gz"),
         &mut receipt,
     )?;
+    let lm = source(&sources, "lame", LAME_VERSION, LAME_URL, &mut receipt)?;
     // Linux carries a software H.264 encoder; the GPL build admits libx264.
     let x264 = if cfg!(target_os = "linux") {
         Some(source(
@@ -309,6 +314,39 @@ pub(super) fn build_source(
         .args(["-j3"]))?;
     run(Command::new(build_tool("make")?)
         .current_dir(&vpbuild)
+        .arg("install"))?;
+    let lamebuild = lm.join(target);
+    fs::create_dir_all(&lamebuild).map_err(|e| e.to_string())?;
+    let mut lame = Command::new(build_tool("bash")?);
+    lame.arg(shell_path(&lm.join("configure"))?)
+        .current_dir(&lamebuild)
+        .args([
+            format!("--prefix={}", shell_path(&prefix)?),
+            "--enable-static".into(),
+            "--disable-shared".into(),
+            "--with-pic".into(),
+            // The library only: no command-line frontend, and no mpglib decoder (GPL).
+            "--disable-frontend".into(),
+            "--disable-decoder".into(),
+            "--disable-gtktest".into(),
+        ])
+        .env("CC", "clang");
+    if cfg!(target_os = "macos") {
+        let host = if arch == "arm64" {
+            "aarch64-apple-darwin"
+        } else {
+            "x86_64-apple-darwin"
+        };
+        lame.args([format!("--build={host}"), format!("--host={host}")])
+            .env("CFLAGS", format!("-O2 -arch {arch} -mmacosx-version-min=11.0"))
+            .env("LDFLAGS", format!("-arch {arch}"));
+    }
+    run(&mut lame)?;
+    run(Command::new(build_tool("make")?)
+        .current_dir(&lamebuild)
+        .arg("-j3"))?;
+    run(Command::new(build_tool("make")?)
+        .current_dir(&lamebuild)
         .arg("install"))?;
     if let Some(x264) = &x264 {
         let build = x264.join(target);
@@ -395,6 +433,7 @@ pub(super) fn build_source(
         (&ff, "LICENSE.md"),
         (&op, "COPYING"),
         (&vp, "LICENSE"),
+        (&lm, "COPYING"),
         (&zl, "LICENSE"),
     ]
     .into_iter()
@@ -411,7 +450,7 @@ pub(super) fn build_source(
     }
     record_patches(&prefix, &patches)?;
     receipt.push_str(&format!(
-        "zlib flags: static, PIC, architecture {arch}\nopus flags: static PIC, DNN off, architecture {arch}\nlibvpx flags: {vpflags:?}\nFFmpeg configure: {flags:?}\n"
+        "zlib flags: static, PIC, architecture {arch}\nopus flags: static PIC, DNN off, architecture {arch}\nlame flags: static PIC, encoder only (no frontend, no mpglib decoder), architecture {arch}\nlibvpx flags: {vpflags:?}\nFFmpeg configure: {flags:?}\n"
     ));
     fs::write(prefix.join("BUILD.txt"), receipt).map_err(|e| e.to_string())?;
     fs::write(base.join("current"), prefix.as_os_str().as_encoded_bytes())

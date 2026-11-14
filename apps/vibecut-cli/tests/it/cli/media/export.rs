@@ -862,3 +862,85 @@ fn export_applies_an_adjustment_layer_blur_to_what_is_below_it() {
         "outside the square: sharp {sharp}, blurred {blurred}"
     );
 }
+
+/// One export row per audio-only format, each probed back for codec, sample rate and
+/// duration; a video export to the same extension is refused before anything is written.
+#[test]
+fn audio_only_export_writes_mp3_wav_and_flac_with_probe() {
+    if !tools() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("audio-formats.vibecut");
+    overlay_project(&path, 64, 64, Tick(time::TICKS_PER_SECOND));
+    let before = fs::read(&path).unwrap();
+    let audio = serde_json::to_string(&render::OutputOptions {
+        audio_only: true,
+        ..Default::default()
+    })
+    .unwrap();
+    for (container, extension, codec) in [
+        (media::Container::Mp3, "mp3", "mp3"),
+        (media::Container::Wav, "wav", "pcm_s16le"),
+        (media::Container::Flac, "flac", "flac"),
+    ] {
+        let destination = dir.path().join(format!("audio.{extension}"));
+        let refused = cli(&[
+            os("export"),
+            path.as_os_str(),
+            os("--out"),
+            destination.as_os_str(),
+        ]);
+        assert_ne!(code(&refused), 0, "{extension} without audio_only");
+        assert!(!destination.exists());
+        if !media::audio_export_container_available(container) {
+            // A build without the encoder refuses with a typed error and writes nothing.
+            let output = cli(&[
+                os("export"),
+                path.as_os_str(),
+                os("--out"),
+                destination.as_os_str(),
+                os("--settings"),
+                os(&audio),
+            ]);
+            assert_ne!(code(&output), 0);
+            assert!(!destination.exists());
+            continue;
+        }
+        let output = cli(&[
+            os("export"),
+            path.as_os_str(),
+            os("--out"),
+            destination.as_os_str(),
+            os("--settings"),
+            os(&audio),
+            os("--json"),
+        ]);
+        assert_eq!(
+            code(&output),
+            0,
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(stdout_json(&output)["status"], "completed");
+        let probe = tool_command("ffprobe")
+            .args(["-v", "error", "-show_streams", "-show_format", "-of", "json"])
+            .arg(&destination)
+            .output()
+            .unwrap();
+        assert!(probe.status.success());
+        let value: Value = serde_json::from_slice(&probe.stdout).unwrap();
+        let streams = value["streams"].as_array().unwrap();
+        assert_eq!(streams.len(), 1, "{extension}");
+        assert_eq!(streams[0]["codec_type"], "audio");
+        assert_eq!(streams[0]["codec_name"], codec);
+        assert_eq!(streams[0]["sample_rate"], "48000");
+        // One second, to within one MP3 frame of padding (1152 samples at 48 kHz).
+        let duration: f64 = value["format"]["duration"].as_str().unwrap().parse().unwrap();
+        assert!(
+            (duration - 1.0).abs() <= 2.0 * 1152.0 / 48_000.0,
+            "{extension} duration {duration}"
+        );
+    }
+    assert_eq!(fs::read(&path).unwrap(), before);
+}

@@ -1174,7 +1174,13 @@ fn copy_publishes_only_the_streams_selected_by_decode() {
     for (container, extension) in [
         (media::Container::Mp4, "m4a"),
         (media::Container::WebM, "webm"),
+        (media::Container::Mp3, "mp3"),
+        (media::Container::Wav, "wav"),
+        (media::Container::Flac, "flac"),
     ] {
+        if !media::audio_export_container_available(container) {
+            continue;
+        }
         settings.container = container;
         let output = root().join(format!("audio-only-mastered.{extension}"));
         let h = Hooks::default();

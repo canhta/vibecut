@@ -356,6 +356,7 @@ fn ffmpeg_recipe_keeps_disable_autodetect_and_platform_licence_admission() {
             "--disable-autodetect",
             "--disable-nonfree",
             "--enable-zlib",
+            "--enable-libmp3lame",
             "--disable-gpl",
         ] {
             assert!(
@@ -381,7 +382,7 @@ fn zlib_version_participates_in_the_media_cache_key() {
     let current = cache_key_for("9.0.2", "1.6.1", "1.17.0", "1.4");
     assert_eq!(
         current,
-        "ffmpeg9.0.2-opus1.6.1-vpx1.17.0-zlib1.4-x26420191217-2245"
+        "ffmpeg9.0.2-opus1.6.1-vpx1.17.0-zlib1.4-x26420191217-2245-lame3.100"
     );
     assert_ne!(current, cache_key_for("9.0.2", "1.6.1", "1.17.0", "1.5"));
 }
@@ -435,7 +436,7 @@ fn zlib_checksum_mismatch_leaves_no_provisioned_prefix() {
     let patch_id = patch_id(&patches().unwrap()).unwrap();
     let prefix = base
         .path()
-        .join(format!("1.4-opus1.0-vpx1.0-zlib1.4-{patch_id}"));
+        .join(format!("1.4-opus1.0-vpx1.0-zlib1.4-lame3.100-{patch_id}"));
     let error = build_source(base.path(), "linux-aarch64", "1.4", "1.0", "1.0", "1.4").unwrap_err();
     assert!(
         error.contains("zlib 1.4 source checksum mismatch"),

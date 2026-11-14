@@ -566,7 +566,7 @@ fn webm_vp9_scaling_has_bt709_tags_and_complete_frames() {
     frames.extend(decoder.flush().unwrap());
     let mut settings =
         VideoEncoderSettings::h264(64, 48, stream.frame_rate.unwrap(), frames[0].color());
-    settings.webm = true;
+    settings.codec = media::AudioCodec::Opus;
     let mut encoder = VideoEncoder::new(settings, &frames[0]).unwrap();
     let path = testkit::fixture::dir("media").join("ffmpeg_scaled.webm");
     let mut mux = Muxer::create(&path, Container::WebM).unwrap();
@@ -613,7 +613,7 @@ fn opus_reframes_aac_without_changing_duration() {
         .clone();
     let mut decoder = AudioDecoder::new(&stream).unwrap();
     let mut settings = media::AudioEncoderSettings::aac(48_000, 2);
-    settings.webm = true;
+    settings.codec = media::AudioCodec::Opus;
     let mut encoder = media::AudioEncoder::new(settings).unwrap();
     let output = testkit::fixture::dir("media").join("ffmpeg_opus.webm");
     let mut mux = Muxer::create(&output, Container::WebM).unwrap();
@@ -1305,4 +1305,93 @@ fn proxy_refuses_an_output_past_the_byte_limit_and_cancellation() {
         max_bytes: 8 << 20,
     };
     assert!(media::write_proxy(&path, &output, limits, cancelled, |_| {}).is_err());
+}
+
+/// Encodes one second and a half of a 440 Hz tone into an audio-only container
+/// and probes it back: codec, sample rate, channels and duration.
+#[test]
+fn audio_only_containers_encode_and_probe_as_their_codec() {
+    const RATE: u32 = 48_000;
+    const TOTAL: usize = 72_000;
+    // MP3 carries up to one frame of encoder padding (1152 samples) beyond the input
+    // and a decoder delay; the lossless containers hold the sample count exactly.
+    const MP3_TOLERANCE: f64 = 2.0 * 1152.0 / RATE as f64;
+    for (container, extension, codec, channels, tolerance) in [
+        (Container::Mp3, "mp3", "mp3", 2u16, MP3_TOLERANCE),
+        (Container::Wav, "wav", "pcm_s16le", 2, 1.0 / RATE as f64),
+        (Container::Flac, "flac", "flac", 2, 1.0 / RATE as f64),
+        (Container::Wav, "wav", "pcm_s16le", 1, 1.0 / RATE as f64),
+    ] {
+        if !media::audio_export_container_available(container) {
+            continue;
+        }
+        let mut settings = media::AudioEncoderSettings::aac(RATE, channels);
+        settings.codec = media::AudioCodec::for_container(container).unwrap();
+        settings.bit_rate = 192_000;
+        let mut encoder = media::AudioEncoder::new(settings).unwrap();
+        let directory = testkit::fixture::dir("media");
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join(format!("audio-only-{channels}.{extension}"));
+        let mut mux = Muxer::create(&path, container).unwrap();
+        let track = mux
+            .add_parameters(&encoder.parameters(), encoder.time_base())
+            .unwrap();
+        let mut written = 0;
+        while written < TOTAL {
+            let count = 4800.min(TOTAL - written);
+            let plane: Vec<f32> = (written..written + count)
+                .map(|n| 0.25 * (std::f32::consts::TAU * 440.0 * n as f32 / RATE as f32).sin())
+                .collect();
+            let planes = vec![plane; usize::from(channels)];
+            let frame = media::AudioFrame::from_planar_f32(
+                Tick::from_units(written as i64, i64::from(RATE), time::Rounding::Nearest)
+                    .unwrap(),
+                RATE,
+                &planes,
+            )
+            .unwrap();
+            for packet in encoder.encode(&frame).unwrap() {
+                mux.write_packet(track, &packet).unwrap();
+            }
+            written += count;
+        }
+        for packet in encoder.flush().unwrap() {
+            mux.write_packet(track, &packet).unwrap();
+        }
+        mux.finish().unwrap();
+        assert!(media::PacketReader::open(&path).is_ok());
+        if testkit::oracle::require("audio-only containers") {
+            assert_eq!(
+                testkit::oracle::stream_field(&path, "a:0", "codec_name"),
+                codec
+            );
+            assert_eq!(
+                testkit::oracle::stream_field(&path, "a:0", "sample_rate"),
+                RATE.to_string()
+            );
+            assert_eq!(
+                testkit::oracle::stream_field(&path, "a:0", "channels"),
+                channels.to_string()
+            );
+            testkit::oracle::approx(
+                testkit::oracle::duration(&path),
+                TOTAL as f64 / f64::from(RATE),
+                tolerance,
+                extension,
+            );
+            assert!(testkit::oracle::decodes(&path));
+        }
+    }
+    assert!(matches!(
+        Container::from_extension("MP3"),
+        Some(Container::Mp3)
+    ));
+    assert!(matches!(
+        Container::from_extension("wav"),
+        Some(Container::Wav)
+    ));
+    assert!(matches!(
+        Container::from_extension("Flac"),
+        Some(Container::Flac)
+    ));
 }

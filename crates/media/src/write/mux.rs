@@ -1,4 +1,4 @@
-//! Writes MP4, MOV and WebM containers over a seekable sink.
+//! Writes MP4, MOV, WebM, GIF and audio-only MP3, WAV and FLAC containers over a seekable sink.
 
 use crate::{CodecParameters, MediaError, Packet, Result, StreamInfo, TimeBase, error, init};
 use ffmpeg_next as ff;
@@ -13,13 +13,31 @@ pub enum Container {
     WebM,
     /// Silent animated GIF; carries palette-indexed video only.
     Gif,
+    /// Audio-only MP3 (MPEG-1/2 Layer III); carries one audio stream.
+    Mp3,
+    /// Audio-only RIFF WAVE with 16-bit PCM; carries one audio stream.
+    Wav,
+    /// Audio-only native FLAC; carries one audio stream.
+    Flac,
 }
 impl Container {
-    /// Resolve the admitted video containers from an ASCII extension.
+    /// Resolve an admitted container from an ASCII extension.
     pub fn from_extension(extension: &str) -> Option<Self> {
-        [Self::Mp4, Self::Mov, Self::WebM, Self::Gif]
-            .into_iter()
-            .find(|container| container.name().eq_ignore_ascii_case(extension))
+        [
+            Self::Mp4,
+            Self::Mov,
+            Self::WebM,
+            Self::Gif,
+            Self::Mp3,
+            Self::Wav,
+            Self::Flac,
+        ]
+        .into_iter()
+        .find(|container| container.name().eq_ignore_ascii_case(extension))
+    }
+    /// True for the containers that carry no video stream by definition.
+    pub fn is_audio_only(self) -> bool {
+        matches!(self, Self::Mp3 | Self::Wav | Self::Flac)
     }
     fn name(self) -> &'static str {
         match self {
@@ -27,6 +45,9 @@ impl Container {
             Self::Mov => "mov",
             Self::WebM => "webm",
             Self::Gif => "gif",
+            Self::Mp3 => "mp3",
+            Self::Wav => "wav",
+            Self::Flac => "flac",
         }
     }
 }

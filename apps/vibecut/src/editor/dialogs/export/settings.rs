@@ -90,6 +90,15 @@ impl Ticked {
     }
 }
 
+/// The Audio Format list: the reference's order (MP3, WAV, AAC, FLAC) then ours (Opus).
+pub(super) const AUDIO_FORMATS: [(ExportFormat, &str); 5] = [
+    (ExportFormat::Mp3, "export.audio.format.mp3"),
+    (ExportFormat::Wav, "export.audio.format.wav"),
+    (ExportFormat::M4a, "export.audio.format.m4a"),
+    (ExportFormat::Flac, "export.audio.format.flac"),
+    (ExportFormat::AudioWebm, "export.audio.format.opus"),
+];
+
 const GIF_RESOLUTIONS: [(u32, &str, &str); 3] = [
     (240, "240P", "export.gif.resolution.240"),
     (320, "320P", "export.gif.resolution.320"),
@@ -628,12 +637,9 @@ pub(super) fn show(
                     .width(field_width)
                     .selected_text(tr(shown.label()))
                     .show_ui(ui, |ui| {
-                        // AAC is the reference's entry; Opus is ours. MP3, WAV and FLAC need
-                        // encoders the media crate does not have.
-                        for (format, id) in [
-                            (ExportFormat::M4a, "export.audio.format.m4a"),
-                            (ExportFormat::AudioWebm, "export.audio.format.opus"),
-                        ] {
+                        // The reference's order is MP3, WAV, AAC, FLAC; Opus is ours and last.
+                        // An entry whose encoder this FFmpeg build lacks is not listed.
+                        for (format, id) in AUDIO_FORMATS {
                             if !media::audio_export_container_available(format.container()) {
                                 continue;
                             }
@@ -913,7 +919,7 @@ pub(super) fn estimated_megabytes(
     let mut settings = options.settings(project);
     // A refused choice leaves the preset's settings; Export is disabled for it anyway.
     let _ = options.output.apply(&mut settings);
-    settings.estimated_bytes(seconds) / 1_000_000.0
+    settings.estimated_bytes(seconds, project.data().settings.audio_sample_rate) / 1_000_000.0
 }
 
 /// Every file the export writes passes its own admission.

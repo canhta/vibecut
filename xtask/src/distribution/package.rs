@@ -44,7 +44,7 @@ pub(super) fn sources(receipt: &str) -> Result<Vec<Source>> {
         let Some((name, version)) = line.split_once(": ") else {
             continue;
         };
-        if !matches!(name, "ffmpeg" | "opus" | "libvpx" | "zlib") {
+        if !matches!(name, "ffmpeg" | "opus" | "libvpx" | "lame" | "zlib") {
             continue;
         }
         if version.is_empty()
@@ -74,7 +74,7 @@ pub(super) fn sources(receipt: &str) -> Result<Vec<Source>> {
         });
     }
     let names: BTreeSet<_> = result.iter().map(|s| s.name.as_str()).collect();
-    if result.len() != 4 || names != BTreeSet::from(["ffmpeg", "opus", "libvpx", "zlib"]) {
+    if result.len() != 5 || names != BTreeSet::from(["ffmpeg", "opus", "libvpx", "lame", "zlib"]) {
         return Err("missing/duplicate corresponding source identities".into());
     }
     Ok(result)
@@ -96,7 +96,7 @@ pub(super) fn compliance(tools: &Tools, prefix: &Path, destination: &Path) -> Re
     if gpl {
         admitted_names.push("x264");
     }
-    admitted_names.extend(["opus", "libvpx", "zlib"]);
+    admitted_names.extend(["opus", "libvpx", "lame", "zlib"]);
     for admitted in admitted_names {
         let matching: Vec<_> = names
             .iter()
@@ -107,6 +107,7 @@ pub(super) fn compliance(tools: &Tools, prefix: &Path, destination: &Path) -> Re
                     "ffmpeg-license" => name.ends_with("LICENSE.md"),
                     "x264" => name.starts_with("x264-") && name.ends_with("-COPYING"),
                     "opus" => name.starts_with("opus-") && name.ends_with("-COPYING"),
+                    "lame" => name.starts_with("lame-") && name.ends_with("-COPYING"),
                     "zlib" => name.starts_with("zlib-") && name.ends_with("-LICENSE"),
                     _ => name.starts_with("libvpx-") && name.ends_with("-LICENSE"),
                 }
@@ -209,9 +210,9 @@ pub(super) fn compliance(tools: &Tools, prefix: &Path, destination: &Path) -> Re
         destination,
     )?;
     let licence = if gpl {
-        "GPL-3.0 FFmpeg with libx264, Opus, libvpx and zlib"
+        "GPL-3.0 FFmpeg with libx264, Opus, libvpx, LAME and zlib"
     } else {
-        "LGPL-2.1-or-later FFmpeg with Opus, libvpx and zlib"
+        "LGPL-2.1-or-later FFmpeg with Opus, libvpx, LAME and zlib"
     };
     fs::write(destination.join("NOTICE.txt"),format!("VibeCut dynamically links {licence}. Corresponding source archives, verified build receipts, backports, recipe and license texts accompany this distribution. Reverse engineering to debug modified libraries is permitted. See README.md for rebuilding and replacement. No model weights are included.\n")).map_err(|e|e.to_string())?;
     copy(
@@ -292,12 +293,13 @@ mod tests {
             "ffmpeg-LICENSE.md",
             "opus-1.0-COPYING",
             "libvpx-1.0-LICENSE",
+            "lame-1.0-COPYING",
             "zlib-1.0-LICENSE",
         ] {
             fs::write(prefix.join("compliance").join(name), b"license fixture").expect("license");
         }
         let mut receipt = "--disable-gpl --disable-nonfree --disable-autodetect\n".to_owned();
-        for name in ["ffmpeg", "opus", "libvpx", "zlib"] {
+        for name in ["ffmpeg", "opus", "libvpx", "lame", "zlib"] {
             let path = root.join("sources").join(format!("{name}-1.0.archive"));
             fs::write(&path, b"synthetic corresponding source").expect("archive");
             receipt.push_str(&format!(
@@ -355,6 +357,7 @@ mod tests {
                 arg("ffmpeg-1.0.archive"),
                 arg("opus-1.0.archive"),
                 arg("libvpx-1.0.archive"),
+                arg("lame-1.0.archive"),
                 arg("zlib-1.0.archive")
             ])
         );

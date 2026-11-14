@@ -12,6 +12,11 @@ use std::{
 
 pub(super) const X264_VERSION: &str = "20191217-2245";
 pub(super) const X264_URL: &str = "https://download.videolan.org/pub/videolan/x264/snapshots/x264-snapshot-20191217-2245-stable.tar.bz2";
+/// LAME, encoding only (`--disable-decoder` leaves out its GPL mpglib decoder). The release
+/// is pinned: LAME has had no release since 2017 and tags no `v` series to resolve.
+pub(super) const LAME_VERSION: &str = "3.100";
+pub(super) const LAME_URL: &str =
+    "https://downloads.sourceforge.net/project/lame/lame/3.100/lame-3.100.tar.gz";
 pub(super) const ZLIB_REPOSITORY: &str = "https://github.com/madler/zlib.git";
 pub(super) fn stable_tag(repository: &str, prefix: &str) -> Result<String, String> {
     let text = capture(Command::new("git").args(["ls-remote", "--tags", "--refs", repository]))?;
@@ -36,7 +41,7 @@ pub(super) fn stable_tag(repository: &str, prefix: &str) -> Result<String, Strin
 }
 
 pub(super) fn cache_key_for(ffmpeg: &str, opus: &str, vpx: &str, zlib: &str) -> String {
-    format!("ffmpeg{ffmpeg}-opus{opus}-vpx{vpx}-zlib{zlib}-x264{X264_VERSION}")
+    format!("ffmpeg{ffmpeg}-opus{opus}-vpx{vpx}-zlib{zlib}-x264{X264_VERSION}-lame{LAME_VERSION}")
 }
 
 /// Resolve the versions used by provisioning before restoring its hosted cache.
