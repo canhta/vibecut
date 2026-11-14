@@ -25,7 +25,9 @@ pub use aggregate::{
     TIMELINE_MAX, TIMELINE_MIN, column_widths, drag_panel, validate_panels,
 };
 pub use easing::{EasingPreferences, EasingTab, MAX_SAVED_EASINGS, SavedEasing};
-pub use edit::{IMAGE_DURATION_RANGE_MS, LOUDNESS_TARGET_RANGE_LUFS, STEP_RANGE};
+pub use edit::{
+    IMAGE_DURATION_RANGE_MS, ImageDurationUnit, LoudnessPreset, STEP_RANGE, TimeCode,
+};
 pub use favorites::{
     CATALOG_FAMILIES, CatalogFavorites, MAX_CATALOG_FAVORITE_ID_BYTES, MAX_CATALOG_FAVORITES,
     MAX_SOUND_FAVORITE_TITLE_BYTES, MAX_SOUND_FAVORITE_URL_BYTES, MAX_SOUND_FAVORITES,

@@ -8,7 +8,7 @@ use crate::{
 use engine::{Command, CueId, EditError, Session, TranscriptView, WordId};
 use project::ItemId;
 use std::{collections::BTreeSet, sync::Arc};
-use time::{TICKS_PER_SECOND, Tick};
+use time::Tick;
 
 /// Cues per page; the pane pages like the cue list above it.
 const PAGE: usize = 50;
@@ -113,11 +113,8 @@ impl Subtitles {
         };
         let ready = self.edit_ready(session);
         let rate = session.project().data().canvas.fps;
-        let timecode = |tick: Tick| {
-            time::format_timecode(tick, rate).unwrap_or_else(|_| {
-                i18n::decimal(locale, tick.0 as f64 / TICKS_PER_SECOND as f64, 3)
-            })
-        };
+        let code = self.time_code;
+        let timecode = |tick: Tick| code.format(tick, rate);
         let mut cut = false;
         let mut merge = false;
         let mut previous = false;

@@ -20,7 +20,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 /// Bumped when the local preference document changes incompatibly.
-pub const PREFERENCES_VERSION: u32 = 27;
+pub const PREFERENCES_VERSION: u32 = 28;
 /// Room for every provider/feature choice and its bounded recent IDs.
 pub const MAX_PREFERENCES_BYTES: u64 = 32 * 1024;
 /// Total open-lane entries across every project; keeps the document bounded.
@@ -86,7 +86,9 @@ pub const PREFERENCE_KEYS: &[&str] = &[
     "frame_step",
     "value_step",
     "image_duration_ms",
-    "loudness_target_lufs",
+    "image_duration_unit",
+    "loudness_preset",
+    "time_code",
     "audio_scrub",
     "export_sound",
 ];
@@ -245,8 +247,12 @@ pub struct Preferences {
     pub value_step: u32,
     /// Length a still image gets on insert, in ms.
     pub image_duration_ms: u32,
-    /// Whole-LUFS target a new loudness normalization starts at.
-    pub loudness_target_lufs: i32,
+    /// The unit the Image duration field shows.
+    pub image_duration_unit: super::edit::ImageDurationUnit,
+    /// The Target loudness option a new loudness normalization starts at.
+    pub loudness_preset: super::edit::LoudnessPreset,
+    /// How every timecode label writes the frame field.
+    pub time_code: super::edit::TimeCode,
     /// Dragging the playhead plays a short burst of audio.
     pub audio_scrub: bool,
     /// A finished export plays a notification sound.
@@ -297,7 +303,9 @@ impl Default for Preferences {
             frame_step: super::edit::DEFAULT_FRAME_STEP,
             value_step: super::edit::DEFAULT_VALUE_STEP,
             image_duration_ms: super::edit::DEFAULT_IMAGE_DURATION_MS,
-            loudness_target_lufs: super::edit::DEFAULT_LOUDNESS_TARGET_LUFS,
+            image_duration_unit: super::edit::ImageDurationUnit::default(),
+            loudness_preset: super::edit::LoudnessPreset::default(),
+            time_code: super::edit::TimeCode::default(),
             audio_scrub: false,
             export_sound: false,
         }
@@ -366,7 +374,6 @@ impl Preferences {
         super::edit::validate_step(self.frame_step, "frame step")?;
         super::edit::validate_step(self.value_step, "value step")?;
         super::edit::validate_image_duration(self.image_duration_ms)?;
-        super::edit::validate_loudness_target(self.loudness_target_lufs)?;
         self.preview_guide.validate()?;
         self.preview_lines.validate()?;
         if serde_json::to_vec(self)?.len() as u64 > MAX_PREFERENCES_BYTES {
@@ -436,11 +443,11 @@ impl Preferences {
             .try_fold(0usize, usize::checked_add)
             .unwrap_or(usize::MAX)
     }
-    /// The target a new loudness normalization starts at: the stored LUFS with the
-    /// project default's true-peak ceiling.
+    /// The target a new loudness normalization starts at: the chosen preset's LUFS with
+    /// the project default's true-peak ceiling.
     pub fn loudness_target(&self) -> project::LoudnessTarget {
         project::LoudnessTarget {
-            target_lufs: self.loudness_target_lufs as f32,
+            target_lufs: self.loudness_preset.lufs() as f32,
             ..project::LoudnessTarget::DEFAULT
         }
     }
@@ -486,7 +493,9 @@ impl Preferences {
             "frame_step" => Ok(serde_json::json!(self.frame_step)),
             "value_step" => Ok(serde_json::json!(self.value_step)),
             "image_duration_ms" => Ok(serde_json::json!(self.image_duration_ms)),
-            "loudness_target_lufs" => Ok(serde_json::json!(self.loudness_target_lufs)),
+            "image_duration_unit" => Ok(serde_json::to_value(self.image_duration_unit)?),
+            "loudness_preset" => Ok(serde_json::to_value(self.loudness_preset)?),
+            "time_code" => Ok(serde_json::to_value(self.time_code)?),
             "audio_scrub" => Ok(serde_json::Value::Bool(self.audio_scrub)),
             "export_sound" => Ok(serde_json::Value::Bool(self.export_sound)),
             _ => Err(Error::Unsupported("preference key")),
@@ -545,7 +554,9 @@ impl Preferences {
             "frame_step" => self.frame_step = serde_json::from_value(value)?,
             "value_step" => self.value_step = serde_json::from_value(value)?,
             "image_duration_ms" => self.image_duration_ms = serde_json::from_value(value)?,
-            "loudness_target_lufs" => self.loudness_target_lufs = serde_json::from_value(value)?,
+            "image_duration_unit" => self.image_duration_unit = serde_json::from_value(value)?,
+            "loudness_preset" => self.loudness_preset = serde_json::from_value(value)?,
+            "time_code" => self.time_code = serde_json::from_value(value)?,
             "audio_scrub" => self.audio_scrub = serde_json::from_value(value)?,
             "export_sound" => self.export_sound = serde_json::from_value(value)?,
             _ => return Err(Error::Unsupported("preference key")),

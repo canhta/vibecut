@@ -45,7 +45,7 @@ impl Editor {
 
     pub(in crate::editor) fn format_timecode(&self, at: Tick) -> String {
         let rate = self.session.project().data().canvas.fps;
-        crate::editor::panels::player::format_timecode(at, rate)
+        self.preferences.time_code.format(at, rate)
     }
 
     pub(in crate::editor) fn current_timecode(&self) -> String {
@@ -86,7 +86,7 @@ impl Editor {
         };
         let duration = self.session.project().duration();
         let rate = self.session.project().data().canvas.fps;
-        match time::parse_timecode(&edit.text, rate) {
+        match self.preferences.time_code.parse(&edit.text, rate) {
             Ok(at) if at >= Tick::ZERO && at <= duration => {
                 if let Err(error) = self.dispatch(AppCommand::Seek(at)) {
                     self.fail(error.to_string());

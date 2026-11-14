@@ -2,6 +2,7 @@
 use super::{Options, Subtitles, key};
 use crate::editor::panels::assets::CaptionsSection;
 use crate::i18n;
+use crate::preferences::TimeCode;
 use crate::{
     Error, Result, egui,
     i18n::{Locale, Text},
@@ -18,7 +19,7 @@ use engine::transcript::Stage;
 use engine::{Command, Session};
 use project::{ItemId, ItemParams};
 use std::{collections::BTreeSet, path::PathBuf, sync::Arc, time::Duration};
-use time::{TICKS_PER_SECOND, Tick};
+use time::Tick;
 
 /// Target languages the translation and bilingual choices offer.
 const TARGET_LANGUAGES: [&str; 4] = ["vi", "en", "zh-Hans", "zh-Hant"];
@@ -35,6 +36,7 @@ fn output_languages(options: &Options, source: &LanguageTag) -> Result<Vec<Langu
 pub(super) struct Controls {
     models: crate::services::remote_models::AiPreferences,
     locale: Locale,
+    pub(super) time_code: TimeCode,
     widgets: Vec<(String, egui::Response)>,
 }
 impl Controls {
@@ -298,6 +300,7 @@ impl Subtitles {
         let mut controls = Controls {
             models: self.models.clone(),
             locale,
+            time_code: self.time_code,
             widgets: Vec::new(),
         };
         let busy = self.busy();
@@ -635,6 +638,7 @@ impl Subtitles {
         let mut controls = Controls {
             models: self.models.clone(),
             locale,
+            time_code: self.time_code,
             widgets: Vec::new(),
         };
         self.consent_ui(ctx, &mut controls);
@@ -1646,8 +1650,8 @@ impl Subtitles {
             ui.separator();
             let time = format!(
                 "{} – {}",
-                time_text(cue.range.start(), rate, c.locale),
-                time_text(cue.range.end(), rate, c.locale)
+                time_text(cue.range.start(), rate, c.time_code),
+                time_text(cue.range.end(), rate, c.time_code)
             );
             // The chip is as wide as its text; the keyboard hints are its tooltip.
             let r = ui
@@ -2043,9 +2047,8 @@ fn byte_offset(text: &str, chars: usize) -> Option<usize> {
         .nth(chars)
 }
 /// Player timecode (same formatter as the transport).
-pub(super) fn time_text(tick: Tick, rate: time::FrameRate, locale: Locale) -> String {
-    time::format_timecode(tick, rate)
-        .unwrap_or_else(|_| i18n::decimal(locale, tick.0 as f64 / TICKS_PER_SECOND as f64, 3))
+pub(super) fn time_text(tick: Tick, rate: time::FrameRate, code: TimeCode) -> String {
+    code.format(tick, rate)
 }
 fn stage_text(stage: Option<Stage>) -> Text {
     match stage {

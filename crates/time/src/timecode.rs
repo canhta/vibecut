@@ -2,15 +2,45 @@
 
 use crate::{FrameRate, Tick, TimeError};
 
-/// Format the frame containing `time` as `[-]HH:MM:SS:FF` (NDF) or
-/// `[-]HH:MM:SS;FF` (DF). Negative times use signed frame indices, floored
-/// toward negative infinity. Hours extend beyond 23 without wrapping.
+/// How the frame field is separated from the seconds field.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TimecodeStyle {
+    /// `HH:MM:SS:FF`, and `HH:MM:SS;FF` for drop-frame rates.
+    #[default]
+    SecondsPlusFrame,
+    /// `HH:MM:SS:FF` for every rate, drop-frame included.
+    AllColons,
+}
+
+impl TimecodeStyle {
+    fn separator(self, drop: i128) -> char {
+        if drop != 0 && self == Self::SecondsPlusFrame {
+            ';'
+        } else {
+            ':'
+        }
+    }
+}
+
+/// [`format_timecode_styled`] in the default [`TimecodeStyle`].
+pub fn format_timecode(time: Tick, rate: FrameRate) -> Result<String, TimeError> {
+    format_timecode_styled(time, rate, TimecodeStyle::default())
+}
+
+/// Format the frame containing `time` as `[-]HH:MM:SS:FF` (NDF) or, in the
+/// default style, `[-]HH:MM:SS;FF` (DF). Negative times use signed frame
+/// indices, floored toward negative infinity. Hours extend beyond 23 without
+/// wrapping.
 ///
 /// Supports 23.976, 24, 25, 29.97, 30, 48, 50, 59.94 and 60 fps. The rate
 /// decides the mode: 29.97 and 59.94 are drop-frame, every other supported
 /// rate is non-drop-frame. Returns `Unsupported` otherwise, and propagates
 /// frame conversion errors. This is an editor label, not LTC.
-pub fn format_timecode(time: Tick, rate: FrameRate) -> Result<String, TimeError> {
+pub fn format_timecode_styled(
+    time: Tick,
+    rate: FrameRate,
+    style: TimecodeStyle,
+) -> Result<String, TimeError> {
     let (base, drop) = parameters(rate)?;
     let frame = rate.frame_at(time)?;
     let mut count = i128::from(frame).abs();
@@ -26,15 +56,20 @@ pub fn format_timecode(time: Tick, rate: FrameRate) -> Result<String, TimeError>
     let minutes = count / (base * 60) % 60;
     let hours = count / (base * 3600);
     let sign = if frame < 0 { "-" } else { "" };
-    let separator = if drop != 0 { ';' } else { ':' };
+    let separator = style.separator(drop);
     Ok(format!(
         "{sign}{hours:02}:{minutes:02}:{seconds:02}{separator}{frames:02}"
     ))
 }
 
+/// [`parse_timecode_styled`] in the default [`TimecodeStyle`].
+pub fn parse_timecode(input: &str, rate: FrameRate) -> Result<Tick, TimeError> {
+    parse_timecode_styled(input, rate, TimecodeStyle::default())
+}
+
 /// Parse an absolute signed editor frame label to its frame's start tick.
 ///
-/// Accepts exactly the format produced by [`format_timecode`]: at least two
+/// Accepts exactly the format produced by [`format_timecode_styled`] in `style`: at least two
 /// hour digits and two digits for all other fields, with no whitespace or `+`.
 /// Hours do not wrap. Negative zero is accepted and normalizes to zero.
 /// The rate decides the mode, with the same limits as the formatter. Returns
@@ -42,7 +77,11 @@ pub fn format_timecode(time: Tick, rate: FrameRate) -> Result<String, TimeError>
 /// `OutOfRange` for numeric overflow, and propagates tick conversion errors. A
 /// label whose frame begins outside the tick range is refused even if part of
 /// that frame is representable.
-pub fn parse_timecode(input: &str, rate: FrameRate) -> Result<Tick, TimeError> {
+pub fn parse_timecode_styled(
+    input: &str,
+    rate: FrameRate,
+    style: TimecodeStyle,
+) -> Result<Tick, TimeError> {
     let (base, drop) = parameters(rate)?;
     // The largest representable tick needs fewer than 20 hour digits.
     if input.len() > 32 {
@@ -65,7 +104,7 @@ pub fn parse_timecode(input: &str, rate: FrameRate) -> Result<Tick, TimeError> {
     {
         return Err(TimeError::InvalidTimecode);
     }
-    let separator = if drop != 0 { ';' } else { ':' };
+    let separator = style.separator(drop);
     if body != format!("{hours}:{minutes}:{seconds}{separator}{frames}") {
         return Err(TimeError::InvalidTimecode);
     }
@@ -155,6 +194,39 @@ mod tests {
                 assert_eq!(format_timecode(tick, rate).unwrap(), label);
                 assert_eq!(parse_timecode(&label, rate).unwrap(), tick);
             }
+        }
+    }
+
+    #[test]
+    fn all_colons_style_replaces_the_drop_frame_separator_only() {
+        let tick = FrameRate::FPS_29_97.tick_of(1800).unwrap();
+        for (style, label) in [
+            (TimecodeStyle::SecondsPlusFrame, "00:01:00;02"),
+            (TimecodeStyle::AllColons, "00:01:00:02"),
+        ] {
+            assert_eq!(
+                format_timecode_styled(tick, FrameRate::FPS_29_97, style).unwrap(),
+                label
+            );
+            assert_eq!(
+                parse_timecode_styled(label, FrameRate::FPS_29_97, style).unwrap(),
+                tick
+            );
+        }
+        assert_eq!(
+            parse_timecode_styled("00:01:00;02", FrameRate::FPS_29_97, TimecodeStyle::AllColons),
+            Err(TimeError::InvalidTimecode)
+        );
+        assert_eq!(
+            parse_timecode_styled("00:01:00:02", FrameRate::FPS_29_97, TimecodeStyle::SecondsPlusFrame),
+            Err(TimeError::InvalidTimecode)
+        );
+        let ndf = FrameRate::FPS_30.tick_of(45).unwrap();
+        for style in [TimecodeStyle::SecondsPlusFrame, TimecodeStyle::AllColons] {
+            assert_eq!(
+                format_timecode_styled(ndf, FrameRate::FPS_30, style).unwrap(),
+                "00:00:01:15"
+            );
         }
     }
 

@@ -10,7 +10,6 @@ mod state;
 mod text;
 mod transform;
 mod view;
-mod workflow;
 
 use crate::{editor::Context, egui};
 pub use lines::{GuideLines, LineAxis};
@@ -20,7 +19,6 @@ use project::ItemId;
 pub use snap::PREVIEW_SNAP_PIXELS;
 pub(crate) use state::{KeyPick, MatteBrush, State};
 pub use state::{PreviewAxis, PreviewGuide, TextCaret};
-pub(in crate::editor) use workflow::format_timecode;
 
 /// Requests are applied by the frame after rendering releases its read borrow.
 pub(crate) enum Action {

@@ -172,7 +172,7 @@ impl Subtitles {
                                 };
                                 let label = format!(
                                     "{} · {}",
-                                    time_text(candidate.range.start, rate, locale),
+                                    time_text(candidate.range.start, rate, c.time_code),
                                     c.tr(kind)
                                 );
                                 let r = ui.checkbox(&mut on, label);

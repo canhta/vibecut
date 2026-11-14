@@ -43,20 +43,23 @@ fn ruler_ticks_keep_labels_separated_at_every_zoom_and_rate() {
     }
     let df = ruler_config(DEFAULT_ZOOM, FrameRate::FPS_29_97);
     assert!(df.label_multiple >= 1);
-    assert!(ruler_label(1.0, FrameRate::FPS_29_97).contains(';'));
-    assert!(ruler_label(1.0, FrameRate::FPS_30).contains(':'));
-    assert!(ruler_label(60.0, FrameRate::FPS_59_94).contains(';'));
-    assert!(!ruler_label(60.0, FrameRate::FPS_23_976).contains(';'));
+    let code = TimeCode::SecondsPlusFrame;
+    assert!(ruler_label(1.0, FrameRate::FPS_29_97, code).contains(';'));
+    assert!(ruler_label(1.0, FrameRate::FPS_30, code).contains(':'));
+    assert!(ruler_label(60.0, FrameRate::FPS_59_94, code).contains(';'));
+    assert!(!ruler_label(60.0, FrameRate::FPS_23_976, code).contains(';'));
+    assert!(!ruler_label(1.0, FrameRate::FPS_29_97, TimeCode::AllColons).contains(';'));
 }
 
 #[test]
 fn captions_use_minutes_and_seconds_until_labels_get_finer_than_a_second() {
-    assert_eq!(ruler_text(9.0, FrameRate::FPS_30, 3.0), "00:09");
-    assert_eq!(ruler_text(75.0, FrameRate::FPS_30, 5.0), "01:15");
-    assert_eq!(ruler_text(3_725.0, FrameRate::FPS_30, 30.0), "1:02:05");
+    let code = TimeCode::default();
+    assert_eq!(ruler_text(9.0, FrameRate::FPS_30, 3.0, code), "00:09");
+    assert_eq!(ruler_text(75.0, FrameRate::FPS_30, 5.0, code), "01:15");
+    assert_eq!(ruler_text(3_725.0, FrameRate::FPS_30, 30.0, code), "1:02:05");
     assert_eq!(
-        ruler_text(1.0, FrameRate::FPS_30, 1.0 / 15.0),
-        ruler_label(1.0, FrameRate::FPS_30)
+        ruler_text(1.0, FrameRate::FPS_30, 1.0 / 15.0, code),
+        ruler_label(1.0, FrameRate::FPS_30, code)
     );
 }
 

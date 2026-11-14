@@ -78,13 +78,13 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | SET-03 | Draft: cache auto delete | Partial | Proposed | 14b/110758 | |
 | SET-04 | Draft: cloud sync | Out of scope | — | 14b/110758 | Cloud sync |
 | SET-05 | Edit: frame step, adjust value | Done | Proposed | 14b/110800 | Number plus stepper, default 10; geometry measured, field is egui |
-| SET-06 | Edit: image duration | Done | Proposed | 14b/110800; 14e/204339 | Stills only (a PNG probes with no length); seconds only, reference unit select also offers frames |
-| SET-07 | Edit: target loudness | Partial | Proposed | 14b/110800; 14e/204332 | Whole LUFS number; reference is a select (Default -23, YouTube -14, TikTok -12) |
+| SET-06 | Edit: image duration | Done | Proposed | 14b/110800, 14e/204339 | Stills only; animations keep their length; unit select s or frames |
+| SET-07 | Edit: target loudness | Done | Proposed | 14b/110800, 14e/204332 | Select: Default -23, YouTube -14, TikTok -12 LUFS |
 | SET-08 | Edit: audio while scrubbing | Done | Proposed | 14b/110804 | 120 ms burst per position [proposed] |
 | SET-09 | Edit: linkage settings | Missing | — | 14b/110804 | Needs TL-21 |
 | SET-10 | Edit: arrange layers | Missing | — | 14b/110804 | |
 | SET-11 | Edit: default frame rate | Done | Proposed | 14b/110804 | Under Draft tab |
-| SET-12 | Edit: time code format | Missing | — | 14b/110804; 14e/204326 | Options HH:MM:SS+frame, HH:MM:SS:FF |
+| SET-12 | Edit: time code format | Done | Proposed | 14b/110804, 14e/204326 | Options HH:MM:SS+frame and HH:MM:SS:FF; they differ only at drop-frame rates, which the capture does not show |
 | SET-13 | Edit: export sound | Done | Proposed | 14b/110804 | Synthesised chime when the render finishes |
 | SET-14 | Edit: partner sync | Out of scope | — | 14b/110804 | Accounts |
 | SET-15 | Perf: hardware encode, decode | Partial | Proposed | 14b/110829 | One choice |

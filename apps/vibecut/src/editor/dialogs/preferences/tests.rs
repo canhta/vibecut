@@ -264,8 +264,28 @@ fn settings_modal_applies_preferences_and_shortcut_transfers_through_the_picker_
         assert_eq!(bench.editor().preferences.value_step, 9);
         bench.click("settings.edit.image_duration.increase");
         assert_eq!(bench.editor().preferences.image_duration_ms, 5100);
-        bench.click("settings.edit.loudness_target.increase");
-        assert_eq!(bench.editor().preferences.loudness_target_lufs, -22);
+        bench.click("settings.edit.image_duration_unit");
+        bench.click("settings.edit.image_duration_unit.frames");
+        assert_eq!(
+            bench.editor().preferences.image_duration_unit,
+            crate::preferences::ImageDurationUnit::Frames
+        );
+        // 5.1 s at the default 30 fps is 153 frames; one step up is 154 frames, 5133 ms.
+        bench.click("settings.edit.image_duration.increase");
+        assert_eq!(bench.editor().preferences.image_duration_ms, 5133);
+        bench.click("settings.edit.loudness_preset");
+        bench.click("settings.edit.loudness_preset.tiktok");
+        assert_eq!(
+            bench.editor().preferences.loudness_preset,
+            crate::preferences::LoudnessPreset::Tiktok
+        );
+        assert_eq!(bench.editor().preferences.loudness_target().target_lufs, -12.0);
+        bench.click("settings.edit.time_code");
+        bench.click("settings.edit.time_code.all_colons");
+        assert_eq!(
+            bench.editor().preferences.time_code,
+            crate::preferences::TimeCode::AllColons
+        );
         bench.click("settings.edit.audio_scrub");
         assert!(bench.editor().preferences.audio_scrub);
         bench.click("settings.edit.export_sound");
