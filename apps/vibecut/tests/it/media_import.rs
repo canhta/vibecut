@@ -307,11 +307,13 @@ fn drop_file(path: impl Into<PathBuf>) -> Arc<dyn egui::DroppedFile + Send + Syn
 
 #[test]
 fn drag_drop_imports_good_files_and_reports_typed_partial_failure() {
+    let woken = crate::woken::Woken::bind();
     let mut editor = editor();
     editor.set_import_probe(Arc::new(Probe::default())).unwrap();
     let mut harness = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 900.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
+    woken.attach(&harness.ctx);
     harness.run_steps(2);
     for name in ["video-a.mp4", "bad-clip.mp4", "audio-a.wav"] {
         harness
@@ -319,7 +321,11 @@ fn drag_drop_imports_good_files_and_reports_typed_partial_failure() {
             .dropped_files
             .push(drop_file(path(name)));
     }
-    let inspection = wait_harness_import(&mut harness);
+    // The drop starts the batch; its results reach the panel on the import worker's wakes.
+    woken.step_until(&mut harness, "the dropped files' import", |editor| {
+        !editor.importing()
+    });
+    let inspection = harness.state().inspect().unwrap();
     assert_eq!(inspection.import_total, 3);
     assert_eq!(inspection.import_completed, 3);
     assert_eq!(inspection.import_imported, 2);

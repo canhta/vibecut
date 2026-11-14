@@ -532,8 +532,10 @@ fn the_chosen_provider_and_voice_generate_consent_fit_place_and_duck_in_one_undo
 
 #[test]
 fn a_take_lands_on_a_free_lowest_audio_track_and_the_clip_is_selected() {
+    let woken = crate::woken::Woken::bind();
     let mut bench = bench(Script::Samples(72_000), Script::Samples(50_400));
     let h = &mut bench.harness;
+    woken.attach(&h.ctx);
     // A second audio track below the original: free at the playhead, so it is the lowest.
     let original = h
         .state()
@@ -562,9 +564,17 @@ fn a_take_lands_on_a_free_lowest_audio_track_and_the_clip_is_selected() {
     click(h, "inspector.narration.category.1");
     click(h, "inspector.narration.voice.1.1");
     click(h, "inspector.narration.generate");
-    wait_for(h, "narration.consent.send");
+    // The consent request and the finished take reach the tab on the job's own wakes. The
+    // consent sheet is a modal laid out invisibly on its first frame: one more frame follows.
+    woken.step_until(h, "the consent sheet", |editor| {
+        crate::woken::shows(editor, "narration.consent.send")
+    });
+    h.run_steps(1);
     click(h, "narration.consent.send");
-    wait_for(h, "inspector.narration.take");
+    woken.step_until(h, "the take", |editor| {
+        crate::woken::shows(editor, "inspector.narration.take")
+    });
+    h.run_steps(1);
     click(h, "inspector.narration.place");
     let placed = narrations(h);
     assert_eq!(placed.len(), 1);

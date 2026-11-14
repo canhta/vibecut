@@ -1200,6 +1200,56 @@ fn idle_home_and_paused_editor_request_no_repaint_and_a_worker_result_requests_o
         quiet,
         "a paused editor woke the loop"
     );
+
+    // Clock-driven state polls only while it is pending, and a pass runs only on a wake: an
+    // edit is journaled once its debounce ends, and a toast leaves when it expires.
+    let woken = crate::woken::Woken::bind();
+    woken.attach(&ctx);
+    let pass = |app: &mut Workspace| {
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| app.ui(ui));
+        output.textures_delta.clear();
+    };
+    let id = app.focused_project().unwrap();
+    let journaled = app
+        .editor_mut(id)
+        .unwrap()
+        .session
+        .autosave()
+        .unwrap()
+        .journaled_revision();
+    app.editor_mut(id)
+        .unwrap()
+        .session
+        .apply(Command::RenameProject {
+            name: "woken".into(),
+        })
+        .unwrap();
+    woken.until("the autosave journal", || {
+        pass(&mut app);
+        let autosave = app.editor_mut(id).unwrap().session.autosave().unwrap();
+        (autosave.journaled_revision() > journaled && !autosave.pending()).then_some(())
+    });
+    app.editor_mut(id).unwrap().saved();
+    pass(&mut app);
+    assert!(
+        app.editor_mut(id)
+            .unwrap()
+            .inspect()
+            .unwrap()
+            .import_toast
+            .is_some(),
+        "no saved toast"
+    );
+    woken.until("the saved toast's expiry", || {
+        pass(&mut app);
+        app.editor_mut(id)
+            .unwrap()
+            .inspect()
+            .unwrap()
+            .import_toast
+            .is_none()
+            .then_some(())
+    });
 }
 
 #[test]

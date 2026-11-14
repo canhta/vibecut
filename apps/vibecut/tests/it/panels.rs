@@ -2672,8 +2672,10 @@ fn text_look_tiles_apply_one_look_per_shelf_as_one_undo_step_keeping_content() {
 
 #[test]
 fn loudness_controls_switch_target_and_apply_through_commands() {
+    let woken = crate::woken::Woken::bind();
     let fixture = fixture();
     let mut harness = build(fixture.editor);
+    woken.attach(&harness.ctx);
     harness.run_steps(3);
     select(&mut harness, fixture.audio);
     let loudness = |harness: &Harness<Editor>| {
@@ -2761,16 +2763,13 @@ fn loudness_controls_switch_target_and_apply_through_commands() {
     assert_eq!(both.clip.map(|t| t.target_lufs), Some(-14.0));
     assert_eq!(both.master, both.clip);
 
-    // Apply runs the measurement job; the frame polls it to the end, which drops the
-    // progress control. The gains are stored only when the job completed.
+    // Apply runs the measurement job; its progress control goes when the job ends, and the
+    // loop runs a frame only when the job wakes it. The gains are stored only when the job
+    // completed.
     click(&mut harness, "inspector.loudness.apply");
-    let mut steps = 0;
-    while has_widget(&harness, "inspector.loudness.progress") {
-        std::thread::sleep(std::time::Duration::from_millis(1));
-        harness.run_steps(1);
-        steps += 1;
-        assert!(steps < 5000, "loudness measurement never finished");
-    }
+    woken.step_until(&mut harness, "the loudness measurement", |editor| {
+        !crate::woken::shows(editor, "inspector.loudness.progress")
+    });
     assert!(!has_widget(&harness, "inspector.loudness.cancel"));
     assert!(has_widget(&harness, "inspector.loudness.apply"));
 
@@ -6340,12 +6339,14 @@ fn stickers_emoji_and_icons_tabs_offer_a_download_card_until_a_collection_is_rea
 
 #[test]
 fn stickers_download_shows_progress_then_the_collection_tiles() {
+    let woken = crate::woken::Woken::bind();
     let root = tempfile::tempdir().unwrap();
     let catalogue = sticker_catalogue();
     let gate = std::sync::Arc::new(StickerGate::default());
     let url = catalogue[0].raw_url("icons/grin.svg");
     let source = serve(&catalogue, Some((url.as_str(), gate.clone())), false);
     let mut h = sticker_panel(root.path(), catalogue, source);
+    woken.attach(&h.ctx);
     let _release = ReleaseOnDrop(gate.clone());
     click(&mut h, "stickers.category.emoji");
     click(&mut h, "stickers.download.noto");
@@ -6356,9 +6357,12 @@ fn stickers_download_shows_progress_then_the_collection_tiles() {
     assert!(has_widget(&h, "stickers.download.cancel"));
     assert!(!has_widget(&h, "stickers.download.noto"));
 
-    // Released: the file verifies, publishes, the card goes and its tile is listed.
+    // Released: the file verifies, publishes, the card goes and its tile is listed, with a
+    // frame run only when the download wakes the loop.
     gate.release();
-    run_until(&mut h, |h| has_widget(h, "stickers.insert.noto-grin"));
+    woken.step_until(&mut h, "the downloaded collection", |editor| {
+        crate::woken::shows(editor, "stickers.insert.noto-grin")
+    });
     assert!(!has_widget(&h, "stickers.download.noto"));
     assert!(!has_widget(&h, "stickers.download.progress"));
     assert!(root.path().join("noto").join("grin.svg").exists());

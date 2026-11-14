@@ -49,6 +49,8 @@ Each package has one integration binary at `tests/it/main.rs` with modules benea
 
 Inject codecs, providers and OS boundaries (file pickers, dropped files) at their seams; native dialogs and coordinate clicks are not test tools. Order concurrent tests with gates or channels.
 
+The app has no repaint timer: a worker result shows only if its producer wakes the loop. A new desktop test that waits for a worker result runs the loop with `Woken` (`apps/vibecut/tests/it/support/woken.rs`), which runs a pass only after a wake, instead of a polling loop of its own.
+
 ## UI evidence
 
 - Attach `cargo xtask ui-audit` scenes (1x and 2x) for each changed screen, and a side-by-side with the cited reference shot at the same logical size. Fix every difference or list it with its cause. Values come from measured shots or the reference's source, never invented.

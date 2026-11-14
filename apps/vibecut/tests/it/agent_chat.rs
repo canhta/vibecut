@@ -272,17 +272,21 @@ fn without_a_key_the_panel_explains_and_offers_no_input() {
 
 #[test]
 fn a_scripted_turn_shows_its_steps_and_the_card_and_discard_changes_nothing() {
+    let woken = crate::woken::Woken::bind();
     let backend = Scripted::new(vec![hide_first_turn()]);
     let dir = tempfile::tempdir().unwrap();
     let mut harness = build(editor(&backend, dir.path()));
+    woken.attach(&harness.ctx);
     let before = harness.state().session.project().clone();
     // The fixture's own inserts are on the undo stack already.
     let history = harness.state().session.history_len();
 
     ask(&mut harness, "hide the first clip");
-    wait_for(&mut harness, "the changes card", |view| {
-        view.stage == "decide"
+    // The turn's events stream to the panel on the wakes the turn thread sends.
+    woken.step_until(&mut harness, "the changes card", |editor| {
+        editor.inspect().unwrap().agent.stage == "decide"
     });
+    harness.run_steps(2);
 
     let shown = view(&harness);
     assert_eq!(
