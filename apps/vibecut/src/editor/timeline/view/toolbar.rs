@@ -11,7 +11,7 @@ use crate::editor::timeline::{
 };
 use crate::i18n;
 
-const EDGE: f32 = 4.0;
+pub(super) const EDGE: f32 = 4.0;
 const CELL: f32 = theme::size::CONTROL;
 /// Caret glyph and the strip it sits in, right of the tool glyph: the measured 12 px
 /// small-glyph token `theme::icon::PLAY`, not a new value.
@@ -106,10 +106,15 @@ struct RightGroup {
     zoom_out: Rect,
     slider: Rect,
     zoom_in: Rect,
+    /// The last cell: hide or show the timeline.
+    hide: Rect,
 }
 
 fn right_group(bar: Rect, top: f32) -> RightGroup {
     let mut right = bar.right() - EDGE;
+    // The reference's last icon, right of the zoom controls. [new] unmeasured pitch.
+    let hide = Rect::from_min_size(egui::pos2(right - CELL, top), Vec2::splat(CELL));
+    right = hide.left() - GAP;
     let zoom_in = Rect::from_min_size(egui::pos2(right - CELL, top), Vec2::splat(CELL));
     right = zoom_in.left() - GAP;
     let slider = Rect::from_min_size(
@@ -138,6 +143,7 @@ fn right_group(bar: Rect, top: f32) -> RightGroup {
         zoom_out,
         slider,
         zoom_in,
+        hide,
     }
 }
 
@@ -148,12 +154,27 @@ fn left_scroll_id() -> Id {
 }
 
 impl State {
+    /// The toolbar row. While the timeline is hidden every cell but the last one (hide or
+    /// show) is disabled, so the strip keeps its place and shows what is unavailable.
     pub(in crate::editor::timeline) fn toolbar(
         &mut self,
         cx: &Context<'_>,
         ui: &mut egui::Ui,
         layout: &TimelineLayout,
     ) {
+        let hidden = self.hidden;
+        ui.add_enabled_ui(!hidden, |ui| self.toolbar_cells(cx, ui, layout));
+        let top = layout.toolbar.top() + (layout.toolbar.height() - CELL) / 2.0;
+        let hide = right_group(layout.toolbar, top).hide;
+        let (icon, label) = if hidden {
+            (Icon::CornersOut, Text::ShowTimeline)
+        } else {
+            (Icon::CornersIn, Text::HideTimeline)
+        };
+        self.toolbar_button(cx, ui, hide, "view.toggle_timeline", icon, label, None);
+    }
+
+    fn toolbar_cells(&mut self, cx: &Context<'_>, ui: &mut egui::Ui, layout: &TimelineLayout) {
         let ink = Ink::of(cx);
         let bar = layout.toolbar;
         let top = bar.top() + (bar.height() - CELL) / 2.0;
@@ -395,7 +416,7 @@ impl State {
         label: Text,
         selected: Option<bool>,
     ) -> bool {
-        let enabled = !cx.disabled.contains(id);
+        let enabled = !cx.disabled.contains(id) && ui.is_enabled();
         let label = tr(cx, label);
         let tooltip = cx.shortcut(id).map_or_else(
             || label.to_owned(),
@@ -436,7 +457,7 @@ impl State {
     fn toolbar_download(&mut self, cx: &Context<'_>, ui: &mut egui::Ui, rect: Rect) {
         let ink = Ink::of(cx);
         let clip = single_selected_span(cx);
-        let enabled = clip.is_some();
+        let enabled = clip.is_some() && ui.is_enabled();
         let label = tr(cx, Text::DownloadClip);
         let glyph = Rect::from_min_size(rect.min, Vec2::splat(CELL));
         let caret = Rect::from_min_size(
@@ -515,8 +536,9 @@ impl State {
             egui::Sense::click(),
         );
         let response = button.union(caret_hit);
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
-        self.remember_icon("timeline.tool", Some(icon.name()), &response);
+        let enabled = ui.is_enabled();
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, label));
+        self.remember_icon("timeline.tool",Some(icon.name()), &response);
         icons::tinted(Icon::CaretDown, TOOL_CARET, ink.text()).paint_at(
             ui,
             Rect::from_center_size(caret.center(), Vec2::splat(TOOL_CARET)),
@@ -559,7 +581,7 @@ impl State {
     /// diamond until the catalog gains a curve icon.
     fn toolbar_graph(&mut self, cx: &Context<'_>, ui: &mut egui::Ui, rect: Rect) {
         let open = self.graph_popover_open();
-        let enabled = open || self.graph_available(cx);
+        let enabled = ui.is_enabled() && (open || self.graph_available(cx));
         let tooltip = tr(cx, Text::GraphEditor);
         let response = ui
             .scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {

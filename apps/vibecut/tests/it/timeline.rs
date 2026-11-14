@@ -6775,4 +6775,142 @@ fn a_double_click_isolates_one_member_and_an_alt_click_selects_the_group() {
     let mut selected = h.state().inspect().unwrap().selection;
     selected.sort();
     assert_eq!(selected, vec![a, b], "an Alt-click selects every member");
+/// A fixture harness with the first clip selected and the playhead at three seconds.
+fn selected_at_three_seconds() -> (Harness<'static, Editor>, ItemId) {
+    let fixture = fixture();
+    let video_a = fixture.video_a;
+    let mut h = harness(fixture.editor);
+    h.run_steps(3);
+    h.state_mut()
+        .dispatch(AppCommand::Seek(Tick(3 * SECOND)))
+        .unwrap();
+    h.run_steps(2);
+    let rect = widget(&h, &format!("timeline.item.{}", video_a.0));
+    click_at(&mut h, egui::pos2(rect.left() + 20.0, rect.center().y));
+    assert_eq!(h.state().inspect().unwrap().selection, vec![video_a]);
+    (h, video_a)
+}
+
+/// Whether a painted widget is enabled, and its tooltip; `None` when it is not painted.
+fn painted(h: &Harness<'_, Editor>, id: &str) -> Option<(bool, Option<String>)> {
+    h.state()
+        .inspect()
+        .unwrap()
+        .widgets
+        .into_iter()
+        .find(|widget| widget.id == id)
+        .map(|widget| (widget.enabled, widget.tooltip))
+}
+
+fn toggle_tooltip(label: &str) -> String {
+    let chord = vibecut::actions::Chord::parse("Ctrl+.")
+        .unwrap()
+        .display(vibecut::actions::Platform::current());
+    format!("{label} ({chord})")
+}
+
+type HideRow = fn(&mut Harness<'static, Editor>, ItemId);
+
+fn hide_collapses_the_panel_and_grows_the_player(h: &mut Harness<'static, Editor>, item: ItemId) {
+    let before_panels = h.state().panels().clone();
+    let before_project = project::encode(h.state().session.project(), false).unwrap();
+    assert_eq!(
+        painted(h, "view.toggle_timeline").unwrap().1,
+        Some(toggle_tooltip("Hide timeline"))
+    );
+    let toggle = widget(h, "view.toggle_timeline").center();
+    click_at(h, toggle);
+    assert!(h.state().inspect().unwrap().timeline_hidden);
+    let panels = h.state().panels().clone();
+    assert!(
+        (panels["timeline"].height() - 45.0).abs() < 0.5,
+        "toolbar, 1 px rule and the 12 px progress strip, got {:?}",
+        panels["timeline"]
+    );
+    assert!((panels["timeline"].bottom() - before_panels["timeline"].bottom()).abs() < 0.5);
+    assert!(panels["preview"].height() > before_panels["preview"].height());
+    for gone in [
+        "timeline.ruler".to_owned(),
+        "timeline.scroll_h".to_owned(),
+        format!("timeline.item.{}", item.0),
+    ] {
+        assert!(painted(h, &gone).is_none(), "{gone} is not painted");
+    }
+    assert!(painted(h, "timeline.progress").is_some());
+    let (enabled, tooltip) = painted(h, "view.toggle_timeline").unwrap();
+    assert!(enabled);
+    assert_eq!(tooltip, Some(toggle_tooltip("Show timeline")));
+    assert_eq!(
+        project::encode(h.state().session.project(), false).unwrap(),
+        before_project,
+        "the view state is not part of the project"
+    );
+}
+
+fn show_restores_selection_playhead_and_layout(h: &mut Harness<'static, Editor>, item: ItemId) {
+    let before_panels = h.state().panels().clone();
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Period);
+    h.run_steps(3);
+    assert!(h.state().inspect().unwrap().timeline_hidden);
+    assert_eq!(h.state().playback.position().unwrap(), Tick(3 * SECOND));
+    assert_eq!(h.state().inspect().unwrap().selection, vec![item]);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Period);
+    h.run_steps(3);
+    let inspection = h.state().inspect().unwrap();
+    assert!(!inspection.timeline_hidden);
+    assert_eq!(inspection.selection, vec![item]);
+    assert_eq!(h.state().playback.position().unwrap(), Tick(3 * SECOND));
+    assert_eq!(h.state().panels()["timeline"], before_panels["timeline"]);
+    assert!(painted(h, &format!("timeline.item.{}", item.0)).is_some());
+    // A plain period is not bound.
+    h.key_press(egui::Key::Period);
+    h.run_steps(3);
+    assert!(!h.state().inspect().unwrap().timeline_hidden);
+}
+
+fn hidden_tools_are_disabled_and_the_progress_line_scrubs(
+    h: &mut Harness<'static, Editor>,
+    _item: ItemId,
+) {
+    h.state_mut().activate("view.toggle_timeline").unwrap();
+    h.run_steps(3);
+    for id in [
+        "timeline.add_track",
+        "timeline.tool",
+        "timeline.split",
+        "timeline.delete",
+        "timeline.snap",
+        "timeline.preview_axis",
+        "timeline.zoom_out",
+        "timeline.zoom_in",
+    ] {
+        let (enabled, _) = painted(h, id).unwrap_or_else(|| panic!("missing {id}"));
+        assert!(!enabled, "{id} is disabled while hidden");
+    }
+    let middle = widget(h, "timeline.progress").center();
+    click_at(h, middle);
+    let position = h.state().playback.position().unwrap();
+    assert!(
+        (position.0 - 5 * SECOND).abs() < SECOND / 10,
+        "the middle of the line is half of the 10 s project, got {position:?}"
+    );
+    assert_eq!(h.state().inspect().unwrap().selection.len(), 1);
+}
+
+/// The hide-timeline behaviour, one row per observed rule, each on a fresh editor with a clip
+/// selected and the playhead at three seconds.
+#[test]
+fn hide_timeline_collapses_to_the_toolbar_and_show_restores_the_editor() {
+    let rows: [(&str, HideRow); 3] = [
+        ("hide", hide_collapses_the_panel_and_grows_the_player),
+        ("show", show_restores_selection_playhead_and_layout),
+        (
+            "disabled tools",
+            hidden_tools_are_disabled_and_the_progress_line_scrubs,
+        ),
+    ];
+    for (_, row) in rows {
+        let (mut h, item) = selected_at_three_seconds();
+        row(&mut h, item);
+    }
 }

@@ -18,7 +18,7 @@ mod workflow;
 
 pub(super) use action::{Action, Gesture};
 pub(super) use state::{DropZone, State, Tool};
-pub(super) use view::{TOOLBAR_ACTIONS, add_track_command, show, show_scenes};
+pub(super) use view::{TOOLBAR_ACTIONS, add_track_command, show, show_hidden, show_scenes};
 pub(super) use visuals::Media;
 pub(super) use workflow::{
     apply, command_on_selection, discard_gesture, discard_timeline_preview, release_graph,
@@ -37,6 +37,10 @@ use view::{item_label, track_height};
 use workflow::{edge_auto_scroll, max_scroll_seconds, slider_to_zoom, zoom_to_slider};
 
 const TOOLBAR_HEIGHT: f32 = theme::size::TOOLBAR;
+/// The collapsed panel: the toolbar, its 1 px rule and the progress strip, which has the
+/// height of the foot strip under the lanes. Ours, unmeasured: the web capture has no
+/// desktop equivalent.
+pub(super) const HIDDEN_HEIGHT: f32 = TOOLBAR_HEIGHT + 1.0 + theme::size::TIMELINE_FOOT;
 const BUTTON_ICON: f32 = theme::icon::DENSE;
 const ICON_BUTTON: f32 = theme::size::CONTROL;
 const RULER_HEIGHT: f32 = theme::size::RULER;

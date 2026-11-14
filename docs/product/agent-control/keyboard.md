@@ -162,6 +162,7 @@
 | `appearance.theme` — Toggle theme | View | — | — | preference store |
 | `appearance.locale` — Toggle language | View | — | — | preference store |
 | `layout.reset` — Reset layout | View | — | — | preference store |
+| `view.toggle_timeline` — Show or hide timeline | View | Ctrl+. | — | timeline panel layout |
 | `shortcuts.open` — Keyboard shortcuts | View | — | — | shortcuts dialog |
 | `app.help` — Help | View | — | — | help |
 | `app.feedback` — Feedback | View | — | — | help |

@@ -1,6 +1,6 @@
 # Timeline view
 
-Interface: `show`, `show_scenes`, `Ink`, `item_label`, `track_height`,
+Interface: `show`, `show_hidden`, `show_scenes`, `Ink`, `item_label`, `track_height`,
 `add_track_command`, `TOOLBAR_ACTIONS`.
 
 Renders the timeline surface: clips, keyframe lanes, the ruler, scenes, toolbar and the

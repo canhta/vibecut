@@ -389,6 +389,7 @@ impl Editor {
             preview_fit: self.player.view.fit,
             preview_offset: self.player.view.offset,
             preview_fullscreen: self.player.fullscreen,
+            timeline_hidden: self.timeline.hidden,
             preview_axis: self.preferences.preview_axis,
             hover_time: self.timeline.hover_time(),
             preview_at: self.playback.hover(),

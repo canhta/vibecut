@@ -59,8 +59,9 @@ impl Editor {
         // History and external commands can remove what the timeline is editing.
         self.forget_missing_transition();
         let missing_fade = self.timeline.forget_missing(&self.session);
-        let interrupted_fade = (!ui.input(|input| input.focused) || self.player.fullscreen)
-            && self.timeline.cancel_fade_drag();
+        let interrupted_fade =
+            (!ui.input(|input| input.focused) || self.player.fullscreen || self.timeline.hidden)
+                && self.timeline.cancel_fade_drag();
         if missing_fade || interrupted_fade {
             self.discard_gesture();
         }
@@ -124,14 +125,19 @@ impl Editor {
             right,
             timeline,
             agent,
-        } = super::layout::Layout::new(rect, self.preferences.panels, {
-            use super::layout::Dock;
-            match (self.agent.is_open(), self.agent.is_expanded()) {
-                (false, _) => Dock::Closed,
-                (true, false) => Dock::Docked,
-                (true, true) => Dock::Expanded,
-            }
-        });
+        } = super::layout::Layout::new(
+            rect,
+            self.preferences.panels,
+            {
+                use super::layout::Dock;
+                match (self.agent.is_open(), self.agent.is_expanded()) {
+                    (false, _) => Dock::Closed,
+                    (true, false) => Dock::Docked,
+                    (true, true) => Dock::Expanded,
+                }
+            },
+            self.timeline.hidden,
+        );
         for (id, area) in [
             ("header", top),
             ("media", left),
@@ -195,6 +201,10 @@ impl Editor {
                 2,
             ),
         ] {
+            // The collapsed timeline has a fixed height, so its gutter is not a handle.
+            if axis == 2 && self.timeline.hidden {
+                continue;
+            }
             let response = ui.interact(area, Id::unique(id), egui::Sense::drag());
             self.remember(id, &response);
             if response.drag_started() {

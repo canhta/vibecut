@@ -31,7 +31,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | TL-22 | Preview axis | Done | Matches | web flows/08 | A transport step ends the hover until the pointer moves |
 | TL-23 | Zoom out, slider, in | Done | Matches | 05/221643 | |
 | TL-24 | Zoom to fit timeline | Partial | — | 14b/110530 | Key Shift+Z; no toolbar button measured |
-| TL-25 | Hide / show timeline | Missing | — | web flows/12 | Web-only evidence |
+| TL-25 | Hide / show timeline | Done | Proposed | web flows/12; [editor](../ui/editor.md#hide-timeline) | No default key (the desktop sheet binds `Ctrl+.` to volume); web-only evidence, desktop strip and progress line unmeasured |
 | TL-26 | Add track button | Ours | Proposed | | |
 | TL-27 | Ripple toggle | Ours | Proposed | | |
 | TL-28 | Scene switcher | Ours | Proposed | | |
