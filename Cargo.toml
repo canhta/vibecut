@@ -66,5 +66,8 @@ wildcard_imports = "warn"
 [profile.dev]
 debug = "line-tables-only"
 
+[profile.dev.package.blake3]
+opt-level = 3
+
 [profile.dev.package."*"]
 debug = false
