@@ -77,6 +77,7 @@ impl State {
                 Action::SoundsSearch { more } => self.sounds_search(more),
                 Action::SoundsCommercial(on) => self.sounds_set_commercial(on),
                 Action::SoundsPreview(id) => self.sounds_preview(id),
+                Action::SoundsPlay(sound) => self.sounds_play(sound),
                 Action::SoundsToggleSaved(id) => self.sounds_toggle_saved(id),
                 Action::SoundsAdd(id) => self.sounds_add(port, id),
                 Action::SoundsCancelCache => self.sounds_cancel_cache(),

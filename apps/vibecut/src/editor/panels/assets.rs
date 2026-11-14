@@ -171,6 +171,8 @@ pub(in crate::editor) enum Action {
     },
     SoundsCommercial(bool),
     SoundsPreview(u64),
+    /// Preview a favourite that is no longer listed, from the URL its star stored.
+    SoundsPlay(libraries::sounds::SoundResult),
     SoundsToggleSaved(u64),
     SoundsAdd(u64),
     SoundsCancelCache,

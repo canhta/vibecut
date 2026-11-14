@@ -920,6 +920,7 @@ catalog! {
     SoundsResultCount { key: "sounds_result_count", en: "{count} sounds", vi: "{count} âm thanh" },
     SoundsRetry { key: "sounds_retry", en: "Retry", vi: "Thử lại" },
     SoundsSave { key: "sounds_save", en: "Save sound", vi: "Lưu âm thanh" },
+    SoundsNotListed { key: "sounds_not_listed", en: "Search for this sound to save or add it", vi: "Tìm âm thanh này để lưu hoặc thêm" },
     SoundsSaveFailed { key: "sounds_save_failed", en: "Couldn't update your saved sounds.", vi: "Không cập nhật được âm thanh đã lưu." },
     SoundsSaved { key: "sounds_saved", en: "Saved", vi: "Đã lưu" },
     SoundsSearch { key: "sounds_search", en: "Search sounds", vi: "Tìm âm thanh" },

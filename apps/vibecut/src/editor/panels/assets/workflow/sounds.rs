@@ -104,6 +104,12 @@ impl State {
         }
     }
 
+    pub(in crate::editor) fn sounds_play(&mut self, sound: SoundResult) {
+        if let Some(sounds) = &mut self.sounds {
+            sounds.play_sound(sound);
+        }
+    }
+
     pub(in crate::editor) fn sounds_toggle_saved(&mut self, id: u64) {
         if let Some(sounds) = &mut self.sounds {
             sounds.toggle_saved(id);

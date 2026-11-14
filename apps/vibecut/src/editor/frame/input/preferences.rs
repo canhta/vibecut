@@ -28,10 +28,27 @@ impl Editor {
     /// Star or unstar one catalogue id (`catalog.favorite.set`). Favourites are app
     /// presentation memory: written without an app-history entry, never project JSON.
     pub fn set_favorite(&mut self, family: &str, id: &str, favorite: bool) -> Result<()> {
-        let next = self
-            .preferences
-            .catalog_favorites
-            .with(family, id, favorite)?;
+        let next = if family == "sounds" {
+            let sound_id: u64 = id.parse().map_err(|_| crate::Error::Invalid("sound id"))?;
+            if favorite {
+                // A star takes the metadata from the listed sound, the same as the Sounds tab.
+                let sound = self
+                    .assets
+                    .sounds
+                    .as_ref()
+                    .and_then(|sounds| sounds.sound(sound_id))
+                    .ok_or(crate::Error::SoundNotListed)?;
+                self.preferences
+                    .catalog_favorites
+                    .with_sound(crate::preferences::SoundFavorite::from_result(&sound), true)?
+            } else {
+                self.preferences.catalog_favorites.without_sound(sound_id)?
+            }
+        } else {
+            self.preferences
+                .catalog_favorites
+                .with(family, id, favorite)?
+        };
         self.preferences
             .set("catalog_favorites", serde_json::to_value(&next)?)?;
         Ok(())

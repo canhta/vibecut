@@ -34,6 +34,28 @@ pub struct SoundFavorite {
     pub preview_url: String,
 }
 
+impl SoundFavorite {
+    /// The metadata a star stores: the title is cut to its bound at a character boundary,
+    /// and a blank name falls back to the provider id.
+    pub fn from_result(sound: &libraries::sounds::SoundResult) -> Self {
+        let title = if sound.name.is_empty() {
+            sound.id.to_string()
+        } else {
+            let mut end = sound.name.len().min(MAX_SOUND_FAVORITE_TITLE_BYTES);
+            while !sound.name.is_char_boundary(end) {
+                end -= 1;
+            }
+            sound.name[..end].to_owned()
+        };
+        Self {
+            id: sound.id,
+            title,
+            duration_ms: sound.duration_ms,
+            preview_url: sound.audio_url.clone(),
+        }
+    }
+}
+
 /// Starred items: ids of every family but `sounds`, plus starred sounds with their
 /// metadata. Each list is ordered oldest star first.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -94,6 +116,15 @@ impl CatalogFavorites {
         if favorite {
             next.sounds.push(sound);
         }
+        next.validate()?;
+        Ok(next)
+    }
+
+    /// The document after unstarring one sound by id; needs no metadata, so it works
+    /// for a starred sound that is no longer listed.
+    pub fn without_sound(&self, id: u64) -> Result<Self> {
+        let mut next = self.clone();
+        next.sounds.retain(|known| known.id != id);
         next.validate()?;
         Ok(next)
     }

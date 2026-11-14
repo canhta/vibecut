@@ -5,7 +5,7 @@ use super::{
     theme,
 };
 use crate::i18n;
-use crate::preferences::{MAX_SOUND_FAVORITE_TITLE_BYTES, SoundFavorite};
+use crate::preferences::SoundFavorite;
 
 impl View<'_> {
     pub(super) fn sounds_nav(&mut self, ui: &mut egui::Ui) {
@@ -288,6 +288,8 @@ impl View<'_> {
         let dark = self.cx.preferences.dark;
         let cached = view.cache.is_some_and(|cache| cache.sound == sound.id);
         let saved = view.saved_ids.contains(&sound.id);
+        // Save and Add resolve the sound from the results or the saved library.
+        let listed = saved || view.results.iter().any(|known| known.id == sound.id);
         ui.painter().rect_filled(
             rect,
             theme::radius::CONTROL,
@@ -401,7 +403,7 @@ impl View<'_> {
         );
         if star_response.clicked() {
             self.actions.push(Action::ToggleSoundFavorite {
-                sound: sound_favorite(sound),
+                sound: SoundFavorite::from_result(sound),
                 favorite: !starred,
             });
         }
@@ -420,13 +422,26 @@ impl View<'_> {
             },
             previewing,
         ) {
-            self.actions.push(Action::SoundsPreview(sound.id));
+            // A listed sound previews by id; a favourite outside the results plays from
+            // the URL its star stored.
+            if listed {
+                self.actions.push(Action::SoundsPreview(sound.id));
+            } else {
+                self.actions.push(Action::SoundsPlay(sound.clone()));
+            }
         }
         let save = Rect::from_min_size(
             egui::pos2(start + 28.0, rect.center().y - 12.0),
             Vec2::splat(24.0),
         );
-        if self.sound_button(
+        if !listed {
+            self.sound_unavailable(
+                ui,
+                save,
+                &format!("sounds.save.unlisted.{}", sound.id),
+                Icon::FloppyDisk,
+            );
+        } else if self.sound_button(
             ui,
             save,
             &format!("sounds.save.{}", sound.id),
@@ -455,6 +470,13 @@ impl View<'_> {
             ) {
                 self.actions.push(Action::SoundsCancelCache);
             }
+        } else if !listed {
+            self.sound_unavailable(
+                ui,
+                add,
+                &format!("sounds.add.unlisted.{}", sound.id),
+                Icon::Plus,
+            );
         } else if self.sound_button(
             ui,
             add,
@@ -465,6 +487,19 @@ impl View<'_> {
         ) {
             self.actions.push(Action::SoundsAdd(sound.id));
         }
+    }
+
+    /// A Save or Add slot that cannot act for a sound outside the results: a dimmed glyph
+    /// whose hover text gives the reason.
+    fn sound_unavailable(&mut self, ui: &mut egui::Ui, rect: Rect, id: &str, glyph: Icon) {
+        let dark = self.cx.preferences.dark;
+        let reason = self.tr(Text::SoundsNotListed).to_owned();
+        let response = ui
+            .interact(rect, Id::unique(id), egui::Sense::hover())
+            .on_hover_text(reason);
+        icons::tinted(glyph, theme::icon::DENSE, theme::secondary(dark))
+            .paint_at(ui, Rect::from_center_size(rect.center(), Vec2::splat(16.0)));
+        self.remember(id, &response, Some(glyph));
     }
 
     fn sound_button(
@@ -580,26 +615,6 @@ impl View<'_> {
     fn text_width(&self, text: Text) -> f32 {
         let characters = i18n::text(self.cx.preferences.locale, text).chars().count() as f32;
         characters * 6.0 + 8.0
-    }
-}
-
-/// The metadata a star stores: the title is cut to its bound at a character boundary,
-/// and a blank name falls back to the provider id.
-fn sound_favorite(sound: &libraries::sounds::SoundResult) -> SoundFavorite {
-    let title = if sound.name.is_empty() {
-        sound.id.to_string()
-    } else {
-        let mut end = sound.name.len().min(MAX_SOUND_FAVORITE_TITLE_BYTES);
-        while !sound.name.is_char_boundary(end) {
-            end -= 1;
-        }
-        sound.name[..end].to_owned()
-    };
-    SoundFavorite {
-        id: sound.id,
-        title,
-        duration_ms: sound.duration_ms,
-        preview_url: sound.audio_url.clone(),
     }
 }
 
