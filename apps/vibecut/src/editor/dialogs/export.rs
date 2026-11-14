@@ -1,6 +1,7 @@
 //! Keeps the export sheet state alongside the requests it returns.
 mod caption_outputs;
 mod chime;
+mod cover;
 mod dialog;
 mod settings;
 mod state;
@@ -23,6 +24,8 @@ pub(in crate::editor) enum Action {
     Start(ExportOptions),
     Retry,
     Save,
+    /// The Edit cover chip: the frame at the playhead becomes the project cover.
+    EditCover,
     /// A caption file or the burned MP4, saved through the window's native picker.
     Caption(crate::services::lifecycle::CaptionOutput),
     /// A caption file of the export's group, written beside the saved media.

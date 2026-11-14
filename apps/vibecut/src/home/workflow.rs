@@ -292,7 +292,7 @@ pub(super) fn catalog_worker(
             }
             Request::Thumbnail { id } => {
                 let result = library
-                    .execute(id, Command::ThumbnailProject {})
+                    .execute(id, Command::ThumbnailProject { tick: None })
                     .and_then(|_| library.list())
                     .map_err(|error| error.to_string());
                 let _ = events.send(Event::Thumbnail(result));

@@ -440,7 +440,7 @@ fn run(
                         .session
                         .autosave()
                         .ok_or(Error::Unsupported("nonpersistent editor"))?;
-                    autosave.apply(Command::ThumbnailProject {})?;
+                    autosave.apply(Command::ThumbnailProject { tick: None })?;
                 }
                 Ok(())
             })();

@@ -798,7 +798,7 @@ commands! {
     SetCanvas, "project.set_canvas", "Set canvas size", Edit { width: u32, height: u32, #[serde(default)] preset: Option<project::AspectPreset> } => Timeline, serde_json::json!({"width":1080,"height":1920,"preset":"9:16"});
     SetFps, "project.set_fps", "Set canvas frame rate", Edit { num: i64, den: i64 } => Timeline, serde_json::json!({"num":30,"den":1});
     SetViewState, "project.set_view_state", "Set timeline view", SessionControl { zoom: f64, scroll: f64, playhead: Tick } => Timeline, serde_json::json!({"zoom":2.0,"scroll":10.0,"playhead":0}), grant = Agent;
-    ThumbnailProject, "project.thumbnail", "Refresh project thumbnail", SessionControl {} => Library, serde_json::json!({}), grant = Human, lifecycle = Thumbnail;
+    ThumbnailProject, "project.thumbnail", "Refresh project thumbnail", SessionControl { #[serde(default)] tick: Option<Tick> } => Library, serde_json::json!({"tick":0}), grant = Human, lifecycle = Thumbnail;
     ProviderCatalog, "provider_catalog", "Provider catalog", Read {} => Timeline, serde_json::json!({}), returns = [Providers];
     Redo, "redo", "Redo", SessionControl {} => Redo, serde_json::json!({}), available = CanRedo, idle = true, grant = Agent, curated = true;
     ReframeApply, "reframe.apply", "Apply a reframe result", Edit { job: super::wire::JobId, replace_manual: bool } => Reframe, serde_json::json!({"job":0,"replace_manual":false}), available = UnlockedItem, idle = true;

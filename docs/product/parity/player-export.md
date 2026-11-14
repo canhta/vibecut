@@ -36,7 +36,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | ID | Item | Function | UI/UX | Evidence | Gap / note |
 |---|---|---|---|---|---|
 | EXP-01 | Dialog frame | Done | Differs | 14b/105340 | 720x663; cover beside the form |
-| EXP-02 | Cover preview, Edit cover | Missing | — | 14b/105340 | |
+| EXP-02 | Cover preview, Edit cover | Partial | Differs | 14b/105340 | Project cover; the chip sets the playhead frame, not the reference cover editor |
 | EXP-03 | Timeline select | Done | Proposed | 14b/105340 | |
 | EXP-04 | Name field | Done | Proposed | 14b/105340 | |
 | EXP-05 | Export-to path | Partial | Differs | 14b/105745 | Picker after render |
@@ -49,7 +49,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | EXP-12 | Format list | Done | Proposed | 14b/105433 | Plus WebM |
 | EXP-13 | Frame rate list | Partial | Differs | 14b/105437 | No 29.97, 59.94, 120 |
 | EXP-14 | Optical flow | Missing | — | 14b/105340 | |
-| EXP-15 | Color space row | Missing | Not captured | 14b/105340 | |
+| EXP-15 | Color space row | Partial | Proposed | 14b/105340 | Rec. 709 SDR only (HDR is refused by media); read-only text with the reason on hover |
 | EXP-16 | Sync to space | Out of scope | — | 14b/105348 | Cloud sync |
 | EXP-17 | Audio formats | Done | Proposed | 14b/105528 | MP3, WAV, AAC, FLAC in the reference order; Opus is ours, last |
 | EXP-18 | Audio-only export | Done | Proposed | 14b/105736 | |

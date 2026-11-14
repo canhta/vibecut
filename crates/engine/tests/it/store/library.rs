@@ -442,7 +442,7 @@ fn listing_uses_main_duration_and_active_scene_first_frame() {
         .unwrap();
     lease.save(session.project()).unwrap();
     drop(lease);
-    lib.execute(ProjectId(1), Command::ThumbnailProject {})
+    lib.execute(ProjectId(1), Command::ThumbnailProject { tick: None })
         .unwrap();
     let entry = lib.list().unwrap().remove(0);
     assert_eq!(entry.duration, time::Tick::ZERO);

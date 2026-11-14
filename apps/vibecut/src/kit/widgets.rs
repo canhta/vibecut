@@ -448,6 +448,57 @@ pub(crate) fn transport_button(
     response
 }
 
+/// Height of the label chip drawn over an image [measured: CapCut 9.7.1 export window, frame
+/// 105340, the `Edit cover` chip, 20 px at 1x].
+const SCRIM_CHIP_HEIGHT: f32 = 20.0;
+
+/// A label chip over an image: a translucent scrim, a 12 px glyph and a 12 px label in
+/// scrim ink, `SCRIM_CHIP_HEIGHT` high and as wide as its content, with its top-left corner at
+/// `min` (the caller's inset from the image corner). The scrim alpha is ours, unmeasured.
+pub(crate) fn scrim_chip(
+    ui: &mut Ui,
+    id: &str,
+    glyph: Icon,
+    label: &str,
+    min: egui::Pos2,
+) -> Response {
+    let enabled = ui.is_enabled();
+    let ink = if enabled {
+        theme::on_scrim()
+    } else {
+        theme::disabled(ui.visuals().dark_mode)
+    };
+    let text = paint(ui).layout_no_wrap(
+        label.to_owned(),
+        egui::FontId::proportional(type_size::BODY),
+        ink,
+    );
+    let width = space::ICON_LABEL * 3.0 + icon::PLAY + text.size().x;
+    let rect = Rect::from_min_size(min, Vec2::new(width, SCRIM_CHIP_HEIGHT));
+    let response = ui.interact(rect, ui.id().with(id), Sense::click());
+    paint(ui).rect_filled(rect, radius::CONTROL, theme::scrim());
+    let glyph_rect = Rect::from_min_size(
+        egui::pos2(
+            rect.left() + space::ICON_LABEL,
+            rect.center().y - icon::PLAY / 2.0,
+        ),
+        Vec2::splat(icon::PLAY),
+    );
+    icons::tinted(glyph, icon::PLAY, ink).paint_at(ui, glyph_rect);
+    paint(ui).galley(
+        egui::pos2(
+            glyph_rect.right() + space::ICON_LABEL,
+            rect.center().y - text.size().y / 2.0,
+        ),
+        text,
+        ink,
+    );
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, label));
+    author(&response, id);
+    focus_ring(ui, &response);
+    response
+}
+
 /// Outlined value badge inside a comfortable pointer target.
 pub(crate) fn badge_button(ui: &mut Ui, id: &str, label: &str) -> Response {
     let response = ui

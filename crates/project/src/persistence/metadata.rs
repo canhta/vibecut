@@ -8,7 +8,7 @@ use std::{
 };
 use time::Tick;
 
-pub const METADATA_VERSION: u32 = 4;
+pub const METADATA_VERSION: u32 = 5;
 /// Small uncompressed sRGB RGBA thumbnail; consumers never decode untrusted images.
 #[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
@@ -75,6 +75,8 @@ impl ViewState {
 pub struct Metadata {
     pub version: u32,
     pub thumbnail: Thumbnail,
+    /// The output tick the cover shows. A tick at or past the project's end shows tick zero.
+    pub cover_tick: Tick,
     pub view: ViewState,
     pub scene_views: std::collections::BTreeMap<crate::SceneId, ViewState>,
     /// Preview reads each source's cached proxy while on. A presentation choice
@@ -89,6 +91,7 @@ impl Default for Metadata {
         Self {
             version: METADATA_VERSION,
             thumbnail: Thumbnail::Missing,
+            cover_tick: Tick::ZERO,
             view: ViewState::default(),
             scene_views: Default::default(),
             proxy_preview: false,
@@ -99,7 +102,10 @@ impl Default for Metadata {
 }
 impl Metadata {
     pub fn validate(&self) -> Result<()> {
-        if self.version != METADATA_VERSION || self.modified_unix_ms < self.created_unix_ms {
+        if self.version != METADATA_VERSION
+            || self.modified_unix_ms < self.created_unix_ms
+            || self.cover_tick < Tick::ZERO
+        {
             return Err(Error::Invalid("metadata version or timestamps"));
         }
         if self.scene_views.len() > 256 {

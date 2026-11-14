@@ -25,8 +25,22 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ctx: &egui::Context) -> 
         .zip(items.iter().filter_map(|item| item.end().ok()).max())
         .and_then(|(start, end)| time::TimeRange::new(start, end).ok());
     let mut options = preferred;
-    let output = dialog.ui(ctx, cx.locale, cx.dark, &mut options, project, cx.preview);
+    let corrections = || {
+        cx.playback
+            .footage_corrections(project)
+            .unwrap_or_default()
+            .corrections()
+    };
+    let cover = super::cover::Cover {
+        thumbnail: &cx.session.metadata().thumbnail,
+        tick: cx.session.metadata().cover_tick,
+        project,
+        corrections: &corrections,
+        editable: cx.cover_editable,
+    };
+    let output = dialog.ui(ctx, cx.locale, cx.dark, &mut options, project, cover);
     match output.action {
+        Some(DialogAction::EditCover) => actions.push(Action::EditCover),
         Some(DialogAction::Start) => actions.push(Action::Start(options)),
         Some(DialogAction::Retry) => actions.push(Action::Retry),
         Some(DialogAction::Save) => actions.push(Action::Save),
@@ -71,6 +85,20 @@ pub(super) fn apply(state: &mut State, port: &mut Port<'_>, action: Action) {
             let project = port.session.project().clone();
             if let Err(error) = state.retry(project, blocked) {
                 state.fail(error);
+            }
+        }
+        Action::EditCover => {
+            // The cover is project metadata beside the project, not project content: the
+            // engine writes it outside history, so there is no undo step to take.
+            let tick = match port.playhead() {
+                Ok(tick) => tick,
+                Err(error) => return port.fail(error.to_string()),
+            };
+            if let Some(autosave) = port.session.autosave()
+                && let Err(error) =
+                    autosave.apply(engine::Command::ThumbnailProject { tick: Some(tick) })
+            {
+                port.fail(error.to_string());
             }
         }
         Action::Save => port.request(Request::Lifecycle(EditorAction::ExportSave)),

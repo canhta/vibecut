@@ -2304,7 +2304,9 @@ Effect: `SessionControl`. Fixture: `Timeline`.
 Effect: `SessionControl`. Fixture: `Library`.
 
 ```json
-{}
+{
+  "tick": 0
+}
 ```
 
 ## `provider_catalog` — Provider catalog

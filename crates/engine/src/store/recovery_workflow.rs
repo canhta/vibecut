@@ -236,6 +236,7 @@ impl Autosave {
         if matches!(metadata.thumbnail, project::Thumbnail::Missing) {
             metadata.thumbnail = crate::store::project_cover::capture(
                 session.project(),
+                metadata.cover_tick,
                 &crate::ByteBudgetHooks::new(&budget, None),
                 &corrections,
             );

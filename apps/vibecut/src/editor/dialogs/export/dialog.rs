@@ -263,6 +263,8 @@ pub struct ExportInspection {
     /// Every file published since the export started, in save order.
     pub saved: Vec<PathBuf>,
     pub attempt: Option<ExportOptions>,
+    /// The pixel size of the sized cover render when it is the image on screen.
+    pub cover: Option<[usize; 2]>,
 }
 #[derive(Clone, Debug)]
 pub struct SaveRequest {
@@ -339,6 +341,8 @@ pub struct ExportDialog {
     publishing: Option<PathBuf>,
     input: Option<CacheKey>,
     publication_fs: Arc<dyn project::atomic::AtomicFs + Send + Sync>,
+    /// The project cover as last uploaded, to upload again only when it changes.
+    cover: super::cover::Held,
 }
 impl ExportDialog {
     /// One export job: the caller's byte budget and the shared render state, no
@@ -393,6 +397,7 @@ impl ExportDialog {
             publishing: None,
             input: None,
             publication_fs: Arc::new(project::atomic::Fs),
+            cover: Default::default(),
         })
     }
     /// Inject only the render source boundary; scheduling stays with engine.
@@ -446,6 +451,7 @@ impl ExportDialog {
             diagnostics: self.diagnostics.clone(),
             saved: self.saved.clone(),
             attempt: self.attempt,
+            cover: self.cover.sharp_size(),
         }
     }
     pub fn active(&self) -> bool {
@@ -1028,6 +1034,8 @@ pub(crate) enum DialogAction {
     Save,
     Start,
     Caption(crate::services::lifecycle::CaptionOutput),
+    /// The Edit cover chip: the frame at the playhead becomes the project cover.
+    EditCover,
 }
 /// The export window: 720 x 663 as in the reference capture (row 12 of the 2026-11-14b round).
 const DIALOG_SIZE: [f32; 2] = [720.0, 663.0];
@@ -1043,7 +1051,7 @@ impl ExportDialog {
         dark: bool,
         options: &mut ExportOptions,
         project: &Arc<project::Project>,
-        preview: Option<&egui::TextureHandle>,
+        cover: super::cover::Cover<'_>,
     ) -> DialogUi {
         let mut result = DialogUi {
             widgets: Vec::new(),
@@ -1333,46 +1341,22 @@ impl ExportDialog {
                                 egui::vec2(227.0, body_height),
                                 egui::Layout::top_down(egui::Align::Center),
                                 |ui| {
-                                    let (rect, _) = ui.allocate_exact_size(
-                                        egui::vec2(
-                                            227.0,
-                                            (227.0 * project.data().canvas.height as f32
-                                                / project.data().canvas.width as f32)
-                                                .min(body_height),
-                                        ),
-                                        egui::Sense::hover(),
+                                    super::cover::show(
+                                        ui,
+                                        &mut self.cover,
+                                        cover,
+                                        super::cover::View {
+                                            locale,
+                                            dark,
+                                            aspect: project.data().canvas.height as f32
+                                                / project.data().canvas.width as f32,
+                                            height: body_height,
+                                            empty: self.empty,
+                                            busy: active,
+                                            budget: self.runner.memory_budget(),
+                                        },
+                                        &mut result,
                                     );
-                                    ui.painter().rect_filled(rect, 4.0, theme::window(dark));
-                                    if let Some(texture) = preview {
-                                        let size = texture.size_vec2();
-                                        let scale = (rect.width() / size.x).min(rect.height() / size.y);
-                                        let image =
-                                            egui::Rect::from_center_size(rect.center(), size * scale);
-                                        ui.painter().image(
-                                            texture.id(),
-                                            image,
-                                            egui::Rect::from_min_max(
-                                                egui::Pos2::ZERO,
-                                                egui::pos2(1.0, 1.0),
-                                            ),
-                                            egui::Color32::WHITE,
-                                        );
-                                    } else {
-                                        let galley = ui.painter().layout(
-                                            tr(if self.empty {
-                                                Text::EmptyPreview
-                                            } else {
-                                                Text::Loading
-                                            })
-                                            .to_owned(),
-                                            egui::FontId::proportional(14.0),
-                                            theme::secondary(dark),
-                                            rect.width() - 24.0,
-                                        );
-                                        let position = rect.center() - galley.size() * 0.5;
-                                        ui.painter()
-                                            .galley(position, galley, theme::secondary(dark));
-                                    }
                                 },
                             );
                             ui.add_space(gap);

@@ -23,7 +23,7 @@ pub(crate) use theme::{
 };
 pub(crate) use widgets::{
     KeyframeControl, KeyframeToggle, action_button, badge_button, checkbox, checkbox_box, dashed_outline,
-    icon_button, icon_tab, keyframe_cluster, keyframe_toggle, rail_slider, rail_stops_slider,
+    icon_button, icon_tab, keyframe_cluster, keyframe_toggle, rail_slider, rail_stops_slider, scrim_chip,
     section_header_with, segmented, stepper, text_tabs, toggle, transport_button, value_field,
     zoom_rail,
 };

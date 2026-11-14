@@ -1810,3 +1810,125 @@ fn audio_formats_list_in_the_reference_order_and_map_to_their_containers() {
         assert!(settings.audio_only);
     }
 }
+
+/// A persistent editor over the fixture project: its engine store can hold a cover.
+fn persistent_editor(root: &std::path::Path) -> Editor {
+    let project = project(false, false);
+    let autosave = engine::recovery::Autosave::new(
+        &root.join("recovery"),
+        Session::new(project.clone(), 10).unwrap(),
+        ByteBudget::new(64 << 20).unwrap(),
+        engine::footage::uncorrected(),
+        Arc::new(engine::jobs::SystemClock::default()),
+        Default::default(),
+    )
+    .unwrap();
+    let mut editor = editor_project(project);
+    editor.session = crate::services::lifecycle::EditorSession::Persistent(Box::new(autosave));
+    editor
+}
+
+#[test]
+fn the_cover_waits_for_its_image_and_edit_cover_stores_the_playhead_frame() {
+    let root = tempfile::tempdir().unwrap();
+    let mut bench = bench(persistent_editor(root.path()));
+    open(&mut bench);
+    assert!(enabled(&bench, "export.cover.edit"));
+    assert_eq!(bench.editor().session.metadata().cover_tick, Tick::ZERO);
+    assert!(matches!(
+        bench.editor().session.metadata().thumbnail,
+        project::Thumbnail::Missing
+    ));
+    let history = bench.editor().session.history_len();
+    bench.editor_mut().seek(Tick(SECOND / 30)).unwrap();
+    let at = bench.editor().playback.position().unwrap();
+    assert_ne!(at, Tick::ZERO);
+    bench.click("export.cover.edit");
+    let metadata = bench.editor().session.metadata();
+    assert_eq!(metadata.cover_tick, at);
+    assert!(matches!(
+        metadata.thumbnail,
+        project::Thumbnail::Ready { .. }
+    ));
+    // The cover is metadata beside the project, so no undo step is taken.
+    assert_eq!(bench.editor().session.history_len(), history);
+    assert_eq!(bench.editor().error, None);
+    // The dialog stays open on its settings with the chip still live.
+    assert!(bench.editor().export_state().unwrap().inspect().open);
+    assert!(enabled(&bench, "export.cover.edit"));
+}
+
+#[test]
+fn edit_cover_is_disabled_with_its_reason_when_nothing_can_store_a_cover() {
+    let mut bench = bench(editor(false, false));
+    open(&mut bench);
+    assert!(!enabled(&bench, "export.cover.edit"));
+    assert_eq!(
+        bench.editor().session.metadata().thumbnail,
+        project::Thumbnail::Missing
+    );
+}
+
+#[test]
+fn the_color_space_row_names_the_only_space_the_encoder_writes() {
+    let mut bench = bench(editor(false, false));
+    open(&mut bench);
+    let harness = bench.harness();
+    harness.get_by_label("Color space");
+    harness.get_by_label("Rec. 709 SDR");
+    // The row has no control: it is read-only text that carries the reason on hover.
+    assert!(enabled(&bench, "export.color_space"));
+}
+
+#[test]
+fn the_cover_is_rendered_at_the_columns_physical_size_and_kept_when_reopened() {
+    for scale in [1.0_f32, 2.0] {
+        let mut bench = bench(editor(false, false));
+        bench
+            .editor_mut()
+            .session
+            .apply(engine::Command::SetCanvas {
+                width: 360,
+                height: 180,
+                preset: None,
+            })
+            .unwrap();
+        bench
+            .harness_mut()
+            .input_mut()
+            .viewports
+            .get_mut(&egui::ViewportId::ROOT)
+            .unwrap()
+            .native_pixels_per_point = Some(scale);
+        bench.harness().ctx.set_zoom_factor(1.0);
+        open(&mut bench);
+        // The 128 px thumbnail is not the sized render; wait for the sized frame to arrive.
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let size = loop {
+            bench.editor_mut().tick();
+            bench.step();
+            if let Some(size) = bench.editor().export_state().unwrap().inspect().cover {
+                break size;
+            }
+            assert!(Instant::now() < deadline, "the sized cover never arrived");
+            std::thread::yield_now();
+        };
+        // The column is 227 logical px wide and the canvas is 2:1.
+        assert_eq!(size[0], (227.0 * scale) as usize, "width at {scale}x");
+        assert_eq!(
+            size[1],
+            (227.0 * 0.5 * scale).round() as usize,
+            "height at {scale}x"
+        );
+        // Closing and reopening on the same project shows the kept render at once.
+        bench.harness_mut().key_press(egui::Key::Escape);
+        bench.harness_mut().run_steps(2);
+        assert!(!bench.editor().export_state().unwrap().inspect().open);
+        open(&mut bench);
+        assert_eq!(
+            bench.editor().export_state().unwrap().inspect().cover,
+            Some(size),
+            "the render is cached at {scale}x"
+        );
+    }
+}

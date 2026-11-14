@@ -248,7 +248,7 @@ fn thumbnails_backfill_on_open_and_refresh_at_exit_without_preview_state() {
             playhead: Tick(frame.0 * 10),
         })
         .unwrap();
-    autosave.apply(Command::ThumbnailProject {}).unwrap();
+    autosave.apply(Command::ThumbnailProject { tick: None }).unwrap();
     let thumbnail = autosave.session().metadata().thumbnail.clone();
     assert_ne!(thumbnail, first);
     assert!(
@@ -284,10 +284,125 @@ fn unrenderable_thumbnail_is_a_persisted_placeholder() {
         project::Thumbnail::Unavailable
     );
     library
-        .execute(ProjectId(1), Command::ThumbnailProject {})
+        .execute(ProjectId(1), Command::ThumbnailProject { tick: None })
         .unwrap();
     assert_eq!(
         library.list().unwrap()[0].thumbnail,
         project::Thumbnail::Unavailable
     );
+}
+
+#[test]
+fn the_cover_tick_picks_the_cover_frame_and_survives_refreshes() {
+    use engine::{
+        ByteBudget,
+        jobs::SystemClock,
+        recovery::{Autosave, Schedule},
+    };
+    use std::sync::Arc;
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("cover.vibecut");
+    let mut data = project::Project::empty(ProjectId(92), "Cover".into())
+        .unwrap()
+        .into_data();
+    let frame = data.canvas.fps.tick_of(1).unwrap();
+    for (id, colour, start) in [
+        (6, [255, 0, 0, 255], Tick::ZERO),
+        (7, [0, 255, 0, 255], frame),
+    ] {
+        data.scene_mut().timeline.main.items.push(
+            testkit::item::item(
+                project::ItemId(id),
+                project::ItemParams::Overlay(project::OverlayParams {
+                    color: project::Color(colour),
+                }),
+            )
+            .source(time::SourceRange::new(Tick::ZERO, frame).unwrap())
+            .start(start)
+            .build(),
+        );
+    }
+    let mut lease = project::WriterLease::acquire(&path).unwrap();
+    lease.save(&project::Project::new(data).unwrap()).unwrap();
+    drop(lease);
+    let mut autosave = Autosave::open(
+        &root.path().join("recovery"),
+        &path,
+        10,
+        ByteBudget::new(64 << 20).unwrap(),
+        engine::footage::uncorrected(),
+        Arc::new(SystemClock::default()),
+        Schedule::default(),
+    )
+    .unwrap();
+    let colour = |autosave: &Autosave| match &autosave.session().metadata().thumbnail {
+        project::Thumbnail::Ready { rgba, .. } => [rgba[0], rgba[1], rgba[2]],
+        other => panic!("cover unavailable: {other:?}"),
+    };
+    let is_red = |c: [u8; 3]| c[0] > 245 && c[1] < 10 && c[2] < 10;
+    let is_green = |c: [u8; 3]| c[0] < 10 && c[1] > 245 && c[2] < 10;
+    assert_eq!(autosave.session().metadata().cover_tick, Tick::ZERO);
+    assert!(is_red(colour(&autosave)));
+    // A chosen tick is stored with the cover and a later refresh keeps it.
+    autosave
+        .apply(Command::ThumbnailProject { tick: Some(frame) })
+        .unwrap();
+    assert_eq!(autosave.session().metadata().cover_tick, frame);
+    assert!(is_green(colour(&autosave)));
+    assert_eq!(project::read_metadata(&path).cover_tick, frame);
+    autosave
+        .apply(Command::ThumbnailProject { tick: None })
+        .unwrap();
+    assert!(is_green(colour(&autosave)));
+    // A tick the project no longer reaches shows its first frame; the choice is kept.
+    let past = Tick(frame.0 * 10);
+    autosave
+        .apply(Command::ThumbnailProject { tick: Some(past) })
+        .unwrap();
+    assert_eq!(autosave.session().metadata().cover_tick, past);
+    assert!(is_red(colour(&autosave)));
+    // A negative tick is refused and changes nothing.
+    assert!(
+        autosave
+            .apply(Command::ThumbnailProject {
+                tick: Some(Tick(-1))
+            })
+            .is_err()
+    );
+    assert_eq!(autosave.session().metadata().cover_tick, past);
+    assert_eq!(project::read_metadata(&path).cover_tick, past);
+    // The cover edit is outside content history.
+    assert_eq!(autosave.session().history_len(), (0, 0));
+}
+
+#[test]
+fn the_cover_renders_at_the_size_an_adapter_asks_for() {
+    let mut data = project::Project::empty(ProjectId(93), "Sized".into())
+        .unwrap()
+        .into_data();
+    let frame = data.canvas.fps.tick_of(1).unwrap();
+    data.scene_mut().timeline.main.items.push(
+        testkit::item::item(
+            project::ItemId(6),
+            project::ItemParams::Overlay(project::OverlayParams {
+                color: project::Color([255, 0, 0, 255]),
+            }),
+        )
+        .source(time::SourceRange::new(Tick::ZERO, frame).unwrap())
+        .build(),
+    );
+    let project = project::Project::new(data).unwrap();
+    let budget = engine::ByteBudget::new(64 << 20).unwrap();
+    let hooks = engine::ByteBudgetHooks::new(&budget, None);
+    let image = engine::cover::render(
+        &project,
+        Tick::ZERO,
+        [454, 255],
+        &hooks,
+        &Default::default(),
+    )
+    .unwrap();
+    assert_eq!((image.width, image.height), (454, 255));
+    assert_eq!(image.rgba.len(), 454 * 255 * 4);
+    assert!(image.rgba[0] > 245 && image.rgba[1] < 10 && image.rgba[2] < 10);
 }

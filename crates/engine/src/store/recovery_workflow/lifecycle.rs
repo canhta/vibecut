@@ -53,7 +53,12 @@ impl Autosave {
     pub fn apply(&mut self, command: crate::Command) -> Result<crate::Outcome> {
         match command.lifecycle() {
             Some(Lifecycle::Thumbnail) => {
-                self.refresh_thumbnail()?;
+                let tick = if let crate::Command::ThumbnailProject { tick } = &command {
+                    *tick
+                } else {
+                    None
+                };
+                self.refresh_thumbnail(tick)?;
                 Ok(unchanged())
             }
             Some(Lifecycle::Save) => {
@@ -73,14 +78,16 @@ impl Autosave {
             | None => Ok(self.session.apply(command)?),
         }
     }
-    fn refresh_thumbnail(&mut self) -> Result<()> {
+    fn refresh_thumbnail(&mut self, tick: Option<time::Tick>) -> Result<()> {
         if self.session.transaction_active() {
             return Err(Error::from(crate::session::SessionError::TransactionActive));
         }
         self.flush()?;
         let mut metadata = self.session.metadata().clone();
+        metadata.cover_tick = tick.unwrap_or(metadata.cover_tick);
         metadata.thumbnail = crate::store::project_cover::capture(
             self.session.project(),
+            metadata.cover_tick,
             &crate::ByteBudgetHooks::new(&self.budget, None),
             &self.corrections,
         );

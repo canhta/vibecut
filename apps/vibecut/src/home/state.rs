@@ -1039,7 +1039,7 @@ mod tests {
         // An editor's save renders the cover through the lent library while Home is not
         // listing; Home keeps its last listing until it is asked again.
         page.catalog()
-            .with(|library| library.execute(ProjectId(1), Command::ThumbnailProject {}))
+            .with(|library| library.execute(ProjectId(1), Command::ThumbnailProject { tick: None }))
             .expect("cover");
         assert_eq!(page.entries()[0].thumbnail, Thumbnail::Unavailable);
         page.refresh();

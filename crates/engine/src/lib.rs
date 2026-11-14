@@ -35,6 +35,7 @@ pub use runtime::{
     HostMemory, MemoryProbe, SystemMemory, host_budget_limit,
 };
 mod store;
+pub use store::cover;
 pub use store::library;
 pub use store::luts;
 pub use store::recovery;
