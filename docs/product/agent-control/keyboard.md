@@ -64,15 +64,15 @@
 | `transport.frame_forward` — Step one frame forward | Navigation | Right | — | playback transport |
 | `transport.start` — Go to start | Navigation | Home, Enter | — | playback transport |
 | `transport.end` — Go to end | Navigation | End | — | playback transport |
-| `playback.jump_bookmark.next` — Next bookmark | Playback | — | — | playback transport |
-| `playback.jump_bookmark.previous` — Previous bookmark | Playback | — | — | playback transport |
+| `playback.jump_bookmark.next` — Next bookmark | Playback | Shift+M | — | playback transport |
+| `playback.jump_bookmark.previous` — Previous bookmark | Playback | Alt+Shift+M | — | playback transport |
 | `playback.loop` — Loop playback | Playback | — | — | playback transport |
 | `timeline.select_all` — Select all | Selection | Ctrl+A | — | timeline selection |
-| `timeline.deselect_all` — Deselect all | Selection | — | — | timeline selection |
+| `timeline.deselect_all` — Deselect all | Selection | Alt+X | — | timeline selection |
 | `timeline.duplicate` — Duplicate | Selection | Ctrl+D | `timeline.duplicate` | — |
 | `timeline.set_hidden` — Hide or show selection | Edit | — | `timeline.set_hidden` | — |
 | `timeline.set_muted` — Mute or unmute selection | Edit | — | `timeline.set_muted` | — |
-| `timeline.extract_audio` — Extract audio | Edit | — | `timeline.extract_audio` | — |
+| `timeline.extract_audio` — Extract audio | Edit | Ctrl+Shift+S | `timeline.extract_audio` | — |
 | `timeline.recover_audio` — Recover audio | Edit | — | `timeline.recover_audio` | — |
 | `selection.escape` — Cancel or deselect | Selection | Escape | — | timeline selection |
 | `edit.undo` — Undo | History | Ctrl+Z | — | app and engine history |
@@ -84,8 +84,8 @@
 | `timeline.tool.split` — Split mode | Timeline | B | — | timeline tool |
 | `timeline.select_left` — Select leftward | Selection | [ | — | timeline selection |
 | `timeline.select_right` — Select rightward | Selection | ] | — | timeline selection |
-| `timeline.zoom_in` — Zoom in | Timeline | — | — | timeline view |
-| `timeline.zoom_out` — Zoom out | Timeline | — | — | timeline view |
+| `timeline.zoom_in` — Zoom in | Timeline | Ctrl+Equals, Ctrl+Plus | — | timeline view |
+| `timeline.zoom_out` — Zoom out | Timeline | Ctrl+Minus | — | timeline view |
 | `timeline.add_track` — Add track | Timeline | — | `timeline.add_track` | — |
 | `timeline.bookmark` — Toggle bookmark | Timeline | M | `bookmark.toggle` | — |
 | `timeline.crop` — Crop | Edit | — | — | crop dialog |
@@ -123,13 +123,13 @@
 | `timeline.item` — Select item | View | — | — | timeline selection |
 | `preview.snapshot` — Save a frame | View | — | — | preview snapshot dialog |
 | `preview.copy_snapshot` — Copy frame | View | — | — | preview snapshot |
-| `preview.fullscreen` — Toggle preview fullscreen | View | — | — | preview viewport |
-| `preview.zoom.fit` — Fit preview | View | — | — | preview view |
-| `preview.zoom.in` — Zoom preview in | View | — | — | preview view |
-| `preview.zoom.out` — Zoom preview out | View | — | — | preview view |
+| `preview.fullscreen` — Toggle preview fullscreen | View | Ctrl+Shift+F | — | preview viewport |
+| `preview.zoom.fit` — Fit preview | View | Alt+Shift+Z | — | preview view |
+| `preview.zoom.in` — Zoom preview in | View | Alt+Shift+Plus | — | preview view |
+| `preview.zoom.out` — Zoom preview out | View | Alt+Shift+Minus | — | preview view |
 | `preview.zoom` — Set preview zoom | View | — | — | preview view |
-| `file.import` — Import | File | — | — | workspace import picker |
-| `file.export` — Export | File | — | — | export dialog |
+| `file.import` — Import | File | Ctrl+I | — | workspace import picker |
+| `file.export` — Export | File | Ctrl+E | — | export dialog |
 | `project.save` — Save | File | — | — | workspace lifecycle |
 | `project.save_as` — Save as | File | — | — | workspace lifecycle |
 | `window.home` — Go to Home | File | — | — | workspace lifecycle |
@@ -161,3 +161,23 @@ Every project mutation uses its engine command id (`vibecut-cli commands --json`
 With the main track magnet on (the default), Delete and Split and remove left or right (`Q`, `W`) on a main-track clip close the gap they leave on the main track in the same undo step; a linked clip on another track closes its own gap, and other tracks do not move. With the magnet off, and no ripple enabled, the gap stays.
 
 Bindings persist in the app preference store as five named profiles (Shortcut 1 to Shortcut 5) and the active one. The shortcuts dialog's preset dropdown switches the active profile at once, as one preference edit; the table above is the default profile, and the drift test compares it. Edits, Reset and Save act on the active profile, and the agent command `ui.keybindings.set` does too. In the shortcuts dialog, a recorded chord that another action already owns opens a conflict prompt naming the owner: Cancel keeps the edit box recording, and Override moves the chord to the recorded action so the old owner loses it. Escape inside the edit box is recorded as a key, so it can conflict like any other chord. The dialog edits a working copy: Save stays disabled until it differs from the stored map, and Save commits it as one preference edit; Cancel, Escape and closing discard it. Reset (per action or all) has no confirmation and acts on the working copy. The `ui.keybindings.set` command refuses a conflicting chord; it does not prompt. Resetting an action removes its `isCustomized` marker. A binding profile with an unsupported format or version is refused with a typed diagnostic.
+
+## Reference defaults
+
+The reference desktop key list (measured 2026-11-14) sets the defaults above where the chord is free here; `Ctrl` there is Cmd. Defaults are written as canonical chord text, so the key names (`Equals`, `Plus`, `Minus`) stand in for the symbols. Where our chord already owns the key, ours stays and the difference is recorded here.
+
+Adopted: extract audio `Ctrl+Shift+S`; timeline zoom in `Ctrl+Equals` (and `Ctrl+Plus` on the numeric keypad) and out `Ctrl+Minus`; deselect all `Alt+X`; full screen `Ctrl+Shift+F`; player zoom in `Alt+Shift+Plus`, out `Alt+Shift+Minus`, fit `Alt+Shift+Z`; import `Ctrl+I`; export `Ctrl+E`; next bookmark `Shift+M`; previous bookmark `Alt+Shift+M`. Rulers and guides are bound by the rulers and guides work on main, so this list does not repeat them.
+
+Not adopted, because the reference chord has no action here:
+- Restore audio has no chord. The reference shows one Shift Ctrl S toggle for extract and restore; a chord binds one action, and extract takes it.
+- New project: Home's create banner is not a registry action.
+- Group and Ungroup, Zoom to fit timeline (`Shift+Z`) and the main track magnet (`P`, a toolbar command, not an action) have no action.
+- Keyframe lane `Alt+K` and add keyframe `Shift+Alt+K` belong to the keyframe work in flight; they are not bound here.
+
+Kept ours (collisions):
+- `Shift+X`: ours is `export.in_out`; the reference uses it for select by clip.
+- `Ctrl+D`: ours is `timeline.duplicate`; the reference uses it for dictation.
+- `Esc`: ours is `selection.escape` (cancel a drag, then deselect). The reference uses it to leave full screen; the player still leaves full screen on `Esc` before selection handles it.
+- `J` and `L`: ours seek back and forward one second; the reference shuttles. `Shift+Left` is ours, one-second jump back; the reference steps back many frames, and `Left` and `Right` already step one frame here.
+
+The shifted minus and plus keys depend on how the keyboard layout reports them, so confirm `Alt+Shift+Minus` and `Alt+Shift+Plus` on a real keyboard.

@@ -1188,3 +1188,85 @@ fn shortcuts_dialog_tabs_switch_and_capture_every_tab_at_two_x() {
         root.join("p1-04-shortcuts.png").display()
     );
 }
+
+#[test]
+fn reference_default_chords_run_their_actions_through_the_keymap() {
+    // One row per adopted group. Each chord goes through the keymap the frame
+    // dispatches with, so a collision or a missing registry row fails here.
+    let keymap = actions::Keymap::resolve(&actions::KeybindingPreferences::default());
+    let command = egui::Modifiers::COMMAND;
+    let alt_shift = egui::Modifiers::ALT.plus(egui::Modifiers::SHIFT);
+    let groups: [(&str, &[(egui::Modifiers, egui::Key, &str)]); 7] = [
+        (
+            "extract audio",
+            &[(
+                command.plus(egui::Modifiers::SHIFT),
+                egui::Key::S,
+                "timeline.extract_audio",
+            )],
+        ),
+        (
+            "timeline zoom",
+            &[
+                (command, egui::Key::Equals, "timeline.zoom_in"),
+                (command, egui::Key::Plus, "timeline.zoom_in"),
+                (command, egui::Key::Minus, "timeline.zoom_out"),
+            ],
+        ),
+        (
+            "deselect",
+            &[(egui::Modifiers::ALT, egui::Key::X, "timeline.deselect_all")],
+        ),
+        (
+            "full screen",
+            &[(
+                command.plus(egui::Modifiers::SHIFT),
+                egui::Key::F,
+                "preview.fullscreen",
+            )],
+        ),
+        (
+            "player zoom",
+            &[
+                (alt_shift, egui::Key::Plus, "preview.zoom.in"),
+                (alt_shift, egui::Key::Minus, "preview.zoom.out"),
+                (alt_shift, egui::Key::Z, "preview.zoom.fit"),
+            ],
+        ),
+        (
+            "import and export",
+            &[
+                (command, egui::Key::I, "file.import"),
+                (command, egui::Key::E, "file.export"),
+            ],
+        ),
+        (
+            "bookmarks",
+            &[
+                (
+                    egui::Modifiers::SHIFT,
+                    egui::Key::M,
+                    "playback.jump_bookmark.next",
+                ),
+                (alt_shift, egui::Key::M, "playback.jump_bookmark.previous"),
+            ],
+        ),
+    ];
+    for (group, chords) in groups {
+        for &(modifiers, key, action) in chords {
+            let mut input = egui::InputState::default();
+            input.events.push(egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers,
+            });
+            let outcome = keymap.take(&mut input, actions::DispatchContext::default());
+            assert!(
+                matches!(outcome, actions::Dispatch::Action { action: found, .. } if found == action),
+                "{group}: {key:?} should run {action}, got {outcome:?}"
+            );
+        }
+    }
+}

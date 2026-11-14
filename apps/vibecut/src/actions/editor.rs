@@ -473,7 +473,7 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         ActionCategory::Playback,
         "playback transport",
         UiAction::JumpBookmark(super::BookmarkDirection::Next),
-        &[],
+        &["Shift+M"],
     ),
     ActionSpec::ui(
         "playback.jump_bookmark.previous",
@@ -481,7 +481,7 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         ActionCategory::Playback,
         "playback transport",
         UiAction::JumpBookmark(super::BookmarkDirection::Previous),
-        &[],
+        &["Alt+Shift+M"],
     ),
     ActionSpec::ui(
         "playback.loop",
@@ -505,7 +505,7 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         ActionCategory::Selection,
         "timeline selection",
         UiAction::DeselectAll,
-        &[],
+        &["Alt+X"],
     ),
     ActionSpec::engine(
         "timeline.duplicate",
@@ -533,7 +533,7 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         Text::ActionTimelineExtractAudio,
         ActionCategory::Edit,
         EngineAction::ExtractAudio,
-        &[],
+        &["Ctrl+Shift+S"],
     ),
     ActionSpec::engine(
         "timeline.recover_audio",
@@ -628,7 +628,7 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         ActionCategory::Timeline,
         "timeline view",
         UiAction::ZoomIn,
-        &[],
+        &["Ctrl+Equals", "Ctrl+Plus"],
     ),
     ActionSpec::ui(
         "timeline.zoom_out",
@@ -636,7 +636,7 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         ActionCategory::Timeline,
         "timeline view",
         UiAction::ZoomOut,
-        &[],
+        &["Ctrl+Minus"],
     ),
     ActionSpec::engine(
         "timeline.add_track",
@@ -926,7 +926,7 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         ActionCategory::View,
         "preview viewport",
         UiAction::PreviewFullscreen,
-        &[],
+        &["Ctrl+Shift+F"],
     ),
     ActionSpec::ui(
         "preview.zoom.fit",
@@ -934,7 +934,7 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         ActionCategory::View,
         "preview view",
         UiAction::PreviewFit,
-        &[],
+        &["Alt+Shift+Z"],
     ),
     ActionSpec::ui(
         "preview.zoom.in",
@@ -942,7 +942,7 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         ActionCategory::View,
         "preview view",
         UiAction::PreviewZoomIn,
-        &[],
+        &["Alt+Shift+Plus"],
     ),
     ActionSpec::ui(
         "preview.zoom.out",
@@ -950,7 +950,7 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         ActionCategory::View,
         "preview view",
         UiAction::PreviewZoomOut,
-        &[],
+        &["Alt+Shift+Minus"],
     ),
     ActionSpec::ui(
         "preview.zoom",
