@@ -148,3 +148,62 @@ pub(super) fn execute_replace_media(
     }
     Ok(data)
 }
+
+/// Replace one clip with another registered source, the way the reference's Replace clip
+/// does: the clip keeps its place, output length, speed, pitch and reverse flags, volume,
+/// effects, masks, keyframes, params and transitions, and plays the new source from its start
+/// (source in point zero) for the length the clip already has. Unlike
+/// [`execute_replace_media`] the source window is rebuilt, so a clip trimmed to the middle of
+/// the old media starts at the head of the new one. The new source must carry the item's stream
+/// kind and cover the window the clip needs when its duration is known. A clip under a speed
+/// curve, or whose length the constant speed cannot reproduce from whole source ticks, refuses.
+/// The retained cut window is dropped because the source window it described no longer exists.
+pub(super) fn execute_replace_clip(
+    mut data: ProjectData,
+    id: ItemId,
+    asset: media::AssetId,
+) -> Result<ProjectData> {
+    let source = data
+        .assets
+        .iter()
+        .find(|record| record.id() == asset)
+        .cloned()
+        .ok_or(EditError::NoAsset(asset))?;
+    let target = item(&mut data, id)?;
+    let needed = match target.content {
+        ItemParams::Video(_) => media::StreamKind::Video,
+        ItemParams::Audio(_) => media::StreamKind::Audio,
+        _ => return Err(EditError::Unsupported("replace clip on non-media item")),
+    };
+    if !source
+        .probe()
+        .streams
+        .iter()
+        .any(|stream| stream.kind == needed)
+    {
+        return Err(EditError::Invalid("replacement media kind mismatch"));
+    }
+    if target.retime.curve.is_some() {
+        return Err(EditError::Unsupported("replace clip under a speed curve"));
+    }
+    let length = target.duration()?;
+    let span = target
+        .retime
+        .speed
+        .source_offset(length, time::Rounding::Ceil)?;
+    if target.retime.speed.output_duration(span)? != length {
+        return Err(EditError::Invalid("clip length not representable"));
+    }
+    if source
+        .probe()
+        .duration
+        .is_some_and(|duration| span > duration)
+    {
+        return Err(EditError::Invalid("replacement source too short"));
+    }
+    target.source_range = time::SourceRange::new(time::Tick::ZERO, span)
+        .map_err(|_| EditError::Invalid("replacement source window"))?;
+    target.retime.window = None;
+    target.source_asset = Some(asset);
+    Ok(data)
+}

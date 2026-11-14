@@ -1,7 +1,8 @@
 //! Resolves a Media-panel drag over the lanes: the landing hint follows the pointer while it
 //! is down, and a release over the lanes inserts the dragged assets. A single asset over an
 //! occupied clip of its kind labels the clip `Replace`; releasing it shorter than that clip
-//! changes nothing and toasts why.
+//! changes nothing and toasts why, and releasing it equal or longer replaces the clip with
+//! `timeline.replace_clip`.
 
 use crate::editor::context::MediaDrag;
 use crate::editor::timeline::{
@@ -51,10 +52,17 @@ impl State {
             self.drop_zone = None;
             self.replace_hint = None;
             if let (Some(pointer), Some(landing)) = (pointer, landing) {
-                if landing.occupied.is_some_and(|occupied| occupied.shorter) {
-                    self.push(Action::Toast(
-                        i18n::text(cx.locale, Text::ReplaceTooShort).to_owned(),
-                    ));
+                if let (Some(occupied), [asset]) = (landing.occupied, drag.assets.as_slice()) {
+                    if occupied.shorter {
+                        self.push(Action::Toast(
+                            i18n::text(cx.locale, Text::ReplaceTooShort).to_owned(),
+                        ));
+                    } else {
+                        self.push(Action::Command(Box::new(engine::Command::ReplaceClip {
+                            item: occupied.item,
+                            asset: *asset,
+                        })));
+                    }
                     return;
                 }
                 let at = self.tick_at(pointer.x, layout.body.left());

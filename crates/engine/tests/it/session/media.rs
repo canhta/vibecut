@@ -368,6 +368,150 @@ fn replace_refuses_short_kind_mismatched_and_hostile_targets_atomically() {
     assert_eq!(session.project(), &locked);
 }
 
+/// A clip at 2x over a mid-source window carrying an effect, a mask and an opacity key.
+fn dressed_clip(session: &mut Session) -> project::ItemId {
+    let item = insert_video_range(
+        session,
+        AssetId(1),
+        SourceRange::new(Tick(2_000), Tick(6_000)).unwrap(),
+    );
+    session
+        .apply(Command::SetSpeed {
+            items: vec![item],
+            speed: time::Speed::from_f64(2.0).unwrap(),
+            maintain_pitch: false,
+        })
+        .unwrap();
+    session
+        .apply(Command::AddEffect {
+            item,
+            effect: project::effect_definition("blur")
+                .unwrap()
+                .instance("blur1"),
+        })
+        .unwrap();
+    session
+        .apply(Command::AddMask {
+            item,
+            mask: project::Mask::new("mask1", project::MaskShape::Rectangle),
+        })
+        .unwrap();
+    session
+        .apply(Command::AddKeyframe {
+            item,
+            path: project::BuiltinPath::Opacity.into(),
+            component: None,
+            key: project::Keyframe::new(Tick(2), project::ParamValue::Scalar(0.5)),
+        })
+        .unwrap();
+    item
+}
+
+#[test]
+fn replace_clip_keeps_every_attribute_and_plays_the_new_media_from_its_start() {
+    let mut session = session();
+    session
+        .apply(Command::AddAsset {
+            asset: asset_with(3, "media-long.mp4", Tick(20_000), true),
+        })
+        .unwrap();
+    let item = dressed_clip(&mut session);
+    let original = item_of(&session, item);
+    assert_eq!(original.duration().unwrap(), Tick(2_000), "2x of 4000");
+    assert!(!original.effects.is_empty() && !original.masks.is_empty());
+    let before = session.project().clone();
+    let history = session.history_len();
+    for asset in [AssetId(2), AssetId(3)] {
+        session
+            .apply(Command::ReplaceClip { item, asset })
+            .unwrap();
+        let replaced = item_of(&session, item);
+        assert_eq!(replaced.source_asset, Some(asset), "asset reference");
+        assert_eq!(
+            replaced.source_range,
+            SourceRange::new(Tick::ZERO, Tick(4_000)).unwrap(),
+            "source in point zero, 4000 source ticks fill 2000 output ticks at 2x"
+        );
+        assert_eq!(replaced.start, original.start, "timeline start");
+        assert_eq!(replaced.duration().unwrap(), original.duration().unwrap());
+        assert_eq!(replaced.retime, original.retime, "speed, pitch, reverse");
+        assert_eq!(replaced.content, original.content, "volume and params");
+        assert_eq!(replaced.effects, original.effects, "effects");
+        assert_eq!(replaced.masks, original.masks, "masks");
+        assert_eq!(replaced.animations, original.animations, "keyframes");
+        assert_eq!(
+            replaced,
+            project::Item {
+                source_asset: Some(asset),
+                source_range: SourceRange::new(Tick::ZERO, Tick(4_000)).unwrap(),
+                ..original.clone()
+            },
+            "nothing else changes"
+        );
+        assert_eq!(session.history_len(), (history.0 + 1, 0), "one undo step");
+        session.undo().unwrap();
+        assert_eq!(session.project(), &before, "undo restores the exact project");
+    }
+}
+
+#[test]
+fn replace_clip_refuses_short_mismatched_and_hostile_targets_atomically() {
+    let mut session = session();
+    for asset in [
+        asset_with(3, "media-short.mp4", Tick(1_000), true),
+        asset_with(4, "media-audio.m4a", Tick(20_000), false),
+    ] {
+        session.apply(Command::AddAsset { asset }).unwrap();
+    }
+    let item = dressed_clip(&mut session);
+    let main = session.project().data().scene().timeline.main.id;
+    let before = session.project().clone();
+    let history = session.history_len();
+    for (target, asset, expected) in [
+        (
+            item,
+            AssetId(3),
+            EditError::Invalid("replacement source too short"),
+        ),
+        (
+            item,
+            AssetId(4),
+            EditError::Invalid("replacement media kind mismatch"),
+        ),
+        (item, AssetId(9), EditError::NoAsset(AssetId(9))),
+        (
+            project::ItemId(99),
+            AssetId(2),
+            EditError::NoItem(project::ItemId(99)),
+        ),
+    ] {
+        let error = session
+            .apply(Command::ReplaceClip {
+                item: target,
+                asset,
+            })
+            .unwrap_err();
+        assert_eq!(format!("{error:?}"), format!("{expected:?}"));
+        assert_eq!(session.project(), &before, "refusal changes nothing");
+        assert_eq!(session.history_len(), history);
+    }
+    session
+        .apply(Command::SetTrackLocked {
+            track: main,
+            locked: true,
+        })
+        .unwrap();
+    let locked = session.project().clone();
+    let error = session
+        .apply(Command::ReplaceClip {
+            item,
+            asset: AssetId(2),
+        })
+        .unwrap_err();
+    assert!(matches!(error, EditError::Locked(track) if track == main));
+    assert_eq!(session.project(), &locked);
+}
+
 #[test]
 fn relink_moves_the_record_path_and_keeps_every_clip_on_it() {
     let mut session = session();

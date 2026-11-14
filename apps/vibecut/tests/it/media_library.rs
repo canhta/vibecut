@@ -1712,26 +1712,67 @@ fn dropping_shorter_media_on_an_occupied_clip_toasts_and_changes_nothing() {
 }
 
 #[test]
-fn dropping_equal_length_media_on_an_occupied_clip_keeps_the_placement_without_the_refusal() {
-    let (editor, clip) = replace_fixture();
-    let mut harness = build(editor);
-    harness.run_steps(3);
-    let target = lane_point(&harness, main_track(&harness));
+fn dropping_equal_or_longer_media_on_an_occupied_clip_replaces_it_and_undo_restores() {
+    for (asset, seconds) in [(AssetId(3), 8), (AssetId(4), 12)] {
+        let mut editor = editor_with_lengths(
+            Preferences::default(),
+            &[
+                (1, "long.mp4", 8),
+                (2, "short.mp4", 2),
+                (3, "equal.mp4", 8),
+                (4, "longer.mp4", 12),
+            ],
+            Arc::new(Files),
+        );
+        let clip = insert_video_span(&mut editor, AssetId(1), 8);
+        let mut harness = build(editor);
+        harness.run_steps(3);
+        let before = harness.state().session.project().clone();
+        let original = clip_of(&before, clip);
+        let target = lane_point(&harness, main_track(&harness));
 
-    hold_asset_over(&mut harness, AssetId(3), target);
-    assert_eq!(
-        harness.state().inspect().unwrap().replace_hint,
-        Some(clip),
-        "the label shows for any single asset over an occupied clip"
-    );
-    harness.drop_at(target);
-    harness.run_steps(2);
+        hold_asset_over(&mut harness, asset, target);
+        assert_eq!(harness.state().inspect().unwrap().replace_hint, Some(clip));
+        harness.drop_at(target);
+        harness.run_steps(2);
 
-    let toast = harness.state().inspect().unwrap().import_toast;
-    assert!(
-        toast.is_none_or(|toast| toast != REPLACE_REFUSAL),
-        "an equal-length drop is not refused for length"
-    );
+        let after = harness.state().session.project().clone();
+        let replaced = clip_of(&after, clip);
+        assert_eq!(replaced.source_asset, Some(asset), "{seconds} s media");
+        assert_eq!(
+            replaced.source_range,
+            SourceRange::new(Tick::ZERO, Tick(8 * SECOND)).unwrap(),
+            "plays from the new media's start for the clip's length"
+        );
+        assert_eq!(replaced.start, original.start);
+        assert_eq!(replaced.duration().unwrap(), original.duration().unwrap());
+        assert_eq!(replaced.retime, original.retime);
+        assert_eq!(replaced.content, original.content);
+        assert_eq!(placed(&after).len(), 1, "no new clip is placed");
+        let toast = harness.state().inspect().unwrap().import_toast;
+        assert!(toast.is_none_or(|toast| toast != REPLACE_REFUSAL));
+
+        harness.state_mut().activate("edit.undo").unwrap();
+        harness.run_steps(2);
+        assert_eq!(
+            harness.state().session.project(),
+            &before,
+            "one undo restores the clip"
+        );
+    }
+}
+
+/// The clip with this id in the active scene.
+fn clip_of(project: &project::Project, id: project::ItemId) -> project::Item {
+    project
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| track.items.iter())
+        .find(|item| item.id == id)
+        .cloned()
+        .unwrap()
 }
 
 #[test]

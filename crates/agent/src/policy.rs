@@ -287,6 +287,7 @@ pub const TABLE: &[(&str, Verdict)] = &[
     ("timeline.recover_audio", Verdict::Allow),
     ("timeline.remove_fillers", Verdict::Allow),
     ("timeline.remove_pauses", Verdict::Allow),
+    ("timeline.replace_clip", Verdict::Allow),
     ("timeline.replace_media", Verdict::Allow),
     ("timeline.set_background", Verdict::Allow),
     ("timeline.set_flipped", Verdict::Allow),
