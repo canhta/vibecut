@@ -23,6 +23,10 @@ use time::{SourceRange, Tick};
 /// corrections the frame is drawn with, so the still matches the corrected preview. Refusals
 /// are typed and change nothing: a relative directory, a non-positive duration, an unknown or
 /// non-video item, a locked track, or a playhead outside the item's output span.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one control admission carrying the session, the authored edit and the lent budget and corrections"
+)]
 pub fn freeze(
     session: &mut Session,
     item: ItemId,
