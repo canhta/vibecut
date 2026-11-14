@@ -16,7 +16,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | MEDIA-07 | Empty media state | Done | Proposed | 221513 | |
 | MEDIA-08 | Media search box | Done | Proposed | 110316 | |
 | MEDIA-09 | Media tile | Done | Proposed | 221635 | |
-| MEDIA-10 | Added badge on tile | Missing | Not captured | 221635 | |
+| MEDIA-10 | Added badge on tile | Done | Proposed | 221635; [ui/editor.md](../ui/editor.md#media-tile-menu-added-badge-folders-and-favorites) | Chip look unmeasured |
 | MEDIA-11 | Add to timeline (plus) | Done | Proposed | 221635 | |
 | MEDIA-12 | Tile drag to timeline | Done | Proposed | 221635 | |
 | MEDIA-13 | Grid/list, sort, filter | Ours | Proposed | | |
@@ -29,10 +29,10 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | MEDIA-16 | Media lost tile state | Done | Matches | 095537; [ui/editor.md](../ui/editor.md) | |
 | MEDIA-17 | Link media dialog | Done | Matches | 095459 | |
 | MEDIA-18 | Tile menu: Delete | Done | Not captured | 103259 | |
-| MEDIA-19 | Tile menu: Rename | Missing | Not captured | 103259 | |
+| MEDIA-19 | Tile menu: Rename | Done | Proposed | 103259; [ui/editor.md](../ui/editor.md#media-tile-menu-added-badge-folders-and-favorites) | Dialog ours; library name, file kept |
 | MEDIA-20 | Tile menu: Open file location | Done | Not captured | 103259 | |
 | MEDIA-21 | Tile menu: Restore LUT | Partial | Not captured | 103305 | LUT lives in Adjust |
-| MEDIA-22 | Tile menu: New folder | Missing | Not captured | 103259 | |
+| MEDIA-22 | Tile menu: New folder | Done | Proposed | 103259; [ui/editor.md](../ui/editor.md#media-tile-menu-added-badge-folders-and-favorites) | Flat project folders; tile look unmeasured |
 | MEDIA-23 | Tile menu: New timeline | Partial | Not captured | 103259 | Scene sheet instead |
 | MEDIA-24 | Tile menu: Link to media | Partial | Not captured | 103259 | Dialog exists, no menu entry |
 | MEDIA-25 | Tile menu: Split scenes | Partial | Not captured | 103259 | Clip-level only |
@@ -43,7 +43,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | ID | Item | Function | UI/UX | Evidence | Gap / note |
 |---|---|---|---|---|---|
 | MEDIA-28 | Yours: Favorites page | Partial | Not captured | 111010 | Per catalogue tab only |
-| MEDIA-29 | Favorites empty state, filter | Missing | Not captured | 111010 | |
+| MEDIA-29 | Favorites empty state, filter | Done | Differs | 111010; [ui/editor.md](../ui/editor.md#media-tile-menu-added-badge-folders-and-favorites) | Link opens Effects, not Library |
 | MEDIA-30 | Yours: My presets | Missing | Not captured | 111030 | |
 | MEDIA-31 | Yours: Brand assets | Partial | Not captured | 111016 | Store done, panel missing |
 | MEDIA-32 | Brand assets refresh, settings | Missing | Not captured | 111024 | |

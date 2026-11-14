@@ -30,6 +30,13 @@ pub(in crate::editor) struct MediaReveal {
     pub(in crate::editor) until: Duration,
 }
 
+/// The Rename dialog: the asset and the name as typed so far.
+#[derive(Clone, Debug)]
+pub(in crate::editor) struct MediaRename {
+    pub(in crate::editor) asset: super::AssetId,
+    pub(in crate::editor) draft: String,
+}
+
 #[derive(Clone, Debug)]
 pub(in crate::editor) struct MediaMarquee {
     pub(in crate::editor) origin: egui::Pos2,
@@ -102,6 +109,12 @@ pub(in crate::editor) struct State {
     pub(in crate::editor) media_marquee: Option<MediaMarquee>,
     pub(in crate::editor) media_reveal: Option<MediaReveal>,
     pub(in crate::editor) media_delete_confirm: Option<Vec<super::AssetId>>,
+    /// Media tab: the rename dialog.
+    pub(in crate::editor) media_rename: Option<MediaRename>,
+    /// Media tab: the folder whose assets the grid lists; `None` lists the top level.
+    pub(super) media_open_folder: Option<project::MediaFolderId>,
+    /// Media tab, Favorites page: the one catalogue family listed; `None` lists every family.
+    pub(super) media_favorites_family: Option<&'static str>,
     /// Media tab: the clip export owner, its queued request and running job.
     pub(in crate::editor) clip_exports: Option<super::media_panel::clips::ClipExports>,
     pub(in crate::editor) asset_states: BTreeMap<super::AssetId, AssetState>,
@@ -182,6 +195,9 @@ impl Default for State {
             media_marquee: None,
             media_reveal: None,
             media_delete_confirm: None,
+            media_rename: None,
+            media_open_folder: None,
+            media_favorites_family: None,
             clip_exports: None,
             asset_states: BTreeMap::new(),
             thumbnails: BTreeMap::new(),

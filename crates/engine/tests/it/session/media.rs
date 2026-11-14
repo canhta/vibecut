@@ -421,3 +421,152 @@ fn relink_moves_the_record_path_and_keeps_every_clip_on_it() {
         assert_eq!(session.project(), &relinked);
     }
 }
+
+#[test]
+fn renaming_media_stores_a_library_name_in_one_undo_step_and_refuses_bad_input() {
+    let mut session = session();
+    session
+        .apply(Command::RenameAsset {
+            asset: AssetId(1),
+            name: "Interview".into(),
+        })
+        .unwrap();
+    let library = &session.project().data().media_library;
+    assert_eq!(library.names.len(), 1);
+    assert_eq!(library.name(AssetId(1)).unwrap().as_str(), "Interview");
+    assert!(library.name(AssetId(2)).is_none());
+    session.undo().unwrap();
+    assert!(session.project().data().media_library.names.is_empty());
+    session.redo().unwrap();
+    session
+        .apply(Command::RenameAsset {
+            asset: AssetId(1),
+            name: "Interview B".into(),
+        })
+        .unwrap();
+    let library = &session.project().data().media_library;
+    assert_eq!(library.names.len(), 1);
+    assert_eq!(library.name(AssetId(1)).unwrap().as_str(), "Interview B");
+    let before = session.project().clone();
+    for (asset, name) in [
+        (AssetId(99), "Missing"),
+        (AssetId(1), ""),
+        (AssetId(1), " padded"),
+        (AssetId(1), "line\nbreak"),
+    ] {
+        assert!(
+            session
+                .apply(Command::RenameAsset {
+                    asset,
+                    name: name.into()
+                })
+                .is_err(),
+            "{name:?}"
+        );
+        assert_eq!(session.project(), &before);
+    }
+}
+
+#[test]
+fn creating_a_media_folder_groups_assets_moves_them_between_folders_and_undoes() {
+    let mut session = session();
+    session
+        .apply(Command::CreateMediaFolder {
+            name: "Day one".into(),
+            assets: vec![AssetId(1), AssetId(2)],
+        })
+        .unwrap();
+    let library = session.project().data().media_library.clone();
+    assert_eq!(library.folders.len(), 1);
+    assert_eq!(library.folders[0].name.as_str(), "Day one");
+    assert_eq!(library.folders[0].assets, vec![AssetId(1), AssetId(2)]);
+    assert_eq!(library.folder_of(AssetId(2)), Some(library.folders[0].id));
+    // Moving one asset leaves the first folder with the other; moving both drops it.
+    session
+        .apply(Command::CreateMediaFolder {
+            name: "Day two".into(),
+            assets: vec![AssetId(2)],
+        })
+        .unwrap();
+    let folders = session.project().data().media_library.folders.clone();
+    assert_eq!(folders.len(), 2);
+    assert_eq!(folders[0].assets, vec![AssetId(1)]);
+    assert_eq!(folders[1].assets, vec![AssetId(2)]);
+    assert_ne!(folders[0].id, folders[1].id);
+    session
+        .apply(Command::CreateMediaFolder {
+            name: "All".into(),
+            assets: vec![AssetId(1), AssetId(2)],
+        })
+        .unwrap();
+    let folders = &session.project().data().media_library.folders;
+    assert_eq!(folders.len(), 1);
+    assert_eq!(folders[0].name.as_str(), "All");
+    session.undo().unwrap();
+    assert_eq!(session.project().data().media_library.folders.len(), 2);
+    session.undo().unwrap();
+    session.undo().unwrap();
+    assert!(session.project().data().media_library.folders.is_empty());
+}
+
+#[test]
+fn hostile_media_folder_requests_are_refused_without_mutating_history() {
+    let mut session = session();
+    let before = session.project().clone();
+    let history = session.history_len();
+    for (name, assets) in [
+        ("Folder", Vec::<AssetId>::new()),
+        ("Folder", vec![AssetId(1), AssetId(1)]),
+        ("Folder", vec![AssetId(99)]),
+        ("", vec![AssetId(1)]),
+        ("trailing ", vec![AssetId(1)]),
+    ] {
+        assert!(
+            session
+                .apply(Command::CreateMediaFolder {
+                    name: name.into(),
+                    assets: assets.clone(),
+                })
+                .is_err(),
+            "{name:?} {assets:?}"
+        );
+        assert_eq!(session.project(), &before);
+        assert_eq!(session.history_len(), history);
+    }
+}
+
+#[test]
+fn removing_media_forgets_its_name_and_drops_a_folder_left_empty() {
+    let mut session = session();
+    session
+        .apply(Command::RenameAsset {
+            asset: AssetId(1),
+            name: "Interview".into(),
+        })
+        .unwrap();
+    session
+        .apply(Command::CreateMediaFolder {
+            name: "Pair".into(),
+            assets: vec![AssetId(1), AssetId(2)],
+        })
+        .unwrap();
+    session
+        .apply(Command::RemoveAssets {
+            assets: vec![AssetId(1)],
+        })
+        .unwrap();
+    let library = &session.project().data().media_library;
+    assert!(library.names.is_empty());
+    assert_eq!(library.folders[0].assets, vec![AssetId(2)]);
+    session
+        .apply(Command::RemoveAssets {
+            assets: vec![AssetId(2)],
+        })
+        .unwrap();
+    assert_eq!(
+        session.project().data().media_library,
+        project::MediaLibrary::default()
+    );
+    session.undo().unwrap();
+    assert_eq!(session.project().data().media_library.folders.len(), 1);
+}

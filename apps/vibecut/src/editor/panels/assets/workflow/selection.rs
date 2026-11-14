@@ -70,6 +70,7 @@ impl State {
             &session.project().data().assets,
             preferences.media_sort,
             &self.media_size_map(),
+            &session.project().data().media_library,
         )
     }
     pub(in crate::editor) fn media_selection(&self) -> &BTreeSet<AssetId> {

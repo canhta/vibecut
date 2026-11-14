@@ -43,6 +43,12 @@ impl Editor {
             }
             return;
         }
+        if self.assets.media_rename.is_some() {
+            if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
+                self.assets.cancel_media_rename();
+            }
+            return;
+        }
         if self.frame.delete_open {
             if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
                 self.frame.delete_open = false;

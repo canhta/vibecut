@@ -218,6 +218,7 @@ impl Editor {
         }
         self.timeline_scenes(ui.ctx());
         self.show_media_delete_dialog(ui.ctx());
+        self.show_media_rename_dialog(ui.ctx());
         self.show_project_delete_dialog(ui.ctx());
         self.show_import_overlay(ui.ctx());
         self.show_drop_overlay(ui.ctx(), hovering);

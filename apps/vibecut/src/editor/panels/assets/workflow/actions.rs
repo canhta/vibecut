@@ -37,6 +37,10 @@ impl State {
                 Action::Command(id) => port.request(Request::Action(id)),
                 Action::Select(id, modifiers) => self.select_asset(port, id, modifiers),
                 Action::Delete(ids) => self.request_media_delete(port.session, ids),
+                Action::RenameMedia(id) => self.request_media_rename(port.session, id),
+                Action::MediaRenameCancel => self.cancel_media_rename(),
+                Action::MediaRenameConfirm => self.confirm_media_rename(port),
+                Action::NewFolder(ids) => self.create_media_folder(port, ids),
                 Action::ExportClips(ids) => match self.queue_clip_export(port.read.budget, ids) {
                     Ok(()) => port.request(Request::ExportClips),
                     Err(error) => port.fail(error.to_string()),

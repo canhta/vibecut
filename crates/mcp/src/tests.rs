@@ -568,6 +568,8 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("import.add_asset", Effect::Edit, false, false),
         ("media.relink", Effect::Edit, false, false),
         ("media.remove", Effect::Edit, true, true),
+        ("media.create_folder", Effect::Edit, true, true),
+        ("media.rename", Effect::Edit, true, true),
         ("timeline.add_track", Effect::Edit, true, true),
         ("track.remove", Effect::Edit, true, true),
         ("track.set_muted", Effect::Edit, true, true),

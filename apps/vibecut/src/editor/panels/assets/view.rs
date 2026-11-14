@@ -6,17 +6,20 @@ mod deletion;
 mod effects;
 mod feedback;
 mod filters;
+mod favorites;
 mod music;
+mod rename;
 mod sounds;
 mod stickers;
 mod transition;
 
 pub(in crate::editor) use deletion::show as delete_dialog;
 pub(in crate::editor) use feedback::{drop_overlay, import_overlay, toast};
+pub(in crate::editor) use rename::show as rename_dialog;
 
 use super::{
     Action, Align2, AssetRow, AssetState, AssetsTab, AudioSection, Color32, EffectRow, FilterRow,
-    FontId, Icon, Id, MediaKind, MediaSection, MediaSortKey, MediaSortOrder, MediaView, Model,
+    FolderRow, FontId, Icon, Id, MediaKind, MediaSection, MediaSortKey, MediaSortOrder, MediaView, Model,
     Recorded, Rect, Row, State, Text, Vec2, asset_state_color, egui, icons, state, theme,
 };
 use state::Filter;
@@ -164,6 +167,13 @@ pub(in crate::editor) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) 
                         view.state.media_section = MediaSection::Timeline;
                     }
                     view.remember("assets.subnav.timeline", &response, None);
+                    let label = view.tr(Text::AssetsFavorites);
+                    let response =
+                        view.nav_row(ui, label, section == MediaSection::Favorites, false);
+                    if response.clicked() {
+                        view.state.media_section = MediaSection::Favorites;
+                    }
+                    view.remember("assets.subnav.favorites", &response, None);
                     return;
                 }
                 let is_text = cx.preferences.assets_tab == AssetsTab::Text;
@@ -193,6 +203,11 @@ pub(in crate::editor) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) 
                 if view.state.media_section == MediaSection::Timeline && nav.width() > 0.0 =>
             {
                 view.scene_list(ui)
+            }
+            AssetsTab::Media
+                if view.state.media_section == MediaSection::Favorites && nav.width() > 0.0 =>
+            {
+                view.favorites(ui)
             }
             AssetsTab::Media if cx.rows.is_empty() && !cx.importing && !cx.failed => {
                 view.empty_media(ui)

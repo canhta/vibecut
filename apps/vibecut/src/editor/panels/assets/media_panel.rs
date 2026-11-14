@@ -2,6 +2,7 @@
 //! classification. Project assets stay owned by the engine; this module never
 //! mutates a `SourceAsset` and reads file size only for display/sort.
 pub(in crate::editor) mod clips;
+mod library;
 use media::{AssetId, SourceAsset, StreamKind};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, path::Path};
@@ -113,19 +114,27 @@ pub fn asset_name(asset: &SourceAsset) -> String {
     )
 }
 
+/// The name a tile shows: the library name the user gave the asset, else its file name.
+pub fn display_name(asset: &SourceAsset, library: &project::MediaLibrary) -> String {
+    library
+        .name(asset.id())
+        .map_or_else(|| asset_name(asset), |name| name.as_str().to_owned())
+}
+
 /// Stable project-order-preserving sort. Equal keys keep their asset-vector
 /// order, which makes repeated sorts deterministic and independent of locale.
 pub fn ordered_assets(
     assets: &[SourceAsset],
     sort: MediaSort,
     sizes: &BTreeMap<AssetId, Option<u64>>,
+    library: &project::MediaLibrary,
 ) -> Vec<AssetId> {
     let mut ordered: Vec<&SourceAsset> = assets.iter().filter(|asset| !asset.ephemeral()).collect();
     ordered.sort_by(|a, b| {
         let ordering = match sort.key {
-            MediaSortKey::Name => asset_name(a)
+            MediaSortKey::Name => display_name(a, library)
                 .to_lowercase()
-                .cmp(&asset_name(b).to_lowercase()),
+                .cmp(&display_name(b, library).to_lowercase()),
             MediaSortKey::Type => MediaKind::of(a).cmp(&MediaKind::of(b)),
             MediaSortKey::Duration => a
                 .probe()
@@ -191,7 +200,38 @@ mod tests {
     }
 
     fn ids(assets: &[SourceAsset], sort: MediaSort) -> Vec<AssetId> {
-        ordered_assets(assets, sort, &BTreeMap::new())
+        ordered_assets(
+            assets,
+            sort,
+            &BTreeMap::new(),
+            &project::MediaLibrary::default(),
+        )
+    }
+
+    #[test]
+    fn a_library_name_replaces_the_file_name_in_the_label_and_the_name_sort() {
+        let assets = [
+            asset(1, "alpha.mp4", Tick(10), vec![stream(StreamKind::Video, None)]),
+            asset(2, "bravo.mp4", Tick(10), vec![stream(StreamKind::Video, None)]),
+        ];
+        let mut library = project::MediaLibrary::default();
+        library.names.push(project::AssetName {
+            asset: AssetId(1),
+            name: "Zulu".into(),
+        });
+        let [first, second] = &assets;
+        assert_eq!(display_name(first, &library), "Zulu");
+        assert_eq!(display_name(second, &library), "bravo.mp4");
+        assert_eq!(
+            ordered_assets(
+                &assets,
+                MediaSort::default(),
+                &BTreeMap::new(),
+                &library
+            ),
+            vec![AssetId(2), AssetId(1)],
+            "the renamed asset sorts under its new name"
+        );
     }
 
     #[test]
@@ -332,7 +372,8 @@ mod tests {
                     key: MediaSortKey::Size,
                     order: MediaSortOrder::Asc
                 },
-                &sizes
+                &sizes,
+                &project::MediaLibrary::default()
             ),
             vec![AssetId(2), AssetId(4), AssetId(3), AssetId(1)]
         );
@@ -343,7 +384,8 @@ mod tests {
                     key: MediaSortKey::Size,
                     order: MediaSortOrder::Desc
                 },
-                &sizes
+                &sizes,
+                &project::MediaLibrary::default()
             ),
             vec![AssetId(1), AssetId(3), AssetId(2), AssetId(4)]
         );

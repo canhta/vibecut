@@ -297,6 +297,8 @@ pub(super) struct AssetRow {
     pub(super) duration: Option<Tick>,
     /// The source file is gone: the tile draws the missing state in place of a thumbnail.
     pub(super) missing: bool,
+    /// A clip on some timeline uses the asset: the tile carries the `Added` badge.
+    pub(super) added: bool,
 }
 /// App state only. The immutable engine project is read through Session, never copied
 /// into a parallel frontend project model. Every edit dispatches its registry ID.

@@ -308,6 +308,15 @@ impl Editor {
         self.with_assets(|assets, port| assets.apply(port, None, actions));
     }
 
+    pub(in crate::editor) fn show_media_rename_dialog(&mut self, ctx: &egui::Context) {
+        let mut state = std::mem::take(&mut self.assets);
+        let cx = self.context();
+        let actions = assets::rename_dialog(&mut state, &cx, ctx);
+        drop(cx);
+        self.assets = state;
+        self.with_assets(|assets, port| assets.apply(port, None, actions));
+    }
+
     /// The media panel's rect as the frame last laid it out.
     fn media_rect(&self) -> Rect {
         self.frame

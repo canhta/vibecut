@@ -454,6 +454,12 @@ pub(crate) fn apply(
         EditCommand::RelinkAsset { asset } => {
             data = media_edits::execute_relink_asset(data, asset)?;
         }
+        EditCommand::RenameAsset { asset, name } => {
+            data = media_edits::execute_rename_asset(data, asset, name)?;
+        }
+        EditCommand::CreateMediaFolder { name, assets } => {
+            data = media_edits::execute_create_media_folder(data, name, assets)?;
+        }
         EditCommand::RemoveAssets { assets } => {
             data = media_edits::execute_remove_assets(data, assets)?;
         }

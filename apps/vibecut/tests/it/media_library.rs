@@ -1651,3 +1651,193 @@ fn media_drag_and_plus_screenshot_for_the_combined_build() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-11-dnd.png");
     harness.render().unwrap().save(&path).unwrap();
 }
+
+fn open_tile_menu(harness: &mut Harness<Editor>, asset: u64) {
+    let id = format!("media.asset.{asset}");
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some(id.as_str())))
+        .click_secondary();
+    harness.run_steps(2);
+}
+
+#[test]
+fn a_tile_carries_the_added_badge_only_while_a_clip_uses_its_asset() {
+    let mut editor = editor();
+    let item = insert_video(&mut editor, AssetId(1));
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    assert!(has_widget(&harness, "media.asset.1.added"));
+    assert!(!has_widget(&harness, "media.asset.2.added"));
+    harness
+        .state_mut()
+        .session
+        .apply(Command::Delete { items: vec![item] })
+        .unwrap();
+    harness.run_steps(2);
+    assert!(!has_widget(&harness, "media.asset.1.added"));
+}
+
+#[test]
+fn the_tile_menu_renames_through_a_dialog_in_one_undo_step_and_escape_cancels() {
+    let mut harness = build(editor());
+    harness.run_steps(3);
+    open_tile_menu(&mut harness, 1);
+    click(&mut harness, "media.rename");
+    assert!(has_widget(&harness, "media.rename_field"));
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+    assert!(!has_widget(&harness, "media.rename_field"), "Escape closes");
+    assert!(
+        harness
+            .state()
+            .session
+            .project()
+            .data()
+            .media_library
+            .names
+            .is_empty()
+    );
+
+    open_tile_menu(&mut harness, 1);
+    click(&mut harness, "media.rename");
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("media.rename_field")))
+        .type_text(" cut");
+    harness.run_steps(2);
+    click(&mut harness, "media.rename_confirm");
+    assert!(!has_widget(&harness, "media.rename_field"));
+    assert_eq!(
+        harness
+            .state()
+            .session
+            .project()
+            .data()
+            .media_library
+            .name(AssetId(1))
+            .unwrap()
+            .as_str(),
+        "Bravo.mp4 cut"
+    );
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert!(
+        harness
+            .state()
+            .session
+            .project()
+            .data()
+            .media_library
+            .names
+            .is_empty()
+    );
+}
+
+#[test]
+fn the_tile_menu_groups_the_selection_into_a_folder_that_opens_and_closes() {
+    let mut harness = build(editor());
+    harness.run_steps(3);
+    click(&mut harness, "media.asset.2");
+    click_modifiers(&mut harness, "media.asset.3", egui::Modifiers::COMMAND);
+    open_tile_menu(&mut harness, 2);
+    click(&mut harness, "media.new_folder");
+    let folder = {
+        let folders = &harness.state().session.project().data().media_library.folders;
+        assert_eq!(folders.len(), 1);
+        assert_eq!(folders[0].assets, vec![AssetId(2), AssetId(3)]);
+        folders[0].id
+    };
+    let tile = format!("media.folder.{}", folder.0);
+    assert!(has_widget(&harness, &tile), "the folder tile is listed");
+    assert!(has_widget(&harness, "media.asset.1"));
+    assert!(!has_widget(&harness, "media.asset.2"), "grouped assets leave the top level");
+    assert!(!has_widget(&harness, "media.asset.3"));
+
+    click(&mut harness, &tile);
+    assert!(has_widget(&harness, "media.asset.2"));
+    assert!(has_widget(&harness, "media.asset.3"));
+    assert!(!has_widget(&harness, "media.asset.1"));
+    assert!(has_widget(&harness, "media.folder.back"));
+    click(&mut harness, "media.folder.back");
+    assert!(has_widget(&harness, "media.asset.1"));
+    assert!(has_widget(&harness, &tile));
+
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert!(
+        harness
+            .state()
+            .session
+            .project()
+            .data()
+            .media_library
+            .folders
+            .is_empty()
+    );
+    assert!(has_widget(&harness, "media.asset.2"));
+    assert!(!has_widget(&harness, &tile));
+}
+
+#[test]
+fn deleting_the_last_asset_of_an_open_folder_returns_to_the_top_level() {
+    let mut editor = editor();
+    editor
+        .session
+        .apply(Command::CreateMediaFolder {
+            name: "Solo".into(),
+            assets: vec![AssetId(2)],
+        })
+        .unwrap();
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    let folder = harness.state().session.project().data().media_library.folders[0].id;
+    click(&mut harness, &format!("media.folder.{}", folder.0));
+    assert!(has_widget(&harness, "media.asset.2"));
+    harness
+        .state_mut()
+        .session
+        .apply(Command::RemoveAssets {
+            assets: vec![AssetId(2)],
+        })
+        .unwrap();
+    harness.run_steps(3);
+    assert!(!has_widget(&harness, "media.folder.back"));
+    assert!(has_widget(&harness, "media.asset.1"));
+}
+
+#[test]
+fn the_favorites_page_shows_its_empty_state_and_lists_starred_families_behind_the_filter() {
+    let mut harness = build(editor());
+    harness.run_steps(3);
+    click(&mut harness, "assets.subnav.favorites");
+    assert!(has_widget(&harness, "media.favorites.link"));
+    assert!(has_widget(&harness, "media.favorites.filter"));
+    assert!(!has_widget(&harness, "media.asset.1"), "the page replaces the asset grid");
+    click(&mut harness, "media.favorites.link");
+    assert_eq!(
+        harness.state().preferences.assets_tab,
+        vibecut::AssetsTab::Effects
+    );
+
+    let mut preferences = Preferences::default();
+    preferences.catalog_favorites = preferences
+        .catalog_favorites
+        .with("effects", "blur", true)
+        .unwrap()
+        .with("filters", "warm", true)
+        .unwrap();
+    let mut harness = build(editor_with(preferences, &[(1, "Bravo.mp4")]));
+    harness.run_steps(3);
+    click(&mut harness, "assets.subnav.favorites");
+    assert!(has_widget(&harness, "media.favorites.row.effects"));
+    assert!(has_widget(&harness, "media.favorites.row.filters"));
+    assert!(!has_widget(&harness, "media.favorites.row.transitions"));
+    assert!(!has_widget(&harness, "media.favorites.link"));
+    click(&mut harness, "media.favorites.filter");
+    click(&mut harness, "media.favorites.filter.transitions");
+    assert!(!has_widget(&harness, "media.favorites.row.effects"));
+    assert!(has_widget(&harness, "media.favorites.link"), "nothing starred in Transitions");
+    click(&mut harness, "media.favorites.filter");
+    click(&mut harness, "media.favorites.filter.filters");
+    assert!(has_widget(&harness, "media.favorites.row.filters"));
+    assert!(!has_widget(&harness, "media.favorites.row.effects"));
+}

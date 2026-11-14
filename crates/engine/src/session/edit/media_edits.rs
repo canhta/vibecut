@@ -45,6 +45,7 @@ pub(super) fn remove_assets(data: &mut ProjectData, assets: Vec<media::AssetId>)
         ));
     }
     data.assets.retain(|asset| !unique.contains(&asset.id()));
+    data.media_library.forget(&unique);
     Ok(())
 }
 // Candidate mutations are committed only after full project validation; batches
@@ -87,6 +88,81 @@ pub(super) fn execute_relink_asset(
         return Err(EditError::Invalid("relink content differs"));
     }
     *record = asset;
+    Ok(data)
+}
+/// Give an asset a library name. The file keeps its own name; renaming never touches a clip.
+pub(super) fn execute_rename_asset(
+    mut data: ProjectData,
+    asset: media::AssetId,
+    name: captions::NfcText,
+) -> Result<ProjectData> {
+    if !data
+        .assets
+        .iter()
+        .any(|record| record.id() == asset && !record.ephemeral())
+    {
+        return Err(EditError::NoAsset(asset));
+    }
+    if !project::valid_media_name(&name) {
+        return Err(EditError::Invalid("asset name"));
+    }
+    match data
+        .media_library
+        .names
+        .iter_mut()
+        .find(|entry| entry.asset == asset)
+    {
+        Some(entry) => entry.name = name,
+        None => data
+            .media_library
+            .names
+            .push(project::AssetName { asset, name }),
+    }
+    Ok(data)
+}
+/// Group library assets into a new folder. An asset already in a folder moves; a folder left
+/// empty by the move is dropped.
+pub(super) fn execute_create_media_folder(
+    mut data: ProjectData,
+    name: captions::NfcText,
+    assets: Vec<media::AssetId>,
+) -> Result<ProjectData> {
+    if assets.is_empty() {
+        return Err(EditError::Invalid("media folder list"));
+    }
+    if assets.len() > crate::session::wire::MAX_COLLECTION {
+        return Err(EditError::Control(
+            crate::session::wire::ControlError::Limit,
+        ));
+    }
+    if !project::valid_media_name(&name) {
+        return Err(EditError::Invalid("media folder name"));
+    }
+    let mut unique = BTreeSet::new();
+    for id in &assets {
+        if !unique.insert(*id) {
+            return Err(EditError::Invalid("duplicate asset ID"));
+        }
+        if !data
+            .assets
+            .iter()
+            .any(|record| record.id() == *id && !record.ephemeral())
+        {
+            return Err(EditError::NoAsset(*id));
+        }
+    }
+    data.media_library.unplace(&unique);
+    let id = project::MediaFolderId(
+        data.media_library
+            .folders
+            .iter()
+            .map(|folder| folder.id.0)
+            .max()
+            .map_or(1, |last| last.saturating_add(1)),
+    );
+    data.media_library
+        .folders
+        .push(project::MediaFolder { id, name, assets });
     Ok(data)
 }
 pub(super) fn execute_remove_assets(

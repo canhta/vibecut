@@ -2,8 +2,9 @@
 use super::effects::{EffectPreviews, preview_instance};
 use super::stickers;
 use super::{
-    AssetRow, AssetState, AssetsTab, BTreeMap, EffectRow, FilterRow, Icon, MediaKind, MediaSection,
-    Model, Row, SceneRow, State, Text, asset_row, egui, file_name,
+    AssetId, AssetRow, AssetState, AssetsTab, BTreeMap, BTreeSet, EffectRow, FilterRow, FolderRow,
+    Icon, MediaKind, MediaSection, Model, Row, SceneRow, State, Text, asset_row, egui, file_name,
+    media_panel,
 };
 use crate::editor::Context;
 
@@ -16,6 +17,22 @@ pub(in crate::editor) fn prepare(
     now: std::time::Duration,
     insertion_ready: bool,
 ) {
+    let data = cx.session.project().data();
+    let library = &data.media_library;
+    if state
+        .media_open_folder
+        .is_some_and(|open| !library.folders.iter().any(|folder| folder.id == open))
+    {
+        state.media_open_folder = None;
+    }
+    // An asset is Added when any clip of any scene reads it.
+    let used: BTreeSet<AssetId> = data
+        .scenes
+        .iter()
+        .flat_map(|scene| scene.timeline.iter())
+        .flat_map(|track| track.items.iter())
+        .filter_map(|item| item.source_asset)
+        .collect();
     let rows = if !matches!(
         cx.preferences.assets_tab,
         AssetsTab::Text
@@ -49,9 +66,12 @@ pub(in crate::editor) fn prepare(
                 // Caption and other generated assets carry no file to lose.
                 display.missing = !asset.ephemeral()
                     && cx.visuals.availability(asset) == media::AssetAvailability::Missing;
+                display.name = media_panel::display_name(asset, library);
+                display.added = used.contains(&id);
                 Some(Row {
                     display,
                     kind: MediaKind::of(asset),
+                    folder: library.folder_of(id),
                 })
             })
             .collect();
@@ -64,8 +84,10 @@ pub(in crate::editor) fn prepare(
                 state: AssetState::Probing,
                 duration: None,
                 missing: false,
+                added: false,
             },
             kind: MediaKind::Other,
+            folder: None,
         }));
         rows
     } else {
@@ -172,9 +194,23 @@ pub(in crate::editor) fn prepare(
     } else {
         Vec::new()
     };
+    let folders = if preferences.assets_tab == AssetsTab::Media {
+        library
+            .folders
+            .iter()
+            .map(|folder| FolderRow {
+                id: folder.id,
+                name: folder.name.as_str().to_owned(),
+                count: folder.assets.len(),
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
     state.model = Model {
         preferences,
         rows,
+        folders,
         thumbnails,
         effects,
         filters,
