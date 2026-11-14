@@ -66,6 +66,9 @@ pub(super) fn show(state: &mut State, cx: &Context, ui: &mut egui::Ui) -> Vec<Ac
         pick::show(state, ui, rect);
     }
     toast::show(state, ui);
+    if let Some(kind) = state.pick_requested.take() {
+        actions.push(Action::Pick(kind));
+    }
     ui.ctx().request_repaint_after(Duration::from_millis(16));
     actions
 }

@@ -121,22 +121,12 @@ pub(super) struct Generating {
     pub(super) cancel: Cancellation,
     pub(super) events: Arc<TaskEvents>,
 }
-#[derive(Clone, Copy)]
-pub(super) enum Pick {
+/// A native dialog the window asks the composition root to open; its answer returns
+/// through [`State::picked`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Pick {
     Video,
     Export,
-}
-pub(super) struct Picker {
-    pub(super) future:
-        std::pin::Pin<Box<dyn std::future::Future<Output = Option<rfd::FileHandle>>>>,
-    pub(super) kind: Pick,
-    pub(super) waker: std::task::Waker,
-}
-pub(super) struct Repaint(egui::Context);
-impl std::task::Wake for Repaint {
-    fn wake(self: Arc<Self>) {
-        self.0.request_repaint();
-    }
 }
 
 /// The selected short as the window plays it back: the prepared snapshot, its
@@ -178,7 +168,10 @@ pub struct State {
     pub(super) runner: JobRunner,
     pub(super) batch: Option<ClipBatch>,
     pub(super) budget: ByteBudget,
-    pub(super) picker: Option<Picker>,
+    /// The native dialog the window asked for, until its answer comes back.
+    pub(super) picking: Option<Pick>,
+    /// A dialog request `show` hands to the composition root as `Action::Pick` this frame.
+    pub(super) pick_requested: Option<Pick>,
     pub(super) error: Option<Error>,
     pub(super) error_text: Text,
     pub(super) cancelled: bool,
@@ -372,7 +365,8 @@ impl State {
             )?,
             batch: None,
             budget,
-            picker: None,
+            picking: None,
+            pick_requested: None,
             error: None,
             error_text: Text::ShortsError,
             cancelled: false,
@@ -506,45 +500,24 @@ impl State {
         }
         self.preview_dirty = true;
     }
-    pub(super) fn pick(&mut self, ctx: &egui::Context, kind: Pick) {
-        let future: std::pin::Pin<Box<dyn std::future::Future<Output = Option<rfd::FileHandle>>>> =
-            match kind {
-                Pick::Video => Box::pin(
-                    rfd::AsyncFileDialog::new()
-                        .add_filter(
-                            i18n::text(self.preferences.locale, Text::Video),
-                            &["mp4", "mov", "mkv", "webm", "m4v"],
-                        )
-                        .pick_file(),
-                ),
-                Pick::Export => Box::pin(rfd::AsyncFileDialog::new().pick_folder()),
-            };
-        self.picker = Some(Picker {
-            future,
-            kind,
-            waker: std::task::Waker::from(Arc::new(Repaint(ctx.clone()))),
-        });
+    /// The window asks for a native dialog; `show` hands the request to the composition root.
+    pub(super) fn request_pick(&mut self, kind: Pick) {
+        if !self.busy() {
+            self.picking = Some(kind);
+            self.pick_requested = Some(kind);
+        }
     }
-    fn poll_picker(&mut self) {
-        let Some(mut picker) = self.picker.take() else {
-            return;
+    /// The answer of the dialog the composition root opened for `kind`; `None` is a dismissed
+    /// dialog. A chosen video or folder goes through the same seams as before.
+    pub fn picked(&mut self, kind: Pick, path: Option<PathBuf>) {
+        self.picking = None;
+        let Some(path) = path else { return };
+        let result = match kind {
+            Pick::Video => self.pick_video(path),
+            Pick::Export => self.export_to(path),
         };
-        match picker
-            .future
-            .as_mut()
-            .poll(&mut std::task::Context::from_waker(&picker.waker))
-        {
-            std::task::Poll::Pending => self.picker = Some(picker),
-            std::task::Poll::Ready(None) => {}
-            std::task::Poll::Ready(Some(file)) => {
-                let result = match picker.kind {
-                    Pick::Video => self.pick_video(file.path().to_owned()),
-                    Pick::Export => self.export_to(file.path().to_owned()),
-                };
-                if let Err(e) = result {
-                    self.fail(e, Text::ShortsError);
-                }
-            }
+        if let Err(e) = result {
+            self.fail(e, Text::ShortsError);
         }
     }
     pub fn reviews(&self) -> &[Review] {
@@ -588,7 +561,7 @@ impl State {
     pub fn busy(&self) -> bool {
         self.generating.is_some()
             || self.exporting()
-            || self.picker.is_some()
+            || self.picking.is_some()
             || self.runs.loading()
     }
     pub fn cancelling(&self) -> bool {
@@ -742,7 +715,6 @@ impl State {
         if self.draft_locale != Some(self.preferences.locale) {
             self.reset_drafts();
         }
-        self.poll_picker();
         self.poll_runs();
         if let Err(e) = self.runner.tick() {
             self.fail(e.into(), Text::ShortsError);

@@ -32,6 +32,8 @@ pub struct Workspace {
     pub(super) focus_requested: Option<project::ProjectId>,
     pub(super) home_open: bool,
     pub(super) shorts_window: bool,
+    /// The native dialog the shorts window asked for, polled by `tick` until it answers.
+    pub(super) shorts_picker: Option<super::picker::Picker>,
     /// The one place stores and the model service are lent from.
     pub(super) lending: Lending,
     /// Project files seen this session (catalog rows and open windows), so
@@ -86,6 +88,7 @@ impl Workspace {
             focus_requested: None,
             home_open: true,
             shorts_window: false,
+            shorts_picker: None,
             lending,
             lane_paths: BTreeMap::new(),
             lane_prune_key: Vec::new(),
@@ -303,6 +306,7 @@ impl Workspace {
         if let Some(shorts) = &mut self.shorts {
             shorts.tick();
         }
+        self.poll_shorts_picker();
         self.home.runner.borrow_mut().drain_events();
         if let Some(error) = self.lending.tick_models() {
             self.home.error.get_or_insert(error);

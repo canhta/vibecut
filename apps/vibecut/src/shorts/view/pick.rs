@@ -107,7 +107,7 @@ pub(super) fn show(state: &mut State, ui: &mut egui::Ui, rect: Rect) {
         )
         .clicked()
         {
-            state.pick(ui.ctx(), super::super::state::Pick::Video);
+            state.request_pick(super::super::state::Pick::Video);
         }
         let go = widgets::button(
             ui,
@@ -163,7 +163,7 @@ pub(super) fn show(state: &mut State, ui: &mut egui::Ui, rect: Rect) {
         )
         .clicked()
         {
-            state.pick(ui.ctx(), super::super::state::Pick::Video);
+            state.request_pick(super::super::state::Pick::Video);
         }
     }
     super::recent::show(state, ui, rect, card.left(), card.width());

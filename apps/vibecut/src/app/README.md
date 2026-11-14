@@ -12,7 +12,7 @@ attach, and imports every window. A window never names it; each window module (`
 | `viewports` | Draws Home, each project viewport and the Shorts viewport, and carries their `Action` values out. |
 | `window` | `EditorWindow`: one editor, its writer lease, pending save and close flow. |
 | `chrome` | The window placeholders and prompts: loading, recovery, error, close. |
-| `picker` | Native file pickers a window requests, polled without blocking and delivered to its editor. |
+| `picker` | Native file pickers a window requests, polled without blocking and delivered to its editor. The shorts window's source and export dialogs are requested through `Action::Pick`, owned by the workspace and delivered to shorts state. |
 | `work` | Background lifecycle jobs (discover, open, create, recover, persist), their worker and their polling. |
 | `runs` | The shorts window's run store over the library the Home catalog worker holds (`home::Catalog`). |
 | `lending` | The one lending point for process stores and the model service. |

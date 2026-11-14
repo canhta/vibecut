@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use vibecut::{
     egui,
     i18n::Locale,
-    shorts::{Action, Context, Decision, State as Shorts},
+    shorts::{Action, Context, Decision, Pick, State as Shorts},
 };
 fn by(id: &str) -> By<'_> {
     By::new().predicate(move |n| n.author_id() == Some(id))
@@ -1190,4 +1190,31 @@ fn the_back_arrow_returns_to_the_entry_and_the_run_keeps_going() {
     h.run_steps(3);
     assert_eq!(h.state().reviews().len(), 2);
     assert!(h.query(by("shorts.candidate.0")).is_some());
+}
+
+#[test]
+fn pick_button_asks_for_the_dialog_and_the_workspace_answer_returns_to_the_state() {
+    let asked = Arc::new(Mutex::new(Vec::new()));
+    let log = asked.clone();
+    let mut h = crate::gpu::builder()
+        .with_size(egui::vec2(1440.0, 1000.0))
+        .build_ui_state(
+            move |ui, a: &mut Shorts| {
+                let cx = Context {
+                    editor_available: true,
+                };
+                log.lock().unwrap().extend(vibecut::shorts::show(a, cx, ui));
+            },
+            state(Default::default(), once(source()).0, 0),
+        );
+    h.run_steps(3);
+    h.get(by("shorts.pick")).click();
+    h.run_steps(2);
+    assert_eq!(*asked.lock().unwrap(), vec![Action::Pick(Pick::Video)]);
+    assert!(h.state().busy());
+    h.state_mut().picked(Pick::Video, None);
+    assert!(!h.state().busy());
+    let video = std::env::temp_dir().join("picked.mp4");
+    h.state_mut().picked(Pick::Video, Some(video.clone()));
+    assert_eq!(h.state().request.path, video);
 }
