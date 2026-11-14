@@ -180,7 +180,7 @@ pub enum RenderError {
     InvalidShadow,
     #[error("glow radius must be finite and not negative")]
     InvalidGlow,
-    #[error("curve must be finite and within 100 percent")]
+    #[error("curve must be finite and within 360 degrees")]
     InvalidCurve,
     #[error("filter radius must be finite and not negative")]
     InvalidFilter,
@@ -296,8 +296,8 @@ pub fn render(
     render_on_arc(layout, canvas, origin, paint, 0.0)
 }
 
-/// [`render`] with every line's glyphs placed on a circular arc: `curve` is a percent in
-/// `-MAX_CURVE..=MAX_CURVE`, positive raising the middle of each line over its ends, zero the
+/// [`render`] with every line's glyphs placed on a circular arc: `curve` is the arc's angle in
+/// degrees in `-MAX_CURVE..=MAX_CURVE`, positive raising the middle of each line over its ends, zero the
 /// straight layout. Glow, shadow and outline follow the placed glyphs; the background box and
 /// decoration bars keep the straight layout.
 pub fn render_on_arc(
@@ -836,7 +836,7 @@ mod tests {
             up,
             render_on_arc(&laid_out, canvas, (20.0, 100.0), &paint, 80.0).expect("again")
         );
-        for bad in [100.5, -101.0, f32::NAN, f32::INFINITY] {
+        for bad in [360.5, -361.0, f32::NAN, f32::INFINITY] {
             assert!(matches!(
                 render_on_arc(&laid_out, canvas, (20.0, 100.0), &paint, bad),
                 Err(RenderError::InvalidCurve)

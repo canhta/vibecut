@@ -4306,6 +4306,12 @@ fn text_tab_edits_every_style_field_one_undo_step_each_and_shows_effects() {
         text_params(&harness, text).curve,
         Some(-project::TextParams::MAX_CURVE)
     );
+    assert_eq!(project::TextParams::DEFAULT_CURVE, 72.0);
+    assert_eq!(project::TextParams::MAX_CURVE, 360.0);
+    enter(&mut harness, "inspector.text_curve_amount", "0");
+    assert_eq!(text_params(&harness, text).curve, Some(0.0));
+    enter(&mut harness, "inspector.text_curve_amount", "50");
+    assert_eq!(text_params(&harness, text).curve, Some(50.0));
     click(&mut harness, "inspector.text_curve");
     assert_eq!(text_params(&harness, text).curve, None);
 

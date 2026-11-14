@@ -1154,7 +1154,7 @@ catalog! {
     TextColor { key: "text_color", en: "Text colour", vi: "Màu chữ" },
     TextContent { key: "text_content", en: "Content", vi: "Nội dung" },
     TextCurve { key: "text_curve", en: "Curve", vi: "Uốn cong" },
-    TextCurveAmount { key: "text_curve_amount", en: "Bend", vi: "Độ cong" },
+    TextCurveAmount { key: "text_curve_amount", en: "Strength", vi: "Cường độ" },
     TextDecoration { key: "text_decoration", en: "Line", vi: "Đường kẻ" },
     TextFill { key: "text_fill", en: "Fill", vi: "Màu tô" },
     TextFont { key: "text_font", en: "Font", vi: "Phông chữ" },

@@ -1155,7 +1155,7 @@ fn text_style_patches_update_one_field_and_validate() {
         Ok(ItemParamPatch::TextCurve(None))
     );
     assert_eq!(
-        ItemParamPatch::parse("text_curve", "250"),
+        ItemParamPatch::parse("text_curve", "999"),
         Ok(ItemParamPatch::TextCurve(Some(
             project::TextParams::MAX_CURVE
         )))
@@ -1163,7 +1163,7 @@ fn text_style_patches_update_one_field_and_validate() {
     assert!(
         s.apply(Command::SetItemParamMany {
             items: vec![item],
-            patch: ItemParamPatch::TextCurve(Some(100.5)),
+            patch: ItemParamPatch::TextCurve(Some(360.5)),
         })
         .is_err()
     );

@@ -282,6 +282,19 @@ impl Panel<'_, '_> {
         } else {
             kit::rail_slider(&mut rail_ui, &id, current, spec.min..=max, rail_width)
         };
+        // A symmetric range is bipolar: a tick under the rail marks its zero at the centre.
+        if spec.min < 0.0 && spec.min == -spec.max {
+            let half = theme::size::SLIDER_THUMB_WIDTH / 2.0;
+            let x = egui::lerp(
+                (response.rect.left() + half)..=(response.rect.right() - half),
+                0.5,
+            );
+            let below = response.rect.center().y + theme::size::SLIDER_RAIL;
+            ui.painter().line_segment(
+                [egui::pos2(x, below + 1.0), egui::pos2(x, below + 4.0)],
+                egui::Stroke::new(1.0, theme::secondary(self.cx.dark)),
+            );
+        }
         self.remember(id, &response);
         self.drive_scrub(item, spec, current, &response, value);
     }
