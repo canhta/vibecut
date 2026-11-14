@@ -18,12 +18,15 @@ conflicts are reported, and unsupported import profiles are refused with a typed
 diagnostic.
 
 The header Shortcuts action opens a four-tab dialog grouped by action category. Rows show
-platform glyph chips; click-to-record captures the next chord; a conflict names the
-existing action and leaves both bindings untouched; unbound actions stay listed;
-per-action and all-action reset remove the override and marker. Every change is the
-app-local `ui.keybindings.set` / `ui.keybindings.reset` command, so undo and redo restore
-the map without touching Project JSON. Import and export controls are visible but
-disabled.
+platform glyph chips; click-to-record captures the next chord, Escape included; a chord
+another action owns opens a conflict prompt naming the owner, where Cancel keeps the edit
+box and Override moves the chord so the owner loses it; unbound actions stay listed;
+per-action and all-action reset act on the working copy without confirmation. The dialog
+edits a working copy: Save is enabled once it differs from the stored map and commits it
+as one preference edit, so undo and redo restore the map without touching Project JSON.
+Cancel, Escape and closing discard the copy. The `ui.keybindings.set` / `ui.keybindings.reset`
+commands stay for agents and refuse a conflicting chord without prompting. Import and export
+controls are visible but disabled.
 
 ## Clipboard actions
 

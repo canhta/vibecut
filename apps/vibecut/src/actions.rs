@@ -506,6 +506,35 @@ impl KeybindingPreferences {
         Ok(removed || marker)
     }
 
+    /// The conflict prompt's Override: `action` takes `chord` and `owner` loses
+    /// it. Both edits land together or not at all.
+    pub fn override_chord(
+        &mut self,
+        action: &str,
+        chord: &str,
+        owner: &str,
+    ) -> Result<(), KeybindingError> {
+        let canonical = Chord::parse(chord)
+            .map_err(|error| KeybindingError::InvalidChord {
+                text: chord.to_owned(),
+                error,
+            })?
+            .canonical();
+        let Some(owner_spec) = self::action(owner).filter(|spec| spec.bindable()) else {
+            return Err(KeybindingError::UnknownAction(owner.to_owned()));
+        };
+        let kept: Vec<String> = self
+            .effective_chords(owner_spec)
+            .into_iter()
+            .filter(|text| Chord::parse(text).is_ok_and(|parsed| parsed.canonical() != canonical))
+            .collect();
+        let mut next = self.clone();
+        next.set_action(owner, kept)?;
+        next.set_action(action, vec![canonical])?;
+        *self = next;
+        Ok(())
+    }
+
     fn check_conflicts(&self, action: &str, chords: &[String]) -> Result<(), KeybindingError> {
         let mut used = BTreeMap::new();
         for spec in actions() {
@@ -929,6 +958,32 @@ mod tests {
             preferences.reset_action("timeline.snap"),
             Err(KeybindingError::Conflict { .. })
         ));
+        assert_eq!(preferences, before);
+
+        // Override moves the chord: the new owner takes it and the old one loses it.
+        let mut preferences = KeybindingPreferences::default();
+        preferences
+            .override_chord("timeline.snap", "Ctrl+B", "timeline.split")
+            .unwrap();
+        assert_eq!(preferences.bindings["timeline.snap"], ["Ctrl+B"]);
+        assert!(preferences.bindings["timeline.split"].is_empty());
+        assert!(preferences.is_customized.contains("timeline.split"));
+        assert!(matches!(
+            preferences.set_action("timeline.ripple", vec!["Ctrl+B".into()]),
+            Err(KeybindingError::Conflict { .. })
+        ));
+        preferences
+            .override_chord("timeline.ripple", "Ctrl+B", "timeline.snap")
+            .unwrap();
+        assert!(preferences.bindings["timeline.snap"].is_empty());
+        assert_eq!(preferences.bindings["timeline.ripple"], ["Ctrl+B"]);
+        // A refused override leaves the map as it was.
+        let before = preferences.clone();
+        assert!(
+            preferences
+                .override_chord("timeline.ripple", "Ctrl+Nope", "timeline.snap")
+                .is_err()
+        );
         assert_eq!(preferences, before);
     }
 

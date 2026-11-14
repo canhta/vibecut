@@ -91,12 +91,25 @@ pub struct ShortcutRow {
     pub unbound: bool,
 }
 
-/// Transient shortcuts-dialog state; bindings themselves live in preferences.
+/// A recorded chord that another action already owns. The prompt waits for
+/// Cancel (the edit box stays open) or Override (the owner loses the chord).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ShortcutConflict {
+    pub action: String,
+    pub chord: String,
+    pub owner: String,
+}
+
+/// Transient shortcuts-dialog state. Bindings live in preferences; the dialog
+/// edits a working copy that Save commits as one preference edit.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ShortcutsInspection {
     pub tab: ShortcutTab,
     pub recording: Option<String>,
     pub error: Option<String>,
+    pub conflict: Option<ShortcutConflict>,
+    /// Whether Save is enabled: the working copy differs from the stored map.
+    pub changed: bool,
     pub rows: Vec<ShortcutRow>,
 }
 #[derive(Clone, Debug)]
