@@ -407,6 +407,10 @@ fn export_clicks(
 ) -> Result<AppHarness, Failure> {
     let mut app = export_dialog(theme, scale)?;
     for id in ids {
+        // A widget scrolled out of the form's view takes no click; bring it in first.
+        app.get(By::new().predicate(|node| node.author_id() == Some(*id)))
+            .scroll_to_me();
+        app.run_steps(6);
         app.get(By::new().predicate(|node| node.author_id() == Some(*id)))
             .click();
         app.run_steps(12);

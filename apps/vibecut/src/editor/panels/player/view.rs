@@ -151,7 +151,7 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
     let size = egui::vec2(canvas_size(cx)[0] as f32, canvas_size(cx)[1] as f32) * fit_scale;
     let frame = Rect::from_center_size(stage.center(), size);
     state.viewport = frame.size().max(Vec2::ZERO);
-    canvas(state, cx, ui, frame, empty, &mut actions);
+    canvas(state, cx, ui, stage, frame, empty, &mut actions);
     if !empty {
         ui.painter().add(
             egui::epaint::RectShape::stroke(
@@ -963,10 +963,13 @@ fn footer_controls(
         });
     }
 }
+/// Draws the picture inside `stage`, the fitted canvas frame; the rulers and guides run along
+/// `viewer`, the whole area between the header and the fit row (100216).
 fn canvas(
     state: &mut State,
     cx: &Context<'_>,
     ui: &mut egui::Ui,
+    viewer: Rect,
     stage: Rect,
     empty: bool,
     actions: &mut Vec<Action>,
@@ -1186,7 +1189,7 @@ fn canvas(
     }
     // Last, so the rulers cover the frame and a guide line wins a press over the
     // transform box beneath it.
-    lines::show(state, cx, ui, stage, displayed.center(), scale, actions);
+    lines::show(state, cx, ui, viewer, displayed.center(), scale, actions);
 }
 
 /// The main-track clip under the playhead names a source whose file is gone.

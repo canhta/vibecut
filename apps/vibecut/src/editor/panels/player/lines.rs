@@ -459,6 +459,12 @@ fn paint_rulers(ui: &egui::Ui, dark: bool, stage: Rect, origin: Pos2, scale: f32
         left.y_range(),
         hairline,
     );
+    // A caption near a ruler's end stops at its strip, never inside the empty corner.
+    let top_painter = painter.with_clip_rect(Rect::from_min_max(
+        egui::pos2(top.left() + thickness, top.top()),
+        top.max,
+    ));
+    let left_painter = painter.with_clip_rect(left);
     let units = |low: f32, high: f32, axis: LineAxis, step: f64| {
         let (a, b) = match axis {
             LineAxis::Vertical => ((low - origin.x) / scale, (high - origin.x) / scale),
@@ -478,9 +484,9 @@ fn paint_rulers(ui: &egui::Ui, dark: bool, stage: Rect, origin: Pos2, scale: f32
         } else {
             (kit::size::PLAYER_RULER_TICK, hairline)
         };
-        painter.vline(x, top.bottom() - height..=top.bottom(), stroke);
+        top_painter.vline(x, top.bottom() - height..=top.bottom(), stroke);
         if mark.major {
-            painter.text(
+            top_painter.text(
                 egui::pos2(x + kit::size::PLAYER_RULER_LABEL_GAP, top.top()),
                 egui::Align2::LEFT_TOP,
                 label(mark.value),
@@ -496,10 +502,10 @@ fn paint_rulers(ui: &egui::Ui, dark: bool, stage: Rect, origin: Pos2, scale: f32
         } else {
             (kit::size::PLAYER_RULER_TICK, hairline)
         };
-        painter.hline(left.right() - height..=left.right(), y, stroke);
+        left_painter.hline(left.right() - height..=left.right(), y, stroke);
         if mark.major {
             // Rotated a quarter turn so the caption reads upward, starting past the tick.
-            let galley = painter.layout_no_wrap(label(mark.value), font.clone(), text);
+            let galley = left_painter.layout_no_wrap(label(mark.value), font.clone(), text);
             let size = galley.size();
             let shape = egui::epaint::TextShape::new(
                 egui::pos2(
@@ -510,7 +516,7 @@ fn paint_rulers(ui: &egui::Ui, dark: bool, stage: Rect, origin: Pos2, scale: f32
                 text,
             )
             .with_angle(-std::f32::consts::FRAC_PI_2);
-            painter.add(shape);
+            left_painter.add(shape);
         }
     }
 }

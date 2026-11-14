@@ -1419,6 +1419,14 @@ fn guide_lines_draw_over_the_player_drag_when_unlocked_and_stay_put_when_locked(
     near(top.height(), 16.0, "top ruler height");
     near(top.left(), left.right(), "the corner stays empty (x)");
     near(left.top(), top.bottom(), "the corner stays empty (y)");
+    // The viewer holds the fitted canvas with room on one axis; the rulers start at the
+    // viewer's edge, outside the canvas frame on that axis, never on the frame itself.
+    let canvas = widget(&h, "preview.canvas").rect;
+    assert!(top.top() <= canvas.top() && left.left() <= canvas.left());
+    assert!(
+        top.top() < canvas.top() - 0.5 || left.left() < canvas.left() - 0.5,
+        "rulers sit on the canvas frame {canvas:?}, not the viewer: top {top:?} left {left:?}"
+    );
     let vertical = widget(&h, "preview.guides.v.0").rect;
     let horizontal = widget(&h, "preview.guides.h.0").rect;
     near(

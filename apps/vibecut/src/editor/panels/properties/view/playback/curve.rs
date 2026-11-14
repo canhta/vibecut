@@ -300,27 +300,33 @@ impl Panel<'_, '_> {
             // The name may use the tile and half the gap each side, so neighbours never touch;
             // a longer name wraps to two lines, and a single long word steps the type down.
             let reach = tile + TILE_GAP * k - NAME_MARGIN;
-            let galley = [theme::type_size::BODY, 11.0, 10.0, NAME_MIN_SIZE]
+            // Wrapping breaks inside a word that is wider than the reach ("Montag/e"), so a
+            // size fits only when every word fits whole on its line.
+            let font = |size: f32| {
+                let mut font = theme::label_font();
+                font.size = size;
+                font
+            };
+            let size = [theme::type_size::BODY, 11.0, 10.0]
                 .into_iter()
-                .map(|size| {
-                    let mut font = theme::label_font();
-                    font.size = size;
-                    let mut job = egui::text::LayoutJob::simple(
-                        label.to_owned(),
-                        font,
-                        self.text_color(),
-                        reach,
-                    );
-                    job.halign = egui::Align::Center;
-                    ui.painter().layout_job(job)
+                .find(|size| {
+                    label.split_whitespace().all(|word| {
+                        ui.painter()
+                            .layout_no_wrap(word.to_owned(), font(*size), self.text_color())
+                            .rect
+                            .width()
+                            <= reach
+                    })
                 })
-                .find(|galley| galley.rect.width() <= reach + 0.5)
-                .unwrap_or_else(|| {
-                    let mut font = theme::label_font();
-                    font.size = NAME_MIN_SIZE;
-                    ui.painter()
-                        .layout(label.to_owned(), font, self.text_color(), reach)
-                });
+                .unwrap_or(NAME_MIN_SIZE);
+            let mut job = egui::text::LayoutJob::simple(
+                label.to_owned(),
+                font(size),
+                self.text_color(),
+                reach,
+            );
+            job.halign = egui::Align::Center;
+            let galley = ui.painter().layout_job(job);
             let at = egui::pos2(band.center().x - galley.rect.center().x, band.top() + 1.0);
             ui.painter().galley(at, galley, self.text_color());
         });

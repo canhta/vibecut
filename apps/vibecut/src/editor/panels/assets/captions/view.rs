@@ -1938,6 +1938,9 @@ impl Subtitles {
         if self.busy() {
             return Err(Error::Invalid("subtitle job busy"));
         }
+        // The export dialog can ask before the Captions panel was ever shown: pick the
+        // project's caption item the way the panel does.
+        self.refresh(session);
         let (item, p) = self
             .caption(session)
             .ok_or(Error::Invalid("caption item"))?;

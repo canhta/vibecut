@@ -52,23 +52,42 @@ impl Section {
             Self::Video
         }
     }
-    fn index(self) -> usize {
-        match self {
-            Self::Video => 0,
-            Self::Audio => 1,
-            Self::Gif => 2,
-        }
-    }
 }
 /// Which of Video, Audio and GIF are ticked: the primary output's section, plus the others
 /// kept in `also`.
-fn ticked(options: &ExportOptions) -> [bool; 3] {
-    let primary = Section::of(options.format);
-    [
-        primary == Section::Video,
-        primary == Section::Audio || options.also.audio.is_some(),
-        primary == Section::Gif || options.also.gif.is_some(),
-    ]
+#[derive(Clone, Copy)]
+struct Ticked {
+    video: bool,
+    audio: bool,
+    gif: bool,
+}
+impl Ticked {
+    fn of(options: &ExportOptions) -> Self {
+        let primary = Section::of(options.format);
+        Self {
+            video: primary == Section::Video,
+            audio: primary == Section::Audio || options.also.audio.is_some(),
+            gif: primary == Section::Gif || options.also.gif.is_some(),
+        }
+    }
+    fn get(self, section: Section) -> bool {
+        match section {
+            Section::Video => self.video,
+            Section::Audio => self.audio,
+            Section::Gif => self.gif,
+        }
+    }
+    fn flip(&mut self, section: Section) {
+        let on = match section {
+            Section::Video => &mut self.video,
+            Section::Audio => &mut self.audio,
+            Section::Gif => &mut self.gif,
+        };
+        *on = !*on;
+    }
+    fn count(self) -> usize {
+        usize::from(self.video) + usize::from(self.audio) + usize::from(self.gif)
+    }
 }
 
 const GIF_RESOLUTIONS: [(u32, &str, &str); 3] = [
@@ -130,11 +149,11 @@ fn toggle_section(
     project: &project::Project,
     section: Section,
 ) {
-    let mut on = ticked(options);
-    on[section.index()] = !on[section.index()];
+    let mut on = Ticked::of(options);
+    on.flip(section);
     let Some(primary) = [Section::Video, Section::Audio, Section::Gif]
         .into_iter()
-        .find(|section| on[section.index()])
+        .find(|section| on.get(*section))
     else {
         // One output stays ticked.
         return;
@@ -173,10 +192,10 @@ fn toggle_section(
             options.output.resolution = Some(gif_size);
         }
     }
-    if primary != Section::Audio && on[Section::Audio.index()] && !options.format.is_sequence() {
+    if primary != Section::Audio && on.get(Section::Audio) && !options.format.is_sequence() {
         options.also.audio = Some(audio_format);
     }
-    if primary != Section::Gif && on[Section::Gif.index()] {
+    if primary != Section::Gif && on.get(Section::Gif) {
         options.also.gif = Some(gif_size);
     }
 }
@@ -249,14 +268,14 @@ pub(super) fn show(
     ui.add_space(if spacious { 44.0 } else { 12.0 });
     // Video, Audio and GIF tick independently, one file each; one stays ticked. The Video
     // block is greyed, not hidden, while Video is unticked.
-    let on = ticked(options);
-    let only = on.iter().filter(|ticked| **ticked).count() == 1;
+    let on = Ticked::of(options);
+    let only = on.count() == 1;
     let (changed, r) = section_header(
         ui,
         locale,
-        on[Section::Video.index()],
+        on.get(Section::Video),
         Text::Video,
-        (on[Section::Video.index()] && only).then_some(Text::ExportKeepOne),
+        (on.get(Section::Video) && only).then_some(Text::ExportKeepOne),
     );
     result.widgets.push(("export.video.include", r));
     if changed {
@@ -264,10 +283,10 @@ pub(super) fn show(
     }
     ui.add_space(if spacious { 26.0 } else { 8.0 });
     let section = Section::of(options.format);
-    let on = ticked(options);
+    let on = Ticked::of(options);
     // The reason the video rows are off while Video is unticked.
     let video_off = match section {
-        _ if on[Section::Video.index()] => None,
+        _ if on.get(Section::Video) => None,
         Section::Audio => Some(Text::ExportNotForAudio),
         _ => Some(Text::ExportNotForGif),
     };
@@ -468,7 +487,7 @@ pub(super) fn show(
                 |fps| format!("{}", fps.as_f64()),
             );
             // The rate is the video's and, capped, the GIF's.
-            let fps_off = (!on[Section::Video.index()] && !on[Section::Gif.index()])
+            let fps_off = (!on.get(Section::Video) && !on.get(Section::Gif))
                 .then_some(Text::ExportNotForAudio);
             let combo = gated(ui, locale, fps_off, |ui| {
                 egui::ComboBox::from_id_salt(egui::IdSalt::new("export.fps"))
@@ -578,7 +597,7 @@ pub(super) fn show(
     result.widgets.push(("export.custom.size", custom));
     ui.add_space(12.0);
     // Audio: a file of its own, beside the video or alone.
-    let audio_ticked = on[Section::Audio.index()];
+    let audio_ticked = on.get(Section::Audio);
     let audio_refused = if options.format.is_sequence() {
         Some(Text::ExportNotForSequence)
     } else if audio_ticked && only {
@@ -638,7 +657,7 @@ pub(super) fn show(
         });
     ui.add_space(12.0);
     let gif_missing = !media::export_container_available(media::Container::Gif);
-    let gif_ticked = on[Section::Gif.index()];
+    let gif_ticked = on.get(Section::Gif);
     let gif_refused = if gif_ticked && only {
         Some(Text::ExportKeepOne)
     } else if gif_missing {

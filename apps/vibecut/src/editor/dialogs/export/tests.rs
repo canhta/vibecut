@@ -1624,3 +1624,83 @@ fn a_derived_name_that_exists_refuses_the_group_until_replace_is_ticked() {
     assert!(dir.path().join("out.mp4").is_file());
     assert_ne!(std::fs::read(&taken).unwrap(), b"previous");
 }
+
+/// A ticked Captions section writes its file beside the saved media even when the Captions
+/// panel was never shown (the panel had no caption item picked and refused the write).
+#[test]
+fn ticked_captions_write_their_file_beside_the_media_without_opening_the_panel() {
+    let dir = tempfile::tempdir().unwrap();
+    let srt = dir.path().join("cues.srt");
+    let text = "1\n00:00:00,000 --> 00:00:00,100\nHello group\n";
+    std::fs::write(&srt, text).unwrap();
+    let imported = captions::parse(
+        text.as_bytes(),
+        captions::Format::Srt,
+        captions::LanguageTag::parse("en").unwrap(),
+    )
+    .unwrap();
+    let end = Tick(SECOND / 10);
+    let mut session = Session::new(project(false, false), 10).unwrap();
+    session
+        .apply(engine::Command::AddAsset {
+            asset: SourceAsset::try_from(AssetData {
+                ephemeral: true,
+                id: AssetId(2),
+                path: std::fs::canonicalize(&srt).unwrap(),
+                content_hash: ContentHash::from_bytes(text.as_bytes()),
+                probe: media::SourceProbe {
+                    format: "srt".into(),
+                    duration: Some(end),
+                    streams: Vec::new(),
+                },
+            })
+            .unwrap(),
+        })
+        .unwrap();
+    session
+        .apply(engine::Command::InsertItem {
+            placement: engine::Placement::Auto,
+            item: engine::NewItem {
+                retime: Default::default(),
+                animations: Default::default(),
+                source_asset: Some(AssetId(2)),
+                source_range: SourceRange::new(Tick::ZERO, end).unwrap(),
+                start: Tick::ZERO,
+                content: ItemParams::Caption(project::CaptionParams {
+                    emphasis: Default::default(),
+                    word_highlight: false,
+                    preset: None,
+                    overrides: Default::default(),
+                    cues: imported.track,
+                }),
+            },
+        })
+        .unwrap();
+    let mut bench = bench(editor_project((**session.project()).clone()));
+    bench.editor_mut().preferences.export.also = AlsoOutputs {
+        captions: Some(captions::Format::Srt),
+        ..Default::default()
+    };
+    bench.editor_mut().activate("export.run").unwrap();
+    assert_eq!(wait(&mut bench), super::ExportPhase::Ready);
+    bench
+        .editor_mut()
+        .export_picked_file(dir.path().join("out.mp4"))
+        .unwrap();
+    assert_eq!(wait(&mut bench), super::ExportPhase::Settings);
+    // The caption file is a job of the Captions panel; it lands a few frames later.
+    let caption = dir.path().join("out.srt");
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !caption.is_file() {
+        assert_eq!(bench.editor().error, None);
+        assert!(
+            Instant::now() < deadline,
+            "the caption file was not written"
+        );
+        bench.editor_mut().tick();
+        bench.step();
+    }
+    assert!(dir.path().join("out.mp4").is_file());
+    let written = std::fs::read_to_string(caption).unwrap();
+    assert!(written.contains("Hello group"), "{written}");
+}
