@@ -62,7 +62,7 @@ that base (`keyframes.set_param`), and any other field edits the stored path, al
 Clicking the curve inserts through `masks.add_point`, which rescales the neighbours' tangent
 keys and keys the new anchor at the segment's key times.
 
-`mask_box` adds the whole-mask gizmo to the same target: the mask box is outlined with
+`mask_path/gizmo` adds the whole-mask gizmo to the same target: the mask box is outlined with
 four corner handles and a rotation grip, all mapped through `MaskGeometry`. Dragging a
 corner scales the mask uniformly about its centre (`scale`, the freeform path's own uniform
 size mode), the grip rotates it (`rotation`), and a press inside the box that meets no

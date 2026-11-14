@@ -12,7 +12,7 @@
 //! the moved box's edges and centre meet the canvas and other items' lines, the dragged
 //! corner meets them per axis, and rotation meets quarter turns.
 
-use super::{
+use super::super::{
     Action, Context, snap,
     state::PreviewGuide,
     transform::{paint_guides, paint_handle},

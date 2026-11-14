@@ -41,6 +41,7 @@ Each module's contract is its README.
 | `editor/panels/` | [Editor panels](src/editor/panels/README.md) |
 | `editor/selection.rs` | [Selection](src/editor/selection/README.md) |
 | `editor/panels/player/` | [Editor player](src/editor/panels/player/README.md) |
+| `editor/panels/player/mask_path.rs` | [Mask path gizmo](src/editor/panels/player/mask_path/README.md) |
 | `editor/panels/properties/` | [Properties](src/editor/panels/properties/README.md) |
 | `editor/panels/properties/font_picker/` | [Font picker](src/editor/panels/properties/font_picker/README.md) |
 | `editor/panels/properties/mask_picker/` | [Mask picker](src/editor/panels/properties/mask_picker/README.md) |

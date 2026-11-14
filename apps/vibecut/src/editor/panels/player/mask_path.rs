@@ -4,7 +4,9 @@
 //! drag maps through the render-owned mask affine, so handles stay on the
 //! rendered contour under mask and item rotation and scale.
 
-use super::{Action, Context, mask_box};
+mod gizmo;
+
+use super::{Action, Context};
 use crate::{
     editor::selection::MaskPointSelection,
     egui::{self, CursorIcon, Pos2, Sense, Vec2},
@@ -36,7 +38,7 @@ const MARQUEE_MOVE: f64 = 4.0;
 pub(in crate::editor) struct State {
     drag: Option<Drag>,
     marquee: Option<Marquee>,
-    gizmo: mask_box::State,
+    gizmo: gizmo::State,
 }
 
 impl State {
@@ -240,7 +242,7 @@ pub(super) fn show(
     else {
         state.drag = None;
         state.marquee = None;
-        state.gizmo = mask_box::State::default();
+        state.gizmo = gizmo::State::default();
         return false;
     };
     let pointer = ui.input(|i| i.pointer.interact_pos());
@@ -270,7 +272,7 @@ pub(super) fn show(
             })
     });
     if !on_diamond
-        && mask_box::drive(
+        && gizmo::drive(
             &mut state.gizmo,
             cx,
             ui,
@@ -427,7 +429,7 @@ pub(super) fn show(
     }
     // The box handles come after the anchors, which win where they coincide, and before
     // the curve so a corner is never read as an insertion.
-    let begin = |state: &mut State, kind: mask_box::Kind| {
+    let begin = |state: &mut State, kind: gizmo::Kind| {
         renderer(cx).is_some_and(|renderer| {
             state.gizmo.begin(
                 cx.staged_project(),
@@ -443,7 +445,7 @@ pub(super) fn show(
         })
     };
     if let Some(kind) =
-        mask_box::Handles::new(&target.geometry, viewport).and_then(|handles| handles.hit(pointer))
+        gizmo::Handles::new(&target.geometry, viewport).and_then(|handles| handles.hit(pointer))
         && begin(state, kind)
     {
         ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
@@ -466,7 +468,7 @@ pub(super) fn show(
             .geometry
             .inverse(viewport, screen)
             .is_ok_and(|local| local.iter().all(|v| (0.0..=1.0).contains(v)))
-        && begin(state, mask_box::Kind::Move)
+        && begin(state, gizmo::Kind::Move)
     {
         return true;
     }
@@ -788,7 +790,7 @@ fn paint(
     dark: bool,
     pointer: Option<Pos2>,
 ) {
-    if let Some(handles) = mask_box::Handles::new(&target.geometry, viewport) {
+    if let Some(handles) = gizmo::Handles::new(&target.geometry, viewport) {
         handles.paint(ui, dark);
     }
     let painter = ui.painter();
@@ -930,7 +932,7 @@ pub(super) fn remember(
             });
         }
     }
-    if let Some(handles) = mask_box::Handles::new(&target.geometry, viewport) {
+    if let Some(handles) = gizmo::Handles::new(&target.geometry, viewport) {
         handles.remember(ui, cx, actions);
     }
 }
