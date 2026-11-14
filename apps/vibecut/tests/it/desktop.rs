@@ -108,6 +108,24 @@ const MENU_ROWS: &[MenuRow] = &[
     },
     MenuRow {
         menu: "header",
+        item: "about",
+        command: "app.about",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "header",
+        item: "terms",
+        command: "app.terms",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "header",
+        item: "privacy",
+        command: "app.privacy",
+        unavailable: false,
+    },
+    MenuRow {
+        menu: "header",
         item: "home",
         command: "window.home",
         unavailable: false,
@@ -345,6 +363,8 @@ fn header_exit_help_and_feedback_route_through_registered_actions() {
         ("project.exit", EditorAction::ExitProject),
         ("app.help", EditorAction::OpenHelp),
         ("app.feedback", EditorAction::OpenFeedback),
+        ("app.terms", EditorAction::OpenTerms),
+        ("app.privacy", EditorAction::OpenPrivacy),
     ] {
         editor.activate(id).unwrap();
         assert_eq!(editor.take_lifecycle_action(), Some(expected), "{id}");

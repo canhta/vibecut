@@ -19,6 +19,8 @@ mod mac {
     use muda::{MenuEvent, PredefinedMenuItem, accelerator::Accelerator};
 
     const HOME: &str = "window.home.show";
+    /// The app menu's About row runs the registry action of the same id.
+    const ABOUT: &str = "app.about";
 
     #[derive(Default)]
     pub(in crate::app) struct Menu {
@@ -113,7 +115,13 @@ mod mac {
         let bar = muda::Menu::new();
         let app = muda::Submenu::new(name, true);
         app.append_items(&[
-            &PredefinedMenuItem::about(Some(&format!("About {name}")), None),
+            // Our own About dialog replaces the platform panel: it lists licences and terms.
+            &muda::MenuItem::with_id(
+                ABOUT,
+                i18n::format(locale, Text::AboutMenuItem, &[("name", name)]),
+                true,
+                None,
+            ),
             &PredefinedMenuItem::separator(),
             &PredefinedMenuItem::services(None),
             &PredefinedMenuItem::separator(),

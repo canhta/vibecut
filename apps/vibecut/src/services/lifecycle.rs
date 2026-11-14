@@ -77,6 +77,8 @@ pub enum EditorAction {
     DeleteProject,
     OpenHelp,
     OpenFeedback,
+    OpenTerms,
+    OpenPrivacy,
     ImportMedia,
     ImportLut,
     ExportClips,

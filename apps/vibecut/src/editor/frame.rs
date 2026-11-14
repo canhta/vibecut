@@ -1,4 +1,5 @@
 //! Owns editor frame composition.
+mod about;
 mod agent;
 #[cfg(test)]
 pub(crate) mod bench;
@@ -30,6 +31,8 @@ pub(super) struct State {
     pub(super) rename_focus: bool,
     /// The header Delete confirmation is open.
     pub(super) delete_open: bool,
+    /// The About dialog's open page, when it is open.
+    pub(super) about: Option<about::Page>,
     /// Header controls painted this frame, routed by the frame after `show`.
     pub(super) painted: Vec<(&'static str, Option<&'static str>, egui::Response)>,
     /// Automation records for every control the editor painted.
@@ -69,6 +72,7 @@ impl State {
             rename: None,
             rename_focus: false,
             delete_open: false,
+            about: None,
             painted: Vec::new(),
             widgets: Widgets::default(),
             panels: BTreeMap::new(),

@@ -1,4 +1,5 @@
 //! Shared services below the windows: transport, preview, crop, AI access, AI task progress, job progress, the editor session, asset intake, clipboard reads and the GPU adapters.
+pub(crate) mod about;
 pub mod ai_access;
 pub mod ai_task;
 pub mod assets;

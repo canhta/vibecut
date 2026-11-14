@@ -234,6 +234,11 @@ pub enum UiAction {
     ExportKeybindings,
     OpenHelp,
     OpenFeedback,
+    OpenAbout,
+    CloseAbout,
+    ShowLicences,
+    OpenTerms,
+    OpenPrivacy,
 }
 
 /// Engine routing owns the executable identity. Delete follows the app's ripple

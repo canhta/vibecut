@@ -108,6 +108,7 @@ impl Editor {
             || self.frame.recording_active
             || self.frame.shortcuts_open
             || self.frame.delete_open
+            || self.frame.about.is_some()
             || self
                 .assets
                 .captions

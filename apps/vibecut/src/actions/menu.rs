@@ -86,6 +86,9 @@ pub const MENUS: &[Menu] = &[
             Action("shortcuts.open"),
             Action("app.help"),
             Action("app.feedback"),
+            Separator,
+            Action("app.terms"),
+            Action("app.privacy"),
         ],
     },
 ];

@@ -179,6 +179,9 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
         for (id, icon, label) in [
             ("project.exit", Icon::ArrowLeft, Text::ExitProject),
             ("app.help", Icon::File, Text::Help),
+            ("app.about", Icon::File, Text::ActionAppAbout),
+            ("app.terms", Icon::LinkSimple, Text::ActionAppTerms),
+            ("app.privacy", Icon::LinkSimple, Text::ActionAppPrivacy),
         ] {
             menu_entry(state, cx, ui, &mut actions, id, icon, label, &font, color);
         }

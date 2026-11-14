@@ -22,6 +22,24 @@ impl Scene {
 
 pub(super) const SCENES: &[Scene] = &[
     Scene {
+        name: "about",
+        reference_dark: Some("capcut-desktop-2026-11-14/capcut-desktop-100436.png"),
+        reference_light: None,
+        build: |theme, scale| about_dialog(theme, scale, Locale::En, false),
+    },
+    Scene {
+        name: "about-vi",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| about_dialog(theme, scale, Locale::Vi, false),
+    },
+    Scene {
+        name: "about-licences",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| about_dialog(theme, scale, Locale::En, true),
+    },
+    Scene {
         name: "settings",
         reference_dark: None,
         reference_light: None,
@@ -933,7 +951,7 @@ mod shorts;
 mod timeline;
 use assets::assets_scene;
 use editor::{
-    caption_word_scene, captions_scene, editor_empty, editor_frame_state, editor_media,
+    about_dialog, caption_word_scene, captions_scene, editor_empty, editor_frame_state, editor_media,
     editor_transitions, export_audio_only, export_custom_bit_rate, export_dialog, export_gif,
     export_resolution, import_progress, models, models_vi, player_scene, player_variant,
     settings_dialog,

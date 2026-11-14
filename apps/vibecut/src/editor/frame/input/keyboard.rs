@@ -49,6 +49,12 @@ impl Editor {
             }
             return;
         }
+        if self.frame.about.is_some() {
+            if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
+                self.frame.about = None;
+            }
+            return;
+        }
         // An open sheet or dialog owns its own Escape handling and blocks every
         // global action. Text inputs are handled below so Escape still reaches
         // the focused field.
@@ -188,6 +194,7 @@ impl Editor {
                 || self.timeline.scenes.is_open()
                 || self.frame.shortcuts_open
                 || self.frame.delete_open
+                || self.frame.about.is_some()
                 || self.dialogs.export.is_open()
                 || self.dialogs.models.is_open()
                 || self.dialogs.voiceover.is_open()
