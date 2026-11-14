@@ -19,7 +19,7 @@ compositor headlessly, the playback GPU adapter and its byte budget in native
 startup. Pending, failed and ready states stay visible; a failed tile offers Retry. A
 tile drops onto a video, image, sticker or graphic clip, or `+` adds it to the
 selected clip. The tab's preview jobs and drag state live in [`effects`](effects/README.md).
-The sub-navigation lists Favorites, then one collapsible `Video effects` group holding All and the library shelves; the group header is 104 x 22 (measured, [editor UI](../../../../../../docs/product/ui/editor.md#effects)). The reference's `Body effects` group has no catalogue content here, so it is not built. The default list's header names its first section, not All. Threshold's tile previews a 120-200 band (proposed; the reference has no measured tile).
+The sub-navigation lists Favorites, then one collapsible `Video effects` group holding All and the library shelves; the group header is 104 x 22 (measured, [editor UI](../../../../../../docs/product/ui/editor.md#effects)). The reference's `Body effects` group has no catalogue content here, so it is not built. The grid header names the selected sidebar entry (All, a shelf or Favorites). Threshold's tile previews a 120-200 band (proposed; the reference has no measured tile).
 
 ## Filters panel
 

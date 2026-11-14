@@ -967,6 +967,28 @@ fn effects_library_lists_only_library_placements() {
 }
 
 #[test]
+fn effects_grid_header_names_the_selected_sidebar_entry() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    click(&mut harness, "assets.tab.effects");
+    // The grid sits right of the 120 px sub-navigation column, so sidebar rows are outside it.
+    let grid = |h: &Harness<Editor>| {
+        let panel = h.state().panels()["media"];
+        egui::Rect::from_min_max(egui::pos2(panel.left() + 120.0, panel.top()), panel.max)
+    };
+    assert!(paints_text(&harness, "All", grid(&harness)), "default header");
+    click(&mut harness, "effects.category.stylize");
+    assert!(paints_text(&harness, "Stylize", grid(&harness)), "shelf header");
+    assert!(!paints_text(&harness, "All", grid(&harness)));
+    click(&mut harness, "effects.category.favorites");
+    assert!(paints_text(&harness, "Favorites", grid(&harness)), "favorites header");
+    assert!(!paints_text(&harness, "Stylize", grid(&harness)));
+    click(&mut harness, "effects.category.all");
+    assert!(paints_text(&harness, "All", grid(&harness)), "all header");
+}
+
+#[test]
 fn effect_tile_drop_adds_to_a_clip_and_refuses_audio_with_a_reason() {
     let fixture = fixture();
     let video = fixture.video;

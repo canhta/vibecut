@@ -143,12 +143,11 @@ impl View<'_> {
         let area = ui.available_rect_before_wrap();
         self.search(ui, area.width());
         let favorites = self.state.effect_favorites;
-        // The default list names its first section, as the reference names Trending.
+        // The header names the list shown: the selected sidebar entry (All, a shelf or Favorites).
         let title = if favorites {
             Text::AssetsFavorites
         } else {
-            let first = self.cx.effects.first().map(|row| row.shelf);
-            self.state.effect_shelf.or(first).map_or(Text::AssetsAll, shelf_label)
+            self.state.effect_shelf.map_or(Text::AssetsAll, shelf_label)
         };
         ui.painter().text(
             area.min + Vec2::new(0.0, 36.0),
