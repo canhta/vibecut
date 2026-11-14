@@ -907,6 +907,8 @@ impl ItemClipboard {
                 .ok_or(EditError::Invalid("clipboard track"))?;
             let mut copy = item.clone();
             copy.id = project::ItemId(0);
+            // A pasted copy never joins the original's group.
+            copy.group = None;
             copy.start = item
                 .start
                 .checked_sub(selection.origin)

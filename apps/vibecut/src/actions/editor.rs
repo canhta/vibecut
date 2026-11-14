@@ -515,6 +515,20 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         &["Ctrl+D"],
     ),
     ActionSpec::engine(
+        "timeline.group",
+        Text::ActionTimelineGroup,
+        ActionCategory::Selection,
+        EngineAction::Group,
+        &["Ctrl+G"],
+    ),
+    ActionSpec::engine(
+        "timeline.ungroup",
+        Text::ActionTimelineUngroup,
+        ActionCategory::Selection,
+        EngineAction::Ungroup,
+        &["Ctrl+Shift+G"],
+    ),
+    ActionSpec::engine(
         "timeline.set_hidden",
         Text::ActionTimelineSetHidden,
         ActionCategory::Edit,

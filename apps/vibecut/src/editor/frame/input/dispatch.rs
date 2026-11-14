@@ -302,6 +302,42 @@ impl Editor {
             .collect()
     }
 
+    /// The selection to group: two or more unlocked items that are not already one whole group.
+    fn group_targets(&self) -> Option<Vec<ItemId>> {
+        let selected = self.selected_items();
+        let items: Vec<ItemId> = selected
+            .iter()
+            .filter(|(locked, _)| !locked)
+            .map(|(_, item)| item.id)
+            .collect();
+        let one_group = selected
+            .first()
+            .and_then(|(_, item)| item.group)
+            .is_some_and(|group| selected.iter().all(|(_, item)| item.group == Some(group)));
+        (items.len() >= 2 && items.len() == selected.len() && !one_group).then_some(items)
+    }
+
+    /// One item per group, in order: the engine edits a whole group from any member, so a
+    /// per-item command for a second member would find the group already edited.
+    fn one_per_group(&self, items: Vec<ItemId>) -> Vec<ItemId> {
+        let project = self.session.project();
+        let mut seen = std::collections::BTreeSet::new();
+        items
+            .into_iter()
+            .filter(|id| {
+                project
+                    .data()
+                    .scene()
+                    .timeline
+                    .iter()
+                    .flat_map(|track| &track.items)
+                    .find(|item| item.id == *id)
+                    .and_then(|item| item.group)
+                    .is_none_or(|group| seen.insert(group))
+            })
+            .collect()
+    }
+
     fn duplicate_targets(&self) -> Vec<ItemId> {
         self.selected_items()
             .into_iter()
@@ -501,6 +537,11 @@ impl Editor {
                     .enabled(&self.session)
                     && match route {
                         EngineAction::Duplicate => !self.duplicate_targets().is_empty(),
+                        EngineAction::Group => self.group_targets().is_some(),
+                        EngineAction::Ungroup => self
+                            .selected_items()
+                            .iter()
+                            .any(|(_, item)| item.group.is_some()),
                         EngineAction::SetHidden => !self.visual_targets().is_empty(),
                         EngineAction::SetMuted => !self.audio_targets().is_empty(),
                         EngineAction::ExtractAudio => !self.extract_targets().is_empty(),
@@ -626,7 +667,7 @@ impl Editor {
             }],
             EngineAction::Split => {
                 let at = self.playback.position()?;
-                self.split_targets()
+                self.one_per_group(self.split_targets())
                     .into_iter()
                     .map(|item| Command::SplitAt { item, at })
                     .collect()
@@ -653,6 +694,18 @@ impl Editor {
             EngineAction::Duplicate => vec![Command::DuplicateItems {
                 items: self.duplicate_targets(),
             }],
+            EngineAction::Group => match self.group_targets() {
+                Some(items) => vec![Command::TimelineGroup { items }],
+                None => Vec::new(),
+            },
+            EngineAction::Ungroup => vec![Command::TimelineUngroup {
+                items: self
+                    .selected_items()
+                    .into_iter()
+                    .filter(|(_, item)| item.group.is_some())
+                    .map(|(_, item)| item.id)
+                    .collect(),
+            }],
             EngineAction::SetHidden => {
                 let items = self.visual_targets();
                 let hidden = items.iter().any(|item| !self.item_hidden(*item));
@@ -671,7 +724,7 @@ impl Editor {
             }],
             EngineAction::Delete | EngineAction::RippleDelete => {
                 if route.command(self.preferences.ripple) == engine::CommandKind::RippleDelete {
-                    self.selection_by_end(true)
+                    self.one_per_group(self.selection_by_end(true))
                         .into_iter()
                         .map(|item| Command::RippleDelete { item })
                         .collect()
@@ -790,6 +843,8 @@ impl Editor {
             EngineAction::AddTrack => self.prune_selection(),
             EngineAction::InsertMedia | EngineAction::FreezeFrame => {}
             EngineAction::SplitRight
+            | EngineAction::Group
+            | EngineAction::Ungroup
             | EngineAction::SetHidden
             | EngineAction::SetMuted
             | EngineAction::ExtractAudio

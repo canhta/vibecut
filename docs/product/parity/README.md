@@ -22,6 +22,7 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 | `14/095518`, bare `0954xx`-`1005xx` | `ui-reference/capcut-desktop-2026-11-14/` |
 | `14b/104709`, bare `1025xx`-`1121xx` | `ui-reference/capcut-desktop-2026-11-14b/` |
 | `14c` | `ui-reference/capcut-desktop-2026-11-14c/` |
+| `14e/203747`, bare `2037xx`-`2042xx` | `ui-reference/capcut-desktop-2026-11-14e/` |
 | `14d/151656`, bare `151xxx` | `ui-reference/capcut-desktop-2026-11-14d/` |
 | `web screens/NN`, `web flows/NN` | `web-editors/capcut-web/` (function only, never layout) |
 
@@ -39,7 +40,7 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 | [Header and sub-navigation](shell.md#header-and-sub-navigation-shell) | 37 | 21 | 5 | 3 | 0 | 3 | 5 | 13 | 1 | 11 | 6 |
 | [Window and panel layout](shell.md#window-and-panel-layout-layout) | 11 | 6 | 1 | 2 | 0 | 1 | 1 | 6 | 0 | 1 | 1 |
 | [Settings](shell.md#settings-set) | 26 | 3 | 4 | 13 | 0 | 4 | 2 | 0 | 2 | 9 | 0 |
-| [Keyboard shortcuts](shell.md#keyboard-shortcuts-shortcut) | 26 | 17 | 2 | 4 | 2 | 1 | 0 | 2 | 0 | 11 | 0 |
+| [Keyboard shortcuts](shell.md#keyboard-shortcuts-shortcut) | 26 | 17 | 3 | 3 | 2 | 1 | 0 | 2 | 0 | 11 | 0 |
 | [Media](assets.md#media-media) | 35 | 15 | 6 | 7 | 0 | 2 | 5 | 2 | 1 | 11 | 16 |
 | [Audio](assets.md#audio-audio) | 21 | 13 | 4 | 2 | 0 | 1 | 1 | 5 | 6 | 6 | 3 |
 | [Text library](assets.md#text-library-textlib) | 10 | 2 | 2 | 4 | 0 | 1 | 1 | 0 | 0 | 2 | 6 |
@@ -56,11 +57,11 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 | [Text item](properties-other.md#text-item-ptext) | 31 | 17 | 8 | 5 | 0 | 0 | 1 | 3 | 7 | 15 | 5 |
 | [Caption item](properties-other.md#caption-item-pcap) | 8 | 1 | 4 | 2 | 0 | 1 | 0 | 0 | 3 | 3 | 2 |
 | [Sticker, effect, filter and adjustment items](properties-other.md#sticker-effect-filter-and-adjustment-items-pother) | 17 | 7 | 6 | 3 | 0 | 1 | 0 | 0 | 5 | 9 | 3 |
-| [Timeline](timeline.md#timeline-tl) | 95 | 44 | 12 | 25 | 2 | 10 | 2 | 13 | 5 | 45 | 5 |
+| [Timeline](timeline.md#timeline-tl) | 95 | 45 | 12 | 24 | 2 | 10 | 2 | 13 | 5 | 46 | 5 |
 | [Keyframes](timeline.md#keyframes-key) | 14 | 10 | 3 | 0 | 0 | 1 | 0 | 2 | 2 | 7 | 1 |
 | [Player](player-export.md#player-play) | 24 | 16 | 4 | 1 | 0 | 3 | 0 | 5 | 5 | 12 | 0 |
 | [Export](player-export.md#export-exp) | 31 | 15 | 7 | 5 | 0 | 1 | 3 | 2 | 8 | 11 | 3 |
 | [AI chat](ai-shorts.md#ai-chat-agent) | 17 | 9 | 3 | 2 | 1 | 1 | 1 | 5 | 3 | 4 | 1 |
 | [Long video to shorts](ai-shorts.md#long-video-to-shorts-shorts) | 24 | 9 | 7 | 4 | 0 | 2 | 2 | 8 | 2 | 5 | 3 |
 | [States](states.md#states-state) | 12 | 7 | 3 | 0 | 1 | 0 | 1 | 2 | 2 | 4 | 3 |
-| **Total** | **667** | **318** | **121** | **127** | **7** | **53** | **41** | **98** | **72** | **262** | **102** |
+| **Total** | **667** | **319** | **122** | **125** | **7** | **53** | **41** | **98** | **72** | **263** | **102** |

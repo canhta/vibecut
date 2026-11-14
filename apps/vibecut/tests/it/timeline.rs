@@ -6643,3 +6643,46 @@ fn a_clips_filmstrip_and_waveform_show_when_their_jobs_wake_the_loop() {
             && label(editor, "waveform").is_some_and(|label| label.starts_with("Waveform"))
     });
 }
+
+#[test]
+fn group_chords_select_the_whole_group_and_ungroup_keeps_the_selection() {
+    let fixture = audible_editor();
+    let (a, b) = (fixture.video_a, fixture.video_b);
+    let mut h = harness(fixture.editor);
+    h.run_steps(3);
+    let before = h.state().session.project().clone();
+    // One selected item cannot be grouped: the chord does nothing.
+    h.state_mut().select([a].into()).unwrap();
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::G);
+    h.run_steps(2);
+    assert!(Arc::ptr_eq(h.state().session.project(), &before));
+    // Ctrl+G groups the selection in one undo step.
+    h.state_mut().select([a, b].into()).unwrap();
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::G);
+    h.run_steps(2);
+    let group = item(h.state(), a).group;
+    assert!(group.is_some());
+    assert_eq!(item(h.state(), b).group, group);
+    // A single click on one member selects the whole group.
+    h.state_mut().activate("timeline.deselect_all").unwrap();
+    h.run_steps(2);
+    click_item(&mut h, a);
+    let mut selected = h.state().inspect().unwrap().selection;
+    selected.sort();
+    assert_eq!(selected, vec![a, b], "a click selects every member");
+    // The clip menu's Ungroup row dissolves the group and keeps the members selected.
+    open_item_menu(&mut h, a, "ungroup");
+    assert_eq!(item(h.state(), a).group, None);
+    assert_eq!(item(h.state(), b).group, None);
+    assert_eq!(h.state().session.selection().len(), 2);
+    // Ctrl+Shift+G with nothing grouped does nothing; Ctrl+Z restores the group.
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    h.run_steps(2);
+    assert_eq!(item(h.state(), a).group, group);
+    h.key_press_modifiers(
+        egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT),
+        egui::Key::G,
+    );
+    h.run_steps(2);
+    assert_eq!(item(h.state(), a).group, None);
+}

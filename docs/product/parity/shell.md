@@ -118,7 +118,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | SHORTCUT-12 | Activate / deactivate V | Missing | — | 14b/110530 | |
 | SHORTCUT-13 | Extract audio key | Done | — | 14b/110530 | Restore has no chord |
 | SHORTCUT-14 | Marker keys | Partial | — | 14b/110530 | No new-colour marker key |
-| SHORTCUT-15 | Group, compound, speed keys | Missing | — | 14b/110530 | No grouping model (TL-42) |
+| SHORTCUT-15 | Group, compound, speed keys | Partial | — | 14b/110530; 14e/203822 | Ctrl+G, Ctrl+Shift+G done; compound and speed keys missing |
 | SHORTCUT-16 | Shuttle J, K, L | Partial | Proposed | 14b/110530 | Ours seeks 1 s |
 | SHORTCUT-17 | Step back many frames | Differs | Proposed | 14b/110530 | Shift+Left jumps 1 s |
 | SHORTCUT-18 | Select by clip Shift X | Differs | — | 14b/110530 | Ours: export in/out |

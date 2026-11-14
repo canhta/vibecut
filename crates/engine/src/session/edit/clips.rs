@@ -7,8 +7,10 @@ use super::{
     take_item, track, unlocked,
 };
 use crate::ClipAnimations;
+use project::GroupId;
 
 pub(super) fn move_items(data: &mut ProjectData, moves: Vec<Move>) -> Result<()> {
+    let moves = with_group_moves(data, moves)?;
     // Only a first placement onto a main track that was already empty clamps to zero; moving
     // the main track's own items leaves the gap they open at the origin.
     let main_was_empty = data.scene().timeline.main.items.is_empty();
@@ -151,6 +153,7 @@ pub(super) fn execute_insert_item(
         Item {
             hidden: false,
             blend_mode: Default::default(),
+            group: None,
             masks: Vec::new(),
             effects: Vec::new(),
             animations: new.animations,
@@ -301,6 +304,7 @@ pub(super) fn move_group(
     created: &mut Vec<CreatedId>,
     next: &mut Option<u64>,
 ) -> Result<ProjectData> {
+    let ids = with_group_members(&data, &ids);
     let mut seen = BTreeSet::new();
     let mut members = Vec::new();
     for id in ids {
@@ -387,6 +391,7 @@ pub(super) fn trim_group(
     delta: Tick,
     sources: &mut TrimSources,
 ) -> Result<ProjectData> {
+    let ids = with_group_members(&data, &ids);
     let mut seen = BTreeSet::new();
     if ids.is_empty() {
         return Err(EditError::Invalid("empty timeline group"));
@@ -635,6 +640,7 @@ pub(super) fn execute_duplicate(
     if items.is_empty() {
         return Err(EditError::Invalid("empty timeline group"));
     }
+    let items = with_group_members(&data, &items);
     let mut selected = BTreeSet::new();
     for id in items {
         if !selected.insert(id) {
@@ -660,12 +666,25 @@ pub(super) fn execute_duplicate(
             copies,
         ));
     }
+    let mut renamed = BTreeMap::new();
     for (name, kind, copies) in groups {
         let target =
             super::tracks::add_track(&mut data, name, kind, TrackPlacement::Auto, created, next)?;
         let target = track(&mut data, target)?;
         for mut copy in copies {
             copy.id = ItemId(alloc(next)?);
+            if let Some(old) = copy.group {
+                let new = match renamed.get(&old) {
+                    Some(new) => *new,
+                    None => {
+                        let new = GroupId(alloc(next)?);
+                        created.push(CreatedId::Group(new));
+                        renamed.insert(old, new);
+                        new
+                    }
+                };
+                copy.group = Some(new);
+            }
             created.push(CreatedId::Item(copy.id));
             target.items.push(copy);
         }
@@ -837,6 +856,7 @@ pub(super) fn execute_extract_audio(
         track(&mut data, target)?.items.push(Item {
             hidden: false,
             blend_mode: Default::default(),
+            group: None,
             masks: Vec::new(),
             effects: Vec::new(),
             animations,
@@ -1090,6 +1110,8 @@ pub(crate) fn magnet_scope(data: &ProjectData, commands: &[Command]) -> Option<B
     {
         return None;
     }
+    // A group is one block on every track it touches, so its other members count as listed.
+    let targets = with_group_members(data, &targets);
     let mut tracks = BTreeSet::new();
     for id in targets {
         let track = data
@@ -1240,4 +1262,214 @@ pub(crate) fn close_vacated_tails(
     super::check_timeline(&mut data)?;
     crate::transitions::revalidate(&mut data, &cuts);
     Ok(project::Project::new(data)?)
+}
+
+/// The listed items plus every other active-scene member of their groups, in track order.
+pub(crate) fn with_group_members(data: &ProjectData, items: &[ItemId]) -> Vec<ItemId> {
+    with_group_members_where(data, items, |_| true)
+}
+
+/// The listed items plus the group members that strictly contain the cut `at`, so a split
+/// reaches every piece of the group under the playhead.
+pub(super) fn with_group_members_at(data: &ProjectData, items: &[ItemId], at: Tick) -> Vec<ItemId> {
+    with_group_members_where(data, items, |member| {
+        member.start < at && member.end().is_ok_and(|end| at < end)
+    })
+}
+
+fn with_group_members_where(
+    data: &ProjectData,
+    items: &[ItemId],
+    keep: impl Fn(&Item) -> bool,
+) -> Vec<ItemId> {
+    let groups: BTreeSet<GroupId> = items
+        .iter()
+        .filter_map(|id| find_item(data, *id)?.1.group)
+        .collect();
+    let mut all = items.to_vec();
+    if groups.is_empty() {
+        return all;
+    }
+    let listed: BTreeSet<ItemId> = items.iter().copied().collect();
+    for item in data.scene().timeline.iter().flat_map(|track| &track.items) {
+        if item.group.is_some_and(|group| groups.contains(&group))
+            && !listed.contains(&item.id)
+            && keep(item)
+        {
+            all.push(item.id);
+        }
+    }
+    all
+}
+
+/// Moves for the unlisted members of every group a move touches: each shifts by the delta of
+/// the first listed member of its group and stays on its own track.
+fn with_group_moves(data: &ProjectData, mut moves: Vec<Move>) -> Result<Vec<Move>> {
+    let mut deltas = BTreeMap::new();
+    for movement in &moves {
+        if let Some((_, item)) = find_item(data, movement.item)
+            && let Some(group) = item.group
+            && !deltas.contains_key(&group)
+        {
+            deltas.insert(group, sub(movement.start, item.start)?);
+        }
+    }
+    if deltas.is_empty() {
+        return Ok(moves);
+    }
+    let listed: BTreeSet<ItemId> = moves.iter().map(|m| m.item).collect();
+    for track in data.scene().timeline.iter() {
+        for item in &track.items {
+            if let Some(group) = item.group
+                && let Some(delta) = deltas.get(&group)
+                && !listed.contains(&item.id)
+            {
+                moves.push(Move {
+                    item: item.id,
+                    track: track.id,
+                    start: super::add(item.start, *delta)?,
+                });
+            }
+        }
+    }
+    Ok(moves)
+}
+
+/// Trim one edge to `at`; a grouped item trims every member of its group by the same delta.
+pub(super) fn trim_set(
+    data: ProjectData,
+    id: ItemId,
+    at: Tick,
+    edge: crate::TrimEdge,
+    sources: &mut TrimSources,
+) -> Result<ProjectData> {
+    let (_, item) = find_item(&data, id).ok_or(EditError::NoItem(id))?;
+    if item.group.is_none() {
+        return match edge {
+            crate::TrimEdge::Start => execute_trim_start(data, id, at, sources),
+            crate::TrimEdge::End => execute_trim_end(data, id, at, sources),
+        };
+    }
+    let edge_now = match edge {
+        crate::TrimEdge::Start => item.start,
+        crate::TrimEdge::End => item.end()?,
+    };
+    let delta = sub(at, edge_now)?;
+    let ids = with_group_members(&data, &[id]);
+    trim_group(data, ids, edge, delta, sources)
+}
+
+/// Split the item and every member of its group that spans the cut; pieces keep the group.
+pub(super) fn split_set(
+    mut data: ProjectData,
+    id: ItemId,
+    at: Tick,
+    created: &mut Vec<CreatedId>,
+    next: &mut Option<u64>,
+    sources: &mut TrimSources,
+) -> Result<ProjectData> {
+    for target in with_group_members_at(&data, &[id], at) {
+        data = execute_split_at(data, target, at, created, next, sources)?;
+    }
+    Ok(data)
+}
+
+/// Put the listed items, and every member of any group among them, into one new group.
+pub(super) fn execute_group(
+    mut data: ProjectData,
+    items: Vec<ItemId>,
+    created: &mut Vec<CreatedId>,
+    next: &mut Option<u64>,
+) -> Result<ProjectData> {
+    let mut seen = BTreeSet::new();
+    for id in &items {
+        if !seen.insert(*id) {
+            return Err(EditError::Invalid("duplicate group item"));
+        }
+        find_item(&data, *id).ok_or(EditError::NoItem(*id))?;
+    }
+    let members: BTreeSet<ItemId> = with_group_members(&data, &items).into_iter().collect();
+    if members.len() < 2 {
+        return Err(EditError::GroupTooSmall);
+    }
+    let existing: BTreeSet<Option<GroupId>> = members
+        .iter()
+        .filter_map(|id| find_item(&data, *id))
+        .map(|(_, item)| item.group)
+        .collect();
+    if existing.len() == 1 && existing.iter().all(Option::is_some) {
+        return Err(EditError::AlreadyGrouped);
+    }
+    for id in &members {
+        unlocked(find_item(&data, *id).ok_or(EditError::NoItem(*id))?.0)?;
+    }
+    let group = GroupId(alloc(next)?);
+    created.push(CreatedId::Group(group));
+    for track in data.scene_mut().timeline.iter_mut() {
+        for item in &mut track.items {
+            if members.contains(&item.id) {
+                item.group = Some(group);
+            }
+        }
+    }
+    Ok(data)
+}
+
+/// Dissolve the whole group of every listed item; a listed item outside any group refuses.
+pub(super) fn execute_ungroup(mut data: ProjectData, items: Vec<ItemId>) -> Result<ProjectData> {
+    if items.is_empty() {
+        return Err(EditError::Invalid("empty timeline group"));
+    }
+    let mut groups = BTreeSet::new();
+    for id in &items {
+        let (_, item) = find_item(&data, *id).ok_or(EditError::NoItem(*id))?;
+        groups.insert(item.group.ok_or(EditError::NotGrouped(*id))?);
+    }
+    for track in data.scene().timeline.iter() {
+        let touched = track
+            .items
+            .iter()
+            .any(|item| item.group.is_some_and(|group| groups.contains(&group)));
+        if touched {
+            unlocked(track)?;
+        }
+    }
+    for track in data.scene_mut().timeline.iter_mut() {
+        for item in &mut track.items {
+            if item.group.is_some_and(|group| groups.contains(&group)) {
+                item.group = None;
+            }
+        }
+    }
+    Ok(data)
+}
+
+/// Dissolve every group left with fewer than two members, in any scene.
+pub(super) fn dissolve_singleton_groups(data: &mut ProjectData) {
+    let mut counts: BTreeMap<GroupId, usize> = BTreeMap::new();
+    for scene in data.scenes.iter() {
+        for group in scene
+            .timeline
+            .iter()
+            .flat_map(|track| &track.items)
+            .filter_map(|item| item.group)
+        {
+            *counts.entry(group).or_default() += 1;
+        }
+    }
+    if counts.values().all(|count| *count >= 2) {
+        return;
+    }
+    for scene in data.scenes.iter_mut() {
+        for track in scene.timeline.iter_mut() {
+            for item in &mut track.items {
+                if item
+                    .group
+                    .is_some_and(|group| counts.get(&group).is_some_and(|n| *n < 2))
+                {
+                    item.group = None;
+                }
+            }
+        }
+    }
 }

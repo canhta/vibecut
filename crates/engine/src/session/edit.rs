@@ -49,6 +49,12 @@ pub enum EditError {
     CuesAcrossTracks,
     #[error("transcript cues are in different items")]
     CuesAcrossItems,
+    #[error("grouping needs at least two items")]
+    GroupTooSmall,
+    #[error("the items already form one group")]
+    AlreadyGrouped,
+    #[error("item {0:?} is not in a group")]
+    NotGrouped(project::ItemId),
     #[error("items overlap on track {0:?}")]
     Overlap(project::TrackId),
     #[error("invalid edit: {0}")]
@@ -84,6 +90,9 @@ impl Failure for EditError {
             | Self::CuesNotAdjacent
             | Self::CuesAcrossTracks
             | Self::CuesAcrossItems
+            | Self::GroupTooSmall
+            | Self::AlreadyGrouped
+            | Self::NotGrouped(_)
             | Self::Overlap(_)
             | Self::DurationFit
             | Self::Invalid(_)
@@ -662,16 +671,24 @@ pub(crate) fn apply(
             data = text::execute_remove_fillers(data, ids, confirm_edited, created, next, sources)?;
         }
         EditCommand::SplitAt { item: id, at } => {
-            data = clips::execute_split_at(data, id, at, created, next, sources)?;
+            data = clips::split_set(data, id, at, created, next, sources)?;
         }
         EditCommand::TimelineSplitAll { at } => {
             data = clips::execute_split_all(data, at, created, next, sources)?;
         }
         EditCommand::TimelineSplitLeft { items, at } => {
+            let items = clips::with_group_members_at(&data, &items, at);
             data = clips::execute_split_left(data, items, at, created, next, sources)?;
         }
         EditCommand::TimelineSplitRight { items, at } => {
+            let items = clips::with_group_members_at(&data, &items, at);
             data = clips::execute_split_right(data, items, at, created, next, sources)?;
+        }
+        EditCommand::TimelineGroup { items } => {
+            data = clips::execute_group(data, items, created, next)?;
+        }
+        EditCommand::TimelineUngroup { items } => {
+            data = clips::execute_ungroup(data, items)?;
         }
         EditCommand::DuplicateItems { items } => {
             data = clips::execute_duplicate(data, items, created, next)?;
@@ -709,12 +726,13 @@ pub(crate) fn apply(
             data = clips::execute_recover_audio(data, items)?;
         }
         EditCommand::TrimStart { item: id, at } => {
-            data = clips::execute_trim_start(data, id, at, sources)?;
+            data = clips::trim_set(data, id, at, crate::TrimEdge::Start, sources)?;
         }
         EditCommand::TrimEnd { item: id, at } => {
-            data = clips::execute_trim_end(data, id, at, sources)?;
+            data = clips::trim_set(data, id, at, crate::TrimEdge::End, sources)?;
         }
         EditCommand::Delete { items } => {
+            let items = clips::with_group_members(&data, &items);
             data = clips::execute_delete(data, items)?;
         }
         EditCommand::RippleDelete { item: id } => {
@@ -984,6 +1002,7 @@ pub(crate) fn apply(
             ripple: _ripple,
         } => return Err(EditError::Invalid("nested ripple policy")),
     }
+    clips::dissolve_singleton_groups(&mut data);
     check_timeline(&mut data)?;
     if let Some(previous) = previous_cuts {
         crate::transitions::revalidate(&mut data, &previous);
@@ -1027,7 +1046,7 @@ pub use audio::dubbing::{
 use motion::{animation, keyframes};
 pub use project_edits::DEFAULT_BOOKMARK_COLOR;
 
-pub(crate) use clips::{close_vacated_tails as ripple, magnet_scope};
+pub(crate) use clips::{close_vacated_tails as ripple, magnet_scope, with_group_members};
 
 /// A global ripple pass replaces command-local shifts, including inside batches.
 /// Run only after the command budget is admitted.

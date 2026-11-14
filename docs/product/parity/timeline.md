@@ -57,7 +57,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 ### Editing operations
 | ID | Item | Function | UI/UX | Evidence | Gap / note |
 |---|---|---|---|---|---|
-| TL-42 | Group / ungroup | Missing | — | 14b/110530 | Needs model design |
+| TL-42 | Group / ungroup | Done | Proposed | 14b/110530; 14e/203825, 203841 | `timeline.group`/`ungroup`; badge name and glyph size by eye, geometry open |
 | TL-43 | Compound clip | Missing | — | 14b/110011 | |
 | TL-44 | Undo compound clip | Missing | — | 14b/110530 | |
 | TL-45 | Multi-camera clip | Missing | — | 14b/110011 | Disabled in reference |

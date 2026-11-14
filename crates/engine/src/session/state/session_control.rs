@@ -31,6 +31,7 @@ impl Session {
         }
         match command {
             Command::CopyItems { items } => {
+                let items = crate::session::edit::with_group_members(self.project().data(), &items);
                 if self.transaction_active() {
                     return Err(EditError::Session(
                         crate::session::SessionError::TransactionActive,
@@ -138,6 +139,7 @@ impl Session {
         }
         match target {
             CutTarget::Items { items } => {
+                let items = crate::session::edit::with_group_members(self.project().data(), &items);
                 let Some(payload) = crate::session::clipboard::ItemClipboard::capture(
                     self.project().data(),
                     &items,

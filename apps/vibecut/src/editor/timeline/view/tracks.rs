@@ -277,6 +277,14 @@ impl State {
         for item in items {
             self.paint_item(cx, ui, layout, item, modifiers);
         }
+        if !cx.preferences.group_tip_seen
+            && let Some(item) = items.iter().find(|item| item.group.is_some())
+        {
+            let x = self
+                .x_at(item.start, layout.body.left())
+                .max(layout.body.left());
+            self.group_tip(cx, ui, egui::pos2(x, item.top));
+        }
         let item_rects: Vec<_> = items
             .iter()
             .map(|item| {

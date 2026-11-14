@@ -209,3 +209,9 @@ eligibility supplies disabled states; opening another item's menu never retarget
 Thumbnail display failures retain Artifact causes inside the mixed engine boundary. The
 existing corrupt-cache recovery recognizes that explicit shape; waveform causes keep their
 Runtime display failure; mixed query refusals compose the Analysis owner.
+
+## Groups
+
+`timeline.group` (`Ctrl+G`) and `timeline.ungroup` (`Ctrl+Shift+G`), also the clip menu's Group and Ungroup rows, send the selection to the engine's [grouping](../../../../../crates/engine/src/session/edit/README.md#edit-semantics-and-limits) commands. Group is enabled with two or more unlocked items selected that are not already one whole group; Ungroup with a grouped item selected; after Ungroup the members stay selected. A single click or an Alt-click on any member selects the whole group (the selected group shows the ordinary white outline on every member); a double-click selects that one member for individual edits (`Action::SelectMember`). A marquee also takes whole groups. Where the app issues one command per selected item (Split, Ripple delete), it sends one item per group, because the engine edits the whole group from any member.
+
+Unselected members show a small group glyph and the group name after the clip label, in the label colour, cut at the clip edge; clip colours do not change. Names are letters in creation order ("Group A", "Group B"), derived from the group ids and never stored. The first time a group is shown, a tip above it reads "Double-click a clip in the group to edit individually" with OK; OK sets `group_tip_seen`. Evidence: the grouping capture (`14e/203825`, `203841`, `203846`, `203852`, `203859`, `204016`, `204033`, `204059`). Wording of the tip and the name are ours; the glyph (about 11 pt) and its gaps (about 4 pt) were read by eye from the downscaled frame, so exact badge geometry stays open (UI parity [Proposed]).

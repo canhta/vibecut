@@ -20,7 +20,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 /// Bumped when the local preference document changes incompatibly.
-pub const PREFERENCES_VERSION: u32 = 24;
+pub const PREFERENCES_VERSION: u32 = 25;
 /// Room for every provider/feature choice and its bounded recent IDs.
 pub const MAX_PREFERENCES_BYTES: u64 = 32 * 1024;
 /// Total open-lane entries across every project; keeps the document bounded.
@@ -69,6 +69,7 @@ pub const PREFERENCE_KEYS: &[&str] = &[
     "keybindings",
     "timeline_lanes",
     "keyframe_hint_seen",
+    "group_tip_seen",
     "font_picker",
     "adjustment_presets",
     "sticker_recents",
@@ -203,6 +204,8 @@ pub struct Preferences {
     pub timeline_lanes: BTreeMap<project::ProjectId, BTreeSet<u64>>,
     /// The first-use keyframe hint was dismissed; presentation memory, never project data.
     pub keyframe_hint_seen: bool,
+    /// The first-use tip after Group was dismissed; presentation memory, never project data.
+    pub group_tip_seen: bool,
     /// Font picker tab and favourite families; presentation only.
     pub font_picker: FontPickerPreferences,
     /// Named colour-adjustment presets stored with the app.
@@ -259,6 +262,7 @@ impl Default for Preferences {
             keybindings: KeybindingPresets::default(),
             timeline_lanes: BTreeMap::new(),
             keyframe_hint_seen: false,
+            group_tip_seen: false,
             font_picker: FontPickerPreferences::default(),
             adjustment_presets: Vec::new(),
             sticker_recents: Vec::new(),
@@ -429,6 +433,7 @@ impl Preferences {
             "keybindings" => Ok(serde_json::to_value(&self.keybindings)?),
             "timeline_lanes" => Ok(serde_json::to_value(&self.timeline_lanes)?),
             "keyframe_hint_seen" => Ok(serde_json::Value::Bool(self.keyframe_hint_seen)),
+            "group_tip_seen" => Ok(serde_json::Value::Bool(self.group_tip_seen)),
             "font_picker" => Ok(serde_json::to_value(&self.font_picker)?),
             "adjustment_presets" => Ok(serde_json::to_value(&self.adjustment_presets)?),
             "sticker_recents" => Ok(serde_json::to_value(&self.sticker_recents)?),
@@ -479,6 +484,7 @@ impl Preferences {
             "keybindings" => self.keybindings = serde_json::from_value(value)?,
             "timeline_lanes" => self.timeline_lanes = serde_json::from_value(value)?,
             "keyframe_hint_seen" => self.keyframe_hint_seen = serde_json::from_value(value)?,
+            "group_tip_seen" => self.group_tip_seen = serde_json::from_value(value)?,
             "font_picker" => self.font_picker = serde_json::from_value(value)?,
             "adjustment_presets" => self.adjustment_presets = serde_json::from_value(value)?,
             "sticker_recents" => self.sticker_recents = serde_json::from_value(value)?,

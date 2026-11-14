@@ -47,6 +47,8 @@ pub(super) struct ItemView {
     pub(super) top: f32,
     pub(super) height: f32,
     pub(super) locked: bool,
+    /// Creation-order rank of the item's group among the scene's groups: 0 is A, 1 is B.
+    pub(super) group: Option<usize>,
     pub(super) label: String,
     pub(super) overlay: Option<[u8; 4]>,
     pub(super) source_asset: Option<AssetId>,
@@ -134,6 +136,7 @@ struct RawItem {
     start: Tick,
     end: Tick,
     locked: bool,
+    group: Option<project::GroupId>,
     label: String,
     overlay: Option<[u8; 4]>,
     source_asset: Option<AssetId>,
@@ -283,6 +286,7 @@ impl State {
                     start: item.start,
                     end,
                     locked: track.locked,
+                    group: item.group,
                     label,
                     overlay,
                     source_asset: item.source_asset,
@@ -333,6 +337,9 @@ impl State {
             row.top += centring;
         }
         let mut lane_offsets = vec![0.0_f32; rows.len()];
+        // Group ids come from one increasing counter, so id order is creation order.
+        let group_ids: std::collections::BTreeSet<project::GroupId> =
+            raw_items.iter().filter_map(|raw| raw.group).collect();
         let mut items = Vec::new();
         for raw in raw_items {
             let (row_top, base_height) = rows
@@ -362,6 +369,9 @@ impl State {
                 top,
                 height: base_height,
                 locked: raw.locked,
+                group: raw
+                    .group
+                    .and_then(|group| group_ids.iter().position(|id| *id == group)),
                 label: raw.label,
                 overlay: raw.overlay,
                 source_asset: raw.source_asset,

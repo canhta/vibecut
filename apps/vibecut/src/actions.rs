@@ -253,6 +253,10 @@ pub enum EngineAction {
     SplitLeft,
     SplitRight,
     SplitAll,
+    /// Group the selected items into one set that moves, trims, splits and deletes together.
+    Group,
+    /// Dissolve the groups of the selected items.
+    Ungroup,
     Duplicate,
     Delete,
     RippleDelete,
@@ -284,6 +288,8 @@ impl EngineAction {
             Self::SplitRight => K::TimelineSplitRight,
             Self::SplitAll => K::TimelineSplitAll,
             Self::Duplicate => K::DuplicateItems,
+            Self::Group => K::TimelineGroup,
+            Self::Ungroup => K::TimelineUngroup,
             Self::Delete if ripple => K::RippleDelete,
             Self::Delete => K::Delete,
             Self::RippleDelete => K::RippleDelete,

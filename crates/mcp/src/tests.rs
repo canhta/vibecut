@@ -263,6 +263,7 @@ async fn lut_source_import_is_denied_on_real_mcp_wire_before_job_or_io() {
         animations: Default::default(),
         retime: Default::default(),
         blend_mode: Default::default(),
+        group: None,
         hidden: false,
     });
     let mut session = Session::new(project::Project::new(data).unwrap(), 10).unwrap();
@@ -648,6 +649,8 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("timeline.split_left", Effect::Edit, true, true),
         ("timeline.split_right", Effect::Edit, true, true),
         ("timeline.duplicate", Effect::Edit, true, true),
+        ("timeline.group", Effect::Edit, true, true),
+        ("timeline.ungroup", Effect::Edit, true, true),
         ("timeline.freeze_frame", Effect::FilePublish, true, false),
         ("timeline.replace_media", Effect::Edit, true, true),
         ("timeline.set_flipped", Effect::Edit, true, true),

@@ -136,8 +136,10 @@ impl Editor {
         match action {
             Action::Select { item, modifiers } => self.select_item(item, modifiers),
             Action::SelectTransition(transition) => self.select_transition(transition),
+            Action::SelectMember(item) => self.select_single(item),
             Action::Marquee(items) => {
                 self.selection_scopes.transition = None;
+                let items = self.with_group_members(items);
                 self.write_selection(items);
             }
             Action::SettleSelection => self.selection_changed(),

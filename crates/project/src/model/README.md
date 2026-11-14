@@ -12,6 +12,8 @@ Project, scene, track, item and bookmark IDs are separate `u64` newtypes; media 
 
 `Project::duration` uses the active scene. `Project::scene_ids(SceneScope)` resolves Active, All or an explicit nonempty, unique Selected list; unknown or duplicate IDs and more than 256 selections refuse. `for_scene` creates a validated immutable snapshot of one scene; preview, mixing and export consume it.
 
+`Item.group` is the optional `GroupId` shared by two or more items of one scene, on any tracks; group ids come from the engine's one ID counter. Validation refuses a group with a single member and a group id used in two scenes; groups carry no name (the app letters them in creation order). Schema 58 added it.
+
 ## Shorts run
 
 `ProjectData.shorts_run` is `None` for every editor project. A run of the shorts window sets it: the project holds the source asset and the source-timed caption cues (the ordinary caption item), and the `ShortsRun` holds the settings, the ranked shorts (title, hook, reason, score, source, `ShortsLabel`, snapped segments and the pieces the suggestion named) and the speech-energy windows, at most `MAX_RUN_CLIPS` shorts, `MAX_RUN_PIECES` pieces each and `MAX_RUN_ENERGY` windows (longer sources merge adjacent windows before saving). `ShortsRun::asset` must name a project asset. Nothing here is migrated: schema 41 added the field and 53 the per-short label.
