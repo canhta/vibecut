@@ -155,7 +155,10 @@ fn rate_control_for(
     software: bool,
     webm: bool,
 ) -> RateControl {
-    if macos && !webm && videotoolbox_quality_attempts(qscale_supported, software)[0] {
+    if macos
+        && !webm
+        && videotoolbox_quality_attempts(qscale_supported, software).first() == Some(&true)
+    {
         RateControl::Quality
     } else {
         RateControl::Target

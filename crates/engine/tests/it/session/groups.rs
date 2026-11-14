@@ -1,5 +1,10 @@
 // Grouping: `timeline.group` / `timeline.ungroup` and the group-aware edits.
-#![allow(clippy::unwrap_used, reason = "validated test fixtures and assertions")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "validated test fixtures and assertions"
+)]
 use crate::support::session::{get, new_item, project, session};
 use engine::{
     Command, CreatedId, EditError, ItemPasteSource, Move, Placement, Session, TrackPlacement,
