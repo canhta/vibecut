@@ -721,8 +721,7 @@ impl FrameEffects<'_> {
             .get_mapped_range()
             .map_err(|_| Error::Unsupported("GPU mapped range"))?;
         let pixels = bytemuck::pod_collect_to_vec::<u8, [f32; 4]>(&data);
-        let result =
-            Image::from_working_pixels(item.width(), item.height(), pixels.into_iter(), self.hooks);
+        let result = Image::from_working_slice(item.width(), item.height(), &pixels, self.hooks);
         drop(data);
         if result.is_ok() {
             self.gpu.work.readbacks.fetch_add(1, Ordering::Relaxed);
