@@ -1662,6 +1662,7 @@ fn trim_clip_cuts_the_selected_clip_to_the_in_out_range_as_one_undo_step() {
         !editor.action_enabled("timeline.trim_clip"),
         "no in/out range is set"
     );
+    let mut ranges = Vec::new();
     for (seconds, mark) in [(1, "export.mark_in"), (4, "export.mark_out")] {
         editor
             .playback
@@ -1672,6 +1673,7 @@ fn trim_clip_cuts_the_selected_clip_to_the_in_out_range_as_one_undo_step() {
             )
             .unwrap();
         editor.activate(mark).unwrap();
+        ranges.push(editor.preferences.export.output.range);
     }
     assert!(editor.action_enabled("timeline.trim_clip"));
     // A clip outside the range, or a selection of two clips, has nothing to trim.
@@ -1692,10 +1694,43 @@ fn trim_clip_cuts_the_selected_clip_to_the_in_out_range_as_one_undo_step() {
         !editor.action_enabled("timeline.trim_clip"),
         "the clip now equals the range"
     );
-    // Edit > Undo takes the app's preference history first (the in/out marks), so the
-    // project step is undone through the engine history the trim was recorded in.
-    editor.session.apply(Command::Undo {}).unwrap();
-    assert_eq!(editor.session.project(), &before);
+    // Ctrl+Z takes the newest step of the project and preference histories: the trim, then
+    // the out mark set before it.
+    let [in_marked, marked] = ranges[..] else {
+        panic!("two marks")
+    };
+    let mut harness = harness(editor);
+    harness.run_steps(2);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().session.project(),
+        &before,
+        "the trim is undone"
+    );
+    assert_eq!(harness.state().preferences.export.output.range, marked);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().preferences.export.output.range,
+        in_marked,
+        "the out mark is undone"
+    );
+    assert_eq!(harness.state().session.project(), &before);
+    // Redo replays them in order: the mark, then the trim.
+    harness.key_press_modifiers(
+        egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT),
+        egui::Key::Z,
+    );
+    harness.run_steps(2);
+    assert_eq!(harness.state().preferences.export.output.range, marked);
+    assert_eq!(harness.state().session.project(), &before);
+    harness.key_press_modifiers(
+        egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT),
+        egui::Key::Z,
+    );
+    harness.run_steps(2);
+    assert_eq!(clip(harness.state(), video_a).start, Tick(SECOND));
 }
 
 #[test]

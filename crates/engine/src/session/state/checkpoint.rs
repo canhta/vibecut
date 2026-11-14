@@ -25,6 +25,8 @@ pub(super) struct Checkpoint {
     ledger_sequence: u64,
     ledger_events: VecDeque<Arc<Event>>,
     state: State,
+    /// Restored with `state`, whose undo list it counts past.
+    evicted: usize,
     gesture: Option<State>,
     timeline_preview: bool,
     ripple: bool,
@@ -43,6 +45,7 @@ impl Checkpoint {
             ledger,
             state,
             limit: _,
+            evicted,
             recorded: _,
             gesture,
             timeline_preview,
@@ -59,6 +62,7 @@ impl Checkpoint {
             ledger_sequence: ledger.sequence,
             ledger_events: ledger.events.clone(),
             state: state.clone(),
+            evicted: *evicted,
             gesture: gesture.clone(),
             timeline_preview: *timeline_preview,
             ripple: *ripple,
@@ -88,6 +92,7 @@ impl Checkpoint {
             ledger,
             state,
             limit: _,
+            evicted,
             recorded: _,
             gesture,
             timeline_preview,
@@ -103,6 +108,7 @@ impl Checkpoint {
         ledger.sequence = self.ledger_sequence;
         ledger.events = self.ledger_events;
         *state = self.state;
+        *evicted = self.evicted;
         *gesture = self.gesture;
         *timeline_preview = self.timeline_preview;
         *ripple = self.ripple;

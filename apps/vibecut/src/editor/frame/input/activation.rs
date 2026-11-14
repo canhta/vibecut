@@ -1,12 +1,12 @@
 //! Routes editor actions through the facade.
 
-use crate::services::about::Page as AboutPage;
 use crate::editor::{
     ActionTarget, Arc, AssetId, BTreeSet, Editor, Error, ItemId, Locale, MediaView, Preferences,
     Result, SelectionScopes, Text, UiAction, actions, media_panel,
 };
 use crate::services::playback::Transport;
 use crate::services::preview;
+use crate::services::views::about::Page as AboutPage;
 
 impl Editor {
     /// All control inputs (including tests/agents) use the same action path.
@@ -462,10 +462,20 @@ impl Editor {
                 UiAction::Start => self.move_playhead(Transport::Start)?,
                 UiAction::End => self.move_playhead(Transport::End)?,
                 UiAction::Undo | UiAction::Redo => {
+                    // The newer step of the two histories goes first.
+                    let position = self.session.history_position();
                     let preference_changed = if action == UiAction::Undo {
-                        self.frame.preference_history.undo(&mut self.preferences)
+                        self.frame.preference_history.undo(
+                            &mut self.preferences,
+                            position,
+                            self.session.can_undo(),
+                        )
                     } else {
-                        self.frame.preference_history.redo(&mut self.preferences)
+                        self.frame.preference_history.redo(
+                            &mut self.preferences,
+                            position,
+                            self.session.can_redo(),
+                        )
                     };
                     if !preference_changed {
                         self.session.apply(if action == UiAction::Undo {

@@ -618,7 +618,9 @@ impl Editor {
                 action: UiAction::Redo,
                 ..
             } => {
-                self.frame.preference_history.can_redo()
+                self.frame
+                    .preference_history
+                    .can_redo(self.session.history_position())
                     || engine::CommandKind::Redo.enabled(&self.session)
             }
             ActionTarget::Ui {

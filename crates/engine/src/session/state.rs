@@ -82,6 +82,8 @@ pub struct Session {
     pub(crate) ledger: super::wire::Ledger,
     state: State,
     limit: usize,
+    /// Undo steps evicted past `limit`; keeps `history_position` counting across eviction.
+    evicted: usize,
     /// `Some` only in a fork's session: the commands that changed its project, in order; a
     /// `transaction` is one entry holding all its children.
     pub(super) recorded: Option<Vec<Vec<super::fork::Logged>>>,
@@ -182,6 +184,7 @@ impl Session {
                 change: None,
             },
             limit: history_limit,
+            evicted: 0,
             recorded: None,
             gesture: None,
             timeline_preview: false,
@@ -515,6 +518,12 @@ impl Session {
     }
     pub fn history_len(&self) -> (usize, usize) {
         (self.state.undo.len(), self.state.redo.len())
+    }
+    /// The project's place in its history: one more after each edit or redo, one less after
+    /// each undo, and unchanged when eviction drops the oldest step. A history kept beside
+    /// this one (the app's preference steps) orders its steps against the project's by it.
+    pub fn history_position(&self) -> usize {
+        self.evicted + self.state.undo.len()
     }
     pub fn gesture_active(&self) -> bool {
         self.gesture.is_some()
@@ -1049,6 +1058,7 @@ impl Session {
         });
         if self.state.undo.len() > self.limit {
             self.state.undo.pop_front();
+            self.evicted += 1;
         }
         self.change_scene_view(next.data());
         self.state.project = next;

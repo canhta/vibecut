@@ -12,9 +12,12 @@ impl Editor {
         if before != after {
             // An editing mode must not shadow the project edit's next Undo.
             if !matches!(key, "ripple" | "timeline_lanes") {
-                self.frame
-                    .preference_history
-                    .record(PreferenceCommand::new(key, before, after));
+                self.frame.preference_history.record(PreferenceCommand::new(
+                    key,
+                    before,
+                    after,
+                    self.session.history_position(),
+                ));
             }
             if key == "keybindings" {
                 self.sync_keymap();

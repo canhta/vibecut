@@ -217,22 +217,29 @@ pub(super) struct PreferenceCommand {
     pub(super) key: String,
     pub(super) before: serde_json::Value,
     pub(super) after: serde_json::Value,
+    /// The project's `Session::history_position` when the edit was made: the step sits after
+    /// every project step below it and before every one above it.
+    pub(super) at: usize,
 }
 impl PreferenceCommand {
     pub(in crate::editor) fn new(
         key: &str,
         before: serde_json::Value,
         after: serde_json::Value,
+        at: usize,
     ) -> Self {
         Self {
             key: key.to_owned(),
             before,
             after,
+            at,
         }
     }
 }
 /// App-owned preference history, deliberately separate from the Project's
-/// command history: `ui.prefs.set` edits never mutate Project JSON.
+/// command history: `ui.prefs.set` edits never mutate Project JSON. Edit > Undo and Redo
+/// still take the most recent step across both: each step carries the project's history
+/// position, and `undo`/`redo` decline a step the project history must take first.
 #[derive(Default)]
 pub(super) struct PreferenceHistory {
     pub(super) undo: Vec<PreferenceCommand>,
@@ -246,10 +253,29 @@ impl PreferenceHistory {
     pub(in crate::editor) fn can_undo(&self) -> bool {
         !self.undo.is_empty()
     }
-    pub(in crate::editor) fn can_redo(&self) -> bool {
-        !self.redo.is_empty()
+    /// Whether a preference step can be redone with the project at `position`: one the
+    /// project has since moved past through a newer edit cannot.
+    pub(in crate::editor) fn can_redo(&self, position: usize) -> bool {
+        self.redo
+            .last()
+            .is_some_and(|command| command.at >= position)
     }
-    pub(in crate::editor) fn undo(&mut self, preferences: &mut Preferences) -> bool {
+    /// Undo the newest preference step when no project step is newer: `position` is the
+    /// project's history position and `project_can_undo` whether it has a step to undo.
+    /// Returns whether a preference step was undone; otherwise the project undoes.
+    pub(in crate::editor) fn undo(
+        &mut self,
+        preferences: &mut Preferences,
+        position: usize,
+        project_can_undo: bool,
+    ) -> bool {
+        if self
+            .undo
+            .last()
+            .is_some_and(|command| command.at < position && project_can_undo)
+        {
+            return false;
+        }
         let Some(command) = self.undo.pop() else {
             return false;
         };
@@ -263,7 +289,23 @@ impl PreferenceHistory {
         self.redo.push(command);
         true
     }
-    pub(in crate::editor) fn redo(&mut self, preferences: &mut Preferences) -> bool {
+    /// Redo the next preference step when the project stands where it was made; a project
+    /// step redone first is taken by the project. A step the project has moved past through
+    /// a newer edit is stale, and the redo list is dropped, as a new edit drops redo.
+    pub(in crate::editor) fn redo(
+        &mut self,
+        preferences: &mut Preferences,
+        position: usize,
+        project_can_redo: bool,
+    ) -> bool {
+        match self.redo.last() {
+            Some(command) if command.at < position => {
+                self.redo.clear();
+                return false;
+            }
+            Some(command) if command.at > position && project_can_redo => return false,
+            _ => {}
+        }
         let Some(command) = self.redo.pop() else {
             return false;
         };

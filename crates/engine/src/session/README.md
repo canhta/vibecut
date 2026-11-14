@@ -50,7 +50,9 @@ step through `begin_gesture` and `commit_gesture`, and `transaction` groups seve
 unwind restores the previous state. History eviction removes the oldest
 undo snapshot and never splits a batch. A changed edit clears redo; failures and no-ops preserve
 it. Undo and redo move existing snapshots, preserving exact integer timing and media and caption
-identity.
+identity. `history_position()` counts the project's place in its history (up one per edit or
+redo, down one per undo, unchanged by eviction) so a history kept beside it, such as the
+desktop's preference steps, can order its own steps against the project's.
 
 `registry()` derives JSON Schema 2020-12 input schemas, effects, labels and executable
 examples from the same declaration as `Command`. Leaf shapes come from the owning types; fixed
