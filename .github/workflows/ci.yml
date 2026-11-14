@@ -36,6 +36,20 @@ jobs:
       - name: Check formatting and repository policy
         run: cargo xtask checks
 
+  # Licences, sources, advisories and duplicate versions (deny.toml). It needs the
+  # advisory database from the network, so it runs here rather than in
+  # `cargo xtask checks`.
+  deny:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - run: cargo install cargo-deny --locked
+      - run: cargo deny check
+
   # Clippy and the tests run as separate jobs on every platform: in one job a
   # lint error fails the step before `cargo xtask test`, which hid every test
   # result on main for five days.
@@ -146,7 +160,7 @@ jobs:
   gate:
     name: CI gate
     if: always()
-    needs: [docs, lint, clippy, clippy-linux, test, test-linux]
+    needs: [docs, lint, deny, clippy, clippy-linux, test, test-linux]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -160,6 +174,6 @@ jobs:
         run: |
           jq -e '
             . as $needs |
-            ["docs", "lint", "clippy", "clippy-linux", "test", "test-linux"] |
+            ["docs", "lint", "deny", "clippy", "clippy-linux", "test", "test-linux"] |
             all(.[]; $needs[.].result == "success")
           ' <<< "$NEEDS_JSON"

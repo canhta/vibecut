@@ -29,7 +29,7 @@ Copy only the files you need. First commit: the mechanical import, renamed to ou
 
 ## Hosted CI
 
-`ci.yml` runs on main pushes and manual dispatch; local [checks](verification.md#checks) are the merge gate. Agents do not watch hosted runs; the maintainer requests fixes for red runs. Cache keys and job layout live in `.github/workflows/`.
+`ci.yml` runs on main pushes and manual dispatch; local [checks](verification.md#checks) are the merge gate. Agents do not watch hosted runs; the maintainer requests fixes for red runs. The `deny` job runs `cargo deny check` (licences, sources, advisories, duplicate versions; [deny.toml](../../deny.toml)); it needs the network advisory database, so it is not part of `cargo xtask checks`. Cache keys and job layout live in `.github/workflows/`.
 
 ## Distribution and release
 

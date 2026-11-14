@@ -119,3 +119,64 @@ skip = [
     { name = "windows_x86_64_gnu", version = "=0.52.6" },
     { name = "windows_x86_64_msvc", version = "=0.52.6" },
 ]
+
+[licenses]
+# Admitted licences per docs/engineering/open-source.md#licensing. Anything else
+# needs an ADR before it is added here.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unlicense",
+    "WTFPL",
+    "CDLA-Permissive-2.0",
+    "MPL-2.0",
+]
+confidence-threshold = 0.9
+# MPL-2.0 is admitted by the policy before any dependency uses it.
+unused-allowed-license = "allow"
+# Workspace crates (publish = false) are our own GPL-3.0-only code.
+private = { ignore = true }
+# Permissive licences outside the admitted list; each stays a per-crate exception
+# until a licence ADR admits it (the policy sends every other licence to an ADR).
+exceptions = [
+    # MIT-0 (MIT without the notice requirement): fluent-uri.
+    { allow = ["MIT-0"], crate = "borrow-or-share" },
+    # BSL-1.0 (Boost): arboard clipboard on Windows (clipboard-win, error-code).
+    { allow = ["BSL-1.0"], crate = "clipboard-win" },
+    { allow = ["BSL-1.0"], crate = "error-code" },
+    # 0BSD (public-domain-equivalent BSD): interprocess and its helpers.
+    { allow = ["0BSD"], crate = "doctest-file" },
+    { allow = ["0BSD"], crate = "recvmsg" },
+    # bzip2-1.0.6 (BSD-style, from the bzip2 reference licence): bzip2 0.6 (zip).
+    { allow = ["bzip2-1.0.6"], crate = "libbz2-rs-sys" },
+    # CC0-1.0 OR MIT-0: zip 9.
+    { allow = ["CC0-1.0", "MIT-0"], crate = "ppmd-rust" },
+]
+
+[advisories]
+# Every entry is an unmaintained-crate notice with no patched release, held by a
+# direct dependency that is already the latest release. Drop an entry when the
+# parent moves off the crate; a vulnerability is never ignored here.
+unmaintained = "all"
+ignore = [
+    # paste (proc-macro): gemm 0.19 (candle-core 0.11, latest) uses it for
+    # compile-time token pasting; it runs only at build time.
+    { id = "RUSTSEC-2024-0436", reason = "build-time proc-macro under candle-core/gemm; no replacement released by the parent" },
+    # zbus_names, zvariant, zvariant_derive: the project moved them into zbus 6;
+    # accesskit_unix 0.24.1 (egui-winit/eframe 0.37, latest) still builds on
+    # zbus 5. Linux accessibility transport only.
+    { id = "RUSTSEC-2026-0370", reason = "zvariant 5 under accesskit_unix (Linux AT-SPI); parent not yet on zbus 6" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names 4 under accesskit_unix (Linux AT-SPI); parent not yet on zbus 6" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive 5 under accesskit_unix (Linux AT-SPI); parent not yet on zbus 6" },
+]
+
+[sources]
+# Registry crates only; no git or alternate-registry dependencies.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
