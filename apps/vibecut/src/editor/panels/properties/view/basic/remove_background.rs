@@ -4,6 +4,7 @@ use super::super::Panel;
 use crate::editor::properties::{
     Action, ColorTarget, Icon, ItemId, ScrubSpec, Text, egui, read, theme,
 };
+use crate::kit;
 use engine::footage::CorrectionKind;
 
 /// Distance between the centres of neighbouring tool icons, measured in the reference.

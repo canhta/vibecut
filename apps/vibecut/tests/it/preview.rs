@@ -1421,10 +1421,26 @@ fn guide_lines_draw_over_the_player_drag_when_unlocked_and_stay_put_when_locked(
     near(left.top(), top.bottom(), "the corner stays empty (y)");
     let vertical = widget(&h, "preview.guides.v.0").rect;
     let horizontal = widget(&h, "preview.guides.h.0").rect;
-    near(vertical.top(), left.top(), "vertical guide top at the viewer edge");
-    near(vertical.bottom(), left.bottom(), "vertical guide bottom at the viewer edge");
-    near(horizontal.left(), top.left(), "horizontal guide left at the viewer edge");
-    near(horizontal.right(), top.right(), "horizontal guide right at the viewer edge");
+    near(
+        vertical.top(),
+        left.top(),
+        "vertical guide top at the viewer edge",
+    );
+    near(
+        vertical.bottom(),
+        left.bottom(),
+        "vertical guide bottom at the viewer edge",
+    );
+    near(
+        horizontal.left(),
+        top.left(),
+        "horizontal guide left at the viewer edge",
+    );
+    near(
+        horizontal.right(),
+        top.right(),
+        "horizontal guide right at the viewer edge",
+    );
     let start = top.center();
     drag_from(&mut h, start, egui::vec2(20.0, 0.0));
     drop_at(&mut h, start + egui::vec2(20.0, 0.0));

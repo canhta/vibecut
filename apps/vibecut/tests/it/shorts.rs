@@ -254,7 +254,7 @@ fn actions_and_play_order_reach_preview_and_single_step_editor_insertion() {
     loop {
         dialog.tick(&project, options).unwrap();
         let state = dialog.inspect();
-        if state.saved.is_some() {
+        if !state.saved.is_empty() {
             break;
         }
         assert_ne!(

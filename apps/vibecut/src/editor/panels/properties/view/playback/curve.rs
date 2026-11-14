@@ -321,10 +321,7 @@ impl Panel<'_, '_> {
                     ui.painter()
                         .layout(label.to_owned(), font, self.text_color(), reach)
                 });
-            let at = egui::pos2(
-                band.center().x - galley.rect.center().x,
-                band.top() + 1.0,
-            );
+            let at = egui::pos2(band.center().x - galley.rect.center().x, band.top() + 1.0);
             ui.painter().galley(at, galley, self.text_color());
         });
         clicked
