@@ -1,6 +1,6 @@
 # Home
 
-Snapshot of main `66512fec` on 2026-11-14. Legend, evidence names and update rule: [parity](README.md).
+Snapshot of main `443181f4` on 2026-11-14. Legend, evidence names and update rule: [parity](README.md).
 
 ## Home (HOME)
 

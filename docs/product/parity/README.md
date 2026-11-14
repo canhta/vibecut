@@ -2,7 +2,7 @@
 
 One row per CapCut desktop item a user can see or use, mapped to VibeCut's state. This folder tracks progress and quality; it does not hold values or behaviour. Measured values live in [UI design](../ui/index.md) and its window files, scope in [requirements](../requirements.md), commands in [agent control](../agent-control/commands.md).
 
-Snapshot: main `66512fec`, 2026-11-14.
+Snapshot: main `443181f4`, 2026-11-14.
 
 ## How to read a row
 
