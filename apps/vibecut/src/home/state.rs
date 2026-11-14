@@ -127,7 +127,7 @@ impl State {
 
     fn spawn(&mut self) {
         let (request, requests) = mpsc::channel();
-        let (sender, events) = time::wake::channel();
+        let (sender, events) = wake::channel();
         let root = self.root.clone();
         let budget = self.budget.clone();
         let corrections = self.corrections.clone();

@@ -1158,13 +1158,21 @@ fn idle_home_and_paused_editor_request_no_repaint_and_a_worker_result_requests_o
     // A worker finishing while the loop sleeps asks for a repaint by itself, with no pass
     // and no tick in between; so does a result sent on a wake channel.
     let before = repaints.load(SeqCst);
-    time::wake::spawn(|| {}).join().unwrap();
-    assert!(repaints.load(SeqCst) > before, "a finished worker did not wake the loop");
+    wake::spawn(|| {}).join().unwrap();
+    assert!(
+        repaints.load(SeqCst) > before,
+        "a finished worker did not wake the loop"
+    );
     let before = repaints.load(SeqCst);
-    let (send, receive) = time::wake::channel();
-    std::thread::spawn(move || send.send(7_u8).unwrap()).join().unwrap();
+    let (send, receive) = wake::channel();
+    std::thread::spawn(move || send.send(7_u8).unwrap())
+        .join()
+        .unwrap();
     assert_eq!(receive.try_recv().unwrap(), 7);
-    assert!(repaints.load(SeqCst) > before, "a sent result did not wake the loop");
+    assert!(
+        repaints.load(SeqCst) > before,
+        "a sent result did not wake the loop"
+    );
     assert!(
         settles(&mut app, &ctx, 10),
         "the wake left the loop asking for repaint"
@@ -1181,7 +1189,11 @@ fn idle_home_and_paused_editor_request_no_repaint_and_a_worker_result_requests_o
     );
     let quiet = repaints.load(SeqCst);
     std::thread::sleep(Duration::from_millis(300));
-    assert_eq!(repaints.load(SeqCst), quiet, "a paused editor woke the loop");
+    assert_eq!(
+        repaints.load(SeqCst),
+        quiet,
+        "a paused editor woke the loop"
+    );
 }
 
 #[test]

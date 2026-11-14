@@ -46,9 +46,10 @@ pub struct Workspace {
     /// path; the editor that registers for the path starts its first turn with the prompt.
     pub(super) agent_prompts: BTreeMap<PathBuf, String>,
     /// Workers ask the event loop to repaint through this; nothing else polls while idle.
-    wake: time::wake::Wake,
+    wake: wake::Wake,
     wake_attached: bool,
-    /// The native menu bar (macOS); a no-op elsewhere.
+    /// The native menu bar.
+    #[cfg(target_os = "macos")]
     pub(super) menu: super::native_menu::Menu,
 }
 
@@ -64,7 +65,7 @@ impl Workspace {
         path: Option<PathBuf>,
     ) -> Result<Self> {
         // Bound first: every worker started below inherits it and wakes the loop when done.
-        let wake = time::wake::Wake::new();
+        let wake = wake::Wake::new();
         wake.bind();
         let budget = ByteBudget::new(preferences.cache_limit_bytes)?;
         let persistence = ByteBudget::new(256 << 20)?;
@@ -111,6 +112,7 @@ impl Workspace {
             agent_prompts: BTreeMap::new(),
             wake,
             wake_attached: false,
+            #[cfg(target_os = "macos")]
             menu: Default::default(),
         })
     }
@@ -295,7 +297,7 @@ impl Workspace {
     pub fn tick(&mut self) {
         self.wake.bind();
         if self.playing() {
-            time::wake::notify_after(Duration::from_millis(8));
+            wake::notify_after(Duration::from_millis(8));
         }
         self.projects.tick();
         if let Some(action) = self.projects.take_action() {

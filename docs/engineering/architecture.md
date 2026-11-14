@@ -6,7 +6,8 @@ The core runs headless. Only `apps/*` may depend on UI, GPU, native window or di
 
 | Package | Path | Owns | May depend on |
 |---|---|---|---|
-| time | crates/time | Ticks, rational rates, source ranges, the worker-to-UI wake hook | - |
+| time | crates/time | Ticks, rational rates, source ranges | - |
+| wake | crates/wake | The worker-to-UI wake hook: threads that wake the UI loop when they end or publish a result | - |
 | transport | crates/transport | Bounded HTTPS requests, streaming downloads, redirect and retry-after rules | - |
 | media | crates/media | Safe FFmpeg I/O: probe, demux/mux, decode/encode, hardware acceleration, conversion, speech and vision media preparation | time, testkit |
 | testkit | crates/testkit | Dev-only synthetic media fixture builders, the timeline-item builder, generated-fixture paths and FFmpeg/FFprobe oracle discovery | media, project, time |
@@ -15,14 +16,14 @@ The core runs headless. Only `apps/*` may depend on UI, GPU, native window or di
 | text | crates/text | Unicode shaping and rasterization | - |
 | render | crates/render | CPU compositor, caption overlay, audio mix, export execution | time, media, project, captions, text, testkit |
 | ai | crates/ai | Provider interfaces, capabilities, consent and cost, AI adapters | time, media, captions, schemars, transport, testkit |
-| engine | crates/engine | Session, commands, history, recovery scheduling, jobs, cache, adapter selection and per-shot analysis | time, media, project, captions, text, render, ai, transport, testkit |
-| mcp | crates/mcp | MCP stdio protocol adapter, grants, inbox and OS-permissioned attach transport | engine, project, ai, render, time |
+| engine | crates/engine | Session, commands, history, recovery scheduling, jobs, cache, adapter selection and per-shot analysis | time, media, project, captions, text, render, ai, transport, wake, testkit |
+| mcp | crates/mcp | MCP stdio protocol adapter, grants, inbox and OS-permissioned attach transport | engine, project, ai, render, time, wake |
 | agent | crates/agent | In-app agent turn loop on a session fork, tool set generated from the registry, agent command policy, event stream and evaluation set | engine, ai, project, time, transport |
 | libraries | crates/libraries | External project assets: user brand kits, font catalog with verified download/import cache, licensed sound search, saved library and previews, sticker flags and downloadable emoji and icon collections | engine, media, project, render, text, time, transport |
 | shorts | crates/shorts | Clip suggestion, boundary snapping and accepted-short batch export | time, media, project, captions, render, ai, engine, transport, testkit |
 | clip-eval | crates/clip-eval | Fixed labelled clip-pipeline evaluation harness, metrics and local reports | time, media, captions, ai, engine, shorts, transport |
 | vibecut-cli | apps/vibecut-cli | Headless adapter: CLI arguments, typed exit codes, dispatch, control-session lifetime, project lease composition, export admission, bounded batch job files | engine, ai, media, project, render, time, shorts, libraries, mcp, agent, testkit |
-| vibecut | apps/vibecut | Desktop app: UI, playback, model-manager presentation, wgpu compositor, preferences, app controls and inspection; composes the MCP adapter into its composition root | time, engine, media, project, captions, text, render, ai, mcp, agent, shorts, libraries, transport, testkit |
+| vibecut | apps/vibecut | Desktop app: UI, playback, model-manager presentation, wgpu compositor, preferences, app controls and inspection; composes the MCP adapter into its composition root | time, engine, media, project, captions, text, render, ai, mcp, agent, shorts, libraries, transport, wake, testkit |
 
 Only `media` links FFmpeg. Render's CPU compositor is the reference for preview and export; the app owns the optional wgpu adapter.
 
@@ -31,6 +32,7 @@ Tiers of the table, arrows pointing at the dependency. Edges implied by a path a
 ```mermaid
 flowchart BT
   transport
+  wake
   media --> time
   captions --> time
   project --> media
@@ -43,6 +45,7 @@ flowchart BT
   engine --> render
   engine --> ai
   engine --> transport
+  engine --> wake
   libraries --> engine
   libraries --> render
   libraries --> transport
@@ -65,7 +68,7 @@ flowchart BT
     cli; app
   end
   subgraph core[headless core]
-    time; text; transport; media; captions; project; ai; render; engine; mcp; agent; libraries; shorts; eval
+    time; wake; text; transport; media; captions; project; ai; render; engine; mcp; agent; libraries; shorts; eval
   end
 ```
 

@@ -95,7 +95,7 @@ impl Editor {
             || self.toast.is_some()
             || self.assets.media_reveal.is_some()
         {
-            time::wake::notify_after(std::time::Duration::from_millis(100));
+            wake::notify_after(std::time::Duration::from_millis(100));
         }
     }
 

@@ -375,7 +375,7 @@ impl Subtitles {
             cancel: cancel.clone(),
         };
         let (send, receive) = mpsc::sync_channel(1);
-        time::wake::spawn(move || {
+        wake::spawn(move || {
             let _ = send.send(suggest(input));
         });
         self.suggest = Some(Suggest {

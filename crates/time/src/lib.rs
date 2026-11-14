@@ -1,5 +1,4 @@
-//! Exact integer media time: ticks, rational frame rates and source ranges, plus the
-//! [`wake`] hook a worker thread uses to ask the UI loop to repaint.
+//! Exact integer media time: ticks, rational frame rates and source ranges.
 //!
 //! Time is an integer count of [`Tick`]s at [`TICKS_PER_SECOND`] = 254 016 000 000
 //! per second. That rate divides evenly into every admitted broadcast frame
@@ -15,7 +14,6 @@ mod rounding;
 mod speed;
 mod tick;
 mod timecode;
-pub mod wake;
 
 pub use clock::{format_clock, format_duration, format_short_clock};
 pub use range::{SourceRange, TimeRange};

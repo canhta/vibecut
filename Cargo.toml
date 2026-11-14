@@ -24,6 +24,7 @@ testkit = { path = "crates/testkit" }
 text = { path = "crates/text" }
 time = { path = "crates/time" }
 transport = { path = "crates/transport" }
+wake = { path = "crates/wake" }
 
 # External crates declared by two or more members. Members keep their own
 # features and default-features; only the version is owned here.

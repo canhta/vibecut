@@ -142,7 +142,7 @@ pub(super) fn catalog_worker(
     budget: ByteBudget,
     corrections: engine::footage::Lookup,
     requests: Receiver<Request>,
-    events: time::wake::Sender<Event>,
+    events: wake::Sender<Event>,
     catalog: Catalog,
 ) {
     let library = match ProjectLibrary::open(&root, budget, corrections) {
@@ -304,7 +304,7 @@ pub(super) fn catalog_worker(
 }
 
 /// Report the directories the listing skipped; a failed scan keeps the previous report.
-fn send_unreadable(library: &ProjectLibrary, events: &Sender<Event>) {
+fn send_unreadable(library: &ProjectLibrary, events: &wake::Sender<Event>) {
     if let Ok(unreadable) = library.list_unreadable() {
         let _ = events.send(Event::Unreadable(unreadable));
     }

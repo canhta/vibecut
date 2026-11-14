@@ -400,7 +400,7 @@ impl JobRunner {
             ready: self.clock.now(),
         });
         // A queued job only starts on a pump: make sure the owner's loop runs one.
-        time::wake::notify();
+        wake::notify();
         Ok((id, token))
     }
     /// Bound a batch by both resource concurrency and retained terminal results.
@@ -423,7 +423,7 @@ impl JobRunner {
         if !self.queue.is_empty() || !self.running.is_empty() {
             // Work in flight reports progress through this pump: poll again soon, and stop
             // when the queue and the running set are both empty.
-            time::wake::notify_after(Duration::from_millis(16));
+            wake::notify_after(Duration::from_millis(16));
         }
         ticked
     }
@@ -582,7 +582,7 @@ impl JobRunner {
             }
             let context = pending.context.clone();
             let task = pending.task.clone();
-            match time::wake::Builder::new()
+            match wake::Builder::new()
                 .name("vibecut-job".into())
                 .spawn(move || {
                     catch_unwind(AssertUnwindSafe(|| {
@@ -683,7 +683,7 @@ impl JobRunner {
             .find(|p| p.snapshot.id == id)
         {
             p.context.cancel.cancel();
-            time::wake::notify();
+            wake::notify();
             return Ok(());
         }
         if self.finished.iter().any(|f| f.snapshot.id == id) {

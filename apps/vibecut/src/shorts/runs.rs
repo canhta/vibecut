@@ -49,7 +49,7 @@ pub(super) enum Event {
 
 pub(super) struct Runs {
     store: Option<Arc<dyn RunStore>>,
-    send: time::wake::Sender<Event>,
+    send: wake::Sender<Event>,
     receive: mpsc::Receiver<Event>,
     pub(super) entries: Vec<RunEntry>,
     /// Uploaded posters by run, created on first paint.
@@ -59,7 +59,7 @@ pub(super) struct Runs {
 
 impl Default for Runs {
     fn default() -> Self {
-        let (send, receive) = time::wake::channel();
+        let (send, receive) = wake::channel();
         Self {
             store: None,
             send,
@@ -82,16 +82,13 @@ impl Runs {
     pub(super) fn loading(&self) -> bool {
         self.loading
     }
-    fn spawn(
-        &mut self,
-        work: impl FnOnce(&dyn RunStore, &time::wake::Sender<Event>) + Send + 'static,
-    ) {
+    fn spawn(&mut self, work: impl FnOnce(&dyn RunStore, &wake::Sender<Event>) + Send + 'static) {
         let Some(store) = self.store.clone() else {
             return;
         };
         let send = self.send.clone();
         // A thread that cannot start leaves the entry screen as it was.
-        let started = time::wake::Builder::new()
+        let started = wake::Builder::new()
             .name("shorts-runs".into())
             .spawn(move || work(store.as_ref(), &send));
         if started.is_err() {

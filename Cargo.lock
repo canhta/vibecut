@@ -1788,6 +1788,7 @@ dependencies = [
  "transport",
  "unicode-normalization",
  "unicode-segmentation",
+ "wake",
 ]
 
 [[package]]
@@ -3323,6 +3324,7 @@ dependencies = [
  "time 0.1.0",
  "tokio",
  "tracing",
+ "wake",
  "widestring",
  "win-authorization-sys",
 ]
@@ -6634,6 +6636,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "transport",
+ "wake",
 ]
 
 [[package]]
@@ -6694,6 +6697,10 @@ checksum = "09ac3b126d3914f9849036f826e054cbabdc8519970b8998ddaf3b5bd3c65f11"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "wake"
+version = "0.1.0"
 
 [[package]]
 name = "walkdir"

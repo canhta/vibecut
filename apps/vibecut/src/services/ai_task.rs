@@ -22,14 +22,14 @@ pub struct TaskEvents {
     pub(crate) state: Mutex<EventState>,
     cancel: Cancellation,
     /// The owner of the thread that built this, woken when a worker changes the state.
-    wake: Option<time::wake::Wake>,
+    wake: Option<wake::Wake>,
 }
 impl TaskEvents {
     pub(crate) fn new(cancel: Cancellation) -> Self {
         Self {
             state: Mutex::new(EventState::default()),
             cancel,
-            wake: time::wake::current(),
+            wake: wake::current(),
         }
     }
     fn wake(&self) {
@@ -168,7 +168,7 @@ mod tests {
         ] {
             let request = upload(model, operation);
             let task = events.clone();
-            let worker = time::wake::spawn(move || task.approve_unknown_price(&request));
+            let worker = wake::spawn(move || task.approve_unknown_price(&request));
             pending(&events);
             assert_eq!(
                 events
@@ -198,7 +198,7 @@ mod tests {
         for disconnected in [false, true] {
             let denied = Arc::new(TaskEvents::new(Cancellation::new()));
             let task = denied.clone();
-            let worker = time::wake::spawn(move || {
+            let worker = wake::spawn(move || {
                 task.approve(&upload(
                     "fixture-denied",
                     CatalogOperation::GenerateChapters,
@@ -217,7 +217,7 @@ mod tests {
         }
         let cancelled = Arc::new(TaskEvents::new(Cancellation::new()));
         let task = cancelled.clone();
-        let worker = time::wake::spawn(move || {
+        let worker = wake::spawn(move || {
             task.approve_unknown_price(&upload("fixture-a", CatalogOperation::GenerateChapters))
         });
         pending(&cancelled);

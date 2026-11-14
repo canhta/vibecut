@@ -433,7 +433,7 @@ impl Music {
         let generation = self.search_generation;
         let library = self.session.library().clone();
         let budget = self.budget.clone();
-        let spawned = time::wake::Builder::new()
+        let spawned = wake::Builder::new()
             .name("vibecut-music-search".into())
             .spawn(move || {
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -593,7 +593,7 @@ impl Music {
         let cancel = Arc::new(AtomicBool::new(false));
         self.preview_cancel = Some(cancel.clone());
         let (tx, rx) = mpsc::sync_channel(1);
-        let spawned = time::wake::Builder::new()
+        let spawned = wake::Builder::new()
             .name("vibecut-music-preview".into())
             .spawn(move || {
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

@@ -21,13 +21,13 @@ pub struct Handler {
     pub(super) send: mpsc::Sender<Pending>,
     pub(super) full: bool,
     /// The owner of the thread that built the inbox: woken when a request is queued.
-    wake: Option<time::wake::Wake>,
+    wake: Option<wake::Wake>,
 }
 impl Handler {
     pub(super) fn new(send: mpsc::Sender<Pending>) -> Self {
         Self {
             send,
-            wake: time::wake::current(),
+            wake: wake::current(),
             full: false,
             project_routing: false,
         }

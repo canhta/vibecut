@@ -473,7 +473,7 @@ impl ImportQueue {
         self.total = total;
         self.pending.clear();
         self.phase = Phase::Probe;
-        let (send, receive) = time::wake::sync_channel(EVENT_QUEUE);
+        let (send, receive) = wake::sync_channel(EVENT_QUEUE);
         let probe = self.probe.clone();
         let store = self.thumbnails.clone();
         let budget = self.budget.clone();
@@ -687,7 +687,7 @@ impl ImportQueue {
         let assets = std::mem::take(&mut self.pending);
         let total = assets.len();
         self.phase = Phase::Thumbnail;
-        let (send, receive) = time::wake::sync_channel(EVENT_QUEUE);
+        let (send, receive) = wake::sync_channel(EVENT_QUEUE);
         let cancelled = Arc::new(AtomicBool::new(false));
         let worker_cancel = cancelled.clone();
         let store = self.thumbnails.clone();
@@ -799,7 +799,7 @@ fn job_key(
 }
 
 fn finish(
-    send: &time::wake::SyncSender<ImportEvent>,
+    send: &wake::SyncSender<ImportEvent>,
     cancelled: bool,
     error: Option<Arc<dyn engine::Failure + 'static>>,
 ) -> std::result::Result<Vec<u8>, engine::control::Error> {

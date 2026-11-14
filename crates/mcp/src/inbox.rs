@@ -149,7 +149,7 @@ impl Inbox {
         };
         // One request per tick: a longer queue needs the loop to come back for the rest.
         if !self.receive.is_empty() {
-            time::wake::notify();
+            wake::notify();
         }
         if pending.reply.is_closed() || Instant::now() >= pending.expires {
             return Ok(());
@@ -183,7 +183,7 @@ impl Inbox {
             return Ok(());
         };
         if !self.receive.is_empty() {
-            time::wake::notify();
+            wake::notify();
         }
         if pending.reply.is_closed() || Instant::now() >= pending.expires {
             return Ok(());
