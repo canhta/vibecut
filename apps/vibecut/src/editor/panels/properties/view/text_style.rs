@@ -519,16 +519,15 @@ impl Panel<'_, '_> {
                 theme::label_font(),
                 egui::Color32::from_rgba_unmultiplied(red, green, blue, alpha),
             );
-            let response = response.on_hover_text(look.name());
-            response.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::Role::Button, enabled, look.name())
-            });
+            let name = self.tr(crate::i18n::text_look(look));
+            let response = response.on_hover_text(name);
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, name));
             let word = look.name().to_lowercase().replace(' ', "_");
             self.remember(format!("inspector.text_look.{word}"), &response);
             ui.add_sized(
                 [TILE, NAME_HEIGHT],
                 egui::Label::new(
-                    egui::RichText::new(look.name())
+                    egui::RichText::new(name)
                         .font(theme::label_font())
                         .size(theme::type_size::SMALL_LABEL)
                         .color(self.text_color()),

@@ -32,6 +32,8 @@ fn preset_style(boxed: bool) -> captions::CueStyle {
         italic: false,
         underline: false,
         strikeout: false,
+        max_lines: None,
+        word_highlight_color: None,
     }
 }
 fn full_style(boxed: bool) -> captions::CaptionStyle {
@@ -681,6 +683,16 @@ fn every_caption_look_applies_as_one_undo_step_with_its_cue_value() {
             "{}",
             look.name()
         );
+        // The item keeps the look's max lines and word-highlight colour, so a karaoke look
+        // paints its own highlight rather than the project default.
+        let painted = render::style_from_cue(&params.cues.styles[0]);
+        assert_eq!(painted.max_lines, look.style().max_lines, "{}", look.name());
+        assert_eq!(
+            painted.word_highlight_color,
+            look.style().word_highlight_color,
+            "{}",
+            look.name()
+        );
         s.undo().unwrap();
         assert_eq!(s.project(), &before, "{}", look.name());
     }
@@ -1323,6 +1335,8 @@ fn ass_style() -> captions::CueStyle {
         italic: false,
         underline: false,
         strikeout: false,
+        max_lines: None,
+        word_highlight_color: None,
     }
 }
 fn ass_asset() -> SourceAsset {

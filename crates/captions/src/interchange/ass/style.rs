@@ -134,6 +134,8 @@ pub(super) fn map_style(
         italic: record.italic.unwrap_or(false),
         underline: record.underline.unwrap_or(false),
         strikeout: record.strikeout.unwrap_or(false),
+        max_lines: None,
+        word_highlight_color: None,
     };
     (style, clamped)
 }
@@ -154,5 +156,7 @@ pub(super) fn default_style(_play_res_x: f64, play_res_y: f64) -> CueStyle {
         italic: false,
         underline: false,
         strikeout: false,
+        max_lines: None,
+        word_highlight_color: None,
     }
 }

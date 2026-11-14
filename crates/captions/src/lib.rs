@@ -218,6 +218,11 @@ pub struct CueStyle {
     pub italic: bool,
     pub underline: bool,
     pub strikeout: bool,
+    /// Total lines the caption wraps to; absent keeps the project caption setting (ASS has no
+    /// such field, so imports leave it absent).
+    pub max_lines: Option<u8>,
+    /// RGB of the word-highlight overlay; absent keeps the project caption setting.
+    pub word_highlight_color: Option<[u8; 3]>,
 }
 impl CueStyle {
     /// Parser and persistence guard for hostile finite values.
@@ -228,6 +233,7 @@ impl CueStyle {
             && bounded(self.font_size_ratio, 10.0)
             && self.font_size_ratio > 0.0
             && (1..=3).contains(&self.border_style)
+            && self.max_lines.is_none_or(|lines| (1..=16).contains(&lines))
             && CueAlignment::from_numpad(self.alignment.numpad) == Some(self.alignment)
             && bounded(self.margin_left_ratio, 10.0)
             && bounded(self.margin_right_ratio, 10.0)

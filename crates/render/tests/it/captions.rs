@@ -97,6 +97,8 @@ fn preset_scene(texts: &[(&str, &str)], boxed: bool) -> project::Project {
             italic: false,
             underline: false,
             strikeout: false,
+            max_lines: None,
+            word_highlight_color: None,
         }],
         Some(captions::CueStyleId(0)),
     );
@@ -321,6 +323,8 @@ fn caption_preset_overrides_patch_every_full_style_field() {
         italic: false,
         underline: false,
         strikeout: false,
+        max_lines: None,
+        word_highlight_color: None,
     });
     let selected = project::Project::new(patched).unwrap();
     let mut settings = RenderSettings::from_project(&selected);
@@ -374,6 +378,8 @@ fn caption_preset_overrides_patch_every_full_style_field() {
         italic: false,
         underline: false,
         strikeout: false,
+        max_lines: None,
+        word_highlight_color: None,
     });
     overrides.apply(&mut effective);
     settings.caption_style = effective;
@@ -1051,6 +1057,8 @@ fn imported_style(numpad: u8) -> captions::CueStyle {
         italic: false,
         underline: false,
         strikeout: false,
+        max_lines: None,
+        word_highlight_color: None,
     }
 }
 

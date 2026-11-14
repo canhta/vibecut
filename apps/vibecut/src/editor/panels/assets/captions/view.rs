@@ -1033,7 +1033,7 @@ impl Subtitles {
             .into_iter()
             .find(|look| first.is_some_and(|style| look.matches(style)))
         {
-            look.name().to_owned()
+            c.tr(crate::i18n::caption_look(look)).to_owned()
         } else {
             c.tr(Text::SubStyleCustom).to_owned()
         };
@@ -1072,7 +1072,8 @@ impl Subtitles {
                                 "subtitles.style.look.{}",
                                 look.name().to_lowercase().replace(' ', "_")
                             );
-                            let response = ui.selectable_label(label == look.name(), look.name());
+                            let name = c.tr(crate::i18n::caption_look(look));
+                            let response = ui.selectable_label(label == name, name);
                             c.remember(id.clone(), &response);
                             if response.clicked() {
                                 chosen = Some(id);
