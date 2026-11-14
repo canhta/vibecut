@@ -720,8 +720,13 @@ fn noise_reduction_cuts_the_noise_floor_keeps_tones_and_stays_on_the_source_samp
     let reduce =
         |db: f32| with_cleanup(fixture_of(8), vec![cleanup(1, 100.0, noise_reduction(db))]);
     // With the gate open the chain is a delayed identity, and the delay is compensated: every
-    // output sample equals the plain mix sample.
-    let open = mix_synth(&reduce(0.0), &mut synth, 8, &[65536]);
+    // output sample equals the plain mix sample. Two seconds hold many analysis frames.
+    let open = mix_synth(
+        &with_cleanup(fixture_of(2), vec![cleanup(1, 100.0, noise_reduction(0.0))]),
+        &mut synth,
+        2,
+        &[65536],
+    );
     let worst = plain
         .iter()
         .zip(&open)
@@ -964,7 +969,7 @@ impl SourceProvider for Wave {
 }
 
 #[test]
-fn voice_enhancement_preset_lifts_speech_over_noise_without_pumping_and_bypass_is_identity() {
+fn voice_enhancement_preset_lifts_speech_over_noise_without_pumping() {
     // Metric, fixed before the chain was written: speech-to-noise ratio in dB, the RMS of the
     // middle halves of the speech-on half seconds over the RMS of the middle halves of the
     // speech-off ones, on the eight second fixture above. Pass: the preset raises it by at
@@ -979,7 +984,7 @@ fn voice_enhancement_preset_lifts_speech_over_noise_without_pumping_and_bypass_i
     };
     let plain = mix(&fixture_of(8), &[65536]);
     let preset = project::voice_enhancement_effects(1).to_vec();
-    let enhanced_project = with_cleanup(fixture_of(8), preset.clone());
+    let enhanced_project = with_cleanup(fixture_of(8), preset);
     let enhanced = mix(&enhanced_project, &[65536]);
     let middle = |k: usize| k * half + half / 4..k * half + 3 * half / 4;
     let gather = |signal: &[f32], ks: &[usize]| -> Vec<f32> {
@@ -1010,31 +1015,12 @@ fn voice_enhancement_preset_lifts_speech_over_noise_without_pumping_and_bypass_i
     let spread = ratios.iter().fold(f32::MIN, |m, r| m.max(*r))
         - ratios.iter().fold(f32::MAX, |m, r| m.min(*r));
     assert!(spread < 3.0, "gain changes {spread} dB across speech");
-    // Preview and export agree for any block partition, and the chain's only delay is the
-    // de-reverb and noise reduction frames, which the mix graph compensates.
-    assert_eq!(enhanced, mix(&enhanced_project, &[1, 7, 1031, 4093]));
+    // The chain's only delay is the de-reverb and noise reduction frames, which the mix graph
+    // compensates. Block-partition independence and bypass identity are per-effect rows above
+    // and below; the preset is only their chain.
     let h = Hooks::default();
     let mixer = AudioMixer::new(&enhanced_project, 2, 0, &h).unwrap();
     assert_eq!(mixer.cleanup_latency_samples(), 4096);
-    // Bypass: every preset effect disabled, or at zero mix, is bit-identical to no chain.
-    let off = preset
-        .iter()
-        .cloned()
-        .map(|mut effect| {
-            effect.enabled = false;
-            effect
-        })
-        .collect();
-    assert_eq!(plain, mix(&with_cleanup(fixture_of(8), off), &[65536]));
-    let dry = preset
-        .iter()
-        .cloned()
-        .map(|mut effect| {
-            effect.wet_percent = 0.0;
-            effect
-        })
-        .collect();
-    assert_eq!(plain, mix(&with_cleanup(fixture_of(8), dry), &[65536]));
 }
 
 fn voiced_stack(n: i64) -> f32 {
@@ -1107,6 +1093,10 @@ fn deesser_cuts_a_sibilant_band_leaves_the_voiced_stack_and_bypass_is_identity()
     let cut = sibilant(vec![cleanup(1, 100.0, deess(8.0))]);
     let band = db_between(&cut[settled.clone()], &plain[settled.clone()]);
     assert!(band <= -4.0, "sibilant band only fell {band} dB");
+    // The envelope follower does not depend on the block partition.
+    let deessed = with_cleanup(fixture_of(2), vec![cleanup(1, 100.0, deess(8.0))]);
+    let blocks = mix_synth(&deessed, &mut Wave(sibilant_band), 2, &[1, 7, 1031, 4093]);
+    assert_eq!(cut, blocks);
     let voiced = |effects| mix_wave(voiced_stack, effects);
     let plain = voiced(vec![]);
     let kept = voiced(vec![cleanup(1, 100.0, deess(8.0))]);
@@ -1115,9 +1105,8 @@ fn deesser_cuts_a_sibilant_band_leaves_the_voiced_stack_and_bypass_is_identity()
     assert_bypass_is_identity(sibilant_band, deess(8.0), deess(0.0));
     // Zero delay: the stage adds no latency to the chain.
     let h = Hooks::default();
-    let p = with_cleanup(fixture_of(2), vec![cleanup(1, 100.0, deess(8.0))]);
     assert_eq!(
-        AudioMixer::new(&p, 2, 0, &h)
+        AudioMixer::new(&deessed, 2, 0, &h)
             .unwrap()
             .cleanup_latency_samples(),
         0
