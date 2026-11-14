@@ -91,7 +91,7 @@ fn every_text_look_is_a_valid_style_and_its_shelf_carries_its_feature() {
                 style
                     .stroke
                     .as_ref()
-                    .is_some_and(|stroke| stroke.width > 0.0),
+                    .is_some_and(|stroke| stroke.thickness > 0.0),
                 "{} has a stroke",
                 look.name()
             ),

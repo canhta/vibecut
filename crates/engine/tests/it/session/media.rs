@@ -391,7 +391,7 @@ fn relink_moves_the_record_path_and_keeps_every_clip_on_it() {
         .find(|record| record.id() == AssetId(1))
         .unwrap();
     assert_eq!(record.path(), std::env::temp_dir().join("media-moved.mp4"));
-    assert_eq!(session.history_len(), history + 1, "one undo step");
+    assert_eq!(session.history_len(), (history.0 + 1, 0), "one undo step");
     let items: Vec<_> = session
         .project()
         .data()

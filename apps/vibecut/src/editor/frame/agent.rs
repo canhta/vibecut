@@ -76,7 +76,7 @@ impl Editor {
 
 /// A small accent tag over a surface that shows the agent's changes instead of the project.
 fn mark(ctx: &egui::Context, id: &'static str, at: egui::Pos2, text: &str, dark: bool) {
-    egui::Area::new(egui::Id::new(id))
+    egui::Area::new(egui::Id::unique(id))
         .order(egui::Order::Foreground)
         .fixed_pos(at)
         .interactable(false)

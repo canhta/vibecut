@@ -206,7 +206,7 @@ fn a_folder_pick_relinks_by_name_and_content_in_one_undo_step() {
     settle(&mut bench);
     let found = std::fs::canonicalize(root.path().join("search").join("clip.mp4")).unwrap();
     assert_eq!(recorded_path(&bench), found);
-    assert_eq!(bench.editor().session.history_len(), history + 1);
+    assert_eq!(bench.editor().session.history_len(), (history.0 + 1, 0));
     assert!(
         !bench.editor().dialogs.link_media.is_open(),
         "every row is linked, so the dialog closes"

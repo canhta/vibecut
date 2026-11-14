@@ -666,7 +666,7 @@ impl State {
             .map_or(1, |id| id.saturating_add(1));
         let asset = SourceAsset::import(AssetId(next), path)
             .map_err(|_| Error::Invalid("narration asset"))?;
-        let speed = time::Speed::from_thousandths(thousandths)?;
+        let speed = time::Speed::from_thousandths(u32::from(thousandths))?;
         let narration = ready.take.narration.clone();
         let outcome = port.apply_result(Command::DubPlace {
             placement: engine::Placement::Auto,

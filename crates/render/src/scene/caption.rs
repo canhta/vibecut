@@ -91,7 +91,7 @@ pub(crate) fn cue_placement(style: &CaptionStyle, cue: Option<&CueStyle>) -> Pla
     let decoration = style
         .outline
         .as_ref()
-        .map_or(0.0, |o| o.width)
+        .map_or(0.0, |o| captions::outline_width(o.thickness, style.size))
         .max(style.background.as_ref().map_or(0.0, |b| b.padding));
     let height = ((f64::from(style.size) * style.max_lines as f64 * 2.0
         + f64::from(decoration) * 2.0

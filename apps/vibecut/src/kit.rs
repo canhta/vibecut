@@ -16,7 +16,7 @@ pub(crate) use theme::{
     accent, border, bright, disabled, disabled_icon, error_text, field, hover, icon, image_tint,
     label_font, missing_band, missing_body, missing_border, missing_canvas, modal, on_accent,
     on_missing, on_scrim, panel, preview_backdrop, radius, scrim, secondary, segment_active,
-    segment_outline, separator, size, space, strip, success, text, track_rest, type_size,
+    segment_outline, separator, size, space, strip, success, text, toggle_knob, track_rest, type_size,
     video_border, video_fill, warning, waveform, window,
 };
 pub(crate) use widgets::{

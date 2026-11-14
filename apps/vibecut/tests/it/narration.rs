@@ -14,7 +14,7 @@ use ai::{ExecutionHooks, Location, Money, ProviderConfig, Support};
 use captions::LanguageTag;
 use egui_kittest::{
     Harness,
-    kittest::{By, NodeT, Queryable},
+    kittest::{By, Queryable},
 };
 use engine::dubbing::SpeechOpener;
 use engine::{ByteBudget, Command, CreatedId, NewItem, Placement, Session};

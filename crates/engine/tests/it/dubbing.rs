@@ -831,7 +831,7 @@ fn dub_generate_on_a_text_item_runs_consent_in_the_job_and_returns_the_take_the_
     assert_eq!(take.natural().unwrap(), cue);
     assert_eq!(take.narration.cue_duration, cue);
     assert_eq!(take.narration.characters, 18);
-    assert_eq!(take.narration.text_sha256.len(), 64);
+    assert_eq!(take.narration.text_sha256.as_str().len(), 64);
     assert_eq!(take.narration.voice.as_str(), "alloy");
     assert_eq!(project::encode(s.project(), false).unwrap(), before);
 

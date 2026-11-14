@@ -250,7 +250,7 @@ pub(in crate::editor) fn show(
         return actions;
     }
     let frame = kit::dialog_frame(ui.ctx()).inner_margin(kit::size::LINK_DIALOG_INSET);
-    let modal = egui::Modal::new(egui::Id::new("link_media.dialog"))
+    let modal = egui::Modal::new(egui::Id::unique("link_media.dialog"))
         .frame(frame)
         .show(ui.ctx(), |ui| {
             ui.set_width(kit::size::LINK_DIALOG_WIDTH - 2.0 * kit::size::LINK_DIALOG_INSET);
@@ -390,7 +390,7 @@ fn list(state: &State, cx: &Context<'_>, ui: &mut egui::Ui, actions: &mut Vec<Ac
                     let id = format!("link_media.row.{}", row.id.0);
                     let response = ui.interact(
                         cell,
-                        egui::Id::new(("link_media.row", row.id.0)),
+                        egui::Id::unique(("link_media.row", row.id.0)),
                         if done || state.job.is_some() {
                             egui::Sense::hover()
                         } else {

@@ -650,7 +650,7 @@ fn input(
             foot.bottom() - theme::space::ROW_INSET,
         ),
     );
-    let id = egui::Id::new("agent.input");
+    let id = egui::Id::unique("agent.input");
     let focused = ui.memory(|memory| memory.has_focus(id));
     let outline = if focused || running {
         theme::accent(dark)
@@ -763,7 +763,7 @@ fn input(
     }
 
     if !shown.is_empty() && focused {
-        let popup = egui::Area::new(egui::Id::new("agent.mentions"))
+        let popup = egui::Area::new(egui::Id::unique("agent.mentions"))
             .order(egui::Order::Foreground)
             .pivot(egui::Align2::LEFT_BOTTOM)
             .fixed_pos(box_rect.left_top())

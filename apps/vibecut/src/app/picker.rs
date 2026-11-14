@@ -287,7 +287,7 @@ impl EditorWindow {
             .replace_picked_file(item, path)
     }
     /// Relink what the Link media pick found. Tests inject a path without a native dialog.
-    pub fn link_media_picked(
+    pub(crate) fn link_media_picked(
         &mut self,
         pick: crate::editor::dialogs::link_media::Pick,
         path: PathBuf,
