@@ -18,7 +18,13 @@ language, audio duration, payload bytes, cost ceiling, policy links); refusal or
 cancellation sends no approval and never selects another provider. Missing models and
 credentials are actionable errors; nothing downloads implicitly.
 
-Candidates show title, duration, editorial score, reason and heuristic/AI source. The
+Candidates show label, title, source range, duration, editorial score, reason and heuristic/AI source.
+The results grid orders the cards by suggestion or by earliest source start (`Sort`, `State::order`; a
+card keeps its candidate index, so trimming never moves it). A short's title is its own field
+(`Review::title`, kept on blur as one history step, blank keeps the old one); it names the preview,
+the export file and the editor project. The captions tool picks one built-in caption look per short
+(`Review::caption_look`, a history step like crop); `ClipShort::caption_look` burns it in the preview,
+the export and the editor handoff, and the sidecar SRT carries text only. The
 shared catalog formats metadata and numbers; trim values parse the same en/vi decimal
 and grouping notation and refuse malformed or mixed input. A runtime locale change
 refreshes trim drafts without changing source ticks.
@@ -67,8 +73,7 @@ click reopens the results without ASR or ranking (a source that moved or changed
 files. While a run works the back arrow returns to the entry (`away`) and the run continues; the
 row shows it first and a click returns to its page, Cancel is its own button, and the count in
 the header follows `JobSnapshot::produced` (clips.suggest reports each candidate as it is
-produced; the retained result stays authoritative). Reopened runs keep no accept/reject or
-crop decisions: those are transient review state.
+produced; the retained result stays authoritative). Reopened runs keep no accept/reject, crop, title or caption look decisions: those are transient review state.
 
 When the shot analysis answers that the model cache is busy (a download running), `tick` asks
 again every 2 s, at most 90 times, and drops the notice once the answer clears; nothing waits.

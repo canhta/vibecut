@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use vibecut::{
     egui,
     i18n::Locale,
-    shorts::{Action, Context, Decision, Pick, State as Shorts},
+    shorts::{Action, Context, Decision, Pick, Sort, State as Shorts},
 };
 fn by(id: &str) -> By<'_> {
     By::new().predicate(move |n| n.author_id() == Some(id))
@@ -1217,4 +1217,150 @@ fn pick_button_asks_for_the_dialog_and_the_workspace_answer_returns_to_the_state
     let video = std::env::temp_dir().join("picked.mp4");
     h.state_mut().picked(Pick::Video, Some(video.clone()));
     assert_eq!(h.state().request.path, video);
+}
+
+/// A window whose first suggestion sits later in the video than its second.
+fn later_first() -> Shorts {
+    let mut source = source();
+    let first = source.candidates[0].segments.clone();
+    source.candidates[0].segments = source.candidates[1].segments.clone();
+    source.candidates[1].segments = first;
+    let duration = source.candidates[0].duration;
+    source.candidates[0].duration = source.candidates[1].duration;
+    source.candidates[1].duration = duration;
+    let mut app = state(Default::default(), once(source).0, 0);
+    app.captions = false;
+    app.pick_video(std::env::temp_dir().join("interview.mp4"))
+        .unwrap();
+    app.generate().unwrap();
+    wait(&mut app);
+    assert!(app.error().is_none(), "{:?}", app.error());
+    app
+}
+
+#[test]
+fn the_sort_toggle_orders_the_cards_by_source_time_and_back() {
+    let mut h = harness(later_first(), 1.0);
+    h.run_steps(3);
+    assert_eq!(h.state().sort(), Sort::Suggestion);
+    assert_eq!(h.state().order(), vec![0, 1]);
+    let left = |h: &Harness<'static, Shorts>, id: &str| h.get(by(id)).rect().left();
+    assert!(left(&h, "shorts.candidate.0") < left(&h, "shorts.candidate.1"));
+    h.get(by("shorts.sort")).click();
+    h.run_steps(3);
+    assert_eq!(h.state().sort(), Sort::Time);
+    assert_eq!(h.state().order(), vec![1, 0]);
+    assert!(left(&h, "shorts.candidate.1") < left(&h, "shorts.candidate.0"));
+    // The card keeps its identity: opening the first card in the row opens that short.
+    h.get(by("shorts.candidate.1")).click();
+    h.run_steps(2);
+    assert_eq!(h.state().selected(), 1);
+    h.get(by("shorts.grid")).click();
+    h.run_steps(2);
+    h.get(by("shorts.sort")).click();
+    h.run_steps(3);
+    assert_eq!(h.state().order(), vec![0, 1]);
+}
+
+#[test]
+fn a_title_typed_on_a_card_is_one_undoable_step_that_names_the_short() {
+    let mut h = harness(ready(), 1.0);
+    h.run_steps(3);
+    let original = h.state().reviews()[0].title.clone();
+    h.get(by("shorts.title.0")).click();
+    h.run_steps(1);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.get(by("shorts.title.0")).type_text("My own hook");
+    h.run_steps(1);
+    assert_eq!(
+        h.state().history_len(),
+        (0, 0),
+        "typing alone commits nothing"
+    );
+    h.key_press(egui::Key::Enter);
+    h.run_steps(2);
+    assert_eq!(h.state().reviews()[0].title, "My own hook");
+    assert_eq!(h.state().reviews()[1].title, "A second idea");
+    assert_eq!(h.state().history_len(), (1, 0));
+    h.state_mut().select(0).unwrap();
+    let (session, _) = h.state().editor_session().unwrap();
+    assert_eq!(session.project().data().name.as_str(), "My own hook");
+    // A blank title keeps the current one.
+    h.state_mut().set_title(0, "   ").unwrap();
+    assert_eq!(h.state().reviews()[0].title, "My own hook");
+    assert_eq!(h.state().history_len(), (1, 0));
+    h.state_mut().undo();
+    assert_eq!(h.state().reviews()[0].title, original);
+}
+
+#[test]
+fn a_caption_look_applies_to_the_open_short_only_and_reaches_its_preview() {
+    let look = project::CaptionLook::PlainMiddle;
+    let mut h = harness(ready(), 1.0);
+    h.run_steps(3);
+    open_first(&mut h);
+    h.get(by("shorts.captions")).click();
+    h.run_steps(2);
+    h.get(by("shorts.look.plain_middle")).click();
+    h.run_steps(3);
+    assert_eq!(h.state().reviews()[0].caption_look, Some(look));
+    assert_eq!(h.state().reviews()[1].caption_look, None);
+    assert_eq!(h.state().history_len(), (1, 0));
+    let styled = |h: &Harness<'static, Shorts>| {
+        let preview = h.state().preview_session().unwrap().project();
+        let track = preview
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .find(|track| track.kind == project::TrackKind::Text)
+            .unwrap();
+        let project::ItemParams::Caption(params) = &track.items[0].content else {
+            panic!("not a caption item");
+        };
+        params.cues.style_of(&params.cues.cues[0]).cloned()
+    };
+    assert_eq!(styled(&h), Some(look.cue_style()));
+    h.get(by("shorts.candidate.1")).click();
+    h.run_steps(3);
+    assert_eq!(styled(&h), None);
+    h.get(by("shorts.candidate.0")).click();
+    h.run_steps(3);
+    h.get(by("shorts.look.original")).click();
+    h.run_steps(3);
+    assert_eq!(h.state().reviews()[0].caption_look, None);
+    assert_eq!(styled(&h), None);
+    h.get(by("shorts.undo")).click();
+    h.run_steps(3);
+    assert_eq!(h.state().reviews()[0].caption_look, Some(look));
+}
+
+#[test]
+fn looks_are_inert_while_captions_are_off() {
+    let mut h = harness(ready(), 1.0);
+    h.run_steps(3);
+    open_first(&mut h);
+    assert!(!h.state().captions);
+    assert!(
+        h.get(by("shorts.look.plain_middle"))
+            .accesskit_node()
+            .is_disabled()
+    );
+    h.get(by("shorts.look.plain_middle")).click();
+    h.run_steps(2);
+    assert_eq!(h.state().reviews()[0].caption_look, None);
+    assert_eq!(h.state().history_len(), (0, 0));
+}
+
+#[test]
+fn export_on_the_grid_waits_for_an_accepted_short() {
+    let mut h = harness(ready(), 1.0);
+    h.run_steps(3);
+    assert!(h.get(by("shorts.export")).accesskit_node().is_disabled());
+    h.state_mut().decide(Decision::Accepted).unwrap();
+    h.run_steps(2);
+    assert!(!h.get(by("shorts.export")).accesskit_node().is_disabled());
+    h.get(by("shorts.export")).click();
+    h.run_steps(2);
+    assert!(h.state().busy());
 }

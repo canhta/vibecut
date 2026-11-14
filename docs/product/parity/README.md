@@ -61,6 +61,6 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 | [Player](player-export.md#player-play) | 24 | 16 | 4 | 1 | 0 | 3 | 0 | 5 | 5 | 12 | 0 |
 | [Export](player-export.md#export-exp) | 33 | 18 | 6 | 5 | 0 | 1 | 3 | 2 | 8 | 12 | 4 |
 | [AI chat](ai-shorts.md#ai-chat-agent) | 17 | 9 | 3 | 2 | 1 | 1 | 1 | 5 | 3 | 4 | 1 |
-| [Long video to shorts](ai-shorts.md#long-video-to-shorts-shorts) | 24 | 9 | 7 | 4 | 0 | 2 | 2 | 8 | 2 | 5 | 3 |
+| [Long video to shorts](ai-shorts.md#long-video-to-shorts-shorts) | 24 | 12 | 5 | 3 | 0 | 2 | 2 | 8 | 1 | 7 | 3 |
 | [States](states.md#states-state) | 12 | 7 | 3 | 0 | 1 | 0 | 1 | 2 | 2 | 4 | 3 |
-| **Total** | **669** | **319** | **120** | **129** | **7** | **53** | **41** | **98** | **72** | **263** | **103** |
+| **Total** | **669** | **322** | **118** | **128** | **7** | **53** | **41** | **98** | **71** | **265** | **103** |

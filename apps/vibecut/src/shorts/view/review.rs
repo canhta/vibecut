@@ -11,6 +11,7 @@ use crate::{
     services::playback::Transport,
     shorts::{Action, Context, Decision},
 };
+use ai::text::clips::ClipLabel;
 use time::{TICKS_PER_SECOND, Tick};
 
 /// Measured at the 1718×989 window (reference 222002/222010), from the content origin.
@@ -31,6 +32,8 @@ const PREVIEW_TOP: f32 = 128.0;
 const PREVIEW_BOTTOM: f32 = 55.0;
 const TOOLS_RESERVE: f32 = 92.0;
 const CONTROLS: f32 = 59.0;
+/// Longest title a field takes (ours, unmeasured).
+const TITLE_LIMIT: usize = 80;
 
 pub(super) fn show(
     state: &mut State,
@@ -112,6 +115,7 @@ fn list_ui(state: &mut State, ui: &mut egui::Ui, list: Rect) {
     let mut picked = None;
     let count = state.reviews.len();
     let rows = count.div_ceil(2) as f32;
+    let entries = entries(state);
     ui.scope_builder(
         egui::UiBuilder::new().id_salt("shorts.list").max_rect(list),
         |ui| {
@@ -123,34 +127,31 @@ fn list_ui(state: &mut State, ui: &mut egui::Ui, list: Rect) {
                         vec2(list.width(), LIST_TOP + rows * PITCH),
                         Sense::hover(),
                     );
-                    let Some(source) = &state.source else { return };
-                    for (index, (candidate, review)) in
-                        source.candidates.iter().zip(&state.reviews).enumerate()
-                    {
+                    for (slot, entry) in entries.iter().enumerate() {
+                        let index = entry.index;
                         let origin = pos2(
                             area.left()
-                                + if index % 2 == 0 {
+                                + if slot % 2 == 0 {
                                     COLUMN_X.0
                                 } else {
                                     COLUMN_X.1
                                 },
-                            area.top() + LIST_TOP + (index / 2) as f32 * PITCH,
+                            area.top() + LIST_TOP + (slot / 2) as f32 * PITCH,
                         );
                         let card = Rect::from_min_size(origin, vec2(CARD[0], CARD[1]));
-                        let title = candidate.proposal.title.as_str();
                         let response = ui
                             .interact(
                                 Rect::from_min_size(origin, vec2(CARD[0], PITCH - 20.0)),
                                 egui::Id::unique(("shorts.candidate", index)),
                                 Sense::click(),
                             )
-                            .on_hover_text(candidate.proposal.reason.as_str());
+                            .on_hover_text(entry.reason.as_str());
                         response.widget_info(|| {
                             egui::WidgetInfo::selected(
                                 egui::Role::Button,
                                 true,
                                 index == state.selected,
-                                title,
+                                entry.title.as_str(),
                             )
                         });
                         widgets::author(&response, &format!("shorts.candidate.{index}"));
@@ -158,11 +159,14 @@ fn list_ui(state: &mut State, ui: &mut egui::Ui, list: Rect) {
                             picked = Some(index);
                         }
                         let poster = super::poster(&mut state.thumbs, ui.ctx(), index);
+                        let Some(review) = state.reviews.get(index) else {
+                            continue;
+                        };
                         card_ui(
                             ui,
                             card,
-                            title,
-                            14.0,
+                            Some((entry.title.as_str(), 14.0)),
+                            state.tr(label_text(entry.label)),
                             review,
                             index == state.selected,
                             poster,
@@ -178,12 +182,107 @@ fn list_ui(state: &mut State, ui: &mut egui::Ui, list: Rect) {
     }
 }
 
-/// One short as a card: its poster (the crop's own frame), decision badge and length.
+/// What a card draws that the review does not hold: its place in the suggester's list, its
+/// label, the reason it was picked and its title.
+pub(super) struct Entry {
+    pub(super) index: usize,
+    pub(super) label: ClipLabel,
+    pub(super) reason: String,
+    pub(super) title: String,
+}
+
+/// The shorts in display order, with the candidate facts the cards need.
+pub(super) fn entries(state: &State) -> Vec<Entry> {
+    let Some(source) = &state.source else {
+        return Vec::new();
+    };
+    state
+        .order()
+        .into_iter()
+        .filter_map(|index| {
+            let candidate = source.candidates.get(index)?;
+            Some(Entry {
+                index,
+                label: candidate.label,
+                reason: candidate.proposal.reason.as_str().to_owned(),
+                title: state.reviews.get(index)?.title.clone(),
+            })
+        })
+        .collect()
+}
+
+/// The creator word for a short's label.
+pub(super) const fn label_text(label: ClipLabel) -> Text {
+    match label {
+        ClipLabel::Hook => Text::ShortsHook,
+        ClipLabel::OnTopic => Text::ShortsLabelOnTopic,
+        ClipLabel::CleanStart => Text::ShortsLabelCleanStart,
+        ClipLabel::Standalone => Text::ShortsLabelStandalone,
+    }
+}
+
+/// The source span a short is cut from, earliest start to latest end.
+pub(super) fn range_text(review: &crate::shorts::Review) -> String {
+    let start = review.segments.iter().map(|s| s.range.start()).min();
+    let end = review.segments.iter().map(|s| s.range.end()).max();
+    match (start, end) {
+        (Some(start), Some(end)) => format!("{} - {}", clock(start), clock(end)),
+        _ => String::new(),
+    }
+}
+
+/// The title of short `index` as a field; the text is kept when focus leaves it.
+pub(super) fn title_field(
+    ui: &mut egui::Ui,
+    state: &mut State,
+    index: usize,
+    rect: Rect,
+    font: f32,
+) {
+    let dark = state.preferences.dark;
+    let mut text = match &state.title_draft {
+        Some((at, draft)) if *at == index => draft.clone(),
+        _ => state
+            .reviews
+            .get(index)
+            .map(|review| review.title.clone())
+            .unwrap_or_default(),
+    };
+    let response = ui.put(
+        rect,
+        egui::TextEdit::singleline(&mut text)
+            .char_limit(TITLE_LIMIT)
+            .font(egui::FontId::proportional(font))
+            .text_color(kit::text(dark))
+            .desired_width(rect.width()),
+    );
+    widgets::named(
+        &response,
+        &format!("shorts.title.{index}"),
+        state.tr(Text::ShortsTitle),
+    );
+    if response.changed() {
+        state.title_draft = Some((index, text));
+    }
+    if response.lost_focus()
+        && state
+            .title_draft
+            .as_ref()
+            .is_some_and(|(at, _)| *at == index)
+        && let Some((_, text)) = state.title_draft.take()
+        && let Err(e) = state.set_title(index, &text)
+    {
+        state.fail(e, Text::ShortsError);
+    }
+}
+
+/// One short as a card: its poster (the crop's own frame), decision badge, label and length.
+/// `title` is drawn under the card, at its font size, unless the caller draws its own.
 pub(super) fn card_ui(
     ui: &egui::Ui,
     card: Rect,
-    title: &str,
-    font: f32,
+    title: Option<(&str, f32)>,
+    label: &str,
     review: &crate::shorts::Review,
     selected: bool,
     poster: Option<egui::TextureId>,
@@ -244,19 +343,32 @@ pub(super) fn card_ui(
         egui::FontId::proportional(12.0),
         kit::on_scrim(),
     );
-    let mut job = egui::text::LayoutJob::single_section(
-        title.to_owned(),
-        egui::TextFormat::simple(egui::FontId::proportional(font), kit::text(dark)),
+    let tag = painter.layout_no_wrap(
+        label.to_owned(),
+        egui::FontId::proportional(12.0),
+        kit::on_scrim(),
     );
-    job.wrap.max_width = card.width();
-    job.wrap.max_rows = 3;
-    job.wrap.break_anywhere = false;
-    let galley = painter.layout_job(job);
-    painter.galley(
-        pos2(card.left(), card.bottom() + 10.0),
-        galley,
-        kit::text(dark),
+    let chip = Rect::from_min_size(
+        pos2(card.right() - 8.0 - tag.size().x - 16.0, card.top() + 8.0),
+        vec2(tag.size().x + 16.0, 20.0),
     );
+    painter.rect_filled(chip, corner(4.0), kit::scrim());
+    painter.galley(chip.center() - tag.size() / 2.0, tag, kit::on_scrim());
+    if let Some((title, font)) = title {
+        let mut job = egui::text::LayoutJob::single_section(
+            title.to_owned(),
+            egui::TextFormat::simple(egui::FontId::proportional(font), kit::text(dark)),
+        );
+        job.wrap.max_width = card.width();
+        job.wrap.max_rows = 3;
+        job.wrap.break_anywhere = false;
+        let galley = painter.layout_job(job);
+        painter.galley(
+            pos2(card.left(), card.bottom() + 10.0),
+            galley,
+            kit::text(dark),
+        );
+    }
 }
 
 /// Width of a 14 px semibold label with the button's 32 px of padding.
@@ -429,21 +541,14 @@ fn header(
     {
         state.editing = false;
     }
-    if let Some(candidate) = state
-        .source
-        .as_ref()
-        .and_then(|s| s.candidates.get(state.selected))
-    {
-        let mut job = egui::text::LayoutJob::single_section(
-            candidate.proposal.title.as_str().to_owned(),
-            egui::TextFormat::simple(egui::FontId::proportional(14.0), kit::text(dark)),
+    if !state.reviews.is_empty() {
+        let width = (back.left() - 16.0 - (panel.left() + HEADER_PAD)).max(40.0);
+        let field = Rect::from_min_size(
+            pos2(panel.left() + HEADER_PAD, top + 4.0),
+            vec2(width, TOOL),
         );
-        job.wrap.max_width = (back.left() - 16.0 - (panel.left() + HEADER_PAD)).max(40.0);
-        job.wrap.max_rows = 1;
-        let galley = ui.painter().layout_job(job);
-        let y = top + BUTTON_HEIGHT / 2.0 - galley.size().y / 2.0;
-        ui.painter()
-            .galley(pos2(panel.left() + HEADER_PAD, y), galley, kit::text(dark));
+        let selected = state.selected;
+        title_field(ui, state, selected, field, 14.0);
     }
 }
 
@@ -646,7 +751,7 @@ fn handle(state: &mut State, ui: &mut egui::Ui) {
     }
 }
 
-fn clock(tick: Tick) -> String {
+pub(super) fn clock(tick: Tick) -> String {
     let seconds = (tick.0.max(0) / TICKS_PER_SECOND) as u64;
     format!("{:02}:{:02}", seconds / 60, seconds % 60)
 }

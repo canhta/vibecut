@@ -2,7 +2,7 @@
 use super::{
     State,
     progress::{CARDS_TOP, COLUMNS, GAP, GRID, ROW_PITCH, TITLE_Y},
-    review::{card_ui, export_button, export_width},
+    review::{card_ui, entries, export_button, export_width, label_text, range_text, title_field},
     widgets::{self, bold},
 };
 use crate::i18n;
@@ -10,7 +10,14 @@ use crate::{
     egui::{self, Align2, Rect, Sense, pos2, vec2},
     i18n::Text,
     kit::{self, Icon},
+    shorts::Sort,
 };
+
+/// The sort toggle and the field under each card (ours, unmeasured).
+const SORT: f32 = 32.0;
+const SORT_GAP: f32 = 12.0;
+const TITLE_GAP: f32 = 8.0;
+const TITLE_HEIGHT: f32 = 32.0;
 
 pub(super) fn show(state: &mut State, ui: &mut egui::Ui, rect: Rect) {
     let dark = state.preferences.dark;
@@ -61,6 +68,30 @@ pub(super) fn show(state: &mut State, ui: &mut egui::Ui, rect: Rect) {
         vec2(export_w, 40.0),
     );
     export_button(ui, state, export);
+    let sort = Rect::from_min_size(
+        pos2(
+            export.left() - SORT_GAP - SORT,
+            export.center().y - SORT / 2.0,
+        ),
+        vec2(SORT, SORT),
+    );
+    if widgets::icon_tap(
+        ui,
+        "shorts.sort",
+        sort,
+        Icon::ListBullets,
+        state.tr(Text::ShortsSortTime),
+        !state.reviews.is_empty(),
+        state.sort() == Sort::Time,
+    )
+    .clicked()
+    {
+        state.set_sort(if state.sort() == Sort::Time {
+            Sort::Suggestion
+        } else {
+            Sort::Time
+        });
+    }
     if state.reviews.is_empty() {
         painter.text(
             rect.center(),
@@ -76,6 +107,7 @@ pub(super) fn show(state: &mut State, ui: &mut egui::Ui, rect: Rect) {
     let card_height = card_width * 16.0 / 9.0;
     let region = Rect::from_min_max(pos2(rect.left(), rect.top() + 68.0), rect.max);
     let rows = state.reviews.len().div_ceil(COLUMNS) as f32;
+    let entries = entries(state);
     let mut opened = None;
     ui.scope_builder(
         egui::UiBuilder::new()
@@ -90,32 +122,62 @@ pub(super) fn show(state: &mut State, ui: &mut egui::Ui, rect: Rect) {
                         vec2(region.width(), CARDS_TOP - 68.0 + rows * ROW_PITCH),
                         Sense::hover(),
                     );
-                    let Some(source) = &state.source else { return };
-                    for (index, (candidate, review)) in
-                        source.candidates.iter().zip(&state.reviews).enumerate()
-                    {
+                    for (slot, entry) in entries.iter().enumerate() {
+                        let index = entry.index;
                         let origin = pos2(
-                            left + (card_width + GAP) * (index % COLUMNS) as f32,
-                            area.top() + (CARDS_TOP - 68.0) + (index / COLUMNS) as f32 * ROW_PITCH,
+                            left + (card_width + GAP) * (slot % COLUMNS) as f32,
+                            area.top() + (CARDS_TOP - 68.0) + (slot / COLUMNS) as f32 * ROW_PITCH,
                         );
                         let card = Rect::from_min_size(origin, vec2(card_width, card_height));
-                        let title = candidate.proposal.title.as_str();
                         let response = ui
                             .interact(
-                                card.expand2(vec2(0.0, 80.0)),
+                                card,
                                 egui::Id::unique(("shorts.candidate", index)),
                                 Sense::click(),
                             )
-                            .on_hover_text(candidate.proposal.reason.as_str());
+                            .on_hover_text(entry.reason.as_str());
                         response.widget_info(|| {
-                            egui::WidgetInfo::labeled(egui::Role::Button, true, title)
+                            egui::WidgetInfo::labeled(
+                                egui::Role::Button,
+                                true,
+                                entry.title.as_str(),
+                            )
                         });
                         widgets::author(&response, &format!("shorts.candidate.{index}"));
                         if response.clicked() {
                             opened = Some(index);
                         }
                         let poster = super::poster(&mut state.thumbs, ui.ctx(), index);
-                        card_ui(ui, card, title, 16.0, review, false, poster);
+                        let Some(review) = state.reviews.get(index) else {
+                            continue;
+                        };
+                        card_ui(
+                            ui,
+                            card,
+                            None,
+                            state.tr(label_text(entry.label)),
+                            review,
+                            false,
+                            poster,
+                        );
+                        let meta = range_text(review);
+                        title_field(
+                            ui,
+                            state,
+                            index,
+                            Rect::from_min_size(
+                                pos2(card.left(), card.bottom() + TITLE_GAP),
+                                vec2(card_width, TITLE_HEIGHT),
+                            ),
+                            16.0,
+                        );
+                        ui.painter().text(
+                            pos2(card.left(), card.bottom() + TITLE_GAP + TITLE_HEIGHT + 8.0),
+                            Align2::LEFT_TOP,
+                            meta,
+                            egui::FontId::proportional(14.0),
+                            kit::secondary(dark),
+                        );
                     }
                 });
         },

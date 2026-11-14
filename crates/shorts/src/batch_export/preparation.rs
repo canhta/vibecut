@@ -288,7 +288,13 @@ fn prepare_clip(
         for (segment, start) in short.segments.iter().zip(&starts) {
             let mapping = captions::EditMapping::new(vec![(segment.range, segment.range.start())])
                 .map_err(Error::engine)?;
-            let clipped = mapping.map_cues(options.cues).map_err(Error::engine)?;
+            let mut clipped = mapping.map_cues(options.cues).map_err(Error::engine)?;
+            if let Some(look) = short.caption_look {
+                clipped.styles = vec![look.cue_style()];
+                for cue in &mut clipped.cues {
+                    cue.style = Some(captions::CueStyleId(0));
+                }
+            }
             for cue in &clipped.cues {
                 for language in options.languages {
                     if !cue.texts.contains_key(language) {

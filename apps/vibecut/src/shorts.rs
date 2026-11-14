@@ -14,7 +14,7 @@ use crate::egui;
 pub use runs::{RunEntry, RunStore};
 pub use state::{
     ClipCandidate, Decision, GenerationRequest, Importer, Pick, Review, ReviewSource, ShotSource,
-    State, TaskEvents, desktop_importer,
+    Sort, State, TaskEvents, desktop_importer,
 };
 
 /// The window the shorts viewport opens at; Home and the editor own their own sizes.
