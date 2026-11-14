@@ -572,11 +572,7 @@ fn ramped_clip_keeps_pitch_when_enabled_and_follows_each_stretch_when_not() {
             .duration()
             .to_units(i64::from(RATE), time::Rounding::Nearest)
             .unwrap() as usize;
-        assert!(
-            out.len().abs_diff(expected_len) <= 1,
-            "the curve's output length {} vs {expected_len}",
-            out.len()
-        );
+        assert_eq!(out.len(), expected_len, "the curve's exact output length");
         for (label, from, expected) in [
             ("2x plateau", 8192, fast),
             ("0.5x plateau", out.len() - 8192 - 16384, slow),

@@ -131,7 +131,8 @@ impl Panel<'_, '_> {
                 });
                 self.remember("inspector.text_font", &response);
                 if response.clicked() {
-                    let anchor = response.rect.left_bottom() + egui::vec2(0.0, theme::space::XS);
+                    // The reference dropdown hangs from the field's right edge.
+                    let anchor = response.rect.right_bottom() + egui::vec2(0.0, theme::space::XS);
                     self.state.font_picker.open(anchor, current);
                 }
                 self.compatible_count(ui, field.compatible);

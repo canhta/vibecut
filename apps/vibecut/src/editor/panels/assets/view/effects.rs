@@ -95,7 +95,11 @@ impl View<'_> {
             .truncate()
             .right_text(""),
         );
-        let glyph = if open { Icon::CaretDown } else { Icon::CaretRight };
+        let glyph = if open {
+            Icon::CaretDown
+        } else {
+            Icon::CaretRight
+        };
         icons::tinted(glyph, 12.0, theme::text(dark)).paint_at(
             ui,
             Rect::from_center_size(

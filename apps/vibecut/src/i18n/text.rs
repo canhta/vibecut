@@ -1692,7 +1692,6 @@ catalog! {
     AttributeGroupText { key: "attribute_group_text", en: "Text style", vi: "Kiểu chữ" },
     AttributeGroupTransform { key: "attribute_group_transform", en: "Transform", vi: "Biến đổi" },
     AttributesSkipped { key: "attributes_skipped", en: "Not pasted: {groups}", vi: "Không dán được: {groups}" },
-    FontClose { key: "font_close", en: "Close", vi: "Đóng" },
     FontDownload { key: "font_download", en: "Download", vi: "Tải xuống" },
     FontDownloadFailed { key: "font_download_failed", en: "Download failed", vi: "Tải xuống thất bại" },
     FontDownloading { key: "font_downloading", en: "Downloading…", vi: "Đang tải…" },

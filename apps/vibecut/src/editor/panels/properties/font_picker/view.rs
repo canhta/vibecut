@@ -73,31 +73,13 @@ pub fn show(
         .title_bar(false)
         .resizable(false)
         .collapsible(false)
-        .pivot(Align2::LEFT_TOP)
+        .pivot(Align2::RIGHT_TOP)
         .fixed_pos(anchor)
         .constrain_to(ctx.content_rect().shrink(8.0));
-    window.show(ctx, |ui| {
+    // The click that opened the picker lands outside it on its first pass.
+    let fresh = !std::mem::replace(&mut state.shown, true);
+    let shown = window.show(ctx, |ui| {
         ui.set_width(WIDTH);
-        ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new(tr(Text::TextFont))
-                    .strong()
-                    .size(theme::type_size::BODY),
-            );
-            ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
-                let close = theme::icon_button(
-                    ui,
-                    "fonts.close",
-                    theme::Icon::X,
-                    tr(Text::FontClose),
-                    false,
-                );
-                record(&mut event.widgets, "fonts.close", close.clone());
-                if close.clicked() {
-                    event.actions.push(Action::Close);
-                }
-            });
-        });
         let search = ui.add_sized(
             [ui.available_width(), SEARCH_HEIGHT],
             egui::TextEdit::singleline(&mut state.query)
@@ -269,6 +251,10 @@ pub fn show(
             record(&mut event.widgets, "fonts.import.failed", label);
         }
     });
+    // A dropdown, as the reference: no title or close button; a click outside closes it.
+    if !fresh && shown.is_some_and(|window| window.response.clicked_elsewhere()) {
+        event.actions.push(Action::Close);
+    }
     event
 }
 

@@ -113,8 +113,8 @@ surface. A Voice enhancement switch ([new], no reference evidence) follows it (`
 next free effect ids after the chain's highest, the way every new effect gets one, or enables the marked effects already present;
 off disables them and keeps tuned values. The preset's effects carry `CleanupEffect::preset` = `voice_enhancement`, the only marker:
 the switch reads on only while five marked effects are present and all enabled, and the Noise reduction switch ignores marked
-effects. New effects start at the reference's Intensity default of 75 percent (`project::VOICE_ENHANCEMENT_INTENSITY_DEFAULT`). While on, an Intensity row (`inspector.voice_enhance.strength.{25,50,75,100}`, the reference slider's 4 tick marks; 0 stays reachable through `audio.update_cleanup_effect`) sets every marked effect's dry/wet mix
-to that percent. Each click is one batched edit, so one undo step. The preset adds no gain stage: loudness stays with the
+effects. New effects start at the reference's Intensity default of 75 percent (`project::VOICE_ENHANCEMENT_INTENSITY_DEFAULT`). While on, the reference's continuous Intensity slider (`inspector.voice_enhance.intensity` field and stepper, `.slider` rail, 0 to 100 with a tick mark every 25) sets every marked effect's dry/wet mix
+to that percent. A rail drag previews on the rail and commits once on release; a click, step or typed value commits at once. Each commit is one batched edit, so one undo step. The preset adds no gain stage: loudness stays with the
 project normalizer, which measures the chain's output, so bypassing the preset never changes what the normalizer applied. The
 preset's individual bands and cutoffs have no control (no reference evidence); they are reachable through
 `audio.*_cleanup_effect`.

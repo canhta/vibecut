@@ -256,13 +256,18 @@ fn reference_tone_measures_its_defined_loudness() {
     let m = report.clips[0].1;
     assert!((m.integrated_lufs.unwrap() + 20.0).abs() < 0.05);
     assert!((m.true_peak_db.unwrap() + 20.0).abs() < 0.05);
-    assert!((f64::from(report.gains.clip[0].1) - 6.0).abs() < 0.05);
+    // The -20 LUFS tone moves to the default target.
+    let gain = f64::from(TARGET.target_lufs) + 20.0;
+    assert!((f64::from(report.gains.clip[0].1) - gain).abs() < 0.05);
 }
 
 #[test]
 fn normalization_is_identity_for_silence_and_normalized_material() {
     let h = Hooks::default();
-    for (level, scope) in [(0.0, "silence"), (10f32.powf(-14.0 / 20.0), "normalized")] {
+    for (level, scope) in [
+        (0.0, "silence"),
+        (10f32.powf(TARGET.target_lufs / 20.0), "normalized"),
+    ] {
         let mut tone = Tone { level, spike: None };
         let report =
             measure_loudness(&tone_project(Some(TARGET), Some(TARGET)), &mut tone, &h).unwrap();

@@ -977,12 +977,21 @@ fn effects_grid_header_names_the_selected_sidebar_entry() {
         let panel = h.state().panels()["media"];
         egui::Rect::from_min_max(egui::pos2(panel.left() + 120.0, panel.top()), panel.max)
     };
-    assert!(paints_text(&harness, "All", grid(&harness)), "default header");
+    assert!(
+        paints_text(&harness, "All", grid(&harness)),
+        "default header"
+    );
     click(&mut harness, "effects.category.stylize");
-    assert!(paints_text(&harness, "Stylize", grid(&harness)), "shelf header");
+    assert!(
+        paints_text(&harness, "Stylize", grid(&harness)),
+        "shelf header"
+    );
     assert!(!paints_text(&harness, "All", grid(&harness)));
     click(&mut harness, "effects.category.favorites");
-    assert!(paints_text(&harness, "Favorites", grid(&harness)), "favorites header");
+    assert!(
+        paints_text(&harness, "Favorites", grid(&harness)),
+        "favorites header"
+    );
     assert!(!paints_text(&harness, "Stylize", grid(&harness)));
     click(&mut harness, "effects.category.all");
     assert!(paints_text(&harness, "All", grid(&harness)), "all header");

@@ -357,7 +357,10 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
         ] {
             assert!(!enabled(&bench, id), "{id} applies to a PNG sequence");
         }
+        // The scene rows exist only while the scene list is open.
+        bench.click("export.scene");
         assert!(!enabled(&bench, "export.scene.all"));
+        bench.click("export.scene");
         assert_eq!(
             ExportFormat::PngSequence.file_name("My: Project?"),
             "My_ Project_"
@@ -386,10 +389,15 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
             "export.quality",
             "export.profile",
             "export.audio.include",
-            "export.scene.all",
         ] {
             assert!(enabled(&bench, id), "{id} applies to WebM");
         }
+        bench.click("export.scene");
+        assert!(
+            enabled(&bench, "export.scene.all"),
+            "all scenes apply to WebM"
+        );
+        bench.click("export.scene");
         bench.click("export.close");
         open(&mut bench);
         assert_eq!(bench.editor().preferences.export.format, ExportFormat::Webm);

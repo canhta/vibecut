@@ -2491,7 +2491,7 @@ fn opacity_and_audio_gain_scrub_through_their_tabs() {
     assert!(has_widget(&harness, "inspector.voice_enhance.toggle"));
     assert!(!has_widget(
         &harness,
-        "inspector.voice_enhance.strength.100"
+        "inspector.voice_enhance.intensity.slider"
     ));
     let preset = |chain: &project::AudioCleanup| {
         chain
@@ -2527,11 +2527,27 @@ fn opacity_and_audio_gain_scrub_through_their_tabs() {
         ..effect
     });
     assert_eq!(preset(&applied), at_default);
+    // Intensity is the reference's continuous slider: dragging the rail to its left end
+    // reaches 0 and commits once on release, one undo step for the whole drag.
     assert!(has_widget(
         &harness,
-        "inspector.voice_enhance.strength.100"
+        "inspector.voice_enhance.intensity.slider"
     ));
-    click(&mut harness, "inspector.voice_enhance.strength.25");
+    drag(
+        &mut harness,
+        "inspector.voice_enhance.intensity.slider",
+        egui::vec2(-400.0, 0.0),
+    );
+    assert_eq!(harness.state().session.history_len().0, history + 2);
+    let silent = preset(&cleanup(&harness));
+    assert!(
+        silent.iter().all(|effect| effect.wet_percent == 0.0),
+        "{silent:?}"
+    );
+    harness.state_mut().session.undo().unwrap();
+    harness.run_steps(2);
+    assert_eq!(preset(&cleanup(&harness)), at_default);
+    enter(&mut harness, "inspector.voice_enhance.intensity", "25");
     assert_eq!(harness.state().session.history_len().0, history + 2);
     let tuned = preset(&cleanup(&harness));
     assert_eq!(tuned.len(), 5);
@@ -2547,7 +2563,7 @@ fn opacity_and_audio_gain_scrub_through_their_tabs() {
     assert!(bypassed.iter().all(|effect| effect.wet_percent == 25.0));
     assert!(!has_widget(
         &harness,
-        "inspector.voice_enhance.strength.100"
+        "inspector.voice_enhance.intensity.slider"
     ));
     // The user's own noise reduction switch still reads its own effect, not the preset's.
     click(&mut harness, "inspector.noise_reduction.toggle");
@@ -4665,7 +4681,10 @@ fn custom_font_pick_completion_cannot_import_into_a_changed_picker_target() {
                     .dispatch(vibecut::AppCommand::Seek(Tick(SECOND)))
                     .unwrap();
             }
-            "close" => click(&mut h, "fonts.close"),
+            "close" => {
+                h.key_press(egui::Key::Escape);
+                h.run_steps(2);
+            }
             "tab" => click(&mut h, "inspector.tab.effects"),
             "budget" => {
                 let replacement = Playback::new(
@@ -5114,10 +5133,13 @@ fn font_picker_lists_search_chips_sections_and_favorites_through_commands() {
         search.top() >= field.bottom(),
         "the popover opens below the field"
     );
+    // The reference dropdown (385 wide) hangs from the field's right edge, so at the default
+    // panel width it overlaps the player to its left.
     assert!(
-        search.left() >= harness.state().panels()["inspector"].left(),
-        "the popover stays inside the properties panel"
+        search.right() <= field.right() && field.right() - search.right() <= 12.0,
+        "the popover's right edge meets the field's: {search:?} {field:?}"
     );
+    assert!((search.width() - 385.0).abs() <= 1.0, "{search:?}");
     let star = widget_rect(&harness, "fonts.favorite.Inter");
     let star_google = widget_rect(&harness, "fonts.favorite.Lobster");
     assert_eq!(
@@ -5246,6 +5268,19 @@ fn font_picker_lists_search_chips_sections_and_favorites_through_commands() {
         has_widget(&harness, "inspector.text_font.Noto Serif"),
         "{inspection:?}"
     );
+    // A dropdown like the reference: no close button, and a click outside it (here on the
+    // Font row's label) closes it without an edit.
+    assert!(!has_widget(&harness, "fonts.close"));
+    let history = harness.state().session.history_len().0;
+    let outside =
+        widget_rect(&harness, "inspector.text_font").left_center() - egui::vec2(40.0, 0.0);
+    harness.hover_at(outside);
+    harness.run_steps(1);
+    harness.drag_at(outside);
+    harness.drop_at(outside);
+    harness.run_steps(2);
+    assert!(!font_picker(&harness).open);
+    assert_eq!(harness.state().session.history_len().0, history);
 }
 
 #[test]

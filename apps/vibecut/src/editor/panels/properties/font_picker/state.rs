@@ -64,6 +64,8 @@ pub struct State {
     pub(crate) importing: bool,
     pub(crate) import_failed: bool,
     pub anchor: Option<egui::Pos2>,
+    /// The popover has drawn since it opened, so a click outside it closes it.
+    pub(crate) shown: bool,
     pub query: String,
     pub filter: Filter,
     /// Whether the Presets section (bundled, catalogue and imported families) is expanded.
@@ -86,6 +88,7 @@ impl State {
     pub fn open(&mut self, anchor: egui::Pos2, current: Option<String>) {
         self.lifetime = self.lifetime.wrapping_add(1);
         self.open = true;
+        self.shown = false;
         self.anchor = Some(anchor);
         self.query.clear();
         self.filter = Filter::All;

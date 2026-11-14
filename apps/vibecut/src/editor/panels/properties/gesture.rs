@@ -64,14 +64,14 @@ impl ScrubSpec {
     }
     /// The label the field shows for `value`, when it sits at the left end.
     pub(super) fn floor_text(self, value: f64) -> Option<&'static str> {
-        self.floor_label.filter(|_| self.quantize(value) <= self.min)
+        self.floor_label
+            .filter(|_| self.quantize(value) <= self.min)
     }
     /// Whether typed text names the left end: the label, `-inf` or `-infinity`.
     pub(super) fn is_floor_text(self, text: &str) -> bool {
         let text = text.trim().to_lowercase();
-        self.floor_label.is_some_and(|label| {
-            text == label || text == "-inf" || text == "-infinity"
-        })
+        self.floor_label
+            .is_some_and(|label| text == label || text == "-inf" || text == "-infinity")
     }
     pub(in crate::editor) fn quantize(self, value: f64) -> f64 {
         if !value.is_finite() {

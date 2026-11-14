@@ -13,7 +13,7 @@ use std::{
 use time::FrameRate;
 use vibecut::{
     Editor, egui,
-    preferences::{DEFAULT_PANELS, PreferenceStore, Preferences},
+    preferences::{DEFAULT_PANELS, PreferenceStore, Preferences, TIMELINE_MAX, TIMELINE_MIN},
     services::playback::{Files, Playback},
 };
 
@@ -236,9 +236,9 @@ fn splitter_drags_clamp_boundaries_and_restore_after_restart() {
     click(&mut harness, "edit.redo");
     assert_eq!(harness.state().preferences.panels, wide);
     drag(&mut harness, "layout.timeline", egui::vec2(0.0, -10_000.0));
-    assert!((harness.state().preferences.panels[2] - 0.70).abs() < f32::EPSILON);
+    assert!((harness.state().preferences.panels[2] - TIMELINE_MAX).abs() < f32::EPSILON);
     drag(&mut harness, "layout.timeline", egui::vec2(0.0, 10_000.0));
-    assert!((harness.state().preferences.panels[2] - 0.15).abs() < f32::EPSILON);
+    assert!((harness.state().preferences.panels[2] - TIMELINE_MIN).abs() < f32::EPSILON);
     drag(&mut harness, "layout.media", egui::vec2(-10_000.0, 0.0));
     assert!((harness.state().preferences.panels[0] - 0.15).abs() < f32::EPSILON);
 
@@ -402,8 +402,13 @@ fn details_rows_and_info_section_collapse_and_persist() {
         std::thread::sleep(std::time::Duration::from_millis(5));
         saving.tick().unwrap();
     }
-    // The session reports the resolved location (macOS temp dirs sit behind /var -> /private/var).
-    let shown = saving.saved_path().unwrap().display().to_string();
+    // The session reports the resolved location (macOS temp dirs sit behind /var -> /private/var);
+    // the view drops Windows' verbatim `\\?\` prefix from a drive path.
+    let resolved = saving.saved_path().unwrap().display().to_string();
+    let shown = resolved
+        .strip_prefix(r"\\?\")
+        .filter(|disk| disk.as_bytes().get(1) == Some(&b':'))
+        .map_or(resolved.clone(), ToOwned::to_owned);
     let mut saved = editor_with(project, Preferences::default());
     saved.session = vibecut::services::lifecycle::EditorSession::Persistent(Box::new(saving));
     let mut harness = build(saved);

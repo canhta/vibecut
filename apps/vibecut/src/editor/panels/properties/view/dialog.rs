@@ -82,7 +82,7 @@ impl Panel<'_, '_> {
         if !self.state.font_picker.open {
             return;
         }
-        // The row stores the field rect; open below its left edge and let the
+        // The row stores the field's right edge; open below it and let the
         // window's own constraint keep the popover inside the app frame.
         let anchor = self
             .state

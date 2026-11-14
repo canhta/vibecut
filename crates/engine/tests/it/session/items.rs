@@ -531,15 +531,20 @@ fn extract_and_recover_source_audio_reuse_the_source_range() {
 }
 /// One unlocked video overlay with audible source audio and one audio clip.
 fn audible_session() -> (Session, TrackId, TrackId, ItemId) {
+    audible_session_of(100)
+}
+
+/// A video clip and an audio item, each `length` ticks of one asset, on their own tracks.
+fn audible_session_of(length: i64) -> (Session, TrackId, TrackId, ItemId) {
     let mut s = Session::new(Project::empty(ProjectId(7), "Actions".into()).unwrap(), 50).unwrap();
     let asset = testkit::source::asset(1, std::env::temp_dir().join("vibecut-actions.mp4"))
         .format("mp4")
-        .duration(Tick(100))
+        .duration(Tick(length))
         .content_hash(ContentHash::from_bytes(b"actions"))
         .stream(
             testkit::source::video()
                 .time_base(media::TimeBase::new(1, 30000).unwrap())
-                .duration(Tick(100))
+                .duration(Tick(length))
                 .start(Tick::ZERO)
                 .size(64, 64)
                 .build(),
@@ -548,7 +553,7 @@ fn audible_session() -> (Session, TrackId, TrackId, ItemId) {
             testkit::source::audio()
                 .index(1)
                 .time_base(media::TimeBase::new(1, 48000).unwrap())
-                .duration(Tick(100))
+                .duration(Tick(length))
                 .start(Tick::ZERO)
                 .build(),
         )
@@ -577,7 +582,7 @@ fn audible_session() -> (Session, TrackId, TrackId, ItemId) {
             item: NewItem {
                 animations: Default::default(),
                 source_asset: Some(AssetId(1)),
-                source_range: range(start, start + 100),
+                source_range: range(start, start + length),
                 start: Tick(start),
                 retime: Default::default(),
                 content,
@@ -2402,8 +2407,9 @@ fn clipboard_attributes_copy_whole_groups_and_skip_what_the_target_kind_cannot_h
     assert!(Arc::ptr_eq(&locked, s.project()));
 
     // A video clip onto an audio item: speed, volume and fades are held by both and copy;
-    // the picture groups the audio item cannot hold are skipped and named.
-    let (mut s, _video, audio, clip) = audible_session();
+    // the picture groups the audio item cannot hold are skipped and named. The clips are long
+    // enough for a speed curve's forty stretches.
+    let (mut s, _video, audio, clip) = audible_session_of(4000);
     let sound = s
         .project()
         .data()

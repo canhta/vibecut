@@ -1017,8 +1017,8 @@ pub(crate) mod recovery_tests {
 mod recovery_benchmark {
     use super::*;
     use crate::{Container, Muxer, VideoEncoder, VideoEncoderSettings};
-    use time::{FrameRate, Rounding};
     use std::time::{Duration, Instant};
+    use time::{FrameRate, Rounding};
 
     #[test]
     #[ignore = "manual 60-second hardware recovery throughput and quality measurement"]

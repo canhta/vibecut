@@ -244,7 +244,7 @@ mod tests {
             ),
             (
                 "font_picker",
-                serde_json::json!({"tab": "favorites", "favorites": ["Anton", "Inter"]}),
+                serde_json::json!({"favorites": ["Anton", "Inter"]}),
             ),
             (
                 "catalog_favorites",

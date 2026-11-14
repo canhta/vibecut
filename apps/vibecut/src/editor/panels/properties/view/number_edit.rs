@@ -12,6 +12,28 @@ const SLIDER_GAP: f32 = 24.0;
 const SLIDER_ROW: f32 = 44.0;
 const SLIDER_FIELD: f32 = 54.0;
 
+/// A whole-number slider row over panel state or a batched edit, not an item field.
+pub(super) struct WholeSlider {
+    pub(super) id: &'static str,
+    /// The draft key of the typed value.
+    pub(super) draft: &'static str,
+    pub(super) label: Text,
+    /// The refusal subject of an unparsable typed value.
+    pub(super) what: &'static str,
+    pub(super) min: u32,
+    pub(super) max: u32,
+    pub(super) current: u32,
+    pub(super) ticks: Option<u32>,
+}
+
+/// What a `WholeSlider` gesture produced this frame.
+pub(super) enum WholeEdit {
+    /// A rail drag in progress.
+    Live(u32),
+    /// A release, click, step or typed value.
+    Commit(u32),
+}
+
 /// Shared draft state for one numeric field; the model value stays in model units.
 /// The field's text: the model value scaled for display, in whole units when scaled.
 fn shown(spec: ScrubSpec, value: f64) -> String {
@@ -260,19 +282,52 @@ impl Panel<'_, '_> {
         self.drive_scrub(item, spec, current, &response, value);
     }
 
-    /// The matte brush's Size row: the label above, the rail and the value group below, the
-    /// slider row's layout. Size is panel view state (1 to 100), not an item field, so it
-    /// writes through `SetMatteBrushSize` and has no keyframes or undo step. A typed value
-    /// commits on Enter or blur, its sign dropped and clamped into range as the reference does.
+    /// The matte brush's Size row. Size is panel view state (1 to 100), not an item field, so
+    /// both a rail drag and a commit write through `SetMatteBrushSize`, with no keyframes or
+    /// undo step.
     pub(super) fn matte_size_row(&mut self, ui: &mut egui::Ui) {
-        const DRAFT: &str = "matte_brush_size";
-        const ID: &str = "inspector.matte_brush.size";
-        let (min, max) = (
-            crate::editor::MATTE_BRUSH_SIZE_MIN,
-            crate::editor::MATTE_BRUSH_SIZE_MAX,
-        );
         let current = self.cx.matte_brush_size;
-        let label = self.tr(Text::EffectSize);
+        let edit = self.whole_slider_row(
+            ui,
+            WholeSlider {
+                id: "inspector.matte_brush.size",
+                draft: "matte_brush_size",
+                label: Text::EffectSize,
+                what: "brush size",
+                min: crate::editor::MATTE_BRUSH_SIZE_MIN,
+                max: crate::editor::MATTE_BRUSH_SIZE_MAX,
+                current,
+                ticks: None,
+            },
+        );
+        if let Some(WholeEdit::Live(size) | WholeEdit::Commit(size)) = edit
+            && size != current
+        {
+            self.actions.push(Action::SetMatteBrushSize(size));
+        }
+    }
+
+    /// A whole-number slider row that is not an item field: the label above, the rail and the
+    /// value group (field and stepper) below, the slider row's layout. A rail drag reports
+    /// `Live` values and a `Commit` on release or click; the stepper and a typed value
+    /// (Enter or blur, its sign dropped and clamped into range as the reference does) report a
+    /// `Commit`. `ticks` marks the rail every that many units.
+    pub(super) fn whole_slider_row(
+        &mut self,
+        ui: &mut egui::Ui,
+        slider: WholeSlider,
+    ) -> Option<WholeEdit> {
+        let WholeSlider {
+            id,
+            draft,
+            label,
+            what,
+            min,
+            max,
+            current,
+            ticks,
+        } = slider;
+        let label = self.tr(label);
         let (row, _) = ui.allocate_exact_size(
             Vec2::new(ui.available_width(), SLIDER_ROW),
             egui::Sense::hover(),
@@ -302,54 +357,56 @@ impl Panel<'_, '_> {
                 .layout(egui::Layout::left_to_right(egui::Align::Center)),
         );
         child.spacing_mut().item_spacing.x = theme::space::XXS;
+        let mut edit = None;
         let mut text = self
             .state
             .drafts
-            .get(DRAFT)
+            .get(draft)
             .cloned()
             .unwrap_or_else(|| current.to_string());
-        let response = kit::value_field(&mut child, ID, &mut text, SLIDER_FIELD, None, label);
-        self.remember(ID, &response);
+        let response = kit::value_field(&mut child, id, &mut text, SLIDER_FIELD, None, label);
+        self.remember(id, &response);
         if response.has_focus() {
-            self.state.focus = Some(DRAFT.to_owned());
+            self.state.focus = Some(draft.to_owned());
         }
         if response.changed() {
-            self.state.drafts.insert(DRAFT.to_owned(), text);
+            self.state.drafts.insert(draft.to_owned(), text);
         }
-        let (up, down) = kit::stepper(&mut child, ID, label);
-        self.remember(format!("{ID}.increase"), &up);
-        self.remember(format!("{ID}.decrease"), &down);
+        let (up, down) = kit::stepper(&mut child, id, label);
+        self.remember(format!("{id}.increase"), &up);
+        self.remember(format!("{id}.decrease"), &down);
         for (clicked, next) in [
             (up.clicked(), current.saturating_add(1)),
             (down.clicked(), current.saturating_sub(1)),
         ] {
             if clicked {
-                self.actions
-                    .push(Action::SetMatteBrushSize(next.clamp(min, max)));
-                self.state.drafts.remove(DRAFT);
+                edit = Some(WholeEdit::Commit(next.clamp(min, max)));
+                self.state.drafts.remove(draft);
             }
         }
-        let editing = response.has_focus() || self.state.focus.as_deref() == Some(DRAFT);
+        let editing = response.has_focus() || self.state.focus.as_deref() == Some(draft);
         if editing && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-            self.state.drafts.remove(DRAFT);
+            self.state.drafts.remove(draft);
             self.state.focus = None;
             response.surrender_focus();
         } else if (response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
             || response.lost_focus()
         {
             self.state.focus = None;
-            if let Some(draft) = self.state.drafts.remove(DRAFT) {
-                let Some(typed) = draft
+            if let Some(typed) = self.state.drafts.remove(draft) {
+                match typed
                     .trim()
                     .parse::<f64>()
                     .ok()
                     .filter(|number| number.is_finite())
-                else {
-                    self.fail(Error::Invalid("brush size"));
-                    return;
-                };
-                let size = typed.abs().round().clamp(f64::from(min), f64::from(max)) as u32;
-                self.actions.push(Action::SetMatteBrushSize(size));
+                {
+                    Some(number) => {
+                        let value =
+                            number.abs().round().clamp(f64::from(min), f64::from(max)) as u32;
+                        edit = Some(WholeEdit::Commit(value));
+                    }
+                    None => self.fail(Error::Invalid(what)),
+                }
             }
         }
         let rail_width = (line.width() - group - SLIDER_GAP).max(40.0);
@@ -361,7 +418,7 @@ impl Panel<'_, '_> {
                 ))
                 .layout(egui::Layout::left_to_right(egui::Align::Center)),
         );
-        let slider_id = format!("{ID}.slider");
+        let slider_id = format!("{id}.slider");
         let (response, value) = kit::rail_slider(
             &mut rail_ui,
             &slider_id,
@@ -370,10 +427,29 @@ impl Panel<'_, '_> {
             rail_width,
         );
         self.remember(slider_id, &response);
-        let size = value.round() as u32;
-        if (response.dragged() || response.clicked()) && size != current {
-            self.actions.push(Action::SetMatteBrushSize(size));
+        if let Some(every) = ticks.filter(|every| *every > 0 && max > min) {
+            let half = theme::size::SLIDER_THUMB_WIDTH / 2.0;
+            let mark = egui::Stroke::new(1.0, theme::secondary(self.cx.dark));
+            let below = response.rect.center().y + theme::size::SLIDER_RAIL;
+            for at in (min..=max).filter(|at| (at - min) % every == 0) {
+                let fraction = (at - min) as f32 / (max - min) as f32;
+                let x = egui::lerp(
+                    (response.rect.left() + half)..=(response.rect.right() - half),
+                    fraction,
+                );
+                ui.painter().line_segment(
+                    [egui::pos2(x, below + 1.0), egui::pos2(x, below + 4.0)],
+                    mark,
+                );
+            }
         }
+        let value = value.round() as u32;
+        if response.drag_stopped() || response.clicked() {
+            edit = Some(WholeEdit::Commit(value));
+        } else if response.dragged() && value != current {
+            edit = Some(WholeEdit::Live(value));
+        }
+        edit
     }
 
     /// Rows with one or two fields sharing a label: Position (X, Y), Rotate, Text size.
@@ -426,12 +502,22 @@ impl Panel<'_, '_> {
                 .layout(egui::Layout::left_to_right(egui::Align::Center)),
         );
         child.spacing_mut().item_spacing.x = theme::space::XXS;
+        // Fields keep their measured width and narrow only when the panel is too narrow for
+        // every field, its gap and its stepper (the default columns at the minimum window).
+        const GAP: f32 = 4.0;
+        const BETWEEN: f32 = 3.0;
+        let count = fields.len() as f32;
+        let per_field = GAP + theme::size::STEPPER + 2.0 * theme::space::XXS;
+        let room = child.max_rect().width()
+            - count * per_field
+            - (count - 1.0) * (BETWEEN + theme::space::XXS);
+        let width = (room / count).clamp(theme::size::CONTROL, FIELD_WIDTH);
         for (index, (spec, prefix)) in fields.iter().enumerate() {
             let Some(value) = self.item_value(item, spec.field) else {
                 continue;
             };
             if index > 0 {
-                child.add_space(3.0);
+                child.add_space(BETWEEN);
             }
             self.numeric_edit(
                 &mut child,
@@ -440,8 +526,8 @@ impl Panel<'_, '_> {
                 value,
                 Layout {
                     prefix: *prefix,
-                    width: FIELD_WIDTH,
-                    gap: 4.0,
+                    width,
+                    gap: GAP,
                 },
             );
         }

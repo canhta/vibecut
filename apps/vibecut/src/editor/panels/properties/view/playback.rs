@@ -1,6 +1,7 @@
 //! Renders a clip's playback controls: the Audio tab's volume and fades, and the constant
 //! speed rows. Mute lives on the track header and the clip menu.
 use super::Panel;
+use super::number_edit::{WholeEdit, WholeSlider};
 use crate::editor::properties::workflow::jobs::loudness::{Cause, Failed, scope_target};
 use crate::editor::properties::{
     AUDIO_GAIN_SCRUB, Action, Color32, ItemId, Rect, SPEED_SCRUB, ScrubSpec, Text, Vec2, egui,
@@ -404,10 +405,11 @@ impl Panel<'_, '_> {
         }
     }
 
-    /// Voice enhancement: one switch over the preset's cleanup effects, and while it is on an
-    /// Intensity row of four dry/wet mixes (25 to 100: the reference slider's 4 tick marks;
-    /// new effects start at 75). The preset's parameters stay ordinary chain effects
-    /// reachable through `audio.*_cleanup_effect`.
+    /// Voice enhancement: one switch over the preset's cleanup effects, and while it is on the
+    /// reference's continuous Intensity slider, 0 to 100 with a tick mark every 25 (new
+    /// effects start at 75). A drag previews on the rail and commits its dry/wet mix once on
+    /// release, so one gesture is one undo step. The preset's parameters stay ordinary chain
+    /// effects reachable through `audio.*_cleanup_effect`.
     fn voice_enhancement_rows(&mut self, ui: &mut egui::Ui, item: ItemId) {
         let project = self.cx.session.project();
         let on = read::voice_enhancement_on(project, item);
@@ -431,30 +433,41 @@ impl Panel<'_, '_> {
         if !on {
             return;
         }
-        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
-        self.row_label(ui, row, self.tr(Text::VoiceEnhancementStrength));
-        // The reference's Intensity slider shows 4 tick marks, every 25 up to 100.
-        let levels: [(&str, f32); 4] = [("25", 25.0), ("50", 50.0), ("75", 75.0), ("100", 100.0)];
-        let ids: Vec<String> = levels
-            .iter()
-            .map(|(name, _)| format!("inspector.voice_enhance.strength.{name}"))
-            .collect();
-        let labels: Vec<&str> = levels.iter().map(|(name, _)| *name).collect();
-        let selected = levels
-            .iter()
-            .position(|(_, wet)| strength.is_some_and(|mix| (mix - wet).abs() < 0.5))
-            .unwrap_or(usize::MAX);
-        let cells = kit::segmented(&mut value_ui, &ids, &labels, selected);
-        for (index, ((id, cell), (_, wet_percent))) in
-            ids.iter().zip(&cells).zip(&levels).enumerate()
-        {
-            self.remember(id.clone(), cell);
-            if cell.clicked() && index != selected {
-                self.actions.push(Action::SetVoiceEnhancementStrength {
-                    item,
-                    wet_percent: *wet_percent,
-                });
+        const LIVE: &str = "voice_enhance.intensity.live";
+        let stored = strength.map_or(0, |mix| mix.round().clamp(0.0, 100.0) as u32);
+        let current = self
+            .state
+            .drafts
+            .get(LIVE)
+            .and_then(|live| live.parse::<u32>().ok())
+            .unwrap_or(stored);
+        let edit = self.whole_slider_row(
+            ui,
+            WholeSlider {
+                id: "inspector.voice_enhance.intensity",
+                draft: "voice_enhance.intensity",
+                label: Text::VoiceEnhancementStrength,
+                what: "intensity",
+                min: 0,
+                max: 100,
+                current,
+                ticks: Some(25),
+            },
+        );
+        match edit {
+            Some(WholeEdit::Live(value)) => {
+                self.state.drafts.insert(LIVE.to_owned(), value.to_string());
             }
+            Some(WholeEdit::Commit(value)) => {
+                self.state.drafts.remove(LIVE);
+                if value != stored {
+                    self.actions.push(Action::SetVoiceEnhancementStrength {
+                        item,
+                        wet_percent: value as f32,
+                    });
+                }
+            }
+            None => {}
         }
     }
 
