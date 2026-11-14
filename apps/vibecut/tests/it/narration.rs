@@ -94,7 +94,7 @@ impl Voice {
                     script: "Latn".into(),
                 })
                 .collect(),
-            voices: ["alloy", "21m00Tcm4TlvDq8ikWAM", "EXAVITQu4vr4xnSDxMaL"]
+            voices: ["alloy", "EXAVITQu4vr4xnSDxMaL", "pNInz6obpgDQGcFmaJgB"]
                 .iter()
                 .map(|id| SpeechVoice {
                     id: (*id).into(),
@@ -480,7 +480,7 @@ fn the_chosen_provider_and_voice_generate_consent_fit_place_and_duck_in_one_undo
             record.model.as_str(),
             record.voice.as_str()
         ),
-        ("elevenlabs", "eleven_flash_v2_5", "EXAVITQu4vr4xnSDxMaL")
+        ("elevenlabs", "eleven_flash_v2_5", "pNInz6obpgDQGcFmaJgB")
     );
     assert!(!record.ducking.enabled);
     assert_eq!(record.cue_duration, Tick(2 * SECOND));

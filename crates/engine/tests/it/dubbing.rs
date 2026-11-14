@@ -713,7 +713,7 @@ fn the_credential_opener_builds_only_the_chosen_provider_with_its_own_key_and_no
         .prepare(&real_request(
             "elevenlabs",
             "eleven_flash_v2_5",
-            "21m00Tcm4TlvDq8ikWAM",
+            "EXAVITQu4vr4xnSDxMaL",
             "vi",
             "Xin chào",
         ))
@@ -731,7 +731,7 @@ fn the_credential_opener_builds_only_the_chosen_provider_with_its_own_key_and_no
         narrator.prepare(&real_request(
             "elevenlabs",
             "eleven_multilingual_v2",
-            "21m00Tcm4TlvDq8ikWAM",
+            "EXAVITQu4vr4xnSDxMaL",
             "vi",
             "Xin chào"
         )),
@@ -949,5 +949,5 @@ fn live_openai_take_through_the_credential_opener() {
 #[test]
 #[ignore = "requires VIBECUT_LIVE_AI=1 and ELEVENLABS_API_KEY; one short paid speech request"]
 fn live_elevenlabs_take_through_the_credential_opener() {
-    live_take("elevenlabs", "21m00Tcm4TlvDq8ikWAM");
+    live_take("elevenlabs", engine::dubbing::ELEVENLABS_VOICES[0].0);
 }

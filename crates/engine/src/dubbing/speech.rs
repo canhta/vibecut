@@ -12,14 +12,15 @@ use std::sync::Arc;
 use transport::{HttpTransport, UreqTransport};
 
 /// The ElevenLabs premade (stock) voices offered by the picker, id and label. Cloned and
-/// professional-clone voices are never listed; whether an id is open to an account is the
-/// provider's answer and is unverified here.
+/// professional-clone voices are never listed. Each id is `premade` in a free account's
+/// `/v1/voices` and synthesized there on 2026-11-14; older stock ids (Rachel, Josh) became
+/// library voices that a free plan is refused (HTTP 402 `paid_plan_required`).
 pub const ELEVENLABS_VOICES: [(&str, &str); 5] = [
-    ("21m00Tcm4TlvDq8ikWAM", "Rachel"),
     ("EXAVITQu4vr4xnSDxMaL", "Sarah"),
     ("pNInz6obpgDQGcFmaJgB", "Adam"),
-    ("TxGEqnHWrfWFTfGW9XjX", "Josh"),
-    ("ErXwobaYiN019PkySvjV", "Antoni"),
+    ("JBFqnCBsd6RMkjVDRZzb", "George"),
+    ("Xb7hH8MSUJpSbSDYk0k2", "Alice"),
+    ("nPczCjzI2devNBz1zQrb", "Brian"),
 ];
 
 /// One provider the narration panel can choose, offline: no adapter is built and no key is read.
