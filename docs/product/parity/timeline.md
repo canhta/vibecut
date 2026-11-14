@@ -57,7 +57,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 ### Editing operations
 | ID | Item | Function | UI/UX | Evidence | Gap / note |
 |---|---|---|---|---|---|
-| TL-42 | Group / ungroup | Done | Differs | 14b/110530; 14e/203825, 203841 | `timeline.group`/`ungroup`; badge pills, gaps and white selected outline measured; Phosphor `tree-structure` stands in for the reference glyph, word `Group` not `Combo`, ordinary clip labels have no pill |
+| TL-42 | Group / ungroup | Done | Differs | 14b/110530; 14e/203825, 203841 | `timeline.group`/`ungroup`; label and badge pills per kind, gaps and white selected outline measured; Phosphor `tree-structure` (turned a quarter) stands in for the reference glyph, word `Group` not `Combo`, label position in the video band not matched |
 | TL-43 | Compound clip | Missing | — | 14b/110011 | |
 | TL-44 | Undo compound clip | Missing | — | 14b/110530 | |
 | TL-45 | Multi-camera clip | Missing | — | 14b/110011 | Disabled in reference |

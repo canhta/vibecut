@@ -155,48 +155,60 @@ impl State {
             Some(rows) => rows.name,
             None => Some(visible.center().y),
         };
+        let pill = theme::clip_pill(dark).gamma_multiply(dim);
+        let font = FontId::proportional(theme::type_size::BODY);
         let mut label_end = visible.left() + 22.0;
         if let (false, Some(label_y)) = (label.is_empty(), label_y) {
-            label_end = painter
-                .text(
-                    egui::pos2(visible.left() + 22.0, label_y),
-                    Align2::LEFT_CENTER,
-                    label,
-                    FontId::proportional(theme::type_size::BODY),
-                    text,
-                )
-                .right();
+            // Every clip label sits on a pill, grouped or not (`14e/203747`).
+            let galley = painter.layout_no_wrap(label.to_owned(), font.clone(), text);
+            let at = egui::pos2(visible.left() + 22.0, label_y - galley.size().y / 2.0);
+            label_end = at.x + galley.size().x;
+            painter.rect_filled(
+                Rect::from_min_max(
+                    egui::pos2(
+                        at.x - theme::size::CLIP_PILL_PAD,
+                        label_y - theme::size::CLIP_PILL_HEIGHT / 2.0,
+                    ),
+                    egui::pos2(
+                        label_end + theme::size::CLIP_PILL_PAD,
+                        label_y + theme::size::CLIP_PILL_HEIGHT / 2.0,
+                    ),
+                ),
+                theme::radius::CLIP_PILL,
+                pill,
+            );
+            painter.galley(at, galley, text);
         }
         if let (Some(rank), Some(label_y)) = (item.group, label_y) {
-            // Group badge: a glyph pill then a name pill after the clip label, both a lighter
-            // wash of the clip fill, cut at the clip edge (measured: `14e/203841`).
-            let pill = theme::group_pill(dark).gamma_multiply(dim);
+            // Group badge after the label pill: glyph and name on lighter pills, laid out per
+            // clip kind as the reference draws them, cut at the clip edge (`14e/203841`).
             let name = i18n::format(
                 cx.locale,
                 Text::GroupName,
                 &[("letter", group_letter(rank).as_str())],
             );
-            let (glyph_pill, _) = group_badge_pills(label_end, label_y, 0.0);
-            if glyph_pill.right() < visible.right() {
-                let name_galley = painter.layout_no_wrap(
-                    name,
-                    FontId::proportional(theme::type_size::BODY),
+            let style = BadgeStyle::of(item.kind);
+            let anchor = label_end + theme::size::CLIP_PILL_PAD;
+            let first = group_badge(style, anchor, label_y, 0.0);
+            if first.glyph.right() < visible.right() {
+                let galley = painter.layout_no_wrap(name, font, text);
+                let badge = group_badge(style, anchor, label_y, galley.size().x);
+                for rect in badge.pills {
+                    painter.rect_filled(rect, theme::radius::CLIP_PILL, pill);
+                }
+                // The three-node glyph is Phosphor `tree-structure` turned a quarter so one
+                // node sits above two, as in the reference.
+                icons::tinted(Icon::TreeStructure, GROUP_GLYPH, text)
+                    .rotate(std::f32::consts::FRAC_PI_2, Vec2::splat(0.5))
+                    .paint_at(
+                        ui,
+                        Rect::from_center_size(badge.glyph.center(), Vec2::splat(GROUP_GLYPH)),
+                    );
+                painter.galley(
+                    egui::pos2(badge.name_left, label_y - galley.size().y / 2.0),
+                    galley,
                     text,
                 );
-                let (glyph_pill, name_pill) =
-                    group_badge_pills(label_end, label_y, name_galley.size().x);
-                for rect in [glyph_pill, name_pill] {
-                    painter.rect_filled(rect, theme::radius::GROUP_PILL, pill);
-                }
-                icons::tinted(Icon::TreeStructure, GROUP_GLYPH, text).paint_at(
-                    ui,
-                    Rect::from_center_size(glyph_pill.center(), Vec2::splat(GROUP_GLYPH)),
-                );
-                let name_at = egui::pos2(
-                    name_pill.left() + theme::size::GROUP_PILL_PAD,
-                    label_y - name_galley.size().y / 2.0,
-                );
-                painter.galley(name_at, name_galley, text);
             }
         }
         self.paint_lane_toggle(cx, ui, item, visible, ink);
@@ -655,29 +667,78 @@ impl State {
 /// reference glyph's ink is `GROUP_GLYPH_INK` wide (`14e/203841`, 22 px at 2x).
 const GROUP_GLYPH: f32 = theme::size::GROUP_GLYPH_INK * 256.0 / 240.0;
 
-/// The glyph pill and the name pill of a group badge: the glyph pill starts one pill padding
-/// and one gap after the label's end, the name pill one gap after it and holds the name
-/// between two paddings; both are one pill high and centred on `label_y`.
-fn group_badge_pills(label_end: f32, label_y: f32, name_width: f32) -> (Rect, Rect) {
-    let top = label_y - theme::size::GROUP_PILL_HEIGHT / 2.0;
-    let glyph = Rect::from_min_size(
-        egui::pos2(
-            label_end + theme::size::GROUP_PILL_PAD + theme::size::GROUP_PILL_GAP,
-            top,
-        ),
-        Vec2::new(
-            theme::size::GROUP_GLYPH_PILL,
-            theme::size::GROUP_PILL_HEIGHT,
-        ),
-    );
-    let name = Rect::from_min_size(
-        egui::pos2(glyph.right() + theme::size::GROUP_PILL_GAP, top),
-        Vec2::new(
-            name_width + 2.0 * theme::size::GROUP_PILL_PAD,
-            theme::size::GROUP_PILL_HEIGHT,
-        ),
-    );
-    (glyph, name)
+/// How a clip kind lays out its group badge, as the reference draws it: the video and
+/// sticker clips put the glyph and the name on two pills, the text clip on one. The kinds the
+/// capture does not show follow the split layout [proposed].
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum BadgeStyle {
+    /// Two pills, the glyph pill `gap` after the label pill (video 4 pt, others 2 pt).
+    Split { gap: f32 },
+    /// One pill holding glyph and name, 2 pt after the label pill (text clip).
+    Merged,
+}
+
+impl BadgeStyle {
+    fn of(kind: TrackKind) -> Self {
+        match kind {
+            TrackKind::Video => Self::Split {
+                gap: theme::size::CLIP_PILL_GAP_VIDEO,
+            },
+            TrackKind::Text => Self::Merged,
+            _ => Self::Split {
+                gap: theme::size::CLIP_PILL_GAP,
+            },
+        }
+    }
+}
+
+/// Where a group badge's pieces go.
+#[derive(Clone, Debug, PartialEq)]
+struct GroupBadge {
+    /// The filled pills: two for a split badge, one for a merged one.
+    pills: Vec<Rect>,
+    /// The glyph's cell, centred on the label row.
+    glyph: Rect,
+    /// Left of the name's text.
+    name_left: f32,
+}
+
+/// Lays out a badge whose first pill starts at `anchor` (the label pill's right edge, or the
+/// label's text end plus one padding when there is no label) with a name `name_width` wide.
+fn group_badge(style: BadgeStyle, anchor: f32, label_y: f32, name_width: f32) -> GroupBadge {
+    let top = label_y - theme::size::CLIP_PILL_HEIGHT / 2.0;
+    let pill = |left: f32, width: f32| {
+        Rect::from_min_size(
+            egui::pos2(left, top),
+            Vec2::new(width, theme::size::CLIP_PILL_HEIGHT),
+        )
+    };
+    let cell = theme::size::GROUP_GLYPH_PILL;
+    let pad = theme::size::CLIP_PILL_PAD;
+    let gap = theme::size::CLIP_PILL_GAP;
+    match style {
+        BadgeStyle::Split { gap: lead } => {
+            let glyph = pill(anchor + lead, cell);
+            let name = pill(glyph.right() + gap, name_width + 2.0 * pad);
+            GroupBadge {
+                pills: vec![glyph, name],
+                glyph,
+                name_left: name.left() + pad,
+            }
+        }
+        BadgeStyle::Merged => {
+            let inset = theme::size::GROUP_MERGED_PAD;
+            let left = anchor + gap;
+            let glyph = pill(left + inset, cell);
+            let name_left = glyph.right() + gap;
+            let width = inset + cell + gap + name_width + inset;
+            GroupBadge {
+                pills: vec![pill(left, width)],
+                glyph,
+                name_left,
+            }
+        }
+    }
 }
 
 /// Group names count in creation order: A, B, … Z, then A1, B1, ….
@@ -1697,17 +1758,34 @@ mod tests {
     }
 
     #[test]
-    fn group_badge_pills_follow_the_measured_geometry() {
-        // 14e/203841 (Pillow, logical = px / 2): 14 pt pills, a 14 pt glyph pill, 2 pt between
-        // the pills, 2.5 pt between a pill's edge and its text.
-        let (glyph, name) = group_badge_pills(100.0, 50.0, 41.0);
+    fn group_badges_follow_the_measured_geometry_per_kind() {
+        // 14e/203841 (Pillow, logical = px / 2): 14 pt pills, a 14 pt glyph cell, 2 pt between
+        // the glyph and name pills, 2.5 pt between a pill's edge and its text.
+        let video = group_badge(BadgeStyle::of(TrackKind::Video), 100.0, 50.0, 41.0);
+        assert_eq!(video.pills.len(), 2, "the video badge has two pills");
+        let mut pills = video.pills.iter().copied();
+        let glyph = pills.next().unwrap_or(Rect::NOTHING);
+        let name = pills.next().unwrap_or(Rect::NOTHING);
         assert_eq!((glyph.height(), glyph.width()), (14.0, 14.0));
         assert_eq!(glyph.center().y, 50.0);
-        assert_eq!(glyph.left(), 100.0 + 2.5 + 2.0);
+        // The video clip leaves 4 pt after its label pill.
+        assert_eq!(glyph.left(), 104.0);
         assert_eq!(name.left() - glyph.right(), 2.0);
         assert_eq!((name.height(), name.width()), (14.0, 41.0 + 5.0));
-        assert_eq!(name.center().y, 50.0);
-        // The glyph's ink (11 pt) sits inside its pill with room on every side.
+        assert_eq!(video.name_left, name.left() + 2.5);
+        // The sticker clip leaves 2 pt.
+        let sticker = group_badge(BadgeStyle::of(TrackKind::Sticker), 100.0, 50.0, 41.0);
+        assert_eq!(sticker.glyph.left(), 102.0);
+        assert_eq!(sticker.pills.len(), 2);
+        // The text clip draws one pill for glyph and name, 2 pt after the label pill.
+        let text = group_badge(BadgeStyle::of(TrackKind::Text), 100.0, 50.0, 41.0);
+        assert_eq!(text.pills.len(), 1, "the text badge has one pill");
+        let one = text.pills.first().copied().unwrap_or(Rect::NOTHING);
+        assert_eq!(one.left(), 102.0);
+        assert_eq!(one.width(), 4.0 + 14.0 + 2.0 + 41.0 + 4.0);
+        assert_eq!(text.glyph.left(), one.left() + 4.0);
+        assert_eq!(text.name_left, text.glyph.right() + 2.0);
+        // The glyph's ink (11 pt) sits inside its cell with room on every side.
         assert!(GROUP_GLYPH * 240.0 / 256.0 <= glyph.width() - 2.0);
     }
 
@@ -1716,7 +1794,7 @@ mod tests {
         // 14e/203832: every member wears a white outline; the light theme keeps its accent.
         assert_eq!(theme::group_outline(true), Color32::WHITE);
         assert_eq!(theme::group_outline(false), theme::accent(false));
-        assert_eq!(theme::group_pill(true), Color32::from_white_alpha(24));
+        assert_eq!(theme::clip_pill(true), Color32::from_white_alpha(24));
     }
 
     #[test]
