@@ -81,6 +81,11 @@ pub(super) const SPEED_SCRUB: ScrubSpec = ScrubSpec {
     suffix: "x",
     scale: 1.0,
 };
+/// The Standard speed slider's tick stops, evenly spaced; the thumb maps piecewise between
+/// them (capcut-desktop-2026-11-14, row 4).
+pub(in crate::editor) const SPEED_STOPS: [f64; 6] = [0.1, 1.0, 2.0, 5.0, 10.0, 100.0];
+/// From this speed up the pitch switch does not apply (the reference's 5x).
+pub(in crate::editor) const SPEED_PITCH_LIMIT: f64 = 5.0;
 /// Transition duration, 0.1-5 s as the reference's field; the engine further
 /// clamps it to the handles of both neighbouring clips.
 pub(super) const TRANSITION_DURATION_SCRUB: ScrubSpec = ScrubSpec {

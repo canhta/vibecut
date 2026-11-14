@@ -741,8 +741,7 @@ fn enter(harness: &mut Harness<Editor>, id: &str, value: &str) {
     type_value(harness, value);
 }
 
-/// Types into the text field of `id` where a section header shares that id (the Speed
-/// section and its speed field are both `inspector.speed`).
+/// Types into the text field of `id`, as opposed to a widget sharing the id.
 fn enter_field(harness: &mut Harness<Editor>, id: &str, value: &str) {
     harness
         .query(
@@ -3795,6 +3794,24 @@ fn speed_tab_scrubs_resets_and_toggles_pitch_through_one_command() {
     }
     harness.state_mut().session.undo().unwrap();
     harness.state_mut().session.undo().unwrap();
+    harness.state_mut().session.undo().unwrap();
+    harness.state_mut().session.undo().unwrap();
+    assert_eq!(
+        item(&harness, fixture.video).retime,
+        project::Retime::default()
+    );
+
+    // The page has no Speed section header. A press on the rail's centre lands midway between
+    // the 2x and 5x ticks (3.5x), one undo step; from 5x the pitch switch is off the table.
+    assert!(!has_widget(&harness, "inspector.section.speed"));
+    let history = harness.state().session.history_len();
+    click(&mut harness, "inspector.speed.slider");
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    assert_eq!(item(&harness, fixture.video).retime.speed.thousandths(), 3500);
+    enter_field(&mut harness, "inspector.speed", "5");
+    let history = harness.state().session.history_len();
+    click(&mut harness, "inspector.speed.pitch");
+    assert_eq!(harness.state().session.history_len(), history, "pitch is off from 5x");
     harness.state_mut().session.undo().unwrap();
     harness.state_mut().session.undo().unwrap();
     assert_eq!(

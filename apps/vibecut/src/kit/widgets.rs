@@ -966,30 +966,93 @@ pub(crate) fn rail_slider(
     range: RangeInclusive<f64>,
     width: f32,
 ) -> (Response, f64) {
+    let start = *range.start();
+    let span = *range.end() - start;
+    let fraction = if span > 0.0 {
+        ((value - start) / span).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let (response, fraction) = rail_fraction(ui, id, fraction, &[], width);
+    (response, start + fraction * span)
+}
+
+/// A rail with a tick at each stop, evenly spaced, and a thumb that maps piecewise-linearly
+/// between neighbouring stops. `stops` ascends and holds at least two values.
+pub(crate) fn rail_stops_slider(
+    ui: &mut Ui,
+    id: &str,
+    value: f64,
+    stops: &[f64],
+    width: f32,
+) -> (Response, f64) {
+    let last = stops.len().saturating_sub(1).max(1);
+    let ticks: Vec<f32> = (0..stops.len()).map(|i| i as f32 / last as f32).collect();
+    let (response, fraction) = rail_fraction(ui, id, stop_fraction(stops, value), &ticks, width);
+    (response, stop_value(stops, fraction))
+}
+
+/// Position of `value` on a rail whose evenly spaced ticks sit at `stops`, 0 to 1.
+pub(crate) fn stop_fraction(stops: &[f64], value: f64) -> f64 {
+    let (Some(&first), Some(&end)) = (stops.first(), stops.last()) else {
+        return 0.0;
+    };
+    let last = stops.len() - 1;
+    if last == 0 || value <= first {
+        return 0.0;
+    }
+    if value >= end {
+        return 1.0;
+    }
+    let index = stops.iter().rposition(|&stop| stop <= value).unwrap_or(0);
+    let (low, high) = (stops[index], stops[index + 1]);
+    (index as f64 + (value - low) / (high - low)) / last as f64
+}
+
+/// The value at rail position `fraction` (0 to 1): the inverse of [`stop_fraction`].
+pub(crate) fn stop_value(stops: &[f64], fraction: f64) -> f64 {
+    let (Some(&first), Some(&end)) = (stops.first(), stops.last()) else {
+        return 0.0;
+    };
+    let last = stops.len() - 1;
+    if last == 0 {
+        return first;
+    }
+    let at = fraction.clamp(0.0, 1.0) * last as f64;
+    let index = (at.floor() as usize).min(last - 1);
+    let (low, high) = (stops[index], stops[index + 1]);
+    if fraction >= 1.0 {
+        return end;
+    }
+    low + (at - index as f64) * (high - low)
+}
+
+/// The rail itself: the thumb sits at `fraction` (0 to 1), `ticks` are fractions to mark.
+fn rail_fraction(
+    ui: &mut Ui,
+    id: &str,
+    fraction: f64,
+    ticks: &[f32],
+    width: f32,
+) -> (Response, f64) {
     let dark = ui.visuals().dark_mode;
     let (rect, response) = ui.allocate_exact_size(
         Vec2::new(width, size::SLIDER_THUMB_HEIGHT + space::XS),
         Sense::click_and_drag(),
     );
-    let start = *range.start();
-    let span = *range.end() - start;
     let half = size::SLIDER_THUMB_WIDTH / 2.0;
-    let mut value = value;
+    let mut fraction = fraction;
     if let Some(pointer) = response.interact_pointer_pos()
         && (response.dragged() || response.drag_started() || response.clicked())
-        && span > 0.0
     {
-        let fraction = f64::from(
+        fraction = f64::from(
             ((pointer.x - rect.left() - half) / (rect.width() - 2.0 * half)).clamp(0.0, 1.0),
         );
-        value = start + fraction * span;
     }
-    let fraction = if span > 0.0 {
-        ((value - start) / span).clamp(0.0, 1.0) as f32
-    } else {
-        0.0
-    };
-    let x = egui::lerp((rect.left() + half)..=(rect.right() - half), fraction);
+    let x = egui::lerp(
+        (rect.left() + half)..=(rect.right() - half),
+        fraction as f32,
+    );
     let rail = Rect::from_center_size(rect.center(), Vec2::new(rect.width(), size::SLIDER_RAIL));
     let fill = if ui.is_enabled() {
         theme::bright(dark)
@@ -1002,6 +1065,17 @@ pub(crate) fn rail_slider(
         radius::PANEL,
         fill,
     );
+    for &tick in ticks {
+        let at = egui::lerp((rect.left() + half)..=(rect.right() - half), tick);
+        paint(ui).rect_filled(
+            Rect::from_center_size(
+                egui::pos2(at, rail.center().y),
+                Vec2::new(1.0, size::SLIDER_RAIL + 2.0 * space::XXS),
+            ),
+            0.0,
+            theme::secondary(dark),
+        );
+    }
     paint(ui).rect_filled(
         Rect::from_center_size(
             egui::pos2(x, rail.center().y),
@@ -1012,7 +1086,7 @@ pub(crate) fn rail_slider(
     );
     author(&response, id);
     focus_ring(ui, &response);
-    (response, value)
+    (response, fraction)
 }
 
 #[cfg(test)]

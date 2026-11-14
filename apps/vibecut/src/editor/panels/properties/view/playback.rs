@@ -3,8 +3,8 @@
 use super::Panel;
 use crate::editor::properties::workflow::jobs::loudness::{Cause, Failed, scope_target};
 use crate::editor::properties::{
-    AUDIO_GAIN_SCRUB, Action, Color32, ItemId, Rect, SPEED_SCRUB, ScrubSpec, Text, Vec2, egui,
-    read, theme,
+    AUDIO_GAIN_SCRUB, Action, Color32, ItemId, Rect, SPEED_PITCH_LIMIT,
+    SPEED_SCRUB, ScrubSpec, Text, Vec2, egui, read, theme,
 };
 use crate::i18n;
 use crate::kit;
@@ -520,10 +520,31 @@ impl Panel<'_, '_> {
             let name = self.tr(Text::ChangePitch);
             let width = value_ui.available_width();
             value_ui.add_space((width - theme::size::TOGGLE_WIDTH).max(0.0));
-            let response = kit::toggle(&mut value_ui, "inspector.speed.pitch", &mut follows, name);
+            // From 5x the pitch cannot follow speed: the switch is off the table and a
+            // note under it says so.
+            let limited = current >= SPEED_PITCH_LIMIT;
+            let response = value_ui
+                .add_enabled_ui(!limited, |ui| {
+                    kit::toggle(ui, "inspector.speed.pitch", &mut follows, name)
+                })
+                .inner;
             self.remember("inspector.speed.pitch", &response);
             if response.clicked() {
                 self.set_speed(item, current, !follows);
+            }
+            if limited {
+                let note = self.tr(Text::SpeedPitchUnsupported);
+                let (row, _) = ui.allocate_exact_size(
+                    Vec2::new(ui.available_width(), SPEED_PITCH_NOTE),
+                    egui::Sense::hover(),
+                );
+                ui.painter().text(
+                    row.left_center(),
+                    egui::Align2::LEFT_CENTER,
+                    note,
+                    egui::FontId::proportional(theme::type_size::BODY),
+                    theme::secondary(self.cx.dark),
+                );
             }
         }
         self.speed_reset_row(ui, item, current, maintain_pitch);
@@ -692,6 +713,9 @@ impl Panel<'_, '_> {
         }
     }
 }
+
+/// The pitch note line under the pitch switch [proposed height].
+const SPEED_PITCH_NOTE: f32 = 18.0;
 
 /// The Duration rows: a label line, then a value line 14 px lower, as the Speed slider. The
 /// length field keeps the slider field's 54 px width, 2 px gap and 16 px stepper.

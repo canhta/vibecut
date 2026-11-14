@@ -170,3 +170,19 @@ fn selected_segment_fill_differs_from_the_unselected_cell() {
     );
     assert_eq!(segment_fill(true, false, false), None);
 }
+
+#[test]
+fn stop_mapping_is_piecewise_between_evenly_spaced_stops() {
+    let stops = [0.1, 1.0, 2.0, 5.0, 10.0, 100.0];
+    for (index, stop) in stops.iter().enumerate() {
+        let fraction = stop_fraction(&stops, *stop);
+        assert!((fraction - index as f64 / 5.0).abs() < 1e-12, "{stop}");
+        assert!((stop_value(&stops, fraction) - stop).abs() < 1e-9, "{stop}");
+    }
+    assert!((stop_fraction(&stops, 1.5) - 0.3).abs() < 1e-12);
+    assert!((stop_value(&stops, 0.7) - 7.5).abs() < 1e-9);
+    assert_eq!(stop_fraction(&stops, 0.01), 0.0);
+    assert_eq!(stop_fraction(&stops, 500.0), 1.0);
+    assert_eq!(stop_value(&stops, 1.0), 100.0);
+    assert_eq!(stop_value(&stops, 0.0), 0.1);
+}
