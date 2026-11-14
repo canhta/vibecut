@@ -460,6 +460,13 @@ pub(super) const SCENES: &[Scene] = &[
         reference_light: Some("capcut-desktop-2026-11-05/capcut-desktop-221910.png"),
         build: |theme, scale| editor_frame_state(theme, scale, "agent"),
     },
+    // The chat expanded into the full-height right column, beside 151706 (151656 is the dock).
+    Scene {
+        name: "agent-chat-expanded",
+        reference_dark: Some("capcut-desktop-2026-11-14d/capcut-desktop-151706.png"),
+        reference_light: Some("capcut-desktop-2026-11-14d/capcut-desktop-151706.png"),
+        build: |theme, scale| editor_frame_state(theme, scale, "agent-expanded"),
+    },
     Scene {
         name: "agent-chat-vi",
         reference_dark: None,

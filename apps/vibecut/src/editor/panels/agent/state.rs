@@ -80,6 +80,9 @@ pub(in crate::editor) enum Action {
 /// The chat panel's state. The frame owns one per editor.
 pub(in crate::editor) struct State {
     pub(super) open: bool,
+    /// The panel fills the right column instead of docking beside the timeline. Kept for the
+    /// window, so closing and opening the chat keeps the layout the creator chose.
+    expanded: bool,
     pub(super) backend: Arc<dyn Backend>,
     history_dir: Option<PathBuf>,
     project: u64,
@@ -107,6 +110,7 @@ impl Default for State {
     fn default() -> Self {
         Self {
             open: false,
+            expanded: false,
             backend: Arc::new(Environment),
             history_dir: None,
             project: 0,
@@ -133,6 +137,8 @@ impl Default for State {
 #[derive(Clone, Debug, PartialEq)]
 pub struct AgentView {
     pub open: bool,
+    /// The panel fills the right column (Restore is offered) instead of docking.
+    pub expanded: bool,
     /// `no_key`, `consent`, `ready`, `running` or `decide`.
     pub stage: &'static str,
     /// Tool steps of the transcript with their outcome; `None` while running.
@@ -169,6 +175,14 @@ impl State {
 
     pub(in crate::editor) fn open(&mut self) {
         self.open = true;
+    }
+
+    pub(in crate::editor) fn is_expanded(&self) -> bool {
+        self.expanded
+    }
+
+    pub(super) fn toggle_expanded(&mut self) {
+        self.expanded = !self.expanded;
     }
 
     pub(super) fn close(&mut self) {
@@ -224,6 +238,7 @@ impl State {
     pub(in crate::editor) fn view(&self) -> AgentView {
         AgentView {
             open: self.open,
+            expanded: self.expanded,
             stage: self.stage(),
             steps: self
                 .entries

@@ -143,7 +143,25 @@ fn header(
         ),
         egui::Vec2::splat(side),
     );
-    // Only Close sits in the header (capture 110207); Clear history lives in the input row.
+    // Expand / Restore sits 28 px left of Close (56 native px between the centres, 151656
+    // and 151706); Clear history lives in the input row.
+    let (glyph, label, id) = if state.is_expanded() {
+        (Icon::CornersIn, Text::AgentRestore, "agent.restore")
+    } else {
+        (Icon::CornersOut, Text::AgentExpand, "agent.expand")
+    };
+    let response = cell(
+        ui,
+        close.translate(egui::vec2(-(side + theme::space::XS), 0.0)),
+        true,
+        id,
+        glyph,
+        cx.tr(label),
+    );
+    if response.clicked() {
+        state.toggle_expanded();
+    }
+    note(actions, id, &response);
     let response = cell(
         ui,
         close,

@@ -2,7 +2,7 @@
 
 Interface: `State`, `Action`, `show`, `apply`, `Backend`, `Environment`, `AgentView`.
 
-The chat docked right of the timeline, in the row below the properties (layout and measured
+The chat docked right of the timeline, in the row below the properties, or expanded into the full-height right column (`State::is_expanded`, kept for the window; layout and measured
 values: [Editor UI](../../../../../../docs/product/ui/editor.md#agent-chat)). It composes the
 [agent crate](../../../../../../crates/agent/README.md) and holds no loop logic.
 
