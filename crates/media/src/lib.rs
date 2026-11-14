@@ -16,8 +16,9 @@ pub use audio::{
 };
 pub use ffmpeg_next::format::Pixel as PixelFormat;
 pub use read::{
-    AudioDecoder, AudioFrame, DecodePreference, PacketReader, RgbaConverter, THUMBNAIL_MAX_EDGE,
-    Thumbnail, VideoDecoder, VideoFrame, VideoReader, probe, thumbnail, thumbnails_at,
+    AudioDecoder, AudioFrame, DecodePreference, PROBE_BYTES, PROBE_MEMORY_BYTES, PacketReader,
+    RgbaConverter, THUMBNAIL_MAX_EDGE, Thumbnail, VideoDecoder, VideoFrame, VideoReader,
+    decoder_threads, probe, thumbnail, thumbnails_at, video_decode_bytes,
 };
 pub use source::{
     AssetAvailability, AssetData, AssetId, AudioInfo, CodecParameters, ColorInfo, ContentHash,
@@ -35,8 +36,9 @@ pub use write::{
     EncodePreference, GIF_MAX_COLORS, GIF_MAX_EDGE, GIF_MAX_FPS, GIF_MAX_FRAMES, GIF_MAX_PIXELS,
     GIF_MAX_SECONDS, GIF_MIN_COLORS, GifDither, GifEncoder, GifEncoderSettings, GifLimit,
     GifOptions, H264Profile, MuxSink, Muxer, PROXY_MAX_EDGE, ProxyLimits, ProxyReport,
-    VideoEncoder, VideoEncoderSettings, audio_export_container_available,
-    export_container_available, h264_encoder_available, proxy_size, write_proxy,
+    VideoEncoder, VideoEncoderSettings, audio_export_container_available, default_encoder_threads,
+    export_container_available, h264_encoder_available, proxy_size, video_encode_bytes,
+    write_proxy,
 };
 
 /// Typed failures from the media boundary. Provider paths and media text are not

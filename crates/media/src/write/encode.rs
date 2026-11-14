@@ -12,6 +12,28 @@ use time::{FrameRate, Rounding};
 const MAX_ENCODED_VIDEO_BATCH_BYTES: usize = 64 * 1024 * 1024;
 const MAX_VIDEO_ENCODER_THREADS: usize = 8;
 
+/// Encoder worker threads when the caller does not bound them: the host's cores, capped.
+pub fn default_encoder_threads() -> u8 {
+    std::thread::available_parallelism().map_or(1, |n| n.get().min(MAX_VIDEO_ENCODER_THREADS)) as u8
+}
+
+/// Frames the encoder retains beyond its workers: the converted input, a reorder and rate
+/// control window, and the picture being drained.
+const ENCODER_QUEUE_FRAMES: u64 = 4;
+
+/// Bytes a [`VideoEncoder`] holds for a `width`x`height` 8-bit 4:2:0 export with
+/// `threads` encoder workers and `conversion_threads` input-conversion workers:
+/// the RGBA input frame, one 4:2:0 frame per worker and queue slot, the packet
+/// batch cap, and each extra conversion worker's slice scratch (a quarter of an
+/// RGBA row band). Software queue depths beyond these are the codec's own.
+pub fn video_encode_bytes(width: u32, height: u32, threads: u8, conversion_threads: u8) -> u64 {
+    let pixels = u64::from(width) * u64::from(height);
+    pixels * 4
+        + pixels * 3 / 2 * (u64::from(threads) + ENCODER_QUEUE_FRAMES)
+        + MAX_ENCODED_VIDEO_BATCH_BYTES as u64
+        + u64::from(conversion_threads.saturating_sub(1)) * pixels
+}
+
 #[derive(
     Clone,
     Copy,
@@ -71,6 +93,8 @@ pub struct VideoEncoderSettings {
     pub webm: bool,
     /// FFmpeg input-conversion workers, 1..=8; caller owns scheduling/accounting.
     pub conversion_threads: u8,
+    /// Encoder worker threads, 1..=8; caller owns scheduling/accounting ([`video_encode_bytes`]).
+    pub encoder_threads: u8,
     /// Every picture is a keyframe (GOP of one), for scrub-friendly stand-ins.
     pub intra_only: bool,
 }
@@ -88,6 +112,7 @@ impl VideoEncoderSettings {
             color,
             webm: false,
             conversion_threads: 1,
+            encoder_threads: default_encoder_threads(),
             intra_only: false,
         }
     }
@@ -238,6 +263,7 @@ impl VideoEncoder {
             || !settings.height.is_multiple_of(2)
             || u64::from(settings.width) * u64::from(settings.height) > 1 << 26
             || !(1..=8).contains(&settings.conversion_threads)
+            || !(1..=8).contains(&settings.encoder_threads)
             || settings.quality > 100
             || settings.bit_rate == 0
         {
@@ -291,11 +317,11 @@ impl VideoEncoder {
                 encoder.set_bit_rate(settings.bit_rate);
                 encoder.set_gop(if settings.intra_only { 1 } else { 60 });
                 encoder.set_max_b_frames(0);
-                // Avoid automatic thread counts (and retained frame queues)
-                // growing with host CPU count. This is independent of scaler workers.
-                let threads = std::thread::available_parallelism()
-                    .map_or(1, |n| n.get().min(MAX_VIDEO_ENCODER_THREADS));
-                encoder.set_threading(ff::codec::threading::Config::count(threads));
+                // The caller's bound, never an automatic count: retained frame queues grow
+                // with threads. This is independent of scaler workers.
+                encoder.set_threading(ff::codec::threading::Config::count(usize::from(
+                    settings.encoder_threads,
+                )));
                 encoder.set_flags(ff::codec::Flags::GLOBAL_HEADER);
                 // FFmpeg mfenc wraps a D3D11 subresource without retaining the
                 // AVFrame's decoder-pool lease while its asynchronous MFT reads

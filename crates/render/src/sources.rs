@@ -92,7 +92,7 @@ impl SourceProvider for FileSources {
             {
                 return Ok(Some(UnavailableReason::Changed));
             }
-            let _probe = hooks.reserve(MemoryKind::Decoded, 256 << 20)?;
+            let _probe = hooks.reserve(MemoryKind::Decoded, media::PROBE_MEMORY_BYTES)?;
             let live = media::probe(asset.path())?;
             if asset.probe().duration.is_some() && live.duration != asset.probe().duration {
                 return Ok(Some(UnavailableReason::Metadata));
@@ -208,7 +208,7 @@ struct VideoCursor {
 }
 impl VideoCursor {
     fn new(asset: &SourceAsset, item: ItemId, hooks: &dyn ExecutionHooks) -> Result<Self> {
-        let probe_guard = hooks.reserve(MemoryKind::Decoded, 256 << 20)?;
+        let probe_guard = hooks.reserve(MemoryKind::Decoded, media::PROBE_MEMORY_BYTES)?;
         let probe = media::probe(asset.path())?;
         let video = probe
             .streams
@@ -247,15 +247,10 @@ impl VideoCursor {
             .and_then(|d| stream.start.unwrap_or(Tick::ZERO).checked_add(d))
             .or(probe.duration);
         Image::bytes(video.width, video.height)?;
-        let bytes = u64::from(video.width).div_ceil(512)
-            * 512
-            * u64::from(video.height).div_ceil(64)
-            * 64
-            * 4
-            * 4
-            + (96 << 20);
         drop(probe_guard);
-        let (threads, lease) = crate::conversion_reservation(hooks, MemoryKind::Decoded, bytes)?;
+        let (threads, lease) = crate::conversion_reservation(hooks, MemoryKind::Decoded, |t| {
+            Ok(media::video_decode_bytes(stream, t)?)
+        })?;
         Ok(Self {
             asset: asset.clone(),
             item,
@@ -378,7 +373,7 @@ struct AudioCursor {
 }
 impl AudioCursor {
     fn new(asset: &SourceAsset, rate: u32, hooks: &dyn ExecutionHooks) -> Result<Self> {
-        let probe_guard = hooks.reserve(MemoryKind::Decoded, 256 << 20)?;
+        let probe_guard = hooks.reserve(MemoryKind::Decoded, media::PROBE_MEMORY_BYTES)?;
         let reader = PacketReader::open(asset.path())?;
         let stream = reader
             .probe()
@@ -396,7 +391,9 @@ impl AudioCursor {
             ));
         }
         let expansion = u64::from(rate).div_ceil(u64::from(info.sample_rate));
-        let bytes = 65536 * u64::from(info.channels) * 8 * (1 + expansion * 2) + (96 << 20);
+        // Plus one demuxed packet and one decoded frame: at most a second of the admitted
+        // 192 kHz stereo f32 (1.5 MiB) each, 8 MiB with codec state.
+        let bytes = 65536 * u64::from(info.channels) * 8 * (1 + expansion * 2) + (8 << 20);
         let source_rate = info.sample_rate;
         let channels = info.channels;
         drop(probe_guard);

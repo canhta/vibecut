@@ -15,6 +15,11 @@ use std::sync::{
 use time::{FrameRate, Rounding, Tick};
 
 const MAX_PACKET: usize = 64 << 20;
+/// Most bytes a probe reads; FFmpeg's probe size and the read budget are both this.
+pub const PROBE_BYTES: u64 = 32 << 20;
+/// Bytes a probe holds: its read window plus the codec contexts and frames FFmpeg opens to
+/// analyze it (a 4K probe measures 22 MiB), twice the read cap.
+pub const PROBE_MEMORY_BYTES: u64 = 2 * PROBE_BYTES;
 struct Input {
     file: File,
     bytes: Arc<AtomicU64>,
@@ -78,7 +83,7 @@ impl PacketReader {
             return Err(MediaError::Cancelled);
         }
         let bytes = Arc::new(AtomicU64::new(0));
-        let budget = Arc::new(AtomicU64::new(max_bytes.min(32 << 20)));
+        let budget = Arc::new(AtomicU64::new(max_bytes.min(PROBE_BYTES)));
         let io = ff::format::context::StreamIo::from_read_seek(Input {
             file: File::open(path)?,
             bytes: bytes.clone(),
@@ -88,7 +93,7 @@ impl PacketReader {
         let token = cancel.clone();
         let mut options = ff::Dictionary::new();
         options.set("max_streams", "256");
-        options.set("probesize", "33554432");
+        options.set("probesize", &PROBE_BYTES.to_string());
         options.set("analyzeduration", "5000000");
         options.set("max_index_size", "8388608");
         let input =

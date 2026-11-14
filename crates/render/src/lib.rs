@@ -73,17 +73,16 @@ pub trait ExecutionHooks: Sync {
         Ok(())
     }
 }
+/// Reserve the bytes `bytes_for(threads)` for the most workers (up to the hooks' parallelism)
+/// the budget admits; the lease and the admitted worker count return together.
 pub(crate) fn conversion_reservation(
     hooks: &dyn ExecutionHooks,
     kind: MemoryKind,
-    base: u64,
+    bytes_for: impl Fn(u8) -> Result<u64>,
 ) -> Result<(u8, Box<dyn Reservation>)> {
     let mut threads = hooks.parallelism().clamp(1, 8) as u8;
     loop {
-        let bytes = base
-            .checked_add(u64::from(threads - 1) * (8 << 20))
-            .ok_or(Error::Invalid("conversion memory bound"))?;
-        match hooks.reserve(kind, bytes) {
+        match hooks.reserve(kind, bytes_for(threads)?) {
             Err(Error::Budget { .. }) if threads > 1 => threads -= 1,
             result => return result.map(|lease| (threads, lease)),
         }

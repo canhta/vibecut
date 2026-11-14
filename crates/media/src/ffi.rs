@@ -78,9 +78,24 @@ pub(super) fn thread_and_limits(ctx: &mut ff::codec::context::Context) {
     unsafe {
         let ptr = ctx.as_mut_ptr();
         (*ptr).thread_type = FF_THREAD_FRAME | FF_THREAD_SLICE;
-        (*ptr).thread_count = 0;
+        (*ptr).thread_count = i32::from(crate::decoder_threads());
         (*ptr).max_pixels = 1 << 26;
     }
+}
+
+/// Bits per decoded pixel of a video stream's pixel format (12 for 4:2:0); 32 when unknown.
+pub(super) fn video_bits_per_pixel(parameters: &ff::codec::Parameters) -> u64 {
+    // SAFETY: Parameters retains its codec metadata for this borrow; only the integer
+    // format field is read, and the cast happens only for a value inside the enum's range.
+    let format = unsafe { (*parameters.as_ptr()).format };
+    if !(0..ff::ffi::AVPixelFormat::AV_PIX_FMT_NB as i32).contains(&format) {
+        return 32;
+    }
+    ff::format::Pixel::from(unsafe { std::mem::transmute::<i32, ff::ffi::AVPixelFormat>(format) })
+        .descriptor()
+        .map(|d| d.bits_per_pixel())
+        .filter(|bits| *bits > 0)
+        .map_or(32, |bits| bits as u64)
 }
 
 /// Thumbnail/recovery decoding has one worker and at most two megapixels per

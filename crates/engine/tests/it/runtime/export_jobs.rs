@@ -542,8 +542,9 @@ fn oversized_export_fails_with_requested_bytes_before_frame_allocation() {
             .as_deref()
             .and_then(|error| (error as &(dyn std::error::Error + 'static))
                 .downcast_ref::<RuntimeError>()),
+        // The first frame's 8192x8192 float image is the first lease asked for.
         Some(RuntimeError::Render(render::Error::Budget {
-            requested: 4362076160,
+            requested: 1_073_741_824,
             ..
         }))
     ));
@@ -1160,6 +1161,165 @@ fn png_sequence_renders_in_a_job_and_publishes_one_renamed_directory() {
         ["final", "foreign", "rendered"],
         "no staging directory is left behind"
     );
+}
+
+/// Charges the desktop project scope exactly as a job does and records each lease.
+struct Recording<'a> {
+    inner: engine::ByteBudgetHooks<'a>,
+    budget: ByteBudget,
+    log: std::sync::Mutex<Vec<(render::MemoryKind, u64)>>,
+    peak: AtomicUsize,
+}
+impl render::ExecutionHooks for Recording<'_> {
+    fn cancelled(&self) -> bool {
+        false
+    }
+    fn parallelism(&self) -> usize {
+        std::thread::available_parallelism().map_or(1, |n| n.get().min(8))
+    }
+    fn reserve(
+        &self,
+        kind: render::MemoryKind,
+        bytes: u64,
+    ) -> render::Result<Box<dyn render::Reservation>> {
+        let lease = self.inner.reserve(kind, bytes)?;
+        self.log.lock().unwrap().push((kind, bytes));
+        let used = self.budget.snapshot().unwrap().limited_used() as usize;
+        self.peak.fetch_max(used, Ordering::Relaxed);
+        Ok(lease)
+    }
+}
+
+/// Exports `layers` stacked full-canvas clips of a `width`x`height` source through the
+/// 1 GiB desktop project scope; prints every declared lease and the declared peak.
+fn export_fits_desktop_budget(name: &str, layers: u64, width: u32, height: u32) {
+    let size = format!("testsrc2=s={width}x{height}:r=30:d=0.3");
+    let Some(source) = testkit::oracle::generate(
+        &testkit::fixture::dir("export-budget"),
+        name,
+        &format!("{width}x{height}-short.mp4"),
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            &size,
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=r=48000:d=0.3",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+        ],
+    ) else {
+        return;
+    };
+    let asset = media::SourceAsset::import(media::AssetId(1), source).unwrap();
+    let mut data = project::Project::empty(project::ProjectId(0), "".into())
+        .unwrap()
+        .into_data();
+    data.canvas.width = width;
+    data.canvas.height = height;
+    data.canvas.fps = asset
+        .probe()
+        .streams
+        .iter()
+        .find_map(|s| s.frame_rate)
+        .unwrap();
+    let duration = asset.probe().duration.unwrap();
+    data.assets.push(asset);
+    let span = time::TimeRange::new(time::Tick::ZERO, duration).unwrap();
+    for layer in 0..layers {
+        data.scene_mut().timeline.insert_track(project::Track {
+            id: project::TrackId(layer + 1),
+            name: "".into(),
+            kind: project::TrackKind::Video,
+            muted: false,
+            hidden: false,
+            locked: false,
+            items: vec![
+                testkit::item::item(
+                    project::ItemId(layer),
+                    project::ItemParams::Video(project::VideoParams::plain()),
+                )
+                .asset(media::AssetId(1))
+                .source(span)
+                .build(),
+            ],
+        });
+    }
+    // A text layer on top forces the re-encode path (a lone clip would stream-copy).
+    data.scene_mut().timeline.insert_track(project::Track {
+        id: project::TrackId(layers + 1),
+        name: "".into(),
+        kind: project::TrackKind::Text,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![
+            testkit::item::item(
+                project::ItemId(layers),
+                project::ItemParams::Text(project::TextParams {
+                    content: "Default text".into(),
+                    ..Default::default()
+                }),
+            )
+            .source(span)
+            .build(),
+        ],
+    });
+    let p = project::Project::new(data).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let budget = ByteBudget::new(1 << 30).unwrap().project_scope().unwrap();
+    let hooks = Recording {
+        inner: engine::ByteBudgetHooks::new(&budget, None),
+        budget: budget.clone(),
+        log: Default::default(),
+        peak: AtomicUsize::new(0),
+    };
+    let settings = render::ExportSettings::from_project(&p);
+    let result = render::export_with_sources(
+        &p,
+        span,
+        &settings,
+        &dir.path().join("out.mp4"),
+        &mut render::FileSources::default(),
+        &hooks,
+    );
+    let mut breakdown = std::collections::BTreeMap::new();
+    for (kind, bytes) in hooks.log.lock().unwrap().iter() {
+        let entry: &mut (u32, u64) = breakdown.entry((format!("{kind:?}"), *bytes)).or_default();
+        entry.0 += 1;
+        entry.1 += bytes;
+    }
+    let peak = hooks.peak.load(Ordering::Relaxed);
+    eprintln!(
+        "{name}: {layers} layer(s) at {width}x{height}, declared peak {} MiB of 1024",
+        peak >> 20
+    );
+    for ((kind, bytes), (count, total)) in breakdown {
+        eprintln!(
+            "  {kind:<10} {:>8.2} MiB x{count:<3} = {:>8.2} MiB",
+            bytes as f64 / 1048576.0,
+            total as f64 / 1048576.0
+        );
+    }
+    result.unwrap();
+    assert!(dir.path().join("out.mp4").exists());
+    assert!(peak <= 1 << 30);
+}
+
+#[test]
+fn five_layer_1080p_export_fits_the_desktop_project_budget() {
+    export_fits_desktop_budget("five layer 1080p", 5, 1920, 1080);
+}
+
+#[test]
+fn single_layer_4k_export_fits_the_desktop_project_budget() {
+    export_fits_desktop_budget("single layer 4k", 1, 3840, 2160);
 }
 
 #[test]

@@ -24,6 +24,8 @@ Media Foundation always receives CPU NV12 input, including with its hardware enc
 
 `RgbaConverter::with_threads` and `VideoEncoderSettings::conversion_threads` admit 1-8 FFmpeg conversion workers, default one. The execution owner chooses and charges that bound. No quality, color, chroma or transfer setting changes with the worker count. Workers live only as long as that converter or encoder.
 
+`VideoEncoderSettings::encoder_threads` (1-8, default the host's cores capped at 8) fixes the codec's worker threads instead of FFmpeg's automatic count. `video_encode_bytes(width, height, encoder_threads, conversion_threads)` is what the encoder holds (RGBA input, a 4:2:0 picture per worker and four queue slots, the 64 MiB packet batch cap, conversion scratch); the execution owner reserves it and picks the largest worker count its budget admits. Measured with VideoToolbox only; software queue depths on Windows and Linux are unverified.
+
 `RgbaConverter::convert_horizontal` accepts a nonempty source-column range and returns CPU RGBA plus its integer source-column origin. NV12/YUV420P at even widths use an aligned integer crop with a 64-pixel chroma-reconstruction halo and 128-pixel alignment. Existing crop metadata or another layout falls back to full conversion. Only the requested interior replaces full-frame conversion; halo-edge pixels carry no resampling contract. PTS, color and alpha convention are kept.
 
 ## GIF
