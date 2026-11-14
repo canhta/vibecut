@@ -222,6 +222,12 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
             Fixture::TransitionCut => s = crate::session::transition_session(false),
             Fixture::Transition => s = crate::session::transition_session(true),
             Fixture::Audio => s = with_audio(&s),
+            Fixture::Compound => {
+                s.apply(Command::TimelineCompound {
+                    items: vec![project::ItemId(1)],
+                })
+                .unwrap();
+            }
             Fixture::Narration => s = crate::support::control::with_narration(&s),
             Fixture::CleanupEffect => {
                 s = with_audio(&s);
@@ -674,6 +680,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
                 "text.apply_preset",
                 "text.save_preset",
                 "timeline.align_items",
+                "timeline.compound",
                 "timeline.distribute_items",
                 "timeline.duplicate",
                 "timeline.freeze_frame",
@@ -690,6 +697,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
                 "timeline.split_left",
                 "timeline.split_right",
                 "timeline.trim",
+                "timeline.uncompound",
                 "timeline.ungroup",
                 "trim_end",
                 "trim_start",

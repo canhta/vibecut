@@ -25,7 +25,10 @@ fn retime_item(
         .position(|i| i.id == id)
         .ok_or(EditError::NoItem(id))?;
     let target = t.items.get_mut(index).ok_or(EditError::NoItem(id))?;
-    if !matches!(target.content, ItemParams::Video(_) | ItemParams::Audio(_)) {
+    if !matches!(
+        target.content,
+        ItemParams::Video(_) | ItemParams::Audio(_) | ItemParams::Compound(_)
+    ) {
         return Err(EditError::Unsupported(unsupported));
     }
     let old_end = target.end()?;
@@ -193,7 +196,10 @@ fn set_reverse(data: &mut ProjectData, id: ItemId, reverse: bool) -> Result<()> 
         .iter_mut()
         .find(|i| i.id == id)
         .ok_or(EditError::NoItem(id))?;
-    if !matches!(target.content, ItemParams::Video(_) | ItemParams::Audio(_)) {
+    if !matches!(
+        target.content,
+        ItemParams::Video(_) | ItemParams::Audio(_) | ItemParams::Compound(_)
+    ) {
         return Err(EditError::Unsupported("reverse on non-media item"));
     }
     target.set_reversed(reverse)?;

@@ -9,6 +9,9 @@ use super::{
 use crate::ClipAnimations;
 use project::GroupId;
 
+mod compound;
+pub(super) use compound::{admit_content, execute_compound, execute_uncompound};
+
 pub(super) fn move_items(data: &mut ProjectData, moves: Vec<Move>) -> Result<()> {
     let moves = with_group_moves(data, moves)?;
     // Only a first placement onto a main track that was already empty clamps to zero; moving
@@ -218,7 +221,8 @@ pub(super) fn execute_paste_items(
     }
     for destination in destinations {
         let id = ItemId(alloc(next)?);
-        let item = destination.item(id);
+        let mut item = destination.item(id);
+        compound::renumber(&mut item, next)?;
         let target = track(&mut data, destination.track)?;
         unlocked(target)?;
         let index = target
@@ -453,6 +457,8 @@ pub(super) fn execute_split_at(
         (*l, *r) = l.split(start, right_cut.start, end_tick)?;
     }
     right.id = ItemId(alloc(next)?);
+    // Each piece of a compound clip owns a copy of the nested timeline under its own ids.
+    compound::renumber(&mut right, next)?;
     right.start = right_cut.start;
     if let ItemParams::Caption(p) = &right.content {
         sources.insert(right.id, Arc::new(p.cues.clone()));
@@ -738,6 +744,7 @@ pub(super) fn execute_duplicate(
                 };
                 copy.group = Some(new);
             }
+            compound::renumber(&mut copy, next)?;
             created.push(CreatedId::Item(copy.id));
             target.items.push(copy);
         }

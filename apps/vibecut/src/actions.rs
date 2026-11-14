@@ -260,6 +260,10 @@ pub enum EngineAction {
     /// Dissolve the groups of the selected items.
     Ungroup,
     Duplicate,
+    /// Move the selected items into one compound clip.
+    Compound,
+    /// Put the selected compound clips back as their members.
+    Uncompound,
     Delete,
     RippleDelete,
     SetHidden,
@@ -292,6 +296,8 @@ impl EngineAction {
             Self::Duplicate => K::DuplicateItems,
             Self::Group => K::TimelineGroup,
             Self::Ungroup => K::TimelineUngroup,
+            Self::Compound => K::TimelineCompound,
+            Self::Uncompound => K::TimelineUncompound,
             Self::Delete if ripple => K::RippleDelete,
             Self::Delete => K::Delete,
             Self::RippleDelete => K::RippleDelete,

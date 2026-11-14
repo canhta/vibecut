@@ -2,6 +2,7 @@
 
 mod animation;
 mod bundle;
+mod compound;
 mod effects;
 mod metadata;
 mod presets;

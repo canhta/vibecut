@@ -191,13 +191,14 @@ fn measure_window(
     let mut meter = Meter::new(rate, 2);
     let mut at = start;
     // Retimed clips stream across consecutive blocks exactly as production does.
-    let mut retimers = std::collections::BTreeMap::new();
-    let mut cleanups = std::collections::BTreeMap::new();
+    let mut state = crate::audio::MixState::default();
     while at < end {
         check(hooks)?;
         let count = (end - at).min(WINDOW as i64) as usize;
         let block = crate::audio::mix_raw(
             project,
+            &project.data().scene().timeline,
+            0,
             at,
             count,
             2,
@@ -205,8 +206,7 @@ fn measure_window(
             hooks,
             0,
             chain,
-            &mut retimers,
-            &mut cleanups,
+            &mut state,
         )?;
         meter.push(block.planes())?;
         at += count as i64;
@@ -313,15 +313,17 @@ fn audible_items(project: &Project, rate: i64) -> Result<Vec<(ItemId, i64, i64)>
             if !crate::audio::has_source_audio(item) {
                 continue;
             }
-            let has_stream = item.source_asset.is_some_and(|id| {
-                project.data().assets.iter().any(|a| {
-                    a.id() == id
-                        && a.probe()
-                            .streams
-                            .iter()
-                            .any(|s| s.kind == media::StreamKind::Audio)
-                })
-            });
+            // A compound clip's nested mix is its stream.
+            let has_stream = matches!(item.content, project::ItemParams::Compound(_))
+                || item.source_asset.is_some_and(|id| {
+                    project.data().assets.iter().any(|a| {
+                        a.id() == id
+                            && a.probe()
+                                .streams
+                                .iter()
+                                .any(|s| s.kind == media::StreamKind::Audio)
+                    })
+                });
             if !has_stream {
                 continue;
             }

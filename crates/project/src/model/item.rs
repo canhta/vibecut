@@ -1218,6 +1218,8 @@ pub enum ItemParams {
     Graphic(GraphicParams),
     Sticker(StickerParams),
     Effect(EffectParams),
+    /// A compound clip: its members on a nested timeline, rendered as those members.
+    Compound(Box<super::compound::CompoundParams>),
 }
 impl ItemParams {
     pub fn kind(&self) -> TrackKind {
@@ -1226,7 +1228,7 @@ impl ItemParams {
             Self::Audio(_) => TrackKind::Audio,
             Self::Text(_) => TrackKind::Text,
             Self::Caption(_) => TrackKind::Text,
-            Self::Overlay(_) | Self::Graphic(_) => TrackKind::Video,
+            Self::Overlay(_) | Self::Graphic(_) | Self::Compound(_) => TrackKind::Video,
             Self::Sticker(_) => TrackKind::Sticker,
             Self::Effect(_) => TrackKind::Effect,
         }
@@ -1254,6 +1256,7 @@ impl ItemParams {
                 | Self::Graphic(_)
                 | Self::Sticker(_)
                 | Self::Effect(_)
+                | Self::Compound(_)
         )
     }
 }

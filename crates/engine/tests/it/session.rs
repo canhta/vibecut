@@ -2,6 +2,7 @@
 mod bookmarks;
 mod canvas;
 mod captions;
+mod compound;
 mod effects;
 mod fades;
 mod fillers;

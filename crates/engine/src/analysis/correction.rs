@@ -406,7 +406,7 @@ pub fn resolve(project: &Project, cache: &mut ArtifactCache) -> Resolution {
     for item in data
         .scenes
         .iter()
-        .flat_map(|scene| scene.timeline.iter())
+        .flat_map(|scene| scene.timeline.all_tracks())
         .flat_map(|track| &track.items)
     {
         let ItemParams::Video(params) = &item.content else {

@@ -91,11 +91,30 @@ impl<'a> Chain<'a> {
             solo,
         }
     }
+    /// A compound clip's nested mix: no gains or fader, everything audible. The compound
+    /// clip's own volume, fades and loudness gain apply once its mix is its source.
+    fn nested() -> Chain<'static> {
+        Chain {
+            clip: &[],
+            master_db: 0.0,
+            fader: false,
+            solo: None,
+        }
+    }
     fn clip_db(&self, item: ItemId) -> f32 {
         self.clip
             .binary_search_by_key(&item, |(id, _)| *id)
             .map_or(0.0, |i| self.clip.get(i).map_or(0.0, |(_, g)| *g))
     }
+}
+
+/// Streaming state of one mix level: retimers and cleanup chains by item, and the state of
+/// each compound clip's nested mix, so every level streams across consecutive blocks.
+#[derive(Default)]
+pub(crate) struct MixState {
+    retimers: BTreeMap<ItemId, Retimer>,
+    cleanups: BTreeMap<ItemId, CleanupChain>,
+    nested: BTreeMap<ItemId, MixState>,
 }
 
 /// Absolute output sample window [start,start+frames), using nearest rounding for
@@ -119,8 +138,7 @@ pub struct AudioMixer<'a> {
     channels: u16,
     fade_ms: u16,
     limiter: super::limiter::Limiter,
-    retimers: BTreeMap<project::ItemId, Retimer>,
-    cleanups: BTreeMap<project::ItemId, CleanupChain>,
+    state: MixState,
     next: Option<i64>,
     _lease: Box<dyn Reservation>,
 }
@@ -142,8 +160,7 @@ impl<'a> AudioMixer<'a> {
             channels,
             fade_ms,
             limiter: super::limiter::Limiter::new(rate, channels),
-            retimers: BTreeMap::new(),
-            cleanups: BTreeMap::new(),
+            state: MixState::default(),
             next: None,
             _lease: lease,
         })
@@ -211,13 +228,14 @@ impl<'a> AudioMixer<'a> {
                     self.channels,
                 );
                 // Retime state replays with the timeline from zero like the limiter.
-                self.retimers.clear();
-                self.cleanups.clear();
+                self.state = MixState::default();
                 // Prime delay from zero (or earlier silence for negative windows).
                 let origin = start.min(0);
                 self.next = Some(origin);
                 let mut prime = mix_raw(
                     self.project,
+                    &self.project.data().scene().timeline,
+                    0,
                     origin,
                     latency as usize,
                     self.channels,
@@ -225,8 +243,7 @@ impl<'a> AudioMixer<'a> {
                     hooks,
                     self.fade_ms,
                     &Chain::of(self.project),
-                    &mut self.retimers,
-                    &mut self.cleanups,
+                    &mut self.state,
                 )?;
                 self.limiter.process(&mut prime.planes);
                 while self.next.is_some_and(|next| next < start) {
@@ -254,6 +271,8 @@ impl<'a> AudioMixer<'a> {
     ) -> Result<AudioBlock> {
         let mut out = mix_raw(
             self.project,
+            &self.project.data().scene().timeline,
+            0,
             start + self.latency_samples() as i64,
             frames,
             self.channels,
@@ -261,17 +280,20 @@ impl<'a> AudioMixer<'a> {
             hooks,
             self.fade_ms,
             &Chain::of(self.project),
-            &mut self.retimers,
-            &mut self.cleanups,
+            &mut self.state,
         )?;
         self.limiter.process(&mut out.planes);
         Ok(out)
     }
 }
 
+/// One level of the mix: `timeline` is the scene at depth 0, or a compound clip's nested
+/// timeline, whose mix is that clip's source audio.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn mix_raw(
     project: &Project,
+    timeline: &project::Timeline,
+    depth: usize,
     start: i64,
     frames: usize,
     channels: u16,
@@ -279,10 +301,19 @@ pub(crate) fn mix_raw(
     hooks: &dyn ExecutionHooks,
     fade_ms: u16,
     chain: &Chain<'_>,
-    retimers: &mut BTreeMap<project::ItemId, Retimer>,
-    cleanups: &mut BTreeMap<project::ItemId, CleanupChain>,
+    state: &mut MixState,
 ) -> Result<AudioBlock> {
     check(hooks)?;
+    if depth > project::MAX_COMPOUND_DEPTH {
+        return Err(Error::Invalid("compound nesting"));
+    }
+    let level = Level {
+        project,
+        channels,
+        fade_ms,
+        depth,
+        hooks,
+    };
     let rate = project.data().settings.audio_sample_rate;
     let end = start
         .checked_add(i64::try_from(frames).map_err(|_| Error::Invalid("sample count"))?)
@@ -292,7 +323,7 @@ pub(crate) fn mix_raw(
         return Ok(out);
     }
     let mut spans = Vec::new();
-    for track in project.data().scene().timeline.iter() {
+    for track in timeline.iter() {
         if track.muted {
             continue;
         }
@@ -307,23 +338,29 @@ pub(crate) fn mix_raw(
             if b <= a {
                 continue;
             }
-            let Some(id) = item.source_asset else {
-                return Err(Error::Invalid("audio source identity"));
+            // A compound clip's source is its nested mix; every other item reads its asset.
+            let asset = if matches!(item.content, ItemParams::Compound(_)) {
+                None
+            } else {
+                let Some(id) = item.source_asset else {
+                    return Err(Error::Invalid("audio source identity"));
+                };
+                let asset = project
+                    .data()
+                    .assets
+                    .iter()
+                    .find(|a| a.id() == id)
+                    .ok_or(Error::Invalid("audio asset"))?;
+                if !asset
+                    .probe()
+                    .streams
+                    .iter()
+                    .any(|s| s.kind == media::StreamKind::Audio)
+                {
+                    continue;
+                }
+                Some(asset)
             };
-            let asset = project
-                .data()
-                .assets
-                .iter()
-                .find(|a| a.id() == id)
-                .ok_or(Error::Invalid("audio asset"))?;
-            if !asset
-                .probe()
-                .streams
-                .iter()
-                .any(|s| s.kind == media::StreamKind::Audio)
-            {
-                continue;
-            }
             if spans.len() >= 4096 {
                 return Err(Error::Invalid("audio window expansion"));
             }
@@ -331,9 +368,27 @@ pub(crate) fn mix_raw(
         }
     }
     let active: Vec<_> = spans.iter().map(|(item, _, _, _, _, _)| item.id).collect();
-    sources.begin_audio(&active);
-    retimers.retain(|id, _| active.contains(id));
-    cleanups.retain(|id, _| active.contains(id));
+    // The scene level names the source cursors it keeps, compound members included; a nested
+    // level reads within that set.
+    if depth == 0 {
+        let mut kept = active.clone();
+        for (item, _, _, _, _, _) in &spans {
+            if let ItemParams::Compound(params) = &item.content {
+                kept.extend(
+                    params
+                        .timeline
+                        .all_tracks()
+                        .into_iter()
+                        .flat_map(|track| &track.items)
+                        .map(|member| member.id),
+                );
+            }
+        }
+        sources.begin_audio(&kept);
+    }
+    state.retimers.retain(|id, _| active.contains(id));
+    state.cleanups.retain(|id, _| active.contains(id));
+    state.nested.retain(|id, _| active.contains(id));
     for (item, asset, i0, i1, a, b) in spans {
         check(hooks)?;
         let window = item.retime_window()?;
@@ -363,7 +418,15 @@ pub(crate) fn mix_raw(
                 let source = origin
                     .checked_add(lo - output_origin)
                     .ok_or(Error::Invalid("source sample position"))?;
-                sources.audio(asset, item.id, source, count, rate, hooks)?
+                source_audio(
+                    level,
+                    item,
+                    asset,
+                    source,
+                    count,
+                    sources,
+                    &mut state.nested,
+                )?
             } else {
                 let length = window
                     .source_range
@@ -381,21 +444,33 @@ pub(crate) fn mix_raw(
                     Pitch::Follow
                 };
                 let map = rate_map(item, rate)?;
-                if retimers
+                if state
+                    .retimers
                     .get(&item.id)
                     .is_none_or(|r| !r.matches(rate, &map, pitch, length))
                 {
-                    retimers.insert(item.id, Retimer::new(rate, map, pitch, length, hooks)?);
+                    state
+                        .retimers
+                        .insert(item.id, Retimer::new(rate, map, pitch, length, hooks)?);
                 }
-                let retimer = retimers
+                let retimer = state
+                    .retimers
                     .get_mut(&item.id)
                     .ok_or(Error::Invalid("retime state"))?;
                 let reverse = item.retime.reverse;
+                let nested = &mut state.nested;
                 let mut pull = |at: i64, count: usize| -> Result<Vec<Vec<f32>>> {
                     if !reverse {
-                        return Ok(sources
-                            .audio(asset, item.id, origin + at, count, rate, hooks)?
-                            .planes);
+                        return Ok(source_audio(
+                            level,
+                            item,
+                            asset,
+                            origin + at,
+                            count,
+                            sources,
+                            nested,
+                        )?
+                        .planes);
                     }
                     // Reversed sample `n` is window sample `length - 1 - n`: the block
                     // `[at, at + count)` is window `[length - at - count, length - at)`, reversed.
@@ -403,9 +478,9 @@ pub(crate) fn mix_raw(
                         .checked_sub(at)
                         .and_then(|t| t.checked_sub(count as i64))
                         .ok_or(Error::Invalid("reversed source position"))?;
-                    let mut planes = sources
-                        .audio(asset, item.id, origin + first, count, rate, hooks)?
-                        .planes;
+                    let mut planes =
+                        source_audio(level, item, asset, origin + first, count, sources, nested)?
+                            .planes;
                     for plane in &mut planes {
                         plane.reverse();
                     }
@@ -442,10 +517,12 @@ pub(crate) fn mix_raw(
         // and the item stays aligned with its picture and every other item.
         let cleanup_chain = match cleanup_of(item).filter(|cleanup| !cleanup.is_bypassed()) {
             Some(cleanup) => {
-                if let std::collections::btree_map::Entry::Vacant(slot) = cleanups.entry(item.id) {
+                if let std::collections::btree_map::Entry::Vacant(slot) =
+                    state.cleanups.entry(item.id)
+                {
                     slot.insert(CleanupChain::new(cleanup, rate, hooks)?);
                 }
-                cleanups.get_mut(&item.id)
+                state.cleanups.get_mut(&item.id)
             }
             None => None,
         };
@@ -486,6 +563,7 @@ pub(crate) fn mix_raw(
         let (volume, muted, fades) = match &item.content {
             ItemParams::Audio(p) => (p.volume, p.muted, p.fades),
             ItemParams::Video(p) => (p.volume, p.muted, p.fades),
+            ItemParams::Compound(p) => (p.clip.volume, p.clip.muted, p.clip.fades),
             _ => (0.0, true, project::Fades::default()),
         };
         // Clip fades multiply the volume curve before summing and the master limiter.
@@ -563,8 +641,9 @@ pub(crate) fn mix_raw(
         }
         if b == i1 {
             sources.finish_audio(item.id);
-            retimers.remove(&item.id);
-            cleanups.remove(&item.id);
+            state.retimers.remove(&item.id);
+            state.cleanups.remove(&item.id);
+            state.nested.remove(&item.id);
         }
     }
     if chain.master_db != 0.0 {
@@ -577,6 +656,47 @@ pub(crate) fn mix_raw(
         }
     }
     Ok(out)
+}
+
+/// What one mix level shares with the source reads of its items.
+#[derive(Clone, Copy)]
+struct Level<'p> {
+    project: &'p Project,
+    channels: u16,
+    fade_ms: u16,
+    depth: usize,
+    hooks: &'p dyn ExecutionHooks,
+}
+
+/// `count` source samples of `item` from source sample `at`: its asset's audio, or a compound
+/// clip's nested mix at that source position.
+fn source_audio(
+    level: Level<'_>,
+    item: &project::Item,
+    asset: Option<&media::SourceAsset>,
+    at: i64,
+    count: usize,
+    sources: &mut dyn SourceProvider,
+    nested: &mut BTreeMap<ItemId, MixState>,
+) -> Result<AudioBlock> {
+    let rate = level.project.data().settings.audio_sample_rate;
+    match (asset, &item.content) {
+        (Some(asset), _) => sources.audio(asset, item.id, at, count, rate, level.hooks),
+        (None, ItemParams::Compound(params)) => mix_raw(
+            level.project,
+            &params.timeline,
+            level.depth + 1,
+            at,
+            count,
+            level.channels,
+            sources,
+            level.hooks,
+            level.fade_ms,
+            &Chain::nested(),
+            nested.entry(item.id).or_default(),
+        ),
+        (None, _) => Err(Error::Invalid("audio source identity")),
+    }
 }
 
 /// The item's source samples `[lo, target)`: the real ones up to the item's `end`, then silence.
@@ -605,6 +725,7 @@ fn cleanup_of(item: &project::Item) -> Option<&project::AudioCleanup> {
     match &item.content {
         ItemParams::Audio(p) => Some(&p.cleanup),
         ItemParams::Video(p) => Some(&p.cleanup),
+        ItemParams::Compound(p) => Some(&p.clip.cleanup),
         _ => None,
     }
 }
@@ -614,6 +735,7 @@ fn cleanup_of(item: &project::Item) -> Option<&project::AudioCleanup> {
 pub(crate) fn has_source_audio(item: &project::Item) -> bool {
     let muted = match &item.content {
         ItemParams::Video(p) if p.source_audio_enabled => p.muted,
+        ItemParams::Compound(p) if p.clip.source_audio_enabled => p.clip.muted,
         ItemParams::Audio(p) => p.muted,
         _ => return false,
     };

@@ -292,6 +292,12 @@ pub(super) const SCENES: &[Scene] = &[
         build: |theme, scale| projects_scene(theme, scale, Some("info")),
     },
     Scene {
+        name: "timeline-compound",
+        reference_dark: None,
+        reference_light: None,
+        build: timeline_compound,
+    },
+    Scene {
         name: "timeline-zoom-low",
         reference_dark: None,
         reference_light: None,
@@ -968,7 +974,7 @@ use properties::{
 use shorts::shorts_scene;
 use timeline::{
     link_media, missing_media, placement, placement_line, preview_axis, preview_axis_ends,
-    preview_axis_reference, scene_create, scene_delete, scene_rename, timeline_fades,
-    timeline_group, timeline_main, timeline_multi, timeline_selection, timeline_selection_vi,
-    timeline_zoom, tracks, tracks_kinds,
+    preview_axis_reference, scene_create, scene_delete, scene_rename, timeline_compound,
+    timeline_fades, timeline_group, timeline_main, timeline_multi, timeline_selection,
+    timeline_selection_vi, timeline_zoom, tracks, tracks_kinds,
 };

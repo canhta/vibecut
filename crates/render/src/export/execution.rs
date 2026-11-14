@@ -35,6 +35,51 @@ pub(super) fn admission(
         .collect();
     for track in timeline.iter() {
         for item in &track.items {
+            // A compound clip reads the media of every member it nests; each member is
+            // admitted over its whole window while the clip is drawn or heard.
+            if let ItemParams::Compound(params) = &item.content {
+                let pictured = video && rendered.contains(&item.id);
+                let heard = include_audio
+                    && !track.muted
+                    && !project.data().settings.master_muted
+                    && crate::audio::has_source_audio(item)
+                    && range.overlaps(TimeRange::new(item.start, item.end()?)?);
+                if !(pictured || heard) {
+                    continue;
+                }
+                for member in params
+                    .timeline
+                    .all_tracks()
+                    .into_iter()
+                    .flat_map(|track| &track.items)
+                {
+                    let Some(id) = member.source_asset else {
+                        continue;
+                    };
+                    let asset = project
+                        .data()
+                        .assets
+                        .iter()
+                        .find(|a| a.id() == id)
+                        .ok_or(Error::Invalid("admission asset"))?;
+                    let reason = if let Some(value) = status.get(&id) {
+                        *value
+                    } else {
+                        let value = sources.status(asset, hash, hooks)?;
+                        status.insert(id, value);
+                        value
+                    };
+                    if let Some(reason) = reason {
+                        out.push(Unavailable {
+                            asset: id,
+                            item: member.id,
+                            range: member.source_range,
+                            reason,
+                        });
+                    }
+                }
+                continue;
+            }
             let video = video
                 && rendered.contains(&item.id)
                 && matches!(item.content, ItemParams::Video(_));
@@ -802,7 +847,8 @@ pub(super) fn licence_tags(project: &Project) -> media::Result<Vec<(String, Stri
         .data()
         .scenes
         .iter()
-        .flat_map(|scene| scene.timeline.iter().flat_map(|track| track.items.iter()))
+        .flat_map(|scene| scene.timeline.all_tracks())
+        .flat_map(|track| track.items.iter())
     {
         match &item.content {
             ItemParams::Audio(params) => match &params.source {

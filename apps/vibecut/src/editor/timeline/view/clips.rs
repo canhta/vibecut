@@ -476,6 +476,37 @@ impl State {
                 ui.close();
             }
         }
+        // Create compound clip takes the whole selection; Undo compound clip shows on a
+        // compound clip only. The frame's eligibility disables either for a locked selection,
+        // and Undo for a clip with its own trim, speed, look or sound.
+        let compound = format!("timeline.item.{}.compound", item.id.0);
+        if self.menu_action(
+            cx,
+            ui,
+            compound,
+            "timeline.compound",
+            Text::ActionTimelineCompound,
+            Icon::SquaresFour,
+            editable && !cx.disabled.contains("timeline.compound"),
+        ) {
+            self.push(Action::Activate("timeline.compound".to_owned()));
+            ui.close();
+        }
+        if item.compound {
+            let uncompound = format!("timeline.item.{}.uncompound", item.id.0);
+            if self.menu_action(
+                cx,
+                ui,
+                uncompound,
+                "timeline.uncompound",
+                Text::ActionTimelineUncompound,
+                Icon::ArrowCounterClockwise,
+                editable && !cx.disabled.contains("timeline.uncompound"),
+            ) {
+                self.push(Action::Activate("timeline.uncompound".to_owned()));
+                ui.close();
+            }
+        }
         let delete = format!("timeline.item.{}.delete", item.id.0);
         if self.menu_action(
             cx,
@@ -1528,6 +1559,12 @@ pub(in crate::editor::timeline) fn item_label(
         ItemParams::Caption(_) => (i18n::text(locale, Text::Caption).to_owned(), None),
         ItemParams::Sticker(params) => (display_label(params.value(), LABEL_CHARS), None),
         ItemParams::Effect(_) => (i18n::text(locale, Text::Effects).to_owned(), None),
+        // A flat block like a generated clip: a compound clip has no filmstrip of its own.
+        // The tint is ours; the reference compound clip was not captured.
+        ItemParams::Compound(_) => (
+            i18n::text(locale, Text::CompoundClip).to_owned(),
+            Some([126, 87, 194, if dark { 90 } else { 60 }]),
+        ),
         ItemParams::Graphic(params) => (
             i18n::text(
                 locale,

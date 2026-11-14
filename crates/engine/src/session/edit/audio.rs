@@ -16,6 +16,7 @@ pub(super) fn fades_mut(content: &mut ItemParams) -> Option<&mut project::Fades>
     match content {
         ItemParams::Audio(project::AudioParams { fades, .. })
         | ItemParams::Video(project::VideoParams { fades, .. }) => Some(fades),
+        ItemParams::Compound(params) => Some(&mut params.clip.fades),
         _ => None,
     }
 }

@@ -6776,3 +6776,59 @@ fn a_double_click_isolates_one_member_and_an_alt_click_selects_the_group() {
     selected.sort();
     assert_eq!(selected, vec![a, b], "an Alt-click selects every member");
 }
+
+#[test]
+fn compound_chords_and_menu_rows_create_and_undo_a_compound_clip() {
+    let fixture = fixture();
+    let (a, b) = (fixture.video_a, fixture.video_b);
+    let mut h = harness(fixture.editor);
+    h.run_steps(3);
+    let present = |editor: &Editor, id: ItemId| {
+        editor
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .any(|track| track.items.iter().any(|item| item.id == id))
+    };
+    // Alt+G moves the selection into one compound clip and selects it.
+    h.state_mut().select([a, b].into()).unwrap();
+    h.key_press_modifiers(egui::Modifiers::ALT, egui::Key::G);
+    h.run_steps(2);
+    let selection: Vec<ItemId> = h.state().session.selection().iter().copied().collect();
+    let [compound] = selection.as_slice() else {
+        panic!("one compound clip selected: {selection:?}");
+    };
+    let compound = *compound;
+    assert!(matches!(
+        item(h.state(), compound).content,
+        ItemParams::Compound(_)
+    ));
+    assert!(!present(h.state(), a) && !present(h.state(), b));
+    // Its menu offers Undo compound clip.
+    open_author_menu(&mut h, format!("timeline.item.{}", compound.0));
+    assert!(menu_enabled(
+        &h,
+        &format!("timeline.item.{}.uncompound", compound.0)
+    ));
+    close_menu(&mut h);
+    // Alt+Shift+G puts the members back at their times.
+    h.key_press_modifiers(
+        egui::Modifiers::ALT.plus(egui::Modifiers::SHIFT),
+        egui::Key::G,
+    );
+    h.run_steps(2);
+    assert!(!present(h.state(), compound));
+    assert_eq!(item(h.state(), a).start, Tick::ZERO);
+    assert_eq!(item(h.state(), b).start, Tick(6 * SECOND));
+    // The clip menu row creates one from the clicked selection.
+    h.state_mut().select([a].into()).unwrap();
+    h.run_steps(2);
+    open_item_menu(&mut h, a, "compound");
+    assert!(!present(h.state(), a));
+    let selection: Vec<ItemId> = h.state().session.selection().iter().copied().collect();
+    assert_eq!(selection.len(), 1);
+    assert_eq!(item(h.state(), selection[0]).start, Tick::ZERO);
+}

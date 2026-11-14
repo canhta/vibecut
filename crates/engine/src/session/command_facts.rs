@@ -51,9 +51,12 @@ impl Availability {
             Self::Assets => !session.project().data().assets.is_empty(),
             Self::RetimableItem => timeline.iter().any(|t| {
                 !t.locked
-                    && t.items
-                        .iter()
-                        .any(|i| matches!(i.content, ItemParams::Video(_) | ItemParams::Audio(_)))
+                    && t.items.iter().any(|i| {
+                        matches!(
+                            i.content,
+                            ItemParams::Video(_) | ItemParams::Audio(_) | ItemParams::Compound(_)
+                        )
+                    })
             }),
             Self::RemovableTrack => timeline
                 .overlays

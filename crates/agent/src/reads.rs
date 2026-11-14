@@ -16,6 +16,7 @@ fn kind_name(content: &ItemParams) -> &'static str {
         ItemParams::Graphic(_) => "graphic",
         ItemParams::Sticker(_) => "sticker",
         ItemParams::Effect(_) => "effect",
+        ItemParams::Compound(_) => "compound",
     }
 }
 

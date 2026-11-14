@@ -23,6 +23,8 @@ pub enum ParamTarget {
     Ellipse,
     Polygon,
     Star,
+    /// A compound clip: its placement, look and sound, like a video clip's.
+    Compound,
 }
 impl ParamTarget {
     /// The target a piece of item content falls under.
@@ -39,6 +41,7 @@ impl ParamTarget {
             ItemParams::Graphic(GraphicParams::Ellipse { .. }) => Self::Ellipse,
             ItemParams::Graphic(GraphicParams::Polygon { .. }) => Self::Polygon,
             ItemParams::Graphic(GraphicParams::Star { .. }) => Self::Star,
+            ItemParams::Compound(_) => Self::Compound,
         }
     }
 }
@@ -524,8 +527,9 @@ const PICTURE: &[T] = &[
     T::Ellipse,
     T::Polygon,
     T::Star,
+    T::Compound,
 ];
-const AUDIBLE: &[T] = &[T::Audio, T::Video];
+const AUDIBLE: &[T] = &[T::Audio, T::Video, T::Compound];
 const VIDEO: &[T] = &[T::Video];
 const TEXT: &[T] = &[T::Text];
 const FILLED: &[T] = &[T::Overlay, T::Rectangle, T::Ellipse, T::Polygon, T::Star];
@@ -682,6 +686,7 @@ item_params! {
             match &mut t.content {
                 ItemParams::Audio(p) => p.volume = *v,
                 ItemParams::Video(p) => p.volume = *v,
+                ItemParams::Compound(p) => p.clip.volume = *v,
                 _ => {}
             }
             animate(t, BuiltinPath::Volume, ParamValue::Scalar(f64::from(*v)))
@@ -696,6 +701,7 @@ item_params! {
             match &mut t.content {
                 ItemParams::Audio(p) => p.muted = *v,
                 ItemParams::Video(p) => p.muted = *v,
+                ItemParams::Compound(p) => p.clip.muted = *v,
                 _ => {}
             }
             animate(t, BuiltinPath::Muted, ParamValue::Bool(*v))

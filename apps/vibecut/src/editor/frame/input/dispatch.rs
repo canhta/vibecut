@@ -338,6 +338,29 @@ impl Editor {
             .collect()
     }
 
+    /// The selection to compound: every selected item, none on a locked track.
+    fn compound_targets(&self) -> Vec<ItemId> {
+        let selected = self.selected_items();
+        if selected.iter().any(|(locked, _)| *locked) {
+            return Vec::new();
+        }
+        selected.into_iter().map(|(_, item)| item.id).collect()
+    }
+
+    /// The selected compound clips on unlocked tracks without edits of their own, which
+    /// releasing the members would lose.
+    fn uncompound_targets(&self) -> Vec<ItemId> {
+        self.selected_items()
+            .into_iter()
+            .filter(|(locked, item)| {
+                !locked
+                    && matches!(item.content, project::ItemParams::Compound(_))
+                    && item.compound_has_own_edits().is_ok_and(|own| !own)
+            })
+            .map(|(_, item)| item.id)
+            .collect()
+    }
+
     fn duplicate_targets(&self) -> Vec<ItemId> {
         self.selected_items()
             .into_iter()
@@ -542,6 +565,8 @@ impl Editor {
                             .selected_items()
                             .iter()
                             .any(|(_, item)| item.group.is_some()),
+                        EngineAction::Compound => !self.compound_targets().is_empty(),
+                        EngineAction::Uncompound => !self.uncompound_targets().is_empty(),
                         EngineAction::SetHidden => !self.visual_targets().is_empty(),
                         EngineAction::SetMuted => !self.audio_targets().is_empty(),
                         EngineAction::ExtractAudio => !self.extract_targets().is_empty(),
@@ -706,6 +731,14 @@ impl Editor {
                     .map(|(_, item)| item.id)
                     .collect(),
             }],
+            EngineAction::Compound => match self.compound_targets() {
+                items if items.is_empty() => Vec::new(),
+                items => vec![Command::TimelineCompound { items }],
+            },
+            EngineAction::Uncompound => match self.uncompound_targets() {
+                items if items.is_empty() => Vec::new(),
+                items => vec![Command::TimelineUncompound { items }],
+            },
             EngineAction::SetHidden => {
                 let items = self.visual_targets();
                 let hidden = items.iter().any(|item| !self.item_hidden(*item));
@@ -824,7 +857,8 @@ impl Editor {
             EngineAction::Split
             | EngineAction::SplitAll
             | EngineAction::SplitLeft
-            | EngineAction::Duplicate => {
+            | EngineAction::Duplicate
+            | EngineAction::Compound => {
                 self.session
                     .set_selection(created_items.iter().copied().collect())?;
             }
@@ -845,6 +879,7 @@ impl Editor {
             EngineAction::SplitRight
             | EngineAction::Group
             | EngineAction::Ungroup
+            | EngineAction::Uncompound
             | EngineAction::SetHidden
             | EngineAction::SetMuted
             | EngineAction::ExtractAudio

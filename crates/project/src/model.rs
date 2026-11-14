@@ -8,6 +8,7 @@ macro_rules! id {
     )+};
 }
 mod audio_cleanup;
+mod compound;
 mod item;
 mod narration;
 mod project;
@@ -22,6 +23,7 @@ pub use audio_cleanup::{
     MainsFrequency, NOISE_REDUCTION_DEFAULT, VOICE_ENHANCEMENT_EFFECTS,
     VOICE_ENHANCEMENT_INTENSITY_DEFAULT, voice_enhancement_effects,
 };
+pub use compound::{CompoundParams, MAX_COMPOUND_DEPTH, release_compound};
 pub use item::{
     AudioParams, AudioSource, BackgroundRemoval, CaptionParams, CaptionWordWarning,
     CaptionWordWarnings, ClipBackground, CutoutStroke, EffectParams, GraphicParams, GroupId, Item,

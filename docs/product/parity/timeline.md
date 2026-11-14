@@ -58,8 +58,8 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | ID | Item | Function | UI/UX | Evidence | Gap / note |
 |---|---|---|---|---|---|
 | TL-42 | Group / ungroup | Done | Differs | 14b/110530; 14e/203825, 203841 | `timeline.group`/`ungroup`; badge glyph and gaps measured; no label chips, Phosphor glyph |
-| TL-43 | Compound clip | Missing | — | 14b/110011 | |
-| TL-44 | Undo compound clip | Missing | — | 14b/110530 | |
+| TL-43 | Compound clip | Partial | Proposed | 14b/110011, 110530; [ui/editor.md](../ui/editor.md#compound-clip) | Trim, split, speed, look as a clip; no opening the nested timeline |
+| TL-44 | Undo compound clip | Done | Proposed | 14b/110530; [ui/editor.md](../ui/editor.md#compound-clip) | Refused while the clip has its own edits |
 | TL-45 | Multi-camera clip | Missing | — | 14b/110011 | Disabled in reference |
 | TL-46 | Deactivate clip | Partial | Proposed | 14b/110011 | Hide item, no V key |
 | TL-47 | Trim clip | Missing | — | 14/095625 | |
