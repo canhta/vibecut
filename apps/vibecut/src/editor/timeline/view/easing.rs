@@ -36,6 +36,17 @@ impl State {
             return;
         }
         let keys: Vec<KeyframeSelection> = cx.keyframes.iter().cloned().collect();
+        self.open_graph(cx, keys, anchor);
+    }
+
+    /// Open the popover on `keys` (the diamond menu's own key) unless none of them has an
+    /// outgoing segment to ease.
+    pub(in crate::editor::timeline) fn open_graph(
+        &mut self,
+        cx: &Context<'_>,
+        keys: Vec<KeyframeSelection>,
+        anchor: egui::Pos2,
+    ) {
         if graph::segments(cx.staged_project(), &keys).is_empty() {
             return;
         }

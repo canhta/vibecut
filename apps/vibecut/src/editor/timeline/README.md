@@ -26,6 +26,18 @@ shows the channel's diamonds. Click selects, Cmd/Ctrl/Shift toggles, a lane marq
 selects, drag retimes with the clips' snapping candidates in one engine gesture, and
 Delete removes selected diamonds through `keyframes.delete_selection` in one undo step.
 Right-click offers before/after Hold or Linear through `keyframes.set_extrapolation`.
+Right-clicking a diamond offers Ease in and Ease out (`keyframes.apply_preset` with the
+`ease_in` / `ease_out` presets), Easing and Show all presets (both open the graph popover on
+the diamond's own key; Show all presets opens its Presets tab), Linear (checked while the
+segment leaving the key is straight; `keyframes.apply_preset` with `linear`), then Copy and
+Delete. Easing items are disabled on the last key, which has no outgoing segment. Paste stays
+on the lane menu. The first diamond shown while `keyframe_hint_seen` is unset draws a one-line
+hint beside it; its OK sets the preference, so the hint is drawn once per preference store.
+`Alt+K` (`timeline.keyframe_lanes`) opens or closes the lanes of every selected item;
+`Alt+Shift+K` (`timeline.keyframe_add`) keys every animated scalar channel of the selected
+items at the playhead in one undo step, skipping channels without keys and items the playhead
+is outside of. Open: a static parameter has no lane to key, so its first key stays with the
+diamond.
 Audio clips draw a draggable volume line using the linear-gain squared map over -60..20
 dB; drags commit on a 0.1 dB grid, field and stored edits keep 0.01 dB; volume keyframes
 show on the line and in the lane.

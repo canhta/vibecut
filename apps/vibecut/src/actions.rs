@@ -160,6 +160,10 @@ pub enum UiAction {
     Ripple,
     Loop,
     PreviewAxis,
+    /// Show or hide the keyframe lanes of the selected items.
+    KeyframeLanes,
+    /// Key every animated channel of the selected items at the playhead.
+    KeyframeAdd,
     /// Timeline pointer mode: Select clicks and drags clips, Split cuts them.
     SelectTool,
     SplitTool,

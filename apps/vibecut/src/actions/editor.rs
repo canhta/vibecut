@@ -591,6 +591,22 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         &["S"],
     ),
     ActionSpec::ui(
+        "timeline.keyframe_lanes",
+        Text::ActionTimelineKeyframeLanes,
+        ActionCategory::Timeline,
+        "timeline keyframes",
+        UiAction::KeyframeLanes,
+        &["Alt+K"],
+    ),
+    ActionSpec::ui(
+        "timeline.keyframe_add",
+        Text::ActionTimelineKeyframeAdd,
+        ActionCategory::Timeline,
+        "timeline keyframes",
+        UiAction::KeyframeAdd,
+        &["Alt+Shift+K"],
+    ),
+    ActionSpec::ui(
         "timeline.tool.select",
         Text::ActionTimelineToolSelect,
         ActionCategory::Timeline,

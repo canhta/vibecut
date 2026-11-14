@@ -80,6 +80,8 @@
 | `timeline.snap` — Toggle snapping | Timeline | N | — | timeline view |
 | `timeline.ripple` — Toggle ripple editing | Timeline | — | — | timeline view |
 | `timeline.preview_axis` — Preview axis | Timeline | S | — | timeline view |
+| `timeline.keyframe_lanes` — Show keyframe lanes | Timeline | Alt+K | — | timeline keyframes |
+| `timeline.keyframe_add` — Add keyframe | Timeline | Alt+Shift+K | — | timeline keyframes |
 | `timeline.tool.select` — Select | Timeline | A | — | timeline tool |
 | `timeline.tool.split` — Split mode | Timeline | B | — | timeline tool |
 | `timeline.select_left` — Select leftward | Selection | [ | — | timeline selection |

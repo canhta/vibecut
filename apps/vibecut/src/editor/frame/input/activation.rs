@@ -1,8 +1,8 @@
 //! Routes editor actions through the facade.
 
 use crate::editor::{
-    ActionTarget, Arc, AssetId, Editor, Error, ItemId, Locale, MediaView, Preferences, Result,
-    SelectionScopes, Text, UiAction, actions, media_panel,
+    ActionTarget, Arc, AssetId, BTreeSet, Editor, Error, ItemId, Locale, MediaView, Preferences,
+    Result, SelectionScopes, Text, UiAction, actions, media_panel,
 };
 use crate::services::playback::Transport;
 use crate::services::preview;
@@ -501,6 +501,8 @@ impl Editor {
                     let after = !self.preferences.preview_axis;
                     self.set_preference("preview_axis", serde_json::json!(after))?;
                 }
+                UiAction::KeyframeLanes => self.toggle_keyframe_lanes()?,
+                UiAction::KeyframeAdd => self.add_keyframes_at_playhead()?,
                 UiAction::SelectTool => {
                     self.timeline
                         .set_tool(crate::editor::timeline::Tool::Select);
@@ -604,6 +606,103 @@ impl Editor {
                 }
             },
         }
+        Ok(())
+    }
+}
+
+impl Editor {
+    /// Open the keyframe lanes of every selected item, or close them when all are open.
+    /// The open set is presentation state, persisted for the owning project.
+    fn toggle_keyframe_lanes(&mut self) -> Result<()> {
+        let items: Vec<ItemId> = self.selection().iter().copied().collect();
+        if items.is_empty() {
+            return Ok(());
+        }
+        let open = items.iter().any(|item| !self.timeline.lane_open(*item));
+        for item in items {
+            self.timeline.set_lane(item, open);
+        }
+        let project = self.session.project().data().id;
+        let expanded: BTreeSet<u64> = self
+            .timeline
+            .expanded_lanes()
+            .into_iter()
+            .map(|item| item.0)
+            .collect();
+        let mut lanes = self.preferences.timeline_lanes.clone();
+        if expanded.is_empty() {
+            lanes.remove(&project);
+        } else {
+            lanes.insert(project, expanded);
+        }
+        self.set_preference("timeline_lanes", serde_json::json!(lanes))
+    }
+
+    /// Key every animated scalar channel of the selected items at the playhead as one undo
+    /// step. A channel without keys has no lane to key yet; the diamond creates its first key.
+    fn add_keyframes_at_playhead(&mut self) -> Result<()> {
+        let at = self.playback.position()?;
+        let mut commands = Vec::new();
+        for item in self
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| track.items.iter())
+            .filter(|item| self.selection().contains(&item.id))
+        {
+            let Ok(end) = item.end() else {
+                continue;
+            };
+            if at < item.start || at >= end {
+                continue;
+            }
+            let Some(local) = at.checked_sub(item.start) else {
+                continue;
+            };
+            for (path, param) in item.animations.iter() {
+                let channels: Vec<(Option<project::ColorComponent>, &project::Channel)> =
+                    match param {
+                        project::Param::Value(channel) => vec![(None, channel)],
+                        project::Param::Color(channels) => [
+                            project::ColorComponent::R,
+                            project::ColorComponent::G,
+                            project::ColorComponent::B,
+                            project::ColorComponent::A,
+                        ]
+                        .into_iter()
+                        .zip(channels.iter())
+                        .map(|(component, channel)| (Some(component), channel))
+                        .collect(),
+                    };
+                for (component, channel) in channels {
+                    if channel.keys().is_empty()
+                        || channel
+                            .keys()
+                            .binary_search_by_key(&local, |key| key.time)
+                            .is_ok()
+                    {
+                        continue;
+                    }
+                    let project::ParamValue::Scalar(value) = channel.value_at(local) else {
+                        continue;
+                    };
+                    commands.push(engine::Command::ToggleKeyframe {
+                        item: item.id,
+                        path: path.clone(),
+                        component,
+                        time: local,
+                        value: project::ParamValue::Scalar(value),
+                    });
+                }
+            }
+        }
+        if commands.is_empty() {
+            return Err(Error::Invalid("keyframe playhead"));
+        }
+        self.session.apply(engine::Command::Batch { commands })?;
         Ok(())
     }
 }
