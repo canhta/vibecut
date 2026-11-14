@@ -4959,6 +4959,7 @@ name = "render"
 version = "0.1.0"
 dependencies = [
  "captions",
+ "image",
  "media",
  "project",
  "rayon",

@@ -96,11 +96,14 @@ impl EditorWindow {
                 let (file_name, directory) = editor.export_save_defaults();
                 let mut dialog = rfd::AsyncFileDialog::new()
                     .set_title(i18n::text(editor.preferences.locale, Text::ExportTitle))
-                    .add_filter(
+                    .set_file_name(file_name);
+                // An image sequence is a directory named by the user; it has no extension.
+                if !format.is_sequence() {
+                    dialog = dialog.add_filter(
                         i18n::text(editor.preferences.locale, Text::ExportFormat),
                         &[format.extension()],
-                    )
-                    .set_file_name(file_name);
+                    );
+                }
                 if let Some(directory) = directory {
                     dialog = dialog.set_directory(directory);
                 }

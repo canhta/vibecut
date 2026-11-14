@@ -6,6 +6,8 @@ The `publication` module owns admission and staged writing for completed exports
 
 `submit_export_publication` copies a retained completed render through this owner with a bounded 64 KiB buffer on the job runner. No admission, copy or sync runs on the UI thread.
 
+`submit_sequence_publication` does the same for a finished PNG sequence directory: it admits the destination as above, copies the frames in name order under `<destination name>_%05d.png` into render's `sequence_stage`, and promotes the directory with one rename after the same fence. An earlier sequence of that name is replaced; a directory holding other files refuses whole.
+
 Cancellation before the fence and storage failures preserve the prior destination and the completed input. After the fence a committed destination reports Completed. The adapter retains the input until the job terminates and joins the runner before cleanup on shutdown. Individual filesystem calls cannot be interrupted; external processes racing path replacement are outside the atomic owner's guarantees.
 
 Publication admission, normalization and same-file resource checks return Runtime results.

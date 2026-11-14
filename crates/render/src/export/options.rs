@@ -190,6 +190,18 @@ impl OutputOptions {
             .into_iter()
             .try_for_each(|(_, range)| super::gif::admission(range, &configured))
     }
+    /// Image-sequence admission for the exact scene, range and rate `settings` resolve
+    /// to: at most `MAX_SEQUENCE_FRAMES` frames. Other outputs pass.
+    pub fn check_sequence(self, project: &Project, settings: &ExportSettings) -> Result<()> {
+        if !settings.image_sequence {
+            return Ok(());
+        }
+        let mut configured = settings.clone();
+        self.apply(&mut configured)?;
+        self.ranges(project)?
+            .into_iter()
+            .try_for_each(|(_, range)| super::sequence::admission(range, &configured))
+    }
     /// Admit every scene and range before starting any file.
     pub fn ranges(self, project: &Project) -> Result<Vec<(SceneId, TimeRange)>> {
         self.validate()?;
@@ -293,6 +305,20 @@ impl OutputOptions {
             || !Self::profile_fits(self.profile, settings.container)
         {
             return Err(Error::Unsupported("codec/profile for container"));
+        }
+        if settings.image_sequence {
+            // One directory of frames: no codec, profile, bitrate or audio apply, and
+            // one directory cannot hold several scenes' frames.
+            if self.audio_only
+                || self.bit_rate.is_some()
+                || self.codec != VideoCodec::Automatic
+                || self.profile != media::H264Profile::Automatic
+            {
+                return Err(Error::Unsupported("video settings for image sequence"));
+            }
+            if self.scene == SceneChoice::All {
+                return Err(Error::Unsupported("image sequence for all scenes"));
+            }
         }
         if self.audio_only {
             if matches!(

@@ -1,6 +1,6 @@
 # render
 
-CPU reference compositor, shared sample-window mixer and bounded MP4/MOV/WebM/GIF export.
+CPU reference compositor, shared sample-window mixer and bounded MP4/MOV/WebM/GIF and PNG-sequence export.
 It consumes immutable project snapshots and renders and mixes one active-scene snapshot at a time. Media owns codecs, conversion and mux, text owns shaping and rasterization, project owns atomic publication, engine owns scheduling and aggregate byte policy. No UI, device or persisted render state.
 
 `ExportSettings::from_project` uses media's platform encoder default (software on Windows). Hardware decoding stays enabled. Requested quality and bitrate are retained. Encoder selection, rate-control fallback and typed errors follow the [media contract](../media/src/write/README.md#encoding).
@@ -14,7 +14,7 @@ It consumes immutable project snapshots and renders and mixes one active-scene s
 | `scene/transitions/` | Implements the ported transition kinds over the working frame. | `thumbnail::ThumbnailCache` | [Transition kinds](src/scene/transitions/README.md) |
 | `audio/` | Owns every project audio stage from mix to limiter. | `AudioBlock`, `AudioMixer`, `mix_audio`, `measure_loudness` | [Audio clock and headroom](src/audio/README.md) |
 | `audio/cleanup/` | Runs an item's source cleanup chain with filter state carried across contiguous blocks. | `CleanupChain` | [Source cleanup](src/audio/cleanup/README.md) |
-| `export/` | Runs a staged project export through to publication. | `OutputOptions`, `RangeChoice`, `SceneChoice`, `VideoCodec`, `export`, `export_with_sources`, `validate_output_path` | [Export and publication](src/export/README.md) |
+| `export/` | Runs a staged project export through to publication. | `OutputOptions`, `RangeChoice`, `SceneChoice`, `VideoCodec`, `export`, `export_with_sources`, `validate_output_path`, `sequence_destination`, `sequence_frame_name`, `sequence_prefix`, `sequence_stage`, `MAX_SEQUENCE_FRAMES` | [Export and publication](src/export/README.md) |
 | `image` | Owns the RGBA frame buffer and its bounded allocation. | `Image` | [source](src/image.rs) |
 | `sources` | Provides decoded video and audio samples. | `SourceProvider`, `FileSources` | [Sources, bounds and cancellation](src/sources/README.md) |
 

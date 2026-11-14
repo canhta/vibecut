@@ -106,6 +106,12 @@ fn export_configured(
     if options.scene == render::SceneChoice::Active && project.duration() == time::Tick::ZERO {
         return Err(CliError::Rejected("project timeline is empty"));
     }
+    // `<name>_%05d.png` selects a PNG sequence; its directory `<name>` is the output.
+    let sequence = render::sequence_destination(&output)?;
+    let output = sequence.clone().unwrap_or(output);
+    if sequence.is_some() && options.scene == render::SceneChoice::All {
+        return Err(render::Error::Unsupported("image sequence for all scenes").into());
+    }
     let paths = options.paths(&project, &output)?;
     for path in &paths {
         if same_target(&project_path, path)? {
@@ -121,7 +127,12 @@ fn export_configured(
         .1;
     let mut settings = export_settings(&project, aspect, allow_degraded, overwrite);
     attach_corrections(context, &project, &mut settings)?;
-    settings.container = render::OutputOptions::container_for_path(&output, options.audio_only)?;
+    if sequence.is_some() {
+        settings.image_sequence = true;
+    } else {
+        settings.container =
+            render::OutputOptions::container_for_path(&output, options.audio_only)?;
+    }
     options.apply(&mut settings)?;
     let key = export_job_key(&project, range, &settings)?;
 
@@ -178,7 +189,7 @@ pub(crate) fn export_job_key(
         media::ContentHash::from_bytes(format!("{}:{}", range.start().0, range.end().0).as_bytes())
             .0;
     let settings_key = format!(
-        "{}x{}@{}/{}:{}:{}:{}:{:?}:{}",
+        "{}x{}@{}/{}:{}:{}:{}:{:?}:{}:{}",
         settings.render.width,
         settings.render.height,
         settings.fps.num(),
@@ -188,6 +199,7 @@ pub(crate) fn export_job_key(
         settings.include_audio,
         settings.container,
         settings.audio_only,
+        settings.image_sequence,
     );
     // Export has no persistent artifact kind; this key only identifies the job.
     Ok(CacheKey::new(KeyInputs {

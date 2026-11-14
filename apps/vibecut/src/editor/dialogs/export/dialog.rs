@@ -30,6 +30,8 @@ pub enum ExportFormat {
     AudioWebm,
     /// Silent animated GIF.
     Gif,
+    /// Silent PNG image sequence: a directory of `<name>_%05d.png` frames.
+    PngSequence,
 }
 impl ExportFormat {
     pub fn extension(self) -> &'static str {
@@ -39,14 +41,31 @@ impl ExportFormat {
             Self::Webm | Self::AudioWebm => "webm",
             Self::M4a => "m4a",
             Self::Gif => "gif",
+            // A directory, not a file: it has no extension.
+            Self::PngSequence => "",
         }
     }
+    /// The name an export of `project_name` is saved under: a file name with the
+    /// extension, or the bare directory name of an image sequence.
+    pub fn file_name(self, project_name: &str) -> String {
+        if self.is_sequence() {
+            engine::sanitize_file_name(project_name)
+        } else {
+            default_file_name(project_name, self.extension())
+        }
+    }
+    pub fn is_sequence(self) -> bool {
+        self == Self::PngSequence
+    }
+    /// The container a video format encodes into. An image sequence has none and
+    /// reports MP4 only to fill the settings' container field.
     pub fn container(self) -> media::Container {
         match self {
             Self::Mp4 | Self::M4a => media::Container::Mp4,
             Self::Mov => media::Container::Mov,
             Self::Webm | Self::AudioWebm => media::Container::WebM,
             Self::Gif => media::Container::Gif,
+            Self::PngSequence => media::Container::Mp4,
         }
     }
     pub fn audio_only(self) -> bool {
@@ -60,6 +79,7 @@ impl ExportFormat {
             Self::M4a => Text::ExportAudioM4a,
             Self::AudioWebm => Text::ExportAudioWebm,
             Self::Gif => Text::ExportGif,
+            Self::PngSequence => Text::ExportPngSequence,
         }
     }
 }
@@ -114,6 +134,7 @@ impl ExportOptions {
         let mut settings = render::ExportSettings::from_project(project);
         settings.container = self.format.container();
         settings.audio_only = self.format.audio_only();
+        settings.image_sequence = self.format.is_sequence();
         (settings.quality, settings.bit_rate) = self.quality.value();
         settings.include_audio = self.include_audio;
         // A chosen quality must be applied, rather than bypassed by Auto copy.
@@ -335,7 +356,7 @@ impl ExportDialog {
                 self.cancelling = false;
                 if let Some(path) = self.publishing.take() {
                     if let Some(finished) = self.finished.take() {
-                        let _ = std::fs::remove_file(finished);
+                        remove_output(&finished);
                     }
                     self.saved = Some(path);
                     self.save_index = self.save_index.saturating_add(1);
@@ -359,7 +380,7 @@ impl ExportDialog {
                 if self.publishing.is_none()
                     && let Some(path) = self.temp.take()
                 {
-                    let _ = std::fs::remove_file(path);
+                    remove_output(&path);
                 }
                 self.cancelling = false;
                 let unavailable = failure.as_deref().and_then(|error| {
@@ -392,7 +413,7 @@ impl ExportDialog {
                     self.discard_scene_outputs();
                 }
                 if let Some(temp) = self.temp.take() {
-                    let _ = std::fs::remove_file(temp);
+                    remove_output(&temp);
                 }
                 self.cancelling = false;
                 self.snapshot = None;
@@ -432,7 +453,7 @@ impl ExportDialog {
         if self.empty {
             return Err(Error::EmptyTimeline);
         }
-        let path = temp_output(options.format.extension());
+        let path = temp_output(options.format);
         let paths = options.output.paths(&project, &path)?;
         let mut settings = options.settings(&project);
         settings.encoder = encoder;
@@ -539,7 +560,7 @@ impl ExportDialog {
         {
             name.push_str(&format!("-scene-{}", scene.id.0));
         }
-        default_file_name(&name, options.format.extension())
+        options.format.file_name(&name)
     }
     pub fn save_to(&mut self, path: PathBuf, protected: Vec<PathBuf>) -> Result<()> {
         if self.active() {
@@ -556,15 +577,29 @@ impl ExportDialog {
             .0
             .clone();
         let key = self.input.ok_or(Error::Invalid("no export job"))?;
-        let job = engine::submit_export_publication(
-            &mut self.runner,
-            key,
-            project,
-            source,
-            path.clone(),
-            protected,
-            self.publication_fs.clone(),
-        )?;
+        let sequence = self
+            .attempt
+            .is_some_and(|attempt| attempt.format.is_sequence());
+        let job = if sequence {
+            engine::submit_sequence_publication(
+                &mut self.runner,
+                key,
+                project,
+                source,
+                path.clone(),
+                protected,
+            )?
+        } else {
+            engine::submit_export_publication(
+                &mut self.runner,
+                key,
+                project,
+                source,
+                path.clone(),
+                protected,
+                self.publication_fs.clone(),
+            )?
+        };
         self.snapshot = self.runner.snapshot(job.0);
         self.job = Some(job);
         self.publishing = Some(path);
@@ -582,25 +617,35 @@ impl ExportDialog {
     pub fn discard_finished(&mut self) {
         self.discard_scene_outputs();
         if let Some(path) = self.finished.take() {
-            let _ = std::fs::remove_file(path);
+            remove_output(&path);
         }
         self.pending_save = false;
     }
     fn discard_scene_outputs(&mut self) {
         for path in self.scene_outputs.drain(..) {
-            let _ = std::fs::remove_file(path);
+            remove_output(&path);
         }
     }
 }
 
-fn temp_output(extension: &str) -> PathBuf {
+fn temp_output(format: ExportFormat) -> PathBuf {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_nanos());
-    std::env::temp_dir().join(format!(
-        "vibecut-export-{}-{nanos}.{extension}",
-        std::process::id()
-    ))
+    let name = format!("vibecut-export-{}-{nanos}", std::process::id());
+    std::env::temp_dir().join(if format.is_sequence() {
+        name
+    } else {
+        format!("{name}.{}", format.extension())
+    })
+}
+/// Removes a finished or abandoned temporary output: a file, or an image sequence's directory.
+fn remove_output(path: &std::path::Path) {
+    if path.is_dir() {
+        let _ = std::fs::remove_dir_all(path);
+    } else {
+        let _ = std::fs::remove_file(path);
+    }
 }
 fn diagnostics(
     error: &(dyn std::error::Error + 'static),
@@ -1109,7 +1154,7 @@ impl Drop for ExportDialog {
         self.runner.shutdown();
         self.discard_finished();
         if let Some(path) = self.temp.take() {
-            let _ = std::fs::remove_file(path);
+            remove_output(&path);
         }
     }
 }

@@ -128,6 +128,81 @@ fn typed_export_options_cover_formats_ranges_profiles_and_scene_scope_with_probe
 }
 
 #[test]
+fn export_pattern_writes_a_png_sequence_directory_and_refuses_hostile_choices() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("overlay.vibecut");
+    overlay_project(&project, 64, 64, Tick(time::TICKS_PER_SECOND));
+    let pattern = dir.path().join("shot_%05d.png");
+    let output = cli(&[
+        os("export"),
+        project.as_os_str(),
+        os("--out"),
+        pattern.as_os_str(),
+        os("--json"),
+    ]);
+    assert_eq!(
+        code(&output),
+        0,
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let directory = dir.path().join("shot");
+    assert_eq!(
+        stdout_json(&output)["path"],
+        directory.to_string_lossy().as_ref()
+    );
+    let mut frames: Vec<_> = fs::read_dir(&directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect();
+    frames.sort();
+    assert_eq!(frames.len(), 30);
+    assert_eq!(frames.first().unwrap(), "shot_00001.png");
+    assert_eq!(frames.last().unwrap(), "shot_00030.png");
+    // A second run refuses the directory, keeps it and stages nothing beside it.
+    let again = cli(&[
+        os("export"),
+        project.as_os_str(),
+        os("--out"),
+        pattern.as_os_str(),
+    ]);
+    assert_ne!(code(&again), 0);
+    assert_eq!(fs::read_dir(&directory).unwrap().count(), 30);
+    // Video-only and all-scene choices refuse before any directory exists.
+    for options in [
+        render::OutputOptions {
+            bit_rate: Some(200_000),
+            ..Default::default()
+        },
+        render::OutputOptions {
+            scene: render::SceneChoice::All,
+            ..Default::default()
+        },
+    ] {
+        let hostile = dir.path().join("hostile_%05d.png");
+        let settings = serde_json::to_string(&options).unwrap();
+        let refused = cli(&[
+            os("export"),
+            project.as_os_str(),
+            os("--out"),
+            hostile.as_os_str(),
+            os("--settings"),
+            os(&settings),
+        ]);
+        assert_ne!(code(&refused), 0);
+        assert!(!dir.path().join("hostile").exists());
+    }
+    assert!(
+        fs::read_dir(dir.path()).unwrap().all(|entry| !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".vibecut-export")),
+        "no staging directory is left behind"
+    );
+}
+
+#[test]
 fn export_writes_a_completed_file_and_keeps_progress_on_stderr() {
     let dir = tempfile::tempdir().unwrap();
     let project = dir.path().join("overlay.vibecut");

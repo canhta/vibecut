@@ -7,6 +7,7 @@ use std::{
 };
 
 pub use super::directory::OwnedDirectory;
+pub use super::sequence::{DirectoryStage, FinalizedDirectory, Owns};
 pub use super::streaming::{AtomicFs, FinalizedStage, Fs, StreamingStage, StreamingWriter};
 
 pub(super) fn parent(path: &Path) -> &Path {

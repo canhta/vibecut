@@ -1,6 +1,6 @@
 # Runtime
 
-Interface: `jobs`, `cache`, `ByteBudget`, `submit_export`, `submit_export_publication`.
+Interface: `jobs`, `cache`, `ByteBudget`, `submit_export`, `submit_export_publication`, `submit_sequence_publication`.
 
 Single- and multi-scene export submission, completed-export publication, subtitle mapping
 and the Session export entrypoints implemented in this execution owner return `runtime::Result`.

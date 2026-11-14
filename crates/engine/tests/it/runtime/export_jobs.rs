@@ -1058,3 +1058,102 @@ fn failed_publication_sync_preserves_completed_input_and_previous_destination() 
     assert_eq!(std::fs::read(&destination).unwrap(), b"completed movie");
     assert_eq!(std::fs::read(&source).unwrap(), b"completed movie");
 }
+
+#[test]
+fn png_sequence_renders_in_a_job_and_publishes_one_renamed_directory() {
+    let project = project();
+    let dir = tempfile::tempdir().unwrap();
+    let rendered = dir.path().join("rendered");
+    let destination = dir.path().join("final");
+    let budget = ByteBudget::new(192 << 20).unwrap();
+    let mut runner = runner(&budget, Arc::new(SystemClock::default()));
+    let mut settings = render::ExportSettings::from_project(&project);
+    settings.image_sequence = true;
+    // A bitrate or several scenes are not a sequence's choices; they refuse at submit.
+    for hostile in [
+        render::OutputOptions {
+            bit_rate: Some(1_000_000),
+            ..Default::default()
+        },
+        render::OutputOptions {
+            scene: render::SceneChoice::All,
+            ..Default::default()
+        },
+    ] {
+        assert!(
+            engine::submit_scene_exports_with_sources(
+                &mut runner,
+                key(110),
+                project.clone(),
+                hostile,
+                settings.clone(),
+                vec![rendered.clone()],
+                || panic!("hostile sequence opened a source"),
+            )
+            .is_err()
+        );
+    }
+    assert!(!rendered.exists());
+    let (id, _) = engine::submit_scene_exports_with_sources(
+        &mut runner,
+        key(111),
+        project.clone(),
+        render::OutputOptions::default(),
+        settings,
+        vec![rendered.clone()],
+        || Box::new(render::FileSources::default()),
+    )
+    .unwrap();
+    let result = complete(&mut runner, id);
+    assert_eq!(result.state, JobState::Completed, "{:?}", result.error);
+    let names = |path: &std::path::Path| {
+        let mut names: Vec<String> = std::fs::read_dir(path)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect();
+        names.sort();
+        names
+    };
+    let frames = names(&rendered);
+    assert_eq!(frames.len(), 30);
+    assert_eq!(frames.first().unwrap(), "rendered_00001.png");
+    // The saved directory renames the frames to its own name, in order.
+    let publish = |runner: &mut JobRunner, destination: &std::path::Path| {
+        let (id, _) = engine::submit_sequence_publication(
+            runner,
+            key(112),
+            project.clone(),
+            rendered.clone(),
+            destination.to_owned(),
+            Vec::new(),
+        )
+        .unwrap();
+        complete(runner, id)
+    };
+    let result = publish(&mut runner, &destination);
+    assert_eq!(result.state, JobState::Completed, "{:?}", result.error);
+    let published = names(&destination);
+    assert_eq!(published.len(), 30);
+    assert_eq!(published.first().unwrap(), "final_00001.png");
+    assert_eq!(published.last().unwrap(), "final_00030.png");
+    assert_eq!(
+        std::fs::read(destination.join("final_00001.png")).unwrap(),
+        std::fs::read(rendered.join("rendered_00001.png")).unwrap()
+    );
+    assert_eq!(names(&rendered), frames, "the completed input is retained");
+    // Saving again replaces the earlier sequence; a folder of other files is refused whole.
+    assert_eq!(
+        publish(&mut runner, &destination).state,
+        JobState::Completed
+    );
+    let foreign = dir.path().join("foreign");
+    std::fs::create_dir(&foreign).unwrap();
+    std::fs::write(foreign.join("notes.txt"), b"mine").unwrap();
+    assert_eq!(publish(&mut runner, &foreign).state, JobState::Failed);
+    assert_eq!(names(&foreign), ["notes.txt"]);
+    assert_eq!(
+        names(dir.path()),
+        ["final", "foreign", "rendered"],
+        "no staging directory is left behind"
+    );
+}
