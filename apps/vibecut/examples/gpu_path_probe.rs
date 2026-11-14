@@ -893,7 +893,34 @@ fn export() {
     println!("PEAK_WORKING_SET {}", peak());
 }
 
+/// Peak resident bytes. Windows asks PowerShell for `PeakWorkingSet64`. macOS has no
+/// safe in-process peak reader (`unsafe` is banned here), so a sampler thread polls
+/// `ps -o rss=` every 100 ms and keeps the maximum: a lower bound that can miss a
+/// spike shorter than the interval. `/usr/bin/time -l` reports the exact figure.
+static SAMPLED_PEAK: AtomicU64 = AtomicU64::new(0);
+
+fn rss_now() -> u64 {
+    std::process::Command::new("ps")
+        .args(["-o", "rss=", "-p", &std::process::id().to_string()])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<u64>().ok())
+        .map_or(0, |kib| kib * 1024)
+}
+
+fn start_peak_sampler() {
+    if cfg!(target_os = "macos") {
+        std::thread::spawn(|| loop {
+            SAMPLED_PEAK.fetch_max(rss_now(), Ordering::Relaxed);
+            std::thread::sleep(Duration::from_millis(100));
+        });
+    }
+}
+
 fn peak() -> u64 {
+    if cfg!(target_os = "macos") {
+        return SAMPLED_PEAK.fetch_max(rss_now(), Ordering::Relaxed).max(rss_now());
+    }
     let output = std::process::Command::new("powershell")
         .args([
             "-NoProfile",
@@ -995,6 +1022,7 @@ fn pooled() {
 
 fn main() {
     use tracing_subscriber::prelude::*;
+    start_peak_sampler();
     let log = tracing_subscriber::fmt::layer().without_time().with_ansi(false)
         .with_filter(tracing_subscriber::filter::filter_fn(|meta| meta.target() == "vibecut::effects"));
     let _log = tracing::subscriber::set_default(tracing_subscriber::registry().with(log));
