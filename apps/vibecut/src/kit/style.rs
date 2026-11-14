@@ -25,14 +25,14 @@ pub(crate) fn install_theme(ctx: &egui::Context, dark: bool) {
     visuals.warn_fg_color = theme::warning(dark);
     visuals.error_fg_color = theme::error_text(dark);
     visuals.hyperlink_color = theme::accent(dark);
-    visuals.override_text_color = Some(text);
     visuals.selection.bg_fill = theme::accent(dark);
     visuals.selection.stroke = stroke(theme::on_accent(dark));
     visuals.text_cursor.stroke = stroke(theme::accent(dark));
     visuals.widgets.noninteractive.bg_fill = theme::panel(dark);
     visuals.widgets.noninteractive.weak_bg_fill = theme::panel(dark);
     visuals.widgets.noninteractive.bg_stroke = stroke(separator);
-    visuals.widgets.noninteractive.fg_stroke = stroke(theme::secondary(dark));
+    // No `override_text_color`: it would also paint selected labels with body ink on the accent.
+    visuals.widgets.noninteractive.fg_stroke = stroke(text);
     visuals.widgets.inactive.bg_fill = field;
     visuals.widgets.inactive.weak_bg_fill = field;
     visuals.widgets.inactive.bg_stroke = stroke(border);
@@ -145,5 +145,28 @@ mod tests {
             ctx.global_style().spacing.interact_size.y,
             egui::Style::default().spacing.interact_size.y
         );
+    }
+
+    #[test]
+    fn selected_label_uses_ink_for_the_accent() {
+        for dark in [true, false] {
+            let ctx = egui::Context::default();
+            install_theme(&ctx, dark);
+            let mut output = ctx.run_ui(Default::default(), |ui| {
+                let _ = ui.selectable_label(true, "Draft");
+            });
+            let ink = output
+                .shapes
+                .iter()
+                .find_map(|clipped| match &clipped.shape {
+                    egui::Shape::Text(text) => {
+                        Some(text.override_text_color.unwrap_or(text.fallback_color))
+                    }
+                    _ => None,
+                })
+                .expect("label text");
+            output.textures_delta.clear();
+            assert_eq!(ink, theme::on_accent(dark), "dark={dark}");
+        }
     }
 }

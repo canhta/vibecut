@@ -139,9 +139,9 @@ impl EditorWindow {
                 let dialog = rfd::AsyncFileDialog::new()
                     .set_title(self.tr(Text::ReplaceMedia))
                     .add_filter(
-                    self.tr(Text::Media),
-                    crate::editor::assets::import::MEDIA_EXTENSIONS,
-                );
+                        self.tr(Text::Media),
+                        crate::editor::assets::import::MEDIA_EXTENSIONS,
+                    );
                 Box::pin(async move { dialog.pick_file().await.map(|file| vec![file]) })
             }
             PickerAction::LinkMedia(pick) => {
@@ -187,9 +187,9 @@ impl EditorWindow {
                 let dialog = rfd::AsyncFileDialog::new()
                     .set_title(self.tr(Text::ImportMediaTitle))
                     .add_filter(
-                    self.tr(Text::Media),
-                    crate::editor::assets::import::MEDIA_EXTENSIONS,
-                );
+                        self.tr(Text::Media),
+                        crate::editor::assets::import::MEDIA_EXTENSIONS,
+                    );
                 Box::pin(dialog.pick_files())
             }
             PickerAction::SnapshotSave => {
