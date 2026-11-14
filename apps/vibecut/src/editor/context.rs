@@ -406,6 +406,8 @@ pub(crate) enum Request {
     ArmMatteBrush(Option<crate::editor::MatteBrush>),
     /// Ask the window to open the native media picker for one clip's replacement.
     ReplaceMedia(project::ItemId),
+    /// Open the Link media dialog on the sources that are missing now.
+    LinkMedia,
     /// Edits changed the project: drop the nested selection scopes it left dangling.
     PruneSelection,
     /// Hand one lifecycle step (a save, a picker) to the window that owns it.

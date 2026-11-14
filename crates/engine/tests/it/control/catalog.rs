@@ -706,6 +706,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
             "fonts.download",
             "fonts.import",
             "import.add_asset",
+            "media.relink",
             "music.add_to_timeline",
             "music.save",
             "music.search",

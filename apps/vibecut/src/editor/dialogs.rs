@@ -1,5 +1,6 @@
 //! Keeps the state of every editor dialog across frames.
 pub mod export;
+pub(crate) mod link_media;
 pub(crate) mod models;
 mod preferences;
 pub(in crate::editor) use preferences::{export_shortcuts, import_shortcuts};
@@ -12,6 +13,7 @@ use crate::editor::{Context, Port, egui};
 #[derive(Default)]
 pub(in crate::editor) struct State {
     pub(in crate::editor) export: export::State,
+    pub(in crate::editor) link_media: link_media::State,
     pub(in crate::editor) models: models::State,
     pub(in crate::editor) preferences: preferences::State,
     pub(in crate::editor) voiceover: voiceover::State,
@@ -21,6 +23,7 @@ pub(in crate::editor) struct State {
 /// What the frame must do after a dialog painted.
 pub(in crate::editor) enum Action {
     Export(export::Action),
+    LinkMedia(link_media::Action),
     Models(models::Action),
     Preferences(preferences::Action),
     Voiceover(voiceover::Action),
@@ -68,11 +71,24 @@ pub(in crate::editor) fn show_models(
 pub(in crate::editor) fn apply(state: &mut State, port: &mut Port<'_>, action: Action) {
     match action {
         Action::Export(action) => export::apply(&mut state.export, port, action),
+        Action::LinkMedia(action) => link_media::apply(&mut state.link_media, port, action),
         Action::Models(action) => models::apply(port, action),
         Action::Preferences(action) => preferences::apply(port, action),
         Action::Voiceover(action) => voiceover::apply(&mut state.voiceover, port, action),
         Action::SceneSplit(action) => scene_split::apply(&mut state.scene_split, port, action),
     }
+}
+
+/// Paint the Link media dialog.
+pub(in crate::editor) fn show_link_media(
+    state: &mut State,
+    cx: &Context<'_>,
+    ui: &mut egui::Ui,
+) -> Vec<Action> {
+    link_media::show(&mut state.link_media, cx, ui)
+        .into_iter()
+        .map(Action::LinkMedia)
+        .collect()
 }
 
 /// Paint the voice-over recorder.

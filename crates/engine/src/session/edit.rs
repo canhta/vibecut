@@ -451,6 +451,9 @@ pub(crate) fn apply(
         EditCommand::AddAsset { asset } => {
             data = media_edits::execute_add_asset(data, asset)?;
         }
+        EditCommand::RelinkAsset { asset } => {
+            data = media_edits::execute_relink_asset(data, asset)?;
+        }
         EditCommand::RemoveAssets { assets } => {
             data = media_edits::execute_remove_assets(data, assets)?;
         }

@@ -28,6 +28,8 @@ pub(in crate::editor) enum Action {
     },
     /// Show a model in the model manager: the link a missing-model row offers.
     OpenModel(String),
+    /// Open Link media: the selected clip's source file is gone.
+    OpenLinkMedia,
     /// Keyword emphasis of the caption cue under the playhead; the frame sends it to the
     /// Captions panel.
     Keywords(crate::editor::context::KeywordAction),

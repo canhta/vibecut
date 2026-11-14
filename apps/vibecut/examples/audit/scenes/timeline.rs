@@ -515,3 +515,33 @@ pub(super) fn placement(theme: Theme, scale: f32) -> Result<AppHarness, Failure>
     app.run_steps(2);
     Ok(app)
 }
+
+/// The editor over sources whose files are absent with a media cache attached, so every
+/// surface draws the relink state, and the first clip selected. Reference: CapCut 9.7.1
+/// capture 095550 (timeline clip, player canvas, media tile, properties line).
+fn lost_media_editor(theme: Theme) -> Result<Editor, Failure> {
+    let (mut editor, item) = media_editor(theme, Locale::En)?;
+    let cache = std::env::temp_dir().join("vibecut-audit-425-cache");
+    std::fs::create_dir_all(&cache)?;
+    let media = engine::control::MediaAccess::open_in(&cache, ByteBudget::new(64 << 20)?)?;
+    editor.set_media(Arc::new(std::sync::Mutex::new(media)));
+    editor.session.set_selection([item].into_iter().collect())?;
+    Ok(editor)
+}
+
+pub(super) fn missing_media(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let editor = lost_media_editor(theme)?;
+    // The canvas paints the missing red, so no preview frame is ever presented to wait for.
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, EDITOR_WINDOW);
+    app.run_steps(8);
+    Ok(app)
+}
+
+/// The Link media dialog as it opens with the project. Reference: capture 095518.
+pub(super) fn link_media(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let mut editor = lost_media_editor(theme)?;
+    editor.offer_link_media();
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, EDITOR_WINDOW);
+    app.run_steps(5);
+    Ok(app)
+}

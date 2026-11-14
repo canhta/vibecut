@@ -888,7 +888,7 @@ fn a_clip_whose_source_file_is_missing_draws_the_relink_state_until_replaced() {
     harness.run_steps(3);
     let strip = format!("timeline.item.{}.filmstrip", first.0);
     let wave = format!("timeline.item.{}.waveform", first.0);
-    let missing = "Media missing. Replace media to relink";
+    let missing = "Media missing. Use Link media to find the file";
     assert_eq!(harness.state().tooltip(&strip).as_deref(), Some(missing));
     assert_eq!(harness.state().tooltip(&wave).as_deref(), Some(missing));
     // One badge per band: the filmstrip and the waveform, and no other visual band.
@@ -918,19 +918,37 @@ fn a_clip_whose_source_file_is_missing_draws_the_relink_state_until_replaced() {
         harness.state_mut().take().is_empty(),
         "a missing source requests no generation and edits nothing"
     );
-    // The band is the warning marker on the field fill, not footage.
+    // The clip is the missing red family, not footage: body fill under the label band,
+    // lighter bands above and below, and no warning glyph.
     let image = harness.render().unwrap();
     let band = harness.state().rect(&strip);
-    let marker = image
-        .get_pixel(band.left() as u32 + 5, band.center().y as u32)
-        .0;
-    let warning = theme::warning(true).to_array();
-    assert!(
-        marker[..3]
+    let close = |actual: [u8; 4], expected: egui::Color32| {
+        actual[..3]
             .iter()
-            .zip(warning[..3].iter())
-            .all(|(actual, expected)| actual.abs_diff(*expected) < 8),
-        "{marker:?} is not the warning marker {warning:?}"
+            .zip(expected.to_array()[..3].iter())
+            .all(|(a, e)| a.abs_diff(*e) < 8)
+    };
+    let body = image
+        .get_pixel(band.left() as u32 + 5, band.top() as u32 + 3)
+        .0;
+    assert!(
+        close(body, theme::missing_body(true)),
+        "{body:?} is not the missing body fill"
+    );
+    let top = image
+        .get_pixel(band.left() as u32 + 5, band.top() as u32 - 8)
+        .0;
+    assert!(
+        close(top, theme::missing_band(true)),
+        "{top:?} is not the missing band fill"
+    );
+    let bottom = harness.state().rect(&wave);
+    let low = image
+        .get_pixel(bottom.left() as u32 + 5, bottom.center().y as u32)
+        .0;
+    assert!(
+        close(low, theme::missing_band(true)),
+        "{low:?} is not the missing band fill"
     );
     let screenshot = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/418-missing-media-clip.png");

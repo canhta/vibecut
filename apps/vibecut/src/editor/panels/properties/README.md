@@ -324,3 +324,5 @@ Graphic controls expose RGBA fill and stroke, width, held stroke alignment and r
 The area's `input_ready` predicate admits frame clipboard actions only with no focused
 field, dirty draft, scrub, picker, reorder or font dialog. Refused actions leave drafts
 in this owner untouched.
+
+A single selected Video or Audio clip whose source file is gone has no properties to edit: the panel shows the reference's one grey line centred under the header and, ours, a `Link media` button that asks the frame to open the [Link media dialog](../../dialogs/link_media/README.md) (`Action::OpenLinkMedia`, `inspector.link_media`). Measurements: [Missing media](../../../../../../docs/product/ui/editor.md#missing-media).

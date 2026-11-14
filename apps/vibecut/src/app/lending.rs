@@ -102,6 +102,7 @@ impl Lending {
         if let Some(media) = &self.media {
             editor.set_media(media.clone());
         }
+        editor.offer_link_media();
     }
     fn lend_sounds(&self, editor: &mut Editor) {
         match &self.sounds {

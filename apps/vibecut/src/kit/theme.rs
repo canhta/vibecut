@@ -59,6 +59,18 @@ pub(crate) const VIDEO_BORDER_DARK: Color32 = Color32::from_rgb(0x0B, 0x6B, 0x5B
 pub(crate) const VIDEO_FILL_LIGHT: Color32 = Color32::from_rgb(0xE3, 0xF7, 0xF2);
 pub(crate) const VIDEO_BORDER_LIGHT: Color32 = Color32::from_rgb(0x0B, 0x6B, 0x5B);
 
+/// Missing-media state (CapCut 9.7.1 capture, editor.md "Missing media"): a red family
+/// in the error hue. Dark keeps the capture's lightness steps (bands lighter than the
+/// body, canvas close to the body, border between); the light ramp is ours.
+const MISSING_BAND_DARK: Color32 = Color32::from_rgb(0xA6, 0x2A, 0x2E);
+const MISSING_BODY_DARK: Color32 = Color32::from_rgb(0x3E, 0x13, 0x16);
+const MISSING_BORDER_DARK: Color32 = Color32::from_rgb(0x66, 0x26, 0x29);
+const MISSING_CANVAS_DARK: Color32 = Color32::from_rgb(0x43, 0x17, 0x1A);
+const MISSING_BAND_LIGHT: Color32 = Color32::from_rgb(0xD9, 0x5A, 0x5F);
+const MISSING_BODY_LIGHT: Color32 = Color32::from_rgb(0xFB, 0xE3, 0xE4);
+const MISSING_BORDER_LIGHT: Color32 = Color32::from_rgb(0xA3, 0x30, 0x36);
+const MISSING_CANVAS_LIGHT: Color32 = Color32::from_rgb(0xF8, 0xD9, 0xDA);
+
 /// Preview well, drop scrim and the text or tint drawn on them.
 const PREVIEW_BACKDROP: Color32 = Color32::BLACK;
 const SCRIM: Color32 = Color32::from_rgba_premultiplied(0, 0, 0, 170);
@@ -169,6 +181,41 @@ pub(crate) const fn preview_backdrop() -> Color32 {
 pub(crate) const fn scrim() -> Color32 {
     SCRIM
 }
+/// Top and bottom bands of a clip whose source file is gone.
+pub(crate) const fn missing_band(dark: bool) -> Color32 {
+    if dark {
+        MISSING_BAND_DARK
+    } else {
+        MISSING_BAND_LIGHT
+    }
+}
+/// Body of a missing clip and of a missing media tile.
+pub(crate) const fn missing_body(dark: bool) -> Color32 {
+    if dark {
+        MISSING_BODY_DARK
+    } else {
+        MISSING_BODY_LIGHT
+    }
+}
+pub(crate) const fn missing_border(dark: bool) -> Color32 {
+    if dark {
+        MISSING_BORDER_DARK
+    } else {
+        MISSING_BORDER_LIGHT
+    }
+}
+/// The player canvas while the clip under the playhead has no source file.
+pub(crate) const fn missing_canvas(dark: bool) -> Color32 {
+    if dark {
+        MISSING_CANVAS_DARK
+    } else {
+        MISSING_CANVAS_LIGHT
+    }
+}
+/// Label ink on the missing fills: white on dark, the text ink on light.
+pub(crate) const fn on_missing(dark: bool) -> Color32 {
+    if dark { ON_SCRIM } else { TEXT_LIGHT }
+}
 pub(crate) const fn on_scrim() -> Color32 {
     ON_SCRIM
 }
@@ -258,6 +305,8 @@ pub(crate) mod radius {
 /// Inter-equivalent sizes inferred from measured capital heights.
 pub(crate) mod type_size {
     pub const BADGE: f32 = 10.0;
+    /// Properties line for a lost clip: 23 px line pitch (capture 095550).
+    pub const MISSING_PANEL: f32 = 16.0;
     pub const PLAYER_VALUE: f32 = 11.0;
     pub const PLAYER_TITLE: f32 = 11.0;
     pub const SMALL_LABEL: f32 = 11.0;
@@ -381,6 +430,14 @@ pub(crate) mod size {
     pub const TEXT_EDIT_SELECTION: f32 = 0.38;
     /// Dialog footer button (export capture: 90x34).
     pub const DIALOG_BUTTON_WIDTH: f32 = 90.0;
+    /// Link media dialog (capture 095518, logical px): 556 wide, 16 px inset, 524 px list
+    /// 317 px tall with a 1 px rule 31 px above its bottom, 72 x 22 footer buttons.
+    pub const LINK_DIALOG_WIDTH: f32 = 556.0;
+    pub const LINK_DIALOG_INSET: f32 = 16.0;
+    pub const LINK_LIST_HEIGHT: f32 = 317.0;
+    pub const LINK_LIST_FOOTER: f32 = 31.0;
+    pub const LINK_BUTTON_WIDTH: f32 = 72.0;
+    pub const LINK_BUTTON_HEIGHT: f32 = 22.0;
     pub const DIALOG_BUTTON_HEIGHT: f32 = 34.0;
     /// Bottom-right toast width and import progress bar height (ui design States).
     pub const TOAST_WIDTH: f32 = 320.0;

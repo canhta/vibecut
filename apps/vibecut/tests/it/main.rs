@@ -29,4 +29,5 @@ mod voiceover;
 
 mod mcp_control;
 mod media_probe;
+mod missing_media;
 mod subtitles;

@@ -679,6 +679,7 @@ impl Editor {
                         self.player.brush_trail = None;
                     }
                     Request::ReplaceMedia(item) => self.timeline.request_replace(item),
+                    Request::LinkMedia => self.dialogs.link_media.open(self.session.project()),
                     Request::PruneSelection => self.prune_selection(),
                     Request::InsertShape(id) => {
                         if self.action_enabled(&id) {

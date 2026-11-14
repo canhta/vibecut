@@ -367,3 +367,57 @@ fn replace_refuses_short_kind_mismatched_and_hostile_targets_atomically() {
     assert!(matches!(error, EditError::Locked(track) if track == main));
     assert_eq!(session.project(), &locked);
 }
+
+#[test]
+fn relink_moves_the_record_path_and_keeps_every_clip_on_it() {
+    let mut session = session();
+    let item = insert_video_range(
+        &mut session,
+        AssetId(1),
+        SourceRange::new(Tick::ZERO, Tick(5_000)).unwrap(),
+    );
+    let history = session.history_len();
+    // Same identity and content hash on another path.
+    session
+        .apply(Command::RelinkAsset {
+            asset: asset(1, "media-moved.mp4"),
+        })
+        .unwrap();
+    let record = session
+        .project()
+        .data()
+        .assets
+        .iter()
+        .find(|record| record.id() == AssetId(1))
+        .unwrap();
+    assert_eq!(record.path(), std::env::temp_dir().join("media-moved.mp4"));
+    assert_eq!(session.history_len(), history + 1, "one undo step");
+    let items: Vec<_> = session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .main
+        .items
+        .iter()
+        .map(|i| (i.id, i.source_asset))
+        .collect();
+    assert_eq!(items, vec![(item, Some(AssetId(1)))]);
+    // Another content hash and an unknown asset refuse with no change.
+    let relinked = session.project().clone();
+    let other_hash = testkit::source::asset(1, std::env::temp_dir().join("media-moved.mp4"))
+        .format("mp4")
+        .duration(Tick(10_000))
+        .hash([9; 32])
+        .build();
+    for (other, expected) in [
+        (other_hash, "Invalid(\"relink content differs\")"),
+        (asset(9, "media-moved.mp4"), "NoAsset(AssetId(9))"),
+    ] {
+        let error = session
+            .apply(Command::RelinkAsset { asset: other })
+            .unwrap_err();
+        assert_eq!(format!("{error:?}"), expected);
+        assert_eq!(session.project(), &relinked);
+    }
+}
