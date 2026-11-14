@@ -10,6 +10,10 @@ modal and returns start, retry, save, options, saved and remember requests; the 
 routes them through the shared write context, so the dialog never writes the editor
 error line or the preview itself.
 
+`State::tick` reports the tick a render finished on; with the `export_sound` preference
+the frame then plays `chime` (two short synthesised tones on the default output device,
+silent when none opens).
+
 The dialog owns the engine job: it stages a unique temporary output, reports engine
 stage and progress, cancels and retries, and publishes a finished file through the
 same atomic path. Settings render `render::OutputOptions`: resolution presets keep the

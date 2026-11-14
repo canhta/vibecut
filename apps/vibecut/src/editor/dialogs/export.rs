@@ -1,5 +1,6 @@
 //! Keeps the export sheet state alongside the requests it returns.
 mod caption_outputs;
+mod chime;
 mod dialog;
 mod settings;
 mod state;
@@ -7,6 +8,7 @@ mod state;
 mod tests;
 mod view;
 
+pub(in crate::editor) use chime::play as play_chime;
 pub use dialog::{
     ExportDialog, ExportFormat, ExportInspection, ExportOptions, ExportPhase, ExportQuality,
     OutputOptions, RangeChoice, SaveRequest, SceneChoice, default_file_name, sanitize_file_name,

@@ -38,8 +38,8 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 | [Home](home.md#home-home) | 34 | 15 | 4 | 5 | 0 | 4 | 6 | 9 | 1 | 6 | 8 |
 | [Header and sub-navigation](shell.md#header-and-sub-navigation-shell) | 37 | 21 | 5 | 3 | 0 | 3 | 5 | 13 | 1 | 11 | 6 |
 | [Window and panel layout](shell.md#window-and-panel-layout-layout) | 11 | 6 | 1 | 2 | 0 | 1 | 1 | 6 | 0 | 1 | 1 |
-| [Settings](shell.md#settings-set) | 26 | 3 | 4 | 13 | 0 | 4 | 2 | 0 | 2 | 9 | 0 |
-| [Keyboard shortcuts](shell.md#keyboard-shortcuts-shortcut) | 26 | 15 | 3 | 5 | 2 | 1 | 0 | 2 | 0 | 11 | 0 |
+| [Settings](shell.md#settings-set) | 26 | 7 | 5 | 8 | 0 | 4 | 2 | 0 | 2 | 14 | 0 |
+| [Keyboard shortcuts](shell.md#keyboard-shortcuts-shortcut) | 26 | 16 | 3 | 5 | 1 | 1 | 0 | 2 | 0 | 11 | 0 |
 | [Media](assets.md#media-media) | 35 | 15 | 6 | 7 | 0 | 2 | 5 | 2 | 1 | 11 | 16 |
 | [Audio](assets.md#audio-audio) | 21 | 13 | 4 | 2 | 0 | 1 | 1 | 5 | 6 | 6 | 3 |
 | [Text library](assets.md#text-library-textlib) | 10 | 2 | 2 | 4 | 0 | 1 | 1 | 0 | 0 | 2 | 6 |
@@ -63,4 +63,4 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 | [AI chat](ai-shorts.md#ai-chat-agent) | 17 | 9 | 3 | 2 | 1 | 1 | 1 | 5 | 3 | 4 | 1 |
 | [Long video to shorts](ai-shorts.md#long-video-to-shorts-shorts) | 24 | 9 | 7 | 4 | 0 | 2 | 2 | 8 | 2 | 5 | 3 |
 | [States](states.md#states-state) | 12 | 7 | 3 | 0 | 1 | 0 | 1 | 2 | 2 | 4 | 3 |
-| **Total** | **667** | **316** | **121** | **129** | **7** | **53** | **41** | **98** | **72** | **262** | **102** |
+| **Total** | **667** | **321** | **122** | **124** | **6** | **53** | **41** | **98** | **72** | **267** | **102** |

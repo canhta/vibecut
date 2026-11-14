@@ -30,6 +30,14 @@ fn lower_third(canvas_height: u32) -> project::Result<project::Animations> {
     Ok(animations)
 }
 
+const TICKS_PER_MS: i64 = TICKS_PER_SECOND / 1000;
+
+/// The length a still image gets on insert: the Edit settings' image duration. A still has
+/// no duration of its own; an animation (GIF, APNG) or an image that reports one keeps it.
+fn still_duration(asset: &SourceAsset, still: Tick) -> Option<Tick> {
+    (asset.is_image() && asset.probe().duration.is_none()).then_some(still)
+}
+
 impl State {
     /// Insert assets in library order, one `timeline.insert` each, all in one transaction so
     /// one undo step reverts the batch. The engine owns track allocation and overlap policy.
@@ -47,6 +55,7 @@ impl State {
             .filter(|asset| self.asset_states.get(&asset.id()) != Some(&AssetState::Ready))
             .map(SourceAsset::id)
             .collect();
+        let still = Tick(i64::from(port.view().preferences.image_duration_ms) * TICKS_PER_MS);
         port.session.transaction(|session| {
             let mut created = Vec::new();
             let mut video_at = at;
@@ -74,9 +83,8 @@ impl State {
                         ));
                     }
                 }
-                let duration = asset
-                    .probe()
-                    .duration
+                let duration = still_duration(asset, still)
+                    .or(asset.probe().duration)
                     .filter(|duration| *duration > Tick::ZERO)
                     .ok_or(engine::control::Error::Edit(
                         engine::EditError::Unsupported("media duration is unavailable"),
@@ -376,5 +384,29 @@ impl State {
                 port.toast(text, None);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn asset(format: &str, duration: Option<Tick>) -> SourceAsset {
+        let mut builder = testkit::source::asset(1, std::env::temp_dir().join("still"))
+            .format(format)
+            .stream(testkit::source::stream(media::StreamKind::Video).build());
+        if let Some(duration) = duration {
+            builder = builder.duration(duration);
+        }
+        builder.build()
+    }
+
+    #[test]
+    fn only_a_still_without_its_own_length_takes_the_image_duration() {
+        let five = Tick(5 * TICKS_PER_SECOND);
+        assert_eq!(still_duration(&asset("png_pipe", None), five), Some(five));
+        // An animation keeps the length it reports; video never takes the setting.
+        assert_eq!(still_duration(&asset("gif", Some(Tick(10))), five), None);
+        assert_eq!(still_duration(&asset("mp4", None), five), None);
     }
 }

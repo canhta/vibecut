@@ -124,7 +124,11 @@ impl State {
             && let Some(pointer) = response.interact_pointer_pos()
         {
             let at = frame_snap(cx, self.tick_at(pointer.x, layout.body.left()));
-            self.push(Action::Seek(at));
+            self.push(if response.dragged() {
+                Action::Scrub(at)
+            } else {
+                Action::Seek(at)
+            });
         }
     }
 }

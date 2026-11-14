@@ -451,15 +451,21 @@ pub(super) fn import_progress(theme: Theme, scale: f32) -> Result<AppHarness, Fa
     Ok(app)
 }
 
-/// The Settings modal as Window / Settings opens it (Draft tab).
+/// The Settings modal as Window / Settings opens it (Draft tab), or on the Edit tab.
 pub(super) fn settings_dialog(
     theme: Theme,
     scale: f32,
     locale: Locale,
+    edit_tab: bool,
 ) -> Result<AppHarness, Failure> {
     let mut editor = empty_editor(theme, locale)?;
     editor.activate("preferences.open")?;
     let mut app = harness_sized(App::Editor(Box::new(editor)), scale, [1280.0, 800.0]);
     app.run_steps(6);
+    if edit_tab {
+        app.get(By::new().predicate(|n| n.author_id() == Some("settings.tab.edit")))
+            .click();
+        app.run_steps(4);
+    }
     Ok(app)
 }

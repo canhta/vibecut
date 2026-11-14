@@ -32,6 +32,9 @@ pub enum Transport {
     ForwardSecond,
     FrameBack,
     FrameForward,
+    /// Move this many frames back; the Edit settings choose the count.
+    StepBack(u32),
+    StepForward(u32),
     Start,
     End,
 }
@@ -709,6 +712,14 @@ impl Playback {
             }
             Transport::FrameBack => ((at - frame).clamp(Tick::ZERO, duration), self.playing()),
             Transport::FrameForward => ((at + frame).clamp(Tick::ZERO, duration), self.playing()),
+            Transport::StepBack(frames) => (
+                (at - Tick(frame.0.saturating_mul(i64::from(frames)))).clamp(Tick::ZERO, duration),
+                self.playing(),
+            ),
+            Transport::StepForward(frames) => (
+                (at + Tick(frame.0.saturating_mul(i64::from(frames)))).clamp(Tick::ZERO, duration),
+                self.playing(),
+            ),
             Transport::Start => (Tick::ZERO, self.playing()),
             Transport::End => (duration, self.playing()),
         };

@@ -150,6 +150,8 @@ pub enum UiAction {
     ForwardSecond,
     FrameBack,
     FrameForward,
+    StepBackMany,
+    StepForwardMany,
     Start,
     End,
     SelectAll,

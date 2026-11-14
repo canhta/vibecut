@@ -122,7 +122,11 @@ impl State {
         {
             self.close_bookmark_popover();
             let at = frame_snap(cx, self.tick_at(pointer.x, layout.ruler.left()));
-            self.push(Action::Seek(at));
+            self.push(if response.dragged() {
+                Action::Scrub(at)
+            } else {
+                Action::Seek(at)
+            });
         }
     }
     /// Right-click the ruler: jump to the next or previous marker through the

@@ -58,8 +58,8 @@
 | `transport.pause` — Pause | Playback | K | — | playback transport |
 | `transport.back` — Seek back 1 second | Navigation | J | — | playback transport |
 | `transport.forward` — Seek forward 1 second | Navigation | L | — | playback transport |
-| `transport.jump_back` — Jump back 1 second | Navigation | Shift+Left | — | playback transport |
-| `transport.jump_forward` — Jump forward 1 second | Navigation | Shift+Right | — | playback transport |
+| `transport.step_back_many` — Step back many frames | Navigation | Shift+Left | — | playback transport |
+| `transport.step_forward_many` — Step forward many frames | Navigation | Shift+Right | — | playback transport |
 | `transport.frame_back` — Step one frame back | Navigation | Left | — | playback transport |
 | `transport.frame_forward` — Step one frame forward | Navigation | Right | — | playback transport |
 | `transport.start` — Go to start | Navigation | Home, Enter | — | playback transport |
@@ -192,6 +192,6 @@ Kept ours (collisions):
 - `Shift+X`: ours is `export.in_out`; the reference uses it for select by clip.
 - `Ctrl+D`: ours is `timeline.duplicate`; the reference uses it for dictation.
 - `Esc`: ours is `selection.escape` (cancel a drag, then deselect). The reference uses it to leave full screen; the player still leaves full screen on `Esc` before selection handles it.
-- `J` and `L`: ours seek back and forward one second; the reference shuttles. `Shift+Left` is ours, one-second jump back; the reference steps back many frames, and `Left` and `Right` already step one frame here.
+- `J` and `L`: ours seek back and forward one second; the reference shuttles. `Shift+Left` and `Shift+Right` step back and forward many frames as the reference does, by the Settings Edit tab's "Step forward or back many" count (default 10); `Left` and `Right` step one frame.
 
 The shifted minus and plus keys depend on how the keyboard layout reports them, so confirm `Alt+Shift+Minus` and `Alt+Shift+Plus` on a real keyboard.

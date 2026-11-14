@@ -20,7 +20,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 /// Bumped when the local preference document changes incompatibly.
-pub const PREFERENCES_VERSION: u32 = 24;
+pub const PREFERENCES_VERSION: u32 = 25;
 /// Room for every provider/feature choice and its bounded recent IDs.
 pub const MAX_PREFERENCES_BYTES: u64 = 32 * 1024;
 /// Total open-lane entries across every project; keeps the document bounded.
@@ -82,6 +82,12 @@ pub const PREFERENCE_KEYS: &[&str] = &[
     "preview_lines",
     "track_height",
     "waveform_size",
+    "frame_step",
+    "value_step",
+    "image_duration_ms",
+    "loudness_target_lufs",
+    "audio_scrub",
+    "export_sound",
 ];
 
 /// Media, player and properties widths in px for `columns` px of room: the stored
@@ -230,6 +236,18 @@ pub struct Preferences {
     pub track_height: super::TrackHeight,
     /// Audio waveform size in percent, one of `WAVEFORM_SIZES`; presentation only.
     pub waveform_size: u8,
+    /// Frames one "step many" key moves the playhead; 1 to 100.
+    pub frame_step: u32,
+    /// Displayed units one shift-click on a number field's stepper changes it by; 1 to 100.
+    pub value_step: u32,
+    /// Length a still image gets on insert, in ms.
+    pub image_duration_ms: u32,
+    /// Whole-LUFS target a new loudness normalization starts at.
+    pub loudness_target_lufs: i32,
+    /// Dragging the playhead plays a short burst of audio.
+    pub audio_scrub: bool,
+    /// A finished export plays a notification sound.
+    pub export_sound: bool,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -272,6 +290,12 @@ impl Default for Preferences {
             preview_lines: GuideLines::default(),
             track_height: super::TrackHeight::default(),
             waveform_size: super::DEFAULT_WAVEFORM_SIZE,
+            frame_step: super::edit::DEFAULT_FRAME_STEP,
+            value_step: super::edit::DEFAULT_VALUE_STEP,
+            image_duration_ms: super::edit::DEFAULT_IMAGE_DURATION_MS,
+            loudness_target_lufs: super::edit::DEFAULT_LOUDNESS_TARGET_LUFS,
+            audio_scrub: false,
+            export_sound: false,
         }
     }
 }
@@ -335,6 +359,10 @@ impl Preferences {
         if let Some(bytes) = self.cache_limit_bytes {
             validate_cache_limit(bytes)?;
         }
+        super::edit::validate_step(self.frame_step, "frame step")?;
+        super::edit::validate_step(self.value_step, "value step")?;
+        super::edit::validate_image_duration(self.image_duration_ms)?;
+        super::edit::validate_loudness_target(self.loudness_target_lufs)?;
         self.preview_guide.validate()?;
         self.preview_lines.validate()?;
         if serde_json::to_vec(self)?.len() as u64 > MAX_PREFERENCES_BYTES {
@@ -404,6 +432,14 @@ impl Preferences {
             .try_fold(0usize, usize::checked_add)
             .unwrap_or(usize::MAX)
     }
+    /// The target a new loudness normalization starts at: the stored LUFS with the
+    /// project default's true-peak ceiling.
+    pub fn loudness_target(&self) -> project::LoudnessTarget {
+        project::LoudnessTarget {
+            target_lufs: self.loudness_target_lufs as f32,
+            ..project::LoudnessTarget::DEFAULT
+        }
+    }
     /// Typed `ui.prefs.set` payload access used by the app history.
     pub fn get(&self, key: &str) -> Result<serde_json::Value> {
         match key {
@@ -442,6 +478,12 @@ impl Preferences {
             "preview_lines" => Ok(serde_json::to_value(&self.preview_lines)?),
             "track_height" => Ok(serde_json::to_value(self.track_height)?),
             "waveform_size" => Ok(serde_json::json!(self.waveform_size)),
+            "frame_step" => Ok(serde_json::json!(self.frame_step)),
+            "value_step" => Ok(serde_json::json!(self.value_step)),
+            "image_duration_ms" => Ok(serde_json::json!(self.image_duration_ms)),
+            "loudness_target_lufs" => Ok(serde_json::json!(self.loudness_target_lufs)),
+            "audio_scrub" => Ok(serde_json::Value::Bool(self.audio_scrub)),
+            "export_sound" => Ok(serde_json::Value::Bool(self.export_sound)),
             _ => Err(Error::Unsupported("preference key")),
         }
     }
@@ -494,6 +536,12 @@ impl Preferences {
             "preview_lines" => self.preview_lines = serde_json::from_value(value)?,
             "track_height" => self.track_height = serde_json::from_value(value)?,
             "waveform_size" => self.waveform_size = serde_json::from_value(value)?,
+            "frame_step" => self.frame_step = serde_json::from_value(value)?,
+            "value_step" => self.value_step = serde_json::from_value(value)?,
+            "image_duration_ms" => self.image_duration_ms = serde_json::from_value(value)?,
+            "loudness_target_lufs" => self.loudness_target_lufs = serde_json::from_value(value)?,
+            "audio_scrub" => self.audio_scrub = serde_json::from_value(value)?,
+            "export_sound" => self.export_sound = serde_json::from_value(value)?,
             _ => return Err(Error::Unsupported("preference key")),
         }
         Ok(())

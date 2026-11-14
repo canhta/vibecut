@@ -18,6 +18,7 @@ impl Editor {
                 wake::notify();
             }
         }
+        self.end_scrub_burst();
         if let Err(e) = self.playback.poll(std::time::Instant::now()) {
             self.fail(e.to_string());
         }
@@ -34,9 +35,13 @@ impl Editor {
             assets.tick_sounds(port);
             assets.tick_music(port);
         });
-        self.dialogs
+        let finished = self
+            .dialogs
             .export
             .tick(self.session.project(), self.preferences.export);
+        if finished && self.preferences.export_sound {
+            crate::editor::dialogs::export::play_chime();
+        }
         if let Some(subtitles) = &mut self.assets.captions {
             subtitles.invalidate_options(&self.preferences.subtitles);
             let result = subtitles.tick(&mut self.session);

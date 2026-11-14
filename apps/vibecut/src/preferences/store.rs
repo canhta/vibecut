@@ -305,6 +305,12 @@ mod tests {
             ),
             ("track_height", serde_json::json!("tall")),
             ("waveform_size", serde_json::json!(100)),
+            ("frame_step", serde_json::json!(25)),
+            ("value_step", serde_json::json!(5)),
+            ("image_duration_ms", serde_json::json!(2500)),
+            ("loudness_target_lufs", serde_json::json!(-16)),
+            ("audio_scrub", serde_json::json!(true)),
+            ("export_sound", serde_json::json!(true)),
             (
                 "preview_lines",
                 serde_json::json!({
@@ -490,10 +496,48 @@ mod tests {
             ("track_height", serde_json::json!("huge")),
             ("waveform_size", serde_json::json!(45)),
             ("waveform_size", serde_json::json!("60")),
+            ("frame_step", serde_json::json!(0)),
+            ("frame_step", serde_json::json!(101)),
+            ("value_step", serde_json::json!(0)),
+            ("image_duration_ms", serde_json::json!(99)),
+            ("image_duration_ms", serde_json::json!(600_001)),
+            ("loudness_target_lufs", serde_json::json!(-51)),
+            ("loudness_target_lufs", serde_json::json!(-4)),
+            ("audio_scrub", serde_json::json!("on")),
         ] {
             assert!(preferences.set(key, value).is_err(), "{key}");
             assert_eq!(preferences, before, "{key} must fail atomically");
         }
+    }
+
+    #[test]
+    fn edit_tab_defaults_match_the_reference_and_feed_the_loudness_default() {
+        let mut preferences = Preferences::default();
+        assert_eq!(
+            (
+                preferences.frame_step,
+                preferences.value_step,
+                preferences.image_duration_ms,
+                preferences.loudness_target_lufs,
+                preferences.audio_scrub,
+                preferences.export_sound,
+            ),
+            (10, 10, 5000, -23, false, false)
+        );
+        assert_eq!(
+            preferences.loudness_target(),
+            project::LoudnessTarget::DEFAULT
+        );
+        preferences
+            .set("loudness_target_lufs", serde_json::json!(-16))
+            .unwrap();
+        let target = preferences.loudness_target();
+        assert_eq!(target.target_lufs, -16.0);
+        assert_eq!(
+            target.true_peak_db,
+            project::LoudnessTarget::DEFAULT.true_peak_db
+        );
+        assert!(target.is_valid());
     }
 
     #[test]
