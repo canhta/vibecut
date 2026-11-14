@@ -6,7 +6,7 @@ mod wheel;
 use super::Panel;
 use crate::editor::properties::{
     Action, ColorTarget, EffectReorder, Error, Icon, Id, ItemId, Rect, ScrubTarget, Text, Tick,
-    Vec2, effect_scrub_spec, egui, icons, read, theme,
+    Vec2, effect_scrub_spec, egui, element_kind, icons, read, theme,
 };
 
 /// Three colour wheels share one row in the measured 460 px panel.
@@ -214,8 +214,18 @@ impl Panel<'_, '_> {
             super::super::AdjustTab::Hsl => self.hsl_controls(ui, item, &id, definition, at),
             super::super::AdjustTab::Curves => self.curve_controls(ui, item, &id, present),
             super::super::AdjustTab::Wheel => self.wheel_controls(ui, item, &id, definition, at),
+            // The Adjust mask limits where the grade applies; its row is the clip mask's row
+            // and popover over the clip's Adjust-scope mask.
+            super::super::AdjustTab::Mask => {
+                let kind = element_kind(self.cx.session.project(), item).map(|(kind, _)| kind);
+                if let Some(kind) = kind {
+                    self.mask_row(ui, item, kind, project::MaskScope::Adjust);
+                }
+            }
         }
-        self.lut_controls(ui, item, &id, definition);
+        if tab != super::super::AdjustTab::Mask {
+            self.lut_controls(ui, item, &id, definition);
+        }
         self.adjust_footer(ui, item, &id, present);
     }
 

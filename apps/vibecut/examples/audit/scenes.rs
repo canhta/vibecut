@@ -642,6 +642,18 @@ pub(super) const SCENES: &[Scene] = &[
         build: inspector_video_keyframes,
     },
     Scene {
+        name: "inspector-adjust-mask",
+        reference_dark: Some("capcut-desktop-2026-11-14b/capcut-desktop-102732.png"),
+        reference_light: None,
+        build: inspector_adjust_mask,
+    },
+    Scene {
+        name: "inspector-effect-mask",
+        reference_dark: Some("capcut-desktop-2026-11-14b/capcut-desktop-105253.png"),
+        reference_light: None,
+        build: inspector_effect_mask,
+    },
+    Scene {
         name: "inspector-remove-background",
         reference_dark: Some("capcut-desktop-2026-11-14/capcut-desktop-100332.png"),
         reference_light: None,
@@ -941,8 +953,8 @@ use editor::{
 use home::{home, home_projects, projects_scene, projects_trash};
 pub(crate) use properties::inspector_mixed_vi;
 use properties::{
-    close_prompt, close_prompt_vi, import_complete_vi, inspector_audio, inspector_audio_vi,
-    inspector_blend, inspector_blend_vi, inspector_color, inspector_mixed, inspector_project,
+    close_prompt, close_prompt_vi, import_complete_vi, inspector_adjust_mask, inspector_audio,
+    inspector_audio_vi, inspector_blend, inspector_effect_mask, inspector_blend_vi, inspector_color, inspector_mixed, inspector_project,
     inspector_project_vi, inspector_remove_background, inspector_speed, inspector_speed_curve,
     inspector_text, inspector_transform, inspector_video, inspector_video_keyframes,
     inspector_video_tab, text_item, text_item_vi, text_panel,

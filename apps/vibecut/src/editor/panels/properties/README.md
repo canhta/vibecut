@@ -209,7 +209,7 @@ items on any other track keep the unsupported-kind refusal.
 
 ## Adjust basic, HSL and the footer
 
-The Adjust tab opens with Basic, HSL, Curves and Color wheel sub-tabs. Basic lists the reference's twelve controls in measured order: saturation, temperature, hue, brightness, contrast, shine, highlight, shadow, sharpness, vignette, fade and grain. All twelve are registered `color_grade` parameters on -50..=50 with 0 neutral and scalar keyframe admission through `effects.<instance>.params.<id>`; the same ids carry the Effects tab rows. HSL lists eight hue bands (red, orange, yellow, green, cyan, blue, purple, magenta) and edits the selected band's `hsl_<band>_hue`, `_saturation` and `_lightness`; switching bands changes no project data. `effect_scrub_field` and its draft/gesture contract above apply unchanged, and every edit is one `effects.update_param` undo step.
+The Adjust tab opens with Basic, HSL, Curves, Color wheel and Mask sub-tabs (the last is described under [Mask](#mask)). Basic lists the reference's twelve controls in measured order: saturation, temperature, hue, brightness, contrast, shine, highlight, shadow, sharpness, vignette, fade and grain. All twelve are registered `color_grade` parameters on -50..=50 with 0 neutral and scalar keyframe admission through `effects.<instance>.params.<id>`; the same ids carry the Effects tab rows. HSL lists eight hue bands (red, orange, yellow, green, cyan, blue, purple, magenta) and edits the selected band's `hsl_<band>_hue`, `_saturation` and `_lightness`; switching bands changes no project data. `effect_scrub_field` and its draft/gesture contract above apply unchanged, and every edit is one `effects.update_param` undo step.
 
 The footer's `Apply to all` copies the selected item's complete grade (including LUT reference and curves) onto every unlocked video and image item as one `batch` command, so it is one undo step; items without a grade gain an instance. `Save as preset` stores the same parameter map as a named app preference (`adjustment_presets`, `Preset N`), never in project data, and the Adjustment assets tab lists each saved preset with an apply action for the selected clip and a delete action. Saving and deleting are preference edits with no project history entry; a preset applies through the same commands as one undo step.
 
@@ -310,13 +310,22 @@ volume steps 0.01 dB over -60..20 dB. `inspector.volume` and
 
 ## Mask
 
-The Basic tab of a video or image item opens with a `Mask` row showing the clip's
-current shape or `None`; audio, text, graphic and effect items have no row. It opens the
-[mask picker](mask_picker/README.md) sub-panel. The first mask is the one the row
-edits: a shape on an empty clip runs `masks.add`, another shape keeps centre, size and
-rotation through `masks.update`, and None runs `masks.remove`. One mask per clip from
-the panel; commands and agents keep the multi-mask engine. A locked track opens
-read-only.
+The Mask sub-tab of a video or image item's Basic tab opens with a `Mask` row showing the
+clip's current shape or `None`; so does the Mask tab of an effect or adjustment layer (an
+effect item, a filter clip excepted; its tabs are Effects and Mask). Audio, text, graphic and
+sticker items have no row. It opens the [mask picker](mask_picker/README.md) sub-panel. The
+first mask of the row's scope (`MaskScope::Clip` here) is the one the row edits: a shape on
+an empty scope runs `masks.add` (id `mask1`), another shape keeps centre, size and rotation
+through `masks.update`, and None runs `masks.remove`. One mask per scope from the panel;
+commands and agents keep the multi-mask engine. A locked track opens read-only.
+
+The Adjust tab's `Mask` sub-tab (`AdjustTab::Mask`, id `effects.<instance>.tab.mask`) holds
+the same row as `inspector.adjust.mask.row` over the clip's `MaskScope::Adjust` mask (id
+`adjust1`); a clip mask stored before it never shadows it, and the Basic row never edits it.
+The sub-tab shows the row alone, no LUT row, above the footer. The popover closes when the
+active tab or sub-tab stops showing the row that opened it. Render limits the grade by this
+mask ([scene](../../../../../../crates/render/src/scene/README.md)). Layout: [Mask
+tabs](../../../../../../docs/product/ui/editor.md#mask-tabs).
 
 Panel design and measured controls: [editor window](../../../../../../docs/product/ui/editor.md).
 

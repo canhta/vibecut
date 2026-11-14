@@ -57,7 +57,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 |---|---|---|---|---|---|
 | PVID-33 | Adjust Basic sliders | Done | Matches | web 18 | |
 | PVID-34 | HSL, Curves, Color wheel | Done | Proposed | | HSL bands ours |
-| PVID-35 | Adjust Mask sub-tab | Missing | Not captured | 221802 | |
+| PVID-35 | Adjust Mask sub-tab | Done | Proposed | 221802; [ui/editor.md](../ui/editor.md#mask-tabs) | Cell as shown; page is the Mask row, mask limits the grade only |
 | PVID-36 | Apply to all, Save as preset | Done | Proposed | web 18 | |
 | PVID-37 | LUT import, Strength | Ours | Proposed | | macOS/Linux acceptance open |
 | PVID-38 | AI colour correction | Missing | Not captured | web 18 | Model feature |

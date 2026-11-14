@@ -796,6 +796,42 @@ fn invalid_candidates_are_refused_without_changing_original() {
     assert_eq!(initial.duration(), Tick::ZERO);
 }
 #[test]
+fn adjust_masks_belong_to_video_items_and_survive_a_round_trip() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = populated(dir.path().join("a.mp4")).into_data();
+    let adjust = |id: &str| {
+        let mut mask = Mask::new(id, MaskShape::Ellipse);
+        mask.scope = MaskScope::Adjust;
+        mask
+    };
+    assert_eq!(Mask::new("clip", MaskShape::Ellipse).scope, MaskScope::Clip);
+    // A video item carries an Adjust mask beside its clip mask, and both persist.
+    let mut data = base.clone();
+    let video = data
+        .scene_mut()
+        .timeline
+        .iter_mut()
+        .flat_map(|track| &mut track.items)
+        .find(|item| matches!(item.content, ItemParams::Video(_)))
+        .unwrap();
+    video.masks.push(Mask::new("clip", MaskShape::Rectangle));
+    video.masks.push(adjust("grade"));
+    let project = Project::new(data).unwrap();
+    let saved = project::encode(&project, false).unwrap();
+    assert_eq!(project::decode(&saved).unwrap().project, project);
+    // Any other item refuses one: it limits a clip's colour grade.
+    let mut data = base;
+    let text = data
+        .scene_mut()
+        .timeline
+        .iter_mut()
+        .flat_map(|track| &mut track.items)
+        .find(|item| matches!(item.content, ItemParams::Text(_)))
+        .unwrap();
+    text.masks.push(adjust("grade"));
+    assert!(Project::new(data).is_err());
+}
+#[test]
 fn model_trust_boundaries() {
     let dir = tempfile::tempdir().unwrap();
     let p = populated(dir.path().join("a.mp4"));

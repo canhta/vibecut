@@ -84,14 +84,16 @@ fn keyframe_reserve(specs: &[ScrubSpec]) -> f32 {
     KEYFRAME_RESERVE * animatable_groups(specs).len() as f32
 }
 
-fn is_basic(tab: PropertiesTab) -> bool {
-    matches!(
-        tab,
-        PropertiesTab::Transform
-            | PropertiesTab::Background
-            | PropertiesTab::RemoveBackground
-            | PropertiesTab::Mask
-    )
+/// Whether `tab` is a sub-tab of the Basic group for this kind. An effect or adjustment
+/// layer keeps Mask as its own top tab, after Effects.
+fn is_basic(kind: ElementKind, tab: PropertiesTab) -> bool {
+    match tab {
+        PropertiesTab::Transform | PropertiesTab::Background | PropertiesTab::RemoveBackground => {
+            true
+        }
+        PropertiesTab::Mask => matches!(kind, ElementKind::Video | ElementKind::Image),
+        _ => false,
+    }
 }
 
 /// The Mask sub-tab carries the clip's Mask row.
@@ -1151,6 +1153,13 @@ impl<'a, 'c> Panel<'a, 'c> {
                         self.cx.playhead,
                     )
             })
+            // A filter clip is a look, not a layer with a region: it takes no mask.
+            .filter(|tab| {
+                *tab != PropertiesTab::Mask
+                    || kind != ElementKind::Effect
+                    || !read::item(self.cx.session.project(), item)
+                        .is_some_and(project::is_filter_clip)
+            })
             // Text to speech reads a text item's words; a caption item has cues instead.
             .filter(|tab| {
                 *tab != PropertiesTab::TextToSpeech
@@ -1166,11 +1175,31 @@ impl<'a, 'c> Panel<'a, 'c> {
             .and_then(|id| PropertiesTab::from_id(id))
             .filter(|tab| tabs.contains(tab));
         let active = stored.unwrap_or_else(|| kind.default_tab());
-        if !shows_mask_row(active) || !matches!(kind, ElementKind::Video | ElementKind::Image) {
+        // The sub-panel stays open only under the row that opened it: the Mask tab for a clip
+        // mask, the Adjust tab's Mask sub-tab for an Adjust mask.
+        let mask_shown = match self.state.mask.scope() {
+            project::MaskScope::Clip => {
+                shows_mask_row(active)
+                    && matches!(
+                        kind,
+                        ElementKind::Video | ElementKind::Image | ElementKind::Effect
+                    )
+            }
+            project::MaskScope::Adjust => {
+                active == PropertiesTab::Adjust
+                    && self.state.adjust_tab == super::AdjustTab::Mask
+                    && matches!(kind, ElementKind::Video | ElementKind::Image)
+            }
+        };
+        if !mask_shown {
             self.state.mask.close();
         }
         // Transform and blending share one top tab with segmented sub-tabs.
-        let basic: Vec<PropertiesTab> = tabs.iter().copied().filter(|tab| is_basic(*tab)).collect();
+        let basic: Vec<PropertiesTab> = tabs
+            .iter()
+            .copied()
+            .filter(|tab| is_basic(kind, *tab))
+            .collect();
         let group_label = match kind {
             ElementKind::Video => Text::Video,
             ElementKind::Image => Text::Image,
@@ -1178,7 +1207,7 @@ impl<'a, 'c> Panel<'a, 'c> {
         };
         let mut top: Vec<Option<PropertiesTab>> = Vec::new();
         for tab in &tabs {
-            if !is_basic(*tab) {
+            if !is_basic(kind, *tab) {
                 top.push(Some(*tab));
             } else if !top.contains(&None) {
                 top.push(None);
@@ -1202,7 +1231,7 @@ impl<'a, 'c> Panel<'a, 'c> {
             .iter()
             .position(|entry| match entry {
                 Some(tab) => *tab == active,
-                None => is_basic(active),
+                None => is_basic(kind, active),
             })
             .unwrap_or(0);
         let responses = kit::text_tabs(ui, &ids, &labels, selected);
@@ -1212,14 +1241,14 @@ impl<'a, 'c> Panel<'a, 'c> {
             if response.clicked() {
                 clicked = match entry {
                     Some(tab) => Some(*tab),
-                    None if is_basic(active) => None,
+                    None if is_basic(kind, active) => None,
                     None => basic.first().copied(),
                 };
             }
         }
         let mut body = body_ui(ui, area);
         let mut sub_clicked = None;
-        if is_basic(active) && basic.len() > 1 {
+        if is_basic(kind, active) && basic.len() > 1 {
             body.add_space(13.0);
             let sub_ids: Vec<String> = basic
                 .iter()
@@ -1266,7 +1295,7 @@ impl<'a, 'c> Panel<'a, 'c> {
             .auto_shrink([false, false])
             .show(&mut body, |ui| {
                 if shows_mask_row(active) {
-                    self.mask_row(ui, item, kind);
+                    self.mask_row(ui, item, kind, project::MaskScope::Clip);
                 }
                 self.properties_tab(ui, item, kind, active)
             });

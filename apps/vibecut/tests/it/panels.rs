@@ -1792,7 +1792,10 @@ fn every_registry_kind_has_its_reference_tab_set() {
             ElementKind::Audio,
             &[PropertiesTab::Audio, PropertiesTab::Speed][..],
         ),
-        (ElementKind::Effect, &[PropertiesTab::Effects][..]),
+        (
+            ElementKind::Effect,
+            &[PropertiesTab::Effects, PropertiesTab::Mask][..],
+        ),
     ] {
         assert_eq!(kind.tabs(), expected, "{kind:?}");
         assert!(expected.contains(&kind.default_tab()), "{kind:?}");
@@ -2207,6 +2210,252 @@ fn mask_key_arrows_seek_to_the_neighbouring_keys_of_the_group() {
 
 fn mask_of(harness: &Harness<Editor>, id: ItemId) -> Option<project::Mask> {
     item(harness, id).masks.first().cloned()
+}
+
+/// The item's mask of one scope.
+fn scoped_mask(
+    harness: &Harness<Editor>,
+    id: ItemId,
+    scope: project::MaskScope,
+) -> Option<project::Mask> {
+    item(harness, id)
+        .masks
+        .into_iter()
+        .find(|mask| mask.scope == scope)
+}
+
+/// An adjustment layer: an effect item on its own effect track over the fixture's clips.
+fn add_layer(harness: &mut Harness<Editor>) -> ItemId {
+    let session = &mut harness.state_mut().session;
+    let track = add_track(session, "Adjustment", TrackKind::Effect);
+    insert(
+        session,
+        track,
+        Tick::ZERO,
+        Tick(3 * SECOND),
+        None,
+        ItemParams::Effect(project::EffectParams::default()),
+    )
+}
+
+#[test]
+fn effect_and_adjustment_layers_mask_from_their_mask_tab_through_the_mask_commands() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    let layer = add_layer(&mut harness);
+    select(&mut harness, layer);
+    // The layer's strip lists Effects and Mask; the Effects tab shows no mask row.
+    assert!(has_widget(&harness, "inspector.tab.effects"));
+    assert!(has_widget(&harness, "inspector.tab.mask"));
+    assert!(!has_widget(&harness, "inspector.mask.row"));
+    click(&mut harness, "inspector.tab.mask");
+    assert!(has_widget(&harness, "inspector.mask.row"));
+    assert!(mask_of(&harness, layer).is_none(), "an empty layer shows None");
+    assert_eq!(
+        harness
+            .state()
+            .preferences
+            .properties_tabs
+            .get("effect")
+            .map(String::as_str),
+        Some("mask")
+    );
+
+    // A shape is one `masks.add` step with the clip scope; a field is one `masks.update`.
+    click(&mut harness, "inspector.mask.row");
+    let start = harness.state().session.project().clone();
+    let history = harness.state().session.history_len();
+    click(&mut harness, "inspector.mask.shape.circle");
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    let mask = mask_of(&harness, layer).expect("the choice adds a mask");
+    assert_eq!(mask.id, "mask1");
+    assert_eq!(mask.scope, project::MaskScope::Clip);
+    assert_eq!(mask.shape, project::MaskShape::Ellipse);
+    enter(&mut harness, "inspector.mask.feather", "30");
+    assert_eq!(harness.state().session.history_len().0, history.0 + 2);
+    assert_eq!(mask_of(&harness, layer).unwrap().feather, 30.0);
+    // Another shape keeps the mask and its geometry; None removes it.
+    click(&mut harness, "inspector.mask.shape.heart");
+    assert_eq!(mask_of(&harness, layer).unwrap().shape, project::MaskShape::Heart);
+    assert_eq!(mask_of(&harness, layer).unwrap().feather, 30.0);
+    click(&mut harness, "inspector.mask.shape.none");
+    assert!(mask_of(&harness, layer).is_none());
+    // Undo walks every step back to the empty layer.
+    for _ in 0..4 {
+        harness.state_mut().session.undo().unwrap();
+    }
+    assert_eq!(harness.state().session.project(), &start);
+    click(&mut harness, "inspector.mask.done");
+}
+
+#[test]
+fn a_layer_on_a_locked_track_shows_its_mask_read_only_and_a_filter_clip_has_no_mask_tab() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    let layer = add_layer(&mut harness);
+    select(&mut harness, layer);
+    click(&mut harness, "inspector.tab.mask");
+    let track = harness
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .find(|track| track.items.iter().any(|candidate| candidate.id == layer))
+        .unwrap()
+        .id;
+    harness
+        .state_mut()
+        .session
+        .apply(Command::SetTrackFlags {
+            track,
+            muted: false,
+            hidden: false,
+            locked: true,
+        })
+        .unwrap();
+    harness.run_steps(3);
+    click(&mut harness, "inspector.mask.row");
+    let history = harness.state().session.history_len();
+    click(&mut harness, "inspector.mask.shape.circle");
+    assert_eq!(harness.state().session.history_len(), history);
+    assert!(mask_of(&harness, layer).is_none(), "a locked track refuses the add");
+    click(&mut harness, "inspector.mask.done");
+
+    // A filter clip is a look, not a layer with a region: no Mask tab.
+    let outcome = harness
+        .state_mut()
+        .session
+        .apply(Command::FiltersInsert {
+            placement: Placement::Auto,
+            filter: "noir".to_owned(),
+            start: Tick(4 * SECOND),
+            duration: Tick(SECOND),
+            intensity: 100.0,
+        })
+        .unwrap();
+    let Some(CreatedId::Item(clip)) = outcome.created.last().copied() else {
+        panic!("created {:?}", outcome.created)
+    };
+    select(&mut harness, clip);
+    assert!(has_widget(&harness, "inspector.filter.look"));
+    assert!(!has_widget(&harness, "inspector.tab.mask"));
+}
+
+#[test]
+fn the_adjust_tab_mask_sub_tab_edits_an_adjust_mask_apart_from_the_clip_mask() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    select(&mut harness, fixture.video);
+    click(&mut harness, "inspector.tab.adjust");
+    // The sub-tab bar ends in Mask; its page is the mask row alone, with no LUT row.
+    assert!(has_widget(&harness, "effects.color_grade.tab.mask"));
+    click(&mut harness, "effects.color_grade.tab.mask");
+    assert!(has_widget(&harness, "inspector.adjust.mask.row"));
+    assert!(!has_widget(&harness, "inspector.mask.row"));
+    assert!(!has_widget(&harness, "inspector.lut.select"));
+    assert!(item(&harness, fixture.video).masks.is_empty());
+
+    // A shape adds an Adjust-scope mask in one step; the clip keeps no mask.
+    click(&mut harness, "inspector.adjust.mask.row");
+    let history = harness.state().session.history_len();
+    click(&mut harness, "inspector.mask.shape.heart");
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    let adjust = scoped_mask(&harness, fixture.video, project::MaskScope::Adjust)
+        .expect("the choice adds an Adjust mask");
+    assert_eq!(adjust.id, "adjust1");
+    assert_eq!(adjust.shape, project::MaskShape::Heart);
+    assert!(scoped_mask(&harness, fixture.video, project::MaskScope::Clip).is_none());
+    enter(&mut harness, "inspector.mask.feather", "20");
+    assert_eq!(
+        scoped_mask(&harness, fixture.video, project::MaskScope::Adjust)
+            .unwrap()
+            .feather,
+        20.0
+    );
+    click(&mut harness, "inspector.mask.done");
+
+    // The Basic tab's Mask row still reads None: the Adjust mask is not the clip's mask.
+    click(&mut harness, "inspector.tab.mask");
+    click(&mut harness, "inspector.mask.row");
+    click(&mut harness, "inspector.mask.shape.circle");
+    let masks = item(&harness, fixture.video).masks;
+    assert_eq!(masks.len(), 2);
+    assert_eq!(
+        scoped_mask(&harness, fixture.video, project::MaskScope::Clip)
+            .unwrap()
+            .shape,
+        project::MaskShape::Ellipse
+    );
+    assert_eq!(
+        scoped_mask(&harness, fixture.video, project::MaskScope::Adjust)
+            .unwrap()
+            .shape,
+        project::MaskShape::Heart,
+        "the clip row leaves the Adjust mask alone"
+    );
+    click(&mut harness, "inspector.mask.done");
+
+    // None under the Adjust sub-tab removes only the Adjust mask.
+    click(&mut harness, "inspector.tab.adjust");
+    click(&mut harness, "effects.color_grade.tab.mask");
+    click(&mut harness, "inspector.adjust.mask.row");
+    click(&mut harness, "inspector.mask.shape.none");
+    assert!(scoped_mask(&harness, fixture.video, project::MaskScope::Adjust).is_none());
+    assert!(scoped_mask(&harness, fixture.video, project::MaskScope::Clip).is_some());
+    click(&mut harness, "inspector.mask.done");
+
+    // A locked track opens the Adjust row read-only.
+    let track = harness
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .main
+        .id;
+    harness
+        .state_mut()
+        .session
+        .apply(Command::SetTrackFlags {
+            track,
+            muted: false,
+            hidden: false,
+            locked: true,
+        })
+        .unwrap();
+    harness.run_steps(3);
+    click(&mut harness, "inspector.adjust.mask.row");
+    let history = harness.state().session.history_len();
+    click(&mut harness, "inspector.mask.shape.rectangle");
+    assert_eq!(harness.state().session.history_len(), history);
+    assert!(scoped_mask(&harness, fixture.video, project::MaskScope::Adjust).is_none());
+    click(&mut harness, "inspector.mask.done");
+}
+
+#[test]
+fn the_adjust_mask_row_is_absent_off_video_and_image_items() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    // An image takes the sub-tab like a video.
+    select(&mut harness, fixture.image);
+    click(&mut harness, "inspector.tab.adjust");
+    click(&mut harness, "effects.color_grade.tab.mask");
+    assert!(has_widget(&harness, "inspector.adjust.mask.row"));
+    // Graphic and effect-layer items have no Adjust tab.
+    let layer = add_layer(&mut harness);
+    for other in [fixture.graphic, layer] {
+        select(&mut harness, other);
+        assert!(!has_widget(&harness, "inspector.tab.adjust"), "{other:?}");
+        assert!(!has_widget(&harness, "inspector.adjust.mask.row"), "{other:?}");
+    }
 }
 
 #[test]

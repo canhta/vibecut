@@ -473,6 +473,11 @@ fn validate(data: &ProjectData) -> Result<()> {
             let mut mask_ids = BTreeSet::new();
             for mask in &item.masks {
                 mask.validate()?;
+                if mask.scope == crate::MaskScope::Adjust
+                    && !matches!(item.content, ItemParams::Video(_))
+                {
+                    return Err(Error::Invalid("adjust mask on non-video item"));
+                }
                 if !mask_ids.insert(&mask.id) {
                     return Err(Error::Invalid("duplicate mask id"));
                 }

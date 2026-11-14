@@ -82,7 +82,9 @@ impl ElementKind {
                 PropertiesTab::Effects,
             ],
             Self::Audio => &[PropertiesTab::Audio, PropertiesTab::Speed],
-            Self::Effect => &[PropertiesTab::Effects],
+            // The reference's effect and adjustment panels end in a Mask tab; a filter clip
+            // has none, so the panel drops it for those.
+            Self::Effect => &[PropertiesTab::Effects, PropertiesTab::Mask],
         }
     }
 

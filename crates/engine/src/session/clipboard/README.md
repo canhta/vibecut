@@ -9,7 +9,7 @@ Interface: `AttributeGroup` (re-exported by `session`). `attributes` is private;
 | `Transform` | position, scale, rotation and reflection channels | video, text, overlay, graphic, sticker |
 | `Blend` | the blend mode and the opacity channel | every kind except audio |
 | `Effects` | the effect stack and its channels | every kind except audio |
-| `Masks` | the masks and their channels | video, text, overlay, graphic |
+| `Masks` | the masks and their channels; an `adjust`-scope mask (and its channels) only onto a video or image target | video, text, overlay, graphic |
 | `Speed` | the whole `Retime` as one value | video, audio |
 | `Audio` | volume, mute and fades, with their channels | video, audio |
 | `Text` | the text style (never the words) and its colour, outline and background channels | text |

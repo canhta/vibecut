@@ -5,21 +5,35 @@ use crate::editor::properties::{
 };
 use crate::i18n;
 use crate::kit;
-use project::MaskShape;
+use project::{MaskScope, MaskShape};
 
 impl Panel<'_, '_> {
-    /// The Basic tab's Mask row: current shape, or None, with a right chevron.
-    /// Video and image items only; a locked track still opens read-only.
+    /// A Mask row: the current shape of its scope, or None, with a right chevron. The Clip row
+    /// serves video, image, effect and adjustment items; the Adjust row (the Adjust tab's Mask
+    /// sub-tab) serves video and image items only. A locked track still opens read-only.
     pub(in super::super) fn mask_row(
         &mut self,
         ui: &mut egui::Ui,
         item: ItemId,
         kind: ElementKind,
+        scope: MaskScope,
     ) {
-        if !matches!(kind, ElementKind::Video | ElementKind::Image) {
+        let served = match scope {
+            MaskScope::Clip => matches!(
+                kind,
+                ElementKind::Video | ElementKind::Image | ElementKind::Effect
+            ),
+            MaskScope::Adjust => matches!(kind, ElementKind::Video | ElementKind::Image),
+        };
+        if !served {
             return;
         }
-        let mask = read::item(self.cx.session.project(), item).and_then(mask_picker::current);
+        let mask = read::item(self.cx.session.project(), item)
+            .and_then(|found| mask_picker::current(found, scope));
+        let row_id = match scope {
+            MaskScope::Clip => "inspector.mask.row",
+            MaskScope::Adjust => "inspector.adjust.mask.row",
+        };
         let value = match mask {
             None => self.tr(Text::DecorationNone),
             Some(mask) => shape_label(&mask.shape, self.cx.locale),
@@ -29,11 +43,7 @@ impl Panel<'_, '_> {
             egui::Sense::hover(),
         );
         let response = ui
-            .interact(
-                row,
-                ui.scope_id().with("inspector.mask.row"),
-                egui::Sense::click(),
-            )
+            .interact(row, ui.scope_id().with(row_id), egui::Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand);
         if response.hovered() {
             ui.painter()
@@ -62,9 +72,9 @@ impl Panel<'_, '_> {
         response.widget_info(|| {
             egui::WidgetInfo::labeled(egui::Role::Button, true, self.tr(Text::Mask))
         });
-        self.remember("inspector.mask.row", &response);
+        self.remember(row_id, &response);
         if response.clicked() {
-            self.state.mask.open(item);
+            self.state.mask.open(item, scope);
         }
     }
 
@@ -77,8 +87,9 @@ impl Panel<'_, '_> {
             self.state.mask.close();
             return;
         };
+        let scope = self.state.mask.scope();
         let mask = read::item(self.cx.session.project(), item)
-            .and_then(mask_picker::current)
+            .and_then(|found| mask_picker::current(found, scope))
             .cloned();
         let locked = read::item_locked(self.cx.session.project(), item);
         let project = self.cx.session.project();

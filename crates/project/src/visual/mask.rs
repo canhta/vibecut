@@ -17,6 +17,18 @@ pub enum MaskMode {
     Darken,
     Difference,
 }
+/// What a mask limits. `Clip` shapes the item's own picture, or an adjustment layer's region;
+/// `Adjust` limits only the clip's colour grade (the Adjust tab's Mask sub-tab) and leaves the
+/// picture whole. Only video and image items carry `Adjust` masks.
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum MaskScope {
+    #[default]
+    Clip,
+    Adjust,
+}
 #[derive(
     Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
 )]
@@ -290,6 +302,7 @@ pub struct Mask {
     pub id: String,
     pub enabled: bool,
     pub mode: MaskMode,
+    pub scope: MaskScope,
     pub shape: MaskShape,
     pub center_x: f64,
     pub center_y: f64,
@@ -309,6 +322,7 @@ impl Mask {
             id: id.into(),
             enabled: true,
             mode: MaskMode::Add,
+            scope: MaskScope::Clip,
             shape,
             center_x: 0.,
             center_y: 0.,

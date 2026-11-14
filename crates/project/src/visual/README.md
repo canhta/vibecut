@@ -32,7 +32,7 @@ Opacity is owned by the scalar `opacity` animation channel. A missing channel me
 
 ## Masks
 
-`Item.masks` is an ordered vector of at most 1,024 `Mask` values. IDs are unique within the item and follow the animation-path identifier grammar. Audio items refuse masks. Empty or whitespace-only text masks are inactive but keep their data. Modes are None/Add/Subtract/Intersect/Lighten/Darken/Difference; render owns coverage math.
+`Item.masks` is an ordered vector of at most 1,024 `Mask` values. IDs are unique within the item and follow the animation-path identifier grammar. Audio items refuse masks. Empty or whitespace-only text masks are inactive but keep their data. Modes are None/Add/Subtract/Intersect/Lighten/Darken/Difference; render owns coverage math. `Mask.scope` is `clip` (the mask shapes the item, or an adjustment layer's region) or `adjust` (it limits only the clip's colour grade, the Adjust tab's Mask sub-tab); validation refuses an `adjust` mask on any item but video and image content, which are both `ItemParams::Video`.
 
 Shapes: split, cinematic band, rectangle, ellipse, heart, diamond, star, text and a cubic `MaskPath`. Text masks persist content, font family, weight, italic, font size, letter spacing and line height; `MaskShape::text` defaults to bundled Inter Regular. Normalized centers are offsets from the placed item center, width/height are item fractions, rotation is degrees and uniform scale multiplies shape size. Path positions and tangent offsets follow the [MaskVertex contract](mask.rs); fill closes open paths. Feather, expansion, stroke width and text size use project-canvas pixels. Color is sRGB RGBA8 `Color`; opacity is 0..1.
 

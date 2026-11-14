@@ -3758,6 +3758,97 @@ fn streak_geometry_extent_raw_pass_budget_and_cancellation_refuse_without_leaks(
     assert_eq!(hooks.used.load(Ordering::SeqCst), 0);
 }
 
+/// One flat 16x16 frame, whatever the asset and time.
+struct FlatSource;
+impl SourceProvider for FlatSource {
+    fn status(
+        &mut self,
+        _: &media::SourceAsset,
+        _: bool,
+        _: &dyn ExecutionHooks,
+    ) -> Result<Option<UnavailableReason>> {
+        Ok(None)
+    }
+    fn video(
+        &mut self,
+        _: &media::SourceAsset,
+        _: project::ItemId,
+        _: time::Tick,
+        h: &dyn ExecutionHooks,
+    ) -> Result<Option<Image>> {
+        Image::from_working_pixels(16, 16, (0..256).map(|_| [0.2, 0.3, 0.4, 1.0]), h).map(Some)
+    }
+    fn audio(
+        &mut self,
+        _: &media::SourceAsset,
+        _: project::ItemId,
+        _: i64,
+        n: usize,
+        rate: u32,
+        h: &dyn ExecutionHooks,
+    ) -> Result<AudioBlock> {
+        AudioBlock::new(rate, 2, n, MemoryKind::Decoded, h)
+    }
+}
+#[test]
+fn an_adjust_mask_limits_the_colour_grade_and_a_clip_mask_cuts_the_picture() {
+    use project::*;
+    // The left half of the clip carries the mask; the grade is a brightness lift.
+    let scene = |grade: bool, mask: Option<MaskScope>| {
+        let mut data = content_scene(vec![]).into_data();
+        data.canvas.width = 16;
+        data.canvas.height = 16;
+        let item = &mut data.scene_mut().timeline.main.items[0];
+        if grade {
+            item.effects.push(
+                effect_definition("color_grade")
+                    .unwrap()
+                    .instance("grade")
+                    .with("brightness", EffectValue::Scalar(50.0))
+                    .unwrap(),
+            );
+        }
+        if let Some(scope) = mask {
+            let mut half = Mask::new("half", MaskShape::Rectangle);
+            half.scope = scope;
+            half.width = 0.5;
+            half.height = 1.0;
+            half.center_x = -0.25;
+            item.masks.push(half);
+        }
+        Project::new(data).unwrap()
+    };
+    let render = |project: &Project| {
+        let hooks = Hooks::default();
+        Renderer::new(project, RenderSettings::from_project(project))
+            .unwrap()
+            .render_frame(time::Tick::ZERO, &mut FlatSource, &hooks)
+            .unwrap()
+    };
+    let plain = render(&scene(false, None));
+    let graded = render(&scene(true, None));
+    let limited = render(&scene(true, Some(MaskScope::Adjust)));
+    let clipped = render(&scene(true, Some(MaskScope::Clip)));
+    let (left, right) = (8 * 16 + 2, 8 * 16 + 13);
+    let near = |a: [f32; 4], b: [f32; 4]| a.iter().zip(&b).all(|(x, y)| (x - y).abs() < 1e-5);
+    assert!(
+        !near(plain.pixels()[left], graded.pixels()[left]),
+        "the grade changes the picture"
+    );
+    assert!(
+        near(limited.pixels()[left], graded.pixels()[left]),
+        "graded inside the mask"
+    );
+    assert!(
+        near(limited.pixels()[right], plain.pixels()[right]),
+        "ungraded outside it"
+    );
+    assert_eq!(limited.pixels()[right][3], 1.0, "the picture stays whole");
+    // A clip mask hides the picture outside it instead of limiting the grade.
+    assert!(near(clipped.pixels()[left], graded.pixels()[left]));
+    assert!(!near(clipped.pixels()[right], plain.pixels()[right]));
+}
+
 struct SpatialSource {
     size: [u32; 2],
     calls: usize,
