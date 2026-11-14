@@ -23,6 +23,11 @@ pub(in crate::editor) enum Action {
     Save,
     /// A caption file or the burned MP4, saved through the window's native picker.
     Caption(crate::services::lifecycle::CaptionOutput),
+    /// A caption file of the export's group, written beside the saved media.
+    CaptionFile {
+        path: std::path::PathBuf,
+        output: crate::services::lifecycle::CaptionOutput,
+    },
     Options(ExportOptions),
     /// Every file the export saved, in save order.
     Saved(Vec<std::path::PathBuf>),

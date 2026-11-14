@@ -55,7 +55,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | EXP-18 | Audio-only export | Done | Proposed | 14b/105736 | |
 | EXP-19 | GIF section | Done | Proposed | 14b/105532 | Ticks beside Video and Audio |
 | EXP-20 | GIF resolution list | Done | Proposed | 14b/105549 | |
-| EXP-21 | Captions section | Partial | Differs | 14b/105557 | Buttons, not a tick |
+| EXP-21 | Captions section | Done | Differs | 14b/105557 | Tick joins the export's group; save buttons stay |
 | EXP-22 | Caption formats | Done | Proposed | 14b/105559 | Plus VTT, burned MP4 |
 | EXP-23 | Check copyright toggle | Missing | — | 14b/105555 | |
 | EXP-24 | Duration and size estimate | Done | Matches | 14b/105340 | One estimate per ticked output |
@@ -66,5 +66,5 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | EXP-29 | Export failure panel | Done | Proposed | | |
 | EXP-30 | Image sequence, range, scenes | Ours | Proposed | | |
 | EXP-31 | Download clip settings | Missing | — | web flows/12 | |
-| EXP-32 | Several outputs in one export | Done | Differs | 14b/105340, 14b/105532, 14b/105736 | A job per output, one progress and toast; a save picker per file |
+| EXP-32 | Several outputs in one export | Done | Differs | 14b/105340, 14b/105532, 14b/105736 | A job per output, one progress and toast; one picker, the rest saved beside it |
 | EXP-33 | Cancel a running export | Done | Not captured | | Stops the running job, starts no later output |

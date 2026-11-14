@@ -414,6 +414,12 @@ pub(crate) enum Request {
     LinkMedia,
     /// Edits changed the project: drop the nested selection scopes it left dangling.
     PruneSelection,
+    /// Write one caption file to a path the export dialog derived; the dialog already
+    /// checked that nothing it would replace was left unconfirmed.
+    CaptionFile {
+        path: std::path::PathBuf,
+        output: crate::services::lifecycle::CaptionOutput,
+    },
     /// Hand one lifecycle step (a save, a picker) to the window that owns it.
     Lifecycle(crate::services::lifecycle::EditorAction),
 }

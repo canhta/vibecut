@@ -59,8 +59,8 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 | [Timeline](timeline.md#timeline-tl) | 95 | 44 | 11 | 26 | 2 | 10 | 2 | 13 | 5 | 45 | 5 |
 | [Keyframes](timeline.md#keyframes-key) | 14 | 10 | 3 | 0 | 0 | 1 | 0 | 2 | 2 | 7 | 1 |
 | [Player](player-export.md#player-play) | 24 | 16 | 4 | 1 | 0 | 3 | 0 | 5 | 5 | 12 | 0 |
-| [Export](player-export.md#export-exp) | 33 | 17 | 7 | 5 | 0 | 1 | 3 | 2 | 8 | 12 | 4 |
+| [Export](player-export.md#export-exp) | 33 | 18 | 6 | 5 | 0 | 1 | 3 | 2 | 8 | 12 | 4 |
 | [AI chat](ai-shorts.md#ai-chat-agent) | 17 | 8 | 3 | 3 | 1 | 1 | 1 | 5 | 2 | 4 | 2 |
 | [Long video to shorts](ai-shorts.md#long-video-to-shorts-shorts) | 24 | 9 | 7 | 4 | 0 | 2 | 2 | 8 | 2 | 5 | 3 |
 | [States](states.md#states-state) | 12 | 7 | 3 | 0 | 1 | 0 | 1 | 2 | 2 | 4 | 3 |
-| **Total** | **669** | **318** | **119** | **131** | **7** | **53** | **41** | **98** | **71** | **262** | **105** |
+| **Total** | **669** | **319** | **118** | **131** | **7** | **53** | **41** | **98** | **71** | **262** | **105** |

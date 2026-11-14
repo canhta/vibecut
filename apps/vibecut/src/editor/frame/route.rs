@@ -681,6 +681,11 @@ impl Editor {
                             crate::editor::properties::add_effect_to_item(port, item, &kind);
                         });
                     }
+                    Request::CaptionFile { path, output } => {
+                        self.with_assets(|assets, port| {
+                            assets.export_caption_output(port, path, output);
+                        });
+                    }
                     Request::Lifecycle(action) => self.lifecycle_action = Some(action),
                     Request::ArmKeyColor(pick) => self.player.key_color_pick = pick,
                     Request::SetMatteBrushSize(size) => {

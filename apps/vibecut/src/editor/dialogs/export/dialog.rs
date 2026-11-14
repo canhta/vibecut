@@ -1,6 +1,7 @@
 //! Presents one export job and its saved choices.
 use super::settings;
 use crate::i18n;
+use crate::services::lifecycle::CaptionOutput;
 use crate::services::progress::job_progress;
 use crate::{
     Error, Result, egui,
@@ -126,7 +127,7 @@ impl ExportQuality {
     }
 }
 /// The files ticked beside the primary output (`ExportOptions::format`): the dialog's
-/// Audio and GIF sections whenever they are not the one holding the primary.
+/// Audio and GIF sections whenever they are not the one holding the primary, and Captions.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AlsoOutputs {
@@ -134,6 +135,8 @@ pub struct AlsoOutputs {
     pub audio: Option<ExportFormat>,
     /// A GIF at this size, the GIF section's own resolution.
     pub gif: Option<[u32; 2]>,
+    /// A caption file in this format, written beside the saved media.
+    pub captions: Option<captions::Format>,
 }
 /// Saved app choices. Consent, overwrite authorization and destination are transient.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -261,6 +264,13 @@ struct Rendered {
     /// The scene an all-scenes export rendered it for.
     scene: Option<project::SceneId>,
 }
+/// Where the files of one export are saved: beside the file the user picked, under derived
+/// names, plus the caption file when Captions is ticked.
+struct Group {
+    dir: PathBuf,
+    base: String,
+    caption: Option<(PathBuf, CaptionOutput)>,
+}
 /// One engine export job: a single output kind, ready to submit.
 struct Queued {
     options: ExportOptions,
@@ -298,6 +308,12 @@ pub struct ExportDialog {
     attempt: Option<ExportOptions>,
     diagnostics: Option<String>,
     saved: Vec<PathBuf>,
+    /// Where the rest of the export goes once the first file's place is picked.
+    group: Option<Group>,
+    /// Replace files that already exist at the derived names of the group.
+    replace: bool,
+    protected: Vec<PathBuf>,
+    caption_writes: Vec<(PathBuf, CaptionOutput)>,
     publishing: Option<PathBuf>,
     input: Option<CacheKey>,
     publication_fs: Arc<dyn project::atomic::AtomicFs + Send + Sync>,
@@ -347,6 +363,10 @@ impl ExportDialog {
             attempt: None,
             diagnostics: None,
             saved: Vec::new(),
+            group: None,
+            replace: false,
+            protected: Vec::new(),
+            caption_writes: Vec::new(),
             publishing: None,
             input: None,
             publication_fs: Arc::new(project::atomic::Fs),
@@ -459,11 +479,28 @@ impl ExportDialog {
                     }
                     self.saved.push(path);
                     self.finished = self.scene_outputs.pop_front();
-                    self.pending_save = self.finished.is_some();
+                    self.pending_save = false;
                     self.open = self.finished.is_some();
                     self.snapshot = None;
                     self.job = None;
                     self.diagnostics = None;
+                    // The place was picked once: the next file goes beside the first.
+                    let next = match (&self.finished, &self.group) {
+                        (Some(file), Some(group)) => Some(self.derived(group, file)),
+                        _ => None,
+                    };
+                    if let Some(target) = next {
+                        let protected = self.protected.clone();
+                        return self.publish(target, protected);
+                    }
+                    if self.finished.is_none()
+                        && let Some(group) = self.group.take()
+                        && let Some((path, output)) = group.caption
+                    {
+                        self.saved.push(path.clone());
+                        self.caption_writes.push((path, output));
+                    }
+                    self.pending_save = self.finished.is_some();
                     return Ok(());
                 }
                 // One job renders one output kind; the next starts when this one is done,
@@ -712,6 +749,8 @@ impl ExportDialog {
         self.attempt_project = Some(project.clone());
         self.attempt_encoder = encoder;
         self.saved.clear();
+        self.group = None;
+        self.caption_writes.clear();
         self.finished = None;
         self.pending_save = false;
         self.diagnostics = None;
@@ -778,10 +817,74 @@ impl ExportDialog {
     pub fn save_format(&self) -> Option<ExportFormat> {
         self.finished.as_ref().map(|file| file.format)
     }
+    /// The place of the export's first file was picked: refuse up front when a file the rest
+    /// would write already exists (unless Replace is ticked), then publish it. The other
+    /// files follow from `tick`, beside it.
     pub fn save_to(&mut self, path: PathBuf, protected: Vec<PathBuf>) -> Result<()> {
         if self.active() {
             return Err(Error::Invalid("export in progress"));
         }
+        let scene = self
+            .finished
+            .as_ref()
+            .ok_or(Error::Invalid("no finished export"))?
+            .scene;
+        if self.saved.is_empty() {
+            let group = self.group_for(&path, scene)?;
+            let mut targets: Vec<PathBuf> = self
+                .scene_outputs
+                .iter()
+                .map(|file| self.derived(&group, file))
+                .collect();
+            targets.extend(group.caption.iter().map(|(path, _)| path.clone()));
+            if !self.replace && targets.iter().any(|target| target.exists()) {
+                return Err(Error::Invalid("export target exists"));
+            }
+            self.group = Some(group);
+            self.protected = protected.clone();
+        }
+        self.publish(path, protected)
+    }
+    /// The group of files saved beside the one the user picked.
+    fn group_for(&self, path: &std::path::Path, scene: Option<project::SceneId>) -> Result<Group> {
+        let dir = path.parent().map(PathBuf::from).unwrap_or_default();
+        let mut base = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .ok_or(Error::Invalid("export name"))?
+            .to_owned();
+        // The picked name already carries its own scene.
+        if let Some(scene) = scene
+            && let Some(stripped) = base.strip_suffix(&format!("-scene-{}", scene.0))
+        {
+            base = stripped.to_owned();
+        }
+        let caption = self
+            .attempt
+            .and_then(|attempt| attempt.also.captions)
+            .filter(|_| {
+                self.attempt_project
+                    .as_deref()
+                    .is_some_and(super::caption_outputs::captioned)
+            })
+            .map(|format| {
+                let output = CaptionOutput::File(format);
+                (dir.join(format!("{base}.{}", output.extension())), output)
+            });
+        Ok(Group { dir, base, caption })
+    }
+    /// Where `file` goes beside the first file: the scene and `-audio` as in the default names.
+    fn derived(&self, group: &Group, file: &Rendered) -> PathBuf {
+        let mut name = group.base.clone();
+        if let Some(scene) = file.scene {
+            name.push_str(&format!("-scene-{}", scene.0));
+        }
+        if file.format.audio_only() && !self.attempt.is_some_and(|a| a.format.audio_only()) {
+            name.push_str("-audio");
+        }
+        group.dir.join(file.format.file_name(&name))
+    }
+    fn publish(&mut self, path: PathBuf, protected: Vec<PathBuf>) -> Result<()> {
         let finished = self
             .finished
             .as_ref()
@@ -824,6 +927,10 @@ impl ExportDialog {
         self.error = None;
         Ok(())
     }
+    /// The caption files the window must write now that the media is saved.
+    pub fn take_caption_writes(&mut self) -> Vec<(PathBuf, CaptionOutput)> {
+        std::mem::take(&mut self.caption_writes)
+    }
     pub fn save_cancelled(&mut self) {
         self.pending_save = false;
     }
@@ -835,6 +942,7 @@ impl ExportDialog {
         Some(std::mem::take(&mut self.saved))
     }
     pub fn discard_finished(&mut self) {
+        self.group = None;
         self.discard_scene_outputs();
         if let Some(file) = self.finished.take() {
             remove_output(&file.path);
@@ -1161,17 +1269,25 @@ impl ExportDialog {
                                 }
                             }
                             ExportPhase::Failed => {
-                                let label = self
-                                    .snapshot
-                                    .as_ref()
-                                    .and_then(|snapshot| snapshot.error.as_deref())
-                                    .map_or(Text::ExportFailure, export_failure);
+                                let label = if matches!(
+                                    self.error.as_deref(),
+                                    Some(Error::Invalid("export target exists"))
+                                ) {
+                                    Text::ExportTargetExists
+                                } else {
+                                    self.snapshot
+                                        .as_ref()
+                                        .and_then(|snapshot| snapshot.error.as_deref())
+                                        .map_or(Text::ExportFailure, export_failure)
+                                };
                                 ui.colored_label(theme::error_text(dark), tr(label));
+                                self.replace_choice(ui, locale, &mut result);
                             }
                             ExportPhase::Ready | ExportPhase::Settings => {
                                 if self.error.is_some() {
                                     ui.colored_label(theme::error_text(dark), tr(Text::ExportFailure));
                                 }
+                                self.replace_choice(ui, locale, &mut result);
                             }
                         }
                     });
@@ -1297,6 +1413,7 @@ impl ExportDialog {
                                                 ui,
                                                 locale,
                                                 project,
+                                                options,
                                                 &mut result,
                                             );
                                             ui.add_space(14.0);
@@ -1316,6 +1433,18 @@ impl ExportDialog {
             }
         }
         result
+    }
+    /// One Replace choice for the whole group, offered while the first file awaits its place
+    /// and the group holds more than that file.
+    fn replace_choice(&mut self, ui: &mut egui::Ui, locale: Locale, result: &mut DialogUi) {
+        let several = !self.scene_outputs.is_empty()
+            || self
+                .attempt
+                .is_some_and(|attempt| attempt.also.captions.is_some());
+        if self.finished.is_some() && self.saved.is_empty() && several {
+            let r = ui.checkbox(&mut self.replace, i18n::text(locale, Text::ExportReplace));
+            result.widgets.push(("export.replace", r));
+        }
     }
     pub(crate) fn failed(&mut self, error: Error) {
         self.diagnostics = Some(format!("{error:?}"));

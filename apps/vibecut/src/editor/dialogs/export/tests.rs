@@ -278,7 +278,7 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
                 quality: ExportQuality::Higher,
                 also: AlsoOutputs {
                     audio: Some(ExportFormat::M4a),
-                    gif: None,
+                    ..Default::default()
                 },
                 ..Default::default()
             }
@@ -955,38 +955,13 @@ fn cancelled_save_keeps_the_finished_export_for_a_later_save() {
         .editor_mut()
         .export_picked_file(destination.clone())
         .unwrap();
-    wait(&mut bench);
+    // The second scene follows beside the first, with no second picker.
+    assert_eq!(wait(&mut bench), super::ExportPhase::Settings);
     assert!(destination.exists());
     assert_ne!(std::fs::read(&destination).unwrap(), b"previous export");
     assert!(!finished.exists());
-    assert_eq!(
-        bench.editor().export_state().unwrap().phase(),
-        super::ExportPhase::Ready
-    );
-    assert!(
-        bench
-            .editor()
-            .export_save_defaults()
-            .0
-            .ends_with("-scene-2.mp4")
-    );
-    bench.editor_mut().export_save_cancelled();
-    let second_finished = bench
-        .editor()
-        .export_state()
-        .unwrap()
-        .inspect()
-        .finished
-        .unwrap();
-    assert!(second_finished.exists());
-    let second_destination = dir.path().join("second-scene.mp4");
-    bench
-        .editor_mut()
-        .export_picked_file(second_destination.clone())
-        .unwrap();
-    wait(&mut bench);
+    let second_destination = dir.path().join("second-save-scene-2.mp4");
     assert!(second_destination.is_file());
-    assert!(!second_finished.exists());
     assert!(!bench.editor().export_state().unwrap().inspect().open);
 }
 
@@ -1333,6 +1308,7 @@ fn ticked_outputs_become_one_job_each_in_a_fixed_order() {
         also: AlsoOutputs {
             audio: Some(ExportFormat::AudioWebm),
             gif: Some([320, 320]),
+            captions: Some(captions::Format::Srt),
         },
         output: render::OutputOptions {
             resolution: Some([1280, 720]),
@@ -1411,6 +1387,9 @@ fn export_sections_tick_together_and_one_stays_ticked() {
     assert!(enabled(&bench, "export.audio.include"));
     assert!(enabled(&bench, "export.gif.include"));
     assert!(!enabled(&bench, "export.audio.format"));
+    // Captions join the group only when the project holds a caption item.
+    assert!(!enabled(&bench, "export.captions.include"));
+    assert!(!enabled(&bench, "export.captions.format"));
     bench.click("export.audio.include");
     bench.click("export.gif.include");
     bench.harness_mut().run_steps(2);
@@ -1465,6 +1444,7 @@ fn ticked_outputs_render_one_after_another_and_save_under_one_toast() {
     bench.editor_mut().preferences.export.also = AlsoOutputs {
         audio: audio.then_some(ExportFormat::M4a),
         gif: gif.then_some([240, 240]),
+        ..Default::default()
     };
     let mut names = vec!["Export fixture.mp4"];
     if audio {
@@ -1475,20 +1455,27 @@ fn ticked_outputs_render_one_after_another_and_save_under_one_toast() {
     }
     bench.editor_mut().activate("export.run").unwrap();
     // One progress covers every job: the dialog is running, not ready, until all rendered.
-    for name in &names {
-        assert_eq!(wait(&mut bench), super::ExportPhase::Ready);
-        assert_eq!(&bench.editor().export_save_defaults().0, name);
-        bench
-            .editor_mut()
-            .export_picked_file(dir.path().join(name))
-            .unwrap();
-    }
+    assert_eq!(wait(&mut bench), super::ExportPhase::Ready);
+    assert_eq!(&bench.editor().export_save_defaults().0, names[0]);
+    // One place is picked, for the first file; the others are written beside it.
+    bench
+        .editor_mut()
+        .export_picked_file(dir.path().join("out.mp4"))
+        .unwrap();
     assert_eq!(wait(&mut bench), super::ExportPhase::Settings);
+    let names: Vec<&str> = names
+        .iter()
+        .map(|name| match *name {
+            "Export fixture.mp4" => "out.mp4",
+            "Export fixture-audio.m4a" => "out-audio.m4a",
+            _ => "out.gif",
+        })
+        .collect();
     for name in &names {
         assert!(dir.path().join(name).is_file(), "{name} was not written");
     }
     if gif {
-        let bytes = std::fs::read(dir.path().join("Export fixture.gif")).unwrap();
+        let bytes = std::fs::read(dir.path().join("out.gif")).unwrap();
         assert!(bytes.starts_with(b"GIF8"));
     }
     let state = bench.editor().export_state().unwrap().inspect();
@@ -1518,6 +1505,7 @@ fn cancelling_a_multi_output_export_starts_no_further_job() {
     bench.editor_mut().preferences.export.also = AlsoOutputs {
         audio: Some(ExportFormat::M4a),
         gif: Some([240, 240]),
+        ..Default::default()
     };
     open(&mut bench);
     bench
@@ -1543,4 +1531,43 @@ fn cancelling_a_multi_output_export_starts_no_further_job() {
     assert!(state.job.is_none());
     assert!(state.finished.is_none());
     assert!(!bench.editor().export_state().unwrap().active());
+}
+
+#[test]
+fn a_derived_name_that_exists_refuses_the_group_until_replace_is_ticked() {
+    if !media::audio_export_container_available(ExportFormat::M4a.container()) {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let taken = dir.path().join("out-audio.m4a");
+    std::fs::write(&taken, b"previous").unwrap();
+    let mut bench = bench(editor(false, false));
+    bench.editor_mut().preferences.export.also = AlsoOutputs {
+        audio: Some(ExportFormat::M4a),
+        ..Default::default()
+    };
+    bench.editor_mut().activate("export.run").unwrap();
+    assert_eq!(wait(&mut bench), super::ExportPhase::Ready);
+    bench.harness_mut().run_steps(2);
+    assert!(enabled(&bench, "export.replace"));
+    // Nothing is written and nothing replaced while a target of the group exists.
+    bench
+        .editor_mut()
+        .export_picked_file(dir.path().join("out.mp4"))
+        .unwrap();
+    assert_eq!(wait(&mut bench), super::ExportPhase::Failed);
+    assert!(!dir.path().join("out.mp4").exists());
+    assert_eq!(std::fs::read(&taken).unwrap(), b"previous");
+    // One Replace choice covers the group.
+    bench.harness_mut().run_steps(3);
+    bench.click("export.replace");
+    bench.click("export.retry");
+    bench.harness_mut().run_steps(2);
+    bench
+        .editor_mut()
+        .export_picked_file(dir.path().join("out.mp4"))
+        .unwrap();
+    assert_eq!(wait(&mut bench), super::ExportPhase::Settings);
+    assert!(dir.path().join("out.mp4").is_file());
+    assert_ne!(std::fs::read(&taken).unwrap(), b"previous");
 }

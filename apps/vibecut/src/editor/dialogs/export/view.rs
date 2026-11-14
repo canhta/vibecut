@@ -36,6 +36,9 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ctx: &egui::Context) -> 
     if dialog.take_save_request(project, preferred).is_some() {
         actions.push(Action::Save);
     }
+    for (path, output) in dialog.take_caption_writes() {
+        actions.push(Action::CaptionFile { path, output });
+    }
     if let Some(saved) = dialog.take_saved() {
         actions.push(Action::Saved(saved));
     }
@@ -71,6 +74,9 @@ pub(super) fn apply(state: &mut State, port: &mut Port<'_>, action: Action) {
             }
         }
         Action::Save => port.request(Request::Lifecycle(EditorAction::ExportSave)),
+        Action::CaptionFile { path, output } => {
+            port.request(Request::CaptionFile { path, output });
+        }
         Action::Caption(output) => {
             port.request(Request::Lifecycle(EditorAction::ExportCaption(output)));
         }

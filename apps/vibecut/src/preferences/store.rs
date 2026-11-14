@@ -333,7 +333,7 @@ mod tests {
                         "scene": {"kind": "active"},
                         "version": 1
                     },
-                    "also": {"audio": "m4a", "gif": [240, 240]}
+                    "also": {"audio": "m4a", "gif": [240, 240], "captions": "txt"}
                 }),
             ),
         ] {
