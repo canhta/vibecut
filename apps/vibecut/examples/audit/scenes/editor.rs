@@ -144,17 +144,16 @@ pub(super) fn captions_review_scene(
     // The window the review test drives: tall enough that Identify is on screen to press.
     let mut app = harness_sized(App::Editor(Box::new(editor)), scale, [1440.0, 1000.0]);
     app.run_steps(4);
+    // Press Identify and wait for the tabs the way the review test does: through the
+    // accessibility tree, where the tabs register their ids (they are not editor widgets).
     app.get(By::new().predicate(|node| node.author_id() == Some("subtitles.review.analyze")))
-        .click();
-    // The review tabs register with the editor once the analysis has finished.
-    let listed = |app: &AppHarness| match &app.state().app {
-        App::Editor(editor) => editor.inspect().is_ok_and(|inspection| {
-            inspection
-                .widgets
-                .iter()
-                .any(|widget| widget.id == "subtitles.review.tab.all")
-        }),
-        _ => false,
+        .click_accesskit();
+    let listed = |app: &AppHarness| {
+        app.query_all(
+            By::new().predicate(|node| node.author_id() == Some("subtitles.review.tab.all")),
+        )
+        .next()
+        .is_some()
     };
     let deadline = Instant::now() + Duration::from_secs(20);
     while !listed(&app) {
@@ -163,6 +162,9 @@ pub(super) fn captions_review_scene(
         }
         app.run_steps(1);
     }
+    // The review opens below the transcript tools; bring its gap card to the top of the pane.
+    app.get(By::new().predicate(|node| node.author_id() == Some("subtitles.review.gap_card")))
+        .scroll_to_me();
     app.run_steps(3);
     Ok(app)
 }

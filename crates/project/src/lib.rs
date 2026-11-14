@@ -35,12 +35,11 @@ pub use visual::{
     HSL_BANDS, HSL_CONTROLS, ItemAlignment, LIFT_MAX, LIFT_MIN, LutId, LutRecord, LutReference,
     MASK_POINT_FIELDS, MASK_SCALARS, MAX_LETTER_SPACING, MAX_LINE_HEIGHT, Mask, MaskMode, MaskPath,
     MaskScope, MaskShape, MaskStroke, MaskVertex, PACKED_COLOR_MAX, POINT_MAX, PointReference,
-    StrokeAlign,
-    TRANSITION_DEFINITIONS, ToneCurve, TransformField, Transition, TransitionAlignment,
-    TransitionDefinition, TransitionId, TransitionParamDef, TransitionParamKind, TransitionParams,
-    TransitionValue, effect_definition, effect_definitions, filter_definition, filter_definitions,
-    filter_look, is_filter_clip, packed_color, transition_definition, valid_letter_spacing,
-    valid_line_height, valid_weight,
+    StrokeAlign, TRANSITION_DEFINITIONS, ToneCurve, TransformField, Transition,
+    TransitionAlignment, TransitionDefinition, TransitionId, TransitionParamDef,
+    TransitionParamKind, TransitionParams, TransitionValue, effect_definition, effect_definitions,
+    filter_definition, filter_definitions, filter_look, is_filter_clip, packed_color,
+    transition_definition, valid_letter_spacing, valid_line_height, valid_weight,
 };
 pub use visual::{FitBox, FitMode, cropped_source_size, fit_box};
 
