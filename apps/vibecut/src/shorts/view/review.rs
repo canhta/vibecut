@@ -291,7 +291,7 @@ pub(super) fn export_button(ui: &mut egui::Ui, state: &mut State, rect: Rect) {
     )
     .clicked()
     {
-        state.pick(ui.ctx(), super::super::state::Pick::Export);
+        state.request_pick(super::super::state::Pick::Export);
     }
 }
 

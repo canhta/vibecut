@@ -204,6 +204,15 @@ impl Workspace {
                 shorts.pause_preview();
                 self.shorts_window = false;
             }
+            for action in &actions {
+                if let crate::shorts::Action::Pick(kind) = action {
+                    self.shorts_picker = Some(super::picker::shorts_picker(
+                        ctx,
+                        *kind,
+                        shorts.preferences.locale,
+                    ));
+                }
+            }
             if actions.contains(&crate::shorts::Action::OpenEditor) && !self.home.busy() {
                 let result = shorts.editor_session().and_then(|(s, settings)| {
                     self.home.submit(

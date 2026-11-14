@@ -1,9 +1,10 @@
 //! Native file pickers: requested by a window, polled without blocking, delivered to its editor.
-use super::window::EditorWindow;
+use super::{registry::Workspace, window::EditorWindow};
 use crate::{
     Error, Result, egui,
-    i18n::{self, Text},
+    i18n::{self, Locale, Text},
     services::lifecycle::CaptionOutput,
+    shorts,
 };
 use project::ItemId;
 use std::{path::PathBuf, sync::Arc};
@@ -44,6 +45,9 @@ pub(super) enum PickerAction {
     },
     /// A custom font file for the font picker's Import action.
     FontUpload,
+    /// The shorts window's source video or export folder. The workspace owns this dialog,
+    /// not an editor window; its answer goes to the shorts state.
+    Shorts(shorts::Pick),
 }
 pub(super) struct Picker {
     pub(super) future:
@@ -66,6 +70,9 @@ impl EditorWindow {
         let future: std::pin::Pin<
             Box<dyn std::future::Future<Output = Option<Vec<rfd::FileHandle>>>>,
         > = match action {
+            PickerAction::Shorts(_) => {
+                return Err(Error::Invalid("shorts picks belong to the workspace"));
+            }
             PickerAction::Open => {
                 let dialog = rfd::AsyncFileDialog::new()
                     .add_filter(self.tr(Text::AppName), &["vibecut", "json"]);
@@ -434,11 +441,64 @@ impl EditorWindow {
                             .collect();
                         self.import_picked_files(paths)
                     }
+                    PickerAction::Shorts(_) => Ok(()),
                 };
                 if let Err(e) = result {
                     self.error = Some(e);
                 }
             }
+        }
+    }
+}
+
+/// The shorts window's dialog, built for `kind` in the language the window shows. The
+/// workspace keeps it in its own picker slot because the window is not an editor.
+pub(super) fn shorts_picker(ctx: &egui::Context, kind: shorts::Pick, locale: Locale) -> Picker {
+    let future: std::pin::Pin<
+        Box<dyn std::future::Future<Output = Option<Vec<rfd::FileHandle>>>>,
+    > = match kind {
+        shorts::Pick::Video => {
+            let dialog = rfd::AsyncFileDialog::new().add_filter(
+                i18n::text(locale, Text::Video),
+                &["mp4", "mov", "mkv", "webm", "m4v"],
+            );
+            Box::pin(async move { dialog.pick_file().await.map(|file| vec![file]) })
+        }
+        shorts::Pick::Export => {
+            let dialog = rfd::AsyncFileDialog::new();
+            Box::pin(async move { dialog.pick_folder().await.map(|folder| vec![folder]) })
+        }
+    };
+    Picker {
+        future,
+        action: PickerAction::Shorts(kind),
+        waker: std::task::Waker::from(Arc::new(Repaint(ctx.clone()))),
+    }
+}
+
+impl Workspace {
+    /// Hand the shorts window's dialog answer to its state without blocking. A dismissed
+    /// dialog releases the window's pick with no path.
+    pub(super) fn poll_shorts_picker(&mut self) {
+        let Some(mut picker) = self.shorts_picker.take() else {
+            return;
+        };
+        let std::task::Poll::Ready(files) = picker
+            .future
+            .as_mut()
+            .poll(&mut std::task::Context::from_waker(&picker.waker))
+        else {
+            self.shorts_picker = Some(picker);
+            return;
+        };
+        let PickerAction::Shorts(kind) = picker.action else {
+            return;
+        };
+        let path = files
+            .and_then(|files| files.into_iter().next())
+            .map(|file| file.path().to_owned());
+        if let Some(shorts) = &mut self.shorts {
+            shorts.picked(kind, path);
         }
     }
 }
@@ -474,9 +534,7 @@ mod tests {
                 }
             }
         }
-        // shorts/state.rs keeps its panel-local dialog until ticket 226's rewrite lands;
-        // drop that entry in the same change as the rewrite.
-        const ALLOWED: [&str; 2] = ["app/picker.rs", "shorts/state.rs"];
+        const ALLOWED: [&str; 1] = ["app/picker.rs"];
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
         let mut found = Vec::new();
         visit(&root, &root, &mut found);

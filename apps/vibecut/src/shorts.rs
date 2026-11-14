@@ -13,8 +13,8 @@ use crate::egui;
 
 pub use runs::{RunEntry, RunStore};
 pub use state::{
-    ClipCandidate, Decision, GenerationRequest, Importer, Review, ReviewSource, ShotSource, State,
-    TaskEvents, desktop_importer,
+    ClipCandidate, Decision, GenerationRequest, Importer, Pick, Review, ReviewSource, ShotSource,
+    State, TaskEvents, desktop_importer,
 };
 
 /// The window the shorts viewport opens at; Home and the editor own their own sizes.
@@ -32,6 +32,9 @@ pub struct Context {
 pub enum Action {
     /// Open the selected short as a project in the editor.
     OpenEditor,
+    /// Open the native dialog for a source video or an export folder; its answer returns
+    /// through [`State::picked`].
+    Pick(Pick),
 }
 
 /// Draw the window and return what its controls asked for.
