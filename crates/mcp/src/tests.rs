@@ -566,6 +566,7 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("export_subtitles", Effect::FilePublish, true, false),
         ("burn_subtitles", Effect::FilePublish, true, false),
         ("import.add_asset", Effect::Edit, false, false),
+        ("media.relink", Effect::Edit, false, false),
         ("media.remove", Effect::Edit, true, true),
         ("timeline.add_track", Effect::Edit, true, true),
         ("track.remove", Effect::Edit, true, true),

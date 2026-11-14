@@ -3107,6 +3107,11 @@ fn removal(harness: &Harness<Editor>, id: ItemId) -> Option<project::BackgroundR
 fn removal_editor(root: &std::path::Path) -> (Editor, ItemId) {
     let fixture = fixture();
     let mut editor = fixture.editor;
+    // With a media cache attached a source whose file is absent is the relink state, which
+    // replaces the properties panel; these tests edit a present source.
+    for asset in &editor.session.project().data().assets {
+        std::fs::write(asset.path(), b"").unwrap();
+    }
     let media =
         engine::control::MediaAccess::open_in(root, ByteBudget::new(64 << 20).unwrap()).unwrap();
     editor.set_media(Arc::new(std::sync::Mutex::new(media)));

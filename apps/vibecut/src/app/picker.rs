@@ -26,6 +26,8 @@ pub(super) enum PickerAction {
     ReplaceMedia {
         item: ItemId,
     },
+    /// A file for one missing source, or the folder to search for every missing source.
+    LinkMedia(crate::editor::dialogs::link_media::Pick),
     ExportSave,
     /// A caption file or the burned MP4, saved from the export dialog's caption section.
     ExportCaption(CaptionOutput),
@@ -136,6 +138,26 @@ impl EditorWindow {
                     crate::editor::assets::import::MEDIA_EXTENSIONS,
                 );
                 Box::pin(async move { dialog.pick_file().await.map(|file| vec![file]) })
+            }
+            PickerAction::LinkMedia(pick) => {
+                use crate::editor::dialogs::link_media::Pick;
+                let dialog = rfd::AsyncFileDialog::new().set_title(self.tr(Text::LinkMediaTitle));
+                let future: std::pin::Pin<
+                    Box<dyn std::future::Future<Output = Option<Vec<rfd::FileHandle>>>>,
+                > =
+                    match pick {
+                        Pick::Folder => Box::pin(async move {
+                            dialog.pick_folder().await.map(|folder| vec![folder])
+                        }),
+                        Pick::File(_) => {
+                            let dialog = dialog.add_filter(
+                                self.tr(Text::Media),
+                                crate::editor::assets::import::MEDIA_EXTENSIONS,
+                            );
+                            Box::pin(async move { dialog.pick_file().await.map(|file| vec![file]) })
+                        }
+                    };
+                future
             }
             PickerAction::ImportLut => {
                 let dialog =
@@ -260,6 +282,18 @@ impl EditorWindow {
             .as_mut()
             .ok_or(Error::Invalid("no project"))?
             .replace_picked_file(item, path)
+    }
+    /// Relink what the Link media pick found. Tests inject a path without a native dialog.
+    pub fn link_media_picked(
+        &mut self,
+        pick: crate::editor::dialogs::link_media::Pick,
+        path: PathBuf,
+    ) -> Result<()> {
+        self.editor
+            .as_mut()
+            .ok_or(Error::Invalid("no project"))?
+            .link_picked(pick, path);
+        Ok(())
     }
     /// Apply a save-picker destination to the existing export dialog.
     pub fn export_picked_file(&mut self, path: PathBuf) -> Result<()> {
@@ -432,6 +466,10 @@ impl EditorWindow {
                     },
                     PickerAction::ReplaceMedia { item } => match files.pop() {
                         Some(file) => self.replace_picked_file(item, file.path().to_owned()),
+                        None => Ok(()),
+                    },
+                    PickerAction::LinkMedia(pick) => match files.pop() {
+                        Some(file) => self.link_media_picked(pick, file.path().to_owned()),
                         None => Ok(()),
                     },
                     PickerAction::ImportMedia => {

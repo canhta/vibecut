@@ -220,6 +220,7 @@ pub const TABLE: &[(&str, Verdict)] = &[
     ("media.detect_scenes", Verdict::Allow),
     ("media.generate_clip_thumbnails", Verdict::Allow),
     ("media.generate_waveform", Verdict::Allow),
+    ("media.relink", Verdict::Refuse(Reason::Path)),
     ("media.remove", Verdict::Allow),
     ("move_item", Verdict::Allow),
     ("move_items", Verdict::Allow),

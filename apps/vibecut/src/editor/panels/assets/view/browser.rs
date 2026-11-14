@@ -555,8 +555,26 @@ impl View<'_> {
                 Vec2::new(rect.width(), theme::size::MEDIA_THUMB_HEIGHT),
             )
         };
-        ui.painter().rect_filled(thumb, 4.0, theme::field(dark));
-        if let Some(texture) = self.cx.thumbnails.get(&row.id) {
+        ui.painter().rect_filled(
+            thumb,
+            4.0,
+            if row.missing {
+                theme::missing_body(dark)
+            } else {
+                theme::field(dark)
+            },
+        );
+        if row.missing {
+            // The lost source's tile: the missing body fill and one centred line, as the
+            // reference's media pool shows (editor.md "Missing media").
+            ui.painter().text(
+                thumb.center(),
+                Align2::CENTER_CENTER,
+                self.tr(Text::MissingClipTitle),
+                FontId::proportional(theme::type_size::BODY),
+                theme::on_missing(dark),
+            );
+        } else if let Some(texture) = self.cx.thumbnails.get(&row.id) {
             let scale =
                 (thumb.width() / texture.size_vec2().x).min(thumb.height() / texture.size_vec2().y);
             let image = Rect::from_center_size(thumb.center(), texture.size_vec2() * scale);

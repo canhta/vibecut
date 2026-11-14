@@ -976,6 +976,8 @@ fn canvas(
             true,
             cx.tr(if empty {
                 Text::ProjectEmpty
+            } else if source_missing_at_playhead(cx) {
+                Text::MissingClipHint
             } else if cx.playback.frame().is_none() {
                 if state.failed {
                     Text::Unavailable
@@ -1098,7 +1100,21 @@ fn canvas(
         stage.center() + state.view.offset,
         egui::vec2(size[0] as f32 * scale, size[1] as f32 * scale),
     );
-    if let Some(frame) = cx.playback.frame() {
+    if source_missing_at_playhead(cx) {
+        // The clip under the playhead has no file: the canvas is the missing red with one
+        // centred line, as the reference's player shows (editor.md "Missing media").
+        state.texture.clear();
+        let shown = displayed.intersect(stage);
+        ui.painter()
+            .rect_filled(shown, 0.0, kit::missing_canvas(cx.dark));
+        ui.painter().text(
+            shown.center(),
+            Align2::CENTER_CENTER,
+            cx.tr(Text::MissingClipHint),
+            FontId::proportional(kit::type_size::BODY),
+            kit::on_missing(cx.dark),
+        );
+    } else if let Some(frame) = cx.playback.frame() {
         if let Some(texture) = state.texture.update(ui.ctx(), "preview.frame", frame) {
             ui.painter().with_clip_rect(stage).image(
                 texture,
@@ -1150,4 +1166,19 @@ fn canvas(
             actions,
         );
     }
+}
+
+/// The main-track clip under the playhead names a source whose file is gone.
+fn source_missing_at_playhead(cx: &Context<'_>) -> bool {
+    let data = cx.staged_project().data();
+    data.scene().timeline.main.items.iter().any(|item| {
+        item.end()
+            .is_ok_and(|end| item.start <= cx.playhead && cx.playhead < end)
+            && item
+                .source_asset
+                .and_then(|id| data.assets.iter().find(|asset| asset.id() == id))
+                .is_some_and(|asset| {
+                    cx.visuals.availability(asset) == media::AssetAvailability::Missing
+                })
+    })
 }

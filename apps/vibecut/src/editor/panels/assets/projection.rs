@@ -44,8 +44,13 @@ pub(in crate::editor) fn prepare(
                     .get(&id)
                     .copied()
                     .unwrap_or(AssetState::Probing);
+                let mut display =
+                    asset_row(asset, cx.locale, sizes.get(&id).copied().flatten(), status);
+                // Caption and other generated assets carry no file to lose.
+                display.missing = !asset.ephemeral()
+                    && cx.visuals.availability(asset) == media::AssetAvailability::Missing;
                 Some(Row {
-                    display: asset_row(asset, cx.locale, sizes.get(&id).copied().flatten(), status),
+                    display,
                     kind: MediaKind::of(asset),
                 })
             })
@@ -58,6 +63,7 @@ pub(in crate::editor) fn prepare(
                 icon: Icon::UploadSimple,
                 state: AssetState::Probing,
                 duration: None,
+                missing: false,
             },
             kind: MediaKind::Other,
         }));

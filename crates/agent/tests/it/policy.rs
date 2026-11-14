@@ -59,6 +59,7 @@ fn decision_five_commands_are_refused_with_their_reason() {
         ("project.duplicate", Reason::Project),
         ("project.import_bundle", Reason::Path),
         ("import.add_asset", Reason::Path),
+        ("media.relink", Reason::Path),
         ("undo", Reason::History),
         ("redo", Reason::History),
         ("fonts.download", Reason::Download),

@@ -43,3 +43,5 @@ tracks on demand. Insert synchronizes playback to the new snapshot.
 
 Thumbnail retention and its leases belong to
 [engine artifacts](../../../../../../../crates/engine/src/artifacts/README.md).
+
+A non-generated asset whose source file is gone draws its tile with the missing body fill and one centred `Media missing` line in place of a thumbnail (`AssetRow::missing`, read from `VisualQuery::availability` while the rows are projected); the rest of the tile is unchanged. Measurements: [Missing media](../../../../../../../docs/product/ui/editor.md#missing-media).

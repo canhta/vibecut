@@ -179,6 +179,10 @@ fn route(state: &mut State, port: &mut Port<'_>, actions: Vec<Action>) {
                 port.request(crate::editor::context::Request::OpenModel(id));
                 Ok(())
             }
+            Action::OpenLinkMedia => {
+                port.request(crate::editor::context::Request::LinkMedia);
+                Ok(())
+            }
             Action::ResetTransform(item) => commands::reset_transform(port, item),
             Action::ResetBlend(item) => commands::reset_blend(port, item),
             Action::ToggleKeyframe { item, fields, time } => {

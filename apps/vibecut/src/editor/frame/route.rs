@@ -674,6 +674,7 @@ impl Editor {
                     Request::Lifecycle(action) => self.lifecycle_action = Some(action),
                     Request::ArmKeyColor(pick) => self.player.key_color_pick = pick,
                     Request::ReplaceMedia(item) => self.timeline.request_replace(item),
+                    Request::LinkMedia => self.dialogs.link_media.open(self.session.project()),
                     Request::PruneSelection => self.prune_selection(),
                     Request::InsertShape(id) => {
                         if self.action_enabled(&id) {

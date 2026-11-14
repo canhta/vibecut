@@ -106,3 +106,5 @@ never sees them.
 
 Platform guides shade the regions the platform's UI covers, fractions and sources in
 [the editor UI doc](../../../../../../docs/product/ui/editor.md#preview-guides-and-notes); Spotlight has no primary source and is absent. Custom margins shade the four bands they leave at the canvas edges; a zero margin shades nothing. Margin edits follow the grid-size rule: a drag or typed edit drafts the values and one preference edit publishes the valid final value when the gesture ends, while an invalid draft keeps its inline error and publishes nothing. Every value in this section is [new]; no capture exists for the picker or for notes.
+
+When the main-track clip under the playhead names a source whose file is gone (`VisualQuery::availability`), the canvas rectangle is the flat missing red with one centred line and no preview frame, and the canvas widget's accessibility name reads the same line ([Missing media](../../../../../../docs/product/ui/editor.md#missing-media)).

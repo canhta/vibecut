@@ -10,6 +10,7 @@ pub mod preferences;
 pub mod services;
 pub mod shorts;
 pub use editor::dialogs::export;
+pub use editor::dialogs::link_media::LinkMediaView;
 pub use editor::dialogs::models::model_manager;
 pub use editor::dialogs::voiceover::VoiceoverView;
 pub use editor::properties::ColorTarget;

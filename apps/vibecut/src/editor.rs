@@ -490,6 +490,7 @@ impl Editor {
                 .map(|s| s.inspect(&self.session)),
             models: self.dialogs.models.inspect(),
             voiceover: self.dialogs.voiceover.view(),
+            link_media: self.dialogs.link_media.view(self.session.project()),
             keybinding_issues: self.frame.keybinding_issues.clone(),
             color_preview: self.properties.color_preview(),
             key_color_pick: self.player.key_color_pick.as_ref().map(|pick| pick.item),
@@ -814,6 +815,21 @@ impl Editor {
     /// hands the request over.
     pub(crate) fn take_replace_request(&mut self) -> Option<ItemId> {
         self.timeline.take_replace_request()
+    }
+    /// Open Link media when the project has sources whose file is gone; the window calls it
+    /// once for a project it just opened.
+    pub fn offer_link_media(&mut self) {
+        self.dialogs.link_media.open(self.session.project());
+    }
+    /// The pick the Link media dialog waits for; taking it hands the request to the window.
+    pub(crate) fn take_link_request(&mut self) -> Option<dialogs::link_media::Pick> {
+        self.dialogs.link_media.take_request()
+    }
+    /// Relink what the native pick found for the Link media dialog.
+    pub(crate) fn link_picked(&mut self, pick: dialogs::link_media::Pick, path: PathBuf) {
+        self.with_dialogs(|state, port| {
+            dialogs::link_media::picked(&mut state.link_media, port, pick, path)
+        });
     }
     /// Replace one clip's source with a file that is already a project asset. A file
     /// that has not been imported refuses, so the timeline never gains an unlisted source.

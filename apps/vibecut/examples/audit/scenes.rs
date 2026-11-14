@@ -682,6 +682,18 @@ pub(super) const SCENES: &[Scene] = &[
         build: close_prompt_vi,
     },
     Scene {
+        name: "missing-media",
+        reference_dark: Some("capcut-desktop-2026-11-14/capcut-desktop-095550.png"),
+        reference_light: None,
+        build: missing_media,
+    },
+    Scene {
+        name: "link-media",
+        reference_dark: Some("capcut-desktop-2026-11-14/capcut-desktop-095518.png"),
+        reference_light: None,
+        build: link_media,
+    },
+    Scene {
         name: "timeline-main",
         reference_dark: None,
         reference_light: None,
@@ -855,7 +867,7 @@ use properties::{
 };
 use shorts::shorts_scene;
 use timeline::{
-    placement, preview_axis, preview_axis_ends, preview_axis_reference, scene_create, scene_delete,
-    scene_rename, timeline_fades, timeline_main, timeline_multi, timeline_selection,
-    timeline_selection_vi, timeline_zoom, tracks,
+    link_media, missing_media, placement, preview_axis, preview_axis_ends, preview_axis_reference,
+    scene_create, scene_delete, scene_rename, timeline_fades, timeline_main, timeline_multi,
+    timeline_selection, timeline_selection_vi, timeline_zoom, tracks,
 };

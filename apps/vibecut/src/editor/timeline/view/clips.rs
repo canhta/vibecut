@@ -44,17 +44,6 @@ impl State {
         );
         let ink = Ink::of(cx);
         let dark = ink.dark();
-        let (fill, border, text) = item_palette(item.kind, dark, selected, item.overlay);
-        // Hidden clips stay editable in the timeline at reduced contrast.
-        let dim = if item.hidden { 0.45 } else { 1.0 };
-        let (fill, border, text) = (
-            fill.gamma_multiply(dim),
-            border.gamma_multiply(dim),
-            text.gamma_multiply(dim),
-        );
-        let painter = ui.painter().with_clip_rect(visible);
-        painter.rect_filled(visible, theme::radius::PANEL, fill);
-        let inner = full.shrink(1.0);
         // A source file gone from disk keeps its asset record: the clip draws the
         // missing state in place of strip and waveform and asks for neither, and
         // names its file so the clip keeps a name while the footage is gone.
@@ -73,6 +62,31 @@ impl State {
             .filter(|asset| cx.visuals.availability(asset) == media::AssetAvailability::Missing);
         let name = missing_asset.map(media_panel::asset_name);
         let label = name.as_deref().unwrap_or(item.label.as_str());
+        let (fill, border, text) = item_palette(item.kind, dark, selected, item.overlay);
+        // The relink state recolours the whole clip: body fill, red border unless selected.
+        let (fill, border, text) = if missing_asset.is_some() {
+            (
+                theme::missing_body(dark),
+                if selected {
+                    border
+                } else {
+                    theme::missing_border(dark)
+                },
+                theme::on_missing(dark),
+            )
+        } else {
+            (fill, border, text)
+        };
+        // Hidden clips stay editable in the timeline at reduced contrast.
+        let dim = if item.hidden { 0.45 } else { 1.0 };
+        let (fill, border, text) = (
+            fill.gamma_multiply(dim),
+            border.gamma_multiply(dim),
+            text.gamma_multiply(dim),
+        );
+        let painter = ui.painter().with_clip_rect(visible);
+        painter.rect_filled(visible, theme::radius::PANEL, fill);
+        let inner = full.shrink(1.0);
         self.remember_with(
             format!("timeline.item.{}", item.id.0),
             None,
@@ -135,8 +149,16 @@ impl State {
             egui::StrokeKind::Inside,
         );
         if !label.is_empty() {
+            // A missing video clip names its file in the top band, as the reference does.
+            let band_label =
+                missing_asset.is_some() && item.kind == TrackKind::Video && item.overlay.is_none();
+            let label_y = if band_label {
+                inner.top() + theme::size::CLIP_BAND / 2.0
+            } else {
+                visible.center().y
+            };
             painter.text(
-                egui::pos2(visible.left() + 22.0, visible.center().y),
+                egui::pos2(visible.left() + 22.0, label_y),
                 Align2::LEFT_CENTER,
                 label,
                 FontId::proportional(theme::type_size::BODY),
@@ -1083,10 +1105,10 @@ impl State {
         self.remember_visual(ui, item, "waveform", wave, label);
     }
 
-    /// The relink state: the strip and waveform bands drop to the field fill with
-    /// the warning marker, and the band hover names Replace media as the way back.
-    /// Values reuse the failed-visual marker; the reference's own missing-media
-    /// clip is not captured, so its colours and glyph stay open.
+    /// The relink state, measured on CapCut 9.7.1 (editor.md "Missing media"): the clip body
+    /// takes the missing fill, the top and bottom bands the lighter red, and two centred
+    /// white lines say the media is lost. There is no glyph. The bands carry the hover and
+    /// accessibility name that points at Link media.
     fn paint_missing_media(
         &mut self,
         cx: &Context<'_>,
@@ -1100,6 +1122,10 @@ impl State {
         let bands = match (item.kind, item.overlay) {
             (TrackKind::Video, None) => {
                 let strip_top = inner.top() + theme::size::CLIP_BAND;
+                let top = Rect::from_min_max(
+                    inner.left_top(),
+                    egui::pos2(inner.right(), strip_top.min(inner.bottom())),
+                );
                 let strip = Rect::from_min_size(
                     egui::pos2(inner.left(), strip_top),
                     Vec2::new(
@@ -1111,14 +1137,34 @@ impl State {
                     egui::pos2(inner.left(), strip.bottom()),
                     inner.right_bottom(),
                 );
+                painter.rect_filled(top, 0.0, theme::missing_band(dark));
+                painter.rect_filled(wave, 0.0, theme::missing_band(dark));
                 vec![("filmstrip", strip), ("waveform", wave)]
             }
             (TrackKind::Audio, _) => vec![("waveform", inner)],
             _ => vec![("missing", inner)],
         };
+        let shown = inner.intersect(painter.clip_rect());
+        if shown.width() > 40.0 && shown.height() > 24.0 {
+            let ink = theme::on_missing(dark);
+            let font = FontId::proportional(theme::type_size::BODY);
+            let line = theme::type_size::BODY + 1.0;
+            painter.text(
+                egui::pos2(shown.center().x, shown.center().y - line / 2.0),
+                Align2::CENTER_CENTER,
+                tr(cx, Text::MissingClipTitle),
+                font.clone(),
+                ink,
+            );
+            painter.text(
+                egui::pos2(shown.center().x, shown.center().y + line / 2.0),
+                Align2::CENTER_CENTER,
+                tr(cx, Text::MissingClipHint),
+                font,
+                ink,
+            );
+        }
         for (band, rect) in bands {
-            painter.rect_filled(rect, 0.0, theme::field(dark));
-            paint_marker(painter, rect, dark);
             self.remember_visual(ui, item, band, rect, label.clone());
         }
     }

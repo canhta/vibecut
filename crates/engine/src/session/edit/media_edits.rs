@@ -69,6 +69,26 @@ pub(super) fn execute_add_asset(
 
     Ok(data)
 }
+/// Point an existing asset record at the file the caller found for it. Identity, content
+/// hash and kind stay as they are, so every clip that names the asset follows the new
+/// path and nothing else in the project changes. A record for another asset or a
+/// different content hash refuses; the caller proved the content match when it built the
+/// record with `SourceAsset::relink`.
+pub(super) fn execute_relink_asset(
+    mut data: ProjectData,
+    asset: media::SourceAsset,
+) -> Result<ProjectData> {
+    let record = data
+        .assets
+        .iter_mut()
+        .find(|record| record.id() == asset.id())
+        .ok_or(EditError::NoAsset(asset.id()))?;
+    if record.content_hash() != asset.content_hash() || record.ephemeral() != asset.ephemeral() {
+        return Err(EditError::Invalid("relink content differs"));
+    }
+    *record = asset;
+    Ok(data)
+}
 pub(super) fn execute_remove_assets(
     mut data: ProjectData,
     assets: Vec<media::AssetId>,

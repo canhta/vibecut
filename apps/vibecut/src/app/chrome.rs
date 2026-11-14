@@ -47,6 +47,15 @@ impl EditorWindow {
         {
             self.error = Some(error);
         }
+        if !self.busy()
+            && let Some(pick) = self
+                .editor
+                .as_mut()
+                .and_then(|editor| editor.take_link_request())
+            && let Err(error) = self.pick(ui.ctx(), PickerAction::LinkMedia(pick))
+        {
+            self.error = Some(error);
+        }
         if self.open_file_requested && !self.busy() {
             self.open_file_requested = false;
             if let Err(error) = self.pick(ui.ctx(), PickerAction::Open) {

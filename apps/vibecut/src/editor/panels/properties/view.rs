@@ -261,6 +261,13 @@ impl<'a, 'c> Panel<'a, 'c> {
             self.transition_panel(ui, area, transition);
             return;
         }
+        if !self.state.details
+            && let Some(item) = single(self.cx.selection())
+            && self.source_missing(item)
+        {
+            self.missing_panel(ui, area);
+            return;
+        }
         if !self.state.details && self.cx.selection().len() == 1 {
             self.properties(ui, area);
             return;
@@ -297,6 +304,49 @@ impl<'a, 'c> Panel<'a, 'c> {
                         |panel, ui| panel.shared_inspector(ui),
                     );
                 });
+        }
+    }
+
+    /// A Video or Audio clip whose source file is gone: the panel has nothing to edit.
+    fn source_missing(&self, item: ItemId) -> bool {
+        let project = self.cx.session.project();
+        read::item(project, item).is_some_and(|clip| {
+            matches!(
+                clip.content,
+                project::ItemParams::Video(_) | project::ItemParams::Audio(_)
+            ) && clip
+                .source_asset
+                .and_then(|id| project.data().assets.iter().find(|asset| asset.id() == id))
+                .is_some_and(|asset| {
+                    self.cx.visuals.availability(asset) == media::AssetAvailability::Missing
+                })
+        })
+    }
+
+    /// The reference's panel for a lost clip is one grey line and no tabs (CapCut 9.7.1,
+    /// editor.md "Missing media"). The Link media button under it is ours: the reference
+    /// has none, and without it Cancel on the open dialog would leave no way back.
+    fn missing_panel(&mut self, ui: &mut egui::Ui, area: Rect) {
+        let mut body = body_ui(ui, area);
+        let mut link = None;
+        let height = body.max_rect().height();
+        body.vertical_centered(|ui| {
+            // One grey line, centred in the body under the 42 px strip (capture 095550).
+            ui.add_space(((height - theme::type_size::MISSING_PANEL * 2.0) / 2.0).max(0.0));
+            ui.label(
+                egui::RichText::new(self.tr(Text::MissingClipsPanel))
+                    .size(theme::type_size::MISSING_PANEL)
+                    .color(theme::disabled(self.cx.dark)),
+            );
+            ui.add_space(theme::space::LG);
+            let response = ui.add(egui::Button::new(self.tr(Text::LinkMediaAction)));
+            link = Some(response);
+        });
+        if let Some(response) = link {
+            self.remember("inspector.link_media", &response);
+            if response.clicked() {
+                self.actions.push(Action::OpenLinkMedia);
+            }
         }
     }
 

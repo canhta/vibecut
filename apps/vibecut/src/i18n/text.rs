@@ -1706,8 +1706,23 @@ catalog! {
     CropReset { key: "crop_reset", en: "Reset", vi: "Đặt lại" },
     CropTitle { key: "crop_title", en: "Crop", vi: "Cắt" },
 
+    // Missing media: panel line and the Link media dialog.
+    LinkMediaAction { key: "link_media_action", en: "Link media", vi: "Liên kết media" },
+    LinkMediaBody { key: "link_media_body", en: "Some media files could not be found. Point to where they are now, then keep editing.", vi: "Không tìm thấy một số tệp media. Chỉ đến nơi chúng đang nằm rồi tiếp tục dựng." },
+    LinkMediaDone { key: "link_media_done", en: "Media linked", vi: "Đã liên kết media" },
+    LinkMediaDuration { key: "link_media_duration", en: "Duration", vi: "Thời lượng" },
+    LinkMediaFolder { key: "link_media_folder", en: "Search the folder I pick", vi: "Tìm trong thư mục tôi chọn" },
+    LinkMediaLastPath { key: "link_media_last_path", en: "Last path", vi: "Đường dẫn cũ" },
+    LinkMediaLinked { key: "link_media_linked", en: "media linked", vi: "media đã liên kết" },
+    LinkMediaName { key: "link_media_name", en: "Name", vi: "Tên" },
+    LinkMediaNoMatch { key: "link_media_no_match", en: "No file there matches the missing media.", vi: "Không có tệp nào ở đó khớp với media bị thiếu." },
+    LinkMediaTitle { key: "link_media_title", en: "Link media", vi: "Liên kết media" },
+    MissingClipsPanel { key: "missing_clips_panel", en: "Clips on this timeline are missing their media", vi: "Clip trên timeline này đang thiếu media" },
+
     // Timeline clip visuals.
-    MediaMissing { key: "media_missing", en: "Media missing. Replace media to relink", vi: "Thiếu media. Dùng Thay media để liên kết lại" },
+    MediaMissing { key: "media_missing", en: "Media missing. Use Link media to find the file", vi: "Thiếu media. Dùng Liên kết media để tìm tệp" },
+    MissingClipHint { key: "missing_clip_hint", en: "File not found", vi: "Không thấy tệp" },
+    MissingClipTitle { key: "missing_clip_title", en: "Media missing", vi: "Thiếu media" },
     TimelineThumbnails { key: "timeline_thumbnails", en: "Thumbnails", vi: "Ảnh thu nhỏ" },
     TimelineWaveform { key: "timeline_waveform", en: "Waveform", vi: "Dạng sóng" },
     VisualClipping { key: "visual_clipping", en: "Audio clips past 0 dBFS", vi: "Âm thanh vượt 0 dBFS" },

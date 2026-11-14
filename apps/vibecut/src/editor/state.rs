@@ -170,6 +170,7 @@ pub struct Inspection {
     pub sounds: Option<super::assets::sounds::SoundsView>,
     pub music: Option<super::assets::sounds::music::MusicView>,
     pub voiceover: super::dialogs::voiceover::VoiceoverView,
+    pub link_media: super::dialogs::link_media::LinkMediaView,
     pub export: Option<crate::export::ExportInspection>,
     pub export_options: crate::export::ExportOptions,
     /// Working crop while its dialog is open; the project keeps its own copy.
@@ -268,6 +269,8 @@ pub(super) struct AssetRow {
     pub(super) icon: Icon,
     pub(super) state: super::assets::AssetState,
     pub(super) duration: Option<Tick>,
+    /// The source file is gone: the tile draws the missing state in place of a thumbnail.
+    pub(super) missing: bool,
 }
 /// App state only. The immutable engine project is read through Session, never copied
 /// into a parallel frontend project model. Every edit dispatches its registry ID.

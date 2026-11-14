@@ -1,6 +1,6 @@
 # Editor dialogs
 
-Interface: `State`, `Action`, `show_export`, `show_models`, `show_preferences`, `show_scene_split`, `show_voiceover`.
+Interface: `State`, `Action`, `show_export`, `show_link_media`, `show_models`, `show_preferences`, `show_scene_split`, `show_voiceover`.
 
 The export, model-manager and AI preferences sheets the editor window owns. Each dialog is one
 module: its `State` is the only place its fields live, and its `show` receives the
@@ -24,6 +24,8 @@ take also blocks global key dispatch. Tests inject the input host and the media 
 `Editor::set_voiceover`.
 
 `timeline.split_scene` opens the [scene split review](scene_split/README.md).
+
+The [Link media dialog](link_media/README.md) opens with a project that has missing sources and from the properties panel's Link media button; it relinks through `media.relink`.
 
 `preferences.open` in the Window menu opens Settings / AI models. Each remote
 provider/feature row puts its shipped default first, then explicitly refreshed IDs,
