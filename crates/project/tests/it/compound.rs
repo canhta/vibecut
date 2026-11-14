@@ -2,6 +2,11 @@
 use project::*;
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 
+/// A named change to one item, a row of an edit table.
+type ItemEdit = Box<dyn Fn(&mut Item)>;
+/// A named change to the project data, a row of a validation table.
+type DataEdit = Box<dyn Fn(&mut ProjectData)>;
+
 fn seconds(value: i64) -> Tick {
     Tick(value * TICKS_PER_SECOND)
 }
@@ -94,7 +99,7 @@ fn release_puts_members_on_their_tracks_at_output_time() {
 fn own_edits_are_a_window_retime_look_or_sound_of_the_clip_itself() {
     assert!(!compound().compound_has_own_edits().unwrap());
     assert!(!overlay(1, 0, 1).compound_has_own_edits().unwrap());
-    let edits: Vec<(&str, Box<dyn Fn(&mut Item)>)> = vec![
+    let edits: Vec<(&str, ItemEdit)> = vec![
         (
             "trimmed",
             Box::new(|item| {
@@ -198,7 +203,7 @@ fn validation_refuses_invalid_compound_clips() {
             audio: Vec::new(),
         }
     });
-    let cases: Vec<(&str, Box<dyn Fn(&mut ProjectData)>)> = vec![
+    let cases: Vec<(&str, DataEdit)> = vec![
         (
             "member id used outside",
             Box::new(|data| data.scene_mut().timeline.main.items[0].id = ItemId(20)),

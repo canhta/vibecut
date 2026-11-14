@@ -50,10 +50,7 @@ pub fn plot_scopes(width: usize, height: usize, rgba: &[u8]) -> Result<Scopes> {
     let mut parade = Grid::new(TRACE_WIDTH, TRACE_HEIGHT)?;
     let mut waveform = Grid::new(TRACE_WIDTH, TRACE_HEIGHT)?;
     let mut vectorscope = Grid::new(VECTOR_SIDE, VECTOR_SIDE)?;
-    for (n, pixel) in rgba.chunks_exact(4).enumerate() {
-        let &[r, g, b, _] = pixel else {
-            continue;
-        };
+    for (n, &[r, g, b, _]) in rgba.as_chunks::<4>().0.iter().enumerate() {
         let x = n % width;
         let within = x * GROUP / width;
         for (channel, (level, colour)) in [(r, [255, 0, 0]), (g, [0, 255, 0]), (b, [0, 0, 255])]

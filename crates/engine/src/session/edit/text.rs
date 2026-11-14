@@ -300,19 +300,31 @@ pub(super) fn save_text_preset(
     Ok(data)
 }
 
+/// One `text.insert_template` request: where, which template, optional words, and the span.
+pub(super) struct TemplateInsert {
+    pub(super) placement: Placement,
+    pub(super) template: project::TextTemplate,
+    pub(super) content: Option<captions::NfcText>,
+    pub(super) start: Tick,
+    pub(super) duration: Tick,
+}
+
 /// Insert one new text item from a built-in template: its look's style, its words (or the
 /// caller's), at its vertical position on the canvas. The item is created by the ordinary
 /// insert, so placement, locks and overlap follow `InsertItem`; the whole insert is one edit.
 pub(super) fn insert_text_template(
     data: ProjectData,
-    placement: Placement,
-    template: project::TextTemplate,
-    content: Option<captions::NfcText>,
-    start: Tick,
-    duration: Tick,
+    request: TemplateInsert,
     created: &mut Vec<CreatedId>,
     next: &mut Option<u64>,
 ) -> Result<ProjectData> {
+    let TemplateInsert {
+        placement,
+        template,
+        content,
+        start,
+        duration,
+    } = request;
     let mut animations = project::Animations::default();
     if template.shift() != 0.0 {
         animations.set(

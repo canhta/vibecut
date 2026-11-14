@@ -871,17 +871,15 @@ fn evaluated(s: &Session, id: &str, time: i64) -> MaskPath {
 }
 
 fn cubic(a: &MaskVertex, b: &MaskVertex, u: f64) -> [f64; 2] {
-    let at = |axis: usize| {
-        let p = [
-            a.p[axis],
-            a.p[axis] + a.t_out[axis],
-            b.p[axis] + b.t_in[axis],
-            b.p[axis],
-        ];
-        let v = 1.0 - u;
-        v * v * v * p[0] + 3.0 * v * v * u * p[1] + 3.0 * v * u * u * p[2] + u * u * u * p[3]
+    let v = 1.0 - u;
+    let bezier = |p0: f64, p1: f64, p2: f64, p3: f64| {
+        v * v * v * p0 + 3.0 * v * v * u * p1 + 3.0 * v * u * u * p2 + u * u * u * p3
     };
-    [at(0), at(1)]
+    let ([ax, ay], [ox, oy], [ix, iy], [bx, by]) = (a.p, a.t_out, b.t_in, b.p);
+    [
+        bezier(ax, ax + ox, bx + ix, bx),
+        bezier(ay, ay + oy, by + iy, by),
+    ]
 }
 
 #[test]

@@ -422,7 +422,16 @@ pub(crate) fn apply(
             duration,
         } => {
             data = text::insert_text_template(
-                data, placement, template, content, start, duration, created, next,
+                data,
+                text::TemplateInsert {
+                    placement,
+                    template,
+                    content,
+                    start,
+                    duration,
+                },
+                created,
+                next,
             )?;
         }
         EditCommand::SaveTextPreset { item, name } => {

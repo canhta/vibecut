@@ -13,6 +13,9 @@ use project::{
 use std::sync::Arc;
 use time::{SourceRange, Tick};
 
+/// Whether a refusal is the expected one.
+type Refusal = fn(&EditError) -> bool;
+
 fn clip(id: u64, content: ItemParams, start: i64, length: i64) -> Item {
     testkit::item::item(ItemId(id), content)
         .source(SourceRange::new(Tick::ZERO, Tick(length)).unwrap())
@@ -184,7 +187,7 @@ fn uncompound_puts_members_back_at_their_times() {
 fn compound_commands_refuse_typed_and_leave_the_project_unchanged() {
     let mut s = session();
     let before = s.project().clone();
-    let cases: Vec<(Command, fn(&EditError) -> bool)> = vec![
+    let cases: Vec<(Command, Refusal)> = vec![
         (
             Command::TimelineCompound {
                 items: vec![ItemId(1), ItemId(6)],
