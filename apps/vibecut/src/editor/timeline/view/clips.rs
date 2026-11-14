@@ -130,10 +130,19 @@ impl State {
             }
             _ => {}
         }
+        // A selected group's members wear the group outline, white in the reference.
+        let outline = if selected && item.group.is_some() {
+            egui::Stroke::new(
+                theme::size::GROUP_OUTLINE,
+                theme::group_outline(dark).gamma_multiply(dim),
+            )
+        } else {
+            egui::Stroke::new(1.0, border)
+        };
         painter.rect_stroke(
             full,
             theme::radius::PANEL,
-            egui::Stroke::new(1.0, border),
+            outline,
             egui::StrokeKind::Inside,
         );
         // A missing clip lays its name and the two relink lines out together so they never
@@ -159,26 +168,35 @@ impl State {
                 .right();
         }
         if let (Some(rank), Some(label_y)) = (item.group, label_y) {
-            // Group cue: a small group glyph then the group name after the clip label, in the
-            // label colour, cut at the clip edge (measured: `14e/203841`).
-            let glyph = Rect::from_center_size(
-                egui::pos2(label_end + GROUP_LEAD + GROUP_GLYPH / 2.0, label_y),
-                Vec2::splat(GROUP_GLYPH),
-            );
+            // Group badge: a glyph pill then a name pill after the clip label, both a lighter
+            // wash of the clip fill, cut at the clip edge (measured: `14e/203841`).
+            let pill = theme::group_pill(dark).gamma_multiply(dim);
             let name = i18n::format(
                 cx.locale,
                 Text::GroupName,
                 &[("letter", group_letter(rank).as_str())],
             );
-            if glyph.right() < visible.right() {
-                icons::tinted(Icon::LinkSimple, GROUP_GLYPH, text).paint_at(ui, glyph);
-                painter.with_clip_rect(visible).text(
-                    egui::pos2(glyph.right() + GROUP_NAME_GAP, label_y),
-                    Align2::LEFT_CENTER,
+            let (glyph_pill, _) = group_badge_pills(label_end, label_y, 0.0);
+            if glyph_pill.right() < visible.right() {
+                let name_galley = painter.layout_no_wrap(
                     name,
                     FontId::proportional(theme::type_size::BODY),
                     text,
                 );
+                let (glyph_pill, name_pill) =
+                    group_badge_pills(label_end, label_y, name_galley.size().x);
+                for rect in [glyph_pill, name_pill] {
+                    painter.rect_filled(rect, theme::radius::GROUP_PILL, pill);
+                }
+                icons::tinted(Icon::TreeStructure, GROUP_GLYPH, text).paint_at(
+                    ui,
+                    Rect::from_center_size(glyph_pill.center(), Vec2::splat(GROUP_GLYPH)),
+                );
+                let name_at = egui::pos2(
+                    name_pill.left() + theme::size::GROUP_PILL_PAD,
+                    label_y - name_galley.size().y / 2.0,
+                );
+                painter.galley(name_at, name_galley, text);
             }
         }
         self.paint_lane_toggle(cx, ui, item, visible, ink);
@@ -633,13 +651,34 @@ impl State {
     }
 }
 
-/// Side of the group glyph beside the group name on a grouped clip.
-/// Measured on `14e/203841` (Pillow, logical = px / 2): the glyph's ink is 11 pt wide.
-const GROUP_GLYPH: f32 = 11.0;
-/// From the clip label's last ink to the group glyph's first ink: 10.5 pt (21 px).
-const GROUP_LEAD: f32 = 10.5;
-/// From the group glyph's last ink to the group name's first ink: 4 pt (8 px).
-const GROUP_NAME_GAP: f32 = 4.0;
+/// Box of the group glyph: Phosphor `tree-structure` inks 240 of its 256 units, and the
+/// reference glyph's ink is `GROUP_GLYPH_INK` wide (`14e/203841`, 22 px at 2x).
+const GROUP_GLYPH: f32 = theme::size::GROUP_GLYPH_INK * 256.0 / 240.0;
+
+/// The glyph pill and the name pill of a group badge: the glyph pill starts one pill padding
+/// and one gap after the label's end, the name pill one gap after it and holds the name
+/// between two paddings; both are one pill high and centred on `label_y`.
+fn group_badge_pills(label_end: f32, label_y: f32, name_width: f32) -> (Rect, Rect) {
+    let top = label_y - theme::size::GROUP_PILL_HEIGHT / 2.0;
+    let glyph = Rect::from_min_size(
+        egui::pos2(
+            label_end + theme::size::GROUP_PILL_PAD + theme::size::GROUP_PILL_GAP,
+            top,
+        ),
+        Vec2::new(
+            theme::size::GROUP_GLYPH_PILL,
+            theme::size::GROUP_PILL_HEIGHT,
+        ),
+    );
+    let name = Rect::from_min_size(
+        egui::pos2(glyph.right() + theme::size::GROUP_PILL_GAP, top),
+        Vec2::new(
+            name_width + 2.0 * theme::size::GROUP_PILL_PAD,
+            theme::size::GROUP_PILL_HEIGHT,
+        ),
+    );
+    (glyph, name)
+}
 
 /// Group names count in creation order: A, B, … Z, then A1, B1, ….
 fn group_letter(rank: usize) -> String {
@@ -1655,6 +1694,29 @@ mod tests {
         let (selected, border, _) = item_palette(TrackKind::Audio, true, true, None);
         assert_eq!(rgb(selected), [0x18, 0x2F, 0x56]);
         assert_eq!(border, theme::accent(true), "selection border");
+    }
+
+    #[test]
+    fn group_badge_pills_follow_the_measured_geometry() {
+        // 14e/203841 (Pillow, logical = px / 2): 14 pt pills, a 14 pt glyph pill, 2 pt between
+        // the pills, 2.5 pt between a pill's edge and its text.
+        let (glyph, name) = group_badge_pills(100.0, 50.0, 41.0);
+        assert_eq!((glyph.height(), glyph.width()), (14.0, 14.0));
+        assert_eq!(glyph.center().y, 50.0);
+        assert_eq!(glyph.left(), 100.0 + 2.5 + 2.0);
+        assert_eq!(name.left() - glyph.right(), 2.0);
+        assert_eq!((name.height(), name.width()), (14.0, 41.0 + 5.0));
+        assert_eq!(name.center().y, 50.0);
+        // The glyph's ink (11 pt) sits inside its pill with room on every side.
+        assert!(GROUP_GLYPH * 240.0 / 256.0 <= glyph.width() - 2.0);
+    }
+
+    #[test]
+    fn a_selected_group_is_outlined_white_in_the_dark_theme_only() {
+        // 14e/203832: every member wears a white outline; the light theme keeps its accent.
+        assert_eq!(theme::group_outline(true), Color32::WHITE);
+        assert_eq!(theme::group_outline(false), theme::accent(false));
+        assert_eq!(theme::group_pill(true), Color32::from_white_alpha(24));
     }
 
     #[test]

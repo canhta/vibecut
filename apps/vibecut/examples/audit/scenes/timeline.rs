@@ -233,7 +233,8 @@ pub(super) fn timeline_multi(theme: Theme, scale: f32) -> Result<AppHarness, Fai
 }
 
 /// Every clip of the media fixture in one group, beside the grouping capture: `selected`
-/// matches 14e/203832, unselected 14e/203841. The first-use tip was dismissed in both frames.
+/// matches 14e/203832 (white outline on every member), unselected 14e/203841 (badge pills). The first-use
+/// tip was dismissed in both frames.
 pub(super) fn timeline_group(
     theme: Theme,
     scale: f32,
