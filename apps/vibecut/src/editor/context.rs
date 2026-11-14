@@ -412,6 +412,8 @@ pub(crate) enum Request {
     SetMatteBrushSize(u32),
     /// Ask the window to open the native media picker for one clip's replacement.
     ReplaceMedia(project::ItemId),
+    /// Open the captions transcript pane on one clip and select the clip's words.
+    OpenTranscript(project::ItemId),
     /// Open the Link media dialog on the sources that are missing now.
     LinkMedia,
     /// Edits changed the project: drop the nested selection scopes it left dangling.

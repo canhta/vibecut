@@ -151,7 +151,7 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
                     }
                 }
             }
-            Command::PasteItems { at, source } => {
+            Command::PasteItems { at, source, .. } => {
                 if *at < Tick::ZERO || at.0 > super::wire::MAX_SAFE_INTEGER {
                     return Err(EditError::Control(
                         crate::session::wire::ControlError::InvalidParams,
@@ -351,12 +351,12 @@ pub(crate) fn apply(
                 payload.paste(item(&mut data, id)?, at)?;
             }
         }
-        EditCommand::PasteItems { at, source } => {
+        EditCommand::PasteItems { at, source, track } => {
             let payload = match &source {
                 crate::ItemPasteSource::Stored => clipboards.items,
                 crate::ItemPasteSource::Payload { payload } => Some(payload),
             };
-            data = clips::execute_paste_items(data, at, payload, created, next, sources)?;
+            data = clips::execute_paste_items(data, at, track, payload, created, next, sources)?;
         }
         EditCommand::PasteAttributes { items, source } => {
             let payload = match &source {
@@ -675,6 +675,12 @@ pub(crate) fn apply(
         }
         EditCommand::TimelineSplitAll { at } => {
             data = clips::execute_split_all(data, at, created, next, sources)?;
+        }
+        EditCommand::CloseGap { track: id, at } => {
+            data = clips::execute_close_gaps(data, id, Some(at))?;
+        }
+        EditCommand::CloseAllGaps { track: id } => {
+            data = clips::execute_close_gaps(data, id, None)?;
         }
         EditCommand::TimelineSplitLeft { items, at } => {
             let items = clips::with_group_members_at(&data, &items, at);

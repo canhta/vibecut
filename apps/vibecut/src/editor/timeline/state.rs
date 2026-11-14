@@ -233,6 +233,8 @@ pub(in crate::editor) struct State {
     /// Preview-axis pointer time; transient and never part of the project.
     pub(in crate::editor::timeline) hover: Option<Tick>,
     pub(in crate::editor::timeline) marquee: Option<(egui::Pos2, BTreeSet<ItemId>, bool)>,
+    /// The track and time a row menu was opened at, fixed by the right click.
+    pub(in crate::editor::timeline) row_menu_target: Option<(TrackId, Tick)>,
     pub(in crate::editor::timeline) track_rename: Option<(TrackId, String)>,
     pub(in crate::editor::timeline) track_rename_focus: bool,
     pub(in crate::editor::timeline) track_drag: Option<TrackId>,
@@ -282,6 +284,7 @@ impl State {
             snap_indicator: None,
             hover: None,
             marquee: None,
+            row_menu_target: None,
             track_rename: None,
             track_rename_focus: false,
             track_drag: None,

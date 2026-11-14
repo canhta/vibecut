@@ -361,6 +361,8 @@ pub enum Fixture {
     Timeline,
     /// Timeline whose item 1 opacity carries a second key at 1 s, so its first segment is easable.
     Keyframes,
+    /// Timeline with two Video items on the empty track 3, one second apart: a gap from 1 s to 2 s.
+    Gap,
     /// Timeline whose item 1 carries one closed cubic path mask, `mask1`.
     MaskPath,
     /// Timeline plus one audible clip, item 5.
@@ -711,7 +713,7 @@ commands! {
     CopyKeyframes, "clipboard.copy_keyframes", "Copy selected keyframes", SessionControl { #[schemars(length(max = 4096))] keys: Vec<KeyframeRef> } => Timeline, serde_json::json!({"keys":[{"item":1,"path":"opacity","component":null,"time":0}]}), idle = true, grant = Agent;
     CopyMaskPoints, "clipboard.copy_mask_points", "Copy mask points", SessionControl { item: ItemId, mask: String, points: Vec<usize> } => MaskPath, serde_json::json!({"item":1,"mask":"mask1","points":[0,1]}), idle = true, grant = Agent, collections = [points];
     CutSelection, "clipboard.cut", "Cut selected items, keyframes or mask points", SessionControl { target: CutTarget } => Timeline, serde_json::json!({"target":{"kind":"items","items":[1]}}), available = UnlockedItem, grant = Agent;
-    PasteItems, "clipboard.paste", "Paste items", Edit { at: Tick, source: ItemPasteSource } => Timeline, serde_json::json!({"at":0,"source":{"kind":"payload","payload":{"version":1,"span":1000,"items":[{"trackKind":"video","trackIndex":0,"item":{"blendMode":"normal","masks":[],"effects":[],"animations":{},"id":0,"hidden":false,"source_asset":null,"source_range":{"start":0,"end":1000},"start":0,"retime":{"speed":1.0,"maintain_pitch":true,"reverse":false},"content":{"kind":"overlay","params":{"color":[255,0,0,255]}}}}]}}}), idle = true, grant = Agent;
+    PasteItems, "clipboard.paste", "Paste items", Edit { at: Tick, source: ItemPasteSource, #[serde(default)] track: Option<TrackId> } => Timeline, serde_json::json!({"at":0,"track":null,"source":{"kind":"payload","payload":{"version":1,"span":1000,"items":[{"trackKind":"video","trackIndex":0,"item":{"blendMode":"normal","masks":[],"effects":[],"animations":{},"id":0,"hidden":false,"source_asset":null,"source_range":{"start":0,"end":1000},"start":0,"retime":{"speed":1.0,"maintain_pitch":true,"reverse":false},"content":{"kind":"overlay","params":{"color":[255,0,0,255]}}}}]}}}), idle = true, grant = Agent;
     PasteKeyframes, "clipboard.paste_keyframes", "Paste keyframes", Edit { item: ItemId, at: Tick, source: KeyframePasteSource } => Timeline, serde_json::json!({"item":1,"at":12,"source":{"kind":"payload","payload":{"version":1,"origin":0,"params":[{"path":"opacity","param":{"kind":"value","channels":{"value":{"kind":"scalar","value":0.7},"keys":[{"time":0,"value":{"kind":"scalar","value":0.25},"segment":"linear","tangent":"flat","incoming":null,"outgoing":null}],"before":"hold","after":"hold"}}}]}}}), available = UnlockedItem, grant = Agent;
     PasteMaskPoints, "clipboard.paste_mask_points", "Paste mask points", Edit { item: ItemId, mask: String, after: usize, source: ItemPasteSource } => MaskPath, serde_json::json!({"item":1,"mask":"mask1","after":0,"source":{"kind":"payload","payload":{"version":1,"items":[],"span":0,"maskPoints":[{"p":[0.5,0.5],"t_in":[0.0,0.0],"t_out":[0.0,0.0]}]}}}), available = VisualItem;
     ReadClipboard, "clipboard.read", "Read keyframe clipboard", Read {} => Timeline, serde_json::json!({}), idle = true, grant = Agent, returns = [Clipboard];
@@ -818,6 +820,8 @@ commands! {
     AddTrack, "timeline.add_track", "Add track", Edit { name: NfcText, kind: TrackKind, #[serde(default)] placement: TrackPlacement } => Timeline, serde_json::json!({"name":"Added","kind":"video"});
     AlignItems, "timeline.align_items", "Align items", Edit { items: Vec<ItemId>, alignment: project::ItemAlignment, at: Tick } => Timeline, serde_json::json!({"items":[1],"alignment":"left","at":0}), available = UnlockedItem, collections = [items];
     ApplySpeedPreset, "timeline.apply_speed_preset", "Apply speed ramp preset", Edit { items: Vec<ItemId>, preset: project::SpeedPreset, maintain_pitch: bool } => Timeline, serde_json::json!({"items":[5],"preset":"montage","maintain_pitch":true}), available = RetimableItem, collections = [items];
+    CloseAllGaps, "timeline.close_all_gaps", "Close all gaps", Edit { track: TrackId } => Gap, serde_json::json!({"track":3});
+    CloseGap, "timeline.close_gap", "Close gap", Edit { track: TrackId, at: Tick } => Gap, serde_json::json!({"track":3,"at":190512000000_i64});
     TimelineCommitPreview, "timeline.commit_preview", "Commit timeline preview", SessionControl {} => Gesture, serde_json::json!({}), available = GestureActive, grant = Human;
     TimelineDiscardPreview, "timeline.discard_preview", "Discard timeline preview", SessionControl {} => Gesture, serde_json::json!({}), available = GestureActive, grant = Human;
     DistributeItems, "timeline.distribute_items", "Distribute items evenly", Edit { items: Vec<ItemId>, axis: project::DistributionAxis, at: Tick } => Arrange, serde_json::json!({"items":[1,3,5],"axis":"horizontal","at":0}), available = UnlockedItem, collections = [items];

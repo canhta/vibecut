@@ -324,6 +324,65 @@ impl State {
     /// The clip context menu: split variants, duplicate, delete, hide/mute and
     /// source-audio extraction, each dispatching its registered action id.
     fn item_menu(&mut self, cx: &Context<'_>, ui: &mut egui::Ui, item: &ItemView) {
+        // The clipboard group in reference order (110011): Copy, Cut, Copy attributes, Paste
+        // attributes. Each is the registered action; its enablement is the engine's admission.
+        let single = cx.selection().len() == 1 && cx.selection().contains(&item.id);
+        let copy = format!("timeline.item.{}.copy", item.id.0);
+        if self.menu_action(
+            cx,
+            ui,
+            copy,
+            "edit.copy",
+            Text::ActionEditCopy,
+            Icon::Copy,
+            cx.session.can_copy_items(&[item.id]),
+        ) {
+            self.push(Action::Activate("edit.copy".to_owned()));
+            ui.close();
+        }
+        let cut = format!("timeline.item.{}.cut", item.id.0);
+        let cuttable = !item.locked
+            && cx.session.can_cut(&engine::CutTarget::Items {
+                items: vec![item.id],
+            });
+        if self.menu_action(
+            cx,
+            ui,
+            cut,
+            "edit.cut",
+            Text::ActionEditCut,
+            Icon::Scissors,
+            cuttable,
+        ) {
+            self.push(Action::Activate("edit.cut".to_owned()));
+            ui.close();
+        }
+        let copy_attributes = format!("timeline.item.{}.copy_attributes", item.id.0);
+        if self.menu_action(
+            cx,
+            ui,
+            copy_attributes,
+            "edit.copy_attributes",
+            Text::ActionEditCopyAttributes,
+            Icon::Copy,
+            single && cx.session.can_copy_items(&[item.id]),
+        ) {
+            self.push(Action::Activate("edit.copy_attributes".to_owned()));
+            ui.close();
+        }
+        let paste_attributes = format!("timeline.item.{}.paste_attributes", item.id.0);
+        if self.menu_action(
+            cx,
+            ui,
+            paste_attributes,
+            "edit.paste_attributes",
+            Text::ActionEditPasteAttributes,
+            Icon::Copy,
+            cx.session.can_paste_attributes(&[item.id]),
+        ) {
+            self.push(Action::Activate("edit.paste_attributes".to_owned()));
+            ui.close();
+        }
         let paste = format!("timeline.item.{}.paste", item.id.0);
         let enabled = !cx.disabled.contains("edit.paste")
             && cx.selection().len() == 1
@@ -444,6 +503,23 @@ impl State {
                 editable && single,
             ) {
                 self.push(Action::Activate("timeline.split_scene".to_owned()));
+                ui.close();
+            }
+        }
+        // Transcript sits after Split scene in the reference (110011); it opens the captions
+        // pane on this clip and selects the words that overlap it.
+        if matches!(item.kind, TrackKind::Video | TrackKind::Audio) {
+            let transcript = format!("timeline.item.{}.transcript", item.id.0);
+            if self.menu_action(
+                cx,
+                ui,
+                transcript,
+                "timeline.transcript",
+                Text::ClipTranscript,
+                Icon::Subtitles,
+                true,
+            ) {
+                self.push(Action::OpenTranscript(item.id));
                 ui.close();
             }
         }

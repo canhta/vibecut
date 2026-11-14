@@ -271,6 +271,8 @@ pub const TABLE: &[(&str, Verdict)] = &[
     ("timeline.add_track", Verdict::Allow),
     ("timeline.align_items", Verdict::Allow),
     ("timeline.apply_speed_preset", Verdict::Allow),
+    ("timeline.close_all_gaps", Verdict::Allow),
+    ("timeline.close_gap", Verdict::Allow),
     ("timeline.commit_preview", Verdict::Refuse(Reason::Gesture)),
     ("timeline.discard_preview", Verdict::Refuse(Reason::Gesture)),
     ("timeline.distribute_items", Verdict::Allow),

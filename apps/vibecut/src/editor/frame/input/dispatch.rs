@@ -151,7 +151,7 @@ impl Editor {
                 // One clipboard entry is live at a time: copied keyframes paste onto
                 // the single selected item, copied items paste on their track.
                 SelectionScope::Items => {
-                    self.session.can_paste_items(at)
+                    self.session.can_paste_items(at, None)
                         || crate::editor::context::single(self.session.selection())
                             .is_some_and(|item| self.session.can_paste_keyframes(item, at))
                 }
@@ -162,7 +162,7 @@ impl Editor {
                     })
                 }
                 // Cut leaves nothing selected; stored items then paste at the playhead.
-                SelectionScope::None => self.session.can_paste_items(at),
+                SelectionScope::None => self.session.can_paste_items(at, None),
                 SelectionScope::Transition => false,
             }
         }

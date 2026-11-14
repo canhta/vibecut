@@ -46,8 +46,8 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 | [Text library](assets.md#text-library-textlib) | 10 | 2 | 2 | 4 | 0 | 1 | 1 | 0 | 0 | 2 | 6 |
 | [Stickers](assets.md#stickers-stick) | 12 | 4 | 1 | 1 | 0 | 4 | 2 | 1 | 1 | 7 | 0 |
 | [Templates](assets.md#templates-tmpl) | 7 | 0 | 0 | 6 | 0 | 0 | 1 | 0 | 0 | 0 | 5 |
-| [Captions panel](captions.md#captions-panel-caps) | 42 | 20 | 11 | 7 | 0 | 4 | 0 | 4 | 5 | 18 | 14 |
-| [Transcript editing](captions.md#transcript-editing-transcript) | 16 | 1 | 5 | 9 | 1 | 0 | 0 | 0 | 1 | 5 | 1 |
+| [Captions panel](captions.md#captions-panel-caps) | 42 | 21 | 10 | 7 | 0 | 4 | 0 | 4 | 5 | 18 | 14 |
+| [Transcript editing](captions.md#transcript-editing-transcript) | 16 | 2 | 5 | 8 | 1 | 0 | 0 | 0 | 2 | 5 | 1 |
 | [Effects](catalogues.md#effects-fx) | 17 | 9 | 4 | 2 | 0 | 0 | 2 | 3 | 3 | 6 | 2 |
 | [Transitions](catalogues.md#transitions-trans) | 16 | 9 | 2 | 1 | 0 | 3 | 1 | 2 | 1 | 9 | 1 |
 | [Filters](catalogues.md#filters-filt) | 9 | 7 | 1 | 0 | 0 | 0 | 1 | 1 | 1 | 4 | 0 |

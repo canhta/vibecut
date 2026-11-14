@@ -1970,3 +1970,85 @@ fn a_missing_clips_name_and_relink_lines_never_overlap_at_any_height() {
     let rows = missing_rows(tiny, tiny, false);
     assert_eq!((rows.name, rows.lines), (Some(10.0), None));
 }
+
+/// A secondary (right) click at `at`: the menu opens on the release.
+fn secondary_click(harness: &mut Harness<'_, Rig>, at: egui::Pos2) {
+    harness.event(egui::Event::PointerMoved(at));
+    harness.run_steps(1);
+    for pressed in [true, false] {
+        harness.event(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Secondary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        });
+        harness.run_steps(1);
+    }
+    harness.run_steps(2);
+}
+
+#[test]
+fn row_menu_closes_the_gap_under_the_click_and_a_clip_menu_opens_its_transcript() {
+    let mut harness = harness(Rig::new());
+    harness.state_mut().take();
+    let (first, second, track) = (
+        harness.state().first,
+        harness.state().second,
+        harness.state().track,
+    );
+    let left = harness.state().rect(&format!("timeline.item.{}", first.0));
+    let right = harness.state().rect(&format!("timeline.item.{}", second.0));
+    // The middle of the gap between the clips (3 s to 5 s) is empty row space.
+    let row_y = harness
+        .state()
+        .rect(&format!("track.{}.header", track.0))
+        .center()
+        .y;
+    let in_gap = egui::pos2((left.right() + right.left()) / 2.0, row_y);
+    secondary_click(&mut harness, in_gap);
+    let close = harness
+        .state()
+        .rect(&format!("track.{}.close_gap", track.0));
+    click(&mut harness, close.center());
+    let returned = harness.state_mut().take();
+    assert!(
+        matches!(
+            returned.as_slice(),
+            [Action::Command(command)]
+                if matches!(
+                    command.as_ref(),
+                    engine::Command::CloseGap { track: clicked, at }
+                        if *clicked == track && at.0 > 3 * SECOND && at.0 < 5 * SECOND
+                )
+        ),
+        "{returned:?}"
+    );
+
+    // The clip menu lists Copy, and its Transcript entry opens the pane for the clicked clip.
+    secondary_click(&mut harness, left.center());
+    harness.state_mut().take();
+    let copy = harness
+        .state()
+        .rect(&format!("timeline.item.{}.copy", first.0));
+    click(&mut harness, copy.center());
+    let returned = harness.state_mut().take();
+    assert!(
+        returned
+            .iter()
+            .any(|action| matches!(action, Action::Activate(id) if id == "edit.copy")),
+        "{returned:?}"
+    );
+    secondary_click(&mut harness, left.center());
+    harness.state_mut().take();
+    let transcript = harness
+        .state()
+        .rect(&format!("timeline.item.{}.transcript", first.0));
+    click(&mut harness, transcript.center());
+    let returned = harness.state_mut().take();
+    assert!(
+        returned
+            .iter()
+            .any(|action| matches!(action, Action::OpenTranscript(item) if *item == first)),
+        "{returned:?}"
+    );
+}

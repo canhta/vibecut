@@ -181,7 +181,7 @@ impl Editor {
                     let mut pasted_items = false;
                     let outcome = match scope {
                         crate::editor::selection::SelectionScope::Items
-                            if !self.session.can_paste_items(at)
+                            if !self.session.can_paste_items(at, None)
                                 && crate::editor::context::single(self.session.selection())
                                     .is_some_and(|item| {
                                         self.session.can_paste_keyframes(item, at)
@@ -211,6 +211,7 @@ impl Editor {
                             self.session.apply(engine::Command::PasteItems {
                                 at,
                                 source: engine::ItemPasteSource::Stored,
+                                track: None,
                             })?
                         }
                         crate::editor::selection::SelectionScope::MaskPoints => {

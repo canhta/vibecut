@@ -1749,6 +1749,9 @@ catalog! {
     AttributeGroupText { key: "attribute_group_text", en: "Text style", vi: "Kiểu chữ" },
     AttributeGroupTransform { key: "attribute_group_transform", en: "Transform", vi: "Biến đổi" },
     AttributesSkipped { key: "attributes_skipped", en: "Not pasted: {groups}", vi: "Không dán được: {groups}" },
+    ClipTranscript { key: "clip_transcript", en: "Transcript", vi: "Bản chép lời" },
+    CloseAllGaps { key: "close_all_gaps", en: "Close all gaps", vi: "Đóng mọi khoảng trống" },
+    CloseGap { key: "close_gap", en: "Close gap", vi: "Đóng khoảng trống" },
     FontDownload { key: "font_download", en: "Download", vi: "Tải xuống" },
     FontDownloadFailed { key: "font_download_failed", en: "Download failed", vi: "Tải xuống thất bại" },
     FontDownloading { key: "font_downloading", en: "Downloading…", vi: "Đang tải…" },
@@ -1792,6 +1795,7 @@ catalog! {
     SceneSplitSelectOne { key: "scene_split_select_one", en: "Select one video clip first.", vi: "Hãy chọn một đoạn video trước." },
     SceneSplitTitle { key: "scene_split_title", en: "Split scene", vi: "Tách theo cảnh" },
 
+    SelectTrackClips { key: "select_track_clips", en: "All clips on track", vi: "Mọi clip trên track" },
     // Crop dialog.
     CropApply { key: "crop_apply", en: "Apply", vi: "Áp dụng" },
     CropAspect16x9 { key: "crop_aspect_16_9", en: "16:9", vi: "16:9" },

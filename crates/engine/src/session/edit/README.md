@@ -94,6 +94,8 @@ ripples, a reviewed span cut always does, a batch follows its children. One post
 closes same-track tails vacated by delete, tail trim or leftward movement; it never shifts
 another track, and cross-track moves, splits and hide/mute leave followers unchanged.
 
+`timeline.close_gap {track,at}` closes the empty span that contains `at` on one unlocked track, and `timeline.close_all_gaps {track}` closes every such span, the lead-in before the first item included; each later item moves left by the closed length, so the track stays one run. A time inside an item, or a track with no gap, refuses and changes nothing ([`execute_close_gaps`](clips.rs)). Trailing space after the last item is never a gap. `clipboard.paste {at,source,track}` with `track` set lands every copied item on that track, which must carry each item's kind; without it the copied track indices apply as before.
+
 The main-track magnet (`timeline.magnet`, `track.set_magnet`; default on) runs the same pass
 without the session flag for a command whose leaves are only `delete`, `timeline.split_left` and
 `timeline.split_right` (a `Batch` of them included) and whose listed items include one on the

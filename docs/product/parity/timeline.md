@@ -64,8 +64,8 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | TL-46 | Deactivate clip | Partial | Proposed | 14b/110011 | Hide item, no V key |
 | TL-47 | Trim clip | Missing | — | 14/095625 | |
 | TL-48 | Replace clip | Done | Proposed | 14/095625 | |
-| TL-49 | Copy, cut, paste | Partial | Proposed | 14b/110011 | Copy, Cut not in clip menu |
-| TL-50 | Copy / paste attributes | Partial | Proposed | 14b/110011 | No menu rows |
+| TL-49 | Copy, cut, paste | Done | Proposed | 14b/110011 | Clip menu Copy and Cut, reference order |
+| TL-50 | Copy / paste attributes | Done | Proposed | 14b/110011 | Clip menu rows, same actions |
 | TL-51 | Save preset (clip) | Missing | — | 14b/103312 | |
 | TL-52 | Export selected clips | Partial | Differs | 14b/110011 | Export range only |
 | TL-53 | Sync video and audio | Missing | — | 14b/110011 | |
@@ -108,20 +108,21 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | TL-78 | Track menu: Track height | Done | Proposed | 14b/103113 | Row scale unmeasured |
 | TL-79 | Track menu: Waveform size | Done | Proposed | 14b/103118 | Bar reach unmeasured |
 | TL-80 | Track menu: ours | Ours | Proposed | | Paste, rename, mute, delete |
-| TL-81 | Row menu: Close gap | Missing | — | 14b/103135 | |
-| TL-82 | Row menu: Close all gaps | Missing | — | 14b/103135 | |
-| TL-83 | Row menu: Paste | Missing | — | 14b/103135 | |
+| TL-81 | Row menu: Close gap | Done | Proposed | 14b/103135 | Gap under the click; one undo step |
+| TL-82 | Row menu: Close all gaps | Done | Proposed | 14b/103135 | Every gap on the row |
+| TL-83 | Row menu: Paste | Done | Proposed | 14b/103135 | Pastes at the click time on that row |
 | TL-84 | Row menu: Render | Missing | — | 14b/103213 | No render cache |
 | TL-85 | Clip menu: chat entry | Missing | — | 14b/110011 | |
 | TL-86 | Clip menu: Edit submenu | Missing | Not captured | 14b/110011 | |
 | TL-87 | Clip menu: AI generate items | Out of scope | — | 14b/110011 | Generated media |
-| TL-88 | Clip menu: Transcript | Missing | — | 14b/110011 | |
+| TL-88 | Clip menu: Transcript | Done | Differs | 14b/110011 | Opens the Captions pane on the clip's words, not a window |
 | TL-89 | Clip menu: Split scenes | Done | Proposed | 14b/110011 | |
 | TL-90 | Text clip menu extras | Missing | — | 14b/103312 | |
 | TL-91 | Audio clip: link, open location | Done | Proposed | 14b/103343 | |
 | TL-92 | Media tile menu | Partial | Not captured | 14b/103259 | See MEDIA |
 | TL-93 | Player right-click | Differs | Not captured | 14b/103250 | Reference has none |
 | TL-94 | Missing-media clip | Done | Proposed | 14/095554 | Name sits in a top band and the two lines centre beneath; below 43 px the name yields, below 26 px the lines yield |
+| TL-96 | Row menu: Select | Partial | Differs | 14b/103135 | Select all clips on the row; reference shows no submenu, Select by clip not modelled |
 
 ## Keyframes (KEY)
 

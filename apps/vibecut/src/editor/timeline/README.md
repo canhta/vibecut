@@ -206,6 +206,15 @@ Lane menus activate shared Copy/Paste actions, with component-distinct
 `timeline.item.<item>.paste` menu supports existing Params with no keys. Current frame
 eligibility supplies disabled states; opening another item's menu never retargets Paste.
 
+The clip menu carries Copy, Cut, Copy attributes and Paste attributes in reference order
+(each the registered `edit.*` action, enabled by the engine's admission for the clicked clip),
+then Paste, and a Transcript entry for video and audio clips that returns
+`Action::OpenTranscript`; the frame opens the Captions pane's Auto page and selects the words
+whose output range overlaps the clip. The empty-row menu opens only on a track row (never
+above the top track) and keeps the row and the click time it was opened at: Close gap and
+Close all gaps push `timeline.close_gap` / `timeline.close_all_gaps`, Select selects the row's
+clips, and Paste pushes `clipboard.paste` with that track.
+
 Thumbnail display failures retain Artifact causes inside the mixed engine boundary. The
 existing corrupt-cache recovery recognizes that explicit shape; waveform causes keep their
 Runtime display failure; mixed query refusals compose the Analysis owner.

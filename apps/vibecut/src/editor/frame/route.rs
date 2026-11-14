@@ -712,6 +712,13 @@ impl Editor {
                         self.player.brush_trail = None;
                     }
                     Request::ReplaceMedia(item) => self.timeline.request_replace(item),
+                    Request::OpenTranscript(item) => {
+                        if let Err(error) =
+                            self.with_assets(|assets, port| assets.open_transcript(port, item))
+                        {
+                            self.fail(error.to_string());
+                        }
+                    }
                     Request::LinkMedia => self.dialogs.link_media.open(self.session.project()),
                     Request::PruneSelection => self.prune_selection(),
                     Request::InsertShape(id) => {
