@@ -5,6 +5,7 @@
 )]
 use engine::{
     ByteBudget, Command, Failure, Session,
+    footage::uncorrected,
     jobs::Clock,
     recovery::{Autosave, Error as RecoveryError, Schedule, discover},
 };
@@ -43,9 +44,26 @@ fn session(id: u64) -> Session {
 fn open(root: &Path, id: u64, path: Option<std::path::PathBuf>, clock: Arc<TestClock>) -> Autosave {
     let budget = ByteBudget::new(64 * 1024 * 1024).unwrap();
     if let Some(path) = path {
-        Autosave::open(root, &path, 10, budget, clock, Schedule::default()).unwrap()
+        Autosave::open(
+            root,
+            &path,
+            10,
+            budget,
+            uncorrected(),
+            clock,
+            Schedule::default(),
+        )
+        .unwrap()
     } else {
-        Autosave::new(root, session(id), budget, clock, Schedule::default()).unwrap()
+        Autosave::new(
+            root,
+            session(id),
+            budget,
+            uncorrected(),
+            clock,
+            Schedule::default(),
+        )
+        .unwrap()
     }
 }
 fn edit(a: &mut Autosave) {
@@ -167,6 +185,7 @@ fn recover_discard_and_save_to_preserve_original_then_promote() {
         &root,
         recovered,
         ByteBudget::new(64 * 1024 * 1024).unwrap(),
+        uncorrected(),
         clock,
         Schedule::default(),
     )
@@ -602,6 +621,7 @@ fn locked_invalid_project_is_refused_before_load() {
         &path,
         10,
         ByteBudget::new(64 * 1024 * 1024).unwrap(),
+        uncorrected(),
         Arc::new(TestClock::default()),
         Schedule::default(),
     );
@@ -619,6 +639,7 @@ fn locked_invalid_project_is_refused_before_load() {
             &path,
             10,
             ByteBudget::new(64 * 1024 * 1024).unwrap(),
+            uncorrected(),
             Arc::new(TestClock::default()),
             Schedule::default()
         )
@@ -810,6 +831,7 @@ fn save_to_refusals_preserve_source_identity_lease_and_both_files() {
             &source,
             10,
             budget,
+            uncorrected(),
             Arc::new(TestClock::default()),
             Schedule::default(),
         )
@@ -871,6 +893,7 @@ fn queued_save_cancellation_on_drop_releases_leases_without_publishing() {
         &source,
         10,
         budget.clone(),
+        uncorrected(),
         Arc::new(TestClock::default()),
         Schedule::default(),
     )
@@ -937,6 +960,7 @@ fn refused_job_submission_retains_the_before_load_lease_and_original_bytes() {
         &source,
         10,
         budget.clone(),
+        uncorrected(),
         clock.clone(),
         Schedule::default(),
     )

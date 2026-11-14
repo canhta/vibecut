@@ -77,8 +77,8 @@ mod correction;
 pub mod footage {
     //! Computes footage corrections once per source and looks them up by key.
     pub use super::correction::{
-        Correction, CorrectionJob, CorrectionRequest, PERSON_MODEL, Resolution,
-        SEGMENTATION_THREADS, Segmenter, resolve,
+        Correction, CorrectionJob, CorrectionRequest, Lookup, PERSON_MODEL, Resolution,
+        SEGMENTATION_THREADS, Segmenter, resolve, uncorrected,
     };
     pub use crate::session::wire::CorrectionKind;
 }

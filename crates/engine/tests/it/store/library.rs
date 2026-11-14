@@ -13,7 +13,12 @@ use project::{Project, ProjectId, Thumbnail, WriterLease};
 use std::{cell::Cell, fs};
 
 fn library(root: &std::path::Path) -> ProjectLibrary {
-    ProjectLibrary::open(root, ByteBudget::new(128 << 20).unwrap()).unwrap()
+    ProjectLibrary::open(
+        root,
+        ByteBudget::new(128 << 20).unwrap(),
+        engine::footage::uncorrected(),
+    )
+    .unwrap()
 }
 fn create(library: &mut ProjectLibrary, id: u64) {
     library
@@ -356,7 +361,14 @@ fn catalog_refuses_concurrent_handles_and_symlink_entries() {
     let root = tempfile::tempdir().unwrap();
     let mut lib = library(root.path());
     create(&mut lib, 1);
-    assert!(ProjectLibrary::open(root.path(), ByteBudget::new(128 << 20).unwrap()).is_err());
+    assert!(
+        ProjectLibrary::open(
+            root.path(),
+            ByteBudget::new(128 << 20).unwrap(),
+            engine::footage::uncorrected(),
+        )
+        .is_err()
+    );
     #[cfg(unix)]
     {
         let other = tempfile::tempdir().unwrap();

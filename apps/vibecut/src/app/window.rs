@@ -34,6 +34,8 @@ pub struct EditorWindow {
     pub(super) root: PathBuf,
     pub(super) budget: ByteBudget,
     pub(super) persistence: ByteBudget,
+    /// The lent footage lookup the stores draw cover images with.
+    pub(super) corrections: engine::footage::Lookup,
     pub(super) runner: std::rc::Rc<std::cell::RefCell<JobRunner>>,
     pub(super) pending: Option<Pending>,
     pub(super) picker: Option<Picker>,
@@ -67,6 +69,7 @@ impl EditorWindow {
         preferences: Preferences,
         budget: ByteBudget,
         persistence: ByteBudget,
+        corrections: engine::footage::Lookup,
         runner: std::rc::Rc<std::cell::RefCell<JobRunner>>,
     ) -> Self {
         static NEXT_WINDOW: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -86,6 +89,7 @@ impl EditorWindow {
             root,
             budget,
             persistence,
+            corrections,
             runner,
             pending: None,
             picker: None,

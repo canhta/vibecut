@@ -6,19 +6,28 @@
 )]
 //! Footage correction: stabilize and the person matte measured once per source, looked up by
 //! key, applied at render.
+use crate::support::control::request;
 use engine::{
-    ByteBudget, Command, RuntimeError, Session,
+    ByteBudget, Command, CreatedId, RuntimeError, Session,
     cache::ArtifactCache,
-    footage::{Correction, CorrectionJob, CorrectionKind, CorrectionRequest, Segmenter, resolve},
+    control::{Caller, ControlResult, MediaAccess, Policy, ResponseValue},
+    footage::{
+        Correction, CorrectionJob, CorrectionKind, CorrectionRequest, Lookup, Segmenter, resolve,
+        uncorrected,
+    },
     jobs::{JobRunner, JobState, RunnerConfig, SystemClock},
+    luts::LutStore,
+    recovery::{Autosave, Schedule},
+    thumbnails::ThumbnailCache,
 };
 use media::{AssetId, SourceAsset};
-use project::{ItemId, Project, ProjectId, StabilizeLevel};
+use project::{ItemId, Project, ProjectId, StabilizeLevel, Thumbnail};
 use render::stabilize::{Stabilizer, Track};
+use serde_json::json;
 use std::{
     io::Write,
     process::Stdio,
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 use time::{TICKS_PER_SECOND, Tick};
@@ -528,4 +537,138 @@ fn a_cancelled_matte_publishes_nothing() {
     assert_eq!(wait(&mut runner, &job), JobState::Cancelled);
     assert!(job.finish(&mut runner, &mut cache).is_err());
     assert_eq!(request.cached(&mut cache).unwrap(), None);
+}
+
+/// Stabilize of `asset` analysed into a fresh cache, as a finished background job leaves it.
+fn analysed(asset: &SourceAsset) -> (ArtifactCache, tempfile::TempDir) {
+    let (mut runner, mut cache, dir) = setup();
+    let request = CorrectionRequest::new(asset.clone(), CorrectionKind::Stabilize).unwrap();
+    let job = request.submit(&mut runner, &mut cache, None).unwrap();
+    assert_eq!(wait(&mut runner, &job), JobState::Completed);
+    job.finish(&mut runner, &mut cache).unwrap().unwrap();
+    (cache, dir)
+}
+
+/// Control admission with no policy limit; the media cache is the one lent to the process.
+struct Allow;
+impl Policy for Allow {
+    fn authorize(&self, _: &engine::Command, _: &Project) -> engine::control::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn a_freeze_frame_of_a_stabilized_clip_equals_the_corrected_frame() {
+    let asset = fixture("shaky-240", 240, 135, 12);
+    let (mut s, _) = session_over(asset.clone(), 12);
+    let (mut cache, dir) = analysed(&asset);
+    // The frame a preview seek draws: the stored track attached to the render settings.
+    let at = Tick(TICKS_PER_SECOND / 10);
+    let resolution = resolve(s.project(), &mut cache);
+    assert!(resolution.missing.is_empty(), "the analysis is stored");
+    let corrected = engine::snapshot::image(s.project(), at, &resolution)
+        .unwrap()
+        .png;
+    let uncorrected_frame = engine::snapshot::image(s.project(), at, &Default::default())
+        .unwrap()
+        .png;
+    assert_ne!(
+        corrected, uncorrected_frame,
+        "the stored track changes the frame"
+    );
+    // Freeze runs through control, which reads the same lent cache the preview reads.
+    let media = Mutex::new(MediaAccess::new(
+        cache,
+        ThumbnailCache::open(
+            &dir.path().join("thumbnails"),
+            ByteBudget::new(64 << 20).unwrap(),
+            16,
+        )
+        .unwrap(),
+        LutStore::open(&dir.path().join("luts")).unwrap(),
+    ));
+    let frozen = dir.path().join("frozen");
+    let (mut jobs, _, _) = setup();
+    let policy = Allow;
+    let caller = Caller {
+        principal: "test",
+        external: false,
+        policy: &policy,
+        fonts: None,
+        sounds: None,
+        music: None,
+        stickers: None,
+        brand: None,
+        media: Some(&media),
+        chapters: None,
+        captions: None,
+        vision: None,
+    };
+    let req = request(
+        &s,
+        "timeline.freeze_frame",
+        json!({"item": 10, "at": TICKS_PER_SECOND / 10, "duration": TICKS_PER_SECOND, "dir": frozen}),
+        "freeze-stabilized",
+    );
+    let response = s.control_request(req, caller, &mut jobs).unwrap();
+    let ResponseValue::Result(ControlResult::Edit { outcome }) = response.value else {
+        panic!("freeze refused");
+    };
+    let CreatedId::Item(still) = outcome.created[0] else {
+        panic!("still item id");
+    };
+    let still_asset = s
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| track.items.iter())
+        .find(|candidate| candidate.id == still)
+        .and_then(|candidate| candidate.source_asset)
+        .unwrap();
+    let path = s
+        .project()
+        .data()
+        .assets
+        .iter()
+        .find(|candidate| candidate.id() == still_asset)
+        .unwrap()
+        .path()
+        .to_path_buf();
+    assert_eq!(std::fs::read(&path).unwrap(), corrected);
+}
+
+#[test]
+fn a_cover_of_a_stabilized_clip_draws_the_stored_correction() {
+    let asset = fixture("shaky-240", 240, 135, 12);
+    let (cache, _dir) = analysed(&asset);
+    let shared = Arc::new(Mutex::new(cache));
+    let lent: Lookup = {
+        let shared = shared.clone();
+        Arc::new(move |project: &Project| resolve(project, &mut shared.lock().unwrap()))
+    };
+    let cover = |lookup: Lookup| {
+        let root = tempfile::tempdir().unwrap();
+        let (session, _) = session_over(asset.clone(), 12);
+        let mut autosave = Autosave::new(
+            &root.path().join("recovery"),
+            session,
+            ByteBudget::new(512 << 20).unwrap(),
+            lookup,
+            Arc::new(SystemClock::default()),
+            Schedule::default(),
+        )
+        .unwrap();
+        autosave.apply(Command::ThumbnailProject {}).unwrap();
+        match autosave.session().metadata().thumbnail.clone() {
+            Thumbnail::Ready { rgba, .. } => rgba,
+            _ => panic!("cover unavailable"),
+        }
+    };
+    assert_ne!(
+        cover(lent),
+        cover(uncorrected()),
+        "the cover draws the stored stabilize"
+    );
 }

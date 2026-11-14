@@ -44,7 +44,11 @@ pub(super) fn home_projects(theme: Theme, scale: f32) -> Result<AppHarness, Fail
     let directory = tempfile::tempdir()?;
     let root = directory.path().join("projects");
     {
-        let mut library = engine::library::ProjectLibrary::open(&root, ByteBudget::new(64 << 20)?)?;
+        let mut library = engine::library::ProjectLibrary::open(
+            &root,
+            ByteBudget::new(64 << 20)?,
+            engine::footage::uncorrected(),
+        )?;
         for id in 1..=10u64 {
             library.execute(
                 ProjectId(id),
@@ -86,7 +90,11 @@ pub(super) fn projects_trash(theme: Theme, scale: f32) -> Result<AppHarness, Fai
     let directory = tempfile::tempdir()?;
     let root = directory.path().join("projects");
     {
-        let mut library = engine::library::ProjectLibrary::open(&root, ByteBudget::new(64 << 20)?)?;
+        let mut library = engine::library::ProjectLibrary::open(
+            &root,
+            ByteBudget::new(64 << 20)?,
+            engine::footage::uncorrected(),
+        )?;
         for id in 1..=6u64 {
             library.execute(
                 ProjectId(id),
@@ -148,7 +156,11 @@ pub(super) fn projects_scene(
     let directory = tempfile::tempdir()?;
     let root = directory.path().join("projects");
     {
-        let mut library = engine::library::ProjectLibrary::open(&root, ByteBudget::new(64 << 20)?)?;
+        let mut library = engine::library::ProjectLibrary::open(
+            &root,
+            ByteBudget::new(64 << 20)?,
+            engine::footage::uncorrected(),
+        )?;
         for (id, name) in [
             (1, "Product launch"),
             (2, "Tiếng Việt: bản dựng"),

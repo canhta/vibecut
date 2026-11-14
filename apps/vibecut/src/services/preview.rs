@@ -425,9 +425,15 @@ pub fn sample_color(
 }
 
 /// Decode the same PNG the engine would publish and hand it to egui's OS
-/// clipboard boundary. No file is written and the project is untouched.
-pub fn copy(session: &Session, at: Tick, ctx: &egui::Context) -> Result<()> {
-    let snapshot = engine::snapshot::image(session.project(), at)?;
+/// clipboard boundary. No file is written and the project is untouched. `corrections` are the
+/// stored footage corrections the preview draws, so the copied frame matches it.
+pub fn copy(
+    session: &Session,
+    at: Tick,
+    corrections: &engine::footage::Resolution,
+    ctx: &egui::Context,
+) -> Result<()> {
+    let snapshot = engine::snapshot::image(session.project(), at, corrections)?;
     let decoded = image::load_from_memory(&snapshot.png)?.into_rgba8();
     let image = egui::ColorImage::from_rgba_unmultiplied(
         [decoded.width() as usize, decoded.height() as usize],

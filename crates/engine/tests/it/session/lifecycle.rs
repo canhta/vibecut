@@ -136,6 +136,7 @@ fn autosave_metadata_survives_save_to_and_reopen() {
             &path,
             10,
             ByteBudget::new(64 << 20).unwrap(),
+            engine::footage::uncorrected(),
             Arc::new(SystemClock::default()),
             Schedule::default(),
         )
@@ -154,6 +155,7 @@ fn autosave_metadata_survives_save_to_and_reopen() {
         &root.path().join("recovery"),
         session,
         ByteBudget::new(64 << 20).unwrap(),
+        engine::footage::uncorrected(),
         Arc::new(SystemClock::default()),
         Schedule::default(),
     )
@@ -203,6 +205,7 @@ fn thumbnails_backfill_on_open_and_refresh_at_exit_without_preview_state() {
         &path,
         10,
         ByteBudget::new(64 << 20).unwrap(),
+        engine::footage::uncorrected(),
         Arc::new(SystemClock::default()),
         Schedule::default(),
     )
@@ -260,7 +263,12 @@ fn thumbnails_backfill_on_open_and_refresh_at_exit_without_preview_state() {
 fn unrenderable_thumbnail_is_a_persisted_placeholder() {
     use engine::{ByteBudget, Command, library::ProjectLibrary};
     let root = tempfile::tempdir().unwrap();
-    let mut library = ProjectLibrary::open(root.path(), ByteBudget::new(1).unwrap()).unwrap();
+    let mut library = ProjectLibrary::open(
+        root.path(),
+        ByteBudget::new(1).unwrap(),
+        engine::footage::uncorrected(),
+    )
+    .unwrap();
     library
         .execute(
             ProjectId(1),

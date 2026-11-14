@@ -34,8 +34,12 @@ impl Fixture {
         let directory = tempfile::tempdir().unwrap();
         let root = directory.path().join("projects");
         {
-            let mut library =
-                ProjectLibrary::open(&root, ByteBudget::new(128 << 20).unwrap()).unwrap();
+            let mut library = ProjectLibrary::open(
+                &root,
+                ByteBudget::new(128 << 20).unwrap(),
+                engine::footage::uncorrected(),
+            )
+            .unwrap();
             for (index, (name, thumbnail)) in projects.iter().enumerate() {
                 let id = ProjectId(index as u64 + 1);
                 library

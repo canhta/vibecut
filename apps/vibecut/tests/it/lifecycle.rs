@@ -1035,6 +1035,7 @@ fn header_delete_asks_first_then_saves_leaves_and_moves_the_library_project_to_t
         let mut library = engine::library::ProjectLibrary::open(
             &projects,
             engine::ByteBudget::new(128 << 20).unwrap(),
+            engine::footage::uncorrected(),
         )
         .unwrap();
         let id = project::ProjectId(1);

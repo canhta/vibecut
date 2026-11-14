@@ -82,6 +82,7 @@ impl Autosave {
         metadata.thumbnail = crate::store::project_cover::capture(
             self.session.project(),
             &crate::ByteBudgetHooks::new(&self.budget, None),
+            &self.corrections,
         );
         if let Some(writer) = &self.writer {
             writer

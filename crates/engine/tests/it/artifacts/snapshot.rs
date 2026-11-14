@@ -177,7 +177,9 @@ fn snapshot_png_matches_canvas_render_at_the_playhead() {
         let project = project("Snapshot", 64, 48, Tick(duration));
         let before = project::encode(&project, true).unwrap();
 
-        let receipt = engine::snapshot::save(&project, Tick(requested), &out, &[]).unwrap();
+        let receipt =
+            engine::snapshot::save(&project, Tick(requested), &out, &[], &Default::default())
+                .unwrap();
 
         assert_eq!(receipt.path, out);
         assert_eq!(
@@ -278,7 +280,8 @@ fn snapshot_refuses_empty_project_with_project_is_empty() {
     let dir = tempfile::tempdir().unwrap();
     let out = dir.path().join("empty.png");
     let empty = Project::empty(ProjectId(2), "Empty".into()).unwrap();
-    let error = engine::snapshot::save(&empty, Tick::ZERO, &out, &[]).unwrap_err();
+    let error =
+        engine::snapshot::save(&empty, Tick::ZERO, &out, &[], &Default::default()).unwrap_err();
     assert!(matches!(error, ArtifactError::EmptyProject));
     assert_eq!(error.to_string(), "Project is empty");
     assert!(!out.exists());
@@ -362,7 +365,13 @@ fn snapshot_publication_refuses_project_and_source_aliases() {
     destinations.extend([source_symlink, project_symlink]);
 
     for destination in destinations {
-        let result = engine::snapshot::save(&project, Tick::ZERO, &destination, &protected);
+        let result = engine::snapshot::save(
+            &project,
+            Tick::ZERO,
+            &destination,
+            &protected,
+            &Default::default(),
+        );
         assert!(result.is_err(), "accepted alias {}", destination.display());
     }
     assert_eq!(std::fs::read(&project_path).unwrap(), b"project JSON");
@@ -371,7 +380,7 @@ fn snapshot_publication_refuses_project_and_source_aliases() {
     assert!(!recovery.join("journal.json").exists());
 
     let out = dir.path().join("snapshot.png");
-    engine::snapshot::save(&project, Tick::ZERO, &out, &protected).unwrap();
+    engine::snapshot::save(&project, Tick::ZERO, &out, &protected, &Default::default()).unwrap();
     assert!(out.is_file());
 }
 
@@ -381,12 +390,23 @@ fn snapshot_refused_destination_leaves_no_partial_file() {
     let project = project("Refused", 16, 16, Tick(TICKS_PER_SECOND));
     let directory = dir.path().join("destination");
     std::fs::create_dir(&directory).unwrap();
-    assert!(engine::snapshot::save(&project, Tick::ZERO, &directory, &[]).is_err());
+    assert!(
+        engine::snapshot::save(&project, Tick::ZERO, &directory, &[], &Default::default()).is_err()
+    );
     assert!(directory.is_dir());
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
 
     let missing_parent = dir.path().join("missing").join("frame.png");
-    assert!(engine::snapshot::save(&project, Tick::ZERO, &missing_parent, &[]).is_err());
+    assert!(
+        engine::snapshot::save(
+            &project,
+            Tick::ZERO,
+            &missing_parent,
+            &[],
+            &Default::default()
+        )
+        .is_err()
+    );
     assert!(!dir.path().join("missing").exists());
 }
 
@@ -420,7 +440,7 @@ fn snapshot_control_request_publishes_and_is_non_mutating() {
 #[test]
 fn snapshot_image_returns_the_same_png_without_publication() {
     let project = project("Copy", 16, 16, Tick(TICKS_PER_SECOND));
-    let image = engine::snapshot::image(&project, Tick::ZERO).unwrap();
+    let image = engine::snapshot::image(&project, Tick::ZERO, &Default::default()).unwrap();
     assert_eq!((image.width, image.height), (16, 16));
     assert_eq!(&image.png[..8], b"\x89PNG\r\n\x1a\n");
     let decoded = image::load_from_memory(&image.png).unwrap().to_rgba8();

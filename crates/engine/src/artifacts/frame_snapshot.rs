@@ -5,6 +5,7 @@
 //! synced and renamed over the destination only after source/project alias
 //! admission succeeds. A refusal or failed write leaves no partial destination.
 use super::{Error as ArtifactError, Result as ArtifactResult};
+use crate::footage::Resolution;
 use crate::{ByteBudget, ByteBudgetHooks};
 use image::ImageEncoder;
 use project::Project;
@@ -44,9 +45,10 @@ pub fn save(
     time: Tick,
     path: &Path,
     protected: &[PathBuf],
+    corrections: &Resolution,
 ) -> ArtifactResult<SnapshotResult> {
     let budget = local_budget(project)?;
-    save_with_budget(project, time, path, protected, &budget)
+    save_with_budget(project, time, path, protected, &budget, corrections)
 }
 
 /// Same publication with the caller's shared byte budget.
@@ -56,6 +58,7 @@ pub fn save_with_budget(
     path: &Path,
     protected: &[PathBuf],
     budget: &ByteBudget,
+    corrections: &Resolution,
 ) -> ArtifactResult<SnapshotResult> {
     save_with_overwrite(
         project,
@@ -64,6 +67,7 @@ pub fn save_with_budget(
         protected,
         budget,
         project::atomic::Overwrite::Replace,
+        corrections,
     )
 }
 
@@ -74,9 +78,10 @@ pub(crate) fn save_with_overwrite(
     protected: &[PathBuf],
     budget: &ByteBudget,
     overwrite: project::atomic::Overwrite,
+    corrections: &Resolution,
 ) -> ArtifactResult<SnapshotResult> {
     let hooks = ByteBudgetHooks::new(budget, None);
-    let image = render(project, time, &hooks)?;
+    let image = render(project, time, &hooks, corrections)?;
     crate::publication::Publication {
         project,
         path,
@@ -102,10 +107,20 @@ pub(crate) fn save_with_overwrite(
     })
 }
 
-/// Render the current frame as PNG without publishing a file (Copy action).
-pub fn image(project: &Project, time: Tick) -> ArtifactResult<SnapshotImage> {
+/// Render the current frame as PNG without publishing a file (Copy action). `corrections` are
+/// the stored footage corrections of the project, as the preview draws them.
+pub fn image(
+    project: &Project,
+    time: Tick,
+    corrections: &Resolution,
+) -> ArtifactResult<SnapshotImage> {
     let budget = local_budget(project)?;
-    render(project, time, &ByteBudgetHooks::new(&budget, None))
+    render(
+        project,
+        time,
+        &ByteBudgetHooks::new(&budget, None),
+        corrections,
+    )
 }
 
 /// Default save name: `<project>-<timecode>.png`, reserved characters replaced
@@ -160,10 +175,12 @@ fn render(
     project: &Project,
     time: Tick,
     hooks: &dyn render::ExecutionHooks,
+    corrections: &Resolution,
 ) -> ArtifactResult<SnapshotImage> {
     let at = render_time(project, time)?;
     let canvas = &project.data().canvas;
-    let settings = render::RenderSettings::from_project(project);
+    let mut settings = render::RenderSettings::from_project(project);
+    corrections.clone().attach(&mut settings);
     let mut renderer = render::Renderer::new(project, settings)?;
     let frame = renderer.render_frame(at, &mut render::FileSources::default(), hooks)?;
     // PNG is an sRGB image boundary; preserve straight alpha for a transparent canvas.

@@ -182,8 +182,9 @@ completed job whose bytes were evicted refuses `job_not_retained`.
   Loudness measurement takes no cache. `footage.analyze {item, kind}` is the same shape: one CPU
   `AnalyzeFootage` job over the item's source that edits nothing, published into the lent cache
   when `job_status` first sees it completed ([footage correction](../analysis/correction/README.md)).
-  `export` and `preview` read the stored corrections of the switched-on items from that cache and
-  hand them to render; `export` refuses with `CorrectionMissing` naming any item that has none.
+  `export`, `preview`, `snapshot` and `timeline.freeze_frame` read the stored corrections of the
+  switched-on items from that cache and hand them to render; `export` refuses with
+  `CorrectionMissing` naming any item that has none.
   `kind: person_matte` needs the local segmenter the root lends with
   `MediaAccess::set_segmentation(SegmentationAccess)`; a cold matte without it, or without
   installed weights, refuses with the typed `ModelMissing`.

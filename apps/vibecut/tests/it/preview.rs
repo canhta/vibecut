@@ -1210,9 +1210,13 @@ fn guides_and_notes_never_change_the_exported_frame() {
     };
     let frame = |preferences: Preferences| {
         let editor = editor(noted_project(), preferences);
-        engine::snapshot::image(editor.session.project(), Tick::ZERO)
-            .unwrap()
-            .png
+        engine::snapshot::image(
+            editor.session.project(),
+            Tick::ZERO,
+            &engine::footage::Resolution::default(),
+        )
+        .unwrap()
+        .png
     };
     let shown = frame(Preferences {
         preview_guide: Guide::Grid { rows: 5, cols: 5 },

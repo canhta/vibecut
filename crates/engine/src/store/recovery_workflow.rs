@@ -174,6 +174,8 @@ pub struct Autosave {
     // Runner is dropped/joined before the session lock is released.
     runner: JobRunner,
     budget: ByteBudget,
+    /// The stored footage corrections cover images are drawn with.
+    corrections: crate::footage::Lookup,
     directory: PathBuf,
     _lock: SessionLock,
     clock: Arc<dyn Clock>,
@@ -196,14 +198,16 @@ pub struct Autosave {
 impl Autosave {
     /// Never-saved or recovered work; save() requires an explicit save-as.
     /// Root follows the app's private data-directory policy.
+    /// `corrections` is the lent footage lookup cover images use.
     pub fn new(
         root: &Path,
         session: Session,
         budget: ByteBudget,
+        corrections: crate::footage::Lookup,
         clock: Arc<dyn Clock>,
         schedule: Schedule,
     ) -> Result<Self> {
-        Self::with_writer(root, session, None, budget, clock, schedule)
+        Self::with_writer(root, session, None, budget, corrections, clock, schedule)
     }
 }
 
@@ -216,6 +220,7 @@ impl Autosave {
         path: &Path,
         history_limit: usize,
         budget: ByteBudget,
+        corrections: crate::footage::Lookup,
         clock: Arc<dyn Clock>,
         schedule: Schedule,
     ) -> Result<Self> {
@@ -232,12 +237,21 @@ impl Autosave {
             metadata.thumbnail = crate::store::project_cover::capture(
                 session.project(),
                 &crate::ByteBudgetHooks::new(&budget, None),
+                &corrections,
             );
             // Optional thumbnail failure must never prevent opening editable content.
             let _ = writer.save_metadata(&metadata);
         }
         session.restore_metadata(metadata)?;
-        Self::with_writer(root, session, Some(writer), budget, clock, schedule)
+        Self::with_writer(
+            root,
+            session,
+            Some(writer),
+            budget,
+            corrections,
+            clock,
+            schedule,
+        )
     }
 }
 
@@ -247,6 +261,7 @@ impl Autosave {
         session: Session,
         writer: Option<WriterLease>,
         budget: ByteBudget,
+        corrections: crate::footage::Lookup,
         clock: Arc<dyn Clock>,
         schedule: Schedule,
     ) -> Result<Self> {
@@ -307,6 +322,7 @@ impl Autosave {
             session,
             runner,
             budget,
+            corrections,
             directory,
             _lock: file,
             clock,
@@ -426,6 +442,7 @@ mod tests {
             )
             .unwrap(),
             ByteBudget::new(64 * 1024 * 1024).unwrap(),
+            crate::footage::uncorrected(),
             Arc::new(SystemClock::default()),
             Schedule::default(),
         )

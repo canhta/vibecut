@@ -3398,6 +3398,7 @@ fn text_fade_preflight_preserves_focused_and_unfocused_caption_and_properties_dr
         &root.path().join("recovery"),
         session,
         ByteBudget::new(64 << 20).unwrap(),
+        engine::footage::uncorrected(),
         Arc::new(engine::jobs::SystemClock::default()),
         Default::default(),
     )
