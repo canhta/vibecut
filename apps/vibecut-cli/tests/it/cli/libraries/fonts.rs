@@ -82,7 +82,7 @@ fn fonts_list_and_resolve_are_offline_and_download_requires_acceptance() {
 }
 
 #[test]
-fn custom_font_import_persists_across_cli_control_reopen_and_export() {
+fn heavy_custom_font_import_persists_across_cli_control_reopen_and_export() {
     use serde_json::{Value, json};
     use std::io::{BufRead, Write};
     use std::process::Stdio;

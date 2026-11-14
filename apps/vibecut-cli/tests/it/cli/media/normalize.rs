@@ -47,7 +47,7 @@ fn exported_audio(path: &Path) -> (f64, f64) {
 }
 
 #[test]
-fn normalize_stores_gains_that_export_applies_without_changing_duration() {
+fn heavy_normalize_stores_gains_that_export_applies_without_changing_duration() {
     if !tools() {
         return;
     }

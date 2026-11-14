@@ -5,7 +5,7 @@ use std::fs;
 use time::Tick;
 
 #[test]
-fn captions_import_reads_ass_and_prints_counts_and_style() {
+fn heavy_captions_import_reads_ass_and_prints_counts_and_style() {
     let dir = tempfile::tempdir().unwrap();
     let project = dir.path().join("ass.vibecut");
     new_project(&project);
@@ -502,7 +502,7 @@ fn captions_import_rejects_non_ass_input() {
 }
 
 #[test]
-fn cli_native_word_opt_in_survives_save_and_paints_the_encoded_source_word() {
+fn heavy_cli_native_word_opt_in_survives_save_and_paints_the_encoded_source_word() {
     if !crate::media_fixture::tools() {
         return;
     }

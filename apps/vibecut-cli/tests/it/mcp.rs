@@ -1310,7 +1310,7 @@ impl engine::providers::ConsentPrompt for AsrOnlyConsent {
 }
 
 #[test]
-fn clip_jobs_suggest_then_export_over_mcp_and_refuse_an_unapproved_remote_suggestion() {
+fn heavy_clip_jobs_suggest_then_export_over_mcp_and_refuse_an_unapproved_remote_suggestion() {
     use engine::providers::{Credentials, Providers, TranscriptionProvider};
     use std::sync::{
         Arc,

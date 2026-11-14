@@ -9,7 +9,7 @@ use std::fs;
 use time::{Tick, TimeRange};
 
 #[test]
-fn lut_cli_imports_applies_reopens_and_refuses_without_project_write() {
+fn heavy_lut_cli_imports_applies_reopens_and_refuses_without_project_write() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("look.vibecut");
     new_project(&path);
@@ -334,7 +334,7 @@ fn cli_clipboard_item_payload_pastes_with_relative_track_overwrite() {
 }
 
 #[test]
-fn cli_text_presets_and_animations_execute_reopen_export_and_control_replay() {
+fn heavy_cli_text_presets_and_animations_execute_reopen_export_and_control_replay() {
     assert!(tools());
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("text.vibecut");
@@ -786,7 +786,7 @@ fn timeline_insert_of_a_generated_clip_on_a_track_at_a_start_lands_there() {
 }
 
 #[test]
-fn cli_graphics_insert_key_save_snapshot_encode_and_reopen_real_processes() {
+fn heavy_cli_graphics_insert_key_save_snapshot_encode_and_reopen_real_processes() {
     // The shape kind is render's geometry; one kind carries the process round trip.
     assert!(tools());
     let graphic = project::GraphicParams::rectangle();
