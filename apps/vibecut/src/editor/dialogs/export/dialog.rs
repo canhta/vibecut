@@ -1463,9 +1463,9 @@ fn unavailable_details(
             .assets
             .iter()
             .find(|asset| asset.id() == item.asset)
-            .and_then(|asset| asset.path().file_name())
+            .map(|asset| project.data().media_library.display_name(asset))
         {
-            ui.add(egui::Label::new(name.to_string_lossy()).truncate());
+            ui.add(egui::Label::new(name).truncate());
         }
         let reason = match item.reason {
             render::UnavailableReason::Missing => Text::SourceMissing,

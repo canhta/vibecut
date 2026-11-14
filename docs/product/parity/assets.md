@@ -42,7 +42,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 ### Yours
 | ID | Item | Function | UI/UX | Evidence | Gap / note |
 |---|---|---|---|---|---|
-| MEDIA-28 | Yours: Favorites page | Partial | Not captured | 111010 | Per catalogue tab only |
+| MEDIA-28 | Yours: Favorites page | Done | Proposed | 111010; [ui/editor.md](../ui/editor.md#media-tile-menu-added-badge-folders-and-favorites) | Name rows, no thumbnails; library items out of scope |
 | MEDIA-29 | Favorites empty state, filter | Done | Differs | 111010; [ui/editor.md](../ui/editor.md#media-tile-menu-added-badge-folders-and-favorites) | Link opens Effects, not Library |
 | MEDIA-30 | Yours: My presets | Missing | Not captured | 111030 | |
 | MEDIA-31 | Yours: Brand assets | Partial | Not captured | 111016 | Store done, panel missing |

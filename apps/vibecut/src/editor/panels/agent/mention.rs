@@ -46,8 +46,7 @@ pub(super) fn candidates(project: &Project, locale: Locale) -> Vec<Mention> {
                     .assets
                     .iter()
                     .find(|known| &known.id() == asset)
-                    .and_then(|known| known.path().file_name())
-                    .map(|name| name.to_string_lossy().into_owned()),
+                    .map(|known| project.data().media_library.display_name(known)),
                 (ItemParams::Text(params), None) => {
                     let value = params.content.as_str();
                     Some(if value.is_empty() {
@@ -69,13 +68,14 @@ pub(super) fn candidates(project: &Project, locale: Locale) -> Vec<Mention> {
         }
     }
     for asset in &project.data().assets {
-        if let Some(name) = asset.path().file_name() {
-            out.push(Mention {
-                target: Target::Media,
-                label: unique(&mut taken, name.to_string_lossy().into_owned()),
-                token: format!("[media {}]", id_text(&asset.id())),
-            });
-        }
+        out.push(Mention {
+            target: Target::Media,
+            label: unique(
+                &mut taken,
+                project.data().media_library.display_name(asset),
+            ),
+            token: format!("[media {}]", id_text(&asset.id())),
+        });
     }
     out
 }

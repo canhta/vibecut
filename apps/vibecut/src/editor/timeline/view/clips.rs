@@ -1,7 +1,6 @@
 //! Renders timeline clips.
 
 use crate::editor::context::visuals::{StripState, StripTile, WaveBar, WaveState};
-use crate::editor::media_panel;
 use crate::editor::timeline::{
     Action, Align2, Color32, Context, DragMode, FontId, Icon, Id, ItemParams, ItemView,
     LABEL_CHARS, Locale, MIN_ZOOM_FLOOR, Rect, State, Text, Tick, TimelineLayout, Tool, TrackKind,
@@ -60,8 +59,11 @@ impl State {
             })
             .flatten()
             .filter(|asset| cx.visuals.availability(asset) == media::AssetAvailability::Missing);
-        let name = missing_asset.map(media_panel::asset_name);
+        let name = missing_asset
+            .map(|asset| cx.staged_project().data().media_library.display_name(asset));
         let label = name.as_deref().unwrap_or(item.label.as_str());
+        // The clip's name reaches assistive tools and tests as the node's label.
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
         let (fill, border, text) = item_palette(item.kind, dark, selected, item.overlay);
         // The relink state recolours the whole clip: body fill, red border unless selected.
         let (fill, border, text) = if missing_asset.is_some() {

@@ -106,19 +106,10 @@ pub fn next_sort(current: MediaSort, key: MediaSortKey) -> MediaSort {
     }
 }
 
-/// Case-insensitive file name; absolute paths are validated by the media owner.
-pub fn asset_name(asset: &SourceAsset) -> String {
-    asset.path().file_name().map_or_else(
-        || asset.path().to_string_lossy().into_owned(),
-        |name| name.to_string_lossy().into_owned(),
-    )
-}
-
-/// The name a tile shows: the library name the user gave the asset, else its file name.
+/// The name a tile shows: the library name the user gave the asset, else its file name. It is
+/// `MediaLibrary::display_name`, the one accessor every surface reads.
 pub fn display_name(asset: &SourceAsset, library: &project::MediaLibrary) -> String {
-    library
-        .name(asset.id())
-        .map_or_else(|| asset_name(asset), |name| name.as_str().to_owned())
+    library.display_name(asset)
 }
 
 /// Stable project-order-preserving sort. Equal keys keep their asset-vector

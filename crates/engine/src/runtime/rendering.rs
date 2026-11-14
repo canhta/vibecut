@@ -590,10 +590,13 @@ pub fn plan_asset_exports(
         settings.overwrite = overwrite_policy(overwrite);
         render::Renderer::new(&derived, settings.render.clone())?;
         super::loudness_admission::admit(&derived)?;
-        let stem = asset
-            .path()
-            .file_stem()
-            .and_then(|stem| stem.to_str())
+        // A library name the user gave the asset names the exported file; else the file stem.
+        let stem = project
+            .data()
+            .media_library
+            .name(asset_id)
+            .map(captions::NfcText::as_str)
+            .or_else(|| asset.path().file_stem().and_then(|stem| stem.to_str()))
             .unwrap_or_default();
         let name = unique_export_name(stem, &mut names);
         plan.push(AssetExport {

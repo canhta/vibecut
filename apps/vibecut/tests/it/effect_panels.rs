@@ -2688,6 +2688,28 @@ fn click_pos(harness: &mut Harness<Editor>, pos: egui::Pos2) {
 }
 
 #[test]
+fn a_starred_effect_is_listed_on_the_media_favorites_page_and_applies_from_there() {
+    let mut f = fixture();
+    let image = f.image;
+    f.editor.preferences.catalog_favorites = f
+        .editor
+        .preferences
+        .catalog_favorites
+        .with("effects", "blur", true)
+        .unwrap();
+    let mut harness = build(f.editor);
+    harness.run_steps(3);
+    click(&mut harness, "assets.subnav.favorites");
+    assert!(has_widget(&harness, "media.favorites.family.effects"));
+    assert!(has_widget(&harness, "media.favorites.effects.blur"));
+    select(&mut harness, image);
+    let history = harness.state().session.history_len();
+    click(&mut harness, "media.favorites.effects.blur");
+    assert_eq!(effect_ids(&harness, image), vec!["blur".to_owned()]);
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+}
+
+#[test]
 fn a_filter_clip_refuses_user_added_effects() {
     let f = fixture();
     let mut harness = build(f.editor);

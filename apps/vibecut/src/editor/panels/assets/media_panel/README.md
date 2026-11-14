@@ -1,7 +1,7 @@
 # Media library
 
 Interface: `MediaView`, `MediaSort`, `MediaSortKey`, `MediaSortOrder`, `MediaKind`, `display_name`,
-`next_sort`, `asset_name`, `ordered_assets`, `file_size`.
+`next_sort`, `ordered_assets`, `file_size`.
 
 The Media tab is the live asset library. Grid and list share one persisted mode. The
 sort dropdown orders by name, type, duration or file size, flips direction on the active
@@ -35,8 +35,9 @@ folder with selected item applies `media.create_folder` to the selection; each i
 step and a refusal reports as a toast. `display_name` is the label every tile and the Name
 sort use: the library name when the user gave one, else the file name. A tile is Added when
 a clip on any scene reads its asset. Which folder is open is presentation state; it resets
-when that folder stops existing. The Favorites page of the sub-navigation reads the
-catalogue stars in preferences and edits nothing. Look and values:
+when that folder stops existing. The Favorites page of the sub-navigation lists the
+catalogue stars from preferences, grouped per family, and a click pushes the same action
+the item's own tab pushes; it stars and unstars nothing. Look and values:
 [editor window](../../../../../../../docs/product/ui/editor.md#media-tile-menu-added-badge-folders-and-favorites).
 
 A pending import row is emitted before probe and hash and stays transient until

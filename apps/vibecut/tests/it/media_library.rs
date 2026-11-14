@@ -1733,6 +1733,34 @@ fn the_tile_menu_renames_through_a_dialog_in_one_undo_step_and_escape_cancels() 
 }
 
 #[test]
+fn a_renamed_asset_names_its_timeline_clip_everywhere_it_shows() {
+    let mut editor = editor();
+    let item = insert_video(&mut editor, AssetId(1));
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    let clip = format!("timeline.item.{}", item.0);
+    let label = |harness: &Harness<Editor>| {
+        harness
+            .get(By::new().predicate(|node| node.author_id() == Some(clip.as_str())))
+            .label()
+            .unwrap_or_default()
+    };
+    assert_eq!(label(&harness), "Bravo.mp4", "the file name until renamed");
+    open_tile_menu(&mut harness, 1);
+    click(&mut harness, "media.rename");
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("media.rename_field")))
+        .type_text(" cut");
+    harness.run_steps(2);
+    click(&mut harness, "media.rename_confirm");
+    harness.run_steps(2);
+    assert_eq!(label(&harness), "Bravo.mp4 cut");
+    let data = harness.state().session.project().data();
+    let asset = data.assets.iter().find(|a| a.id() == AssetId(1)).unwrap();
+    assert_eq!(data.media_library.display_name(asset), "Bravo.mp4 cut");
+}
+
+#[test]
 fn the_tile_menu_groups_the_selection_into_a_folder_that_opens_and_closes() {
     let mut harness = build(editor());
     harness.run_steps(3);
@@ -1818,26 +1846,29 @@ fn the_favorites_page_shows_its_empty_state_and_lists_starred_families_behind_th
         vibecut::AssetsTab::Effects
     );
 
+    let filter = project::filter_definitions().first().unwrap().id;
     let mut preferences = Preferences::default();
     preferences.catalog_favorites = preferences
         .catalog_favorites
         .with("effects", "blur", true)
         .unwrap()
-        .with("filters", "warm", true)
+        .with("filters", filter, true)
         .unwrap();
     let mut harness = build(editor_with(preferences, &[(1, "Bravo.mp4")]));
     harness.run_steps(3);
     click(&mut harness, "assets.subnav.favorites");
-    assert!(has_widget(&harness, "media.favorites.row.effects"));
-    assert!(has_widget(&harness, "media.favorites.row.filters"));
-    assert!(!has_widget(&harness, "media.favorites.row.transitions"));
+    assert!(has_widget(&harness, "media.favorites.family.effects"));
+    assert!(has_widget(&harness, "media.favorites.effects.blur"));
+    assert!(has_widget(&harness, "media.favorites.family.filters"));
+    assert!(has_widget(&harness, &format!("media.favorites.filters.{filter}")));
+    assert!(!has_widget(&harness, "media.favorites.family.transitions"));
     assert!(!has_widget(&harness, "media.favorites.link"));
     click(&mut harness, "media.favorites.filter");
     click(&mut harness, "media.favorites.filter.transitions");
-    assert!(!has_widget(&harness, "media.favorites.row.effects"));
+    assert!(!has_widget(&harness, "media.favorites.effects.blur"));
     assert!(has_widget(&harness, "media.favorites.link"), "nothing starred in Transitions");
     click(&mut harness, "media.favorites.filter");
     click(&mut harness, "media.favorites.filter.filters");
-    assert!(has_widget(&harness, "media.favorites.row.filters"));
-    assert!(!has_widget(&harness, "media.favorites.row.effects"));
+    assert!(has_widget(&harness, "media.favorites.family.filters"));
+    assert!(!has_widget(&harness, "media.favorites.family.effects"));
 }

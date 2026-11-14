@@ -120,19 +120,12 @@ fn new_track_landing(
 
 /// The dragged asset's name beside the pointer, on a layer above the panels.
 fn paint_ghost(cx: &Context<'_>, ui: &egui::Ui, drag: &MediaDrag, pointer: egui::Pos2) {
+    let data = cx.session.project().data();
     let name = drag
         .assets
         .first()
-        .and_then(|id| {
-            cx.session
-                .project()
-                .data()
-                .assets
-                .iter()
-                .find(|asset| asset.id() == *id)
-        })
-        .and_then(|asset| asset.path().file_name())
-        .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
+        .and_then(|id| data.assets.iter().find(|asset| asset.id() == *id))
+        .map_or_else(String::new, |asset| data.media_library.display_name(asset));
     let label = if drag.assets.len() > 1 {
         format!("{name} +{}", drag.assets.len() - 1)
     } else {

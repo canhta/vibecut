@@ -55,6 +55,19 @@ impl MediaLibrary {
             .find(|entry| entry.asset == asset)
             .map(|entry| &entry.name)
     }
+    /// The one name every surface shows for `asset`: the library name the user gave it, else
+    /// the file name (the whole path when it has none).
+    pub fn display_name(&self, asset: &SourceAsset) -> String {
+        self.name(asset.id()).map_or_else(
+            || {
+                asset.path().file_name().map_or_else(
+                    || asset.path().to_string_lossy().into_owned(),
+                    |name| name.to_string_lossy().into_owned(),
+                )
+            },
+            |name| name.as_str().to_owned(),
+        )
+    }
     /// The folder holding `asset`, when it sits in one.
     pub fn folder_of(&self, asset: AssetId) -> Option<MediaFolderId> {
         self.folders

@@ -2,29 +2,93 @@
 use super::{Action, AssetsTab, FontId, Icon, Id, Rect, Text, Vec2, View, egui, icons, theme};
 use crate::i18n;
 
-/// The catalogue families a star can sit in: the stored id, the label and the assets tab that
-/// lists them (animations are starred from the properties panel, so they have no tab).
-const FAMILIES: [(&str, Text, Option<AssetsTab>); 6] = [
-    ("effects", Text::Effects, Some(AssetsTab::Effects)),
-    (
-        "transitions",
-        Text::Transitions,
-        Some(AssetsTab::Transitions),
-    ),
-    ("filters", Text::Filters, Some(AssetsTab::Filters)),
-    ("animations", Text::MediaFavoritesAnimations, None),
-    ("stickers", Text::Stickers, Some(AssetsTab::Stickers)),
-    ("sounds", Text::Sounds, Some(AssetsTab::Sounds)),
+/// The catalogue families a star can sit in: the stored id and the label.
+const FAMILIES: [(&str, Text); 6] = [
+    ("effects", Text::Effects),
+    ("transitions", Text::Transitions),
+    ("filters", Text::Filters),
+    ("animations", Text::MediaFavoritesAnimations),
+    ("stickers", Text::Stickers),
+    ("sounds", Text::Sounds),
 ];
 
+/// What a click on a starred item does: the same action its own tab's tile pushes.
+enum Apply {
+    Effect(&'static str),
+    Filter(&'static str),
+    Transition(&'static str),
+    Sticker(String),
+    Sound(u64),
+}
+
+/// One starred item listed on the page. Animations are starred and applied from the
+/// properties panel, so their rows carry no action.
+struct Starred {
+    key: String,
+    name: String,
+    apply: Option<Apply>,
+}
+
 impl View<'_> {
-    fn favorite_count(&self, family: &str) -> usize {
+    /// The starred items of one family, oldest star first. A star whose catalogue entry is
+    /// gone is skipped.
+    fn starred(&self, family: &str) -> Vec<Starred> {
         let favorites = &self.cx.preferences.catalog_favorites;
+        let mut out = Vec::new();
         if family == "sounds" {
-            favorites.sounds().len()
-        } else {
-            favorites.list(family).len()
+            for sound in favorites.sounds() {
+                out.push(Starred {
+                    key: sound.id.to_string(),
+                    name: sound.title.clone(),
+                    apply: Some(Apply::Sound(sound.id)),
+                });
+            }
+            return out;
         }
+        for id in favorites.list(family) {
+            let (name, apply) = match family {
+                "effects" => {
+                    let Some(definition) = project::effect_definitions()
+                        .iter()
+                        .find(|definition| definition.id == id.as_str())
+                    else {
+                        continue;
+                    };
+                    let name = crate::i18n::effect_label(definition.id, None)
+                        .map_or(definition.name, |key| self.tr(key));
+                    (name.to_owned(), Some(Apply::Effect(definition.id)))
+                }
+                "filters" => {
+                    let Some(definition) = project::filter_definition(id) else {
+                        continue;
+                    };
+                    (
+                        definition.name.to_owned(),
+                        Some(Apply::Filter(definition.id)),
+                    )
+                }
+                "transitions" => {
+                    let Some(definition) = project::TRANSITION_DEFINITIONS
+                        .iter()
+                        .find(|definition| definition.kind == id.as_str())
+                    else {
+                        continue;
+                    };
+                    (
+                        self.tr(i18n::transition_label(definition.kind)).to_owned(),
+                        Some(Apply::Transition(definition.kind)),
+                    )
+                }
+                "stickers" => (id.clone(), Some(Apply::Sticker(id.clone()))),
+                _ => (id.clone(), None),
+            };
+            out.push(Starred {
+                key: id.clone(),
+                name,
+                apply,
+            });
+        }
+        out
     }
 
     pub(super) fn favorites(&mut self, ui: &mut egui::Ui) {
@@ -40,11 +104,11 @@ impl View<'_> {
             |ui| self.favorites_filter(ui),
         );
         let chosen = self.state.media_favorites_family;
-        let rows: Vec<_> = FAMILIES
+        let groups: Vec<_> = FAMILIES
             .iter()
-            .filter(|(family, ..)| chosen.is_none_or(|chosen| chosen == *family))
-            .map(|(family, label, tab)| (*label, *tab, self.favorite_count(family)))
-            .filter(|(_, _, count)| *count > 0)
+            .filter(|(family, _)| chosen.is_none_or(|chosen| chosen == *family))
+            .map(|(family, label)| (*family, *label, self.starred(family)))
+            .filter(|(_, _, items)| !items.is_empty())
             .collect();
         let body = Rect::from_min_max(
             egui::pos2(area.left(), tool.bottom() + theme::space::MD),
@@ -55,7 +119,7 @@ impl View<'_> {
                 .id_salt("media.favorites.body")
                 .max_rect(body),
             |ui| {
-                if rows.is_empty() {
+                if groups.is_empty() {
                     self.favorites_empty(ui, body);
                     return;
                 }
@@ -63,30 +127,55 @@ impl View<'_> {
                 egui::ScrollArea::vertical()
                     .id_salt("media.favorites.list")
                     .show(ui, |ui| {
-                        for (label, tab, count) in rows {
-                            let count = i18n::number(self.cx.preferences.locale, count as u64);
-                            let response = ui.add_enabled(
-                                tab.is_some(),
-                                egui::Button::new(
-                                    egui::RichText::new(self.tr(label))
-                                        .size(theme::type_size::BODY)
-                                        .color(theme::text(dark)),
-                                )
-                                .fill(theme::hover(dark))
-                                .stroke(egui::Stroke::NONE)
-                                .min_size(Vec2::new(ui.available_width(), theme::size::CONTROL))
-                                .right_text(count),
+                        for (family, label, items) in groups {
+                            let count =
+                                i18n::number(self.cx.preferences.locale, items.len() as u64);
+                            let header = format!("{}  {count}", self.tr(label));
+                            let response = ui.label(
+                                egui::RichText::new(header)
+                                    .font(theme::label_font())
+                                    .size(theme::type_size::BODY)
+                                    .color(theme::text(dark)),
                             );
                             self.remember(
-                                format!("media.favorites.row.{}", label.key()),
+                                format!("media.favorites.family.{family}"),
                                 &response,
                                 None,
                             );
-                            if let Some(tab) = tab
-                                && response.clicked()
-                            {
-                                self.actions.push(Action::SelectTab(tab));
+                            for item in items {
+                                let response = ui.add_enabled(
+                                    item.apply.is_some(),
+                                    egui::Button::new(
+                                        egui::RichText::new(&item.name)
+                                            .size(theme::type_size::BODY)
+                                            .color(theme::text(dark)),
+                                    )
+                                    .fill(theme::hover(dark))
+                                    .stroke(egui::Stroke::NONE)
+                                    .truncate()
+                                    .min_size(Vec2::new(
+                                        ui.available_width(),
+                                        theme::size::CONTROL,
+                                    )),
+                                );
+                                self.remember(
+                                    format!("media.favorites.{family}.{}", item.key),
+                                    &response,
+                                    None,
+                                );
+                                if response.clicked()
+                                    && let Some(apply) = item.apply
+                                {
+                                    self.actions.push(match apply {
+                                        Apply::Effect(kind) => Action::AddEffect(kind),
+                                        Apply::Filter(id) => Action::AddFilter(id),
+                                        Apply::Transition(kind) => Action::AddTransition(kind),
+                                        Apply::Sticker(id) => Action::InsertSticker(id),
+                                        Apply::Sound(id) => Action::SoundsAdd(id),
+                                    });
+                                }
                             }
+                            ui.add_space(theme::space::MD);
                         }
                     });
             },
@@ -111,7 +200,7 @@ impl View<'_> {
                     self.state.media_favorites_family = None;
                     ui.close();
                 }
-                for (family, label, _) in FAMILIES {
+                for (family, label) in FAMILIES {
                     let response = ui.selectable_label(
                         self.state.media_favorites_family == Some(family),
                         self.tr(label),
