@@ -349,8 +349,73 @@ fn heuristic_is_explicit_free_and_multilingual_with_exact_source_edges() {
                     .any(|s| s.range.end() == c.segments[0].range.end())
             );
             assert!((tick(4)..=tick(15)).contains(&c.segments[0].range.duration()));
+            let sentence = match lang {
+                "vi" => "Bí quyết tiết kiệm thời gian.",
+                "zh" | "zh-Hans" | "zh-Hant" => "节省时间的方法。",
+                _ => "The secret to saving time.",
+            };
+            assert_eq!(c.proposal.title.as_str(), sentence);
+            assert_eq!(c.label, ClipLabel::CleanStart);
         }
     }
+    // OnTopic: keyword density reaches the threshold on every clip's transcript text.
+    let mut topical = input("en", 5);
+    topical.settings.keywords = vec!["time".into()];
+    let p = HeuristicClipSuggester::new().unwrap();
+    let s = scope(&topical, &p);
+    let result = suggest_clips(
+        &p,
+        &topical,
+        &[Request {
+            scope: &s,
+            consent: None,
+        }],
+        &Hooks::default(),
+    )
+    .unwrap();
+    assert!(!result.clips.is_empty());
+    assert!(result.clips.iter().all(|c| c.label == ClipLabel::OnTopic));
+    // Standalone: without sentence ends, only a clip opening the transcript is CleanStart.
+    let mut open = input("en", 5);
+    for segment in &mut open.segments {
+        segment.text = "and then more".into();
+    }
+    let s = scope(&open, &p);
+    let result = suggest_clips(
+        &p,
+        &open,
+        &[Request {
+            scope: &s,
+            consent: None,
+        }],
+        &Hooks::default(),
+    )
+    .unwrap();
+    assert!(!result.clips.is_empty());
+    for c in &result.clips {
+        let opens_transcript = c.segments[0].range.start() == open.segments[0].range.start();
+        let expected = if opens_transcript {
+            ClipLabel::CleanStart
+        } else {
+            ClipLabel::Standalone
+        };
+        assert_eq!(c.label, expected);
+    }
+    // Very short transcript: shorter than the minimum clip, so no short and no error.
+    let mut tiny = input("en", 1);
+    tiny.segments[0].range = SourceRange::new(Tick::ZERO, Tick(TICKS_PER_SECOND / 2)).unwrap();
+    let s = scope(&tiny, &p);
+    let result = suggest_clips(
+        &p,
+        &tiny,
+        &[Request {
+            scope: &s,
+            consent: None,
+        }],
+        &Hooks::default(),
+    )
+    .unwrap();
+    assert!(result.clips.is_empty());
 }
 #[test]
 fn long_transcript_windows_cover_all_legal_ranges_and_merge() {
@@ -390,6 +455,11 @@ fn validation_has_bounded_inputs_and_normalizes_nfc() {
     let mut bad = w.clone();
     bad.segments[1].range = bad.segments[0].range;
     assert!(bad.validate().is_err());
+    // Empty transcript is a payload refusal before any suggester runs.
+    let mut empty = w.clone();
+    empty.segments.clear();
+    assert!(matches!(empty.validate(), Err(Error::Payload)));
+    assert!(matches!(empty.windows(), Err(Error::Payload)));
     w.settings.overlap_tolerance = f64::NAN;
     assert!(w.validate().is_err());
 }
@@ -689,6 +759,7 @@ fn assembled_play_order_retains_source_order_and_serializes_without_enclosing_ra
             [tick(30), tick(0), tick(15)]
         );
         assert_eq!(c.proposal.segments[0].role, ClipRole::Hook);
+        assert_eq!(c.label, ClipLabel::Hook);
         let json = serde_json::to_value(c).unwrap();
         assert!(json.get("range").is_none());
         assert_eq!(json["proposal"]["hook_text"], "Try this");

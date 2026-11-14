@@ -5,8 +5,9 @@ use crate::clip_boundaries::{
 use crate::error::Error;
 use ai::Scope;
 use ai::text::clips::{
-    AnthropicClipSuggester, ClipInput, ClipProposal, ClipSegment, ClipSettings, ClipSource,
-    ClipSourceSegment, ClipSuggester, ClipSuggestion, HeuristicClipSuggester, OpenAiClipSuggester,
+    AnthropicClipSuggester, ClipInput, ClipLabel, ClipProposal, ClipSegment, ClipSettings,
+    ClipSource, ClipSourceSegment, ClipSuggester, ClipSuggestion, HeuristicClipSuggester,
+    OpenAiClipSuggester,
 };
 use captions::{Cue, LanguageTag, NfcText};
 use engine::control::Error as EngineError;
@@ -51,6 +52,7 @@ pub struct ClipCandidate {
     pub segments: Vec<ClipSourceSegment>,
     pub adjustments: Vec<SegmentAdjustment>,
     pub duration: Tick,
+    pub label: ClipLabel,
     pub source: ClipSource,
 }
 

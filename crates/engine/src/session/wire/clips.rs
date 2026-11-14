@@ -54,6 +54,8 @@ pub struct ClipCandidateView {
     pub score: f64,
     /// `llm` or `heuristic`.
     pub source: String,
+    /// `hook`, `on_topic`, `clean_start` or `standalone`: the first rule the short matches.
+    pub label: String,
     /// Sum of the piece durations, excluding gaps.
     pub duration: Tick,
     pub segments: Vec<ClipPieceRange>,

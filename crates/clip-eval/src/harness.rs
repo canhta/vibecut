@@ -391,7 +391,7 @@ pub fn run(options: &Options) -> Result<RunOutput> {
         "cost is the provider's per-invocation upper-bound estimate, not measured billing".into(),
     );
     let report = Report {
-        schema: 2,
+        schema: 3,
         set: options.set.clone(),
         provider: provider_label,
         model: provider.config().model().as_str().into(),
