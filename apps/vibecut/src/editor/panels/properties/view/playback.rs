@@ -3,7 +3,7 @@
 use super::Panel;
 use crate::editor::properties::workflow::jobs::loudness::{Cause, Failed, scope_target};
 use crate::editor::properties::{
-    AUDIO_GAIN_SCRUB, Action, Icon, ItemId, SPEED_SCRUB, ScrubSpec, Text, egui, read, theme,
+    AUDIO_GAIN_SCRUB, Action, ItemId, SPEED_SCRUB, ScrubSpec, Text, egui, read, theme,
 };
 use crate::i18n;
 use crate::kit;
@@ -493,30 +493,8 @@ impl Panel<'_, '_> {
             self.speed_curve_controls(ui, item, segments, maintain_pitch, has_audio);
             return;
         }
-        self.scrub_field(ui, item, SPEED_SCRUB);
-        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
-        self.row_label(ui, row, self.tr(Text::SpeedDuration));
-        if let Some((source, output)) = read::retime_seconds(project, item) {
-            let response = value_ui.label(
-                egui::RichText::new(format!("{source:.2}s → {output:.2}s"))
-                    .size(theme::type_size::BODY)
-                    .color(self.secondary()),
-            );
-            self.remember("inspector.speed.duration", &response);
-        }
-        value_ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let reset = self.icon_only(
-                ui,
-                "inspector.speed.reset",
-                Icon::ArrowCounterClockwise,
-                self.tr(Text::SpeedReset),
-                None,
-                current != 1.0,
-            );
-            if reset {
-                self.set_speed(item, 1.0, maintain_pitch);
-            }
-        });
+        self.slider_row(ui, item, SPEED_SCRUB);
+        self.speed_duration_row(ui, item, current, maintain_pitch);
         let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
         self.row_label(ui, row, self.tr(Text::SpeedReverse));
         let mut reversed = read::retime_reversed(project, item).unwrap_or(false);
@@ -533,18 +511,114 @@ impl Panel<'_, '_> {
             let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
             self.row_label(ui, row, self.tr(Text::ChangePitch));
             // "Change pitch" on lets pitch follow speed, so it is the inverse of maintain_pitch.
+            // The reference shows it as a switch.
             let mut follows = !maintain_pitch;
-            let response = value_ui.add(egui::Checkbox::without_text(&mut follows));
             let name = self.tr(Text::ChangePitch);
-            response
-                .ctx
-                .accesskit_node_builder(response.id, |node| node.set_label(name));
+            let response = kit::toggle(&mut value_ui, "inspector.speed.pitch", &mut follows, name);
             self.remember("inspector.speed.pitch", &response);
-            if response.changed() {
+            if response.clicked() {
                 self.set_speed(item, current, !follows);
             }
         }
+        self.speed_reset_row(ui, item, current, maintain_pitch);
     }
+
+    /// The Standard view's Duration row: the source length, an arrow, then the retimed length
+    /// as an editable field. A typed length sets the speed to source / typed, one undo step;
+    /// the speed clamps to the slider's range. Escape drops the draft.
+    fn speed_duration_row(
+        &mut self,
+        ui: &mut egui::Ui,
+        item: ItemId,
+        current: f64,
+        maintain_pitch: bool,
+    ) {
+        let Some((source, output)) = read::retime_seconds(self.cx.session.project(), item) else {
+            return;
+        };
+        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        self.row_label(ui, row, self.tr(Text::SpeedDuration));
+        let response = value_ui.label(
+            egui::RichText::new(format!("{source:.2}s →"))
+                .size(theme::type_size::BODY)
+                .color(self.secondary()),
+        );
+        self.remember("inspector.speed.duration", &response);
+        let key = SPEED_DURATION_DRAFT;
+        let mut text = self
+            .state
+            .drafts
+            .get(key)
+            .cloned()
+            .unwrap_or_else(|| format!("{output:.2}s"));
+        let field = kit::value_field(
+            &mut value_ui,
+            "inspector.speed.duration.field",
+            &mut text,
+            SPEED_DURATION_WIDTH,
+            None,
+            self.tr(Text::SpeedDuration),
+        );
+        self.remember("inspector.speed.duration.field", &field);
+        if field.has_focus() {
+            self.state.focus = Some(key.to_owned());
+        }
+        if field.has_focus() && ui.input(|input| input.key_pressed(egui::Key::Escape)) {
+            self.state.drafts.remove(key);
+            self.state.focus = None;
+            field.surrender_focus();
+            return;
+        }
+        if field.changed() {
+            self.state.drafts.insert(key.to_owned(), text.clone());
+        }
+        let enter = field.has_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter));
+        if enter || field.lost_focus() {
+            self.state.focus = None;
+            self.state.drafts.remove(key);
+            if let Some(seconds) = parse_seconds(&text) {
+                let speed = SPEED_SCRUB.quantize(source / seconds);
+                if (speed - current).abs() > f64::EPSILON {
+                    self.set_speed(item, speed, maintain_pitch);
+                }
+            }
+        }
+    }
+
+    /// Reset at the panel's bottom right: back to a constant 1x, one undo step.
+    fn speed_reset_row(
+        &mut self,
+        ui: &mut egui::Ui,
+        item: ItemId,
+        current: f64,
+        maintain_pitch: bool,
+    ) {
+        let label = self.tr(Text::SpeedReset);
+        let reset = ui
+            .with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.add_enabled(current != 1.0, egui::Button::new(label))
+            })
+            .inner;
+        self.remember("inspector.speed.reset", &reset);
+        if reset.clicked() {
+            self.set_speed(item, 1.0, maintain_pitch);
+        }
+    }
+}
+
+/// The Duration field's draft key and width (the loudness fields' 96 px).
+const SPEED_DURATION_DRAFT: &str = "speed_duration";
+const SPEED_DURATION_WIDTH: f32 = 96.0;
+
+/// A typed duration such as `4703.2s` in seconds; `None` for anything not a positive length.
+fn parse_seconds(text: &str) -> Option<f64> {
+    let value = text
+        .trim()
+        .trim_end_matches('s')
+        .trim()
+        .parse::<f64>()
+        .ok()?;
+    (value.is_finite() && value > 0.0).then_some(value)
 }
 
 /// Automation word and label of a speed ramp preset.

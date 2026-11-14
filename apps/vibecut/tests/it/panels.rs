@@ -3711,6 +3711,17 @@ fn speed_tab_scrubs_resets_and_toggles_pitch_through_one_command() {
     harness.state_mut().session.undo().unwrap();
     assert!(!item(&harness, fixture.video).retime.reverse);
 
+    // A typed duration sets the speed to source / typed length (2 s source, 1 s typed: 2x),
+    // one undo step; the typed speed clamps to the slider's 0.01-5x range.
+    let history = harness.state().session.history_len();
+    enter(&mut harness, "inspector.speed.duration.field", "1.00s");
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    assert_eq!(item(&harness, fixture.video).retime.speed.as_f64(), 2.0);
+    harness.state_mut().session.undo().unwrap();
+    enter(&mut harness, "inspector.speed.duration.field", "0.001s");
+    assert_eq!(item(&harness, fixture.video).retime.speed.as_f64(), 5.0);
+    harness.state_mut().session.undo().unwrap();
+
     // Audio items get the same controls; a video without audio has nothing to pitch-shift.
     select(&mut harness, fixture.audio);
     click(&mut harness, "inspector.tab.speed");
