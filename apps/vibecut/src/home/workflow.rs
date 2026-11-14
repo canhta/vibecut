@@ -13,7 +13,7 @@ use std::{
     sync::{
         Arc, Mutex,
         atomic::{AtomicU64, Ordering},
-        mpsc::{Receiver, Sender},
+        mpsc::Receiver,
     },
 };
 
@@ -139,7 +139,7 @@ pub(super) fn catalog_worker(
     budget: ByteBudget,
     corrections: engine::footage::Lookup,
     requests: Receiver<Request>,
-    events: Sender<Event>,
+    events: time::wake::Sender<Event>,
     catalog: Catalog,
 ) {
     let library = match ProjectLibrary::open(&root, budget, corrections) {

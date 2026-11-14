@@ -29,7 +29,7 @@ impl CacheWorker {
     ) -> std::io::Result<Self> {
         let cancel = Arc::new(AtomicBool::new(false));
         let flag = cancel.clone();
-        let handle = std::thread::Builder::new()
+        let handle = time::wake::Builder::new()
             .name("timeline-cache".into())
             .spawn(move || {
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(flag))).unwrap_or_else(

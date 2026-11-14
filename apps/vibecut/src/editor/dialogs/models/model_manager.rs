@@ -205,7 +205,7 @@ impl ModelManager {
         let transfers = self.transfers.clone();
         let cancel = self.check_cancel.clone();
         self.checking = true;
-        let worker = std::thread::Builder::new()
+        let worker = time::wake::Builder::new()
             .name("vibecut-model-check".into())
             .spawn(move || {
                 let hooks = CheckHooks(cancel.clone());

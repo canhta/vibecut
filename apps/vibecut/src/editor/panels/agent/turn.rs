@@ -9,7 +9,7 @@ use engine::{
 use std::{
     sync::{
         Arc,
-        mpsc::{self, Receiver, TryRecvError},
+        mpsc::{Receiver, TryRecvError},
     },
     thread::JoinHandle,
     time::Duration,
@@ -83,7 +83,7 @@ pub(super) fn spawn(
     budget: ByteBudget,
     ctx: Option<egui::Context>,
 ) -> Option<Running> {
-    let (sender, events) = mpsc::channel();
+    let (sender, events) = time::wake::channel();
     let cancel = CancelFlag::new();
     let flag = cancel.clone();
     let repaint = move |ctx: &Option<egui::Context>| {
@@ -91,7 +91,7 @@ pub(super) fn spawn(
             ctx.request_repaint();
         }
     };
-    let worker = std::thread::Builder::new()
+    let worker = time::wake::Builder::new()
         .name("agent-turn".to_owned())
         .spawn(move || {
             let turn = match JobRunner::new(RUNNER, budget, Arc::new(SystemClock::default())) {

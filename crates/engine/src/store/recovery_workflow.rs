@@ -422,6 +422,14 @@ impl Autosave {
                 .as_ref()
                 .is_some_and(|f| f.save.is_some() || f.clear)
     }
+    /// True while `tick` still has a journal write to start or finish: an unjournaled edit
+    /// waiting out its debounce, or a write in flight. A sticky failure ends the wait.
+    pub fn pending(&self) -> bool {
+        self.failure.is_none()
+            && (self.flight.is_some()
+                || self.saving()
+                || (self.is_dirty() && self.revision != self.journaled))
+    }
 }
 
 #[cfg(test)]

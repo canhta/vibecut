@@ -10,7 +10,7 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicU8, Ordering},
     },
-    thread::{self, JoinHandle},
+    thread::JoinHandle,
     time::{Duration, Instant},
 };
 
@@ -399,6 +399,8 @@ impl JobRunner {
             context,
             ready: self.clock.now(),
         });
+        // A queued job only starts on a pump: make sure the owner's loop runs one.
+        time::wake::notify();
         Ok((id, token))
     }
     /// Bound a batch by both resource concurrency and retained terminal results.
@@ -417,6 +419,15 @@ impl JobRunner {
     /// Pump from the UI/CLI event loop. No wait for executing tasks; completed
     /// handles are joined. Scheduling scans past resource-blocked jobs.
     pub fn tick(&mut self) -> RuntimeResult<()> {
+        let ticked = self.pump();
+        if !self.queue.is_empty() || !self.running.is_empty() {
+            // Work in flight reports progress through this pump: poll again soon, and stop
+            // when the queue and the running set are both empty.
+            time::wake::notify_after(Duration::from_millis(16));
+        }
+        ticked
+    }
+    fn pump(&mut self) -> RuntimeResult<()> {
         let now = self.clock.now();
         let mut i = 0;
         while i < self.running.len() {
@@ -571,7 +582,7 @@ impl JobRunner {
             }
             let context = pending.context.clone();
             let task = pending.task.clone();
-            match thread::Builder::new()
+            match time::wake::Builder::new()
                 .name("vibecut-job".into())
                 .spawn(move || {
                     catch_unwind(AssertUnwindSafe(|| {
@@ -672,6 +683,7 @@ impl JobRunner {
             .find(|p| p.snapshot.id == id)
         {
             p.context.cancel.cancel();
+            time::wake::notify();
             return Ok(());
         }
         if self.finished.iter().any(|f| f.snapshot.id == id) {

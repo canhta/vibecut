@@ -65,7 +65,6 @@ struct Native {
     smoke: Option<Smoke>,
     capture: Option<Capture>,
     observe_create: bool,
-    active_until: Instant,
 }
 struct Smoke {
     started: Instant,
@@ -78,17 +77,8 @@ struct Smoke {
 }
 impl eframe::App for Native {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Poll fast only while work is live or the user just acted; idle falls to a heartbeat.
-        let now = Instant::now();
-        if self.workspace.active() || ctx.input(|i| !i.events.is_empty() || i.pointer.is_moving())
-        {
-            self.active_until = now + Duration::from_secs(2);
-        }
-        ctx.request_repaint_after(if now < self.active_until {
-            Duration::from_millis(8)
-        } else {
-            Workspace::IDLE_POLL
-        });
+        // No timer here: workers, the job runner and playback wake the loop themselves.
+        self.workspace.attach(ctx);
         self.workspace.tick();
         // Immediate child viewports are declared by the root UI pass. Keep
         // running that pass after Home is hidden, including the final close.
@@ -469,7 +459,6 @@ fn run() -> Result<()> {
                 smoke,
                 capture: None,
                 observe_create,
-                active_until: Instant::now(),
             }))
         }),
     )?;

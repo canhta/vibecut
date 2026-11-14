@@ -359,7 +359,7 @@ impl Sounds {
         let (tx, rx) = mpsc::channel();
         self.search_generation = self.search_generation.wrapping_add(1);
         let generation = self.search_generation;
-        let spawned = std::thread::Builder::new()
+        let spawned = time::wake::Builder::new()
             .name("vibecut-sounds-search".into())
             .spawn(move || {
                 let client = SoundClient::new(client.token, client.transport);
@@ -510,7 +510,7 @@ impl Sounds {
         let cancel = Arc::new(AtomicBool::new(false));
         self.preview_cancel = Some(cancel.clone());
         let (tx, rx) = mpsc::sync_channel(1);
-        let spawned = std::thread::Builder::new()
+        let spawned = time::wake::Builder::new()
             .name("vibecut-sounds-preview".into())
             .spawn(move || {
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

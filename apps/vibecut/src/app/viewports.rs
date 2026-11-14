@@ -54,6 +54,7 @@ impl Workspace {
         }
     }
     pub fn ui(&mut self, ui: &mut egui::Ui) {
+        self.attach(ui.ctx());
         self.tick();
         if !self.home.configured {
             Editor::fonts(ui.ctx());
@@ -84,6 +85,9 @@ impl Workspace {
         if self.ready_to_close() {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
+        // Work the UI just asked for starts on a tick, and nothing polls while idle: run it
+        // now. What it publishes wakes the loop again on its own.
+        self.tick();
     }
     /// The root viewport: Home's catalog over its lifecycle worker's chrome, or hidden.
     fn show_home(&mut self, ui: &mut egui::Ui) {

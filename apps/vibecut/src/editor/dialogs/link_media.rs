@@ -589,7 +589,7 @@ fn spawn(assets: Vec<SourceAsset>, pick: Pick, path: PathBuf, hasher: Hasher) ->
     let cancel = Arc::new(AtomicBool::new(false));
     let (send, events) = mpsc::channel();
     let flag = cancel.clone();
-    std::thread::spawn(move || {
+    time::wake::spawn(move || {
         for asset in &assets {
             if flag.load(Ordering::Relaxed) {
                 break;

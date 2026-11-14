@@ -86,6 +86,17 @@ impl Editor {
         if let Err(error) = self.remember_view() {
             self.fail(error.to_string());
         }
+        // Clock-driven state has no worker to wake the loop: the autosave debounce and the
+        // toast and reveal expiry. Poll while one is pending and stop when each is gone.
+        if self
+            .session
+            .autosave()
+            .is_some_and(|autosave| autosave.pending())
+            || self.toast.is_some()
+            || self.assets.media_reveal.is_some()
+        {
+            time::wake::notify_after(std::time::Duration::from_millis(100));
+        }
     }
 
     /// Wait for every requested effect preview to reach a terminal tile state.

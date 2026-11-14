@@ -110,7 +110,7 @@ impl Recorder {
         let worker = {
             let shared = shared.clone();
             let part = part.clone();
-            std::thread::Builder::new()
+            time::wake::Builder::new()
                 .name("voiceover-encoder".into())
                 .spawn(move || {
                     work(

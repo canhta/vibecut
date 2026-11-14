@@ -366,7 +366,7 @@ impl Subtitles {
             cancel: cancel.clone(),
         };
         let (send, receive) = mpsc::sync_channel(1);
-        std::thread::spawn(move || {
+        time::wake::spawn(move || {
             let _ = send.send(classify(input));
         });
         self.classify = Some(Classify {

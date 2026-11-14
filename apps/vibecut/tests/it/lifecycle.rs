@@ -1124,28 +1124,62 @@ fn settles(app: &mut Workspace, ctx: &egui::Context, quiet: usize) -> bool {
         if run >= quiet {
             return true;
         }
-        std::thread::sleep(Duration::from_millis(5));
+        std::thread::sleep(Duration::from_millis(10));
     }
     false
 }
 
+/// Every repaint request the context receives, from any thread, passes included.
+fn count_repaints(ctx: &egui::Context) -> std::sync::Arc<std::sync::atomic::AtomicUsize> {
+    let count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let seen = count.clone();
+    ctx.set_request_repaint_callback(move |_| {
+        seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    });
+    count
+}
+
 #[test]
-fn idle_home_and_paused_editor_request_no_repaint_and_only_work_wakes_the_poll() {
+fn idle_home_and_paused_editor_request_no_repaint_and_a_worker_result_requests_one() {
+    use std::sync::atomic::Ordering::SeqCst;
     let root = tempfile::tempdir().unwrap();
     let mut app = app(root.path());
     let ctx = egui::Context::default();
-    assert!(!app.active());
+    let repaints = count_repaints(&ctx);
     assert!(
         settles(&mut app, &ctx, 10),
         "idle Home keeps asking for repaint"
     );
+    // Nothing polls while idle: a quiet stretch with no pass adds no request at all.
+    let quiet = repaints.load(SeqCst);
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(repaints.load(SeqCst), quiet, "idle Home woke the loop");
+
+    // A worker finishing while the loop sleeps asks for a repaint by itself, with no pass
+    // and no tick in between; so does a result sent on a wake channel.
+    let before = repaints.load(SeqCst);
+    time::wake::spawn(|| {}).join().unwrap();
+    assert!(repaints.load(SeqCst) > before, "a finished worker did not wake the loop");
+    let before = repaints.load(SeqCst);
+    let (send, receive) = time::wake::channel();
+    std::thread::spawn(move || send.send(7_u8).unwrap()).join().unwrap();
+    assert_eq!(receive.try_recv().unwrap(), 7);
+    assert!(repaints.load(SeqCst) > before, "a sent result did not wake the loop");
+    assert!(
+        settles(&mut app, &ctx, 10),
+        "the wake left the loop asking for repaint"
+    );
+
+    // The lifecycle jobs finish on the job runner's worker threads and reach the UI the same way.
     app.create().unwrap();
     idle(&mut app);
     assert!(app.error().is_none(), "{:?}", app.error());
-    assert!(!app.active(), "a paused editor is not active");
+    assert!(!app.playing(), "a new project starts paused");
     assert!(
         settles(&mut app, &ctx, 10),
         "a paused editor keeps asking for repaint"
     );
-    assert!(Workspace::IDLE_POLL >= Duration::from_millis(250));
+    let quiet = repaints.load(SeqCst);
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(repaints.load(SeqCst), quiet, "a paused editor woke the loop");
 }

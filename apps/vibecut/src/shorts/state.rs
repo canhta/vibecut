@@ -228,12 +228,12 @@ impl Thumbs {
     }
     fn start(&mut self, asset: media::SourceAsset, starts: Vec<Tick>) {
         self.stop();
-        let (send, receive) = mpsc::channel();
+        let (send, receive) = time::wake::channel();
         let cancel = self.cancel.clone();
         self.images = starts.iter().map(|_| None).collect();
         self.textures = starts.iter().map(|_| None).collect();
         self.receive = Some(receive);
-        self.worker = std::thread::Builder::new()
+        self.worker = time::wake::Builder::new()
             .name("shorts-posters".into())
             .spawn(move || {
                 for (index, at) in starts.into_iter().enumerate() {

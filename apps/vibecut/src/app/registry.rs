@@ -43,6 +43,9 @@ pub struct Workspace {
     /// Prompts Home's agent card typed for projects that are still opening, by canonical
     /// path; the editor that registers for the path starts its first turn with the prompt.
     pub(super) agent_prompts: BTreeMap<PathBuf, String>,
+    /// Workers ask the event loop to repaint through this; nothing else polls while idle.
+    wake: time::wake::Wake,
+    wake_attached: bool,
 }
 
 impl Workspace {
@@ -56,6 +59,9 @@ impl Workspace {
         preferences: Preferences,
         path: Option<PathBuf>,
     ) -> Result<Self> {
+        // Bound first: every worker started below inherits it and wakes the loop when done.
+        let wake = time::wake::Wake::new();
+        wake.bind();
         let budget = ByteBudget::new(preferences.cache_limit_bytes)?;
         let persistence = ByteBudget::new(256 << 20)?;
         let lending = Lending::open(&root, &budget);
@@ -98,7 +104,21 @@ impl Workspace {
             lane_paths: BTreeMap::new(),
             lane_prune_key: Vec::new(),
             agent_prompts: BTreeMap::new(),
+            wake,
+            wake_attached: false,
         })
+    }
+    /// Point the worker wake at this context's root viewport. Immediate child windows paint
+    /// inside the root pass, so one root repaint serves every window.
+    pub fn attach(&mut self, ctx: &egui::Context) {
+        self.wake.bind();
+        if !self.wake_attached {
+            self.wake_attached = true;
+            let ctx = ctx.clone();
+            self.wake.set(move |delay| {
+                ctx.request_repaint_after_for(delay, egui::ViewportId::ROOT);
+            });
+        }
     }
     pub fn control_budget(&self) -> ByteBudget {
         self.home.budget.clone()
@@ -201,16 +221,14 @@ impl Workspace {
     pub fn busy(&self) -> bool {
         self.home.busy() || self.projects.busy() || self.windows.values().any(EditorWindow::busy)
     }
-    /// True while something needs the fast poll: a job in flight or a playing editor.
-    pub fn active(&self) -> bool {
-        self.busy()
-            || self
-                .windows
-                .values()
-                .any(|w| w.editor.as_ref().is_some_and(|e| e.playback.playing()))
+    /// True while a playing editor needs the frame pace. Everything else that waits wakes
+    /// the loop itself: workers on exit or per result, the job runner while work is in
+    /// flight, and the editor while a clock-driven expiry is pending.
+    pub fn playing(&self) -> bool {
+        self.windows
+            .values()
+            .any(|w| w.editor.as_ref().is_some_and(|e| e.playback.playing()))
     }
-    /// The idle heartbeat of the native loop: it only picks up job results nobody painted.
-    pub const IDLE_POLL: std::time::Duration = std::time::Duration::from_millis(500);
     pub fn error(&self) -> Option<&Error> {
         self.home.error().or_else(|| {
             self.focused
@@ -269,6 +287,10 @@ impl Workspace {
         }
     }
     pub fn tick(&mut self) {
+        self.wake.bind();
+        if self.playing() {
+            time::wake::notify_after(Duration::from_millis(8));
+        }
         self.projects.tick();
         if let Some(action) = self.projects.take_action() {
             self.project_action(action);
