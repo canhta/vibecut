@@ -16,6 +16,7 @@ mod media_import;
 mod media_library;
 mod models;
 mod music;
+mod narration;
 mod panels;
 mod preview;
 mod projects;

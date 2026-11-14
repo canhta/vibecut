@@ -263,6 +263,8 @@ pub(in crate::editor) enum Action {
     Font(super::font_picker::Action),
     /// Mask row sub-panel edits.
     Mask(super::mask_picker::Action),
+    /// The Text to speech tab: generate, consent, place and ducking.
+    Narration(super::workflow::jobs::narration::Action),
     Error(String),
 }
 

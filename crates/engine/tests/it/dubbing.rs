@@ -641,3 +641,244 @@ fn a_take_twice_its_cue_is_refused_and_places_nothing() {
     assert_eq!(s.history_len(), history);
     assert!(narrations(&s).is_empty());
 }
+
+// ----- the credential opener: real adapters, no network -----
+
+/// A transport that records every send; the opener and `prepare` must never reach it.
+#[derive(Default)]
+struct NoNetwork(std::sync::atomic::AtomicUsize);
+impl transport::HttpTransport for NoNetwork {
+    fn send(&self, _: transport::HttpRequest) -> Result<transport::HttpResponse, transport::Error> {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Err(transport::Error::Network)
+    }
+}
+
+fn real_request(provider: &str, model: &str, voice: &str, language: &str, text: &str) -> Request {
+    Request {
+        provider: provider.into(),
+        model: model.into(),
+        voice: voice.into(),
+        language: LanguageTag::parse(language).unwrap(),
+        text: text.into(),
+        cue_duration: Tick(SECOND),
+        provider_speed_thousandths: None,
+    }
+}
+
+#[test]
+fn the_credential_opener_builds_only_the_chosen_provider_with_its_own_key_and_no_network() {
+    use engine::dubbing::{CredentialSpeech, SpeechOpener, speech_options};
+    use engine::providers::Credentials;
+    let wire = Arc::new(NoNetwork::default());
+
+    // Only an OpenAI key: OpenAI opens, ElevenLabs is an authentication refusal, never a swap.
+    let only_openai = CredentialSpeech::with_transport(
+        Credentials::new(Some("sk-test".into()), None, None),
+        wire.clone(),
+    );
+    let (synth, output) = only_openai.open("openai", "gpt-audio-1.5", None).unwrap();
+    assert_eq!(synth.config().id().as_str(), "openai");
+    assert_eq!(output.sample_rate, 24_000);
+    assert!(matches!(
+        only_openai.open("openai", "gpt-audio-1.5", Some(1100)),
+        Err(ai::Error::Unsupported)
+    ));
+    assert!(matches!(
+        only_openai.open("elevenlabs", "eleven_flash_v2_5", None),
+        Err(ai::Error::Auth)
+    ));
+    assert!(matches!(
+        only_openai.open("azure", "any", None),
+        Err(ai::Error::Unsupported)
+    ));
+
+    // Both keys: ElevenLabs takes its speed setting inside 0.7 to 1.2 and refuses outside it.
+    let both = CredentialSpeech::with_transport(
+        Credentials::new(Some("sk-test".into()), Some("xi-test".into()), None),
+        wire.clone(),
+    );
+    assert!(
+        both.open("elevenlabs", "eleven_flash_v2_5", Some(1100))
+            .is_ok()
+    );
+    assert!(
+        both.open("elevenlabs", "eleven_flash_v2_5", Some(1300))
+            .is_err()
+    );
+
+    // The narrator quotes and discloses through the real adapters before anything is sent.
+    let narrator = Narrator::new(Arc::new(both));
+    let flash = narrator
+        .prepare(&real_request(
+            "elevenlabs",
+            "eleven_flash_v2_5",
+            "21m00Tcm4TlvDq8ikWAM",
+            "vi",
+            "Xin chào",
+        ))
+        .unwrap();
+    assert_eq!(flash.disclosure().provider, "elevenlabs");
+    assert_eq!(
+        flash.disclosure().cost,
+        Cost::UpperBound {
+            currency: "USD".into(),
+            micros: 320
+        }
+    );
+    // Multilingual v2 has no Vietnamese, an unknown voice is not guessed, and neither asks.
+    assert!(matches!(
+        narrator.prepare(&real_request(
+            "elevenlabs",
+            "eleven_multilingual_v2",
+            "21m00Tcm4TlvDq8ikWAM",
+            "vi",
+            "Xin chào"
+        )),
+        Err(Error::Ai(ai::Error::UnsupportedLanguage))
+    ));
+    assert!(matches!(
+        narrator.prepare(&real_request(
+            "elevenlabs",
+            "eleven_flash_v2_5",
+            "cloned-voice",
+            "en",
+            "Hello"
+        )),
+        Err(Error::Ai(ai::Error::UnsupportedVoice))
+    ));
+    let openai = narrator
+        .prepare(&real_request(
+            "openai",
+            "gpt-audio-1.5",
+            "alloy",
+            "en",
+            "Welcome back.",
+        ))
+        .unwrap();
+    assert_eq!(openai.disclosure().voice, "alloy");
+    assert!(matches!(
+        openai.disclosure().cost,
+        Cost::UpperBound { micros, .. } if micros > 0
+    ));
+    assert_eq!(wire.0.load(std::sync::atomic::Ordering::SeqCst), 0);
+
+    // The picker lists exactly these two providers, with built-in or premade voices only.
+    let options = speech_options();
+    assert_eq!(
+        options.iter().map(|option| option.id).collect::<Vec<_>>(),
+        ["openai", "elevenlabs"]
+    );
+    assert!(options.iter().all(|option| !option.models.is_empty()));
+    assert!(options[0].voices.iter().any(|(id, _)| *id == "alloy"));
+    assert!(options[1].speed && !options[0].speed);
+}
+
+// ----- dub.generate on a text item: the one path the panel, an agent and the CLI share -----
+
+#[test]
+fn dub_generate_on_a_text_item_runs_consent_in_the_job_and_returns_the_take_the_panel_shows() {
+    use crate::support::control::{Allow, caller, finish, ok, request, runner, with_text};
+    use engine::control::{ControlResult, ResponseValue};
+    use engine::dubbing::decode_take;
+    use engine::jobs::JobState;
+    use engine::subtitles::CaptionAccess;
+
+    let mut s = with_text(&seed());
+    let before = project::encode(s.project(), false).unwrap();
+    // The text item's own words and time are the source of the narration.
+    let found = item(&s, ItemId(3));
+    let ItemParams::Text(params) = &found.content else {
+        panic!("text item");
+    };
+    let text = params.content.as_str().to_owned();
+    let cue = found.duration().unwrap();
+    let params = |language: &str| {
+        serde_json::json!({
+            "provider": "scripted", "model": "model-a", "voice": "alloy",
+            "language": language, "text": text, "cue_duration": cue.0,
+        })
+    };
+    let access_over = |voice: &Arc<Voice>, prompt: &Arc<Prompt>| {
+        CaptionAccess::consent_only(prompt.clone()).with_dubbing(Arc::new(Narrator::new(Arc::new(
+            Opener::new(vec![("scripted", "model-a", voice.clone())]),
+        ))))
+    };
+
+    // Allowed: the job is accepted with no consent asked yet, then asks inside the job.
+    let allowed_voice = fx_voice();
+    let prompt = Arc::new(Prompt::new(true, false));
+    let access = access_over(&allowed_voice, &prompt);
+    let mut r = runner();
+    let mut c = caller(&Allow);
+    c.captions = Some(&access);
+    let response = s
+        .control_request(
+            request(&s, "dub.generate", params("vi"), "gen-allow"),
+            c,
+            &mut r,
+        )
+        .unwrap();
+    let ControlResult::JobAccepted { job, .. } = ok(response) else {
+        panic!("dub.generate starts a job");
+    };
+    finish(&mut r, job);
+    assert_eq!(r.snapshot(job).unwrap().state, JobState::Completed);
+    let take = decode_take(r.output_bytes(job).unwrap()).unwrap();
+    assert_eq!(prompt.count(), 1);
+    assert_eq!(allowed_voice.calls(), 1);
+    // One second of audio for the one-second text item, with the provenance of what was approved.
+    assert_eq!(take.natural().unwrap(), cue);
+    assert_eq!(take.narration.cue_duration, cue);
+    assert_eq!(take.narration.characters, 18);
+    assert_eq!(take.narration.text_sha256.len(), 64);
+    assert_eq!(take.narration.voice.as_str(), "alloy");
+    assert_eq!(project::encode(s.project(), false).unwrap(), before);
+
+    // Denied: the job ends as a permission failure; nothing reached the provider.
+    let denied_voice = fx_voice();
+    let denied_prompt = Arc::new(Prompt::new(false, false));
+    let denied = access_over(&denied_voice, &denied_prompt);
+    let mut c = caller(&Allow);
+    c.captions = Some(&denied);
+    let response = s
+        .control_request(
+            request(&s, "dub.generate", params("vi"), "gen-deny"),
+            c,
+            &mut r,
+        )
+        .unwrap();
+    let ControlResult::JobAccepted { job, .. } = ok(response) else {
+        panic!("dub.generate starts a job");
+    };
+    finish(&mut r, job);
+    let snapshot = r.snapshot(job).unwrap();
+    assert_eq!(snapshot.state, JobState::Failed);
+    assert_eq!(
+        snapshot.error.unwrap().code(),
+        engine::control::ErrorCode::Permission
+    );
+    assert_eq!((denied_prompt.count(), denied_voice.calls()), (1, 0));
+
+    // An unsupported language is refused by the command itself: no job, no question.
+    let refused_prompt = Arc::new(Prompt::new(true, false));
+    let refused = access_over(&fx_voice(), &refused_prompt);
+    let mut c = caller(&Allow);
+    c.captions = Some(&refused);
+    let response = s
+        .control_request(
+            request(&s, "dub.generate", params("zh"), "gen-zh"),
+            c,
+            &mut r,
+        )
+        .unwrap();
+    assert!(
+        matches!(response.value, ResponseValue::Error(_)),
+        "{response:?}"
+    );
+    assert_eq!(refused_prompt.count(), 0);
+    assert_eq!(project::encode(s.project(), false).unwrap(), before);
+}
+fn fx_voice() -> Arc<Voice> {
+    voice(Script::Samples(24_000))
+}

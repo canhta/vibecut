@@ -106,6 +106,17 @@ pub fn desktop_opener(budget: ByteBudget) -> Opener {
     })
 }
 
+/// The access one narration run lends to `dub.generate`: the run's own consent sheet and the
+/// narrator over the chosen speech opener. Narration needs no ASR provider and no models cache,
+/// so none is opened; the same registered command an agent sends does the work.
+pub fn narration_access(
+    consent: Consent,
+    opener: Arc<dyn engine::dubbing::SpeechOpener>,
+) -> CaptionAccess {
+    CaptionAccess::consent_only(consent)
+        .with_dubbing(Arc::new(engine::dubbing::Narrator::new(opener)))
+}
+
 /// A process opens the models cache once; every run locks it only for get/put.
 fn models_cache(budget: &ByteBudget) -> engine::control::Result<Arc<Mutex<ArtifactCache>>> {
     static MODELS: Mutex<Option<Arc<Mutex<ArtifactCache>>>> = Mutex::new(None);

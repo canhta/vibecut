@@ -11,6 +11,7 @@ use crate::kit;
 use project::{TextLook, TextShelf};
 
 mod keywords;
+mod narration;
 
 const fn spec(field: &'static str, label: Text, decimals: usize) -> ScrubSpec {
     ScrubSpec::of(

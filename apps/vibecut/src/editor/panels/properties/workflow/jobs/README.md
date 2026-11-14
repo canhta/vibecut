@@ -1,6 +1,8 @@
 # Properties jobs
 
-Interface: `footage::FootageWorkflow`, `footage::FootageStatus`, `loudness::LoudnessWorkflow`, `loudness::Failed`, `loudness::scope_target`, `lut::LutWorkflow`.
+Interface: `footage::FootageWorkflow`, `footage::FootageStatus`, `loudness::LoudnessWorkflow`, `loudness::Failed`, `loudness::scope_target`, `lut::LutWorkflow`, `narration::NarrationWorkflow`, `narration::Action`, `narration::Failed`.
+
+The narration workflow (`narration.rs`) submits the registered `dub.generate` command to its own runner with a human caller and a `ai_access::narration_access` (the run's `TaskEvents` consent prompt and the narrator, nothing else), the same path an agent or the CLI drives. It keeps the form, one run, one pending take and its fit decision, advances the job once per frame from the frame, reads the take from the retained job output, and writes the project only through `dub.place` and `dub.set_ducking`. A refusal, a decline, a provider failure or a cancel (`dub.cancel`) leaves the project untouched; selecting another item cancels the job. Tests inject the speech opener and the take folder with `Editor::set_narration`.
 
 The three row-started engine jobs of the properties area, each with its own runner over the shared
 process media access: the LUT import (`lut.rs`), the footage analyses, stabilize and person
