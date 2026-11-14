@@ -892,6 +892,15 @@ impl Drop for Playback {
 }
 /// Map `at` into a looping `[from, to)` range; one rule for ticks and samples.
 /// Positions before `to` pass through, and an empty range never wraps.
+/// The tick the compositor renders for the scheduled frame at `at`. The transport at or
+/// past the timeline end holds the last frame, because the compositor excludes an ended
+/// layer and would otherwise show black; a pointer time keeps the empty tail black.
+fn held_at(at: Tick, pointer: bool, duration: Tick, fps: time::FrameRate) -> Result<Tick> {
+    if pointer || duration <= Tick::ZERO || at < duration {
+        return Ok(at);
+    }
+    Ok(fps.snap(Tick(duration.0 - 1))?)
+}
 fn wrap_units(at: i64, from: i64, to: i64) -> i64 {
     if at < to || to <= from {
         at
@@ -1115,7 +1124,11 @@ fn video_loop(
             continue;
         }
         let at = fps.tick_of(next)?;
-        let image = renderer.render_frame(at, sources.as_mut(), hooks)?;
+        let image = renderer.render_frame(
+            held_at(at, r.hover.is_some(), r.project.duration(), fps)?,
+            sources.as_mut(),
+            hooks,
+        )?;
         let lease = budget.reserve(
             ByteOwner::DecodedFrames,
             u64::from(image.width()) * u64::from(image.height()) * 12,
@@ -1146,10 +1159,10 @@ fn video_loop(
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
-    use super::{Files, Playback, loop_window, plan_block, wrap_units};
+    use super::{Files, Playback, held_at, loop_window, plan_block, wrap_units};
     use engine::{ByteBudget, ByteOwner, Session};
     use std::sync::Arc;
-    use time::Tick;
+    use time::{TICKS_PER_SECOND, Tick};
 
     #[test]
     fn a_successor_opens_on_a_full_budget_and_shares_the_ring_bytes() {
@@ -1181,6 +1194,25 @@ mod tests {
     }
 
     type Bounds = Option<(i64, i64)>;
+
+    #[test]
+    fn the_transport_at_the_timeline_end_holds_the_last_frame() {
+        let fps = time::FrameRate::new(30, 1).unwrap();
+        let end = Tick(2 * TICKS_PER_SECOND);
+        let last = fps.tick_of(59).unwrap();
+        // Inside the timeline the scheduled frame renders as itself.
+        let mid = Tick(TICKS_PER_SECOND);
+        assert_eq!(held_at(mid, false, end, fps).unwrap(), mid);
+        // At and past the end the transport shows the last frame, not black.
+        assert_eq!(held_at(end, false, end, fps).unwrap(), last);
+        assert_eq!(held_at(Tick(end.0 + 1), false, end, fps).unwrap(), last);
+        // A pointer over the empty tail and an empty timeline keep their own time.
+        assert_eq!(held_at(end, true, end, fps).unwrap(), end);
+        assert_eq!(
+            held_at(Tick::ZERO, false, Tick::ZERO, fps).unwrap(),
+            Tick::ZERO
+        );
+    }
 
     #[test]
     fn loop_wrap_rows() {
