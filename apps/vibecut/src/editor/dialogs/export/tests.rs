@@ -317,9 +317,26 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
         assert!(enabled(&bench, "export.gif.colors"));
         assert!(enabled(&bench, "export.gif.dither"));
         assert!(!enabled(&bench, "export.bitrate.custom"));
+        // GIF leaves the encoder rows unused: they stay listed but disabled.
+        for id in [
+            "export.codec",
+            "export.quality",
+            "export.profile",
+            "export.audio.include",
+        ] {
+            assert!(!enabled(&bench, id), "{id} applies to GIF");
+        }
         // A PNG sequence has no codec rate: the same bitrate row is disabled and cleared, and
-        // the finished output is named without an extension.
+        // the finished output is named without an extension. Codec, profile and the all-scenes
+        // choice are reset to the values the export accepts.
+        bench.click("export.format");
+        bench.click("export.format.mp4");
+        bench.click("export.codec");
+        bench.click("export.codec.h264");
         bench.editor_mut().preferences.export.output.bit_rate = Some(100_000);
+        bench.editor_mut().preferences.export.output.profile = media::H264Profile::High;
+        bench.click("export.scene");
+        bench.click("export.scene.all");
         bench.click("export.format");
         bench.click("export.format.png_sequence");
         bench.harness_mut().run_steps(2);
@@ -328,7 +345,19 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
             (sequence.format, sequence.output.bit_rate),
             (ExportFormat::PngSequence, None)
         );
-        assert!(!enabled(&bench, "export.bitrate.custom"));
+        assert!(sequence.output.codec == render::VideoCodec::Automatic);
+        assert!(sequence.output.profile == media::H264Profile::Automatic);
+        assert!(sequence.output.scene == render::SceneChoice::Active);
+        for id in [
+            "export.bitrate.custom",
+            "export.codec",
+            "export.quality",
+            "export.profile",
+            "export.audio.include",
+        ] {
+            assert!(!enabled(&bench, id), "{id} applies to a PNG sequence");
+        }
+        assert!(!enabled(&bench, "export.scene.all"));
         assert_eq!(
             ExportFormat::PngSequence.file_name("My: Project?"),
             "My_ Project_"
@@ -337,8 +366,10 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
             ExportFormat::Mp4.file_name("My: Project?"),
             "My_ Project_.mp4"
         );
-        let screenshot = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target/82-export-png-sequence.png");
+        let screenshot = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+            "../../target/82-export-png-sequence-{}.png",
+            format!("{locale:?}").to_lowercase()
+        ));
         bench
             .harness_mut()
             .render()
@@ -349,6 +380,16 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
         bench.click("export.format.webm");
         bench.harness_mut().run_steps(2);
         assert_eq!(bench.editor().preferences.export.format, ExportFormat::Webm);
+        // Leaving the silent format re-enables the rows it had disabled.
+        for id in [
+            "export.codec",
+            "export.quality",
+            "export.profile",
+            "export.audio.include",
+            "export.scene.all",
+        ] {
+            assert!(enabled(&bench, id), "{id} applies to WebM");
+        }
         bench.click("export.close");
         open(&mut bench);
         assert_eq!(bench.editor().preferences.export.format, ExportFormat::Webm);
