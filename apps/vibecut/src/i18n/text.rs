@@ -1334,6 +1334,7 @@ catalog! {
     GuidesClear { key: "guides_clear", en: "Clear guides", vi: "Xóa đường dẫn" },
     GuidesHide { key: "guides_hide", en: "Hide guides", vi: "Ẩn đường dẫn" },
     GuidesLock { key: "guides_lock", en: "Lock guides", vi: "Khóa đường dẫn" },
+    GuidesLocked { key: "guides_locked", en: "Guides locked", vi: "Đã khóa đường dẫn" },
     GuidesShow { key: "guides_show", en: "Show guides", vi: "Hiện đường dẫn" },
     GuidesUnlock { key: "guides_unlock", en: "Unlock guides", vi: "Mở khóa đường dẫn" },
     HideItem { key: "hide_item", en: "Hide", vi: "Ẩn" },

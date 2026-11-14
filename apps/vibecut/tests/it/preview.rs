@@ -1289,9 +1289,15 @@ fn rulers_and_guide_lines_run_as_registered_commands_and_undo_without_touching_t
         );
     }
 
-    // Our decision: a locked guide cannot be moved, by hand or by command.
+    // Our decision: a locked guide cannot be moved, by hand or by command; locking says so
+    // in a toast (111325).
+    assert!(h.state().inspect().unwrap().import_toast.is_none());
     h.state_mut().activate("preview.guides.lock").unwrap();
     assert!(lines(&h).2);
+    assert_eq!(
+        h.state().inspect().unwrap().import_toast.as_deref(),
+        Some("Guides locked")
+    );
     assert!(
         h.state_mut()
             .dispatch(AppCommand::MoveGuide {
@@ -1380,6 +1386,40 @@ fn guide_lines_draw_over_the_player_drag_when_unlocked_and_stay_put_when_locked(
     assert_eq!(lines(&h).3, vec![0], "the drag is one undo step");
     h.state_mut().activate("edit.redo").unwrap();
     assert_eq!(lines(&h).3, vec![moved]);
+
+    // Pulling out of the left ruler adds a vertical guide at the drop (111304); the line
+    // follows the pointer and nothing is published until the drop.
+    let ruler = widget(&h, "preview.rulers.left").rect;
+    let content_left = ruler.right();
+    let pull_start = ruler.center();
+    let pull_end = egui::pos2(content_left + 60.0, pull_start.y);
+    drag_from(&mut h, pull_start, pull_end - pull_start);
+    assert_eq!(lines(&h).3, vec![moved], "nothing is published mid-pull");
+    drop_at(&mut h, pull_end);
+    assert_eq!(lines(&h).3.len(), 2, "the pull added a vertical guide");
+    let added = widget(&h, "preview.guides.v.1").rect.center();
+    assert!(
+        (added.x - pull_end.x).abs() <= 2.0,
+        "the new guide sits at the drop: {added:?} vs {pull_end:?}"
+    );
+    // A pull from the top ruler adds a horizontal one; one dropped on the ruler adds nothing.
+    let top = widget(&h, "preview.rulers.top").rect;
+    let start = top.center();
+    drag_from(&mut h, start, egui::vec2(0.0, 50.0));
+    drop_at(&mut h, start + egui::vec2(0.0, 50.0));
+    assert_eq!(lines(&h).4.len(), 1);
+    let start = top.center();
+    drag_from(&mut h, start, egui::vec2(20.0, 0.0));
+    drop_at(&mut h, start + egui::vec2(20.0, 0.0));
+    assert_eq!(
+        lines(&h).4.len(),
+        1,
+        "a drop back on the ruler adds nothing"
+    );
+    h.state_mut().activate("edit.undo").unwrap();
+    h.state_mut().activate("edit.undo").unwrap();
+    assert_eq!(lines(&h).3, vec![moved], "each pull is one undo step");
+    assert!(lines(&h).4.is_empty());
 
     // Locked guides do not move.
     h.state_mut().activate("preview.guides.lock").unwrap();

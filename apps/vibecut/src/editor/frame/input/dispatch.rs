@@ -36,6 +36,13 @@ pub enum AppCommand {
         index: usize,
         position: i32,
     },
+    /// `preview.guides.add_horizontal` and `preview.guides.add_vertical` at an absolute
+    /// canvas position, in canvas pixels from the canvas centre (x to the right, y upward);
+    /// the menu rows and keys add at the centre.
+    AddGuide {
+        axis: crate::editor::LineAxis,
+        position: i32,
+    },
     /// `media.reveal`: reveal one library asset.
     RevealMedia(AssetId),
 }
@@ -429,6 +436,9 @@ impl Editor {
                 index,
                 position,
             } => self.edit_guide_lines(|lines| lines.with_moved(axis, index, position)),
+            AppCommand::AddGuide { axis, position } => {
+                self.edit_guide_lines(|lines| lines.with_added_at(axis, position))
+            }
             AppCommand::RevealMedia(asset) => self.activate(&format!("media.reveal.{}", asset.0)),
         }
     }

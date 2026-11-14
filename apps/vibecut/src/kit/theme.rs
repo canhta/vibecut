@@ -71,6 +71,11 @@ const MISSING_BODY_LIGHT: Color32 = Color32::from_rgb(0xFB, 0xE3, 0xE4);
 const MISSING_BORDER_LIGHT: Color32 = Color32::from_rgb(0xA3, 0x30, 0x36);
 const MISSING_CANVAS_LIGHT: Color32 = Color32::from_rgb(0xF8, 0xD9, 0xDA);
 
+/// Custom guide line: the dark teal is the 100216 and 111304 sample (90, 190, 203); the
+/// light shade is ours, darkened to keep 4.5:1 on white.
+const GUIDE_LINE_DARK: Color32 = Color32::from_rgb(0x5A, 0xBE, 0xCB);
+const GUIDE_LINE_LIGHT: Color32 = Color32::from_rgb(0x1D, 0x7F, 0x8C);
+
 /// Preview well, drop scrim and the text or tint drawn on them.
 const PREVIEW_BACKDROP: Color32 = Color32::BLACK;
 const SCRIM: Color32 = Color32::from_rgba_premultiplied(0, 0, 0, 170);
@@ -202,6 +207,14 @@ pub(crate) const fn missing_border(dark: bool) -> Color32 {
         MISSING_BORDER_DARK
     } else {
         MISSING_BORDER_LIGHT
+    }
+}
+/// The player's custom guide lines.
+pub(crate) const fn guide_line(dark: bool) -> Color32 {
+    if dark {
+        GUIDE_LINE_DARK
+    } else {
+        GUIDE_LINE_LIGHT
     }
 }
 /// The player canvas while the clip under the playhead has no source file.
@@ -420,9 +433,11 @@ pub(crate) mod size {
     pub const PLAYER_RULER_TICK: f32 = 4.0;
     pub const PLAYER_RULER_TICK_MAJOR: f32 = 12.0;
     pub const PLAYER_RULER_LABEL_GAP: f32 = 5.0;
-    /// Least screen distance between labelled ruler ticks. [proposed]: the capture shows one
-    /// zoom (70 px horizontal, 101 px vertical), so the adaptive rule is ours.
-    pub const PLAYER_RULER_MAJOR_MIN: f32 = 64.0;
+    /// Most labelled spans along one ruler. 100216 and 111304 show 700 units over 70.6 px on a
+    /// 391 px ruler (5.5 spans), 1000 units over 101 px on a 551 px ruler (5.4 spans, 7.7 at
+    /// 700) and 700 over 71 px on a 442 px ruler (6.2 spans). The count sits between 6.2 and
+    /// 7.5, so 7 is [proposed].
+    pub const PLAYER_RULER_MAX_SPANS: f32 = 7.0;
     /// Custom guide line stroke (capture: 1 px) and the pointer band around it. The band is [proposed].
     pub const GUIDE_LINE: f32 = 1.0;
     pub const GUIDE_LINE_HIT: f32 = 8.0;

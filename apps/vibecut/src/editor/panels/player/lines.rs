@@ -114,9 +114,15 @@ impl GuideLines {
 
     /// One more line at the canvas centre, shown. Refused at `LINES_MAX`.
     pub fn with_added(&self, axis: LineAxis) -> Result<Self> {
+        self.with_added_at(axis, 0)
+    }
+
+    /// One more line at an absolute position, shown. Refused at `LINES_MAX` or
+    /// beyond `LINE_LIMIT`. A lock does not refuse it: the lock stops moving lines.
+    pub fn with_added_at(&self, axis: LineAxis, position: i32) -> Result<Self> {
         let mut next = self.clone();
         next.shown = true;
-        next.positions_mut(axis).push(0);
+        next.positions_mut(axis).push(position);
         next.validate()?;
         Ok(next)
     }
@@ -145,12 +151,16 @@ impl GuideLines {
     }
 }
 
-/// The guide line a drag is moving; it is published once when the drag ends.
+/// The guide line a drag is moving, or the new one pulled out of a ruler; it is
+/// published once when the drag ends.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::editor) struct LineDrag {
     axis: LineAxis,
-    index: usize,
+    /// The line being moved; `None` for a new line pulled out of a ruler.
+    index: Option<usize>,
     position: i32,
+    /// A ruler pull creates its line only when it ends over the viewer.
+    inside: bool,
 }
 
 /// One ruler tick, in canvas units.
@@ -161,15 +171,17 @@ pub(super) struct Mark {
     pub major: bool,
 }
 
-/// Canvas units between labelled ticks: the smallest 1, 2 or 5 times a power of
-/// ten whose spacing on screen reaches `kit::size::PLAYER_RULER_MAJOR_MIN`.
-pub(super) fn major_step(scale: f32) -> Option<f64> {
-    if !scale.is_finite() || scale <= 0.0 {
+/// Canvas units between labelled ticks on a ruler `length` screen pixels long: the
+/// smallest 1, 2, 5 or 7 times a power of ten that leaves at most
+/// `kit::size::PLAYER_RULER_MAX_SPANS` labelled spans along the ruler.
+pub(super) fn major_step(scale: f32, length: f32) -> Option<f64> {
+    if !scale.is_finite() || scale <= 0.0 || !length.is_finite() || length <= 0.0 {
         return None;
     }
-    let wanted = f64::from(kit::size::PLAYER_RULER_MAJOR_MIN) / f64::from(scale);
+    let wanted =
+        f64::from(length) / f64::from(scale) / f64::from(kit::size::PLAYER_RULER_MAX_SPANS);
     let decade = 10f64.powf(wanted.log10().floor());
-    [1.0, 2.0, 5.0, 10.0]
+    [1.0, 2.0, 5.0, 7.0, 10.0]
         .into_iter()
         .map(|factor| decade * factor)
         .find(|step| *step >= wanted)
@@ -215,7 +227,30 @@ fn canvas_position(origin: Pos2, scale: f32, axis: LineAxis, pointer: Pos2) -> i
         .clamp(-(LINE_LIMIT as f32), LINE_LIMIT as f32) as i32
 }
 
-/// Draws the guide lines and the rulers over the stage and handles a guide drag.
+/// The two ends of a guide line across the viewer content, and the pointer band around it.
+fn line_and_hit(content: Rect, axis: LineAxis, at: f32) -> ([Pos2; 2], Rect) {
+    let half = kit::size::GUIDE_LINE_HIT / 2.0;
+    match axis {
+        LineAxis::Vertical => (
+            [
+                egui::pos2(at, content.top()),
+                egui::pos2(at, content.bottom()),
+            ],
+            Rect::from_x_y_ranges(at - half..=at + half, content.y_range()),
+        ),
+        LineAxis::Horizontal => (
+            [
+                egui::pos2(content.left(), at),
+                egui::pos2(content.right(), at),
+            ],
+            Rect::from_x_y_ranges(content.x_range(), at - half..=at + half),
+        ),
+    }
+}
+
+/// Draws the guide lines and the rulers over the stage, handles a guide drag and the
+/// pull of a new guide out of a ruler. `stage` is the whole viewer: the rulers run along
+/// its top and left edges and the guides to its other edges, past the canvas.
 /// `origin` is the canvas centre on screen and `scale` the screen pixels per canvas pixel.
 pub(super) fn show(
     state: &mut State,
@@ -233,40 +268,21 @@ pub(super) fn show(
         0.0
     };
     let content = Rect::from_min_max(stage.min + egui::vec2(thickness, thickness), stage.max);
+    let stroke = egui::Stroke::new(kit::size::GUIDE_LINE, kit::guide_line(cx.dark));
+    if !lines.rulers || scale <= 0.0 {
+        // A pull out of a ruler ends with its ruler.
+        state.line_drag = state.line_drag.filter(|drag| drag.index.is_some());
+    }
     if lines.shown && scale > 0.0 {
         let painter = ui.painter().with_clip_rect(content);
-        let stroke = egui::Stroke::new(kit::size::GUIDE_LINE, kit::accent(cx.dark));
         for (axis, name) in [(LineAxis::Vertical, "v"), (LineAxis::Horizontal, "h")] {
             for (index, saved) in lines.positions(axis).iter().enumerate() {
                 let position = state
                     .line_drag
-                    .filter(|drag| drag.axis == axis && drag.index == index)
+                    .filter(|drag| drag.axis == axis && drag.index == Some(index))
                     .map_or(*saved, |drag| drag.position);
                 let at = screen(origin, scale, axis, f64::from(position));
-                let (line, hit) = match axis {
-                    LineAxis::Vertical => (
-                        [
-                            egui::pos2(at, content.top()),
-                            egui::pos2(at, content.bottom()),
-                        ],
-                        Rect::from_x_y_ranges(
-                            at - kit::size::GUIDE_LINE_HIT / 2.0
-                                ..=at + kit::size::GUIDE_LINE_HIT / 2.0,
-                            content.y_range(),
-                        ),
-                    ),
-                    LineAxis::Horizontal => (
-                        [
-                            egui::pos2(content.left(), at),
-                            egui::pos2(content.right(), at),
-                        ],
-                        Rect::from_x_y_ranges(
-                            content.x_range(),
-                            at - kit::size::GUIDE_LINE_HIT / 2.0
-                                ..=at + kit::size::GUIDE_LINE_HIT / 2.0,
-                        ),
-                    ),
-                };
+                let (line, hit) = line_and_hit(content, axis, at);
                 painter.line_segment(line, stroke);
                 let hit = hit.intersect(content);
                 if !hit.is_positive() {
@@ -297,8 +313,9 @@ pub(super) fn show(
                     {
                         state.line_drag = Some(LineDrag {
                             axis,
-                            index,
+                            index: Some(index),
                             position: canvas_position(origin, scale, axis, pointer),
+                            inside: true,
                         });
                     }
                     if response.drag_stopped()
@@ -321,19 +338,103 @@ pub(super) fn show(
             }
         }
     } else {
-        state.line_drag = None;
+        state.line_drag = state.line_drag.filter(|drag| drag.index.is_none());
     }
-    if lines.rulers {
+    if lines.rulers && scale > 0.0 {
+        ruler_pull(state, cx, ui, stage, origin, scale, actions);
         paint_rulers(ui, cx.dark, stage, origin, scale);
+    }
+}
+
+/// A drag that starts on a ruler pulls a new guide out of it: the top ruler makes a
+/// horizontal line and the left ruler a vertical one. The line follows the pointer and is
+/// published as `preview.guides.add_*` at the drop position when the drag ends over the
+/// viewer.
+fn ruler_pull(
+    state: &mut State,
+    cx: &Context<'_>,
+    ui: &mut egui::Ui,
+    stage: Rect,
+    origin: Pos2,
+    scale: f32,
+    actions: &mut Vec<Action>,
+) {
+    let thickness = kit::size::PLAYER_RULER;
+    let content = Rect::from_min_max(stage.min + egui::vec2(thickness, thickness), stage.max);
+    let stroke = egui::Stroke::new(kit::size::GUIDE_LINE, kit::guide_line(cx.dark));
+    let top = Rect::from_min_max(
+        egui::pos2(content.left(), stage.top()),
+        egui::pos2(stage.right(), content.top()),
+    );
+    let left = Rect::from_min_max(
+        egui::pos2(stage.left(), content.top()),
+        egui::pos2(content.left(), stage.bottom()),
+    );
+    for (strip, axis, id, cursor) in [
+        (
+            top,
+            LineAxis::Horizontal,
+            "preview.rulers.top",
+            egui::CursorIcon::ResizeVertical,
+        ),
+        (
+            left,
+            LineAxis::Vertical,
+            "preview.rulers.left",
+            egui::CursorIcon::ResizeHorizontal,
+        ),
+    ] {
+        if !strip.is_positive() {
+            continue;
+        }
+        let response = ui.interact(strip, ui.make_persistent_id(id), Sense::drag());
+        if response.hovered() || response.dragged() {
+            ui.ctx().set_cursor_icon(cursor);
+        }
+        if response.dragged()
+            && let Some(pointer) = response.interact_pointer_pos()
+        {
+            state.line_drag = Some(LineDrag {
+                axis,
+                index: None,
+                position: canvas_position(origin, scale, axis, pointer),
+                inside: content.contains(pointer),
+            });
+        }
+        if response.drag_stopped()
+            && let Some(drag) = state.line_drag.take()
+            && drag.index.is_none()
+            && drag.inside
+        {
+            actions.push(Action::AddGuide {
+                axis,
+                position: drag.position,
+            });
+        }
+        remember(cx, actions, id, response);
+    }
+    if let Some(drag) = state.line_drag
+        && drag.index.is_none()
+        && drag.inside
+    {
+        let at = screen(origin, scale, drag.axis, f64::from(drag.position));
+        let (line, _) = line_and_hit(content, drag.axis, at);
+        ui.painter()
+            .with_clip_rect(content)
+            .line_segment(line, stroke);
     }
 }
 
 /// Draws the top and left rulers over the stage edges.
 fn paint_rulers(ui: &egui::Ui, dark: bool, stage: Rect, origin: Pos2, scale: f32) {
-    let Some(step) = major_step(scale) else {
+    let thickness = kit::size::PLAYER_RULER;
+    // Each ruler picks its own step from its own length.
+    let (Some(top_step), Some(left_step)) = (
+        major_step(scale, stage.width() - thickness),
+        major_step(scale, stage.height() - thickness),
+    ) else {
         return;
     };
-    let thickness = kit::size::PLAYER_RULER;
     let painter = ui.painter().with_clip_rect(stage);
     let top = Rect::from_min_size(stage.min, egui::vec2(stage.width(), thickness));
     let left = Rect::from_min_max(
@@ -358,14 +459,19 @@ fn paint_rulers(ui: &egui::Ui, dark: bool, stage: Rect, origin: Pos2, scale: f32
         left.y_range(),
         hairline,
     );
-    let units = |low: f32, high: f32, axis: LineAxis| {
+    let units = |low: f32, high: f32, axis: LineAxis, step: f64| {
         let (a, b) = match axis {
             LineAxis::Vertical => ((low - origin.x) / scale, (high - origin.x) / scale),
             LineAxis::Horizontal => ((origin.y - high) / scale, (origin.y - low) / scale),
         };
         marks(f64::from(a), f64::from(b), step)
     };
-    for mark in units(top.left() + thickness, top.right(), LineAxis::Vertical) {
+    for mark in units(
+        top.left() + thickness,
+        top.right(),
+        LineAxis::Vertical,
+        top_step,
+    ) {
         let x = screen(origin, scale, LineAxis::Vertical, mark.value);
         let (height, stroke) = if mark.major {
             (kit::size::PLAYER_RULER_TICK_MAJOR, major)
@@ -383,7 +489,7 @@ fn paint_rulers(ui: &egui::Ui, dark: bool, stage: Rect, origin: Pos2, scale: f32
             );
         }
     }
-    for mark in units(left.top(), left.bottom(), LineAxis::Horizontal) {
+    for mark in units(left.top(), left.bottom(), LineAxis::Horizontal, left_step) {
         let y = screen(origin, scale, LineAxis::Horizontal, mark.value);
         let (height, stroke) = if mark.major {
             (kit::size::PLAYER_RULER_TICK_MAJOR, major)
@@ -512,6 +618,20 @@ mod tests {
     }
 
     #[test]
+    fn a_line_can_be_added_at_a_position_even_while_locked_but_not_beyond_the_limit() {
+        let lines = GuideLines::default().with_locked(true);
+        let added = lines.with_added_at(LineAxis::Horizontal, -320).unwrap();
+        assert_eq!(added.horizontal, vec![-320]);
+        assert!(added.locked && added.shown);
+        assert!(lines.with_added_at(LineAxis::Vertical, LINE_LIMIT).is_ok());
+        assert!(
+            lines
+                .with_added_at(LineAxis::Vertical, -LINE_LIMIT - 1)
+                .is_err()
+        );
+    }
+
+    #[test]
     fn moving_replaces_one_position_and_refuses_locked_unknown_and_far_lines() {
         let lines = GuideLines::default()
             .with_added(LineAxis::Vertical)
@@ -580,27 +700,43 @@ mod tests {
     }
 
     #[test]
-    fn the_major_step_is_the_smallest_one_two_or_five_that_spaces_labels_apart() {
-        let min = f64::from(kit::size::PLAYER_RULER_MAJOR_MIN);
+    fn the_major_step_is_the_smallest_one_two_five_or_seven_that_leaves_few_spans() {
+        let max = f64::from(kit::size::PLAYER_RULER_MAX_SPANS);
         for scale in [0.05_f32, 0.1, 0.1016, 0.25, 0.5, 1.0, 3.0, 16.0] {
-            let step = major_step(scale).unwrap();
-            assert!(step * f64::from(scale) >= min - 1e-6, "{scale}");
-            let mantissa = step / 10f64.powf(step.log10().floor());
-            assert!(
-                [1.0, 2.0, 5.0].iter().any(|m| (m - mantissa).abs() < 1e-9),
-                "{scale}: {step}"
-            );
-            // No smaller allowed step would have fit.
-            let smaller = match mantissa.round() as u32 {
-                1 => step / 2.0,
-                2 => step / 2.0,
-                _ => step * 2.0 / 5.0,
-            };
-            assert!(smaller * f64::from(scale) < min, "{scale}: {step}");
+            for length in [120.0_f32, 391.0, 442.0, 551.0, 900.0] {
+                let step = major_step(scale, length).unwrap();
+                let spans = f64::from(length) / f64::from(scale) / step;
+                assert!(spans <= max + 1e-9, "{scale} {length}: {spans}");
+                let mantissa = step / 10f64.powf(step.log10().floor());
+                assert!(
+                    [1.0, 2.0, 5.0, 7.0]
+                        .iter()
+                        .any(|m| (m - mantissa).abs() < 1e-9),
+                    "{scale} {length}: {step}"
+                );
+                // No smaller allowed step would have fit.
+                let smaller = match mantissa.round() as u32 {
+                    1 => step * 0.7,
+                    2 => step / 2.0,
+                    5 => step * 2.0 / 5.0,
+                    _ => step * 5.0 / 7.0,
+                };
+                assert!(
+                    f64::from(length) / f64::from(scale) / smaller > max,
+                    "{scale} {length}: {step}"
+                );
+            }
         }
-        assert_eq!(major_step(0.1016), Some(1000.0));
-        assert_eq!(major_step(0.0), None);
-        assert_eq!(major_step(f32::NAN), None);
+        // The reference shots: top ruler 391 px logical at 0.1009 px per unit shows 700 (100216),
+        // the left ruler 551 px at 0.102 shows 1000 (100216), and 442 and 383 px at 0.1018
+        // show 700 (111304).
+        assert_eq!(major_step(0.1009, 391.0), Some(700.0));
+        assert_eq!(major_step(0.102, 551.0), Some(1000.0));
+        assert_eq!(major_step(0.1018, 442.0), Some(700.0));
+        assert_eq!(major_step(0.1018, 383.0), Some(700.0));
+        assert_eq!(major_step(0.0, 400.0), None);
+        assert_eq!(major_step(0.1, 0.0), None);
+        assert_eq!(major_step(f32::NAN, 400.0), None);
     }
 
     #[test]
