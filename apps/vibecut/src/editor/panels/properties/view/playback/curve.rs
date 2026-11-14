@@ -10,6 +10,11 @@ const TILE: f32 = 62.0;
 const TILE_GAP: f32 = 16.0;
 const NAME_BAND: f32 = 23.0;
 const MAX_COLUMNS: usize = 6;
+/// The reference body is 493 px wide (capture 100104). A narrower body scales the tiles, their
+/// gap and the plot height by its width over that, so six tiles still share a row.
+const REFERENCE_BODY: f32 = 493.0;
+/// The smallest plot height a narrow body shrinks to.
+const MIN_PLOT_HEIGHT: f32 = 100.0;
 /// Gap from the last tile row to the plot box (capture 100104).
 const PLOT_GAP: f32 = 24.0;
 /// The plot box: a 35 px Duration header, the 146 px plot, a 34 px footer with the buttons.
@@ -82,13 +87,13 @@ fn held_preset(shape: Option<&[SpeedPoint]>) -> Option<SpeedPreset> {
     )
 }
 
-/// How many tiles fit a row of `width`: the measured six, fewer in a narrow body.
-fn columns(width: f32) -> usize {
-    let fit = ((width + TILE_GAP) / (TILE + TILE_GAP)).floor();
-    if fit.is_finite() && fit >= 1.0 {
-        (fit as usize).min(MAX_COLUMNS)
+/// The factor a body of `width` scales the measured tile layout by: 1 at the reference width
+/// or wider, the width over it below.
+fn scale(width: f32) -> f32 {
+    if width.is_finite() && width > 0.0 {
+        (width / REFERENCE_BODY).min(1.0)
     } else {
-        1
+        1.0
     }
 }
 
@@ -228,11 +233,20 @@ impl Panel<'_, '_> {
         let tiles: Vec<Option<SpeedPreset>> = std::iter::once(None)
             .chain(SpeedPreset::ALL.into_iter().map(Some))
             .collect();
-        for row in tiles.chunks(columns(ui.available_width())) {
+        let k = scale(ui.available_width());
+        for row in tiles.chunks(MAX_COLUMNS) {
             ui.horizontal_top(|ui| {
-                ui.spacing_mut().item_spacing.x = TILE_GAP;
+                ui.spacing_mut().item_spacing.x = TILE_GAP * k;
                 for entry in row {
-                    self.speed_preset_tile(ui, item, *entry, *entry == held, shape, maintain_pitch);
+                    self.speed_preset_tile(
+                        ui,
+                        item,
+                        *entry,
+                        *entry == held,
+                        shape,
+                        maintain_pitch,
+                        k,
+                    );
                 }
             });
         }
@@ -246,19 +260,21 @@ impl Panel<'_, '_> {
         selected: bool,
         shape: Option<&[SpeedPoint]>,
         maintain_pitch: bool,
+        k: f32,
     ) {
         let dark = self.cx.dark;
+        let tile = TILE * k;
         let (word, text) = tile_entry(entry);
         let label = self.tr(text);
         let mut clicked = false;
         ui.vertical(|ui| {
-            ui.set_width(TILE);
+            ui.set_width(tile);
             ui.spacing_mut().item_spacing.y = 0.0;
             let (rect, response) =
-                ui.allocate_exact_size(egui::Vec2::splat(TILE), egui::Sense::click());
+                ui.allocate_exact_size(egui::Vec2::splat(tile), egui::Sense::click());
             let radius = theme::radius::UPLOAD;
             ui.painter().rect_filled(rect, radius, theme::field(dark));
-            self.paint_preset_icon(ui, rect, entry);
+            self.paint_preset_icon(ui, rect, entry, k);
             if selected || response.hovered() || response.has_focus() {
                 ui.painter().rect_stroke(
                     rect,
@@ -273,7 +289,7 @@ impl Panel<'_, '_> {
             self.remember(format!("inspector.speed.preset.{word}"), &response);
             clicked = response.clicked() && !selected;
             let (band, _) =
-                ui.allocate_exact_size(egui::vec2(TILE, NAME_BAND), egui::Sense::hover());
+                ui.allocate_exact_size(egui::vec2(tile, NAME_BAND), egui::Sense::hover());
             ui.painter().text(
                 egui::pos2(band.center().x, band.top() + 10.5),
                 egui::Align2::CENTER_CENTER,
@@ -302,15 +318,21 @@ impl Panel<'_, '_> {
 
     /// The tile picture: the 2x and 0.5x guides with the preset's shape over them; None is a
     /// struck circle and Custom three sliders.
-    fn paint_preset_icon(&self, ui: &egui::Ui, rect: egui::Rect, entry: Option<SpeedPreset>) {
+    fn paint_preset_icon(
+        &self,
+        ui: &egui::Ui,
+        rect: egui::Rect,
+        entry: Option<SpeedPreset>,
+        k: f32,
+    ) {
         let dark = self.cx.dark;
         let painter = ui.painter();
         let ink = theme::accent(dark);
         match entry {
             None => {
                 let stroke = egui::Stroke::new(2.0, self.secondary());
-                painter.circle_stroke(rect.center(), 11.0, stroke);
-                let reach = 11.0 * std::f32::consts::FRAC_1_SQRT_2;
+                painter.circle_stroke(rect.center(), 11.0 * k, stroke);
+                let reach = 11.0 * k * std::f32::consts::FRAC_1_SQRT_2;
                 painter.line_segment(
                     [
                         rect.center() - egui::vec2(reach, reach),
@@ -322,21 +344,25 @@ impl Panel<'_, '_> {
             Some(SpeedPreset::Custom) => {
                 let stroke = egui::Stroke::new(1.5, ink);
                 for (row, knob) in [(-14.0, -6.0), (0.0, 4.0), (14.0, 8.0)] {
-                    let y = rect.center().y + row;
+                    let y = rect.center().y + row * k;
                     painter.line_segment(
                         [
-                            egui::pos2(rect.left() + 14.0, y),
-                            egui::pos2(rect.right() - 14.0, y),
+                            egui::pos2(rect.left() + 14.0 * k, y),
+                            egui::pos2(rect.right() - 14.0 * k, y),
                         ],
                         stroke,
                     );
-                    painter.circle_stroke(egui::pos2(rect.center().x + knob, y), 3.0, stroke);
+                    painter.circle_stroke(
+                        egui::pos2(rect.center().x + knob * k, y),
+                        3.0 * k,
+                        stroke,
+                    );
                 }
             }
             Some(preset) => {
-                let inner = rect.shrink2(egui::vec2(2.0, 4.0));
+                let inner = rect.shrink2(egui::vec2(2.0, 4.0) * k);
                 let middle = rect.center().y;
-                let height = |speed: f64| middle - speed.log10() as f32 * ICON_DECADE;
+                let height = |speed: f64| middle - speed.log10() as f32 * ICON_DECADE * k;
                 let guide = egui::Stroke::new(1.0, theme::border(dark));
                 painter.line_segment(
                     [
@@ -381,12 +407,13 @@ impl Panel<'_, '_> {
     ) {
         let dark = self.cx.dark;
         let width = ui.available_width().max(1.0);
+        let plot_height = (PLOT_HEIGHT * scale(width)).max(MIN_PLOT_HEIGHT);
         let (outer, _) = ui.allocate_exact_size(
-            egui::vec2(width, HEADER + PLOT_HEIGHT + FOOTER),
+            egui::vec2(width, HEADER + plot_height + FOOTER),
             egui::Sense::hover(),
         );
         let header = egui::Rect::from_min_size(outer.min, egui::vec2(width, HEADER));
-        let plot = egui::Rect::from_min_size(header.left_bottom(), egui::vec2(width, PLOT_HEIGHT));
+        let plot = egui::Rect::from_min_size(header.left_bottom(), egui::vec2(width, plot_height));
         let footer = egui::Rect::from_min_max(plot.left_bottom(), outer.right_bottom());
         let painter = ui.painter().clone();
         painter.rect_filled(outer, theme::radius::FIELD, theme::window(dark));

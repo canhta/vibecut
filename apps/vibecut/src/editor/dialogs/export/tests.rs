@@ -27,7 +27,10 @@ fn temp_target(name: &str) -> PathBuf {
     std::env::temp_dir().join(name)
 }
 fn project(empty: bool, source: bool) -> Project {
-    let mut d = Project::empty(ProjectId(18), "Xuất video".into())
+    project_named("Export fixture", empty, source)
+}
+fn project_named(name: &str, empty: bool, source: bool) -> Project {
+    let mut d = Project::empty(ProjectId(18), name.into())
         .unwrap()
         .into_data();
     d.canvas.width = 64;
@@ -243,8 +246,19 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
     let dir = tempfile::tempdir().unwrap();
     let store = PreferenceStore::new(dir.path().join("prefs.json"));
     for locale in [Locale::En, Locale::Vi] {
-        let mut e = editor(true, false);
+        // The default name follows the UI language: the dialog's Name starts from the project's
+        // default name in that language (an English render never shows the Vietnamese one).
+        let name = crate::i18n::text(locale, crate::i18n::Text::UntitledProject);
+        assert_eq!(
+            name,
+            match locale {
+                Locale::En => "Untitled Project",
+                Locale::Vi => "Dự án chưa đặt tên",
+            }
+        );
+        let mut e = editor_project(project_named(name, true, false));
         e.preferences.locale = locale;
+        assert_eq!(e.session.project().data().name.as_str(), name);
         assert_eq!(e.preferences.export, ExportOptions::default());
         let mut bench = bench(e);
         open(&mut bench);

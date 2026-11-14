@@ -20,7 +20,7 @@ const ROW_HEIGHT: f32 = 28.0;
 const SECTION_HEIGHT: f32 = 24.0;
 const CHECK_WIDTH: f32 = 20.0;
 const ICON_CELL: f32 = 28.0;
-const STATE_WIDTH: f32 = 96.0;
+const STATE_WIDTH: f32 = 132.0;
 const ACTION_WIDTH: f32 = 84.0;
 
 /// What the picker asks the properties owner to do.
@@ -310,15 +310,22 @@ fn font_row(
             .max_rect(star_rect)
             .layout(egui::Layout::left_to_right(Align::Center)),
     );
-    let star = star_ui.add_sized(
-        [ICON_CELL, ROW_HEIGHT],
-        egui::Button::new(tr(if favorite {
-            Text::FontFavoriteOn
-        } else {
-            Text::FontFavoriteOff
-        }))
-        .frame(false),
-    );
+    // The reference stars are outlined (103657): the outline glyph while unmarked, the solid
+    // glyph once the family is a favourite.
+    let star = if favorite {
+        star_ui.add_sized(
+            [ICON_CELL, ROW_HEIGHT],
+            egui::Button::new(tr(Text::FontFavoriteOn)).frame(false),
+        )
+    } else {
+        theme::icon_button(
+            &mut star_ui,
+            &format!("fonts.favorite.{family}"),
+            theme::Icon::Star,
+            &i18n::format(locale, Text::FontFavorite, &[("family", family)]),
+            false,
+        )
+    };
     star.widget_info(|| {
         egui::WidgetInfo::selected(
             egui::Role::CheckBox,
@@ -383,28 +390,36 @@ fn font_row(
     }
 
     if let Some((status, detail, id)) = row_status(entry, active, locale) {
-        // Stack the state lines on the row's centre line. top_down starts at
-        // its rect's top, so the rect itself carries the vertical offset.
+        // One line on the row's centre line, so a 28 px row is never crowded: the state, then
+        // the size after a dot, cut with an ellipsis when the cell is narrower than the text.
         let line = ui.text_style_height(&egui::TextStyle::Small);
-        let gap = ui.spacing().item_spacing.y;
-        let lines = if detail.is_some() { 2.0 } else { 1.0 };
-        let height = line * lines + gap * (lines - 1.0);
         let state_rect = Rect::from_min_size(
-            egui::pos2(state_rect.left(), state_rect.center().y - height * 0.5),
-            Vec2::new(state_rect.width(), height),
+            egui::pos2(state_rect.left(), state_rect.center().y - line * 0.5),
+            Vec2::new(state_rect.width(), line),
         );
         let mut state_ui = ui.new_child(
             egui::UiBuilder::new()
                 .max_rect(state_rect)
-                .layout(egui::Layout::top_down(Align::LEFT)),
+                .layout(egui::Layout::left_to_right(Align::Center)),
         );
-        let status = state_ui.label(egui::RichText::new(status).small().color(
-            if active.is_some_and(|download| download.failed) {
-                theme::error_text(dark)
-            } else {
-                theme::secondary(dark)
-            },
-        ));
+        let text = match detail {
+            Some(size) => i18n::format(
+                locale,
+                Text::FontStateWithSize,
+                &[("state", status.as_str()), ("size", size.as_str())],
+            ),
+            None => status,
+        };
+        let status = state_ui.add(
+            egui::Label::new(egui::RichText::new(text).small().color(
+                if active.is_some_and(|download| download.failed) {
+                    theme::error_text(dark)
+                } else {
+                    theme::secondary(dark)
+                },
+            ))
+            .truncate(),
+        );
         record(
             &mut event.widgets,
             &format!("fonts.state.{family}"),
@@ -412,18 +427,6 @@ fn font_row(
         );
         if id == "fonts.downloading" || id == "fonts.download_failed" {
             record(&mut event.widgets, id, status);
-        }
-        if let Some(detail) = detail {
-            let size = state_ui.label(
-                egui::RichText::new(detail)
-                    .small()
-                    .color(theme::secondary(dark)),
-            );
-            record(
-                &mut event.widgets,
-                &format!("fonts.state_size.{family}"),
-                size,
-            );
         }
     }
 

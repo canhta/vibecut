@@ -1,4 +1,4 @@
-//! Draws the Remove BG sub-tab: the Auto removal switch with its feather and analysis state, then
+//! Draws the Remove BG sub-tab: the Auto removal checkbox with its feather and analysis state, then
 //! the Chroma key switch and its keyed controls.
 use super::super::Panel;
 use crate::editor::properties::{
@@ -11,6 +11,27 @@ use engine::footage::CorrectionKind;
 const TOOL_PITCH: f32 = 48.0;
 
 impl Panel<'_, '_> {
+    /// A property row led by its checkbox, the label to its right (reference 100332: the box
+    /// at the row's left edge, the label 4 px after it). The caller reads `on` and the click.
+    fn checkbox_row(&self, ui: &mut egui::Ui, label: Text, on: &mut bool) -> egui::Response {
+        let (row, _) = ui.allocate_exact_size(
+            egui::vec2(ui.available_width(), theme::size::PROPERTY_ROW),
+            egui::Sense::hover(),
+        );
+        let mut cells = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(row)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
+        cells.spacing_mut().icon_spacing = theme::space::XS;
+        cells.add(egui::Checkbox::new(
+            on,
+            egui::RichText::new(self.tr(label))
+                .size(theme::type_size::BODY)
+                .color(theme::text(self.cx.dark)),
+        ))
+    }
+
     /// The Auto removal switch row, then, while it is on, the edge feather slider and the
     /// analysis state. Turning the switch on keeps the model's own edge and starts the person
     /// matte analysis; a warm cache finishes at once.
@@ -21,16 +42,7 @@ impl Panel<'_, '_> {
             return;
         };
         let mut on = params.background_removal.is_some();
-        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
-        self.row_label(ui, row, self.tr(Text::AutoRemoval));
-        let width = value_ui.available_width();
-        value_ui.add_space((width - theme::size::TOGGLE_WIDTH).max(0.0));
-        let response = kit::toggle(
-            &mut value_ui,
-            "inspector.auto_removal",
-            &mut on,
-            self.tr(Text::AutoRemoval),
-        );
+        let response = self.checkbox_row(ui, Text::AutoRemoval, &mut on);
         self.remember("inspector.auto_removal", &response);
         if response.clicked() {
             if on {
@@ -72,8 +84,17 @@ impl Panel<'_, '_> {
             .matte_brush
             .filter(|brush| brush.item == item)
             .map(|brush| brush.mode);
-        let (row, _) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
-        self.row_label(ui, row, self.tr(Text::CustomRemoval));
+        let mut custom = armed.is_some();
+        let response = self.checkbox_row(ui, Text::CustomRemoval, &mut custom);
+        self.remember("inspector.custom_removal", &response);
+        if response.clicked() {
+            self.actions.push(Action::SetMatteBrush(custom.then_some(
+                crate::editor::MatteBrush {
+                    item,
+                    mode: project::MatteStrokeMode::Add,
+                },
+            )));
+        }
         let tools = [
             (
                 project::MatteStrokeMode::Add,

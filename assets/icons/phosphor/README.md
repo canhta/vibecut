@@ -8,8 +8,8 @@ time; there is no runtime network or font request.
 - Source archive: <https://registry.npmjs.org/@phosphor-icons/core/-/core-2.1.1.tgz>
 - Author: Phosphor Icons
 - Licence: MIT, see [LICENSE](LICENSE)
-- Added: p0-core/39; extended: p1-parity/06, p1-parity/09, p1-parity/54, p1-parity/117, 2026-11-12, 2026-11-13, 2026-11-14
-- Files: 73 unmodified `assets/regular/*.svg` files.
+- Added: p0-core/39; extended: p1-parity/06, p1-parity/09, p1-parity/54, p1-parity/117, 2026-11-12, 2026-11-13, 2026-11-14, p1-parity/502
+- Files: 74 unmodified `assets/regular/*.svg` files.
 
 SHA-256 of each embedded file:
 
@@ -80,6 +80,7 @@ SHA-256 of each embedded file:
 | `squares-four.svg` | `f70d6b20e08e028ab5b1714077681910a2431092cf7a23b82366ddaec554ab87` |
 | `speaker-high.svg` | `caca5fc1ee8489ac19232301d2c96f6d4048802491d75d761bbb89d5c98e459d` |
 | `speaker-slash.svg` | `66b75267ea8ba8759a70e4c8312bfe06b834fc8fcf0dd1710d9819877f0c8013` |
+| `star.svg` | `165cd96e51d60442fb9c7aa89592fa6ef28f22d18368c85771be302c2e977101` |
 | `sticker.svg` | `7379d82ae678fe74e65cb01680c5df319e8b4aa05f5ecc02f3c483c681962faf` |
 | `subtitles.svg` | `830b60f447804704071506de91ee161dd721813d795968faaa5a42be85e88cf1` |
 | `text-t.svg` | `00f5cc0ddab2aacaf377ffe956e2ee5375ec3395043d468cbb5937251df7fc69` |

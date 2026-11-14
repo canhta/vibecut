@@ -4127,6 +4127,15 @@ fn text_tab_edits_every_style_field_one_undo_step_each_and_shows_effects() {
         harness.state_mut().session.redo().unwrap();
         harness.run_steps(2);
     }
+    // The Case cells start in the 120 px value column, level with the Font field.
+    let first_cell = widget_rect(&harness, "inspector.text_case.upper");
+    if has_widget(&harness, "inspector.text_font") {
+        let font = widget_rect(&harness, "inspector.text_font");
+        assert!(
+            (first_cell.left() - font.left()).abs() < 0.5,
+            "{font:?} {first_cell:?}"
+        );
+    }
     // The Case row is three buttons; each press is one edit and the stored text keeps what was typed.
     for (case, word) in [
         (project::TextCase::Upper, "upper"),
@@ -5231,24 +5240,24 @@ fn font_picker_lists_search_chips_sections_and_favorites_through_commands() {
     );
     assert!(has_widget(&harness, "fonts.state.Lobster"));
     let state = widget_rect(&harness, "fonts.state.Lobster");
-    let size = widget_rect(&harness, "fonts.state_size.Lobster");
-    assert_eq!(
-        state.left(),
-        size.left(),
-        "the state column has one fixed left edge"
+    assert!(
+        !has_widget(&harness, "fonts.state_size.Lobster"),
+        "the size shares the state's single line"
     );
     assert!(
-        size.top() >= state.bottom() && size.width() > 0.0,
-        "the not-downloaded row stacks its size under its state text"
+        state.height() <= 28.0 && state.width() > 0.0,
+        "the not-downloaded state is one line inside its 28 px row: {state:?}"
     );
+    // The favourite star is the outline glyph while unmarked.
+    assert!(has_widget(&harness, "fonts.favorite.Lobster"));
     // The clickable row cell still spans the whole name column.
     let row = widget_rect(&harness, "inspector.text_font.Inter");
     assert_eq!(row.left(), name.left());
     assert!(row.right() <= state.left() + 0.5);
     assert!(widget_rect(&harness, "fonts.download.Lobster").left() >= state.left());
-    // The state block is centred on the same line as the name.
+    // The state line is centred on the same line as the name.
     assert!(
-        ((state.top() + size.bottom()) * 0.5 - name_google.center().y).abs() < 1.0,
+        (state.center().y - name_google.center().y).abs() < 1.0,
         "the state text shares the row's centre line with the name"
     );
 
@@ -7024,8 +7033,9 @@ fn speed_curve_tab_applies_presets_and_edits_the_plot_points() {
     );
     assert!(!has_widget(&harness, "inspector.speed.scrub"));
 
-    // Eight 62 px tiles in the reference order, 16 px apart along a row; None is selected, so
-    // there is no plot yet.
+    // Eight square tiles in the reference order, six to a row at every body width (62 px
+    // tiles 16 px apart at the reference width, scaled down together in a narrow body); None
+    // is selected, so there is no plot yet.
     let words = [
         "none",
         "custom",
@@ -7045,22 +7055,29 @@ fn speed_curve_tab_applies_presets_and_edits_the_plot_points() {
             )
         })
         .collect();
+    let side = tiles[0].1.width();
     for (word, rect) in &tiles {
         assert!(
-            (rect.width() - 62.0).abs() < 0.01 && (rect.height() - 62.0).abs() < 0.01,
+            (rect.width() - side).abs() < 0.01 && (rect.height() - side).abs() < 0.01,
             "{word}: {rect:?}"
         );
     }
+    assert!(side <= 62.01 && side > 40.0, "{side}");
     tiles.sort_by(|a, b| {
         (a.1.top(), a.1.left())
             .partial_cmp(&(b.1.top(), b.1.left()))
             .unwrap()
     });
     assert_eq!(tiles.iter().map(|tile| tile.0).collect::<Vec<_>>(), words);
+    let first_row = tiles
+        .iter()
+        .filter(|tile| (tile.1.top() - tiles[0].1.top()).abs() < 0.01)
+        .count();
+    assert_eq!(first_row, 6, "{tiles:?}");
     for pair in tiles.windows(2) {
         if (pair[0].1.top() - pair[1].1.top()).abs() < 0.01 {
             assert!(
-                (pair[1].1.left() - pair[0].1.right() - 16.0).abs() < 0.01,
+                (pair[1].1.left() - pair[0].1.right() - side * 16.0 / 62.0).abs() < 0.01,
                 "{pair:?}"
             );
         }
@@ -7091,6 +7108,9 @@ fn speed_curve_tab_applies_presets_and_edits_the_plot_points() {
     assert!(has_widget(&harness, "inspector.speed.point.5"));
     assert!(!has_widget(&harness, "inspector.speed.point.6"));
     assert!(has_widget(&harness, "inspector.speed.curve.reset"));
+    // Reset and the point button sit in view at 1440 x 900 without scrolling.
+    let reset = widget_rect(&harness, "inspector.speed.curve.reset");
+    assert!(reset.bottom() <= 540.0, "{reset:?}");
     let shown = item(&harness, fixture.video).duration().unwrap().seconds();
     assert!(shown > 1.3 && shown < 1.7, "{shown}");
 
