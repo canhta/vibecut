@@ -633,8 +633,8 @@ fn every_preset_bakes_a_smooth_curve_over_its_output_span() {
         assert_eq!(other.total_source(), Tick(4 * second), "{preset:?}");
     }
     // Custom is a flat 1x shape: the output is as long as the source.
-    let flat = SpeedCurve::from_points(Tick(10 * second), &SpeedPreset::Custom.points()).unwrap();
-    assert_eq!(flat.total_output(), Tick(10 * second));
+    let custom = SpeedCurve::from_points(Tick(10 * second), &SpeedPreset::Custom.points()).unwrap();
+    assert_eq!(custom.total_output(), Tick(10 * second));
     // Flat 2x halves it; the Montage shape reads 10 s as about 7.5 s (the reference shows 7 s).
     let double = [0, 1000].map(|at| SpeedPoint {
         at,

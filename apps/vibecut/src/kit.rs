@@ -9,7 +9,7 @@ mod widgets;
 
 pub use appearance::Look;
 pub(crate) use dialog::{dialog_button, dialog_frame, dialog_title};
-pub(crate) use feedback::{Tone, panel_state, progress_bar, toast};
+pub(crate) use feedback::{Tone, panel_state, progress_bar, toast, toast_top};
 pub(crate) use icons::{Icon, icon, install, tinted};
 pub(crate) use style::{install_editor_density, install_fonts, install_theme};
 pub(crate) use theme::{

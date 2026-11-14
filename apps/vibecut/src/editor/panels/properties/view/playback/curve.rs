@@ -391,8 +391,8 @@ impl Panel<'_, '_> {
         let painter = ui.painter().clone();
         painter.rect_filled(outer, theme::radius::FIELD, theme::window(dark));
 
-        let drag_id = egui::Id::new(("inspector.speed.drag", item.0));
-        let select_id = egui::Id::new(("inspector.speed.selected", item.0));
+        let drag_id = egui::Id::unique(("inspector.speed.drag", item.0));
+        let select_id = egui::Id::unique(("inspector.speed.selected", item.0));
         let drag: Option<Drag> = ui.data(|data| data.get_temp(drag_id));
         let points: Vec<SpeedPoint> = drag
             .as_ref()
@@ -424,7 +424,7 @@ impl Panel<'_, '_> {
 
         let area = ui.interact(
             plot,
-            egui::Id::new(("inspector.speed.plot", item.0)),
+            egui::Id::unique(("inspector.speed.plot", item.0)),
             egui::Sense::hover(),
         );
         let plot_label = self.tr(Text::SpeedCurvePlot);
@@ -436,7 +436,7 @@ impl Panel<'_, '_> {
             let center = egui::pos2(plot_x(plot, point.at), plot_y(plot, point.speed.as_f64()));
             let handle = ui.interact(
                 egui::Rect::from_center_size(center, HIT),
-                egui::Id::new(("inspector.speed.point", item.0, index)),
+                egui::Id::unique(("inspector.speed.point", item.0, index)),
                 egui::Sense::click_and_drag(),
             );
             self.remember(format!("inspector.speed.point.{index}"), &handle);
@@ -494,8 +494,12 @@ impl Panel<'_, '_> {
             }
         }
         match selected {
-            Some(index) => ui.data_mut(|data| data.insert_temp(select_id, index)),
-            None => ui.data_mut(|data| data.remove::<usize>(select_id)),
+            Some(index) => {
+                ui.data_mut(|data| data.insert_temp(select_id, index));
+            }
+            None => {
+                ui.data_mut(|data| data.remove::<usize>(select_id));
+            }
         }
 
         let edit = Edit {
@@ -522,7 +526,7 @@ impl Panel<'_, '_> {
             commit,
         } = edit;
         let mut next = commit;
-        let select_id = egui::Id::new(("inspector.speed.selected", item.0));
+        let select_id = egui::Id::unique(("inspector.speed.selected", item.0));
         let right = footer.right() - BOX_PAD - 2.0;
         let point_rect = egui::Rect::from_min_size(
             egui::pos2(
