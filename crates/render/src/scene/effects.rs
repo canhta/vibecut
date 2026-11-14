@@ -1803,7 +1803,7 @@ static OPS: &[EffectOp] = &[
         entry_point: "camera_shake",
         wgsl: Wgsl::Absent,
         kernel: Kernel::Sample(SampleOp {
-            len: 5,
+            len: 4,
             valid: whole_image::valid_shake,
             apply: whole_image::camera_shake,
         }),

@@ -26,7 +26,10 @@ pub(super) fn assets_scene(theme: Theme, scale: f32, state: &str) -> Result<AppH
         Locale::En
     };
     let state = state.strip_suffix("-vi").unwrap_or(state);
-    let phase3 = state.ends_with("-phase3");
+    // `effects-shelf-<id>` opens the Effects tab on one library shelf, settled like phase 3.
+    let shelf = state.strip_prefix("effects-shelf-");
+    let state = if shelf.is_some() { "effects" } else { state };
+    let phase3 = state.ends_with("-phase3") || shelf.is_some();
     let state = state.strip_suffix("-phase3").unwrap_or(state);
     let mut sound_library = None;
     let mut editor = empty_editor(theme, locale)?;
@@ -138,6 +141,12 @@ pub(super) fn assets_scene(theme: Theme, scale: f32, state: &str) -> Result<AppH
         app.get(By::new().predicate(|node| node.author_id() == Some("audio.section.music")))
             .click();
         app.run_steps(40);
+    }
+    if let Some(shelf) = shelf {
+        let id = format!("effects.category.{shelf}");
+        app.get(By::new().predicate(move |node| node.author_id() == Some(id.as_str())))
+            .click();
+        app.run_steps(4);
     }
     if phase3 {
         if let App::Assets(editor) = &mut app.state_mut().app {

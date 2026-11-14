@@ -1024,8 +1024,21 @@ impl Panel<'_, '_> {
                                 project::EffectParamKind::Color if parameter.animatable => {
                                     self.effect_color_field(ui, item, &effect.id, parameter.id);
                                 }
+                                project::EffectParamKind::Point => {
+                                    if let Some(project::EffectValue::Point(point)) =
+                                        effect.value(parameter.id)
+                                    {
+                                        self.effect_point_field(
+                                            ui,
+                                            item,
+                                            &effect.id,
+                                            definition.id,
+                                            parameter,
+                                            *point,
+                                        );
+                                    }
+                                }
                                 project::EffectParamKind::Color
-                                | project::EffectParamKind::Point
                                 | project::EffectParamKind::Lut
                                 | project::EffectParamKind::Curve => {}
                             }
@@ -1227,6 +1240,71 @@ impl Panel<'_, '_> {
                     self.remember(id.clone(), &response);
                 }
                 _ => {}
+            }
+        });
+    }
+
+    /// One frame-fraction point as two percent fields (X then Y). A drag or typed value is
+    /// held as a draft and published as one undo step when the gesture or edit ends.
+    fn effect_point_field(
+        &mut self,
+        ui: &mut egui::Ui,
+        item: ItemId,
+        effect: &str,
+        kind: &str,
+        parameter: &project::EffectParamDefinition,
+        current: [f64; 2],
+    ) {
+        let label = crate::i18n::effect_label(kind, Some(parameter.id))
+            .map_or(parameter.name, |key| self.tr(key));
+        let locked = read::item_locked(self.cx.session.project(), item);
+        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        self.row_label(ui, row, label);
+        value_ui.add_enabled_ui(!locked, |ui| {
+            for (axis, name) in [(0, "x"), (1, "y")] {
+                let id = format!("effects.{effect}.param.{}.{name}", parameter.id);
+                let draft_id = egui::Id::unique((&id, item.0));
+                let [x, y] = current;
+                let stored = if axis == 0 { x } else { y };
+                let mut shown = ui
+                    .data(|data| data.get_temp::<f64>(draft_id))
+                    .unwrap_or(stored * 100.0);
+                let response = ui.add(
+                    egui::DragValue::new(&mut shown)
+                        .range(0.0..=project::POINT_MAX * 100.0)
+                        .speed(0.5)
+                        .fixed_decimals(1)
+                        .suffix("%")
+                        .prefix(format!("{} ", name.to_uppercase())),
+                );
+                response.widget_info(|| {
+                    egui::WidgetInfo::labeled(
+                        egui::Role::SpinButton,
+                        !locked,
+                        format!("{label} {name}"),
+                    )
+                });
+                self.remember(id, &response);
+                if response.changed() {
+                    ui.data_mut(|data| data.insert_temp(draft_id, shown));
+                }
+                if response.drag_stopped() || response.lost_focus() {
+                    ui.data_mut(|data| data.remove_temp::<f64>(draft_id));
+                    let value = (shown / 100.0).clamp(0.0, project::POINT_MAX);
+                    let point = if axis == 0 { [value, y] } else { [x, value] };
+                    if point != current {
+                        self.actions.push(Action::SetEffectValues {
+                            item,
+                            effect: effect.to_owned(),
+                            values: vec![(
+                                parameter.id.to_owned(),
+                                project::EffectParamUpdate::Point(project::PointReference {
+                                    point,
+                                }),
+                            )],
+                        });
+                    }
+                }
             }
         });
     }

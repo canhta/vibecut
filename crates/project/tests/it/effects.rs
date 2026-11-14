@@ -1197,3 +1197,44 @@ fn filter_catalogue_holds_twenty_looks_and_four_tools_that_all_build_valid_grade
     }
     assert!(filter_definition("nope").is_none());
 }
+
+#[test]
+fn point_updates_are_closed_objects_checked_against_the_frame() {
+    assert_eq!(
+        serde_json::from_str::<EffectParamUpdate>("{\"point\":[0.25,0.75]}").unwrap(),
+        EffectParamUpdate::Point(PointReference {
+            point: [0.25, 0.75]
+        })
+    );
+    for refused in [
+        "{\"point\":[0.5]}",
+        "{\"point\":[0.5,0.5],\"x\":1}",
+        "{\"point\":[0.5,0.5],\"point\":[0.1,0.1]}",
+        "{}",
+        "[0.5,0.5]",
+        "[[0.5,0.5]]",
+    ] {
+        assert!(
+            serde_json::from_str::<EffectParamUpdate>(refused).is_err(),
+            "{refused}"
+        );
+    }
+    let mut pin = effect_definition("corner_pin").unwrap().instance("pin1");
+    for (point, ok) in [
+        ([0.0, 1.0], true),
+        ([0.5, 1.5], false),
+        ([-0.1, 0.5], false),
+        ([f64::NAN, 0.5], false),
+    ] {
+        let update = EffectParamUpdate::Point(PointReference { point });
+        assert_eq!(pin.set_param("upper_left", update).is_ok(), ok, "{point:?}");
+    }
+    assert_eq!(
+        pin.value("upper_left"),
+        Some(&EffectValue::Point([0.0, 1.0]))
+    );
+    let update = EffectParamUpdate::Point(PointReference { point: [0.5, 0.5] });
+    assert!(pin.set_param("nope", update).is_err());
+    let mut blur = effect_definition("blur").unwrap().instance("blur1");
+    assert!(blur.set_param("intensity", update).is_err(), "wrong kind");
+}

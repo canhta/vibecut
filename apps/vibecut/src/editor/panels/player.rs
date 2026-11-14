@@ -1,5 +1,6 @@
 //! Owns preview presentation state behind the player panel interface.
 pub mod crop;
+mod effect_point;
 mod lines;
 mod mask_box;
 mod mask_path;
@@ -10,7 +11,6 @@ mod state;
 mod text;
 mod transform;
 mod view;
-mod workflow;
 
 use crate::{editor::Context, egui};
 pub use lines::{GuideLines, LineAxis};
@@ -20,7 +20,7 @@ use project::ItemId;
 pub use snap::PREVIEW_SNAP_PIXELS;
 pub(crate) use state::{KeyPick, MatteBrush, State};
 pub use state::{PreviewAxis, PreviewGuide, TextCaret};
-pub(in crate::editor) use workflow::format_timecode;
+pub(in crate::editor) use view::format_timecode;
 
 /// Requests are applied by the frame after rendering releases its read borrow.
 pub(crate) enum Action {
@@ -90,6 +90,17 @@ pub(crate) enum Action {
     MaskBoxPreview {
         item: ItemId,
         mask: project::Mask,
+    },
+    /// Stage one absolute effect point candidate (frame fractions) from a handle drag.
+    EffectPointPreview {
+        item: ItemId,
+        effect: String,
+        key: String,
+        point: [f64; 2],
+    },
+    /// Close an effect point gesture, publishing one undo step when `commit`.
+    EffectPointEnd {
+        commit: bool,
     },
     /// Close a mask path or whole-mask gesture, publishing one undo step when `commit`.
     MaskPathEnd {

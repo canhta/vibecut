@@ -559,7 +559,10 @@ fn canvas_size(cx: &Context<'_>) -> [u32; 2] {
 }
 fn timecode(cx: &Context<'_>, at: Tick) -> String {
     let rate = cx.session.project().data().canvas.fps;
-    super::workflow::format_timecode(at, rate)
+    format_timecode(at, rate)
+}
+pub(in crate::editor) fn format_timecode(at: Tick, rate: crate::editor::FrameRate) -> String {
+    time::format_timecode(at, rate).unwrap_or_else(|_| time::format_clock(at))
 }
 fn footer_controls(
     state: &mut State,
@@ -1190,6 +1193,7 @@ fn canvas(
         super::transform::show(
             &mut state.transform,
             &mut state.mask_path,
+            &mut state.effect_point,
             cx,
             ui,
             displayed,

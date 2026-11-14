@@ -6428,48 +6428,50 @@ fn measure_whole_image_1080p() {
         &hooks,
     )
     .unwrap();
-    let mut rows = Vec::new();
-    for kind in WHOLE_EFFECTS.iter().chain(["posterize_time"].iter()) {
-        let kind = *kind;
-        let instance = effect_instance(kind, &[]);
-        let passes = evaluate_effect(
-            &project::Animations::default(),
-            &instance,
-            whole_time(kind),
-            EffectGeometry::new([1920, 1080], [1.0, 1.0]).unwrap(),
-            true,
-            &render::lut::LutResources::default(),
-        )
-        .unwrap();
-        let run = || {
-            CpuEffects
-                .apply(
-                    &input,
-                    &passes,
-                    EffectInputs {
-                        input: &input,
-                        below: &input,
-                        coverage: None,
-                    },
-                    &hooks,
-                )
-                .unwrap()
-        };
-        drop(run());
-        let start = std::time::Instant::now();
-        for _ in 0..2 {
+    for (quality, fine) in [("export", true), ("preview", false)] {
+        let mut rows = Vec::new();
+        for kind in WHOLE_EFFECTS.iter().chain(["posterize_time"].iter()) {
+            let kind = *kind;
+            let instance = effect_instance(kind, &[]);
+            let passes = evaluate_effect(
+                &project::Animations::default(),
+                &instance,
+                whole_time(kind),
+                EffectGeometry::new([1920, 1080], [1.0, 1.0]).unwrap(),
+                fine,
+                &render::lut::LutResources::default(),
+            )
+            .unwrap();
+            let run = || {
+                CpuEffects
+                    .apply(
+                        &input,
+                        &passes,
+                        EffectInputs {
+                            input: &input,
+                            below: &input,
+                            coverage: None,
+                        },
+                        &hooks,
+                    )
+                    .unwrap()
+            };
             drop(run());
+            let start = std::time::Instant::now();
+            for _ in 0..2 {
+                drop(run());
+            }
+            let ms = start.elapsed().as_secs_f64() * 1000.0 / 2.0;
+            eprintln!(
+                "WHOLE_COST {quality} {kind} {ms:.3} ms/frame 1920x1080 passes={}",
+                passes.len()
+            );
+            rows.push((kind, ms));
         }
-        let ms = start.elapsed().as_secs_f64() * 1000.0 / 2.0;
-        eprintln!(
-            "WHOLE_COST {kind} {ms:.3} ms/frame 1920x1080 passes={}",
-            passes.len()
-        );
-        rows.push((kind, ms));
-    }
-    rows.sort_by(|a, b| b.1.total_cmp(&a.1));
-    for (kind, ms) in rows.iter().take(5) {
-        eprintln!("WHOLE_SLOWEST {kind} {ms:.3} ms");
+        rows.sort_by(|a, b| b.1.total_cmp(&a.1));
+        for (kind, ms) in rows.iter().take(5) {
+            eprintln!("WHOLE_SLOWEST {quality} {kind} {ms:.3} ms");
+        }
     }
     drop(input);
     assert_eq!(hooks.used.load(Ordering::SeqCst), 0);

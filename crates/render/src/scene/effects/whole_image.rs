@@ -399,28 +399,36 @@ pub(super) fn roughen_edges(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &
     out.map(|v| v * k)
 }
 
-pub(super) fn camera_shake(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f32]) -> [f32; 4] {
-    let [amount, rotation, zoom, frequency, seconds] = [0, 1, 2, 3, 4].map(|i| uniform(values, i));
-    let shake = |t: f64, channel: u64| -> f32 {
+/// The frame's shake depends only on item-local time, so it is evaluated once per frame
+/// and the sample pass only applies the resulting offset, scale and angle.
+fn shake_at(seconds: f64, amount: f32, rotation: f32, zoom: f32, frequency: f32) -> [f32; 4] {
+    let shake = |channel: u64| -> f32 {
         let (mut sum, mut amp, mut freq, mut norm) = (0.0, 1.0, 1.0, 0.0);
         for octave in 0..3u64 {
-            sum += noise1(t * f64::from(frequency) * freq, channel * 10 + octave, 0) * amp;
+            sum += noise1(
+                seconds * f64::from(frequency) * freq,
+                channel * 10 + octave,
+                0,
+            ) * amp;
             norm += amp;
             amp *= 0.5;
             freq *= 2.0;
         }
         sum / norm.max(1e-6) * 1.6
     };
-    let t = f64::from(seconds);
-    let offset = [shake(t, 0) * amount, shake(t, 1) * amount];
-    let scale = 1.0 + zoom * (0.5 + 0.5 * shake(t, 3));
-    let angle = shake(t, 2) * rotation;
+    [
+        shake(0) * amount,
+        shake(1) * amount,
+        1.0 + zoom * (0.5 + 0.5 * shake(3)),
+        shake(2) * rotation,
+    ]
+}
+
+pub(super) fn camera_shake(inputs: &SampleInputs<'_>, x: u32, y: u32, values: &[f32]) -> [f32; 4] {
+    let [ox, oy, scale, angle] = [0, 1, 2, 3].map(|i| uniform(values, i));
     let (px, py) = (x as f32 + 0.5, y as f32 + 0.5);
     let (w, h) = (inputs.input.width() as f32, inputs.input.height() as f32);
-    let (qx, qy) = (
-        (px - w / 2.0 - offset[0]) / scale,
-        (py - h / 2.0 - offset[1]) / scale,
-    );
+    let (qx, qy) = ((px - w / 2.0 - ox) / scale, (py - h / 2.0 - oy) / scale);
     let (sin, cos) = angle.sin_cos();
     let (rx, ry) = (qx * cos - qy * sin, qx * sin + qy * cos);
     inputs.sample_input(
@@ -932,7 +940,7 @@ pub(super) fn valid_roughen(values: &[f32], _: u32, _: u32) -> bool {
     warp(values, 8) && uniform(values, 5) > 0.0 && (1.0..=10.0).contains(&uniform(values, 6))
 }
 pub(super) fn valid_shake(values: &[f32], _: u32, _: u32) -> bool {
-    warp(values, 5) && uniform(values, 3) > 0.0
+    warp(values, 4) && uniform(values, 2) > 0.0
 }
 pub(super) fn valid_sobel(values: &[f32], _: u32, _: u32) -> bool {
     finite(values, 1) && (0.0..=1.0).contains(&uniform(values, 0))
@@ -1316,7 +1324,7 @@ pub(super) fn shake_eval(
     let frequency = frame.scalar("frequency")? as f32;
     Ok(vec![EffectPass::Sample {
         entry_point: "camera_shake",
-        uniforms: floats([amount, rotation, zoom, frequency, frame.seconds as f32]),
+        uniforms: floats(shake_at(frame.seconds, amount, rotation, zoom, frequency)),
     }])
 }
 

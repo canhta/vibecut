@@ -427,7 +427,15 @@ impl Editor {
                     self.preview_mask_path(item, &mask, &path)
                 }
                 Action::MaskBoxPreview { item, mask } => self.preview_mask_box(item, mask),
-                Action::MaskPathEnd { commit } => self.end_preview_transform(commit),
+                Action::MaskPathEnd { commit } | Action::EffectPointEnd { commit } => {
+                    self.end_preview_transform(commit)
+                }
+                Action::EffectPointPreview {
+                    item,
+                    effect,
+                    key,
+                    point,
+                } => self.preview_effect_point(item, effect, key, point),
                 Action::MaskPointAdd {
                     item,
                     mask,
