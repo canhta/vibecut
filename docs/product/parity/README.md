@@ -37,32 +37,32 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 
 | Area | Rows | Done | Partial | Missing | Differs | Ours | Out of scope | UI Matches | UI Differs | UI Proposed | UI Not captured |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| [Home](home.md#home-home) | 34 | 15 | 4 | 5 | 0 | 4 | 6 | 9 | 1 | 6 | 8 |
+| [Home](home.md#home-home) | 34 | 15 | 4 | 5 | 0 | 4 | 6 | 9 | 1 | 7 | 8 |
 | [Header and sub-navigation](shell.md#header-and-sub-navigation-shell) | 37 | 22 | 5 | 2 | 0 | 3 | 5 | 14 | 1 | 11 | 5 |
 | [Window and panel layout](shell.md#window-and-panel-layout-layout) | 11 | 6 | 1 | 2 | 0 | 1 | 1 | 6 | 0 | 1 | 1 |
-| [Settings](shell.md#settings-set) | 26 | 7 | 5 | 8 | 0 | 4 | 2 | 0 | 2 | 14 | 0 |
-| [Keyboard shortcuts](shell.md#keyboard-shortcuts-shortcut) | 26 | 20 | 2 | 2 | 1 | 1 | 0 | 2 | 0 | 11 | 0 |
-| [Media](assets.md#media-media) | 35 | 15 | 6 | 7 | 0 | 2 | 5 | 2 | 1 | 11 | 16 |
+| [Settings](shell.md#settings-set) | 26 | 9 | 4 | 7 | 0 | 4 | 2 | 0 | 2 | 15 | 0 |
+| [Keyboard shortcuts](shell.md#keyboard-shortcuts-shortcut) | 26 | 21 | 1 | 2 | 1 | 1 | 0 | 2 | 0 | 11 | 0 |
+| [Media](assets.md#media-media) | 35 | 20 | 5 | 3 | 0 | 2 | 5 | 2 | 2 | 15 | 11 |
 | [Audio](assets.md#audio-audio) | 21 | 13 | 4 | 2 | 0 | 1 | 1 | 5 | 6 | 6 | 3 |
 | [Text library](assets.md#text-library-textlib) | 10 | 6 | 2 | 0 | 0 | 1 | 1 | 0 | 5 | 2 | 1 |
 | [Stickers](assets.md#stickers-stick) | 12 | 4 | 1 | 1 | 0 | 4 | 2 | 1 | 1 | 7 | 0 |
 | [Templates](assets.md#templates-tmpl) | 7 | 0 | 0 | 6 | 0 | 0 | 1 | 0 | 0 | 0 | 5 |
-| [Captions panel](captions.md#captions-panel-caps) | 42 | 21 | 10 | 7 | 0 | 4 | 0 | 4 | 5 | 18 | 14 |
-| [Transcript editing](captions.md#transcript-editing-transcript) | 16 | 2 | 5 | 8 | 1 | 0 | 0 | 0 | 2 | 5 | 1 |
+| [Captions panel](captions.md#captions-panel-caps) | 42 | 24 | 10 | 4 | 0 | 4 | 0 | 4 | 6 | 22 | 9 |
+| [Transcript editing](captions.md#transcript-editing-transcript) | 16 | 7 | 8 | 0 | 1 | 0 | 0 | 0 | 4 | 12 | 0 |
 | [Effects](catalogues.md#effects-fx) | 17 | 9 | 4 | 2 | 0 | 0 | 2 | 3 | 3 | 6 | 2 |
 | [Transitions](catalogues.md#transitions-trans) | 16 | 9 | 2 | 1 | 0 | 3 | 1 | 2 | 1 | 9 | 1 |
 | [Filters](catalogues.md#filters-filt) | 9 | 7 | 1 | 0 | 0 | 0 | 1 | 1 | 1 | 4 | 0 |
 | [Adjustment](catalogues.md#adjustment-adj) | 6 | 2 | 3 | 0 | 0 | 1 | 0 | 1 | 3 | 2 | 0 |
-| [Video clip](properties-video.md#video-clip-pvid) | 52 | 32 | 8 | 6 | 0 | 3 | 3 | 6 | 3 | 34 | 6 |
+| [Video clip](properties-video.md#video-clip-pvid) | 52 | 33 | 8 | 5 | 0 | 3 | 3 | 6 | 3 | 35 | 5 |
 | [Audio clip](properties-other.md#audio-clip-paud) | 17 | 8 | 1 | 7 | 0 | 1 | 0 | 3 | 1 | 6 | 7 |
 | [Text item](properties-other.md#text-item-ptext) | 31 | 18 | 8 | 4 | 0 | 0 | 1 | 4 | 7 | 15 | 4 |
 | [Caption item](properties-other.md#caption-item-pcap) | 8 | 1 | 4 | 2 | 0 | 1 | 0 | 0 | 3 | 3 | 2 |
-| [Sticker, effect, filter and adjustment items](properties-other.md#sticker-effect-filter-and-adjustment-items-pother) | 17 | 7 | 6 | 3 | 0 | 1 | 0 | 0 | 5 | 9 | 3 |
-| [Timeline](timeline.md#timeline-tl) | 96 | 56 | 13 | 13 | 2 | 10 | 2 | 13 | 8 | 54 | 5 |
+| [Sticker, effect, filter and adjustment items](properties-other.md#sticker-effect-filter-and-adjustment-items-pother) | 17 | 9 | 6 | 1 | 0 | 1 | 0 | 0 | 7 | 9 | 1 |
+| [Timeline](timeline.md#timeline-tl) | 96 | 57 | 14 | 11 | 2 | 10 | 2 | 13 | 8 | 56 | 5 |
 | [Keyframes](timeline.md#keyframes-key) | 14 | 10 | 3 | 0 | 0 | 1 | 0 | 2 | 2 | 7 | 1 |
-| [Player](player-export.md#player-play) | 24 | 16 | 4 | 1 | 0 | 3 | 0 | 6 | 4 | 12 | 0 |
-| [Export](player-export.md#export-exp) | 33 | 19 | 5 | 5 | 0 | 1 | 3 | 2 | 7 | 13 | 4 |
+| [Player](player-export.md#player-play) | 24 | 17 | 4 | 0 | 0 | 3 | 0 | 7 | 4 | 12 | 0 |
+| [Export](player-export.md#export-exp) | 33 | 19 | 7 | 3 | 0 | 1 | 3 | 2 | 8 | 14 | 3 |
 | [AI chat](ai-shorts.md#ai-chat-agent) | 17 | 9 | 3 | 2 | 1 | 1 | 1 | 5 | 3 | 4 | 1 |
 | [Long video to shorts](ai-shorts.md#long-video-to-shorts-shorts) | 24 | 12 | 5 | 3 | 0 | 2 | 2 | 8 | 1 | 7 | 3 |
 | [States](states.md#states-state) | 12 | 7 | 3 | 0 | 1 | 0 | 1 | 2 | 2 | 4 | 3 |
-| **Total** | **670** | **344** | **121** | **105** | **6** | **53** | **41** | **100** | **74** | **278** | **102** |
+| **Total** | **670** | **374** | **121** | **75** | **6** | **53** | **41** | **102** | **85** | **302** | **81** |

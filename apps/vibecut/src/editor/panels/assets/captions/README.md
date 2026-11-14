@@ -60,7 +60,7 @@ it, so no word is looked up again. Remove gaps sends every listed gap as one `ti
 The review has no history of
 its own; its Undo and Redo buttons are `undo` and `redo`. Show deleted words keeps the words of each
 cut made through the pane together with the undo depth after it, and drops an entry once that cut
-leaves the history. Create compound clip is disabled until ticket 533. Design:
+leaves the history. Create compound clip stays disabled: the review does not make compound clips yet. Design:
 [transcript review](../../../../../../../docs/product/ui/editor.md#transcript-review).
 
 The spoken-language select lists Auto plus every language the configured ASR adapters

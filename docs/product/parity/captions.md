@@ -54,7 +54,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | CAPS-37 | Tabs: All, Pauses, Repeats, Fillers | Partial | Proposed | 110106, 110110 | No Filler words tab |
 | CAPS-38 | Pause chips, remove pauses | Done | Proposed | 110059; [ui/editor.md](../ui/editor.md#transcript-pane) | Gap card removes all |
 | CAPS-39 | Select all, total duration | Done | Proposed | 110122; [ui/editor.md](../ui/editor.md#transcript-pane) | |
-| CAPS-40 | Create compound clip option | Partial | Proposed | 110059; [ui/editor.md](../ui/editor.md#transcript-pane) | Disabled until 533 |
+| CAPS-40 | Create compound clip option | Partial | Proposed | 110059; [ui/editor.md](../ui/editor.md#transcript-pane) | Disabled; the review makes no compound clip |
 | CAPS-41 | Delete, Cancel footer | Partial | Not captured | 110059 | |
 | CAPS-42 | Chapters page | Ours | Proposed | [ui/editor.md](../ui/editor.md#chapters-section) | |
 
@@ -72,7 +72,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | TRANSCRIPT-08 | Select all, total duration | Done | Proposed | 14b/110122 | |
 | TRANSCRIPT-09 | Preview player, row seek | Partial | Proposed | 14b/110130 | |
 | TRANSCRIPT-10 | Mini timeline in window | Partial | Differs | 14b/110059 | No ruler or zoom, click seeks |
-| TRANSCRIPT-11 | Create compound option | Partial | Proposed | 14b/110059 | Disabled until 533 |
+| TRANSCRIPT-11 | Create compound option | Partial | Proposed | 14b/110059 | Disabled; the review makes no compound clip |
 | TRANSCRIPT-12 | Cancel, Delete | Partial | Proposed | 14b/110136 | |
 | TRANSCRIPT-13 | Find box | Done | Proposed | web screens/17 | |
 | TRANSCRIPT-14 | Gap card, remove gaps | Done | Proposed | web screens/17 | Function only |

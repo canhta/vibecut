@@ -160,9 +160,11 @@ impl Theme {
     }
 }
 pub(super) fn preferences(theme: Theme, locale: Locale) -> Preferences {
+    // The first-launch welcome shows only in its own scene.
     Preferences {
         locale,
         dark: theme.dark(),
+        welcome_seen: true,
         ..Preferences::default()
     }
 }

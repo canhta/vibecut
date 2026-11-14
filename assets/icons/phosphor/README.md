@@ -8,7 +8,7 @@ time; there is no runtime network or font request.
 - Source archive: <https://registry.npmjs.org/@phosphor-icons/core/-/core-2.1.1.tgz>
 - Author: Phosphor Icons
 - Licence: MIT, see [LICENSE](LICENSE)
-- Added: p0-core/39; extended: p1-parity/06, p1-parity/09, p1-parity/54, p1-parity/117, 2026-11-12, 2026-11-13, 2026-11-14, p1-parity/523
+- Added: p0-core/39; extended: p1-parity/06, p1-parity/09, p1-parity/54, p1-parity/117, 2026-11-12, 2026-11-13, 2026-11-14, 2026-11-14e (grouped clips)
 - Files: 76 unmodified `assets/regular/*.svg` files.
 
 SHA-256 of each embedded file:

@@ -12,10 +12,22 @@ use vibecut::egui;
 use vibecut::i18n::Locale;
 
 pub(super) fn home(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    home_with(theme, scale, true)
+}
+
+/// Home on a first launch: the welcome dialog over the empty library.
+pub(super) fn home_welcome(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    home_with(theme, scale, false)
+}
+
+fn home_with(theme: Theme, scale: f32, welcome_seen: bool) -> Result<AppHarness, Failure> {
     let directory = tempfile::tempdir()?;
     let workspace = Workspace::new(
         directory.path().join("recovery"),
-        preferences(theme, Locale::En),
+        vibecut::preferences::Preferences {
+            welcome_seen,
+            ..preferences(theme, Locale::En)
+        },
         None,
     )?;
     let mut app = harness(

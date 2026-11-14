@@ -19,8 +19,11 @@ Each module's contract is its README.
 | `editor/panels/agent/` | [Agent chat](src/editor/panels/agent/README.md) |
 | `editor/panels/assets/` | [Assets](src/editor/panels/assets/README.md) |
 | `editor/panels/assets/sounds/` | [Sounds tab](src/editor/panels/assets/sounds/README.md) |
+| `editor/panels/assets/catalog.rs` | [Assets catalogue](src/editor/panels/assets/catalog/README.md) |
 | `editor/panels/assets/view/` | [Assets view](src/editor/panels/assets/view/README.md) |
+| `editor/panels/assets/view/audio.rs` | [Assets audio view](src/editor/panels/assets/view/audio/README.md) |
 | `editor/panels/assets/workflow/` | [Assets workflow](src/editor/panels/assets/workflow/README.md) |
+| `editor/panels/assets/workflow/audio.rs` | [Assets audio workflow](src/editor/panels/assets/workflow/audio/README.md) |
 | `editor/panels/assets/captions.rs` | [Captions tab](src/editor/panels/assets/captions/README.md) |
 | `editor/panels/assets/effects.rs` | [Effect previews](src/editor/panels/assets/effects/README.md) |
 | `editor/panels/assets/import.rs` | [Media import](src/editor/panels/assets/import/README.md) |
@@ -66,6 +69,7 @@ Each module's contract is its README.
 | `services/color_picker/` | [Colour picker](src/services/color_picker/README.md) |
 | `services/gpu/` | [GPU adapters](src/services/gpu/README.md) |
 | `services/lifecycle.rs` | [Project lifecycle](src/services/lifecycle/README.md) |
+| `services/views.rs` | [Services views](src/services/views/README.md) |
 | `services/remote_models/` | [Remote model selection](src/services/remote_models/README.md) |
 | `services/assets/` | [Asset intake services](src/services/assets/README.md) |
 | `services/assets/voiceover/` | [Voice-over capture](src/services/assets/voiceover/README.md) |
