@@ -1,6 +1,6 @@
 # Kit widgets
 
-Interface: `action_button`, `badge_button`, `dashed_outline`, `icon_button`, `icon_tab`,
+Interface: `action_button`, `badge_button`, `checkbox`, `dashed_outline`, `icon_button`, `icon_tab`,
 `keyframe_cluster` (with `KeyframeControl`), `rail_slider`, `section_header_with`,
 `segmented`, `stepper`, `text_tabs`, `toggle`, `transport_button`, `value_field`, `zoom_rail`.
 

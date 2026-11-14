@@ -655,6 +655,19 @@ fn widget_rect(harness: &Harness<Editor>, id: &str) -> egui::Rect {
         .rect
 }
 
+/// Whether the rendered rect holds red ink: a pixel whose red leads its green by 100 or more.
+/// The error tokens (`ERROR_TEXT_DARK`, `ERROR_LIGHT` in kit/theme.rs) are red; body and
+/// secondary inks are neutral grey. The harness is 1440 px wide, so the scale is the image's
+/// width over that.
+fn has_red_ink(harness: &mut Harness<Editor>, rect: egui::Rect) -> bool {
+    let image = harness.render().unwrap();
+    let scale = image.width() as f32 / 1440.0;
+    image.enumerate_pixels().any(|(x, y, pixel)| {
+        let point = egui::pos2(x as f32 / scale, y as f32 / scale);
+        rect.contains(point) && i16::from(pixel.0[0]) - i16::from(pixel.0[1]) >= 100
+    })
+}
+
 /// The accessibility toggled state of one control: a selected tab reads as `True`.
 fn toggled(harness: &Harness<Editor>, id: &str) -> Option<egui::accesskit::Toggled> {
     harness
@@ -2564,6 +2577,16 @@ fn loudness_controls_switch_target_and_apply_through_commands() {
     }
     assert_eq!(loudness(&harness), project::Loudness::default());
 
+    // The target fields span the value column: their right edge meets the switch's and Apply's.
+    let edge = widget_rect(&harness, "inspector.loudness.clip").right();
+    for id in [
+        "inspector.loudness.target",
+        "inspector.loudness.true_peak",
+        "inspector.loudness.apply",
+    ] {
+        assert!((widget_rect(&harness, id).right() - edge).abs() < 0.5, "{id}");
+    }
+
     // A scope switch is one undo step: on sets the shown default target, off clears it.
     let history = harness.state().session.history_len().0;
     click(&mut harness, "inspector.loudness.clip");
@@ -2830,6 +2853,11 @@ fn loudness_failed_measurement_names_its_cause_and_applies_nothing() {
         assert!(
             harness.query(By::new().label_contains(line)).is_some(),
             "the failure cause shows on the Audio tab: {line}"
+        );
+        let status = widget_rect(&harness, "inspector.loudness.status");
+        assert!(
+            has_red_ink(&mut harness, status),
+            "the failure line paints the error token: {line}"
         );
         if decode {
             let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");

@@ -207,23 +207,23 @@ fn body(state: &State, cx: &Context<'_>, ui: &mut egui::Ui, actions: &mut Vec<Ac
                     ChangeKind::Fade => tr(Text::SceneSplitFade),
                 };
                 let label = format!("{} · {kind}", seconds(candidate.at));
-                let label = egui::RichText::new(label).color(kit::text(cx.dark));
-                let response = ui.checkbox(&mut on, label);
+                let id = format!("scene_split.candidate.{index}");
+                let response = kit::checkbox(ui, &id, &mut on, &label);
                 let changed = response.changed();
-                actions.push(Action::Remember(
-                    format!("scene_split.candidate.{index}"),
-                    response,
-                ));
+                actions.push(Action::Remember(id, response));
                 if changed {
                     actions.push(Action::Toggle(index, on));
                 }
             }
             let count = selected.iter().filter(|on| **on).count();
-            let apply = i18n::format(
+            let apply = i18n::format_count(
                 cx.locale,
-                Text::SceneSplitApply,
-                &[("count", &i18n::number(cx.locale, count as u64))],
+                count as u64,
+                Text::SceneSplitApplyOne,
+                Text::SceneSplitApplyOther,
             );
+            // One panel row of air between the last candidate and the footer.
+            ui.add_space(kit::space::LG);
             ui.horizontal(|ui| {
                 button(
                     ui,
