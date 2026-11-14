@@ -2,7 +2,7 @@
 //! on the item's layer right after the matte, as a CPU pass; the picture's alpha is the shape, so
 //! the outline follows the matte edge, and it sits under the person and over whatever the layer
 //! still holds (a caption behind the clip is covered, as in the reference).
-use crate::{Error, ExecutionHooks, Image, Result, check};
+use crate::{Error, ExecutionHooks, Image, MemoryKind, Result, check};
 use project::{CutoutStroke, StrokePreset};
 
 /// Outline radius at Size 0 and Size 100 as a fraction of the layer's shorter side. Measured
@@ -77,6 +77,13 @@ pub fn apply(mut layer: Image, stroke: &CutoutStroke, hooks: &dyn ExecutionHooks
     if width == 0 || height == 0 || layer.pixels.len() != width * height {
         return Err(Error::Invalid("cutout stroke layer"));
     }
+    // The distance field (one f64 per layer pixel) and the four 1-D scratch lines are charged
+    // like a layer image: about 66 MB at 4K.
+    let line_bytes = width.max(height) as u64 * 8;
+    let _field = hooks.reserve(
+        MemoryKind::Compositor,
+        (width * height) as u64 * 8 + 5 * line_bytes,
+    )?;
     let mut field: Vec<f64> = layer
         .pixels
         .iter()

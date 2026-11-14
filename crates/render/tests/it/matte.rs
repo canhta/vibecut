@@ -309,7 +309,10 @@ fn a_matted_item_renders_the_same_in_preview_and_export_and_a_missing_matte_rend
                 .unwrap()
         }
     };
-    let on = Some(project::BackgroundRemoval { feather: 0.0, ..Default::default() });
+    let on = Some(project::BackgroundRemoval {
+        feather: 0.0,
+        ..Default::default()
+    });
     let off = scene(None, false);
     let plain = render(&off, None, false);
     let empty = render(&scene(None, true), None, false);
@@ -341,7 +344,13 @@ fn a_matted_item_renders_the_same_in_preview_and_export_and_a_missing_matte_rend
     );
     // A feather softens the cut: the column at the boundary is neither clip nor canvas.
     let soft = render(
-        &scene(Some(project::BackgroundRemoval { feather: 100.0, ..Default::default() }), false),
+        &scene(
+            Some(project::BackgroundRemoval {
+                feather: 100.0,
+                ..Default::default()
+            }),
+            false,
+        ),
         Some(halves()),
         false,
     );
@@ -437,7 +446,10 @@ fn a_screen_point_maps_back_to_the_decoded_frame_through_crop_and_fit() {
 fn matte_strokes_add_and_remove_over_the_computed_matte_on_their_own_frame_only() {
     use project::{MatteStroke, MatteStrokeMode as Mode};
     let hooks = Hooks::default();
-    let on = Some(project::BackgroundRemoval { feather: 0.0, ..Default::default() });
+    let on = Some(project::BackgroundRemoval {
+        feather: 0.0,
+        ..Default::default()
+    });
     let two_frames = || {
         let plane: Vec<u8> = (0..CELLS)
             .map(|i| if i % SIDE < SIDE / 2 { 255 } else { 0 })
@@ -510,22 +522,39 @@ fn a_cutout_stroke_outlines_the_matte_edge_in_the_preview_and_the_export() {
         preset: project::StrokePreset::Solid,
         ..Default::default()
     };
-    let removal = |stroke| Some(project::BackgroundRemoval { feather: 0.0, stroke });
+    let removal = |stroke| {
+        Some(project::BackgroundRemoval {
+            feather: 0.0,
+            stroke,
+        })
+    };
     let render = |stroke: project::CutoutStroke, preview: bool| {
         let project = scene(removal(stroke), false);
         let mut settings = RenderSettings::from_project(&project);
         settings.person_mattes.insert(project::ItemId(1), halves());
         let mut renderer = Renderer::new(&project, settings).unwrap();
         if preview {
-            renderer.preview_frame(Tick::ZERO, &mut Ramp, &hooks).unwrap()
+            renderer
+                .preview_frame(Tick::ZERO, &mut Ramp, &hooks)
+                .unwrap()
         } else {
-            renderer.render_frame(Tick::ZERO, &mut Ramp, &hooks).unwrap()
+            renderer
+                .render_frame(Tick::ZERO, &mut Ramp, &hooks)
+                .unwrap()
         }
     };
     let plain = render(project::CutoutStroke::default(), false);
     let drawn = render(stroke, false);
-    assert_eq!(drawn.pixels(), render(stroke, true).pixels(), "preview equals export");
-    assert_eq!(drawn.pixels(), render(stroke, false).pixels(), "deterministic");
+    assert_eq!(
+        drawn.pixels(),
+        render(stroke, true).pixels(),
+        "preview equals export"
+    );
+    assert_eq!(
+        drawn.pixels(),
+        render(stroke, false).pixels(),
+        "deterministic"
+    );
     // The default Size 35 at 192 px is a 3.7 px radius: the person half is untouched, the
     // columns beside the edge are white, and the far side stays the canvas.
     let row = SIZE as usize;
@@ -534,13 +563,22 @@ fn a_cutout_stroke_outlines_the_matte_edge_in_the_preview_and_the_export() {
             assert_eq!(drawn.pixels()[y * row + x], plain.pixels()[y * row + x]);
         }
         let near = drawn.pixels()[y * row + row / 2];
-        assert!(near.iter().all(|v| (v - 1.0).abs() < 1e-3), "edge column {near:?}");
+        assert!(
+            near.iter().all(|v| (v - 1.0).abs() < 1e-3),
+            "edge column {near:?}"
+        );
         let far = y * row + 3 * row / 4;
         assert_eq!(drawn.pixels()[far], plain.pixels()[far]);
     }
     // Opacity scales the outline's coverage; Size 0 leaves a thin line (one pixel);
     // the None preset and an unchecked box draw nothing.
-    let half = render(project::CutoutStroke { opacity: 50.0, ..stroke }, false);
+    let half = render(
+        project::CutoutStroke {
+            opacity: 50.0,
+            ..stroke
+        },
+        false,
+    );
     let middle = row / 2 * row + row / 2;
     for channel in 0..4 {
         let expected = 0.5 + 0.5 * plain.pixels()[middle][channel];
@@ -550,12 +588,24 @@ fn a_cutout_stroke_outlines_the_matte_edge_in_the_preview_and_the_export() {
             half.pixels()[middle]
         );
     }
-    let thin = render(project::CutoutStroke { size: 0.0, ..stroke }, false);
+    let thin = render(
+        project::CutoutStroke {
+            size: 0.0,
+            ..stroke
+        },
+        false,
+    );
     assert_ne!(thin.pixels()[middle], plain.pixels()[middle]);
     assert_eq!(thin.pixels()[middle + 3], plain.pixels()[middle + 3]);
     for off in [
-        project::CutoutStroke { preset: project::StrokePreset::None, ..stroke },
-        project::CutoutStroke { enabled: false, ..stroke },
+        project::CutoutStroke {
+            preset: project::StrokePreset::None,
+            ..stroke
+        },
+        project::CutoutStroke {
+            enabled: false,
+            ..stroke
+        },
     ] {
         assert_eq!(render(off, false).pixels(), plain.pixels());
     }
@@ -569,7 +619,13 @@ fn the_stroke_pass_measures_its_radius_and_colours_the_shape_distance() {
         Image::from_working_pixels(
             200,
             100,
-            (0..200 * 100).map(|i| if i % 200 < 100 { [0.2, 0.2, 0.2, 1.0] } else { [0.0; 4] }),
+            (0..200 * 100).map(|i| {
+                if i % 200 < 100 {
+                    [0.2, 0.2, 0.2, 1.0]
+                } else {
+                    [0.0; 4]
+                }
+            }),
             &hooks,
         )
         .unwrap()
@@ -582,7 +638,27 @@ fn the_stroke_pass_measures_its_radius_and_colours_the_shape_distance() {
         opacity: 100.0,
     };
     assert!((render::outline::radius(100.0, 200, 100) - 5.3).abs() < 1e-3);
-    assert_eq!(render::outline::radius(0.0, 200, 100), 1.0, "thin, never zero");
+    assert_eq!(
+        render::outline::radius(0.0, 200, 100),
+        1.0,
+        "thin, never zero"
+    );
+    // The distance field is charged like a layer image: one f64 per pixel plus five lines of
+    // scratch, 168,000 bytes here, so a budget under it refuses the stroke.
+    let budget = |limit| Hooks {
+        limit,
+        ..Hooks::default()
+    };
+    assert!(matches!(
+        render::outline::apply(layer(), &stroke, &budget(167_999)),
+        Err(render::Error::Budget { .. })
+    ));
+    let charged = budget(168_000);
+    render::outline::apply(layer(), &stroke, &charged).unwrap();
+    assert_eq!(
+        charged.peak.load(std::sync::atomic::Ordering::SeqCst),
+        168_000
+    );
     let out = render::outline::apply(layer(), &stroke, &hooks).unwrap();
     let at = |x: usize| out.pixels()[50 * 200 + x];
     assert_eq!(at(99), [0.2, 0.2, 0.2, 1.0], "the person is untouched");
@@ -605,12 +681,18 @@ fn the_stroke_pass_measures_its_radius_and_colours_the_shape_distance() {
     .unwrap();
     let out = render::outline::apply(soft, &stroke, &hooks).unwrap();
     let edge = out.pixels()[50 * 200 + 100];
-    assert!((edge[3] - 1.0).abs() < 1e-5, "0.25 + 0.75 of white: {edge:?}");
+    assert!(
+        (edge[3] - 1.0).abs() < 1e-5,
+        "0.25 + 0.75 of white: {edge:?}"
+    );
     assert!((edge[0] - (0.05 + 0.75)).abs() < 1e-5, "{edge:?}");
     // Nothing opaque: nothing to outline.
-    let empty = Image::from_working_pixels(8, 8, std::iter::repeat_n([0.0; 4], 64), &hooks).unwrap();
+    let empty =
+        Image::from_working_pixels(8, 8, std::iter::repeat_n([0.0; 4], 64), &hooks).unwrap();
     assert_eq!(
-        render::outline::apply(empty, &stroke, &hooks).unwrap().pixels(),
+        render::outline::apply(empty, &stroke, &hooks)
+            .unwrap()
+            .pixels(),
         vec![[0.0; 4]; 64].as_slice()
     );
 }
