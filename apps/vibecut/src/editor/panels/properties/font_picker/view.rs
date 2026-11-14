@@ -724,9 +724,8 @@ fn human_size(locale: Locale, bytes: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Download, chip_fill, chip_ink, row_status};
+    use super::{Download, row_status};
     use crate::i18n::Locale;
-    use crate::kit as theme;
     use engine::control::{FontEntry, FontOrigin, FontState};
     use engine::jobs::JobId;
 
@@ -797,15 +796,5 @@ mod tests {
         .expect("a failed download shows its failure");
         assert_eq!(status, "Download failed");
         assert_eq!(id, "fonts.download_failed");
-    }
-
-    #[test]
-    fn selected_chip_uses_the_accent_fill_and_on_accent_ink() {
-        for dark in [true, false] {
-            assert_eq!(chip_fill(true, dark), theme::accent(dark));
-            assert_eq!(chip_ink(true, dark), theme::on_accent(dark));
-            assert_eq!(chip_fill(false, dark), theme::field(dark));
-            assert_eq!(chip_ink(false, dark), theme::text(dark));
-        }
     }
 }

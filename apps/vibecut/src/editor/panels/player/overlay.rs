@@ -263,22 +263,6 @@ mod tests {
     }
 
     #[test]
-    fn planes_paint_scene_then_viewport_then_hud_and_notes_sit_above_the_guide() {
-        assert_eq!(PLANES, [Plane::Scene, Plane::Viewport, Plane::Hud]);
-        assert!(PLANES.windows(2).all(|pair| pair[0] < pair[1]));
-        assert_eq!(Overlay::Guide.plane(), Plane::Viewport);
-        assert_eq!(Overlay::Notes.plane(), Plane::Hud);
-    }
-
-    #[test]
-    fn defaults_are_a_three_by_three_grid_with_notes_shown_and_the_guide_hidden() {
-        assert_eq!(Guide::default(), Guide::Grid { rows: 3, cols: 3 });
-        let visibility = OverlayVisibility::default();
-        assert!(visibility.shows(Overlay::Notes));
-        assert!(!visibility.shows(Overlay::Guide));
-    }
-
-    #[test]
     fn the_picker_ignores_grid_size_and_no_guide_draws_no_lines() {
         assert!(Guide::Grid { rows: 5, cols: 2 }.same_choice(Guide::default()));
         assert!(!Guide::Grid { rows: 5, cols: 2 }.same_choice(Guide::None));

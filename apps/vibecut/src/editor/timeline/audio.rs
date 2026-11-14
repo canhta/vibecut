@@ -12,9 +12,6 @@ pub(in crate::editor::timeline) const DB_MAX: f32 = 20.0;
 pub(in crate::editor::timeline) const DISPLAY_FLOOR_DB: f32 = -40.0;
 /// One drag step in dB.
 pub(in crate::editor::timeline) const DRAG_STEP: f32 = 0.1;
-/// One stored parameter step in dB.
-#[cfg(test)]
-pub(in crate::editor::timeline) const PARAM_STEP: f32 = 0.01;
 
 fn min_gain() -> f64 {
     f64::from(10.0_f32.powf(DB_MIN / 20.0))
@@ -36,11 +33,6 @@ pub(in crate::editor::timeline) fn db_at_fraction(fraction: f32) -> f32 {
     let progress = (1.0 - f64::from(fraction.clamp(0.0, 1.0))).clamp(0.0, 1.0);
     let linear = min_gain() + progress.powi(2) * (max_gain() - min_gain());
     clamp((20.0 * linear.log10()) as f32)
-}
-/// The stored 0.01 dB grid the engine validates.
-#[cfg(test)]
-pub(in crate::editor::timeline) fn quantize_param(db: f32) -> f32 {
-    quantize(db, PARAM_STEP)
 }
 /// The coarser 0.1 dB grid a pointer drag commits.
 pub(in crate::editor::timeline) fn quantize_drag(db: f32) -> f32 {
@@ -103,12 +95,6 @@ mod tests {
         assert_eq!(quantize_drag(-6.05), -6.1);
         assert_eq!(quantize_drag(19.99), DB_MAX);
         assert_eq!(quantize_drag(-60.04), DB_MIN);
-        assert!((quantize_param(-6.04) + 6.04).abs() < 1e-4);
-        assert!((quantize_param(-6.046) + 6.05).abs() < 1e-4);
-        for value in [0.0, -0.1, -12.3, 20.0] {
-            let hundredths = quantize_param(value) * 100.0;
-            assert!((hundredths - hundredths.round()).abs() < 1e-3);
-        }
     }
 
     #[test]

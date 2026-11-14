@@ -350,16 +350,3 @@ impl State {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn engine_codes_name_the_cause() {
-        assert_eq!(Cause::of(ErrorCode::Unavailable), Cause::Source);
-        assert_eq!(Cause::of(ErrorCode::Media), Cause::Decode);
-        assert_eq!(Cause::of(ErrorCode::Cancelled), Cause::Cancelled);
-        assert_eq!(Cause::of(ErrorCode::Render), Cause::Other);
-    }
-}

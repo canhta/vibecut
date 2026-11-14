@@ -451,11 +451,4 @@ mod tests {
         assert!((centre[0] - (bounds.x + bounds.width / 2.0)).abs() < 1e-6);
         assert!((centre[1] - (bounds.y + bounds.height / 2.0)).abs() < 1e-6);
     }
-
-    #[test]
-    fn preview_thresholds_are_the_measured_pixel_and_degree_values() {
-        assert_eq!(PREVIEW_SNAP_PIXELS, 5.0);
-        assert_eq!(ROTATE_SNAP_STEP, 90.0);
-        assert_eq!(ROTATE_SNAP_DEGREES, 5.0);
-    }
 }

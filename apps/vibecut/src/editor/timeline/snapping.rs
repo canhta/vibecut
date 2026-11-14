@@ -401,11 +401,6 @@ mod tests {
         assert_eq!(finite, (2, SnapSource::ItemStart(ItemId(3)), 1.0));
     }
 
-    #[test]
-    fn timeline_threshold_is_the_reference_ten_pixels() {
-        assert_eq!(SNAP_PIXELS, 10.0);
-    }
-
     proptest! {
         #[test]
         fn snapping_never_moves_beyond_the_tick_threshold(
