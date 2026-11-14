@@ -17,6 +17,7 @@ pub(in crate::editor) fn apply(
             Action::Activate(id) => port.request(Request::Action(id)),
             Action::Command(command) => command_on_selection(port, *command),
             Action::ReplaceMedia(item) => port.request(Request::ReplaceMedia(item)),
+            Action::OpenTranscript(item) => port.request(Request::OpenTranscript(item)),
             Action::DownloadClip { item, mode } => port.request(Request::Lifecycle(
                 crate::services::lifecycle::EditorAction::ClipDownload { item, mode },
             )),

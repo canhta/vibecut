@@ -45,8 +45,8 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 | [Text library](assets.md#text-library-textlib) | 10 | 2 | 2 | 4 | 0 | 1 | 1 | 0 | 0 | 2 | 6 |
 | [Stickers](assets.md#stickers-stick) | 12 | 4 | 1 | 1 | 0 | 4 | 2 | 1 | 1 | 7 | 0 |
 | [Templates](assets.md#templates-tmpl) | 7 | 0 | 0 | 6 | 0 | 0 | 1 | 0 | 0 | 0 | 5 |
-| [Captions panel](captions.md#captions-panel-caps) | 42 | 20 | 11 | 7 | 0 | 4 | 0 | 4 | 5 | 18 | 14 |
-| [Transcript editing](captions.md#transcript-editing-transcript) | 16 | 1 | 5 | 9 | 1 | 0 | 0 | 0 | 1 | 5 | 1 |
+| [Captions panel](captions.md#captions-panel-caps) | 42 | 21 | 10 | 7 | 0 | 4 | 0 | 4 | 5 | 18 | 14 |
+| [Transcript editing](captions.md#transcript-editing-transcript) | 16 | 2 | 5 | 8 | 1 | 0 | 0 | 0 | 2 | 5 | 1 |
 | [Effects](catalogues.md#effects-fx) | 17 | 9 | 4 | 2 | 0 | 0 | 2 | 3 | 3 | 6 | 2 |
 | [Transitions](catalogues.md#transitions-trans) | 16 | 9 | 2 | 1 | 0 | 3 | 1 | 2 | 1 | 9 | 1 |
 | [Filters](catalogues.md#filters-filt) | 9 | 7 | 1 | 0 | 0 | 0 | 1 | 1 | 1 | 4 | 0 |
@@ -56,11 +56,11 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 | [Text item](properties-other.md#text-item-ptext) | 31 | 17 | 8 | 5 | 0 | 0 | 1 | 3 | 7 | 15 | 5 |
 | [Caption item](properties-other.md#caption-item-pcap) | 8 | 1 | 4 | 2 | 0 | 1 | 0 | 0 | 3 | 3 | 2 |
 | [Sticker, effect, filter and adjustment items](properties-other.md#sticker-effect-filter-and-adjustment-items-pother) | 17 | 7 | 6 | 3 | 0 | 1 | 0 | 0 | 5 | 9 | 3 |
-| [Timeline](timeline.md#timeline-tl) | 95 | 44 | 11 | 26 | 2 | 10 | 2 | 13 | 5 | 45 | 5 |
+| [Timeline](timeline.md#timeline-tl) | 96 | 50 | 10 | 22 | 2 | 10 | 2 | 13 | 7 | 48 | 5 |
 | [Keyframes](timeline.md#keyframes-key) | 14 | 10 | 3 | 0 | 0 | 1 | 0 | 2 | 2 | 7 | 1 |
 | [Player](player-export.md#player-play) | 24 | 16 | 4 | 1 | 0 | 3 | 0 | 5 | 5 | 12 | 0 |
 | [Export](player-export.md#export-exp) | 31 | 15 | 7 | 5 | 0 | 1 | 3 | 2 | 8 | 11 | 3 |
 | [AI chat](ai-shorts.md#ai-chat-agent) | 17 | 9 | 3 | 2 | 1 | 1 | 1 | 5 | 3 | 4 | 1 |
 | [Long video to shorts](ai-shorts.md#long-video-to-shorts-shorts) | 24 | 9 | 7 | 4 | 0 | 2 | 2 | 8 | 2 | 5 | 3 |
 | [States](states.md#states-state) | 12 | 7 | 3 | 0 | 1 | 0 | 1 | 2 | 2 | 4 | 3 |
-| **Total** | **667** | **316** | **121** | **129** | **7** | **53** | **41** | **98** | **72** | **262** | **102** |
+| **Total** | **668** | **324** | **119** | **124** | **7** | **53** | **41** | **98** | **75** | **265** | **102** |

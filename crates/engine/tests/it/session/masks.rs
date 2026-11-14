@@ -445,13 +445,14 @@ fn mask_point_clipboard_rides_the_item_payload_and_pastes_in_one_undo_step() {
     assert_eq!(s.history_len(), history);
     assert_eq!(s.mask_point_clipboard_len(), 2);
     assert!(
-        !s.can_paste_items(Tick::ZERO),
+        !s.can_paste_items(Tick::ZERO, None),
         "an item Paste refuses mask points"
     );
     assert!(
         s.apply(Command::PasteItems {
             at: Tick::ZERO,
             source: ItemPasteSource::Stored,
+            track: None,
         })
         .is_err()
     );

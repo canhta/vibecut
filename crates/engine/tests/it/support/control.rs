@@ -411,6 +411,33 @@ pub(crate) fn with_keyframes(seed: &Session) -> Session {
         .unwrap();
     Session::new(Project::new(data).unwrap(), 10).unwrap()
 }
+/// The seed with two Video items on the empty track 3, one second long and one second apart:
+/// the only gap is from 1 s to 2 s.
+pub(crate) fn with_gap(seed: &Session) -> Session {
+    let mut data = seed.project().data().clone();
+    let track = data
+        .scene_mut()
+        .timeline
+        .overlays
+        .iter_mut()
+        .find(|track| track.id == TrackId(3))
+        .expect("seed empty track");
+    track.items = [(20, 0), (21, 2)]
+        .into_iter()
+        .map(|(id, seconds)| {
+            testkit::item::item(
+                ItemId(id),
+                ItemParams::Overlay(OverlayParams {
+                    color: Color([0, 64, 128, 255]),
+                }),
+            )
+            .source(SourceRange::new(Tick::ZERO, Tick(time::TICKS_PER_SECOND)).unwrap())
+            .start(Tick(seconds * time::TICKS_PER_SECOND))
+            .build()
+        })
+        .collect();
+    Session::new(Project::new(data).unwrap(), 10).unwrap()
+}
 /// The seed plus one real mono audio asset (id 97) for waveform command examples.
 pub(crate) fn with_waveform(seed: &Session, path: &Path) -> Session {
     let mut data = seed.project().data().clone();

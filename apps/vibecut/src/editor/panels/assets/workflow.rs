@@ -13,7 +13,7 @@ mod stickers;
 mod transition;
 pub(super) use transition::{cuts, refusal, selected_cut};
 
-use super::{AssetsTab, State};
+use super::{AssetsTab, CaptionsSection, State};
 use crate::editor::{Port, Result};
 
 impl State {
@@ -34,6 +34,33 @@ impl State {
             port.sync();
         }
         port.store_preference("assets_tab", serde_json::to_value(tab)?);
+        Ok(())
+    }
+
+    /// Open the captions transcript pane on one clip: show the Captions tab's Auto page and
+    /// select the words whose output range overlaps the clip.
+    pub(in crate::editor) fn open_transcript(
+        &mut self,
+        port: &mut Port<'_>,
+        item: project::ItemId,
+    ) -> Result<()> {
+        let span = port
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| &track.items)
+            .find(|candidate| candidate.id == item)
+            .and_then(|candidate| candidate.end().ok().map(|end| (candidate.start, end)))
+            .ok_or(crate::editor::Error::Invalid("transcript target"))?;
+        self.remember_assets_tab(port, AssetsTab::Captions)?;
+        self.captions_section = CaptionsSection::Auto;
+        self.prepare_captions(port.read.budget)?;
+        if let Some(panel) = &mut self.captions {
+            panel.select_words_in(&*port.session, span);
+        }
         Ok(())
     }
 }

@@ -80,6 +80,24 @@ impl Subtitles {
         self.transcript.view = Some((project.clone(), Arc::new(view)));
     }
 
+    /// Open the pane on one clip: select every measured word whose output range overlaps
+    /// `span`, replacing the earlier word selection.
+    pub(in crate::editor) fn select_words_in(&mut self, session: &Session, span: (Tick, Tick)) {
+        self.transcript_refresh(session);
+        let Some((_, view)) = self.transcript.view.clone() else {
+            return;
+        };
+        let (start, end) = span;
+        self.transcript.clear_words();
+        for cue in &view.cues {
+            for word in &cue.words {
+                if word.output.start() < end && start < word.output.end() {
+                    self.transcript.words.insert(word.id.clone());
+                }
+            }
+        }
+    }
+
     /// Words and cues of every caption item in the active scene, below the cue list.
     pub(super) fn transcript_ui(
         &mut self,

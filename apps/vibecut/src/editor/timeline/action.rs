@@ -74,6 +74,8 @@ pub(in crate::editor) enum Action {
     },
     /// Open the native media picker to replace one clip's source; the window owns the dialog.
     ReplaceMedia(ItemId),
+    /// Open the captions transcript pane on one clip and select its words; the frame routes it.
+    OpenTranscript(ItemId),
     /// Download one clip (`export.clip`); the window owns the save dialog.
     DownloadClip {
         item: ItemId,

@@ -274,6 +274,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
             Fixture::Loudness => s = with_loudness(&s, &wav),
             Fixture::MaskPath => s = crate::support::control::with_mask_path(&s),
             Fixture::Keyframes => s = crate::support::control::with_keyframes(&s),
+            Fixture::Gap => s = crate::support::control::with_gap(&s),
             Fixture::Captions => {
                 s = with_waveform(&s, &wav);
                 let req = request(

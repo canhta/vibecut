@@ -196,15 +196,16 @@ impl Session {
             && !items.is_empty()
             && super::ItemClipboard::can_capture(self.project().data(), items)
     }
-    /// Current playhead/track admission for the desktop item Paste action.
-    pub fn can_paste_items(&self, at: Tick) -> bool {
+    /// Current admission for the desktop item Paste action: at `at` on the copied tracks, or,
+    /// with `track`, every copied item on that one track.
+    pub fn can_paste_items(&self, at: Tick, track: Option<project::TrackId>) -> bool {
         if self.transaction_active() {
             return false;
         }
         let Some(payload) = &self.item_clipboard else {
             return false;
         };
-        payload.can_paste(self.project().data(), at)
+        payload.can_paste(self.project().data(), at, track)
     }
     /// Current admission for the desktop Paste attributes action: the stored entry is one
     /// copied item and every target is an item on an unlocked track.
@@ -798,7 +799,7 @@ impl Session {
     /// End of the last item Paste in this command tree, for repeated-paste advance.
     fn pasted_span_end(&self, command: &Command) -> Option<Tick> {
         match command {
-            Command::PasteItems { at, source } => {
+            Command::PasteItems { at, source, .. } => {
                 let payload = match source {
                     crate::ItemPasteSource::Stored => self.item_clipboard.as_deref(),
                     crate::ItemPasteSource::Payload { payload } => Some(payload),

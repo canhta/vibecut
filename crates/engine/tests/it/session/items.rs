@@ -2374,6 +2374,7 @@ fn clipboard_items_round_trip_preserves_content_and_advances_the_playhead() {
         .apply(Command::PasteItems {
             at: Tick(200),
             source: ItemPasteSource::Stored,
+            track: None,
         })
         .unwrap();
     assert_eq!(get(&s, paste(&pasted)[0].0).start, Tick(200));
@@ -2639,6 +2640,7 @@ fn clipboard_items_paste_offsets_overwrite_and_split_on_the_relative_track() {
         .apply(Command::PasteItems {
             at: Tick(20),
             source: ItemPasteSource::Stored,
+            track: None,
         })
         .unwrap();
     let created = paste(&out);
@@ -2664,6 +2666,7 @@ fn clipboard_items_paste_offsets_overwrite_and_split_on_the_relative_track() {
     s.apply(Command::PasteItems {
         at: Tick(10),
         source: ItemPasteSource::Payload { payload },
+        track: None,
     })
     .unwrap();
     let track = &s.project().data().scene().timeline.overlays[0];
@@ -2694,6 +2697,7 @@ fn clipboard_items_empty_fallback_and_incompatible_kinds_refuse_atomically() {
         !s.apply(Command::PasteItems {
             at: Tick::ZERO,
             source: ItemPasteSource::Stored,
+            track: None,
         })
         .unwrap()
         .changed
@@ -2709,6 +2713,7 @@ fn clipboard_items_empty_fallback_and_incompatible_kinds_refuse_atomically() {
         .apply(Command::PasteItems {
             at: Tick::ZERO,
             source: ItemPasteSource::Payload { payload },
+            track: None,
         })
         .unwrap();
     let created = paste(&out);
@@ -2726,6 +2731,7 @@ fn clipboard_items_empty_fallback_and_incompatible_kinds_refuse_atomically() {
         s.apply(Command::PasteItems {
             at: Tick::ZERO,
             source: ItemPasteSource::Payload { payload },
+            track: None,
         }),
         Err(EditError::Invalid("clipboard item kind"))
     ));
@@ -2739,6 +2745,7 @@ fn clipboard_items_empty_fallback_and_incompatible_kinds_refuse_atomically() {
         s.apply(Command::PasteItems {
             at: Tick::ZERO,
             source: ItemPasteSource::Payload { payload },
+            track: None,
         }),
         Err(EditError::NoAsset(AssetId(99)))
     ));
@@ -2761,6 +2768,7 @@ fn clipboard_items_empty_fallback_and_incompatible_kinds_refuse_atomically() {
         s.apply(Command::PasteItems {
             at: Tick(200),
             source: ItemPasteSource::Stored,
+            track: None,
         }),
         Err(EditError::Locked(TrackId(1)))
     ));
@@ -3114,4 +3122,91 @@ fn item_param_table_rows_declare_kinds_and_bounds_and_parse_by_wire_name() {
         Err(ParamParseError::Unknown)
     );
     assert_eq!(item_param("audio_gain"), None);
+}
+
+#[test]
+fn close_gap_closes_the_gap_under_the_time_or_every_gap_in_one_undo_step() {
+    let mut s = session();
+    let before = s.project().clone();
+    let track = s.project().data().scene().timeline.overlays[0].id;
+    // Items 10 (0..40) and 11 (60..100) leave one gap (40..60).
+    assert!(
+        s.apply(Command::CloseGap {
+            track,
+            at: Tick(10),
+        })
+        .is_err(),
+        "a time inside an item is not in a gap"
+    );
+    assert!(Arc::ptr_eq(&before, s.project()));
+    let out = s
+        .apply(Command::CloseGap {
+            track,
+            at: Tick(50),
+        })
+        .unwrap();
+    assert!(out.changed);
+    assert_eq!(get(&s, 10).start, Tick::ZERO);
+    assert_eq!(get(&s, 11).start, Tick(40));
+    assert_eq!(s.history_len().0, 1);
+    s.undo().unwrap();
+    assert!(Arc::ptr_eq(&before, s.project()));
+
+    // Close all gaps finds the same single gap; a second pass has nothing to close.
+    let out = s.apply(Command::CloseAllGaps { track }).unwrap();
+    assert!(out.changed);
+    assert_eq!(get(&s, 11).start, Tick(40));
+    assert_eq!(s.history_len().0, 1);
+    assert!(
+        s.apply(Command::CloseAllGaps { track }).is_err(),
+        "a track without gaps refuses"
+    );
+    s.undo().unwrap();
+    assert!(Arc::ptr_eq(&before, s.project()));
+
+    // A locked track refuses every gap close and keeps its items.
+    let mut locked = session();
+    locked
+        .apply(Command::SetTrackLocked {
+            track,
+            locked: true,
+        })
+        .unwrap();
+    let locked_before = locked.project().clone();
+    assert!(locked.apply(Command::CloseAllGaps { track }).is_err());
+    assert!(Arc::ptr_eq(&locked_before, locked.project()));
+}
+
+#[test]
+fn clipboard_paste_on_a_named_track_lands_every_copied_item_there() {
+    let mut s = session();
+    let track = s.project().data().scene().timeline.overlays[0].id;
+    s.apply(Command::CopyItems {
+        items: vec![ItemId(10)],
+    })
+    .unwrap();
+    assert!(s.can_paste_items(Tick(100), Some(track)));
+    let out = s
+        .apply(Command::PasteItems {
+            at: Tick(100),
+            source: ItemPasteSource::Stored,
+            track: Some(track),
+        })
+        .unwrap();
+    let created = paste(&out);
+    assert_eq!(created.len(), 1);
+    assert_eq!(get(&s, created[0].0).start, Tick(100));
+    let owner = s
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .find(|candidate| candidate.items.iter().any(|item| item.id == created[0]))
+        .unwrap();
+    assert_eq!(owner.id, track);
+    assert!(
+        !s.can_paste_items(Tick(100), Some(TrackId(999))),
+        "an unknown track refuses"
+    );
 }

@@ -48,7 +48,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | CAPS-31 | Translate dialog (from, to) | Partial | Differs | web captions translate | Page, not dialog |
 | CAPS-32 | Glossary, replace-edited | Ours | Proposed | | |
 | CAPS-33 | Export SRT, TXT, VTT | Done | Proposed | web captions export | In export dialog |
-| CAPS-34 | Transcript entry (clip menu) | Partial | Differs | 110011 | Pane in Captions tab |
+| CAPS-34 | Transcript entry (clip menu) | Done | Differs | 110011 | Pane in Captions tab |
 | CAPS-35 | Analyzing modal | Missing | Not captured | 110018 | |
 | CAPS-36 | Transcript view, sentence rows | Partial | Differs | 110059; [ui/editor.md](../ui/editor.md#transcript-pane) | Word level |
 | CAPS-37 | Tabs: All, Pauses, Repeats, Fillers | Partial | Not captured | 110106, 110110 | No Repeats, no tabs |
@@ -62,7 +62,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 
 | ID | Item | Function | UI/UX | Evidence | Gap / note |
 |---|---|---|---|---|---|
-| TRANSCRIPT-01 | Entry from clip menu | Missing | — | 14b/110011 | |
+| TRANSCRIPT-01 | Entry from clip menu | Done | Differs | 14b/110011 | Clip menu opens the Captions pane (TRANSCRIPT-03) |
 | TRANSCRIPT-02 | Analyzing modal, Cancel | Missing | — | 14b/110018 | |
 | TRANSCRIPT-03 | Separate result window | Differs | Differs | 14b/110059 | Ours: Captions-tab pane |
 | TRANSCRIPT-04 | Tabs All, Pauses, Repeats, Fillers | Partial | Not captured | 14b/110059 | Filler list only |

@@ -179,6 +179,7 @@ pub(super) fn execute_insert_item(
 pub(super) fn execute_paste_items(
     mut data: ProjectData,
     at: Tick,
+    track: Option<TrackId>,
     payload: Option<&crate::ItemClipboard>,
     created: &mut Vec<CreatedId>,
     next: &mut Option<u64>,
@@ -187,7 +188,7 @@ pub(super) fn execute_paste_items(
     let Some(payload) = payload else {
         return Ok(data);
     };
-    let destinations = payload.destinations(&data, at)?;
+    let destinations = payload.destinations(&data, at, track)?;
     if destinations.is_empty() {
         return Ok(data);
     }
@@ -595,6 +596,58 @@ pub(super) fn execute_split_all(
     for id in targets {
         data = execute_split_at(data, id, at, created, next, sources)?;
     }
+    Ok(data)
+}
+
+/// Close the empty spans of one unlocked track. With `at`, only the gap that contains that
+/// time closes; without it, every gap closes, the lead-in before the first item included.
+/// Each item after a closed gap moves left by the gap's length, so the track stays one
+/// contiguous run. Refuses when there is no gap to close; one undo step.
+pub(super) fn execute_close_gaps(
+    mut data: ProjectData,
+    track_id: TrackId,
+    at: Option<Tick>,
+) -> Result<ProjectData> {
+    let mut spans = Vec::new();
+    for item in &track(&mut data, track_id)?.items {
+        spans.push((item.start, item.end()?));
+    }
+    spans.sort_unstable();
+    let mut gaps = Vec::new();
+    let mut cursor = Tick::ZERO;
+    for (start, end) in spans {
+        if start > cursor {
+            gaps.push((cursor, start));
+        }
+        cursor = cursor.max(end);
+    }
+    let closing = match at {
+        Some(at) => {
+            let gap = gaps
+                .into_iter()
+                .find(|(start, end)| *start <= at && at < *end)
+                .ok_or(EditError::Invalid("no gap at time"))?;
+            vec![gap]
+        }
+        None if gaps.is_empty() => return Err(EditError::Invalid("no gap to close")),
+        None => gaps,
+    };
+    let cuts = crate::transitions::cuts(&data.scene().timeline);
+    let target = track(&mut data, track_id)?;
+    unlocked(target)?;
+    for item in &mut target.items {
+        let mut shift = Tick::ZERO;
+        for (start, end) in &closing {
+            if *end <= item.start {
+                shift = super::add(shift, super::sub(*end, *start)?)?;
+            }
+        }
+        if shift != Tick::ZERO {
+            item.start = super::sub(item.start, shift)?;
+        }
+    }
+    super::check_timeline(&mut data)?;
+    crate::transitions::revalidate(&mut data, &cuts);
     Ok(data)
 }
 

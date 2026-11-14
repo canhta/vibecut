@@ -1,7 +1,7 @@
 //! Transfers bounded snapshots through the in-app clipboard.
 use crate::KeyframeRef;
 use crate::session::{EditError, Result};
-use project::{AnimationPath, Channel, ColorComponent, Param, ProjectData};
+use project::{AnimationPath, Channel, ColorComponent, Param, ProjectData, TrackId};
 use serde::{Deserialize, Serialize, ser::SerializeSeq};
 use std::collections::{BTreeMap, BTreeSet};
 use time::Tick;
@@ -922,15 +922,17 @@ impl ItemClipboard {
         }
         Self::assemble(items).map(Some)
     }
-    pub(super) fn can_paste(&self, data: &ProjectData, at: Tick) -> bool {
-        self.destinations(data, at).is_ok()
+    pub(super) fn can_paste(&self, data: &ProjectData, at: Tick, track: Option<TrackId>) -> bool {
+        self.destinations(data, at, track).is_ok()
     }
-    /// Resolve every copied item to its relative track, or the last track of that
-    /// kind, before any edit. A locked target or a kind with no track refuses.
+    /// Resolve every copied item to its relative track, or the last track of that kind,
+    /// before any edit. With `track`, every item lands on that one track, which must carry
+    /// each item's kind. A locked target or a kind with no track refuses.
     pub(super) fn destinations(
         &self,
         data: &ProjectData,
         at: Tick,
+        track: Option<TrackId>,
     ) -> Result<Vec<Destination<'_>>> {
         if self.mask_points.is_some() {
             return Err(EditError::Invalid("clipboard holds mask points"));
@@ -952,14 +954,29 @@ impl ItemClipboard {
             if entry.item.content.kind() != entry.kind {
                 return Err(EditError::Invalid("clipboard item kind"));
             }
-            let tracks = kind_tracks(timeline, entry.kind);
-            let index = usize::try_from(entry.track).map_err(|_| {
-                EditError::Control(crate::session::wire::ControlError::InvalidParams)
-            })?;
-            let target = tracks
-                .get(index)
-                .or_else(|| tracks.last())
-                .ok_or(EditError::Invalid("clipboard track kind"))?;
+            let target = match track {
+                Some(id) => {
+                    let target = timeline
+                        .iter()
+                        .find(|candidate| candidate.id == id)
+                        .ok_or(EditError::NoTrack(id))?;
+                    if target.kind != entry.kind {
+                        return Err(EditError::Invalid("clipboard track kind"));
+                    }
+                    target
+                }
+                None => {
+                    let tracks = kind_tracks(timeline, entry.kind);
+                    let index = usize::try_from(entry.track).map_err(|_| {
+                        EditError::Control(crate::session::wire::ControlError::InvalidParams)
+                    })?;
+                    tracks
+                        .get(index)
+                        .or_else(|| tracks.last())
+                        .copied()
+                        .ok_or(EditError::Invalid("clipboard track kind"))?
+                }
+            };
             if target.locked {
                 return Err(EditError::Locked(target.id));
             }

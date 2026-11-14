@@ -2,8 +2,8 @@
 
 use crate::editor::timeline::{
     Action, BTreeSet, Color32, Context, DragMode, DropZone, FontId, ICON_BUTTON, Icon, Id, ItemId,
-    ItemView, Locale, Rect, State, Text, Tick, TimelineLayout, Tool, TrackKind, TrackRow, Vec2,
-    egui, icons, theme,
+    ItemView, Locale, Rect, State, Text, Tick, TimelineLayout, Tool, TrackId, TrackKind, TrackRow,
+    Vec2, egui, icons, theme,
     view::{Ink, tr},
 };
 use crate::i18n;
@@ -273,6 +273,15 @@ impl State {
             },
         );
         self.remember("timeline.marquee", &background);
+        // A right click on empty row space fixes the row and the time it was made at; the
+        // menu opens only for a row, never above the top track (103135 and its negative).
+        if background.secondary_clicked() {
+            let pointer = ui.input(|input| input.pointer.interact_pos());
+            self.row_menu_target = pointer.and_then(|pos| self.row_target(rows, layout, pos));
+        }
+        if let Some((track, at)) = self.row_menu_target {
+            background.context_menu(|ui| self.row_menu_ui(cx, ui, track, at));
+        }
         let modifiers = ui.ctx().input(|input| input.modifiers);
         for item in items {
             self.paint_item(cx, ui, layout, item, modifiers);
@@ -532,6 +541,116 @@ impl State {
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &message));
         self.remember_with("timeline.refusal", None, Some(message), &response);
     }
+    /// The row and the time under a pointer in the timeline body, `None` above or below the rows.
+    fn row_target(
+        &self,
+        rows: &[TrackRow],
+        layout: &TimelineLayout,
+        pos: egui::Pos2,
+    ) -> Option<(TrackId, Tick)> {
+        rows.iter()
+            .find(|row| {
+                let top = layout.body.top() + row.top - self.vertical_scroll;
+                pos.y >= top && pos.y <= top + row.height
+            })
+            .map(|row| {
+                (
+                    row.id,
+                    self.tick_at(pos.x, layout.body.left()).max(Tick::ZERO),
+                )
+            })
+    }
+
+    /// The empty-row menu (103135): Close gap and Close all gaps on the row's track, Select and
+    /// Paste at the time of the click. Each entry pushes one registered engine command or action.
+    fn row_menu_ui(&mut self, cx: &Context<'_>, ui: &mut egui::Ui, track: TrackId, at: Tick) {
+        let Some(row) = cx
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .find(|candidate| candidate.id == track)
+        else {
+            return;
+        };
+        let gaps = track_gaps(row);
+        let ink = Ink::of(cx);
+        let gap_here = gaps.iter().any(|(start, end)| *start <= at && at < *end);
+        let close = ui.add_enabled(
+            !row.locked && gap_here,
+            egui::Button::image_and_text(
+                icons::tinted(Icon::ArrowsInLineHorizontal, 16.0, ink.text()),
+                tr(cx, Text::CloseGap),
+            ),
+        );
+        self.remember_icon(
+            format!("track.{}.close_gap", track.0),
+            Some(Icon::ArrowsInLineHorizontal.name()),
+            &close,
+        );
+        if close.clicked() {
+            self.push(Action::Command(Box::new(engine::Command::CloseGap {
+                track,
+                at,
+            })));
+            ui.close();
+        }
+        let close_all = ui.add_enabled(
+            !row.locked && !gaps.is_empty(),
+            egui::Button::image_and_text(
+                icons::tinted(Icon::ArrowsInLineHorizontal, 16.0, ink.text()),
+                tr(cx, Text::CloseAllGaps),
+            ),
+        );
+        self.remember_icon(
+            format!("track.{}.close_all_gaps", track.0),
+            Some(Icon::ArrowsInLineHorizontal.name()),
+            &close_all,
+        );
+        if close_all.clicked() {
+            self.push(Action::Command(Box::new(engine::Command::CloseAllGaps {
+                track,
+            })));
+            ui.close();
+        }
+        ui.separator();
+        let ids: BTreeSet<ItemId> = row.items.iter().map(|item| item.id).collect();
+        ui.menu_button(tr(cx, Text::Select), |ui| {
+            let select = ui.add_enabled(
+                !ids.is_empty(),
+                egui::Button::new(tr(cx, Text::SelectTrackClips)),
+            );
+            if select.clicked() {
+                self.push(Action::Marquee(ids.clone()));
+                self.push(Action::SettleSelection);
+                ui.close();
+            }
+        });
+        ui.separator();
+        let paste = ui.add_enabled(
+            cx.session.can_paste_items(at, Some(track)),
+            egui::Button::image_and_text(
+                icons::tinted(Icon::Copy, 16.0, ink.text()),
+                tr(cx, Text::ActionEditPaste),
+            ),
+        );
+        self.remember_icon(
+            format!("track.{}.row_paste", track.0),
+            Some(Icon::Copy.name()),
+            &paste,
+        );
+        if paste.clicked() {
+            self.push(Action::Command(Box::new(engine::Command::PasteItems {
+                at,
+                source: engine::ItemPasteSource::Stored,
+                track: Some(track),
+            })));
+            ui.close();
+        }
+    }
+
     /// The context menu shared by a header's right click and its more button.
     fn track_menu(&mut self, cx: &Context<'_>, ui: &mut egui::Ui, row: &TrackRow) {
         let ink = Ink::of(cx);
@@ -799,6 +918,26 @@ pub(in crate::editor) fn add_track_command(
 
 /// Inner shadow at the left edge of the lanes (221643 x 132-137: dark to panel over 5 px).
 const SHADOW: f32 = 5.0;
+/// The empty spans Close gap closes on a track: the lead-in before the first item and every
+/// space between two items, as the engine counts them. Trailing space is not a gap.
+fn track_gaps(track: &project::Track) -> Vec<(Tick, Tick)> {
+    let mut spans: Vec<(Tick, Tick)> = track
+        .items
+        .iter()
+        .filter_map(|item| item.end().ok().map(|end| (item.start, end)))
+        .collect();
+    spans.sort_unstable();
+    let mut gaps = Vec::new();
+    let mut cursor = Tick::ZERO;
+    for (start, end) in spans {
+        if start > cursor {
+            gaps.push((cursor, start));
+        }
+        cursor = cursor.max(end);
+    }
+    gaps
+}
+
 fn shadow_mesh(rect: Rect, dark: egui::Color32) -> egui::Mesh {
     let mut mesh = egui::Mesh::default();
     let clear = egui::Color32::TRANSPARENT;
