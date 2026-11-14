@@ -59,8 +59,8 @@ impl State {
             })
             .flatten()
             .filter(|asset| cx.visuals.availability(asset) == media::AssetAvailability::Missing);
-        let name = missing_asset
-            .map(|asset| cx.staged_project().data().media_library.display_name(asset));
+        let name =
+            missing_asset.map(|asset| cx.staged_project().data().media_library.display_name(asset));
         let label = name.as_deref().unwrap_or(item.label.as_str());
         // The clip's name reaches assistive tools and tests as the node's label.
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
@@ -149,21 +149,28 @@ impl State {
         );
         // A missing clip lays its name and the two relink lines out together so they never
         // overlap; every other clip centres its name.
-        let rows = missing_asset.is_some().then(|| {
-            let band_label = item.kind == TrackKind::Video && item.overlay.is_none();
-            missing_rows(inner, inner.intersect(visible), band_label)
-        });
+        // A video clip names its file in the top band, 4 from its left edge (`14e/203747`).
+        let band_label = item.kind == TrackKind::Video && item.overlay.is_none();
+        let rows = missing_asset
+            .is_some()
+            .then(|| missing_rows(inner, inner.intersect(visible), band_label));
         let label_y = match rows {
             Some(rows) => rows.name,
+            None if band_label => Some(inner.top() + theme::size::CLIP_BAND / 2.0),
             None => Some(visible.center().y),
+        };
+        let label_left = if band_label {
+            visible.left() + theme::size::CLIP_LABEL_INSET + theme::size::CLIP_PILL_PAD
+        } else {
+            visible.left() + 22.0
         };
         let pill = theme::clip_pill(dark).gamma_multiply(dim);
         let font = FontId::proportional(theme::type_size::BODY);
-        let mut label_end = visible.left() + 22.0;
+        let mut label_end = label_left;
         if let (false, Some(label_y)) = (label.is_empty(), label_y) {
             // Every clip label sits on a pill, grouped or not (`14e/203747`).
             let galley = painter.layout_no_wrap(label.to_owned(), font.clone(), text);
-            let at = egui::pos2(visible.left() + 22.0, label_y - galley.size().y / 2.0);
+            let at = egui::pos2(label_left, label_y - galley.size().y / 2.0);
             label_end = at.x + galley.size().x;
             painter.rect_filled(
                 Rect::from_min_max(

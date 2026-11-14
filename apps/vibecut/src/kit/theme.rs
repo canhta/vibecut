@@ -468,6 +468,10 @@ pub(crate) mod size {
     pub const CLIP_PILL_ALPHA: u8 = 24;
     /// Pill edge to text ink: 5.0 to 5.7 px on the video and text label pills.
     pub const CLIP_PILL_PAD: f32 = 2.5;
+    /// A video clip's label pill starts 8 px from the clip's left edge, centred in the 17
+    /// top band (`203747`, `203841`: edge x 366, pill x 374; pill y 1749-1776 in band
+    /// 1745-1779).
+    pub const CLIP_LABEL_INSET: f32 = 4.0;
     /// Between a pill and the next one: label pill to badge on the text clip (3.95 px), glyph
     /// pill to name pill on the sticker (3.9 px) and the video clip (about 4 px, hidden by the
     /// playhead).
