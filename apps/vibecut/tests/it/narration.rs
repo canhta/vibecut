@@ -342,7 +342,9 @@ fn choose(harness: &mut Harness<Editor>, dropdown: &str, index: usize) {
     click(harness, &format!("{dropdown}.{index}"));
 }
 
-/// Step the frame until a widget appears; the worker thread finishes on its own time.
+/// Step the frame until a widget appears; the worker thread finishes on its own time. The
+/// consent sheet is a modal: egui lays a new one out invisibly on its first frame, so one more
+/// frame passes before the widget can be clicked.
 fn wait_for(harness: &mut Harness<Editor>, id: &str) {
     let deadline = Instant::now() + Duration::from_secs(20);
     while !has_widget(harness, id) {
@@ -350,6 +352,7 @@ fn wait_for(harness: &mut Harness<Editor>, id: &str) {
         std::thread::sleep(Duration::from_millis(2));
         harness.run_steps(1);
     }
+    harness.run_steps(1);
 }
 
 fn narrations(harness: &Harness<Editor>) -> Vec<(ItemId, project::Narration)> {
