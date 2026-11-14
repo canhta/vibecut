@@ -1158,3 +1158,95 @@ fn png_sequence_renders_in_a_job_and_publishes_one_renamed_directory() {
         "no staging directory is left behind"
     );
 }
+
+#[test]
+fn export_at_defaults_fits_the_desktop_project_budget() {
+    let Some(source) = testkit::oracle::generate(
+        &testkit::fixture::dir("export-budget"),
+        "export at defaults",
+        "hd.mp4",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=s=1920x1080:r=30:d=2",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=r=48000:d=2",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+        ],
+    ) else {
+        return;
+    };
+    let asset = media::SourceAsset::import(media::AssetId(1), source).unwrap();
+    let mut data = project::Project::empty(project::ProjectId(0), "".into())
+        .unwrap()
+        .into_data();
+    data.canvas.width = 1920;
+    data.canvas.height = 1080;
+    data.canvas.fps = asset
+        .probe()
+        .streams
+        .iter()
+        .find_map(|s| s.frame_rate)
+        .unwrap();
+    let duration = asset.probe().duration.unwrap();
+    data.assets.push(asset);
+    let item = |id, params| testkit::item::item(project::ItemId(id), params);
+    let span = time::TimeRange::new(time::Tick::ZERO, duration).unwrap();
+    for (track, kind, items) in [
+        (
+            1,
+            project::TrackKind::Video,
+            vec![
+                item(0, project::ItemParams::Video(project::VideoParams::plain()))
+                    .asset(media::AssetId(1))
+                    .source(span)
+                    .build(),
+            ],
+        ),
+        (
+            2,
+            project::TrackKind::Text,
+            vec![
+                item(
+                    1,
+                    project::ItemParams::Text(project::TextParams {
+                        content: "Default text".into(),
+                        ..Default::default()
+                    }),
+                )
+                .source(span)
+                .build(),
+            ],
+        ),
+    ] {
+        data.scene_mut().timeline.insert_track(project::Track {
+            id: project::TrackId(track),
+            name: "".into(),
+            kind,
+            muted: false,
+            hidden: false,
+            locked: false,
+            items,
+        });
+    }
+    let p = Arc::new(project::Project::new(data).unwrap());
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("out.mp4");
+    // Desktop sizing: the 1 GiB default cache limit, one project scope.
+    let budget = ByteBudget::new(1 << 30).unwrap().project_scope().unwrap();
+    let mut runner = runner(&budget, Arc::new(SystemClock::default()));
+    let settings = render::ExportSettings::from_project(&p);
+    let (id, _) =
+        engine::submit_export(&mut runner, key(0), p, span, settings, path.clone()).unwrap();
+    let s = complete(&mut runner, id);
+    assert_eq!(s.state, JobState::Completed, "{:?}", s.error);
+    assert!(path.exists());
+}

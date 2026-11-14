@@ -83,6 +83,11 @@ impl ByteBudget {
     pub fn child(&self, limit: u64) -> Result<Self> {
         Self::with_parent(limit, Some(self.clone()))
     }
+    /// A per-project scope that may use the parent's whole limit. The parent still
+    /// bounds the app aggregate; a smaller inner cap refused 1080p exports.
+    pub fn project_scope(&self) -> Result<Self> {
+        self.child(self.snapshot()?.limit)
+    }
     /// Whether both handles retain the same accounting policy, including its child scope.
     pub fn same_policy(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)

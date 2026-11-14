@@ -252,7 +252,7 @@ impl Inbox {
     ) -> engine::control::Result<Value> {
         let id = session.project().data().id;
         if !self.projects.contains_key(&id) {
-            self.register_project(id, self.budget.child(512 << 20)?)?;
+            self.register_project(id, self.budget.project_scope()?)?;
         }
         let Self {
             projects,
