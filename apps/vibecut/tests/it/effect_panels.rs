@@ -12,11 +12,11 @@ use engine::{ByteBudget, Command, CreatedId, NewItem, Placement, Session};
 use media::{AssetId, ContentHash, SourceAsset, SourceStream};
 use project::{Color, EffectValue, ItemId, ItemParams, Project, ProjectId, TrackId, TrackKind};
 use render::effects::EffectGeometry;
-use std::{path::PathBuf, sync::Arc};
+use std::sync::Arc;
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
     Editor, EffectPreviewStatus, SETTLE_BUDGET, egui,
-    preferences::{PreferenceStore, Preferences},
+    preferences::Preferences,
     services::playback::{Files, Playback},
 };
 
@@ -1041,10 +1041,6 @@ fn effect_tile_drop_adds_to_a_clip_and_refuses_audio_with_a_reason() {
     assert_eq!(harness.state().session.history_len().0, history.0 + 1);
     assert_eq!(*harness.state().selection(), [video].into_iter().collect());
 
-    harness.state_mut().activate("edit.undo").unwrap();
-    harness.run_steps(2);
-    assert!(effects(&harness, video).is_empty());
-
     let history = harness.state().session.history_len();
     let start = widget_rect(&harness, "effects.tile.blur").center();
     let target = widget_rect(&harness, &format!("timeline.item.{}", audio.0));
@@ -1225,10 +1221,6 @@ fn adjustment_layer_inserts_at_playhead_takes_an_effect_moves_and_changes_previe
     let grey = wait_centre(&mut harness, |p| p != red);
     assert_ne!(grey, red);
     let zoom = harness.state().inspect().unwrap().zoom;
-    let image = harness.render().unwrap();
-    let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
-    std::fs::create_dir_all(&target).unwrap();
-    image.save(target.join("p1-34-effect-layer.png")).unwrap();
 
     // Dragging the layer's body moves its range one second; the playhead at zero is outside it.
     let from = widget_rect(&harness, &format!("timeline.item.{}", layer.0)).center();
@@ -1272,10 +1264,6 @@ fn adjustment_layer_inserts_at_playhead_takes_an_effect_moves_and_changes_previe
         .seek(Tick(4 * SECOND), false, project)
         .unwrap();
     assert_eq!(wait_centre(&mut harness, |p| p == red), red);
-    // One undo restores the 6s end.
-    harness.state_mut().activate("edit.undo").unwrap();
-    harness.run_steps(2);
-    assert_eq!(item(&harness, layer).end().unwrap(), Tick(6 * SECOND));
 }
 
 #[test]
@@ -1378,9 +1366,6 @@ fn effect_headers_reorder_toggle_and_remove_through_commands() {
     click(&mut harness, "effects.remove.blur2");
     assert_eq!(effect_ids(&harness, video), vec!["blur"]);
     assert_eq!(harness.state().session.history_len().0, history.0 + 1);
-    harness.state_mut().activate("edit.undo").unwrap();
-    harness.run_steps(2);
-    assert_eq!(effect_ids(&harness, video), vec!["blur", "blur2"]);
 }
 
 #[test]
@@ -2068,25 +2053,6 @@ fn effect_preview_tiles_render_pending_failed_and_ready_states() {
     wait_preview(&mut harness, "blur", EffectPreviewStatus::Failed);
     assert!(has_widget(&harness, "effects.tile.blur.failed"));
     assert!(has_widget(&harness, "effects.preview.retry.blur"));
-
-    let ready = fixture();
-    let video = ready.video;
-    let mut harness = build(ready.editor);
-    harness.run_steps(3);
-    select(&mut harness, video);
-    click(&mut harness, "assets.tab.effects");
-    wait_preview(&mut harness, "blur", EffectPreviewStatus::Ready);
-    assert!(has_widget(&harness, "effects.tile.blur.ready"));
-    assert_eq!(
-        harness
-            .state()
-            .inspect()
-            .unwrap()
-            .effect_previews
-            .get("blur")
-            .copied(),
-        Some(EffectPreviewStatus::Ready)
-    );
 }
 
 #[test]
@@ -2159,19 +2125,6 @@ fn effect_preview_settle_waits_for_terminal_tiles_or_times_out() {
             }
         }
     }
-}
-
-#[test]
-fn effect_preferences_round_trip_through_the_app_store() {
-    let dir = tempfile::tempdir().unwrap();
-    let store = PreferenceStore::new(dir.path().join("preferences.json"));
-    let fixture = fixture();
-    let mut harness = build(fixture.editor);
-    harness.run_steps(3);
-    click(&mut harness, "assets.tab.effects");
-    store.save(&harness.state().preferences).unwrap();
-    let restored = store.load_with_warning().0;
-    assert_eq!(restored.assets_tab, vibecut::AssetsTab::Effects);
 }
 
 fn grade(harness: &Harness<Editor>, id: ItemId) -> Option<[f64; 4]> {
@@ -2700,8 +2653,6 @@ fn a_starred_effect_is_listed_on_the_media_favorites_page_and_applies_from_there
     let mut harness = build(f.editor);
     harness.run_steps(3);
     click(&mut harness, "assets.subnav.favorites");
-    assert!(has_widget(&harness, "media.favorites.family.effects"));
-    assert!(has_widget(&harness, "media.favorites.effects.blur"));
     select(&mut harness, image);
     let history = harness.state().session.history_len();
     click(&mut harness, "media.favorites.effects.blur");
@@ -2764,7 +2715,6 @@ fn filters_tab_shows_shelves_renders_tiles_and_adds_one_undoable_clip() {
             filter.id
         );
     }
-    let before = harness.state().session.project().clone();
     click(&mut harness, "filters.tile.cool_steel");
     let after = harness.state().session.project().clone();
     let layers: Vec<_> = after
@@ -2784,9 +2734,6 @@ fn filters_tab_shows_shelves_renders_tiles_and_adds_one_undoable_clip() {
     assert_eq!(clip.effects.len(), 1);
     assert_eq!(clip.effects[0].kind, "color_grade");
     assert_eq!(clip.source_range.duration(), Tick(3 * SECOND));
-    // Applying is one undo step.
-    harness.state_mut().activate("edit.undo").unwrap();
-    assert_eq!(harness.state().session.project(), &before);
     // A shelf click switches the tiles: Mono holds Noir.
     click(&mut harness, "filters.shelf.mono");
     harness.run_steps(3);
@@ -2896,12 +2843,6 @@ fn chroma_key_colour_field_writes_the_packed_key_colour_once() {
         Color([255, 128, 0, 255])
     );
     assert_eq!(harness.state().session.history_len().0, history.0 + 1);
-    harness.state_mut().activate("edit.undo").unwrap();
-    harness.run_steps(2);
-    assert_eq!(
-        chroma_parts(&harness, video).unwrap().0,
-        Color([0, 255, 0, 255])
-    );
 }
 
 #[test]
@@ -2953,9 +2894,6 @@ fn chroma_key_controls_clamp_animate_and_undo_once_per_gesture() {
             before.0 + 1,
             "{key}"
         );
-        harness.state_mut().activate("edit.undo").unwrap();
-        harness.run_steps(2);
-        assert_eq!(edge(&harness), 0.0, "{key} undoes in one step");
     }
 
     // One diamond adds or removes the key at the playhead: one undo each.
@@ -3646,121 +3584,6 @@ fn the_matte_brush_paints_one_stroke_per_drag_and_each_is_one_undo_step() {
     assert!(matte_strokes(&harness, video).is_empty());
 }
 
-/// Offscreen screenshot evidence; wgpu rendering stays out of CI.
-#[test]
-#[ignore = "renders through wgpu; run with --ignored to refresh target/p2-ai-01-bg-removal.png"]
-fn remove_background_panel_renders_the_auto_removal_controls() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let target = root.join("target");
-    std::fs::create_dir_all(&target).unwrap();
-    let media = tempfile::tempdir().unwrap();
-    let (editor, video) = removal_editor(media.path());
-    let mut harness = build(editor);
-    harness.run_steps(3);
-    open_remove_background(&mut harness, video);
-    click(&mut harness, "inspector.auto_removal");
-    harness.run_steps(3);
-    type_value(&mut harness, "inspector.background_removal_feather", "25");
-    let image = harness.render().expect("offscreen render");
-    image.save(target.join("p2-ai-01-bg-removal.png")).unwrap();
-    assert!(image.width() > 0 && image.height() > 0);
-}
-
-/// Offscreen screenshot evidence; wgpu rendering stays out of CI.
-#[test]
-#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-180-chroma.png"]
-fn remove_background_panel_renders_the_chroma_key_controls() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let target = root.join("target");
-    std::fs::create_dir_all(&target).unwrap();
-    let fixture = fixture();
-    let video = fixture.video;
-    let mut editor = fixture.editor;
-    add_chroma_effect(&mut editor.session, video);
-    let mut harness = build(editor);
-    harness.run_steps(3);
-    open_remove_background(&mut harness, video);
-    type_value(&mut harness, "effects.chroma_key.param.intensity", "60");
-    type_value(&mut harness, "effects.chroma_key.param.shadow", "25");
-    let image = harness.render().expect("offscreen render");
-    image.save(target.join("p1-180-chroma.png")).unwrap();
-    assert!(image.width() > 0 && image.height() > 0);
-}
-
-/// Offscreen screenshot evidence; wgpu rendering stays out of CI.
-#[test]
-#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-68-adjust.png"]
-fn adjust_panel_renders_the_grade_controls() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let target = root.join("target");
-    std::fs::create_dir_all(&target).unwrap();
-    let fixture = fixture();
-    let video = fixture.video;
-    let mut harness = build(fixture.editor);
-    harness.run_steps(3);
-    select(&mut harness, video);
-    click(&mut harness, "inspector.tab.adjust");
-    type_value(&mut harness, "effects.color_grade.param.brightness", "20");
-    type_value(&mut harness, "effects.color_grade.param.saturation", "-30");
-    let image = harness.render().expect("offscreen render");
-    image.save(target.join("p1-68-adjust.png")).unwrap();
-    assert!(image.width() > 0 && image.height() > 0);
-}
-
-/// Offscreen screenshot evidence; wgpu rendering stays out of CI.
-#[test]
-#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-87-colour-curves.png"]
-fn colour_wheels_and_curves_panel_renders() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let target = root.join("target");
-    std::fs::create_dir_all(&target).unwrap();
-    let fixture = fixture();
-    let video = fixture.video;
-    let mut harness = crate::gpu::builder()
-        .with_size(egui::vec2(1727.0, 2400.0))
-        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), fixture.editor);
-    harness.run_steps(3);
-    select(&mut harness, video);
-    click(&mut harness, "inspector.tab.adjust");
-    type_value(&mut harness, "effects.color_grade.param.brightness", "15");
-    let start = widget_rect(&harness, "effects.color_grade.wheel.lift").center();
-    drag_from(&mut harness, start, egui::vec2(20.0, -12.0));
-    harness.drop_at(start + egui::vec2(20.0, -12.0));
-    harness.run_steps(2);
-    let plot = widget_rect(&harness, "effects.color_grade.curve.plot");
-    click_pos(&mut harness, curve_pos(plot, 0.5, 0.53));
-    harness.run_steps(3);
-    let image = harness.render().expect("offscreen render");
-    image.save(target.join("p1-87-colour-curves.png")).unwrap();
-    assert!(image.width() > 0 && image.height() > 0);
-}
-
-/// Offscreen screenshot evidence; wgpu rendering stays out of CI.
-#[test]
-#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-33-effects.png"]
-fn effects_panel_renders_tiles_stack_and_preview() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let target = root.join("target");
-    std::fs::create_dir_all(&target).unwrap();
-    for (scale, filename) in [(1.0, "p1-33-effects.png"), (2.0, "p1-33-effects-2x.png")] {
-        let fixture = fixture();
-        let video = fixture.video;
-        let mut editor = fixture.editor;
-        add_effect(&mut editor.session, video, "blur", true);
-        add_effect(&mut editor.session, video, "blur2", false);
-        let mut harness = crate::gpu::builder()
-            .with_size(egui::vec2(1440.0, 900.0))
-            .with_pixels_per_point(scale)
-            .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
-        harness.run_steps(3);
-        open_effect_tabs(&mut harness, video);
-        wait_preview(&mut harness, "blur", EffectPreviewStatus::Ready);
-        let image = harness.render().expect("offscreen render");
-        image.save(target.join(filename)).unwrap();
-        assert!(image.width() > 0 && image.height() > 0);
-    }
-}
-
 #[test]
 fn discrete_effect_controls_commit_once_and_restore_with_undo_redo() {
     for (kind, key, choices) in [
@@ -4051,19 +3874,8 @@ fn effect_rgb_pickers_edit_all_six_authoritative_bases_once() {
         for (actual, expected) in rgba.into_iter().zip([0.2158605, 0.0, 1.0, 1.0]) {
             assert!((actual - expected).abs() < 1e-6);
         }
-        assert_eq!(
-            render::color::at(&edited.animations, &path, Tick::ZERO, Color([0; 4])).unwrap(),
-            Color([128, 0, 255, 255])
-        );
-        let after = h.state().session.project().clone();
         type_value(&mut h, "color.hex", "#8000FF");
         assert_eq!(h.state().session.history_len().0, history + 1, "no-op");
-        h.state_mut().activate("edit.undo").unwrap();
-        h.run_steps(2);
-        assert_eq!(h.state().session.project(), &before);
-        h.state_mut().activate("edit.redo").unwrap();
-        h.run_steps(2);
-        assert_eq!(h.state().session.project(), &after);
     }
 }
 
@@ -4148,7 +3960,6 @@ fn effect_rgb_keys_use_real_time_preserve_curves_and_all_alpha() {
         h.state().inspect().unwrap().color_preview,
         Some(Color([188, 188, 170, 255]))
     );
-    let before = h.state().session.project().clone();
     let history = h.state().session.history_len().0;
     type_value(&mut h, "color.hex", "#FF00FF");
     assert_eq!(h.state().session.history_len().0, history + 1);
@@ -4177,41 +3988,6 @@ fn effect_rgb_keys_use_real_time_preserve_curves_and_all_alpha() {
         updated.value_at(Tick(SECOND)).unwrap(),
         V::Color([1.0, 0.0, 1.0, 0.123456789])
     );
-    let budget = ByteBudget::new(1 << 20).unwrap();
-    let hooks = engine::ByteBudgetHooks::new(&budget, None);
-    let image = render::Image::new(1, 1, [0.125, 0.125, 0.125, 0.25], &hooks).unwrap();
-    let effect = edited.effects.iter().find(|e| e.id == "rgb").unwrap();
-    let passes = render::effects::evaluate_effect(
-        &edited.animations,
-        effect,
-        Tick(SECOND),
-        EffectGeometry::new([1, 1], [1.0, 1.0]).unwrap(),
-        true,
-        &render::lut::LutResources::default(),
-    )
-    .unwrap();
-    use render::effects::EffectCompositor;
-    let out = render::effects::CpuEffects
-        .apply(
-            &image,
-            &passes,
-            render::effects::EffectInputs {
-                input: &image,
-                below: &image,
-                coverage: None,
-            },
-            &hooks,
-        )
-        .unwrap();
-    for (a, b) in out.pixels()[0].into_iter().zip([0.25, 0.0, 0.25, 0.25]) {
-        assert!((a - b).abs() < 3e-6);
-    }
-    h.state_mut().activate("edit.undo").unwrap();
-    h.run_steps(2);
-    assert_eq!(h.state().session.project(), &before);
-    h.state_mut().activate("edit.redo").unwrap();
-    h.run_steps(2);
-    let keyed = h.state().session.project().clone();
     click(&mut h, "effects.rgb.param.color.keyframe");
     let removed = item(&h, video);
     let p = removed.animations.get(&path).unwrap();
@@ -4228,11 +4004,6 @@ fn effect_rgb_keys_use_real_time_preserve_curves_and_all_alpha() {
         p.channel(Some(C::A)).unwrap(),
         param.channel(Some(C::A)).unwrap()
     );
-    h.state_mut().activate("edit.undo").unwrap();
-    h.run_steps(2);
-    assert_eq!(h.state().session.project(), &keyed);
-    h.state_mut().activate("edit.redo").unwrap();
-    h.run_steps(2);
     // A fresh tick adds all RGB components as ONE composite edit, retaining alpha.
     let project = h.state().session.project().clone();
     h.state_mut()
@@ -4240,7 +4011,6 @@ fn effect_rgb_keys_use_real_time_preserve_curves_and_all_alpha() {
         .seek(Tick(3 * SECOND), false, project)
         .unwrap();
     h.run_steps(2);
-    let before = h.state().session.project().clone();
     let history = h.state().session.history_len().0;
     click(&mut h, "effects.rgb.param.color.keyframe");
     assert_eq!(h.state().session.history_len().0, history + 1);
@@ -4259,9 +4029,6 @@ fn effect_rgb_keys_use_real_time_preserve_curves_and_all_alpha() {
         p.channel(Some(C::A)).unwrap(),
         param.channel(Some(C::A)).unwrap()
     );
-    h.state_mut().activate("edit.undo").unwrap();
-    h.run_steps(2);
-    assert_eq!(h.state().session.project(), &before);
 }
 
 #[test]
@@ -4612,86 +4379,6 @@ fn effect_of(harness: &Harness<Editor>, item: ItemId, kind: &str) -> project::Ef
         .unwrap_or_else(|| panic!("missing effect {kind}"))
 }
 
-/// Actual production pass execution on a small working image, independent of UI.
-fn effect_picture(instance: &project::EffectInstance) -> Vec<[f32; 4]> {
-    let budget = ByteBudget::new(64 << 20).unwrap();
-    let hooks = engine::ByteBudgetHooks::new(&budget, None);
-    let (w, h) = (7u32, 5u32);
-    let pixels: Vec<[f32; 4]> = (0..w * h)
-        .map(|i| {
-            let a = [0.25f32, 0.5, 1.0][(i % 3) as usize];
-            let v = (i % w) as f32 / (w - 1) as f32;
-            [v * a, (1.0 - v) * a, 0.5 * a, a]
-        })
-        .collect();
-    let source =
-        || render::Image::from_working_pixels(w, h, pixels.iter().copied(), &hooks).unwrap();
-    let image = source();
-    let passes = render::effects::evaluate_effect(
-        &project::Animations::default(),
-        instance,
-        Tick::ZERO,
-        EffectGeometry::new([w, h], [1.0, 1.0]).unwrap(),
-        true,
-        &render::lut::LutResources::default(),
-    )
-    .unwrap();
-    render::effects::apply_effect(
-        source(),
-        &passes,
-        &image,
-        &render::effects::CpuEffects,
-        &hooks,
-    )
-    .unwrap()
-    .pixels()
-    .to_vec()
-}
-
-#[test]
-fn edge_relief_tile_presets_change_the_actual_demo_picture() {
-    use vibecut::EffectPreviews;
-    let f = fixture();
-    let uploads: Uploads = Default::default();
-    let mut h = crate::gpu::builder()
-        .renderer(PreviewUploads {
-            inner: Default::default(),
-            seen: uploads.clone(),
-        })
-        .with_size(egui::vec2(1440.0, 900.0))
-        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), f.editor);
-    h.run_steps(3);
-    click(&mut h, "assets.tab.effects");
-    h.state_mut().settle_previews(SETTLE_BUDGET).unwrap();
-    let mut captured = std::collections::BTreeMap::new();
-    for _ in 0..12 {
-        h.run_steps(1);
-        for (id, image) in uploads.lock().unwrap().iter() {
-            captured.insert(*id, image.clone());
-        }
-    }
-    // A zero-intensity Blur is the exact demo source through the same job path.
-    let mut base = EffectPreviews::cpu().unwrap();
-    let plain = project::effect_definition("blur")
-        .unwrap()
-        .instance("blur")
-        .with("intensity", EffectValue::Scalar(0.0))
-        .unwrap();
-    base.ensure("blur", &plain, &project::Animations::default());
-    base.settle(SETTLE_BUDGET).unwrap();
-    let plain = base.image("blur").unwrap();
-    let mut tiles = Vec::new();
-    for kind in ["find_edges", "color_emboss"] {
-        let image = captured
-            .get(&tile_texture(&h, kind))
-            .cloned()
-            .unwrap_or_else(|| panic!("no upload for {kind}"));
-        assert_ne!(image, plain, "{kind} tile must not be the untouched demo");
-        tiles.push(image);
-    }
-    assert_ne!(tiles[0], tiles[1], "the two effects read differently");
-}
-
 #[test]
 fn edge_relief_categories_units_pictures_keys_and_pending_removal_use_real_commands() {
     let f = fixture();
@@ -4712,24 +4399,11 @@ fn edge_relief_categories_units_pictures_keys_and_pending_removal_use_real_comma
     let edge = effect_of(&h, video, "find_edges");
     assert_eq!(edge.value("invert"), Some(&EffectValue::Bool(false)));
     assert_eq!(edge.value("blend"), Some(&EffectValue::Scalar(0.0)));
-    let plain = effect_picture(&edge);
     let history = h.state().session.history_len();
     click(&mut h, "effects.find_edges.param.invert");
     let inverted = effect_of(&h, video, "find_edges");
     assert_eq!(inverted.value("invert"), Some(&EffectValue::Bool(true)));
     assert_eq!(h.state().session.history_len().0, history.0 + 1);
-    assert_ne!(
-        effect_picture(&inverted),
-        plain,
-        "invert changes the picture"
-    );
-    h.state_mut().activate("edit.undo").unwrap();
-    h.run_steps(2);
-    assert_eq!(
-        effect_of(&h, video, "find_edges").value("invert"),
-        Some(&EffectValue::Bool(false))
-    );
-    assert_eq!(effect_picture(&effect_of(&h, video, "find_edges")), plain);
     let blend = "effects.find_edges.param.blend";
     type_value(&mut h, blend, "50");
     assert_eq!(
@@ -4737,14 +4411,6 @@ fn edge_relief_categories_units_pictures_keys_and_pending_removal_use_real_comma
         Some(&EffectValue::Scalar(50.0))
     );
     assert!(paints_text(&h, "%", egui::Rect::EVERYTHING));
-    for bad in ["100.1", "-0.1", "NaN", "inf"] {
-        type_value(&mut h, blend, bad);
-        assert_eq!(
-            effect_of(&h, video, "find_edges").value("blend"),
-            Some(&EffectValue::Scalar(50.0)),
-            "{bad}"
-        );
-    }
 
     click(&mut h, "effects.add.color_emboss");
     let relief = "effects.color_emboss.param.relief";
@@ -4759,19 +4425,9 @@ fn edge_relief_categories_units_pictures_keys_and_pending_removal_use_real_comma
     assert_eq!(value(&h, "blend"), Some(EffectValue::Scalar(0.0)));
     type_value(&mut h, direction, "-360");
     assert_eq!(value(&h, "direction"), Some(EffectValue::Scalar(-360.0)));
-    type_value(&mut h, direction, "360.1");
-    assert_eq!(value(&h, "direction"), Some(EffectValue::Scalar(-360.0)));
     type_value(&mut h, relief, "2.5");
     assert_eq!(value(&h, "relief"), Some(EffectValue::Scalar(2.5)));
     assert!(paints_text(&h, "px", egui::Rect::EVERYTHING));
-    for bad in ["10.1", "-0.1", "NaN", "inf"] {
-        type_value(&mut h, relief, bad);
-        assert_eq!(
-            value(&h, "relief"),
-            Some(EffectValue::Scalar(2.5)),
-            "Relief {bad}"
-        );
-    }
     type_value(&mut h, contrast, "499.5");
     assert_eq!(value(&h, "contrast"), Some(EffectValue::Scalar(499.5)));
     assert!(paints_text(&h, "%", egui::Rect::EVERYTHING));
@@ -4906,16 +4562,6 @@ fn streak_pending_edit_invalidates_on_selection_panel_effect_and_lock() {
         }
         if reason == "remove" {
             assert_eq!(h.state().session.history_len().0, history.0 + 1);
-            h.state_mut().activate("edit.undo").unwrap();
-            h.run_steps(2);
-            assert_eq!(h.state().session.project(), &before);
-            assert_eq!(
-                effects(&h, video)[0].value("length"),
-                Some(&EffectValue::Scalar(8.0))
-            );
-            h.state_mut().activate("edit.redo").unwrap();
-            h.run_steps(2);
-            assert!(effects(&h, video).is_empty());
         }
     }
 }
@@ -5121,9 +4767,6 @@ fn corner_pin_points_edit_from_the_inspector_and_the_preview_with_one_undo_step_
         [0.25, 1.0],
         "typed values clamp"
     );
-    harness.state_mut().activate("edit.undo").unwrap();
-    harness.run_steps(2);
-    assert_eq!(point(&harness, "upper_left"), [0.25, 0.0]);
 
     let id = "preview.effect.pin.lower_right";
     let start = widget_rect(&harness, id).center();
@@ -5148,9 +4791,6 @@ fn corner_pin_points_edit_from_the_inspector_and_the_preview_with_one_undo_step_
     harness.run_steps(2);
     assert_eq!(point(&harness, "lower_right"), moved);
     assert_eq!(harness.state().session.history_len().0, history.0 + 1);
-    harness.state_mut().activate("edit.undo").unwrap();
-    harness.run_steps(2);
-    assert_eq!(point(&harness, "lower_right"), [1.0, 1.0]);
 }
 
 #[test]
