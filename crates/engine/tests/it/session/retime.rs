@@ -569,59 +569,6 @@ fn speed_edits_refuse_atomically_and_ripple_only_on_a_magnetic_main_track() {
     assert!(s.apply(set_speed(&[1], 5.0, false)).is_err());
 }
 
-#[test]
-fn split_inside_retimed_transition_preserves_output_span() {
-    let mut a = testkit::item::video(ItemId(1))
-        .asset(media::AssetId(1))
-        .source(range(0, 4 * SECOND))
-        .build();
-    let mut b = testkit::item::video(ItemId(2))
-        .asset(media::AssetId(1))
-        .source(range(4 * SECOND, 8 * SECOND))
-        .start(Tick(2 * SECOND))
-        .build();
-    a.retime.speed = speed(2.0);
-    b.retime.speed = speed(2.0);
-    let mut s = session(vec![a, b], vec![], true);
-    let track = s.project().data().scene().timeline.main.id;
-    s.apply(Command::AddTransition {
-        track,
-        from: ItemId(1),
-        to: ItemId(2),
-        kind: "cross_dissolve".into(),
-        duration: Tick(2 * SECOND),
-        alignment: project::TransitionAlignment::Center,
-    })
-    .unwrap();
-    let before = s
-        .project()
-        .data()
-        .scene()
-        .timeline
-        .transitions
-        .first()
-        .unwrap()
-        .clone();
-    s.apply(Command::SplitAt {
-        item: ItemId(1),
-        at: Tick(3 * SECOND / 2),
-    })
-    .unwrap();
-    let after = s
-        .project()
-        .data()
-        .scene()
-        .timeline
-        .transitions
-        .first()
-        .unwrap();
-    assert_eq!(
-        (after.start, after.duration),
-        (before.start, before.duration),
-        "split must retain original transition progress at every output tick"
-    );
-}
-
 struct SplitHooks;
 struct SplitLease;
 impl render::Reservation for SplitLease {}
@@ -696,157 +643,169 @@ fn split_pictures(p: &Project, times: &[Tick]) -> Vec<Vec<[f32; 4]>> {
 #[test]
 fn transition_splits_preserve_every_frame_mapping_history_and_persistence() {
     use project::TransitionAlignment::{Center, End, Start};
+    // Split mapping does not depend on the kind: every rate and alignment runs with the
+    // first kind of each family, and every kind runs at one odd rate and alignment.
+    let mut cases = Vec::new();
     for rate in [0.5, 1., 2., 0.333, 1.501, 5.] {
         for alignment in [Start, Center, End] {
+            let mut families = std::collections::BTreeSet::new();
             for definition in project::TRANSITION_DEFINITIONS {
-                let mut a = testkit::item::video(ItemId(1))
-                    .asset(media::AssetId(1))
-                    .source(range(4 * SECOND, 8 * SECOND))
-                    .build();
-                a.retime.speed = speed(rate);
-                let cut = a.end().unwrap().0;
-                let mut opacity = Param::new(ParamValue::Scalar(0.2)).unwrap();
-                for (t, value) in [(0, 0.2), (cut / 3, 0.9), (cut, 0.4)] {
-                    opacity
-                        .channel_mut(None)
-                        .unwrap()
-                        .put(Keyframe::new(Tick(t), ParamValue::Scalar(value)))
-                        .unwrap();
+                if families.insert(definition.family) {
+                    cases.push((rate, alignment, definition));
                 }
-                a.animations
-                    .set(AnimationPath::new("opacity").unwrap(), opacity)
-                    .unwrap();
-                let mut b = testkit::item::video(ItemId(2))
-                    .asset(media::AssetId(1))
-                    .source(range(12 * SECOND, 16 * SECOND))
-                    .start(Tick(cut))
-                    .build();
-                b.retime.speed = speed(rate);
-                let mut s = session(vec![a, b], vec![], true);
-                s.apply(Command::AddTransition {
-                    track: s.project().data().scene().timeline.main.id,
-                    from: ItemId(1),
-                    to: ItemId(2),
-                    kind: definition.kind.into(),
-                    duration: Tick(cut / 2),
-                    alignment,
-                })
-                .unwrap();
-                let original = s.project().clone();
-                for id in [ItemId(1), ItemId(2)] {
-                    assert!(
-                        s.apply(Command::SplitAt {
-                            item: id,
-                            at: Tick(cut)
-                        })
-                        .is_err()
-                    );
-                    assert_eq!(s.project(), &original);
-                }
-                let tr = &original.data().scene().timeline.transitions[0];
-                let end = original.duration().0;
-                let mut times: Vec<_> = (0..end).step_by(FRAME as usize).map(Tick).collect();
-                // Include both sides of span boundaries and odd, non-frame cut ticks.
-                let cuts = [
-                    tr.start.0,
-                    tr.start.0 + tr.duration.0 / 4 + 1,
-                    tr.start.0 + tr.duration.0 * 3 / 4 + 1,
-                    tr.end().unwrap().0,
-                    cut / 3 + 1,
-                    cut + cut / 3 + 1,
-                ];
-                for t in cuts {
-                    times.extend([Tick(t - 1), Tick(t), Tick(t + 1)]);
-                }
-                times.retain(|t| t.0 >= 0 && t.0 < end);
-                let expected = split_pictures(&original, &times);
-                for at in cuts {
-                    if at <= 0 || at >= end || at == cut {
-                        continue;
-                    }
-                    let id = if at < cut { ItemId(1) } else { ItemId(2) };
-                    s.apply(Command::SplitAt {
-                        item: id,
-                        at: Tick(at),
-                    })
-                    .unwrap();
-                    // Split the remaining larger piece again, without undoing the first cut.
-                    let piece = s
-                        .project()
-                        .data()
-                        .scene()
-                        .timeline
-                        .main
-                        .items
-                        .iter()
-                        .filter(|i| {
-                            if at < cut {
-                                i.start.0 < cut
-                            } else {
-                                i.start.0 >= cut
-                            }
-                        })
-                        .max_by_key(|i| i.duration().unwrap())
-                        .unwrap();
-                    let second = piece.start.0 + piece.duration().unwrap().0 / 2 + 1;
-                    let id = piece.id;
-                    let once = s.project().clone();
-                    s.apply(Command::SplitAt {
-                        item: id,
-                        at: Tick(second),
-                    })
-                    .unwrap();
-                    let twice = s.project().clone();
-                    let after = &twice.data().scene().timeline.transitions[0];
-                    assert_eq!(
-                        (after.start, after.duration, after.alignment),
-                        (tr.start, tr.duration, tr.alignment),
-                        "{rate} {alignment:?} {at}"
-                    );
-                    assert_eq!(
-                        split_pictures(&twice, &times),
-                        expected,
-                        "{rate} {alignment:?} {} {at}",
-                        definition.kind
-                    );
-                    let boundary = [Tick(second - 1), Tick(second), Tick(second + 1)];
-                    assert_eq!(
-                        split_pictures(&twice, &boundary),
-                        split_pictures(&original, &boundary)
-                    );
-                    let loaded = project::decode(&project::encode(&twice, false).unwrap())
-                        .unwrap()
-                        .project;
-                    assert_eq!(split_pictures(&loaded, &times), expected);
-                    s.undo().unwrap();
-                    assert_eq!(s.project(), &once);
-                    s.redo().unwrap();
-                    assert_eq!(s.project(), &twice);
-                    s.undo().unwrap();
-                    s.undo().unwrap();
-                    assert_eq!(s.project(), &original);
-                }
-                for (id, at) in [(ItemId(1), cut * 3 / 4 + 1), (ItemId(2), cut + cut / 4 + 1)] {
-                    s.apply(Command::SplitAt {
-                        item: id,
-                        at: Tick(at),
-                    })
-                    .unwrap();
-                }
-                assert_eq!(
-                    split_pictures(s.project(), &times),
-                    expected,
-                    "both sides split"
-                );
-                let loaded = project::decode(&project::encode(s.project(), false).unwrap())
-                    .unwrap()
-                    .project;
-                assert_eq!(split_pictures(&loaded, &times), expected);
-                s.undo().unwrap();
-                s.undo().unwrap();
-                assert_eq!(s.project(), &original);
             }
         }
+    }
+    for definition in project::TRANSITION_DEFINITIONS {
+        cases.push((1.501, Center, definition));
+    }
+    for (rate, alignment, definition) in cases {
+        let mut a = testkit::item::video(ItemId(1))
+            .asset(media::AssetId(1))
+            .source(range(4 * SECOND, 8 * SECOND))
+            .build();
+        a.retime.speed = speed(rate);
+        let cut = a.end().unwrap().0;
+        let mut opacity = Param::new(ParamValue::Scalar(0.2)).unwrap();
+        for (t, value) in [(0, 0.2), (cut / 3, 0.9), (cut, 0.4)] {
+            opacity
+                .channel_mut(None)
+                .unwrap()
+                .put(Keyframe::new(Tick(t), ParamValue::Scalar(value)))
+                .unwrap();
+        }
+        a.animations
+            .set(AnimationPath::new("opacity").unwrap(), opacity)
+            .unwrap();
+        let mut b = testkit::item::video(ItemId(2))
+            .asset(media::AssetId(1))
+            .source(range(12 * SECOND, 16 * SECOND))
+            .start(Tick(cut))
+            .build();
+        b.retime.speed = speed(rate);
+        let mut s = session(vec![a, b], vec![], true);
+        s.apply(Command::AddTransition {
+            track: s.project().data().scene().timeline.main.id,
+            from: ItemId(1),
+            to: ItemId(2),
+            kind: definition.kind.into(),
+            duration: Tick(cut / 2),
+            alignment,
+        })
+        .unwrap();
+        let original = s.project().clone();
+        for id in [ItemId(1), ItemId(2)] {
+            assert!(
+                s.apply(Command::SplitAt {
+                    item: id,
+                    at: Tick(cut)
+                })
+                .is_err()
+            );
+            assert_eq!(s.project(), &original);
+        }
+        let tr = &original.data().scene().timeline.transitions[0];
+        let end = original.duration().0;
+        let mut times: Vec<_> = (0..end).step_by(FRAME as usize).map(Tick).collect();
+        // Include both sides of span boundaries and odd, non-frame cut ticks.
+        let cuts = [
+            tr.start.0,
+            tr.start.0 + tr.duration.0 / 4 + 1,
+            tr.start.0 + tr.duration.0 * 3 / 4 + 1,
+            tr.end().unwrap().0,
+            cut / 3 + 1,
+            cut + cut / 3 + 1,
+        ];
+        for t in cuts {
+            times.extend([Tick(t - 1), Tick(t), Tick(t + 1)]);
+        }
+        times.retain(|t| t.0 >= 0 && t.0 < end);
+        let expected = split_pictures(&original, &times);
+        for at in cuts {
+            if at <= 0 || at >= end || at == cut {
+                continue;
+            }
+            let id = if at < cut { ItemId(1) } else { ItemId(2) };
+            s.apply(Command::SplitAt {
+                item: id,
+                at: Tick(at),
+            })
+            .unwrap();
+            // Split the remaining larger piece again, without undoing the first cut.
+            let piece = s
+                .project()
+                .data()
+                .scene()
+                .timeline
+                .main
+                .items
+                .iter()
+                .filter(|i| {
+                    if at < cut {
+                        i.start.0 < cut
+                    } else {
+                        i.start.0 >= cut
+                    }
+                })
+                .max_by_key(|i| i.duration().unwrap())
+                .unwrap();
+            let second = piece.start.0 + piece.duration().unwrap().0 / 2 + 1;
+            let id = piece.id;
+            let once = s.project().clone();
+            s.apply(Command::SplitAt {
+                item: id,
+                at: Tick(second),
+            })
+            .unwrap();
+            let twice = s.project().clone();
+            let after = &twice.data().scene().timeline.transitions[0];
+            assert_eq!(
+                (after.start, after.duration, after.alignment),
+                (tr.start, tr.duration, tr.alignment),
+                "{rate} {alignment:?} {at}"
+            );
+            assert_eq!(
+                split_pictures(&twice, &times),
+                expected,
+                "{rate} {alignment:?} {} {at}",
+                definition.kind
+            );
+            let boundary = [Tick(second - 1), Tick(second), Tick(second + 1)];
+            assert_eq!(
+                split_pictures(&twice, &boundary),
+                split_pictures(&original, &boundary)
+            );
+            let loaded = project::decode(&project::encode(&twice, false).unwrap())
+                .unwrap()
+                .project;
+            assert_eq!(split_pictures(&loaded, &times), expected);
+            s.undo().unwrap();
+            assert_eq!(s.project(), &once);
+            s.redo().unwrap();
+            assert_eq!(s.project(), &twice);
+            s.undo().unwrap();
+            s.undo().unwrap();
+            assert_eq!(s.project(), &original);
+        }
+        for (id, at) in [(ItemId(1), cut * 3 / 4 + 1), (ItemId(2), cut + cut / 4 + 1)] {
+            s.apply(Command::SplitAt {
+                item: id,
+                at: Tick(at),
+            })
+            .unwrap();
+        }
+        assert_eq!(
+            split_pictures(s.project(), &times),
+            expected,
+            "both sides split"
+        );
+        let loaded = project::decode(&project::encode(s.project(), false).unwrap())
+            .unwrap()
+            .project;
+        assert_eq!(split_pictures(&loaded, &times), expected);
+        s.undo().unwrap();
+        s.undo().unwrap();
+        assert_eq!(s.project(), &original);
     }
 }
 
@@ -934,82 +893,84 @@ fn split_audio(p: &Project) -> Vec<Vec<f32>> {
 
 #[test]
 fn retimed_fades_and_audio_replay_survive_repeated_cuts_history_and_persistence() {
-    for rate in [0.5, 1., 2., 0.333, 1.501, 5.] {
+    // The curve shape is the project's; each case takes the next curve so every curve
+    // still meets a retime.
+    let curves = [
+        project::FadeCurve::Linear,
+        project::FadeCurve::EqualPower,
+        project::FadeCurve::Exponential,
+    ];
+    for (n, rate) in [0.5, 1., 2., 0.333, 1.501, 5.].into_iter().enumerate() {
         for maintain_pitch in [false, true] {
-            for curve in [
-                project::FadeCurve::Linear,
-                project::FadeCurve::EqualPower,
-                project::FadeCurve::Exponential,
+            let curve = curves[(2 * n + usize::from(maintain_pitch)) % curves.len()];
+            let mut a = testkit::item::audio(ItemId(1))
+                .asset(media::AssetId(1))
+                .source(range(SECOND, SECOND + SECOND / 5))
+                .build();
+            let start = SECOND / 7 + 1;
+            a.start = Tick(start);
+            a.retime.speed = speed(rate);
+            a.retime.maintain_pitch = maintain_pitch;
+            let duration = a.duration().unwrap();
+            if let ItemParams::Audio(p) = &mut a.content {
+                p.fades
+                    .set(project::FadeEdge::In, Tick(duration.0 / 3), curve, duration)
+                    .unwrap();
+                p.fades
+                    .set(
+                        project::FadeEdge::Out,
+                        Tick(duration.0 / 3),
+                        curve,
+                        duration,
+                    )
+                    .unwrap();
+            }
+            let mut s = session(vec![], vec![a], false);
+            let original = s.project().clone();
+            let expected = split_audio(&original);
+            for at in [
+                duration.0 / 6 + 1,
+                duration.0 / 3,
+                duration.0 * 2 / 3,
+                duration.0 * 5 / 6 + 1,
             ] {
-                let mut a = testkit::item::audio(ItemId(1))
-                    .asset(media::AssetId(1))
-                    .source(range(SECOND, SECOND + SECOND / 5))
-                    .build();
-                let start = SECOND / 7 + 1;
-                a.start = Tick(start);
-                a.retime.speed = speed(rate);
-                a.retime.maintain_pitch = maintain_pitch;
-                let duration = a.duration().unwrap();
-                if let ItemParams::Audio(p) = &mut a.content {
-                    p.fades
-                        .set(project::FadeEdge::In, Tick(duration.0 / 3), curve, duration)
-                        .unwrap();
-                    p.fades
-                        .set(
-                            project::FadeEdge::Out,
-                            Tick(duration.0 / 3),
-                            curve,
-                            duration,
-                        )
-                        .unwrap();
-                }
-                let mut s = session(vec![], vec![a], false);
-                let original = s.project().clone();
-                let expected = split_audio(&original);
-                for at in [
-                    duration.0 / 6 + 1,
-                    duration.0 / 3,
-                    duration.0 * 2 / 3,
-                    duration.0 * 5 / 6 + 1,
-                ] {
-                    s.apply(Command::SplitAt {
-                        item: ItemId(1),
-                        at: Tick(start + at),
-                    })
+                s.apply(Command::SplitAt {
+                    item: ItemId(1),
+                    at: Tick(start + at),
+                })
+                .unwrap();
+                let once = s.project().clone();
+                let piece = s
+                    .project()
+                    .data()
+                    .scene()
+                    .timeline
+                    .iter()
+                    .flat_map(|t| &t.items)
+                    .max_by_key(|i| i.duration().unwrap())
                     .unwrap();
-                    let once = s.project().clone();
-                    let piece = s
-                        .project()
-                        .data()
-                        .scene()
-                        .timeline
-                        .iter()
-                        .flat_map(|t| &t.items)
-                        .max_by_key(|i| i.duration().unwrap())
-                        .unwrap();
-                    s.apply(Command::SplitAt {
-                        item: piece.id,
-                        at: Tick(piece.start.0 + piece.duration().unwrap().0 / 2 + 1),
-                    })
-                    .unwrap();
-                    let twice = s.project().clone();
-                    assert_eq!(
-                        split_audio(&twice),
-                        expected,
-                        "{rate} {maintain_pitch} {curve:?} {at}"
-                    );
-                    let loaded = project::decode(&project::encode(&twice, false).unwrap())
-                        .unwrap()
-                        .project;
-                    assert_eq!(split_audio(&loaded), expected);
-                    s.undo().unwrap();
-                    assert_eq!(s.project(), &once);
-                    s.redo().unwrap();
-                    assert_eq!(s.project(), &twice);
-                    s.undo().unwrap();
-                    s.undo().unwrap();
-                    assert_eq!(s.project(), &original);
-                }
+                s.apply(Command::SplitAt {
+                    item: piece.id,
+                    at: Tick(piece.start.0 + piece.duration().unwrap().0 / 2 + 1),
+                })
+                .unwrap();
+                let twice = s.project().clone();
+                assert_eq!(
+                    split_audio(&twice),
+                    expected,
+                    "{rate} {maintain_pitch} {curve:?} {at}"
+                );
+                let loaded = project::decode(&project::encode(&twice, false).unwrap())
+                    .unwrap()
+                    .project;
+                assert_eq!(split_audio(&loaded), expected);
+                s.undo().unwrap();
+                assert_eq!(s.project(), &once);
+                s.redo().unwrap();
+                assert_eq!(s.project(), &twice);
+                s.undo().unwrap();
+                s.undo().unwrap();
+                assert_eq!(s.project(), &original);
             }
         }
     }

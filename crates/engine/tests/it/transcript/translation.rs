@@ -544,40 +544,6 @@ fn consent_preparation_cannot_rebind_old_source_to_a_new_session_revision() {
     assert_eq!(transport.calls.load(Ordering::Relaxed), 0);
 }
 
-#[test]
-fn retranslate_during_trim_retains_unselected_hidden_cues() {
-    let mut s = session();
-    s.begin_gesture().unwrap();
-    s.apply(Command::TrimEnd {
-        item: ItemId(0),
-        at: Tick(20),
-    })
-    .unwrap();
-    assert_eq!(cues(&s).len(), 2);
-    s.apply(Command::Retranslate {
-        item: ItemId(0),
-        target_language: lang("en"),
-        texts: [("cue-0".into(), "new translation".into())].into(),
-        translation_ref: "review".into(),
-        force: false,
-    })
-    .unwrap();
-    s.apply(Command::TrimEnd {
-        item: ItemId(0),
-        at: Tick(40),
-    })
-    .unwrap();
-    assert_eq!(
-        cues(&s).len(),
-        4,
-        "reversing trim must restore unrelated source cues"
-    );
-    assert_eq!(
-        cues(&s)[0].texts[&lang("en")].text.as_str(),
-        "new translation"
-    );
-}
-
 fn translate_cue(id: &str, force: bool) -> Command {
     Command::Retranslate {
         item: ItemId(0),

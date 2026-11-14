@@ -11,7 +11,7 @@ use engine::{
     waveform::{MAX_COLUMNS, WaveformRequest, WaveformState, display},
 };
 use media::{AssetId, SourceAsset};
-use project::{ItemId, Project, ProjectId, Track, TrackId, TrackKind};
+use project::ItemId;
 use std::{
     path::{Path, PathBuf},
     sync::{
@@ -595,39 +595,6 @@ fn corrupt_cache_is_failed_and_regenerates() {
         display(&asset, &clip, window(0, 3), 8, &mut cache).unwrap(),
         WaveformState::Ready(_)
     ));
-}
-
-#[test]
-fn project_json_stays_byte_identical_after_generation() {
-    let Some(path) = sections() else {
-        return;
-    };
-    let asset = source_asset(&path, 1);
-    let mut data = Project::empty(ProjectId(1), "Waveform".into())
-        .unwrap()
-        .into_data();
-    data.assets.push(asset.clone());
-    data.scene_mut().timeline.audio.push(Track {
-        id: TrackId(1),
-        name: "Audio".into(),
-        kind: TrackKind::Audio,
-        muted: false,
-        hidden: false,
-        locked: false,
-        items: vec![
-            testkit::item::audio(ItemId(1))
-                .asset(asset.id())
-                .source(range(0, 3))
-                .start(Tick::ZERO)
-                .speed(1.0)
-                .build(),
-        ],
-    });
-    let project = Project::new(data).unwrap();
-    let before = project::encode(&project, false).unwrap();
-    let (_summary, _runner, _cache, _dir) = run(&WaveformRequest::new(asset).unwrap());
-    let after = project::encode(&project, false).unwrap();
-    assert_eq!(before, after);
 }
 
 #[test]

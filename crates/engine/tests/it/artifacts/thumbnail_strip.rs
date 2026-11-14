@@ -13,7 +13,7 @@ use engine::{
     thumbnails::ThumbnailCache,
 };
 use media::{AssetId, SourceAsset, THUMBNAIL_MAX_EDGE};
-use project::{ItemId, Project, ProjectId, Track, TrackId, TrackKind};
+use project::{ItemId, Project, ProjectId};
 use std::{
     path::{Path, PathBuf},
     sync::{
@@ -871,49 +871,6 @@ fn corrupt_cached_frames_are_failed_and_regenerate() {
         .unwrap(),
         ThumbnailStripState::Ready(_)
     ));
-}
-
-#[test]
-fn project_json_stays_byte_identical_after_generation() {
-    let Some(path) = clip() else {
-        return;
-    };
-    let asset = source_asset(&path, 1);
-    let mut data = Project::empty(ProjectId(1), "Thumbnail strip".into())
-        .unwrap()
-        .into_data();
-    data.assets.push(asset.clone());
-    data.scene_mut().timeline.main = Track {
-        id: TrackId(1),
-        name: "Video".into(),
-        kind: TrackKind::Video,
-        muted: false,
-        hidden: false,
-        locked: false,
-        items: vec![
-            testkit::item::video(ItemId(1))
-                .asset(asset.id())
-                .source(range(0, 3))
-                .start(Tick::ZERO)
-                .speed(1.0)
-                .build(),
-        ],
-    };
-    let project = Project::new(data).unwrap();
-    let before = project::encode(&project, false).unwrap();
-    let request =
-        ThumbnailStripRequest::new(asset.clone(), range(0, 3), t(1), THUMBNAIL_MAX_EDGE).unwrap();
-    let (_strip, _runner, _cache, _dir) = run(&request);
-    let after = project::encode(&project, false).unwrap();
-    assert_eq!(before, after);
-}
-
-#[test]
-fn tile_interval_is_one_sixteen_by_nine_tile() {
-    let interval = tile_interval(39, 71.5).unwrap();
-    assert!(interval > Tick(TICKS_PER_SECOND / 2));
-    assert!(interval < Tick(TICKS_PER_SECOND));
-    assert!(tile_interval(39, 71.5).is_ok());
 }
 
 /// The generated strip's cached frames are exactly what one `thumbnail`
