@@ -2927,27 +2927,6 @@ fn changed_value(param: &project::EffectParamDefinition) -> EffectValue {
 }
 
 #[test]
-fn pixel_effects_that_are_identity_at_default_emit_no_pass() {
-    for kind in ["gamma_correction", "levels", "channel_mix"] {
-        let passes = evaluate_effect(
-            &project::Animations::default(),
-            &effect_instance(kind, &[]),
-            time::Tick::ZERO,
-            render::effects::EffectGeometry::new([13, 1], [1.0, 1.0]).unwrap(),
-            true,
-            &render::lut::LutResources::default(),
-        )
-        .unwrap();
-        assert!(passes.is_empty(), "{kind} emits an identity pass");
-        assert_eq!(
-            effect_output(kind, &[]),
-            effect_chart(),
-            "{kind} is identity"
-        );
-    }
-}
-
-#[test]
 fn every_pixel_effect_parameter_changes_the_picture() {
     // Strobe's time gates need a moment where the default is idle; every other
     // parameter reads at the clip start.
@@ -2969,48 +2948,6 @@ fn every_pixel_effect_parameter_changes_the_picture() {
                 &effect_chart(),
             );
             assert_ne!(changed, base, "{kind}.{} changed nothing", param.id);
-        }
-    }
-}
-
-#[test]
-fn animated_pixel_parameters_clamp_to_their_hard_range() {
-    for kind in PIXEL_EFFECTS {
-        let definition = project::effect_definition(kind).unwrap();
-        for (param, (min, max)) in definition
-            .params
-            .iter()
-            .filter(|p| p.animatable)
-            .filter_map(|p| p.scalar_range().map(|range| (p, range)))
-        {
-            for (raw, expected) in [(1e9, max), (-1e9, min)] {
-                let mut animations = project::Animations::default();
-                animations
-                    .set(
-                        project::AnimationPath::new(format!("effects.one.params.{}", param.id))
-                            .unwrap(),
-                        project::Param::new(project::ParamValue::Scalar(raw)).unwrap(),
-                    )
-                    .unwrap();
-                let instance = definition.instance("one");
-                let frame =
-                    EffectFrame::new(&animations, &instance, time::Tick::ZERO, 64, 36).unwrap();
-                assert_eq!(
-                    frame.scalar(param.id).unwrap(),
-                    expected,
-                    "{kind}.{}",
-                    param.id
-                );
-                for pass in (evaluator(kind).unwrap())(
-                    &frame,
-                    &EffectGeometry::new([64, 36], [1.0, 1.0]).unwrap(),
-                )
-                .unwrap()
-                {
-                    validate_pass(&pass, 64, 36)
-                        .unwrap_or_else(|error| panic!("{kind}.{} {error:?}", param.id));
-                }
-            }
         }
     }
 }
@@ -4108,6 +4045,11 @@ fn streak_scene_uses_actual_unreduced_clip_crop_fit_and_generated_canvas_units()
             for (a, b) in out.pixels().iter().zip(&expected) {
                 assert_working_pixel(*a, *b, "Streak scene geometry");
             }
+        }
+        // A missing source refuses export and previews black whatever the geometry, so the
+        // small row carries it.
+        if size != [37, 61] {
+            continue;
         }
         src.missing = true;
         assert!(matches!(
@@ -6382,24 +6324,6 @@ fn whole_base_params(
 }
 
 #[test]
-fn whole_image_effects_that_are_identity_at_default_emit_no_pass() {
-    for kind in ["lens_distortion", "corner_pin", "basic_3d"] {
-        let instance = effect_instance(kind, &[]);
-        let passes = evaluate_effect(
-            &project::Animations::default(),
-            &instance,
-            time::Tick::ZERO,
-            EffectGeometry::new([24, 18], [1.0, 1.0]).unwrap(),
-            true,
-            &render::lut::LutResources::default(),
-        )
-        .unwrap();
-        assert!(passes.is_empty(), "{kind} emits an identity pass");
-        assert_eq!(whole_output(kind, &[]), whole_chart(), "{kind} is identity");
-    }
-}
-
-#[test]
 fn every_whole_image_parameter_changes_the_picture() {
     for kind in WHOLE_EFFECTS {
         let definition = project::effect_definition(kind).unwrap();
@@ -6494,41 +6418,76 @@ fn whole_image_effects_keep_premultiplied_pixels_finite_at_hostile_bounds() {
 }
 
 #[test]
-fn whole_image_animations_clamp_to_their_hard_range() {
-    for kind in WHOLE_EFFECTS {
+fn effects_that_are_identity_at_default_emit_no_pass() {
+    // Pixel effects on the packed chart, whole-image effects on the spatial chart.
+    for (kind, whole) in [
+        ("gamma_correction", false),
+        ("levels", false),
+        ("channel_mix", false),
+        ("lens_distortion", true),
+        ("corner_pin", true),
+        ("basic_3d", true),
+    ] {
+        let (output, source, size) = if whole {
+            (whole_output(kind, &[]), whole_chart(), [24, 18])
+        } else {
+            (effect_output(kind, &[]), effect_chart(), [13, 1])
+        };
+        let passes = evaluate_effect(
+            &project::Animations::default(),
+            &effect_instance(kind, &[]),
+            time::Tick::ZERO,
+            EffectGeometry::new(size, [1.0, 1.0]).unwrap(),
+            true,
+            &render::lut::LutResources::default(),
+        )
+        .unwrap();
+        assert!(passes.is_empty(), "{kind} emits an identity pass");
+        assert_eq!(output, source, "{kind} is identity");
+    }
+}
+
+#[test]
+fn animated_effect_parameters_clamp_to_their_hard_range() {
+    let rows = PIXEL_EFFECTS
+        .iter()
+        .map(|kind| (*kind, [64, 36]))
+        .chain(WHOLE_EFFECTS.iter().map(|kind| (*kind, [24, 18])));
+    for (kind, [width, height]) in rows {
         let definition = project::effect_definition(kind).unwrap();
-        for param in definition
+        for (param, (min, max)) in definition
             .params
             .iter()
             .filter(|p| p.animatable)
             .filter_map(|p| p.scalar_range().map(|range| (p, range)))
         {
-            for (raw, expected) in [(1e9, param.1.1), (-1e9, param.1.0)] {
+            for (raw, expected) in [(1e9, max), (-1e9, min)] {
                 let mut animations = project::Animations::default();
                 animations
                     .set(
-                        project::AnimationPath::new(format!("effects.one.params.{}", param.0.id))
+                        project::AnimationPath::new(format!("effects.one.params.{}", param.id))
                             .unwrap(),
                         project::Param::new(project::ParamValue::Scalar(raw)).unwrap(),
                     )
                     .unwrap();
                 let instance = definition.instance("one");
                 let frame =
-                    EffectFrame::new(&animations, &instance, time::Tick::ZERO, 24, 18).unwrap();
+                    EffectFrame::new(&animations, &instance, time::Tick::ZERO, width, height)
+                        .unwrap();
                 assert_eq!(
-                    frame.scalar(param.0.id).unwrap(),
+                    frame.scalar(param.id).unwrap(),
                     expected,
                     "{kind}.{}",
-                    param.0.id
+                    param.id
                 );
                 for pass in (evaluator(kind).unwrap())(
                     &frame,
-                    &EffectGeometry::new([24, 18], [1.0, 1.0]).unwrap(),
+                    &EffectGeometry::new([width, height], [1.0, 1.0]).unwrap(),
                 )
                 .unwrap()
                 {
-                    validate_pass(&pass, 24, 18)
-                        .unwrap_or_else(|error| panic!("{kind}.{} {error:?}", param.0.id));
+                    validate_pass(&pass, width, height)
+                        .unwrap_or_else(|error| panic!("{kind}.{} {error:?}", param.id));
                 }
             }
         }
