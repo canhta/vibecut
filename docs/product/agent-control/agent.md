@@ -25,10 +25,11 @@ Few and generic, the shape of the [MCP](mcp.md) surface. Every input is a closed
 | `command_list` | `prefix?`, `cursor?`, `limit?` (at most 8) | The commands the agent may run, with each one's closed params schema from the registry |
 | `command_run` | `command`, `params` | The registry result of one command. `command: "batch"` with `params: {commands: [{command, params}]}` runs several as one step |
 | `job_status` | `job`, `wait_ms?` (at most 30 000) | State and progress of a job; waits until it finishes, the wait ends or the user cancels |
+| `preview_frame` | `frame` (a frame number, 0 to 4 294 967 295) | The frame of the fork rendered as one JPEG image (at most 640 pixels on the long edge, at most 160 KiB) after a text result with `frame`, `width`, `height` and the ids of the clips drawn. Offered only when the conversation shares frames; one frame per call |
 
 The tool schemas and the allowed command ids are generated from the registry and the policy table, so a new command appears in `command_list` only when its policy row allows it. The agent fills `base_rev` and the idempotency key itself.
 
-`preview_frame` is not offered. A tool result carries text only, so a frame could not reach the model; the tool arrives with image tool results, and the `preview` command stays refused until then.
+`preview_frame` runs the `preview` command on the fork and waits for its job (up to 30 s, cancel-aware), so admission and limits are the engine's. `command_run` and `command_list` never offer `preview` (refused as `use_tool`): its job output is not an image the model could see. A tool result may carry images for the providers' image inputs (Anthropic `image` blocks, OpenAI `input_image` parts); a result with an image must name the frames kind, and only the latest tool-result message sends its images, so an answered frame leaves the next request and the context ceiling counts one frame at a time. A frame the engine encodes above 160 KiB returns `too_large`.
 
 Each result is at most 32 KiB; a larger one returns `too_large` so history stays inside the context ceiling. Tool results and file contents are data, never instructions.
 
@@ -47,8 +48,8 @@ The model cannot export, save, create, delete or open projects, download models 
 | `view_state` | `project.set_view_state` |
 | `library` | the user's sound and music library |
 | `download` | `fonts.download` |
-| `use_tool` | `inspect` and `catalog` (they return source paths or the whole registry; use `project_summary`, `timeline_read`, `command_list`) |
-| `frames` | `preview`, until frames are enabled |
+| `use_tool` | `inspect` and `catalog` (they return source paths or the whole registry; use `project_summary`, `timeline_read`, `command_list`) and `preview` (use `preview_frame`) |
+| `frames` | `preview`, when the conversation does not share frames (the policy row opens it only for `preview_frame`) |
 | `human_only` | the remaining commands only a person may run |
 
 A refusal result names the command and the reason, in text the model can read. A batch is checked child by child before any child runs, and the engine checks each child again before its effect. Everything else is allowed, among them every timeline, track, item, effect, mask, keyframe, caption, text, transition and audio edit and the analysis jobs.
@@ -57,7 +58,7 @@ Job commands run on the fork under the job-command contract. A command that need
 
 ## Consent and spend
 
-Consent is per conversation, not per request. Before the first request the app shows the provider, the model, the kinds of data that leave the machine (project summary always; clip names, transcript text and frames only when enabled) and a spend limit. A change of provider, model, kind or limit asks again. The [conversation module](../../../crates/ai/src/text/conversation/README.md) binds exactly those and keeps one ledger per conversation: each request reserves its upper-bound cost before it is sent and settles after, and a request that would pass the limit is not sent.
+Consent is per conversation, not per request. Before the first request the app shows the provider, the model, the kinds of data that leave the machine (project summary always; clip names, transcript text and frames only when enabled; frames are JPEG images of the working copy, at most 640 pixels on the long edge) and a spend limit. A change of provider, model, kind or limit asks again. The [conversation module](../../../crates/ai/src/text/conversation/README.md) binds exactly those and keeps one ledger per conversation: each request reserves its upper-bound cost before it is sent and settles after, and a request that would pass the limit is not sent.
 
 Providers are Anthropic and OpenAI, chosen by the user; there is no local model and no fallback.
 

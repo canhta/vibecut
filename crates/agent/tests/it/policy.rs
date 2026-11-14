@@ -97,3 +97,23 @@ fn editing_commands_are_allowed_and_frames_open_only_the_preview() {
         "frames never open an export"
     );
 }
+
+#[test]
+fn the_preview_row_opens_with_frames_but_command_run_always_points_to_the_tool() {
+    assert_eq!(verdict("preview"), Some(Verdict::Frames));
+    assert_eq!(
+        AgentPolicy::new(false).check("preview"),
+        Err(Reason::Frames)
+    );
+    assert_eq!(AgentPolicy::new(true).check("preview"), Ok(()));
+    for frames in [false, true] {
+        assert_eq!(
+            AgentPolicy::new(frames).check_command("preview"),
+            Err(Reason::UseTool)
+        );
+        assert_eq!(
+            AgentPolicy::new(frames).check_command("timeline.trim"),
+            Ok(())
+        );
+    }
+}

@@ -2,11 +2,12 @@
 //! Sources checked 2026-11-12: streaming events (`message_start`, `content_block_*`,
 //! `message_delta`, `message_stop`, `ping`, `error`), `input_json_delta` partial JSON
 //! per tool_use block, `tool_result` blocks in the next user message and thinking
-//! blocks passed back unmodified, in the Messages API reference.
+//! blocks passed back unmodified, and `image` blocks with a `base64` source inside a
+//! `tool_result`'s content array, in the Messages API reference.
 use super::sse::{self, Sse};
 use super::{
     AssistantTurn, ChatEvent, ChatModel, ChatReply, ChatRequest, MAX_REPLY_BYTES, Message,
-    PreparedRequest, Replay, ToolCall, ToolInput, Usage,
+    PreparedRequest, Replay, ToolCall, ToolInput, ToolResult, Usage,
 };
 use crate::foundation::transport::ApiKey;
 use crate::remote;
@@ -162,7 +163,7 @@ fn messages(history: &[Message]) -> Result<Vec<Value>, Error> {
                         let mut block = Map::new();
                         block.insert("type".into(), "tool_result".into());
                         block.insert("tool_use_id".into(), result.call_id.clone().into());
-                        block.insert("content".into(), result.content.clone().into());
+                        block.insert("content".into(), result_content(result));
                         if result.is_error {
                             block.insert("is_error".into(), true.into());
                         }
@@ -173,6 +174,22 @@ fn messages(history: &[Message]) -> Result<Vec<Value>, Error> {
             }
         })
         .collect()
+}
+
+/// A plain string, or text then image blocks when the result shows the model frames.
+fn result_content(result: &ToolResult) -> Value {
+    if result.images.is_empty() {
+        return result.content.clone().into();
+    }
+    let mut blocks = vec![json!({"type": "text", "text": result.content})];
+    blocks.extend(result.images.iter().map(|image| {
+        json!({"type": "image", "source": {
+            "type": "base64",
+            "media_type": image.image_type().media_type(),
+            "data": image.base64(),
+        }})
+    }));
+    Value::Array(blocks)
 }
 
 enum Block {

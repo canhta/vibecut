@@ -12,8 +12,8 @@ use ai::providers::anthropic::{ANTHROPIC_VERSION, ENDPOINT as ANTHROPIC_ENDPOINT
 use ai::providers::openai::TRANSLATION_ENDPOINT as OPENAI_RESPONSES;
 use ai::text::conversation::{
     AgentChatConsent, AgentChatLimits, AgentChatScope, AnthropicChat, ChatEvent, ChatModel,
-    ChatRequest, Conversation, DataKind, Message, OpenAiChat, ToolInput, ToolResult, ToolSpec,
-    Usage, default_model, disclosure,
+    ChatRequest, Conversation, DataKind, ImageType, Message, OpenAiChat, ToolImage, ToolInput,
+    ToolResult, ToolSpec, Usage, default_model, disclosure,
 };
 use ai::{Error, ExecutionHooks, Money, ProviderConfig, Stage};
 use serde_json::{Value, json};
@@ -222,6 +222,7 @@ fn result(call_id: &str) -> ToolResult {
         content: "{\"name\":\"intro\"}".into(),
         is_error: false,
         kinds: kinds(&[DataKind::ClipNames]),
+        images: Vec::new(),
     }
 }
 fn no_events(_: ChatEvent<'_>) {}
@@ -947,4 +948,114 @@ fn disclosure_names_what_leaves_and_unpriced_models_cannot_hold_a_limit() {
     assert_eq!(default_model("anthropic"), Some("claude-sonnet-5-5"));
     assert_eq!(default_model("openai"), Some("gpt-6.1-sol"));
     assert_eq!(default_model("elevenlabs"), None);
+}
+
+#[test]
+fn frames_reach_the_provider_as_images_only_with_consent_and_only_the_latest() {
+    use base64::Engine as _;
+    let encoded = |bytes: &[u8]| base64::engine::general_purpose::STANDARD.encode(bytes);
+    for provider in PROVIDERS {
+        let with_frame = |call_id: &str, bytes: &[u8]| {
+            let mut result = result(call_id);
+            result.kinds = kinds(&[DataKind::ProjectSummary, DataKind::Frames]);
+            result.images = vec![ToolImage::new(ImageType::Jpeg, bytes)];
+            result
+        };
+        let (id, _, _) = provider.ids();
+
+        // Images need the frames kind in the consent, whatever the result's own kinds say.
+        let mock = Mock::new([Script::ok(provider.fixture("tool.sse"))]);
+        let mut denied = chat(provider, &mock, 1_000_000, AgentChatLimits::default());
+        denied
+            .send_user("look", &mut no_events, &Hooks::default())
+            .unwrap();
+        let mut sneaky = result(id);
+        sneaky.images = vec![ToolImage::new(ImageType::Jpeg, b"first-frame")];
+        assert!(matches!(
+            denied.send_tool_results(&[sneaky], &mut no_events, &Hooks::default()),
+            Err(Error::ConsentRequired)
+        ));
+        assert_eq!(mock.count(), 1);
+
+        let mock = Mock::new([
+            Script::ok(provider.fixture("tool.sse")),
+            Script::ok(provider.fixture("tool.sse")),
+            Script::ok(provider.fixture("text.sse")),
+        ]);
+        let config = provider.config(provider.model_id());
+        let consent = AgentChatConsent::grant(scope(
+            config.clone(),
+            1_000_000,
+            &[DataKind::ProjectSummary, DataKind::Frames],
+        ))
+        .unwrap();
+        let mut conversation = Conversation::new(
+            provider.adapter(config, &mock),
+            Some(&consent),
+            "You edit video.",
+            tools(),
+            AgentChatLimits::default(),
+        )
+        .unwrap();
+        conversation
+            .send_user("look", &mut no_events, &Hooks::default())
+            .unwrap();
+        for bytes in [&b"first-frame"[..], &b"second-frame"[..]] {
+            conversation
+                .send_tool_results(&[with_frame(id, bytes)], &mut no_events, &Hooks::default())
+                .unwrap();
+        }
+
+        let first = encoded(b"first-frame");
+        let second = encoded(b"second-frame");
+        let body = |index: usize| mock.request(index).body.to_string();
+        assert!(body(1).contains(&first));
+        assert!(!body(1).contains(&second));
+        assert!(
+            !body(2).contains(&first),
+            "an answered frame leaves the next request"
+        );
+        assert!(body(2).contains(&second));
+        // The history the app keeps still holds both frames.
+        let held = conversation
+            .history()
+            .iter()
+            .filter(|message| matches!(message, Message::ToolResults(r) if !r[0].images.is_empty()))
+            .count();
+        assert_eq!(held, 2);
+
+        let last = mock.request(2).body;
+        match provider {
+            Provider::Anthropic => {
+                let answer =
+                    last["messages"].as_array().unwrap().last().unwrap()["content"][0]["content"]
+                        .clone();
+                assert_eq!(answer[0]["type"], "text");
+                assert_eq!(answer[1]["type"], "image");
+                assert_eq!(answer[1]["source"]["type"], "base64");
+                assert_eq!(answer[1]["source"]["media_type"], "image/jpeg");
+            }
+            Provider::OpenAi => {
+                let output = last["input"].as_array().unwrap().last().unwrap()["output"].clone();
+                assert_eq!(output[0]["type"], "input_text");
+                assert_eq!(output[1]["type"], "input_image");
+                assert!(
+                    output[1]["image_url"]
+                        .as_str()
+                        .unwrap()
+                        .starts_with("data:image/jpeg;base64,")
+                );
+            }
+        }
+
+        // The disclosure names frames when the user grants them.
+        let granted = scope(
+            provider.config(provider.model_id()),
+            5_000_000,
+            &[DataKind::Frames],
+        );
+        let model = provider.adapter(granted.provider.clone(), &mock);
+        let shown = disclosure(model.as_ref(), &granted, &AgentChatLimits::default()).unwrap();
+        assert!(shown.kinds.contains(&DataKind::Frames));
+    }
 }

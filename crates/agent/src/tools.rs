@@ -3,9 +3,10 @@ use crate::cancel::CancelFlag;
 use crate::event::{AgentEvent, EndReason};
 use crate::policy::{AgentPolicy, Reason};
 use crate::reads;
-use ai::text::conversation::{DataKind, ToolSpec};
+use ai::text::conversation::{DataKind, ImageType, ToolImage, ToolSpec};
 use engine::control::{
-    API_VERSION, Caller, ControlResult, ErrorCode, Failure, Request, ResponseValue, registry_hash,
+    API_VERSION, Caller, ControlResult, ErrorCode, Failure, JobOutput, JobView, Request,
+    ResponseValue, registry_hash,
 };
 use engine::jobs::{JobId, JobRunner, JobState};
 use engine::{Effect, Fork, Session, registry};
@@ -22,6 +23,7 @@ const TRANSCRIPT_READ: &str = "transcript_read";
 const COMMAND_LIST: &str = "command_list";
 const COMMAND_RUN: &str = "command_run";
 const JOB_STATUS: &str = "job_status";
+const PREVIEW_FRAME: &str = "preview_frame";
 
 /// Bytes one tool result may carry; a larger one is refused so history stays inside the
 /// conversation's context ceiling.
@@ -29,18 +31,25 @@ const MAX_RESULT_BYTES: usize = 32 * 1024;
 const MAX_PAGE: u64 = 50;
 const MAX_COMMANDS_PAGE: u64 = 8;
 const MAX_WAIT_MS: u64 = 30_000;
+/// Bytes of JPEG one frame may carry into the conversation; the engine renders at most 640
+/// pixels on the long edge, and a larger encoding is refused so one frame stays a small part
+/// of the context ceiling.
+const MAX_FRAME_BYTES: usize = 160 * 1024;
+const MAX_FRAME_NUMBER: u64 = u32::MAX as u64;
+/// How long one `preview_frame` call waits for its render.
+const FRAME_WAIT: Duration = Duration::from_millis(MAX_WAIT_MS);
 const POLL: Duration = Duration::from_millis(20);
 /// How long ending a turn waits for cancelled jobs to settle.
 const DRAIN: Duration = Duration::from_secs(2);
 
 /// The tools the model is offered, schemas generated from the registry. `preview_frame` is
-/// not offered: a tool result carries text only, so a frame could not reach the model.
-pub fn tool_specs() -> Vec<ToolSpec> {
-    let policy = AgentPolicy::new(false);
+/// offered only when the conversation shares frames.
+pub fn tool_specs(frames: bool) -> Vec<ToolSpec> {
+    let policy = AgentPolicy::new(frames);
     let allowed: Vec<&str> = registry()
         .iter()
         .map(|spec| spec.id)
-        .filter(|id| policy.check(id).is_ok())
+        .filter(|id| policy.check_command(id).is_ok())
         .collect();
     let page = |max: u64| {
         json!({"type": "object", "additionalProperties": false, "properties": {
@@ -64,7 +73,7 @@ pub fn tool_specs() -> Vec<ToolSpec> {
         description: description.to_owned(),
         input_schema,
     };
-    vec![
+    let mut specs = vec![
         spec(
             PROJECT_SUMMARY,
             "Project name, canvas, duration, tracks and media of the working copy.",
@@ -104,7 +113,18 @@ pub fn tool_specs() -> Vec<ToolSpec> {
                 "wait_ms": {"type": "integer", "minimum": 0, "maximum": MAX_WAIT_MS},
             }}),
         ),
-    ]
+    ];
+    if frames {
+        specs.push(spec(
+            PREVIEW_FRAME,
+            "Render one frame of the working copy and see it as an image, at most 640 pixels on the long edge. frame is a frame number at the project's frame rate. One frame per call.",
+            json!({"type": "object", "additionalProperties": false, "required": ["frame"],
+            "properties": {
+                "frame": {"type": "integer", "minimum": 0, "maximum": MAX_FRAME_NUMBER},
+            }}),
+        ));
+    }
+    specs
 }
 
 /// What one tool call produced for the model.
@@ -112,6 +132,8 @@ pub(crate) struct ToolOutput {
     pub(crate) content: String,
     pub(crate) is_error: bool,
     pub(crate) kinds: BTreeSet<DataKind>,
+    /// Frames the model sees after `content`.
+    pub(crate) images: Vec<ToolImage>,
     /// The turn must end now for this reason.
     pub(crate) stop: Option<EndReason>,
 }
@@ -122,6 +144,7 @@ impl ToolOutput {
                 content,
                 is_error: false,
                 kinds: kinds.iter().copied().collect(),
+                images: Vec::new(),
                 stop: None,
             },
             _ => Self::error("too_large", "The result is too large; ask for less."),
@@ -132,6 +155,7 @@ impl ToolOutput {
             content: json!({"error": code, "detail": detail}).to_string(),
             is_error: true,
             kinds: BTreeSet::new(),
+            images: Vec::new(),
             stop: None,
         }
     }
@@ -141,6 +165,7 @@ impl ToolOutput {
                 .to_string(),
             is_error: true,
             kinds: BTreeSet::new(),
+            images: Vec::new(),
             stop: None,
         }
     }
@@ -199,7 +224,7 @@ impl<'r> Toolbox<'r> {
         Self {
             fork,
             runner,
-            policy: AgentPolicy::new(false),
+            policy: AgentPolicy::new(allowed.contains(&DataKind::Frames)),
             cancel,
             allowed,
             sequence: 0,
@@ -235,6 +260,7 @@ impl<'r> Toolbox<'r> {
             COMMAND_LIST => Self::command_list(input, &self.policy),
             COMMAND_RUN => self.command_run(input),
             JOB_STATUS => self.job_status(input, emit),
+            PREVIEW_FRAME => self.preview_frame(input, emit),
             _ => Err(ToolOutput::error("unknown_tool", "No such tool.")),
         };
         result.unwrap_or_else(|output| output)
@@ -322,7 +348,7 @@ impl<'r> Toolbox<'r> {
         };
         let mut matching = registry()
             .iter()
-            .filter(|spec| spec.id.starts_with(prefix) && policy.check(spec.id).is_ok())
+            .filter(|spec| spec.id.starts_with(prefix) && policy.check_command(spec.id).is_ok())
             .skip(cursor)
             .peekable();
         let mut entries: Vec<Value> = Vec::new();
@@ -352,7 +378,7 @@ impl<'r> Toolbox<'r> {
 
     /// The first refused command in a request, searching a batch's children too.
     fn refusal(&self, id: &str, params: &Value, depth: usize) -> Option<(String, Reason)> {
-        if let Err(reason) = self.policy.check(id) {
+        if let Err(reason) = self.policy.check_command(id) {
             return Some((id.to_owned(), reason));
         }
         if depth >= 8 {
@@ -417,6 +443,89 @@ impl<'r> Toolbox<'r> {
             .and_then(Value::as_u64)
             .ok_or_else(|| ToolOutput::error("invalid_input", "job must be an id."))?;
         let wait = Duration::from_millis(number(map, "wait_ms", 0, MAX_WAIT_MS)?);
+        let view = self.wait_job(job, wait, emit)?;
+        let value = json!({
+            "job": job,
+            "state": view.state,
+            "progress": view.progress,
+            "error": view.error,
+            "has_output": view.output.is_some(),
+        });
+        Ok(ToolOutput::ok(&value, &[DataKind::ProjectSummary]))
+    }
+
+    /// Render one frame of the fork and hand it to the model as an image. The frame is
+    /// requested through the same `preview` command an outside agent runs, so admission,
+    /// limits and the fork's current state are the engine's.
+    fn preview_frame(
+        &mut self,
+        input: &Value,
+        emit: &mut dyn FnMut(AgentEvent),
+    ) -> Result<ToolOutput, ToolOutput> {
+        let map = fields(input, &["frame"])?;
+        if !self.allowed.contains(&DataKind::Frames) {
+            return Err(ToolOutput::error(
+                "not_shared",
+                "Frames are not shared in this conversation.",
+            ));
+        }
+        if !map.contains_key("frame") {
+            return Err(ToolOutput::error("invalid_input", "frame is required."));
+        }
+        let frame = number(map, "frame", 0, MAX_FRAME_NUMBER)?;
+        let job = match self.send("preview", json!({"frames": [frame]}), true) {
+            Ok(ResponseValue::Result(ControlResult::JobAccepted { job, .. })) => job,
+            Ok(ResponseValue::Error(code)) | Err(code) => {
+                return Err(ToolOutput::error(
+                    code_name(code),
+                    "The frame could not be rendered.",
+                ));
+            }
+            Ok(ResponseValue::Result(_)) => {
+                return Err(ToolOutput::error("unreadable", "Not a job."));
+            }
+        };
+        self.watch(job);
+        let view = self.wait_job(job.0, FRAME_WAIT, emit)?;
+        let Some(JobOutput::Preview(result)) = view.output else {
+            return Err(ToolOutput::error(
+                "preview_failed",
+                "The frame could not be rendered.",
+            ));
+        };
+        let rendered = result
+            .frames
+            .first()
+            .ok_or_else(|| ToolOutput::error("preview_failed", "No frame was rendered."))?;
+        if rendered.jpeg.len() > MAX_FRAME_BYTES {
+            return Err(ToolOutput::error(
+                "too_large",
+                "The frame is too large to show.",
+            ));
+        }
+        let clips: Vec<u64> = rendered.clips.iter().map(|id| id.0).collect();
+        let value = json!({
+            "frame": rendered.frame,
+            "width": rendered.width,
+            "height": rendered.height,
+            "clips": clips,
+        });
+        let mut output = ToolOutput::ok(&value, &[DataKind::ProjectSummary, DataKind::Frames]);
+        if !output.is_error {
+            output
+                .images
+                .push(ToolImage::new(ImageType::Jpeg, &rendered.jpeg));
+        }
+        Ok(output)
+    }
+
+    /// Poll a job until it ends, the wait runs out or the user cancels, reporting progress.
+    fn wait_job(
+        &mut self,
+        job: u64,
+        wait: Duration,
+        emit: &mut dyn FnMut(AgentEvent),
+    ) -> Result<JobView, ToolOutput> {
         let id = JobId(job);
         self.watch(id);
         let deadline = Instant::now() + wait;
@@ -444,14 +553,7 @@ impl<'r> Toolbox<'r> {
                 });
             }
             if terminal(view.state) || Instant::now() >= deadline || self.cancel.is_cancelled() {
-                let value = json!({
-                    "job": job,
-                    "state": view.state,
-                    "progress": view.progress,
-                    "error": view.error,
-                    "has_output": view.output.is_some(),
-                });
-                return Ok(ToolOutput::ok(&value, &[DataKind::ProjectSummary]));
+                return Ok(view);
             }
             std::thread::sleep(POLL);
         }
