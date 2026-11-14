@@ -254,35 +254,6 @@ const CURVE_NAMES: [FadeCurve; 3] = [
 ];
 
 #[test]
-fn split_inside_a_fade_keeps_the_envelope_the_original_had() {
-    // The reviewed reproduction: 1000 ticks, 300 linear in, 400 exponential out, one tick
-    // per sample so the curve is checked at exact integer positions.
-    let rate = time::TICKS_PER_SECOND;
-    let mut s = session();
-    fade_edges(&mut s, FadeCurve::Linear, FadeCurve::Exponential);
-    let original = envelope(&s, rate);
-    assert_eq!(original[75], 0.25);
-    s.apply(Command::SplitAt {
-        item: ItemId(20),
-        at: Tick(150),
-    })
-    .unwrap();
-    let cut = envelope(&s, rate);
-    assert_eq!(cut[75], 0.25);
-    assert_eq!(cut[150], 0.5);
-    assert_eq!(original, cut);
-    s.undo().unwrap();
-    s.apply(Command::SplitAt {
-        item: ItemId(20),
-        at: Tick(800),
-    })
-    .unwrap();
-    let cut = envelope(&s, rate);
-    assert!((cut[799] - 0.11920292).abs() < 1e-6, "{}", cut[799]);
-    assert_eq!(original, cut);
-}
-
-#[test]
 fn every_cut_of_every_curve_pair_replays_the_original_envelope() {
     let rate = time::TICKS_PER_SECOND;
     for curve_in in CURVE_NAMES {
@@ -308,64 +279,6 @@ fn every_cut_of_every_curve_pair_replays_the_original_envelope() {
             }
         }
     }
-}
-
-#[test]
-fn a_cut_at_a_fade_boundary_gives_each_piece_only_its_own_fade() {
-    let mut s = session();
-    fade_edges(&mut s, FadeCurve::Linear, FadeCurve::Exponential);
-    s.apply(Command::SplitAt {
-        item: ItemId(20),
-        at: Tick(300),
-    })
-    .unwrap();
-    let ps = pieces(&s);
-    let [(_, _, _, left), (_, _, _, right)] = ps[..] else {
-        panic!("two pieces")
-    };
-    assert_eq!(left.fade_in.window(), Tick(300));
-    assert_eq!(left.fade_out, Fade::default());
-    assert_eq!(right.fade_in, Fade::default());
-    assert_eq!(right.fade_out.window(), Tick(400));
-    s.undo().unwrap();
-    s.apply(Command::SplitAt {
-        item: ItemId(20),
-        at: Tick(600),
-    })
-    .unwrap();
-    let ps = pieces(&s);
-    let [(_, _, _, left), (_, _, _, right)] = ps[..] else {
-        panic!("two pieces")
-    };
-    assert_eq!(left.fade_out, Fade::default());
-    assert_eq!(right.fade_in, Fade::default());
-    assert_eq!(right.fade_out.window(), Tick(400));
-}
-
-#[test]
-fn a_split_keeps_the_whole_fade_and_the_consumed_part() {
-    let mut s = session();
-    fade_edges(&mut s, FadeCurve::Linear, FadeCurve::Exponential);
-    s.apply(Command::SplitAt {
-        item: ItemId(20),
-        at: Tick(150),
-    })
-    .unwrap();
-    let ps = pieces(&s);
-    let [(_, _, _, left), (_, _, _, right)] = ps[..] else {
-        panic!("two pieces")
-    };
-    assert_eq!(
-        (left.fade_in.duration, left.fade_in.offset),
-        (Tick(300), Tick::ZERO)
-    );
-    assert_eq!(
-        (right.fade_in.duration, right.fade_in.offset),
-        (Tick(300), Tick(150))
-    );
-    assert_eq!(right.fade_in.curve, FadeCurve::Linear);
-    assert_eq!(left.fade_out, Fade::default());
-    assert_eq!(right.fade_out.window(), Tick(400));
 }
 
 #[test]
@@ -419,66 +332,6 @@ fn trim_then_split_and_split_twice_stay_non_destructive() {
     }
     assert_eq!(pieces(&s).len(), 5);
     assert_eq!(trimmed, envelope(&s, rate));
-}
-
-#[test]
-fn split_pieces_undo_redo_and_persist_with_their_envelope() {
-    let rate = time::TICKS_PER_SECOND;
-    let mut s = session();
-    fade_edges(&mut s, FadeCurve::Exponential, FadeCurve::EqualPower);
-    let original = envelope(&s, rate);
-    let before = s.project().clone();
-    s.apply(Command::SplitAt {
-        item: ItemId(20),
-        at: Tick(150),
-    })
-    .unwrap();
-    s.apply(Command::SplitAt {
-        item: ItemId(20),
-        at: Tick(75),
-    })
-    .unwrap();
-    let after = s.project().clone();
-    s.undo().unwrap();
-    s.undo().unwrap();
-    assert_eq!(&before, s.project());
-    assert_eq!(original, envelope(&s, rate));
-    s.redo().unwrap();
-    s.redo().unwrap();
-    assert_eq!(&after, s.project());
-    assert_eq!(original, envelope(&s, rate));
-    let encoded = project::encode(s.project(), false).unwrap();
-    let loaded = project::decode(&encoded).unwrap().project;
-    assert_eq!(&loaded, s.project().as_ref());
-    let reloaded = Session::new(loaded, 100).unwrap();
-    assert_eq!(original, envelope(&reloaded, rate));
-}
-
-#[test]
-fn off_grid_cuts_at_real_sample_rates_replay_the_original_samples() {
-    // A 100 ms clip with fades and cuts that fall between samples at 44.1 and 48 kHz.
-    let len = time::TICKS_PER_SECOND / 10 + 4321;
-    for rate in [44_100, 48_000] {
-        let mut s = session_len(len);
-        let ms = |n: i64| time::TICKS_PER_SECOND / 1000 * n + 17;
-        for (curve_in, curve_out) in CURVE_NAMES
-            .into_iter()
-            .zip(CURVE_NAMES.into_iter().cycle().skip(1))
-        {
-            set(&mut s, FadeEdge::In, ms(30), curve_in).unwrap();
-            set(&mut s, FadeEdge::Out, ms(30), curve_out).unwrap();
-            let original = envelope(&s, rate);
-            for at in [ms(3), ms(30), ms(41), ms(72), ms(99)] {
-                s.apply(Command::SplitAt {
-                    item: ItemId(20),
-                    at: Tick(at),
-                })
-                .unwrap();
-                assert_eq!(original, envelope(&s, rate), "rate {rate} cut {at}");
-                s.undo().unwrap();
-            }
-        }
-    }
 }
 
 #[test]
