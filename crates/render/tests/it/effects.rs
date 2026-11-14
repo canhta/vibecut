@@ -5001,6 +5001,70 @@ fn detail_boost_parameters_change_the_picture_clamp_and_refuse_hostile_values() 
     assert_eq!(out[1][3], 0.0);
 }
 
+#[test]
+fn detail_boost_large_radius_blurs_a_reduced_copy_close_to_the_exact_passes() {
+    let hooks = Hooks::default();
+    let (w, h) = (128_u32, 96_u32);
+    let image = Image::from_working_pixels(
+        w,
+        h,
+        (0..w * h).map(|i| {
+            let (x, y) = ((i % w) as f32, (i / w) as f32);
+            let v = 0.5 + 0.4 * (x * 0.15).sin() * (y * 0.2).cos();
+            [v, v * 0.5, v * 0.25, 1.0]
+        }),
+        &hooks,
+    )
+    .unwrap();
+    let apply = |current: &Image, passes: &[EffectPass]| {
+        CpuEffects
+            .apply(
+                current,
+                passes,
+                EffectInputs {
+                    input: &image,
+                    coverage: None,
+                    below: &image,
+                },
+                &hooks,
+            )
+            .unwrap()
+    };
+    // Radii 12 and 24 are 3 and 9 kernel iterations of two passes.
+    for (radius, pairs) in [(12.0, 3), (24.0, 9)] {
+        let passes = evaluate_effect(
+            &project::Animations::default(),
+            &detail_boost(100.0, radius, 0.0),
+            time::Tick::ZERO,
+            EffectGeometry::new([w, h], [1.0, 1.0]).unwrap(),
+            true,
+            &render::lut::LutResources::default(),
+        )
+        .unwrap();
+        assert_eq!(passes.len(), 2 * pairs + 1, "radius {radius}");
+        let reduced = apply(&image, &passes);
+        // One pair per call is below the reduction threshold, so it runs exactly.
+        let (blur, boost) = passes.split_at(passes.len() - 1);
+        let mut exact_blur = apply(&image, &blur[..2]);
+        for pair in blur[2..].chunks(2) {
+            exact_blur = apply(&exact_blur, pair);
+        }
+        let exact = apply(&exact_blur, boost);
+        let worst = reduced
+            .pixels()
+            .iter()
+            .zip(exact.pixels())
+            .flat_map(|(a, b)| a.iter().zip(b).map(|(a, b)| (a - b).abs()))
+            .fold(0.0_f32, f32::max);
+        assert!(worst <= 0.03, "radius {radius}: worst difference {worst}");
+        assert_ne!(reduced.pixels(), exact.pixels(), "radius {radius}");
+        for pixel in reduced.pixels() {
+            assert_eq!(pixel[3], 1.0);
+            assert!(pixel[..3].iter().all(|v| (0.0..=1.0).contains(v)));
+        }
+    }
+}
+
 fn lens_blur(
     amount: f64,
     shape: u32,
@@ -5082,6 +5146,116 @@ fn lens_expected(
         .collect()
 }
 
+// Independent f64 reduced Lens Blur for a disc wider than three pixels: boost
+// per texel, 2x2 box halvings until the reach is at most three pixels (or one
+// pixel is left), the unboosted gather at that scale, then a bilinear upsample.
+fn lens_reduced_expected(
+    pixels: &[[f64; 4]],
+    size: [u32; 2],
+    (sides, rotation): (u32, f64),
+    radii: [f64; 2],
+    (highlight, threshold): (f64, f64),
+) -> Vec<[f64; 4]> {
+    let (mut reach, mut dims, mut levels) = (radii[0].max(radii[1]), size, 0);
+    while reach > 3.0 && dims[0].max(dims[1]) > 1 {
+        reach /= 2.0;
+        dims = dims.map(|d| d.div_ceil(2));
+        levels += 1;
+    }
+    assert!(levels > 0);
+    let scale = f64::from(1u32 << levels);
+    let rings = (reach.ceil() as u32).clamp(1, 12);
+    let boost = highlight / 100.0 * 6.0;
+    let threshold = threshold / 100.0;
+    let polygon = |theta: f64| {
+        if sides == 0 {
+            return 1.0;
+        }
+        let segment = std::f64::consts::TAU / f64::from(sides);
+        let a = (theta - rotation).rem_euclid(segment) - segment / 2.0;
+        (std::f64::consts::PI / f64::from(sides)).cos() / a.cos()
+    };
+    let mut plane: Vec<[f64; 4]> = pixels
+        .iter()
+        .map(|p| {
+            if boost <= 0.0 || p[3] <= 1e-6 {
+                return *p;
+            }
+            let encoded = [0, 1, 2].map(|k| oracle_encode((p[k] / p[3]).clamp(0.0, 1.0)));
+            let t = ((colour_luma(encoded) - threshold) / (1.0 - threshold)).clamp(0.0, 1.0);
+            let k = 1.0 + boost * t * t * (3.0 - 2.0 * t);
+            [p[0] * k, p[1] * k, p[2] * k, p[3]]
+        })
+        .collect();
+    let mut plane_dims = size;
+    for _ in 0..levels {
+        let next = plane_dims.map(|d| d.div_ceil(2));
+        let mut halved = Vec::new();
+        for y in 0..next[1] {
+            for x in 0..next[0] {
+                let (mut sum, mut count) = ([0.0; 4], 0.0);
+                for yy in 2 * y..(2 * y + 2).min(plane_dims[1]) {
+                    for xx in 2 * x..(2 * x + 2).min(plane_dims[0]) {
+                        for k in 0..4 {
+                            sum[k] += plane[(yy * plane_dims[0] + xx) as usize][k];
+                        }
+                        count += 1.0;
+                    }
+                }
+                halved.push(sum.map(|v| v / count));
+            }
+        }
+        plane = halved;
+        plane_dims = next;
+    }
+    assert_eq!(plane_dims, dims);
+    let gathered: Vec<[f64; 4]> = (0..dims[0] * dims[1])
+        .map(|i| {
+            let (x, y) = (f64::from(i % dims[0]), f64::from(i / dims[0]));
+            let mut taps = vec![spatial_sample(&plane, dims, x, y)];
+            for ring in 1..=rings {
+                let n = (ring * 8).max(6);
+                for k in 0..n {
+                    let theta = std::f64::consts::TAU * (f64::from(k) + 0.5 * f64::from(ring % 2))
+                        / f64::from(n);
+                    let r = f64::from(ring) / f64::from(rings) * polygon(theta);
+                    taps.push(spatial_sample(
+                        &plane,
+                        dims,
+                        x + theta.cos() * r * radii[0] / scale,
+                        y + theta.sin() * r * radii[1] / scale,
+                    ));
+                }
+            }
+            let count = taps.len() as f64;
+            let mut sum = [0.0; 4];
+            for tap in &taps {
+                for k in 0..4 {
+                    sum[k] += tap[k];
+                }
+            }
+            sum.map(|v| v / count)
+        })
+        .collect();
+    let (sx, sy) = (
+        f64::from(dims[0]) / f64::from(size[0]),
+        f64::from(dims[1]) / f64::from(size[1]),
+    );
+    (0..size[0] * size[1])
+        .map(|i| {
+            let (x, y) = (f64::from(i % size[0]), f64::from(i / size[0]));
+            let p = spatial_sample(
+                &gathered,
+                dims,
+                (x + 0.5) * sx - 0.5,
+                (y + 0.5) * sy - 0.5,
+            );
+            let alpha = p[3].clamp(0.0, 1.0);
+            [0, 1, 2, 3].map(|k| if k == 3 { alpha } else { p[k].clamp(0.0, alpha) })
+        })
+        .collect()
+}
+
 #[test]
 fn lens_blur_matches_independent_iris_gather_and_identity_below_half_a_pixel() {
     let size = [12, 9];
@@ -5115,11 +5289,18 @@ fn lens_blur_matches_independent_iris_gather_and_identity_below_half_a_pixel() {
             let effect = lens_blur(amount, shape, rotation, highlight, threshold);
             let (actual, passes) = spatial_output(pixels, size, gains, &effect, true);
             assert_eq!(passes, 1, "Lens Blur is one gather pass at {amount}");
-            let expected = lens_expected(
+            let radii = [amount * gains[0], amount * gains[1]];
+            // Discs past three pixels gather on a halved copy.
+            let oracle = if radii[0].max(radii[1]) > 3.0 {
+                lens_reduced_expected
+            } else {
+                lens_expected
+            };
+            let expected = oracle(
                 pixels,
                 size,
                 (sides_of[shape as usize], f64::to_radians(rotation)),
-                [amount * gains[0], amount * gains[1]],
+                radii,
                 (highlight, threshold),
             );
             for (index, (actual, expected)) in actual.iter().zip(expected).enumerate() {
@@ -5144,7 +5325,7 @@ fn lens_blur_matches_independent_iris_gather_and_identity_below_half_a_pixel() {
 }
 
 #[test]
-fn lens_blur_parameters_change_the_picture_and_large_radii_prefilter_within_bounds() {
+fn lens_blur_parameters_change_the_picture_and_large_radii_reduce_within_bounds() {
     let size = [16, 12];
     let mid = oracle_decode(0.9);
     let pixels: Vec<[f64; 4]> = (0..192)
@@ -5189,7 +5370,7 @@ fn lens_blur_parameters_change_the_picture_and_large_radii_prefilter_within_boun
         assert!((0.0..=1.0).contains(&pixel[3]));
         assert!(pixel[..3].iter().all(|v| *v <= pixel[3]));
     }
-    // Past twelve output pixels a gaussian prefilter of radius/24 precedes the gather.
+    // A wide disc is still one pass: the executor gathers it on a halved plane.
     let effect = lens_blur(60.0, 4, 0.0, 50.0, 80.0);
     let passes = evaluate_effect(
         &project::Animations::default(),
@@ -5200,16 +5381,19 @@ fn lens_blur_parameters_change_the_picture_and_large_radii_prefilter_within_boun
         &render::lut::LutResources::default(),
     )
     .unwrap();
-    assert_eq!(passes.len(), 3);
-    assert!(matches!(passes[0], EffectPass::Convolve { .. }));
-    assert_eq!(passes[2].entry_point(), "lens_blur");
+    assert_eq!(passes.len(), 1);
+    assert_eq!(passes[0].entry_point(), "lens_blur");
     let (out, count) = spatial_output(&pixels, size, [1.0, 1.0], &effect, true);
-    assert_eq!(count, 3);
+    assert_eq!(count, 1);
     assert!(out.iter().all(|p| p.iter().all(|v| v.is_finite())));
-    // Hostile geometry clamps the radius and saturates the prefilter.
+    assert!(
+        out.iter()
+            .all(|p| p[3] <= 1.0 && p[..3].iter().all(|v| *v <= p[3]))
+    );
+    // Hostile geometry clamps the radius and halves down to one pixel.
     let hostile = lens_blur(500.0, 4, 0.0, 100.0, 0.0);
     let (out, count) = spatial_output(&pixels, size, [1e9, 1e9], &hostile, true);
-    assert_eq!(count, 129);
+    assert_eq!(count, 1);
     assert!(out.iter().all(|p| p.iter().all(|v| v.is_finite())));
     let definition = project::effect_definition("bokeh_blur").unwrap();
     for (id, value) in [
