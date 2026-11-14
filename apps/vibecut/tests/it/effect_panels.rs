@@ -3347,9 +3347,9 @@ fn the_matte_brush_paints_one_stroke_per_drag_and_each_is_one_undo_step() {
     assert_eq!(strokes[0].mode, Mode::Add);
     assert!(strokes[0].points.len() >= 2, "{:?}", strokes[0].points);
     assert!(strokes[0].valid());
-    // Size 20 stores the measured radius: 20 x 0.00155 of the frame's shorter side.
+    // Size 20 stores the fitted radius 0.00626 + 20 x 0.00126 of the frame's shorter side.
     assert!(
-        (strokes[0].radius - 0.031).abs() < 1e-6,
+        (strokes[0].radius - 0.03146).abs() < 1e-6,
         "{}",
         strokes[0].radius
     );
@@ -3391,7 +3391,19 @@ fn the_matte_brush_paints_one_stroke_per_drag_and_each_is_one_undo_step() {
     let strokes = matte_strokes(&harness, video);
     assert_eq!(strokes.len(), 1);
     assert!(
-        (strokes[0].radius - 0.155).abs() < 1e-6,
+        (strokes[0].radius - 0.13226).abs() < 1e-6,
+        "{}",
+        strokes[0].radius
+    );
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    // Size 1 stores the smallest tip: a floor of 0.00626, not zero.
+    type_value(&mut harness, "inspector.matte_brush.size", "1");
+    paint(&mut harness, start, end);
+    let strokes = matte_strokes(&harness, video);
+    assert_eq!(strokes.len(), 1);
+    assert!(
+        (strokes[0].radius - 0.00752).abs() < 1e-6,
         "{}",
         strokes[0].radius
     );
@@ -3401,7 +3413,7 @@ fn the_matte_brush_paints_one_stroke_per_drag_and_each_is_one_undo_step() {
     assert_eq!(harness.state().inspect().unwrap().matte_brush, None);
     assert_eq!(
         harness.state().inspect().unwrap().matte_brush_size,
-        100,
+        1,
         "Size outlives the armed tool"
     );
     // With the brush off the drag is the preview's ordinary move of the selected clip: one

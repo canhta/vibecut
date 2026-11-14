@@ -29,7 +29,7 @@ drag instead of the transform gizmo, maps each pointer position through `Rendere
 (crop, fit and transform undone) to a decoded-frame point, draws a translucent trail, and on release
 sends one `Action::PaintMatteStroke` carrying a `project::MatteStroke` stamped with the item's source
 time at the playhead. Escape, a selection change or leaving the panel disarms it; the stroke itself
-is one undo step ([properties](../properties/README.md#remove-bg-sub-tab)). The tip radius is `State.matte_brush_size` (1 to 100, default 20) times 0.00155 of the frame's
+is one undo step ([properties](../properties/README.md#remove-bg-sub-tab)). The tip radius is `State.matte_brush_size` (1 to 100, default 20) as 0.00626 + 0.00126 x Size of the frame's
 shorter side, derived from the reference's cursor circle at Size 20
 ([Remove background](../../../../../../docs/product/ui/editor.md#remove-background)); the stored
 `MatteStroke::radius` is that fraction.

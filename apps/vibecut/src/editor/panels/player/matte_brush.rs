@@ -14,16 +14,18 @@ pub(crate) const SIZE_MIN: u32 = 1;
 pub(crate) const SIZE_MAX: u32 = 100;
 pub(crate) const SIZE_DEFAULT: u32 = 20;
 
-/// Tip radius per Size unit, as a fraction of the frame's shorter side. Derived from one
-/// measurement: at Size 20 the reference's cursor circle is 14.2 logical px across on a preview
-/// frame 230 px high, a diameter of 6.17 % of the shorter side, so Size 20 is a radius of
-/// 3.09 %; the mapping is taken as linear through zero (only Size 20 was measured).
-const RADIUS_PER_SIZE: f32 = 0.00155;
+/// The tip radius is affine in Size: `RADIUS_BASE + RADIUS_PER_SIZE x Size`, as a fraction of
+/// the frame's shorter side. Fitted by least squares to the reference's cursor ring measured at
+/// Sizes 1, 20 and 100: outer diameters 3.7, 14.2 and 61 logical px on a preview frame 230 px
+/// high (shots 111432, 111435, 111439), i.e. d = 2.88 + 0.5806 x Size px, so the radius is
+/// d / 2 / 230 = 0.00626 + 0.00126 x Size. The ring is not proportional to Size.
+const RADIUS_BASE: f32 = 0.00626;
+const RADIUS_PER_SIZE: f32 = 0.00126;
 
 /// Tip radius of a stroke at `size`, as a fraction of the decoded frame's shorter side. The
 /// stored `MatteStroke::radius` is this value, so the stored shape is unchanged.
 pub(super) fn radius(size: u32) -> f32 {
-    size.clamp(SIZE_MIN, SIZE_MAX) as f32 * RADIUS_PER_SIZE
+    RADIUS_BASE + size.clamp(SIZE_MIN, SIZE_MAX) as f32 * RADIUS_PER_SIZE
 }
 
 /// The open stroke: each point in decoded-frame units with the screen position it was read at.
