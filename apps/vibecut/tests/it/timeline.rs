@@ -6804,13 +6804,6 @@ fn painted(h: &Harness<'_, Editor>, id: &str) -> Option<(bool, Option<String>)> 
         .map(|widget| (widget.enabled, widget.tooltip))
 }
 
-fn toggle_tooltip(label: &str) -> String {
-    let chord = vibecut::actions::Chord::parse("Ctrl+.")
-        .unwrap()
-        .display(vibecut::actions::Platform::current());
-    format!("{label} ({chord})")
-}
-
 type HideRow = fn(&mut Harness<'static, Editor>, ItemId);
 
 fn hide_collapses_the_panel_and_grows_the_player(h: &mut Harness<'static, Editor>, item: ItemId) {
@@ -6818,7 +6811,8 @@ fn hide_collapses_the_panel_and_grows_the_player(h: &mut Harness<'static, Editor
     let before_project = project::encode(h.state().session.project(), false).unwrap();
     assert_eq!(
         painted(h, "view.toggle_timeline").unwrap().1,
-        Some(toggle_tooltip("Hide timeline"))
+        Some("Hide timeline".to_owned()),
+        "the action has no default chord"
     );
     let toggle = widget(h, "view.toggle_timeline").center();
     click_at(h, toggle);
@@ -6841,7 +6835,7 @@ fn hide_collapses_the_panel_and_grows_the_player(h: &mut Harness<'static, Editor
     assert!(painted(h, "timeline.progress").is_some());
     let (enabled, tooltip) = painted(h, "view.toggle_timeline").unwrap();
     assert!(enabled);
-    assert_eq!(tooltip, Some(toggle_tooltip("Show timeline")));
+    assert_eq!(tooltip.as_deref(), Some("Show timeline"));
     assert_eq!(
         project::encode(h.state().session.project(), false).unwrap(),
         before_project,
@@ -6851,12 +6845,16 @@ fn hide_collapses_the_panel_and_grows_the_player(h: &mut Harness<'static, Editor
 
 fn show_restores_selection_playhead_and_layout(h: &mut Harness<'static, Editor>, item: ItemId) {
     let before_panels = h.state().panels().clone();
+    // Ctrl+. is the volume step, not this action: it leaves the timeline shown.
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Period);
+    h.run_steps(3);
+    assert!(!h.state().inspect().unwrap().timeline_hidden);
+    h.state_mut().activate("view.toggle_timeline").unwrap();
     h.run_steps(3);
     assert!(h.state().inspect().unwrap().timeline_hidden);
     assert_eq!(h.state().playback.position().unwrap(), Tick(3 * SECOND));
     assert_eq!(h.state().inspect().unwrap().selection, vec![item]);
-    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Period);
+    h.state_mut().activate("view.toggle_timeline").unwrap();
     h.run_steps(3);
     let inspection = h.state().inspect().unwrap();
     assert!(!inspection.timeline_hidden);

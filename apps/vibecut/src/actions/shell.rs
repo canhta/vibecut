@@ -130,7 +130,7 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         ActionCategory::View,
         "timeline panel layout",
         UiAction::ToggleTimeline,
-        &["Ctrl+."],
+        &[],
     ),
     ActionSpec::ui(
         "shortcuts.open",

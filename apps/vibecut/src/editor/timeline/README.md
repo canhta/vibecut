@@ -52,7 +52,7 @@ handle re-shapes that edge as one `audio.set_fade` command.
 
 ## Hidden timeline
 
-`State::hidden` (`view.toggle_timeline`, `Ctrl+.`) is presentation state: never saved, never an
+`State::hidden` (`view.toggle_timeline`, no default chord) is presentation state: never saved, never an
 undo step, reset with the state when a project opens. While set the frame gives the panel
 `HIDDEN_HEIGHT` (toolbar, rule and a progress strip) and calls `show_hidden` instead of `show`:
 the toolbar paints with every cell but the hide/show button disabled, the lanes, ruler and
