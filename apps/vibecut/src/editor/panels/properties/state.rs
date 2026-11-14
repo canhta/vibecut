@@ -28,7 +28,8 @@ pub(in crate::editor) enum Action {
     },
     /// Show a model in the model manager: the link a missing-model row offers.
     OpenModel(String),
-    /// Keyword emphasis of the selected caption cue; the frame sends it to the Captions panel.
+    /// Keyword emphasis of the caption cue under the playhead; the frame sends it to the
+    /// Captions panel.
     Keywords(crate::editor::context::KeywordAction),
     ImportLut {
         item: ItemId,

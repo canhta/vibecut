@@ -22,12 +22,15 @@ Cue, import, text and glossary limits belong to [captions](../../../../../../../
 Design: [captions workflow](../../../../../../../docs/product/ui/editor.md#captions-workflow).
 
 `emphasis.rs` is the keyword state behind the caption item's properties Keywords section, which
-draws the `keyword_ui` read and returns `keyword_action`s the frame routes here. Its chips, Choose keywords and Clear
-are one `captions.set_emphasis` or `captions.select_emphasis` command each through
-`Session::apply`, so each is one undo step; a cue without verified word timing refuses with
-`NoWordTiming` and changes nothing. Preview selects the cue and seeks to it. Suggest with AI runs
-the lent text provider's keyword selection on a worker thread behind the same upload sheet as the
-filler cut list, with the `emphasis_model` snapshot of the SelectEmphasis row for the text provider.
+draws the `keyword_ui` read and returns `keyword_action`s the frame routes here. The target is the
+caption cue under the playhead (`cue_at`, the cue's timeline span as `select_cue` maps it); the
+Captions tab's cue selection does not feed it, and no cue under the playhead means no target. Its
+chips, Choose keywords and Clear are one `captions.set_emphasis` or `captions.select_emphasis`
+command each through `Session::apply`, so each is one undo step; a cue without verified word timing
+refuses with `NoWordTiming` and changes nothing. Preview seeks the playhead to the cue's start and
+leaves the selection alone. Suggest with AI runs the lent text provider's keyword selection for that
+cue on a worker thread behind the same upload sheet as the filler cut list, with the
+`emphasis_model` snapshot of the SelectEmphasis row for the text provider.
 Apply sends every suggested cue in one `Batch`. A stored selection whose words no longer validate
 against the cue's source text shows as stale and is offered no chips. Design:
 [keyword section](../../../../../../../docs/product/ui/editor.md#captions-workflow).

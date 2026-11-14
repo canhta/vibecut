@@ -256,10 +256,10 @@ These fields are not engine parameter rows. `write_field` sends them as `Action:
 current value with only that field replaced, so the colour and the other geometry survive.
 
 A caption item selected alone shows a collapsed Keywords section in its Text tab
-(`inspector.keywords`). It draws the read `Context.keywords` carries from the Captions panel,
-which owns the cue selection and the suggestion run; its chips, Choose, Preview, Clear, Suggest
-and Apply emit `Action::Keywords`, and the frame routes them to that panel (one undo step each,
-Apply as one batch). A chosen chip uses the sub-navigation's selected style (accent label on
+(`inspector.keywords`). It draws the read `Context.keywords` carries from the Captions panel for
+the caption cue under the playhead, and says `No caption under the playhead.` when none is there;
+its chips, Choose, Preview, Clear, Suggest and Apply emit `Action::Keywords`, and the frame routes
+them to that panel with the playhead (one undo step each, Apply as one batch). A chosen chip uses the sub-navigation's selected style (accent label on
 the hover fill, as the Media Timeline scene row), and the section spaces its chips and actions
 at the kit density gap (8 px across, 4 px between wrapped rows). Behaviour: [captions owner](../assets/captions/README.md).
 

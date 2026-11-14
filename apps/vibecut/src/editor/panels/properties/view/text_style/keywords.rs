@@ -1,6 +1,6 @@
-//! Keyword emphasis of the selected caption cue, drawn in the caption item's Text tab. The
-//! Captions panel owns the cue selection and the suggestion run; this section draws the read it
-//! gets and emits `KeywordAction`s, which the frame routes back to that panel.
+//! Keyword emphasis of the caption cue under the playhead, drawn in the caption item's Text tab.
+//! The playhead picks the cue and the Captions panel owns the suggestion run; this section draws
+//! the read it gets and emits `KeywordAction`s, which the frame routes back to that panel.
 use super::Panel;
 use crate::{
     editor::{
@@ -14,8 +14,8 @@ use crate::{
 use project::ItemId;
 
 impl Panel<'_, '_> {
-    /// The collapsed Keywords section. Its chips and buttons act on the cue selected in the
-    /// Captions panel, and draw nothing when that selection is not this item's.
+    /// The collapsed Keywords section. Its chips and buttons act on the caption cue under the
+    /// playhead, and say so when no cue is there.
     pub(in super::super) fn keywords_section(&mut self, ui: &mut egui::Ui, item: ItemId) {
         let Some(keywords) = self.cx.keywords.clone() else {
             return;
@@ -31,13 +31,16 @@ impl Panel<'_, '_> {
                 // The properties body runs with zero item spacing; the section restores the
                 // kit's density gap between its chips, actions and rows.
                 ui.spacing_mut().item_spacing = egui::vec2(theme::space::MD, theme::space::XS);
+                if !has_cue {
+                    ui.label(self.tr(Text::EmphasisNoCue));
+                }
                 ui.horizontal_wrapped(|ui| {
                     if self.keyword_button(
                         ui,
                         "inspector.keywords.choose",
                         Text::EmphasisChoose,
                         Icon::TextT,
-                        idle && keywords.timed && keywords.selected > 0,
+                        idle && has_cue && keywords.timed,
                     ) {
                         self.actions.push(Action::Keywords(KeywordAction::Choose));
                     }
@@ -64,15 +67,12 @@ impl Panel<'_, '_> {
                         "inspector.keywords.suggest",
                         Text::EmphasisAi,
                         Icon::Sparkle,
-                        idle && keywords.selected > 0,
+                        idle && has_cue,
                     ) {
                         self.actions.push(Action::Keywords(KeywordAction::Suggest));
                     }
                 });
-                if keywords.selected > 1 {
-                    ui.label(self.tr(Text::EmphasisOneCue));
-                }
-                if keywords.selected > 0 && !keywords.timed {
+                if has_cue && !keywords.timed {
                     ui.label(self.tr(Text::EmphasisNoTimings));
                 }
                 if keywords.stale {
