@@ -1253,6 +1253,9 @@ fn idle_home_and_paused_editor_request_no_repaint_and_a_worker_result_requests_o
             .is_none()
             .then_some(())
     });
+    // Everything has settled: no autosave, toast or reveal is pending, so nothing may ask
+    // for a pass over the next two seconds.
+    woken.silent("an idle paused editor", Duration::from_secs(2), || pass(&mut app));
 }
 
 #[test]
