@@ -5130,3 +5130,35 @@ fn corner_pin_points_edit_from_the_inspector_and_the_preview_with_one_undo_step_
     harness.run_steps(2);
     assert_eq!(point(&harness, "lower_right"), [1.0, 1.0]);
 }
+
+#[test]
+fn point_fields_stay_inside_the_value_column_at_the_minimum_inspector_width() {
+    let fixture = fixture();
+    let video = fixture.video;
+    let mut editor = fixture.editor;
+    editor
+        .session
+        .apply(Command::AddEffect {
+            item: video,
+            effect: project::effect_definition("corner_pin")
+                .unwrap()
+                .instance("pin"),
+        })
+        .unwrap();
+    // A tiny properties ratio clamps the column to its pixel minimum.
+    editor.preferences.panels = [0.3, 0.01, 0.45];
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    open_effect_tabs(&mut harness, video);
+    for key in ["upper_left", "upper_right", "lower_left", "lower_right"] {
+        let x = widget_rect(&harness, &format!("effects.pin.param.{key}.x"));
+        let y = widget_rect(&harness, &format!("effects.pin.param.{key}.y"));
+        assert!(x.right() <= y.left(), "{key}: {x:?} {y:?}");
+        assert!(y.right() - x.left() <= 120.0, "{key}: {x:?} {y:?}");
+        // The inspector holds its 368 px minimum at the window's right edge.
+        assert!(
+            x.left() >= 1440.0 - 368.0 && y.right() <= 1440.0,
+            "{key}: {x:?} {y:?}"
+        );
+    }
+}

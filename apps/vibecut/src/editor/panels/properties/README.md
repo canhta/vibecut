@@ -195,8 +195,9 @@ RGB diamonds add/remove RGB keys together in one undo; alpha keys do not fill th
 Keyed edits/diamonds outside the clip are disabled; unkeyed bases remain editable.
 Selection, time, effect, lock and panel invalidation cancel the picker preview.
 Point parameters (static frame fractions) are one row: the label and two percent fields,
-X then Y (`effects.<id>.param.<key>.x`/`.y`, 0.0 to 100.0, one decimal, 22 px fields in
-the 120 px value column; sizing is proposed, not measured). A drag or typed edit is held
+X then Y (`effects.<id>.param.<key>.x`/`.y`, percent of the frame 0.0 to 100.0, one
+decimal, no unit suffix). The two 22 px fields share 120 px (the label column's width)
+so `X 100.0 Y 100.0` fits; sizing is proposed, not measured. A drag or typed edit is held
 as a draft and published as one `{"point":[x,y]}` `effects.update_param` step when the
 drag stops or the field loses focus; the other axis keeps its stored value. No keyframe
 diamond. The same value has a [preview handle](../player/README.md).

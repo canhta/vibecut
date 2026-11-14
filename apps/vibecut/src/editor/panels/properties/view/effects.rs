@@ -9,6 +9,8 @@ use crate::editor::properties::{
     Vec2, effect_scrub_spec, egui, icons, read, theme,
 };
 
+/// Width both point fields share, the label column's width: X and Y fit side by side.
+const POINT_COLUMN: f32 = 120.0;
 /// Three colour wheels share one row in the measured 460 px panel.
 const WHEEL_DIAMETER: f32 = 104.0;
 /// Distance a curve point or polyline must be before a click edits it.
@@ -1244,7 +1246,7 @@ impl Panel<'_, '_> {
         });
     }
 
-    /// One frame-fraction point as two percent fields (X then Y). A drag or typed value is
+    /// One frame-fraction point as two percent fields (X then Y) inside `POINT_COLUMN`. A drag or typed value is
     /// held as a draft and published as one undo step when the gesture or edit ends.
     fn effect_point_field(
         &mut self,
@@ -1261,6 +1263,10 @@ impl Panel<'_, '_> {
         let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
         self.row_label(ui, row, label);
         value_ui.add_enabled_ui(!locked, |ui| {
+            // Both fields share one 120 px value column (the label column's width), so a
+            // value of 100.0 never pushes the pair past it.
+            let gap = ui.spacing().item_spacing.x;
+            let field = ((POINT_COLUMN.min(ui.available_width()) - gap) / 2.0).floor();
             for (axis, name) in [(0, "x"), (1, "y")] {
                 let id = format!("effects.{effect}.param.{}.{name}", parameter.id);
                 let draft_id = egui::Id::unique((&id, item.0));
@@ -1269,12 +1275,12 @@ impl Panel<'_, '_> {
                 let mut shown = ui
                     .data(|data| data.get_temp::<f64>(draft_id))
                     .unwrap_or(stored * 100.0);
-                let response = ui.add(
+                let response = ui.add_sized(
+                    [field, theme::size::FIELD],
                     egui::DragValue::new(&mut shown)
                         .range(0.0..=project::POINT_MAX * 100.0)
                         .speed(0.5)
                         .fixed_decimals(1)
-                        .suffix("%")
                         .prefix(format!("{} ", name.to_uppercase())),
                 );
                 response.widget_info(|| {
