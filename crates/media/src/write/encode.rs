@@ -912,7 +912,7 @@ mod acceleration_tests {
     #[test]
     #[ignore = "requires a working VideoToolbox hardware decoder and platform software encoder"]
     fn explicit_software_encoder_converts_gpu_input_without_retaining_its_pool() {
-        let Some(path) = crate::read::decode::recovery_tests::fixture() else {
+        let Some(path) = crate::read::recovery_tests::fixture() else {
             return;
         };
         let mut reader = VideoReader::open(path).unwrap();
@@ -940,7 +940,7 @@ mod acceleration_tests {
     #[test]
     #[ignore = "requires a working VideoToolbox hardware decoder and encoder"]
     fn hardware_pool_survives_decoder_and_accepts_software_frames() {
-        let Some(path) = crate::read::decode::recovery_tests::fixture() else {
+        let Some(path) = crate::read::recovery_tests::fixture() else {
             return;
         };
         let mut reader = VideoReader::open(&path).unwrap();

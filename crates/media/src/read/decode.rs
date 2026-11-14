@@ -1016,7 +1016,8 @@ pub(crate) mod recovery_tests {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod recovery_benchmark {
     use super::*;
-    use crate::{Container, DecodeFault, Muxer, VideoEncoder, VideoEncoderSettings};
+    use crate::{Container, Muxer, VideoEncoder, VideoEncoderSettings};
+    use time::{FrameRate, Rounding};
     use std::time::{Duration, Instant};
 
     #[test]
