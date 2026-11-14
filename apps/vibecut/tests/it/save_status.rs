@@ -82,7 +82,7 @@ fn settle(harness: &mut Harness<Editor>) -> String {
     }
 }
 
-fn autosave(harness: &mut Harness<Editor>) -> &mut engine::recovery::Autosave {
+fn autosave<'a>(harness: &'a mut Harness<'_, Editor>) -> &'a mut engine::recovery::Autosave {
     harness.state_mut().session.autosave().unwrap()
 }
 

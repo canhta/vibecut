@@ -98,7 +98,11 @@ impl Panel<'_, '_> {
             .accesskit_node_builder(response.id, |node| node.set_label(name));
         self.remember("inspector.cutout_stroke", &response);
         if response.changed() {
-            self.set_item_field(item, "cutout_stroke", if checked { "true" } else { "false" });
+            self.set_item_field(
+                item,
+                "cutout_stroke",
+                if checked { "true" } else { "false" },
+            );
         }
         if !stroke.enabled {
             return;

@@ -1876,22 +1876,43 @@ fn background_removal_is_a_video_item_switch_whose_feather_is_one_undo_step() {
         patch: P::BackgroundRemoval(Some(B::default())),
     })
     .unwrap();
-    assert_eq!(removal(&s), Some(B { feather: 0.0, ..Default::default() }));
+    assert_eq!(
+        removal(&s),
+        Some(B {
+            feather: 0.0,
+            ..Default::default()
+        })
+    );
     s.apply(Command::SetItemField {
         item: clip,
         patch: P::BackgroundRemovalFeather(35.0),
     })
     .unwrap();
-    assert_eq!(removal(&s), Some(B { feather: 35.0, ..Default::default() }));
+    assert_eq!(
+        removal(&s),
+        Some(B {
+            feather: 35.0,
+            ..Default::default()
+        })
+    );
     s.undo().unwrap();
-    assert_eq!(removal(&s), Some(B { feather: 0.0, ..Default::default() }));
+    assert_eq!(
+        removal(&s),
+        Some(B {
+            feather: 0.0,
+            ..Default::default()
+        })
+    );
     s.undo().unwrap();
     assert_eq!(removal(&s), None);
     // Out-of-range values never reach the project.
     assert!(
         s.apply(Command::SetItemField {
             item: clip,
-            patch: P::BackgroundRemoval(Some(B { feather: 101.0, ..Default::default() })),
+            patch: P::BackgroundRemoval(Some(B {
+                feather: 101.0,
+                ..Default::default()
+            })),
         })
         .is_err()
     );
@@ -1903,7 +1924,10 @@ fn background_removal_is_a_video_item_switch_whose_feather_is_one_undo_step() {
     );
     assert_eq!(
         P::parse("background_removal", "40").unwrap(),
-        P::BackgroundRemoval(Some(B { feather: 40.0, ..Default::default() }))
+        P::BackgroundRemoval(Some(B {
+            feather: 40.0,
+            ..Default::default()
+        }))
     );
     assert_eq!(
         P::parse("background_removal", "off").unwrap(),
@@ -1922,8 +1946,11 @@ fn background_removal_is_a_video_item_switch_whose_feather_is_one_undo_step() {
     // percentages pulled into 0..=100, the colour kept opaque.
     let stroke = |s: &Session| removal(s).map(|r| r.stroke);
     assert!(
-        s.apply(Command::SetItemField { item: clip, patch: P::CutoutStroke(true) })
-            .is_err()
+        s.apply(Command::SetItemField {
+            item: clip,
+            patch: P::CutoutStroke(true)
+        })
+        .is_err()
     );
     s.apply(Command::SetItemField {
         item: clip,
@@ -1938,7 +1965,8 @@ fn background_removal_is_a_video_item_switch_whose_feather_is_one_undo_step() {
         P::CutoutStrokeSize(80.0),
         P::CutoutStrokeOpacity(40.0),
     ] {
-        s.apply(Command::SetItemField { item: clip, patch }).unwrap();
+        s.apply(Command::SetItemField { item: clip, patch })
+            .unwrap();
     }
     assert_eq!(
         stroke(&s),
@@ -1953,8 +1981,11 @@ fn background_removal_is_a_video_item_switch_whose_feather_is_one_undo_step() {
     s.undo().unwrap();
     assert_eq!(stroke(&s).map(|s| s.opacity), Some(100.0));
     assert!(
-        s.apply(Command::SetItemField { item: clip, patch: P::CutoutStrokeSize(100.5) })
-            .is_err()
+        s.apply(Command::SetItemField {
+            item: clip,
+            patch: P::CutoutStrokeSize(100.5)
+        })
+        .is_err()
     );
     assert_eq!(
         P::parse("cutout_stroke_size", "999").unwrap(),
@@ -1973,7 +2004,10 @@ fn background_removal_is_a_video_item_switch_whose_feather_is_one_undo_step() {
         P::parse("cutout_stroke_color", "#336699").unwrap(),
         P::CutoutStrokeColor(project::Color([0x33, 0x66, 0x99, 255]))
     );
-    assert_eq!(P::parse("cutout_stroke", "true").unwrap(), P::CutoutStroke(true));
+    assert_eq!(
+        P::parse("cutout_stroke", "true").unwrap(),
+        P::CutoutStroke(true)
+    );
     // It addresses video items only.
     let patch = P::BackgroundRemoval(Some(B::default()));
     assert!(patch.compatible(&get_id(&s, clip).content));

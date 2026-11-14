@@ -1123,7 +1123,10 @@ fn chroma_key_leaves_spill_for_the_clean_up_edge_slider() {
         }
     };
     let green = encoded(out[1] / out[3]);
-    assert!((green - 0.60).abs() < 1e-3, "keying keeps the green {green}");
+    assert!(
+        (green - 0.60).abs() < 1e-3,
+        "keying keeps the green {green}"
+    );
     let cleaned = |slider: f64| {
         let pixels = vec![cast.map(f64::from); 2];
         let (out, _) = spatial_output(
@@ -1136,16 +1139,30 @@ fn chroma_key_leaves_spill_for_the_clean_up_edge_slider() {
         out[0]
     };
     let at_zero = cleaned(0.0);
-    assert!((at_zero[1] - out[1]).abs() < 1e-5, "slider 0 changes nothing");
+    assert!(
+        (at_zero[1] - out[1]).abs() < 1e-5,
+        "slider 0 changes nothing"
+    );
     let green_at = |slider| {
         let pixel = cleaned(slider);
         encoded(pixel[1] / pixel[3])
     };
-    assert!((green_at(25.0) - 0.575).abs() < 2e-3, "half strength {}", green_at(25.0));
+    assert!(
+        (green_at(25.0) - 0.575).abs() < 2e-3,
+        "half strength {}",
+        green_at(25.0)
+    );
     for slider in [50.0, 100.0] {
-        assert!((green_at(slider) - 0.55).abs() < 2e-3, "{slider}: {}", green_at(slider));
+        assert!(
+            (green_at(slider) - 0.55).abs() < 2e-3,
+            "{slider}: {}",
+            green_at(slider)
+        );
         let pixel = cleaned(slider);
-        assert!((pixel[1] - pixel[0]).abs() < 1e-4, "green no longer dominates");
+        assert!(
+            (pixel[1] - pixel[0]).abs() < 1e-4,
+            "green no longer dominates"
+        );
         assert!((pixel[3] - out[3]).abs() < 1e-6, "the matte is untouched");
     }
     // Shadow restores pixels darker than the key, as the reference shows.
@@ -1242,7 +1259,10 @@ fn chroma_key_feather_edge_blurs_colour_and_coverage_on_the_cpu() {
         out
     };
     let base = run(&chroma_edge_effect(40.0, 0.0, 0.0));
-    assert!(base[5][3] < 1e-3 && base[6][3] > 0.99, "a vertical key edge");
+    assert!(
+        base[5][3] < 1e-3 && base[6][3] > 0.99,
+        "a vertical key edge"
+    );
     let at = |a: &[[f32; 4]], x: i64, y: i64| {
         a[y.clamp(0, h as i64 - 1) as usize * w + x.clamp(0, w as i64 - 1) as usize]
     };
@@ -1264,15 +1284,27 @@ fn chroma_key_feather_edge_blurs_colour_and_coverage_on_the_cpu() {
     let close = |actual: &[[f32; 4]], expected: &[[f32; 4]], what: &str| {
         for (i, (pixel, want)) in actual.iter().zip(expected).enumerate() {
             for c in 0..4 {
-                assert!((pixel[c] - want[c]).abs() < 1e-5, "{what} {i}: {pixel:?} {want:?}");
+                assert!(
+                    (pixel[c] - want[c]).abs() < 1e-5,
+                    "{what} {i}: {pixel:?} {want:?}"
+                );
             }
-            assert!(pixel[..3].iter().all(|v| *v <= pixel[3] + 1e-6), "{what} {i}");
+            assert!(
+                pixel[..3].iter().all(|v| *v <= pixel[3] + 1e-6),
+                "{what} {i}"
+            );
         }
     };
     let feathered = run(&chroma_edge_effect(40.0, 0.0, 5.0));
     close(&feathered, &feather(&base), "feather");
-    assert!(feathered[5][3] > 0.1, "the edge spreads onto the removed side");
-    assert!(feathered[6][3] > 0.2 && feathered[6][3] < 0.9, "a soft edge");
+    assert!(
+        feathered[5][3] > 0.1,
+        "the edge spreads onto the removed side"
+    );
+    assert!(
+        feathered[6][3] > 0.2 && feathered[6][3] < 0.9,
+        "a soft edge"
+    );
     // Clean up is pixel-local and leaves this fixture's skin alone, so adding it
     // does not change the feathered result.
     let both = run(&chroma_edge_effect(40.0, 25.0, 5.0));
@@ -1291,7 +1323,9 @@ fn chroma_key_edge_passes_follow_the_keying_pass_scale_and_refuse_bad_input() {
     assert_eq!(entries(&chroma_edge_effect(20.0, 0.0, 0.0), 1.0).len(), 1);
     let full = entries(&chroma_edge_effect(20.0, 100.0, 100.0), 1.0);
     assert_eq!(
-        full.iter().map(|(entry, _)| entry.as_str()).collect::<Vec<_>>(),
+        full.iter()
+            .map(|(entry, _)| entry.as_str())
+            .collect::<Vec<_>>(),
         ["chroma_key", "spill_clean", "matte_feather"]
     );
     // Spill strength reaches 1 at slider 50 and is linear below it.
@@ -1299,10 +1333,19 @@ fn chroma_key_edge_passes_follow_the_keying_pass_scale_and_refuse_bad_input() {
     assert_eq!(full[2].1, [18.0]);
     let half = entries(&chroma_edge_effect(20.0, 25.0, 0.0), 1.0);
     assert_eq!(half[1].1, [0.0, 1.0, 0.0, 0.5]);
-    assert_eq!(entries(&chroma_edge_effect(20.0, 50.0, 0.0), 1.0)[1].1[3], 1.0);
+    assert_eq!(
+        entries(&chroma_edge_effect(20.0, 50.0, 0.0), 1.0)[1].1[3],
+        1.0
+    );
     // The feather radius follows the clip-to-output pixel scale and saturates.
-    assert_eq!(entries(&chroma_edge_effect(20.0, 0.0, 100.0), 2.0)[1].1, [36.0]);
-    assert_eq!(entries(&chroma_edge_effect(20.0, 0.0, 100.0), 1e9)[1].1, [64.0]);
+    assert_eq!(
+        entries(&chroma_edge_effect(20.0, 0.0, 100.0), 2.0)[1].1,
+        [36.0]
+    );
+    assert_eq!(
+        entries(&chroma_edge_effect(20.0, 0.0, 100.0), 1e9)[1].1,
+        [64.0]
+    );
     // A feather under half an output pixel emits nothing; intensity 0 keys
     // nothing, so no edge stage.
     assert_eq!(entries(&chroma_edge_effect(20.0, 0.0, 2.0), 1.0).len(), 1);
@@ -1325,8 +1368,17 @@ fn chroma_key_edge_passes_follow_the_keying_pass_scale_and_refuse_bad_input() {
         uniforms: values.into_iter().map(Uniform::Float).collect(),
     };
     assert!(validate_pass(&sample(vec![2.0]), 8, 4).is_ok());
-    for values in [vec![], vec![0.4], vec![64.5], vec![f32::NAN], vec![1.0, 1.0]] {
-        assert!(validate_pass(&sample(values.clone()), 8, 4).is_err(), "{values:?}");
+    for values in [
+        vec![],
+        vec![0.4],
+        vec![64.5],
+        vec![f32::NAN],
+        vec![1.0, 1.0],
+    ] {
+        assert!(
+            validate_pass(&sample(values.clone()), 8, 4).is_err(),
+            "{values:?}"
+        );
     }
     let spill = |key: [f32; 3], strength: f32| EffectPass::Pixel {
         entry_point: "spill_clean",
@@ -1341,7 +1393,10 @@ fn chroma_key_edge_passes_follow_the_keying_pass_scale_and_refuse_bad_input() {
         ([0.0, 1.5, 0.0], 0.5),
         ([f32::NAN, 1.0, 0.0], 0.5),
     ] {
-        assert!(validate_pass(&spill(key, strength), 8, 4).is_err(), "{key:?} {strength}");
+        assert!(
+            validate_pass(&spill(key, strength), 8, 4).is_err(),
+            "{key:?} {strength}"
+        );
     }
 }
 

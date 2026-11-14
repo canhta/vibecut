@@ -502,6 +502,7 @@ fn expand_takes_the_right_column_and_restore_docks_the_chat_again() {
     assert!(has(&harness, "agent.expand") && !has(&harness, "agent.restore"));
     assert!(
         node(&harness, "agent.expand")
+            .accesskit_node()
             .label()
             .is_some_and(|label| label == "Expand")
     );
@@ -513,6 +514,7 @@ fn expand_takes_the_right_column_and_restore_docks_the_chat_again() {
     assert!(has(&harness, "agent.restore") && !has(&harness, "agent.expand"));
     assert!(
         node(&harness, "agent.restore")
+            .accesskit_node()
             .label()
             .is_some_and(|label| label == "Restore")
     );

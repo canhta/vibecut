@@ -76,7 +76,9 @@ impl BackgroundRemoval {
 /// The outline styles of the Stroke row. The reference lists eight tiles (None, Paper Stroke,
 /// Luminescence, Hand-drawn, Straight stroke, Solid Stroke, Offset Stroke, Dotted stroke); only
 /// the plain ones are built, the rest are open in the render README.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum StrokePreset {
     /// No outline; the controls stay hidden.

@@ -108,9 +108,8 @@ fn taps(radius: f32) -> impl Iterator<Item = (i64, i64)> {
 
 /// The current image's premultiplied pixel at an offset, clamped to the picture edge.
 fn pixel_at(inputs: &SampleInputs<'_>, x: u32, y: u32, dx: i64, dy: i64) -> [f32; 4] {
-    let at = |v: u32, d: i64, size: u32| {
-        (i64::from(v) + d).clamp(0, i64::from(size.max(1)) - 1) as u32
-    };
+    let at =
+        |v: u32, d: i64, size: u32| (i64::from(v) + d).clamp(0, i64::from(size.max(1)) - 1) as u32;
     inputs.texel_current(
         at(x, dx, inputs.current.width()),
         at(y, dy, inputs.current.height()),

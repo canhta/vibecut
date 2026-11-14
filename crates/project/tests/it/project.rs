@@ -898,16 +898,34 @@ fn model_trust_boundaries() {
                 _ => None,
             })
             .unwrap();
-        video.background_removal = Some(project::BackgroundRemoval { feather, ..Default::default() });
+        video.background_removal = Some(project::BackgroundRemoval {
+            feather,
+            ..Default::default()
+        });
         cases.push(d);
     }
     // The cutout stroke's Size and Opacity are 0..=100 and its colour opaque.
     for stroke in [
-        project::CutoutStroke { size: -1.0, ..Default::default() },
-        project::CutoutStroke { size: 100.5, ..Default::default() },
-        project::CutoutStroke { opacity: f32::NAN, ..Default::default() },
-        project::CutoutStroke { opacity: 101.0, ..Default::default() },
-        project::CutoutStroke { color: project::Color([255, 255, 255, 128]), ..Default::default() },
+        project::CutoutStroke {
+            size: -1.0,
+            ..Default::default()
+        },
+        project::CutoutStroke {
+            size: 100.5,
+            ..Default::default()
+        },
+        project::CutoutStroke {
+            opacity: f32::NAN,
+            ..Default::default()
+        },
+        project::CutoutStroke {
+            opacity: 101.0,
+            ..Default::default()
+        },
+        project::CutoutStroke {
+            color: project::Color([255, 255, 255, 128]),
+            ..Default::default()
+        },
     ] {
         let mut d = base.clone();
         let video = d
@@ -920,7 +938,10 @@ fn model_trust_boundaries() {
                 _ => None,
             })
             .unwrap();
-        video.background_removal = Some(project::BackgroundRemoval { feather: 0.0, stroke });
+        video.background_removal = Some(project::BackgroundRemoval {
+            feather: 0.0,
+            stroke,
+        });
         cases.push(d);
     }
     let good = project::MatteStroke {
