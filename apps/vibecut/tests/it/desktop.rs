@@ -1688,6 +1688,7 @@ fn preview_axis_held_hover_does_not_keep_a_finished_transport_playing() {
     let end = session.project().duration();
     assert_eq!(playback.display_position().unwrap(), end);
     wait_preview(&mut playback, end);
+    // The stopped transport at the end holds the overlay's last frame.
     assert!(
         playback
             .frame()
@@ -1695,7 +1696,7 @@ fn preview_axis_held_hover_does_not_keep_a_finished_transport_playing() {
             .image
             .pixels
             .iter()
-            .all(|p| *p == egui::Color32::BLACK)
+            .all(|p| *p == egui::Color32::RED)
     );
 }
 

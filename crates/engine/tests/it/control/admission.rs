@@ -834,7 +834,7 @@ fn owner_failures_classify_publication_receipts_and_events() {
             E::Transcript(T::Ai(ai::Error::RateLimit {
                 retry_after_seconds: Some(3)
             })),
-            Ai,
+            RateLimit,
             true
         ),
         row!(
@@ -852,7 +852,7 @@ fn owner_failures_classify_publication_receipts_and_events() {
             E::Providers(P::Ai(ai::Error::RateLimit {
                 retry_after_seconds: Some(3)
             })),
-            Ai,
+            RateLimit,
             true
         ),
         row!(E::Providers(P::Ai(ai::Error::ConsentRequired)), Ai, false),
@@ -884,7 +884,7 @@ fn owner_failures_classify_publication_receipts_and_events() {
             E::Models(engine::models::Error::Ai(ai::Error::RateLimit {
                 retry_after_seconds: Some(3)
             })),
-            Ai,
+            RateLimit,
             true
         ),
         row!(
@@ -1112,7 +1112,7 @@ fn owner_failures_classify_publication_receipts_and_events() {
         row!(E::Runtime(engine::RuntimeError::CacheCorrupt), Job, false),
         row!(E::Render(render::Error::Cancelled), Render, false),
         row!(E::Media(media::MediaError::Cancelled), Media, false),
-        row!(E::Ai(ai::Error::Auth), Ai, false),
+        row!(E::Ai(ai::Error::Auth), Auth, false),
         row!(E::Sounds(S::NoCredentials), Setup, false),
         row!(E::Font(F::Unavailable), Refused, false),
         row!(E::Providers(P::ConsentRequired), Permission, false),
@@ -1316,15 +1316,15 @@ fn owner_failures_classify_publication_receipts_and_events() {
             Refused,
             false
         ),
-        row!(E::Ai(ai::Error::Network), Ai, true),
-        row!(E::Ai(ai::Error::Timeout), Ai, true),
-        row!(E::Ai(ai::Error::Server), Ai, true),
+        row!(E::Ai(ai::Error::Network), Network, true),
+        row!(E::Ai(ai::Error::Timeout), Network, true),
+        row!(E::Ai(ai::Error::Server), Network, true),
         row!(E::Ai(ai::Error::Schema), Ai, true),
         row!(
             E::Ai(ai::Error::RateLimit {
                 retry_after_seconds: Some(3)
             }),
-            Ai,
+            RateLimit,
             true
         ),
         row!(E::Ai(ai::Error::Incomplete), Ai, false),

@@ -602,7 +602,7 @@ fn a_paid_plan_voice_names_itself_in_its_own_line_and_places_nothing() {
     let line = h
         .get(By::new().predicate(|node| node.author_id() == Some("inspector.narration.failure")))
         .accesskit_node()
-        .label()
+        .value()
         .unwrap_or_default();
     assert!(line.contains("Adam"), "{line}");
     assert!(!line.contains("quota"), "{line}");

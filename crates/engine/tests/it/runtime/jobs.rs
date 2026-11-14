@@ -2113,7 +2113,7 @@ fn classified_failures_reach_job_resync_without_broadening_retries() {
                     retry_after_seconds: Some(3_600),
                 }))))
             },
-            C::Ai,
+            C::RateLimit,
             false,
         ),
         (

@@ -756,11 +756,12 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![ProjectId(1), ProjectId(2)]
         );
-        // Corruption of another row makes the post-delete listing fail. The
-        // last successful rows remain, and Retry must stop the live worker.
-        let path = root.path().join("0000000000000002/project.vibecut");
-        let original = std::fs::read(&path).unwrap();
-        std::fs::write(&path, b"invalid project").unwrap();
+        // An unreadable project no longer fails a listing, but a root past its entry limit
+        // does: the post-delete listing fails, the last successful rows remain, and Retry
+        // must stop the live worker.
+        for index in 0..4096 {
+            std::fs::write(root.path().join(format!("clutter-{index}")), b"").unwrap();
+        }
         page.request_delete(vec![ProjectId(1)]);
         while page.busy() {
             page.tick();
@@ -811,7 +812,9 @@ mod tests {
                 "Retry must not join a worker while an operation is pending"
             );
         }
-        std::fs::write(path, original).unwrap();
+        for index in 0..4096 {
+            std::fs::remove_file(root.path().join(format!("clutter-{index}"))).unwrap();
+        }
         harness.get(retry()).click();
         harness.run_steps(2);
         while harness.state().0.busy() {
