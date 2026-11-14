@@ -124,7 +124,14 @@ impl Editor {
             right,
             timeline,
             agent,
-        } = super::layout::Layout::new(rect, self.preferences.panels, self.agent.is_open());
+        } = super::layout::Layout::new(rect, self.preferences.panels, {
+            use super::layout::Dock;
+            match (self.agent.is_open(), self.agent.is_expanded()) {
+                (false, _) => Dock::Closed,
+                (true, false) => Dock::Docked,
+                (true, true) => Dock::Expanded,
+            }
+        });
         for (id, area) in [
             ("header", top),
             ("media", left),

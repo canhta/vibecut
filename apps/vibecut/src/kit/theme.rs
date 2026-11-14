@@ -458,6 +458,9 @@ pub(crate) mod size {
     /// and as tall as the timeline row, a 40 px title strip, an 84 px input box and 34 px
     /// suggestion chips (editpilot/editor-editpilot.png, 8 px apart).
     pub const AGENT_PANEL: f32 = 484.0;
+    /// The expanded chat column, full height right of the other areas: x 2594-3661 of
+    /// 151706 (3680 px), logical = native / 2 on the 1840 pt window.
+    pub const AGENT_EXPANDED: f32 = 534.0;
     pub const AGENT_HEADER: f32 = 40.0;
     pub const AGENT_INPUT: f32 = 84.0;
     pub const AGENT_CHIP: f32 = 34.0;

@@ -9,7 +9,7 @@ time; there is no runtime network or font request.
 - Author: Phosphor Icons
 - Licence: MIT, see [LICENSE](LICENSE)
 - Added: p0-core/39; extended: p1-parity/06, p1-parity/09, p1-parity/54, p1-parity/117, 2026-11-12, 2026-11-13, 2026-11-14
-- Files: 73 unmodified `assets/regular/*.svg` files.
+- Files: 74 unmodified `assets/regular/*.svg` files.
 
 SHA-256 of each embedded file:
 
@@ -36,6 +36,7 @@ SHA-256 of each embedded file:
 | `chat-circle.svg` | `09e36aa820a39bbc8cffe705ad84c836d1e5733f83dc1d2212a965fdacdf4a67` |
 | `circle-half.svg` | `4e5376acc240190bf951be566c4649b69936c928f679eba6793412295bb90736` |
 | `copy.svg` | `5a892fc6a72866e60c67db2088a87653cf44b57b1a5d183b36e950cdc5dd66b3` |
+| `corners-in.svg` | `31e9060aafdd6e24f4b8aef7742a89e7e616e6e2da07160691d020cb5ab07dee` |
 | `corners-out.svg` | `fd79277404b3662b50b737127fb6bf6f63ae93c9b60d9f2aca9122a950ec08c8` |
 | `crop.svg` | `ebe7c26f3b67a0345ed22254195dc649f52788b403194c2024125f7324e939d1` |
 | `cursor.svg` | `67df1a1f6d7868c4eed4705775cafd972c19a3ff25f99b1b260b525b7c85d1e4` |

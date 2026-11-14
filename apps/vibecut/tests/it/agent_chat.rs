@@ -486,3 +486,60 @@ fn history_is_kept_per_project_and_clear_removes_it() {
     harness.run_steps(2);
     assert_eq!(view(&harness).history, 0, "cleared for good");
 }
+
+#[test]
+fn expand_takes_the_right_column_and_restore_docks_the_chat_again() {
+    let backend = Scripted::new(vec![]);
+    let dir = tempfile::tempdir().unwrap();
+    let mut harness = build(editor(&backend, dir.path()));
+    harness.state_mut().open_agent();
+    harness.run_steps(3);
+    assert!(!view(&harness).expanded);
+    assert!(has(&harness, "agent.expand") && !has(&harness, "agent.restore"));
+    assert!(
+        node(&harness, "agent.expand")
+            .label()
+            .is_some_and(|label| label == "Expand")
+    );
+    let docked = harness.state().panels().clone();
+
+    click(&mut harness, "agent.expand");
+    harness.run_steps(2);
+    assert!(view(&harness).expanded);
+    assert!(has(&harness, "agent.restore") && !has(&harness, "agent.expand"));
+    assert!(
+        node(&harness, "agent.restore")
+            .label()
+            .is_some_and(|label| label == "Restore")
+    );
+    let wide = harness.state().panels().clone();
+    // The chat runs from the header to the bottom of the body, in the measured 534 wide column.
+    assert_eq!(wide["agent"].top(), wide["header"].bottom());
+    assert_eq!(wide["agent"].bottom(), docked["timeline"].bottom());
+    assert_eq!(wide["agent"].right(), docked["agent"].right());
+    assert_eq!(wide["agent"].width(), 534.0);
+    // Media, player, properties and timeline keep the rest, a 7 gutter away from the chat.
+    for id in ["inspector", "timeline"] {
+        assert_eq!(wide["agent"].left() - wide[id].right(), 7.0, "{id}");
+    }
+    assert!(wide["preview"].width() < docked["preview"].width());
+    assert!(wide["timeline"].width() < docked["timeline"].width());
+    assert_eq!(wide["timeline"].top(), docked["timeline"].top());
+    assert_eq!(wide["timeline"].height(), docked["timeline"].height());
+    assert_eq!(wide["media"].left(), docked["media"].left());
+    assert_eq!(wide["media"].height(), docked["media"].height());
+
+    // Closing and opening again keeps the layout the creator chose.
+    click(&mut harness, "agent.close");
+    assert!(!view(&harness).open && view(&harness).expanded);
+    harness.state_mut().open_agent();
+    harness.run_steps(3);
+    assert_eq!(harness.state().panels()["agent"], wide["agent"]);
+
+    click(&mut harness, "agent.restore");
+    harness.run_steps(2);
+    assert!(!view(&harness).expanded);
+    assert_eq!(harness.state().panels()["agent"], docked["agent"]);
+    assert_eq!(harness.state().panels()["timeline"], docked["timeline"]);
+    assert_eq!(harness.state().panels()["preview"], docked["preview"]);
+}

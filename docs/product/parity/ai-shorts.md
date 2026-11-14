@@ -9,7 +9,7 @@ Snapshot of main `443181f4` on 2026-11-14. Legend, evidence names and update rul
 | AGENT-01 | Chat button | Done | Proposed | 14b/110200 | |
 | AGENT-02 | Docked bottom-right panel | Done | Matches | 05/221910; [ui/editor.md](../ui/editor.md#agent-chat) | |
 | AGENT-03 | Header title, Beta tag | Done | Matches | 14b/110207 | |
-| AGENT-04 | Expand / restore | Missing | Not captured | 14d/151656 | |
+| AGENT-04 | Expand / restore | Done | Differs | 14d/151656, 151659, 151706, 151713; [ui/editor.md](../ui/editor.md#agent-chat) | Layout matches; glyph is Phosphor corners, not the two brackets |
 | AGENT-05 | Close button | Done | Matches | 14b/110259 | Header holds Close only |
 | AGENT-06 | Empty state, suggestion chips | Done | Matches | 14b/110207 | |
 | AGENT-07 | Selected-clip chip in input | Partial | Differs | 14b/110207 | Manual @ mention |

@@ -81,6 +81,11 @@ pub(super) fn editor_frame_state(
     };
     let mut app = harness_sized(App::Editor(Box::new(editor)), scale, size);
     app.run_steps(3);
+    if state == "agent-expanded" {
+        app.get(By::new().predicate(|node| node.author_id() == Some("agent.expand")))
+            .click();
+        app.run_steps(3);
+    }
     if state == "menu" {
         app.get(By::new().predicate(|node| node.author_id() == Some("window.menu")))
             .click();

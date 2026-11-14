@@ -35,6 +35,7 @@ pub(crate) enum Icon {
     ChatCircle,
     CircleHalf,
     Copy,
+    CornersIn,
     CornersOut,
     Crop,
     Cursor,
@@ -113,6 +114,7 @@ impl Icon {
         Self::ChatCircle,
         Self::CircleHalf,
         Self::Copy,
+        Self::CornersIn,
         Self::CornersOut,
         Self::Crop,
         Self::Cursor,
@@ -190,6 +192,7 @@ impl Icon {
             Self::ChatCircle => "chat-circle",
             Self::CircleHalf => "circle-half",
             Self::Copy => "copy",
+            Self::CornersIn => "corners-in",
             Self::CornersOut => "corners-out",
             Self::Crop => "crop",
             Self::Cursor => "cursor",
@@ -336,6 +339,10 @@ const ICONS: &[(&str, &[u8])] = &[
     (
         "copy",
         include_bytes!("../../../../assets/icons/phosphor/regular/copy.svg"),
+    ),
+    (
+        "corners-in",
+        include_bytes!("../../../../assets/icons/phosphor/regular/corners-in.svg"),
     ),
     (
         "corners-out",
