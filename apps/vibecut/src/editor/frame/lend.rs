@@ -329,7 +329,7 @@ impl Editor {
 
     pub(in crate::editor) fn show_drop_overlay(&mut self, ctx: &egui::Context, hovering: bool) {
         let importing = self.assets.importing();
-        if !hovering || importing {
+        if !hovering || importing || self.assets.drop_zone_pass == ctx.cumulative_pass_nr() {
             return;
         }
         let cx = self.context();

@@ -69,6 +69,8 @@ pub struct State {
     pub(super) selection: BTreeSet<ProjectId>,
     pub(super) anchor: Option<ProjectId>,
     pub(super) search: String,
+    /// The welcome dialog's current step.
+    pub(super) welcome_step: usize,
     pub(super) ready: bool,
     pub(super) pending: usize,
     pub(super) creating: bool,
@@ -106,6 +108,7 @@ impl State {
             selection: BTreeSet::new(),
             anchor: None,
             search: String::new(),
+            welcome_step: 0,
             ready: false,
             pending: 0,
             creating: false,
@@ -799,8 +802,8 @@ mod tests {
                             look: state.1,
                             projects: &mut state.2,
                             status: None,
-
                             default_fps: 30,
+                            welcome_seen: &mut true,
                         },
                         ui,
                     );
@@ -884,8 +887,8 @@ mod tests {
                             look: state.1,
                             projects: &mut state.2,
                             status: None,
-
                             default_fps: 30,
+                            welcome_seen: &mut true,
                         },
                         ui,
                     );
@@ -932,6 +935,12 @@ mod tests {
                 .query_by_label(crate::i18n::text(locale, Text::LoadingProject))
                 .is_some(),
             "the loading row must render while the catalog is pending"
+        );
+        assert!(
+            harness
+                .query(By::new().predicate(|node| node.author_id() == Some("projects.skeleton")))
+                .is_some(),
+            "the loading face is the card skeleton"
         );
         release();
         harness.run_steps(2);

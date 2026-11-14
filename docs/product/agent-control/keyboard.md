@@ -162,6 +162,7 @@
 | `appearance.theme` — Toggle theme | View | — | — | preference store |
 | `appearance.locale` — Toggle language | View | — | — | preference store |
 | `layout.reset` — Reset layout | View | — | — | preference store |
+| `ui.onboarding.reset` — Show welcome again | View | — | — | preference store |
 | `shortcuts.open` — Keyboard shortcuts | View | — | — | shortcuts dialog |
 | `app.help` — Help | View | — | — | help |
 | `app.feedback` — Feedback | View | — | — | help |

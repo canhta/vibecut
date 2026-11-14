@@ -18,6 +18,7 @@ mod media_library;
 mod models;
 mod music;
 mod narration;
+mod onboarding;
 mod panels;
 mod preview;
 mod projects;

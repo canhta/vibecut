@@ -193,6 +193,8 @@ pub enum UiAction {
     Theme,
     Locale,
     ResetLayout,
+    /// `ui.onboarding.reset`: show the first-launch welcome dialog again.
+    ResetOnboarding,
     ProjectInspector,
     DetailsInspector,
     RetryPreview,

@@ -696,6 +696,37 @@ impl<'a, 'c> Panel<'a, 'c> {
     fn fail(&mut self, error: impl ToString) {
         self.actions.push(Action::Error(error.to_string()));
     }
+    /// An empty face (24 px glyph over one line) with one call-to-action under it. Returns
+    /// whether the call-to-action was clicked.
+    fn empty_cta(
+        &mut self,
+        ui: &mut egui::Ui,
+        id: &str,
+        glyph: kit::Icon,
+        line: Text,
+        cta: (&str, kit::Icon, Text),
+    ) -> bool {
+        let (rect, _) = ui.allocate_exact_size(
+            Vec2::new(
+                ui.available_width(),
+                theme::icon::STATE + theme::space::MD + theme::type_size::BODY * 2.0,
+            ),
+            egui::Sense::hover(),
+        );
+        let face = kit::panel_state(ui, id, rect, glyph, self.tr(line), kit::Tone::Quiet);
+        self.remember(id, &face);
+        let (button, icon, label) = cta;
+        let mut clicked = false;
+        ui.vertical_centered(|ui| {
+            let response = ui.add(egui::Button::image_and_text(
+                kit::tinted(icon, theme::icon::DENSE, self.text_color()),
+                self.tr(label),
+            ));
+            self.remember(button, &response);
+            clicked = response.clicked();
+        });
+        clicked
+    }
     fn remember(&mut self, id: impl Into<String>, response: &egui::Response) {
         self.remember_with_icon(id, None, response);
     }

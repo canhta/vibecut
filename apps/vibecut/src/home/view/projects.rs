@@ -2,7 +2,7 @@
 
 use super::{
     CARD_RADIUS, GRID_BLEED, GRID_GAP, GRID_INSET, ROW_GAP, THUMB, THUMB_RADIUS,
-    widgets::{line, menu_action, quiet_buttons, semibold, set_author_id},
+    widgets::{action_button, line, menu_action, quiet_buttons, semibold, set_author_id},
 };
 use crate::{
     egui,
@@ -73,12 +73,7 @@ pub(super) fn section(
         // many controls the ready grid would allocate in the same position.
         ui.scope_builder(
             egui::UiBuilder::new().scope_id(ui.make_persistent_id("projects.loading")),
-            |ui| {
-                ui.horizontal(|ui| {
-                    ui.spinner();
-                    ui.label(tr(Text::LoadingProject));
-                });
-            },
+            |ui| skeleton(ui, tr(Text::LoadingProject), dark),
         );
         return;
     }
@@ -118,6 +113,20 @@ pub(super) fn section(
                     tr(text),
                     kit::Tone::Quiet,
                 );
+                if matches!(text, Text::ProjectsNoResults) && !state.search.trim().is_empty() {
+                    ui.add_space(kit::space::MD);
+                    ui.vertical_centered(|ui| {
+                        if action_button(
+                            ui,
+                            "projects.search.clear",
+                            Icon::X,
+                            tr(Text::AssetsClearSearch),
+                            true,
+                        ) {
+                            state.search.clear();
+                        }
+                    });
+                }
             } else {
                 ui.add_enabled_ui(!state.busy(), |ui| match projects.view {
                     ProjectsView::Grid => grid(ui, state, &shown, locale, &mut actions),
@@ -128,6 +137,33 @@ pub(super) fn section(
     );
     ui.add_space(24.0);
     apply(state, actions, &order);
+}
+
+/// The loading face of the grid: one row of card-sized placeholders, named for assistive tools.
+fn skeleton(ui: &mut egui::Ui, label: &str, dark: bool) {
+    let row_width = ui.available_width() + GRID_BLEED;
+    let pitch = THUMB + GRID_GAP;
+    let columns = (((row_width - GRID_INSET + GRID_GAP) / pitch).floor() as usize).max(1);
+    let (band, response) = ui.allocate_exact_size(
+        egui::vec2(row_width, THUMB + 2.0 + 16.0 + 16.0),
+        egui::Sense::hover(),
+    );
+    let fill = kit::field(dark);
+    for column in 0..columns {
+        let left = band.min.x + GRID_INSET + column as f32 * pitch;
+        let thumb =
+            egui::Rect::from_min_size(egui::pos2(left, band.min.y), egui::Vec2::splat(THUMB));
+        ui.painter().rect_filled(thumb, THUMB_RADIUS, fill);
+        for (offset, width) in [(2.0, THUMB * 0.7), (18.0, THUMB * 0.45)] {
+            let bar = egui::Rect::from_min_size(
+                egui::pos2(left, thumb.max.y + offset + 2.0),
+                egui::vec2(width, 10.0),
+            );
+            ui.painter().rect_filled(bar, 2.0, fill);
+        }
+    }
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, label));
+    set_author_id(&response, "projects.skeleton");
 }
 
 fn notices(ui: &mut egui::Ui, state: &mut State, locale: Locale, dark: bool) {

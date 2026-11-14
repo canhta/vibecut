@@ -217,6 +217,10 @@ fn route(state: &mut State, port: &mut Port<'_>, actions: Vec<Action>) {
                 Ok(())
             }
             Action::ResetKeyColor { item, effect } => state.reset_key_color(port, item, &effect),
+            Action::ShowEffects => port.store_preference_result(
+                "assets_tab",
+                serde_json::json!(crate::editor::AssetsTab::Effects),
+            ),
             Action::SetSection { key, open } => port.set_section_open(key, open),
             Action::SetTab { kind, tab } => state.set_tab(port, kind, tab),
             Action::ScrubBegin => state.begin_gesture(port),

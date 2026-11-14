@@ -24,6 +24,17 @@ impl Panel<'_, '_> {
             None => self.tr(Text::DecorationNone),
             Some(mask) => shape_label(&mask.shape, self.cx.locale),
         };
+        if mask.is_none()
+            && self.empty_cta(
+                ui,
+                "inspector.mask.empty",
+                kit::Icon::CircleHalf,
+                Text::MaskNone,
+                ("inspector.mask.add", kit::Icon::Plus, Text::MaskAdd),
+            )
+        {
+            self.state.mask.open(item);
+        }
         let (row, _) = ui.allocate_exact_size(
             egui::Vec2::new(ui.available_width(), theme::size::PROPERTY_ROW),
             egui::Sense::hover(),

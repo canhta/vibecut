@@ -14,7 +14,12 @@ fn idle(app: &mut Workspace) {
     }
 }
 fn app(root: &std::path::Path) -> Workspace {
-    let mut app = Workspace::new(root.join("recovery"), Preferences::default(), None).unwrap();
+    // A returning user: the welcome would cover Home.
+    let preferences = Preferences {
+        welcome_seen: true,
+        ..Preferences::default()
+    };
+    let mut app = Workspace::new(root.join("recovery"), preferences, None).unwrap();
     idle(&mut app);
     app
 }

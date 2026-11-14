@@ -36,7 +36,7 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 
 | Area | Rows | Done | Partial | Missing | Differs | Ours | Out of scope | UI Matches | UI Differs | UI Proposed | UI Not captured |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| [Home](home.md#home-home) | 34 | 15 | 4 | 5 | 0 | 4 | 6 | 9 | 1 | 6 | 8 |
+| [Home](home.md#home-home) | 34 | 15 | 4 | 5 | 0 | 4 | 6 | 9 | 1 | 7 | 8 |
 | [Header and sub-navigation](shell.md#header-and-sub-navigation-shell) | 37 | 21 | 5 | 3 | 0 | 3 | 5 | 13 | 1 | 11 | 6 |
 | [Window and panel layout](shell.md#window-and-panel-layout-layout) | 11 | 6 | 1 | 2 | 0 | 1 | 1 | 6 | 0 | 1 | 1 |
 | [Settings](shell.md#settings-set) | 26 | 7 | 5 | 8 | 0 | 4 | 2 | 0 | 2 | 14 | 0 |
@@ -64,4 +64,4 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 | [AI chat](ai-shorts.md#ai-chat-agent) | 17 | 9 | 3 | 2 | 1 | 1 | 1 | 5 | 3 | 4 | 1 |
 | [Long video to shorts](ai-shorts.md#long-video-to-shorts-shorts) | 24 | 9 | 7 | 4 | 0 | 2 | 2 | 8 | 2 | 5 | 3 |
 | [States](states.md#states-state) | 12 | 7 | 3 | 0 | 1 | 0 | 1 | 2 | 2 | 4 | 3 |
-| **Total** | **670** | **336** | **120** | **114** | **6** | **53** | **41** | **98** | **77** | **271** | **102** |
+| **Total** | **670** | **336** | **120** | **114** | **6** | **53** | **41** | **98** | **77** | **272** | **102** |

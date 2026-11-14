@@ -190,6 +190,7 @@ impl Workspace {
                     default_fps: self.preferences.default_fps,
                     projects: &mut self.preferences.projects,
                     status,
+                    welcome_seen: &mut self.preferences.welcome_seen,
                 };
                 for action in home::show(&mut self.projects, cx, ui) {
                     self.project_action(action);
