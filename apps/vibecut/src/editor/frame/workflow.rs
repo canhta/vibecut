@@ -98,15 +98,26 @@ impl Editor {
             self.fail(error.to_string());
         }
         // Clock-driven state has no worker to wake the loop: the autosave debounce and the
-        // toast and reveal expiry. Poll while one is pending and stop when each is gone.
-        if self
-            .session
-            .autosave()
-            .is_some_and(|autosave| autosave.pending())
-            || self.toast.is_some()
-            || self.assets.media_reveal.is_some()
-        {
-            wake::notify_after(std::time::Duration::from_millis(100));
+        // toast and reveal expiry. Ask for one wake at the nearest deadline; a state with
+        // none leaves the loop asleep, so an idle editor requests nothing.
+        let now = self.clock.now();
+        let due = [
+            self.session
+                .autosave()
+                .and_then(|autosave| autosave.next_tick_in()),
+            self.toast
+                .as_ref()
+                .map(|toast| toast.until.saturating_sub(now)),
+            self.assets
+                .media_reveal
+                .as_ref()
+                .map(|reveal| reveal.until.saturating_sub(now)),
+        ]
+        .into_iter()
+        .flatten()
+        .min();
+        if let Some(due) = due {
+            wake::notify_after(due.max(std::time::Duration::from_millis(1)));
         }
     }
 

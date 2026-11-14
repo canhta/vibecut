@@ -80,6 +80,26 @@ impl Woken {
         }
     }
 
+    /// Run `pass` until a pass leaves the loop with nothing to wait for, then require that
+    /// no wake asks for another pass in the next `span`. Fails on the first request.
+    #[track_caller]
+    pub fn silent(&self, what: &str, span: Duration, mut pass: impl FnMut()) {
+        let limit = Instant::now() + LIMIT;
+        loop {
+            pass();
+            if self.asks.recv_timeout(Duration::from_millis(500)).is_err() {
+                break;
+            }
+            assert!(
+                Instant::now() < limit,
+                "{what}: still asking for passes after {LIMIT:?}"
+            );
+        }
+        if let Ok(delay) = self.asks.recv_timeout(span) {
+            panic!("{what}: a wake asked for a pass (after {delay:?}) within {span:?} of idle");
+        }
+    }
+
     /// [`Woken::until`] over an attached kittest harness: each pass is one frame.
     #[track_caller]
     pub fn step_until<S>(

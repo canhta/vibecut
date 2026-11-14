@@ -430,6 +430,29 @@ impl Autosave {
                 || self.saving()
                 || (self.is_dirty() && self.revision != self.journaled))
     }
+    /// How long until `tick` next has something to do on the clock alone, or `None` when
+    /// only an event can change the state. A write in flight, a held transaction, a pending
+    /// save-as and a sticky failure wait on a worker or an edit, and both wake the owner
+    /// themselves; only an unjournaled edit waiting out its debounce needs a timer. A
+    /// deadline already past means a start was refused: retry at the poll interval.
+    pub fn next_tick_in(&self) -> Option<Duration> {
+        const RETRY: Duration = Duration::from_millis(100);
+        if self.failure.is_some()
+            || self.flight.is_some()
+            || self.pending_save.is_some()
+            || self.session.transaction_active()
+            || !self.is_dirty()
+            || self.revision == self.journaled
+        {
+            return None;
+        }
+        let debounce = self.last_change.saturating_add(self.schedule.debounce);
+        let due = self.first_dirty.map_or(debounce, |first| {
+            debounce.min(first.saturating_add(self.schedule.max_dirty_age))
+        });
+        let wait = due.saturating_sub(self.clock.now());
+        Some(if wait.is_zero() { RETRY } else { wait })
+    }
 }
 
 #[cfg(test)]
@@ -455,6 +478,16 @@ mod tests {
             Schedule::default(),
         )
         .unwrap()
+    }
+    #[test]
+    fn only_an_unjournaled_edit_asks_for_a_timer() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut autosave = open(dir.path());
+        let wait = autosave.next_tick_in().unwrap();
+        assert!(wait <= Schedule::default().debounce, "{wait:?}");
+        autosave.flush().unwrap();
+        assert!(!autosave.pending());
+        assert_eq!(autosave.next_tick_in(), None);
     }
     #[cfg(unix)]
     #[test]
