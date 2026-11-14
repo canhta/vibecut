@@ -41,7 +41,7 @@ jump uses the existing Seek path.
 
 `nudged_volume` moves a clip volume one tenth of a decibel on the 0.1 dB grid and clamps to the
 clip volume range; a clip already at that end yields `None` and drops out of the batch, so
-`timeline.volume_up` and `timeline.volume_down` are disabled when no selected clip can move.
+`timeline.volume_up` and `timeline.volume_down` are disabled when no selected clip can move. A keyed volume steps the value at the playhead and writes a key.
 
 `Chord`, `KeybindingPreferences`, `Keymap` and `Dispatch` live in
 [key input](../input/README.md).

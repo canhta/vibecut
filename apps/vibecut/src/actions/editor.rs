@@ -549,7 +549,7 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         Text::ActionTimelineVolumeUp,
         ActionCategory::Edit,
         EngineAction::NudgeVolume(super::VolumeStep::Up),
-        &[],
+        &["Ctrl+Period"],
     ),
     ActionSpec::engine(
         "timeline.volume_down",

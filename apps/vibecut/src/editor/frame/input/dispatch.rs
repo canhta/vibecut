@@ -596,8 +596,12 @@ impl Editor {
     }
 
     /// `timeline.volume_up` and `timeline.volume_down`: one volume edit per selected unlocked
-    /// clip that has audio and is not already at the end of the range.
+    /// clip that has audio and is not already at the end of the range. A clip whose volume is
+    /// keyed steps the value at the playhead and writes a key there; a clip the playhead is
+    /// outside of is left alone. Other clips step the stored volume.
     fn volume_nudges(&self, step: actions::VolumeStep) -> Vec<Command> {
+        let playhead = self.playback.position().ok();
+        let path = project::AnimationPath::from(project::BuiltinPath::Volume);
         self.selected_items()
             .into_iter()
             .filter(|(locked, _)| !locked)
@@ -609,9 +613,35 @@ impl Editor {
                     }
                     _ => return None,
                 };
-                actions::nudged_volume(volume, step).map(|volume| Command::SetItemField {
+                let keyed = matches!(
+                    item.animations.get(&path),
+                    Some(project::Param::Value(channel)) if !channel.keys().is_empty()
+                );
+                if !keyed {
+                    return actions::nudged_volume(volume, step).map(|volume| {
+                        Command::SetItemField {
+                            item: item.id,
+                            patch: engine::ItemParamPatch::AudioGain(volume),
+                        }
+                    });
+                }
+                let local = playhead?.checked_sub(item.start)?;
+                if local < Tick::ZERO || local >= item.duration().ok()? {
+                    return None;
+                }
+                let Some(project::ParamValue::Scalar(current)) =
+                    item.animations.value_at(&path, local).ok().flatten()
+                else {
+                    return None;
+                };
+                actions::nudged_volume(current as f32, step).map(|next| Command::AddKeyframe {
                     item: item.id,
-                    patch: engine::ItemParamPatch::AudioGain(volume),
+                    path: path.clone(),
+                    component: None,
+                    key: project::Keyframe::new(
+                        local,
+                        project::ParamValue::Scalar(f64::from(next)),
+                    ),
                 })
             })
             .collect()

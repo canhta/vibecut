@@ -74,7 +74,7 @@
 | `timeline.duplicate` — Duplicate | Selection | Ctrl+D | `timeline.duplicate` | — |
 | `timeline.set_hidden` — Hide or show selection | Edit | V | `timeline.set_hidden` | — |
 | `timeline.set_muted` — Mute or unmute selection | Edit | — | `timeline.set_muted` | — |
-| `timeline.volume_up` — Volume +0.1 dB | Edit | — | `timeline.set_item_param` | — |
+| `timeline.volume_up` — Volume +0.1 dB | Edit | Ctrl+Period | `timeline.set_item_param` | — |
 | `timeline.volume_down` — Volume -0.1 dB | Edit | Ctrl+Comma | `timeline.set_item_param` | — |
 | `timeline.extract_audio` — Extract audio | Edit | Ctrl+Shift+S | `timeline.extract_audio` | — |
 | `timeline.recover_audio` — Recover audio | Edit | — | `timeline.recover_audio` | — |
@@ -189,10 +189,9 @@ Bindings persist in the app preference store as five named profiles (Shortcut 1 
 
 The reference desktop key list (measured 2026-11-14) sets the defaults above where the chord is free here; `Ctrl` there is Cmd. Defaults are written as canonical chord text, so the key names (`Equals`, `Plus`, `Minus`) stand in for the symbols. Where our chord already owns the key, ours stays and the difference is recorded here.
 
-Adopted: extract audio `Ctrl+Shift+S`; timeline zoom in `Ctrl+Equals` (and `Ctrl+Plus` on the numeric keypad) and out `Ctrl+Minus`; deselect all `Alt+X`; full screen `Ctrl+Shift+F`; player zoom in `Alt+Shift+Plus`, out `Alt+Shift+Minus`, fit `Alt+Shift+Z`; import `Ctrl+I`; export `Ctrl+E`; next bookmark `Shift+M`; previous bookmark `Alt+Shift+M`; keyframe lanes `Alt+K`; add keyframe `Alt+Shift+K`; last cut point `Up`, next cut point `Down`; activate or deactivate clip `V` (`timeline.set_hidden`); add marker with new colour `Alt+M`; show speed panel `Ctrl+R`; curve speed `Shift+B`; volume -0.1 dB `Ctrl+,`. Rulers (`Ctrl+Alt+R`) and guides (`Ctrl+;`) keep the chords main gave them.
+Adopted: extract audio `Ctrl+Shift+S`; timeline zoom in `Ctrl+Equals` (and `Ctrl+Plus` on the numeric keypad) and out `Ctrl+Minus`; deselect all `Alt+X`; full screen `Ctrl+Shift+F`; player zoom in `Alt+Shift+Plus`, out `Alt+Shift+Minus`, fit `Alt+Shift+Z`; import `Ctrl+I`; export `Ctrl+E`; next bookmark `Shift+M`; previous bookmark `Alt+Shift+M`; keyframe lanes `Alt+K`; add keyframe `Alt+Shift+K`; last cut point `Up`, next cut point `Down`; activate or deactivate clip `V` (`timeline.set_hidden`); add marker with new colour `Alt+M`; show speed panel `Ctrl+R`; curve speed `Shift+B`; volume +0.1 dB `Ctrl+.` and -0.1 dB `Ctrl+,`. Rulers (`Ctrl+Alt+R`) and guides (`Ctrl+;`) keep the chords main gave them.
 
-Not adopted, because the reference chord has no action here or is taken:
-- Volume +0.1 dB: the reference chord is `Ctrl+.`, which the Hide timeline toggle takes. `timeline.volume_up` has no default chord until that is settled; its partner `Ctrl+,` is adopted.
+Not adopted, because the reference chord has no action here:
 - Restore audio has no chord. The reference shows one Shift Ctrl S toggle for extract and restore; a chord binds one action, and extract takes it.
 - New project: Home's create banner is not a registry action.
 - Group and Ungroup, Zoom to fit timeline (`Shift+Z`) and the main track magnet (`P`, a toolbar command, not an action) have no action.

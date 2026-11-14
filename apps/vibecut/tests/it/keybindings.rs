@@ -1282,6 +1282,7 @@ fn reference_default_chords_run_their_actions_through_the_keymap() {
                 ),
                 (command, egui::Key::R, "timeline.speed_panel"),
                 (egui::Modifiers::SHIFT, egui::Key::B, "timeline.speed_curve"),
+                (command, egui::Key::Period, "timeline.volume_up"),
                 (command, egui::Key::Comma, "timeline.volume_down"),
             ],
         ),
@@ -1431,9 +1432,10 @@ fn volume_keys_move_the_selected_audio_clip_by_a_tenth_of_a_decibel_within_the_r
     harness.run_steps(2);
     assert_eq!(volume(harness.state(), audio), -0.1);
     assert_eq!(harness.state().session.history_len().0, history + 1);
-    // Volume up has no default chord: Ctrl+. belongs to Hide timeline.
-    harness.state_mut().activate("timeline.volume_up").unwrap();
-    harness.state_mut().activate("timeline.volume_up").unwrap();
+    for _ in 0..2 {
+        harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Period);
+        harness.run_steps(2);
+    }
     assert_eq!(volume(harness.state(), audio), 0.1);
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
     harness.run_steps(2);
@@ -1606,4 +1608,56 @@ fn trim_clip_cuts_the_selected_clip_to_the_in_out_range_as_one_undo_step() {
     );
     editor.activate("edit.undo").unwrap();
     assert_eq!(editor.session.project(), &before);
+}
+
+#[test]
+fn volume_keys_step_a_keyed_volume_at_the_playhead_by_writing_a_key() {
+    let fixture = fixture();
+    let mut editor = fixture.editor;
+    let audio = audio_clip(&editor);
+    let path = project::AnimationPath::from(project::BuiltinPath::Volume);
+    for seconds in [0, 2] {
+        editor
+            .session
+            .apply(Command::AddKeyframe {
+                item: audio,
+                path: path.clone(),
+                component: None,
+                key: project::Keyframe::new(
+                    Tick(seconds * SECOND),
+                    project::ParamValue::Scalar(-10.0),
+                ),
+            })
+            .unwrap();
+    }
+    editor.select([audio].into()).unwrap();
+    editor
+        .playback
+        .seek(Tick(SECOND), false, editor.session.project().clone())
+        .unwrap();
+    let before = editor.session.project().clone();
+    let history = editor.session.history_len().0;
+    let mut harness = harness(editor);
+    harness.run_steps(3);
+
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Period);
+    harness.run_steps(2);
+    let stepped = clip(harness.state(), audio)
+        .animations
+        .value_at(&path, Tick(SECOND))
+        .unwrap();
+    assert_eq!(
+        stepped,
+        Some(project::ParamValue::Scalar(f64::from(-9.9_f32))),
+        "a key at the playhead holds the stepped value"
+    );
+    assert_eq!(
+        volume(harness.state(), audio),
+        0.0,
+        "the stored volume stays"
+    );
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    harness.run_steps(2);
+    assert_eq!(harness.state().session.project(), &before);
 }

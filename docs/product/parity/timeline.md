@@ -76,7 +76,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | TL-58 | Select by clip, Deselect | Partial | Not captured | 14b/103135 | |
 | TL-59 | In / out points | Done | Proposed | 14b/110530 | |
 | TL-60 | Last / next cut point | Done | Proposed | 14b/110530; [ui/editor.md](../ui/editor.md#timeline-keys) | Cut point = main-track clip edge, ours |
-| TL-61 | Volume ±0.1 dB keys | Partial | — | 14b/110530; [ui/editor.md](../ui/editor.md#timeline-keys) | `Ctrl+,` only; `Ctrl+.` is Hide timeline |
+| TL-61 | Volume ±0.1 dB keys | Done | — | 14b/110530; [ui/editor.md](../ui/editor.md#timeline-keys) | `Ctrl+.` and `Ctrl+,`; keyed volume writes a key |
 | TL-62 | Speed panel keys | Done | Proposed | 14b/110530; [ui/editor.md](../ui/editor.md#timeline-keys) | `Ctrl+R` Standard, `Shift+B` Curve; curve result not captured |
 | TL-63 | Show variable speed animation | Missing | — | 14b/103312 | |
 | TL-64 | Fade handles, volume line | Ours | Proposed | | |
