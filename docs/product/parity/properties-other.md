@@ -51,7 +51,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | PTEXT-16 | Background | Done | Proposed | 103613 | Ours adds padding, radius |
 | PTEXT-17 | Glow | Done | Proposed | 103613 | Switch only |
 | PTEXT-18 | Shadow controls | Done | Matches | 095914-095917 | |
-| PTEXT-19 | Curve (bend text) | Done | Proposed | 103632 | Section collapsed in frame; amount range, default and arc measure ours |
+| PTEXT-19 | Curve (bend text) | Done | Differs | 103632; 14e/204153 | Reference Strength is -360 to 360 degrees (default 72); ours is percent ±100 (100 a half circle), stroke and shadow follow the arc |
 | PTEXT-20 | Colour picker popover | Done | Proposed | 095732-095751 | |
 | PTEXT-21 | Save as preset | Done | Proposed | 103808 | |
 
