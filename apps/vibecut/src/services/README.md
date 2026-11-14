@@ -26,7 +26,9 @@ areas, frame and composition root; a services module never names a window, an ar
 The device must be stereo f32 at the project's render-owned sample rate (default
 48 kHz), else unavailable. The app never resamples, remaps channels or substitutes a
 wall clock. Gaps and underruns play silence, keep the device timeline and are counted.
-Pausing and seeking invalidate old ring samples by generation. Shutdown cancels and
+Pausing and seeking invalidate old ring samples by generation. A paused or pinned
+preview blocks both workers on one condvar (no sleep or poll) until a seek, a pointer
+change or cancellation wakes them. Shutdown cancels and
 joins the engine workers. An absent, failed or one-second-stalled device refuses or
 pauses playback as unavailable. `poll` takes the caller's monotonic instant for
 health checks; only actual callback progress or an explicit transport reset
