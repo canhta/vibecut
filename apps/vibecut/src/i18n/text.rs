@@ -958,6 +958,7 @@ catalog! {
     DurationUnknown { key: "duration_unknown", en: "duration unknown", vi: "chưa rõ thời lượng" },
     FailureDetail { key: "failure_detail", en: "{name}: {reason}", vi: "{name}: {reason}" },
     Import { key: "import", en: "Import", vi: "Nhập" },
+    ImportMediaTitle { key: "import_media_title", en: "Import media", vi: "Nhập tư liệu" },
     ImportBusy { key: "import_busy", en: "Import in progress", vi: "Đang nhập" },
     ImportCancelled { key: "import_cancelled", en: "Import cancelled", vi: "Đã hủy nhập" },
     ImportComplete { key: "import_complete", en: "Import complete", vi: "Nhập hoàn tất" },
