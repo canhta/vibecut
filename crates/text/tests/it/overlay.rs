@@ -52,6 +52,7 @@ fn two_line_vietnamese_frame_overlay_is_a_repeatable_golden() {
         shadow: None,
         glow: None,
         background: Some(Rectangle::uniform(Color::rgba(0, 0, 0, 150), 28.0, 18.0)),
+        bubble: None,
         decoration: text::Decoration::None,
     };
     let canvas = Canvas {
@@ -90,6 +91,7 @@ fn two_line_vietnamese_frame_overlay_is_a_repeatable_golden() {
             shadow: None,
             glow: None,
             background: None,
+            bubble: None,
             decoration: text::Decoration::None,
         },
     )

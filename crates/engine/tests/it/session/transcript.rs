@@ -52,6 +52,8 @@ fn caption_item(id: u64, start: i64, source: (i64, i64), cues: Vec<Cue>) -> Item
         ItemId(id),
         ItemParams::Caption(CaptionParams {
             emphasis: Default::default(),
+            bubble: None,
+            effect: None,
             word_highlight: false,
             preset: None,
             overrides: captions::CaptionOverrides::default(),

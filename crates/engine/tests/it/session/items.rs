@@ -1090,6 +1090,8 @@ fn text_style_patches_update_one_field_and_validate() {
         })),
         ItemParamPatch::TextGlow(true),
         ItemParamPatch::TextCurve(Some(-40.0)),
+        ItemParamPatch::TextBubble(Some(project::TextBubble::Burst)),
+        ItemParamPatch::TextEffect(Some(project::TextEffect::Fire)),
     ] {
         let before = s.project().clone();
         assert!(

@@ -688,6 +688,17 @@ impl<'a> Renderer<'a> {
                                 text::curve_displacement(degrees, area) + p.font_size * scale,
                             )
                         });
+                        let (fill, outline, shadow, glow) = match p.effect {
+                            None => (fill, outline, shadow, glow),
+                            Some(effect) => {
+                                let r = super::raster::text_look::recipe(
+                                    effect,
+                                    p.font_size * scale,
+                                    fill.0[3],
+                                );
+                                (project::Color(r.fill), r.outline, r.shadow, r.glow)
+                            }
+                        };
                         let background = match &p.background {
                             None => None,
                             Some(b) => {
@@ -745,9 +756,14 @@ impl<'a> Renderer<'a> {
                             shadow,
                             glow,
                             curve,
+                            bubble: p.bubble,
                         };
                         // The raster grows by every decoration's margin on each side; the text keeps its place.
-                        let margin = f64::from(face.decoration_margin(background));
+                        let margin = f64::from(face.decoration_margin(background).max(
+                            p.bubble.map_or(0.0, |_| {
+                                (p.font_size * scale * text::BUBBLE_MARGIN).ceil()
+                            }),
+                        ));
                         let mut grown = placement;
                         grown.destination = Rect {
                             x: placement.destination.x - margin / f64::from(self.settings.width),
@@ -806,9 +822,15 @@ impl<'a> Renderer<'a> {
                                 let cue_style = p.cues.style_of(cue);
                                 let placement_style =
                                     if selected.is_some() { None } else { cue_style };
-                                let style = selected.unwrap_or_else(|| {
+                                let mut style = selected.unwrap_or_else(|| {
                                     super::caption::for_cue(&self.settings.caption_style, cue_style)
                                 });
+                                let (look_shadow, look_glow) =
+                                    super::raster::text_look::caption_effect(
+                                        &mut style,
+                                        p.effect,
+                                        self.settings.height as f32 / 1080.0,
+                                    );
                                 let caption_placement =
                                     super::caption::cue_placement(&style, placement_style);
                                 let scale = self.settings.height as f32 / 1080.0;
@@ -826,6 +848,9 @@ impl<'a> Renderer<'a> {
                                         style: style.font_style.as_str(),
                                         align: super::caption::align(placement_style),
                                         decoration: super::caption::decoration(placement_style),
+                                        shadow: look_shadow,
+                                        glow: look_glow,
+                                        bubble: p.bubble,
                                         ..Default::default()
                                     },
                                     background,
@@ -1226,6 +1251,7 @@ impl<'a> Renderer<'a> {
                 .curve
                 .map(|(percent, extent)| (percent.to_bits(), extent.to_bits())),
             background: background.map(TextBox::key),
+            bubble: face.bubble,
             align: face.align,
             decoration: face.decoration,
             case: face.case,
@@ -1295,10 +1321,15 @@ impl<'a> Renderer<'a> {
                         let selected = super::caption::item_style(self.project.data(), params);
                         let cue_style = params.cues.style_of(cue);
                         let placement_style = if selected.is_some() { None } else { cue_style };
-                        let style = selected.unwrap_or_else(|| {
+                        let mut style = selected.unwrap_or_else(|| {
                             super::caption::for_cue(&self.settings.caption_style, cue_style)
                         });
                         let scale = self.settings.height as f32 / 1080.0;
+                        let (look_shadow, look_glow) = super::raster::text_look::caption_effect(
+                            &mut style,
+                            params.effect,
+                            scale,
+                        );
                         let key = self.text_key(
                             &value,
                             style.size,
@@ -1310,6 +1341,9 @@ impl<'a> Renderer<'a> {
                                 style: &style.font_style,
                                 align: super::caption::align(placement_style),
                                 decoration: super::caption::decoration(placement_style),
+                                shadow: look_shadow,
+                                glow: look_glow,
+                                bubble: params.bubble,
                                 ..Default::default()
                             },
                             style.background.as_ref().map(|b| {

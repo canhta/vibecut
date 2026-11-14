@@ -17,7 +17,7 @@ pub use scene::effects::lut;
 pub use scene::{
     CaptionBackground, CaptionOutline, CaptionPosition, CaptionStyle, Corrections, FLAGS_PROVIDER,
     Fit, MAX_STICKER_RASTER_SIDE, Placement, RasterCacheStats, Rect, RenderSettings, Renderer,
-    StickerError, StickerFault, StickerRaster, StickerSource, lend_sticker_source,
+    StickerError, StickerFault, StickerRaster, StickerSource, lend_sticker_source, look_sample,
     rasterize_sticker, style_from_cue,
 };
 pub use scene::{

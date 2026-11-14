@@ -797,3 +797,35 @@ const GOLDENS: &[(&str, u64)] = &[
     ("box-offset", 0x5572f4c77cf4358c),
     ("vietnamese", 0x95ff5395511c870f),
 ];
+
+#[test]
+fn every_bubble_and_effect_changes_the_picture_and_is_deterministic() {
+    let plain = export(&project_with(base(), Default::default(), 1), Tick::ZERO);
+    let mut cases: Vec<(String, Edit)> = Vec::new();
+    for bubble in project::TextBubble::ALL {
+        cases.push((
+            format!("bubble {}", bubble.id()),
+            Box::new(move |t| t.bubble = Some(bubble)),
+        ));
+    }
+    for effect in project::TextEffect::ALL {
+        cases.push((
+            format!("effect {}", effect.id()),
+            Box::new(move |t| t.effect = Some(effect)),
+        ));
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for (name, edit) in cases {
+        let mut text = base();
+        edit(&mut text);
+        let project = project_with(text, Default::default(), 1);
+        let first = export(&project, Tick::ZERO);
+        assert_ne!(first, plain, "{name} changes the picture");
+        assert_eq!(
+            first,
+            export(&project, Tick::ZERO),
+            "{name} is deterministic"
+        );
+        assert!(seen.insert(first), "{name} differs from every other look");
+    }
+}

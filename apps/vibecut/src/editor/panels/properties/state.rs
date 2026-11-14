@@ -72,6 +72,16 @@ pub(in crate::editor) enum Action {
         field: String,
         value: String,
     },
+    /// Set or clear the bubble of caption items (`captions.set_bubble`).
+    SetCaptionBubble {
+        items: Vec<ItemId>,
+        bubble: Option<project::TextBubble>,
+    },
+    /// Set or clear the text effect of caption items (`captions.set_effect`).
+    SetCaptionEffect {
+        items: Vec<ItemId>,
+        effect: Option<project::TextEffect>,
+    },
     SetShared {
         field: String,
         value: String,

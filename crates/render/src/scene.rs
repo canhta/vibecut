@@ -9,6 +9,7 @@ mod evaluation;
 pub mod mask;
 mod raster;
 pub use correction::{brush, flicker, matte, outline, stabilize};
+pub use raster::text_look::sample as look_sample;
 pub(crate) mod transform;
 pub use transform::arrange;
 pub mod transitions;

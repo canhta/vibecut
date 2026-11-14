@@ -346,3 +346,7 @@ field, dirty draft, scrub, picker, reorder or font dialog. Refused actions leave
 in this owner untouched.
 
 A single selected Video or Audio clip whose source file is gone has no properties to edit: the panel shows the reference's one grey line centred under the header and, ours, a `Link media` button that asks the frame to open the [Link media dialog](../../dialogs/link_media/README.md) (`Action::OpenLinkMedia`, `inspector.link_media`). Measurements: [Missing media](../../../../../../docs/product/ui/editor.md#missing-media).
+
+## Text bubble and effects
+
+A text or caption item's Text tab starts with the Basic, Bubble and Effects sub-tabs (`inspector.text_sub.<id>`, view memory in `State`). Bubble and Effects draw a four-column grid of 62 px tiles (`inspector.text_bubble.<word>`, `inspector.text_effect.<word>`, the first tile `none`) and a Reset button (`inspector.text_look.reset`). A text item writes `text_bubble` or `text_effect` through `timeline.set_item_param`; a caption item sends `captions.set_bubble` or `captions.set_effect`, with every caption item named when its Apply to all box (`inspector.caption_apply_all`) is checked, so a choice is one undo step either way. Tile samples come from `render::look_sample` and are cached as textures. Layout: [UI design](../../../../../../docs/product/ui/editor.md#text-bubble-and-effects).

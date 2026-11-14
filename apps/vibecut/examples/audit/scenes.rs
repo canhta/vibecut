@@ -678,6 +678,24 @@ pub(super) const SCENES: &[Scene] = &[
         build: |theme, scale| text_panel(theme, scale, false),
     },
     Scene {
+        name: "text-bubble",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| text_look(theme, scale, Locale::En, false),
+    },
+    Scene {
+        name: "text-bubble-vi",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| text_look(theme, scale, Locale::Vi, false),
+    },
+    Scene {
+        name: "text-effects",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| text_look(theme, scale, Locale::En, true),
+    },
+    Scene {
         name: "font-dropdown",
         reference_dark: None,
         reference_light: None,
@@ -975,7 +993,7 @@ use properties::{
     inspector_blend, inspector_blend_vi, inspector_color, inspector_mixed, inspector_project,
     inspector_project_vi, inspector_remove_background, inspector_speed, inspector_speed_curve,
     inspector_text, inspector_transform, inspector_video, inspector_video_keyframes,
-    inspector_video_tab, text_item, text_item_vi, text_panel,
+    inspector_video_tab, text_item, text_item_vi, text_look, text_panel,
 };
 use shorts::shorts_scene;
 use timeline::{

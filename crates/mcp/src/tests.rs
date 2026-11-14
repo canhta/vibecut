@@ -725,6 +725,8 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("reframe.set_manual", Effect::Edit, true, true),
         ("captions.apply", Effect::Edit, true, true),
         ("captions.select_emphasis", Effect::Edit, true, true),
+        ("captions.set_bubble", Effect::Edit, true, true),
+        ("captions.set_effect", Effect::Edit, true, true),
         ("captions.set_emphasis", Effect::Edit, true, true),
         ("captions.set_word_highlight", Effect::Edit, true, true),
         ("captions.generate", Effect::JobControl, true, true),

@@ -31,6 +31,8 @@ fn scene(texts: &[(&str, &str)]) -> project::Project {
                 project::ItemId(1),
                 project::ItemParams::Caption(project::CaptionParams {
                     emphasis: Default::default(),
+                    bubble: None,
+                    effect: None,
                     word_highlight: false,
                     preset: None,
                     overrides: captions::CaptionOverrides::default(),
@@ -1469,4 +1471,39 @@ fn verified_source_words_share_preview_burn_boundaries_and_clear_warnings() {
                 .is_empty()
         );
     }
+}
+
+#[test]
+fn caption_bubble_and_effect_repaint_every_cue_over_any_style() {
+    let h = Hooks::default();
+    let texts = [("en", "Bubble caption")];
+    let frame = |edit: &dyn Fn(&mut project::CaptionParams)| {
+        let mut data = scene(&texts).into_data();
+        for item in data
+            .scene_mut()
+            .timeline
+            .iter_mut()
+            .flat_map(|t| &mut t.items)
+        {
+            if let project::ItemParams::Caption(params) = &mut item.content {
+                edit(params);
+            }
+        }
+        let p = project::Project::new(data).unwrap();
+        let mut r = Renderer::new(&p, settings(&p)).unwrap();
+        r.render_frame(tick(1, 2), &mut Empty, &h)
+            .unwrap()
+            .pixels()
+            .to_vec()
+    };
+    let plain = frame(&|_| {});
+    let bubbled = frame(&|p| p.bubble = Some(captions::TextBubble::Pill));
+    let effect = frame(&|p| p.effect = Some(captions::TextEffect::Neon));
+    assert_ne!(plain, bubbled);
+    assert_ne!(plain, effect);
+    assert_ne!(bubbled, effect);
+    assert_eq!(
+        bubbled,
+        frame(&|p| p.bubble = Some(captions::TextBubble::Pill))
+    );
 }

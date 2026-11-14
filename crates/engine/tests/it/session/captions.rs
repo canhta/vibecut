@@ -47,6 +47,52 @@ fn apply_style(style: engine::CaptionStyleApply) -> Command {
 }
 
 #[test]
+fn caption_bubble_and_effect_commands_are_one_undo_step_each_and_refuse_bad_targets() {
+    use project::{TextBubble, TextEffect};
+    let mut s = Session::new(style_source_project(), 30).unwrap();
+    let original = s.project().clone();
+    let look = |s: &Session| {
+        let ItemParams::Caption(p) = &get(s, 1).content else {
+            panic!("caption")
+        };
+        (p.bubble, p.effect)
+    };
+    s.wire(
+        "captions.set_bubble",
+        json!({"items":[1],"bubble":"speech_down"}),
+    )
+    .unwrap();
+    s.wire("captions.set_effect", json!({"items":[1],"effect":"neon"}))
+        .unwrap();
+    assert_eq!(
+        look(&s),
+        (Some(TextBubble::SpeechDown), Some(TextEffect::Neon))
+    );
+    assert_eq!(s.history_len(), (2, 0));
+    // Reset is a null look and its own step; undo walks back through both.
+    s.wire("captions.set_effect", json!({"items":[1],"effect":null}))
+        .unwrap();
+    assert_eq!(look(&s), (Some(TextBubble::SpeechDown), None));
+    s.undo().unwrap();
+    s.undo().unwrap();
+    s.undo().unwrap();
+    assert_eq!(s.project(), &original);
+    // An empty list and a missing item change nothing.
+    assert!(
+        s.wire("captions.set_bubble", json!({"items":[],"bubble":"pill"}))
+            .is_err()
+    );
+    assert!(
+        s.wire(
+            "captions.set_bubble",
+            json!({"items":[999],"bubble":"pill"})
+        )
+        .is_err()
+    );
+    assert_eq!(s.project(), &original);
+}
+
+#[test]
 fn caption_bank_selection_overrides_noops_and_ids_round_trip() {
     use engine::CaptionStyleApply;
     use project::{CaptionPresetId, SavedCaptionPreset};
@@ -1071,6 +1117,8 @@ fn caption_project() -> Project {
                 ItemId(1),
                 ItemParams::Caption(CaptionParams {
                     emphasis: Default::default(),
+                    bubble: None,
+                    effect: None,
                     word_highlight: false,
                     preset: None,
                     overrides: captions::CaptionOverrides::default(),

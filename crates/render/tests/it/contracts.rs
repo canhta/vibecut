@@ -1437,6 +1437,8 @@ fn caption_expansion_is_refused_before_raster_allocation() {
                 project::ItemId(0),
                 project::ItemParams::Caption(project::CaptionParams {
                     emphasis: Default::default(),
+                    bubble: None,
+                    effect: None,
                     word_highlight: false,
                     preset: None,
                     overrides: captions::CaptionOverrides::default(),

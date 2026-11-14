@@ -152,6 +152,8 @@ pub const TABLE: &[(&str, Verdict)] = &[
     ("captions.rename_preset", Verdict::Allow),
     ("captions.save_preset", Verdict::Allow),
     ("captions.select_emphasis", Verdict::Allow),
+    ("captions.set_bubble", Verdict::Allow),
+    ("captions.set_effect", Verdict::Allow),
     ("captions.set_emphasis", Verdict::Allow),
     ("captions.set_word_highlight", Verdict::Allow),
     ("captions.suggest_emphasis", Verdict::Allow),

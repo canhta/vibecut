@@ -15,6 +15,7 @@ Headless source-timed transcript and multilingual cue storage, BCP 47 language p
 | `mapping.rs` | Maps source ticks to output ticks through edit cut lists and clips a cue track to a source range. | [Edit mapping](src/mapping/README.md) |
 | `segment.rs` | Generates subtitle cues from transcripts. | [Segmentation](src/segment/README.md) |
 | `span.rs` | Owns raw-to-NFC text correspondence at grapheme granularity. | [Text correspondence](src/span/README.md) |
+| `text_look.rs` | Owns the own-drawn text bubble and own-authored text effect vocabularies. | - |
 | `style.rs` | Owns the complete persisted caption presentation style and its sparse field overrides. | - |
 | `timing.rs` | Owns source timing identity and explicit raw/NFC/display correspondence. | [Timing spans](src/timing/README.md) |
 

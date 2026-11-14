@@ -619,6 +619,8 @@ fn caption_project() -> project::Project {
                     ItemId(n as u64 + 1),
                     ItemParams::Caption(CaptionParams {
                         emphasis: Default::default(),
+                        bubble: None,
+                        effect: None,
                         word_highlight: false,
                         preset: None,
                         overrides: captions::CaptionOverrides::default(),

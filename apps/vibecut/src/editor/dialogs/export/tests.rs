@@ -1718,6 +1718,8 @@ fn ticked_captions_write_their_file_beside_the_media_without_opening_the_panel()
                 start: Tick::ZERO,
                 content: ItemParams::Caption(project::CaptionParams {
                     emphasis: Default::default(),
+                    bubble: None,
+                    effect: None,
                     word_highlight: false,
                     preset: None,
                     overrides: Default::default(),

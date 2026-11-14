@@ -90,6 +90,8 @@ fn insert(
             start,
             content: project::ItemParams::Caption(project::CaptionParams {
                 emphasis: Default::default(),
+                bubble: None,
+                effect: None,
                 word_highlight: false,
                 preset: None,
                 overrides: captions::CaptionOverrides::default(),

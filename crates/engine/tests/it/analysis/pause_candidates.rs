@@ -74,6 +74,8 @@ fn caption_item(audio: &SourceAsset, word: SourceRange) -> Item {
         ItemId(90),
         ItemParams::Caption(project::CaptionParams {
             emphasis: Default::default(),
+            bubble: None,
+            effect: None,
             word_highlight: false,
             preset: None,
             overrides: captions::CaptionOverrides::default(),

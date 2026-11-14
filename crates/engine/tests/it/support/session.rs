@@ -241,6 +241,8 @@ pub(crate) fn caption_words_item(
         ItemId(id),
         ItemParams::Caption(project::CaptionParams {
             emphasis: Default::default(),
+            bubble: None,
+            effect: None,
             word_highlight: false,
             preset: None,
             overrides: captions::CaptionOverrides::default(),

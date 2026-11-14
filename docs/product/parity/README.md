@@ -24,6 +24,7 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 | `14c` | `ui-reference/capcut-desktop-2026-11-14c/` |
 | `14e/203747`, bare `2037xx`-`2042xx` | `ui-reference/capcut-desktop-2026-11-14e/` |
 | `14d/151656`, bare `151xxx` | `ui-reference/capcut-desktop-2026-11-14d/` |
+| `14f/NN` | `ui-reference/capcut-desktop-2026-11-14f/text-bubble-effects/` |
 | `web screens/NN`, `web flows/NN` | `web-editors/capcut-web/` (function only, never layout) |
 
 ## Update rule
@@ -54,8 +55,8 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 | [Adjustment](catalogues.md#adjustment-adj) | 6 | 2 | 3 | 0 | 0 | 1 | 0 | 1 | 3 | 2 | 0 |
 | [Video clip](properties-video.md#video-clip-pvid) | 52 | 31 | 9 | 6 | 0 | 3 | 3 | 6 | 3 | 33 | 6 |
 | [Audio clip](properties-other.md#audio-clip-paud) | 17 | 8 | 1 | 7 | 0 | 1 | 0 | 3 | 1 | 6 | 7 |
-| [Text item](properties-other.md#text-item-ptext) | 31 | 18 | 8 | 4 | 0 | 0 | 1 | 4 | 7 | 15 | 4 |
-| [Caption item](properties-other.md#caption-item-pcap) | 8 | 1 | 4 | 2 | 0 | 1 | 0 | 0 | 3 | 3 | 2 |
+| [Text item](properties-other.md#text-item-ptext) | 31 | 20 | 9 | 1 | 0 | 0 | 1 | 6 | 7 | 16 | 1 |
+| [Caption item](properties-other.md#caption-item-pcap) | 8 | 3 | 4 | 0 | 0 | 1 | 0 | 1 | 3 | 4 | 0 |
 | [Sticker, effect, filter and adjustment items](properties-other.md#sticker-effect-filter-and-adjustment-items-pother) | 17 | 7 | 6 | 3 | 0 | 1 | 0 | 0 | 5 | 9 | 3 |
 | [Timeline](timeline.md#timeline-tl) | 96 | 56 | 13 | 13 | 2 | 10 | 2 | 13 | 8 | 54 | 5 |
 | [Keyframes](timeline.md#keyframes-key) | 14 | 10 | 3 | 0 | 0 | 1 | 0 | 2 | 2 | 7 | 1 |

@@ -32,6 +32,24 @@ use gesture::{
 
 use workflow::transform_scrub;
 
+/// The Text tab's sub-tabs in reference order.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(in crate::editor) enum TextSub {
+    #[default]
+    Basic,
+    Bubble,
+    Effects,
+}
+impl TextSub {
+    pub(in crate::editor) const fn id(self) -> &'static str {
+        match self {
+            Self::Basic => "basic",
+            Self::Bubble => "bubble",
+            Self::Effects => "effects",
+        }
+    }
+}
+
 /// The Adjust tab's sub-tabs in reference order.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(in crate::editor) enum AdjustTab {
@@ -121,6 +139,11 @@ pub(in crate::editor) struct State {
     adjust_tab: AdjustTab,
     /// The Speed tab shows its Curve view (also shown whenever the item has a curve).
     speed_curve_view: bool,
+    /// Text sub-tab shown, and a caption's Apply to all box; view memory only.
+    text_sub: TextSub,
+    caption_apply_all: bool,
+    /// Bubble and effect tile samples by `family.word`, rendered on first draw.
+    look_samples: std::collections::BTreeMap<String, egui::TextureHandle>,
     /// Animation sub-tab (In, Out or Combo) shown by the shared Animation control.
     animation_slot: engine::AnimationSlot,
     /// The Animation tiles' preview jobs and strips; built when the tab first draws.
@@ -251,6 +274,9 @@ impl Default for State {
             curve_channel: 0,
             adjust_tab: AdjustTab::default(),
             speed_curve_view: false,
+            text_sub: TextSub::Basic,
+            caption_apply_all: false,
+            look_samples: std::collections::BTreeMap::new(),
             animation_slot: engine::AnimationSlot::In,
             animation_previews: None,
             animation_favorites: false,
