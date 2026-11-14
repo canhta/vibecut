@@ -138,6 +138,27 @@ tile centres; the sharp flag forces the nearest colour, so it changes the
 picture only with softness above zero. One block per axis on both axes emits
 no pass.
 
+`spatial.rs` owns the four remaining E1 spatial references. Detail Boost is Sharpen's
+pass list with an authored radius: a gaussian of `radius * min(gx, gy)` output pixels,
+floored at .6 and capped at 64 (64 iterations of two passes, a named bound inside the
+reserved kernel slots), then `detail_boost` at `amount/100` gated by `threshold/255`
+times coverage; amount 0 emits no pass. Lens Blur is one `lens_blur` sample that averages
+the current image over an iris disc: the centre plus up to twelve rings
+(`min(ceil(reach), 12)`, ring `r` holding `max(8r, 6)` taps at radius `r/rings` times
+the polygon radius of the chosen iris, rotated), each tap bilinear with clamp and
+scaled per axis by `amount * gain`. Each tap's straight encoded luma boosts its colour by
+`1 + 6*highlight*smoothstep(threshold, 1, luma)` (energy, so the pass exit clamp is what
+bounds it), applied per tap instead of to a boosted copy. Reach under .5 output pixels
+emits no pass. Above 12 output pixels a gaussian of `reach/24` (capped at 64) precedes the
+gather so twelve rings leave no gaps; this replaces the source's halve-and-upsample levels
+and is a named approximation, as is the radius clamp at 1e6 pixels. Mirror emits the shared
+`mirror` sample (instance input, transparent beyond the frame) with a centre in output
+pixels and the unit normal `(cos, sin)` of the angle. Wrap Shift is one `wrap_shift`
+sample reading the current image at `x - dx` with the wrap edge, so a fractional shift
+interpolates across the seam (the source clamped there); shifts are reduced into
+`[0, extent]`, and a whole-frame shift on both axes or blend 100 emits no pass. None of
+the three sample ops has a shader entry yet (264g).
+
 ## Person matte pass
 
 `person_matte` is a table entry with a native shader that reads the instance input, but no effect evaluator emits it: the scene runs it once per matted item before noise reduction and every effect, with the matte plane packed into the instance input ([person matte](../correction/README.md#person-matte)).

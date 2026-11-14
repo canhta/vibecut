@@ -549,6 +549,15 @@ pub(in crate::editor) fn preview_instance(
             instance.set_scalar("direction", 45.0).ok()?;
         }
         "sharpen" => instance.set_scalar("amount", 100.0).ok()?,
+        "unsharp_mask" => {
+            instance.set_scalar("amount", 200.0).ok()?;
+            instance.set_scalar("radius", 3.0).ok()?;
+        }
+        "bokeh_blur" => instance.set_scalar("amount", 30.0).ok()?,
+        "offset" => {
+            instance.set_scalar("shift_x", 30.0).ok()?;
+            instance.set_scalar("shift_y", 20.0).ok()?;
+        }
         // A soft 8x6 lattice shows both axes and a blended edge.
         "mosaic" => {
             instance.set_scalar("horizontal", 8.0).ok()?;

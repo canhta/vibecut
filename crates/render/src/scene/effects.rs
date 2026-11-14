@@ -8,6 +8,7 @@ mod denoise;
 mod image_ops;
 mod layers;
 pub mod lut;
+mod spatial;
 mod whole_image;
 pub use denoise::reduce_noise_passes;
 pub(crate) use layers::adjust_backdrop;
@@ -1547,6 +1548,24 @@ static OPS: &[EffectOp] = &[
         }),
     },
     EffectOp {
+        entry_point: "lens_blur",
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 7,
+            valid: spatial::valid_lens_blur,
+            apply: spatial::lens_blur,
+        }),
+    },
+    EffectOp {
+        entry_point: "wrap_shift",
+        wgsl: Wgsl::Absent,
+        kernel: Kernel::Sample(SampleOp {
+            len: 3,
+            valid: spatial::valid_wrap_shift,
+            apply: spatial::wrap_shift,
+        }),
+    },
+    EffectOp {
         entry_point: "vignette",
         wgsl: Wgsl::Absent,
         kernel: Kernel::Sample(SampleOp {
@@ -2553,6 +2572,10 @@ pub fn evaluator(kind: &str) -> Option<EffectEvaluator> {
         "color_grade" => color_grade,
         "chroma_key" => chroma_key,
         "sharpen" => sharpen,
+        "unsharp_mask" => spatial::detail_boost_eval,
+        "bokeh_blur" => spatial::lens_blur_eval,
+        "mirror" => spatial::mirror_eval,
+        "offset" => spatial::wrap_shift_eval,
         "black_white" => black_white,
         "channel_mix" => channel_mix,
         "color_pass" => color_pass,

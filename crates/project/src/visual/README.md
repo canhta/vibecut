@@ -77,6 +77,17 @@ slider 1–200, default 10), an animatable softness percent and a static sharp f
 The counts are blocks per axis, not pixel sizes; one block per axis on both axes is
 identity.
 
+Detail Boost (`unsharp_mask`, Blur & Detail) animates amount (percent gain, hard
+0–500, default 50), radius (full-resolution clip pixels, 0.1–250, default 1) and
+threshold (0–255 codes, default 0). Lens Blur (`bokeh_blur`, Blur & Detail) animates
+blur amount (clip pixels, hard 0–500, slider 0–60, default 10), iris rotation,
+highlight brightness (default 50) and highlight threshold (default 80) percents, with
+a static six-way iris shape (default hexagon). Mirror (`mirror`, Distort) animates its
+reflection centre as two percent sliders (default 50) and a reflection angle; Wrap
+Shift (`offset`, Distort) animates a percent shift on each axis (hard -100–100, default
+0) and a blend percent. Mirror's centre and Wrap Shift's shift are scalar pairs, not
+`Point` values, because a `Point` has no edit or keyframe path; no schema change.
+
 The 26 whole-image entries sit on the Distort, Glow & Light, Stylize and Overlay & Key
 shelves: twirl, spherize, magnify, wave_warp, lens_distortion, turbulent_displace,
 corner_pin and basic_3d on Distort; echo_glow, edge_glow, glint, wonder_glow,
