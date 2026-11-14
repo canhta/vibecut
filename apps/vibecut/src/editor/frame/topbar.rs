@@ -209,7 +209,7 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
 }
 
 /// The header's left text: the autosave clock, or the unsaved, pending and failed states.
-fn save_label(locale: i18n::Locale, status: &SaveStatus) -> String {
+pub(super) fn save_label(locale: i18n::Locale, status: &SaveStatus) -> String {
     match status {
         SaveStatus::Failed => i18n::text(locale, Text::SaveFailed).to_owned(),
         SaveStatus::Saving => i18n::text(locale, Text::SavingProject).to_owned(),

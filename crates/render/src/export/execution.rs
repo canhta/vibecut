@@ -417,7 +417,7 @@ pub(super) fn encoded_export(
 }
 fn audio_encoder_settings(project: &Project, settings: &ExportSettings) -> AudioEncoderSettings {
     AudioEncoderSettings {
-        bit_rate: 192_000,
+        bit_rate: super::estimate::AUDIO_BIT_RATE,
         webm: matches!(settings.container, Container::WebM),
         ..AudioEncoderSettings::aac(project.data().settings.audio_sample_rate, settings.channels)
     }

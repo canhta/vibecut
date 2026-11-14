@@ -772,17 +772,15 @@ impl ExportDialog {
                                 .map(|(_, range)| range.duration().seconds())
                                 .sum()
                         });
-                        let rate = options.output.bit_rate.unwrap_or(options.quality.value().1) as f64
-                            + if options.include_audio {
-                                192_000.0
-                            } else {
-                                0.0
-                            };
                         ui.label(format!(
                             "{} | {} {} MB",
                             i18n::export_duration(locale, duration),
                             tr(Text::ExportEstimatedSize),
-                            i18n::decimal(locale, duration * rate / 8_000_000.0, 1)
+                            i18n::decimal(
+                                locale,
+                                super::settings::estimated_megabytes(options, project, duration),
+                                1
+                            )
                         ));
                         ui.with_layout(
                             egui::Layout::right_to_left(egui::Align::Center),

@@ -307,3 +307,12 @@ fn a_media_drop_into_an_empty_project_asks_the_player_for_the_new_snapshot() {
     );
     assert_eq!(editor.playback.position().unwrap(), Tick::ZERO);
 }
+
+#[test]
+fn the_header_save_text_follows_a_failed_save_and_a_memory_session() {
+    let mut editor = rig().editor;
+    // A session nothing writes says so, and a presented persistence failure replaces it.
+    assert_eq!(editor.save_status_text(), "Not saved");
+    editor.persistence_error = Some(Arc::new(engine::recovery::Error::Busy));
+    assert_eq!(editor.save_status_text(), "Save failed");
+}

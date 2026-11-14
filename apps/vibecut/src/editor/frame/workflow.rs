@@ -7,10 +7,16 @@ impl Editor {
     pub fn tick(&mut self) {
         self.drain_requests();
         self.agent.tick();
-        if let Some(autosave) = self.session.autosave()
-            && let Err(e) = autosave.tick()
-        {
-            self.persistence_error = Some(std::sync::Arc::new(e));
+        if let Some(autosave) = self.session.autosave() {
+            let was_pending = autosave.pending();
+            if let Err(e) = autosave.tick() {
+                self.persistence_error = Some(std::sync::Arc::new(e));
+            }
+            // The header reads the save state at paint time; a write that finishes (or
+            // fails) here with the loop idle needs one more paint to show the result.
+            if was_pending && !autosave.pending() {
+                wake::notify();
+            }
         }
         if let Err(e) = self.playback.poll(std::time::Instant::now()) {
             self.fail(e.to_string());

@@ -1,5 +1,6 @@
 //! Runs a staged project export through to publication.
 mod destination;
+mod estimate;
 mod execution;
 mod gif;
 mod options;
