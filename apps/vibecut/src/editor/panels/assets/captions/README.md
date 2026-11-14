@@ -53,10 +53,11 @@ on a `wake::spawn` worker; the analyzing modal (`dialogs`) shows while that run 
 drops the run so its late result has no receiver. `tick` takes the result only for the project
 snapshot it was read from. A review belongs to one snapshot: any other edit, undo or redo closes it,
 and its own edits read the transcript again with the same minimum. The gap minimum (default 500 ms)
-is session state. Delete sends the ticked pauses as one `timeline.remove_pauses`, finds the ticked
-words again by cue, index and their position after the closed pauses (the cut splits items, so item
-ids change), then sends them as one `transcript.delete_range`; Remove gaps sends every listed gap as
-one `timeline.remove_pauses`. Each is an ordinary undoable command, so the review has no history of
+is session state. Delete sends the ticked words as `transcript.delete_range` and the ticked pauses as
+`timeline.remove_pauses` in one `batch`, one undo step. Both are computed against the timeline the
+review was read from: a pause span moves back by the length of the merged word runs that end before
+it, so no word is looked up again. Remove gaps sends every listed gap as one `timeline.remove_pauses`.
+The review has no history of
 its own; its Undo and Redo buttons are `undo` and `redo`. Show deleted words keeps the words of each
 cut made through the pane together with the undo depth after it, and drops an entry once that cut
 leaves the history. Create compound clip is disabled until ticket 533. Design:

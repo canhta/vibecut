@@ -23,16 +23,16 @@ use time::{TICKS_PER_SECOND, Tick};
 const DEFAULT_GAP_MS: i64 = 500;
 /// Crossfade of a removed pause, the default of `timeline.pause_candidates`.
 const PAUSE_CROSSFADE_MS: i64 = 20;
-/// List row pitch (14b/110059: 49 px on a 1.92 scale capture, 47 logical).
+/// List row pitch (14b/110059, 2x Retina: 94 px between hairlines, 47 logical).
 const ROW_HEIGHT: f32 = 47.0;
-/// Pause capsule height (14b/110059: 19 px on a 1.92 scale capture, 18 logical).
+/// Pause capsule height (14b/110059, 2x Retina: 36 px, 18 logical).
 const PILL_HEIGHT: f32 = 18.0;
 /// Rows shown before the list scrolls. Ours, unmeasured: the reference list fills its window.
 const LIST_ROWS: f32 = 8.0;
 /// Mini timeline height. Ours, unmeasured: the reference strip fills the window foot.
 const TIMELINE_HEIGHT: f32 = 48.0;
-/// Analyzing modal button (14b/110018: 174 x 23 px on a 1.84 scale capture, 160 x 21 logical).
-const MODAL_BUTTON: egui::Vec2 = egui::vec2(160.0, 21.0);
+/// Analyzing modal button (14b/110018, 2x Retina: 320 x 44 px, 160 x 22 logical).
+const MODAL_BUTTON: egui::Vec2 = egui::vec2(160.0, 22.0);
 
 /// The list a review tab shows.
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
@@ -282,16 +282,6 @@ fn gap_ticks(ms: i64) -> Tick {
     Tick(ms.saturating_mul(TICKS_PER_SECOND) / 1000)
 }
 
-/// Where `tick` lands once the removed `spans` are closed up. Spans hold no words, so a word
-/// only moves by the spans that end before it.
-fn shifted(spans: &[OutputSpan], tick: Tick) -> Tick {
-    let closed: i64 = spans
-        .iter()
-        .filter(|span| span.end.0 <= tick.0)
-        .map(|span| span.end.0 - span.start.0)
-        .sum();
-    Tick(tick.0 - closed)
-}
 
 impl Subtitles {
     /// Whether no analysis is running.
@@ -747,12 +737,54 @@ impl Subtitles {
         }
     }
 
-    /// Cut what the review ticked: pauses as one `timeline.remove_pauses`, then the ticked
-    /// repeats and sentences as one `transcript.delete_range`. Both are undo steps; a refusal
-    /// shows its reason and keeps what was cut so far. The list is read again afterwards.
+    /// Cut what the review ticked as one `batch`, so it is one undo step: the ticked repeat
+    /// words and sentences as `transcript.delete_range`, then the ticked pauses as
+    /// `timeline.remove_pauses`. Every range is computed here against the timeline the review
+    /// was read from: the word cut closes exactly the merged runs of its words, so a pause span
+    /// moves back by the length of the runs that end before it. A refusal changes nothing and
+    /// shows its reason. The list is read again afterwards.
     fn review_apply(&mut self, session: &mut Session, every_gap: bool) {
         let Some(open) = self.review.open.as_ref() else {
             return;
+        };
+        let mut ids: BTreeSet<WordId> = BTreeSet::new();
+        if !every_gap {
+            for repeat in open
+                .repeats
+                .iter()
+                .filter_map(|index| open.analysis.repeats.get(*index))
+            {
+                ids.extend(repeat.words.iter().cloned());
+            }
+            for cue in &open.view.cues {
+                if open.cues.contains(&(cue.item, cue.id.clone())) {
+                    ids.extend(cue.words.iter().map(|word| word.id.clone()));
+                }
+            }
+        }
+        let mut ranges: Vec<(i64, i64)> = open
+            .view
+            .cues
+            .iter()
+            .flat_map(|cue| cue.words.iter())
+            .filter(|word| ids.contains(&word.id))
+            .map(|word| (word.output.start().0, word.output.end().0))
+            .collect();
+        ranges.sort_unstable();
+        let mut runs: Vec<(i64, i64)> = Vec::new();
+        for (start, end) in ranges {
+            match runs.last_mut() {
+                Some(last) if start <= last.1 => last.1 = last.1.max(end),
+                _ => runs.push((start, end)),
+            }
+        }
+        let closed = |tick: Tick| -> Tick {
+            let length: i64 = runs
+                .iter()
+                .filter(|run| run.1 <= tick.0)
+                .map(|run| run.1 - run.0)
+                .sum();
+            Tick(tick.0 - length)
         };
         let spans: Vec<OutputSpan> = open
             .analysis
@@ -760,108 +792,53 @@ impl Subtitles {
             .iter()
             .enumerate()
             .filter(|(index, _)| every_gap || open.gaps.contains(index))
-            .map(|(_, gap)| gap.span)
+            .map(|(_, gap)| OutputSpan {
+                start: closed(gap.span.start),
+                end: closed(gap.span.end),
+            })
             .collect();
-        let mut words: Vec<(WordId, Tick)> = Vec::new();
-        if !every_gap {
-            let mut seen = BTreeSet::new();
-            let mut add = |id: &WordId, at: Tick| {
-                if seen.insert(id.clone()) {
-                    words.push((id.clone(), at));
-                }
-            };
-            let start_of = |id: &WordId| {
-                open.view
-                    .cues
-                    .iter()
-                    .flat_map(|cue| cue.words.iter())
-                    .find(|word| word.id == *id)
-                    .map(|word| word.output.start())
-            };
-            for repeat in open
-                .repeats
-                .iter()
-                .filter_map(|index| open.analysis.repeats.get(*index))
-            {
-                for id in &repeat.words {
-                    if let Some(at) = start_of(id) {
-                        add(id, at);
-                    }
-                }
-            }
-            for cue in &open.view.cues {
-                if open.cues.contains(&(cue.item, cue.id.clone())) {
-                    for word in &cue.words {
-                        add(&word.id, word.output.start());
-                    }
-                }
-            }
-        }
-        let earliest = spans
+        let earliest = open
+            .analysis
+            .gaps
             .iter()
-            .map(|span| span.start)
-            .chain(words.iter().map(|(_, at)| *at))
+            .enumerate()
+            .filter(|(index, _)| every_gap || open.gaps.contains(index))
+            .map(|(_, gap)| gap.span.start)
+            .chain(runs.first().map(|run| Tick(run.0)))
             .min();
         let before = open.view.clone();
-        if spans.is_empty() && words.is_empty() {
-            return;
+        let mut commands = Vec::new();
+        if !ids.is_empty() {
+            commands.push(Command::TranscriptDeleteRange {
+                word_ids: ids.iter().cloned().collect(),
+            });
         }
+        if !spans.is_empty() {
+            commands.push(Command::RemovePauses {
+                spans,
+                crossfade_ms: PAUSE_CROSSFADE_MS,
+            });
+        }
+        let command = match commands.len() {
+            0 => return,
+            1 => commands.remove(0),
+            _ => Command::Batch { commands },
+        };
         if self.flush_drafts(session).is_err() {
             self.review.problem = Some(Text::SubEditFailed);
             return;
         }
         self.review.problem = None;
-        if !spans.is_empty()
-            && let Err(error) = session.apply(Command::RemovePauses {
-                spans: spans.clone(),
-                crossfade_ms: PAUSE_CROSSFADE_MS,
-            })
-        {
-            self.review.problem = Some(refusal(&error));
-            return;
-        }
-        if !words.is_empty() {
-            // The pause cut splits items, so words are found again by cue, index and their
-            // position after the closed pauses.
-            let ids = match session.transcript() {
-                Ok(now) => words
-                    .iter()
-                    .filter_map(|(id, at)| {
-                        let expected = shifted(&spans, *at);
-                        now.cues
-                            .iter()
-                            .flat_map(|cue| cue.words.iter())
-                            .find(|word| {
-                                word.id.cue == id.cue
-                                    && word.id.word == id.word
-                                    && word.output.start() == expected
-                            })
-                            .map(|word| word.id.clone())
-                    })
-                    .collect::<Vec<_>>(),
-                Err(_) => Vec::new(),
-            };
-            if ids.len() != words.len() {
-                self.review.problem = Some(Text::SubEditFailed);
-                self.review_reopen(session);
-                return;
+        match session.apply(command) {
+            Ok(outcome) => {
+                if outcome.changed && !ids.is_empty() {
+                    self.review
+                        .record_deleted(&before, ids.iter(), session.history_len().0);
+                }
             }
-            let originals: Vec<WordId> = words.iter().map(|(id, _)| id.clone()).collect();
-            match session.apply(Command::TranscriptDeleteRange { word_ids: ids }) {
-                Ok(outcome) => {
-                    if outcome.changed {
-                        self.review.record_deleted(
-                            &before,
-                            originals.iter(),
-                            session.history_len().0,
-                        );
-                    }
-                }
-                Err(error) => {
-                    self.review.problem = Some(refusal(&error));
-                    self.review_reopen(session);
-                    return;
-                }
+            Err(error) => {
+                self.review.problem = Some(refusal(&error));
+                return;
             }
         }
         if let Some(at) = earliest {

@@ -4150,15 +4150,19 @@ fn review_select_all_ticks_every_row_and_delete_cuts_the_pause_and_every_word() 
     let mut h = review_harness();
     analyze(&mut h);
     click(&mut h, "subtitles.review.select_all");
+    let before = h.state().session.project().clone();
     let history = h.state().session.history_len().0;
     click(&mut h, "subtitles.review.delete");
     h.run_steps(3);
     assert_eq!(transcript_words(h.state()), 0);
     assert_eq!(
         h.state().session.history_len().0,
-        history + 2,
-        "pauses and words are one undo step each"
+        history + 1,
+        "pauses and words are one undo step"
     );
+    h.state_mut().session.undo().unwrap();
+    h.run_steps(3);
+    assert_eq!(h.state().session.project(), &before, "one Undo restores both");
 }
 
 #[test]
