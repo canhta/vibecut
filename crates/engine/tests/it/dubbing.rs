@@ -353,6 +353,9 @@ fn failures_rejections_and_cancel_leave_no_take() {
         (Script::Fail(|| ai::Error::Quota), |e| {
             matches!(e, ai::Error::Quota)
         }),
+        (Script::Fail(|| ai::Error::PaidPlanRequired), |e| {
+            matches!(e, ai::Error::PaidPlanRequired)
+        }),
         (Script::WrongTranscript, |e| {
             matches!(e, ai::Error::OutputRejected)
         }),

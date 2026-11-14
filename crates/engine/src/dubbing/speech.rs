@@ -14,7 +14,8 @@ use transport::{HttpTransport, UreqTransport};
 /// The ElevenLabs premade (stock) voices offered by the picker, id and label. Cloned and
 /// professional-clone voices are never listed. Each id is `premade` in a free account's
 /// `/v1/voices` and synthesized there on 2026-11-14; older stock ids (Rachel, Josh) became
-/// library voices that a free plan is refused (HTTP 402 `paid_plan_required`).
+/// library voices that a free plan is refused (HTTP 402 `paid_plan_required`, typed as
+/// `ai::Error::PaidPlanRequired` and shown as its own failure, never as quota).
 pub const ELEVENLABS_VOICES: [(&str, &str); 5] = [
     ("EXAVITQu4vr4xnSDxMaL", "Sarah"),
     ("pNInz6obpgDQGcFmaJgB", "Adam"),
@@ -32,6 +33,8 @@ pub struct SpeechOption {
     pub models: Vec<String>,
     /// Voice ids with a display label (the id itself for the built-in OpenAI voices).
     pub voices: Vec<(&'static str, &'static str)>,
+    /// The category every voice of this provider carries: built-in or stock.
+    pub category: VoiceCategory,
     /// Whether the provider offers a `voice_settings.speed`.
     pub speed: bool,
 }
@@ -44,6 +47,7 @@ pub fn speech_options() -> Vec<SpeechOption> {
             label: "OpenAI",
             models: vec![ai::defaults::model("openai", ai::Operation::Synthesize).into()],
             voices: SPEECH_VOICES.iter().map(|voice| (*voice, *voice)).collect(),
+            category: VoiceCategory::BuiltIn,
             speed: false,
         },
         SpeechOption {
@@ -54,6 +58,7 @@ pub fn speech_options() -> Vec<SpeechOption> {
                 "eleven_multilingual_v2".into(),
             ],
             voices: ELEVENLABS_VOICES.to_vec(),
+            category: VoiceCategory::Stock,
             speed: true,
         },
     ]

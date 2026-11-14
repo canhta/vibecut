@@ -7,6 +7,7 @@ impl Failure for ai::Error {
     fn code(&self) -> ErrorCode {
         match self {
             Self::Chapters(_) => ErrorCode::Refused,
+            Self::PaidPlanRequired => ErrorCode::PlanRequired,
             _ => ErrorCode::Ai,
         }
     }

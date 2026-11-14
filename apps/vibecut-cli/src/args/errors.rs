@@ -234,6 +234,7 @@ fn failure_code(code: ErrorCode) -> (&'static str, u8) {
         | ErrorCode::WorkerFailure
         | ErrorCode::Cancelled => ("job", 7),
         ErrorCode::Quota => ("quota", 4),
+        ErrorCode::PlanRequired => ("plan_required", 4),
         ErrorCode::RateLimit => ("rate_limit", 4),
         ErrorCode::Network => ("network", 7),
         ErrorCode::AudioDevice => ("audio_device", 4),

@@ -290,6 +290,10 @@ fn bench(openai: Script, elevenlabs: Script) -> Bench {
     )
     .unwrap();
     playback.set_device_available(true);
+    // The playhead sits inside the original audio, so a take cannot land on that track.
+    playback
+        .seek(Tick(SECOND), false, Arc::new(session.project().clone()))
+        .unwrap();
     let mut editor = Editor::new(session, playback, Preferences::default());
     let opener = Arc::new(Opener {
         openai: Voice::new("openai", "gpt-audio-1.5", openai),
@@ -390,6 +394,20 @@ fn ducked(harness: &Harness<Editor>, item: ItemId) -> bool {
         .is_some_and(|found| found.animations.get(&path).is_some())
 }
 
+/// The item sits on the lowest audio track of the timeline.
+fn on_lowest_audio(harness: &Harness<Editor>, item: ItemId) -> bool {
+    harness
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .audio
+        .last()
+        .is_some_and(|track| track.items.iter().any(|candidate| candidate.id == item))
+}
+
 fn save(harness: &mut Harness<Editor>, name: &str) {
     let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
     std::fs::create_dir_all(&target).unwrap();
@@ -402,18 +420,20 @@ fn the_chosen_provider_and_voice_generate_consent_fit_place_and_duck_in_one_undo
     let mut bench = bench(Script::Samples(72_000), Script::Samples(50_400));
     let h = &mut bench.harness;
     for id in [
-        "inspector.narration.provider",
+        "inspector.narration.category.0",
+        "inspector.narration.category.1",
         "inspector.narration.model",
-        "inspector.narration.voice",
         "inspector.narration.language",
+        "inspector.narration.voice_filter",
+        "inspector.narration.voice.0.0",
         "inspector.narration.text",
         "inspector.narration.generate",
     ] {
         assert!(has_widget(h, id), "{id}");
     }
-    // Nothing is chosen for the person: pick ElevenLabs and its second premade voice.
-    choose(h, "inspector.narration.provider", 1);
-    choose(h, "inspector.narration.voice", 1);
+    // Nothing is chosen for the person: the Stock chip, then ElevenLabs' second premade voice.
+    click(h, "inspector.narration.category.1");
+    click(h, "inspector.narration.voice.1.1");
     let history = h.state().session.history_len().0;
 
     // Declining the sheet sends nothing and changes nothing.
@@ -468,7 +488,8 @@ fn the_chosen_provider_and_voice_generate_consent_fit_place_and_duck_in_one_undo
     click(h, "inspector.narration.ducking.enabled");
     save(h, "p2-dubbing-02-tts.png");
 
-    // Place is one undo step: asset, item, stretch and the (disabled) ducking together.
+    // Place is one undo step: asset, item, stretch and the (disabled) ducking together. The
+    // take starts at the playhead, on a new lowest audio track, and the clip is selected.
     click(h, "inspector.narration.place");
     let placed = narrations(h);
     assert_eq!(placed.len(), 1);
@@ -484,13 +505,16 @@ fn the_chosen_provider_and_voice_generate_consent_fit_place_and_duck_in_one_undo
     );
     assert!(!record.ducking.enabled);
     assert_eq!(record.cue_duration, Tick(2 * SECOND));
+    assert!(on_lowest_audio(h, item));
+    assert_eq!(h.state().inspect().unwrap().selection, vec![item]);
     assert!(!ducked(h, bench.audio));
-    assert!(has_widget(h, "inspector.narration.ducking.enabled"));
+    // The properties moved to the clip: its Audio tab carries the Ducking section.
     assert!(!has_widget(h, "inspector.narration.place"));
     let written = std::fs::read_dir(bench.directory.path()).unwrap().count();
     assert_eq!(written, 1, "one take file");
 
     // After placement the same switch is `dub.set_ducking`: the original audio now ducks.
+    assert!(has_widget(h, "inspector.narration.ducking.enabled"));
     click(h, "inspector.narration.ducking.enabled");
     assert_eq!(h.state().session.history_len().0, history + 2);
     assert!(narrations(h)[0].1.ducking.enabled);
@@ -504,6 +528,86 @@ fn the_chosen_provider_and_voice_generate_consent_fit_place_and_duck_in_one_undo
     assert!(narrations(h).is_empty());
     assert_eq!(h.state().session.history_len().0, history);
     let _ = (item, bench.text);
+}
+
+#[test]
+fn a_take_lands_on_a_free_lowest_audio_track_and_the_clip_is_selected() {
+    let mut bench = bench(Script::Samples(72_000), Script::Samples(50_400));
+    let h = &mut bench.harness;
+    // A second audio track below the original: free at the playhead, so it is the lowest.
+    let original = h
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .audio
+        .last()
+        .unwrap()
+        .id;
+    let outcome = h
+        .state_mut()
+        .session
+        .apply(Command::AddTrack {
+            placement: engine::TrackPlacement::Below { track: original },
+            name: "Voice".into(),
+            kind: TrackKind::Audio,
+        })
+        .unwrap();
+    let voice = match outcome.created.first().copied() {
+        Some(CreatedId::Track(id)) => id,
+        _ => panic!("track"),
+    };
+    click(h, "inspector.narration.category.1");
+    click(h, "inspector.narration.voice.1.1");
+    click(h, "inspector.narration.generate");
+    wait_for(h, "narration.consent.send");
+    click(h, "narration.consent.send");
+    wait_for(h, "inspector.narration.take");
+    click(h, "inspector.narration.place");
+    let placed = narrations(h);
+    assert_eq!(placed.len(), 1);
+    let item = placed[0].0;
+    let lowest = h
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .audio
+        .last()
+        .unwrap()
+        .id;
+    assert_eq!(lowest, voice);
+    assert!(on_lowest_audio(h, item));
+    assert_eq!(h.state().inspect().unwrap().selection, vec![item]);
+}
+
+#[test]
+fn a_paid_plan_voice_names_itself_in_its_own_line_and_places_nothing() {
+    let mut bench = bench(
+        Script::Samples(48_000),
+        Script::Fail(|| ai::Error::PaidPlanRequired),
+    );
+    let h = &mut bench.harness;
+    let before = h.state().session.project().clone();
+    click(h, "inspector.narration.category.1");
+    click(h, "inspector.narration.voice.1.1");
+    click(h, "inspector.narration.generate");
+    wait_for(h, "narration.consent.send");
+    click(h, "narration.consent.send");
+    wait_for(h, "inspector.narration.failure");
+    let line = h
+        .get(By::new().predicate(|node| node.author_id() == Some("inspector.narration.failure")))
+        .accesskit_node()
+        .label()
+        .unwrap_or_default();
+    assert!(line.contains("Adam"), "{line}");
+    assert!(!line.contains("quota"), "{line}");
+    assert!(!has_widget(h, "inspector.narration.take"));
+    assert_eq!(h.state().session.project(), &before);
 }
 
 #[test]

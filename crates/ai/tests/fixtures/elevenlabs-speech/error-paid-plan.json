@@ -1,0 +1,4 @@
+{
+  "status": 402,
+  "detail": {"status": "paid_plan_required", "message": "Free users cannot use library voices via the API."}
+}

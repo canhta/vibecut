@@ -677,6 +677,11 @@ fn status_error(response: &HttpResponse) -> Error {
     // public error or logs.
     remote::status_error(response, |status, fields| {
         if (400..=429).contains(&status) {
+            // A library voice on a free plan is HTTP 402 `paid_plan_required`: its own
+            // error, so the panel names the voice instead of asking the person to wait.
+            if remote::matches(fields, &["paid_plan_required"]) {
+                return Some(Error::PaidPlanRequired);
+            }
             if remote::quota(fields) {
                 return Some(Error::Quota);
             }
