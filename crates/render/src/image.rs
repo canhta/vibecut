@@ -45,18 +45,24 @@ impl Image {
         if pixels.len() as u64 != Self::bytes(width, height)? / 16 {
             return Err(Error::Invalid("working pixel count"));
         }
-        let mut out = Self::new(width, height, [0.0; 4], hooks)?;
-        for (row, source) in pixels
-            .chunks_exact(width as usize)
-            .zip(out.pixels.chunks_exact_mut(width as usize))
-        {
+        let bytes = Self::bytes(width, height)?;
+        let lease = hooks.reserve(MemoryKind::Compositor, bytes)?;
+        // No zero-fill: each validated row is appended once.
+        let mut out = Vec::new();
+        out.try_reserve_exact(pixels.len())?;
+        for row in pixels.chunks_exact(width as usize) {
             crate::check(hooks)?;
             if !row.iter().all(|pixel| working_pixel(*pixel)) {
                 return Err(Error::Invalid("working pixel"));
             }
-            source.copy_from_slice(row);
+            out.extend_from_slice(row);
         }
-        Ok(out)
+        Ok(Self {
+            width,
+            height,
+            pixels: out,
+            _lease: lease,
+        })
     }
     pub(crate) fn copy(&self, hooks: &dyn ExecutionHooks) -> Result<Self> {
         Self::from_working_pixels(self.width, self.height, self.pixels.iter().copied(), hooks)
@@ -352,11 +358,13 @@ pub struct Rgba8 {
 }
 /// A premultiplied working pixel: finite channels in 0..=alpha and alpha at most 1.
 fn working_pixel(pixel: [f32; 4]) -> bool {
+    // Branchless so a row vectorises. Finite follows from `0 <= v <= alpha <= 1`
+    // (a NaN fails every comparison).
     let alpha = pixel[3];
-    alpha <= 1.0
-        && pixel
+    (alpha <= 1.0)
+        & pixel
             .iter()
-            .all(|v| v.is_finite() && *v >= 0.0 && *v <= alpha)
+            .fold(true, |ok, v| ok & (*v >= 0.0) & (*v <= alpha))
 }
 pub(crate) fn color(bytes: [u8; 4]) -> [f32; 4] {
     let a = f32::from(bytes.get(3).copied().unwrap_or(0)) / 255.0;

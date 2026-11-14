@@ -19,6 +19,10 @@ test = true
 name = "preview_fixture"
 path = "examples/preview_fixture.rs"
 
+[[example]]
+name = "gpu_path_probe"
+path = "examples/gpu_path_probe.rs"
+
 [lints]
 workspace = true
 

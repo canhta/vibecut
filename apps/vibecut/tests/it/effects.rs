@@ -1939,5 +1939,30 @@ fn reduce_noise_native_frame_time_1080p_and_4k() {
             times[0],
             times[times.len() - 1]
         );
+        // The production configuration: one frame scope reuses the admitted scratch
+        // across calls, so only the first run allocates.
+        let hooks: &dyn ExecutionHooks = &Hooks;
+        let scope = gpu.frame(hooks).unwrap().expect("a GPU frame scope");
+        let mut times = Vec::new();
+        for run in 0..9 {
+            let start = std::time::Instant::now();
+            let output = scope.apply(&input, &passes, inputs(), hooks).unwrap();
+            let ms = start.elapsed().as_secs_f64() * 1000.0;
+            let error = max_error(&expected, &output);
+            assert!(
+                error <= 1e-4,
+                "scoped reduce_noise {width}x{height} error={error}"
+            );
+            if run >= 2 {
+                times.push(ms);
+            }
+        }
+        times.sort_by(f64::total_cmp);
+        eprintln!(
+            "NOISE_COST reduce_noise_gpu_scoped median={:.3} min={:.3} max={:.3} ms/frame {width}x{height}",
+            times[times.len() / 2],
+            times[0],
+            times[times.len() - 1]
+        );
     }
 }

@@ -720,8 +720,18 @@ impl FrameEffects<'_> {
             .slice(..)
             .get_mapped_range()
             .map_err(|_| Error::Unsupported("GPU mapped range"))?;
-        let pixels = bytemuck::pod_collect_to_vec::<u8, [f32; 4]>(&data);
-        let result = Image::from_working_slice(item.width(), item.height(), &pixels, self.hooks);
+        // Zero-copy view of the mapped bytes when aligned; the copying collect is the
+        // fallback. Mapped memory is shared on unified-memory adapters, so this drops a
+        // full-frame copy on any adapter.
+        let owned;
+        let pixels = match bytemuck::try_cast_slice::<u8, [f32; 4]>(&data) {
+            Ok(view) => view,
+            Err(_) => {
+                owned = bytemuck::pod_collect_to_vec::<u8, [f32; 4]>(&data);
+                &owned
+            }
+        };
+        let result = Image::from_working_slice(item.width(), item.height(), pixels, self.hooks);
         drop(data);
         if result.is_ok() {
             self.gpu.work.readbacks.fetch_add(1, Ordering::Relaxed);
