@@ -254,6 +254,8 @@ pub enum UiAction {
     GuideAdd(crate::editor::LineAxis),
     /// `preview.guides.move`: move one guide line to a canvas position.
     GuideMove,
+    /// `preview.scopes`: show or hide the colour scopes under the player video.
+    PreviewScopes,
     Seek,
     JumpBookmark(BookmarkDirection),
     /// `playback.jump_cut`: seek to the previous or next main-track cut point.

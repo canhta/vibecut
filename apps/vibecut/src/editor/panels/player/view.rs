@@ -2,6 +2,7 @@
 use super::{
     Action, Context, State, lines,
     overlay::{GRID_MAX, GRID_MIN, Guide, Overlay, OverlayVisibility, PLANES, custom_from_draft},
+    scope,
     state::{GridDraft, TimecodeEdit},
 };
 use crate::{
@@ -123,6 +124,7 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
                     None,
                 );
                 ui.separator();
+                scope::submenu(ui, cx, &mut actions);
                 guide_menu(ui, cx, state, &mut actions);
                 lines::submenu(ui, cx, &mut actions);
             });
@@ -140,11 +142,18 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
         ),
         panel.max,
     );
+    // The scopes strip sits above the footer and the video area gives it the room, with a gap
+    // above it; with too little room the scopes stay hidden.
+    let strip = (cx.preferences.preview_scopes
+        && !empty
+        && footer.top() - kit::scope::PANEL_HEIGHT - kit::scope::ABOVE >= header.bottom())
+    .then(|| scope::strip(panel, footer.top()));
+    let lower = strip.map_or(footer.top(), |strip| strip.top() - kit::scope::ABOVE);
     let stage = Rect::from_min_max(
         egui::pos2(panel.left() + kit::space::MD, header.bottom()),
         egui::pos2(
             panel.right() - kit::space::MD - kit::space::HAIRLINE,
-            (footer.top() - kit::size::PLAYER_FIT_ROW).max(header.bottom()),
+            (lower - kit::size::PLAYER_FIT_ROW).max(header.bottom()),
         ),
     );
     // While rulers show, the canvas fits the viewer less the two strips, so a canvas that
@@ -176,7 +185,7 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
         let fit = Rect::from_center_size(
             egui::pos2(
                 stage.center().x,
-                (frame.bottom() + kit::size::PLAYER_FIT_OFFSET).min(footer.top() - kit::space::MD),
+                (frame.bottom() + kit::size::PLAYER_FIT_OFFSET).min(lower - kit::space::MD),
             ),
             Vec2::splat(kit::size::CONTROL),
         );
@@ -193,6 +202,16 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
             }
             remember(cx, &mut actions, "preview.zoom.fit", r);
         });
+    }
+    if let Some(strip) = strip {
+        let scoped = if source_missing_at_playhead(cx) {
+            None
+        } else {
+            cx.playback.frame()
+        };
+        scope::show(&mut state.scope, cx, ui, strip, scoped, &mut actions);
+    } else {
+        state.scope.clear();
     }
     footer_controls(state, cx, ui, footer, empty, &mut actions);
     actions

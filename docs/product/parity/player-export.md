@@ -8,7 +8,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 |---|---|---|---|---|---|
 | PLAY-01 | Player title | Done | Matches | 05/221643 | |
 | PLAY-02 | Player menu entry | Partial | Differs | 14/100123 | Header button |
-| PLAY-03 | Color oscilloscope | Missing | — | 14/100123 | |
+| PLAY-03 | Color oscilloscope | Done | Matches | 14/100123, 14f/scopes/04 | Show/Hide, RGB parade, waveform and vectorscope strip measured; the check mark, 90 degree ticks, bracket arms and skin line angle are ours |
 | PLAY-04 | Export still frames | Done | Proposed | 14/100123 | |
 | PLAY-05 | Add horizontal / vertical guide | Done | Proposed | 14/100216 | Teal guides |
 | PLAY-06 | Drag guide from ruler | Done | Proposed | 14b/111304 | |

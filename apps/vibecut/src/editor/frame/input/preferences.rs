@@ -34,6 +34,11 @@ impl Editor {
         let next = edit(&self.preferences.preview_lines)?;
         self.set_preference("preview_lines", serde_json::to_value(&next)?)
     }
+    /// Show or hide the colour scopes: one preference step in app history, never project JSON.
+    pub(in crate::editor) fn toggle_preview_scopes(&mut self) -> Result<()> {
+        let next = !self.preferences.preview_scopes;
+        self.set_preference("preview_scopes", serde_json::Value::Bool(next))
+    }
     /// Star or unstar one catalogue id (`catalog.favorite.set`). Favourites are app
     /// presentation memory: written without an app-history entry, never project JSON.
     pub fn set_favorite(&mut self, family: &str, id: &str, favorite: bool) -> Result<()> {

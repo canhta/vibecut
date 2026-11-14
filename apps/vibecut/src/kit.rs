@@ -17,7 +17,7 @@ pub(crate) use theme::{
     TEXT_CLIP_DARK, VIDEO_FILL_DARK, accent, audio_waveform, border, bright, disabled,
     disabled_icon, error_text, field, guide_line, hover, icon, image_tint, label_font, light_clip,
     missing_band, missing_body, missing_border, missing_canvas, modal, on_accent, on_missing,
-    on_scrim, panel, preview_backdrop, radius, scrim, secondary, segment_active, segment_outline,
+    on_scrim, panel, preview_backdrop, radius, scope, scrim, secondary, segment_active, segment_outline,
     separator, size, space, strip, subnav_active, success, text, toggle_knob, track_rest,
     type_size, video_border, video_fill, warning, waveform, window,
 };

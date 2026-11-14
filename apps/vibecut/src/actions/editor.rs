@@ -1140,6 +1140,14 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         &[],
     ),
     ActionSpec::ui(
+        "preview.scopes",
+        Text::ActionPreviewScopes,
+        ActionCategory::View,
+        "preview colour scopes",
+        UiAction::PreviewScopes,
+        &[],
+    ),
+    ActionSpec::ui(
         "preview.zoom.fit",
         Text::ActionPreviewZoomFit,
         ActionCategory::View,

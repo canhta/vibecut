@@ -593,6 +593,7 @@ impl Editor {
                 UiAction::GuideAdd(axis) => {
                     self.edit_guide_lines(|lines| lines.with_added(axis))?;
                 }
+                UiAction::PreviewScopes => self.toggle_preview_scopes()?,
                 UiAction::PreviewZoomIn => self.preview_zoom_by(preview::ZOOM_STEP)?,
                 UiAction::PreviewZoomOut => self.preview_zoom_by(1.0 / preview::ZOOM_STEP)?,
                 UiAction::PreviewZoomPreset => {

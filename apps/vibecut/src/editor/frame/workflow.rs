@@ -130,6 +130,7 @@ impl Editor {
         if let Some(previews) = &mut self.assets.filter_previews {
             previews.settle(timeout)?;
         }
+        self.player.scope.settle(timeout)?;
         Ok(())
     }
 }

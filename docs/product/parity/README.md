@@ -24,6 +24,7 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 | `14c` | `ui-reference/capcut-desktop-2026-11-14c/` |
 | `14e/203747`, bare `2037xx`-`2042xx` | `ui-reference/capcut-desktop-2026-11-14e/` |
 | `14d/151656`, bare `151xxx` | `ui-reference/capcut-desktop-2026-11-14d/` |
+| `14f/scopes/NN` | `ui-reference/capcut-desktop-2026-11-14f/scopes/` |
 | `web screens/NN`, `web flows/NN` | `web-editors/capcut-web/` (function only, never layout) |
 
 ## Update rule

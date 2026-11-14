@@ -34,7 +34,7 @@ bounded custom IDs and four recent IDs per pair, using AI's shipped table for de
 The Captions and Shorts provider pickers resolve their transient request snapshots
 from this map. Downloaded local weight choices remain in their local owner. Keys,
 fetched lists and price acknowledgements are never serialized. A document whose version is not
-`PREFERENCES_VERSION` is refused through the version refusal; there is no migration. Version 23 replaced the export `quality` values (`low`, `medium`, `high`, `very_high`) with the Bit rate presets `lower`, `recommended` and `higher`. Version 24 made `cache_limit_bytes` optional: absent is Automatic, sized from host memory. Version 25 added the export `also` object (`audio`, `gif`, `captions`): the files ticked beside the primary output. Version 26 added `group_tip_seen`. Version 27 added the Settings Edit tab choices (`frame_step`, `value_step`, `image_duration_ms`, `loudness_target_lufs`, `audio_scrub`, `export_sound`). Version 28 replaced `loudness_target_lufs` with `loudness_preset` and added `image_duration_unit` and `time_code`.
+`PREFERENCES_VERSION` is refused through the version refusal; there is no migration. Version 23 replaced the export `quality` values (`low`, `medium`, `high`, `very_high`) with the Bit rate presets `lower`, `recommended` and `higher`. Version 24 made `cache_limit_bytes` optional: absent is Automatic, sized from host memory. Version 25 added the export `also` object (`audio`, `gif`, `captions`): the files ticked beside the primary output. Version 26 added `group_tip_seen`. Version 27 added the Settings Edit tab choices (`frame_step`, `value_step`, `image_duration_ms`, `loudness_target_lufs`, `audio_scrub`, `export_sound`). Version 28 replaced `loudness_target_lufs` with `loudness_preset` and added `image_duration_unit` and `time_code`. Version 29 added `preview_scopes`.
 Version 14 removed `recent_colors`; the colour popover's recents live in the project.
 Version 19 removed the font picker's persisted `tab` (the picker has no tabs); `font_picker` keeps only `favorites`.
 Version 22 replaced the single keybinding delta map with `KeybindingPresets`: five named profiles and the active one (`input`), with no migration.
@@ -57,6 +57,8 @@ an edit is one `ui.prefs.set` step in app history. Version 11 introduced them, v
 migration: older documents are dropped.
 
 `preview_lines` is `GuideLines`: the player rulers on or off, the guide lines shown or hidden and locked, and the vertical and horizontal guide positions (canvas pixels from the canvas centre, x right and y up; at most 16 per axis, within +/-100000). It is presentation only: an edit is one `ui.prefs.set` step in app history and the `preview.rulers` and `preview.guides.*` actions write it. Version 18 added it, with no migration.
+
+`preview_scopes` is whether the colour scopes (RGB parade, waveform, vectorscope) show under the player video, off by default. It is presentation only: an edit is one `ui.prefs.set` step in app history and the `preview.scopes` action writes it. Version 26 added it, with no migration.
 
 `adjustment_presets` is the bounded app-owned bank of named colour grades (at most 32,
 64-byte unique names, exactly the current `color_grade` parameter set with each value

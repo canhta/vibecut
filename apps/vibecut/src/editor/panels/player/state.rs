@@ -32,6 +32,8 @@ pub(crate) struct State {
     pub(in crate::editor) margin_draft: Option<[i32; 4]>,
     /// The guide line an open drag is moving; it is published once when the drag ends.
     pub(in crate::editor) line_drag: Option<super::lines::LineDrag>,
+    /// The colour scope's plot and the worker making the next one.
+    pub(in crate::editor) scope: super::scope::State,
 }
 
 /// The grid size a picker gesture is drafting, as rows and columns.
@@ -64,6 +66,7 @@ impl State {
             grid_draft: None,
             margin_draft: None,
             line_drag: None,
+            scope: super::scope::State::default(),
         }
     }
 }

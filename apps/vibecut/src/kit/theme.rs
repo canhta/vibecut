@@ -360,6 +360,53 @@ pub(crate) mod radius {
     /// About app icon corner: ours, unmeasured (the reference tile is a rounded square).
     pub const ABOUT_ICON: u8 = 14;
 }
+/// The colour scopes strip under the player video, measured in the reference desktop capture
+/// 2026-11-14f `scopes/` (logical px = capture px / 2). Scopes are fixed black instruments: the
+/// reference has one dark theme, so these colours do not follow the app theme. Values marked
+/// [proposed] were not measured.
+pub(crate) mod scope {
+    use eframe::egui::Color32;
+    /// Panel height; its width is a third of the strip (127 in the 407 px reference panel).
+    pub const PANEL_HEIGHT: f32 = 159.0;
+    /// Gap between panels, and between the video area and the strip.
+    pub const GAP: f32 = 5.0;
+    pub const ABOVE: f32 = 10.0;
+    pub const RADIUS: u8 = 4;
+    /// Plot inset from the panel's left and right edges.
+    pub const PLOT_INSET: f32 = 8.0;
+    /// The top and bottom graticule lines sit this far inside the panel.
+    pub const LINE_INSET: f32 = 7.75;
+    /// Dashed graticule line: 2 px in the capture, 1 px on and 2.5 px off.
+    pub const GRATICULE: f32 = 1.0;
+    pub const DASH_ON: f32 = 1.0;
+    pub const DASH_OFF: f32 = 2.5;
+    /// Level label offset from the panel's left edge and type size (about 10 pt).
+    pub const LABEL_INSET: f32 = 4.5;
+    pub const LABEL_SIZE: f32 = 10.0;
+    /// Vectorscope ring diameter and line width.
+    pub const VECTOR_DIAMETER: f32 = 119.0;
+    pub const RING: f32 = 1.0;
+    /// Ticks around the ring every 10 degrees; 4 px long, [proposed] 8 px every 90 degrees.
+    pub const TICK_STEP_DEGREES: u32 = 10;
+    pub const TICK: f32 = 4.0;
+    pub const TICK_MAJOR: f32 = 8.0;
+    /// Target bracket square, its distance from the centre and its letter size.
+    pub const BRACKET: f32 = 10.0;
+    /// Length of each corner arm of a target bracket [proposed].
+    pub const BRACKET_ARM: f32 = 3.0;
+    pub const BRACKET_RADIUS: f32 = 40.0;
+    pub const TARGET_SIZE: f32 = 9.0;
+    pub const BACKGROUND: Color32 = Color32::from_rgb(0x00, 0x00, 0x00);
+    pub const GRATICULE_LINE: Color32 = Color32::from_rgb(0x33, 0x33, 0x33);
+    pub const LABEL: Color32 = Color32::from_rgba_premultiplied(0x55, 0x55, 0x55, 0x99);
+    pub const RING_LINE: Color32 = Color32::from_rgb(0x1F, 0x1F, 0x1F);
+    pub const TICK_LINE: Color32 = Color32::from_rgb(0x37, 0x37, 0x37);
+    pub const TARGET: Color32 = Color32::from_rgb(0x55, 0x55, 0x55);
+    /// The skin-tone line from the centre to the ring, a solid thin grey; its angle is the
+    /// standard 123 degrees counter-clockwise from the blue-difference axis [proposed].
+    pub const SKIN_LINE: Color32 = Color32::from_rgb(0x55, 0x55, 0x55);
+    pub const SKIN_DEGREES: f32 = 123.0;
+}
 /// Inter-equivalent sizes inferred from measured capital heights.
 pub(crate) mod type_size {
     pub const BADGE: f32 = 10.0;

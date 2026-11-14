@@ -1924,6 +1924,135 @@ fn player_footer_stays_on_one_row_in_both_languages() {
     }
 }
 
+fn scopes_shown(h: &Harness<Editor>) -> bool {
+    h.state().preferences.preview_scopes
+}
+
+#[test]
+fn colour_scopes_run_as_one_registered_command_and_undo_without_touching_the_project() {
+    let fresh = || Project::new(project(FrameRate::FPS_30, 640, 360, false).into_data()).unwrap();
+    let mut h = build(editor(fresh(), Preferences::default()));
+    let committed = h.state().session.project().clone();
+    assert!(!scopes_shown(&h), "the scopes start hidden");
+    let spec = vibecut::actions::action("preview.scopes").expect("registered");
+    assert!(spec.defaults.is_empty());
+    for old in [
+        "preview.scope.waveform",
+        "preview.scope.vectorscope",
+        "preview.scope.histogram",
+    ] {
+        assert!(vibecut::actions::action(old).is_none(), "{old}");
+    }
+    assert!(h.state().action_enabled("preview.scopes"));
+    h.state_mut().activate("preview.scopes").unwrap();
+    assert!(scopes_shown(&h));
+    h.state_mut().activate("preview.scopes").unwrap();
+    assert!(!scopes_shown(&h));
+    // Each toggle is one app-history step.
+    h.state_mut().activate("edit.undo").unwrap();
+    assert!(scopes_shown(&h));
+    h.state_mut().activate("edit.redo").unwrap();
+    assert!(!scopes_shown(&h));
+    assert!(
+        Arc::ptr_eq(&committed, h.state().session.project()),
+        "the scopes never touch the project"
+    );
+    // The choice survives a restart.
+    h.state_mut().activate("preview.scopes").unwrap();
+    let saved = h.state().preferences.clone();
+    let restarted = build(editor(fresh(), saved));
+    assert!(scopes_shown(&restarted));
+}
+
+/// Opens the Color oscilloscope submenu and clicks one of its rows.
+fn row(h: &mut Harness<Editor>, id: &str) {
+    click(h, "preview.menu.scope");
+    h.run_steps(3);
+    h.get(By::new().predicate(|node| node.author_id() == Some(id)))
+        .click();
+    h.run_steps(3);
+}
+
+#[test]
+fn the_color_oscilloscope_submenu_offers_show_and_hide() {
+    let mut h = build(editor(
+        project(FrameRate::FPS_30, 640, 360, false),
+        Preferences::default(),
+    ));
+    row(&mut h, "preview.menu.scopes.show");
+    assert!(scopes_shown(&h));
+    // Show while shown changes nothing and records nothing.
+    row(&mut h, "preview.menu.scopes.show");
+    assert!(scopes_shown(&h));
+    h.state_mut().activate("edit.undo").unwrap();
+    assert!(!scopes_shown(&h), "the second Show added no step");
+    h.state_mut().activate("edit.redo").unwrap();
+    row(&mut h, "preview.menu.scopes.hide");
+    assert!(!scopes_shown(&h));
+}
+
+#[test]
+fn shown_scopes_take_a_strip_under_the_video_plotted_off_the_ui_thread() {
+    let woken = crate::woken::Woken::bind();
+    let mut h = build(editor(
+        project(FrameRate::FPS_30, 640, 360, false),
+        Preferences::default(),
+    ));
+    woken.attach(&h.ctx);
+    woken.step_until(&mut h, "the preview frame", |editor| {
+        editor.playback.frame().is_some()
+    });
+    assert!(!crate::woken::shows(h.state(), "preview.scopes"));
+    let video_before = widget(&h, "preview.canvas").rect;
+
+    h.state_mut().activate("preview.scopes").unwrap();
+    h.step();
+    assert!(crate::woken::shows(h.state(), "preview.scopes"));
+    assert!(
+        !crate::woken::shows(h.state(), "preview.scopes.ready"),
+        "the first pass only starts the plot: the panels show their axes without a trace"
+    );
+    woken.step_until(&mut h, "the scope plots", |editor| {
+        crate::woken::shows(editor, "preview.scopes.ready")
+    });
+    assert!(!crate::woken::shows(h.state(), "preview.scopes.failed"));
+
+    // Three panels in a row, 159 tall with a 5 gap: RGB parade, waveform, vectorscope (04).
+    let stage = widget(&h, "preview.canvas").rect;
+    let strip = widget(&h, "preview.scopes").rect;
+    let panels = [
+        widget(&h, "preview.scopes.parade").rect,
+        widget(&h, "preview.scopes.waveform").rect,
+        widget(&h, "preview.scopes.vectorscope").rect,
+    ];
+    let near = |a: f32, b: f32, what: &str| assert!((a - b).abs() <= 0.5, "{what}: {a} vs {b}");
+    near(strip.left(), stage.left(), "the strip is inset like the video area");
+    for panel in panels {
+        near(panel.height(), 159.0, "panel height");
+        near(panel.top(), strip.top(), "panel top");
+        near(panel.width(), panels[0].width(), "equal panels");
+    }
+    near(panels[1].left() - panels[0].right(), 5.0, "gap one");
+    near(panels[2].left() - panels[1].right(), 5.0, "gap two");
+    near(panels[2].right(), strip.right(), "the strip is filled");
+    // The video area shrinks to make room, and the strip sits below it.
+    assert!(
+        stage.height() <= video_before.height() - 159.0,
+        "{stage:?} vs {video_before:?}"
+    );
+    assert!(stage.bottom() <= strip.top());
+
+    // Hiding returns the room and drops the plots.
+    h.state_mut().activate("preview.scopes").unwrap();
+    h.step();
+    assert!(!crate::woken::shows(h.state(), "preview.scopes"));
+    near(
+        widget(&h, "preview.canvas").rect.height(),
+        video_before.height(),
+        "the video area returns",
+    );
+}
+
 #[test]
 fn pending_preview_invalidates_presented_readiness_until_the_replacement_is_polled() {
     let mut model = editor(

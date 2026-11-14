@@ -16,6 +16,7 @@ It consumes immutable project snapshots and renders and mixes one active-scene s
 | `audio/cleanup/` | Runs an item's source cleanup chain with filter state carried across contiguous blocks. | `CleanupChain` | [Source cleanup](src/audio/cleanup/README.md) |
 | `export/` | Runs a staged project export through to publication. | `OutputOptions`, `RangeChoice`, `SceneChoice`, `VideoCodec`, `export`, `export_with_sources`, `validate_output_path`, `sequence_destination`, `sequence_frame_name`, `sequence_prefix`, `sequence_stage`, `MAX_SEQUENCE_FRAMES` | [Export and publication](src/export/README.md) |
 | `image` | Owns the RGBA frame buffer and its bounded allocation. | `Image` | [source](src/image.rs) |
+| `scopes` | Plots the RGB parade, waveform and vectorscope of one displayed 8-bit frame into fixed-size plots, one pass over the pixels. | `Scopes`, `Plot`, `TRACE_WIDTH`, `TRACE_HEIGHT`, `VECTOR_SIDE`, `plot_scopes` | [source](src/scopes.rs) |
 | `sources` | Provides decoded video and audio samples. | `SourceProvider`, `FileSources` | [Sources, bounds and cancellation](src/sources/README.md) |
 
 The crate root re-exports the public names; module paths are private except the scene helpers re-exported at the root.
