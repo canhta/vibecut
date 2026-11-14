@@ -246,10 +246,12 @@ impl Editor {
         self.with_assets(|assets, port| assets.finish_effect_drag(port, ui.ctx()));
         self.assets.finish_media_drag(ui.ctx());
         self.with_assets(|assets, port| assets.finish_transition_drag(port, ui.ctx()));
-        ui.ctx()
-            .request_repaint_after(std::time::Duration::from_millis(
-                if self.playback.playing() { 8 } else { 33 },
-            ));
+        // Playback is the only frame loop this pass owns; a paused editor repaints on input and
+        // on the jobs and animations that ask for it. The native loop paces worker polling.
+        if self.playback.playing() {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(8));
+        }
     }
     /// Draw the properties area and route what it asks for.
     fn inspector(&mut self, ui: &mut egui::Ui) {

@@ -201,6 +201,16 @@ impl Workspace {
     pub fn busy(&self) -> bool {
         self.home.busy() || self.projects.busy() || self.windows.values().any(EditorWindow::busy)
     }
+    /// True while something needs the fast poll: a job in flight or a playing editor.
+    pub fn active(&self) -> bool {
+        self.busy()
+            || self
+                .windows
+                .values()
+                .any(|w| w.editor.as_ref().is_some_and(|e| e.playback.playing()))
+    }
+    /// The idle heartbeat of the native loop: it only picks up job results nobody painted.
+    pub const IDLE_POLL: std::time::Duration = std::time::Duration::from_millis(500);
     pub fn error(&self) -> Option<&Error> {
         self.home.error().or_else(|| {
             self.focused

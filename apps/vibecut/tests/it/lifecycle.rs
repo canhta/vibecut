@@ -1108,3 +1108,44 @@ fn header_delete_asks_first_then_saves_leaves_and_moves_the_library_project_to_t
         .join("project.vibecut");
     assert!(kept.is_file());
 }
+
+/// Run whole passes until every viewport has asked for no repaint on `quiet` passes in a row.
+fn settles(app: &mut Workspace, ctx: &egui::Context, quiet: usize) -> bool {
+    let mut run = 0;
+    for _ in 0..300 {
+        app.tick();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| app.ui(ui));
+        output.textures_delta.clear();
+        let asked = output
+            .viewport_output
+            .values()
+            .any(|viewport| viewport.repaint_delay != Duration::MAX);
+        run = if asked { 0 } else { run + 1 };
+        if run >= quiet {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    false
+}
+
+#[test]
+fn idle_home_and_paused_editor_request_no_repaint_and_only_work_wakes_the_poll() {
+    let root = tempfile::tempdir().unwrap();
+    let mut app = app(root.path());
+    let ctx = egui::Context::default();
+    assert!(!app.active());
+    assert!(
+        settles(&mut app, &ctx, 10),
+        "idle Home keeps asking for repaint"
+    );
+    app.create().unwrap();
+    idle(&mut app);
+    assert!(app.error().is_none(), "{:?}", app.error());
+    assert!(!app.active(), "a paused editor is not active");
+    assert!(
+        settles(&mut app, &ctx, 10),
+        "a paused editor keeps asking for repaint"
+    );
+    assert!(Workspace::IDLE_POLL >= Duration::from_millis(250));
+}

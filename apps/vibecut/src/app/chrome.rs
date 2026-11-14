@@ -7,7 +7,6 @@ use crate::{
     services::lifecycle::{EditorAction, FEEDBACK_URL, HELP_URL},
 };
 use engine::control::Error as EngineError;
-use std::time::Duration;
 
 impl EditorWindow {
     pub(super) fn tr(&self, text: Text) -> &'static str {
@@ -317,6 +316,5 @@ impl EditorWindow {
         if self.ready_to_close {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
         }
-        ui.ctx().request_repaint_after(Duration::from_millis(16));
     }
 }

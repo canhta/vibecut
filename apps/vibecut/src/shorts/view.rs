@@ -69,7 +69,9 @@ pub(super) fn show(state: &mut State, cx: &Context, ui: &mut egui::Ui) -> Vec<Ac
     if let Some(kind) = state.pick_requested.take() {
         actions.push(Action::Pick(kind));
     }
-    ui.ctx().request_repaint_after(Duration::from_millis(16));
+    if state.busy() {
+        ui.ctx().request_repaint_after(Duration::from_millis(16));
+    }
     actions
 }
 

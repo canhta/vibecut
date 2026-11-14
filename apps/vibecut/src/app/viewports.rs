@@ -6,7 +6,6 @@ use crate::{
     kit as icons,
     preferences::WindowGeometry,
 };
-use std::time::Duration;
 
 impl Workspace {
     /// Draw a specific project through the same path as its native viewport.
@@ -85,7 +84,6 @@ impl Workspace {
         if self.ready_to_close() {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
-        ctx.request_repaint_after(Duration::from_millis(16));
     }
     /// The root viewport: Home's catalog over its lifecycle worker's chrome, or hidden.
     fn show_home(&mut self, ui: &mut egui::Ui) {
