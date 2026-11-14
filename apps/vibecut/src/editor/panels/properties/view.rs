@@ -1600,15 +1600,8 @@ impl<'a, 'c> Panel<'a, 'c> {
                 );
             }
             PropertiesTab::Speed if matches!(kind, ElementKind::Video | ElementKind::Audio) => {
-                self.panel_section(
-                    ui,
-                    "inspector.section.speed",
-                    "inspector.speed",
-                    Text::Speed,
-                    true,
-                    false,
-                    |panel, ui| panel.speed_controls(ui, item),
-                );
+                // The Speed tab is the page: no section header above the rows.
+                self.speed_controls(ui, item);
             }
             PropertiesTab::Adjust if matches!(kind, ElementKind::Video | ElementKind::Image) => {
                 self.panel_section(

@@ -1,7 +1,8 @@
 //! Renders numeric property rows: label left, controls right.
 use super::Panel;
 use crate::editor::properties::{
-    Action, Error, ItemId, Rect, ScrubSpec, ScrubTarget, Text, Vec2, egui, read, theme,
+    Action, Error, ItemId, Rect, SPEED_SCRUB, SPEED_STOPS, ScrubSpec, ScrubTarget, Text, Vec2,
+    egui, read, theme,
 };
 use crate::kit;
 
@@ -276,8 +277,11 @@ impl Panel<'_, '_> {
             spec.max
         };
         let id = format!("inspector.{}.slider", spec.field);
-        let (response, value) =
-            kit::rail_slider(&mut rail_ui, &id, current, spec.min..=max, rail_width);
+        let (response, value) = if spec.field == SPEED_SCRUB.field {
+            kit::rail_stops_slider(&mut rail_ui, &id, current, &SPEED_STOPS, rail_width)
+        } else {
+            kit::rail_slider(&mut rail_ui, &id, current, spec.min..=max, rail_width)
+        };
         self.remember(id, &response);
         self.drive_scrub(item, spec, current, &response, value);
     }
