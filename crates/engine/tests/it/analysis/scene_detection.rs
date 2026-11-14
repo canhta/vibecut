@@ -542,7 +542,7 @@ fn cut_at_decode_slice_boundary_is_neither_lost_nor_duplicated() {
 /// or other test threads in the RSS sample. This is a Mac host acceptance test.
 #[cfg(target_os = "macos")]
 #[test]
-fn duration_scaling_bounds_peak_memory() {
+fn heavy_duration_scaling_bounds_peak_memory() {
     const PROBE: &str = "VIBECUT_SCENE_MEMORY_PROBE";
     if let Some(path) = std::env::var_os(PROBE) {
         let asset = SourceAsset::import(AssetId(1), std::path::PathBuf::from(path)).unwrap();
@@ -563,7 +563,7 @@ fn duration_scaling_bounds_peak_memory() {
             .arg(std::env::current_exe().unwrap())
             .args([
                 "--exact",
-                "analysis::scene_detection::duration_scaling_bounds_peak_memory",
+                "analysis::scene_detection::heavy_duration_scaling_bounds_peak_memory",
                 "--nocapture",
             ])
             .env(PROBE, asset.path())

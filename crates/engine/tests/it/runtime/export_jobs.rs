@@ -1329,23 +1329,23 @@ fn export_within(name: &str, layers: u64, width: u32, height: u32, limit: u64) {
 }
 
 #[test]
-fn five_layer_1080p_export_fits_the_desktop_project_budget() {
+fn heavy_five_layer_1080p_export_fits_the_desktop_project_budget() {
     export_fits_desktop_budget("five layer 1080p", 5, 1920, 1080);
 }
 
 #[test]
-fn single_layer_4k_export_fits_the_desktop_project_budget() {
+fn heavy_single_layer_4k_export_fits_the_desktop_project_budget() {
     export_fits_desktop_budget("single layer 4k", 1, 3840, 2160);
 }
 
 #[test]
-fn single_layer_4k_export_fits_the_host_sized_budget() {
+fn heavy_single_layer_4k_export_fits_the_host_sized_budget() {
     let limit = engine::host_budget_limit(&engine::SystemMemory);
     export_within("single layer 4k host", 1, 3840, 2160, limit);
 }
 
 #[test]
-fn export_at_defaults_fits_the_desktop_project_budget() {
+fn heavy_export_at_defaults_fits_the_desktop_project_budget() {
     let Some(source) = testkit::oracle::generate(
         &testkit::fixture::dir("export-budget"),
         "export at defaults",
