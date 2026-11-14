@@ -9,6 +9,7 @@ pub mod library {
     //! Owns managed project storage.
     pub use super::projects::{
         Error, MAX_RUNS, ProjectEntry, ProjectLibrary, RETENTION_DAYS, Result, ShortsCard,
+        UnreadableProject,
     };
 }
 mod recovery_workflow;

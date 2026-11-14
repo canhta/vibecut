@@ -99,6 +99,18 @@ pub struct ShortsCard {
     pub clips: usize,
 }
 
+/// A managed project directory the library could not read: an older schema, a damaged file
+/// or a foreign entry. It is listed with its reason and never blocks the readable projects
+/// or a new project.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+pub struct UnreadableProject {
+    /// The directory's ID, which is always a full 16-digit lowercase hex name.
+    pub id: ProjectId,
+    pub path: PathBuf,
+    /// The innermost cause, free of user text (schema versions, JSON line and column, IO kind).
+    pub reason: String,
+}
+
 impl ProjectEntry {
     /// Whole days this trashed entry may stay before the next automatic purge.
     /// Active entries and entries without a readable record report `None`.
@@ -280,20 +292,27 @@ impl ProjectLibrary {
         }
         Ok(lease)
     }
-    /// At most 1024 managed entries; corrupt entries return typed errors rather than
-    /// silently hiding user projects. Busy projects may be listed read-only.
+    /// At most 1024 managed entries. An entry that cannot be read is skipped here and
+    /// reported by `list_unreadable`, so one bad project never hides the others. Busy
+    /// projects may be listed read-only.
     pub fn list(&self) -> Result<Vec<ProjectEntry>> {
-        self.scan(false)
+        Ok(self.scan(false)?.0)
+    }
+    /// The managed directories `list` skipped because they could not be read, ordered by ID.
+    /// A new project and every other command ignore them, but their IDs stay taken.
+    pub fn list_unreadable(&self) -> Result<Vec<UnreadableProject>> {
+        Ok(self.scan(false)?.1)
     }
     /// The runs of the shorts window, which are ordinary managed projects that carry a
     /// shorts run. They share the root, the lease and the limits of the editor projects but
     /// are never listed with them. Same error contract as `list`.
     pub fn list_runs(&self) -> Result<Vec<ProjectEntry>> {
-        self.scan(true)
+        Ok(self.scan(true)?.0)
     }
-    fn scan(&self, runs: bool) -> Result<Vec<ProjectEntry>> {
+    fn scan(&self, runs: bool) -> Result<(Vec<ProjectEntry>, Vec<UnreadableProject>)> {
         self._lease.validate()?;
         let mut entries = Vec::new();
+        let mut unreadable = Vec::new();
         let mut retained_bytes = 0usize;
         for (count, entry) in fs::read_dir(&self.root)?.enumerate() {
             if count >= MAX_ENTRIES * 4 {
@@ -313,7 +332,20 @@ impl ProjectLibrary {
             {
                 continue;
             }
-            let (entry, bytes) = self.read_entry(&entry.path(), name, None)?;
+            let path = entry.path();
+            let (entry, bytes) = match self.read_entry(&path, name, None) {
+                Ok(read) => read,
+                Err(error) => {
+                    if let Ok(id) = u64::from_str_radix(name, 16) {
+                        unreadable.push(UnreadableProject {
+                            id: ProjectId(id),
+                            path,
+                            reason: reason(&error),
+                        });
+                    }
+                    continue;
+                }
+            };
             if entry.shorts.is_some() != runs {
                 continue;
             }
@@ -331,7 +363,8 @@ impl ProjectLibrary {
             entries.push(entry);
         }
         entries.sort_by_key(|entry| entry.id.0);
-        Ok(entries)
+        unreadable.sort_by_key(|entry| entry.id.0);
+        Ok((entries, unreadable))
     }
     /// Keep a finished run of the shorts window as a managed project. The project must carry
     /// its `shorts_run` and keeps referring to the source file in place: unlike an editor
@@ -859,6 +892,14 @@ impl ProjectLibrary {
         }
         Ok(())
     }
+}
+/// The innermost cause of a failed entry read; the outer wrappers carry no detail.
+fn reason(error: &Error) -> String {
+    let mut cause: &(dyn std::error::Error + 'static) = error;
+    while let Some(next) = cause.source() {
+        cause = next;
+    }
+    cause.to_string()
 }
 fn outcome(changed: bool) -> Outcome {
     Outcome {

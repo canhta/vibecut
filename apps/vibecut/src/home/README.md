@@ -27,5 +27,7 @@ operations retain the library-owned result; mixed composition converts through e
 at its actual boundary, preserving safe messages and the original cause. Engine
 lifecycle hooks backfill and refresh thumbnails, including on close without saving.
 
+A project directory the library cannot read (older schema, damaged) is not migrated and does not fail the listing: the page shows one row per directory, "Couldn't read project" with its ID and the engine's reason, above the cards. New project and duplicate pick an ID that no directory, readable or not, already owns.
+
 View, sort key and direction persist in [preferences](../preferences/README.md).
 Geometry: [Home window](../../../../docs/product/ui/home.md).

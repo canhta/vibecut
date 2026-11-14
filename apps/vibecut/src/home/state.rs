@@ -10,7 +10,10 @@ use crate::{
     home::{ProjectsPreferences, ProjectsSortKey},
     i18n::Text,
 };
-use engine::{ByteBudget, library::ProjectEntry};
+use engine::{
+    ByteBudget,
+    library::{ProjectEntry, UnreadableProject},
+};
 use project::ProjectId;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -56,6 +59,8 @@ pub struct State {
     pub(super) catalog: Catalog,
     pub(super) entries: Vec<ProjectEntry>,
     pub(super) trash: Vec<ProjectEntry>,
+    /// Directories the catalog could not read (older schema, damaged), each with its reason.
+    pub(super) unreadable: Vec<UnreadableProject>,
     /// Trash mode replaces the Projects grid; `trash_loaded` keeps a first
     /// listing from rendering the active entries.
     pub(super) trash_mode: bool,
@@ -94,6 +99,7 @@ impl State {
             catalog: Catalog::default(),
             entries: Vec::new(),
             trash: Vec::new(),
+            unreadable: Vec::new(),
             trash_mode: false,
             trash_loaded: false,
             textures: BTreeMap::new(),
@@ -470,6 +476,7 @@ impl State {
     fn apply(&mut self, event: Event) {
         match event {
             Event::Failed(error) => self.list_error = Some(error.to_string()),
+            Event::Unreadable(unreadable) => self.unreadable = unreadable,
             Event::Ready(result) => {
                 self.ready = true;
                 match result {
