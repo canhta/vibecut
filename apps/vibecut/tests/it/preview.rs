@@ -1408,6 +1408,23 @@ fn guide_lines_draw_over_the_player_drag_when_unlocked_and_stay_put_when_locked(
     drag_from(&mut h, start, egui::vec2(0.0, 50.0));
     drop_at(&mut h, start + egui::vec2(0.0, 50.0));
     assert_eq!(lines(&h).4.len(), 1);
+    // The rulers sit on the viewer edges and the guides span the whole viewer, not the
+    // canvas (100216, 111304): the strips are 16 px, the corner square stays empty, a
+    // vertical guide's band is as tall as the left ruler and a horizontal one as wide as
+    // the top ruler.
+    let left = widget(&h, "preview.rulers.left").rect;
+    let top = widget(&h, "preview.rulers.top").rect;
+    let near = |a: f32, b: f32, what: &str| assert!((a - b).abs() <= 0.5, "{what}: {a} vs {b}");
+    near(left.width(), 16.0, "left ruler width");
+    near(top.height(), 16.0, "top ruler height");
+    near(top.left(), left.right(), "the corner stays empty (x)");
+    near(left.top(), top.bottom(), "the corner stays empty (y)");
+    let vertical = widget(&h, "preview.guides.v.0").rect;
+    let horizontal = widget(&h, "preview.guides.h.0").rect;
+    near(vertical.top(), left.top(), "vertical guide top at the viewer edge");
+    near(vertical.bottom(), left.bottom(), "vertical guide bottom at the viewer edge");
+    near(horizontal.left(), top.left(), "horizontal guide left at the viewer edge");
+    near(horizontal.right(), top.right(), "horizontal guide right at the viewer edge");
     let start = top.center();
     drag_from(&mut h, start, egui::vec2(20.0, 0.0));
     drop_at(&mut h, start + egui::vec2(20.0, 0.0));

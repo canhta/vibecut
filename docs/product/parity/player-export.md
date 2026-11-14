@@ -15,8 +15,8 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | PLAY-07 | Lock / unlock guides | Done | Proposed | 14b/111325 | |
 | PLAY-08 | Show / hide guides | Done | Proposed | 14/100219 | |
 | PLAY-09 | Clear guides | Done | Proposed | 14/100219 | |
-| PLAY-10 | Show / hide rulers | Done | Differs | 14/100133 | Rulers cover canvas only |
-| PLAY-11 | Guide and ruler geometry | Partial | Differs | 14/100216 | Per-ruler label step; rulers still bound to the canvas |
+| PLAY-10 | Show / hide rulers | Done | Matches | 14/100133 | |
+| PLAY-11 | Guide and ruler geometry | Partial | Matches | 14/100216 | Rulers on viewer edges, guides span the viewer; label steps beyond 700 and 1000 open |
 | PLAY-12 | Play / pause | Done | Matches | 14b/110531 | |
 | PLAY-13 | Timecode | Done | Matches | 05/221643 | |
 | PLAY-14 | Fit button | Done | Matches | 05/221643 | |
