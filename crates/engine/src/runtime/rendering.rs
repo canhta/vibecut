@@ -738,6 +738,7 @@ fn full_source_project(
             items: vec![project::Item {
                 hidden: false,
                 blend_mode: Default::default(),
+                group: None,
                 retime: Default::default(),
                 masks: Vec::new(),
                 effects: Vec::new(),

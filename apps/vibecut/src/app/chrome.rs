@@ -109,6 +109,10 @@ impl EditorWindow {
                         self.request_close();
                         Ok(())
                     }
+                    EditorAction::CreateProject => {
+                        self.create_requested = true;
+                        Ok(())
+                    }
                     EditorAction::ExitProject => {
                         self.request_close();
                         Ok(())

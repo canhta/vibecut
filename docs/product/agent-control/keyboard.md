@@ -70,6 +70,8 @@
 | `timeline.select_all` — Select all | Selection | Ctrl+A | — | timeline selection |
 | `timeline.deselect_all` — Deselect all | Selection | Alt+X | — | timeline selection |
 | `timeline.duplicate` — Duplicate | Selection | Ctrl+D | `timeline.duplicate` | — |
+| `timeline.group` — Group | Selection | Ctrl+G | `timeline.group` | — |
+| `timeline.ungroup` — Ungroup | Selection | Ctrl+Shift+G | `timeline.ungroup` | — |
 | `timeline.set_hidden` — Hide or show selection | Edit | — | `timeline.set_hidden` | — |
 | `timeline.set_muted` — Mute or unmute selection | Edit | — | `timeline.set_muted` | — |
 | `timeline.extract_audio` — Extract audio | Edit | Ctrl+Shift+S | `timeline.extract_audio` | — |
@@ -79,6 +81,7 @@
 | `edit.redo` — Redo | History | Ctrl+Shift+Z, Ctrl+Y | — | app and engine history |
 | `timeline.snap` — Toggle snapping | Timeline | N | — | timeline view |
 | `timeline.ripple` — Toggle ripple editing | Timeline | — | — | timeline view |
+| `timeline.magnet` — Toggle main track magnet | Timeline | P | — | timeline view |
 | `timeline.preview_axis` — Preview axis | Timeline | S | — | timeline view |
 | `timeline.track_height.short` — Short track height | Timeline | — | — | timeline view |
 | `timeline.track_height.default` — Default track height | Timeline | — | — | timeline view |
@@ -94,6 +97,7 @@
 | `timeline.select_right` — Select rightward | Selection | ] | — | timeline selection |
 | `timeline.zoom_in` — Zoom in | Timeline | Ctrl+Equals, Ctrl+Plus | — | timeline view |
 | `timeline.zoom_out` — Zoom out | Timeline | Ctrl+Minus | — | timeline view |
+| `timeline.zoom_fit` — Zoom to fit timeline | Timeline | Shift+Z | — | timeline view |
 | `timeline.add_track` — Add track | Timeline | — | `timeline.add_track` | — |
 | `timeline.bookmark` — Toggle bookmark | Timeline | M | `bookmark.toggle` | — |
 | `timeline.crop` — Crop | Edit | — | — | crop dialog |
@@ -148,6 +152,7 @@
 | `project.save` — Save | File | Ctrl+S | — | workspace lifecycle |
 | `project.save_as` — Save as | File | — | — | workspace lifecycle |
 | `window.home` — Go to Home | File | — | — | workspace lifecycle |
+| `project.create` — New project | File | Ctrl+N | — | workspace lifecycle |
 | `project.rename` — Rename project | File | — | — | project rename input |
 | `project.delete` — Delete project | File | — | — | project delete confirmation |
 | `project.cancel_delete` — Cancel project delete | File | — | — | project delete confirmation |
@@ -175,18 +180,16 @@ Every project mutation uses its engine command id (`vibecut-cli commands --json`
 
 With the main track magnet on (the default), Delete and Split and remove left or right (`Q`, `W`) on a main-track clip close the gap they leave on the main track in the same undo step; a linked clip on another track closes its own gap, and other tracks do not move. With the magnet off, and no ripple enabled, the gap stays. Dragging a main-track clip never closes or pins anything: the first clip moved right leaves its gap from 0 with the magnet on or off.
 
-Bindings persist in the app preference store as five named profiles (Shortcut 1 to Shortcut 5) and the active one. The shortcuts dialog's preset dropdown switches the active profile at once, as one preference edit; the table above is the default profile, and the drift test compares it. Edits, Reset and Save act on the active profile, and the agent command `ui.keybindings.set` does too. In the shortcuts dialog, a recorded chord that another action already owns opens a conflict prompt naming the owner: Cancel keeps the edit box recording, and Override moves the chord to the recorded action so the old owner loses it. Escape inside the edit box is recorded as a key, so it can conflict like any other chord. The dialog edits a working copy: Save stays disabled until it differs from the stored map, and Save commits it as one preference edit; Cancel, Escape and closing discard it. Reset (per action or all) has no confirmation and acts on the working copy. The `ui.keybindings.set` command refuses a conflicting chord; it does not prompt. Resetting an action removes its `isCustomized` marker. A binding profile with an unsupported format or version is refused with a typed diagnostic.
+Bindings persist in the app preference store as five named profiles (Shortcut 1 to Shortcut 5) and the active one. The shortcuts dialog's preset dropdown switches the active profile at once, as one preference edit; the table above is the default profile, and the drift test compares it. Edits, Reset and Save act on the active profile, and the agent command `ui.keybindings.set` does too. In the shortcuts dialog, a recorded chord that another action already owns opens a conflict prompt naming the owner: Cancel keeps the edit box recording, and Override moves the chord to the recorded action so the old owner loses it. Escape inside the edit box is recorded as a key, so it can conflict like any other chord. The dialog edits a working copy: Save stays disabled until it differs from the stored map, and Save commits it as one preference edit; Cancel, Escape and closing discard it. Reset (per action or all) has no confirmation and acts on the working copy. The `ui.keybindings.set` command refuses a conflicting chord; it does not prompt. Resetting an action removes its `isCustomized` marker. A recorded chord is compared with the defaults in canonical form, so recording `[`, `]` or `Ctrl+;` back as it was leaves the action uncustomized. A binding profile with an unsupported format or version is refused with a typed diagnostic.
 
 ## Reference defaults
 
 The reference desktop key list (measured 2026-11-14) sets the defaults above where the chord is free here; `Ctrl` there is Cmd. Defaults are written as canonical chord text, so the key names (`Equals`, `Plus`, `Minus`) stand in for the symbols. Where our chord already owns the key, ours stays and the difference is recorded here.
 
-Adopted: extract audio `Ctrl+Shift+S`; timeline zoom in `Ctrl+Equals` (and `Ctrl+Plus` on the numeric keypad) and out `Ctrl+Minus`; deselect all `Alt+X`; full screen `Ctrl+Shift+F`; player zoom in `Alt+Shift+Plus`, out `Alt+Shift+Minus`, fit `Alt+Shift+Z`; import `Ctrl+I`; export `Ctrl+E`; next bookmark `Shift+M`; previous bookmark `Alt+Shift+M`; keyframe lanes `Alt+K`; add keyframe `Alt+Shift+K`. Rulers (`Ctrl+Alt+R`) and guides (`Ctrl+;`) keep the chords main gave them.
+Adopted: new project `Ctrl+N` (Home and every editor window); main track magnet `P`; zoom to fit timeline `Shift+Z`; extract audio `Ctrl+Shift+S`; timeline zoom in `Ctrl+Equals` (and `Ctrl+Plus` on the numeric keypad) and out `Ctrl+Minus`; deselect all `Alt+X`; full screen `Ctrl+Shift+F`; player zoom in `Alt+Shift+Plus`, out `Alt+Shift+Minus`, fit `Alt+Shift+Z`; import `Ctrl+I`; export `Ctrl+E`; next bookmark `Shift+M`; previous bookmark `Alt+Shift+M`; keyframe lanes `Alt+K`; add keyframe `Alt+Shift+K`; group `Ctrl+G`; ungroup `Ctrl+Shift+G`. Rulers (`Ctrl+Alt+R`) and guides (`Ctrl+;`) keep the chords main gave them.
 
 Not adopted, because the reference chord has no action here:
 - Restore audio has no chord. The reference shows one Shift Ctrl S toggle for extract and restore; a chord binds one action, and extract takes it.
-- New project: Home's create banner is not a registry action.
-- Group and Ungroup, Zoom to fit timeline (`Shift+Z`) and the main track magnet (`P`, a toolbar command, not an action) have no action.
 
 Kept ours (collisions):
 - `Shift+X`: ours is `export.in_out`; the reference uses it for select by clip.

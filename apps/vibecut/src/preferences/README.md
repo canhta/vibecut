@@ -21,7 +21,7 @@ keys are refused, and the lane map, colour list, section map, window map (64 ent
 and panel ratios are bounded. `ui.prefs.set` edits carry app-owned undo and redo and
 never touch project JSON. Ripple mode and keyframe lane visibility persist outside
 undo history, so entering an editing mode or opening its lanes cannot shadow the
-project edit's next Undo. The first-use keyframe hint is one flag, `keyframe_hint_seen`; version 21 added it, with no migration.
+project edit's next Undo. The first-use keyframe hint is one flag, `keyframe_hint_seen`; version 21 added it, with no migration. The first-use group tip is one flag, `group_tip_seen`; version 26 added it, with no migration.
 
 `EasingPreferences` stores the keyframe graph popover's tab (`presets` or `saved`) and up to
 64 saved easing curves, each a unique name of at most 64 bytes with a normalized
@@ -34,7 +34,7 @@ bounded custom IDs and four recent IDs per pair, using AI's shipped table for de
 The Captions and Shorts provider pickers resolve their transient request snapshots
 from this map. Downloaded local weight choices remain in their local owner. Keys,
 fetched lists and price acknowledgements are never serialized. A document whose version is not
-`PREFERENCES_VERSION` is refused through the version refusal; there is no migration. Version 23 replaced the export `quality` values (`low`, `medium`, `high`, `very_high`) with the Bit rate presets `lower`, `recommended` and `higher`. Version 24 made `cache_limit_bytes` optional: absent is Automatic, sized from host memory. Version 25 added the export `also` object (`audio`, `gif`, `captions`): the files ticked beside the primary output.
+`PREFERENCES_VERSION` is refused through the version refusal; there is no migration. Version 23 replaced the export `quality` values (`low`, `medium`, `high`, `very_high`) with the Bit rate presets `lower`, `recommended` and `higher`. Version 24 made `cache_limit_bytes` optional: absent is Automatic, sized from host memory. Version 25 added the export `also` object (`audio`, `gif`, `captions`): the files ticked beside the primary output. Version 26 added `group_tip_seen`.
 Version 14 removed `recent_colors`; the colour popover's recents live in the project.
 Version 19 removed the font picker's persisted `tab` (the picker has no tabs); `font_picker` keeps only `favorites`.
 Version 22 replaced the single keybinding delta map with `KeybindingPresets`: five named profiles and the active one (`input`), with no migration.

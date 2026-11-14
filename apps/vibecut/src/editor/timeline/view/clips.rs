@@ -146,14 +146,41 @@ impl State {
             Some(rows) => rows.name,
             None => Some(visible.center().y),
         };
+        let mut label_end = visible.left() + 22.0;
         if let (false, Some(label_y)) = (label.is_empty(), label_y) {
-            painter.text(
-                egui::pos2(visible.left() + 22.0, label_y),
-                Align2::LEFT_CENTER,
-                label,
-                FontId::proportional(theme::type_size::BODY),
-                text,
+            label_end = painter
+                .text(
+                    egui::pos2(visible.left() + 22.0, label_y),
+                    Align2::LEFT_CENTER,
+                    label,
+                    FontId::proportional(theme::type_size::BODY),
+                    text,
+                )
+                .right();
+        }
+        if let (Some(rank), Some(label_y)) = (item.group, label_y) {
+            // Group cue: a small group glyph then the group name after the clip label, in the
+            // label colour, cut at the clip edge. Measured by eye from the reference frame (about
+            // 11 pt glyph, 4 pt gaps); exact geometry stays open.
+            let glyph = Rect::from_center_size(
+                egui::pos2(label_end + 4.0 + GROUP_GLYPH / 2.0, label_y),
+                Vec2::splat(GROUP_GLYPH),
             );
+            let name = i18n::format(
+                cx.locale,
+                Text::GroupName,
+                &[("letter", group_letter(rank).as_str())],
+            );
+            if glyph.right() < visible.right() {
+                icons::tinted(Icon::LinkSimple, GROUP_GLYPH, text).paint_at(ui, glyph);
+                painter.with_clip_rect(visible).text(
+                    egui::pos2(glyph.right() + 4.0, label_y),
+                    Align2::LEFT_CENTER,
+                    name,
+                    FontId::proportional(theme::type_size::BODY),
+                    text,
+                );
+            }
         }
         self.paint_lane_toggle(cx, ui, item, visible, ink);
         if self.drag.as_ref().is_some_and(|drag| {
@@ -229,6 +256,9 @@ impl State {
                 item: item.id,
                 modifiers,
             });
+            if response.double_clicked() && item.group.is_some() {
+                self.push(Action::SelectMember(item.id));
+            }
         }
         if !item.locked && self.drag.is_none() && response.drag_started() {
             let press = ui.input(|input| input.pointer.press_origin());
@@ -248,6 +278,47 @@ impl State {
             });
         }
         response.context_menu(|ui| self.item_menu(cx, ui, item));
+    }
+
+    /// The first-use tip after Group, drawn above the first grouped clip until OK dismisses it.
+    /// Wording is ours; the card passes clicks through and only OK takes them.
+    pub(in crate::editor::timeline) fn group_tip(
+        &mut self,
+        cx: &Context<'_>,
+        ui: &egui::Ui,
+        anchor: egui::Pos2,
+    ) {
+        let locale = cx.locale;
+        let ok = i18n::text(locale, Text::Ok);
+        let card = egui::Area::new(Id::unique("timeline.group_tip"))
+            .order(egui::Order::Foreground)
+            .interactable(false)
+            .pivot(Align2::LEFT_BOTTOM)
+            .fixed_pos(anchor)
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style())
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new(i18n::text(locale, Text::GroupTip))
+                                    .size(theme::type_size::BODY)
+                                    .color(theme::text(cx.dark)),
+                            );
+                            ui.add_visible(false, egui::Button::new(ok)).rect
+                        })
+                        .inner
+                    })
+                    .inner
+            });
+        let button = egui::Area::new(Id::unique("timeline.group_tip.ok"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(card.inner.min)
+            .show(ui.ctx(), |ui| ui.button(ok));
+        ui.ctx().move_to_top(button.response.layer_id);
+        self.remember("timeline.group_tip.ok".to_owned(), &button.inner);
+        if button.inner.clicked() {
+            self.push(Action::DismissGroupTip);
+        }
     }
 
     /// The clip context menu: split variants, duplicate, delete, hide/mute and
@@ -323,6 +394,29 @@ impl State {
         ) {
             self.push(Action::Activate("timeline.duplicate".to_owned()));
             ui.close();
+        }
+        // Both rows always show: Group needs two or more selected clips that are not already
+        // one whole group, Ungroup needs a grouped clip.
+        let grouped = item.group.is_some();
+        for (suffix, id, label, enabled) in [
+            (
+                "group",
+                "timeline.group",
+                Text::Group,
+                editable && cx.selection().len() > 1 && !cx.disabled.contains("timeline.group"),
+            ),
+            (
+                "ungroup",
+                "timeline.ungroup",
+                Text::Ungroup,
+                editable && grouped,
+            ),
+        ] {
+            let row = format!("timeline.item.{}.{suffix}", item.id.0);
+            if self.menu_action(cx, ui, row, id, label, Icon::LinkSimple, enabled) {
+                self.push(Action::Activate(id.to_owned()));
+                ui.close();
+            }
         }
         let delete = format!("timeline.item.{}.delete", item.id.0);
         if self.menu_action(
@@ -461,6 +555,18 @@ impl State {
         let response = ui.add_enabled(enabled, button);
         self.remember_icon(id, Some(icon.name()), &response);
         enabled && response.clicked()
+    }
+}
+
+/// Side of the group glyph beside the group name on a grouped clip.
+const GROUP_GLYPH: f32 = 11.0;
+
+/// Group names count in creation order: A, B, … Z, then A1, B1, ….
+fn group_letter(rank: usize) -> String {
+    let letter = char::from(b'A' + (rank % 26) as u8);
+    match rank / 26 {
+        0 => letter.to_string(),
+        round => format!("{letter}{round}"),
     }
 }
 

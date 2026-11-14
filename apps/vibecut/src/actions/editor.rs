@@ -515,6 +515,20 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         &["Ctrl+D"],
     ),
     ActionSpec::engine(
+        "timeline.group",
+        Text::ActionTimelineGroup,
+        ActionCategory::Selection,
+        EngineAction::Group,
+        &["Ctrl+G"],
+    ),
+    ActionSpec::engine(
+        "timeline.ungroup",
+        Text::ActionTimelineUngroup,
+        ActionCategory::Selection,
+        EngineAction::Ungroup,
+        &["Ctrl+Shift+G"],
+    ),
+    ActionSpec::engine(
         "timeline.set_hidden",
         Text::ActionTimelineSetHidden,
         ActionCategory::Edit,
@@ -581,6 +595,14 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         "timeline view",
         UiAction::Ripple,
         &[],
+    ),
+    ActionSpec::ui(
+        "timeline.magnet",
+        Text::ActionTimelineMagnet,
+        ActionCategory::Timeline,
+        "timeline view",
+        UiAction::TrackMagnet,
+        &["P"],
     ),
     ActionSpec::ui(
         "timeline.preview_axis",
@@ -701,6 +723,14 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         "timeline view",
         UiAction::ZoomOut,
         &["Ctrl+Minus"],
+    ),
+    ActionSpec::ui(
+        "timeline.zoom_fit",
+        Text::ActionTimelineZoomFit,
+        ActionCategory::Timeline,
+        "timeline view",
+        UiAction::ZoomFit,
+        &["Shift+Z"],
     ),
     ActionSpec::engine(
         "timeline.add_track",

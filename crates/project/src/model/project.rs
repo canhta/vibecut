@@ -695,6 +695,25 @@ fn validate(data: &ProjectData) -> Result<()> {
             }
         }
     }
+    // A group has two or more members, all in one scene; its id is unique across the project.
+    let mut groups = std::collections::BTreeMap::new();
+    for scene in data.scenes.iter() {
+        for group in scene
+            .timeline
+            .iter()
+            .flat_map(|t| &t.items)
+            .filter_map(|item| item.group)
+        {
+            let (home, count) = groups.entry(group).or_insert((scene.id, 0_usize));
+            if *home != scene.id {
+                return Err(Error::Invalid("group spans scenes"));
+            }
+            *count += 1;
+        }
+    }
+    if groups.values().any(|(_, count)| *count < 2) {
+        return Err(Error::Invalid("group with a single member"));
+    }
     let mut bookmark_ids = BTreeSet::new();
     for b in data.scenes.iter().flat_map(|s| &s.bookmarks) {
         text(&b.note)?;

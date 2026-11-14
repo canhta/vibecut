@@ -43,10 +43,42 @@ impl Workspace {
             if std::mem::take(&mut window.focus_home) {
                 self.bring_home_forward(ui.ctx());
             }
+            if std::mem::take(&mut window.create_requested) {
+                self.create_project();
+            }
         }
         #[cfg(target_os = "macos")]
         if self.focused == Some(id) {
             self.run_menu(ui.ctx(), id);
+        }
+    }
+    /// A new project from `project.create`, the same request as Home's banner.
+    fn create_project(&mut self) {
+        let name = i18n::text(self.preferences.locale, Text::NewProject).to_owned();
+        self.projects.create_from_shortcut(name);
+    }
+    /// The one registry action Home runs from the keyboard; every other chord stays with
+    /// the project windows. A focused text field keeps its typing.
+    fn home_shortcuts(&mut self, ctx: &egui::Context) {
+        let typed = ctx.input(|input| {
+            input
+                .events
+                .iter()
+                .any(|event| matches!(event, egui::Event::Key { pressed: true, .. }))
+        });
+        if !typed || !self.home_focused {
+            return;
+        }
+        let keymap =
+            crate::actions::Keymap::resolve(&self.preferences.keybindings).only(&["project.create"]);
+        let context = crate::actions::DispatchContext {
+            text_input: ctx.text_edit_focused(),
+            ..Default::default()
+        };
+        if let crate::actions::Dispatch::Action { .. } =
+            ctx.input_mut(|input| keymap.take(input, context))
+        {
+            self.create_project();
         }
     }
     fn bring_home_forward(&mut self, ctx: &egui::Context) {
@@ -161,6 +193,7 @@ impl Workspace {
                 for action in home::show(&mut self.projects, cx, ui) {
                     self.project_action(action);
                 }
+                self.home_shortcuts(&ctx);
             }
             self.home.preferences = self.preferences.clone();
         } else {

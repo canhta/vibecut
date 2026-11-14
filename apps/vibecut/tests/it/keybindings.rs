@@ -1206,7 +1206,7 @@ fn reference_default_chords_run_their_actions_through_the_keymap() {
     let command = egui::Modifiers::COMMAND;
     let alt_shift = egui::Modifiers::ALT.plus(egui::Modifiers::SHIFT);
     type Chords<'a> = &'a [(egui::Modifiers, egui::Key, &'a str)];
-    let groups: [(&str, Chords); 7] = [
+    let groups: [(&str, Chords); 10] = [
         (
             "extract audio",
             &[(
@@ -1261,6 +1261,18 @@ fn reference_default_chords_run_their_actions_through_the_keymap() {
                 (alt_shift, egui::Key::M, "playback.jump_bookmark.previous"),
             ],
         ),
+        (
+            "main track magnet",
+            &[(egui::Modifiers::NONE, egui::Key::P, "timeline.magnet")],
+        ),
+        (
+            "timeline zoom to fit",
+            &[(egui::Modifiers::SHIFT, egui::Key::Z, "timeline.zoom_fit")],
+        ),
+        (
+            "new project",
+            &[(command, egui::Key::N, "project.create")],
+        ),
     ];
     for (group, chords) in groups {
         for &(modifiers, key, action) in chords {
@@ -1279,4 +1291,38 @@ fn reference_default_chords_run_their_actions_through_the_keymap() {
             );
         }
     }
+}
+
+#[test]
+fn magnet_zoom_fit_and_new_project_chords_run_their_actions() {
+    let mut harness = harness(fixture().editor);
+    harness.run_steps(3);
+    assert!(harness.state().session.project().data().scene().timeline.magnet);
+    harness.key_press(egui::Key::P);
+    harness.run_steps(3);
+    assert!(!harness.state().session.project().data().scene().timeline.magnet);
+    harness.key_press(egui::Key::P);
+    harness.run_steps(3);
+    assert!(harness.state().session.project().data().scene().timeline.magnet);
+
+    for _ in 0..3 {
+        harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Equals);
+        harness.run_steps(2);
+    }
+    let zoomed = harness.state().inspect().unwrap().zoom;
+    harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::Z);
+    harness.run_steps(3);
+    let fit = harness.state().inspect().unwrap().zoom;
+    assert!(fit < zoomed, "fit {fit} is below the zoomed-in {zoomed}");
+    harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::Z);
+    harness.run_steps(3);
+    assert_eq!(harness.state().inspect().unwrap().zoom, fit, "fit is stable");
+
+    assert_eq!(harness.state_mut().take_lifecycle_action(), None);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::N);
+    harness.run_steps(3);
+    assert_eq!(
+        harness.state_mut().take_lifecycle_action(),
+        Some(vibecut::services::lifecycle::EditorAction::CreateProject)
+    );
 }

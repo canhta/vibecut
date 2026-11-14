@@ -9,7 +9,7 @@ use media::AssetId;
 use serde::{Deserialize, Serialize};
 use time::{SourceRange, Tick};
 
-id!(ItemId);
+id!(ItemId, GroupId);
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -1253,6 +1253,8 @@ pub struct Item {
     pub effects: Vec<crate::EffectInstance>,
     pub animations: crate::Animations,
     pub id: ItemId,
+    /// The group this item belongs to: shared by two or more items of one scene, on any tracks.
+    pub group: Option<GroupId>,
     /// Visual item hidden in the preview and export while its audio stays audible.
     #[serde(default)]
     pub hidden: bool,

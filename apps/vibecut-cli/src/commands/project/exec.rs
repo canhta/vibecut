@@ -135,5 +135,6 @@ fn created_human(created: &CreatedId) -> String {
         CreatedId::Track(id) => format!("track {}", id.0),
         CreatedId::Item(id) => format!("item {}", id.0),
         CreatedId::Bookmark(id) => format!("bookmark {}", id.0),
+        CreatedId::Group(id) => format!("group {}", id.0),
     }
 }

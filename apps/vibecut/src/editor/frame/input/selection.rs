@@ -71,7 +71,41 @@ impl Editor {
             modifiers.command || modifiers.ctrl || modifiers.shift,
             None,
         );
+        // Any member, with or without Alt, selects its whole group; a double-click isolates one
+        // member (`Action::SelectMember`).
+        let members = self.group_members(item);
+        if items.contains(&item) {
+            items.extend(members);
+        } else {
+            for member in members {
+                items.remove(&member);
+            }
+        }
         self.replace_selection(items);
+    }
+    /// Every active-scene item sharing a group with `item`, `item` included.
+    pub(in crate::editor) fn group_members(&self, item: ItemId) -> BTreeSet<ItemId> {
+        let data = self.session.project().data();
+        let items = || data.scene().timeline.iter().flat_map(|track| &track.items);
+        let group = items().find(|i| i.id == item).and_then(|i| i.group);
+        match group {
+            Some(group) => items()
+                .filter(|i| i.group == Some(group))
+                .map(|i| i.id)
+                .collect(),
+            None => BTreeSet::from([item]),
+        }
+    }
+    /// `items` plus every member of the groups they touch.
+    pub(in crate::editor) fn with_group_members(
+        &self,
+        items: BTreeSet<ItemId>,
+    ) -> BTreeSet<ItemId> {
+        items
+            .iter()
+            .flat_map(|item| self.group_members(*item))
+            .chain(items.iter().copied())
+            .collect()
     }
     pub(in crate::editor) fn select_all(&mut self) {
         let items = self

@@ -161,6 +161,7 @@ API version: 19. Registry digest: `7f5eb6c5be35bdb042de78f37e739caa3fe54ad2458d1
 | `timeline.extract_audio` | `Edit` | Extract source audio |
 | `timeline.filler_candidates` | `Read` | List filler candidates |
 | `timeline.freeze_frame` | `FilePublish` | Freeze frame |
+| `timeline.group` | `Edit` | Group items |
 | `timeline.insert` | `Edit` | Insert item |
 | `timeline.move_items` | `Edit` | Move timeline group |
 | `timeline.paste_attributes` | `Edit` | Paste attributes |
@@ -184,6 +185,7 @@ API version: 19. Registry digest: `7f5eb6c5be35bdb042de78f37e739caa3fe54ad2458d1
 | `timeline.split_left` | `Edit` | Split items and remove the left part |
 | `timeline.split_right` | `Edit` | Split items and remove the right part |
 | `timeline.trim` | `Edit` | Trim timeline group |
+| `timeline.ungroup` | `Edit` | Ungroup items |
 | `track.remove` | `Edit` | Remove track |
 | `track.rename` | `Edit` | Rename track |
 | `track.reorder` | `Edit` | Reorder track |

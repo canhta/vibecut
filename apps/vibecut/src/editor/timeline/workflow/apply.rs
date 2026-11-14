@@ -43,6 +43,9 @@ pub(in crate::editor) fn apply(
             Action::DismissKeyframeHint => {
                 port.set_preference("keyframe_hint_seen", serde_json::json!(true));
             }
+            Action::DismissGroupTip => {
+                port.set_preference("group_tip_seen", serde_json::json!(true));
+            }
             Action::Preview(command) => preview_gesture(port, *command),
             Action::EndGesture => end_drag_gesture(port),
             Action::DiscardGesture => discard_gesture(port),
@@ -59,6 +62,7 @@ pub(in crate::editor) fn apply(
                 port.fail(message);
             }
             frame @ (Action::Select { .. }
+            | Action::SelectMember(_)
             | Action::SelectTransition(_)
             | Action::Marquee(_)
             | Action::SettleSelection

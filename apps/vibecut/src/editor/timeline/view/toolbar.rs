@@ -321,7 +321,7 @@ impl State {
             Text::Snap,
             Some(cx.preferences.snapping),
         );
-        if self.toolbar_button(
+        self.toolbar_button(
             cx,
             ui,
             toggles[1],
@@ -329,11 +329,7 @@ impl State {
             Icon::LinkSimple,
             Text::Magnet,
             Some(magnet),
-        ) {
-            self.push(Action::Command(Box::new(engine::Command::SetTrackMagnet {
-                enabled: !magnet,
-            })));
-        }
+        );
         self.toolbar_button(
             cx,
             ui,

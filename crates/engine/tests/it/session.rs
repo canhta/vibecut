@@ -5,6 +5,7 @@ mod captions;
 mod effects;
 mod fades;
 mod fillers;
+mod groups;
 mod history;
 mod items;
 mod keyframes;

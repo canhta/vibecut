@@ -351,6 +351,7 @@ fn item(effects: Vec<project::EffectInstance>) -> project::Item {
     project::Item {
         hidden: false,
         blend_mode: Default::default(),
+        group: None,
         retime: Default::default(),
         masks: Vec::new(),
         effects,
@@ -636,6 +637,7 @@ fn project_at(path: &std::path::Path, effects: Vec<project::EffectInstance>) -> 
     d.scene_mut().timeline.main.items.push(project::Item {
         hidden: false,
         blend_mode: Default::default(),
+        group: None,
         retime: Default::default(),
         masks: Vec::new(),
         effects,

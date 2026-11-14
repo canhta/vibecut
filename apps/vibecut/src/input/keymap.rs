@@ -33,6 +33,26 @@ impl Keymap {
         }
     }
 
+    /// The same chords restricted to `actions`: a window that runs only some registry
+    /// actions leaves every other key press alone.
+    pub fn only(&self, actions: &[&str]) -> Self {
+        Self {
+            bindings: self
+                .bindings
+                .iter()
+                .filter(|(_, action)| actions.contains(*action))
+                .map(|(chord, action)| (*chord, *action))
+                .collect(),
+            specs: self
+                .specs
+                .iter()
+                .filter(|(action, _)| actions.contains(action))
+                .map(|(action, info)| (*action, *info))
+                .collect(),
+            issues: Vec::new(),
+        }
+    }
+
     pub fn issues(&self) -> &[super::KeybindingIssue] {
         &self.issues
     }

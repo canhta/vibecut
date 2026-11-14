@@ -492,6 +492,11 @@ impl Editor {
                     let after = !self.preferences.ripple;
                     self.set_preference("ripple", serde_json::json!(after))?;
                 }
+                UiAction::TrackMagnet => {
+                    let enabled = !self.session.project().data().scene().timeline.magnet;
+                    self.session
+                        .apply(engine::Command::SetTrackMagnet { enabled })?;
+                }
                 UiAction::Loop => {
                     let after = !self.preferences.playback_loop;
                     self.set_preference("playback_loop", serde_json::json!(after))?;
@@ -520,6 +525,11 @@ impl Editor {
                 UiAction::SelectRightward => self.select_by_playhead(true)?,
                 UiAction::ZoomIn => self.zoom_timeline(true),
                 UiAction::ZoomOut => self.zoom_timeline(false),
+                UiAction::ZoomFit => self.zoom_timeline_fit(),
+                UiAction::CreateProject => {
+                    self.lifecycle_action =
+                        Some(crate::services::lifecycle::EditorAction::CreateProject)
+                }
                 UiAction::Theme => {
                     let after = !self.preferences.dark;
                     self.set_preference("dark", serde_json::json!(after))?;

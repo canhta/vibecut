@@ -94,6 +94,10 @@ pub(in crate::editor) enum Action {
         item: ItemId,
         modifiers: egui::Modifiers,
     },
+    /// Double-click on a grouped clip: select that one member for individual edits.
+    SelectMember(ItemId),
+    /// The first-use group tip was dismissed: remember it in preferences.
+    DismissGroupTip,
     /// Select an applied transition on the timeline.
     SelectTransition(project::TransitionId),
     /// Live marquee result; the selection is not settled until `SettleSelection`.

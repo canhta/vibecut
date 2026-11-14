@@ -265,6 +265,7 @@ fn prepare_clip(
             audio_items.push(Item {
                 hidden: false,
                 blend_mode: Default::default(),
+                group: None,
                 retime: Default::default(),
                 masks: Vec::new(),
                 effects: Vec::new(),
@@ -310,6 +311,7 @@ fn prepare_clip(
             caption_items.push(Item {
                 hidden: false,
                 blend_mode: Default::default(),
+                group: None,
                 retime: Default::default(),
                 masks: Vec::new(),
                 effects: Vec::new(),
@@ -517,6 +519,7 @@ fn slot_item(
     Ok(Item {
         hidden: false,
         blend_mode: Default::default(),
+        group: None,
         retime: Default::default(),
         masks: Vec::new(),
         effects: Vec::new(),

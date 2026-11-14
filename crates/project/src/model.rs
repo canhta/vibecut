@@ -24,7 +24,7 @@ pub use audio_cleanup::{
 };
 pub use item::{
     AudioParams, AudioSource, BackgroundRemoval, CaptionParams, CaptionWordWarning,
-    CaptionWordWarnings, ClipBackground, CutoutStroke, EffectParams, GraphicParams, Item, ItemId,
+    CaptionWordWarnings, ClipBackground, CutoutStroke, EffectParams, GraphicParams, GroupId, Item, ItemId,
     ItemParams, LibraryMusic, LibrarySound, MatteStroke, MatteStrokeMode, MusicLicence,
     OverlayParams, StabilizeLevel, StickerParams, StrokePreset, TextAlign, TextBackground,
     TextCase, TextDecoration, TextParams, TextShadow, TextStroke, TextStyle, VOLUME_DB_RANGE,

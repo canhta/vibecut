@@ -136,8 +136,10 @@ impl Editor {
         match action {
             Action::Select { item, modifiers } => self.select_item(item, modifiers),
             Action::SelectTransition(transition) => self.select_transition(transition),
+            Action::SelectMember(item) => self.select_single(item),
             Action::Marquee(items) => {
                 self.selection_scopes.transition = None;
+                let items = self.with_group_members(items);
                 self.write_selection(items);
             }
             Action::SettleSelection => self.selection_changed(),
@@ -589,6 +591,12 @@ impl Editor {
         let playhead = self.playback.position().unwrap_or(Tick::ZERO);
         let duration = self.session.project().duration();
         self.timeline.zoom_step(zoom_in, duration, playhead);
+    }
+    /// Fit the whole project across the timeline viewport.
+    pub(in crate::editor) fn zoom_timeline_fit(&mut self) {
+        let playhead = self.playback.position().unwrap_or(Tick::ZERO);
+        let duration = self.session.project().duration();
+        self.timeline.zoom_fit(duration, playhead);
     }
     /// Apply one proxy intention. The on/off choice is session presentation
     /// state: it reaches preview through the shared index on the next frame

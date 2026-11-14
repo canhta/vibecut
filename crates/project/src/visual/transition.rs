@@ -365,6 +365,7 @@ mod tests {
                 effects: vec![],
                 masks: vec![],
                 blend_mode: Default::default(),
+                group: None,
             })
             .collect();
         d

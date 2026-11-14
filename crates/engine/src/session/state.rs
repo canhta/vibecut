@@ -140,6 +140,11 @@ impl Session {
                             .flat_map(|t| t.items.iter().map(|i| i.id.0)),
                     )
                     .chain(s.bookmarks.iter().map(|b| b.id.0))
+                    .chain(
+                        s.timeline
+                            .iter()
+                            .flat_map(|t| t.items.iter().filter_map(|i| i.group.map(|g| g.0))),
+                    )
             })
             .chain(data.caption_presets.iter().map(|preset| preset.id.0))
             .max()

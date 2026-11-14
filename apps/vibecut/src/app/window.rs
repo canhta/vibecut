@@ -27,6 +27,8 @@ pub struct EditorWindow {
     pub(super) title: String,
     pub(super) retained_models: Option<ModelManager>,
     pub(super) focus_home: bool,
+    /// `project.create` from this editor: the workspace starts a project in a new window.
+    pub(super) create_requested: bool,
     pub(super) project_window: bool,
     pub(super) path: Option<PathBuf>,
     pub(super) requested_open: Option<PathBuf>,
@@ -82,6 +84,7 @@ impl EditorWindow {
             title: i18n::text(preferences.locale, Text::AppName).to_owned(),
             retained_models: None,
             focus_home: false,
+            create_requested: false,
             project_window: false,
             path: None,
             requested_open: None,

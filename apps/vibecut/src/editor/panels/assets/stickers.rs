@@ -429,6 +429,7 @@ fn graphic_image(graphic: project::GraphicParams, side: u32) -> Result<egui::Col
     data.scene_mut().timeline.main.items.push(project::Item {
         hidden: false,
         blend_mode: Default::default(),
+        group: None,
         masks: vec![],
         effects: vec![],
         animations: Default::default(),

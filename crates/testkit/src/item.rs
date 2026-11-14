@@ -5,8 +5,8 @@
 //! start at zero. Setters change only what a test is about.
 use media::AssetId;
 use project::{
-    Animations, AudioParams, BlendMode, EffectInstance, Item, ItemId, ItemParams, Mask, Retime,
-    VideoParams,
+    Animations, AudioParams, BlendMode, EffectInstance, GroupId, Item, ItemId, ItemParams, Mask,
+    Retime, VideoParams,
 };
 use time::{SourceRange, Speed, TICKS_PER_SECOND, Tick};
 
@@ -21,6 +21,7 @@ pub fn item(id: ItemId, content: ItemParams) -> ItemBuilder {
     ItemBuilder {
         item: Item {
             blend_mode: BlendMode::default(),
+            group: None,
             masks: Vec::new(),
             effects: Vec::new(),
             animations: Animations::default(),
@@ -84,6 +85,11 @@ impl ItemBuilder {
 
     pub fn hidden(mut self, hidden: bool) -> Self {
         self.item.hidden = hidden;
+        self
+    }
+
+    pub fn group(mut self, group: GroupId) -> Self {
+        self.item.group = Some(group);
         self
     }
 
