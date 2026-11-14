@@ -154,6 +154,9 @@ pub struct Subtitles {
     missing_model: Option<String>,
     completed: Option<usize>,
     pub(crate) notice: Option<usize>,
+    /// The running export belongs to the export dialog's group: its completion raises no
+    /// panel toast, the group toast names every file instead.
+    pub(crate) grouped: bool,
     pub(crate) requested_import: Option<Tick>,
     pub(crate) requested_model: Option<String>,
     pub(crate) requested_seek: Option<Tick>,
@@ -212,6 +215,7 @@ impl Subtitles {
             missing_model: None,
             completed: None,
             notice: None,
+            grouped: false,
             requested_import: None,
             requested_model: None,
             requested_seek: None,
@@ -631,7 +635,7 @@ impl Subtitles {
                     self.error = snapshot.error.clone();
                 }
             }
-            if snapshot.state == JobState::Completed {
+            if snapshot.state == JobState::Completed && !self.grouped {
                 self.notice = self.completed;
             }
             self.runner.take_output(id);

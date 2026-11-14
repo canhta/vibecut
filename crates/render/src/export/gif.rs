@@ -88,3 +88,21 @@ pub(super) fn gif_export(
         degraded: Vec::new(),
     })
 }
+
+/// Encoded bytes per pixel per frame at a 256-colour palette: one measurement, a 3 s GIF at
+/// 240P wrote 1.25 MB. The run's frame size and rate were not recorded, so the constant
+/// assumes the 16:9 426x240 canvas at 30 fps (9.2 M pixel-frames); re-measure with those
+/// recorded before trusting it for other content.
+const BYTES_PER_PIXEL_FRAME_AT_256: f64 = 1_250_000.0 / (426.0 * 240.0 * 90.0);
+
+/// Expected bytes of a GIF of `seconds`: pixels x frames x a measured ratio, scaled by the
+/// palette's code width (`log2(colors) / 8`, since LZW codes are that many bits). GIF is
+/// silent, so there is no audio term, and the video bit-rate model does not apply.
+/// Dither and content are not modelled. This is the one GIF branch of
+/// `ExportSettings::estimated_bytes` (`estimate.rs`).
+pub(super) fn estimated_bytes(settings: &ExportSettings, seconds: f64) -> f64 {
+    let pixels = f64::from(settings.render.width) * f64::from(settings.render.height);
+    let fps = settings.fps.as_f64().min(media::GIF_MAX_FPS as f64);
+    let width = f64::from(settings.gif.max_colors.max(2)).log2() / 8.0;
+    seconds.max(0.0) * fps * pixels * BYTES_PER_PIXEL_FRAME_AT_256 * width
+}

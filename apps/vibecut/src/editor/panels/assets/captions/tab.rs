@@ -103,8 +103,10 @@ impl State {
             }
             CaptionOutput::Burned => subtitles.burn_subtitles(&*port.session, path, &options, true),
         };
-        if let Err(e) = result {
-            port.fail(e.to_string());
+        match result {
+            // The dialog's group toast is the export's one toast.
+            Ok(()) => subtitles.grouped = true,
+            Err(e) => port.fail(e.to_string()),
         }
     }
 

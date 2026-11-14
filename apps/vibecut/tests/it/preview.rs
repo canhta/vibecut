@@ -1345,6 +1345,41 @@ fn rulers_and_guide_lines_run_as_registered_commands_and_undo_without_touching_t
 }
 
 #[test]
+fn the_canvas_fits_inside_the_ruler_strips_while_rulers_show() {
+    // 100216: a canvas that fills the viewer width starts at the left ruler's edge, not under it.
+    let fresh = || Project::new(project(FrameRate::FPS_30, 1920, 1080, false).into_data()).unwrap();
+    let mut h = build(editor(fresh(), Preferences::default()));
+    h.run_steps(3);
+    let bare = widget(&h, "preview.canvas").rect;
+    h.state_mut().activate("preview.rulers").unwrap();
+    h.run_steps(3);
+    let left = widget(&h, "preview.rulers.left").rect;
+    let top = widget(&h, "preview.rulers.top").rect;
+    let fitted = widget(&h, "preview.canvas").rect;
+    assert!(
+        fitted.left() >= left.right() - 0.5,
+        "{fitted:?} under {left:?}"
+    );
+    assert!(
+        fitted.top() >= top.bottom() - 0.5,
+        "{fitted:?} under {top:?}"
+    );
+    assert!(
+        fitted.width() <= bare.width() + 0.5,
+        "{fitted:?} vs {bare:?}"
+    );
+    // The picture keeps its aspect, centred in what the strips leave.
+    assert!((fitted.aspect_ratio() - bare.aspect_ratio()).abs() < 0.01);
+    h.state_mut().activate("preview.rulers").unwrap();
+    h.run_steps(3);
+    assert_eq!(
+        widget(&h, "preview.canvas").rect,
+        bare,
+        "hiding the rulers restores the fit"
+    );
+}
+
+#[test]
 fn guide_lines_draw_over_the_player_drag_when_unlocked_and_stay_put_when_locked() {
     let fresh = || Project::new(project(FrameRate::FPS_30, 640, 360, false).into_data()).unwrap();
     let mut h = build(editor(fresh(), Preferences::default()));
