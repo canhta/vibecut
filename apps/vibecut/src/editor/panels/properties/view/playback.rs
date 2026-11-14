@@ -492,10 +492,10 @@ impl Panel<'_, '_> {
         let Some((current, maintain_pitch, has_audio)) = read::retime_of(project, item) else {
             return;
         };
-        let curve = read::speed_curve(project, item);
-        self.speed_tabs(ui, item, curve.is_some(), maintain_pitch);
-        if curve.is_some() || self.state.speed_curve_view {
-            self.speed_curve_controls(ui, item, curve, maintain_pitch, has_audio);
+        let shape = read::speed_shape(project, item);
+        self.speed_tabs(ui, item, shape.is_some(), maintain_pitch);
+        if shape.is_some() || self.state.speed_curve_view {
+            self.speed_curve_controls(ui, item, shape, maintain_pitch, has_audio);
             return;
         }
         self.slider_row(ui, item, SPEED_SCRUB);

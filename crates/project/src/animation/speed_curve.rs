@@ -14,7 +14,7 @@ use time::{Rounding, Speed, Tick};
 /// Most keys a curve holds (forty constant-speed segments).
 pub const MAX_SPEED_KEYS: usize = 41;
 
-/// Total of [`SpeedSegment::span`] over one curve: a thousandth of the source.
+/// Position of a shape's last point: thousandths of the curve's output span.
 pub const SPEED_SPAN_TOTAL: u16 = 1000;
 
 /// One key of a curve: `source` ticks of the window have played after `output` ticks.
@@ -29,16 +29,6 @@ const ORIGIN: SpeedKey = SpeedKey {
     output: Tick::ZERO,
     source: Tick::ZERO,
 };
-
-/// A constant-speed stretch of a curve, as edited: its share of the source
-/// span in thousandths and its speed.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct SpeedSegment {
-    /// Thousandths of the clip's source span; all spans of one curve sum to 1000.
-    pub span: u16,
-    pub speed: Speed,
-}
 
 /// Most control points of an editable curve shape.
 pub const MAX_SPEED_POINTS: usize = 12;
@@ -193,9 +183,8 @@ impl SpeedPreset {
     }
 }
 
-/// Validated curve of 2..=41 keys, stored inline so `Retime` stays `Copy`. A
-/// curve built from control points also keeps them (the editable shape); one
-/// built from stretches alone has none.
+/// Validated curve of 2..=41 keys, stored inline so `Retime` stays `Copy`, with
+/// the control points (the editable shape) the keys were baked from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(try_from = "SpeedCurveWire", into = "SpeedCurveWire")]
 #[schemars(with = "SpeedCurveWire")]
@@ -207,7 +196,7 @@ pub struct SpeedCurve {
 }
 
 /// The stored form of a curve: its keys (the time map) and its control points
-/// (the editable shape the keys were baked from; empty for a stepped curve).
+/// (the editable shape the keys were baked from).
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct SpeedCurveWire {
@@ -219,13 +208,11 @@ impl TryFrom<SpeedCurveWire> for SpeedCurve {
     type Error = Error;
     fn try_from(wire: SpeedCurveWire) -> Result<Self> {
         let mut curve = Self::new(&wire.keys)?;
-        if !wire.points.is_empty() {
-            SpeedPoint::validate(&wire.points)?;
-            for (slot, point) in curve.points.iter_mut().zip(&wire.points) {
-                *slot = *point;
-            }
-            curve.point_len = wire.points.len() as u8;
+        SpeedPoint::validate(&wire.points)?;
+        for (slot, point) in curve.points.iter_mut().zip(&wire.points) {
+            *slot = *point;
         }
+        curve.point_len = wire.points.len() as u8;
         Ok(curve)
     }
 }
@@ -251,7 +238,7 @@ impl SpeedCurve {
     ///
     /// Returns an error for a bad key count, a non-zero origin, a stretch that
     /// does not advance in both clocks, or one outside the speed range.
-    pub fn new(keys: &[SpeedKey]) -> Result<Self> {
+    fn new(keys: &[SpeedKey]) -> Result<Self> {
         if keys.len() < 2 || keys.len() > MAX_SPEED_KEYS {
             return Err(Error::Invalid("speed curve key count"));
         }
@@ -327,89 +314,64 @@ impl SpeedCurve {
         Ok(curve)
     }
 
-    /// The same curve over another source span: its control points re-baked,
-    /// or its stretches rebuilt when it has none.
+    /// The same shape over another source span, re-baked.
     ///
     /// # Errors
     ///
     /// Returns an error when the curve cannot cover `source`.
     pub fn over(&self, source: Tick) -> Result<Self> {
-        if self.points().is_empty() {
-            Self::from_segments(source, &self.segments())
+        Self::from_points(source, self.points())
+    }
+
+    /// The shape of the output slice `[offset, offset + duration)`: what a split
+    /// piece plays. Its ends are the shape's speeds at the cut, the points inside
+    /// the slice are rescaled to its span. The whole shape when the slice is whole.
+    pub fn slice_points(&self, offset: Tick, duration: Tick) -> Vec<SpeedPoint> {
+        let whole = self.points().to_vec();
+        let total = self.total_output().0;
+        if total <= 0 || duration.0 <= 0 || (offset.0 <= 0 && duration.0 >= total) {
+            return whole;
+        }
+        let from = (offset.0.max(0) as f64 / total as f64).min(1.0);
+        let to = ((offset.0.max(0) + duration.0) as f64 / total as f64).min(1.0);
+        let span = to - from;
+        if span <= 0.0 {
+            return whole;
+        }
+        let speed_at = |fraction: f64| {
+            Speed::from_f64(SpeedPoint::interpolate(&whole, fraction)).unwrap_or(Speed::UNITY)
+        };
+        let mut slice = vec![SpeedPoint {
+            at: 0,
+            speed: speed_at(from),
+        }];
+        for point in &whole {
+            let fraction = f64::from(point.at) / f64::from(SPEED_SPAN_TOTAL);
+            let at = ((fraction - from) / span * f64::from(SPEED_SPAN_TOTAL)).round();
+            let last = slice.last().map_or(0, |p| p.at);
+            if at > f64::from(last) && at < f64::from(SPEED_SPAN_TOTAL) {
+                slice.push(SpeedPoint {
+                    at: at as u16,
+                    speed: point.speed,
+                });
+            }
+        }
+        slice.push(SpeedPoint {
+            at: SPEED_SPAN_TOTAL,
+            speed: speed_at(to),
+        });
+        if SpeedPoint::validate(&slice).is_ok() {
+            slice
         } else {
-            Self::from_points(source, self.points())
+            whole
         }
     }
 
-    /// The editable control points; empty for a stepped curve.
+    /// The editable control points.
     pub fn points(&self) -> &[SpeedPoint] {
         self.points
             .get(..usize::from(self.point_len))
             .unwrap_or(&[])
-    }
-
-    /// Build a curve over `source` ticks from edited stretches. Each stretch
-    /// plays for the ceiling of its source ticks over its speed, so no stretch
-    /// exceeds the speed it was given.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the spans do not sum to 1000, a stretch has no
-    /// source tick, there are more than seven stretches, or a key is invalid.
-    pub fn from_segments(source: Tick, segments: &[SpeedSegment]) -> Result<Self> {
-        if segments.is_empty() || segments.len() >= MAX_SPEED_KEYS {
-            return Err(Error::Invalid("speed curve segment count"));
-        }
-        let total: u32 = segments.iter().map(|s| u32::from(s.span)).sum();
-        if total != u32::from(SPEED_SPAN_TOTAL) {
-            return Err(Error::Invalid("speed curve spans must sum to 1000"));
-        }
-        let mut keys = vec![ORIGIN];
-        let (mut cumulative, mut output, mut previous) = (0i64, 0i64, 0i64);
-        for segment in segments {
-            cumulative += i64::from(segment.span);
-            let at = source.checked_scale(cumulative, 1000, Rounding::Nearest)?;
-            let advance = at.0.checked_sub(previous).ok_or_else(overflow)?;
-            if advance <= 0 {
-                return Err(Error::Invalid("speed curve must advance"));
-            }
-            let played = Tick(advance).checked_scale(
-                1000,
-                i64::from(segment.speed.thousandths()),
-                Rounding::Ceil,
-            )?;
-            output = output.checked_add(played.0).ok_or_else(overflow)?;
-            previous = at.0;
-            keys.push(SpeedKey {
-                output: Tick(output),
-                source: at,
-            });
-        }
-        Self::new(&keys)
-    }
-
-    /// The curve as editable stretches (spans rounded to the nearest thousandth
-    /// of the source, speeds to the nearest 0.001x).
-    pub fn segments(&self) -> Vec<SpeedSegment> {
-        let total = self.total_source().0.max(1);
-        let mut out = Vec::new();
-        let mut before = 0i64;
-        for pair in self.keys().windows(2) {
-            if let [a, b] = pair {
-                let cumulative = Tick(b.source.0)
-                    .checked_scale(1000, total, Rounding::Nearest)
-                    .map_or(before, |t| t.0);
-                let src = (b.source.0 - a.source.0) as f64;
-                let played = (b.output.0 - a.output.0) as f64;
-                let speed = Speed::from_f64(src / played).unwrap_or(Speed::UNITY);
-                out.push(SpeedSegment {
-                    span: u16::try_from(cumulative - before).unwrap_or(0),
-                    speed,
-                });
-                before = cumulative;
-            }
-        }
-        out
     }
 
     pub fn keys(&self) -> &[SpeedKey] {

@@ -11,7 +11,7 @@ pub use animation::{
     EasingPreset, Extrapolation, Fade, FadeCurve, FadeEdge, FadeSpans, Fades, HandleSide, Keyframe,
     MAX_ANIMATION_PATHS, MAX_CHANNEL_KEYS, MAX_PROJECT_KEYS, MAX_SPEED_KEYS, MAX_SPEED_POINTS,
     Param, ParamValue, Retime, RetimeWindow, SPEED_SPAN_TOTAL, Segment, SpeedCurve, SpeedKey,
-    SpeedPoint, SpeedPreset, SpeedSegment, TangentMode,
+    SpeedPoint, SpeedPreset, TangentMode,
 };
 pub use model::*;
 pub use persistence::atomic;

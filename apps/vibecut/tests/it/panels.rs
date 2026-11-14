@@ -6963,6 +6963,84 @@ fn speed_curve_tab_applies_presets_and_edits_the_plot_points() {
 }
 
 #[test]
+fn speed_plot_of_a_split_piece_shows_and_edits_only_its_own_part() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    harness
+        .state_mut()
+        .session
+        .apply(Command::ApplySpeedPreset {
+            items: vec![fixture.video],
+            preset: project::SpeedPreset::Montage,
+            maintain_pitch: true,
+        })
+        .unwrap();
+    let whole = item(&harness, fixture.video);
+    let at = Tick(whole.duration().unwrap().0 * 2 / 5);
+    harness
+        .state_mut()
+        .session
+        .apply(Command::SplitAt {
+            item: fixture.video,
+            at,
+        })
+        .unwrap();
+    let pieces: Vec<project::Item> = harness
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .main
+        .items
+        .iter()
+        .filter(|piece| piece.retime.curve.is_some())
+        .cloned()
+        .collect();
+    assert_eq!(pieces.len(), 2);
+    let (first, second) = (pieces[0].clone(), pieces[1].clone());
+    let window = second
+        .retime
+        .window
+        .expect("a split piece keeps its window");
+    let slice = second
+        .retime
+        .curve
+        .unwrap()
+        .slice_points(window.offset, window.duration);
+    assert_ne!(slice, project::SpeedPreset::Montage.points());
+
+    // The plot of the second piece shows its slice of the shape, not the whole of it.
+    select(&mut harness, second.id);
+    click(&mut harness, "inspector.tab.speed");
+    assert!(has_widget(&harness, "inspector.speed.plot"));
+    assert!(has_widget(
+        &harness,
+        &format!("inspector.speed.point.{}", slice.len() - 1)
+    ));
+    assert!(!has_widget(
+        &harness,
+        &format!("inspector.speed.point.{}", slice.len())
+    ));
+
+    // An edit gives that piece its own shape and leaves the other piece alone.
+    drag(
+        &mut harness,
+        "inspector.speed.point.1",
+        egui::vec2(0.0, -15.0),
+    );
+    let edited = item(&harness, second.id);
+    assert_eq!(edited.retime.window, None);
+    let own = edited.retime.curve.unwrap().points().to_vec();
+    assert_eq!(own.len(), slice.len());
+    assert_eq!(own[0], slice[0]);
+    assert_ne!(own[1].speed, slice[1].speed);
+    assert_eq!(item(&harness, first.id).retime, first.retime);
+}
+
+#[test]
 #[ignore = "renders through wgpu; run with --ignored to refresh target/p1-64-ramps.png"]
 fn speed_curve_tab_renders_the_ramp_editor() {
     let fixture = fixture();

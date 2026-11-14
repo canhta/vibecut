@@ -520,12 +520,21 @@ pub(super) fn chroma_key_color(
         .color()
 }
 
-/// The item's speed curve; `None` for a constant rate.
-pub(super) fn speed_curve(project: &project::Project, item: ItemId) -> Option<project::SpeedCurve> {
-    find(project, item)?.retime.curve
+/// The shape the item plays, as editable points: its curve's points, or for a split piece the
+/// slice of them over the piece's output span. `None` for a constant rate.
+pub(super) fn speed_shape(
+    project: &project::Project,
+    item: ItemId,
+) -> Option<Vec<project::SpeedPoint>> {
+    let found = find(project, item)?;
+    let curve = found.retime.curve?;
+    Some(match found.retime.window {
+        Some(window) => curve.slice_points(window.offset, window.duration),
+        None => curve.points().to_vec(),
+    })
 }
 
-/// Where `playhead` sits along the item's curve, in thousandths of the curve's output span;
+/// Where `playhead` sits along the item's shape, in thousandths of the item's output span;
 /// `None` for a constant rate or a playhead outside the item.
 pub(super) fn speed_playhead(
     project: &project::Project,
@@ -533,13 +542,11 @@ pub(super) fn speed_playhead(
     playhead: Tick,
 ) -> Option<u16> {
     let found = find(project, item)?;
-    let curve = found.retime.curve?;
+    found.retime.curve?;
     let local = playhead.0.checked_sub(found.start.0)?;
-    let offset = found.retime.window.map_or(0, |window| window.offset.0);
-    let total = curve.total_output().0;
-    if local < 0 || local > found.duration().ok()?.0 || total <= 0 {
+    let total = found.duration().ok()?.0;
+    if local < 0 || local > total || total <= 0 {
         return None;
     }
-    let thousandths = i128::from(local + offset) * 1000 / i128::from(total);
-    u16::try_from(thousandths).ok()
+    u16::try_from(i128::from(local) * 1000 / i128::from(total)).ok()
 }

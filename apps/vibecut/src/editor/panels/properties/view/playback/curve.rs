@@ -1,7 +1,7 @@
 //! The Speed tab's Curve view: the preset tiles and the speed plot.
 use super::super::Panel;
 use crate::editor::properties::{Action, ItemId, Text, egui, read, theme};
-use project::{SPEED_SPAN_TOTAL, SpeedCurve, SpeedPoint, SpeedPreset};
+use project::{SPEED_SPAN_TOTAL, SpeedPoint, SpeedPreset};
 use time::Speed;
 
 /// Preset tiles (capture 100057, logical px): 62 px squares 16 px apart, six to a row, the
@@ -70,14 +70,14 @@ fn tile_entry(preset: Option<SpeedPreset>) -> (&'static str, Text) {
     }
 }
 
-/// The preset a curve shows as: the named shape it equals, else Custom; `None` without a curve.
-fn held_preset(curve: Option<&SpeedCurve>) -> Option<SpeedPreset> {
-    let curve = curve?;
+/// The preset a shape shows as: the named shape it equals, else Custom; `None` without a curve.
+fn held_preset(shape: Option<&[SpeedPoint]>) -> Option<SpeedPreset> {
+    let shape = shape?;
     Some(
         SpeedPreset::ALL
             .into_iter()
             .filter(|preset| *preset != SpeedPreset::Custom)
-            .find(|preset| preset.points() == curve.points())
+            .find(|preset| preset.points() == shape)
             .unwrap_or(SpeedPreset::Custom),
     )
 }
@@ -179,21 +179,22 @@ fn pairs(points: &[SpeedPoint]) -> Vec<(u16, f64)> {
 
 impl Panel<'_, '_> {
     /// The Curve view: the preset tiles, then, once the clip carries a curve, the speed plot
+    /// of the shape the clip plays (a split piece's slice of it)
     /// with its Duration line, Reset and point button, then the pitch policy.
     pub(super) fn speed_curve_controls(
         &mut self,
         ui: &mut egui::Ui,
         item: ItemId,
-        curve: Option<SpeedCurve>,
+        shape: Option<Vec<SpeedPoint>>,
         maintain_pitch: bool,
         has_audio: bool,
     ) {
-        self.speed_preset_tiles(ui, item, curve.as_ref(), maintain_pitch);
-        let Some(curve) = curve else {
+        self.speed_preset_tiles(ui, item, shape.as_deref(), maintain_pitch);
+        let Some(shape) = shape else {
             return;
         };
         ui.add_space(PLOT_GAP);
-        self.speed_plot(ui, item, &curve, maintain_pitch);
+        self.speed_plot(ui, item, &shape, maintain_pitch);
         if has_audio {
             ui.add_space(theme::space::SM);
             let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
@@ -208,7 +209,7 @@ impl Panel<'_, '_> {
             if response.changed() {
                 self.actions.push(Action::SetSpeedCurve {
                     item,
-                    points: pairs(curve.points()),
+                    points: pairs(&shape),
                     maintain_pitch: !follows,
                 });
             }
@@ -220,10 +221,10 @@ impl Panel<'_, '_> {
         &mut self,
         ui: &mut egui::Ui,
         item: ItemId,
-        curve: Option<&SpeedCurve>,
+        shape: Option<&[SpeedPoint]>,
         maintain_pitch: bool,
     ) {
-        let held = held_preset(curve);
+        let held = held_preset(shape);
         let tiles: Vec<Option<SpeedPreset>> = std::iter::once(None)
             .chain(SpeedPreset::ALL.into_iter().map(Some))
             .collect();
@@ -231,7 +232,7 @@ impl Panel<'_, '_> {
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = TILE_GAP;
                 for entry in row {
-                    self.speed_preset_tile(ui, item, *entry, *entry == held, curve, maintain_pitch);
+                    self.speed_preset_tile(ui, item, *entry, *entry == held, shape, maintain_pitch);
                 }
             });
         }
@@ -243,7 +244,7 @@ impl Panel<'_, '_> {
         item: ItemId,
         entry: Option<SpeedPreset>,
         selected: bool,
-        curve: Option<&SpeedCurve>,
+        shape: Option<&[SpeedPoint]>,
         maintain_pitch: bool,
     ) {
         let dark = self.cx.dark;
@@ -287,7 +288,7 @@ impl Panel<'_, '_> {
         match entry {
             None => {
                 self.state.speed_curve_view = true;
-                if curve.is_some() {
+                if shape.is_some() {
                     self.set_speed(item, 1.0, maintain_pitch);
                 }
             }
@@ -375,7 +376,7 @@ impl Panel<'_, '_> {
         &mut self,
         ui: &mut egui::Ui,
         item: ItemId,
-        curve: &SpeedCurve,
+        shape: &[SpeedPoint],
         maintain_pitch: bool,
     ) {
         let dark = self.cx.dark;
@@ -395,7 +396,7 @@ impl Panel<'_, '_> {
         let drag: Option<Drag> = ui.data(|data| data.get_temp(drag_id));
         let points: Vec<SpeedPoint> = drag
             .as_ref()
-            .map_or_else(|| curve.points().to_vec(), |drag| drag.points.clone());
+            .map_or_else(|| shape.to_vec(), |drag| drag.points.clone());
         let mut selected: Option<usize> = ui
             .data(|data| data.get_temp::<usize>(select_id))
             .filter(|index| *index < points.len());
@@ -468,7 +469,7 @@ impl Panel<'_, '_> {
                     .unwrap_or_else(|| points.clone());
                 if handle.drag_stopped() {
                     ui.data_mut(|data| data.remove::<Drag>(drag_id));
-                    if next != curve.points() {
+                    if next != shape {
                         commit = Some(next);
                     }
                 } else {
@@ -502,7 +503,7 @@ impl Panel<'_, '_> {
             selected,
             commit,
         };
-        self.speed_plot_footer(ui, item, footer, curve, edit, maintain_pitch);
+        self.speed_plot_footer(ui, item, footer, shape, edit, maintain_pitch);
     }
 
     /// Reset and the add/remove point button; also publishes the frame's commit.
@@ -511,7 +512,7 @@ impl Panel<'_, '_> {
         ui: &mut egui::Ui,
         item: ItemId,
         footer: egui::Rect,
-        curve: &SpeedCurve,
+        current: &[SpeedPoint],
         edit: Edit<'_>,
         maintain_pitch: bool,
     ) {
@@ -590,7 +591,7 @@ impl Panel<'_, '_> {
             }
         }
         if let Some(shape) = next
-            && shape != curve.points()
+            && shape != current
         {
             self.actions.push(Action::SetSpeedCurve {
                 item,

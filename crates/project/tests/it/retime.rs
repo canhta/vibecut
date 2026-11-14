@@ -583,29 +583,18 @@ fn reversed_clip_plays_its_source_backwards_and_cuts_keep_the_mapping() {
     }
 }
 
-fn segments(table: &[(u16, u32)]) -> Vec<SpeedSegment> {
-    table
-        .iter()
-        .map(|&(span, thousandths)| SpeedSegment {
-            span,
+/// A flat shape at `thousandths`: every baked stretch plays the same speed, so the keys are exact.
+fn flat(thousandths: u32) -> Vec<SpeedPoint> {
+    [0, 1000]
+        .map(|at| SpeedPoint {
+            at,
             speed: Speed::from_thousandths(thousandths).unwrap(),
         })
-        .collect()
+        .to_vec()
 }
 
-/// Stepped fixtures with hand-checkable numbers: `(span, speed in thousandths)`.
-const SLOW_IN_FAST_OUT: &[(u16, u32)] = &[(250, 500), (250, 800), (250, 1250), (250, 2000)];
-const FAST_IN_SLOW_OUT: &[(u16, u32)] = &[(250, 2000), (250, 1250), (250, 800), (250, 500)];
-const SLOW_MIDDLE: &[(u16, u32)] = &[(300, 1000), (400, 300), (300, 1000)];
-const FAST_MIDDLE: &[(u16, u32)] = &[(300, 1000), (400, 3000), (300, 1000)];
-const STEPPED: [&[(u16, u32)]; 4] = [SLOW_IN_FAST_OUT, FAST_IN_SLOW_OUT, SLOW_MIDDLE, FAST_MIDDLE];
-
-fn ramp_item(source: i64, start: i64, segments: &[SpeedSegment]) -> Item {
-    let curve = SpeedCurve::from_segments(Tick(source), segments).unwrap();
-    ramp_item_with(source, start, curve)
-}
-
-fn ramp_item_with(source: i64, start: i64, curve: SpeedCurve) -> Item {
+fn ramp_item(source: i64, start: i64, points: &[SpeedPoint]) -> Item {
+    let curve = SpeedCurve::from_points(Tick(source), points).unwrap();
     testkit::item::item(
         ItemId(1),
         ItemParams::Video(VideoParams {
@@ -659,9 +648,12 @@ fn every_preset_bakes_a_smooth_curve_over_its_output_span() {
     assert!((seconds - 7.52).abs() < 0.01, "{seconds}");
     // The first stretch plays at 0.9x, the crest stretches near 2.69x and the trough near 0.3x.
     let speeds: Vec<f64> = montage
-        .segments()
-        .iter()
-        .map(|s| s.speed.as_f64())
+        .keys()
+        .windows(2)
+        .map(|pair| {
+            (pair[1].source.0 - pair[0].source.0) as f64
+                / (pair[1].output.0 - pair[0].output.0) as f64
+        })
         .collect();
     assert!((speeds.first().unwrap() - 0.9).abs() < 0.01, "{speeds:?}");
     assert!(speeds.iter().any(|s| *s > 2.6 && *s < 2.7), "{speeds:?}");
@@ -681,33 +673,31 @@ fn every_preset_bakes_a_smooth_curve_over_its_output_span() {
         assert!(SpeedCurve::from_points(Tick(10 * second), &bad).is_err());
     }
 
-    // Stepped curves keep their stretches and carry no control points.
-    for table in STEPPED {
-        let curve =
-            SpeedCurve::from_segments(Tick(10 * TICKS_PER_SECOND), &segments(table)).unwrap();
-        assert!(curve.keys().len() >= 3, "{table:?}");
-        assert!(curve.points().is_empty());
-        assert_eq!(curve.segments(), segments(table), "{table:?}");
-    }
-    let item = ramp_item(10 * second, 0, &segments(SLOW_IN_FAST_OUT));
-    // First stretch: 2.5 s of source at 0.5x takes 5 s; the last runs at 2x.
+    // A flat 0.5x shape is exact: each of the forty stretches plays a fortieth of the
+    // source (0.25 s) for a fortieth of the output (0.5 s).
+    let item = ramp_item(10 * second, 0, &flat(500));
+    assert_eq!(item.duration().unwrap(), Tick(20 * second));
     assert_eq!(item.source_time_at(Tick(second)).unwrap(), Tick(second / 2));
     let curve = item.retime.curve.unwrap();
-    let second_key = curve.keys().get(1).unwrap();
-    assert_eq!(second_key.output, Tick(5 * second));
-    assert_eq!(second_key.source, Tick(5 * second / 2));
+    let first = curve.keys().get(1).unwrap();
+    assert_eq!(first.output, Tick(second / 2));
+    assert_eq!(first.source, Tick(second / 4));
+    // Flash out ends on a 2x plateau: its last output second covers two source seconds.
+    let item = ramp_item(10 * second, 0, &SpeedPreset::FlashOut.points());
     let last = item.end().unwrap();
     let before = item.source_time_at(Tick(last.0 - second)).unwrap();
     let after = item.source_time_at(Tick(last.0 - second / 2)).unwrap();
-    assert_eq!(after.0 - before.0, second, "2x in the last stretch");
+    assert!(
+        (after.0 - before.0 - second).abs() <= 2,
+        "2x on the plateau"
+    );
 }
 
 #[test]
 fn curve_to_source_time_is_monotonic_and_exact_at_every_key() {
     let second = TICKS_PER_SECOND;
-    for table in STEPPED {
-        let preset = table;
-        let item = ramp_item(10 * second, 3 * second, &segments(table));
+    for preset in SpeedPreset::ALL {
+        let item = ramp_item(10 * second, 3 * second, &preset.points());
         let curve = item.retime.curve.unwrap();
         for key in curve.keys() {
             let at = Tick(item.start.0 + key.output.0);
@@ -754,9 +744,8 @@ fn curve_to_source_time_is_monotonic_and_exact_at_every_key() {
 #[test]
 fn split_and_trim_of_a_ramped_clip_reproduce_the_original_mapping() {
     let second = TICKS_PER_SECOND;
-    for table in STEPPED {
-        let preset = table;
-        let item = ramp_item(10 * second, second, &segments(table));
+    for preset in SpeedPreset::ALL {
+        let item = ramp_item(10 * second, second, &preset.points());
         let length = item.duration().unwrap().0;
         for numerator in [1, 3, 5, 8, 9] {
             let at = Tick(item.start.0 + length * numerator / 10);
@@ -821,25 +810,33 @@ fn ramped_clip_snaps_to_the_29_97_frame_grid() {
     let second = TICKS_PER_SECOND;
     let frame = second * 1001 / 30000;
     assert_eq!(frame * 30000, second * 1001, "29.97 frames are whole ticks");
-    // Normal speed for the first 30%: every output frame shows its own source frame.
-    let slow_middle = ramp_item(10 * second, 0, &segments(SLOW_MIDDLE));
+    // A flat 1x shape: every output frame shows its own source frame.
+    let normal = ramp_item(10 * second, 0, &flat(1000));
     for n in 0..89 {
         let at = Tick(n * frame);
-        assert_eq!(slow_middle.source_time_at(at).unwrap(), at, "frame {n}");
+        assert_eq!(normal.source_time_at(at).unwrap(), at, "frame {n}");
     }
-    // 3x in the middle: source frames advance by at most three per output frame and
+    // A flat 3x shape advances exactly three source frames per output frame.
+    let triple = ramp_item(10 * second, 0, &flat(3000));
+    let frames = triple.duration().unwrap().0 / frame;
+    for n in 1..frames {
+        let now = triple.source_time_at(Tick(n * frame)).unwrap().0 / frame;
+        let before = triple.source_time_at(Tick((n - 1) * frame)).unwrap().0 / frame;
+        assert_eq!(now - before, 3, "frame {n}");
+    }
+    // Flash out eases 1x to 2x: source frames advance by one or two per output frame and
     // never go backwards.
-    let fast_middle = ramp_item(10 * second, 0, &segments(FAST_MIDDLE));
-    let frames = fast_middle.duration().unwrap().0 / frame;
+    let ramp = ramp_item(10 * second, 0, &SpeedPreset::FlashOut.points());
+    let frames = ramp.duration().unwrap().0 / frame;
     let mut previous = 0;
     let mut deltas = Vec::new();
     for n in 0..frames {
-        let source = fast_middle.source_time_at(Tick(n * frame)).unwrap().0 / frame;
-        assert!(source >= previous && source - previous <= 3, "frame {n}");
+        let source = ramp.source_time_at(Tick(n * frame)).unwrap().0 / frame;
+        assert!(source >= previous && source - previous <= 2, "frame {n}");
         deltas.push(source - previous);
         previous = source;
     }
-    assert!(deltas.contains(&3) && deltas.contains(&1));
+    assert!(deltas.contains(&2) && deltas.contains(&1));
 }
 
 #[test]
@@ -851,13 +848,13 @@ fn curve_persists_and_invalid_curves_are_refused() {
         data.scene_mut().timeline.main.items.push(item);
         Project::new(data)
     };
-    let ramp = ramp_item(1000, 0, &segments(SLOW_MIDDLE));
+    let ramp = ramp_item(1000, 0, &flat(2000));
     let project = build(ramp.clone()).unwrap();
-    assert_eq!(project.duration(), Tick(1934));
+    assert_eq!(project.duration(), Tick(500));
     let bytes = encode(&project, false).unwrap();
     let text = String::from_utf8(bytes.clone()).unwrap();
     assert!(
-        text.contains(r#""curve":{"keys":[{"output":0,"source":0},{"output":300,"source":300}"#),
+        text.contains(r#""curve":{"keys":[{"output":0,"source":0},{"output":13,"source":25}"#),
         "{text}"
     );
     assert_eq!(decode(&bytes).unwrap().project, project);
@@ -889,57 +886,34 @@ fn curve_persists_and_invalid_curves_are_refused() {
     doubled.retime.speed = Speed::from_thousandths(2000).unwrap();
     assert!(build(doubled).is_err());
 
-    // Curve-level refusals.
-    let key = |output, source| SpeedKey {
-        output: Tick(output),
-        source: Tick(source),
-    };
-    assert!(SpeedCurve::new(&[key(0, 0)]).is_err(), "one key");
-    assert!(SpeedCurve::new(&[key(1, 0), key(2, 2)]).is_err(), "origin");
-    assert!(
-        SpeedCurve::new(&[key(0, 0), key(10, 10), key(10, 20)]).is_err(),
-        "flat output"
-    );
-    assert!(
-        SpeedCurve::new(&[key(0, 0), key(10, 10), key(20, 10)]).is_err(),
-        "flat source"
-    );
-    assert!(
-        SpeedCurve::new(&[key(0, 0), key(10, 10), key(5, 20)]).is_err(),
-        "backwards"
-    );
-    assert!(
-        SpeedCurve::new(&[key(0, 0), key(10, 1010)]).is_err(),
-        "above 100x"
-    );
-    assert!(
-        SpeedCurve::new(&[key(0, 0), key(10, 1000)]).is_ok(),
-        "exactly 100x"
-    );
-    assert!(
-        SpeedCurve::new(&[key(0, 0), key(1000, 99)]).is_err(),
-        "below 0.1x"
-    );
-    assert!(
-        SpeedCurve::new(&[key(0, 0), key(1000, 100)]).is_ok(),
-        "exactly 0.1x"
-    );
-    let many: Vec<_> = (0..42).map(|n| key(n * 10, n * 10)).collect();
-    assert!(SpeedCurve::new(&many).is_err(), "forty-two keys");
-    assert!(
-        SpeedCurve::new(many.get(..41).unwrap()).is_ok(),
-        "forty-one keys"
-    );
-    assert!(
-        serde_json::from_str::<SpeedCurve>(
-            r#"{"keys":[{"output":0,"source":0},{"output":10,"source":1010}],"points":[]}"#
+    // Curve-level refusals, through the stored form: keys plus a valid flat shape.
+    let wire = |keys: &[(i64, i64)]| {
+        let keys: Vec<String> = keys
+            .iter()
+            .map(|(output, source)| format!(r#"{{"output":{output},"source":{source}}}"#))
+            .collect();
+        format!(
+            r#"{{"keys":[{}],"points":[{{"at":0,"speed":1.0}},{{"at":1000,"speed":1.0}}]}}"#,
+            keys.join(",")
         )
-        .is_err()
-    );
-    // Control points must be a valid shape; bare key lists are no longer a curve.
+    };
+    let curve = |keys: &[(i64, i64)]| serde_json::from_str::<SpeedCurve>(&wire(keys));
+    assert!(curve(&[(0, 0)]).is_err(), "one key");
+    assert!(curve(&[(1, 0), (2, 2)]).is_err(), "origin");
+    assert!(curve(&[(0, 0), (10, 10), (10, 20)]).is_err(), "flat output");
+    assert!(curve(&[(0, 0), (10, 10), (20, 10)]).is_err(), "flat source");
+    assert!(curve(&[(0, 0), (10, 10), (5, 20)]).is_err(), "backwards");
+    assert!(curve(&[(0, 0), (10, 1010)]).is_err(), "above 100x");
+    assert!(curve(&[(0, 0), (10, 1000)]).is_ok(), "exactly 100x");
+    assert!(curve(&[(0, 0), (1000, 99)]).is_err(), "below 0.1x");
+    assert!(curve(&[(0, 0), (1000, 100)]).is_ok(), "exactly 0.1x");
+    let many: Vec<(i64, i64)> = (0..42).map(|n| (n * 10, n * 10)).collect();
+    assert!(curve(&many).is_err(), "forty-two keys");
+    assert!(curve(many.get(..41).unwrap()).is_ok(), "forty-one keys");
+    // A curve without a valid shape, or as a bare key list, is no curve.
     assert!(
         serde_json::from_str::<SpeedCurve>(
-            r#"{"keys":[{"output":0,"source":0},{"output":10,"source":10}],"points":[{"at":0,"speed":1.0}]}"#
+            r#"{"keys":[{"output":0,"source":0},{"output":10,"source":10}],"points":[]}"#
         )
         .is_err()
     );
@@ -949,22 +923,11 @@ fn curve_persists_and_invalid_curves_are_refused() {
         )
         .is_err()
     );
-    let wire = r#"{"keys":[{"output":0,"source":0},{"output":10,"source":20}],"points":[]}"#;
-    let good = serde_json::from_str::<SpeedCurve>(wire).unwrap();
-    assert_eq!(serde_json::to_string(&good).unwrap(), wire);
-    // Edited stretches: spans must sum to 1000 and each needs a source tick.
-    assert!(SpeedCurve::from_segments(Tick(1000), &segments(&[(1000, 2000)])).is_ok());
-    assert!(SpeedCurve::from_segments(Tick(1000), &segments(&[(1000, 100_000)])).is_ok());
-    assert!(
-        SpeedCurve::from_segments(Tick(1000), &segments(&[(500, 100_000), (500, 100)])).is_ok()
-    );
-    assert!(SpeedCurve::from_segments(Tick(1000), &segments(&[(500, 1000)])).is_err());
-    assert!(SpeedCurve::from_segments(Tick(1000), &[]).is_err());
-    assert!(SpeedCurve::from_segments(Tick(1), &segments(&[(500, 1000), (500, 1000)])).is_err());
-    let mut forty_one = vec![(24, 1000); 40];
-    forty_one.push((40, 1000));
-    assert!(
-        SpeedCurve::from_segments(Tick(100_000), &segments(&forty_one)).is_err(),
-        "forty stretches at most"
-    );
+    let good = curve(&[(0, 0), (10, 20)]).unwrap();
+    let json = serde_json::to_string(&good).unwrap();
+    assert_eq!(serde_json::from_str::<SpeedCurve>(&json).unwrap(), good);
+    // A source too short for forty stretches refuses; a long one takes the extreme speeds.
+    assert!(SpeedCurve::from_points(Tick(1), &flat(1000)).is_err());
+    assert!(SpeedCurve::from_points(Tick(100_000), &flat(100_000)).is_ok());
+    assert!(SpeedCurve::from_points(Tick(100_000), &flat(100)).is_ok());
 }
