@@ -42,7 +42,7 @@ joined.
 
 The app shares catalog, preferences, model presentation, lifecycle runner and aggregate
 media accounting. Each project's media budget is a 512 MiB child of the 768 MiB
-aggregate; autosave uses separate 64 MiB project children of a 256 MiB persistence
+aggregate; autosave uses separate 384 MiB project children of a 768 MiB persistence
 allowance, so export cannot consume journal or save admission. Model transfers stay
 app-owned across project saves and closes. `lending` opens the process stores once and
 is the only place an editor receives them: the saved-sound library, the music session, the

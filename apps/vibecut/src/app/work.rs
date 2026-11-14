@@ -25,6 +25,12 @@ use std::{
     time::Duration,
 };
 
+/// Each project's save scope: the job's work allowance, a decoder probe and the frames a video
+/// clip's cover draws. A smaller scope refuses the cover of every video project.
+const SAVE_SCOPE: u64 = 384 << 20;
+/// The persistence allowance: two projects can save at once.
+pub(super) const PERSISTENCE: u64 = 2 * SAVE_SCOPE;
+
 pub(super) type EditorSlot = Arc<Mutex<Option<Box<Editor>>>>;
 pub(super) struct WorkingEditor {
     pub(super) slot: EditorSlot,
@@ -91,7 +97,7 @@ impl EditorWindow {
         } else {
             self.budget.clone()
         };
-        let persistence = self.persistence.child(64 << 20)?;
+        let persistence = self.persistence.child(SAVE_SCOPE)?;
         let corrections = self.corrections.clone();
         let input = Arc::new(Mutex::new(Some(work)));
         let preferences = self.preferences.clone();

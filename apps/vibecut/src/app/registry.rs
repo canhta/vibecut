@@ -68,7 +68,7 @@ impl Workspace {
         let wake = wake::Wake::new();
         wake.bind();
         let budget = ByteBudget::new(preferences.cache_limit_bytes)?;
-        let persistence = ByteBudget::new(256 << 20)?;
+        let persistence = ByteBudget::new(super::work::PERSISTENCE)?;
         let lending = Lending::open(&root, &budget);
         let corrections = lending.footage();
         let runner = std::rc::Rc::new(std::cell::RefCell::new(JobRunner::new(
