@@ -6,5 +6,5 @@ mod view;
 
 pub use backend::{Backend, EngineBackend};
 pub(in crate::editor) use state::PendingImport;
-pub use state::{Category, Download, Inspection, State, Status};
+pub use state::{Download, Filter, Inspection, State, Status};
 pub(in crate::editor) use view::{Action, label_family, show};

@@ -4,7 +4,7 @@ Interface: `Preferences`, `PreferenceStore`, `PreferenceIssue`, `PREFERENCES_VER
 `PREFERENCE_KEYS`, `MAX_PREFERENCES_BYTES`, `MAX_SECTIONS`, `MAX_TIMELINE_LANES`,
 `PANEL_MIN`, `PANEL_MAX`, `PREVIEW_MIN`, `PREVIEW_MAX`, `TIMELINE_MIN`, `TIMELINE_MAX`,
 `DEFAULT_PANELS`, `drag_panel`, `validate_panels`, `WINDOW_MIN`, `WindowGeometry`,
-`FontPickerPreferences`, `FontTab`, `AdjustmentPreset`, `MAX_ADJUSTMENT_PRESETS`,
+`FontPickerPreferences`, `AdjustmentPreset`, `MAX_ADJUSTMENT_PRESETS`,
 `MAX_ADJUSTMENT_PRESET_NAME`, `validate_adjustment_presets`, `EasingPreferences`, `EasingTab`,
 `SavedEasing`, `MAX_SAVED_EASINGS`, `SubtitleOptions`, `SOURCE_LANGUAGES`.
 
@@ -36,6 +36,7 @@ from this map. Downloaded local weight choices remain in their local owner. Keys
 fetched lists and price acknowledgements are never serialized. A document whose version is not
 `PREFERENCES_VERSION` is refused through the version refusal; there is no migration.
 Version 14 removed `recent_colors`; the colour popover's recents live in the project.
+Version 19 removed the font picker's persisted `tab` (the picker has no tabs); `font_picker` keeps only `favorites`.
 
 The text-task provider is one persisted choice, `subtitles.text_provider`, shared by
 translation, `fillers.classify` and `chapters.generate`. The models are not shared: each task takes its own

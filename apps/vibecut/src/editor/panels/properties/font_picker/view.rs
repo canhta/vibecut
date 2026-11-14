@@ -1,17 +1,25 @@
 //! Draws the font picker popover and turns its events into picker actions.
-use super::state::{Category, Download, State, Status};
+use super::state::{Download, Filter, State, Status};
 use crate::egui::{self, Align, Align2, Color32, Id, Rect, Sense, Stroke, Vec2};
 use crate::i18n::{self, Locale, Text};
 use crate::kit as theme;
-use crate::preferences::{FontPickerPreferences, FontTab};
+use crate::preferences::FontPickerPreferences;
 use engine::control::{FontEntry, FontState};
 use std::sync::Arc;
 
-/// Popover width and list ceiling; the reference's own list is 288 px.
-const WIDTH: f32 = 320.0;
-const LIST_HEIGHT: f32 = 288.0;
-const ROW_HEIGHT: f32 = 34.0;
-const STAR_WIDTH: f32 = 24.0;
+/// Measured from the reference dropdown (logical px, frame 103657 of the 2026-11-14b round):
+/// popover 385 wide opening 8 below the field, search field 26 high, filter chips 24 high,
+/// rows on a 28 pitch with the download and star icons in 28 px cells at the right edge, the
+/// list running to about 448 under the chips. The section header height is read from the
+/// Presets label's 24 px band and is [proposed]; the 10 px inset is the search field's.
+const WIDTH: f32 = 385.0;
+const LIST_HEIGHT: f32 = 448.0;
+const SEARCH_HEIGHT: f32 = 26.0;
+const CHIP_HEIGHT: f32 = 24.0;
+const ROW_HEIGHT: f32 = 28.0;
+const SECTION_HEIGHT: f32 = 24.0;
+const CHECK_WIDTH: f32 = 20.0;
+const ICON_CELL: f32 = 28.0;
 const STATE_WIDTH: f32 = 96.0;
 const ACTION_WIDTH: f32 = 84.0;
 
@@ -21,7 +29,6 @@ pub enum Action {
     Close,
     /// Ask the backend for the catalog through `fonts.list`.
     List,
-    Tab(FontTab),
     /// Toggle one family in the persisted favourites.
     Favorite {
         family: String,
@@ -91,55 +98,33 @@ pub fn show(
                 }
             });
         });
-        let search = ui.add(
+        let search = ui.add_sized(
+            [ui.available_width(), SEARCH_HEIGHT],
             egui::TextEdit::singleline(&mut state.query)
                 .id(Id::unique("fonts.search"))
-                .hint_text(tr(Text::FontsSearch))
-                .desired_width(f32::INFINITY),
+                .hint_text(tr(Text::FontsSearch)),
         );
         record(&mut event.widgets, "fonts.search", search);
         ui.add_space(theme::space::XS);
 
-        let tabs = state.tabs();
-        let ids: Vec<String> = tabs
-            .iter()
-            .map(|tab| format!("fonts.tab.{}", tab.id()))
-            .collect();
-        let labels: Vec<&str> = tabs.iter().map(|tab| tab_label(*tab, locale)).collect();
-        let selected = tabs
-            .iter()
-            .position(|tab| *tab == state.tab(preferences))
-            .unwrap_or(0);
-        let responses = theme::text_tabs(ui, &ids, &labels, selected);
-        for ((id, response), tab) in ids.iter().zip(&responses).zip(&tabs) {
-            record(&mut event.widgets, id, response.clone());
-            if response.clicked() {
-                event.actions.push(Action::Tab(*tab));
-            }
-        }
-        if state.tab(preferences) == FontTab::All {
-            ui.add_space(theme::space::XS);
-            ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing.x = theme::space::XS;
-                for category in Category::ALL {
-                    let enabled = true;
-                    let id = format!("fonts.category.{}", category.id());
-                    let label = tr(category_label(category));
-                    let selected = state.category == category;
-                    let button = egui::Button::new(
-                        egui::RichText::new(label).color(chip_ink(selected, enabled, dark)),
-                    )
-                    .fill(chip_fill(selected, enabled, dark))
-                    .stroke(Stroke::new(theme::space::HAIRLINE, theme::border(dark)))
-                    .min_size(Vec2::new(0.0, theme::size::FIELD));
-                    let response = ui.push_id(&id, |ui| ui.add_enabled(enabled, button)).inner;
-                    record(&mut event.widgets, &id, response.clone());
-                    if enabled && response.clicked() {
-                        state.category = category;
-                    }
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = theme::space::XS;
+            for filter in Filter::ALL {
+                let id = format!("fonts.filter.{}", filter.id());
+                let selected = state.filter == filter;
+                let button = egui::Button::new(
+                    egui::RichText::new(tr(filter_label(filter))).color(chip_ink(selected, dark)),
+                )
+                .fill(chip_fill(selected, dark))
+                .stroke(Stroke::new(theme::space::HAIRLINE, theme::border(dark)))
+                .min_size(Vec2::new(0.0, CHIP_HEIGHT));
+                let response = ui.push_id(&id, |ui| ui.add(button)).inner;
+                record(&mut event.widgets, &id, response.clone());
+                if response.clicked() {
+                    state.filter = filter;
                 }
-            });
-        }
+            }
+        });
         ui.add_space(theme::space::XS);
         match state.status {
             Status::Loading => {
@@ -170,37 +155,73 @@ pub fn show(
                 ui.add_space(theme::space::LG);
             }
             Status::Ready => {
-                let rows: Vec<FontEntry> =
-                    state.visible(preferences).into_iter().cloned().collect();
-                if rows.is_empty() {
+                let (presets, system): (Vec<FontEntry>, Vec<FontEntry>) = {
+                    let (presets, system) = state.sections(preferences);
+                    (
+                        presets.into_iter().cloned().collect(),
+                        system.into_iter().cloned().collect(),
+                    )
+                };
+                if presets.is_empty() && system.is_empty() {
                     ui.add_space(theme::space::LG);
-                    let message =
-                        if state.tab(preferences) == FontTab::MyFonts && !state.has_imports {
-                            Text::FontUploadHint
-                        } else {
-                            Text::FontsNone
-                        };
-                    let label =
-                        ui.label(egui::RichText::new(tr(message)).color(theme::secondary(dark)));
-                    record(
-                        &mut event.widgets,
-                        if message == Text::FontUploadHint {
-                            "fonts.my_empty"
-                        } else {
-                            "fonts.empty"
-                        },
-                        label,
+                    let label = ui.label(
+                        egui::RichText::new(tr(Text::FontsNone)).color(theme::secondary(dark)),
                     );
+                    record(&mut event.widgets, "fonts.empty", label);
                     ui.add_space(theme::space::LG);
                 } else {
                     egui::ScrollArea::vertical()
                         .id_salt("fonts.list")
                         .max_height(LIST_HEIGHT)
-                        .auto_shrink([false, false])
+                        .auto_shrink([false, true])
                         .show(ui, |ui| {
-                            ui.spacing_mut().item_spacing.y = theme::space::XXS;
-                            for entry in rows {
-                                font_row(ui, &entry, state, preferences, locale, dark, &mut event);
+                            ui.spacing_mut().item_spacing.y = 0.0;
+                            if !presets.is_empty() {
+                                let toggled = section_header(
+                                    ui,
+                                    "fonts.section.presets",
+                                    tr(Text::FontsPresets),
+                                    Some(state.presets_collapsed),
+                                    dark,
+                                    &mut event,
+                                );
+                                if toggled {
+                                    state.presets_collapsed = !state.presets_collapsed;
+                                }
+                                if !state.presets_collapsed {
+                                    for entry in &presets {
+                                        font_row(
+                                            ui,
+                                            entry,
+                                            state,
+                                            preferences,
+                                            locale,
+                                            dark,
+                                            &mut event,
+                                        );
+                                    }
+                                }
+                            }
+                            if !system.is_empty() {
+                                section_header(
+                                    ui,
+                                    "fonts.section.system",
+                                    tr(Text::FontsSystem),
+                                    None,
+                                    dark,
+                                    &mut event,
+                                );
+                                for entry in &system {
+                                    font_row(
+                                        ui,
+                                        entry,
+                                        state,
+                                        preferences,
+                                        locale,
+                                        dark,
+                                        &mut event,
+                                    );
+                                }
                             }
                         });
                 }
@@ -273,13 +294,21 @@ fn font_row(
     if selected {
         ui.painter()
             .rect_filled(row, theme::radius::CONTROL, theme::hover(dark));
+        paint_check(ui, row, dark);
     }
-    let star_rect = Rect::from_min_size(row.min, Vec2::new(STAR_WIDTH, ROW_HEIGHT));
-    let action_left = row.right() - ACTION_WIDTH;
+    // Right to left, as the reference: star cell, then the download or action cell, then the
+    // state text, with the name taking what is left after the check column.
+    let star_rect = Rect::from_min_max(egui::pos2(row.right() - ICON_CELL, row.top()), row.max);
+    let action_width = if active.is_some() {
+        ACTION_WIDTH
+    } else {
+        ICON_CELL
+    };
+    let action_left = star_rect.left() - action_width;
     let state_left = action_left - STATE_WIDTH;
     let name_rect = Rect::from_min_max(
-        egui::pos2(row.left() + STAR_WIDTH, row.top()),
-        egui::pos2(state_left.max(row.left() + STAR_WIDTH), row.bottom()),
+        egui::pos2(row.left() + CHECK_WIDTH, row.top()),
+        egui::pos2(state_left.max(row.left() + CHECK_WIDTH), row.bottom()),
     );
     let state_rect = Rect::from_min_max(
         egui::pos2(state_left, row.top()),
@@ -287,7 +316,7 @@ fn font_row(
     );
     let action_rect = Rect::from_min_max(
         egui::pos2(action_left, row.top()),
-        egui::pos2(row.right(), row.bottom()),
+        egui::pos2(star_rect.left(), row.bottom()),
     );
 
     let mut star_ui = ui.new_child(
@@ -296,7 +325,7 @@ fn font_row(
             .layout(egui::Layout::left_to_right(Align::Center)),
     );
     let star = star_ui.add_sized(
-        [STAR_WIDTH, ROW_HEIGHT],
+        [ICON_CELL, ROW_HEIGHT],
         egui::Button::new(tr(if favorite {
             Text::FontFavoriteOn
         } else {
@@ -446,9 +475,12 @@ fn font_row(
                 }
             }
             _ => {
-                let download = action_ui.add_sized(
-                    [ACTION_WIDTH, theme::size::FIELD],
-                    egui::Button::new(tr(Text::FontDownload)),
+                let download = theme::icon_button(
+                    &mut action_ui,
+                    &format!("fonts.download.{family}"),
+                    theme::Icon::DownloadSimple,
+                    tr(Text::FontDownload),
+                    false,
                 );
                 record(
                     &mut event.widgets,
@@ -507,18 +539,16 @@ fn row_status(
     }
 }
 
-fn chip_ink(selected: bool, enabled: bool, dark: bool) -> Color32 {
-    if !enabled {
-        theme::disabled(dark)
-    } else if selected {
+fn chip_ink(selected: bool, dark: bool) -> Color32 {
+    if selected {
         theme::on_accent(dark)
     } else {
         theme::text(dark)
     }
 }
 
-fn chip_fill(selected: bool, enabled: bool, dark: bool) -> Color32 {
-    if selected && enabled {
+fn chip_fill(selected: bool, dark: bool) -> Color32 {
+    if selected {
         theme::accent(dark)
     } else {
         theme::field(dark)
@@ -604,24 +634,71 @@ fn row_family(state: &State, family: &str) -> egui::FontFamily {
     }
 }
 
-fn category_label(category: Category) -> Text {
-    match category {
-        Category::All => Text::FontsAll,
-        Category::System => Text::FontsSystem,
-        Category::Google => Text::FontsGoogle,
-        Category::Custom => Text::FontsCustom,
+fn filter_label(filter: Filter) -> Text {
+    match filter {
+        Filter::All => Text::FontsAll,
+        Filter::Commercial => Text::FontsCommercial,
     }
 }
 
-fn tab_label(tab: FontTab, locale: Locale) -> &'static str {
-    i18n::text(
-        locale,
-        match tab {
-            FontTab::All => Text::FontsAll,
-            FontTab::MyFonts => Text::FontsMine,
-            FontTab::Favorites => Text::FontsFavorites,
-        },
-    )
+/// One section header band. `collapsed` is `Some` for the collapsible Presets section, which
+/// shows a caret and answers a click; the return value says the click happened.
+fn section_header(
+    ui: &mut egui::Ui,
+    id: &str,
+    label: &str,
+    collapsed: Option<bool>,
+    dark: bool,
+    event: &mut Event,
+) -> bool {
+    let sense = if collapsed.is_some() {
+        Sense::click()
+    } else {
+        Sense::hover()
+    };
+    let (rect, response) =
+        ui.allocate_exact_size(Vec2::new(ui.available_width(), SECTION_HEIGHT), sense);
+    let text = ui.painter().text(
+        egui::pos2(rect.left(), rect.center().y),
+        Align2::LEFT_CENTER,
+        label,
+        egui::FontId::proportional(theme::type_size::CHROME),
+        theme::secondary(dark),
+    );
+    if let Some(collapsed) = collapsed {
+        let icon = if collapsed {
+            theme::Icon::CaretRight
+        } else {
+            theme::Icon::CaretDown
+        };
+        ui.put(
+            Rect::from_center_size(
+                egui::pos2(text.right() + theme::space::SM, rect.center().y),
+                Vec2::splat(theme::icon::DENSE),
+            ),
+            theme::tinted(icon, theme::icon::DENSE, theme::secondary(dark)),
+        );
+        response.widget_info(|| {
+            egui::WidgetInfo::selected(egui::Role::Button, true, !collapsed, label)
+        });
+    }
+    let clicked = response.clicked();
+    record(&mut event.widgets, id, response);
+    clicked
+}
+
+/// The selected row's check mark in the name column's gutter, drawn as two strokes so it needs
+/// no glyph or icon asset.
+fn paint_check(ui: &egui::Ui, row: Rect, dark: bool) {
+    let center = egui::pos2(row.left() + CHECK_WIDTH * 0.5, row.center().y);
+    ui.painter().add(egui::Shape::line(
+        vec![
+            center + Vec2::new(-4.0, 0.0),
+            center + Vec2::new(-1.5, 3.0),
+            center + Vec2::new(4.0, -3.0),
+        ],
+        Stroke::new(1.5, theme::accent(dark)),
+    ));
 }
 
 fn record(widgets: &mut Vec<(String, egui::Response)>, id: &str, response: egui::Response) {
@@ -727,12 +804,10 @@ mod tests {
     #[test]
     fn selected_chip_uses_the_accent_fill_and_on_accent_ink() {
         for dark in [true, false] {
-            assert_eq!(chip_fill(true, true, dark), theme::accent(dark));
-            assert_eq!(chip_ink(true, true, dark), theme::on_accent(dark));
-            assert_eq!(chip_fill(false, true, dark), theme::field(dark));
-            assert_eq!(chip_ink(false, true, dark), theme::text(dark));
-            assert_eq!(chip_fill(false, false, dark), theme::field(dark));
-            assert_eq!(chip_ink(false, false, dark), theme::disabled(dark));
+            assert_eq!(chip_fill(true, dark), theme::accent(dark));
+            assert_eq!(chip_ink(true, dark), theme::on_accent(dark));
+            assert_eq!(chip_fill(false, dark), theme::field(dark));
+            assert_eq!(chip_ink(false, dark), theme::text(dark));
         }
     }
 }

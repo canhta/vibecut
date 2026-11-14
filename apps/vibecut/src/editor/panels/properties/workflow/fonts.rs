@@ -3,7 +3,6 @@ use super::super::State;
 use super::super::font_picker::{self, Action, Download};
 use super::commands::set_shared_field;
 use crate::editor::{Error, Port, Result};
-use crate::preferences;
 use engine::control::FontLoadState;
 use engine::jobs::JobState;
 
@@ -16,7 +15,6 @@ impl State {
                 Ok(())
             }
             Action::List => self.font_list(port),
-            Action::Tab(tab) => self.font_tab(port, tab),
             Action::Favorite { family, favorite } => self.font_favorite(port, &family, favorite),
             Action::Select(family) => self.font_select(port, &family),
             Action::Download(family) => self.font_download(port, &family),
@@ -75,13 +73,6 @@ impl State {
             }
         }
         Ok(())
-    }
-
-    fn font_tab(&mut self, port: &mut Port<'_>, tab: preferences::FontTab) -> Result<()> {
-        let mut preferences = port.view().preferences.font_picker.clone();
-        preferences.tab = tab;
-        self.font_picker.category = font_picker::Category::All;
-        port.set_preference_result("font_picker", serde_json::to_value(preferences)?)
     }
 
     fn font_favorite(&mut self, port: &mut Port<'_>, family: &str, favorite: bool) -> Result<()> {

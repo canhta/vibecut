@@ -23,7 +23,7 @@ use vibecut::services::lifecycle::EditorSession::Memory;
 use vibecut::{
     AssetsTab, Editor, ElementKind, PropertiesTab, egui,
     font_picker::{Backend, Status},
-    preferences::{FontTab, PreferenceStore, Preferences},
+    preferences::{PreferenceStore, Preferences},
     services::playback::{Files, Playback},
 };
 
@@ -4051,14 +4051,13 @@ fn text_tab_edits_every_style_field_one_undo_step_each_and_shows_effects() {
         harness.state_mut().session.redo().unwrap();
         harness.run_steps(2);
     }
-    // The Case menu opens on its own and each word is one edit; the stored text keeps what was typed.
+    // The Case row is three buttons; each press is one edit and the stored text keeps what was typed.
     for (case, word) in [
         (project::TextCase::Upper, "upper"),
         (project::TextCase::Lower, "lower"),
         (project::TextCase::Title, "title"),
     ] {
         let before = harness.state().session.project().clone();
-        click(&mut harness, "inspector.text_case");
         click(&mut harness, &format!("inspector.text_case.{word}"));
         let params = text_params(&harness, text);
         assert_eq!(params.case, case, "{word}");
@@ -4072,6 +4071,27 @@ fn text_tab_edits_every_style_field_one_undo_step_each_and_shows_effects() {
         harness.state_mut().session.redo().unwrap();
         harness.run_steps(2);
     }
+    // Pressing the active button (Title, left by the loop) returns to as typed, one edit.
+    assert_eq!(
+        text_params(&harness, text).case,
+        project::TextCase::Title,
+        "the last press stays active"
+    );
+    let before_release = harness.state().session.project().clone();
+    click(&mut harness, "inspector.text_case.title");
+    assert_eq!(
+        text_params(&harness, text).case,
+        project::TextCase::AsTyped,
+        "the active button toggles back to as typed"
+    );
+    harness.state_mut().session.undo().unwrap();
+    assert_eq!(
+        harness.state().session.project(),
+        &before_release,
+        "as typed undo"
+    );
+    harness.state_mut().session.redo().unwrap();
+    harness.run_steps(2);
     // Turn the box on with the shared toggle, then every numeric row commits through the field.
     click(&mut harness, "inspector.text_background");
     assert!(text_params(&harness, text).background.is_some());
@@ -4377,7 +4397,7 @@ fn font_entry(
         origin,
         styles: vec!["Regular".into()],
         state,
-        license: (origin == FontOrigin::Google).then(|| "OFL-1.1".into()),
+        license: (origin != FontOrigin::System).then(|| "OFL-1.1".into()),
         source: (origin == FontOrigin::Google).then(|| "https://github.com/google/fonts".into()),
         download_bytes,
     }
@@ -4471,7 +4491,6 @@ fn custom_font_import_uses_the_store_picker_history_and_reopen_in_both_locales()
                 "import never chooses or edits text"
             );
             std::fs::rename(&source, directory.path().join("original-moved")).unwrap();
-            click(&mut h, "fonts.category.custom");
             assert!(has_widget(&h, "inspector.text_font.VibeCut Fixture Sans"));
             let history = h.state().session.history_len().0;
             click(&mut h, "inspector.text_font.VibeCut Fixture Sans");
@@ -4487,7 +4506,6 @@ fn custom_font_import_uses_the_store_picker_history_and_reopen_in_both_locales()
             assert_eq!(params.font.as_str(), "Inter");
             h.state_mut().activate("edit.redo").unwrap();
             open_font_picker(&mut h);
-            click(&mut h, "fonts.tab.my_fonts");
             assert!(has_widget(&h, "inspector.text_font.VibeCut Fixture Sans"));
             h.run_steps(3);
             let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
@@ -5044,7 +5062,7 @@ fn type_search(harness: &mut Harness<Editor>, text: &str) {
 }
 
 #[test]
-fn font_picker_lists_search_tabs_and_favorites_through_commands() {
+fn font_picker_lists_search_chips_sections_and_favorites_through_commands() {
     let fixture = fixture();
     let fonts = FakeFonts::new();
     let (editor, text) = fonts_editor(fixture, &fonts);
@@ -5114,10 +5132,14 @@ fn font_picker_lists_search_tabs_and_favorites_through_commands() {
         name_google.left(),
         "every name starts at the same left edge"
     );
-    assert_eq!(
-        name.left(),
-        star.right(),
-        "the name text starts at the name column's left edge"
+    assert!(
+        (name.left() - (search.left() + 20.0)).abs() < 1.0 && name.right() <= star.left(),
+        "the name text sits after the check gutter and before the star cell at the right edge"
+    );
+    let download = widget_rect(&harness, "fonts.download.Lobster");
+    assert!(
+        (star.center().x - download.center().x).abs() <= 28.5,
+        "the download icon sits in the cell next to the star"
     );
     // Only informative rows carry state text: not downloaded with size, and
     // later downloading or failed. Ready rows are blank.
@@ -5155,32 +5177,32 @@ fn font_picker_lists_search_tabs_and_favorites_through_commands() {
     assert!(has_widget(&harness, "fonts.empty"));
     type_search(&mut harness, "");
 
-    // All three tabs and import controls remain available with an empty bank.
-    assert!(has_widget(&harness, "fonts.tab.all"));
-    assert!(has_widget(&harness, "fonts.tab.my_fonts"));
-    assert!(has_widget(&harness, "fonts.tab.favorites"));
+    // The reference's chips and both sections, and the import control, are always there.
+    assert!(has_widget(&harness, "fonts.filter.all"));
+    assert!(has_widget(&harness, "fonts.filter.commercial"));
+    assert!(has_widget(&harness, "fonts.section.presets"));
+    assert!(has_widget(&harness, "fonts.section.system"));
+    assert!(has_widget(&harness, "inspector.text_font.Arial"));
     assert!(
         !harness
             .get(By::new().predicate(|node| node.author_id() == Some("fonts.upload")))
             .accesskit_node()
             .is_disabled()
     );
-    assert!(
-        !harness
-            .get(By::new().predicate(|node| node.author_id() == Some("fonts.category.custom")))
-            .accesskit_node()
-            .is_disabled()
-    );
-    click(&mut harness, "fonts.tab.my_fonts");
-    assert!(
-        has_widget(&harness, "fonts.my_empty"),
-        "no imports exist yet"
-    );
-    click(&mut harness, "fonts.tab.all");
-
-    click(&mut harness, "fonts.tab.favorites");
-    assert!(has_widget(&harness, "fonts.empty"));
-    click(&mut harness, "fonts.tab.all");
+    // Commercial keeps the licensed families and drops the system ones.
+    click(&mut harness, "fonts.filter.commercial");
+    assert!(has_widget(&harness, "inspector.text_font.Inter"));
+    assert!(!has_widget(&harness, "inspector.text_font.Arial"));
+    assert!(!has_widget(&harness, "fonts.section.system"));
+    click(&mut harness, "fonts.filter.all");
+    assert!(has_widget(&harness, "inspector.text_font.Arial"));
+    // Collapsing Presets hides its rows and keeps System font.
+    click(&mut harness, "fonts.section.presets");
+    assert!(font_picker(&harness).presets_collapsed);
+    assert!(!has_widget(&harness, "inspector.text_font.Inter"));
+    assert!(has_widget(&harness, "inspector.text_font.Arial"));
+    click(&mut harness, "fonts.section.presets");
+    assert!(has_widget(&harness, "inspector.text_font.Inter"));
     click(&mut harness, "fonts.favorite.Noto Serif");
     assert_eq!(
         harness.state().preferences.font_picker.favorites,
@@ -5191,9 +5213,12 @@ fn font_picker_lists_search_tabs_and_favorites_through_commands() {
         &project,
         "favoriting never mutates the project"
     );
-    click(&mut harness, "fonts.tab.favorites");
-    assert!(has_widget(&harness, "inspector.text_font.Noto Serif"));
-    assert!(!has_widget(&harness, "inspector.text_font.Inter"));
+    harness.run_steps(2);
+    assert!(
+        widget_rect(&harness, "inspector.text_font.Noto Serif").top()
+            < widget_rect(&harness, "inspector.text_font.Inter").top(),
+        "a favourite floats to the top of its section"
+    );
 
     let history = harness.state().session.history_len().0;
     click(&mut harness, "inspector.text_font.Noto Serif");
@@ -5206,11 +5231,15 @@ fn font_picker_lists_search_tabs_and_favorites_through_commands() {
     assert_eq!(text.font.as_str(), "Noto Serif");
     assert!(!font_picker(&harness).open);
 
-    // The persisted tab and favourite survive close and reopen.
+    // The persisted favourite survives close and reopen.
     open_font_picker(&mut harness);
     let inspection = font_picker(&harness);
     assert!(inspection.open, "{inspection:?}");
-    assert_eq!(inspection.tab, FontTab::Favorites, "{inspection:?}");
+    assert_eq!(
+        inspection.filter,
+        vibecut::font_picker::Filter::All,
+        "{inspection:?}"
+    );
     assert_eq!(inspection.status, Status::Ready, "{inspection:?}");
     assert!(inspection.favorites.iter().any(|name| name == "Noto Serif"));
     assert!(

@@ -1,6 +1,6 @@
-//! Owns the font picker's catalog state, tab/category filtering and inspection.
+//! Owns the font picker's catalog state, chip filter, sections and inspection.
 use crate::egui;
-use crate::preferences::{FontPickerPreferences, FontTab};
+use crate::preferences::FontPickerPreferences;
 use engine::control::{FontEntry, FontState};
 use engine::jobs::JobId;
 use std::collections::BTreeSet;
@@ -13,23 +13,26 @@ pub(in crate::editor) struct PendingImport {
     pub job: Option<JobId>,
 }
 
-/// Which family group All fonts shows within its source tab.
+/// The reference's filter chips: every family, or only those with a recorded licence
+/// (bundled, catalogue and imported families; system fonts carry none).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Category {
+pub enum Filter {
     #[default]
     All,
-    System,
-    Google,
-    Custom,
+    Commercial,
 }
-impl Category {
-    pub const ALL: [Self; 4] = [Self::All, Self::System, Self::Google, Self::Custom];
+impl Filter {
+    pub const ALL: [Self; 2] = [Self::All, Self::Commercial];
     pub const fn id(self) -> &'static str {
         match self {
             Self::All => "all",
-            Self::System => "system",
-            Self::Google => "google",
-            Self::Custom => "custom",
+            Self::Commercial => "commercial",
+        }
+    }
+    fn admits(self, entry: &FontEntry) -> bool {
+        match self {
+            Self::All => true,
+            Self::Commercial => entry.license.is_some(),
         }
     }
 }
@@ -53,7 +56,7 @@ pub struct Download {
     pub failed: bool,
 }
 
-/// Transient picker state; the tab and favourites live in preferences.
+/// Transient picker state; the favourites live in preferences.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct State {
     pub open: bool,
@@ -62,7 +65,9 @@ pub struct State {
     pub(crate) import_failed: bool,
     pub anchor: Option<egui::Pos2>,
     pub query: String,
-    pub category: Category,
+    pub filter: Filter,
+    /// Whether the Presets section (bundled, catalogue and imported families) is expanded.
+    pub presets_collapsed: bool,
     pub status: Status,
     pub entries: Vec<FontEntry>,
     pub loaded: bool,
@@ -78,15 +83,13 @@ pub struct State {
     pub preview_pending: BTreeSet<String>,
 }
 impl State {
-    /// The source tab set; My fonts filters verified imported families.
-    pub const TABS: [FontTab; 3] = [FontTab::All, FontTab::MyFonts, FontTab::Favorites];
-
     pub fn open(&mut self, anchor: egui::Pos2, current: Option<String>) {
         self.lifetime = self.lifetime.wrapping_add(1);
         self.open = true;
         self.anchor = Some(anchor);
         self.query.clear();
-        self.category = Category::All;
+        self.filter = Filter::All;
+        self.presets_collapsed = false;
         self.current = current;
         if !self.loaded {
             self.status = Status::Loading;
@@ -97,33 +100,35 @@ impl State {
         self.lifetime = self.lifetime.wrapping_add(1);
         self.open = false;
     }
-    pub fn tabs(&self) -> [FontTab; 3] {
-        Self::TABS
-    }
-    pub fn tab(&self, preferences: &FontPickerPreferences) -> FontTab {
-        preferences.tab
-    }
-    /// Entries the active tab, category and search show, in catalog order.
-    pub fn visible(&self, preferences: &FontPickerPreferences) -> Vec<&FontEntry> {
+    /// The families the chip and search show: the Presets section (every origin but the
+    /// operating system, catalogue order) and the System font section. Favourites come first
+    /// within a section.
+    pub fn sections(
+        &self,
+        preferences: &FontPickerPreferences,
+    ) -> (Vec<&FontEntry>, Vec<&FontEntry>) {
         let query = self.query.trim().to_lowercase();
-        let tab = self.tab(preferences);
-        self.entries
+        let (mut presets, mut system): (Vec<&FontEntry>, Vec<&FontEntry>) = self
+            .entries
             .iter()
-            .filter(|entry| match tab {
-                FontTab::All => match self.category {
-                    Category::All => true,
-                    Category::System => entry.origin == engine::control::FontOrigin::System,
-                    Category::Google => entry.origin == engine::control::FontOrigin::Google,
-                    Category::Custom => entry.origin == engine::control::FontOrigin::Custom,
-                },
-                FontTab::Favorites => preferences
+            .filter(|entry| self.filter.admits(entry))
+            .filter(|entry| query.is_empty() || entry.family.to_lowercase().contains(&query))
+            .partition(|entry| entry.origin != engine::control::FontOrigin::System);
+        for section in [&mut presets, &mut system] {
+            section.sort_by_key(|entry| {
+                !preferences
                     .favorites
                     .iter()
-                    .any(|family| family == &entry.family),
-                FontTab::MyFonts => entry.origin == engine::control::FontOrigin::Custom,
-            })
-            .filter(|entry| query.is_empty() || entry.family.to_lowercase().contains(&query))
-            .collect()
+                    .any(|family| family == &entry.family)
+            });
+        }
+        (presets, system)
+    }
+    /// Every shown family in section order, collapsed or not.
+    pub fn visible(&self, preferences: &FontPickerPreferences) -> Vec<&FontEntry> {
+        let (mut presets, system) = self.sections(preferences);
+        presets.extend(system);
+        presets
     }
     /// Next available family after `family` in the visible order, then before it.
     pub fn next_available(
@@ -144,8 +149,8 @@ impl State {
     pub fn inspect(&self, preferences: &FontPickerPreferences) -> Inspection {
         Inspection {
             open: self.open,
-            tab: self.tab(preferences),
-            category: self.category,
+            filter: self.filter,
+            presets_collapsed: self.presets_collapsed,
             query: self.query.clone(),
             status: self.status,
             entries: self.entries.clone(),
@@ -161,8 +166,8 @@ impl State {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Inspection {
     pub open: bool,
-    pub tab: FontTab,
-    pub category: Category,
+    pub filter: Filter,
+    pub presets_collapsed: bool,
     pub query: String,
     pub status: Status,
     pub entries: Vec<FontEntry>,
@@ -175,8 +180,8 @@ pub struct Inspection {
 
 #[cfg(test)]
 mod tests {
-    use super::{Category, State, Status};
-    use crate::preferences::{FontPickerPreferences, FontTab};
+    use super::{Filter, State, Status};
+    use crate::preferences::FontPickerPreferences;
     use engine::control::{FontEntry, FontOrigin, FontState};
 
     fn entry(family: &str, origin: FontOrigin, state: FontState) -> FontEntry {
@@ -185,7 +190,7 @@ mod tests {
             origin,
             styles: vec!["Regular".into()],
             state,
-            license: None,
+            license: (origin != FontOrigin::System).then(|| "OFL-1.1".into()),
             source: None,
             download_bytes: None,
         }
@@ -205,53 +210,41 @@ mod tests {
     }
 
     #[test]
-    fn tabs_mirror_the_source_set_with_my_fonts_always_present() {
+    fn sections_split_presets_from_system_fonts_and_float_favorites() {
         let state = state();
-        assert_eq!(
-            state.tabs(),
-            [FontTab::All, FontTab::MyFonts, FontTab::Favorites]
-        );
-        let preferences = FontPickerPreferences {
-            tab: FontTab::MyFonts,
-            ..FontPickerPreferences::default()
+        let mut preferences = FontPickerPreferences::default();
+        let (presets, system) = state.sections(&preferences);
+        let names = |list: &[&engine::control::FontEntry]| {
+            list.iter()
+                .map(|entry| entry.family.clone())
+                .collect::<Vec<_>>()
         };
-        assert_eq!(state.tab(&preferences), FontTab::MyFonts);
-        assert!(
-            state.visible(&preferences).is_empty(),
-            "no imports exist yet"
+        assert_eq!(names(&presets), ["Inter", "Lobster"]);
+        assert_eq!(names(&system), ["Arial"]);
+        preferences.favorites = vec!["Lobster".into()];
+        let (presets, _) = state.sections(&preferences);
+        assert_eq!(
+            names(&presets),
+            ["Lobster", "Inter"],
+            "a favourite sorts first"
         );
-        let mut imported = state;
-        imported.has_imports = true;
-        assert_eq!(imported.tabs().len(), 3);
     }
 
     #[test]
-    fn search_category_and_favorites_filter_the_visible_catalog() {
+    fn search_and_the_commercial_chip_filter_the_visible_catalog() {
         let state = state();
-        let mut preferences = FontPickerPreferences::default();
+        let preferences = FontPickerPreferences::default();
         assert_eq!(state.visible(&preferences).len(), 3);
         let mut search = state.clone();
         search.query = "LO".into();
         let visible = search.visible(&preferences);
         assert_eq!(visible.len(), 1);
         assert_eq!(visible[0].family, "Lobster");
-        let mut system = state.clone();
-        system.category = Category::System;
-        assert_eq!(system.visible(&preferences)[0].family, "Arial");
-        let mut google = state.clone();
-        google.category = Category::Google;
-        assert_eq!(google.visible(&preferences)[0].family, "Lobster");
-        let mut custom = state.clone();
-        custom.category = Category::Custom;
-        assert!(custom.visible(&preferences).is_empty());
-        preferences.favorites = vec!["Inter".into(), "Lobster".into()];
-        preferences.tab = FontTab::Favorites;
-        let favorites: Vec<_> = state
-            .visible(&preferences)
-            .into_iter()
-            .map(|entry| entry.family.as_str())
-            .collect();
-        assert_eq!(favorites, ["Inter", "Lobster"]);
+        let mut commercial = state.clone();
+        commercial.filter = Filter::Commercial;
+        let (presets, system) = commercial.sections(&preferences);
+        assert_eq!(presets.len(), 2);
+        assert!(system.is_empty(), "system fonts carry no licence record");
     }
 
     #[test]
