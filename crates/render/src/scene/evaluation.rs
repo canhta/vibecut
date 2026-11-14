@@ -680,12 +680,12 @@ impl<'a> Renderer<'a> {
                         });
                         // The arc moves glyphs by at most its sagitta over the text area's width,
                         // plus a glyph's own extent once turned.
-                        let curve = p.curve.filter(|percent| *percent != 0.0).map(|percent| {
+                        let curve = p.curve.filter(|degrees| *degrees != 0.0).map(|degrees| {
                             let area =
                                 self.settings.width as f32 * placement.destination.width as f32;
                             (
-                                percent,
-                                text::curve_displacement(percent, area) + p.font_size * scale,
+                                degrees,
+                                text::curve_displacement(degrees, area) + p.font_size * scale,
                             )
                         });
                         let background = match &p.background {

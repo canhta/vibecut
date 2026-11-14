@@ -64,14 +64,14 @@ const STROKE_THICKNESS: ScrubSpec = effect_spec(
     project::TextStroke::MAX_THICKNESS as f64,
     "",
 );
-/// Curve's bend amount, whole percent steps over the model's range. Open: the reference shows
-/// no amount control until the section is on, so the range and unit are ours.
+/// Curve's Strength, whole degree steps over -360 to 360, the reference's bipolar slider with a
+/// centre tick (capture 2026-11-14e, frames 204153 to 204238).
 const CURVE_AMOUNT: ScrubSpec = effect_spec(
     "text_curve_amount",
     Text::TextCurveAmount,
     -(project::TextParams::MAX_CURVE as f64),
     project::TextParams::MAX_CURVE as f64,
-    "%",
+    "\u{b0}",
 );
 const SHADOW_OPACITY: ScrubSpec = effect_spec(
     "text_shadow_opacity",
@@ -495,9 +495,9 @@ impl Panel<'_, '_> {
             );
             self.scrub_field(ui, item, RADIUS);
         }
-        // The bend amount exists while Curve is on.
+        // The Strength slider exists while Curve is on.
         if params.curve.is_some() {
-            self.scrub_field(ui, item, CURVE_AMOUNT);
+            self.slider_row(ui, item, CURVE_AMOUNT);
         }
         // The outline and shadow geometry rows exist while their toggles are on.
         if params.stroke.is_some() {

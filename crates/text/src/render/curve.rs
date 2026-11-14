@@ -3,12 +3,9 @@
 use crate::layout::Layout;
 use crate::raster::Path;
 
-/// Arc angle a line spans at a curve of 100 percent, in radians (a half circle). Open: the
-/// reference gives no measure.
-const FULL_ARC: f32 = std::f32::consts::PI;
-
-/// Largest curve magnitude, in percent.
-pub const MAX_CURVE: f32 = 100.0;
+/// Largest curve magnitude, in degrees: the angle a line's arc spans, so 360 is a full circle
+/// (reference, capture 2026-11-14e).
+pub const MAX_CURVE: f32 = 360.0;
 
 /// Rigid placement of one glyph: its pivot (advance centre on the baseline) in layout
 /// coordinates and the clockwise turn about it.
@@ -25,8 +22,8 @@ pub(super) struct Placement {
 /// Placements for every glyph, or `None` at zero curve. A positive curve raises the middle of
 /// each line over its ends (an arch) and a negative one lowers it; the line keeps its length
 /// along the arc, centred on its own middle.
-pub(super) fn placements(layout: &Layout, percent: f32) -> Option<Vec<Placement>> {
-    let angle = percent / MAX_CURVE * FULL_ARC;
+pub(super) fn placements(layout: &Layout, degrees: f32) -> Option<Vec<Placement>> {
+    let angle = degrees.to_radians();
     if angle == 0.0 {
         return None;
     }
@@ -93,10 +90,11 @@ pub(super) fn place(path: &mut Path, at: &Placement, origin: (f32, f32)) {
     }
 }
 
-/// Pixels a line of `width` pixels moves off its straight position at `percent`: the arc's
-/// sagitta, an upper bound on the vertical shift of any glyph pivot.
-pub fn displacement(percent: f32, width: f32) -> f32 {
-    let angle = (percent / MAX_CURVE * FULL_ARC).abs();
+/// Pixels a line of `width` pixels moves off its straight position at `degrees`: the arc's
+/// sagitta (at most the circle's diameter), an upper bound on the vertical shift of any glyph
+/// pivot.
+pub fn displacement(degrees: f32, width: f32) -> f32 {
+    let angle = degrees.to_radians().abs();
     if !(angle > 0.0 && width.is_finite() && width > 0.0) {
         return 0.0;
     }
@@ -147,13 +145,27 @@ mod tests {
     }
 
     #[test]
+    fn three_hundred_sixty_degrees_closes_the_circle() {
+        let layout = laid_out();
+        let line = &layout.lines[0];
+        let radius = line.width / std::f32::consts::TAU;
+        let bound = displacement(360.0, line.width);
+        assert!((bound - 2.0 * radius).abs() < 1e-3, "{bound} {radius}");
+        let (cx, cy) = (line.x + line.width / 2.0, layout.glyphs[0].y + radius);
+        for p in placements(&layout, 360.0).expect("arc") {
+            let r = ((p.x - cx).powi(2) + (p.y - cy).powi(2)).sqrt();
+            assert!((r - radius).abs() < 0.01 * radius, "{r} vs {radius}");
+        }
+    }
+
+    #[test]
     fn pivots_lie_on_one_circle_and_stay_within_the_sagitta() {
         let layout = laid_out();
         let line = &layout.lines[0];
-        let radius = line.width / FULL_ARC;
+        let radius = line.width / std::f32::consts::PI;
         let (cx, cy) = (line.x + line.width / 2.0, layout.glyphs[0].y + radius);
-        let bound = displacement(100.0, line.width);
-        for p in placements(&layout, 100.0).expect("arc") {
+        let bound = displacement(180.0, line.width);
+        for p in placements(&layout, 180.0).expect("arc") {
             let r = ((p.x - cx).powi(2) + (p.y - cy).powi(2)).sqrt();
             assert!((r - radius).abs() < 0.01 * radius, "{r} vs {radius}");
             assert!(p.y - layout.glyphs[0].y <= bound + 1e-3);

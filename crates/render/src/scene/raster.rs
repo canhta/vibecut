@@ -32,7 +32,7 @@ pub(super) struct TextKey {
     pub(super) shadow: Option<(u32, u32, u32, [u8; 4])>,
     /// Glow radius (float bits) and colour.
     pub(super) glow: Option<(u32, [u8; 4])>,
-    /// Curve percent and the extra margin it needs (float bits).
+    /// Curve degrees and the extra margin it needs (float bits).
     pub(super) curve: Option<(u32, u32)>,
     pub(super) background: Option<BoxKey>,
     pub(super) align: TextAlign,
@@ -133,7 +133,7 @@ pub(super) struct TextFace<'a> {
     pub(super) shadow: Option<(f32, f32, f32, [u8; 4])>,
     /// Glow radius in output pixels and its colour.
     pub(super) glow: Option<(f32, [u8; 4])>,
-    /// Curve percent and the margin in output pixels its arc needs around the text area.
+    /// Curve degrees and the margin in output pixels its arc needs around the text area.
     pub(super) curve: Option<(f32, f32)>,
 }
 impl TextFace<'_> {

@@ -366,7 +366,7 @@ macro_rules! from_color {
 }
 from_color!(TextBackground, project::TextStroke, project::TextShadow);
 text_shape!(TextBackground, project::TextStroke, project::TextShadow);
-/// `none` or `off` switches the text curve off; a number switches it on at that percent,
+/// `none` or `off` switches the text curve off; a number switches it on at that angle in degrees,
 /// pulled into the model's range.
 impl ParamText for Option<f32> {
     fn from_text(text: &str, _: &ParamBounds) -> Option<Self> {
