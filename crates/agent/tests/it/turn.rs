@@ -539,10 +539,7 @@ fn preview_frame_shows_the_model_one_frame_of_the_fork_and_refuses_bad_input() {
         .collect();
     assert_eq!(codes[0], "invalid_input");
     assert_eq!(codes[1], "invalid_input");
-    assert!(
-        codes[2] == "invalid_params" || codes[2] == "limit",
-        "{codes:?}"
-    );
+    assert_eq!(codes[2], "invalid_params", "{codes:?}");
     let reason: serde_json::Value = serde_json::from_str(&held[4].content).unwrap();
     assert_eq!(reason["reason"], "use_tool");
     runner.shutdown();

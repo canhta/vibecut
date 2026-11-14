@@ -1059,3 +1059,83 @@ fn frames_reach_the_provider_as_images_only_with_consent_and_only_the_latest() {
         assert!(shown.kinds.contains(&DataKind::Frames));
     }
 }
+
+/// One consented live round trip: the model calls `preview_frame`, the result carries the
+/// overlay fixture's frame (`frame.jpg`, the agent evaluation fixture's solid red frame at
+/// 640x360) and the reply must describe the image.
+fn live_frame_round_trip(provider: Provider, key_var: &str) {
+    assert_eq!(std::env::var("VIBECUT_LIVE_AI").as_deref(), Ok("1"));
+    let config = provider.config(provider.model_id());
+    let key = ApiKey::new(std::env::var(key_var).unwrap()).unwrap();
+    let transport: Arc<dyn StreamTransport> = Arc::new(transport::UreqTransport::new());
+    let model: Box<dyn ChatModel> = match provider {
+        Provider::Anthropic => {
+            Box::new(AnthropicChat::new(config.clone(), key, transport).unwrap())
+        }
+        Provider::OpenAi => Box::new(OpenAiChat::new(config.clone(), key, transport).unwrap()),
+    };
+    let granted = [DataKind::ProjectSummary, DataKind::Frames];
+    let consent = AgentChatConsent::grant(scope(config, 200_000, &granted)).unwrap();
+    let tools = vec![ToolSpec {
+        name: "preview_frame".into(),
+        description: "Render one frame of the project as an image.".into(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {"frame": {"type": "integer", "minimum": 0}},
+            "required": ["frame"],
+        }),
+    }];
+    let mut conversation = Conversation::new(
+        model,
+        Some(&consent),
+        "You edit video. Use the tools to look at the project.",
+        tools,
+        AgentChatLimits::default(),
+    )
+    .unwrap();
+    let reply = conversation
+        .send_user(
+            "Call preview_frame for frame 0, then say in one sentence which colour fills the frame.",
+            &mut no_events,
+            &Hooks::default(),
+        )
+        .unwrap();
+    assert_eq!(reply.calls.len(), 1, "{provider:?} did not call the tool");
+    let frame = fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/conversation/frame.jpg"),
+    )
+    .unwrap();
+    let shown = ToolResult {
+        call_id: reply.calls[0].id.clone(),
+        content: json!({"frame": 0, "width": 640, "height": 360, "clips": ["1"]}).to_string(),
+        is_error: false,
+        kinds: kinds(&granted),
+        images: vec![ToolImage::new(ImageType::Jpeg, &frame)],
+    };
+    let reply = conversation
+        .send_tool_results(&[shown], &mut no_events, &Hooks::default())
+        .unwrap();
+    assert!(
+        reply.text.to_lowercase().contains("red"),
+        "{provider:?}: {}",
+        reply.text
+    );
+    eprintln!(
+        "{provider:?} {}: {} micro-USD, reply {:?}",
+        provider.model_id(),
+        conversation.ledger().spent_micros(),
+        reply.text
+    );
+}
+
+#[test]
+#[ignore = "requires VIBECUT_LIVE_AI=1 and ANTHROPIC_API_KEY; two bounded claude-sonnet-5-5 requests"]
+fn live_anthropic_reads_a_frame_from_a_tool_result() {
+    live_frame_round_trip(Provider::Anthropic, "ANTHROPIC_API_KEY");
+}
+
+#[test]
+#[ignore = "requires VIBECUT_LIVE_AI=1 and OPENAI_API_KEY; two bounded gpt-6.1-sol requests"]
+fn live_openai_reads_a_frame_from_a_tool_result() {
+    live_frame_round_trip(Provider::OpenAi, "OPENAI_API_KEY");
+}
