@@ -32,6 +32,8 @@ pub(super) struct TextKey {
     pub(super) shadow: Option<(u32, u32, u32, [u8; 4])>,
     /// Glow radius (float bits) and colour.
     pub(super) glow: Option<(u32, [u8; 4])>,
+    /// Curve percent and the extra margin it needs (float bits).
+    pub(super) curve: Option<(u32, u32)>,
     pub(super) background: Option<BoxKey>,
     pub(super) align: TextAlign,
     pub(super) decoration: TextDecoration,
@@ -80,11 +82,13 @@ impl TextKey {
             f32::from_bits(x).abs().max(f32::from_bits(y).abs()) + f32::from_bits(blur)
         });
         let glow = self.glow.map_or(0.0, |(radius, _)| f32::from_bits(radius));
+        let curve = self.curve.map_or(0.0, |(_, extent)| f32::from_bits(extent));
         outline
             .max(shadow)
             .max(glow)
             .max(self.background.map_or(0.0, BoxKey::margin))
             .ceil()
+            + curve.ceil()
     }
 }
 impl TextBox {
@@ -129,6 +133,8 @@ pub(super) struct TextFace<'a> {
     pub(super) shadow: Option<(f32, f32, f32, [u8; 4])>,
     /// Glow radius in output pixels and its colour.
     pub(super) glow: Option<(f32, [u8; 4])>,
+    /// Curve percent and the margin in output pixels its arc needs around the text area.
+    pub(super) curve: Option<(f32, f32)>,
 }
 impl TextFace<'_> {
     /// Pixels the raster grows beyond the text area on every side for these
@@ -139,11 +145,13 @@ impl TextFace<'_> {
             .shadow
             .map_or(0.0, |(x, y, blur, _)| x.abs().max(y.abs()) + blur);
         let glow = self.glow.map_or(0.0, |(radius, _)| radius);
+        let curve = self.curve.map_or(0.0, |(_, extent)| extent);
         outline
             .max(shadow)
             .max(glow)
             .max(background.map_or(0.0, TextBox::margin))
             .ceil()
+            + curve.ceil()
     }
 }
 impl Default for TextFace<'_> {
@@ -159,6 +167,7 @@ impl Default for TextFace<'_> {
             outline: None,
             shadow: None,
             glow: None,
+            curve: None,
         }
     }
 }
@@ -225,7 +234,7 @@ pub(super) fn raster_text(key: &TextKey, hooks: &dyn ExecutionHooks) -> Result<I
         }
     };
     check(hooks)?;
-    let image = text::render(
+    let image = text::render_on_arc(
         &layout,
         text::Canvas {
             width: w,
@@ -261,6 +270,8 @@ pub(super) fn raster_text(key: &TextKey, hooks: &dyn ExecutionHooks) -> Result<I
                 TextDecoration::LineThrough => text::Decoration::LineThrough,
             },
         },
+        key.curve
+            .map_or(0.0, |(percent, _)| f32::from_bits(percent)),
     )?;
     Image::from_rgba8(w, h, &image.pixels, true, 13, hooks)
 }

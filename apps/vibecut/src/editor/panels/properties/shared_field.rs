@@ -38,6 +38,7 @@ pub fn shared_fields(project: &Project, selection: &BTreeSet<ItemId>) -> Vec<Sha
         "text_stroke",
         "text_shadow",
         "text_glow",
+        "text_curve",
     ]
     .into_iter()
     .filter_map(|id| {
@@ -82,6 +83,10 @@ pub fn shared_fields(project: &Project, selection: &BTreeSet<ItemId>) -> Vec<Sha
                         .map_or_else(|| "none".to_owned(), |shadow| hex(shadow.color)),
                 ),
                 ("text_glow", ItemParams::Text(p)) => Some(p.glow.to_string()),
+                ("text_curve", ItemParams::Text(p)) => Some(
+                    p.curve
+                        .map_or_else(|| "none".to_owned(), |amount| amount.to_string()),
+                ),
                 _ => None,
             })
             .collect();
@@ -182,6 +187,11 @@ mod tests {
                     SharedField {
                         id: "text_glow",
                         value: Some("false".into()),
+                        compatible: count
+                    },
+                    SharedField {
+                        id: "text_curve",
+                        value: Some("none".into()),
                         compatible: count
                     }
                 ]

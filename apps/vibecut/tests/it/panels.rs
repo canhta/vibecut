@@ -4281,6 +4281,34 @@ fn text_tab_edits_every_style_field_one_undo_step_each_and_shows_effects() {
         -project::TextShadow::MAX_ANGLE
     );
 
+    // Curve: the switch turns the bend on at its starting amount, the amount row writes one
+    // undoable value, hostile entries clamp, and the switch off clears it.
+    assert_eq!(text_params(&harness, text).curve, None);
+    click(&mut harness, "inspector.text_curve");
+    assert_eq!(
+        text_params(&harness, text).curve,
+        Some(project::TextParams::DEFAULT_CURVE)
+    );
+    let before = harness.state().session.project().clone();
+    enter(&mut harness, "inspector.text_curve_amount", "-30");
+    assert_eq!(text_params(&harness, text).curve, Some(-30.0));
+    harness.state_mut().session.undo().unwrap();
+    assert_eq!(harness.state().session.project(), &before, "curve undo");
+    harness.state_mut().session.redo().unwrap();
+    harness.run_steps(2);
+    enter(&mut harness, "inspector.text_curve_amount", "999");
+    assert_eq!(
+        text_params(&harness, text).curve,
+        Some(project::TextParams::MAX_CURVE)
+    );
+    enter(&mut harness, "inspector.text_curve_amount", "-999");
+    assert_eq!(
+        text_params(&harness, text).curve,
+        Some(-project::TextParams::MAX_CURVE)
+    );
+    click(&mut harness, "inspector.text_curve");
+    assert_eq!(text_params(&harness, text).curve, None);
+
     // Hostile entries clamp to the field's range instead of reaching the model.
     enter(&mut harness, "inspector.text_background_padding_x", "9999");
     assert_eq!(

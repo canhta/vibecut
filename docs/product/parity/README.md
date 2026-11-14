@@ -54,7 +54,7 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 | [Adjustment](catalogues.md#adjustment-adj) | 6 | 2 | 3 | 0 | 0 | 1 | 0 | 1 | 3 | 2 | 0 |
 | [Video clip](properties-video.md#video-clip-pvid) | 52 | 31 | 8 | 7 | 0 | 3 | 3 | 6 | 3 | 33 | 6 |
 | [Audio clip](properties-other.md#audio-clip-paud) | 17 | 8 | 1 | 7 | 0 | 1 | 0 | 3 | 1 | 6 | 7 |
-| [Text item](properties-other.md#text-item-ptext) | 31 | 17 | 8 | 5 | 0 | 0 | 1 | 3 | 7 | 15 | 5 |
+| [Text item](properties-other.md#text-item-ptext) | 31 | 18 | 8 | 4 | 0 | 0 | 1 | 3 | 7 | 16 | 4 |
 | [Caption item](properties-other.md#caption-item-pcap) | 8 | 1 | 4 | 2 | 0 | 1 | 0 | 0 | 3 | 3 | 2 |
 | [Sticker, effect, filter and adjustment items](properties-other.md#sticker-effect-filter-and-adjustment-items-pother) | 17 | 7 | 6 | 3 | 0 | 1 | 0 | 0 | 5 | 9 | 3 |
 | [Timeline](timeline.md#timeline-tl) | 95 | 45 | 12 | 24 | 2 | 10 | 2 | 13 | 5 | 46 | 5 |

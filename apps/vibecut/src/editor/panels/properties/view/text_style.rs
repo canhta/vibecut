@@ -64,6 +64,15 @@ const STROKE_THICKNESS: ScrubSpec = effect_spec(
     project::TextStroke::MAX_THICKNESS as f64,
     "",
 );
+/// Curve's bend amount, whole percent steps over the model's range. Open: the reference shows
+/// no amount control until the section is on, so the range and unit are ours.
+const CURVE_AMOUNT: ScrubSpec = effect_spec(
+    "text_curve_amount",
+    Text::TextCurveAmount,
+    -(project::TextParams::MAX_CURVE as f64),
+    project::TextParams::MAX_CURVE as f64,
+    "%",
+);
 const SHADOW_OPACITY: ScrubSpec = effect_spec(
     "text_shadow_opacity",
     Text::Opacity,
@@ -408,6 +417,15 @@ impl Panel<'_, '_> {
                 );
             }
         }
+        if let Some(curve) = field("text_curve") {
+            self.text_effect_toggle(
+                ui,
+                curve,
+                Text::TextCurve,
+                "inspector.text_curve",
+                &project::TextParams::DEFAULT_CURVE.to_string(),
+            );
+        }
         if let Some(glow) = field("text_glow") {
             let mut on = glow.value.as_deref() == Some("true");
             let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
@@ -476,6 +494,10 @@ impl Panel<'_, '_> {
                 &[(OFFSET_X, Some("X")), (OFFSET_Y, Some("Y"))],
             );
             self.scrub_field(ui, item, RADIUS);
+        }
+        // The bend amount exists while Curve is on.
+        if params.curve.is_some() {
+            self.scrub_field(ui, item, CURVE_AMOUNT);
         }
         // The outline and shadow geometry rows exist while their toggles are on.
         if params.stroke.is_some() {

@@ -1089,6 +1089,7 @@ fn text_style_patches_update_one_field_and_validate() {
             angle: 130.0,
         })),
         ItemParamPatch::TextGlow(true),
+        ItemParamPatch::TextCurve(Some(-40.0)),
     ] {
         let before = s.project().clone();
         assert!(
@@ -1147,6 +1148,25 @@ fn text_style_patches_update_one_field_and_validate() {
     assert_eq!((shadow.opacity, shadow.blurriness), (80.0, 20.0));
     assert_eq!((shadow.distance, shadow.angle), (8.0, 130.0));
     assert!(p.glow);
+    assert_eq!(p.curve, Some(-40.0));
+    // Typed text reads `none` as off and clamps beyond the range; the patch itself refuses it.
+    assert_eq!(
+        ItemParamPatch::parse("text_curve", "none"),
+        Ok(ItemParamPatch::TextCurve(None))
+    );
+    assert_eq!(
+        ItemParamPatch::parse("text_curve", "250"),
+        Ok(ItemParamPatch::TextCurve(Some(
+            project::TextParams::MAX_CURVE
+        )))
+    );
+    assert!(
+        s.apply(Command::SetItemParamMany {
+            items: vec![item],
+            patch: ItemParamPatch::TextCurve(Some(100.5)),
+        })
+        .is_err()
+    );
 
     let after = s.project().clone();
     for patch in [
