@@ -6,7 +6,7 @@ Contributions are [GPL-3.0-only](../../LICENSE). Admitted dependency licences: M
 
 ## FFmpeg distribution
 
-Build dynamic FFmpeg with nonfree and automatic external-library discovery off. Linux enables the GPL build and libx264 so software H.264 export works without a GPU; macOS and Windows keep their platform encoders. Admitted extras: libvpx, libopus and dav1d (BSD), zlib (Zlib, statically linked so PNG packets decode), libx264 (GPL-3.0), libmp3lame for encoding only (its GPL mpglib excluded). Any other component needs a licence review.
+Build dynamic FFmpeg with nonfree and automatic external-library discovery off. Linux enables the GPL build and libx264 so software H.264 export works without a GPU; macOS and Windows keep their platform encoders. Admitted extras: libvpx, libopus and dav1d (BSD), zlib (Zlib, statically linked so PNG packets decode), libx264 (GPL-3.0), libmp3lame for encoding only (its GPL mpglib excluded). Audio export formats: AAC and the FLAC and 16-bit PCM encoders are FFmpeg built-ins (LGPL, no extra library), Opus is libopus, and MP3 is the recipe's static LAME 3.100 built with `--disable-frontend --disable-decoder`, its COPYING shipped in the compliance texts and its source archive with the corresponding sources. Any other component needs a licence review.
 
 Every shipped bundle carries the resolved build recipe, source identity and hashes, licence texts and notices, and the corresponding FFmpeg source (a link to a moving branch is not enough). App docs name FFmpeg and its licence (LGPL where used, GPL-3.0 on Linux); our terms allow reverse engineering for debugging and replacing the libraries.
 

@@ -237,7 +237,7 @@ mod tests {
                 )
                 .expect("build record");
                 let mut receipt = String::new();
-                for name in ["ffmpeg", "opus", "libvpx", "zlib"] {
+                for name in ["ffmpeg", "opus", "libvpx", "lame", "zlib"] {
                     let version = if mismatch == "sources" && arch == "intel" && name == "ffmpeg" {
                         "2.0"
                     } else {

@@ -24,4 +24,4 @@ Window boundaries are quantized to the 16 kHz output sample grid. Each `SpeechWi
 
 `AudioResampler` performs explicit continuous-span rate, layout and sample-format conversion. It admits output rates of 8-192 kHz and up to 24x expansion, keeps the source origin and counts output samples in integer time; drain with `flush`. `convert` returns bounded frames and drains buffered output without finalizing the filter. A discontinuity requires a new converter.
 
-`AudioEncoder` keeps the source rate, converts sample format and uses a bounded FFmpeg FIFO for AAC/Opus frame sizes. FFmpeg owns codec delay and final padding.
+`AudioEncoder` keeps the source rate, converts sample format and uses a bounded FFmpeg FIFO for the AAC, Opus, MP3, FLAC and PCM frame sizes. FFmpeg owns codec delay and final padding.

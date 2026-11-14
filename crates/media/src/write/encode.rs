@@ -146,14 +146,71 @@ fn video_open_error(last: Option<ff::Error>, software_h264: bool, webm: bool) ->
     }
 }
 
+/// The audio codec an audio stream is encoded with. Each container admits one:
+/// AAC in MP4, Opus in WebM, and MP3, 16-bit PCM and FLAC in their own
+/// audio-only containers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AudioCodec {
+    Aac,
+    Opus,
+    Mp3,
+    /// Signed 16-bit little-endian PCM, written to WAV.
+    Pcm,
+    Flac,
+}
+impl AudioCodec {
+    /// The codec a container carries, or `None` for a container with no audio
+    /// codec of ours (MOV and GIF).
+    pub fn for_container(container: crate::Container) -> Option<Self> {
+        match container {
+            crate::Container::Mp4 => Some(Self::Aac),
+            crate::Container::WebM => Some(Self::Opus),
+            crate::Container::Mp3 => Some(Self::Mp3),
+            crate::Container::Wav => Some(Self::Pcm),
+            crate::Container::Flac => Some(Self::Flac),
+            crate::Container::Mov | crate::Container::Gif => None,
+        }
+    }
+    fn encoder_name(self) -> &'static str {
+        match self {
+            Self::Aac => "aac",
+            Self::Opus => "libopus",
+            Self::Mp3 => "libmp3lame",
+            Self::Pcm => "pcm_s16le",
+            Self::Flac => "flac",
+        }
+    }
+    fn missing(self) -> &'static str {
+        match self {
+            Self::Aac => "AAC encoder unavailable in this FFmpeg build",
+            Self::Opus => "Opus encoder unavailable in this FFmpeg build",
+            Self::Mp3 => "MP3 encoder unavailable in this FFmpeg build",
+            Self::Pcm => "PCM encoder unavailable in this FFmpeg build",
+            Self::Flac => "FLAC encoder unavailable in this FFmpeg build",
+        }
+    }
+    /// The sample layout the encoder opens with: the lossy encoders take 32-bit
+    /// float (Opus packed, the others planar), PCM and FLAC take 16-bit packed.
+    fn sample_format(self) -> ff::format::Sample {
+        match self {
+            Self::Aac | Self::Mp3 => ff::format::Sample::F32(ff::format::sample::Type::Planar),
+            Self::Opus => ff::format::Sample::F32(ff::format::sample::Type::Packed),
+            Self::Pcm | Self::Flac => ff::format::Sample::I16(ff::format::sample::Type::Packed),
+        }
+    }
+    /// Whether the registry holds this codec's encoder.
+    fn available(self) -> bool {
+        ff::encoder::find_by_name(self.encoder_name()).is_some()
+    }
+}
+
+/// PCM has no fixed frame size; it encodes whatever block the fifo hands it.
+const PCM_BLOCK_SAMPLES: usize = 4096;
+
 /// Registry lookup for the one audio encoder a container admits. A missing
 /// encoder names the absent capability; there is no fallback pair.
-fn audio_encoder(name: &'static str, webm: bool) -> Result<ff::Codec> {
-    ff::encoder::find_by_name(name).ok_or(MediaError::Unsupported(if webm {
-        "Opus encoder unavailable in this FFmpeg build"
-    } else {
-        "AAC encoder unavailable in this FFmpeg build"
-    }))
+fn audio_encoder(codec: AudioCodec) -> Result<ff::Codec> {
+    ff::encoder::find_by_name(codec.encoder_name()).ok_or(MediaError::Unsupported(codec.missing()))
 }
 
 /// Encoders this host can open for MP4, in preference order.
@@ -189,8 +246,12 @@ pub fn h264_encoder_available() -> bool {
 
 /// Registry admission for the built-in video/audio pairs and the silent GIF
 /// encoder; opening still reports device-specific failures through the normal
-/// encoder error path.
+/// encoder error path. The audio-only containers carry no video and are
+/// admitted by [`audio_export_container_available`].
 pub fn export_container_available(container: crate::Container) -> bool {
+    if container.is_audio_only() {
+        return false;
+    }
     if matches!(container, crate::Container::Gif) {
         return ff::encoder::find_by_name("gif").is_some();
     }
@@ -198,14 +259,14 @@ pub fn export_container_available(container: crate::Container) -> bool {
     video_candidates(webm)
         .iter()
         .any(|(name, _)| ff::encoder::find_by_name(name).is_some())
-        && ff::encoder::find_by_name(if webm { "libopus" } else { "aac" }).is_some()
+        && AudioCodec::for_container(container).is_some_and(AudioCodec::available)
 }
 
-/// Registry admission for audio-only exports: AAC in MP4 or Opus in WebM, the
-/// same audio encoders the video pairs use.
+/// Registry admission for audio-only exports: the container's audio encoder
+/// (AAC in MP4, Opus in WebM, libmp3lame, 16-bit PCM or FLAC), the same
+/// encoders the video pairs use where they overlap.
 pub fn audio_export_container_available(container: crate::Container) -> bool {
-    let webm = matches!(container, crate::Container::WebM);
-    ff::encoder::find_by_name(if webm { "libopus" } else { "aac" }).is_some()
+    AudioCodec::for_container(container).is_some_and(AudioCodec::available)
 }
 
 /// Drains every packet the encoder has ready under the retained-byte bound.
@@ -539,8 +600,9 @@ impl VideoEncoder {
 pub struct AudioEncoderSettings {
     pub sample_rate: u32,
     pub channels: u16,
+    /// Target for the lossy codecs; PCM and FLAC are lossless and ignore it.
     pub bit_rate: usize,
-    pub webm: bool,
+    pub codec: AudioCodec,
 }
 impl AudioEncoderSettings {
     pub fn aac(sample_rate: u32, channels: u16) -> Self {
@@ -548,7 +610,7 @@ impl AudioEncoderSettings {
             sample_rate,
             channels,
             bit_rate: usize::from(channels) * 128_000,
-            webm: false,
+            codec: AudioCodec::Aac,
         }
     }
 }
@@ -560,6 +622,8 @@ pub struct AudioEncoder {
     converter: Option<ff::software::resampling::Context>,
     next_pts: Option<i64>,
     input_end: Option<i64>,
+    /// Samples per encoder frame: the codec's fixed size, or the PCM block.
+    block: usize,
 }
 impl AudioEncoder {
     pub fn new(settings: AudioEncoderSettings) -> Result<Self> {
@@ -571,26 +635,32 @@ impl AudioEncoder {
         {
             return Err(MediaError::Invalid("audio encoder settings"));
         }
-        let name = if settings.webm { "libopus" } else { "aac" };
-        let codec = audio_encoder(name, settings.webm)?;
+        // LAME encodes only the MPEG-1/2/2.5 Layer III sample rates.
+        if settings.codec == AudioCodec::Mp3
+            && !matches!(
+                settings.sample_rate,
+                8_000 | 11_025 | 12_000 | 16_000 | 22_050 | 24_000 | 32_000 | 44_100 | 48_000
+            )
+        {
+            return Err(MediaError::Unsupported("MP3 sample rate"));
+        }
+        let codec = audio_encoder(settings.codec)?;
         let mut encoder = ff::codec::context::Context::new_with_codec(codec)
             .encoder()
             .audio()
             .map_err(error("create audio encoder"))?;
         encoder.set_rate(settings.sample_rate as i32);
         encoder.set_channel_layout(ff::ChannelLayout::default(i32::from(settings.channels)));
-        encoder.set_format(ff::format::Sample::F32(if settings.webm {
-            ff::format::sample::Type::Packed
-        } else {
-            ff::format::sample::Type::Planar
-        }));
+        encoder.set_format(settings.codec.sample_format());
         encoder.set_bit_rate(settings.bit_rate);
         encoder.set_time_base((1, settings.sample_rate as i32));
         encoder.set_flags(ff::codec::Flags::GLOBAL_HEADER);
         let encoder = encoder.open().map_err(error("open audio encoder"))?;
-        if encoder.frame_size() == 0 || encoder.frame_size() > 65_536 {
-            return Err(MediaError::Unsupported("audio encoder frame size"));
-        }
+        let block = match (encoder.frame_size(), settings.codec) {
+            (0, AudioCodec::Pcm) => PCM_BLOCK_SAMPLES,
+            (size @ 1..=65_536, _) => size as usize,
+            _ => return Err(MediaError::Unsupported("audio encoder frame size")),
+        };
         let fifo = ffi::AudioFifo::new(encoder.format(), encoder.channel_layout(), encoder.rate())?;
         Ok(Self {
             encoder,
@@ -600,6 +670,7 @@ impl AudioEncoder {
             converter: None,
             next_pts: None,
             input_end: None,
+            block,
         })
     }
     pub fn time_base(&self) -> TimeBase {
@@ -687,7 +758,7 @@ impl AudioEncoder {
     }
     fn drain_frames(&mut self, last: bool) -> Result<Vec<Packet>> {
         let mut packets = Vec::new();
-        let frame_size = self.encoder.frame_size() as usize;
+        let frame_size = self.block;
         while self.fifo.samples() >= frame_size || (last && self.fifo.samples() > 0) {
             let count = self.fifo.samples().min(frame_size);
             let mut frame = self.fifo.pop(count)?;
@@ -896,14 +967,15 @@ mod tests {
             MediaError::Unsupported("VP9 encoder unavailable in this FFmpeg build")
         ));
         // The audio registry lookup fails with the container's own codec name.
-        assert!(matches!(
-            audio_encoder("vibecut-no-such-encoder", true),
-            Err(MediaError::Unsupported(message)) if message.contains("Opus")
-        ));
-        assert!(matches!(
-            audio_encoder("vibecut-no-such-encoder", false),
-            Err(MediaError::Unsupported(message)) if message.contains("AAC")
-        ));
+        for (codec, name) in [
+            (AudioCodec::Aac, "AAC"),
+            (AudioCodec::Opus, "Opus"),
+            (AudioCodec::Mp3, "MP3"),
+            (AudioCodec::Pcm, "PCM"),
+            (AudioCodec::Flac, "FLAC"),
+        ] {
+            assert!(codec.missing().contains(name));
+        }
         // Capability admission is the registry itself, not a platform adapter.
         init().unwrap();
         let vp9 = ff::encoder::find_by_name("libvpx-vp9").is_some();
@@ -915,10 +987,23 @@ mod tests {
         assert_eq!(video_candidates(true), &[("libvpx-vp9", true)][..]);
         if !opus {
             assert!(matches!(
-                audio_encoder("libopus", true),
+                audio_encoder(AudioCodec::Opus),
                 Err(MediaError::Unsupported(message)) if message.contains("Opus")
             ));
         }
+        // Each audio-only container is admitted by exactly its own encoder.
+        for (container, name) in [
+            (crate::Container::Mp3, "libmp3lame"),
+            (crate::Container::Wav, "pcm_s16le"),
+            (crate::Container::Flac, "flac"),
+        ] {
+            assert_eq!(
+                audio_export_container_available(container),
+                ff::encoder::find_by_name(name).is_some()
+            );
+            assert!(!export_container_available(container));
+        }
+        assert_eq!(AudioCodec::for_container(crate::Container::Mov), None);
         if !vp9 {
             assert!(matches!(
                 video_open_error(None, false, true),

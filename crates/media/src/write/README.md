@@ -6,7 +6,7 @@ Frame encoding and container writing for an export or a preview proxy.
 
 `VideoEncoder` accepts constant-rate frames on the requested output grid with explicit canvas, rate, bitrate, quality and color, as H.264 or VP9. It rejects missing or discontinuous output timing. Hardware frames pass directly to an encoder that keeps the same frame pool; otherwise transfer and conversion happen explicitly in the encoder. CPU recovery frames are converted to the retained pool's software format and uploaded through FFmpeg. A failed pool allocation or upload is a typed native error; encoding is never reopened midstream against stale mux parameters. Conversion uses frame-aware swscale with Lanczos, accurate rounding and frame color and chroma metadata.
 
-`VideoEncoderSettings.profile` selects automatic, Main or High for H.264 through the encoder's `profile` option; VP9 refuses explicit H.264 profiles. `export_container_available` admits only installed H.264/AAC or VP9/Opus encoder pairs. Device-specific open failures keep the typed encoder failure rather than changing the requested profile.
+`VideoEncoderSettings.profile` selects automatic, Main or High for H.264 through the encoder's `profile` option; VP9 refuses explicit H.264 profiles. `export_container_available` admits only installed H.264/AAC or VP9/Opus encoder pairs; `audio_export_container_available` admits the audio-only outputs by the registry: AAC (MP4), Opus (WebM), `libmp3lame` (MP3), `pcm_s16le` (WAV) and `flac`. Device-specific open failures keep the typed encoder failure rather than changing the requested profile.
 
 Input formats and codecs come from the resolved FFmpeg build. The development recipe includes built-in decoders, static zlib for PNG, native AAC, libvpx and libopus. dav1d, LAME and distribution requirements are owned by the [open-source policy](../../../../docs/engineering/open-source.md#ffmpeg-distribution). Missing encoders or decoders return typed capability failures. AV1 availability is conditional; no AV1 software decoder is promised.
 
@@ -38,9 +38,13 @@ Bounds (typed `GifLimit`, wrapped as `MediaError::Gif`, refused before an encode
 
 ## Muxing
 
-`Muxer` writes MP4, MOV, WebM and GIF over a seekable `MuxSink` (plain File or the project's bounded streaming writer), accepts stream-copy or encoded parameters, rescales timestamps and propagates trailer and fsync errors. Write to a temporary output and promote it only after successful `finish`; render and engine own cancellation, final-file replacement and restart policy. Packet buffers are shared by reference and only metadata is rescaled into the final mux time base. FFmpeg owns codec padding and edit-list creation.
+`Muxer` writes MP4, MOV, WebM, GIF and the audio-only MP3, WAV and FLAC over a seekable `MuxSink` (plain File or the project's bounded streaming writer), accepts stream-copy or encoded parameters, rescales timestamps and propagates trailer and fsync errors. Write to a temporary output and promote it only after successful `finish`; render and engine own cancellation, final-file replacement and restart policy. Packet buffers are shared by reference and only metadata is rescaled into the final mux time base. FFmpeg owns codec padding and edit-list creation.
 
-`Container::from_extension` resolves MP4, MOV, WebM and GIF case-insensitively for CLI and control requests; render takes an explicit container setting.
+`Container::from_extension` resolves MP4, MOV, WebM, GIF, MP3, WAV and FLAC case-insensitively for CLI and control requests; render takes an explicit container setting.
+
+## Audio codecs
+
+`AudioCodec` names the audio encoder a container carries (`for_container`: MP4 AAC, WebM Opus, MP3 `libmp3lame`, WAV `pcm_s16le`, FLAC `flac`; MOV and GIF none) and `AudioEncoderSettings::codec` selects it. The lossy encoders take 32-bit float (Opus packed, AAC and MP3 planar) and the 192 kb/s target; PCM and FLAC take 16-bit packed samples, convert from the float mix through the same resampler and ignore the bit rate. PCM has no frame size, so it encodes 4096-sample blocks. MP3 refuses a sample rate outside the Layer III set (`Unsupported("MP3 sample rate")`) and its channel count is the caller's mono or stereo. Output depth is 16 bit, ours and unmeasured against the reference; a deeper WAV or FLAC would change this table, not the container code. Tests: `audio_only_containers_encode_and_probe_as_their_codec` in `tests/it/pipeline.rs` probes codec, sample rate, channels and duration of each container.
 
 ## Audio file writer
 

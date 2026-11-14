@@ -1218,7 +1218,14 @@ fn encoded_color_patch_uses_same_compositor_and_has_valid_audio_video() {
     for (container, extension, codec) in [
         (media::Container::Mp4, "m4a", "aac"),
         (media::Container::WebM, "webm", "opus"),
+        (media::Container::Mp3, "mp3", "mp3"),
+        (media::Container::Wav, "wav", "pcm_s16le"),
+        (media::Container::Flac, "flac", "flac"),
     ] {
+        // The registry decides: a build without libmp3lame has no MP3 row.
+        if !media::audio_export_container_available(container) {
+            continue;
+        }
         let path = root().join(format!("audio-only.{extension}"));
         let mut s = ExportSettings::from_project(&p);
         s.audio_only = true;
@@ -2202,4 +2209,70 @@ fn a_covering_clip_paints_no_background() {
         let image = render_split(&split_project(320, 180, background, true), &hooks);
         assert_eq!(image.pixels(), plain.pixels());
     }
+}
+
+#[test]
+fn audio_containers_refuse_video_export_and_estimate_their_own_size() {
+    let p = solid_project(1, 128, 96, [20, 30, 40, 255]);
+    let range = TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap();
+    for container in [
+        media::Container::Mp3,
+        media::Container::Wav,
+        media::Container::Flac,
+    ] {
+        let mut settings = ExportSettings::from_project(&p);
+        settings.container = container;
+        settings.overwrite = project::atomic::Overwrite::Replace;
+        let path = root().join("audio-container-video.bin");
+        assert!(matches!(
+            export(&p, range, &settings, &path, &Hooks::default()),
+            Err(Error::Unsupported("audio container for video export"))
+        ));
+        assert!(!path.exists());
+        assert!(matches!(
+            render::OutputOptions::default().apply(&mut settings),
+            Err(Error::Unsupported("audio container for video export"))
+        ));
+        let audio = render::OutputOptions {
+            audio_only: true,
+            ..render::OutputOptions::default()
+        };
+        audio.apply(&mut settings).unwrap();
+        assert!(settings.audio_only);
+    }
+    for (extension, accepted) in [
+        ("mp3", media::Container::Mp3),
+        ("WAV", media::Container::Wav),
+        ("flac", media::Container::Flac),
+    ] {
+        let path = std::path::PathBuf::from(format!("out.{extension}"));
+        assert_eq!(
+            render::OutputOptions::container_for_path(&path, true).unwrap(),
+            accepted
+        );
+        assert!(matches!(
+            render::OutputOptions::container_for_path(&path, false),
+            Err(Error::Unsupported("audio container for video export"))
+        ));
+    }
+    // WAV is 16-bit PCM at the project rate; FLAC is estimated at that size; MP3 follows
+    // the encoder's target rate.
+    let mut settings = ExportSettings::from_project(&p);
+    settings.audio_only = true;
+    settings.channels = 2;
+    settings.container = media::Container::Wav;
+    assert_eq!(
+        settings.estimated_bytes(10.0, 48_000),
+        10.0 * 48_000.0 * 2.0 * 2.0
+    );
+    settings.container = media::Container::Flac;
+    assert_eq!(
+        settings.estimated_bytes(10.0, 44_100),
+        10.0 * 44_100.0 * 2.0 * 2.0
+    );
+    settings.container = media::Container::Mp3;
+    assert_eq!(
+        settings.estimated_bytes(10.0, 48_000),
+        10.0 * 192_000.0 / 8.0
+    );
 }

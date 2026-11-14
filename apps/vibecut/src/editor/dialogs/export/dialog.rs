@@ -29,6 +29,12 @@ pub enum ExportFormat {
     M4a,
     /// Audio only: Opus in a WebM container.
     AudioWebm,
+    /// Audio only: MP3.
+    Mp3,
+    /// Audio only: 16-bit PCM in a WAV file.
+    Wav,
+    /// Audio only: FLAC.
+    Flac,
     /// Silent animated GIF.
     Gif,
     /// Silent PNG image sequence: a directory of `<name>_%05d.png` frames.
@@ -41,6 +47,9 @@ impl ExportFormat {
             Self::Mov => "mov",
             Self::Webm | Self::AudioWebm => "webm",
             Self::M4a => "m4a",
+            Self::Mp3 => "mp3",
+            Self::Wav => "wav",
+            Self::Flac => "flac",
             Self::Gif => "gif",
             // A directory, not a file: it has no extension.
             Self::PngSequence => "",
@@ -65,12 +74,18 @@ impl ExportFormat {
             Self::Mp4 | Self::M4a => media::Container::Mp4,
             Self::Mov => media::Container::Mov,
             Self::Webm | Self::AudioWebm => media::Container::WebM,
+            Self::Mp3 => media::Container::Mp3,
+            Self::Wav => media::Container::Wav,
+            Self::Flac => media::Container::Flac,
             Self::Gif => media::Container::Gif,
             Self::PngSequence => media::Container::Mp4,
         }
     }
     pub fn audio_only(self) -> bool {
-        matches!(self, Self::M4a | Self::AudioWebm)
+        matches!(
+            self,
+            Self::M4a | Self::AudioWebm | Self::Mp3 | Self::Wav | Self::Flac
+        )
     }
     /// Why the video encoder rows (bit rate, codec and H.264 profile) do not apply to
     /// this format, or `None` when they do. Silent image outputs and audio-only output
@@ -79,7 +94,9 @@ impl ExportFormat {
         match self {
             Self::Gif => Some(Text::ExportNotForGif),
             Self::PngSequence => Some(Text::ExportNotForSequence),
-            Self::M4a | Self::AudioWebm => Some(Text::ExportNotForAudio),
+            Self::M4a | Self::AudioWebm | Self::Mp3 | Self::Wav | Self::Flac => {
+                Some(Text::ExportNotForAudio)
+            }
             Self::Mp4 | Self::Mov | Self::Webm => None,
         }
     }
@@ -93,6 +110,9 @@ impl ExportFormat {
             Self::Webm => Text::ExportWebm,
             Self::M4a => Text::ExportAudioM4a,
             Self::AudioWebm => Text::ExportAudioWebm,
+            Self::Mp3 => Text::ExportAudioMp3,
+            Self::Wav => Text::ExportAudioWav,
+            Self::Flac => Text::ExportAudioFlac,
             Self::Gif => Text::ExportGif,
             Self::PngSequence => Text::ExportPngSequence,
         }

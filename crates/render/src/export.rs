@@ -47,7 +47,8 @@ pub enum HdrPolicy {
 pub struct ExportSettings {
     pub render: RenderSettings,
     pub fps: FrameRate,
-    /// Output container; MP4/MOV encode H.264 + AAC, WebM encodes VP9 + Opus and
+    /// Output container; MP4/MOV encode H.264 + AAC, WebM encodes VP9 + Opus, MP3, WAV
+    /// (16-bit PCM) and FLAC are audio-only (`audio_only` required) and
     /// GIF encodes silent palette video.
     pub container: Container,
     /// Palette choices used when `container` is GIF.
@@ -142,6 +143,9 @@ pub fn export_with_sources(
     check(hooks)?;
     if settings.audio_only && !settings.include_audio {
         return Err(Error::Invalid("audio-only export without audio"));
+    }
+    if settings.container.is_audio_only() && !settings.audio_only {
+        return Err(Error::Unsupported("audio container for video export"));
     }
     if settings.audio_only && settings.mode == ExportMode::StreamCopy {
         return Err(Error::Unsupported(

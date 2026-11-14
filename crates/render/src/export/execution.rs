@@ -6,8 +6,8 @@ use crate::{
     Unavailable, check,
 };
 use media::{
-    AssetId, AudioEncoder, AudioEncoderSettings, Container, Muxer, PacketReader, StreamKind,
-    VideoEncoder, VideoEncoderSettings,
+    AssetId, AudioCodec, AudioEncoder, AudioEncoderSettings, Container, Muxer, PacketReader,
+    StreamKind, VideoEncoder, VideoEncoderSettings,
 };
 use project::{AudioSource, ItemParams, Project};
 use std::collections::{BTreeMap, BTreeSet};
@@ -180,8 +180,9 @@ pub(super) fn copy_plan<'a>(
             matches!(video.codec.as_str(), "h264" | "hevc" | "mpeg4")
         }
         Container::WebM => matches!(video.codec.as_str(), "vp8" | "vp9" | "av1"),
-        // A GIF is always re-encoded from rendered frames.
-        Container::Gif => false,
+        // A GIF is always re-encoded from rendered frames, and the audio-only
+        // containers have no video stream to copy.
+        Container::Gif | Container::Mp3 | Container::Wav | Container::Flac => false,
     };
     if !compatible
         || shape.width != settings.render.width
@@ -438,7 +439,9 @@ pub(super) fn encoded_export(
 fn audio_encoder_settings(project: &Project, settings: &ExportSettings) -> AudioEncoderSettings {
     AudioEncoderSettings {
         bit_rate: super::estimate::AUDIO_BIT_RATE,
-        webm: matches!(settings.container, Container::WebM),
+        // MOV and GIF carry no audio codec of ours; admission refuses them before
+        // an encoder is built, and AAC is the container-less default.
+        codec: AudioCodec::for_container(settings.container).unwrap_or(AudioCodec::Aac),
         ..AudioEncoderSettings::aac(project.data().settings.audio_sample_rate, settings.channels)
     }
 }

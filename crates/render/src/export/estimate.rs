@@ -1,5 +1,6 @@
 //! The size an export is expected to write, from the settings the encoder will receive.
 use super::ExportSettings;
+use media::Container;
 
 /// The audio encoder's bit rate in bits per second; `execution` hands this to the encoder.
 pub(super) const AUDIO_BIT_RATE: usize = 192_000;
@@ -26,16 +27,29 @@ impl ExportSettings {
         model.max(self.bit_rate as f64)
     }
 
+    /// The audio track's bit rate in bits per second at `sample_rate`. WAV is exact
+    /// (16-bit PCM). FLAC is lossless and its size depends on the signal, so it is
+    /// estimated at its PCM size, an upper bound. The lossy codecs follow the target
+    /// the encoder receives.
+    pub fn estimated_audio_bit_rate(&self, sample_rate: u32) -> f64 {
+        match self.container {
+            Container::Wav | Container::Flac => {
+                f64::from(sample_rate) * f64::from(self.channels) * 16.0
+            }
+            _ => AUDIO_BIT_RATE as f64,
+        }
+    }
+
     /// Expected output bytes for `seconds` of output: video (none for audio-only output)
-    /// plus the audio track when it is included.
-    pub fn estimated_bytes(&self, seconds: f64) -> f64 {
+    /// plus the audio track when it is included, at the project's `sample_rate`.
+    pub fn estimated_bytes(&self, seconds: f64, sample_rate: u32) -> f64 {
         let video = if self.audio_only {
             0.0
         } else {
             self.estimated_video_bit_rate()
         };
         let audio = if self.include_audio || self.audio_only {
-            AUDIO_BIT_RATE as f64
+            self.estimated_audio_bit_rate(sample_rate)
         } else {
             0.0
         };

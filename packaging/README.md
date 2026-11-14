@@ -53,7 +53,7 @@ The default smoke opens no window. `--signed` also checks the app signature, Gat
 
 ## Library replacement and recovery
 
-FFmpeg is LGPL-2.1-or-later on macOS and Windows and GPL-3.0 with libx264 on Linux; reverse engineering to debug library changes is permitted. Included FFmpeg/Opus/libvpx/zlib archives match the verified recipe, receipt and patches. Extract `.archive` files with `tar -xf` and rebuild ABI-compatible shared libraries in an isolated prefix. No app rebuild is required. Keep the original libraries to undo replacement and never modify the only copy of an installed app.
+FFmpeg is LGPL-2.1-or-later on macOS and Windows and GPL-3.0 with libx264 on Linux; reverse engineering to debug library changes is permitted. Included FFmpeg/Opus/libvpx/LAME/zlib archives match the verified recipe, receipt and patches. Extract `.archive` files with `tar -xf` and rebuild ABI-compatible shared libraries in an isolated prefix. No app rebuild is required. Keep the original libraries to undo replacement and never modify the only copy of an installed app.
 
 On macOS, copy the app, replace architecture/ABI-compatible dylibs under `Contents/Frameworks`, preserve `@rpath/<filename>` IDs and `@loader_path`, and re-sign inside out with an ad-hoc identity. `cargo xtask dist replace --app-copy COPY.app --libraries PREFIX/lib` does the replacement, relocation and re-signing for original runtime filenames. The copy loses its notarized identity. Rerun the smoke and inspect loaded paths. On Windows close the app, back up and replace compatible DLLs beside both EXEs, then rerun smoke and module inspection; restore the backups to recover.
 

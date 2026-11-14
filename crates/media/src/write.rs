@@ -9,7 +9,7 @@ mod quantize;
 
 pub use audio_file::{AUDIO_FILE_BLOCK, AudioFileWriter};
 pub use encode::{
-    AudioEncoder, AudioEncoderSettings, EncodePreference, H264Profile, VideoEncoder,
+    AudioCodec, AudioEncoder, AudioEncoderSettings, EncodePreference, H264Profile, VideoEncoder,
     VideoEncoderSettings, audio_export_container_available, default_encoder_threads,
     export_container_available, h264_encoder_available, video_encode_bytes,
 };
