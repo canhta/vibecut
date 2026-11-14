@@ -39,7 +39,7 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 | [Header and sub-navigation](shell.md#header-and-sub-navigation-shell) | 36 | 19 | 6 | 3 | 0 | 3 | 5 | 13 | 1 | 11 | 5 |
 | [Window and panel layout](shell.md#window-and-panel-layout-layout) | 11 | 6 | 1 | 2 | 0 | 1 | 1 | 6 | 0 | 1 | 1 |
 | [Settings](shell.md#settings-set) | 26 | 3 | 4 | 13 | 0 | 4 | 2 | 0 | 2 | 9 | 0 |
-| [Keyboard shortcuts](shell.md#keyboard-shortcuts-shortcut) | 26 | 9 | 3 | 11 | 2 | 1 | 0 | 2 | 1 | 10 | 0 |
+| [Keyboard shortcuts](shell.md#keyboard-shortcuts-shortcut) | 26 | 15 | 3 | 5 | 2 | 1 | 0 | 2 | 0 | 11 | 0 |
 | [Media](assets.md#media-media) | 35 | 15 | 6 | 7 | 0 | 2 | 5 | 2 | 1 | 11 | 16 |
 | [Audio](assets.md#audio-audio) | 21 | 11 | 6 | 2 | 0 | 1 | 1 | 4 | 6 | 6 | 4 |
 | [Text library](assets.md#text-library-textlib) | 10 | 2 | 2 | 4 | 0 | 1 | 1 | 0 | 0 | 2 | 6 |
@@ -51,16 +51,16 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 | [Transitions](catalogues.md#transitions-trans) | 16 | 9 | 2 | 1 | 0 | 3 | 1 | 2 | 1 | 9 | 1 |
 | [Filters](catalogues.md#filters-filt) | 9 | 7 | 1 | 0 | 0 | 0 | 1 | 1 | 1 | 4 | 0 |
 | [Adjustment](catalogues.md#adjustment-adj) | 6 | 2 | 3 | 0 | 0 | 1 | 0 | 1 | 3 | 2 | 0 |
-| [Video clip](properties-video.md#video-clip-pvid) | 52 | 27 | 10 | 9 | 0 | 3 | 3 | 5 | 11 | 24 | 8 |
-| [Audio clip](properties-other.md#audio-clip-paud) | 17 | 8 | 1 | 7 | 0 | 1 | 0 | 3 | 2 | 5 | 7 |
+| [Video clip](properties-video.md#video-clip-pvid) | 52 | 29 | 8 | 9 | 0 | 3 | 3 | 6 | 8 | 26 | 8 |
+| [Audio clip](properties-other.md#audio-clip-paud) | 17 | 8 | 1 | 7 | 0 | 1 | 0 | 3 | 1 | 6 | 7 |
 | [Text item](properties-other.md#text-item-ptext) | 31 | 16 | 8 | 6 | 0 | 0 | 1 | 3 | 7 | 14 | 6 |
 | [Caption item](properties-other.md#caption-item-pcap) | 8 | 1 | 4 | 2 | 0 | 1 | 0 | 0 | 3 | 3 | 2 |
 | [Sticker, effect, filter and adjustment items](properties-other.md#sticker-effect-filter-and-adjustment-items-pother) | 17 | 7 | 6 | 3 | 0 | 1 | 0 | 0 | 5 | 9 | 3 |
-| [Timeline](timeline.md#timeline-tl) | 94 | 33 | 17 | 29 | 3 | 10 | 2 | 7 | 10 | 43 | 4 |
-| [Keyframes](timeline.md#keyframes-key) | 14 | 5 | 5 | 3 | 0 | 1 | 0 | 2 | 1 | 6 | 1 |
-| [Player](player-export.md#player-play) | 24 | 13 | 6 | 2 | 0 | 3 | 0 | 5 | 6 | 11 | 0 |
+| [Timeline](timeline.md#timeline-tl) | 94 | 43 | 11 | 26 | 2 | 10 | 2 | 13 | 5 | 45 | 4 |
+| [Keyframes](timeline.md#keyframes-key) | 14 | 10 | 3 | 0 | 0 | 1 | 0 | 2 | 2 | 7 | 1 |
+| [Player](player-export.md#player-play) | 24 | 15 | 5 | 1 | 0 | 3 | 0 | 5 | 6 | 11 | 0 |
 | [Export](player-export.md#export-exp) | 31 | 10 | 10 | 7 | 0 | 1 | 3 | 2 | 11 | 6 | 3 |
 | [AI chat](ai-shorts.md#ai-chat-agent) | 17 | 8 | 3 | 3 | 1 | 1 | 1 | 5 | 2 | 4 | 2 |
 | [Long video to shorts](ai-shorts.md#long-video-to-shorts-shorts) | 24 | 9 | 7 | 4 | 0 | 2 | 2 | 8 | 2 | 5 | 3 |
-| [States](states.md#states-state) | 12 | 6 | 4 | 0 | 1 | 0 | 1 | 2 | 2 | 4 | 3 |
-| **Total** | **665** | **273** | **142** | **148** | **8** | **53** | **41** | **90** | **90** | **239** | **105** |
+| [States](states.md#states-state) | 12 | 7 | 3 | 0 | 1 | 0 | 1 | 2 | 2 | 4 | 3 |
+| **Total** | **665** | **299** | **130** | **135** | **7** | **53** | **41** | **97** | **81** | **246** | **105** |

@@ -21,10 +21,10 @@ Snapshot of main `66512fec` on 2026-11-14. Legend, evidence names and update rul
 | PLAY-13 | Timecode | Done | Matches | 05/221643 | |
 | PLAY-14 | Fit button | Done | Matches | 05/221643 | |
 | PLAY-15 | Zoom control | Done | Differs | 14d/151402 | Preset list |
-| PLAY-16 | Full screen | Partial | Proposed | 14b/110536 | Key pending |
+| PLAY-16 | Full screen | Done | Proposed | 14b/110536 | |
 | PLAY-17 | Ratio button | Partial | Differs | 14b/110316 | Popup shows size only |
 | PLAY-18 | Quality button | Partial | Proposed | 05/221643 | Stub popup |
-| PLAY-19 | Player zoom keys | Missing | — | 14b/110531 | Pending |
+| PLAY-19 | Player zoom keys | Done | — | 14b/110531 | Shifted keys unconfirmed on hardware |
 | PLAY-20 | Transform handles, snap | Done | Proposed | 14b/110531 | |
 | PLAY-21 | Missing-media canvas | Done | Matches | 14/095554 | |
 | PLAY-22 | Loop, master volume | Ours | Proposed | | |

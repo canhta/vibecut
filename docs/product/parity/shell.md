@@ -105,27 +105,27 @@ Snapshot of main `66512fec` on 2026-11-14. Legend, evidence names and update rul
 |---|---|---|---|---|---|
 | SHORTCUT-01 | Open button in title bar | Done | Proposed | 14b/110515 | |
 | SHORTCUT-02 | Window, four tabs | Done | Matches | 14b/110515 | |
-| SHORTCUT-03 | Preset dropdown, five presets | Partial | Proposed | 14b/110522 | Pending (batch 14) |
+| SHORTCUT-03 | Preset dropdown, five presets | Done | Proposed | 14b/110522 | Popup list not captured |
 | SHORTCUT-04 | Click to rebind | Done | Proposed | 14b/110640 | |
-| SHORTCUT-05 | Conflict prompt, Override | Partial | Differs | 14b/110641 | Pending (batch 14) |
-| SHORTCUT-06 | Esc recorded as a key | Missing | — | 14b/110656 | Pending (batch 14) |
+| SHORTCUT-05 | Conflict prompt, Override | Done | Proposed | 14b/110641 | Prompt layout not captured |
+| SHORTCUT-06 | Esc recorded as a key | Done | — | 14b/110656 | |
 | SHORTCUT-07 | Reset, Save, Cancel | Done | Matches | 14b/110708 | |
 | SHORTCUT-08 | No search field | Done | — | 14b/110515 | |
 | SHORTCUT-09 | Matching timeline defaults | Done | Proposed | 14b/110530; [keyboard.md](../agent-control/keyboard.md) | |
 | SHORTCUT-10 | Main track magnet P | Missing | — | 14b/110530 | |
-| SHORTCUT-11 | Timeline zoom keys | Missing | — | 14b/110530 | Pending (batch 14) |
+| SHORTCUT-11 | Timeline zoom keys | Done | — | 14b/110530 | |
 | SHORTCUT-12 | Activate / deactivate V | Missing | — | 14b/110530 | |
-| SHORTCUT-13 | Extract audio key | Missing | — | 14b/110530 | Pending (batch 14) |
-| SHORTCUT-14 | Marker keys | Missing | — | 14b/110530 | Pending (batch 14) |
+| SHORTCUT-13 | Extract audio key | Done | — | 14b/110530 | Restore has no chord |
+| SHORTCUT-14 | Marker keys | Partial | — | 14b/110530 | No new-colour marker key |
 | SHORTCUT-15 | Group, compound, speed keys | Missing | — | 14b/110530 | |
 | SHORTCUT-16 | Shuttle J, K, L | Partial | Proposed | 14b/110530 | Ours seeks 1 s |
 | SHORTCUT-17 | Step back many frames | Differs | Proposed | 14b/110530 | Shift+Left jumps 1 s |
 | SHORTCUT-18 | Select by clip Shift X | Differs | — | 14b/110530 | Ours: export in/out |
 | SHORTCUT-19 | Duplicate Ctrl D | Ours | Proposed | | |
 | SHORTCUT-20 | Player: play, rulers, guides | Done | Proposed | 14b/110531 | |
-| SHORTCUT-21 | Player: full screen, zoom keys | Missing | — | 14b/110531 | Pending (batch 14) |
+| SHORTCUT-21 | Player: full screen, zoom keys | Done | — | 14b/110531 | Shifted keys unconfirmed on hardware |
 | SHORTCUT-22 | Copy, cut, paste, undo, redo | Done | Proposed | 14b/110536 | |
 | SHORTCUT-23 | Copy and paste attributes | Done | Proposed | 14b/110536 | |
-| SHORTCUT-24 | Import, Export, New project keys | Missing | — | 14b/110536 | Pending (batch 14) |
+| SHORTCUT-24 | Import, Export, New project keys | Partial | — | 14b/110536 | New project has no action |
 | SHORTCUT-25 | Tab, Dictate, Back to edit | Missing | — | 14b/110536 | |
 | SHORTCUT-26 | Resize text from centre | Missing | — | 14b/110542 | |

@@ -45,10 +45,10 @@ Snapshot of main `66512fec` on 2026-11-14. Legend, evidence names and update rul
 | TL-32 | Lock track | Done | Proposed | 14b/102805 | |
 | TL-33 | Hide track | Done | Proposed | 14b/102809 | |
 | TL-34 | Mute track | Done | Proposed | 14b/102844 | |
-| TL-35 | Track settings button | Partial | Differs | 14b/102817 | Height, waveform menu pending |
+| TL-35 | Track settings button | Done | Proposed | 14b/102817, 103113, 103118 | Menu row effects unmeasured |
 | TL-36 | Main track Cover button | Missing | — | 14b/102704 | No cover feature |
-| TL-37 | Row height by kind | Partial | Differs | 14b/102704 | Measured heights pending |
-| TL-38 | Clip colour by kind | Partial | Proposed | 14b/102704 | Measured fills pending |
+| TL-37 | Row height by kind | Done | Matches | 14b/102704; [ui/editor.md](../ui/editor.md#track-rows-by-kind) | |
+| TL-38 | Clip colour by kind | Done | Matches | 14b/102704; [ui/editor.md](../ui/editor.md#track-rows-by-kind) | Light fills proposed |
 | TL-39 | New track from drop | Done | Proposed | 14b/102949 | |
 | TL-40 | Track reorder by drag | Ours | Proposed | | |
 | TL-41 | Track rename | Ours | Proposed | | |
@@ -83,10 +83,10 @@ Snapshot of main `66512fec` on 2026-11-14. Legend, evidence names and update rul
 ### Drag feedback
 | ID | Item | Function | UI/UX | Evidence | Gap / note |
 |---|---|---|---|---|---|
-| TL-65 | Grey slot in target row | Partial | Differs | 14b/102933 | Pending (batch 14) |
-| TL-66 | New-track insertion line | Partial | Differs | 14b/102949 | Pending (batch 14) |
-| TL-67 | Dragged clip outline | Missing | — | 14b/102933 | Pending (batch 14) |
-| TL-68 | Main track placeholder from 0 | Differs | Differs | 14b/103040 | Ours pins at 0 (pending) |
+| TL-65 | Grey slot in target row | Done | Matches | 14b/102933 | Light slot colours proposed |
+| TL-66 | New-track insertion line | Done | Matches | 14b/102949 | |
+| TL-67 | Dragged clip outline | Done | Matches | 14b/102933 | |
+| TL-68 | Main track placeholder from 0 | Done | Matches | 14b/103040 | Engine keeps the gap, magnet on or off |
 | TL-69 | Snap edge lines | Partial | Proposed | 14b/103040 | |
 | TL-70 | Trim past source end | Differs | Differs | 14b/103022 | Ours shows a pill, deliberate |
 | TL-71 | Refusal pill | Ours | Proposed | [ui/editor.md](../ui/editor.md#timeline-gestures) | |
@@ -97,15 +97,15 @@ Snapshot of main `66512fec` on 2026-11-14. Legend, evidence names and update rul
 |---|---|---|---|---|---|
 | TL-73 | Add marker | Done | Proposed | 14b/110530 | |
 | TL-74 | Marker with new colour | Missing | — | 14b/110530 | |
-| TL-75 | Next / previous marker | Partial | Proposed | 14b/110530 | Keys pending |
+| TL-75 | Next / previous marker | Done | Proposed | 14b/110530 | |
 | TL-76 | Marker editor popover | Ours | Proposed | | |
 | TL-77 | Snap indicator | Done | Proposed | 14b/103040 | |
 
 ### Context menus
 | ID | Item | Function | UI/UX | Evidence | Gap / note |
 |---|---|---|---|---|---|
-| TL-78 | Track menu: Track height | Missing | — | 14b/103113 | Pending (batch 14) |
-| TL-79 | Track menu: Waveform size | Missing | — | 14b/103118 | Pending (batch 14) |
+| TL-78 | Track menu: Track height | Done | Proposed | 14b/103113 | Row scale unmeasured |
+| TL-79 | Track menu: Waveform size | Done | Proposed | 14b/103118 | Bar reach unmeasured |
 | TL-80 | Track menu: ours | Ours | Proposed | | Paste, rename, mute, delete |
 | TL-81 | Row menu: Close gap | Missing | — | 14b/103135 | |
 | TL-82 | Row menu: Close all gaps | Missing | — | 14b/103135 | |
@@ -129,14 +129,14 @@ Snapshot of main `66512fec` on 2026-11-14. Legend, evidence names and update rul
 | KEY-01 | Diamond per property | Done | Matches | 14b/103405 | |
 | KEY-02 | Prev / next key arrows | Done | Matches | 14b/103419 | |
 | KEY-03 | Typing a value adds a key | Done | Not captured | 14b/103419 | |
-| KEY-04 | First-use key hint | Missing | — | 14b/103405 | Pending (batch 14) |
+| KEY-04 | First-use key hint | Done | Differs | 14b/103405 | One-line hint under the first lane diamond |
 | KEY-05 | Interpolated value | Done | — | 14b/103429 | |
 | KEY-06 | Diamonds on timeline clip | Partial | Proposed | 14b/103419 | |
-| KEY-07 | Key menu: Ease in / out / Easing | Missing | — | 14b/103437 | Pending (batch 14) |
-| KEY-08 | Key menu: Linear, all presets | Partial | Proposed | 14b/103437 | |
-| KEY-09 | Key menu: Copy, Delete | Partial | Proposed | 14b/103437 | |
-| KEY-10 | Lane toggle (Alt K) | Partial | Differs | 14b/103444 | Pending (batch 14) |
+| KEY-07 | Key menu: Ease in / out / Easing | Done | Proposed | 14b/103437 | |
+| KEY-08 | Key menu: Linear, all presets | Done | Proposed | 14b/103437 | |
+| KEY-09 | Key menu: Copy, Delete | Done | Proposed | 14b/103437 | |
+| KEY-10 | Lane toggle (Alt K) | Done | Differs | 14b/103444 | Alt+K only, no menu row |
 | KEY-11 | Lane rows per channel | Done | Proposed | 14b/103444 | |
 | KEY-12 | Lane toolbar | Partial | Proposed | 14b/103452 | |
-| KEY-13 | Add key shortcuts | Missing | — | 14b/110530 | Pending (batch 14) |
+| KEY-13 | Add key shortcuts | Partial | — | 14b/110530 | No Shift+click on a lane |
 | KEY-14 | Key paste, multi-select, retime | Ours | Proposed | | |

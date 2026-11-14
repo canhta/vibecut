@@ -8,7 +8,7 @@ Snapshot of main `66512fec` on 2026-11-14. Legend, evidence names and update rul
 |---|---|---|---|---|---|
 | STATE-01 | Link media dialog | Done | Matches | 14/095518; [ui/editor.md](../ui/editor.md#missing-media) | |
 | STATE-02 | Lost clip on timeline | Done | Matches | 14/095554 | |
-| STATE-03 | Lost-clip properties message | Partial | Differs | 14/095550 | Pending (batch 14) |
+| STATE-03 | Lost-clip properties message | Done | Differs | 14/095550 | Adds a Link media button |
 | STATE-04 | Lost media tile | Done | Proposed | 14/095554 | |
 | STATE-05 | Corrupt import toast | Done | Proposed | 14b/110341 | |
 | STATE-06 | Download progress ring | Partial | Not captured | 14b/110442 | Fonts, sounds only |

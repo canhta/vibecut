@@ -65,10 +65,10 @@ Snapshot of main `66512fec` on 2026-11-14. Legend, evidence names and update rul
 ### Speed
 | ID | Item | Function | UI/UX | Evidence | Gap / note |
 |---|---|---|---|---|---|
-| PVID-39 | Standard slider 0.1-100x | Done | Differs | 100018-100039; [ui/editor.md](../ui/editor.md#speed-tab-standard-view) | Ticks pending |
+| PVID-39 | Standard slider 0.1-100x | Done | Proposed | 100018-100039; [ui/editor.md](../ui/editor.md#speed-tab-standard-view) | Tick mark ink proposed |
 | PVID-40 | Duration field | Done | Proposed | 100018 | |
-| PVID-41 | Change audio pitch | Partial | Differs | 100036 | Above-5x note pending |
-| PVID-42 | Reset button label | Partial | Differs | 221757 | |
+| PVID-41 | Change audio pitch | Done | Proposed | 100036 | |
+| PVID-42 | Reset button label | Done | Matches | 221757 | |
 | PVID-43 | Curve presets (8) | Done | Differs | 100057 | 4 per row, not 6 |
 | PVID-44 | Curve plot, points, Reset, + | Done | Differs | 100104-100108 | Plot below the fold |
 | PVID-45 | Smooth slow-mo | Missing | Not captured | 100036 | Optical flow |

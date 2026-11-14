@@ -21,7 +21,7 @@ Snapshot of main `66512fec` on 2026-11-14. Legend, evidence names and update rul
 | PAUD-13 | Voice characters grid | Missing | Not captured | 104516 | After v1.0 |
 | PAUD-14 | Speech to song | Missing | Not captured | 104520 | |
 | PAUD-15 | Voice changer Apply to all | Missing | Not captured | 104508 | |
-| PAUD-16 | Speed slider, Duration | Done | Differs | 104527-104547 | Ticks pending |
+| PAUD-16 | Speed slider, Duration | Done | Proposed | 104527-104547 | Tick mark ink proposed |
 | PAUD-17 | Change audio pitch | Done | Proposed | 104527 | |
 
 ## Text item (PTEXT)
