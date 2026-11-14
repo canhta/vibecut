@@ -21,7 +21,8 @@ Usage:
   vibecut-cli bundle import <bundle-dir> <project-dir>
   vibecut-cli exec <project> <command_id> <json>
   vibecut-cli normalize <project> [--clip] [--master] [--target-lufs -23] [--true-peak-db -1]
-  vibecut-cli control <project> [--allow-overwrite] [--no-save]
+  vibecut-cli control <project> [--allow-overwrite] [--no-save] [--yes-upload]
+                     [--accept-unknown-price]
   vibecut-cli mcp <project> [--output-dir <directory>] [--all-tools] [--no-save]
   vibecut-cli mcp --attach --socket <endpoint>
   vibecut-cli export <project> --out <mp4|mov|webm|gif|name_%05d.png> [--settings <JSON>] [--aspect 9:16] [--allow-degraded] [--overwrite]

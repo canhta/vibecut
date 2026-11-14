@@ -15,7 +15,7 @@ Bounded result decoding, apply-command construction and caption-track lookup ret
 Edit results. Export-key construction and CaptionAccess resource access return Runtime results.
 An unavailable CaptionAccess stores one typed `Arc<subtitles::Error>`; each resource refusal
 keeps that same Arc in Runtime Failed, preserving its code without inheriting retry, advisory
-or terminal-cancellation policy. Optional setup does not disable unrelated commands.
+or terminal-cancellation policy. Optional setup does not disable unrelated commands. `with_consent` gives such an access the caller's prompt, so narration, which needs no caption resource, still asks it.
 
 ## Subtitle workflow
 

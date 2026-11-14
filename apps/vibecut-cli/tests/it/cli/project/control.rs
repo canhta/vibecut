@@ -22,6 +22,8 @@ impl ControlSession {
             .arg("control")
             .arg(project)
             .args(extra)
+            .env_remove("OPENAI_API_KEY")
+            .env_remove("ELEVENLABS_API_KEY")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -1019,4 +1021,45 @@ fn control_clipboard_snapshot_roundtrip_replay_save_and_reopen_lifetime() {
             .unwrap()
             .clipboard_has_entry()
     );
+}
+
+#[test]
+fn control_lends_the_narrator_so_dub_generate_reaches_the_credential_check() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("dub.vibecut");
+    new_project(&project);
+    let mut control = ControlSession::start(&project, &[]);
+    let inspect = control.send(control_request("r0", "inspect", json!({}), None, None));
+    let rev = inspect["rev_after"].as_str().unwrap().to_owned();
+    // No provider key in the environment: the lent narrator refuses the command as an
+    // authentication failure, never as an unavailable narrator, and sends nothing.
+    let dub = control.send(control_request(
+        "dub",
+        "dub.generate",
+        json!({
+            "provider": "openai",
+            "model": "gpt-audio-1.5",
+            "voice": "alloy",
+            "language": "en",
+            "text": "Welcome back.",
+            "cue_duration": time::TICKS_PER_SECOND,
+        }),
+        Some(&rev),
+        Some("dub-1"),
+    ));
+    assert_eq!(response_error(&dub), "auth", "{dub}");
+    let (code, stderr) = control.finish();
+    assert_eq!(code, 5, "{stderr}");
+}
+
+#[test]
+fn control_help_lists_the_upload_consent_flags() {
+    let output = Command::new(bin())
+        .args([os("control"), os("--help"), os("--json")])
+        .output()
+        .unwrap();
+    assert_eq!(code(&output), 0);
+    let usage = String::from_utf8_lossy(&output.stdout);
+    assert!(usage.contains("--yes-upload"), "{usage}");
+    assert!(usage.contains("--accept-unknown-price"), "{usage}");
 }
