@@ -34,14 +34,14 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | ID | Item | Function | UI/UX | Evidence | Gap / note |
 |---|---|---|---|---|---|
 | PVID-19 | Auto removal | Partial | Proposed | 104613-104648, 100332 | Checkbox; Feather row is ours |
-| PVID-20 | Auto removal Stroke row | Missing | Not captured | 151551-151628 | |
+| PVID-20 | Auto removal Stroke row | Partial | Proposed | 151551-151628 | None and Solid built; six presets open |
 | PVID-21 | Custom removal Brush, Eraser | Done | Proposed | 104709 | |
 | PVID-22 | Smart brush, Smart eraser | Missing | Not captured | 104720-104726 | Model-backed |
 | PVID-23 | Custom removal Size 1-100 | Done | Matches | 100332-100347 | |
 | PVID-24 | Custom removal Apply | Partial | Differs | 100402-100407 | Ours paints live |
 | PVID-25 | Chroma key eyedropper | Done | Proposed | 104920-104926 | |
 | PVID-26 | Chroma Intensity, Shadow | Done | Proposed | 104911, 151402 | |
-| PVID-27 | Chroma Feather, Clean up edge | Done | Proposed | 104926, 151342-151410 | Edge radii inferred, not measured |
+| PVID-27 | Chroma Feather, Clean up edge | Partial | Proposed | 151342-151410 | Clean up = spill suppression; ramps and Feather curve open |
 | PVID-28 | Chroma controls grey until pick | Done | Proposed | 104911 | |
 | PVID-29 | AI background option | Out of scope | — | 151402 | Generated media |
 
