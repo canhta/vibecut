@@ -17,5 +17,7 @@ Shots 221941 pick, 221946 working, 222002 and 222010 quick edit. Window content 
 
 ## Gaps
 
-- Not built (the engine only crops to 9:16): results grid with inline players, caption template grid, Fill/Fit/4:3/Split layout presets.
+- Results grid, ours and unmeasured (the web tool is function only): under each 9:16 card a 32 px title field 8 px below (16 px) and the source range in 14 px secondary text 8 px under it; a 20 px label chip 8 px in from the card's top right (12 px on the scrim fill, like the length pill); a 32 px sort toggle 12 px left of `Export`, filled while sorting by time. Not built: inline players.
+- Caption tool, ours and unmeasured: under the captions switch two columns of 36 px cells (8 px gap), the first `Original style`, then every built-in look by name in 12 px; the picked cell has a 2 px accent outline; the cells are inert while captions are off. The quick-edit header title is the same field, 32 px high, between the header's left padding and the back arrow.
+- Not built: Fill/Fit/4:3/Split layout presets per short (p1-clips/11).
 - A control stays only if a capture shows it and an engine command backs it. The trim tool, quick-edit header icons, options popover and a separate results grid have no capture and are hidden.

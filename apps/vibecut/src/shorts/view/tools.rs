@@ -23,6 +23,9 @@ const PANEL_GAP: f32 = 13.0;
 const PANEL_WIDTH: f32 = 242.0;
 const PANEL_RADIUS: f32 = 12.0;
 const PANEL_PAD: f32 = 16.0;
+/// Caption look cells, two across (ours, unmeasured).
+const LOOK_HEIGHT: f32 = 36.0;
+const LOOK_GAP: f32 = 8.0;
 
 pub(super) fn show(state: &mut State, ui: &mut egui::Ui, panel: Rect) {
     let dark = state.preferences.dark;
@@ -198,6 +201,100 @@ fn captions(state: &mut State, ui: &mut egui::Ui) {
         state.captions = !state.captions;
         state.preview_dirty = true;
     }
+    looks(state, ui);
+}
+
+/// The caption looks of the editor, applied to the open short only: "original" first, then
+/// every built-in look by its name. Cells are inert while captions are off.
+fn looks(state: &mut State, ui: &mut egui::Ui) {
+    let dark = state.preferences.dark;
+    let Some(current) = state.reviews.get(state.selected).map(|r| r.caption_look) else {
+        return;
+    };
+    let enabled = state.captions;
+    let cells: Vec<(Option<project::CaptionLook>, &'static str)> =
+        std::iter::once((None, state.tr(Text::ShortsCaptionDefault)))
+            .chain(
+                project::CaptionLook::ALL
+                    .into_iter()
+                    .map(|look| (Some(look), state.tr(i18n::caption_look(look)))),
+            )
+            .collect();
+    let mut chosen = None;
+    egui::ScrollArea::vertical()
+        .id_salt("shorts.looks")
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            let width = ui.available_width();
+            let cell_width = (width - LOOK_GAP) / 2.0;
+            let rows = cells.len().div_ceil(2) as f32;
+            let (area, _) = ui.allocate_exact_size(
+                vec2(width, rows * (LOOK_HEIGHT + LOOK_GAP)),
+                egui::Sense::hover(),
+            );
+            for (slot, (look, name)) in cells.iter().enumerate() {
+                let cell = Rect::from_min_size(
+                    pos2(
+                        area.left() + (cell_width + LOOK_GAP) * (slot % 2) as f32,
+                        area.top() + (LOOK_HEIGHT + LOOK_GAP) * (slot / 2) as f32,
+                    ),
+                    vec2(cell_width, LOOK_HEIGHT),
+                );
+                let id = match look {
+                    Some(look) => format!("shorts.look.{}", look_id(*look)),
+                    None => "shorts.look.original".to_owned(),
+                };
+                let response = widgets::tap(ui, &id, cell, name, enabled);
+                let selected = *look == current;
+                let ink = if enabled {
+                    kit::text(dark)
+                } else {
+                    kit::disabled(dark)
+                };
+                ui.painter().rect_filled(
+                    cell,
+                    corner(8.0),
+                    if response.hovered() && enabled {
+                        kit::hover(dark)
+                    } else {
+                        kit::field(dark)
+                    },
+                );
+                if selected {
+                    ui.painter().rect_stroke(
+                        cell,
+                        corner(8.0),
+                        egui::Stroke::new(2.0, kit::accent(dark)),
+                        egui::StrokeKind::Inside,
+                    );
+                }
+                let mut job = egui::text::LayoutJob::single_section(
+                    (*name).to_owned(),
+                    egui::TextFormat::simple(egui::FontId::proportional(12.0), ink),
+                );
+                job.wrap.max_width = cell_width - 16.0;
+                job.wrap.max_rows = 1;
+                let galley = ui.painter().layout_job(job);
+                ui.painter()
+                    .galley(cell.center() - galley.size() / 2.0, galley, ink);
+                if response.clicked() {
+                    chosen = Some(*look);
+                }
+            }
+        });
+    if let Some(look) = chosen
+        && let Err(e) = state.set_caption_look(look)
+    {
+        state.fail(e, Text::ShortsError);
+    }
+}
+
+/// The look's wire id, the stable part of its automation id.
+fn look_id(look: project::CaptionLook) -> String {
+    serde_json::to_value(look)
+        .ok()
+        .and_then(|value| value.as_str().map(str::to_owned))
+        .unwrap_or_default()
 }
 
 fn trim(state: &mut State, ui: &mut egui::Ui) {

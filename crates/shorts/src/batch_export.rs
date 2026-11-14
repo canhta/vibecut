@@ -40,6 +40,8 @@ pub struct ClipShort {
     pub crop: Option<project::Crop>,
     /// The reviewer's layout choices; empty leaves every shot automatic.
     pub layout: crate::layout::LayoutOverrides,
+    /// This short's own caption look; `None` keeps the cues' styles.
+    pub caption_look: Option<project::CaptionLook>,
 }
 impl ClipShort {
     pub fn new(
@@ -51,6 +53,7 @@ impl ClipShort {
             segments,
             crop: None,
             layout: Default::default(),
+            caption_look: None,
         }
     }
     /// Preserve the accepted suggestion's play order and ranges; crop stays centered.
@@ -60,11 +63,17 @@ impl ClipShort {
             segments: suggestion.segments.clone(),
             crop: None,
             layout: Default::default(),
+            caption_look: None,
         }
     }
     /// Apply one normalized crop rectangle to every Fill piece in this short.
     pub fn with_crop(mut self, crop: Option<project::Crop>) -> Self {
         self.crop = crop;
+        self
+    }
+    /// Burn this short's captions in `look` instead of the cues' own styles.
+    pub fn with_caption_look(mut self, look: Option<project::CaptionLook>) -> Self {
+        self.caption_look = look;
         self
     }
     /// Keep the reviewer's layout choices with the short.

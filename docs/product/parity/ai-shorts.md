@@ -39,14 +39,14 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | SHORTS-09 | Options: duration chips | Partial | Differs | web screens/19 | Min, max, count fields |
 | SHORTS-10 | Convert button | Done | Matches | web screens/19 | |
 | SHORTS-11 | Working page skeleton | Done | Matches | 05/221946 | |
-| SHORTS-12 | Result cards | Partial | Differs | web screens/19 | No label chip, range |
-| SHORTS-13 | Sort Recommended / Time | Missing | — | web screens/19 | |
+| SHORTS-12 | Result cards | Done | Proposed | web screens/19 | Label chip, editable title, range and length; hover shows the reason |
+| SHORTS-13 | Sort Recommended / Time | Done | Proposed | web screens/19 | One toggle: suggestion order or source time |
 | SHORTS-14 | Card hover Export, Edit | Partial | Not captured | web screens/19 | |
 | SHORTS-15 | Quick edit short list | Done | Matches | 05/222002 | |
 | SHORTS-16 | Feedback thumbs | Missing | Not captured | web screens/19 | |
 | SHORTS-17 | 9:16 player and bar | Done | Matches | 05/222002 | |
 | SHORTS-18 | Edit more, Export buttons | Done | Matches | 05/222002 | |
-| SHORTS-19 | Caption style tool | Partial | Proposed | 05/222006 | No template grid |
+| SHORTS-19 | Caption style tool | Done | Proposed | 05/222006 | Built-in looks per short, applied to preview and export |
 | SHORTS-20 | Layout tool | Partial | Proposed | 05/222010 | Presets unbuilt |
 | SHORTS-21 | Export panel | Partial | Not captured | web screens/19 | Batch export |
 | SHORTS-22 | Export matches preview | Partial | — | web screens/19 | |

@@ -2082,3 +2082,50 @@ mod layouts {
         ));
     }
 }
+
+#[test]
+fn a_short_with_a_caption_look_burns_it_and_the_others_keep_their_cues() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = project(asset(1, dir.path().join("missing-source.mp4"), 30));
+    let cues = CueTrack {
+        styles: Vec::new(),
+        cues: vec![cue("a", 2, 12, &[("vi", "Xin chào")])],
+    };
+    let look = project::CaptionLook::LabelBlack;
+    let request = ClipBatchRequest {
+        languages: vec![lang("vi")],
+        ..batch(
+            1,
+            vec![
+                ClipShort::new("Styled", vec![segment(2, 8, 1)]).with_caption_look(Some(look)),
+                ClipShort::new("Plain", vec![segment(2, 8, 1)]),
+            ],
+            cues,
+            dir.path(),
+        )
+    };
+    let batch = ClipBatch::prepare(&source, request).unwrap();
+    let styles = |index: usize| {
+        batch
+            .project(index)
+            .unwrap()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .find(|track| track.kind == project::TrackKind::Text)
+            .unwrap()
+            .items
+            .iter()
+            .map(|item| {
+                let project::ItemParams::Caption(params) = &item.content else {
+                    panic!("not a caption item");
+                };
+                let cue = params.cues.cues.first().unwrap();
+                params.cues.style_of(cue).cloned()
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(styles(0), vec![Some(look.cue_style())]);
+    assert_eq!(styles(1), vec![None]);
+}

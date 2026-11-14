@@ -52,11 +52,26 @@ pub struct Review {
     pub segments: Vec<ClipSourceSegment>,
     pub crop: project::Crop,
     pub decision: Decision,
+    /// The short's own title: the proposal's until the reviewer edits it; it names the export.
+    pub title: String,
+    /// This short's caption look; `None` keeps the source cues' own styles.
+    pub caption_look: Option<project::CaptionLook>,
+}
+/// The order the results list shows the shorts in.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Sort {
+    /// The suggester's ranking.
+    #[default]
+    Suggestion,
+    /// Earliest source start first.
+    Time,
 }
 impl PartialEq for Review {
     fn eq(&self, other: &Self) -> bool {
         self.crop == other.crop
             && self.decision == other.decision
+            && self.title == other.title
+            && self.caption_look == other.caption_look
             && self.segments.len() == other.segments.len()
             && self.segments.iter().zip(&other.segments).all(|(a, b)| {
                 a.range == b.range
@@ -181,6 +196,9 @@ pub struct State {
     pub(super) options_open: bool,
     /// False shows the grid of results; true the quick edit of the selected short.
     pub(super) editing: bool,
+    pub(super) sort: Sort,
+    /// The title being typed: which short and its text, until the field loses focus.
+    pub(super) title_draft: Option<(usize, String)>,
     pub(super) thumbs: Thumbs,
     pub(super) configured: bool,
     /// Resolves the per-shot analysis the engine owns; the process lends the stores.
@@ -375,6 +393,8 @@ impl State {
             list_open: true,
             options_open: false,
             editing: false,
+            sort: Sort::Suggestion,
+            title_draft: None,
             thumbs: Thumbs::default(),
             configured: false,
             shots_source: no_shots(),
@@ -1005,6 +1025,8 @@ impl State {
                 segments: c.segments.clone(),
                 crop: center,
                 decision: Decision::Pending,
+                title: c.proposal.title.as_str().to_owned(),
+                caption_look: None,
             })
             .collect();
         // Admission validates all candidates before changing the current review.
@@ -1012,8 +1034,9 @@ impl State {
             let req = ClipBatchRequest::new(
                 source.asset,
                 vec![
-                    ClipShort::new(candidate.proposal.title.clone(), review.segments.clone())
-                        .with_crop(Some(review.crop)),
+                    ClipShort::new(review.title.as_str(), review.segments.clone())
+                        .with_crop(Some(review.crop))
+                        .with_caption_look(review.caption_look),
                 ],
                 std::env::temp_dir(),
             );
@@ -1035,6 +1058,7 @@ impl State {
             self.thumbs.start(asset, starts);
         }
         self.editing = false;
+        self.title_draft = None;
         self.source = Some(source);
         self.reviews = reviews;
         self.selected = 0;
@@ -1104,6 +1128,7 @@ impl State {
                 .ok_or(Error::Invalid("candidate index"))? = after.clone();
             let mut picture = before.clone();
             picture.decision = after.decision;
+            picture.title.clone_from(&after.title);
             self.preview_dirty |= picture != after;
             self.undo.push_back(Edit {
                 index,
@@ -1124,6 +1149,54 @@ impl State {
             .cloned()
             .ok_or(Error::Invalid("no candidate"))?;
         row.decision = decision;
+        self.commit(self.selected, row)
+    }
+    /// The shorts in display order: indices into the reviews and candidates.
+    pub fn order(&self) -> Vec<usize> {
+        let mut order: Vec<usize> = (0..self.reviews.len()).collect();
+        if self.sort == Sort::Time
+            && let Some(source) = &self.source
+        {
+            // The candidate's own pieces, so trimming a short never moves its card.
+            let start = |index: usize| {
+                source
+                    .candidates
+                    .get(index)
+                    .and_then(|c| c.segments.iter().map(|s| s.range.start()).min())
+                    .unwrap_or(Tick::ZERO)
+            };
+            order.sort_by_key(|index| (start(*index), *index));
+        }
+        order
+    }
+    pub fn sort(&self) -> Sort {
+        self.sort
+    }
+    pub fn set_sort(&mut self, sort: Sort) {
+        self.sort = sort;
+    }
+    /// Rename short `index`; blank text keeps the current title. Part of the review history.
+    pub fn set_title(&mut self, index: usize, title: &str) -> Result<()> {
+        let mut row = self
+            .reviews
+            .get(index)
+            .cloned()
+            .ok_or(Error::Invalid("candidate index"))?;
+        let title = title.trim();
+        if title.is_empty() {
+            return Ok(());
+        }
+        row.title = title.to_owned();
+        self.commit(index, row)
+    }
+    /// Burn the selected short's captions in `look` (`None`: the source cues' styles).
+    pub fn set_caption_look(&mut self, look: Option<project::CaptionLook>) -> Result<()> {
+        let mut row = self
+            .reviews
+            .get(self.selected)
+            .cloned()
+            .ok_or(Error::Invalid("no candidate"))?;
+        row.caption_look = look;
         self.commit(self.selected, row)
     }
     /// Safe frame/word snapping is owned by engine; failure leaves review/history intact.
@@ -1207,13 +1280,13 @@ impl State {
             let review = override_row
                 .or_else(|| self.reviews.get(*index))
                 .ok_or(Error::Invalid("candidate index"))?;
-            let candidate = source
-                .candidates
-                .get(*index)
-                .ok_or(Error::Invalid("candidate index"))?;
+            if *index >= source.candidates.len() {
+                return Err(Error::Invalid("candidate index"));
+            }
             shorts.push(
-                ClipShort::new(candidate.proposal.title.clone(), review.segments.clone())
-                    .with_crop(Some(review.crop)),
+                ClipShort::new(review.title.as_str(), review.segments.clone())
+                    .with_crop(Some(review.crop))
+                    .with_caption_look(review.caption_look),
             );
         }
         let mut request = ClipBatchRequest::new(source.asset, shorts, directory);
