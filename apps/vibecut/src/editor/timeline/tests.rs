@@ -393,7 +393,10 @@ impl Rig {
         self.widgets
             .iter()
             .find(|widget| widget.id == id)
-            .unwrap_or_else(|| panic!("missing control {id}"))
+            .unwrap_or_else(|| {
+                let known: Vec<&str> = self.widgets.iter().map(|w| w.id.as_str()).collect();
+                panic!("missing control {id}; drawn: {known:?}")
+            })
             .response
             .rect
     }
@@ -1988,7 +1991,7 @@ fn secondary_click(harness: &mut Harness<'_, Rig>, at: egui::Pos2) {
 }
 
 #[test]
-fn row_menu_closes_the_gap_under_the_click_and_a_clip_menu_opens_its_transcript() {
+fn row_menu_closes_the_gap_under_the_click_and_a_text_clip_menu_has_no_transcript() {
     let mut harness = harness(Rig::new());
     harness.state_mut().take();
     let (first, second, track) = (
@@ -2038,17 +2041,16 @@ fn row_menu_closes_the_gap_under_the_click_and_a_clip_menu_opens_its_transcript(
             .any(|action| matches!(action, Action::Activate(id) if id == "edit.copy")),
         "{returned:?}"
     );
+    // Transcript is a media clip's row (video and audio); a text clip's menu has none. The
+    // route from a video clip is the `subtitles` kittest
+    // `clip_menu_transcript_opens_the_pane_on_the_words_under_the_clip`.
     secondary_click(&mut harness, left.center());
-    harness.state_mut().take();
-    let transcript = harness
-        .state()
-        .rect(&format!("timeline.item.{}.transcript", first.0));
-    click(&mut harness, transcript.center());
-    let returned = harness.state_mut().take();
+    let transcript = format!("timeline.item.{}.transcript", first.0);
     assert!(
-        returned
+        harness
+            .state()
+            .widgets
             .iter()
-            .any(|action| matches!(action, Action::OpenTranscript(item) if *item == first)),
-        "{returned:?}"
+            .all(|widget| widget.id != transcript)
     );
 }

@@ -543,13 +543,14 @@ mod tests {
                 );
             }
         }
-        // Bold italic is synthetic here, so its last glyph's ink leans past the advance; the
+        // Noto Serif ships only an upright Regular, so its bold italic is synthetic and the last
+        // glyph's ink leans past the advance (Inter has a real italic face, which wins); the
         // aligned ink must still end inside the box and bounds must cover it.
         for align in [Align::Left, Align::Center, Align::Right] {
             let italic = layout(
                 "Hello",
                 &LayoutOptions {
-                    family: "Inter",
+                    family: "Noto Serif",
                     style: &crate::fonts::style_name(700, true),
                     align,
                     ..options(400.0)

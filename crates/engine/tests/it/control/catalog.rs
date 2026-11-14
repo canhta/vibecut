@@ -275,6 +275,12 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
             Fixture::MaskPath => s = crate::support::control::with_mask_path(&s),
             Fixture::Keyframes => s = crate::support::control::with_keyframes(&s),
             Fixture::Gap => s = crate::support::control::with_gap(&s),
+            Fixture::Group => {
+                s.apply(Command::TimelineGroup {
+                    items: vec![project::ItemId(1), project::ItemId(5)],
+                })
+                .unwrap();
+            }
             Fixture::Captions => {
                 s = with_waveform(&s, &wav);
                 let req = request(
@@ -411,7 +417,10 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
                 &mut r,
             )
             .unwrap();
-        let value = ok(result);
+        let value = match result.value {
+            engine::control::ResponseValue::Result(value) => value,
+            engine::control::ResponseValue::Error(error) => panic!("{}: {error:?}", spec.id),
+        };
         // The declaration covers what dispatch returned, and the narrowed output
         // schema still names that variant.
         assert!(

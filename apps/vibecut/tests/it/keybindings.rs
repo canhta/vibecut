@@ -324,7 +324,7 @@ fn unknown_actions_are_reported() {
 }
 
 #[test]
-fn shift_arrows_and_j_l_both_seek_one_second() {
+fn shift_arrows_step_many_frames_and_j_l_seek_one_second() {
     let fixture = fixture();
     let mut editor = fixture.editor;
     editor
@@ -333,7 +333,20 @@ fn shift_arrows_and_j_l_both_seek_one_second() {
         .unwrap();
     let mut harness = harness(editor);
     harness.run_steps(3);
+    // Shift+Right steps the Settings Edit count (default 10 frames, a third of a second at 30 fps).
     harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::ArrowRight);
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().playback.position().unwrap(),
+        Tick(3 * SECOND + SECOND / 3)
+    );
+    harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::ArrowLeft);
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().playback.position().unwrap(),
+        Tick(3 * SECOND)
+    );
+    harness.key_press(egui::Key::L);
     harness.run_steps(2);
     assert_eq!(
         harness.state().playback.position().unwrap(),

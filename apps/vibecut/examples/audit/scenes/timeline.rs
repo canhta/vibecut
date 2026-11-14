@@ -232,6 +232,37 @@ pub(super) fn timeline_multi(theme: Theme, scale: f32) -> Result<AppHarness, Fai
     Ok(app)
 }
 
+/// Every clip of the media fixture in one group, beside the grouping capture: `selected`
+/// matches 14e/203832, unselected 14e/203841. The first-use tip was dismissed in both frames.
+pub(super) fn timeline_group(
+    theme: Theme,
+    scale: f32,
+    selected: bool,
+) -> Result<AppHarness, Failure> {
+    let (mut editor, _) = media_editor(theme, Locale::En)?;
+    let items: Vec<project::ItemId> = editor
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .map(|item| item.id)
+        .collect();
+    editor.session.apply(Command::TimelineGroup {
+        items: items.clone(),
+    })?;
+    editor.preferences.group_tip_seen = true;
+    if selected {
+        editor.select(items.into_iter().collect())?;
+    }
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, EDITOR_WINDOW);
+    wait_for_presented(&mut app)?;
+    app.run_steps(3);
+    Ok(app)
+}
+
 // New bottom-corner design: the reference captures only panel duration fields.
 pub(super) fn timeline_fades(theme: Theme, scale: f32, state: &str) -> Result<AppHarness, Failure> {
     let locale = if state == "menu" {

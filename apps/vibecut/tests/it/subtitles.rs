@@ -3430,9 +3430,10 @@ fn transcript_locked_track_marks_its_cues_and_refuses_a_merge() {
 
 #[test]
 fn clip_menu_transcript_opens_the_pane_on_the_words_under_the_clip() {
+    use egui::accesskit::Toggled;
     let mut editor = editor_with_cues("en", transcript_cues(false));
-    // A 2-4 s clip overlaps the second word of each cue (2-3 s and 3-4 s) and only touches
-    // the first (1-2 s) and the last (4-5 s).
+    // The first clip on the empty main track lands at 0: a 0-2.5 s clip overlaps both words
+    // of the first cue (1-2 s, 2-3 s) and none of the second (3-5 s).
     let out = editor
         .session
         .apply(Command::InsertItem {
@@ -3441,9 +3442,9 @@ fn clip_menu_transcript_opens_the_pane_on_the_words_under_the_clip() {
                 retime: Default::default(),
                 animations: Default::default(),
                 source_asset: None,
-                source_range: time::SourceRange::new(Tick::ZERO, Tick(2 * TICKS_PER_SECOND))
+                source_range: time::SourceRange::new(Tick::ZERO, Tick(5 * TICKS_PER_SECOND / 2))
                     .unwrap(),
-                start: Tick(2 * TICKS_PER_SECOND),
+                start: Tick::ZERO,
                 content: ItemParams::Overlay(project::OverlayParams {
                     color: project::Color([25, 50, 90, 255]),
                 }),
@@ -3475,7 +3476,7 @@ fn clip_menu_transcript_opens_the_pane_on_the_words_under_the_clip() {
         let id = transcript_word(&h, cue, word);
         h.get(By::new().predicate(|n| n.author_id() == Some(id.as_str())))
             .accesskit_node()
-            .is_selected()
+            .toggled()
     };
     assert_eq!(
         [
@@ -3484,7 +3485,12 @@ fn clip_menu_transcript_opens_the_pane_on_the_words_under_the_clip() {
             selected("cue-1", 0),
             selected("cue-1", 1)
         ],
-        [Some(false), Some(true), Some(true), Some(false)]
+        [
+            Some(Toggled::True),
+            Some(Toggled::True),
+            Some(Toggled::False),
+            Some(Toggled::False)
+        ]
     );
 }
 

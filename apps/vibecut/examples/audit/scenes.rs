@@ -780,6 +780,18 @@ pub(super) const SCENES: &[Scene] = &[
         build: timeline_multi,
     },
     Scene {
+        name: "timeline-group",
+        reference_dark: Some("capcut-desktop-2026-11-14e/capcut-desktop-203841.png"),
+        reference_light: None,
+        build: |theme, scale| timeline_group(theme, scale, false),
+    },
+    Scene {
+        name: "timeline-group-selected",
+        reference_dark: Some("capcut-desktop-2026-11-14e/capcut-desktop-203832.png"),
+        reference_light: None,
+        build: |theme, scale| timeline_group(theme, scale, true),
+    },
+    Scene {
         name: "timeline-fades-clamped",
         reference_dark: None,
         reference_light: None,
@@ -957,6 +969,6 @@ use shorts::shorts_scene;
 use timeline::{
     link_media, missing_media, placement, placement_line, preview_axis, preview_axis_ends,
     preview_axis_reference, scene_create, scene_delete, scene_rename, timeline_fades,
-    timeline_main, timeline_multi, timeline_selection, timeline_selection_vi, timeline_zoom,
-    tracks, tracks_kinds,
+    timeline_group, timeline_main, timeline_multi, timeline_selection, timeline_selection_vi,
+    timeline_zoom, tracks, tracks_kinds,
 };

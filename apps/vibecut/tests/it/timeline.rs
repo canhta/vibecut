@@ -1903,7 +1903,7 @@ fn every_editor_button_reports_its_embedded_icon() {
         ("timeline.snap", "Snap (N)"),
         ("timeline.preview_axis", "Turn off preview axis (S)"),
         ("timeline.zoom_in", zoom_in.as_str()),
-        ("timeline.magnet", "Main track magnet"),
+        ("timeline.magnet", "Main track magnet (P)"),
         ("transport.back", "Back 1 second (J)"),
         ("transport.play", "Play (Space)"),
         ("preview.retry", "Retry"),
@@ -2464,7 +2464,7 @@ fn mixed_text_inspector_applies_one_field_and_restores_selected_items() {
         harness.state().session.project(),
         harness.state().selection(),
     );
-    assert_eq!(fields.len(), 9);
+    assert_eq!(fields.len(), 10);
     for field in &fields {
         assert_eq!(field.compatible, 2);
         assert_eq!(
@@ -6735,7 +6735,11 @@ fn group_chords_select_the_whole_group_and_ungroup_keeps_the_selection() {
 fn a_double_click_isolates_one_member_and_an_alt_click_selects_the_group() {
     let fixture = audible_editor();
     let (a, b) = (fixture.video_a, fixture.video_b);
-    let mut h = harness(fixture.editor);
+    // A short step keeps the deferred second click inside egui's double-click window.
+    let mut h = crate::gpu::builder()
+        .with_size(egui::vec2(1440.0, 900.0))
+        .with_step_dt(0.05)
+        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), fixture.editor);
     h.run_steps(3);
     h.state_mut().select([a, b].into()).unwrap();
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::G);
@@ -6743,14 +6747,24 @@ fn a_double_click_isolates_one_member_and_an_alt_click_selects_the_group() {
     assert!(item(h.state(), a).group.is_some());
     h.state_mut().activate("timeline.deselect_all").unwrap();
     h.run_steps(2);
-    // Two clicks in one frame are a double-click: only that member stays selected.
+    // Two quick clicks are a double-click: only that member stays selected.
     let member = move |id: ItemId| {
         By::new().predicate(move |node| {
             node.author_id() == Some(format!("timeline.item.{}", id.0).as_str())
         })
     };
-    h.get(member(a)).click();
-    h.get(member(a)).click();
+    let at = h.get(member(a)).rect().center();
+    for _ in 0..2 {
+        h.event(egui::Event::PointerMoved(at));
+        for pressed in [true, false] {
+            h.event(egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::default(),
+            });
+        }
+    }
     h.run_steps(2);
     assert_eq!(h.state().inspect().unwrap().selection, vec![a]);
     // Alt does not isolate: an Alt-click on a member selects the whole group.

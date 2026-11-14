@@ -764,8 +764,13 @@ fn text_curve_places_glyphs_on_an_arc_and_zero_is_identity() {
     let centre = |b: (usize, usize, usize, usize)| (b.0 + b.2) as f64 / 2.0;
     assert!((centre(arched) - centre(flat)).abs() < 3.0);
     assert!((centre(dipped) - centre(flat)).abs() < 3.0);
-    // The arch and the dip reflect each other about the straight line's height.
-    assert!(((up_ends - flat_ends) + (down_ends - flat_ends)).abs() < 6.0);
+    // The glyph pivots (baseline centres) of the arch and the dip reflect each other exactly
+    // (`text::render::curve` tests that). The ink does not: each end glyph turns about its
+    // baseline, so its ink centre sits half the glyph height times (1 - cos) lower in both cases.
+    // The sum of the two end shifts is that lift: positive and below one line of ink.
+    let lift = (up_ends - flat_ends) + (down_ends - flat_ends);
+    let ink_height = (flat.3 - flat.1) as f64;
+    assert!(lift > 0.0 && lift < ink_height, "{lift} {ink_height}");
 }
 
 const GOLDENS: &[(&str, u64)] = &[
