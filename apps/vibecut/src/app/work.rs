@@ -246,6 +246,8 @@ impl EditorWindow {
                     self.retry_save = None;
                     if leave || close {
                         self.editor = None;
+                    } else if let Some(editor) = &mut self.editor {
+                        editor.saved();
                     }
                     if close {
                         self.ready_to_close = true;

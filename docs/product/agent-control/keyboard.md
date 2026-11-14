@@ -137,8 +137,8 @@
 | `preview.zoom` — Set preview zoom | View | — | — | preview view |
 | `file.import` — Import | File | — | — | workspace import picker |
 | `file.export` — Export | File | — | — | export dialog |
-| `project.save` — Save | File | — | — | workspace lifecycle |
-| `project.save_as` — Save as | File | — | — | workspace lifecycle |
+| `project.save` — Save | File | Ctrl+S | — | workspace lifecycle |
+| `project.save_as` — Save as | File | Ctrl+Shift+S | — | workspace lifecycle |
 | `window.home` — Go to Home | File | — | — | workspace lifecycle |
 | `project.rename` — Rename project | File | — | — | project rename input |
 | `project.delete` — Delete project | File | — | — | project delete confirmation |

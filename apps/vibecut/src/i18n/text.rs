@@ -372,6 +372,7 @@ catalog! {
     AutoSaved { key: "auto_saved", en: "Auto saved", vi: "Đã tự động lưu" },
     Export { key: "export", en: "Export", vi: "Xuất" },
     Language { key: "language", en: "Tiếng Việt", vi: "English" },
+    ProjectSaved { key: "project_saved", en: "Saved", vi: "Đã lưu" },
     NotSaved { key: "not_saved", en: "Not saved", vi: "Chưa lưu" },
     Ok { key: "ok", en: "OK", vi: "OK" },
     PreferencesReset { key: "preferences_reset", en: "Settings were reset.", vi: "Đã đặt lại cài đặt." },

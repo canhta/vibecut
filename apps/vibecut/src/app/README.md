@@ -29,7 +29,7 @@ memory; history and playback restart on the copy. The picker confirmed the desti
 the command runs with `replace: true`; the project's own file is still refused. Opening the source afterwards makes a separate window, and reopening the
 destination focuses the issuing window. Home
 hosts catalog and startup recovery prompts; each accepted recovery becomes a project
-window. Closing Home hides it until Window > Home; the event loop exits after the last
+window. The editor's Home action (`window.home`) shows Home and closes that project; a project with no unsaved changes closes without the save prompt. Closing Home hides it until Window > Home; the event loop exits after the last
 window closes.
 
 `window_ui(project_id, ui)` drives a project surface in kittest with unchanged automation

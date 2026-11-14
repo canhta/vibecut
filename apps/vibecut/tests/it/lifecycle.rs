@@ -1108,3 +1108,89 @@ fn header_delete_asks_first_then_saves_leaves_and_moves_the_library_project_to_t
         .join("project.vibecut");
     assert!(kept.is_file());
 }
+
+#[test]
+fn saving_clears_dirty_so_closing_a_saved_project_asks_nothing_and_an_edited_one_asks() {
+    let root = tempfile::tempdir().unwrap();
+    let mut app = app(root.path());
+    app.create().unwrap();
+    idle(&mut app);
+    assert_eq!(
+        vibecut::actions::action("project.save").unwrap().defaults,
+        ["Ctrl+S"]
+    );
+    app.persist(Some(root.path().join("saved.vibecut")), false, false, false)
+        .unwrap();
+    idle(&mut app);
+    assert!(app.error().is_none(), "{:?}", app.error());
+    // Save As rekeys the window to the copy.
+    let id = app.focused_project().unwrap();
+    app.editor_mut(id)
+        .unwrap()
+        .session
+        .apply(Command::RenameProject {
+            name: "edited".into(),
+        })
+        .unwrap();
+    app.windows.get_mut(&id).unwrap().request_close();
+    assert!(
+        !app.windows.get(&id).unwrap().busy(),
+        "an edited project asks first"
+    );
+    app.windows
+        .get_mut(&id)
+        .unwrap()
+        .persist(None, false, false, false)
+        .unwrap();
+    idle(&mut app);
+    app.windows.get_mut(&id).unwrap().request_close();
+    assert!(
+        app.windows.get(&id).unwrap().busy(),
+        "a saved project closes without a prompt"
+    );
+    idle(&mut app);
+    app.tick();
+    assert!(app.windows.is_empty());
+}
+
+#[test]
+fn header_save_confirms_with_a_toast_and_home_leaves_the_saved_project() {
+    let root = tempfile::tempdir().unwrap();
+    let mut app = app(root.path());
+    app.create().unwrap();
+    idle(&mut app);
+    app.persist(Some(root.path().join("saved.vibecut")), false, false, false)
+        .unwrap();
+    idle(&mut app);
+    let mut harness = crate::gpu::builder()
+        .with_size(egui::vec2(1440.0, 900.0))
+        .build_ui_state(
+            move |ui, a: &mut Workspace| {
+                a.tick();
+                if let Some(id) = a.focused_project() {
+                    a.window_ui(id, ui);
+                }
+            },
+            app,
+        );
+    harness.run_steps(3);
+    let by = |id: &'static str| By::new().predicate(move |n| n.author_id() == Some(id));
+    harness.get(by("window.menu")).click();
+    harness.run_steps(3);
+    harness.get(by("project.save")).click();
+    harness.run_steps(3);
+    idle(harness.state_mut());
+    harness.run_steps(3);
+    assert!(harness.query_by_label("Saved").is_some(), "no saved toast");
+    harness.get(by("window.menu")).click();
+    harness.run_steps(3);
+    harness.get(by("window.home")).click();
+    harness.run_steps(3);
+    idle(harness.state_mut());
+    harness.run_steps(3);
+    assert!(harness.state().home_open());
+    assert!(
+        harness.state().windows.is_empty(),
+        "the saved project closes"
+    );
+}
