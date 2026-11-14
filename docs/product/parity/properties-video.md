@@ -69,7 +69,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | PVID-40 | Duration field | Done | Proposed | 100018 | |
 | PVID-41 | Change audio pitch | Done | Proposed | 100036 | |
 | PVID-42 | Reset button label | Done | Matches | 221757 | |
-| PVID-43 | Curve presets (8) | Done | Proposed | 100057 | Six per row; names wrap to two lines or step down in size inside the tile and gap |
+| PVID-43 | Curve presets (8) | Done | Proposed | 100057 | Six per row; names wrap at spaces, and step down in size until each word fits whole |
 | PVID-44 | Curve plot, points, Reset, + | Done | Proposed | 100104-100108 | |
 | PVID-45 | Smooth slow-mo | Missing | Not captured | 100036 | Optical flow |
 | PVID-46 | Reverse switch | Ours | Proposed | | |

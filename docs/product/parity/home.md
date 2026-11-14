@@ -37,7 +37,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | HOME-20 | Trash view | Done | Matches | 221432 | |
 | HOME-21 | Sync toggle | Out of scope | — | 221432 | Cloud sync |
 | HOME-22 | Sort control | Ours | Proposed | `apps/vibecut/src/home/view/projects.rs` | |
-| HOME-23 | Project thumbnail card | Done | Matches | 221432 | Relists on Home focus |
+| HOME-23 | Project thumbnail card | Done | Matches | 221432 | Relists on Home focus; a video project saves a ready cover |
 | HOME-24 | Card name and detail line | Done | Matches | 221432 | |
 | HOME-25 | Card menu (open, rename, duplicate) | Done | Not captured | web 01-home.md | |
 | HOME-26 | Rename, info, delete dialogs | Done | Not captured | [ui/home.md](../ui/home.md) | |
