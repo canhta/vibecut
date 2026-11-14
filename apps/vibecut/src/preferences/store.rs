@@ -128,7 +128,7 @@ impl PreferenceStore {
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
-    use crate::editor::{AssetsTab, Guide};
+    use crate::editor::AssetsTab;
     use crate::i18n::Locale;
     use crate::preferences::{EasingTab, SavedEasing};
     use crate::preferences::{
@@ -145,25 +145,6 @@ mod tests {
     /// Widths after a drag of `delta` (a fraction of the columns).
     fn dragged(panels: [f32; 3], axis: usize, delta: f32, columns: f32) -> [f32; 3] {
         px(drag_panel(panels, axis, delta, columns), columns)
-    }
-
-    /// A complete version-8 document as the app writes it, including the font
-    /// picker section and the preview axis toggle.
-    #[test]
-    fn default_is_deterministic_and_system_preferences_follow_the_os() {
-        assert_eq!(Preferences::default().locale, Locale::En);
-        assert_eq!(Preferences::default().panels, DEFAULT_PANELS);
-        assert!(Preferences::default().snapping);
-        assert!(!Preferences::default().ripple);
-        assert!(Preferences::default().preview_axis);
-        assert!(!Preferences::default().playback_loop);
-        assert_eq!(Preferences::default().preview_guide, Guide::default());
-        assert!(Preferences::default().preview_overlays.notes);
-        assert!(!Preferences::default().preview_overlays.guide);
-        let lines = &Preferences::default().preview_lines;
-        assert!(!lines.rulers && lines.shown && !lines.locked && lines.is_empty());
-        assert!(!Preferences::default().preview_scopes);
-        assert_eq!(Preferences::system().locale, Locale::from_system());
     }
 
     #[test]

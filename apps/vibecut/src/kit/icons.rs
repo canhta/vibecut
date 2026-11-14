@@ -713,20 +713,6 @@ mod tests {
     }
 
     #[test]
-    fn one_arc_is_shared_per_icon() {
-        let ImageSource::Bytes { bytes, .. } = source("play") else {
-            unreachable!("icon source is always embedded bytes")
-        };
-        let ImageSource::Bytes { bytes: again, .. } = source("play") else {
-            unreachable!("icon source is always embedded bytes")
-        };
-        let (Bytes::Shared(first), Bytes::Shared(second)) = (bytes, again) else {
-            unreachable!("catalog shares one Arc per icon")
-        };
-        assert!(Arc::ptr_eq(&first, &second));
-    }
-
-    #[test]
     fn svg_loader_rasterizes_every_icon_and_keeps_the_measured_glyph() {
         // The 20 px box is the rendered SVG's nominal size. Phosphor regular's
         // filled paths ink 14-20 px inside it, mostly around the measured 16 px

@@ -235,15 +235,6 @@ fn detect_review_apply_splits_every_reviewed_cut() {
         footer.top() - last.bottom(),
         kit::space::LG
     );
-    let screenshot =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p2-ai-05-scene-split.png");
-    std::fs::create_dir_all(screenshot.parent().unwrap()).unwrap();
-    bench
-        .harness_mut()
-        .render()
-        .unwrap()
-        .save(&screenshot)
-        .unwrap();
     bench.click("scene_split.apply");
     assert!(!bench.editor().dialogs.scene_split.is_open());
     assert_eq!(clip_count(&bench), 1 + candidates);
@@ -348,28 +339,6 @@ fn cancel_during_detection_leaves_the_timeline_unchanged() {
     bench.click("scene_split.cancel");
     settle(&mut bench, |state| matches!(state.phase, Phase::Cancelled));
     assert!(!gate.load(Ordering::SeqCst));
-    assert_eq!(clip_count(&bench), 1);
-}
-
-#[test]
-fn the_idle_frame_offers_find_and_close_without_a_job() {
-    let Some(path) = render("cut.mkv", CUT) else {
-        return;
-    };
-    let cache = tempfile::tempdir().unwrap();
-    let (mut bench, _) = mounted(&path, &cache);
-    open(&mut bench);
-    bench.step();
-    assert!(matches!(
-        bench.editor().dialogs.scene_split.phase,
-        Phase::Idle
-    ));
-    assert!(
-        bench
-            .harness_mut()
-            .query_by_label(Text::SceneSplitIdle.text(Locale::En))
-            .is_some()
-    );
     assert_eq!(clip_count(&bench), 1);
 }
 

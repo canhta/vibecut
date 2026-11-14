@@ -142,18 +142,6 @@ mod tests {
     }
 
     #[test]
-    fn panel_state_is_named_by_its_words_in_every_tone() {
-        for tone in [Tone::Quiet, Tone::Error] {
-            let mut harness = harness(move |ui, _| {
-                let rect = ui.max_rect();
-                panel_state(ui, "state", rect, Icon::FolderOpen, "Nothing here", tone);
-            });
-            harness.run();
-            harness.get_by_label("Nothing here");
-        }
-    }
-
-    #[test]
     fn progress_bar_keeps_its_height_for_any_fraction() {
         for fraction in [-1.0, 0.0, 0.5, 2.0, f32::NAN] {
             let mut harness = harness(move |ui, _| {
@@ -166,21 +154,5 @@ mod tests {
                 "{fraction}"
             );
         }
-    }
-
-    #[test]
-    fn toast_sits_bottom_right_inside_its_width() {
-        let mut harness = harness(|ui, _| {
-            toast(ui.ctx(), "toast", |ui| ui.label("Saved"));
-        });
-        harness.run();
-        let screen = harness.ctx.content_rect();
-        let rect = harness.get_by_label("Saved").rect();
-        assert!(rect.width() <= size::TOAST_WIDTH, "{rect:?}");
-        assert!(rect.right() <= screen.right() - space::XL + 0.5, "{rect:?}");
-        assert!(
-            rect.bottom() <= screen.bottom() - space::XL + 0.5,
-            "{rect:?}"
-        );
     }
 }

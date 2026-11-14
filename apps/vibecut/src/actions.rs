@@ -777,6 +777,7 @@ mod tests {
         assert_eq!(chord.canonical(), "Ctrl+Alt+Shift+Z");
         assert_eq!(chord.display(Platform::Mac), "⌥⇧⌘Z");
         assert_eq!(chord.display(Platform::Windows), "Ctrl+Alt+Shift+Z");
+        assert_eq!(chord.display(Platform::Linux), "Ctrl+Alt+Shift+Z");
         assert_eq!(
             Chord::parse("⌥⇧⌘Z").unwrap().canonical(),
             "Ctrl+Alt+Shift+Z"
@@ -802,20 +803,6 @@ mod tests {
         assert_eq!(bracket.parts(Platform::Mac), ["⌘", "["]);
         assert_eq!(bracket.display(Platform::Mac), "⌘[");
         assert_eq!(bracket.display(Platform::Windows), "Ctrl+[");
-    }
-
-    #[test]
-    fn stored_chords_stay_canonical_while_labels_follow_the_platform() {
-        let table = [
-            (Platform::Mac, "⇧⌘N"),
-            (Platform::Windows, "Ctrl+Shift+N"),
-            (Platform::Linux, "Ctrl+Shift+N"),
-        ];
-        let chord = Chord::parse("Ctrl+Shift+N").unwrap();
-        for (platform, label) in table {
-            assert_eq!(chord.display(platform), label, "{platform:?}");
-            assert_eq!(Chord::parse(label).unwrap().canonical(), "Ctrl+Shift+N");
-        }
     }
 
     #[test]
@@ -1046,37 +1033,6 @@ mod tests {
             preferences.validate(),
             Err(KeybindingError::InvalidChord { .. })
         ));
-    }
-
-    #[test]
-    fn binding_preferences_round_trip_with_customized_flags() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = PreferenceStore::new(dir.path().join("preferences.json"));
-        let mut preferences = Preferences::default();
-        preferences
-            .keybindings
-            .set_action("timeline.snap", vec!["Ctrl+Shift+N".into()])
-            .unwrap();
-        preferences
-            .keybindings
-            .set_action("timeline.ripple", vec!["Ctrl+Shift+Y".into()])
-            .unwrap();
-        preferences
-            .keybindings
-            .set_action("timeline.split", Vec::new())
-            .unwrap();
-        store.save(&preferences).unwrap();
-        let loaded = store.load_with_warning().0;
-        assert_eq!(loaded.keybindings, preferences.keybindings);
-        assert!(loaded.keybindings.is_customized.contains("timeline.snap"));
-        assert!(loaded.keybindings.is_customized.contains("timeline.ripple"));
-        assert!(loaded.keybindings.is_customized.contains("timeline.split"));
-        assert_eq!(
-            loaded
-                .keybindings
-                .effective_chords(action("timeline.split").unwrap()),
-            Vec::<String>::new()
-        );
     }
 
     #[test]

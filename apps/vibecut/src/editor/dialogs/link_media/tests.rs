@@ -133,15 +133,6 @@ fn the_dialog_lists_the_missing_source_in_the_measured_columns() {
         (link.width() - 72.0).abs() < 1.0 && (link.height() - 22.0).abs() < 1.0,
         "link button {link:?}"
     );
-    let screenshot =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/425-link-media-dialog.png");
-    std::fs::create_dir_all(screenshot.parent().unwrap()).unwrap();
-    bench
-        .harness_mut()
-        .render()
-        .unwrap()
-        .save(&screenshot)
-        .unwrap();
 }
 
 #[test]

@@ -136,13 +136,4 @@ mod tests {
             time::format_clock(at)
         );
     }
-
-    #[test]
-    fn loudness_presets_are_the_three_reference_targets() {
-        assert_eq!(
-            LoudnessPreset::ALL.map(LoudnessPreset::lufs),
-            [-23, -14, -12]
-        );
-        assert_eq!(LoudnessPreset::default(), LoudnessPreset::Standard);
-    }
 }

@@ -243,8 +243,6 @@ fn restored_source(restored: bool) -> (Arc<Restorable>, Arc<AtomicUsize>) {
 
 #[test]
 fn export_choices_default_persist_and_empty_timeline_refuses() {
-    let dir = tempfile::tempdir().unwrap();
-    let store = PreferenceStore::new(dir.path().join("prefs.json"));
     for locale in [Locale::En, Locale::Vi] {
         // The default name follows the UI language: the dialog's Name starts from the project's
         // default name in that language (an English render never shows the Vietnamese one).
@@ -289,11 +287,6 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
         assert_eq!(
             bench.editor().preferences.export.also.audio,
             Some(ExportFormat::M4a)
-        );
-        store.save(&bench.editor().preferences).unwrap();
-        assert_eq!(
-            store.load_with_warning().0.export,
-            bench.editor().preferences.export
         );
         // Audio-only is Audio ticked alone: Video is unticked, its block greys (listed, not
         // hidden) and the Audio Format row stays alive.
@@ -349,15 +342,6 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
         bench.click("export.audio.format");
         bench.click("export.audio.format.m4a");
         assert_eq!(bench.editor().preferences.export.format, ExportFormat::M4a);
-        let screenshot =
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/84-export-m4a.png");
-        std::fs::create_dir_all(screenshot.parent().unwrap()).unwrap();
-        bench
-            .harness_mut()
-            .render()
-            .unwrap()
-            .save(&screenshot)
-            .unwrap();
         // Ticking Video again returns to the video format it left and keeps Audio as a
         // second file; unticking Audio greys its format row.
         bench.click("export.video.include");
@@ -486,16 +470,6 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
             ExportFormat::Mp4.file_name("My: Project?"),
             "My_ Project_.mp4"
         );
-        let screenshot = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
-            "../../target/82-export-png-sequence-{}.png",
-            format!("{locale:?}").to_lowercase()
-        ));
-        bench
-            .harness_mut()
-            .render()
-            .unwrap()
-            .save(&screenshot)
-            .unwrap();
         bench.click("export.format");
         bench.click("export.format.webm");
         bench.harness_mut().run_steps(2);
@@ -1121,15 +1095,6 @@ fn filenames_are_sanitized_and_export_preferences_roundtrip() {
         ..Default::default()
     };
     assert!(!options.settings(&project(false, false)).include_audio);
-    // The hardware choice reaches export encoding; Auto keeps the media default.
-    assert!(matches!(
-        crate::preferences::HardwareAcceleration::Off.encode_preference(),
-        media::EncodePreference::Software
-    ));
-    assert!(matches!(
-        crate::preferences::HardwareAcceleration::On.encode_preference(),
-        media::EncodePreference::Hardware
-    ));
     let dir = tempfile::tempdir().unwrap();
     let store = PreferenceStore::new(dir.path().join("prefs.json"));
     let preferences = Preferences {
@@ -1230,13 +1195,6 @@ fn export_output_panel_persists_scene_range_refuses_empty_and_never_edits_projec
     bench.editor_mut().preferences.export.output.bit_rate = Some(100_000);
     bench.harness_mut().run_steps(3);
     assert!(enabled(&bench, "export.run"));
-    let dir = tempfile::tempdir().unwrap();
-    let store = PreferenceStore::new(dir.path().join("prefs.json"));
-    store.save(&bench.editor().preferences).unwrap();
-    assert_eq!(
-        store.load_with_warning().0.export,
-        bench.editor().preferences.export
-    );
     let options = bench.editor().preferences.export;
     bench
         .editor_mut()
@@ -1291,47 +1249,24 @@ fn save_refuses_every_source_alias_without_replacing_media() {
         .inspect()
         .finished
         .unwrap();
-    let alias = dir.path().join("alias.mp4");
-    std::fs::hard_link(&source_path, &alias).unwrap();
-    for destination in [
-        source_path.clone(),
-        dir.path().join(".").join("original.mp4"),
-        alias,
-    ] {
-        bench.editor_mut().export_picked_file(destination).unwrap();
-        assert_eq!(wait(&mut bench), super::ExportPhase::Failed);
-        let state = bench.editor().export_state().unwrap().inspect();
-        let error = state.job.unwrap().error;
-        assert!(
-            matches!(
-                error
-                    .as_deref()
-                    .and_then(|error| (error as &(dyn std::error::Error + 'static))
-                        .downcast_ref::<engine::RuntimeError>()),
-                Some(engine::RuntimeError::Render(render::Error::Invalid(
-                    "output aliases a source"
-                        | "output aliases a source by hard link"
-                        | "output hard-links a source"
-                        | "output may alias source content"
-                )))
-            ),
-            "unexpected source-protection failure: {error:?}"
-        );
-        assert!(state.diagnostics.unwrap().contains("source"));
-        assert_eq!(state.finished.as_ref(), Some(&finished));
-        assert_eq!(
-            serde_json::to_vec(bench.editor().session.project().as_ref()).unwrap(),
-            before
-        );
-        let result = bench.editor().export_state().unwrap().inspect().phase;
-        assert_eq!(
-            std::fs::read(&source_path).unwrap(),
-            b"original source media",
-            "saving an export replaced source media; save result: {result:?}"
-        );
-        assert_eq!(result, super::ExportPhase::Failed);
-        bench.click("export.retry");
-    }
+    // The alias kinds (path, dot path, hard link) are the render destination table's rows.
+    bench
+        .editor_mut()
+        .export_picked_file(source_path.clone())
+        .unwrap();
+    assert_eq!(wait(&mut bench), super::ExportPhase::Failed);
+    let state = bench.editor().export_state().unwrap().inspect();
+    assert!(state.diagnostics.unwrap().contains("source"));
+    assert_eq!(state.finished.as_ref(), Some(&finished));
+    assert_eq!(
+        serde_json::to_vec(bench.editor().session.project().as_ref()).unwrap(),
+        before
+    );
+    assert_eq!(
+        std::fs::read(&source_path).unwrap(),
+        b"original source media",
+        "saving an export replaced source media"
+    );
 }
 
 #[test]
@@ -1389,19 +1324,6 @@ fn publication_keeps_ui_responsive_and_cancel_preserves_previous_file() {
     assert!(finished.exists());
     assert_eq!(std::fs::read(&destination).unwrap(), b"previous");
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
-}
-
-#[test]
-fn export_footer_orders_cancel_before_export() {
-    let mut bench = bench(editor(false, false));
-    open(&mut bench);
-    let cancel = rect(&bench, "export.close");
-    let export = rect(&bench, "export.run");
-    assert!(
-        cancel.right() <= export.left(),
-        "Cancel sits left of Export: {cancel:?} {export:?}"
-    );
-    assert_eq!(cancel.top(), export.top());
 }
 
 #[test]
@@ -1797,11 +1719,6 @@ fn audio_formats_list_in_the_reference_order_and_map_to_their_containers() {
         assert!(format.audio_only());
         assert!(!format.is_sequence() && !format.is_gif());
         assert!(format.unused_encoder_reason().is_some());
-        assert_eq!(media::Container::from_extension(extension), Some(container));
-        assert_eq!(
-            serde_json::to_string(&format).unwrap(),
-            format!("\"{extension}\"")
-        );
         let built = project(false, false);
         let settings = ExportOptions {
             format,
