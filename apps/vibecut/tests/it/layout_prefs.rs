@@ -13,7 +13,10 @@ use std::{
 use time::FrameRate;
 use vibecut::{
     Editor, egui,
-    preferences::{DEFAULT_PANELS, PreferenceStore, Preferences, TIMELINE_MAX, TIMELINE_MIN},
+    preferences::{
+        DEFAULT_PANELS, MEDIA_MIN_PX, PLAYER_MIN_PX, PreferenceStore, Preferences, TIMELINE_MAX,
+        TIMELINE_MIN,
+    },
     services::playback::{Files, Playback},
 };
 
@@ -229,8 +232,9 @@ fn splitter_drags_clamp_boundaries_and_restore_after_restart() {
         + harness.state().panels()["inspector"].width();
     drag(&mut harness, "layout.media", egui::vec2(10_000.0, 0.0));
     let wide = harness.state().preferences.panels;
-    assert!((wide[0] - 0.40).abs() < f32::EPSILON);
-    assert!(0.30 <= 1.0 - wide[0] - wide[1] + f32::EPSILON);
+    // The media column takes what the player and properties leave at their minimums.
+    let properties = harness.state().panels()["inspector"].width();
+    assert!((wide[0] * full_width - (full_width - PLAYER_MIN_PX - properties)).abs() < 1.0);
     click(&mut harness, "edit.undo");
     assert_eq!(harness.state().preferences.panels, DEFAULT_PANELS);
     click(&mut harness, "edit.redo");
@@ -240,9 +244,9 @@ fn splitter_drags_clamp_boundaries_and_restore_after_restart() {
     drag(&mut harness, "layout.timeline", egui::vec2(0.0, 10_000.0));
     assert!((harness.state().preferences.panels[2] - TIMELINE_MIN).abs() < f32::EPSILON);
     drag(&mut harness, "layout.media", egui::vec2(-10_000.0, 0.0));
-    assert!((harness.state().preferences.panels[0] - 0.15).abs() < f32::EPSILON);
+    assert!((harness.state().preferences.panels[0] * full_width - MEDIA_MIN_PX).abs() < 1.0);
 
-    harness.state_mut().preferences.panels = [0.30, 0.20, 0.45];
+    harness.state_mut().preferences.panels = [0.35, 0.30, 0.45];
     store.save(&harness.state().preferences).unwrap();
     let restored = store.load_with_warning().0;
     let mut restarted = build(editor(restored.clone()));
@@ -253,7 +257,7 @@ fn splitter_drags_clamp_boundaries_and_restore_after_restart() {
         "restored left width {media} should match {}",
         full_width * restored.panels[0]
     );
-    assert_eq!(restarted.state().preferences.panels, [0.30, 0.20, 0.45]);
+    assert_eq!(restarted.state().preferences.panels, [0.35, 0.30, 0.45]);
 }
 
 #[test]

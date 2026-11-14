@@ -195,11 +195,13 @@ impl Editor {
             }
             if response.dragged() {
                 let delta = response.drag_delta();
+                let columns = (left.width() + preview.width() + right.width()).max(1.0);
                 let fraction = match axis {
-                    0 | 1 => delta.x / (left.width() + preview.width() + right.width()).max(1.0),
+                    0 | 1 => delta.x / columns,
                     _ => delta.y / (body.height() - theme::space::SM).max(1.0),
                 };
-                self.preferences.panels = drag_panel(self.preferences.panels, axis, fraction);
+                self.preferences.panels =
+                    drag_panel(self.preferences.panels, axis, fraction, columns);
             }
             if response.drag_stopped()
                 && let Some(before) = self.frame.layout_drag.take()

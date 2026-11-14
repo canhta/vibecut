@@ -59,12 +59,10 @@ impl Layout {
         };
         let gutter = kit::space::PANEL_GUTTER.min(body.width() / 2.0);
         let columns = (body.width() - gutter * 2.0).max(0.0);
-        let left = Rect::from_min_size(
-            upper.min,
-            Vec2::new((columns * panels[0]).round(), upper.height()),
-        );
+        let [media, _, properties] = crate::preferences::column_widths(panels, columns);
+        let left = Rect::from_min_size(upper.min, Vec2::new(media.round(), upper.height()));
         let right = Rect::from_min_max(
-            egui::pos2(upper.right() - (columns * panels[1]).round(), upper.top()),
+            egui::pos2(upper.right() - properties.round(), upper.top()),
             upper.max,
         );
         let player = Rect::from_min_max(

@@ -2,7 +2,7 @@
 
 Interface: `Preferences`, `PreferenceStore`, `PreferenceIssue`, `PREFERENCES_VERSION`,
 `PREFERENCE_KEYS`, `MAX_PREFERENCES_BYTES`, `MAX_SECTIONS`, `MAX_TIMELINE_LANES`,
-`PANEL_MIN`, `PANEL_MAX`, `PREVIEW_MIN`, `PREVIEW_MAX`, `TIMELINE_MIN`, `TIMELINE_MAX`,
+`MEDIA_MIN_PX`, `PLAYER_MIN_PX`, `PROPERTIES_MIN_PX`, `column_widths`, `TIMELINE_MIN`, `TIMELINE_MAX`,
 `DEFAULT_PANELS`, `drag_panel`, `validate_panels`, `WINDOW_MIN`, `WindowGeometry`,
 `FontPickerPreferences`, `AdjustmentPreset`, `MAX_ADJUSTMENT_PRESETS`,
 `MAX_ADJUSTMENT_PRESET_NAME`, `validate_adjustment_presets`, `EasingPreferences`, `EasingTab`,
