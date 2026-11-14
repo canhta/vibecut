@@ -36,8 +36,8 @@ pub use write::{
     EncodePreference, GIF_MAX_COLORS, GIF_MAX_EDGE, GIF_MAX_FPS, GIF_MAX_FRAMES, GIF_MAX_PIXELS,
     GIF_MAX_SECONDS, GIF_MIN_COLORS, GifDither, GifEncoder, GifEncoderSettings, GifLimit,
     GifOptions, H264Profile, MuxSink, Muxer, PROXY_MAX_EDGE, ProxyLimits, ProxyReport,
-    VideoEncoder, VideoEncoderSettings, audio_export_container_available, default_encoder_threads,
-    export_container_available, h264_encoder_available, proxy_size, video_encode_bytes,
+    RateControl, VideoEncoder, VideoEncoderSettings, audio_export_container_available, default_encoder_threads,
+    expected_rate_control, export_container_available, h264_encoder_available, proxy_size, video_encode_bytes,
     write_proxy,
 };
 
