@@ -349,6 +349,30 @@ pub(super) fn inspector_video_keyframes(theme: Theme, scale: f32) -> Result<AppH
     Ok(app)
 }
 
+/// Video > Remove BG with Auto removal on and the brush tool armed at the default Size 20,
+/// the Custom removal section beside desktop shot 100332 (which has no Auto removal, so the
+/// Auto removal rows differ; the tools row and Size row are the compared part).
+pub(super) fn inspector_remove_background(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let (mut editor, item) = media_editor(theme, Locale::En)?;
+    capture_columns(&mut editor)?;
+    editor.session.apply(Command::SetItemField {
+        item,
+        patch: ItemParamPatch::BackgroundRemoval(Some(project::BackgroundRemoval::default())),
+    })?;
+    editor.select([item].into_iter().collect())?;
+    editor.preferences.set(
+        "properties_tabs",
+        serde_json::json!({"video": "remove_background"}),
+    )?;
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, CAPTURE_WINDOW);
+    wait_for_presented(&mut app)?;
+    app.run_steps(3);
+    app.get(By::new().predicate(|node| node.author_id() == Some("inspector.matte_brush.add")))
+        .click();
+    app.run_steps(3);
+    Ok(app)
+}
+
 pub(super) fn inspector_project(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     inspector_project_locale(theme, scale, Locale::En)
 }

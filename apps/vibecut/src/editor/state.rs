@@ -183,6 +183,8 @@ pub struct Inspection {
     pub key_color_pick: Option<ItemId>,
     /// Clip and mode of the armed matte refinement brush.
     pub matte_brush: Option<(ItemId, project::MatteStrokeMode)>,
+    /// The matte brush's Size.
+    pub matte_brush_size: u32,
     /// Present while the shortcuts dialog is open.
     pub shortcuts: Option<ShortcutsInspection>,
     /// Font picker state, tab, favourites and download.

@@ -37,6 +37,7 @@ impl Editor {
             media_drag: self.assets.media_drag.clone(),
             key_color_pick: self.player.key_color_pick.clone(),
             matte_brush: self.player.matte_brush,
+            matte_brush_size: self.player.matte_brush_size,
             colour_sampling: self.properties.sampling_colour(),
             keywords: self.keyword_ui(playhead),
         }
@@ -674,6 +675,12 @@ impl Editor {
                     }
                     Request::Lifecycle(action) => self.lifecycle_action = Some(action),
                     Request::ArmKeyColor(pick) => self.player.key_color_pick = pick,
+                    Request::SetMatteBrushSize(size) => {
+                        self.player.matte_brush_size = size.clamp(
+                            crate::editor::MATTE_BRUSH_SIZE_MIN,
+                            crate::editor::MATTE_BRUSH_SIZE_MAX,
+                        );
+                    }
                     Request::ArmMatteBrush(brush) => {
                         self.player.matte_brush = brush;
                         self.player.brush_trail = None;

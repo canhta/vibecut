@@ -183,6 +183,8 @@ pub(crate) struct Context<'a> {
     pub(crate) key_color_pick: Option<crate::editor::KeyPick>,
     /// Armed matte refinement brush; the player turns its drags into strokes.
     pub(crate) matte_brush: Option<crate::editor::MatteBrush>,
+    /// The matte brush's Size, 1 to 100.
+    pub(crate) matte_brush_size: u32,
     /// The colour popover's eyedropper is armed; the player samples its next click.
     pub(crate) colour_sampling: bool,
     /// Keyword emphasis of the selected caption item's cue, when one item is selected.
@@ -404,6 +406,8 @@ pub(crate) enum Request {
     ArmKeyColor(Option<crate::editor::KeyPick>),
     /// Arm or leave the matte refinement brush the player paints with.
     ArmMatteBrush(Option<crate::editor::MatteBrush>),
+    /// Set the matte brush's Size; the player clamps it to 1 to 100.
+    SetMatteBrushSize(u32),
     /// Ask the window to open the native media picker for one clip's replacement.
     ReplaceMedia(project::ItemId),
     /// Edits changed the project: drop the nested selection scopes it left dangling.

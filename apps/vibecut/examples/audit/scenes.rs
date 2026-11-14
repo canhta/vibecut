@@ -610,6 +610,12 @@ pub(super) const SCENES: &[Scene] = &[
         build: inspector_video_keyframes,
     },
     Scene {
+        name: "inspector-remove-background",
+        reference_dark: Some("capcut-desktop-2026-11-14/capcut-desktop-100332.png"),
+        reference_light: None,
+        build: inspector_remove_background,
+    },
+    Scene {
         name: "inspector-project",
         reference_dark: None,
         reference_light: None,
@@ -850,8 +856,9 @@ pub(crate) use properties::inspector_mixed_vi;
 use properties::{
     close_prompt, close_prompt_vi, import_complete_vi, inspector_audio, inspector_audio_vi,
     inspector_blend, inspector_blend_vi, inspector_color, inspector_mixed, inspector_project,
-    inspector_project_vi, inspector_speed, inspector_text, inspector_transform, inspector_video,
-    inspector_video_keyframes, inspector_video_tab, text_item, text_item_vi,
+    inspector_project_vi, inspector_remove_background, inspector_speed, inspector_text,
+    inspector_transform, inspector_video, inspector_video_keyframes, inspector_video_tab,
+    text_item, text_item_vi,
 };
 use shorts::shorts_scene;
 use timeline::{

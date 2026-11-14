@@ -196,6 +196,10 @@ fn route(state: &mut State, port: &mut Port<'_>, actions: Vec<Action>) {
                 time,
                 value,
             } => commands::set_keyframe_at(port, item, &field, time, value),
+            Action::SetMatteBrushSize(size) => {
+                port.request(crate::editor::context::Request::SetMatteBrushSize(size));
+                Ok(())
+            }
             Action::SetMatteBrush(brush) => {
                 port.request(crate::editor::context::Request::ArmMatteBrush(brush));
                 Ok(())

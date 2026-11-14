@@ -229,6 +229,8 @@ pub(in crate::editor) enum Action {
     },
     /// Arm or leave the matte refinement brush the player paints with.
     SetMatteBrush(Option<crate::editor::MatteBrush>),
+    /// Set the matte brush's Size, 1 to 100.
+    SetMatteBrushSize(u32),
     /// Arm or leave the eyedropper that samples the rendered preview frame.
     SetKeyColorPick(Option<crate::editor::KeyPick>),
     /// Turn the chroma-key effect on or off for one clip.

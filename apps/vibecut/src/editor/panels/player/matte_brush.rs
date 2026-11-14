@@ -9,9 +9,22 @@ use crate::egui::{self, CursorIcon, Pos2};
 use project::MatteStroke;
 use time::Tick;
 
-/// Tip radius of a stroke, as a fraction of the decoded frame's shorter side. Not measured: the
-/// reference shows no brush, so the size and its control are open (see the properties owner).
-pub(super) const TIP_RADIUS: f32 = 0.03;
+/// The Size control's range and default, read from the reference (Remove BG, Custom removal).
+pub(crate) const SIZE_MIN: u32 = 1;
+pub(crate) const SIZE_MAX: u32 = 100;
+pub(crate) const SIZE_DEFAULT: u32 = 20;
+
+/// Tip radius per Size unit, as a fraction of the frame's shorter side. Derived from one
+/// measurement: at Size 20 the reference's cursor circle is 14.2 logical px across on a preview
+/// frame 230 px high, a diameter of 6.17 % of the shorter side, so Size 20 is a radius of
+/// 3.09 %; the mapping is taken as linear through zero (only Size 20 was measured).
+const RADIUS_PER_SIZE: f32 = 0.00155;
+
+/// Tip radius of a stroke at `size`, as a fraction of the decoded frame's shorter side. The
+/// stored `MatteStroke::radius` is this value, so the stored shape is unchanged.
+pub(super) fn radius(size: u32) -> f32 {
+    size.clamp(SIZE_MIN, SIZE_MAX) as f32 * RADIUS_PER_SIZE
+}
 
 /// The open stroke: each point in decoded-frame units with the screen position it was read at.
 pub(in crate::editor) type Trail = Vec<([f32; 2], Pos2)>;
@@ -21,6 +34,7 @@ pub(in crate::editor) type Trail = Vec<([f32; 2], Pos2)>;
 pub(super) fn show(
     trail: &mut Option<Trail>,
     brush: &MatteBrush,
+    size: u32,
     cx: &Context<'_>,
     ui: &mut egui::Ui,
     frame: egui::Rect,
@@ -28,8 +42,20 @@ pub(super) fn show(
     at: Tick,
     actions: &mut Vec<Action>,
 ) {
+    let tip = radius(size);
+    let tip_px = tip * frame.width().min(frame.height());
     if canvas.hovered() {
-        ui.ctx().set_cursor_icon(CursorIcon::Crosshair);
+        // The system cursor gives way to a circle the size of the tip.
+        ui.ctx().set_cursor_icon(CursorIcon::None);
+        if let Some(pointer) = ui.input(|i| i.pointer.hover_pos()) {
+            let painter = ui.painter().with_clip_rect(frame);
+            painter.circle(
+                pointer,
+                tip_px,
+                egui::Color32::from_white_alpha(24),
+                egui::Stroke::new(1.0, egui::Color32::from_white_alpha(200)),
+            );
+        }
     }
     let project = cx.staged_project();
     let dimensions = &project.data().canvas;
@@ -64,7 +90,7 @@ pub(super) fn show(
                 points.push((point, pointer));
             }
         }
-        let width = 2.0 * TIP_RADIUS * frame.width().min(frame.height());
+        let width = 2.0 * tip_px;
         let painter = ui.painter().with_clip_rect(frame);
         let line: Vec<Pos2> = points.iter().map(|(_, screen)| *screen).collect();
         painter.add(egui::Shape::line(
@@ -91,7 +117,7 @@ pub(super) fn show(
             stroke: MatteStroke {
                 mode: brush.mode,
                 at: source,
-                radius: TIP_RADIUS,
+                radius: tip,
                 points: points.into_iter().map(|(point, _)| point).collect(),
             },
         });
