@@ -286,13 +286,20 @@ pub(super) fn clip_background_blur(
     intensity: u32,
     hooks: &dyn ExecutionHooks,
 ) -> Result<Image> {
-    /// Sigma one kernel iteration covers (`sigma_passes` splits larger sigmas into
-    /// (sigma / 8)^2 iterations, which grows too fast to run per frame).
-    const SINGLE_ITERATION_SIGMA: f32 = 8.0;
     let scale = (f64::from(image.width) / 1920.0).min(f64::from(image.height) / 1080.0);
-    let mut sigma = (f64::from(intensity) / 5.0 * scale) as f32;
-    // A clip background is smooth, so large sigmas blur a half-resolution copy
-    // at half sigma per level, then scale back up. Each level halves both axes.
+    reduced_blur(image, (f64::from(intensity) / 5.0 * scale) as f32, hooks)
+}
+/// Sigma one kernel iteration covers (`sigma_passes` splits larger sigmas into
+/// (sigma / 8)^2 iterations, which grows too fast to run per frame).
+const SINGLE_ITERATION_SIGMA: f32 = 8.0;
+/// Fewest repeated gaussian pass pairs the CPU executor replaces by one
+/// reduced-resolution blur of their combined sigma.
+const REDUCED_BLUR_PAIRS: usize = 3;
+/// Gaussian of `sigma` output pixels. Large sigmas blur a half-resolution copy
+/// at half sigma per level until one kernel iteration covers them, then scale
+/// back up with bilinear taps; each level halves both axes.
+fn reduced_blur(image: &Image, sigma: f32, hooks: &dyn ExecutionHooks) -> Result<Image> {
+    let mut sigma = sigma;
     let mut levels: Option<Image> = None;
     while sigma > SINGLE_ITERATION_SIGMA {
         let (width, height) = levels
@@ -315,6 +322,42 @@ pub(super) fn clip_background_blur(
             image_ops::upsample(&blurred, image.width, image.height, hooks)
         }
     }
+}
+/// The leading run of at least [`REDUCED_BLUR_PAIRS`] identical horizontal then
+/// vertical gaussian pairs (how `sigma_passes` splits a large sigma) as its
+/// pass count and combined sigma: independent passes add variances, and the
+/// kernel's own variance is read from its weights. Pictures of two pixels or
+/// fewer on a side cannot be reduced and run pass by pass.
+fn gaussian_run(passes: &[EffectPass], width: u32, height: u32) -> Option<(usize, f32)> {
+    let EffectPass::Convolve {
+        entry_point,
+        weights,
+        ..
+    } = passes.first()?
+    else {
+        return None;
+    };
+    if width.min(height) <= 2 {
+        return None;
+    }
+    let is = |pass: Option<&EffectPass>, want: bool| {
+        matches!(pass, Some(EffectPass::Convolve { entry_point: e, horizontal, weights: w })
+            if e == entry_point && *horizontal == want && w == weights)
+    };
+    let mut len = 0;
+    while is(passes.get(len), true) && is(passes.get(len + 1), false) {
+        len += 2;
+    }
+    if len < 2 * REDUCED_BLUR_PAIRS {
+        return None;
+    }
+    let radius = (weights.len() / 2) as f32;
+    let variance: f32 = weights
+        .iter()
+        .enumerate()
+        .map(|(i, w)| w * (i as f32 - radius).powi(2))
+        .sum();
+    Some((len, ((len / 2) as f32 * variance).sqrt()))
 }
 /// Linear-light mid grey that contrast pivots around.
 const GRADE_PIVOT: f32 = 0.18;
@@ -2207,7 +2250,17 @@ impl EffectCompositor for CpuEffects {
         }
         let mut a = item.copy(hooks)?;
         let mut b = Image::new(item.width(), item.height(), [0.0; 4], hooks)?;
-        for pass in passes {
+        let mut next = 0;
+        while let Some(pass) = passes.get(next) {
+            if let Some((len, sigma)) = passes
+                .get(next..)
+                .and_then(|rest| gaussian_run(rest, a.width, a.height))
+            {
+                a = reduced_blur(&a, sigma, hooks)?;
+                next += len;
+                continue;
+            }
+            next += 1;
             let (horizontal, weights) = match pass {
                 EffectPass::Lut3d { table, strength } => {
                     crate::image::row_chunks(
@@ -2238,6 +2291,10 @@ impl EffectCompositor for CpuEffects {
                 EffectPass::Sample { entry_point, .. } => {
                     let op = sample_op(entry_point).ok_or(Error::Unsupported("effect pass"))?;
                     let values = pass.values();
+                    if let Some(reduced) = spatial::reduced_sample(entry_point, &a, &values, hooks)? {
+                        a = reduced;
+                        continue;
+                    }
                     let inputs = SampleInputs {
                         current: &a,
                         input: inputs.input,
@@ -2292,34 +2349,54 @@ impl EffectCompositor for CpuEffects {
                 for (row, pixels) in rows.chunks_mut(w).enumerate() {
                     check(hooks)?;
                     let y = start / w + row;
-                    for (x, output) in pixels.iter_mut().enumerate() {
-                        let mut sum = [0.0; 4];
+                    let line = |y: usize| {
+                        a.pixels
+                            .get(y * w..(y + 1) * w)
+                            .ok_or(Error::Invalid("effect pixel"))
+                    };
+                    if horizontal {
+                        // Interior outputs read their window directly; only
+                        // the border outputs clamp the tap column.
+                        let source = line(y)?;
+                        for (x, output) in pixels.iter_mut().enumerate() {
+                            let mut sum = [0.0; 4];
+                            let window = (x as i64 - radius >= 0)
+                                .then(|| source.get(x - radius as usize..=x + radius as usize))
+                                .flatten();
+                            if let Some(window) = window {
+                                for (weight, s) in weights.iter().zip(window) {
+                                    for (v, c) in sum.iter_mut().zip(s) {
+                                        *v += c * weight;
+                                    }
+                                }
+                            } else {
+                                for (tap, weight) in weights.iter().enumerate() {
+                                    let sx = (x as i64 + tap as i64 - radius).clamp(0, w as i64 - 1);
+                                    let s = source
+                                        .get(sx as usize)
+                                        .ok_or(Error::Invalid("effect pixel"))?;
+                                    for (v, c) in sum.iter_mut().zip(s) {
+                                        *v += c * weight;
+                                    }
+                                }
+                            }
+                            *output = clamp_to_alpha(sum);
+                        }
+                    } else {
+                        // Row-wise accumulation in tap order: the same sums as
+                        // a per-pixel walk, with sequential reads.
+                        pixels.fill([0.0; 4]);
                         for (tap, weight) in weights.iter().enumerate() {
-                            let delta = tap as i64 - radius;
-                            let sx = if horizontal {
-                                (x as i64 + delta).clamp(0, w as i64 - 1) as usize
-                            } else {
-                                x
-                            };
-                            let sy = if horizontal {
-                                y
-                            } else {
-                                (y as i64 + delta).clamp(0, h as i64 - 1) as usize
-                            };
-                            let source = a
-                                .pixels
-                                .get(sy * w + sx)
-                                .ok_or(Error::Invalid("effect pixel"))?;
-                            for (v, s) in sum.iter_mut().zip(source) {
-                                *v += s * weight;
+                            let sy = (y as i64 + tap as i64 - radius).clamp(0, h as i64 - 1);
+                            for (output, s) in pixels.iter_mut().zip(line(sy as usize)?) {
+                                for (v, c) in output.iter_mut().zip(s) {
+                                    *v += c * weight;
+                                }
                             }
                         }
-                        // Roundoff must not violate the working-image contract.
-                        let alpha = sum.get(3).copied().unwrap_or(0.0).clamp(0.0, 1.0);
-                        for v in &mut sum {
-                            *v = v.clamp(0.0, alpha);
+                        for output in pixels.iter_mut() {
+                            *output = clamp_to_alpha(*output);
                         }
-                        *output = sum;
                     }
                 }
                 Ok(())
@@ -2328,6 +2405,14 @@ impl EffectCompositor for CpuEffects {
         }
         Ok(a)
     }
+}
+/// Roundoff must not violate the working-image contract.
+fn clamp_to_alpha(mut sum: [f32; 4]) -> [f32; 4] {
+    let alpha = sum[3].clamp(0.0, 1.0);
+    for v in &mut sum {
+        *v = v.clamp(0.0, alpha);
+    }
+    sum
 }
 /// Admit a pass for positive output dimensions within Image's area bound.
 /// Mirror centres lie in [0,width] x [0,height] in image-edge pixels, with an

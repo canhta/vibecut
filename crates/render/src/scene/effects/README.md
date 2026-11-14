@@ -143,15 +143,28 @@ pass list with an authored radius: a gaussian of `radius * min(gx, gy)` output p
 floored at .6 and capped at 64 (64 iterations of two passes, a named bound inside the
 reserved kernel slots), then `detail_boost` at `amount/100` gated by `threshold/255`
 times coverage; amount 0 emits no pass. Lens Blur is one `lens_blur` sample that averages
-the current image over an iris disc: the centre plus up to twelve rings
-(`min(ceil(reach), 12)`, ring `r` holding `max(8r, 6)` taps at radius `r/rings` times
+a plane over an iris disc: the centre plus up to twelve rings
+(`min(ceil(reach_L), 12)`, ring `r` holding `max(8r, 6)` taps at radius `r/rings` times
 the polygon radius of the chosen iris, rotated), each tap bilinear with clamp and
-scaled per axis by `amount * gain`. Each tap's straight encoded luma boosts its colour by
+scaled per axis by `amount * gain / 2^L`. Each tap's straight encoded luma boosts its colour by
 `1 + 6*highlight*smoothstep(threshold, 1, luma)` (energy, so the pass exit clamp is what
-bounds it), applied per tap instead of to a boosted copy. Reach under .5 output pixels
-emits no pass. Above 12 output pixels a gaussian of `reach/24` (capped at 64) precedes the
-gather so twelve rings leave no gaps; this replaces the source's halve-and-upsample levels
-and is a named approximation, as is the radius clamp at 1e6 pixels. Mirror emits the shared
+bounds it). Reach under .5 output pixels emits no pass. `L` is the number of 2x2 box
+halvings (odd edges average the pixels present) until the disc reach is at most 3 pixels
+(or the picture is one pixel), so a gather never exceeds 49 taps: at `L = 0` the boost is
+applied per tap on the picture; at `L > 0` it is applied per texel before halving (a
+boosted copy), the unboosted gather runs on the halved plane, and the result is upsampled
+bilinearly with edge clamp (`(x+.5)*src/dst-.5`) and clamped to the working contract. This
+is the source's halve-and-upsample scheme and replaces the former twelve-ring gather at
+full resolution plus gaussian prefilter; it is a named approximation, as is the radius
+clamp at 1e6 pixels. The CPU executor also replaces a run of at least three identical
+horizontal/vertical gaussian pairs (what `sigma_passes` emits above sigma 11.3, up to 64
+pairs for Detail Boost at 64 pixels) by one gaussian of the combined sigma
+(`sqrt(pairs * kernel variance)`) taken on halved copies until one kernel iteration covers
+it, then upsampled; the pass list, and so the reserved kernel slots, is unchanged, and
+shorter runs and pictures of two pixels or fewer on a side keep the exact passes. Per
+frame at 1920x1080 that is about 3.4e6 kernel taps for sigma 64 instead of 1.3e10, and
+about 1.2e7 tap-equivalents for Lens Blur 10 or 60 instead of 9.1e8 or 1.3e9. The
+separable convolution itself reads interior windows without clamping. Mirror emits the shared
 `mirror` sample (instance input, transparent beyond the frame) with a centre in output
 pixels and the unit normal `(cos, sin)` of the angle. Wrap Shift is one `wrap_shift`
 sample reading the current image at `x - dx` with the wrap edge, so a fractional shift
