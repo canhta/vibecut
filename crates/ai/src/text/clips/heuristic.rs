@@ -1,7 +1,7 @@
 //! Local heuristic clip proposals that need no remote provider.
 use super::{
     ClipInput, ClipPiece, ClipProposal, ClipRole, ClipSource, ClipSuggester, HEURISTIC_SETTINGS,
-    prepare,
+    keyword_density, prepare, sentence,
 };
 use crate::Location;
 use crate::{
@@ -78,23 +78,17 @@ impl ClipSuggester for HeuristicClipSuggester {
                     next.range.start().0.saturating_sub(last.range.end().0)
                         >= time::TICKS_PER_SECOND / 2
                 });
-                let lowered = text.to_lowercase();
-                let hits: usize = window
-                    .settings
-                    .keywords
-                    .iter()
-                    .map(|k| lowered.matches(&k.as_str().to_lowercase()).count())
-                    .sum();
-                let density = (hits as f64 / lowered.chars().count().max(1) as f64 * 20.0).min(1.0);
+                let density = keyword_density(&window.settings.keywords, &text);
                 let score = 0.15
                     + if starts_sentence { 0.2 } else { 0.0 }
                     + if sentence_end { 0.3 } else { 0.0 }
                     + if pause { 0.15 } else { 0.0 }
                     + density * 0.2;
                 if best.as_ref().is_none_or(|p| p.score < score) {
-                    // Keep complete NFC text; a bounded generic label avoids splitting a grapheme.
-                    let title = if first.text.as_str().len() <= 2048 {
-                        first.text.as_str()
+                    // The opening sentence, trimmed; a bounded generic label avoids a long title.
+                    let opening = first_sentence(first.text.as_str());
+                    let title = if opening.len() <= 2048 {
+                        opening
                     } else {
                         "Local clip"
                     };
@@ -120,6 +114,11 @@ impl ClipSuggester for HeuristicClipSuggester {
         Ok(proposals)
     }
 }
-fn sentence(s: &str) -> bool {
-    s.trim_end().ends_with(['.', '?', '!', '。', '？', '！'])
+/// The text through its first sentence-ending mark, or the whole text when none ends it.
+fn first_sentence(text: &str) -> &str {
+    let end = text
+        .char_indices()
+        .find(|(_, c)| matches!(*c, '.' | '?' | '!' | '。' | '？' | '！'))
+        .map_or(text.len(), |(i, c)| i + c.len_utf8());
+    text.get(..end).unwrap_or(text).trim()
 }

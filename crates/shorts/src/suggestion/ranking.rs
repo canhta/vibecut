@@ -86,6 +86,7 @@ pub(super) fn snap_candidate(
         segments: short.segments,
         adjustments: short.adjustments,
         duration: short.duration,
+        label: suggestion.label,
         source: suggestion.source,
     })
 }

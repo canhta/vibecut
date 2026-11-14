@@ -128,6 +128,7 @@ pub(super) fn run_provider(
                 ClipSource::Llm => "llm".into(),
                 ClipSource::Heuristic => "heuristic".into(),
             },
+            label: clip.label,
             title: clip.proposal.title.as_str().to_owned(),
             segments: clip
                 .segments

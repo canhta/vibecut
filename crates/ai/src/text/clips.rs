@@ -246,12 +246,26 @@ pub enum ClipSource {
     Llm,
     Heuristic,
 }
+/// Category of one short. The first matching rule wins: `Hook` when the opening piece is
+/// the hook, `OnTopic` at keyword density `ON_TOPIC_DENSITY`, `CleanStart` when the opening
+/// segment begins a sentence, otherwise `Standalone`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClipLabel {
+    Hook,
+    OnTopic,
+    CleanStart,
+    Standalone,
+}
+/// Keyword density (see `keyword_density`) at or above which a short is `OnTopic`.
+pub(super) const ON_TOPIC_DENSITY: f64 = 0.5;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ClipSuggestion {
     pub proposal: ClipProposal,
     pub segments: Vec<ClipSourceSegment>,
     /// Sum of piece durations, excluding gaps, in ticks.
     pub duration: Tick,
+    pub label: ClipLabel,
     pub source: ClipSource,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -346,7 +360,7 @@ pub fn suggest_clips(
             observe(
                 &mut observations,
                 clip.proposal,
-                Some(clip.segments),
+                Some((clip.segments, clip.label)),
                 ClipDropReason::Duration,
             )?;
         }
@@ -364,11 +378,12 @@ pub fn suggest_clips(
     let mut all = Vec::new();
     let mut dropped = Vec::new();
     for observation in observations.into_values() {
-        if let Some(segments) = observation.segments {
+        if let Some((segments, label)) = observation.segments {
             all.push(ClipSuggestion {
                 proposal: observation.proposal,
                 duration: duration(&segments)?,
                 segments,
+                label,
                 source: provider.source(),
             });
         } else {
@@ -389,14 +404,14 @@ pub fn suggest_clips(
 
 struct WindowObservation {
     proposal: ClipProposal,
-    segments: Option<Vec<ClipSourceSegment>>,
+    segments: Option<(Vec<ClipSourceSegment>, ClipLabel)>,
     reason: ClipDropReason,
     duplicate: Option<ClipProposal>,
 }
 fn observe(
     observations: &mut BTreeMap<Vec<(NfcText, NfcText, ClipRole)>, WindowObservation>,
     proposal: ClipProposal,
-    segments: Option<Vec<ClipSourceSegment>>,
+    segments: Option<(Vec<ClipSourceSegment>, ClipLabel)>,
     reason: ClipDropReason,
 ) -> Result<(), Error> {
     let key = proposal
@@ -480,6 +495,7 @@ fn validate(
         match resolve(input, &ids, &mut p) {
             Ok(segments) => result.clips.push(ClipSuggestion {
                 duration: duration(&segments)?,
+                label: label(input, &p, &segments),
                 proposal: p,
                 segments,
                 source,
@@ -491,6 +507,56 @@ fn validate(
         }
     }
     Ok(result)
+}
+/// Keyword hits per character, scaled so one hit per 20 characters is 1.0. Shared by every
+/// suggester so the same text gets the same density.
+pub(super) fn keyword_density(keywords: &[NfcText], text: &str) -> f64 {
+    let lowered = text.to_lowercase();
+    let hits: usize = keywords
+        .iter()
+        .map(|k| lowered.matches(&k.as_str().to_lowercase()).count())
+        .sum();
+    (hits as f64 / lowered.chars().count().max(1) as f64 * 20.0).min(1.0)
+}
+/// True when the segment text ends a sentence.
+pub(super) fn sentence(s: &str) -> bool {
+    s.trim_end().ends_with(['.', '?', '!', '。', '？', '！'])
+}
+/// Label from the opening role, the keyword density of the clip's transcript text and
+/// whether the opening segment starts a sentence. A pure function of its inputs.
+fn label(input: &ClipInput, proposal: &ClipProposal, segments: &[ClipSourceSegment]) -> ClipLabel {
+    if proposal
+        .segments
+        .first()
+        .is_some_and(|piece| piece.role == ClipRole::Hook)
+    {
+        return ClipLabel::Hook;
+    }
+    let text = input
+        .segments
+        .iter()
+        .filter(|s| segments.iter().any(|piece| piece.range.overlaps(s.range)))
+        .map(|s| s.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    if keyword_density(&input.settings.keywords, &text) >= ON_TOPIC_DENSITY {
+        return ClipLabel::OnTopic;
+    }
+    let opening = segments.first().map(|s| s.range.start());
+    let starts_sentence = input
+        .segments
+        .iter()
+        .position(|s| Some(s.range.start()) == opening)
+        .is_some_and(|i| {
+            i.checked_sub(1)
+                .and_then(|previous| input.segments.get(previous))
+                .is_none_or(|previous| sentence(previous.text.as_str()))
+        });
+    if starts_sentence {
+        ClipLabel::CleanStart
+    } else {
+        ClipLabel::Standalone
+    }
 }
 fn duration(segments: &[ClipSourceSegment]) -> Result<Tick, Error> {
     segments.iter().try_fold(Tick::ZERO, |sum, s| {

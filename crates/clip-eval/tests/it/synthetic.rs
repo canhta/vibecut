@@ -52,4 +52,6 @@ fn synthetic_set_runs_end_to_end_and_writes_both_reports() {
     assert!(markdown.contains("## TL;DR"));
     assert!(markdown.contains("Heuristic baseline"));
     assert!(markdown.contains("Main baseline"));
+    assert!(markdown.contains("## Suggestion labels"));
+    assert!(markdown.contains("| Video | Rank | Label | Source | Score | Title |"));
 }

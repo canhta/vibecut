@@ -2,6 +2,7 @@
 
 use crate::Result;
 use crate::metrics::Metrics;
+use ai::text::clips::ClipLabel;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
@@ -9,8 +10,18 @@ use std::path::{Path, PathBuf};
 pub struct SuggestionReport {
     pub score: f64,
     pub source: String,
+    pub label: ClipLabel,
     pub title: String,
     pub segments: Vec<RangeReport>,
+}
+
+fn label_name(label: ClipLabel) -> &'static str {
+    match label {
+        ClipLabel::Hook => "hook",
+        ClipLabel::OnTopic => "on_topic",
+        ClipLabel::CleanStart => "clean_start",
+        ClipLabel::Standalone => "standalone",
+    }
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -241,6 +252,22 @@ pub(super) fn markdown(report: &Report) -> String {
             cost(video.current.cost_micros),
             video.current.wall_ms
         ));
+    }
+    out.push_str("\n## Suggestion labels\n\n");
+    out.push_str("| Video | Rank | Label | Source | Score | Title |\n");
+    out.push_str("|---|---:|---|---|---:|---|\n");
+    for video in &report.videos {
+        for (rank, suggestion) in video.suggestions.iter().enumerate() {
+            out.push_str(&format!(
+                "| `{}` | {} | {} | {} | {:.3} | {} |\n",
+                video.label,
+                rank.saturating_add(1),
+                label_name(suggestion.label),
+                suggestion.source,
+                suggestion.score,
+                suggestion.title.replace(['|', '\n', '\r'], " ")
+            ));
+        }
     }
     out.push_str("\n## Notes\n\n");
     for note in &report.notes {
