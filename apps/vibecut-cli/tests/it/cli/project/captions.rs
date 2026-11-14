@@ -270,7 +270,9 @@ Dialogue: 0,broken,0:00:02.00,Default,,0,0,0,,Skipped\n",
                 .iter()
                 .all(|c| c.style.is_some_and(|id| id.0 == 0))
         );
-        if crate::media_fixture::tools() {
+        // The encoded look and its warning diagnostics are one export row; the other preset
+        // reaches export through the control job above.
+        if crate::media_fixture::tools() && preset == "outline_bottom" {
             let output = dir.path().join(format!("{preset}.mp4"));
             let settings = render::OutputOptions {
                 resolution: Some([360, 640]),
