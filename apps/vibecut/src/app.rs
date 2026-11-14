@@ -3,6 +3,7 @@ mod chrome;
 mod control;
 mod geometry;
 mod lending;
+mod native_menu;
 mod picker;
 mod registry;
 mod runs;

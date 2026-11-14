@@ -1,5 +1,5 @@
 //! Draws Home, every project viewport and the Shorts viewport from the registry.
-use super::{geometry::remember_geometry, registry::Workspace, work::Work};
+use super::{geometry::remember_geometry, native_menu::Entry, registry::Workspace, work::Work};
 use crate::{
     Editor, egui, home,
     i18n::{self, Text},
@@ -39,17 +39,37 @@ impl Workspace {
                 self.preferences.copy_timeline_lanes(from, to);
             }
             if std::mem::take(&mut window.focus_home) {
-                self.home_open = true;
-                ui.ctx().send_viewport_cmd_to(
-                    egui::ViewportId::ROOT,
-                    egui::ViewportCommand::Visible(true),
-                );
-                ui.ctx().send_viewport_cmd_to(
-                    egui::ViewportId::ROOT,
-                    egui::ViewportCommand::Minimized(false),
-                );
-                ui.ctx()
-                    .send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Focus);
+                self.bring_home_forward(ui.ctx());
+            }
+        }
+        if self.focused == Some(id) {
+            self.run_menu(ui.ctx(), id);
+        }
+    }
+    fn bring_home_forward(&mut self, ctx: &egui::Context) {
+        self.home_open = true;
+        ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Visible(true));
+        ctx.send_viewport_cmd_to(
+            egui::ViewportId::ROOT,
+            egui::ViewportCommand::Minimized(false),
+        );
+        ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Focus);
+    }
+    /// Run the native menu rows clicked since the last frame in the focused project, the
+    /// way the same key press would; a row with no project window to take it is dropped.
+    fn run_menu(&mut self, ctx: &egui::Context, project: project::ProjectId) {
+        for entry in self.menu.take() {
+            match entry {
+                Entry::Home => self.bring_home_forward(ctx),
+                Entry::Action(id) => {
+                    if let Some(editor) = self
+                        .windows
+                        .get_mut(&project)
+                        .and_then(|window| window.editor.as_deref_mut())
+                    {
+                        editor.menu_action(ctx, id);
+                    }
+                }
             }
         }
     }
@@ -82,8 +102,16 @@ impl Workspace {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.request_close();
         }
+        self.menu
+            .sync(self.preferences.locale, &self.preferences.keybindings);
         self.show_home(ui);
         self.show_projects(&ctx);
+        // With no project window focused only the Window menu's Home row has a target.
+        for entry in self.menu.take() {
+            if entry == Entry::Home {
+                self.bring_home_forward(&ctx);
+            }
+        }
         self.show_shorts(&ctx);
         if let Some(geometry) = WindowGeometry::read(ui) {
             remember_geometry(&mut self.preferences, "home".into(), geometry);

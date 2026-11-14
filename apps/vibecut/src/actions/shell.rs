@@ -26,7 +26,7 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         ActionCategory::File,
         "workspace lifecycle",
         UiAction::Save,
-        &[],
+        &["Ctrl+S"],
     ),
     ActionSpec::ui(
         "project.save_as",
@@ -34,7 +34,7 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         ActionCategory::File,
         "workspace lifecycle",
         UiAction::SaveAs,
-        &[],
+        &["Ctrl+Shift+S"],
     ),
     ActionSpec::ui(
         "window.home",

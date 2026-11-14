@@ -1,6 +1,6 @@
 # Keyboard
 
-`Ctrl` means Cmd on macOS and Ctrl on Windows/Linux; `Alt` means Option on macOS. Menus and the shortcuts dialog show platform glyphs. Defaults live in the app action registry; the table below is generated from it.
+`Ctrl` means Cmd on macOS and Ctrl on Windows/Linux; `Alt` means Option on macOS. Menus and the shortcuts dialog show platform glyphs (`[` `]` and other symbol keys as the symbol). The macOS menu bar (File, Edit, View, Window, Help) runs registry actions and shows their current chords. Defaults live in the app action registry; the table below is generated from it.
 
 <!-- BEGIN GENERATED KEYMAP -->
 | Action | Category | Default keys | Engine command | UI owner |
@@ -145,8 +145,8 @@
 | `preview.zoom` — Set preview zoom | View | — | — | preview view |
 | `file.import` — Import | File | Ctrl+I | — | workspace import picker |
 | `file.export` — Export | File | Ctrl+E | — | export dialog |
-| `project.save` — Save | File | — | — | workspace lifecycle |
-| `project.save_as` — Save as | File | — | — | workspace lifecycle |
+| `project.save` — Save | File | Ctrl+S | — | workspace lifecycle |
+| `project.save_as` — Save as | File | Ctrl+Shift+S | — | workspace lifecycle |
 | `window.home` — Go to Home | File | — | — | workspace lifecycle |
 | `project.rename` — Rename project | File | — | — | project rename input |
 | `project.delete` — Delete project | File | — | — | project delete confirmation |

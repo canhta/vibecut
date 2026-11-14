@@ -66,6 +66,8 @@ rfd = { version = "0.17.2", default-features = false, features = ["xdg-portal", 
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.5"
+# Native menu bar (Apache-2.0 OR MIT); safe API, so the workspace keeps `unsafe_code = "forbid"`.
+muda = { version = "0.21.2", default-features = false }
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSRunningApplication"] }
 
 [dev-dependencies]

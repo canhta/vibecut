@@ -147,7 +147,7 @@ impl Chord {
             if self.mods.shift {
                 text.push_str("Shift+");
             }
-            text.push_str(self.key.name());
+            text.push_str(self.key.symbol_or_name());
         }
         text
     }
@@ -188,7 +188,7 @@ impl Chord {
             (true, egui::Key::Backspace) => "⌫".to_owned(),
             (true, egui::Key::Delete) => "⌦".to_owned(),
             (false, egui::Key::Escape) => "Esc".to_owned(),
-            _ => self.key.name().to_owned(),
+            _ => self.key.symbol_or_name().to_owned(),
         });
         parts
     }
@@ -322,7 +322,7 @@ fn mac_key(key: egui::Key) -> &'static str {
         egui::Key::Backspace => "⌫",
         egui::Key::Enter => "⏎",
         egui::Key::Delete => "⌦",
-        other => other.name(),
+        other => other.symbol_or_name(),
     }
 }
 

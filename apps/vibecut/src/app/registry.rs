@@ -48,6 +48,8 @@ pub struct Workspace {
     /// Workers ask the event loop to repaint through this; nothing else polls while idle.
     wake: time::wake::Wake,
     wake_attached: bool,
+    /// The native menu bar (macOS); a no-op elsewhere.
+    pub(super) menu: super::native_menu::Menu,
 }
 
 impl Workspace {
@@ -109,6 +111,7 @@ impl Workspace {
             agent_prompts: BTreeMap::new(),
             wake,
             wake_attached: false,
+            menu: Default::default(),
         })
     }
     /// Point the worker wake at this context's root viewport. Immediate child windows paint

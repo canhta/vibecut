@@ -189,6 +189,14 @@ fn closing_one_window_preserves_another_windows_dirty_edit_and_running_export() 
     assert!(!app.home_open());
     assert!(!app.ready_to_close());
     app.focus(first).unwrap();
+    // A saved, unchanged project closes without asking; an edited one asks first.
+    app.editor_mut(first)
+        .unwrap()
+        .session
+        .apply(engine::Command::RenameProject {
+            name: "unsaved first".into(),
+        })
+        .unwrap();
     app.windows.get_mut(&first).unwrap().request_close();
     let mut h = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 900.0))

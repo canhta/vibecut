@@ -104,7 +104,9 @@ impl EditorWindow {
                         self.pick(ui.ctx(), PickerAction::KeybindingsImport { replace })
                     }
                     EditorAction::FocusHome => {
+                        // Back to Home: Home comes forward and this project is left.
                         self.focus_home = true;
+                        self.request_close();
                         Ok(())
                     }
                     EditorAction::ExitProject => {

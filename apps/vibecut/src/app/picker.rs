@@ -136,10 +136,12 @@ impl EditorWindow {
                 Box::pin(async move { dialog.save_file().await.map(|file| vec![file]) })
             }
             PickerAction::ReplaceMedia { .. } => {
-                let dialog = rfd::AsyncFileDialog::new().add_filter(
-                    self.tr(Text::Media),
-                    crate::editor::assets::import::MEDIA_EXTENSIONS,
-                );
+                let dialog = rfd::AsyncFileDialog::new()
+                    .set_title(self.tr(Text::ReplaceMedia))
+                    .add_filter(
+                        self.tr(Text::Media),
+                        crate::editor::assets::import::MEDIA_EXTENSIONS,
+                    );
                 Box::pin(async move { dialog.pick_file().await.map(|file| vec![file]) })
             }
             PickerAction::LinkMedia(pick) => {
@@ -163,12 +165,14 @@ impl EditorWindow {
                 future
             }
             PickerAction::ImportLut => {
-                let dialog =
-                    rfd::AsyncFileDialog::new().add_filter(self.tr(Text::Lut), &["cube", "3dl"]);
+                let dialog = rfd::AsyncFileDialog::new()
+                    .set_title(self.tr(Text::LutImport))
+                    .add_filter(self.tr(Text::Lut), &["cube", "3dl"]);
                 Box::pin(async move { dialog.pick_file().await.map(|file| vec![file]) })
             }
             PickerAction::ImportSubtitles { .. } => {
                 let dialog = rfd::AsyncFileDialog::new()
+                    .set_title(self.tr(Text::SubImport))
                     .add_filter(self.tr(Text::SubImport), &["srt", "vtt"]);
                 Box::pin(async move { dialog.pick_file().await.map(|file| vec![file]) })
             }
@@ -180,10 +184,12 @@ impl EditorWindow {
                 Box::pin(async move { dialog.pick_file().await.map(|file| vec![file]) })
             }
             PickerAction::ImportMedia => {
-                let dialog = rfd::AsyncFileDialog::new().add_filter(
-                    self.tr(Text::Media),
-                    crate::editor::assets::import::MEDIA_EXTENSIONS,
-                );
+                let dialog = rfd::AsyncFileDialog::new()
+                    .set_title(self.tr(Text::ImportMediaTitle))
+                    .add_filter(
+                        self.tr(Text::Media),
+                        crate::editor::assets::import::MEDIA_EXTENSIONS,
+                    );
                 Box::pin(dialog.pick_files())
             }
             PickerAction::SnapshotSave => {

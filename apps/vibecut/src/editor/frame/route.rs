@@ -1,5 +1,6 @@
 //! Routes the actions an area returns to the owners that apply them.
 use crate::editor::{Command, Context, Editor, ItemId, Request, Tick, egui, timeline};
+use crate::i18n::Text;
 
 impl Editor {
     /// The read-only services every area receives.
@@ -610,6 +611,10 @@ impl Editor {
     /// Show a creator-facing failure on the editor's error line.
     pub(in crate::editor) fn fail(&mut self, message: impl Into<String>) {
         self.error = Some(message.into());
+    }
+    /// Confirm a manual save to the creator.
+    pub fn saved(&mut self) {
+        self.set_toast(self.tr(Text::ProjectSaved), None);
     }
     /// Stage a preview and always show it; a reversal must restore the entry
     /// frame even when the engine reports no net change.

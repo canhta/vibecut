@@ -136,7 +136,18 @@ impl EditorWindow {
         self.ready_to_close
     }
     pub fn request_close(&mut self) {
-        if self.editor.is_some() || self.busy() {
+        // A saved project has nothing to ask about: close it the way "keep backup" does.
+        let clean = !self.busy()
+            && self
+                .editor
+                .as_mut()
+                .and_then(|editor| editor.session.autosave())
+                .is_some_and(|autosave| !autosave.is_dirty() && !autosave.saving());
+        if clean {
+            if let Err(error) = self.persist(None, true, true, true) {
+                self.error = Some(error);
+            }
+        } else if self.editor.is_some() || self.busy() {
             self.close_prompt = true;
         } else {
             self.ready_to_close = true;
