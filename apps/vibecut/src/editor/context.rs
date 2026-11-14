@@ -384,6 +384,8 @@ pub(crate) enum Request {
     ImportLut,
     /// Move the shared transport.
     Seek(time::Tick),
+    /// Move the shared transport during a playhead drag.
+    Scrub(time::Tick),
     Cache(CacheAction),
     Proxy(ProxyAction),
     /// Open the model manager on a missing model.

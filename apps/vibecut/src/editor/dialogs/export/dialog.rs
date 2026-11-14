@@ -305,6 +305,8 @@ pub struct ExportDialog {
     pub(crate) selection_range: Option<time::TimeRange>,
     finished: Option<Rendered>,
     pending_save: bool,
+    /// The render finished since the last `take_completed`; the Edit settings' export sound.
+    completed: bool,
     attempt: Option<ExportOptions>,
     diagnostics: Option<String>,
     saved: Vec<PathBuf>,
@@ -360,6 +362,7 @@ impl ExportDialog {
             selection_range: None,
             finished: None,
             pending_save: false,
+            completed: false,
             attempt: None,
             diagnostics: None,
             saved: Vec::new(),
@@ -455,6 +458,10 @@ impl ExportDialog {
             self.cancelling = self.active();
         }
     }
+    /// Whether a render finished since the last call; reading clears it.
+    pub fn take_completed(&mut self) -> bool {
+        std::mem::take(&mut self.completed)
+    }
     pub fn tick(
         &mut self,
         _project: &Arc<project::Project>,
@@ -515,6 +522,7 @@ impl ExportDialog {
                 if self.finished.is_none() {
                     self.finished = self.temp.take();
                     self.pending_save = self.finished.is_some();
+                    self.completed |= self.finished.is_some();
                 }
             }
             Some(JobState::Failed) => {

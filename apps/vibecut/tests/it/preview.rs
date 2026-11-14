@@ -2971,4 +2971,18 @@ fn a_paused_start_seek_and_frame_step_show_their_frames_when_the_worker_wakes_th
         target + p.project.data().canvas.fps.frame_duration().unwrap()
     );
     assert!(lit, "the stepped frame is black");
+
+    // "Step many" moves the Edit settings' frame count, forward and back.
+    let frame = p.project.data().canvas.fps.frame_duration().unwrap();
+    let stepped = target + frame;
+    p.playback
+        .transport(Transport::StepForward(10), p.project.clone())
+        .unwrap();
+    let (at, _) = p.frame_when_woken("step many forward");
+    assert_eq!(at, stepped + Tick(frame.0 * 10));
+    p.playback
+        .transport(Transport::StepBack(10), p.project.clone())
+        .unwrap();
+    let (at, _) = p.frame_when_woken("step many back");
+    assert_eq!(at, stepped);
 }

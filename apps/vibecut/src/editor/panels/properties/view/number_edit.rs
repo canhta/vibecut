@@ -663,9 +663,15 @@ impl Panel<'_, '_> {
         let (up, down) = kit::stepper(ui, &id, label);
         self.remember(format!("{id}.increase"), &up);
         self.remember(format!("{id}.decrease"), &down);
+        // Shift moves by the Edit settings' "Adjust value many" count of displayed units.
+        let many = if ui.input(|i| i.modifiers.shift) {
+            f64::from(self.cx.preferences.value_step)
+        } else {
+            1.0
+        };
         for (clicked, sign) in [(up.clicked(), 1.0), (down.clicked(), -1.0)] {
             if clicked {
-                let value = spec.quantize(current + sign * arrow_step(spec));
+                let value = spec.quantize(current + sign * many * arrow_step(spec));
                 self.write_field(item, spec, &spec.format(value));
                 self.state.drafts.remove(spec.field);
             }

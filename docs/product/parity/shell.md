@@ -77,15 +77,15 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | SET-02 | Draft: save and download paths | Missing | — | 14b/110747 | Managed library |
 | SET-03 | Draft: cache auto delete | Partial | Proposed | 14b/110758 | |
 | SET-04 | Draft: cloud sync | Out of scope | — | 14b/110758 | Cloud sync |
-| SET-05 | Edit: frame step, adjust value | Missing | — | 14b/110800 | |
-| SET-06 | Edit: image duration | Missing | — | 14b/110800 | |
-| SET-07 | Edit: target loudness | Missing | — | 14b/110800 | Per project |
-| SET-08 | Edit: audio while scrubbing | Missing | — | 14b/110804 | |
+| SET-05 | Edit: frame step, adjust value | Done | Proposed | 14b/110800 | Number plus stepper, default 10; geometry measured, field is egui |
+| SET-06 | Edit: image duration | Done | Proposed | 14b/110800 | Stills only; animations keep their length |
+| SET-07 | Edit: target loudness | Partial | Proposed | 14b/110800 | Whole LUFS number; select options uncaptured |
+| SET-08 | Edit: audio while scrubbing | Done | Proposed | 14b/110804 | 120 ms burst per position [proposed] |
 | SET-09 | Edit: linkage settings | Missing | — | 14b/110804 | Needs TL-21 |
 | SET-10 | Edit: arrange layers | Missing | — | 14b/110804 | |
 | SET-11 | Edit: default frame rate | Done | Proposed | 14b/110804 | Under Draft tab |
-| SET-12 | Edit: time code format | Missing | — | 14b/110804 | |
-| SET-13 | Edit: export sound | Missing | — | 14b/110804 | |
+| SET-12 | Edit: time code format | Missing | — | 14b/110804 | Select options uncaptured |
+| SET-13 | Edit: export sound | Done | Proposed | 14b/110804 | Synthesised chime when the render finishes |
 | SET-14 | Edit: partner sync | Out of scope | — | 14b/110804 | Accounts |
 | SET-15 | Perf: hardware encode, decode | Partial | Proposed | 14b/110829 | One choice |
 | SET-16 | Perf: auto optimization, remux | Missing | — | 14b/110829 | |
@@ -120,7 +120,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | SHORTCUT-14 | Marker keys | Partial | — | 14b/110530 | No new-colour marker key |
 | SHORTCUT-15 | Group, compound, speed keys | Partial | — | 14b/110530; 14e/203822 | Ctrl+G, Ctrl+Shift+G done; compound and speed keys missing |
 | SHORTCUT-16 | Shuttle J, K, L | Partial | Proposed | 14b/110530 | Ours seeks 1 s |
-| SHORTCUT-17 | Step back many frames | Differs | Proposed | 14b/110530 | Shift+Left jumps 1 s |
+| SHORTCUT-17 | Step back many frames | Done | Proposed | 14b/110530 | Shift+Left, count from Settings Edit |
 | SHORTCUT-18 | Select by clip Shift X | Differs | — | 14b/110530 | Ours: export in/out |
 | SHORTCUT-19 | Duplicate Ctrl D | Ours | Proposed | | |
 | SHORTCUT-20 | Player: play, rulers, guides | Done | Proposed | 14b/110531 | |

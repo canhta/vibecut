@@ -38,6 +38,10 @@ pub(in crate::editor) fn apply(
                 let at = at.clamp(Tick::ZERO, port.session.project().duration());
                 port.request(Request::Seek(at));
             }
+            Action::Scrub(at) => {
+                let at = at.clamp(Tick::ZERO, port.session.project().duration());
+                port.request(Request::Scrub(at));
+            }
             Action::SettleKeyframes => {}
             Action::SetLaneOpen { item, open } => set_lane_open(state, port, item, open),
             Action::DismissKeyframeHint => {

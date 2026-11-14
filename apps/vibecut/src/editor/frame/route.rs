@@ -674,6 +674,11 @@ impl Editor {
                             self.fail(error.to_string());
                         }
                     }
+                    Request::Scrub(at) => {
+                        if let Err(error) = self.scrub(at) {
+                            self.fail(error.to_string());
+                        }
+                    }
                     Request::OpenModel(id) => {
                         if let Err(error) = self.open_model(&id) {
                             self.fail(error.to_string());

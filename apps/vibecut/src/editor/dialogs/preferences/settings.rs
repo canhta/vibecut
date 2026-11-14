@@ -75,6 +75,60 @@ fn hardware_label(choice: HardwareAcceleration) -> Text {
     }
 }
 
+/// Edit tab geometry, logical px from CapCut frames 110800 and 110804: the caption
+/// column is 164 wide (x 704 to 868), rows sit 46 apart, a number field with its stepper
+/// is 77.5 wide and a select 268.
+const ROW_PITCH: f32 = 46.0;
+const CAPTION_WIDTH: f32 = 164.0;
+const NUMBER_WIDTH: f32 = 61.5;
+
+/// One Edit row: the caption in its column, then the controls.
+fn edit_row(ui: &mut egui::Ui, caption: &str, controls: impl FnOnce(&mut egui::Ui)) {
+    ui.horizontal(|ui| {
+        ui.set_min_height(ROW_PITCH);
+        ui.add_sized([CAPTION_WIDTH, ROW_PITCH], egui::Label::new(caption));
+        controls(ui);
+    });
+}
+
+/// A number field with the kit stepper and its unit. Typing commits on Enter; the stepper
+/// moves by `step`. `encode` turns the shown value into the stored JSON.
+fn number_row(
+    ui: &mut egui::Ui,
+    actions: &mut Vec<Action>,
+    (id, caption, unit): (&str, &str, &str),
+    shown: (f64, usize),
+    limits: (f64, f64, f64),
+    (key, encode): (&'static str, impl Fn(f64) -> serde_json::Value),
+) {
+    let (value, decimals) = shown;
+    let (min, max, step) = limits;
+    edit_row(ui, caption, |ui| {
+        let mut next = value;
+        let field = ui.add_sized(
+            [NUMBER_WIDTH, crate::kit::size::FIELD],
+            egui::DragValue::new(&mut next)
+                .range(min..=max)
+                .speed(0.0)
+                .fixed_decimals(decimals),
+        );
+        actions.push(Action::Remember(id.into(), field));
+        let (up, down) = crate::kit::stepper(ui, id, caption);
+        actions.push(Action::Remember(format!("{id}.increase"), up.clone()));
+        actions.push(Action::Remember(format!("{id}.decrease"), down.clone()));
+        if up.clicked() {
+            next = (value + step).min(max);
+        }
+        if down.clicked() {
+            next = (value - step).max(min);
+        }
+        ui.label(unit);
+        if (next - value).abs() > f64::EPSILON {
+            actions.push(Action::Set(key, encode(next)));
+        }
+    });
+}
+
 fn toggle(
     ui: &mut egui::Ui,
     actions: &mut Vec<Action>,
@@ -158,6 +212,106 @@ pub(super) fn show(
                     });
                 }
                 Tab::Edit => {
+                    let steps = (
+                        f64::from(*crate::preferences::STEP_RANGE.start()),
+                        f64::from(*crate::preferences::STEP_RANGE.end()),
+                        1.0,
+                    );
+                    number_row(
+                        ui,
+                        actions,
+                        (
+                            "settings.edit.frame_step",
+                            tr(Text::SettingsStepMany),
+                            tr(Text::SettingsFramesUnit),
+                        ),
+                        (f64::from(prefs.frame_step), 0),
+                        steps,
+                        ("frame_step", |v: f64| serde_json::json!(v.round() as u32)),
+                    );
+                    number_row(
+                        ui,
+                        actions,
+                        (
+                            "settings.edit.value_step",
+                            tr(Text::SettingsAdjustMany),
+                            tr(Text::SettingsUnitsUnit),
+                        ),
+                        (f64::from(prefs.value_step), 0),
+                        steps,
+                        ("value_step", |v: f64| serde_json::json!(v.round() as u32)),
+                    );
+                    let image_ms = crate::preferences::IMAGE_DURATION_RANGE_MS;
+                    number_row(
+                        ui,
+                        actions,
+                        (
+                            "settings.edit.image_duration",
+                            tr(Text::SettingsImageDuration),
+                            tr(Text::SettingsSecondsUnit),
+                        ),
+                        (f64::from(prefs.image_duration_ms) / 1000.0, 1),
+                        (
+                            f64::from(*image_ms.start()) / 1000.0,
+                            f64::from(*image_ms.end()) / 1000.0,
+                            0.1,
+                        ),
+                        ("image_duration_ms", |v: f64| {
+                            serde_json::json!((v * 1000.0).round() as u32)
+                        }),
+                    );
+                    let lufs = crate::preferences::LOUDNESS_TARGET_RANGE_LUFS;
+                    number_row(
+                        ui,
+                        actions,
+                        (
+                            "settings.edit.loudness_target",
+                            tr(Text::SettingsTargetLoudness),
+                            tr(Text::SettingsLufsUnit),
+                        ),
+                        (f64::from(prefs.loudness_target_lufs), 0),
+                        (f64::from(*lufs.start()), f64::from(*lufs.end()), 1.0),
+                        ("loudness_target_lufs", |v: f64| {
+                            serde_json::json!(v.round() as i32)
+                        }),
+                    );
+                    ui.separator();
+                    edit_row(ui, tr(Text::SettingsAudioScrub), |ui| {
+                        ui.vertical(|ui| {
+                            let mut on = prefs.audio_scrub;
+                            let response = crate::kit::toggle(
+                                ui,
+                                "settings.edit.audio_scrub",
+                                &mut on,
+                                tr(Text::SettingsAudioScrub),
+                            );
+                            actions.push(Action::Remember(
+                                "settings.edit.audio_scrub".into(),
+                                response,
+                            ));
+                            ui.label(egui::RichText::new(tr(Text::SettingsAudioScrubHint)).small());
+                            if on != prefs.audio_scrub {
+                                actions.push(Action::Set("audio_scrub", serde_json::json!(on)));
+                            }
+                        });
+                    });
+                    edit_row(ui, tr(Text::SettingsExportSound), |ui| {
+                        let mut on = prefs.export_sound;
+                        let response = crate::kit::checkbox(
+                            ui,
+                            "settings.edit.export_sound",
+                            &mut on,
+                            tr(Text::SettingsExportSoundHint),
+                        );
+                        actions.push(Action::Remember(
+                            "settings.edit.export_sound".into(),
+                            response,
+                        ));
+                        if on != prefs.export_sound {
+                            actions.push(Action::Set("export_sound", serde_json::json!(on)));
+                        }
+                    });
+                    ui.separator();
                     toggle(
                         ui,
                         actions,

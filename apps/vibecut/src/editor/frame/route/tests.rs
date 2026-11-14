@@ -242,6 +242,32 @@ fn commands_seeks_activations_scene_renames_and_failures_reach_their_owners() {
     );
     editor.apply_timeline(vec![timeline::Action::Seek(Tick(2 * SECOND))]);
     assert_eq!(editor.playback.position().unwrap(), Tick(2 * SECOND));
+    // A playhead drag seeks too; with the audio-scrub preference it plays a burst that
+    // the frame ends, and with no audio device it stays a plain seek.
+    editor.apply_timeline(vec![timeline::Action::Scrub(Tick(SECOND))]);
+    assert_eq!(editor.playback.position().unwrap(), Tick(SECOND));
+    assert!(!editor.playback.playing() && editor.frame.scrub_until.is_none());
+    editor
+        .set_preference("audio_scrub", serde_json::json!(true))
+        .unwrap();
+    editor.apply_timeline(vec![timeline::Action::Scrub(Tick(2 * SECOND))]);
+    assert_eq!(editor.playback.position().unwrap(), Tick(2 * SECOND));
+    assert_eq!(
+        editor.playback.playing(),
+        editor.frame.scrub_until.is_some(),
+        "a burst is armed exactly while the transport plays"
+    );
+    editor
+        .set_preference("audio_scrub", serde_json::json!(false))
+        .unwrap();
+    editor
+        .playback
+        .transport(
+            crate::services::playback::Transport::Pause,
+            editor.session.project().clone(),
+        )
+        .unwrap();
+    editor.frame.scrub_until = None;
     assert!(!editor.preferences.ripple);
     editor.apply_timeline(vec![timeline::Action::Activate("timeline.ripple".into())]);
     assert!(

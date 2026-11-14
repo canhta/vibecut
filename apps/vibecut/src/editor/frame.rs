@@ -37,6 +37,8 @@ pub(super) struct State {
     pub(super) panels: BTreeMap<&'static str, Rect>,
     /// App-owned preference history, deliberately separate from the project's.
     pub(super) preference_history: PreferenceHistory,
+    /// When the audio burst a playhead drag started ends; the frame pauses the transport then.
+    pub(super) scrub_until: Option<std::time::Duration>,
     pub(super) keymap: Keymap,
     pub(super) keymap_source: actions::KeybindingPresets,
     pub(super) keybinding_issues: Vec<KeybindingIssue>,
@@ -73,6 +75,7 @@ impl State {
             widgets: Widgets::default(),
             panels: BTreeMap::new(),
             preference_history: PreferenceHistory::default(),
+            scrub_until: None,
             keybinding_issues: keymap.issues().to_vec(),
             keymap_source: preferences.keybindings.clone(),
             keymap,

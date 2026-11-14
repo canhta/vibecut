@@ -192,7 +192,10 @@ impl Panel<'_, '_> {
             locale: self.cx.locale,
             clip_on: scope_target(project, LoudnessScope::Clip).is_some(),
             master_on: scope_target(project, LoudnessScope::Master).is_some(),
-            shown: self.state.loudness.shown_target(project),
+            shown: self
+                .state
+                .loudness
+                .shown_target(project, self.cx.preferences.loudness_target()),
             progress: self.state.loudness.progress(),
             failed: self.state.loudness.failure().cloned(),
             result: self.state.loudness.result_for(project).cloned(),

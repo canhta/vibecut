@@ -89,6 +89,8 @@ pub(in crate::editor) enum Action {
     },
     /// Move the playhead.
     Seek(Tick),
+    /// Drag the playhead: seek, and play a short burst of audio when the preference asks.
+    Scrub(Tick),
     /// Click selection with the pointer's modifiers.
     Select {
         item: ItemId,

@@ -3,6 +3,9 @@
 use crate::editor::{AppCommand, Editor, Error, Result, Text, Tick, Vec2};
 use crate::services::preview;
 
+/// How long one scrub position plays before the transport pauses again.
+const SCRUB_BURST: std::time::Duration = std::time::Duration::from_millis(120);
+
 impl Editor {
     /// Restart preview/audio work against the current immutable project snapshot.
     /// Old generations are fenced by `Playback::seek`; the position is clamped when
@@ -156,6 +159,40 @@ impl Editor {
         self.playback
             .seek(at, self.playback.playing(), self.session.project().clone())?;
         self.remember_view()
+    }
+
+    /// A playhead drag. With "Play audio while scrubbing" on it seeks playing and arms
+    /// the burst's end (`end_scrub_burst`); otherwise, or with no audio device, it is a seek.
+    pub(in crate::editor) fn scrub(&mut self, at: Tick) -> Result<()> {
+        let burst = self.preferences.audio_scrub
+            && (!self.playback.playing() || self.frame.scrub_until.is_some());
+        if burst
+            && self
+                .playback
+                .seek(at, true, self.session.project().clone())
+                .is_ok()
+        {
+            self.frame.scrub_until = Some(self.clock.now() + SCRUB_BURST);
+            return self.remember_view();
+        }
+        self.seek(at)
+    }
+
+    /// Pause the audio burst a scrub started once it has played its length.
+    pub(in crate::editor) fn end_scrub_burst(&mut self) {
+        let Some(until) = self.frame.scrub_until else {
+            return;
+        };
+        if self.clock.now() < until {
+            return;
+        }
+        self.frame.scrub_until = None;
+        if let Err(error) = self.playback.transport(
+            crate::services::playback::Transport::Pause,
+            self.session.project().clone(),
+        ) {
+            self.fail(error.to_string());
+        }
     }
 
     pub(in crate::editor) fn remember_view(&mut self) -> Result<()> {

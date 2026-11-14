@@ -25,13 +25,19 @@ pub(super) const SCENES: &[Scene] = &[
         name: "settings",
         reference_dark: None,
         reference_light: None,
-        build: |theme, scale| settings_dialog(theme, scale, Locale::En),
+        build: |theme, scale| settings_dialog(theme, scale, Locale::En, false),
     },
     Scene {
         name: "settings-vi",
         reference_dark: None,
         reference_light: None,
-        build: |theme, scale| settings_dialog(theme, scale, Locale::Vi),
+        build: |theme, scale| settings_dialog(theme, scale, Locale::Vi, false),
+    },
+    Scene {
+        name: "settings-edit",
+        reference_dark: Some("capcut-desktop-2026-11-14b/capcut-desktop-110800.png"),
+        reference_light: None,
+        build: |theme, scale| settings_dialog(theme, scale, Locale::En, true),
     },
     Scene {
         name: "player-timecode",

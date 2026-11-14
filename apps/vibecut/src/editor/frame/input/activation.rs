@@ -448,6 +448,14 @@ impl Editor {
                 UiAction::FrameForward => self
                     .playback
                     .transport(Transport::FrameForward, self.session.project().clone())?,
+                UiAction::StepBackMany => self.playback.transport(
+                    Transport::StepBack(self.preferences.frame_step),
+                    self.session.project().clone(),
+                )?,
+                UiAction::StepForwardMany => self.playback.transport(
+                    Transport::StepForward(self.preferences.frame_step),
+                    self.session.project().clone(),
+                )?,
                 UiAction::Start => self
                     .playback
                     .transport(Transport::Start, self.session.project().clone())?,

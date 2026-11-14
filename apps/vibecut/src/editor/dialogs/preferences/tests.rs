@@ -256,6 +256,20 @@ fn settings_modal_applies_preferences_and_shortcut_transfers_through_the_picker_
         bench.click("settings.draft.fps");
         bench.click("settings.draft.fps.60");
         assert_eq!(bench.editor().preferences.default_fps, 60);
+        // The Edit tab: steppers move each number by one unit; the switches flip.
+        bench.click("settings.tab.edit");
+        bench.click("settings.edit.frame_step.increase");
+        assert_eq!(bench.editor().preferences.frame_step, 11);
+        bench.click("settings.edit.value_step.decrease");
+        assert_eq!(bench.editor().preferences.value_step, 9);
+        bench.click("settings.edit.image_duration.increase");
+        assert_eq!(bench.editor().preferences.image_duration_ms, 5100);
+        bench.click("settings.edit.loudness_target.increase");
+        assert_eq!(bench.editor().preferences.loudness_target_lufs, -22);
+        bench.click("settings.edit.audio_scrub");
+        assert!(bench.editor().preferences.audio_scrub);
+        bench.click("settings.edit.export_sound");
+        assert!(bench.editor().preferences.export_sound);
         bench.click("settings.tab.performance");
         bench.click("settings.performance.hardware");
         bench.click("settings.performance.hardware.Off");

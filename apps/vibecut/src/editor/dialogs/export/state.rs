@@ -144,13 +144,19 @@ impl State {
     }
 
     /// Advance the running job and publish its terminal state.
-    pub(in crate::editor) fn tick(&mut self, project: &Arc<Project>, options: ExportOptions) {
+    /// Returns whether a render finished during this tick.
+    pub(in crate::editor) fn tick(
+        &mut self,
+        project: &Arc<Project>,
+        options: ExportOptions,
+    ) -> bool {
         let Some(dialog) = &mut self.dialog else {
-            return;
+            return false;
         };
         if let Err(error) = dialog.tick(project, options) {
             dialog.failed(error);
         }
+        dialog.take_completed()
     }
 
     pub(in crate::editor) fn inspect(&self) -> Option<ExportInspection> {

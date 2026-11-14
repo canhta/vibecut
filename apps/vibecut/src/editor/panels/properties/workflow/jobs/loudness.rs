@@ -97,12 +97,17 @@ impl LoudnessWorkflow {
         self.failure.as_ref()
     }
 
-    /// The target the fields show: the switched-on scope's target, else the last typed one.
-    pub(in crate::editor) fn shown_target(&self, project: &project::Project) -> LoudnessTarget {
+    /// The target the fields show: the switched-on scope's target, else the last typed one,
+    /// else `default`, the Edit settings' target loudness.
+    pub(in crate::editor) fn shown_target(
+        &self,
+        project: &project::Project,
+        default: LoudnessTarget,
+    ) -> LoudnessTarget {
         scope_target(project, LoudnessScope::Clip)
             .or_else(|| scope_target(project, LoudnessScope::Master))
             .or(self.typed)
-            .unwrap_or(LoudnessTarget::DEFAULT)
+            .unwrap_or(default)
     }
 
     /// The finished measurement, while the project still holds the gains it produced.
@@ -189,7 +194,8 @@ impl State {
             return Ok(());
         }
         let command = if enabled {
-            let target = self.loudness.shown_target(project);
+            let default = port.view().preferences.loudness_target();
+            let target = self.loudness.shown_target(project, default);
             engine::Command::SetLoudness {
                 scope,
                 target_lufs: target.target_lufs,
