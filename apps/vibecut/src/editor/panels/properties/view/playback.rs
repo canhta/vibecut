@@ -15,7 +15,6 @@ const FADE_MAX_SECONDS: f64 = 10.0;
 /// Drafts of the two loudness target fields, by field key.
 const LUFS_DRAFT: &str = "loudness_target";
 const PEAK_DRAFT: &str = "loudness_true_peak";
-const LOUDNESS_FIELD_WIDTH: f32 = 96.0;
 const LUFS_SUFFIX: &str = " LUFS";
 const PEAK_SUFFIX: &str = " dBTP";
 
@@ -165,8 +164,7 @@ impl Panel<'_, '_> {
             }
         }
         // The status line takes a full property row, so it lines up with the rows above it.
-        let secondary = self.secondary();
-        for line in self.loudness_status(&frame) {
+        for (line, color) in self.loudness_status(&frame) {
             let status = ui
                 .allocate_ui_with_layout(
                     egui::vec2(ui.available_width(), theme::size::PROPERTY_ROW),
@@ -175,7 +173,7 @@ impl Panel<'_, '_> {
                         ui.label(
                             egui::RichText::new(line)
                                 .size(theme::type_size::BODY)
-                                .color(secondary),
+                                .color(color),
                         )
                     },
                 )
@@ -241,6 +239,8 @@ impl Panel<'_, '_> {
     ) -> bool {
         let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
         self.row_label(ui, row, self.tr(label));
+        // The field spans the value column, to the right edge of the switches and Apply.
+        let width = value_ui.available_width();
         let mut next = self
             .state
             .drafts
@@ -251,7 +251,7 @@ impl Panel<'_, '_> {
             &mut value_ui,
             id,
             &mut next,
-            LOUDNESS_FIELD_WIDTH,
+            width,
             None,
             self.tr(label),
         );
@@ -305,26 +305,30 @@ impl Panel<'_, '_> {
     }
 
     /// The one status line, in priority order: progress, failure, a refused target, no scope,
-    /// the result for the current gains, or the unmeasured hint.
-    fn loudness_status(&self, frame: &LoudnessFrame) -> Vec<String> {
+    /// the result for the current gains, or the unmeasured hint. Each line carries its colour:
+    /// a failure paints the error token, a stale notice the warning token, the rest the
+    /// secondary ink.
+    fn loudness_status(&self, frame: &LoudnessFrame) -> Vec<(String, egui::Color32)> {
         let locale = frame.locale;
+        let dark = self.cx.dark;
+        let secondary = self.secondary();
         let tr = |key: Text| i18n::text(locale, key).to_owned();
         if let Some(progress) = frame.progress {
             let percent = format!("{:.0}", progress.clamp(0.0, 1.0) * 100.0);
-            return vec![i18n::format(
-                locale,
-                Text::LoudnessMeasuring,
-                &[("percent", &percent)],
+            return vec![(
+                i18n::format(locale, Text::LoudnessMeasuring, &[("percent", &percent)]),
+                secondary,
             )];
         }
         match &frame.failed {
-            Some(Failed::Stale) => return vec![tr(Text::LoudnessStale)],
+            Some(Failed::Stale) => {
+                return vec![(tr(Text::LoudnessStale), kit::warning(dark))];
+            }
             Some(Failed::Measurement(cause)) => {
                 let reason = tr(cause_text(*cause));
-                return vec![i18n::format(
-                    locale,
-                    Text::LoudnessFailed,
-                    &[("reason", &reason)],
+                return vec![(
+                    i18n::format(locale, Text::LoudnessFailed, &[("reason", &reason)]),
+                    kit::error_text(dark),
                 )];
             }
             None => {}
@@ -333,13 +337,13 @@ impl Panel<'_, '_> {
             .typed_loudness(frame.shown)
             .is_some_and(|t| t.is_valid())
         {
-            return vec![tr(Text::LoudnessInvalid)];
+            return vec![(tr(Text::LoudnessInvalid), secondary)];
         }
         if !frame.clip_on && !frame.master_on {
-            return vec![tr(Text::LoudnessNoScope)];
+            return vec![(tr(Text::LoudnessNoScope), secondary)];
         }
         let Some(result) = &frame.result else {
-            return vec![tr(Text::LoudnessUnmeasured)];
+            return vec![(tr(Text::LoudnessUnmeasured), secondary)];
         };
         let mut lines = Vec::new();
         if frame.clip_on {
@@ -355,7 +359,7 @@ impl Panel<'_, '_> {
                 Text::LoudnessClipSummary,
                 &[("total", &total), ("silent", &silent)],
             );
-            lines.push(loudness_line(locale, Text::LoudnessClip, &detail));
+            lines.push((loudness_line(locale, Text::LoudnessClip, &detail), secondary));
         }
         if let (true, Some(measured)) = (frame.master_on, result.master) {
             let detail = match (measured.integrated_lufs, measured.true_peak_db) {
@@ -371,7 +375,7 @@ impl Panel<'_, '_> {
                 }
                 _ => tr(Text::LoudnessSilent),
             };
-            lines.push(loudness_line(locale, Text::LoudnessMaster, &detail));
+            lines.push((loudness_line(locale, Text::LoudnessMaster, &detail), secondary));
         }
         lines
     }

@@ -525,24 +525,7 @@ pub(crate) fn section_header_with(
                 let enable_id = format!("{id}.enable");
                 let (rect, response) = ui
                     .allocate_exact_size(Vec2::new(size::CHECKBOX, size::CHECKBOX), Sense::click());
-                if checked {
-                    paint(ui).rect_filled(rect, radius::CONTROL, theme::accent(dark));
-                    paint(ui).add(egui::Shape::line(
-                        vec![
-                            rect.min + egui::vec2(3.0, 6.0),
-                            rect.min + egui::vec2(5.0, 8.5),
-                            rect.min + egui::vec2(9.0, 3.5),
-                        ],
-                        Stroke::new(1.5, theme::on_accent(dark)),
-                    ));
-                } else {
-                    paint(ui).rect_stroke(
-                        rect,
-                        radius::CONTROL,
-                        Stroke::new(space::HAIRLINE, theme::border(dark)),
-                        egui::StrokeKind::Inside,
-                    );
-                }
+                paint_checkbox(ui, rect, checked, dark);
                 response.widget_info(|| {
                     egui::WidgetInfo::selected(
                         egui::Role::CheckBox,
@@ -790,6 +773,61 @@ pub(crate) fn segmented(
     }
     ui.allocate_rect(full, Sense::hover());
     out
+}
+
+/// The 12 px box: an accent fill with a tick when checked, a hairline outline when not.
+fn paint_checkbox(ui: &Ui, rect: Rect, checked: bool, dark: bool) {
+    if checked {
+        paint(ui).rect_filled(rect, radius::CONTROL, theme::accent(dark));
+        paint(ui).add(egui::Shape::line(
+            vec![
+                rect.min + egui::vec2(3.0, 6.0),
+                rect.min + egui::vec2(5.0, 8.5),
+                rect.min + egui::vec2(9.0, 3.5),
+            ],
+            Stroke::new(1.5, theme::on_accent(dark)),
+        ));
+    } else {
+        paint(ui).rect_stroke(
+            rect,
+            radius::CONTROL,
+            Stroke::new(space::HAIRLINE, theme::border(dark)),
+            egui::StrokeKind::Inside,
+        );
+    }
+}
+
+/// A 12 px checkbox with its label to its right; the whole row is the hit area. The caller
+/// owns the value; the response carries the click.
+pub(crate) fn checkbox(ui: &mut Ui, id: &str, value: &mut bool, label: &str) -> Response {
+    let dark = ui.visuals().dark_mode;
+    let galley = ui
+        .painter()
+        .layout_no_wrap(label.to_owned(), theme::label_font(), theme::text(dark));
+    let width = size::CHECKBOX + space::MD + galley.size().x;
+    let (rect, mut response) =
+        ui.allocate_exact_size(Vec2::new(width, size::FIELD), Sense::click());
+    if response.clicked() {
+        *value = !*value;
+        response.mark_changed();
+    }
+    let boxed = Rect::from_min_size(
+        egui::pos2(rect.left(), rect.center().y - size::CHECKBOX / 2.0),
+        Vec2::splat(size::CHECKBOX),
+    );
+    paint_checkbox(ui, boxed, *value, dark);
+    let text_pos = egui::pos2(
+        boxed.right() + space::MD,
+        rect.center().y - galley.size().y / 2.0,
+    );
+    paint(ui).galley(text_pos, galley, theme::text(dark));
+    let on = *value;
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::Role::CheckBox, ui.is_enabled(), on, label)
+    });
+    author(&response, id);
+    focus_ring(ui, &response);
+    response.on_hover_text(label)
 }
 
 /// A 36x16 switch. The caller owns the value; the response carries the click.

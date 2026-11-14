@@ -4,9 +4,10 @@ use super::{Action, DetectSource, Phase, State, apply, show};
 use crate::editor::frame::bench::Bench;
 use crate::editor::{Editor, egui};
 use crate::i18n::{Locale, Text};
+use crate::kit;
 use crate::preferences::Preferences;
 use crate::services::playback::{Files, Playback};
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{By, Queryable};
 use engine::{ByteBudget, Command, CreatedId, NewItem, Placement, Session, control::MediaAccess};
 use media::{AssetId, SourceAsset};
 use project::{ItemId, ItemParams, Project, ProjectId, VideoParams};
@@ -135,6 +136,14 @@ fn settle(bench: &mut Mounted, done: impl Fn(&State) -> bool) {
     bench.step();
 }
 
+/// The laid-out rect of the widget with this automation id.
+fn rect(bench: &Mounted, id: &str) -> egui::Rect {
+    bench
+        .harness()
+        .get(By::new().predicate(|node| node.author_id() == Some(id)))
+        .rect()
+}
+
 fn clip_count(bench: &Mounted) -> usize {
     bench
         .editor()
@@ -206,6 +215,25 @@ fn detect_review_apply_splits_every_reviewed_cut() {
     assert!(
         bench.harness_mut().query_by_label(&line).is_some(),
         "the review shows {line:?}"
+    );
+    // The footer counts the checked cuts through the same plural rule.
+    let apply_line = if candidates == 1 {
+        "Split at 1 scene change".to_owned()
+    } else {
+        format!("Split at {candidates} scene changes")
+    };
+    assert!(
+        bench.harness_mut().query_by_label(&apply_line).is_some(),
+        "the footer reads {apply_line:?}"
+    );
+    // The footer sits one panel row below the last candidate, never against it.
+    let last = rect(&bench, &format!("scene_split.candidate.{}", candidates - 1));
+    let footer = rect(&bench, "scene_split.apply");
+    assert!(
+        footer.top() - last.bottom() >= kit::space::LG - 0.5,
+        "the footer gap is {} px, one row is {} px",
+        footer.top() - last.bottom(),
+        kit::space::LG
     );
     let screenshot =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p2-ai-05-scene-split.png");

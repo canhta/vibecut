@@ -19,7 +19,7 @@ pub(crate) use theme::{
     type_size, video_border, video_fill, warning, waveform, window,
 };
 pub(crate) use widgets::{
-    KeyframeControl, action_button, badge_button, dashed_outline, icon_button, icon_tab,
+    KeyframeControl, action_button, badge_button, checkbox, dashed_outline, icon_button, icon_tab,
     keyframe_cluster, rail_slider, section_header_with, segmented, stepper, text_tabs, toggle,
     transport_button, value_field, zoom_rail,
 };
