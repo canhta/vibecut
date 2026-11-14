@@ -1068,3 +1068,90 @@ fn sounds_tab_renders_a_representative_result_list() {
     image.save(target.join("p1-43-sounds.png")).unwrap();
     assert!(image.width() > 0 && image.height() > 0);
 }
+
+#[test]
+fn sounds_favorites_star_list_unstar_and_show_the_empty_state() {
+    use vibecut::preferences::SoundFavorite;
+
+    let root = tempfile::tempdir().unwrap();
+    let library = library(root.path());
+    let sound = result(1, "Creative Commons 0");
+    let (client, _transport) = json_client(
+        200,
+        Vec::new(),
+        page(vec![sound.clone(), result(2, "Attribution")], false),
+    );
+    let gate = Arc::new(Gate::new());
+    let sink = Sink::gated(gate.clone());
+    let mut editor = editor(
+        library.clone(),
+        Some(client),
+        Arc::new(Download {
+            gate: None,
+            status: 200,
+        }),
+        sink.clone(),
+        root.path().join("media"),
+    );
+    editor.preferences.assets_tab = vibecut::AssetsTab::Sounds;
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    click(&mut harness, "sounds.search");
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("sounds.search")))
+        .type_text("sound");
+    harness.key_press(egui::Key::Enter);
+    wait(&mut harness, "first page", |editor| {
+        editor
+            .inspect()
+            .unwrap()
+            .sounds
+            .is_some_and(|sounds| !sounds.searching && sounds.results.len() == 2)
+    });
+
+    // Star from the results: the metadata Favorites needs is stored with the star.
+    click(&mut harness, "sounds.favorite.1");
+    assert_eq!(
+        harness.state().preferences.catalog_favorites.sounds(),
+        [SoundFavorite {
+            id: 1,
+            title: sound.name.clone(),
+            duration_ms: sound.duration_ms,
+            preview_url: sound.audio_url.clone(),
+        }]
+    );
+    assert!(
+        harness
+            .state()
+            .preferences
+            .catalog_favorites
+            .contains("sounds", "1")
+    );
+
+    // Listed under Favorites; the unstarred result stays out of the list.
+    click(&mut harness, "sounds.tab.favorites");
+    harness.run_steps(3);
+    assert!(has_widget(&harness, "sounds.result.1"));
+    assert!(!has_widget(&harness, "sounds.result.2"));
+
+    // Unstar from the Favorites list removes it and leaves the empty state.
+    click(&mut harness, "sounds.favorite.1");
+    harness.run_steps(3);
+    assert!(
+        !harness
+            .state()
+            .preferences
+            .catalog_favorites
+            .contains("sounds", "1")
+    );
+    assert!(
+        harness
+            .state()
+            .preferences
+            .catalog_favorites
+            .sounds()
+            .is_empty()
+    );
+    assert!(!has_widget(&harness, "sounds.result.1"));
+    assert!(!has_widget(&harness, "sounds.favorite.1"));
+}

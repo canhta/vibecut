@@ -5,6 +5,7 @@ use super::{
     theme,
 };
 use crate::i18n;
+use crate::preferences::{MAX_SOUND_FAVORITE_TITLE_BYTES, SoundFavorite};
 
 impl View<'_> {
     pub(super) fn sounds_nav(&mut self, ui: &mut egui::Ui) {
@@ -56,22 +57,25 @@ impl View<'_> {
         }
     }
 
-    /// Starred sounds in star order, resolved from the saved library first and then the
-    /// current results. A starred id found in neither is not listed.
-    fn favorite_sounds(&self, view: &SoundsView) -> Vec<libraries::sounds::SoundResult> {
+    /// Starred sounds in star order, from the metadata stored with each star. No provider
+    /// lookup, so a starred sound outside the current results is still listed. Author and
+    /// licence are not stored; those rows show the duration alone.
+    fn favorite_sounds(&self) -> Vec<libraries::sounds::SoundResult> {
         self.cx
             .preferences
             .catalog_favorites
-            .list("sounds")
+            .sounds()
             .iter()
-            .filter_map(|id| {
-                let id: u64 = id.parse().ok()?;
-                view.saved
-                    .iter()
-                    .map(|saved| &saved.sound)
-                    .chain(view.results.iter())
-                    .find(|sound| sound.id == id)
-                    .cloned()
+            .map(|sound| libraries::sounds::SoundResult {
+                id: sound.id,
+                name: sound.title.clone(),
+                author: String::new(),
+                licence: String::new(),
+                attribution: String::new(),
+                source_url: String::new(),
+                audio_url: sound.preview_url.clone(),
+                duration_ms: sound.duration_ms,
+                downloads: 0,
             })
             .collect()
     }
@@ -202,7 +206,7 @@ impl View<'_> {
 
         let favorites = self.state.sounds_favorites;
         let list = if favorites {
-            self.favorite_sounds(&view)
+            self.favorite_sounds()
         } else {
             view.results.clone()
         };
@@ -321,15 +325,19 @@ impl View<'_> {
             theme::label_font(),
             theme::text(dark),
         );
-        let meta = i18n::format(
-            self.cx.preferences.locale,
-            Text::SoundsMeta,
-            &[
-                ("author", &sound.author),
-                ("duration", &duration(sound.duration_ms)),
-                ("licence", &sound.licence),
-            ],
-        );
+        let meta = if sound.author.is_empty() && sound.licence.is_empty() {
+            duration(sound.duration_ms)
+        } else {
+            i18n::format(
+                self.cx.preferences.locale,
+                Text::SoundsMeta,
+                &[
+                    ("author", &sound.author),
+                    ("duration", &duration(sound.duration_ms)),
+                    ("licence", &sound.licence),
+                ],
+            )
+        };
         painter.text(
             clip.min + Vec2::new(0.0, 15.0),
             Align2::LEFT_TOP,
@@ -392,9 +400,8 @@ impl View<'_> {
             theme::text(dark),
         );
         if star_response.clicked() {
-            self.actions.push(Action::ToggleFavorite {
-                family: "sounds",
-                id: key,
+            self.actions.push(Action::ToggleSoundFavorite {
+                sound: sound_favorite(sound),
                 favorite: !starred,
             });
         }
@@ -573,6 +580,26 @@ impl View<'_> {
     fn text_width(&self, text: Text) -> f32 {
         let characters = i18n::text(self.cx.preferences.locale, text).chars().count() as f32;
         characters * 6.0 + 8.0
+    }
+}
+
+/// The metadata a star stores: the title is cut to its bound at a character boundary,
+/// and a blank name falls back to the provider id.
+fn sound_favorite(sound: &libraries::sounds::SoundResult) -> SoundFavorite {
+    let title = if sound.name.is_empty() {
+        sound.id.to_string()
+    } else {
+        let mut end = sound.name.len().min(MAX_SOUND_FAVORITE_TITLE_BYTES);
+        while !sound.name.is_char_boundary(end) {
+            end -= 1;
+        }
+        sound.name[..end].to_owned()
+    };
+    SoundFavorite {
+        id: sound.id,
+        title,
+        duration_ms: sound.duration_ms,
+        preview_url: sound.audio_url.clone(),
     }
 }
 

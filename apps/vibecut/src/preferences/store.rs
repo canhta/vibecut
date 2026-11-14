@@ -234,7 +234,15 @@ mod tests {
             ),
             (
                 "catalog_favorites",
-                serde_json::json!({"effects": ["blur", "glow"], "sounds": ["12"]}),
+                serde_json::json!({
+                    "ids": {"effects": ["blur", "glow"]},
+                    "sounds": [{
+                        "id": 12,
+                        "title": "Whoosh",
+                        "duration_ms": 1000,
+                        "preview_url": "https://cdn.freesound.org/previews/1/1-hq.mp3"
+                    }]
+                }),
             ),
             (
                 "easing",

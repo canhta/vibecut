@@ -38,6 +38,15 @@ impl Editor {
     }
     /// The starred ids of one catalogue family, oldest star first (`catalog.favorite.list`).
     pub fn catalog_favorites(&self, family: &str) -> Vec<String> {
+        if family == "sounds" {
+            return self
+                .preferences
+                .catalog_favorites
+                .sounds()
+                .iter()
+                .map(|sound| sound.id.to_string())
+                .collect();
+        }
         self.preferences.catalog_favorites.list(family).to_vec()
     }
     /// Hand the ripple preference to the session, which alone decides how an edit

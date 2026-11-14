@@ -209,6 +209,11 @@ pub(in crate::editor) enum Action {
         id: String,
         favorite: bool,
     },
+    /// Star or unstar one sound; a star stores the metadata its Favorites row shows.
+    ToggleSoundFavorite {
+        sound: crate::preferences::SoundFavorite,
+        favorite: bool,
+    },
     /// Download one Emoji or Icons collection on the user's explicit action; its card shows the
     /// licence credit before the button.
     DownloadSticker(String),
