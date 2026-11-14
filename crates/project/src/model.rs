@@ -24,11 +24,11 @@ pub use audio_cleanup::{
 };
 pub use item::{
     AudioParams, AudioSource, BackgroundRemoval, CaptionParams, CaptionWordWarning,
-    CaptionWordWarnings, ClipBackground, EffectParams, GraphicParams, Item, ItemId, ItemParams,
-    LibraryMusic, LibrarySound, MatteStroke, MatteStrokeMode, MusicLicence, OverlayParams,
-    StabilizeLevel, StickerParams, TextAlign, TextBackground, TextCase, TextDecoration, TextParams,
-    TextShadow, TextStroke, TextStyle, VOLUME_DB_RANGE, VideoParams, WordSpan, valid_volume,
-    volume_gain, volume_is_silent,
+    CaptionWordWarnings, ClipBackground, CutoutStroke, EffectParams, GraphicParams, Item, ItemId,
+    ItemParams, LibraryMusic, LibrarySound, MatteStroke, MatteStrokeMode, MusicLicence,
+    OverlayParams, StabilizeLevel, StickerParams, StrokePreset, TextAlign, TextBackground,
+    TextCase, TextDecoration, TextParams, TextShadow, TextStroke, TextStyle, VOLUME_DB_RANGE,
+    VideoParams, WordSpan, valid_volume, volume_gain, volume_is_silent,
 };
 pub use narration::{
     MAX_DUCK_MS, MAX_DUCK_TENTHS_DB, Narration, NarrationConsent, NarrationCost, NarrationDucking,

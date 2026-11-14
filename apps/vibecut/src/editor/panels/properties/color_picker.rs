@@ -30,6 +30,8 @@ pub enum ColorTarget {
     /// A video clip's solid background colour; a non-solid background reads as black.
     ClipBackground(ItemId),
     GraphicFill(ItemId),
+    /// The outline colour of a video clip's cutout stroke.
+    CutoutStroke(ItemId),
     GraphicColor {
         item: ItemId,
         stroke: bool,
@@ -117,7 +119,10 @@ impl ColorTarget {
     pub(crate) fn item(&self) -> Option<ItemId> {
         match self {
             Self::Texts { items, .. } => items.first().copied(),
-            Self::ClipBackground(id) | Self::GraphicFill(id) | Self::GraphicStroke(id) => Some(*id),
+            Self::ClipBackground(id)
+            | Self::CutoutStroke(id)
+            | Self::GraphicFill(id)
+            | Self::GraphicStroke(id) => Some(*id),
             Self::GraphicColor { item, .. }
             | Self::MaskStroke { item, .. }
             | Self::EffectColor { item, .. } => Some(*item),
@@ -190,6 +195,10 @@ impl ColorTarget {
                 // The classic web editor's default background colour, black.
                 _ => Color([0, 0, 0, 255]),
             }),
+            (Self::CutoutStroke(_), project::ItemParams::Video(p)) => p
+                .background_removal
+                .map(|removal| removal.stroke.color)
+                .ok_or(Error::Invalid("cutout stroke colour target")),
             (Self::GraphicFill(_), project::ItemParams::Overlay(p)) => Ok(p.color),
             (Self::GraphicStroke(_), project::ItemParams::Overlay(_)) => Ok(render::color::at(
                 &item.animations,
@@ -245,6 +254,12 @@ impl ColorTarget {
             return Ok(engine::Command::SetItemsBackground {
                 items: vec![*item],
                 background: project::ClipBackground::Solid { color },
+            });
+        }
+        if let Self::CutoutStroke(item) = self {
+            return Ok(engine::Command::SetItemField {
+                item: *item,
+                patch: engine::ItemParamPatch::CutoutStrokeColor(color),
             });
         }
         if let Self::Bookmark(bookmark) = self {

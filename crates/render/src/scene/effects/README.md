@@ -194,7 +194,7 @@ Drop Shadow blurs first and shifts alpha in its sample; Long Shadow marches the 
 alpha over a bounded tap count. Every op returns premultiplied linear RGBA and the
 shared pass exit clamps it once.
 
-Chroma key edge stages (`chroma_edge.rs`): `matte_clean` and `matte_feather` are CPU-only sample passes after the keying pass. Open, unmeasured: the reference's pixel radius at Feather edge 100 and Clean up edge 100 and whether either is a min/mean disc; ours are 4 and 8 clip pixels and the disc forms in [scene](../README.md).
+Chroma key edge stages (`chroma_edge.rs`): `spill_clean` (Clean up edge, a pixel pass: spill suppression, decided from capture round 4 frames 151402-151410) and `matte_feather` (Feather edge, a sample pass: a premultiplied disc mean) are CPU-only passes after the keying pass; the passes and the decision are in [scene](../README.md). Open: the Clean up ramp between 0 and 50 (only 0, 50 and 100 were captured, and 50 equals 100) and the Feather growth curve (measured about 8 and 24 image pixels of transition at 50 and 100 at an estimated 3x zoom; ours is linear to 18 clip pixels of radius at 100); neither was captured on a second key colour or a soft-keyed foreground.
 
 Determinism: time reads only the item-local `frame.seconds` (wave phase, shake noise,
 leak drift), so a given item-local time always produces the same pixels. Colour-key

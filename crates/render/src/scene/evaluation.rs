@@ -845,6 +845,14 @@ impl<'a> Renderer<'a> {
                     let mut filtered = out;
                     if let Some((plane, map)) = &matte {
                         filtered = super::matte::apply(filtered, plane, *map, adapter, hooks)?;
+                        // The cutout stroke outlines the matted picture, before every effect.
+                        if let ItemParams::Video(project::VideoParams {
+                            background_removal: Some(removal),
+                            ..
+                        }) = &item.content
+                        {
+                            filtered = super::outline::apply(filtered, &removal.stroke, hooks)?;
+                        }
                     }
                     if !adjustment {
                         for run in &runs {

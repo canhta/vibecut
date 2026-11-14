@@ -4,4 +4,5 @@
 pub mod brush;
 pub mod flicker;
 pub mod matte;
+pub mod outline;
 pub mod stabilize;

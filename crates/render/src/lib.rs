@@ -21,7 +21,7 @@ pub use scene::{
     rasterize_sticker, style_from_cue,
 };
 pub use scene::{
-    arrange, blend, color, effects, flicker, mask, matte, stabilize, transitions, viewport,
+    arrange, blend, color, effects, flicker, mask, matte, outline, stabilize, transitions, viewport,
 };
 pub use sources::{FileSources, SourceProvider};
 use time::SourceRange;

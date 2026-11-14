@@ -494,6 +494,7 @@ fn a_missing_matte_renders_unmatted_and_export_refuses_until_the_analysis_is_sto
         item,
         patch: engine::ItemParamPatch::BackgroundRemoval(Some(project::BackgroundRemoval {
             feather: 30.0,
+            ..Default::default()
         })),
     })
     .unwrap();

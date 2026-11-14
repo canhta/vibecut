@@ -225,15 +225,6 @@ fn chroma_key(@builtin(global_invocation_id) id: vec3<u32>) {
     let keyness = clamp(proj, 0.0, 1.5) * (1.0 - ramp(0.0, tol, dist));
     let protect = max(ky - y, 0.0) * shadow * 2.0 * min(keyness, 1.0);
     let matte = clamp(1.0 - keyness * (1.0 + 2.0 * intensity) + protect, 0.0, 1.0);
-    var dominant = 0u;
-    if key.g >= key.r && key.g >= key.b { dominant = 1u; }
-    else if key.b >= key.r { dominant = 2u; }
-    var limit = 0.0;
-    if dominant == 0u { limit = max(c.g, c.b); }
-    else if dominant == 1u { limit = max(c.r, c.b); }
-    else { limit = max(c.r, c.g); }
-    let excess = max(c[dominant] - limit, 0.0);
-    c[dominant] = c[dominant] - excess;
     let a = matte * px.a;
     let out = vec3<f32>(eotf(c.r), eotf(c.g), eotf(c.b)) * a;
     dst[i] = vec4<f32>(clamp(out, vec3<f32>(0.0), vec3<f32>(a)), a);

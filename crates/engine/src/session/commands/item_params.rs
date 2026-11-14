@@ -166,6 +166,7 @@ admit_always!(
     project::TextAlign,
     project::TextCase,
     project::TextDecoration,
+    project::StrokePreset,
     StrokeAlign,
 );
 impl Admit for f64 {
@@ -310,6 +311,7 @@ text_word!(
     project::TextAlign,
     project::TextCase,
     project::TextDecoration,
+    project::StrokePreset,
     StrokeAlign,
 );
 impl ParamText for Color {
@@ -384,6 +386,7 @@ impl ParamText for Option<project::BackgroundRemoval> {
         }
         let removal = project::BackgroundRemoval {
             feather: text.parse().ok()?,
+            ..Default::default()
         };
         removal.valid().then_some(Some(removal))
     }
@@ -406,6 +409,16 @@ impl ParamText for Option<project::Crop> {
     }
 }
 
+/// The background removal of a video item, refused while it is off.
+fn removal(target: &mut Item) -> Result<&mut project::BackgroundRemoval> {
+    match &mut target.content {
+        ItemParams::Video(project::VideoParams {
+            background_removal: Some(removal),
+            ..
+        }) => Ok(removal),
+        _ => Err(EditError::Invalid("background removal is off")),
+    }
+}
 fn animate(target: &mut Item, path: BuiltinPath, value: ParamValue) -> Result<()> {
     target
         .animations
@@ -1044,6 +1057,70 @@ item_params! {
                 }
                 _ => Err(EditError::Invalid("background removal is off")),
             }
+        },
+    },
+    /// The Stroke checkbox of a video item whose background removal is on; refused while it is off.
+    CutoutStroke(bool) = "cutout_stroke" {
+        targets: VIDEO,
+        bounds: ParamBounds::Free,
+        unit: ParamUnit::None,
+        path: None,
+        apply: |t, v, cx| {
+            removal(t)?.stroke.enabled = *v;
+            Ok(())
+        },
+    },
+    /// The outline style (`none`, `solid`); refused while background removal is off.
+    CutoutStrokePreset(project::StrokePreset) = "cutout_stroke_preset" {
+        targets: VIDEO,
+        bounds: ParamBounds::Free,
+        unit: ParamUnit::None,
+        path: None,
+        apply: |t, v, cx| {
+            removal(t)?.stroke.preset = *v;
+            Ok(())
+        },
+    },
+    /// The outline colour, opaque (Opacity is its own control); refused while removal is off.
+    CutoutStrokeColor(Color) = "cutout_stroke_color" {
+        targets: VIDEO,
+        bounds: ParamBounds::Free,
+        unit: ParamUnit::None,
+        path: None,
+        apply: |t, v, cx| {
+            let [r, g, b, _] = v.0;
+            removal(t)?.stroke.color = Color([r, g, b, 255]);
+            Ok(())
+        },
+    },
+    /// The outline size, 0..=100; refused while background removal is off.
+    CutoutStrokeSize(f32) = "cutout_stroke_size" {
+        targets: VIDEO,
+        bounds: ParamBounds::Range {
+            min: 0.0,
+            max: project::CutoutStroke::MAX_PERCENT as f64,
+            clamp: true,
+        },
+        unit: ParamUnit::Percent,
+        path: None,
+        apply: |t, v, cx| {
+            removal(t)?.stroke.size = *v;
+            Ok(())
+        },
+    },
+    /// The outline opacity, 0..=100; refused while background removal is off.
+    CutoutStrokeOpacity(f32) = "cutout_stroke_opacity" {
+        targets: VIDEO,
+        bounds: ParamBounds::Range {
+            min: 0.0,
+            max: project::CutoutStroke::MAX_PERCENT as f64,
+            clamp: true,
+        },
+        unit: ParamUnit::Percent,
+        path: None,
+        apply: |t, v, cx| {
+            removal(t)?.stroke.opacity = *v;
+            Ok(())
         },
     },
     /// The refinement brush strokes of a video item's person matte, replaced as a whole list: one
