@@ -542,8 +542,9 @@ fn oversized_export_fails_with_requested_bytes_before_frame_allocation() {
             .as_deref()
             .and_then(|error| (error as &(dyn std::error::Error + 'static))
                 .downcast_ref::<RuntimeError>()),
+        // The first frame's 8192x8192 float image is the first lease asked for.
         Some(RuntimeError::Render(render::Error::Budget {
-            requested: 4362076160,
+            requested: 1_073_741_824,
             ..
         }))
     ));
