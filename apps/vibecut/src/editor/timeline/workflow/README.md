@@ -27,9 +27,11 @@ Move and edge trim stage the group contract: each pointer update sends an absolu
 paints `preview_project()` while the committed project stays byte-identical, and release
 either publishes one undo step with `timeline.commit_preview` or discards with
 `timeline.discard_preview` (Escape, gesture reversal, refused candidate). A move drop
-outlines the landing row or draws an insertion line for a created track; a refusal paints
-the engine's reason above the scrollbar; a main-track item at the origin is pinned with an
-accent edge and cannot move left.
+shows a clip-length slot in the landing row or a thin line for a created track, and the dragged
+clip wears a white outline; a main-track item at the origin is not pinned, so moving it right
+paints a placeholder from 0 and the gap stays (the engine's move never ripples; the magnet
+closes only delete and split gaps), and nothing moves before 0; a refusal paints the engine's
+reason above the scrollbar.
 
 Snapping is a persisted preference (on by default) behind the magnet control. The
 timeline's `snapping.rs` owns it: it converts 10 logical pixels to ticks at the current

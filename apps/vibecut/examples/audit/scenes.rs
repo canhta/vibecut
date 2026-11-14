@@ -832,6 +832,12 @@ pub(super) const SCENES: &[Scene] = &[
         reference_light: Some("capcut/illustrations/capcut-desktop-editor-keyframes.png"),
         build: placement,
     },
+    Scene {
+        name: "placement-line",
+        reference_dark: None,
+        reference_light: None,
+        build: placement_line,
+    },
 ];
 pub(super) fn select(
     names: impl Iterator<Item = String>,
@@ -917,7 +923,8 @@ use properties::{
 };
 use shorts::shorts_scene;
 use timeline::{
-    link_media, missing_media, placement, preview_axis, preview_axis_ends, preview_axis_reference,
+    link_media, missing_media, placement, placement_line, preview_axis, preview_axis_ends,
+    preview_axis_reference,
     scene_create, scene_delete, scene_rename, timeline_fades, timeline_main, timeline_multi,
     timeline_selection, timeline_selection_vi, timeline_zoom, tracks, tracks_kinds,
 };

@@ -1,12 +1,18 @@
 //! Renders timeline tracks.
 
 use crate::editor::timeline::{
-    Action, BTreeSet, Context, DropZone, FontId, ICON_BUTTON, Icon, Id, ItemId, ItemView, Locale,
-    Rect, State, Text, TimelineLayout, Tool, TrackKind, TrackRow, Vec2, egui, icons, theme,
+    Action, BTreeSet, Color32, Context, DragMode, DropZone, FontId, ICON_BUTTON, Icon, Id, ItemId,
+    ItemView, Locale, Rect, State, Text, Tick, TimelineLayout, Tool, TrackKind, TrackRow, Vec2,
+    egui, icons, theme,
     view::{Ink, tr},
 };
 use crate::i18n;
 use crate::preferences::{TrackHeight, WAVEFORM_SIZES};
+
+/// Logical gap between a row edge and the slot drawn in it (measured: row 80, slot 74).
+const SLOT_INSET: f32 = 3.0;
+/// Logical thickness of the new-track insertion line (measured 4 px at 2x).
+const INSERT_LINE: f32 = 2.0;
 
 impl State {
     pub(in crate::editor::timeline) fn paint_tracks(
@@ -360,38 +366,77 @@ impl State {
             }
         }
     }
-    /// Highlight the row or the gap a release would land on.
+    /// Draw the move drag's feedback: a clip-length grey slot in the landing row, a thin
+    /// full-width line where a release would create a track, and the placeholder a main-track
+    /// first clip leaves from the origin when it moves right.
     fn paint_drop_zone(
-        &self,
+        &mut self,
         ui: &egui::Ui,
         layout: &TimelineLayout,
         rows: &[TrackRow],
         ink: &Ink,
     ) {
+        let Some(drag) = self.drag.clone() else {
+            return;
+        };
+        if drag.mode != DragMode::Move {
+            return;
+        }
+        let painter = ui.painter().with_clip_rect(layout.body);
+        let row_rect = |state: &Self, row: &TrackRow| {
+            Rect::from_min_size(
+                egui::pos2(
+                    layout.body.left(),
+                    layout.body.top() + row.top - state.vertical_scroll + SLOT_INSET,
+                ),
+                Vec2::new(
+                    layout.body.width(),
+                    (row.height - 2.0 * SLOT_INSET).max(1.0),
+                ),
+            )
+        };
+        for origin in &drag.origins {
+            if drag.delta <= Tick::ZERO || origin.start != Tick::ZERO {
+                continue;
+            }
+            let Some(row) = rows.iter().find(|row| row.id == origin.track && row.main) else {
+                continue;
+            };
+            let row = row_rect(&*self, row);
+            let slot = Rect::from_min_max(
+                egui::pos2(self.x_at(Tick::ZERO, layout.body.left()), row.top()),
+                egui::pos2(self.x_at(drag.delta, layout.body.left()), row.bottom()),
+            )
+            .intersect(layout.body);
+            self.paint_slot(ui, &painter, slot, ink, "timeline.drop.placeholder");
+        }
         let Some(zone) = self.drop_zone else {
             return;
         };
-        let painter = ui.painter().with_clip_rect(layout.body);
         match zone {
             DropZone::Track(track) => {
                 let Some(row) = rows.iter().find(|row| row.id == track) else {
                     return;
                 };
-                let rect = Rect::from_min_size(
-                    egui::pos2(
-                        layout.body.left(),
-                        layout.body.top() + row.top - self.vertical_scroll,
-                    ),
-                    Vec2::new(layout.body.width(), row.height),
-                )
-                .intersect(layout.body);
-                if rect.is_positive() {
-                    painter.rect_filled(rect, 2.0, ink.accent().gamma_multiply(0.10));
-                    painter.rect_stroke(
-                        rect,
-                        2.0,
-                        egui::Stroke::new(2.0, ink.accent()),
-                        egui::StrokeKind::Inside,
+                let row = row_rect(&*self, row);
+                for origin in &drag.origins {
+                    let slot = Rect::from_min_max(
+                        egui::pos2(
+                            self.x_at(origin.start + drag.delta, layout.body.left()),
+                            row.top(),
+                        ),
+                        egui::pos2(
+                            self.x_at(origin.end + drag.delta, layout.body.left()),
+                            row.bottom(),
+                        ),
+                    )
+                    .intersect(layout.body);
+                    self.paint_slot(
+                        ui,
+                        &painter,
+                        slot,
+                        ink,
+                        &format!("timeline.drop.slot.{}", origin.item.0),
                     );
                 }
             }
@@ -404,24 +449,46 @@ impl State {
                 if y < layout.body.top() || y > layout.body.bottom() {
                     return;
                 }
-                painter.line_segment(
-                    [
-                        egui::pos2(layout.body.left(), y),
-                        egui::pos2(layout.body.right(), y),
-                    ],
-                    egui::Stroke::new(2.0, ink.accent()),
+                let line = Rect::from_min_max(
+                    egui::pos2(layout.body.left(), y - INSERT_LINE / 2.0),
+                    egui::pos2(layout.body.right(), y + INSERT_LINE / 2.0),
                 );
-                // A small cap at the header edge marks the new-track insertion.
-                painter.rect_filled(
-                    Rect::from_min_size(
-                        egui::pos2(layout.body.left(), y - 2.0),
-                        Vec2::new(8.0, 4.0),
-                    ),
-                    1.0,
-                    ink.accent(),
+                painter.rect_filled(line, 0.0, theme::video_fill(ink.dark()));
+                let response = ui.interact(
+                    line,
+                    Id::new(("timeline.drop.line", track.0)),
+                    egui::Sense::hover(),
                 );
+                self.remember("timeline.drop.line", &response);
             }
         }
+    }
+    /// A grey clip-length block: the slot a release would fill or a vacated start.
+    fn paint_slot(
+        &mut self,
+        ui: &egui::Ui,
+        painter: &egui::Painter,
+        rect: Rect,
+        ink: &Ink,
+        name: &str,
+    ) {
+        if !rect.is_positive() {
+            return;
+        }
+        let (fill, edge) = if ink.dark() {
+            (Color32::from_gray(58), Color32::from_gray(67))
+        } else {
+            (ink.field(), ink.border())
+        };
+        painter.rect_filled(rect, theme::radius::PANEL, fill);
+        painter.rect_stroke(
+            rect,
+            theme::radius::PANEL,
+            egui::Stroke::new(1.0, edge),
+            egui::StrokeKind::Inside,
+        );
+        let response = ui.interact(rect, Id::new(name), egui::Sense::hover());
+        self.remember(name, &response);
     }
     /// Show the engine's refusal for a staged move/trim over the lanes.
     pub(in crate::editor::timeline) fn paint_refusal(

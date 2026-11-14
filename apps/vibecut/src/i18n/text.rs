@@ -1287,11 +1287,6 @@ catalog! {
     Magnet { key: "magnet", en: "Main track magnet", vi: "Nam châm rãnh chính" },
     MuteTrack { key: "mute_track", en: "Mute track", vi: "Tắt tiếng rãnh" },
     PasteElements { key: "paste_elements", en: "Paste elements", vi: "Dán mục" },
-    PinnedToStart {
-        key: "pinned_to_start",
-        en: "Pinned to the timeline start",
-        vi: "Ghim ở đầu dòng thời gian"
-    },
     RenameTrack { key: "rename_track", en: "Rename track", vi: "Đổi tên rãnh" },
     ShowTrack { key: "show_track", en: "Show track", vi: "Hiện rãnh" },
     TextItem { key: "text_item", en: "Text", vi: "Văn bản" },
