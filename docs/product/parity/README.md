@@ -2,7 +2,7 @@
 
 One row per CapCut desktop item a user can see or use, mapped to VibeCut's state. This folder tracks progress and quality; it does not hold values or behaviour. Measured values live in [UI design](../ui/index.md) and its window files, scope in [requirements](../requirements.md), commands in [agent control](../agent-control/commands.md).
 
-Snapshot: main `492e55c5`, 2026-11-15.
+Snapshot: main `d21e0aa8`, 2026-11-15.
 
 ## How to read a row
 
@@ -26,6 +26,7 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 | `14d/151656`, bare `151xxx` | `ui-reference/capcut-desktop-2026-11-14d/` |
 | `14f/scopes/NN` | `ui-reference/capcut-desktop-2026-11-14f/scopes/` |
 | `14f/NN` | `ui-reference/capcut-desktop-2026-11-14f/text-bubble-effects/` |
+| `14f/layout-presets/NN` | `ui-reference/capcut-desktop-2026-11-14f/layout-presets/` |
 | `web screens/NN`, `web flows/NN` | `web-editors/capcut-web/` (function only, never layout) |
 
 ## Update rule
@@ -40,7 +41,7 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | [Home](home.md#home-home) | 34 | 15 | 4 | 5 | 0 | 4 | 6 | 9 | 1 | 7 | 8 |
 | [Header and sub-navigation](shell.md#header-and-sub-navigation-shell) | 37 | 22 | 5 | 2 | 0 | 3 | 5 | 14 | 1 | 11 | 5 |
-| [Window and panel layout](shell.md#window-and-panel-layout-layout) | 11 | 6 | 1 | 2 | 0 | 1 | 1 | 6 | 0 | 1 | 1 |
+| [Window and panel layout](shell.md#window-and-panel-layout-layout) | 11 | 8 | 1 | 0 | 0 | 1 | 1 | 7 | 1 | 1 | 0 |
 | [Settings](shell.md#settings-set) | 26 | 9 | 4 | 7 | 0 | 4 | 2 | 0 | 2 | 15 | 0 |
 | [Keyboard shortcuts](shell.md#keyboard-shortcuts-shortcut) | 26 | 21 | 1 | 2 | 1 | 1 | 0 | 2 | 0 | 11 | 0 |
 | [Media](assets.md#media-media) | 35 | 20 | 5 | 3 | 0 | 2 | 5 | 2 | 2 | 15 | 11 |
@@ -56,8 +57,8 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 | [Adjustment](catalogues.md#adjustment-adj) | 6 | 2 | 3 | 0 | 0 | 1 | 0 | 1 | 3 | 2 | 0 |
 | [Video clip](properties-video.md#video-clip-pvid) | 52 | 33 | 8 | 5 | 0 | 3 | 3 | 6 | 3 | 35 | 5 |
 | [Audio clip](properties-other.md#audio-clip-paud) | 17 | 8 | 1 | 7 | 0 | 1 | 0 | 3 | 1 | 6 | 7 |
-| [Text item](properties-other.md#text-item-ptext) | 31 | 18 | 8 | 4 | 0 | 0 | 1 | 4 | 7 | 15 | 4 |
-| [Caption item](properties-other.md#caption-item-pcap) | 8 | 1 | 4 | 2 | 0 | 1 | 0 | 0 | 3 | 3 | 2 |
+| [Text item](properties-other.md#text-item-ptext) | 31 | 20 | 9 | 1 | 0 | 0 | 1 | 6 | 7 | 16 | 1 |
+| [Caption item](properties-other.md#caption-item-pcap) | 8 | 3 | 4 | 0 | 0 | 1 | 0 | 1 | 3 | 4 | 0 |
 | [Sticker, effect, filter and adjustment items](properties-other.md#sticker-effect-filter-and-adjustment-items-pother) | 17 | 9 | 6 | 1 | 0 | 1 | 0 | 0 | 7 | 9 | 1 |
 | [Timeline](timeline.md#timeline-tl) | 96 | 57 | 14 | 11 | 2 | 10 | 2 | 13 | 8 | 56 | 5 |
 | [Keyframes](timeline.md#keyframes-key) | 14 | 10 | 3 | 0 | 0 | 1 | 0 | 2 | 2 | 7 | 1 |
@@ -66,4 +67,4 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 | [AI chat](ai-shorts.md#ai-chat-agent) | 17 | 9 | 3 | 2 | 1 | 1 | 1 | 5 | 3 | 4 | 1 |
 | [Long video to shorts](ai-shorts.md#long-video-to-shorts-shorts) | 24 | 12 | 5 | 3 | 0 | 2 | 2 | 8 | 1 | 7 | 3 |
 | [States](states.md#states-state) | 12 | 7 | 3 | 0 | 1 | 0 | 1 | 2 | 2 | 4 | 3 |
-| **Total** | **670** | **374** | **121** | **75** | **6** | **53** | **41** | **102** | **85** | **302** | **81** |
+| **Total** | **670** | **380** | **122** | **68** | **6** | **53** | **41** | **106** | **86** | **304** | **75** |
