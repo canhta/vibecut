@@ -646,19 +646,24 @@ fn shortcut_rows_and_conflict_messages_use_the_vietnamese_catalog() {
         assert!(!spec.label.text(Locale::Vi).is_empty(), "{} vi", spec.id);
     }
 
-    // A conflict names the other action in Vietnamese too.
+    // A conflict prompt names the owning action; its label is localized in the prompt.
     harness
         .state_mut()
         .record_shortcut("timeline.split", "N")
-        .expect_err("N is bound to snapping");
+        .unwrap();
     let shortcuts = harness.state().inspect().unwrap().shortcuts.unwrap();
-    let error = shortcuts.error.expect("conflict message");
+    let conflict = shortcuts.conflict.expect("conflict prompt");
+    assert_eq!(conflict.owner, "timeline.snap");
+    assert_eq!(conflict.chord, "N");
+    let owner_label = i18n::text(Locale::Vi, actions::action("timeline.snap").unwrap().label);
     assert!(
-        error.contains(i18n::text(
+        i18n::format(
             Locale::Vi,
-            actions::action("timeline.snap").unwrap().label
-        )),
-        "conflict must name the localized action: {error}"
+            i18n::Text::ShortcutsConflictBody,
+            &[("chord", "N"), ("action", owner_label)],
+        )
+        .contains(owner_label),
+        "the Vietnamese prompt must name the localized owner"
     );
 }
 
@@ -724,6 +729,31 @@ fn shortcuts_dialog_records_binds_unbound_actions_and_survives_undo_redo() {
     let expected = actions::Chord::parse("Ctrl+Shift+R")
         .unwrap()
         .display(actions::Platform::current());
+    // The chord lives in the dialog's working copy until Save.
+    assert!(
+        !harness
+            .state()
+            .preferences
+            .keybindings
+            .bindings
+            .contains_key("file.import")
+    );
+    let inspection = harness.state().inspect().unwrap();
+    let shortcuts = inspection.shortcuts.unwrap();
+    assert!(shortcuts.recording.is_none());
+    assert!(shortcuts.error.is_none());
+    assert!(shortcuts.changed, "Save enables once the copy differs");
+    let row = shortcuts
+        .rows
+        .iter()
+        .find(|row| row.action == "file.import")
+        .unwrap();
+    assert!(!row.unbound);
+    assert!(row.customized);
+    assert_eq!(row.keys, [expected]);
+
+    click(&mut harness, "shortcuts.save");
+    assert!(harness.state().inspect().unwrap().shortcuts.is_none());
     assert_eq!(
         harness.state().preferences.keybindings.bindings["file.import"],
         ["Ctrl+Shift+R"]
@@ -736,18 +766,6 @@ fn shortcuts_dialog_records_binds_unbound_actions_and_survives_undo_redo() {
             .is_customized
             .contains("file.import")
     );
-    let inspection = harness.state().inspect().unwrap();
-    let shortcuts = inspection.shortcuts.unwrap();
-    assert!(shortcuts.recording.is_none());
-    assert!(shortcuts.error.is_none());
-    let row = shortcuts
-        .rows
-        .iter()
-        .find(|row| row.action == "file.import")
-        .unwrap();
-    assert!(!row.unbound);
-    assert!(row.customized);
-    assert_eq!(row.keys, [expected]);
 
     harness.state_mut().activate("edit.undo").unwrap();
     harness.run_steps(3);
@@ -763,30 +781,38 @@ fn shortcuts_dialog_records_binds_unbound_actions_and_survives_undo_redo() {
 }
 
 #[test]
-fn shortcuts_dialog_refuses_conflicts_and_invalid_chords_without_rebinding() {
+fn shortcuts_dialog_prompts_on_conflicts_and_overrides_or_keeps_the_edit_box() {
     let fixture = fixture();
     let mut harness = harness(fixture.editor);
     harness.run_steps(3);
     open_shortcuts(&mut harness);
     let project = harness.state().session.project().clone();
     let project_can_undo = harness.state().session.can_undo();
+    let ctrl_b = actions::Chord::parse("Ctrl+B")
+        .unwrap()
+        .display(actions::Platform::current());
+    let split = actions::action("timeline.split").unwrap();
 
+    // Save stays disabled until the working copy differs from the stored map.
+    let inspection = harness.state().inspect().unwrap();
+    assert!(!inspection.shortcuts.as_ref().unwrap().changed);
+    assert!(
+        inspection
+            .widgets
+            .iter()
+            .any(|widget| widget.id == "shortcuts.save" && !widget.enabled),
+        "Save must be disabled before a change"
+    );
+
+    // Ctrl+B already belongs to Split at playhead: the prompt names it and the box keeps recording.
     click(&mut harness, "shortcuts.row.timeline.snap");
-    // Ctrl+B already belongs to Split at playhead.
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::B);
     harness.run_steps(3);
-    let inspection = harness.state().inspect().unwrap();
-    let shortcuts = inspection.shortcuts.unwrap();
-    let error = shortcuts.error.as_deref().unwrap();
-    assert!(
-        error.contains(
-            actions::action("timeline.split")
-                .unwrap()
-                .label
-                .text(vibecut::i18n::Locale::En)
-        ),
-        "{error}"
-    );
+    let shortcuts = harness.state().inspect().unwrap().shortcuts.unwrap();
+    let conflict = shortcuts.conflict.clone().expect("conflict prompt");
+    assert_eq!(conflict.action, "timeline.snap");
+    assert_eq!(conflict.chord, "Ctrl+B");
+    assert_eq!(conflict.owner, "timeline.split");
     assert_eq!(shortcuts.recording.as_deref(), Some("timeline.snap"));
     assert!(
         !harness
@@ -796,15 +822,6 @@ fn shortcuts_dialog_refuses_conflicts_and_invalid_chords_without_rebinding() {
             .bindings
             .contains_key("timeline.snap")
     );
-    assert!(
-        !harness
-            .state()
-            .preferences
-            .keybindings
-            .bindings
-            .contains_key("timeline.split")
-    );
-    let split = actions::action("timeline.split").unwrap();
     assert_eq!(
         harness
             .state()
@@ -814,6 +831,49 @@ fn shortcuts_dialog_refuses_conflicts_and_invalid_chords_without_rebinding() {
         ["Ctrl+B"]
     );
 
+    // Cancel keeps the edit box open and changes nothing.
+    click(&mut harness, "shortcuts.conflict.cancel");
+    let shortcuts = harness.state().inspect().unwrap().shortcuts.unwrap();
+    assert!(shortcuts.conflict.is_none());
+    assert_eq!(shortcuts.recording.as_deref(), Some("timeline.snap"));
+    assert!(!shortcuts.changed);
+
+    // Override moves Ctrl+B to snapping; Split loses it and its row turns unbound.
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::B);
+    harness.run_steps(3);
+    click(&mut harness, "shortcuts.conflict.override");
+    let shortcuts = harness.state().inspect().unwrap().shortcuts.unwrap();
+    assert!(shortcuts.conflict.is_none());
+    assert!(shortcuts.recording.is_none());
+    assert!(shortcuts.error.is_none());
+    assert!(shortcuts.changed);
+    let row = |id: &str| shortcuts.rows.iter().find(|row| row.action == id).unwrap();
+    assert_eq!(row("timeline.snap").keys, [ctrl_b.clone()]);
+    assert!(row("timeline.split").unbound);
+    assert_eq!(harness.state().session.project(), &project);
+
+    // Escape inside the edit box is recorded as a key and conflicts with Cancel or deselect.
+    click(&mut harness, "shortcuts.row.timeline.snap");
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(3);
+    let shortcuts = harness.state().inspect().unwrap().shortcuts.unwrap();
+    let conflict = shortcuts.conflict.clone().expect("Escape conflict prompt");
+    assert_eq!(conflict.chord, "Escape");
+    assert_eq!(conflict.owner, "selection.escape");
+    assert_eq!(shortcuts.recording.as_deref(), Some("timeline.snap"));
+    click(&mut harness, "shortcuts.conflict.cancel");
+    assert!(
+        harness
+            .state()
+            .inspect()
+            .unwrap()
+            .shortcuts
+            .unwrap()
+            .conflict
+            .is_none()
+    );
+
+    // A chord the parser refuses reports the reason and keeps the edit box open.
     let invalid = harness
         .state_mut()
         .record_shortcut("timeline.snap", "Ctrl+NotAKey")
@@ -830,24 +890,24 @@ fn shortcuts_dialog_refuses_conflicts_and_invalid_chords_without_rebinding() {
     let error = shortcuts.error.as_deref().unwrap();
     assert!(error.contains("Can't use"), "{error}");
     assert!(error.contains("NotAKey"), "{error}");
-    assert!(
-        !harness
-            .state()
-            .preferences
-            .keybindings
-            .bindings
-            .contains_key("timeline.snap")
-    );
+    assert_eq!(shortcuts.recording.as_deref(), Some("timeline.snap"));
 
-    // The first Escape cancels recording but keeps the dialog; the second closes.
-    harness.key_press(egui::Key::Escape);
-    harness.run_steps(3);
-    let shortcuts = harness.state().inspect().unwrap().shortcuts.unwrap();
-    assert!(shortcuts.recording.is_none());
-    assert!(shortcuts.error.is_none());
+    // A second click on the recording row ends its edit box; Escape then closes the dialog.
+    click(&mut harness, "shortcuts.row.timeline.snap");
+    assert!(
+        harness
+            .state()
+            .inspect()
+            .unwrap()
+            .shortcuts
+            .unwrap()
+            .recording
+            .is_none()
+    );
     harness.key_press(egui::Key::Escape);
     harness.run_steps(3);
     assert!(harness.state().inspect().unwrap().shortcuts.is_none());
+    assert!(harness.state().preferences.keybindings.bindings.is_empty());
     assert_eq!(harness.state().session.project(), &project);
     assert_eq!(harness.state().session.can_undo(), project_can_undo);
 }
@@ -867,11 +927,16 @@ fn shortcuts_dialog_resets_one_and_all_actions_and_undo_restores_the_map() {
         harness.state_mut().record_shortcut(action, chord).unwrap();
     }
     harness.run_steps(3);
+    click(&mut harness, "shortcuts.save");
     let custom = harness.state().preferences.keybindings.clone();
     assert_eq!(custom.bindings.len(), 2);
     assert_eq!(custom.is_customized.len(), 2);
 
+    // Reset edits the working copy; Save commits it as one preference edit.
+    open_shortcuts(&mut harness);
     click(&mut harness, "shortcuts.reset.timeline.snap");
+    assert_eq!(harness.state().preferences.keybindings, custom);
+    click(&mut harness, "shortcuts.save");
     let reset_one = harness.state().preferences.keybindings.clone();
     assert!(!reset_one.bindings.contains_key("timeline.snap"));
     assert!(!reset_one.is_customized.contains("timeline.snap"));
@@ -885,18 +950,23 @@ fn shortcuts_dialog_resets_one_and_all_actions_and_undo_restores_the_map() {
     harness.run_steps(3);
     assert_eq!(harness.state().preferences.keybindings, reset_one);
 
+    // Reset all has no confirmation: it clears the working copy at once, and Save commits.
+    open_shortcuts(&mut harness);
     click(&mut harness, "shortcuts.reset_all");
+    let inspection = harness.state().inspect().unwrap().shortcuts.unwrap();
+    assert!(inspection.conflict.is_none());
+    assert!(inspection.changed);
+    assert_eq!(harness.state().preferences.keybindings, reset_one);
+    click(&mut harness, "shortcuts.save");
     let reset_all = harness.state().preferences.keybindings.clone();
     assert!(reset_all.bindings.is_empty());
     assert!(reset_all.is_customized.is_empty());
-    assert!(harness.state().preferences.keybindings.bindings.is_empty());
     harness.state_mut().activate("edit.undo").unwrap();
     harness.run_steps(3);
     assert_eq!(harness.state().preferences.keybindings, reset_one);
     assert_eq!(harness.state().session.project(), &project);
     assert_eq!(harness.state().session.can_undo(), project_can_undo);
 }
-
 #[test]
 fn shortcuts_bindings_and_reset_state_roundtrip_through_the_preference_store() {
     let fixture = fixture();
@@ -991,6 +1061,82 @@ fn shortcuts_import_export_entry_points_are_disabled_until_settings_export() {
 }
 
 #[test]
+fn shortcut_presets_keep_their_own_bindings_and_persist_the_choice() {
+    let fixture = fixture();
+    let mut harness = harness(fixture.editor);
+    harness.run_steps(3);
+    let one = actions::KeybindingPreset::One;
+    let two = actions::KeybindingPreset::Two;
+    let snap = actions::action("timeline.snap").unwrap();
+    let split = actions::action("timeline.split").unwrap();
+    let ctrl_shift_n = actions::Chord::parse("Ctrl+Shift+N")
+        .unwrap()
+        .display(actions::Platform::current());
+    let project = harness.state().session.project().clone();
+
+    // Preset 1: record a chord and save it into the active profile.
+    open_shortcuts(&mut harness);
+    click(&mut harness, "shortcuts.row.timeline.snap");
+    harness.key_press_modifiers(
+        egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT),
+        egui::Key::N,
+    );
+    harness.run_steps(3);
+    click(&mut harness, "shortcuts.save");
+    let keybindings = &harness.state().preferences.keybindings;
+    assert_eq!(keybindings.active, one);
+    assert_eq!(keybindings.effective_chords(snap), [ctrl_shift_n.clone()]);
+
+    // Switching to preset 2 applies its own profile: snapping is back on N there.
+    harness.state_mut().select_shortcut_preset(two).unwrap();
+    harness.run_steps(3);
+    let keybindings = &harness.state().preferences.keybindings;
+    assert_eq!(keybindings.active, two);
+    assert_eq!(keybindings.effective_chords(snap), ["N"]);
+    assert_eq!(
+        keybindings.profile(one).effective_chords(snap),
+        [ctrl_shift_n.clone()],
+        "preset 1 keeps its chord while preset 2 is active"
+    );
+
+    // An override in preset 2 moves Ctrl+B to snapping there and leaves preset 1 alone.
+    open_shortcuts(&mut harness);
+    assert_eq!(
+        harness.state().inspect().unwrap().shortcuts.unwrap().preset,
+        two
+    );
+    click(&mut harness, "shortcuts.row.timeline.snap");
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::B);
+    harness.run_steps(3);
+    click(&mut harness, "shortcuts.conflict.override");
+    click(&mut harness, "shortcuts.save");
+    let keybindings = &harness.state().preferences.keybindings;
+    assert_eq!(
+        keybindings.effective_chords(snap),
+        ["Ctrl+B"].map(String::from)
+    );
+    assert!(keybindings.effective_chords(split).is_empty());
+    assert_eq!(
+        keybindings.profile(one).effective_chords(snap),
+        [ctrl_shift_n.clone()]
+    );
+    assert_eq!(keybindings.profile(one).effective_chords(split), ["Ctrl+B"]);
+    assert_eq!(harness.state().session.project(), &project);
+
+    // The active choice and every profile survive a store round-trip.
+    let dir = tempfile::tempdir().unwrap();
+    let store = PreferenceStore::new(dir.path().join("preferences.json"));
+    store.save(&harness.state().preferences).unwrap();
+    let loaded = store.load_with_warning().0;
+    assert_eq!(loaded.keybindings, harness.state().preferences.keybindings);
+    assert_eq!(loaded.keybindings.active, two);
+    assert_eq!(
+        loaded.keybindings.profile(one).effective_chords(snap),
+        [ctrl_shift_n]
+    );
+}
+
+#[test]
 fn shortcuts_dialog_tabs_switch_and_capture_every_tab_at_two_x() {
     let fixture = fixture();
     let mut editor = fixture.editor;
@@ -1041,4 +1187,86 @@ fn shortcuts_dialog_tabs_switch_and_capture_every_tab_at_two_x() {
         "shortcuts screenshot: {}",
         root.join("p1-04-shortcuts.png").display()
     );
+}
+
+#[test]
+fn reference_default_chords_run_their_actions_through_the_keymap() {
+    // One row per adopted group. Each chord goes through the keymap the frame
+    // dispatches with, so a collision or a missing registry row fails here.
+    let keymap = actions::Keymap::resolve(&actions::KeybindingPreferences::default());
+    let command = egui::Modifiers::COMMAND;
+    let alt_shift = egui::Modifiers::ALT.plus(egui::Modifiers::SHIFT);
+    let groups: [(&str, &[(egui::Modifiers, egui::Key, &str)]); 7] = [
+        (
+            "extract audio",
+            &[(
+                command.plus(egui::Modifiers::SHIFT),
+                egui::Key::S,
+                "timeline.extract_audio",
+            )],
+        ),
+        (
+            "timeline zoom",
+            &[
+                (command, egui::Key::Equals, "timeline.zoom_in"),
+                (command, egui::Key::Plus, "timeline.zoom_in"),
+                (command, egui::Key::Minus, "timeline.zoom_out"),
+            ],
+        ),
+        (
+            "deselect",
+            &[(egui::Modifiers::ALT, egui::Key::X, "timeline.deselect_all")],
+        ),
+        (
+            "full screen",
+            &[(
+                command.plus(egui::Modifiers::SHIFT),
+                egui::Key::F,
+                "preview.fullscreen",
+            )],
+        ),
+        (
+            "player zoom",
+            &[
+                (alt_shift, egui::Key::Plus, "preview.zoom.in"),
+                (alt_shift, egui::Key::Minus, "preview.zoom.out"),
+                (alt_shift, egui::Key::Z, "preview.zoom.fit"),
+            ],
+        ),
+        (
+            "import and export",
+            &[
+                (command, egui::Key::I, "file.import"),
+                (command, egui::Key::E, "file.export"),
+            ],
+        ),
+        (
+            "bookmarks",
+            &[
+                (
+                    egui::Modifiers::SHIFT,
+                    egui::Key::M,
+                    "playback.jump_bookmark.next",
+                ),
+                (alt_shift, egui::Key::M, "playback.jump_bookmark.previous"),
+            ],
+        ),
+    ];
+    for (group, chords) in groups {
+        for &(modifiers, key, action) in chords {
+            let mut input = egui::InputState::default();
+            input.events.push(egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers,
+            });
+            let outcome = keymap.take(&mut input, actions::DispatchContext::default());
+            assert!(
+                matches!(outcome, actions::Dispatch::Action { action: found, .. } if found == action),
+                "{group}: {key:?} should run {action}, got {outcome:?}"
+            );
+        }
+    }
 }

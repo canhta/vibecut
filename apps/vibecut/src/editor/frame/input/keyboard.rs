@@ -83,10 +83,14 @@ impl Editor {
         }
         // The shortcuts dialog records the next chord itself and owns Escape.
         // Capture before panels so a recorded key cannot also press a focused
-        // control in the same frame.
+        // control in the same frame. A conflict prompt owns the keys until its
+        // Cancel or Override button is pressed.
         if self.frame.shortcuts_open {
+            if self.frame.shortcut_conflict.is_some() {
+                return;
+            }
             if self.frame.shortcut_recording.is_some() {
-                let _ = self.capture_shortcut(ctx);
+                self.capture_shortcut(ctx);
             } else if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
                 self.close_shortcuts();
             }

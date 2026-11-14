@@ -15,7 +15,7 @@ mod workflow;
 
 pub use input::{AppCommand, PreviewZoom};
 
-use super::state::PreferenceHistory;
+use super::state::{PreferenceHistory, ShortcutConflict};
 use super::widgets::Widgets;
 use super::{BTreeMap, Context, Rect, ShortcutTab};
 use crate::{
@@ -38,7 +38,7 @@ pub(super) struct State {
     /// App-owned preference history, deliberately separate from the project's.
     pub(super) preference_history: PreferenceHistory,
     pub(super) keymap: Keymap,
-    pub(super) keymap_source: actions::KeybindingPreferences,
+    pub(super) keymap_source: actions::KeybindingPresets,
     pub(super) keybinding_issues: Vec<KeybindingIssue>,
     /// A host-set capture flag; global keys wait. A running voice-over take counts
     /// too, read from its dialog by `dispatch_context`.
@@ -49,6 +49,10 @@ pub(super) struct State {
     pub(super) shortcut_tab: ShortcutTab,
     pub(super) shortcut_recording: Option<&'static str>,
     pub(super) shortcut_error: Option<String>,
+    /// The shortcuts dialog's working copy; Save commits it as one preference edit.
+    pub(super) shortcut_draft: Option<actions::KeybindingPreferences>,
+    /// A recorded chord another action owns, waiting for Cancel or Override.
+    pub(super) shortcut_conflict: Option<ShortcutConflict>,
 }
 
 impl Default for State {
@@ -78,6 +82,8 @@ impl State {
             shortcut_tab: ShortcutTab::Timeline,
             shortcut_recording: None,
             shortcut_error: None,
+            shortcut_draft: None,
+            shortcut_conflict: None,
         }
     }
     /// Open the shortcuts dialog on its first tab.
@@ -86,11 +92,15 @@ impl State {
         self.shortcut_tab = ShortcutTab::Timeline;
         self.shortcut_recording = None;
         self.shortcut_error = None;
+        self.shortcut_conflict = None;
     }
+    /// Closing drops the working copy, so Cancel and Escape discard edits.
     pub(super) fn close_shortcuts(&mut self) {
         self.shortcuts_open = false;
         self.shortcut_recording = None;
         self.shortcut_error = None;
+        self.shortcut_conflict = None;
+        self.shortcut_draft = None;
     }
     /// Switch tabs; a recording gesture belongs to the old tab.
     pub(super) fn set_shortcut_tab(&mut self, tab: ShortcutTab) {

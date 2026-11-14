@@ -13,7 +13,7 @@ use crate::{
     editor::{Guide, GuideLines, MediaSort, MediaView, OverlayVisibility},
     home::ProjectsPreferences,
     i18n::Locale,
-    input::KeybindingPreferences,
+    input::KeybindingPresets,
 };
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
@@ -21,7 +21,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 /// Bumped when the local preference document changes incompatibly.
-pub const PREFERENCES_VERSION: u32 = 21;
+pub const PREFERENCES_VERSION: u32 = 22;
 /// Room for every provider/feature choice and its bounded recent IDs.
 pub const MAX_PREFERENCES_BYTES: u64 = 32 * 1024;
 /// Total open-lane entries across every project; keeps the document bounded.
@@ -198,7 +198,7 @@ pub struct Preferences {
     pub snapshot_directory: Option<PathBuf>,
     /// App-local action overrides. Defaults and action metadata live in
     /// `actions`; this is the only persisted binding map.
-    pub keybindings: KeybindingPreferences,
+    pub keybindings: KeybindingPresets,
     /// Items whose keyframe lanes stay open, keyed by the project they belong
     /// to: item ids restart in every project.
     pub timeline_lanes: BTreeMap<project::ProjectId, BTreeSet<u64>>,
@@ -256,7 +256,7 @@ impl Default for Preferences {
             preview_axis: true,
             playback_loop: false,
             snapshot_directory: None,
-            keybindings: KeybindingPreferences::default(),
+            keybindings: KeybindingPresets::default(),
             timeline_lanes: BTreeMap::new(),
             keyframe_hint_seen: false,
             font_picker: FontPickerPreferences::default(),

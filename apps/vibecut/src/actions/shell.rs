@@ -10,7 +10,7 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         ActionCategory::File,
         "workspace import picker",
         UiAction::Import,
-        &[],
+        &["Ctrl+I"],
     ),
     ActionSpec::ui(
         "file.export",
@@ -18,7 +18,7 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         ActionCategory::File,
         "export dialog",
         UiAction::Export,
-        &[],
+        &["Ctrl+E"],
     ),
     ActionSpec::ui(
         "project.save",

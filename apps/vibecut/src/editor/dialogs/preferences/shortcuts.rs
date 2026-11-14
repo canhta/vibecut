@@ -44,17 +44,20 @@ fn apply(port: &mut Port<'_>, path: &Path, replace: bool) -> Result<usize> {
         .read
         .preferences
         .keybindings
+        .active()
         .apply_profile(profile, mode, |id| crate::actions::action(id).is_some())
         .map_err(|_| Error::Invalid("shortcut file"))?;
     let unknown = outcome.unknown_actions.len();
-    let value = serde_json::to_value(&outcome.preferences)?;
+    let mut presets = port.read.preferences.keybindings.clone();
+    *presets.active_mut() = outcome.preferences;
+    let value = serde_json::to_value(&presets)?;
     port.set_preference_result("keybindings", value)?;
     Ok(unknown)
 }
 
 /// Write the canonical, versioned binding map to the picked destination.
 pub(in crate::editor) fn export(state: &mut State, port: &Port<'_>, path: &Path) -> Result<()> {
-    let bytes = KeybindingProfile::export(port.read.preferences.keybindings.clone())
+    let bytes = KeybindingProfile::export(port.read.preferences.keybindings.active().clone())
         .map_err(|_| Error::Invalid("shortcut profile"))?;
     std::fs::write(path, bytes)?;
     state.shortcut_notice = Some(ShortcutNotice::Exported);

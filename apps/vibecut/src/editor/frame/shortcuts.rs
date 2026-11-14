@@ -10,7 +10,12 @@ use crate::editor::{
 /// Modal shortcuts editor over the one action registry and preference store.
 /// Rows read effective bindings; grouping and conflict rules all
 /// stay owned by their existing modules.
-pub(super) fn show(state: &mut State, cx: &Context<'_>, ctx: &egui::Context) -> Vec<Action> {
+pub(super) fn show(
+    state: &mut State,
+    cx: &Context<'_>,
+    ctx: &egui::Context,
+    preset: actions::KeybindingPreset,
+) -> Vec<Action> {
     let mut actions = Vec::new();
     const ROW_HEIGHT: f32 = SHORTCUT_ROW_HEIGHT;
     const CARD_PAD: f32 = 10.0;
@@ -35,6 +40,14 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ctx: &egui::Context) -> 
     let rows_height = split.max(specs.len() - split) as f32 * ROW_HEIGHT;
     let content_height = rows_height.clamp(96.0, CONTENT_MAX);
     let mut close_requested = false;
+    // Save and reset act on the working copy; Save stays disabled until it differs.
+    let (changed, can_reset) = {
+        let draft = state.shortcut_draft.as_ref().unwrap_or(cx.keybindings);
+        (
+            draft != cx.keybindings,
+            !draft.bindings.is_empty() || !draft.is_customized.is_empty(),
+        )
+    };
     let output = egui::Modal::new(Id::unique("shortcuts.dialog"))
         .frame(crate::kit::dialog_frame(ctx).inner_margin(egui::Margin::ZERO))
         .show(ctx, |ui| {
@@ -86,7 +99,7 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ctx: &egui::Context) -> 
                             shortcut_tab_button(state, cx, ui, tab, dark);
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            shortcut_preset(state, cx, ui)
+                            shortcut_preset(state, cx, ui, preset, &mut actions)
                         });
                     });
                     ui.add_space(theme::space::LG);
@@ -172,8 +185,6 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ctx: &egui::Context) -> 
                     }
                     ui.add_space(theme::space::ROW_INSET);
                     ui.horizontal(|ui| {
-                        let can_reset = !cx.keybindings.bindings.is_empty()
-                            || !cx.keybindings.is_customized.is_empty();
                         let reset = ui.add_enabled(
                             can_reset,
                             egui::Button::new(i18n::text(cx.locale, Text::ShortcutsResetAll))
@@ -205,7 +216,7 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ctx: &egui::Context) -> 
                                 close_requested = true;
                             }
                             let save = ui.add_enabled(
-                                false,
+                                changed,
                                 egui::Button::new(
                                     egui::RichText::new(i18n::text(cx.locale, Text::ShortcutsSave))
                                         .color(theme::on_accent(dark)),
@@ -214,6 +225,9 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ctx: &egui::Context) -> 
                                 .min_size(Vec2::new(84.0, SHORTCUT_CONTROL_HEIGHT)),
                             );
                             state.widgets.remember("shortcuts.save", &save);
+                            if save.clicked() {
+                                actions.push(Action::Save);
+                            }
                         });
                     });
                 });
@@ -222,7 +236,80 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ctx: &egui::Context) -> 
     if close_requested || output.backdrop_response.clicked() {
         state.close_shortcuts();
     }
+    conflict_prompt(state, cx, ctx, &mut actions);
     actions
+}
+
+/// The conflict prompt: another action owns the recorded chord. Override moves
+/// the chord to the recording action; Cancel keeps the edit box open.
+fn conflict_prompt(
+    state: &mut State,
+    cx: &Context<'_>,
+    ctx: &egui::Context,
+    actions: &mut Vec<Action>,
+) {
+    let Some(conflict) = state.shortcut_conflict.clone() else {
+        return;
+    };
+    let chord = actions::Chord::parse(&conflict.chord).map_or_else(
+        |_| conflict.chord.clone(),
+        |parsed| parsed.display(actions::Platform::current()),
+    );
+    let owner = actions::action(&conflict.owner)
+        .map_or(conflict.owner.as_str(), |spec| spec.label.text(cx.locale));
+    let body = i18n::format(
+        cx.locale,
+        Text::ShortcutsConflictBody,
+        &[("chord", &chord), ("action", owner)],
+    );
+    let _ = egui::Modal::new(Id::unique("shortcuts.conflict"))
+        .frame(crate::kit::dialog_frame(ctx))
+        .show(ctx, |ui| {
+            ui.set_width(360.0);
+            egui::Frame::NONE
+                .inner_margin(egui::Margin::same(16))
+                .show(ui, |ui| {
+                    ui.set_width(328.0);
+                    ui.label(
+                        egui::RichText::new(i18n::text(cx.locale, Text::ShortcutsConflictTitle))
+                            .size(theme::type_size::BODY)
+                            .strong()
+                            .color(theme::text(cx.dark)),
+                    );
+                    ui.add_space(theme::space::MD);
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(body)
+                                .size(theme::type_size::BODY)
+                                .color(theme::text(cx.dark)),
+                        )
+                        .wrap(),
+                    );
+                    ui.add_space(theme::space::LG);
+                    ui.horizontal(|ui| {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let override_button = ui.add(
+                                egui::Button::new(i18n::text(cx.locale, Text::ShortcutsOverride))
+                                    .min_size(Vec2::new(84.0, SHORTCUT_CONTROL_HEIGHT)),
+                            );
+                            state
+                                .widgets
+                                .remember("shortcuts.conflict.override", &override_button);
+                            if override_button.clicked() {
+                                actions.push(Action::OverrideConflict);
+                            }
+                            let cancel = ui.add(
+                                egui::Button::new(i18n::text(cx.locale, Text::ShortcutsCancel))
+                                    .min_size(Vec2::new(84.0, SHORTCUT_CONTROL_HEIGHT)),
+                            );
+                            state.widgets.remember("shortcuts.conflict.cancel", &cancel);
+                            if cancel.clicked() {
+                                actions.push(Action::CancelConflict);
+                            }
+                        });
+                    });
+                });
+        });
 }
 fn shortcut_tab_button(
     state: &mut State,
@@ -264,18 +351,37 @@ fn shortcut_tab_button(
         state.set_shortcut_tab(tab);
     }
 }
-fn shortcut_preset(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) {
-    let label = i18n::text(cx.locale, Text::ShortcutsProfile);
-    let mut selected = 0u8;
-    let response = egui::ComboBox::from_id_salt(Id::unique("shortcuts.preset"))
-        .selected_text(label)
+/// The preset dropdown lists Shortcut 1 to Shortcut 5. Choosing one switches
+/// the active profile.
+fn shortcut_preset(
+    state: &mut State,
+    cx: &Context<'_>,
+    ui: &mut egui::Ui,
+    preset: actions::KeybindingPreset,
+    pending: &mut Vec<Action>,
+) {
+    let mut selected = preset;
+    let response = egui::ComboBox::from_id_salt("shortcuts.preset")
+        .selected_text(preset_label(cx.locale, preset))
         .width(180.0)
         .show_ui(ui, |ui| {
-            ui.selectable_value(&mut selected, 0, label);
+            for choice in actions::KeybindingPreset::ALL {
+                ui.selectable_value(&mut selected, choice, preset_label(cx.locale, choice));
+            }
         })
-        .response
-        .on_hover_text(label);
+        .response;
     state.widgets.remember("shortcuts.preset", &response);
+    if selected != preset {
+        pending.push(Action::SelectPreset(selected));
+    }
+}
+
+fn preset_label(locale: i18n::Locale, preset: actions::KeybindingPreset) -> String {
+    i18n::format(
+        locale,
+        Text::ShortcutsPreset,
+        &[("index", &preset.number().to_string())],
+    )
 }
 /// One action row: label, platform glyphs and a per-action reset once the
 /// action owns an override. Clicking the row records the next chord.
@@ -303,8 +409,10 @@ fn shortcut_row(
         egui::Sense::click(),
     );
     let recording = state.shortcut_recording == Some(spec.id);
-    let customized = cx.keybindings.is_customized.contains(spec.id);
-    let chords = cx.keybindings.effective_chords(spec);
+    let bindings = state.shortcut_draft.as_ref().unwrap_or(cx.keybindings);
+    let customized = bindings.is_customized.contains(spec.id);
+    let can_reset = bindings.bindings.contains_key(spec.id);
+    let chords = bindings.effective_chords(spec);
     let key_color = if recording {
         theme::accent(cx.dark)
     } else {
@@ -394,10 +502,10 @@ fn shortcut_row(
         record.tooltip = Some(key_tooltip);
     }
     if row.clicked() {
-        state.shortcut_recording = Some(spec.id);
+        // A second click on the recording row ends its edit box.
+        state.shortcut_recording = if recording { None } else { Some(spec.id) };
         state.shortcut_error = None;
     }
-    let can_reset = cx.keybindings.bindings.contains_key(spec.id);
     if can_reset {
         let image = icons::tinted(Icon::ArrowCounterClockwise, 14.0, theme::secondary(cx.dark));
         let reset = ui.put(
@@ -478,6 +586,14 @@ fn paint_shortcut_chords(
 pub(super) enum Action {
     /// Reset one action's chords, or every override when `action` is `None`.
     ResetKeybindings { action: Option<&'static str> },
+    /// Commit the working copy and close.
+    Save,
+    /// Switch the active preset.
+    SelectPreset(actions::KeybindingPreset),
+    /// Move the conflicting chord to the recording action.
+    OverrideConflict,
+    /// Keep the edit box open for another chord.
+    CancelConflict,
 }
 
 impl Editor {
@@ -488,21 +604,25 @@ impl Editor {
         }
         let mut frame = std::mem::take(&mut self.frame);
         let cx = self.context();
-        let actions = show(&mut frame, &cx, ctx);
+        let preset = self.preferences.keybindings.active;
+        let actions = show(&mut frame, &cx, ctx, preset);
         drop(cx);
         self.frame = frame;
         for action in actions {
             match action {
-                Action::ResetKeybindings { action } => {
-                    let result = match action {
-                        Some(id) => self.reset_keybinding(id),
-                        None => self.reset_keybindings(),
-                    };
-                    self.frame.shortcut_error = match result {
-                        Ok(()) => None,
-                        Err(error) => Some(self.shortcut_error_message(&error)),
-                    };
+                Action::ResetKeybindings { action } => self.reset_shortcut_draft(action),
+                Action::SelectPreset(preset) => {
+                    if let Err(error) = self.select_shortcut_preset(preset) {
+                        self.frame.shortcut_error = Some(self.shortcut_error_message(&error));
+                    }
                 }
+                Action::Save => {
+                    if let Err(error) = self.save_shortcuts() {
+                        self.frame.shortcut_error = Some(self.shortcut_error_message(&error));
+                    }
+                }
+                Action::OverrideConflict => self.override_shortcut_conflict(),
+                Action::CancelConflict => self.cancel_shortcut_conflict(),
             }
         }
     }

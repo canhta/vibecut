@@ -34,7 +34,8 @@ pub use panels::player::{
     TextCaret,
 };
 pub use state::{
-    AssetInspection, Editor, Inspection, ShortcutRow, ShortcutTab, ShortcutsInspection,
+    AssetInspection, Editor, Inspection, ShortcutConflict, ShortcutRow, ShortcutTab,
+    ShortcutsInspection,
 };
 use state::{
     AssetRow, PreferenceCommand, SHORTCUT_CONTROL_HEIGHT, SHORTCUT_ROW_HEIGHT, SHORTCUT_TEXT_SIZE,
@@ -507,11 +508,13 @@ impl Editor {
             text_caret: self.player.transform.text_caret(),
             shortcuts: self.frame.shortcuts_open.then(|| {
                 let platform = actions::Platform::current();
+                let stored = self.preferences.keybindings.active();
+                let draft = self.frame.shortcut_draft.as_ref().unwrap_or(stored);
                 let rows = actions::actions()
                     .iter()
                     .filter(|spec| spec.bindable())
                     .map(|spec| {
-                        let chords = self.preferences.keybindings.effective_chords(spec);
+                        let chords = draft.effective_chords(spec);
                         ShortcutRow {
                             action: spec.id.to_owned(),
                             label: spec.label.text(self.preferences.locale).to_owned(),
@@ -522,19 +525,18 @@ impl Editor {
                                 .filter_map(|text| actions::Chord::parse(text).ok())
                                 .map(|chord| chord.display(platform))
                                 .collect(),
-                            customized: self
-                                .preferences
-                                .keybindings
-                                .is_customized
-                                .contains(spec.id),
+                            customized: draft.is_customized.contains(spec.id),
                             unbound: chords.is_empty(),
                         }
                     })
                     .collect();
                 ShortcutsInspection {
                     tab: self.frame.shortcut_tab,
+                    preset: self.preferences.keybindings.active,
                     recording: self.frame.shortcut_recording.map(str::to_owned),
                     error: self.frame.shortcut_error.clone(),
+                    conflict: self.frame.shortcut_conflict.clone(),
+                    changed: draft != stored,
                     rows,
                 }
             }),
