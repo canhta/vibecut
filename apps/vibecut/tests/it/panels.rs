@@ -529,8 +529,8 @@ fn open_mask(harness: &mut Harness<Editor>) {
 /// Wheel the inspector until `id` sits fully inside its visible body, then wait for the
 /// scroll animation to settle.
 pub(crate) fn reveal(harness: &mut Harness<Editor>, id: &str) {
-    // Measure from the tab strip the selected kind shows (Text or Adjust).
-    let tab = ["inspector.tab.text", "inspector.tab.adjust"]
+    // Measure from the tab strip the selected kind shows (Text, Adjust or Speed).
+    let tab = ["inspector.tab.text", "inspector.tab.adjust", "inspector.tab.speed"]
         .into_iter()
         .find(|tab| has_widget(harness, tab));
     // A control clipped out of a tall body is not drawn yet: scroll toward it first.
@@ -604,6 +604,12 @@ fn needs_reveal(id: &str) -> bool {
         // A section header scrolled under the fixed tab strip would take the tab's click.
         || id.starts_with("inspector.section.")
         || id.starts_with("inspector.animation.")
+        // The speed plot sits below the preset tiles; a short panel scrolls it partly out of
+        // view, and a clipped handle takes no pointer.
+        || id.starts_with("inspector.speed.point.")
+        || id.starts_with("inspector.speed.curve.")
+        || id == "inspector.speed.pitch"
+        || id.starts_with("inspector.speed.preset.")
         || id.starts_with("inspector.lut.")
         || id.starts_with("inspector.loudness.")
         || id.starts_with("inspector.volume")
@@ -730,6 +736,9 @@ fn drag_to(harness: &mut Harness<Editor>, id: &str, delta: egui::Vec2) {
 }
 
 fn drag(harness: &mut Harness<Editor>, id: &str, delta: egui::Vec2) {
+    if needs_reveal(id) {
+        reveal(harness, id);
+    }
     let start = widget_rect(harness, id).center();
     drag_to(harness, id, delta);
     harness.drop_at(start + delta);

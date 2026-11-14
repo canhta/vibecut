@@ -259,9 +259,11 @@ impl State {
             match view.state {
                 JobState::Completed => {
                     self.font_picker.importing = false;
-                    self.font_picker.loaded = false;
-                    self.font_picker.request_sent = false;
-                    self.font_picker.status = font_picker::Status::Loading;
+                    // List in this poll, before the frame draws: the imported family's row
+                    // shows in the frame that sees it, with no Loading frame between.
+                    if self.font_list(port).is_err() {
+                        self.font_picker.status = font_picker::Status::Failed;
+                    }
                     return;
                 }
                 JobState::Failed | JobState::Cancelled => {

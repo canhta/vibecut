@@ -461,8 +461,17 @@ fn font_row(
                 }
             }
             _ => {
+                // The icon is centred in its cell, one cell left of the star's.
+                let mut icon_ui = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(Rect::from_center_size(
+                            action_rect.center(),
+                            Vec2::splat(theme::size::CONTROL),
+                        ))
+                        .layout(egui::Layout::left_to_right(Align::Center)),
+                );
                 let download = theme::icon_button(
-                    &mut action_ui,
+                    &mut icon_ui,
                     &format!("fonts.download.{family}"),
                     theme::Icon::DownloadSimple,
                     tr(Text::FontDownload),
