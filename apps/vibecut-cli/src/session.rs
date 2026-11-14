@@ -32,19 +32,11 @@ use crate::args::CliError;
 use engine::ByteBudget;
 
 /// Per-process CLI admission settings; each job keeps its existing independent budget.
-pub(crate) struct Context {
-    memory_limit: u64,
-}
-impl Default for Context {
-    fn default() -> Self {
-        Self {
-            memory_limit: 2 << 30,
-        }
-    }
-}
+pub(crate) struct Context;
 impl Context {
+    /// The host-sized default every adapter shares.
     pub(crate) fn budget(&self) -> Result<ByteBudget, CliError> {
-        Ok(ByteBudget::new(self.memory_limit).map_err(engine::control::Error::from)?)
+        Ok(ByteBudget::for_host(&engine::SystemMemory).map_err(engine::control::Error::from)?)
     }
 }
 #[cfg(test)]

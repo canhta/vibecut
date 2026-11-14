@@ -67,7 +67,10 @@ impl Workspace {
         // Bound first: every worker started below inherits it and wakes the loop when done.
         let wake = wake::Wake::new();
         wake.bind();
-        let budget = ByteBudget::new(preferences.cache_limit_bytes)?;
+        let budget = match preferences.cache_limit_bytes {
+            Some(bytes) => ByteBudget::new(bytes)?,
+            None => ByteBudget::for_host(&engine::SystemMemory)?,
+        };
         let persistence = ByteBudget::new(256 << 20)?;
         let lending = Lending::open(&root, &budget);
         let corrections = lending.footage();

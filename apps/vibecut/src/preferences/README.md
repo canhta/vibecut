@@ -34,7 +34,7 @@ bounded custom IDs and four recent IDs per pair, using AI's shipped table for de
 The Captions and Shorts provider pickers resolve their transient request snapshots
 from this map. Downloaded local weight choices remain in their local owner. Keys,
 fetched lists and price acknowledgements are never serialized. A document whose version is not
-`PREFERENCES_VERSION` is refused through the version refusal; there is no migration. Version 23 replaced the export `quality` values (`low`, `medium`, `high`, `very_high`) with the Bit rate presets `lower`, `recommended` and `higher`.
+`PREFERENCES_VERSION` is refused through the version refusal; there is no migration. Version 23 replaced the export `quality` values (`low`, `medium`, `high`, `very_high`) with the Bit rate presets `lower`, `recommended` and `higher`. Version 24 made `cache_limit_bytes` optional: absent is Automatic, sized from host memory.
 Version 14 removed `recent_colors`; the colour popover's recents live in the project.
 Version 19 removed the font picker's persisted `tab` (the picker has no tabs); `font_picker` keeps only `favorites`.
 Version 22 replaced the single keybinding delta map with `KeybindingPresets`: five named profiles and the active one (`input`), with no migration.
@@ -70,5 +70,5 @@ and project-command paths; the bank never enters project JSON or project history
 `default_fps` is one of the project frame rates the settings dialog offers (24, 25, 30,
 60, 120; default 30). `hardware_acceleration` is `auto`, `on` or `off`. `cache_limit_bytes`
 is the one aggregate byte budget the app opens the engine with, bounded to 256 MiB–8 GiB
-(default 768 MiB, the previous fixed value). The limit and acceleration apply at the next
+(default automatic: `None` sizes it from host memory, [budget rule](../../../../crates/engine/src/runtime/README.md#host-sized-default-budget)). The limit and acceleration apply at the next
 start; an open project is never changed by either.

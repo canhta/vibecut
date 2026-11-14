@@ -55,7 +55,7 @@ fn export_refuses_when_a_source_disappears_mid_job() {
     let removed = Arc::new(AtomicBool::new(false));
     let signal = removed.clone();
     let result = export_project_with(
-        &Context::default(),
+        &Context,
         project,
         output.clone(),
         None,

@@ -37,6 +37,7 @@ text.workspace = true
 transport.workspace = true
 fs4 = "1.1.0"
 wake.workspace = true
+sysinfo = { version = "0.40.3", default-features = false, features = ["system"] }
 
 [target.'cfg(windows)'.dependencies]
 file-id = "0.2.3"

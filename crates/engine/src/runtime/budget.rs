@@ -63,6 +63,11 @@ impl ByteBudget {
     pub fn new(limit: u64) -> Result<Self> {
         Self::with_parent(limit, None)
     }
+    /// The app-wide budget sized by [`host_budget_limit`](super::host_budget_limit);
+    /// the one default every adapter (desktop, CLI, MCP) opens with.
+    pub fn for_host(probe: &dyn super::MemoryProbe) -> Result<Self> {
+        Self::new(super::host_budget_limit(probe))
+    }
     fn with_parent(limit: u64, parent: Option<Self>) -> Result<Self> {
         if limit == 0 {
             return Err(Error::Limit);

@@ -115,7 +115,9 @@ impl From<crate::session::SessionError> for Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 mod budget;
+mod host_memory;
 pub use budget::{BudgetSnapshot, ByteBudget, ByteBudgetHooks, ByteLease, ByteOwner};
+pub use host_memory::{HostMemory, MemoryProbe, SystemMemory, host_budget_limit};
 mod cache_location;
 mod cache_storage;
 pub mod cache {

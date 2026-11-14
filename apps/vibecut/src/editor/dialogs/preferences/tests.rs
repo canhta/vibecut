@@ -265,7 +265,13 @@ fn settings_modal_applies_preferences_and_shortcut_transfers_through_the_picker_
         );
         bench.click("settings.performance.cache");
         bench.click("settings.performance.cache.1024");
-        assert_eq!(bench.editor().preferences.cache_limit_bytes, 1024 << 20);
+        assert_eq!(
+            bench.editor().preferences.cache_limit_bytes,
+            Some(1024 << 20)
+        );
+        bench.click("settings.performance.cache");
+        bench.click("settings.performance.cache.auto");
+        assert_eq!(bench.editor().preferences.cache_limit_bytes, None);
         bench.click("settings.performance.cache.clear");
         // Settings clears through the one cache-maintenance path the timeline owns.
         // The frame drains the request at once, so the timeline's phase shows it; this

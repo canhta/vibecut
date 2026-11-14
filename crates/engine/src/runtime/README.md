@@ -27,6 +27,23 @@ The named paths preserve the existing layout: `models()` is `<base>/VibeCut/mode
 caller-injected `ArtifactCache` or `MediaAccess::open_in` roots. Cache consumers retain
 their existing storage, budget and cleanup policy.
 
+## Host-sized default budget
+
+`ByteBudget::for_host(&dyn MemoryProbe)` is the one default every adapter opens with: the
+desktop app (unless the user picks a cache limit), the CLI and, through them, MCP. The limit
+is `clamp(min(total / 4, available / 2), 1 GiB, 8 GiB)`, read once at start.
+
+- Physical memory is the stable part: a quarter leaves the OS, the GPU, decoders and other
+  apps the rest, and the same host gets the same budget every launch. Available memory only
+  lowers it, so launching under pressure does not push the host into swap.
+- The 1 GiB floor is what a 4K single-layer export declares (about 1005 MiB), so it is never
+  refused on a small host; the 8 GiB ceiling matches the settings maximum, since more adds
+  no measured export speed.
+- Rows (total/available): 8 GB/4 GB gives 2 GiB, 8/2 gives 1 GiB; 16/10 gives 4 GiB, 16/2
+  gives 1 GiB; 64/50 and larger give 8 GiB. An unreadable probe (zero) gives the floor.
+- `SystemMemory` reads macOS, Windows and Linux through `sysinfo` (no `unsafe` of ours);
+  tests inject a `MemoryProbe`.
+
 ## Cache result boundary
 
 Cache location discovery, artifact keys/storage, native model leases/state and maintenance

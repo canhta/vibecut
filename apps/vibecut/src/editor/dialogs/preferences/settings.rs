@@ -5,10 +5,10 @@ use super::{Action, State};
 use crate::{
     editor::{Context, context::CachePhase, egui},
     i18n::{self, Locale, Text},
-    preferences::{DEFAULT_CACHE_LIMIT, HardwareAcceleration, PROJECT_FPS},
+    preferences::{HardwareAcceleration, PROJECT_FPS},
 };
 
-/// Cache budgets offered in MiB; the default and both bounds are included.
+/// Cache budgets offered in MiB beside Automatic; both bounds are included.
 const CACHE_LIMITS_MIB: [u64; 7] = [256, 512, 768, 1024, 2048, 4096, 8192];
 const FPS_COMBO: &str = "settings.draft.fps";
 const HARDWARE_COMBO: &str = "settings.performance.hardware";
@@ -222,12 +222,29 @@ pub(super) fn show(
                         let caption = ui.label(tr(Text::SettingsCacheLimit));
                         let current = prefs.cache_limit_bytes;
                         let combo = egui::ComboBox::from_id_salt(CACHE_COMBO)
-                            .selected_text(i18n::format(
-                                locale,
-                                Text::SettingsMib,
-                                &[("mib", &mib(current).to_string())],
-                            ))
+                            .selected_text(match current {
+                                Some(bytes) => i18n::format(
+                                    locale,
+                                    Text::SettingsMib,
+                                    &[("mib", &mib(bytes).to_string())],
+                                ),
+                                None => tr(Text::SettingsHardwareAuto).to_string(),
+                            })
                             .show_ui(ui, |ui| {
+                                let auto = ui.selectable_label(
+                                    current.is_none(),
+                                    tr(Text::SettingsHardwareAuto),
+                                );
+                                actions.push(Action::Remember(
+                                    "settings.performance.cache.auto".into(),
+                                    auto.clone(),
+                                ));
+                                if auto.clicked() && current.is_some() {
+                                    actions.push(Action::Set(
+                                        "cache_limit_bytes",
+                                        serde_json::Value::Null,
+                                    ));
+                                }
                                 for limit in CACHE_LIMITS_MIB {
                                     let bytes = limit << 20;
                                     let label = i18n::format(
@@ -235,12 +252,13 @@ pub(super) fn show(
                                         Text::SettingsMib,
                                         &[("mib", &limit.to_string())],
                                     );
-                                    let response = ui.selectable_label(bytes == current, label);
+                                    let response =
+                                        ui.selectable_label(Some(bytes) == current, label);
                                     actions.push(Action::Remember(
                                         format!("settings.performance.cache.{limit}"),
                                         response.clone(),
                                     ));
-                                    if response.clicked() && bytes != current {
+                                    if response.clicked() && Some(bytes) != current {
                                         actions.push(Action::Set(
                                             "cache_limit_bytes",
                                             serde_json::json!(bytes),
@@ -253,8 +271,6 @@ pub(super) fn show(
                             combo.response.labelled_by(caption.id),
                         ));
                     });
-                    // The default must be one of the offered choices.
-                    debug_assert!(CACHE_LIMITS_MIB.contains(&mib(DEFAULT_CACHE_LIMIT)));
                     let cache = &cx.cache;
                     let clearing = cache.phase == CachePhase::Clearing;
                     ui.horizontal(|ui| {
