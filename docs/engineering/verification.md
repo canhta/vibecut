@@ -48,7 +48,7 @@ Each behaviour is asserted at one layer, the lowest that owns it:
 - A new test function needs a new behaviour; a new case of a known behaviour is a row. The test's doc line says what bug it catches (`/// Fails if a split moves the right half's keys.`); a test that cannot say so is not written.
 - Screenshots (ui-audit) are evidence for review, not tests. Layout is asserted only where a measured value has regressed before, as a row of the screen's geometry table.
 - A ticket adds at most five new test functions; more needs a reason per test in the handback. Review rejects unjustified ones.
-- Tests that need a GPU, the real FFmpeg export path for longer than 2 s, a model or the network carry `heavy` in their name and run in the per-batch gate only for touched packages; the full set runs at milestones.
+- Tests that need a GPU, the real FFmpeg export path for longer than 2 s, a model or the network carry `heavy` in their name and run in the per-batch gate only for touched packages; the full set runs at milestones. `cargo nextest run --profile light` ([`.config/nextest.toml`](../../.config/nextest.toml)) skips them for untouched packages.
 
 Each package has one integration binary at `tests/it/main.rs` with modules beneath it; run one with `cargo test -p <crate> --test it <module>::`.
 

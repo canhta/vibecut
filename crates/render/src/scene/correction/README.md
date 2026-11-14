@@ -90,7 +90,7 @@ layer (a thumbnail) takes the same arithmetic in place. On the CPU the pass hold
 layer-sized images (the layer, the packed plane and the reference's two working buffers, as any
 effect instance does), all charged through the frame hooks; the 4K test asserts that bound and
 that a cancelled frame stops. The GPU parity row lives in the desktop
-`gpu_matches_cpu_working_pixels_at_both_scales` (tolerance 1e-5, identity, scaled and rotated
+`heavy_gpu_matches_cpu_working_pixels_at_both_scales` (tolerance 1e-5, identity, scaled and rotated
 maps, feather 0, 40 and 100). Preview and export take the one path, so they agree, and the export
 stream-copy path refuses an item with removal on.
 

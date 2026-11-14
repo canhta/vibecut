@@ -969,7 +969,7 @@ mod tests {
         }
     }
     #[test]
-    fn submitted_resources_survive_native_failures_scope_drop_and_registration_unwind() {
+    fn heavy_submitted_resources_survive_native_failures_scope_drop_and_registration_unwind() {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let adapter = pollster::block_on(instance.request_adapter(&Default::default()));
         if !adapter

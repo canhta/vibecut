@@ -247,7 +247,7 @@ fn pixel_parity(gpu: &vibecut::services::gpu::effects::GpuEffects, image: &Image
     }
 }
 #[test]
-fn gpu_matches_cpu_working_pixels_at_both_scales() {
+fn heavy_gpu_matches_cpu_working_pixels_at_both_scales() {
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
     let adapter = match pollster::block_on(instance.request_adapter(&Default::default())) {
         Ok(adapter) if adapter.get_info().device_type != wgpu::DeviceType::Cpu => adapter,
@@ -1041,7 +1041,7 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
 
 #[test]
 #[ignore = "bounded native 1080p pixel-effect measurement; run explicitly on hardware"]
-fn pixel_effects_native_1080p_measurement() {
+fn heavy_pixel_effects_native_1080p_measurement() {
     use std::sync::atomic::{AtomicU64, Ordering};
     struct Meter {
         budget: engine::ByteBudget,
@@ -1144,7 +1144,7 @@ fn pixel_effects_native_1080p_measurement() {
 }
 
 #[test]
-fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
+fn heavy_unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
     use project::BlendMode::Normal;
     use std::sync::{
         Mutex,
@@ -1926,7 +1926,7 @@ fn unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
 
 #[test]
 #[ignore = "native reduce-noise frame time at 1080p and 4K; run explicitly on hardware"]
-fn reduce_noise_native_frame_time_1080p_and_4k() {
+fn heavy_reduce_noise_native_frame_time_1080p_and_4k() {
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
     let adapter = pollster::block_on(instance.request_adapter(&Default::default()))
         .expect("measurement requires a native adapter");

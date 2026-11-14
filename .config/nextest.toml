@@ -1,0 +1,4 @@
+# Tests named `heavy` need a GPU, a long real FFmpeg export, a model or the network.
+# docs/engineering/verification.md owns when they run.
+[profile.light]
+default-filter = "not test(heavy)"
