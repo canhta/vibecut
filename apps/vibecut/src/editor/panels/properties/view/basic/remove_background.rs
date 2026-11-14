@@ -89,13 +89,8 @@ impl Panel<'_, '_> {
         stroke: project::CutoutStroke,
     ) {
         let mut checked = stroke.enabled;
-        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
-        self.row_label(ui, row, self.tr(Text::CutoutStroke));
-        let response = value_ui.add(egui::Checkbox::without_text(&mut checked));
-        let name = self.tr(Text::CutoutStroke);
-        response
-            .ctx
-            .accesskit_node_builder(response.id, |node| node.set_label(name));
+        // Box then label, as Auto removal (frame 151605).
+        let response = self.checkbox_row(ui, Text::CutoutStroke, &mut checked);
         self.remember("inspector.cutout_stroke", &response);
         if response.changed() {
             self.set_item_field(

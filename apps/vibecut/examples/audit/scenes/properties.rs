@@ -369,7 +369,8 @@ pub(super) fn inspector_video_keyframes(theme: Theme, scale: f32) -> Result<AppH
     Ok(app)
 }
 
-/// Video > Remove BG with Auto removal on and the brush tool armed at the default Size 20,
+/// Video > Remove BG with Auto removal on, its Stroke checked on Solid (Color, Size 35 and
+/// Opacity 100 rows, as in frame 151605) and the brush tool armed at the default Size 20,
 /// the Custom removal section beside desktop shot 100332 (which has no Auto removal, so the
 /// Auto removal rows differ; the tools row and Size row are the compared part).
 pub(super) fn inspector_remove_background(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
@@ -377,7 +378,14 @@ pub(super) fn inspector_remove_background(theme: Theme, scale: f32) -> Result<Ap
     capture_columns(&mut editor)?;
     editor.session.apply(Command::SetItemField {
         item,
-        patch: ItemParamPatch::BackgroundRemoval(Some(project::BackgroundRemoval::default())),
+        patch: ItemParamPatch::BackgroundRemoval(Some(project::BackgroundRemoval {
+            stroke: project::CutoutStroke {
+                enabled: true,
+                preset: project::StrokePreset::Solid,
+                ..Default::default()
+            },
+            ..Default::default()
+        })),
     })?;
     editor.select([item].into_iter().collect())?;
     editor.preferences.set(
