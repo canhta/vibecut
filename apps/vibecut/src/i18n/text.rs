@@ -1327,6 +1327,7 @@ catalog! {
     ExportName { key: "export_name", en: "Name", vi: "Tên" },
     ExportOut { key: "export_out", en: "Out", vi: "Ra" },
     ExportOverload { key: "export_overload", en: "Audio is too loud. Lower the volume and retry.", vi: "Âm thanh quá lớn. Hãy giảm âm lượng rồi thử lại." },
+    ExportPngSequence { key: "export_png_sequence", en: "PNG sequence", vi: "Chuỗi ảnh PNG" },
     ExportProfile { key: "export_profile", en: "H.264 profile", vi: "Cấu hình H.264" },
     ExportProgress { key: "export_progress", en: "Exporting…", vi: "Đang xuất…" },
     ExportProjectCanvas { key: "export_project_canvas", en: "Match project", vi: "Theo dự án" },

@@ -130,7 +130,7 @@ pub(super) fn show(
                 ui.horizontal(|ui| {
                     let mut custom = options.output.bit_rate.is_some();
                     let r = ui.add_enabled(
-                        options.format != super::ExportFormat::Gif,
+                        options.format != super::ExportFormat::Gif && !options.format.is_sequence(),
                         egui::Checkbox::new(&mut custom, tr(Text::ExportCustom)),
                     );
                     if r.changed() {
@@ -167,7 +167,11 @@ pub(super) fn show(
                             (render::VideoCodec::H264, "export.codec.h264"),
                             (render::VideoCodec::Vp9, "export.codec.vp9"),
                         ] {
-                            let allowed = codec.fits(options.format.container());
+                            let allowed = if options.format.is_sequence() {
+                                codec == render::VideoCodec::Automatic
+                            } else {
+                                codec.fits(options.format.container())
+                            };
                             let r = ui.add_enabled(
                                 allowed,
                                 egui::Button::selectable(
@@ -198,8 +202,15 @@ pub(super) fn show(
                         (super::ExportFormat::M4a, "export.format.m4a"),
                         (super::ExportFormat::AudioWebm, "export.format.audio_webm"),
                         (super::ExportFormat::Gif, "export.format.gif"),
+                        (
+                            super::ExportFormat::PngSequence,
+                            "export.format.png_sequence",
+                        ),
                     ] {
-                        let available = if format.audio_only() {
+                        // PNG frames need no encoder from the media build.
+                        let available = if format.is_sequence() {
+                            true
+                        } else if format.audio_only() {
                             media::audio_export_container_available(format.container())
                         } else {
                             media::export_container_available(format.container())
@@ -212,7 +223,7 @@ pub(super) fn show(
                         if r.changed() {
                             options.output.codec = render::VideoCodec::Automatic;
                             options.output.profile = media::H264Profile::Automatic;
-                            if format == super::ExportFormat::Gif {
+                            if format == super::ExportFormat::Gif || format.is_sequence() {
                                 options.output.bit_rate = None;
                             }
                         }
@@ -299,7 +310,8 @@ pub(super) fn show(
                                 render::OutputOptions::profile_fits(
                                     profile,
                                     options.format.container(),
-                                ),
+                                ) && (!options.format.is_sequence()
+                                    || profile == media::H264Profile::Automatic),
                                 |ui| {
                                     ui.selectable_value(
                                         &mut options.output.profile,
@@ -534,4 +546,5 @@ pub(super) fn valid(options: &ExportOptions, project: &project::Project) -> bool
     options.output.ranges(project).is_ok()
         && options.output.apply(&mut settings).is_ok()
         && options.output.check_gif(project, &settings).is_ok()
+        && options.output.check_sequence(project, &settings).is_ok()
 }

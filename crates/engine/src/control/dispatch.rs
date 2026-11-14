@@ -890,8 +890,20 @@ impl Session {
                 let mut settings = render::ExportSettings::from_project(self.project());
                 self.footage_corrections(caller.media)?
                     .attach(&mut settings.render);
-                settings.container =
-                    render::OutputOptions::container_for_path(&path, options.audio_only)?;
+                // `<name>_%05d.png` selects a PNG sequence; its directory `<name>` is the output.
+                let sequence = render::sequence_destination(&path)?;
+                let path = sequence.clone().unwrap_or(path);
+                if sequence.is_some() {
+                    if options.scene == render::SceneChoice::All {
+                        return Err(
+                            render::Error::Unsupported("image sequence for all scenes").into()
+                        );
+                    }
+                    settings.image_sequence = true;
+                } else {
+                    settings.container =
+                        render::OutputOptions::container_for_path(&path, options.audio_only)?;
+                }
                 let paths = options.paths(self.project(), &path)?;
                 for output in &paths {
                     caller.policy.authorize(

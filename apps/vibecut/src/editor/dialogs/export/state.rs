@@ -127,12 +127,9 @@ impl State {
         options: ExportOptions,
         directory: Option<PathBuf>,
     ) -> (String, Option<PathBuf>) {
-        let name = self.save_name(project, options).unwrap_or_else(|| {
-            super::dialog::default_file_name(
-                project.data().name.as_str(),
-                options.format.extension(),
-            )
-        });
+        let name = self
+            .save_name(project, options)
+            .unwrap_or_else(|| options.format.file_name(project.data().name.as_str()));
         (name, directory)
     }
 

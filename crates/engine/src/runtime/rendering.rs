@@ -274,6 +274,7 @@ pub fn submit_scene_exports_with_sources(
     let mut settings = settings;
     options.apply(&mut settings)?;
     options.check_gif(&project, &settings)?;
+    options.check_sequence(&project, &settings)?;
     if let [(scene, range)] = scenes.as_slice() {
         let snapshot = if *scene == project.data().current_scene_id {
             project.clone()
@@ -472,6 +473,40 @@ pub fn submit_export_publication(
                     Ok(())
                 },
             )?;
+            Ok(Vec::new())
+        },
+    )
+}
+
+/// Publish a completed PNG sequence directory as `destination`, the directory the user
+/// chose, renaming its frames to that name. Admission, the byte bound, cancellation and
+/// the all-or-nothing promotion are [`submit_export_publication`]'s, for a directory.
+pub fn submit_sequence_publication(
+    runner: &mut JobRunner,
+    input: CacheKey,
+    project: Arc<project::Project>,
+    source: PathBuf,
+    destination: PathBuf,
+    protected: Vec<PathBuf>,
+) -> Result<(JobId, CancelToken)> {
+    runner.submit::<RuntimeError>(
+        JobSpec {
+            kind: JobKind::Export,
+            class: ResourceClass::Cpu,
+            input,
+            bytes: JobBytes {
+                export: 64 << 10,
+                ..JobBytes::default()
+            },
+        },
+        move |context| {
+            crate::publication::Publication {
+                project: &project,
+                path: &destination,
+                protected: &protected,
+                hooks: context,
+            }
+            .write_sequence(project::atomic::Overwrite::Replace, 64 << 30, &source)?;
             Ok(Vec::new())
         },
     )

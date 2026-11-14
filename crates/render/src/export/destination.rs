@@ -23,6 +23,18 @@ pub fn validate_output_path(
         std::fs::canonicalize(parent)?
             .join(path.file_name().ok_or(Error::Invalid("output filename"))?)
     };
+    // An existing directory (an image-sequence destination) aliases every source it
+    // holds: replacing it would discard them. It has no bytes to compare.
+    if path.is_dir() {
+        for asset in &project.data().assets {
+            let source =
+                std::fs::canonicalize(asset.path()).unwrap_or_else(|_| asset.path().to_path_buf());
+            if source.starts_with(&normalized) {
+                return Err(Error::Invalid("output aliases a source"));
+            }
+        }
+        return Ok(());
+    }
     // A destination that names a source is a definite alias even when another
     // source happens to hold identical bytes. Decide path identity for every
     // asset before the content fallback below can classify the destination as

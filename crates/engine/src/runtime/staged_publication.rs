@@ -32,6 +32,47 @@ impl Publication<'_> {
         Ok(())
     }
 
+    /// Publish a completed frame directory under the destination's name. The frames are
+    /// renamed `<destination name>_%05d.png` in order, staged beside the destination and
+    /// promoted as one directory, so cancellation or failure leaves no partial result.
+    pub fn write_sequence(
+        &self,
+        overwrite: Overwrite,
+        max_bytes: u64,
+        source: &Path,
+    ) -> Result<()> {
+        self.admit()?;
+        let (mut stage, prefix) = render::sequence_stage(self.path, overwrite, max_bytes)?;
+        let mut frames = Vec::new();
+        for entry in std::fs::read_dir(source)? {
+            let entry = entry?;
+            if entry.file_type()?.is_file() {
+                frames.push(entry.path());
+            }
+        }
+        // Frame names are fixed-width, so name order is frame order.
+        frames.sort();
+        for (index, frame) in frames.iter().enumerate() {
+            if self.hooks.cancelled() {
+                return Err(RuntimeError::Cancelled);
+            }
+            let _lease = self.hooks.reserve(
+                render::MemoryKind::Export,
+                std::fs::metadata(frame)?.len() + (1 << 20),
+            )?;
+            let bytes = std::fs::read(frame)?;
+            stage.write_file(
+                &render::sequence_frame_name(&prefix, index as u64 + 1),
+                &bytes,
+            )?;
+        }
+        let finalized = stage.finalize()?;
+        self.admit()?;
+        self.hooks.begin_publish()?;
+        finalized.publish()?;
+        Ok(())
+    }
+
     pub(crate) fn admit(&self) -> Result<()> {
         if self.hooks.cancelled() {
             return Err(RuntimeError::Cancelled);

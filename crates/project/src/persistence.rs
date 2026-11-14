@@ -7,6 +7,7 @@ pub mod bundle;
 mod directory;
 mod identity;
 mod metadata;
+mod sequence;
 mod streaming;
 mod writer;
 

@@ -12,6 +12,7 @@ mod masks;
 mod matte;
 mod media_pipeline;
 mod output_alias;
+mod sequence;
 mod stabilize;
 mod support;
 mod text_style;

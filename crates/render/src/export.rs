@@ -4,7 +4,11 @@ mod execution;
 mod gif;
 mod options;
 mod publication;
+mod sequence;
 pub use options::{OutputOptions, RangeChoice, SceneChoice, VideoCodec};
+pub use sequence::{
+    MAX_SEQUENCE_FRAMES, sequence_destination, sequence_frame_name, sequence_prefix, sequence_stage,
+};
 
 use crate::{
     Error, ExecutionHooks, FileSources, RenderSettings, Renderer, Result, SourceProvider, Stage,
@@ -21,7 +25,8 @@ use project::{
     ItemParams, Project,
     atomic::{Overwrite, StreamingStage},
 };
-use publication::publish;
+use publication::{publish, publish_directory};
+use sequence::sequence_export;
 use std::{collections::BTreeSet, path::Path};
 use time::{FrameRate, Tick, TimeRange};
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -67,6 +72,10 @@ pub struct ExportSettings {
     /// Audio-only output: no video stream, renderer or stream copy. The mix graph
     /// and audio encoder are the video path's; the container picks AAC or Opus.
     pub audio_only: bool,
+    /// PNG image sequence: the output path is a directory of `<name>_%05d.png` frames
+    /// rendered by the same frame producer. Silent, always rendered, never stream-copied;
+    /// `container` plays no part.
+    pub image_sequence: bool,
 }
 impl ExportSettings {
     pub fn from_project(project: &Project) -> Self {
@@ -92,6 +101,7 @@ impl ExportSettings {
             audio_block: 2048,
             audio_cut_fade_ms: 0,
             audio_only: false,
+            image_sequence: false,
         }
     }
 }
@@ -137,11 +147,18 @@ pub fn export_with_sources(
             "audio-only export has no video stream to copy",
         ));
     }
-    let is_gif = settings.container == Container::Gif;
-    // A GIF is silent and always rendered: audio never reaches admission, and
-    // stream copy has nothing to copy.
+    let is_sequence = settings.image_sequence;
+    if is_sequence && settings.audio_only {
+        return Err(Error::Invalid("image sequence has no audio"));
+    }
+    if is_sequence && settings.mode == ExportMode::StreamCopy {
+        return Err(Error::Unsupported("image sequence has no stream to copy"));
+    }
+    let is_gif = settings.container == Container::Gif && !is_sequence;
+    // A GIF or image sequence is silent and always rendered: audio never reaches
+    // admission, and stream copy has nothing to copy.
     let silent;
-    let settings = if is_gif {
+    let settings = if is_gif || is_sequence {
         silent = ExportSettings {
             include_audio: false,
             ..settings.clone()
@@ -179,13 +196,32 @@ pub fn export_with_sources(
         return Err(Error::Invalid("export frame expansion"));
     }
     gif::admission(range, settings)?;
+    sequence::admission(range, settings)?;
     if !settings.audio_only {
         admit_stickers(project, range)?;
     }
     let mut renderer = Renderer::new(project, settings.render.clone())?;
     sources.begin_video(&[]);
     sources.begin_audio(&[]);
-    let stage = StreamingStage::new(path, settings.overwrite, settings.max_bytes)?;
+    let (stage, mut frames_stage) = if is_sequence {
+        (
+            None,
+            Some(sequence::sequence_stage(
+                path,
+                settings.overwrite,
+                settings.max_bytes,
+            )?),
+        )
+    } else {
+        (
+            Some(StreamingStage::new(
+                path,
+                settings.overwrite,
+                settings.max_bytes,
+            )?),
+            None,
+        )
+    };
     hooks.progress(Stage::Admit, 0.0)?;
     let unavailable = admission(
         project,
@@ -207,12 +243,13 @@ pub fn export_with_sources(
     }
     let omitted: BTreeSet<_> = unavailable.iter().map(|u| u.asset).collect();
     validate_output_path(project, path, hooks)?;
-    let copy = if settings.mode != ExportMode::Encode && !settings.audio_only && !is_gif {
-        copy_plan(project, range, settings, hooks)?
-            .filter(|plan| !omitted.contains(&plan.asset.id()))
-    } else {
-        None
-    };
+    let copy =
+        if settings.mode != ExportMode::Encode && !settings.audio_only && !is_gif && !is_sequence {
+            copy_plan(project, range, settings, hooks)?
+                .filter(|plan| !omitted.contains(&plan.asset.id()))
+        } else {
+            None
+        };
     let copy = if settings.audio_cut_fade_ms == 0 {
         copy
     } else {
@@ -252,46 +289,62 @@ pub fn export_with_sources(
         inner: sources,
         omitted,
     };
-    let result = if settings.audio_only {
-        audio_only_export(
-            project,
+    let result = if let Some((directory, prefix)) = frames_stage.as_mut() {
+        sequence_export(
             range,
             settings,
-            stage.writer()?,
-            &mut source,
-            hooks,
-        )
-    } else if let Some(asset) = copy {
-        copy_export(
-            project,
-            range,
-            settings,
-            stage.writer()?,
-            asset,
-            &mut source,
-            hooks,
-        )
-    } else if is_gif {
-        gif_export(
-            range,
-            settings,
-            stage.writer()?,
+            directory,
+            prefix,
             &mut renderer,
             &mut source,
             hooks,
             frames as u64,
         )
     } else {
-        encoded_export(
-            project,
-            range,
-            settings,
-            stage.writer()?,
-            &mut renderer,
-            &mut source,
-            hooks,
-            frames as u64,
-        )
+        let stage = stage
+            .as_ref()
+            .ok_or(Error::Invalid("export staging file"))?;
+        if settings.audio_only {
+            audio_only_export(
+                project,
+                range,
+                settings,
+                stage.writer()?,
+                &mut source,
+                hooks,
+            )
+        } else if let Some(asset) = copy {
+            copy_export(
+                project,
+                range,
+                settings,
+                stage.writer()?,
+                asset,
+                &mut source,
+                hooks,
+            )
+        } else if is_gif {
+            gif_export(
+                range,
+                settings,
+                stage.writer()?,
+                &mut renderer,
+                &mut source,
+                hooks,
+                frames as u64,
+            )
+        } else {
+            encoded_export(
+                project,
+                range,
+                settings,
+                stage.writer()?,
+                &mut renderer,
+                &mut source,
+                hooks,
+                frames as u64,
+            )
+        }
     };
     let mut receipt = match result {
         Ok(v) => v,
@@ -337,6 +390,10 @@ pub fn export_with_sources(
         return Err(Error::Unavailable(final_missing));
     }
     receipt.degraded = unavailable;
-    publish(stage, hooks)?;
+    if let Some((directory, _)) = frames_stage {
+        publish_directory(directory, hooks)?;
+    } else if let Some(stage) = stage {
+        publish(stage, hooks)?;
+    }
     Ok(receipt)
 }

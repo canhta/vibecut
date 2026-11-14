@@ -317,6 +317,34 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
         assert!(enabled(&bench, "export.gif.colors"));
         assert!(enabled(&bench, "export.gif.dither"));
         assert!(!enabled(&bench, "export.bitrate.custom"));
+        // A PNG sequence has no codec rate: the same bitrate row is disabled and cleared, and
+        // the finished output is named without an extension.
+        bench.editor_mut().preferences.export.output.bit_rate = Some(100_000);
+        bench.click("export.format");
+        bench.click("export.format.png_sequence");
+        bench.harness_mut().run_steps(2);
+        let sequence = bench.editor().preferences.export;
+        assert_eq!(
+            (sequence.format, sequence.output.bit_rate),
+            (ExportFormat::PngSequence, None)
+        );
+        assert!(!enabled(&bench, "export.bitrate.custom"));
+        assert_eq!(
+            ExportFormat::PngSequence.file_name("My: Project?"),
+            "My_ Project_"
+        );
+        assert_eq!(
+            ExportFormat::Mp4.file_name("My: Project?"),
+            "My_ Project_.mp4"
+        );
+        let screenshot = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/82-export-png-sequence.png");
+        bench
+            .harness_mut()
+            .render()
+            .unwrap()
+            .save(&screenshot)
+            .unwrap();
         bench.click("export.format");
         bench.click("export.format.webm");
         bench.harness_mut().run_steps(2);

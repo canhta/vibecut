@@ -153,7 +153,7 @@ pub use rendering::{
     AssetExport, clip_export_range, plan_asset_exports, submit_asset_exports,
     submit_asset_exports_with_sources, submit_clip_export, submit_export,
     submit_export_publication, submit_export_with_sources, submit_scene_exports_with_sources,
-    subtitle_file,
+    submit_sequence_publication, subtitle_file,
 };
 
 pub(crate) use staged_publication::snapshot_project_name;
