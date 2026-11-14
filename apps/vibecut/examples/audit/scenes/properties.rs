@@ -416,10 +416,8 @@ pub(super) fn inspector_adjust_mask(theme: Theme, scale: f32) -> Result<AppHarne
     let mut app = harness_sized(App::Editor(Box::new(editor)), scale, CAPTURE_WINDOW);
     wait_for_presented(&mut app)?;
     app.run_steps(3);
-    app.get(
-        By::new().predicate(|node| node.author_id() == Some("effects.color_grade.tab.mask")),
-    )
-    .click();
+    app.get(By::new().predicate(|node| node.author_id() == Some("effects.color_grade.tab.mask")))
+        .click();
     app.run_steps(3);
     Ok(app)
 }

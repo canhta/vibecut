@@ -443,7 +443,7 @@ impl Subtitles {
                                 .as_ref()
                                 .and_then(|(id, _)| self.runner.snapshot(*id))
                             {
-                                crate::services::progress::job_progress(
+                                crate::services::views::progress::job_progress(
                                     ui,
                                     "subtitles.progress",
                                     &job,
@@ -456,7 +456,7 @@ impl Subtitles {
                                     stage_text(snapshot.stage)
                                 });
                                 if let Some(progress) = snapshot.progress {
-                                    crate::services::progress::line(
+                                    crate::services::views::progress::line(
                                         ui,
                                         "subtitles.progress",
                                         locale,

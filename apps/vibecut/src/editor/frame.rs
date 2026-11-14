@@ -1,13 +1,12 @@
 //! Owns editor frame composition.
-mod about;
 mod agent;
 #[cfg(test)]
 pub(crate) mod bench;
+mod header_dialogs;
 mod input;
 mod layout;
 mod lend;
 mod player;
-mod project_delete;
 mod route;
 mod shortcuts;
 mod topbar;
@@ -32,7 +31,7 @@ pub(super) struct State {
     /// The header Delete confirmation is open.
     pub(super) delete_open: bool,
     /// The About dialog's open page, when it is open.
-    pub(super) about: Option<crate::services::about::Page>,
+    pub(super) about: Option<crate::services::views::about::Page>,
     /// Header controls painted this frame, routed by the frame after `show`.
     pub(super) painted: Vec<(&'static str, Option<&'static str>, egui::Response)>,
     /// Automation records for every control the editor painted.

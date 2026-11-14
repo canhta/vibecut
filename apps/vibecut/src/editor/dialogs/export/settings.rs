@@ -533,10 +533,7 @@ pub(super) fn show(
             // a dim label and the one value, with the reason no other space is offered.
             ui.weak(tr(Text::ExportColorSpace));
             let value = ui
-                .add(
-                    egui::Label::new(tr(Text::ExportColorSpaceRec709))
-                        .sense(egui::Sense::hover()),
-                )
+                .add(egui::Label::new(tr(Text::ExportColorSpaceRec709)).sense(egui::Sense::hover()))
                 .on_hover_text(tr(Text::ExportColorSpaceOnly));
             result.widgets.push(("export.color_space", value));
             ui.end_row();

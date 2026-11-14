@@ -54,7 +54,12 @@ impl State {
                     painter.text(
                         egui::pos2(x + 4.0, layout.ruler.top() + 7.5),
                         Align2::LEFT_CENTER,
-                        ruler_text(seconds, rate, config.label_seconds, cx.preferences.time_code),
+                        ruler_text(
+                            seconds,
+                            rate,
+                            config.label_seconds,
+                            cx.preferences.time_code,
+                        ),
                         FontId::proportional(theme::type_size::CAPTION),
                         ink.secondary(),
                     );

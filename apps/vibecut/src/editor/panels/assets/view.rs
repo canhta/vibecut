@@ -1,15 +1,14 @@
 //! Renders the assets surface from a read-only projection.
 use crate::i18n;
+mod audio;
 mod browser;
 mod captions;
 mod deletion;
 mod effects;
+mod favorites;
 mod feedback;
 mod filters;
-mod favorites;
-mod music;
 mod rename;
-mod sounds;
 mod stickers;
 mod text;
 mod transition;
@@ -20,8 +19,8 @@ pub(in crate::editor) use rename::show as rename_dialog;
 
 use super::{
     Action, Align2, AssetRow, AssetState, AssetsTab, AudioSection, Color32, EffectRow, FilterRow,
-    FolderRow, FontId, Icon, Id, MediaKind, MediaSection, MediaSortKey, MediaSortOrder, MediaView, Model,
-    Recorded, Rect, Row, State, Text, Vec2, asset_state_color, egui, icons, state, theme,
+    FolderRow, FontId, Icon, Id, MediaKind, MediaSection, MediaSortKey, MediaSortOrder, MediaView,
+    Model, Recorded, Rect, Row, State, Text, Vec2, asset_state_color, egui, icons, state, theme,
 };
 use state::Filter;
 

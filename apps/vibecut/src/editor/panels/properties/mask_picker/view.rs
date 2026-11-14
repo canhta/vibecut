@@ -255,7 +255,13 @@ fn content(ui: &mut egui::Ui, state: &mut State, page: &Page<'_>, event: &mut Ev
         page.locked,
         page.timing,
     );
-    grid(ui, tr, page, locked || (page.inline && mask.is_none()), event);
+    grid(
+        ui,
+        tr,
+        page,
+        locked || (page.inline && mask.is_none()),
+        event,
+    );
     if let Some(mask) = mask {
         ui.add_space(theme::space::XS);
         ui.separator();

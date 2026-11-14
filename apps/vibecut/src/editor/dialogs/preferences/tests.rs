@@ -279,7 +279,10 @@ fn settings_modal_applies_preferences_and_shortcut_transfers_through_the_picker_
             bench.editor().preferences.loudness_preset,
             crate::preferences::LoudnessPreset::Tiktok
         );
-        assert_eq!(bench.editor().preferences.loudness_target().target_lufs, -12.0);
+        assert_eq!(
+            bench.editor().preferences.loudness_target().target_lufs,
+            -12.0
+        );
         bench.click("settings.edit.time_code");
         bench.click("settings.edit.time_code.all_colons");
         assert_eq!(

@@ -616,7 +616,12 @@ fn deterministic_catalog_and_schema_document_receipts() {
         (Availability::CanRedo, &["redo"]),
         (
             Availability::Assets,
-            &["export.clips", "media.create_folder", "media.remove", "media.rename"],
+            &[
+                "export.clips",
+                "media.create_folder",
+                "media.remove",
+                "media.rename",
+            ],
         ),
         (
             Availability::RetimableItem,

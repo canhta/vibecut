@@ -214,11 +214,19 @@ mod tests {
             );
         }
         assert_eq!(
-            parse_timecode_styled("00:01:00;02", FrameRate::FPS_29_97, TimecodeStyle::AllColons),
+            parse_timecode_styled(
+                "00:01:00;02",
+                FrameRate::FPS_29_97,
+                TimecodeStyle::AllColons
+            ),
             Err(TimeError::InvalidTimecode)
         );
         assert_eq!(
-            parse_timecode_styled("00:01:00:02", FrameRate::FPS_29_97, TimecodeStyle::SecondsPlusFrame),
+            parse_timecode_styled(
+                "00:01:00:02",
+                FrameRate::FPS_29_97,
+                TimecodeStyle::SecondsPlusFrame
+            ),
             Err(TimeError::InvalidTimecode)
         );
         let ndf = FrameRate::FPS_30.tick_of(45).unwrap();

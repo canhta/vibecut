@@ -88,11 +88,7 @@ impl TimeCode {
     }
 
     /// The tick a typed label names; accepts exactly what [`TimeCode::format`] writes.
-    pub fn parse(
-        self,
-        label: &str,
-        rate: FrameRate,
-    ) -> std::result::Result<Tick, time::TimeError> {
+    pub fn parse(self, label: &str, rate: FrameRate) -> std::result::Result<Tick, time::TimeError> {
         time::parse_timecode_styled(label, rate, self.style())
     }
 }

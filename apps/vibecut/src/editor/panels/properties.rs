@@ -43,8 +43,13 @@ pub(in crate::editor) enum AdjustTab {
     Mask,
 }
 impl AdjustTab {
-    pub(in crate::editor) const ALL: [Self; 5] =
-        [Self::Basic, Self::Hsl, Self::Curves, Self::Wheel, Self::Mask];
+    pub(in crate::editor) const ALL: [Self; 5] = [
+        Self::Basic,
+        Self::Hsl,
+        Self::Curves,
+        Self::Wheel,
+        Self::Mask,
+    ];
     pub(in crate::editor) const fn id(self) -> &'static str {
         match self {
             Self::Basic => "basic",

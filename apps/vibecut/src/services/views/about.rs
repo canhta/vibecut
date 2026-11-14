@@ -25,7 +25,7 @@ struct Notice {
 const ASSETS: &[Notice] = include!(concat!(env!("OUT_DIR"), "/licences.rs"));
 
 /// Every shipped Rust crate: `name<TAB>version<TAB>licence` per line, from `cargo xtask licences`.
-const CRATES: &str = include_str!("../../third-party-crates.txt");
+const CRATES: &str = include_str!("../../../third-party-crates.txt");
 
 /// One row of the licence list.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -77,7 +77,7 @@ pub(crate) enum Page {
 pub(crate) type Click = (&'static str, Option<&'static str>, egui::Response);
 
 /// The app tile the dialog shows, decoded once per context.
-const ICON_PNG: &[u8] = include_bytes!("../../../../assets/app-icon/vibecut-1024.png");
+const ICON_PNG: &[u8] = include_bytes!("../../../../../assets/app-icon/vibecut-1024.png");
 
 /// Paint the dialog and return the controls it drew; the host routes their clicks.
 pub(crate) fn show(ctx: &egui::Context, page: Page, locale: Locale, dark: bool) -> Vec<Click> {

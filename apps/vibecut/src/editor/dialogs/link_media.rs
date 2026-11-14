@@ -12,7 +12,7 @@ use crate::{
     editor::{Context, Port, egui},
     i18n::Text,
     kit,
-    services::progress,
+    services::views::progress,
 };
 use engine::Command;
 use media::{AssetAvailability, AssetId, SourceAsset};
@@ -615,7 +615,10 @@ pub(in crate::editor) fn picked(state: &mut State, port: &mut Port<'_>, pick: Pi
         .collect();
     state.notice = None;
     let library = &port.session.project().data().media_library;
-    let names = assets.iter().map(|asset| library.display_name(asset)).collect();
+    let names = assets
+        .iter()
+        .map(|asset| library.display_name(asset))
+        .collect();
     state.job = Some(spawn(assets, names, pick, path, state.hasher.clone()));
 }
 

@@ -1,6 +1,6 @@
 //! Applies the Sounds tab's provider, cache and add workflows.
-use super::super::sounds::{LibraryStore, Sounds, SoundsMode, SoundsProblem};
-use super::{AssetsTab, State};
+use super::super::super::sounds::{LibraryStore, Sounds, SoundsMode, SoundsProblem};
+use super::super::{AssetsTab, State};
 use crate::editor::{Port, Result};
 use engine::CreatedId;
 use libraries::sounds::SoundResult;

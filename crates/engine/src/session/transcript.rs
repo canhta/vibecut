@@ -127,7 +127,10 @@ pub fn analyze(view: &TranscriptView, min_gap: Tick) -> TranscriptAnalysis {
             let width = start.0.saturating_sub(end.0);
             if width > 0 && width >= min_gap.0 {
                 gaps.push(TranscriptGap {
-                    span: OutputSpan { start: end, end: start },
+                    span: OutputSpan {
+                        start: end,
+                        end: start,
+                    },
                     before: before.id.clone(),
                     after: word.id.clone(),
                 });

@@ -495,9 +495,10 @@ impl Mask {
                 let mut param = crate::Param::new(crate::ParamValue::Scalar(base))?;
                 for (time, vertex) in &keyed {
                     let value = vertex.field(field).ok_or_else(missing)?;
-                    param
-                        .channel_mut(None)?
-                        .put(crate::Keyframe::new(*time, crate::ParamValue::Scalar(value)))?;
+                    param.channel_mut(None)?.put(crate::Keyframe::new(
+                        *time,
+                        crate::ParamValue::Scalar(value),
+                    ))?;
                 }
                 animations.set(self.point_path(segment + 1, field)?, param)?;
             }

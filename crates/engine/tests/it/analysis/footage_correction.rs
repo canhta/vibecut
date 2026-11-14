@@ -663,7 +663,9 @@ fn a_cover_of_a_stabilized_clip_draws_the_stored_correction() {
             Schedule::default(),
         )
         .unwrap();
-        autosave.apply(Command::ThumbnailProject { tick: None }).unwrap();
+        autosave
+            .apply(Command::ThumbnailProject { tick: None })
+            .unwrap();
         match autosave.session().metadata().thumbnail.clone() {
             Thumbnail::Ready { rgba, .. } => rgba,
             _ => panic!("cover unavailable"),

@@ -1,6 +1,6 @@
 # Services
 
-Interface: `about`, `playback`, `preview`, `crop`, `color_picker`, `ai_access`, `ai_task`, `remote_models`, `progress`, `clipboard`, `lifecycle`, `assets`, `gpu`.
+Interface: `views`, `playback`, `preview`, `crop`, `color_picker`, `ai_access`, `ai_task`, `remote_models`, `clipboard`, `lifecycle`, `assets`, `gpu`.
 
 What more than one window needs and no window owns. Imports point here from the windows,
 areas, frame and composition root; a services module never names a window, an area or
@@ -8,7 +8,7 @@ areas, frame and composition root; a services module never names a window, an ar
 
 | Module | Holds |
 |---|---|
-| `about` | The About dialog: its facts (`VERSION`, the terms and privacy URLs, `entries()`: FFmpeg, then one row per bundled-asset author and licence that `build.rs` reads from the `.attribution` sidecars, then every shipped Rust crate read from the committed `apps/vibecut/third-party-crates.txt`, which `cargo xtask licences` writes and `cargo xtask checks` verifies; no network) and the one `show` view the editor frame and Home both host. |
+| `views` | [Views more than one window shows](views/README.md): the About dialog and the job progress line. |
 | `playback` | Engine-scheduled frames, the device clock and the one transport mapping. The app runs no second scheduler. The audio callback only copies samples, zero-fills underruns and reports callback-to-playback latency; every DSP and mix decision belongs to render. Video follows the latency-corrected audio clock and skips past frames under load. Preview is built on `Proxied` sources (cached proxies while the project's choice is on); export reads `Files`. |
 | `preview` | `View` (fit flag, explicit scale, pan offset, 0.25–16x), `FrameTexture` (one upload per preview generation and tick, retaining its frame) and the snapshot boundary (`preview.snapshot`, clipboard copy). The player panel and the shorts window present their own chrome over the same state. |
 | `crop` | The source-normalized crop model: `portrait` and `control` (edge and corner drag, ratio lock, 5% minimum edge, 1% and 10% arrow steps). The editor's crop dialog lives in the player panel. |
@@ -17,7 +17,6 @@ areas, frame and composition root; a services module never names a window, an ar
 | `ai_task` | `TaskEvents`: one coalescing progress slot and one exact per-upload consent request, carrying cancellation. |
 | `remote_models` | [Model selection and explicit refresh](remote_models/README.md). |
 | `clipboard` | [Clipboard reads](clipboard/README.md): `TextClipboard` and `FileClipboard`. |
-| `progress` | `job_progress` and `line`: the status line with its percentage over the kit progress bar, drawn from an engine snapshot or a surface's own status words. The percentage is now a "Status N%" line above the bar, not text inside it. |
 | `lifecycle` | [Project lifecycle](lifecycle/README.md): `EditorSession`, the editor's memory or autosave-backed engine session. |
 | `assets` | [Asset intake](assets/README.md): the services that bring a new source asset into the project (music library tracks, voice-over takes, frozen stills). |
 | `gpu` | [GPU adapters](gpu/README.md): `GpuEffects`, the wgpu implementation of render's effect interface, and `Capture`, bounded fresh-frame screenshots. |

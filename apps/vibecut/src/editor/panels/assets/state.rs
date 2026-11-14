@@ -78,7 +78,7 @@ pub(in crate::editor) struct State {
     pub(super) transition_favorites: bool,
     /// Adjustment tab: list only the starred presets.
     pub(super) adjustment_favorites: bool,
-    pub(super) transition_previews: BTreeMap<&'static str, super::transition::Preview>,
+    pub(super) transition_previews: BTreeMap<&'static str, super::catalog::transition::Preview>,
     pub(in crate::editor) transition_drag: Option<(&'static str, std::sync::Arc<project::Project>)>,
     /// Sounds tab: the presentation owner and the add target directory.
     pub(in crate::editor) sounds: Option<super::sounds::Sounds>,
@@ -143,11 +143,11 @@ pub(in crate::editor) struct State {
     pub(in crate::editor) captions_section: super::CaptionsSection,
     /// Text tab: the page (styles or templates), the category chip and the Commercial filter
     /// (off lists everything).
-    pub(super) text_page: super::text::TextPage,
+    pub(super) text_page: super::catalog::text::TextPage,
     /// Text tab: the section the list is scrolled to (the highlighted chip), and a chip click
     /// waiting to scroll the list there.
-    pub(super) text_active: super::text::TextChip,
-    pub(super) text_jump: Option<super::text::TextChip>,
+    pub(super) text_active: super::catalog::text::TextChip,
+    pub(super) text_jump: Option<super::catalog::text::TextChip>,
     pub(super) text_commercial: bool,
     /// Stickers tab: the category tab, whether See all widened the results, and the thumbnails.
     pub(super) sticker_tab: super::stickers::StickerTab,
@@ -228,7 +228,7 @@ impl Default for State {
             captions: None,
             captions_section: super::CaptionsSection::default(),
             text_page: Default::default(),
-            text_active: super::text::TextChip::Favorites,
+            text_active: super::catalog::text::TextChip::Favorites,
             text_jump: None,
             text_commercial: false,
             sticker_tab: Default::default(),

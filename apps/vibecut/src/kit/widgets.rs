@@ -925,8 +925,7 @@ pub(crate) fn checkbox(ui: &mut Ui, id: &str, value: &mut bool, label: &str) -> 
 /// A 12 px checkbox alone, for rows that draw their own text; `label` is its accessible name.
 pub(crate) fn checkbox_box(ui: &mut Ui, id: &str, value: &mut bool, label: &str) -> Response {
     let dark = ui.visuals().dark_mode;
-    let (rect, mut response) =
-        ui.allocate_exact_size(Vec2::splat(size::FIELD), Sense::click());
+    let (rect, mut response) = ui.allocate_exact_size(Vec2::splat(size::FIELD), Sense::click());
     if response.clicked() {
         *value = !*value;
         response.mark_changed();

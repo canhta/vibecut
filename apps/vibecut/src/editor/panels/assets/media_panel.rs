@@ -117,7 +117,8 @@ pub fn ordered_assets(
     let mut ordered: Vec<&SourceAsset> = assets.iter().filter(|asset| !asset.ephemeral()).collect();
     ordered.sort_by(|a, b| {
         let ordering = match sort.key {
-            MediaSortKey::Name => library.display_name(a)
+            MediaSortKey::Name => library
+                .display_name(a)
                 .to_lowercase()
                 .cmp(&library.display_name(b).to_lowercase()),
             MediaSortKey::Type => MediaKind::of(a).cmp(&MediaKind::of(b)),
@@ -196,8 +197,18 @@ mod tests {
     #[test]
     fn a_library_name_replaces_the_file_name_in_the_label_and_the_name_sort() {
         let assets = [
-            asset(1, "alpha.mp4", Tick(10), vec![stream(StreamKind::Video, None)]),
-            asset(2, "bravo.mp4", Tick(10), vec![stream(StreamKind::Video, None)]),
+            asset(
+                1,
+                "alpha.mp4",
+                Tick(10),
+                vec![stream(StreamKind::Video, None)],
+            ),
+            asset(
+                2,
+                "bravo.mp4",
+                Tick(10),
+                vec![stream(StreamKind::Video, None)],
+            ),
         ];
         let mut library = project::MediaLibrary::default();
         library.names.push(project::AssetName {
@@ -208,12 +219,7 @@ mod tests {
         assert_eq!(library.display_name(first), "Zulu");
         assert_eq!(library.display_name(second), "bravo.mp4");
         assert_eq!(
-            ordered_assets(
-                &assets,
-                MediaSort::default(),
-                &BTreeMap::new(),
-                &library
-            ),
+            ordered_assets(&assets, MediaSort::default(), &BTreeMap::new(), &library),
             vec![AssetId(2), AssetId(1)],
             "the renamed asset sorts under its new name"
         );

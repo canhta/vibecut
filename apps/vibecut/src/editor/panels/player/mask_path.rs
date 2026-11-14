@@ -196,12 +196,9 @@ fn target(
         .iter()
         .flat_map(|track| track.items.iter())
         .find(|candidate| candidate.id == item)?;
-    let mask = source
-        .masks
-        .iter()
-        .find(|mask| {
-            mask.active() && mask.scope == scope && matches!(mask.shape, MaskShape::Path { .. })
-        })?;
+    let mask = source.masks.iter().find(|mask| {
+        mask.active() && mask.scope == scope && matches!(mask.shape, MaskShape::Path { .. })
+    })?;
     let MaskShape::Path { path: stored } = &mask.shape else {
         return None;
     };
@@ -661,7 +658,10 @@ fn key_diamonds(
                 .iter()
                 .filter(|field| keyed || !target.keys_here.contains(&(index, **field)))
                 .filter_map(|field| {
-                    Some((target.owner.point_path(index, field).ok()?, vertex.field(field)?))
+                    Some((
+                        target.owner.point_path(index, field).ok()?,
+                        vertex.field(field)?,
+                    ))
                 })
                 .collect();
             actions.push(Action::MaskPointKey {

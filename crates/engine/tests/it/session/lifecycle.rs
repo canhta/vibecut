@@ -248,7 +248,9 @@ fn thumbnails_backfill_on_open_and_refresh_at_exit_without_preview_state() {
             playhead: Tick(frame.0 * 10),
         })
         .unwrap();
-    autosave.apply(Command::ThumbnailProject { tick: None }).unwrap();
+    autosave
+        .apply(Command::ThumbnailProject { tick: None })
+        .unwrap();
     let thumbnail = autosave.session().metadata().thumbnail.clone();
     assert_ne!(thumbnail, first);
     assert!(

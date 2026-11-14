@@ -1,10 +1,10 @@
 //! Names the catalogue for the browser and renders cached procedural thumbnails.
-use super::{Text, egui};
+use super::super::{Text, egui};
 use engine::{ByteBudget, ByteBudgetHooks};
 use project::TransitionParams;
 
 /// The shelf's left-rail label; `Basic` is shared with other panels.
-pub(super) fn shelf_label(shelf: &str) -> Text {
+pub(in super::super) fn shelf_label(shelf: &str) -> Text {
     match shelf {
         "Basic" => Text::Basic,
         "Overlay" => Text::TransitionShelfOverlay,
@@ -20,17 +20,17 @@ pub(super) fn shelf_label(shelf: &str) -> Text {
 }
 
 /// Idle tiles retain a 176 px raster; hover/focus plays a 48 px, 12 fps loop.
-pub(super) struct Preview {
+pub(in super::super) struct Preview {
     idle: Option<egui::TextureHandle>,
     animated: Option<egui::TextureHandle>,
     frame: Option<u32>,
     started: Option<f64>,
-    pub(super) progress: f32,
-    pub(super) failed: bool,
-    pub(super) dark: bool,
+    pub(in super::super) progress: f32,
+    pub(in super::super) failed: bool,
+    pub(in super::super) dark: bool,
 }
 impl Preview {
-    pub(super) fn new(_kind: &str, dark: bool) -> crate::Result<Self> {
+    pub(in super::super) fn new(_kind: &str, dark: bool) -> crate::Result<Self> {
         Ok(Self {
             idle: None,
             animated: None,
@@ -41,14 +41,14 @@ impl Preview {
             dark,
         })
     }
-    pub(super) fn texture(&self) -> Option<&egui::TextureHandle> {
+    pub(in super::super) fn texture(&self) -> Option<&egui::TextureHandle> {
         if self.frame.is_some() {
             self.animated.as_ref()
         } else {
             self.idle.as_ref()
         }
     }
-    pub(super) fn update(&mut self, ctx: &egui::Context, kind: &str, active: bool) {
+    pub(in super::super) fn update(&mut self, ctx: &egui::Context, kind: &str, active: bool) {
         if self.failed {
             return;
         }

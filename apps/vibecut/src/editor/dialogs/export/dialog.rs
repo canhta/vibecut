@@ -2,7 +2,7 @@
 use super::settings;
 use crate::i18n;
 use crate::services::lifecycle::CaptionOutput;
-use crate::services::progress::job_progress;
+use crate::services::views::progress::job_progress;
 use crate::{
     Error, Result, egui,
     i18n::{Locale, Text},

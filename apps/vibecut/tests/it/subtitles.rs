@@ -4228,7 +4228,11 @@ fn review_select_all_ticks_every_row_and_delete_cuts_the_pause_and_every_word() 
     );
     h.state_mut().session.undo().unwrap();
     h.run_steps(3);
-    assert_eq!(h.state().session.project(), &before, "one Undo restores both");
+    assert_eq!(
+        h.state().session.project(),
+        &before,
+        "one Undo restores both"
+    );
 }
 
 #[test]
@@ -4245,7 +4249,9 @@ fn review_remove_gaps_is_one_undo_step_and_the_card_then_reports_none() {
         !has(&h, "subtitles.review.pause.0"),
         "the pause is gone after the list is read again"
     );
-    h.get_by_label("No speech gaps longer than 0.5 s. Change the duration to look for shorter ones.");
+    h.get_by_label(
+        "No speech gaps longer than 0.5 s. Change the duration to look for shorter ones.",
+    );
     click(&mut h, "subtitles.review.undo");
     h.run_steps(3);
     assert_eq!(h.state().session.project(), &before);

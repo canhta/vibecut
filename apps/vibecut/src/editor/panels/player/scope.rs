@@ -151,7 +151,10 @@ impl State {
 /// `bottom`.
 pub(super) fn strip(panel: Rect, bottom: f32) -> Rect {
     Rect::from_min_max(
-        egui::pos2(panel.left() + kit::space::MD, bottom - kit::scope::PANEL_HEIGHT),
+        egui::pos2(
+            panel.left() + kit::space::MD,
+            bottom - kit::scope::PANEL_HEIGHT,
+        ),
         egui::pos2(panel.right() - kit::space::MD, bottom),
     )
 }
@@ -162,7 +165,10 @@ pub(super) fn panels(strip: Rect) -> [Rect; 3] {
     let width = ((strip.width() - 2.0 * kit::scope::GAP) / 3.0).max(0.0);
     std::array::from_fn(|n| {
         let left = strip.left() + n as f32 * (width + kit::scope::GAP);
-        Rect::from_min_size(egui::pos2(left, strip.top()), egui::vec2(width, strip.height()))
+        Rect::from_min_size(
+            egui::pos2(left, strip.top()),
+            egui::vec2(width, strip.height()),
+        )
     })
 }
 
@@ -202,8 +208,16 @@ pub(super) fn show(
             kit::scope::TARGET,
         );
     }
-    let response = ui.interact(strip, ui.make_persistent_id("preview.scopes"), Sense::hover());
-    let name = if failed { Text::ScopeFailed } else { Text::ScopeMenu };
+    let response = ui.interact(
+        strip,
+        ui.make_persistent_id("preview.scopes"),
+        Sense::hover(),
+    );
+    let name = if failed {
+        Text::ScopeFailed
+    } else {
+        Text::ScopeMenu
+    };
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Image, true, cx.tr(name)));
     remember(cx, actions, "preview.scopes", response);
     for (id, on) in [
@@ -218,7 +232,11 @@ pub(super) fn show(
     for (rect, id, label) in [
         (parade, "preview.scopes.parade", Text::ScopeParade),
         (waveform, "preview.scopes.waveform", Text::ScopeWaveform),
-        (vectorscope, "preview.scopes.vectorscope", Text::ScopeVectorscope),
+        (
+            vectorscope,
+            "preview.scopes.vectorscope",
+            Text::ScopeVectorscope,
+        ),
     ] {
         let panel = ui.interact(rect, ui.make_persistent_id(id), Sense::hover());
         panel.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Image, true, cx.tr(label)));
@@ -294,7 +312,10 @@ fn vector(painter: &egui::Painter, rect: Rect, texture: Option<&egui::TextureHan
     painter.circle_stroke(centre, radius, ring);
     for (from, to) in [
         (at(0.0, -radius), at(0.0, radius)),
-        (at(std::f32::consts::FRAC_PI_2, -radius), at(std::f32::consts::FRAC_PI_2, radius)),
+        (
+            at(std::f32::consts::FRAC_PI_2, -radius),
+            at(std::f32::consts::FRAC_PI_2, radius),
+        ),
     ] {
         painter.extend(egui::Shape::dashed_line(
             &[from, to],

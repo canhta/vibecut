@@ -509,7 +509,11 @@ pub(super) fn refusal(error: &EditError) -> Text {
     }
 }
 
-pub(super) fn remember(widgets: &mut Vec<(String, egui::Response)>, id: String, r: &egui::Response) {
+pub(super) fn remember(
+    widgets: &mut Vec<(String, egui::Response)>,
+    id: String,
+    r: &egui::Response,
+) {
     r.ctx.accesskit_node_builder(r.id, |n| n.set_author_id(&id));
     widgets.push((id, r.clone()));
 }

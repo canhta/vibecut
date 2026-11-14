@@ -1059,25 +1059,26 @@ mod shorts;
 mod timeline;
 use assets::assets_scene;
 use editor::{
-    about_dialog, caption_word_scene, captions_review_scene, captions_scene, editor_empty, editor_frame_state,
-    editor_media, editor_media_favorites, editor_media_folder, editor_media_menu,
-    editor_transitions, export_audio_only, export_cover, export_custom_bit_rate, export_dialog, export_gif,
-    export_resolution, import_progress, models, models_vi, player_scene, player_variant,
-    settings_dialog,
+    about_dialog, caption_word_scene, captions_review_scene, captions_scene, editor_empty,
+    editor_frame_state, editor_media, editor_media_favorites, editor_media_folder,
+    editor_media_menu, editor_transitions, export_audio_only, export_cover, export_custom_bit_rate,
+    export_dialog, export_gif, export_resolution, import_progress, models, models_vi, player_scene,
+    player_variant, settings_dialog,
 };
 use home::{home, home_projects, projects_scene, projects_trash};
 pub(crate) use properties::inspector_mixed_vi;
 use properties::{
     close_prompt, close_prompt_vi, import_complete_vi, inspector_adjust_mask, inspector_audio,
-    inspector_audio_vi, inspector_blend, inspector_effect_mask, inspector_blend_vi, inspector_color, inspector_mixed, inspector_project,
-    inspector_project_vi, inspector_remove_background, inspector_speed, inspector_speed_curve,
-    inspector_text, inspector_transform, inspector_video, inspector_video_keyframes,
-    inspector_video_tab, text_item, text_item_vi, text_panel,
+    inspector_audio_vi, inspector_blend, inspector_blend_vi, inspector_color,
+    inspector_effect_mask, inspector_mixed, inspector_project, inspector_project_vi,
+    inspector_remove_background, inspector_speed, inspector_speed_curve, inspector_text,
+    inspector_transform, inspector_video, inspector_video_keyframes, inspector_video_tab,
+    text_item, text_item_vi, text_panel,
 };
 use shorts::shorts_scene;
 use timeline::{
     link_media, missing_media, placement, placement_line, preview_axis, preview_axis_ends,
-    preview_axis_reference, scene_create, scene_delete, scene_rename, timeline_clip_menu, timeline_compound,
-    timeline_fades, timeline_group, timeline_hidden, timeline_main, timeline_multi,
-    timeline_selection, timeline_selection_vi, timeline_zoom, tracks, tracks_kinds,
+    preview_axis_reference, scene_create, scene_delete, scene_rename, timeline_clip_menu,
+    timeline_compound, timeline_fades, timeline_group, timeline_hidden, timeline_main,
+    timeline_multi, timeline_selection, timeline_selection_vi, timeline_zoom, tracks, tracks_kinds,
 };

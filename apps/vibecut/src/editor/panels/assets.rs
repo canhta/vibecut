@@ -1,5 +1,6 @@
 //! Owns the assets presentation boundary.
 pub mod captions;
+mod catalog;
 pub mod effects;
 pub mod import;
 pub mod media_panel;
@@ -8,8 +9,6 @@ pub mod sounds;
 mod state;
 mod stickers;
 mod tabs;
-mod text;
-mod transition;
 mod view;
 mod workflow;
 pub use import::{

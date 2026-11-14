@@ -1,14 +1,13 @@
 //! Applies the assets workflows.
 mod actions;
 mod adjustment;
+mod audio;
 mod effects;
 mod import;
 mod insertion;
 mod marquee;
-mod music;
 mod rows;
 mod selection;
-mod sounds;
 mod stickers;
 mod text;
 mod transition;

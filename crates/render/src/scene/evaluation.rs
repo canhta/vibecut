@@ -961,9 +961,7 @@ impl<'a> Renderer<'a> {
                             // A masked grade step mixes its result with the picture it started
                             // from, so the grade keeps its place in the stack.
                             let before = match &grade_coverage {
-                                Some(_) if grade_at.contains(&index) => {
-                                    Some(filtered.copy(hooks)?)
-                                }
+                                Some(_) if grade_at.contains(&index) => Some(filtered.copy(hooks)?),
                                 _ => None,
                             };
                             filtered = crate::effects::apply_effect(

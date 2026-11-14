@@ -4,9 +4,7 @@
 //! A style tile applies to the selected text items; a template tile inserts a new item at the
 //! playhead. Every sample sits on the reference's tile backing.
 
-use super::super::text::{
-    Entry, TextChip, TextPage, Tile, backing, section, tiles,
-};
+use super::super::catalog::text::{Entry, TextChip, TextPage, Tile, backing, section, tiles};
 use super::super::{Action, Align2, AssetsTab, Color32, Rect, Text, Vec2, egui, theme};
 use super::View;
 
@@ -285,7 +283,10 @@ fn chip_button(ui: &mut egui::Ui, label: &str, selected: bool, dark: bool) -> eg
         )
         .selected(selected)
         .fill(fill)
-        .stroke(egui::Stroke::new(theme::space::HAIRLINE, theme::border(dark)))
+        .stroke(egui::Stroke::new(
+            theme::space::HAIRLINE,
+            theme::border(dark),
+        ))
         .min_size(Vec2::new(0.0, theme::size::CONTROL)),
     )
 }

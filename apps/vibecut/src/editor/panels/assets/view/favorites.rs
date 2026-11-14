@@ -205,11 +205,7 @@ impl View<'_> {
                         self.state.media_favorites_family == Some(family),
                         self.tr(label),
                     );
-                    self.remember(
-                        format!("media.favorites.filter.{family}"),
-                        &response,
-                        None,
-                    );
+                    self.remember(format!("media.favorites.filter.{family}"), &response, None);
                     if response.clicked() {
                         self.state.media_favorites_family = Some(family);
                         ui.close();
@@ -268,7 +264,8 @@ impl View<'_> {
             link.size(),
         );
         ui.painter().galley(line, text, theme::secondary(dark));
-        ui.painter().galley(link_rect.min, link, theme::accent(dark));
+        ui.painter()
+            .galley(link_rect.min, link, theme::accent(dark));
         let response = ui
             .interact(
                 link_rect,
@@ -277,11 +274,7 @@ impl View<'_> {
             )
             .on_hover_cursor(egui::CursorIcon::PointingHand);
         response.widget_info(|| {
-            egui::WidgetInfo::labeled(
-                egui::Role::Button,
-                true,
-                self.tr(Text::MediaFavoritesLink),
-            )
+            egui::WidgetInfo::labeled(egui::Role::Button, true, self.tr(Text::MediaFavoritesLink))
         });
         self.remember("media.favorites.link", &response, None);
         if response.clicked() {

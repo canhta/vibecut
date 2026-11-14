@@ -84,7 +84,7 @@ pub struct State {
     pub(super) info: Option<ProjectId>,
     pub(super) delete: Option<DeleteDialog>,
     /// The About dialog's open page; the native About row opens it here.
-    pub(super) about: Option<crate::services::about::Page>,
+    pub(super) about: Option<crate::services::views::about::Page>,
     pub(super) notice: Option<(Text, Option<String>)>,
     pub(super) list_error: Option<String>,
     pub(super) action: Option<Action>,
@@ -171,7 +171,7 @@ impl State {
 
     /// Open the About dialog over Home.
     pub fn open_about(&mut self) {
-        self.about = Some(crate::services::about::Page::Main);
+        self.about = Some(crate::services::views::about::Page::Main);
     }
 
     pub fn busy(&self) -> bool {

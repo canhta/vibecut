@@ -70,10 +70,7 @@ pub(super) fn candidates(project: &Project, locale: Locale) -> Vec<Mention> {
     for asset in &project.data().assets {
         out.push(Mention {
             target: Target::Media,
-            label: unique(
-                &mut taken,
-                project.data().media_library.display_name(asset),
-            ),
+            label: unique(&mut taken, project.data().media_library.display_name(asset)),
             token: format!("[media {}]", id_text(&asset.id())),
         });
     }

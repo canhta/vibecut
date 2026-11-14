@@ -1,6 +1,6 @@
 //! Applies the Music section's provider, cache, key and add workflows.
-use super::super::sounds::music::{AddIntent, Music, MusicMode, MusicProblem};
-use super::State;
+use super::super::super::sounds::music::{AddIntent, Music, MusicMode, MusicProblem};
+use super::super::State;
 use crate::editor::{Port, Result};
 use crate::services::assets::music::MusicSession;
 use engine::CreatedId;

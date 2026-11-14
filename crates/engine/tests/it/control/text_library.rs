@@ -44,7 +44,12 @@ fn text_search_filters_by_query_shelf_and_licence_without_editing() {
     );
     assert_eq!(looks, ["neon_cyan", "neon_pink"]);
     assert_eq!(templates, ["neon_sign"]);
-    let (looks, templates) = search(&mut s, &mut r, json!({"query": "neon", "shelf": "label"}), "x");
+    let (looks, templates) = search(
+        &mut s,
+        &mut r,
+        json!({"query": "neon", "shelf": "label"}),
+        "x",
+    );
     assert!(looks.is_empty() && templates.is_empty());
     assert!(Arc::ptr_eq(&before, s.project()), "search is not an edit");
     let ControlResult::TextLibrary { looks, .. } = ok(run(

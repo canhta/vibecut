@@ -59,7 +59,7 @@ portrait project in one engine transaction, keeping the prepared media's origina
 dimensions while replaying items so first-import initialization preserves the explicit
 portrait canvas, then hands off to the nonblocking recovery and autosave owner. The
 window plays the selected short from its own prepared snapshot through
-`services::playback`, `services::preview` and `services::progress`. Review crops are
+`services::playback`, `services::preview` and `services::views::progress`. Review crops are
 transient; persisted crop channels and later editor crop edits belong to the crop
 controls.
 

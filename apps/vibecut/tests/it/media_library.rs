@@ -1924,7 +1924,13 @@ fn the_tile_menu_groups_the_selection_into_a_folder_that_opens_and_closes() {
     open_tile_menu(&mut harness, 2);
     click(&mut harness, "media.new_folder");
     let folder = {
-        let folders = &harness.state().session.project().data().media_library.folders;
+        let folders = &harness
+            .state()
+            .session
+            .project()
+            .data()
+            .media_library
+            .folders;
         assert_eq!(folders.len(), 1);
         assert_eq!(folders[0].assets, vec![AssetId(2), AssetId(3)]);
         folders[0].id
@@ -1932,7 +1938,10 @@ fn the_tile_menu_groups_the_selection_into_a_folder_that_opens_and_closes() {
     let tile = format!("media.folder.{}", folder.0);
     assert!(has_widget(&harness, &tile), "the folder tile is listed");
     assert!(has_widget(&harness, "media.asset.1"));
-    assert!(!has_widget(&harness, "media.asset.2"), "grouped assets leave the top level");
+    assert!(
+        !has_widget(&harness, "media.asset.2"),
+        "grouped assets leave the top level"
+    );
     assert!(!has_widget(&harness, "media.asset.3"));
 
     click(&mut harness, &tile);
@@ -1972,7 +1981,14 @@ fn deleting_the_last_asset_of_an_open_folder_returns_to_the_top_level() {
         .unwrap();
     let mut harness = build(editor);
     harness.run_steps(3);
-    let folder = harness.state().session.project().data().media_library.folders[0].id;
+    let folder = harness
+        .state()
+        .session
+        .project()
+        .data()
+        .media_library
+        .folders[0]
+        .id;
     click(&mut harness, &format!("media.folder.{}", folder.0));
     assert!(has_widget(&harness, "media.asset.2"));
     harness
@@ -1994,7 +2010,10 @@ fn the_favorites_page_shows_its_empty_state_and_lists_starred_families_behind_th
     click(&mut harness, "assets.subnav.favorites");
     assert!(has_widget(&harness, "media.favorites.link"));
     assert!(has_widget(&harness, "media.favorites.filter"));
-    assert!(!has_widget(&harness, "media.asset.1"), "the page replaces the asset grid");
+    assert!(
+        !has_widget(&harness, "media.asset.1"),
+        "the page replaces the asset grid"
+    );
     click(&mut harness, "media.favorites.link");
     assert_eq!(
         harness.state().preferences.assets_tab,
@@ -2015,13 +2034,19 @@ fn the_favorites_page_shows_its_empty_state_and_lists_starred_families_behind_th
     assert!(has_widget(&harness, "media.favorites.family.effects"));
     assert!(has_widget(&harness, "media.favorites.effects.blur"));
     assert!(has_widget(&harness, "media.favorites.family.filters"));
-    assert!(has_widget(&harness, &format!("media.favorites.filters.{filter}")));
+    assert!(has_widget(
+        &harness,
+        &format!("media.favorites.filters.{filter}")
+    ));
     assert!(!has_widget(&harness, "media.favorites.family.transitions"));
     assert!(!has_widget(&harness, "media.favorites.link"));
     click(&mut harness, "media.favorites.filter");
     click(&mut harness, "media.favorites.filter.transitions");
     assert!(!has_widget(&harness, "media.favorites.effects.blur"));
-    assert!(has_widget(&harness, "media.favorites.link"), "nothing starred in Transitions");
+    assert!(
+        has_widget(&harness, "media.favorites.link"),
+        "nothing starred in Transitions"
+    );
     click(&mut harness, "media.favorites.filter");
     click(&mut harness, "media.favorites.filter.filters");
     assert!(has_widget(&harness, "media.favorites.family.filters"));

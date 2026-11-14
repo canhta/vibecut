@@ -90,7 +90,11 @@ pub fn verified_cues() -> CueTrack {
 /// repeated word, and a one second silence separates each pair.
 pub fn review_cues() -> CueTrack {
     let mut track = cues("en");
-    for (cue, text) in track.cues.iter_mut().zip(["go go now", "good day", "so so far"]) {
+    for (cue, text) in track
+        .cues
+        .iter_mut()
+        .zip(["go go now", "good day", "so so far"])
+    {
         let language = cue.source_lang.clone();
         cue.texts.insert(
             language.clone(),

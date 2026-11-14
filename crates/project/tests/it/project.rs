@@ -799,7 +799,8 @@ fn invalid_candidates_are_refused_without_changing_original() {
 #[test]
 fn media_library_names_and_folders_validate_and_round_trip() {
     let mut data = empty().into_data();
-    data.assets.push(source(std::env::temp_dir().join("library.mp4")));
+    data.assets
+        .push(source(std::env::temp_dir().join("library.mp4")));
     data.media_library.names.push(AssetName {
         asset: AssetId(3),
         name: "Interview".into(),
@@ -815,7 +816,12 @@ fn media_library_names_and_folders_validate_and_round_trip() {
         project
     );
     assert_eq!(
-        project.data().media_library.name(AssetId(3)).unwrap().as_str(),
+        project
+            .data()
+            .media_library
+            .name(AssetId(3))
+            .unwrap()
+            .as_str(),
         "Interview"
     );
     assert_eq!(

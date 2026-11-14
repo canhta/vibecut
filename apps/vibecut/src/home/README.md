@@ -11,9 +11,7 @@ carry out. The page never loads or mutates project JSON: a catalog worker runs e
 
 `Catalog` is the worker's open library, lent by the composition root to the shorts window (the library holds one exclusive lease, so no window opens a second handle). Each worker request and each lent call holds it for its own duration; the lent handle is not kept between calls, so Retry can reopen the catalog. Runs of the shorts window live in the same library and are never listed here.
 
-The About dialog is the shared [services](../services/README.md) `about` view hosted over Home as well (`State::open_about`; the macOS app menu's About row opens it when no project window is focused); Escape and Close dismiss it.
-
-The About dialog is the shared [services](../services/README.md) `about` view, hosted over Home as well (`State::open_about`; the macOS app menu's About row opens it when no project window is focused); Escape and Close dismiss it.
+The About dialog is the shared [services](../services/README.md) `views::about` view hosted over Home as well (`State::open_about`; the macOS app menu's About row opens it when no project window is focused); Escape and Close dismiss it.
 
 The toolbar's Trash control swaps the grid for the trashed entries without changing page. A
 trashed row shows its remaining retention days; Restore and Delete forever are its row menu

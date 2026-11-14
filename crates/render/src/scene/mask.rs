@@ -995,11 +995,7 @@ pub(crate) fn apply(
     mut glyph: impl FnMut(MaskText<'_>, f32, Geometry) -> Result<std::sync::Arc<Image>>,
     hooks: &dyn ExecutionHooks,
 ) -> Result<()> {
-    let Some(first) = item
-        .masks
-        .iter()
-        .find(|m| m.active() && m.scope == scope)
-    else {
+    let Some(first) = item.masks.iter().find(|m| m.active() && m.scope == scope) else {
         return Ok(());
     };
     let w = image.width;
@@ -1009,11 +1005,7 @@ pub(crate) fn apply(
     let scale = (dw / canvas.width as f32).min(dh / canvas.height as f32);
     let mut combined = Image::new(w, h, [initial(first.mode); 4], hooks)?;
     let mut strokes: Option<Image> = None;
-    for mask in item
-        .masks
-        .iter()
-        .filter(|m| m.active() && m.scope == scope)
-    {
+    for mask in item.masks.iter().filter(|m| m.active() && m.scope == scope) {
         check(hooks)?;
         let extra = match &mask.shape {
             project::MaskShape::Text { content, .. } => content.as_str().len(),

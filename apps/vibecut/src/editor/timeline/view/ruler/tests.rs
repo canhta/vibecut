@@ -56,7 +56,10 @@ fn captions_use_minutes_and_seconds_until_labels_get_finer_than_a_second() {
     let code = TimeCode::default();
     assert_eq!(ruler_text(9.0, FrameRate::FPS_30, 3.0, code), "00:09");
     assert_eq!(ruler_text(75.0, FrameRate::FPS_30, 5.0, code), "01:15");
-    assert_eq!(ruler_text(3_725.0, FrameRate::FPS_30, 30.0, code), "1:02:05");
+    assert_eq!(
+        ruler_text(3_725.0, FrameRate::FPS_30, 30.0, code),
+        "1:02:05"
+    );
     assert_eq!(
         ruler_text(1.0, FrameRate::FPS_30, 1.0 / 15.0, code),
         ruler_label(1.0, FrameRate::FPS_30, code)

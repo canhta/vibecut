@@ -11,7 +11,7 @@ use crate::{
     editor::{Context, Port, egui},
     i18n::{self, Text},
     kit,
-    services::progress,
+    services::views::progress,
 };
 use engine::{
     ByteBudget, Command, Session,

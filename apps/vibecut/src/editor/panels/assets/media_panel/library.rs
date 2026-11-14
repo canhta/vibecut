@@ -1,7 +1,7 @@
 //! Applies the media tile menu's Rename and New folder requests.
-use crate::editor::{Port, error_detail};
 use crate::editor::panels::assets::State;
 use crate::editor::panels::assets::state::MediaRename;
+use crate::editor::{Port, error_detail};
 use crate::i18n;
 use crate::i18n::Text;
 use engine::Command;
@@ -56,7 +56,11 @@ impl State {
     }
     /// Group `ids` into a new folder through `media.create_folder`, named after the locale's
     /// default and numbered when that name is taken.
-    pub(in crate::editor) fn create_media_folder(&mut self, port: &mut Port<'_>, ids: Vec<AssetId>) {
+    pub(in crate::editor) fn create_media_folder(
+        &mut self,
+        port: &mut Port<'_>,
+        ids: Vec<AssetId>,
+    ) {
         let base = i18n::text(port.locale(), Text::MediaFolderDefault);
         let library = &port.session.project().data().media_library;
         let taken = |candidate: &str| {

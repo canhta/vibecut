@@ -1,15 +1,15 @@
 //! Renders the Audio tab's Music section: chips, results and saved tracks.
-use super::super::AudioSection;
-use super::super::sounds::LibraryStore;
-use super::super::sounds::music::{MusicMode, MusicProblem, MusicView};
-use super::{
+use super::super::super::AudioSection;
+use super::super::super::sounds::LibraryStore;
+use super::super::super::sounds::music::{MusicMode, MusicProblem, MusicView};
+use super::super::{
     Action, Align2, Color32, FontId, Icon, Id, Rect, Text, Vec2, View, egui, icons, theme,
 };
 use crate::i18n;
 
 impl View<'_> {
     /// Section switch shared by the Music and Sound-effects pages.
-    pub(super) fn audio_nav(&mut self, ui: &mut egui::Ui) {
+    pub(in super::super) fn audio_nav(&mut self, ui: &mut egui::Ui) {
         for (section, label, id) in [
             (AudioSection::Music, Text::Music, "audio.section.music"),
             (
@@ -113,7 +113,7 @@ impl View<'_> {
         response.clicked()
     }
 
-    pub(super) fn music(&mut self, ui: &mut egui::Ui) {
+    pub(in super::super) fn music(&mut self, ui: &mut egui::Ui) {
         let credits = self.cx.music_credits.clone();
         let credits_failed = self.cx.music_credits_failed;
         let Some(view) = self.cx.music.clone() else {

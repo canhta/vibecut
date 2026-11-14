@@ -1,9 +1,11 @@
-//! Presents the header Delete confirmation and routes its two choices.
+//! Hosts the dialogs the header menu opens in the editor window and routes their clicks.
 use crate::editor::Editor;
 use crate::i18n::{self, Text};
+use crate::services::views::about;
 use crate::{egui, kit::Icon};
 
 impl Editor {
+    /// The header Delete confirmation and its two choices.
     pub(in crate::editor) fn show_project_delete_dialog(&mut self, ctx: &egui::Context) {
         if !self.frame.delete_open {
             return;
@@ -36,6 +38,20 @@ impl Editor {
                 }
             });
         });
+        for (id, icon, response) in painted {
+            self.remember_with_icon(id, icon, &response);
+            if response.clicked() {
+                self.action(id);
+            }
+        }
+    }
+
+    /// The shared About dialog on its open page.
+    pub(in crate::editor) fn show_about_dialog(&mut self, ctx: &egui::Context) {
+        let Some(page) = self.frame.about else {
+            return;
+        };
+        let painted = about::show(ctx, page, self.preferences.locale, self.preferences.dark);
         for (id, icon, response) in painted {
             self.remember_with_icon(id, icon, &response);
             if response.clicked() {

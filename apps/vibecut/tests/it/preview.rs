@@ -2026,7 +2026,11 @@ fn shown_scopes_take_a_strip_under_the_video_plotted_off_the_ui_thread() {
         widget(&h, "preview.scopes.vectorscope").rect,
     ];
     let near = |a: f32, b: f32, what: &str| assert!((a - b).abs() <= 0.5, "{what}: {a} vs {b}");
-    near(strip.left(), stage.left(), "the strip is inset like the video area");
+    near(
+        strip.left(),
+        stage.left(),
+        "the strip is inset like the video area",
+    );
     for panel in panels {
         near(panel.height(), 159.0, "panel height");
         near(panel.top(), strip.top(), "panel top");

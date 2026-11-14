@@ -56,15 +56,15 @@ pub fn plot_scopes(width: usize, height: usize, rgba: &[u8]) -> Result<Scopes> {
         };
         let x = n % width;
         let within = x * GROUP / width;
-        for (channel, (level, colour)) in [
-            (r, [255, 0, 0]),
-            (g, [0, 255, 0]),
-            (b, [0, 0, 255]),
-        ]
-        .into_iter()
-        .enumerate()
+        for (channel, (level, colour)) in [(r, [255, 0, 0]), (g, [0, 255, 0]), (b, [0, 0, 255])]
+            .into_iter()
+            .enumerate()
         {
-            parade.add(channel * GROUP + within, row_of(level, TRACE_HEIGHT), colour);
+            parade.add(
+                channel * GROUP + within,
+                row_of(level, TRACE_HEIGHT),
+                colour,
+            );
         }
         waveform.add(
             x * TRACE_WIDTH / width,
@@ -160,7 +160,9 @@ impl Grid {
             let [r, g, b] = if bright && top == 0 {
                 [255; 3]
             } else if bright {
-                mean.map(|value| u8::try_from(u32::from(value) * 255 / u32::from(top)).unwrap_or(255))
+                mean.map(|value| {
+                    u8::try_from(u32::from(value) * 255 / u32::from(top)).unwrap_or(255)
+                })
             } else {
                 mean
             };

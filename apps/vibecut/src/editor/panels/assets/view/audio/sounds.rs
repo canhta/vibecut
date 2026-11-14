@@ -1,6 +1,8 @@
 //! Renders the Sounds tab's provider results, saved library and states.
-use super::super::sounds::{LibraryProblem, LibraryStore, SoundsMode, SoundsProblem, SoundsView};
-use super::{
+use super::super::super::sounds::{
+    LibraryProblem, LibraryStore, SoundsMode, SoundsProblem, SoundsView,
+};
+use super::super::{
     Action, Align2, AssetsTab, Color32, FontId, Icon, Id, Rect, Text, Vec2, View, egui, icons,
     theme,
 };
@@ -8,7 +10,7 @@ use crate::i18n;
 use crate::preferences::SoundFavorite;
 
 impl View<'_> {
-    pub(super) fn sounds_nav(&mut self, ui: &mut egui::Ui) {
+    pub(in super::super) fn sounds_nav(&mut self, ui: &mut egui::Ui) {
         // `None` is the Favorites entry; it lists starred sounds without changing the library mode.
         for (mode, label) in [
             (None, Text::AssetsFavorites),
@@ -80,7 +82,7 @@ impl View<'_> {
             .collect()
     }
 
-    pub(super) fn sounds(&mut self, ui: &mut egui::Ui) {
+    pub(in super::super) fn sounds(&mut self, ui: &mut egui::Ui) {
         let Some(view) = self.cx.sounds.clone() else {
             match self.state.sounds_open {
                 Some(problem) => self.library_open_failure(ui, LibraryStore::Sounds, problem),
@@ -583,7 +585,7 @@ impl View<'_> {
 
     /// A library store that did not open: its reason and a Retry row, in place of
     /// the section's list. Retry asks the lending owner to open the store again.
-    pub(super) fn library_open_failure(
+    pub(in super::super) fn library_open_failure(
         &mut self,
         ui: &mut egui::Ui,
         store: LibraryStore,

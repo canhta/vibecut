@@ -8,30 +8,30 @@ use project::{TextLook, TextShelf, TextTemplate};
 
 /// The tab's two pages: the look tiles, or the template tiles.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) enum TextPage {
+pub(in super::super) enum TextPage {
     #[default]
     Styles,
     Templates,
 }
 
 impl TextPage {
-    pub(super) const ALL: [Self; 2] = [Self::Styles, Self::Templates];
+    pub(in super::super) const ALL: [Self; 2] = [Self::Styles, Self::Templates];
 
-    pub(super) const fn id(self) -> &'static str {
+    pub(in super::super) const fn id(self) -> &'static str {
         match self {
             Self::Styles => "styles",
             Self::Templates => "templates",
         }
     }
 
-    pub(super) const fn label(self) -> Text {
+    pub(in super::super) const fn label(self) -> Text {
         match self {
             Self::Styles => Text::TextLibraryStyles,
             Self::Templates => Text::TextLibraryTemplates,
         }
     }
 
-    pub(super) const fn search_hint(self) -> Text {
+    pub(in super::super) const fn search_hint(self) -> Text {
         match self {
             Self::Styles => Text::TextLibrarySearchStyles,
             Self::Templates => Text::TextLibrarySearchTemplates,
@@ -39,7 +39,7 @@ impl TextPage {
     }
 
     /// The catalogue-favourites family the page's stars belong to.
-    pub(super) const fn family(self) -> &'static str {
+    pub(in super::super) const fn family(self) -> &'static str {
         match self {
             Self::Styles => "text_looks",
             Self::Templates => "text_templates",
@@ -50,14 +50,14 @@ impl TextPage {
 /// One section of the list, and the chip that jumps to it: the Favorites section first, then
 /// the five look shelves in panel order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum TextChip {
+pub(in super::super) enum TextChip {
     Favorites,
     Shelf(TextShelf),
 }
 
 impl TextChip {
     /// Sections and chips in order.
-    pub(super) const ALL: [Self; 6] = [
+    pub(in super::super) const ALL: [Self; 6] = [
         Self::Favorites,
         Self::Shelf(TextShelf::Plain),
         Self::Shelf(TextShelf::Outline),
@@ -66,7 +66,7 @@ impl TextChip {
         Self::Shelf(TextShelf::Label),
     ];
 
-    pub(super) const fn id(self) -> &'static str {
+    pub(in super::super) const fn id(self) -> &'static str {
         match self {
             Self::Favorites => "favorites",
             Self::Shelf(TextShelf::Plain) => "plain",
@@ -77,7 +77,7 @@ impl TextChip {
         }
     }
 
-    pub(super) const fn label(self) -> Text {
+    pub(in super::super) const fn label(self) -> Text {
         match self {
             Self::Favorites => Text::AssetsFavorites,
             Self::Shelf(TextShelf::Plain) => Text::LookShelfPlain,
@@ -91,7 +91,7 @@ impl TextChip {
 
 /// What a tile applies or inserts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Entry {
+pub(in super::super) enum Entry {
     Look(TextLook),
     Template(TextTemplate),
 }
@@ -99,16 +99,16 @@ pub(super) enum Entry {
 /// One tile: the entry, its wire id (the favourites key), its translated name and whether it is
 /// starred.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct Tile {
-    pub(super) entry: Entry,
-    pub(super) id: String,
-    pub(super) name: &'static str,
-    pub(super) starred: bool,
+pub(in super::super) struct Tile {
+    pub(in super::super) entry: Entry,
+    pub(in super::super) id: String,
+    pub(in super::super) name: &'static str,
+    pub(in super::super) starred: bool,
 }
 
 impl Tile {
     /// The look whose fill the tile previews.
-    pub(super) const fn look(&self) -> TextLook {
+    pub(in super::super) const fn look(&self) -> TextLook {
         match self.entry {
             Entry::Look(look) => look,
             Entry::Template(template) => template.look(),
@@ -116,13 +116,13 @@ impl Tile {
     }
 
     /// The shelf the tile's section belongs to.
-    pub(super) const fn shelf(&self) -> TextShelf {
+    pub(in super::super) const fn shelf(&self) -> TextShelf {
         self.look().shelf()
     }
 }
 
 /// The tiles of one section: the starred ones for Favorites, else those of the shelf.
-pub(super) fn section(tiles: &[Tile], chip: TextChip) -> Vec<&Tile> {
+pub(in super::super) fn section(tiles: &[Tile], chip: TextChip) -> Vec<&Tile> {
     tiles
         .iter()
         .filter(|tile| match chip {
@@ -142,7 +142,7 @@ fn matches(needle: &str, translated: &str, english: &str) -> bool {
 
 /// The tiles of one page after the search and the filter, in catalogue order. `starred` is the
 /// page family's favourites list.
-pub(super) fn tiles(
+pub(in super::super) fn tiles(
     page: TextPage,
     query: &str,
     commercial_only: bool,
@@ -190,13 +190,13 @@ pub(super) fn tiles(
 
 /// The tile backing of the reference's Text grid: the neutral grey sampled from captures 103727
 /// and 104218 (native sRGB 59, the same in both frames).
-pub(super) const BACKING: [u8; 3] = [59, 59, 59];
+pub(in super::super) const BACKING: [u8; 3] = [59, 59, 59];
 /// The backing a sample that is too dark for [`BACKING`] sits on: the mirrored grey (255 - 59).
-pub(super) const BACKING_LIGHT: [u8; 3] = [196, 196, 196];
+pub(in super::super) const BACKING_LIGHT: [u8; 3] = [196, 196, 196];
 /// The least contrast a tile sample keeps against its backing: WCAG 3:1, the bar for large
 /// text (the sample is a 12 px semibold glyph run at 100 % zoom, so this is the floor, not the
 /// goal).
-pub(super) const MIN_CONTRAST: f32 = 3.0;
+pub(in super::super) const MIN_CONTRAST: f32 = 3.0;
 
 /// WCAG relative luminance of an sRGB colour.
 fn luminance(color: [u8; 3]) -> f32 {
@@ -212,14 +212,14 @@ fn luminance(color: [u8; 3]) -> f32 {
 }
 
 /// WCAG contrast ratio of two sRGB colours, 1 to 21.
-pub(super) fn contrast(a: [u8; 3], b: [u8; 3]) -> f32 {
+pub(in super::super) fn contrast(a: [u8; 3], b: [u8; 3]) -> f32 {
     let (la, lb) = (luminance(a), luminance(b));
     (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
 }
 
 /// The backing a sample in `ink` is drawn on: the reference grey when the sample reads on it,
 /// else its light mirror.
-pub(super) fn backing(ink: [u8; 3]) -> [u8; 3] {
+pub(in super::super) fn backing(ink: [u8; 3]) -> [u8; 3] {
     if contrast(ink, BACKING) >= MIN_CONTRAST {
         BACKING
     } else {
@@ -264,15 +264,28 @@ mod tests {
         assert!(glow.iter().all(|tile| tile.shelf() == TextShelf::Glow));
         let favorites = section(&all, TextChip::Favorites);
         assert_eq!(
-            favorites.iter().map(|tile| tile.id.as_str()).collect::<Vec<_>>(),
+            favorites
+                .iter()
+                .map(|tile| tile.id.as_str())
+                .collect::<Vec<_>>(),
             ["clean_white", "neon_pink"]
         );
         let total: usize = TextChip::ALL[1..]
             .iter()
             .map(|chip| section(&all, *chip).len())
             .sum();
-        assert_eq!(total, all.len(), "every tile is in exactly one shelf section");
-        assert!(section(&tiles(TextPage::Styles, "", false, &[], Locale::En), TextChip::Favorites).is_empty());
+        assert_eq!(
+            total,
+            all.len(),
+            "every tile is in exactly one shelf section"
+        );
+        assert!(
+            section(
+                &tiles(TextPage::Styles, "", false, &[], Locale::En),
+                TextChip::Favorites
+            )
+            .is_empty()
+        );
     }
 
     #[test]
@@ -287,9 +300,9 @@ mod tests {
         );
         let templates = tiles(TextPage::Templates, "", true, &[], Locale::En);
         assert!(
-            templates
-                .iter()
-                .all(|tile| matches!(tile.entry, Entry::Template(template) if template.commercial()))
+            templates.iter().all(
+                |tile| matches!(tile.entry, Entry::Template(template) if template.commercial())
+            )
         );
     }
 

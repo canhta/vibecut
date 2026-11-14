@@ -12,7 +12,11 @@ impl State {
     /// Copy one built-in look onto the selected text items as one undo step
     /// (`text.apply_preset`). With no text item selected it explains what to select and
     /// changes nothing; a refusal (a locked track) is already on the error line.
-    pub(in crate::editor) fn apply_text_look(&mut self, port: &mut Port<'_>, look: project::TextLook) {
+    pub(in crate::editor) fn apply_text_look(
+        &mut self,
+        port: &mut Port<'_>,
+        look: project::TextLook,
+    ) {
         let items: Vec<project::ItemId> = port
             .session
             .selection()

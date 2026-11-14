@@ -1,5 +1,5 @@
 //! Presents the transition catalog in the measured asset grid.
-use super::super::transition::{self, Preview};
+use super::super::catalog::transition::{self, Preview};
 use super::{
     Action, Align2, AssetsTab, FontId, Icon, Id, Rect, Text, Vec2, View, egui, icons, theme,
 };

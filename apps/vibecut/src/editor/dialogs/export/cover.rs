@@ -79,8 +79,11 @@ impl Held {
                         [image.width as usize, image.height as usize],
                         &image.rgba,
                     );
-                    let texture =
-                        ctx.load_texture("export.cover.sized", pixels, egui::TextureOptions::LINEAR);
+                    let texture = ctx.load_texture(
+                        "export.cover.sized",
+                        pixels,
+                        egui::TextureOptions::LINEAR,
+                    );
                     self.sized = Some((key, texture));
                 }
                 Ok(None) | Err(mpsc::TryRecvError::Disconnected) => self.failed = Some(key),
@@ -93,7 +96,10 @@ impl Held {
             size,
         };
         let current = self.sized.as_ref().is_some_and(|(held, _)| held.same(&key));
-        let waiting = self.pending.as_ref().is_some_and(|(held, _)| held.same(&key));
+        let waiting = self
+            .pending
+            .as_ref()
+            .is_some_and(|(held, _)| held.same(&key));
         let failed = self.failed.as_ref().is_some_and(|held| held.same(&key));
         if !current && !waiting && !failed {
             let (sender, receiver) = wake::channel();
@@ -132,10 +138,8 @@ impl Held {
             .as_ref()
             .is_none_or(|(held, _)| held != thumbnail)
         {
-            let image = egui::ColorImage::from_rgba_unmultiplied(
-                [*width as usize, *height as usize],
-                rgba,
-            );
+            let image =
+                egui::ColorImage::from_rgba_unmultiplied([*width as usize, *height as usize], rgba);
             let texture = ctx.load_texture("export.cover", image, egui::TextureOptions::LINEAR);
             self.thumbnail = Some((thumbnail.clone(), texture));
         }

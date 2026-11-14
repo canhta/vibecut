@@ -5,8 +5,8 @@ use crate::{
     i18n::{self, Text},
     kit::{self as icons, Icon},
     services::{
-        about,
         lifecycle::{EditorAction, FEEDBACK_URL, HELP_URL},
+        views::about,
     },
 };
 use engine::control::Error as EngineError;

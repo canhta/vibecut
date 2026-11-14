@@ -6,7 +6,7 @@ use crate::{
     home::state::State,
     i18n::{self, Text},
     kit::{self, Icon, Look},
-    services::about,
+    services::views::about,
 };
 use project::ProjectId;
 

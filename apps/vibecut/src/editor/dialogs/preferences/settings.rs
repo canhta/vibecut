@@ -5,9 +5,7 @@ use super::{Action, State};
 use crate::{
     editor::{Context, context::CachePhase, egui},
     i18n::{self, Locale, Text},
-    preferences::{
-        HardwareAcceleration, ImageDurationUnit, LoudnessPreset, PROJECT_FPS, TimeCode,
-    },
+    preferences::{HardwareAcceleration, ImageDurationUnit, LoudnessPreset, PROJECT_FPS, TimeCode},
 };
 
 /// Cache budgets offered in MiB beside Automatic; both bounds are included.
@@ -178,10 +176,7 @@ fn combo<T: Copy + PartialEq + serde::Serialize>(
         .show_ui(ui, |ui| {
             for &(choice, suffix, label) in options {
                 let response = ui.selectable_label(choice == current, label);
-                actions.push(Action::Remember(
-                    format!("{id}.{suffix}"),
-                    response.clone(),
-                ));
+                actions.push(Action::Remember(format!("{id}.{suffix}"), response.clone()));
                 if response.clicked() && choice != current {
                     actions.push(Action::Set(
                         key,
@@ -365,7 +360,10 @@ pub(super) fn show(
                             ),
                         ),
                         ImageDurationUnit::Frames => (
-                            ((f64::from(prefs.image_duration_ms) * fps / 1000.0).round(), 0),
+                            (
+                                (f64::from(prefs.image_duration_ms) * fps / 1000.0).round(),
+                                0,
+                            ),
                             (
                                 (f64::from(*image_ms.start()) * fps / 1000.0).ceil(),
                                 (f64::from(*image_ms.end()) * fps / 1000.0).floor(),
@@ -386,8 +384,9 @@ pub(super) fn show(
                                     ImageDurationUnit::Seconds => v * 1000.0,
                                     ImageDurationUnit::Frames => v * 1000.0 / fps,
                                 };
-                                serde_json::json!((ms.round() as u32)
-                                    .clamp(*image_ms.start(), *image_ms.end()))
+                                serde_json::json!(
+                                    (ms.round() as u32).clamp(*image_ms.start(), *image_ms.end())
+                                )
                             }),
                         );
                         let options = ImageDurationUnit::ALL
@@ -417,7 +416,8 @@ pub(super) fn show(
                         );
                     });
                     let code = prefs.time_code;
-                    let options = TimeCode::ALL.map(|c| (c, time_code_id(c), tr(time_code_text(c))));
+                    let options =
+                        TimeCode::ALL.map(|c| (c, time_code_id(c), tr(time_code_text(c))));
                     edit_row_with(ui, tr(Text::SettingsTimeCode), |ui, label| {
                         combo(
                             ui,

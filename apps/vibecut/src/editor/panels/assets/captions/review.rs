@@ -282,7 +282,6 @@ fn gap_ticks(ms: i64) -> Tick {
     Tick(ms.saturating_mul(TICKS_PER_SECOND) / 1000)
 }
 
-
 impl Subtitles {
     /// Whether no analysis is running.
     pub(super) fn review_idle(&self) -> bool {
@@ -618,7 +617,11 @@ impl Subtitles {
                             if row.checked {
                                 text = text.strikethrough();
                             }
-                            cell.add(egui::Label::new(text).truncate().sense(egui::Sense::click()))
+                            cell.add(
+                                egui::Label::new(text)
+                                    .truncate()
+                                    .sense(egui::Sense::click()),
+                            )
                         }
                     };
                     remember(widgets, format!("{id}.text"), &text_response);
@@ -924,7 +927,9 @@ fn mini_timeline(
         }
     }
     remember(widgets, "subtitles.review.timeline".into(), &response);
-    let at = response.interact_pointer_pos().filter(|_| response.clicked())?;
+    let at = response
+        .interact_pointer_pos()
+        .filter(|_| response.clicked())?;
     let ratio = f64::from(((at.x - rect.left()) / rect.width().max(1.0)).clamp(0.0, 1.0));
     Some(Tick((ratio * span as f64) as i64))
 }

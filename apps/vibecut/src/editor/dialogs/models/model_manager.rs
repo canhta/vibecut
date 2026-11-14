@@ -693,7 +693,7 @@ impl ModelManager {
                 JobStage::Backoff => Text::ModelQueued,
                 _ => Text::ModelDownloading,
             };
-            crate::services::progress::line(
+            crate::services::views::progress::line(
                 ui,
                 "models.progress",
                 locale,

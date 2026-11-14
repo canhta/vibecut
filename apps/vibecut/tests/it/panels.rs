@@ -2271,7 +2271,10 @@ fn effect_and_adjustment_layers_nest_a_mask_page_in_their_segmented_bar() {
     assert!(has_widget(&harness, "inspector.mask.add"));
     let checkbox = widget_rect(&harness, "inspector.mask.enabled");
     let add = widget_rect(&harness, "inspector.mask.add");
-    assert!(checkbox.top() < add.top(), "the checkbox row is above Add mask");
+    assert!(
+        checkbox.top() < add.top(),
+        "the checkbox row is above Add mask"
+    );
     assert!((add.width() - 103.0).abs() < 0.5 && (add.height() - 27.0).abs() < 0.5);
     let first_tile = widget_rect(&harness, "inspector.mask.shape.none");
     assert!(add.bottom() <= first_tile.top(), "tiles sit under Add mask");
@@ -2282,7 +2285,10 @@ fn effect_and_adjustment_layers_nest_a_mask_page_in_their_segmented_bar() {
         tile_row("inspector.mask.shape.heart")
     );
     assert!(tile_row("inspector.mask.shape.stars") > tile_row("inspector.mask.shape.none"));
-    assert!(mask_of(&harness, layer).is_none(), "an empty layer has no mask");
+    assert!(
+        mask_of(&harness, layer).is_none(),
+        "an empty layer has no mask"
+    );
     let history = harness.state().session.history_len();
     click(&mut harness, "inspector.mask.shape.circle");
     assert_eq!(
@@ -2301,7 +2307,10 @@ fn effect_and_adjustment_layers_nest_a_mask_page_in_their_segmented_bar() {
     assert_eq!(mask.scope, project::MaskScope::Clip);
     assert!(mask.enabled);
     click(&mut harness, "inspector.mask.shape.circle");
-    assert_eq!(mask_of(&harness, layer).unwrap().shape, project::MaskShape::Ellipse);
+    assert_eq!(
+        mask_of(&harness, layer).unwrap().shape,
+        project::MaskShape::Ellipse
+    );
     enter(&mut harness, "inspector.mask.feather", "30");
     assert_eq!(mask_of(&harness, layer).unwrap().feather, 30.0);
     // The checkbox switches the mask off and on, one `masks.update` step each.
@@ -2358,7 +2367,10 @@ fn a_layer_on_a_locked_track_shows_its_mask_page_read_only_and_a_filter_clip_has
     let history = harness.state().session.history_len();
     click(&mut harness, "inspector.mask.add");
     assert_eq!(harness.state().session.history_len(), history);
-    assert!(mask_of(&harness, layer).is_none(), "a locked track refuses the add");
+    assert!(
+        mask_of(&harness, layer).is_none(),
+        "a locked track refuses the add"
+    );
 
     // A filter clip is a look, not a layer with a region: no Mask page, no segmented bar.
     let outcome = harness
@@ -2496,7 +2508,10 @@ fn the_adjust_mask_page_is_absent_off_video_and_image_items() {
     for other in [fixture.graphic, layer] {
         select(&mut harness, other);
         assert!(!has_widget(&harness, "inspector.tab.adjust"), "{other:?}");
-        assert!(!has_widget(&harness, "effects.color_grade.tab.mask"), "{other:?}");
+        assert!(
+            !has_widget(&harness, "effects.color_grade.tab.mask"),
+            "{other:?}"
+        );
     }
 }
 
@@ -7094,9 +7109,17 @@ fn freeform_point_diamond_keys_the_anchor_and_a_drag_writes_a_key_at_the_playhea
     assert_eq!(harness.state().session.history_len().0, history.0 + 1);
     for field in project::MASK_POINT_FIELDS {
         assert_eq!(keys(&harness, 0, field), 1, "{field} keyed");
-        assert_eq!(keys(&harness, 1, field), 0, "the other anchors stay unkeyed");
+        assert_eq!(
+            keys(&harness, 1, field),
+            0,
+            "the other anchors stay unkeyed"
+        );
     }
-    assert_eq!(path_of(&harness, video), stored, "keys leave the stored path");
+    assert_eq!(
+        path_of(&harness, video),
+        stored,
+        "keys leave the stored path"
+    );
 
     // A drag at a later playhead writes keys for the moved fields only, and keeps the base.
     let start = item(&harness, video).start;
@@ -7114,15 +7137,27 @@ fn freeform_point_diamond_keys_the_anchor_and_a_drag_writes_a_key_at_the_playhea
     assert_eq!(harness.state().session.history_len().0, history.0 + 1);
     assert_eq!(keys(&harness, 0, "x"), 2);
     assert_eq!(keys(&harness, 0, "y"), 2);
-    assert_eq!(keys(&harness, 0, "in_x"), 1, "an anchor drag leaves its tangents");
-    assert_eq!(path_of(&harness, video), stored, "the stored path keeps its base");
+    assert_eq!(
+        keys(&harness, 0, "in_x"),
+        1,
+        "an anchor drag leaves its tangents"
+    );
+    assert_eq!(
+        path_of(&harness, video),
+        stored,
+        "the stored path keeps its base"
+    );
 
     // The diamond is open here (four fields lack a key); it adds them, then removes all six.
     click(&mut harness, "preview.mask.point.0.keyframe");
     assert_eq!(keys(&harness, 0, "in_x"), 2);
     click(&mut harness, "preview.mask.point.0.keyframe");
     for field in project::MASK_POINT_FIELDS {
-        assert_eq!(keys(&harness, 0, field), 1, "{field} loses the key at this time");
+        assert_eq!(
+            keys(&harness, 0, field),
+            1,
+            "{field} loses the key at this time"
+        );
     }
 }
 
@@ -7993,7 +8028,10 @@ fn chip_chosen(harness: &Harness<Editor>, id: &str) -> bool {
 fn text_library_chip_click_scrolls_its_section_to_the_top() {
     let (mut h, _) = text_library_harness();
     for section in ["favorites", "plain", "outline", "shadow", "glow", "label"] {
-        assert!(has_widget(&h, &format!("text.section.{section}")), "{section}");
+        assert!(
+            has_widget(&h, &format!("text.section.{section}")),
+            "{section}"
+        );
     }
     assert!(has_widget(&h, "text.favorites.empty"));
     assert!(chip_chosen(&h, "text.chip.favorites"));
@@ -8006,7 +8044,10 @@ fn text_library_chip_click_scrolls_its_section_to_the_top() {
             (header - top).abs() < 2.0,
             "{section} header at {header}, list top at {top}"
         );
-        assert!(chip_chosen(&h, &format!("text.chip.{section}")), "{section}");
+        assert!(
+            chip_chosen(&h, &format!("text.chip.{section}")),
+            "{section}"
+        );
     }
 }
 
@@ -8044,10 +8085,7 @@ fn text_library_favorites_star_list_unstar_and_show_the_empty_state() {
     click(&mut h, "text.favorite.styles.neon_pink");
     set_sticker_search(&mut h, "");
     assert_eq!(
-        h.state()
-            .preferences
-            .catalog_favorites
-            .list("text_looks"),
+        h.state().preferences.catalog_favorites.list("text_looks"),
         ["neon_pink"]
     );
     // Listed in the Favorites section and still in its shelf.

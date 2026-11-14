@@ -134,11 +134,10 @@ impl Panel<'_, '_> {
             && let Some(mut changed) = mask.clone()
         {
             changed.enabled = on;
-            self.actions
-                .push(Action::Mask(mask_picker::Action::Update {
-                    item,
-                    mask: changed,
-                }));
+            self.actions.push(Action::Mask(mask_picker::Action::Update {
+                item,
+                mask: changed,
+            }));
         }
         // Add mask: 103 x 27 logical in frame 105253 (112 x 29 of 2000 px, scaled by 0.92).
         let can_add = mask.is_none() && !locked;
@@ -189,7 +188,12 @@ impl Panel<'_, '_> {
         // No mask yet: the page says so above its grey tiles; Add mask is its call-to-action.
         if mask.is_none() {
             ui.add_space(theme::space::MD);
-            self.empty_face(ui, "inspector.mask.empty", kit::Icon::CircleHalf, Text::MaskNone);
+            self.empty_face(
+                ui,
+                "inspector.mask.empty",
+                kit::Icon::CircleHalf,
+                Text::MaskNone,
+            );
         }
         ui.add_space(theme::space::MD);
         let timing = read::item(project, item).and_then(|found| {
