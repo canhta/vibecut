@@ -87,8 +87,8 @@ fade's window). Fade edits are `audio.set_fade` with the edge's current curve, o
 step per commit; a drag is one gesture. The engine clamps a fade to the same room, so
 a typed value above it lands on the cap. Every row is disabled on a locked track. Mute
 is not on this tab: it is the track header and the clip menu. The engine's volume floor
-is -60 dB and that left end is true silence: the reference shows -inf dB there and a typed value below
-it lands on it (`project::volume_gain` is exactly 0 at the floor). The clip panel has no ducking row (ducking stays with narration). A Noise reduction switch follows the fades (`inspector.noise_reduction.toggle`, the
+is -60 dB and that left end is true silence: the field shows `-∞dB` there (the spec's `floor_label`; typed `-inf`, `-∞` or any value below
+parses to the floor) and a stored floor mixes silent (`project::volume_gain` is exactly 0 at the floor). The clip panel has no ducking row (ducking stays with narration). A Noise reduction switch follows the fades (`inspector.noise_reduction.toggle`, the
 39 px row with the shared toggle). The capture shows only the switch, so there is no strength control: on adds one
 `noise_reduction` cleanup effect at `project::NOISE_REDUCTION_DEFAULT` (12 dB reduction, 6 dB threshold, 50 %
 smoothing, full mix) or enables the item's existing one; off disables it and keeps its values. Each click is one
@@ -100,7 +100,7 @@ surface. A Voice enhancement switch ([new], no reference evidence) follows it (`
 next free effect ids after the chain's highest, the way every new effect gets one, or enables the marked effects already present;
 off disables them and keeps tuned values. The preset's effects carry `CleanupEffect::preset` = `voice_enhancement`, the only marker:
 the switch reads on only while five marked effects are present and all enabled, and the Noise reduction switch ignores marked
-effects. New effects start at the reference's Intensity default of 75 percent (`project::VOICE_ENHANCEMENT_INTENSITY_DEFAULT`). While on, an Intensity row (`inspector.voice_enhance.strength.{0,25,50,75,100}`, the reference slider's ticks) sets every marked effect's dry/wet mix
+effects. New effects start at the reference's Intensity default of 75 percent (`project::VOICE_ENHANCEMENT_INTENSITY_DEFAULT`). While on, an Intensity row (`inspector.voice_enhance.strength.{25,50,75,100}`, the reference slider's 4 tick marks; 0 stays reachable through `audio.update_cleanup_effect`) sets every marked effect's dry/wet mix
 to that percent. Each click is one batched edit, so one undo step. The preset adds no gain stage: loudness stays with the
 project normalizer, which measures the chain's output, so bypassing the preset never changes what the normalizer applied. The
 preset's individual bands and cutoffs have no control (no reference evidence); they are reachable through

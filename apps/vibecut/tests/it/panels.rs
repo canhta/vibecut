@@ -2388,6 +2388,41 @@ fn opacity_and_audio_gain_scrub_through_their_tabs() {
     };
     assert_eq!(params.volume, 0.04);
 
+    // The range's left end is true silence and reads "-∞dB": a slider drag to the left end, a
+    // typed -inf or -∞ and any typed value at or below the floor store the floor; -59.99 is
+    // still audible and reads as a number.
+    let floor = *project::VOLUME_DB_RANGE.start();
+    let volume = |harness: &Harness<Editor>| {
+        let ItemParams::Audio(params) = &item(harness, fixture.audio).content else {
+            panic!("audio")
+        };
+        params.volume
+    };
+    let shown = |harness: &Harness<Editor>| {
+        harness
+            .get(By::new().predicate(|n| n.author_id() == Some("inspector.volume")))
+            .value()
+    };
+    drag(
+        &mut harness,
+        "inspector.volume.slider",
+        egui::vec2(-4000.0, 0.0),
+    );
+    assert_eq!(volume(&harness), floor);
+    assert_eq!(shown(&harness).as_deref(), Some("-∞dB"));
+    enter(&mut harness, "inspector.volume", "-59.99");
+    assert_eq!(volume(&harness), -59.99);
+    assert_eq!(shown(&harness).as_deref(), Some("-59.99dB"));
+    for typed in ["-inf", "-∞", "-999"] {
+        enter(&mut harness, "inspector.volume", "-10");
+        assert_eq!(volume(&harness), -10.0);
+        enter(&mut harness, "inspector.volume", typed);
+        assert_eq!(volume(&harness), floor, "{typed}");
+        assert_eq!(shown(&harness).as_deref(), Some("-∞dB"), "{typed}");
+    }
+    enter(&mut harness, "inspector.volume", "0");
+    assert_eq!(volume(&harness), 0.0);
+
     // The Audio tab is volume and two fades: sliders with fields, no mute checkbox.
     for id in [
         "inspector.volume.slider",
@@ -2439,7 +2474,7 @@ fn opacity_and_audio_gain_scrub_through_their_tabs() {
     assert_eq!(cleanup(&harness), off);
 
     // Voice enhancement ([new]) is one batched preset over the same chain: on adds its five
-    // effects with the next free ids, Intensity retunes all five, off disables them keeping the tuned values, and
+    // effects with the next free ids, Intensity retunes all five effects, off disables them keeping the tuned values, and
     // each click is one undo step. The Noise reduction switch does not touch the preset's own
     // noise reduction effect.
     assert!(has_widget(&harness, "inspector.voice_enhance.toggle"));

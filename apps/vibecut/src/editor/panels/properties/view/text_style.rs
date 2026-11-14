@@ -44,6 +44,7 @@ const fn effect_spec(field: &'static str, label: Text, min: f64, max: f64) -> Sc
         decimals: 0,
         suffix: "",
         scale: 1.0,
+        floor_label: None,
     }
 }
 const STROKE_WIDTH: ScrubSpec = effect_spec(

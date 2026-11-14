@@ -16,6 +16,9 @@ pub(super) struct ScrubSpec {
     /// Shown value = model value × scale, in whole units, with `suffix`. Opacity and the
     /// scale fields use 100 for 0–100 %. The model value, step and drag stay unscaled.
     pub(super) scale: f64,
+    /// What the field shows at its left end instead of the number (the volume's `-∞`); a
+    /// typed label, `-inf` or any value at or below `min` parses back to `min`.
+    pub(super) floor_label: Option<&'static str>,
 }
 impl ScrubSpec {
     /// The contract of an engine table parameter. Its bounds, unit suffix and display scale
@@ -51,7 +54,24 @@ impl ScrubSpec {
             decimals,
             suffix: row.unit.suffix(),
             scale: row.unit.shown_scale(),
+            floor_label: None,
         }
+    }
+    /// The same contract with the left end shown as `label`.
+    pub(super) const fn with_floor_label(mut self, label: &'static str) -> Self {
+        self.floor_label = Some(label);
+        self
+    }
+    /// The label the field shows for `value`, when it sits at the left end.
+    pub(super) fn floor_text(self, value: f64) -> Option<&'static str> {
+        self.floor_label.filter(|_| self.quantize(value) <= self.min)
+    }
+    /// Whether typed text names the left end: the label, `-inf` or `-infinity`.
+    pub(super) fn is_floor_text(self, text: &str) -> bool {
+        let text = text.trim().to_lowercase();
+        self.floor_label.is_some_and(|label| {
+            text == label || text == "-inf" || text == "-infinity"
+        })
     }
     pub(in crate::editor) fn quantize(self, value: f64) -> f64 {
         if !value.is_finite() {
@@ -60,6 +80,7 @@ impl ScrubSpec {
         let steps = ((value.clamp(self.min, self.max) - self.min) / self.step).round();
         (self.min + steps * self.step).clamp(self.min, self.max)
     }
+    /// The model number as transport text; the left-end label is display only (see `shown`).
     pub(in crate::editor) fn format(self, value: f64) -> String {
         format!("{:.*}", self.decimals, self.quantize(value))
     }
@@ -80,6 +101,7 @@ pub(super) const SPEED_SCRUB: ScrubSpec = ScrubSpec {
     decimals: 2,
     suffix: "x",
     scale: 1.0,
+    floor_label: None,
 };
 /// Transition duration, 0.1-5 s as the reference's field; the engine further
 /// clamps it to the handles of both neighbouring clips.
@@ -93,9 +115,10 @@ pub(super) const TRANSITION_DURATION_SCRUB: ScrubSpec = ScrubSpec {
     decimals: 1,
     suffix: "s",
     scale: 1.0,
+    floor_label: None,
 };
 pub(super) const AUDIO_GAIN_SCRUB: ScrubSpec =
-    ScrubSpec::of("volume", Text::AudioGain, 0.01, 4.0, 2);
+    ScrubSpec::of("volume", Text::AudioGain, 0.01, 4.0, 2).with_floor_label("-∞");
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum ScrubTarget {
     Item(&'static str),
@@ -166,5 +189,6 @@ pub(super) fn effect_scrub_spec(parameter: &project::EffectParamDefinition) -> S
         decimals: if step < 1.0 { 2 } else { 0 },
         suffix: "",
         scale: 1.0,
+        floor_label: None,
     }
 }

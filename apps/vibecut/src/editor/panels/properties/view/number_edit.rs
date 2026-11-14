@@ -15,6 +15,9 @@ const SLIDER_FIELD: f32 = 54.0;
 /// Shared draft state for one numeric field; the model value stays in model units.
 /// The field's text: the model value scaled for display, in whole units when scaled.
 fn shown(spec: ScrubSpec, value: f64) -> String {
+    if let Some(label) = spec.floor_text(value) {
+        return format!("{label}{}", spec.suffix);
+    }
     let decimals = if spec.scale == 1.0 { spec.decimals } else { 0 };
     format!(
         "{:.*}{}",
@@ -26,12 +29,11 @@ fn shown(spec: ScrubSpec, value: f64) -> String {
 
 /// The model value a typed field text means, undoing the display scale.
 fn parse(spec: ScrubSpec, text: &str) -> Option<f64> {
-    let value = text
-        .trim()
-        .trim_end_matches(spec.suffix)
-        .trim()
-        .parse::<f64>()
-        .ok()?;
+    let text = text.trim().trim_end_matches(spec.suffix).trim();
+    if spec.is_floor_text(text) {
+        return Some(spec.min / spec.scale);
+    }
+    let value = text.parse::<f64>().ok()?;
     value.is_finite().then_some(value / spec.scale)
 }
 

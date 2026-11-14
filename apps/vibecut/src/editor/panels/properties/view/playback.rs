@@ -402,8 +402,8 @@ impl Panel<'_, '_> {
     }
 
     /// Voice enhancement: one switch over the preset's cleanup effects, and while it is on an
-    /// Intensity row of five dry/wet mixes (0 to 100 in steps of 25, as the reference's slider
-    /// ticks; new effects start at 75). The preset's parameters stay ordinary chain effects
+    /// Intensity row of four dry/wet mixes (25 to 100: the reference slider's 4 tick marks;
+    /// new effects start at 75). The preset's parameters stay ordinary chain effects
     /// reachable through `audio.*_cleanup_effect`.
     fn voice_enhancement_rows(&mut self, ui: &mut egui::Ui, item: ItemId) {
         let project = self.cx.session.project();
@@ -430,14 +430,8 @@ impl Panel<'_, '_> {
         }
         let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
         self.row_label(ui, row, self.tr(Text::VoiceEnhancementStrength));
-        // The reference's Intensity slider has ticks every 25 from 0 to 100.
-        let levels: [(&str, f32); 5] = [
-            ("0", 0.0),
-            ("25", 25.0),
-            ("50", 50.0),
-            ("75", 75.0),
-            ("100", 100.0),
-        ];
+        // The reference's Intensity slider shows 4 tick marks, every 25 up to 100.
+        let levels: [(&str, f32); 4] = [("25", 25.0), ("50", 50.0), ("75", 75.0), ("100", 100.0)];
         let ids: Vec<String> = levels
             .iter()
             .map(|(name, _)| format!("inspector.voice_enhance.strength.{name}"))
@@ -480,6 +474,7 @@ impl Panel<'_, '_> {
             decimals: 1,
             suffix: "s",
             scale: 1.0,
+            floor_label: None,
         }
     }
 }
