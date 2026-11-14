@@ -383,7 +383,11 @@ pub(super) fn show(
             .flatten()
             .map(|geometry| (item, geometry))
     });
+    // Point handles replace the transform box: a second grip and corner set would overlap them.
     let visual = geometry.and_then(|(item, geometry)| {
+        if super::effect_point::active(cx, item, &geometry, &viewport) {
+            return None;
+        }
         Visual::new(&viewport, &geometry).map(|visual| (item, geometry, visual))
     });
 

@@ -753,35 +753,77 @@ impl Subtitles {
         };
         // The row is exactly one primary button tall; a plain horizontal row in the bottom-up
         // column would take the column's full height.
-        let row = egui::vec2(ui.available_width(), theme::size::CONTROL);
-        ui.allocate_ui_with_layout(
-            row,
-            egui::Layout::left_to_right(egui::Align::Center),
-            |ui| {
-                let r = ui.checkbox(&mut self.delete_current, c.tr(Text::SubDeleteCurrent));
-                c.remember("subtitles.delete_current", &r);
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let r = ui.add_enabled(
-                        reason.is_none(),
-                        egui::Button::new(c.tr(Text::SubGenerate))
-                            .min_size(egui::vec2(0.0, theme::size::CONTROL)),
-                    );
-                    let r = match reason {
-                        Some(text) => r.on_disabled_hover_text(c.tr(text)),
-                        None => r,
-                    };
-                    c.remember("subtitles.generate", &r);
-                    if r.clicked()
-                        && let Some(source) = source
-                    {
-                        let result = self
-                            .flush_drafts(session)
-                            .and_then(|_| self.generate(session, source, options));
-                        self.ui_result(result);
-                    }
-                });
-            },
+        let spacing = ui.spacing().clone();
+        let measure = |text: &str, style: egui::TextStyle| {
+            egui::WidgetText::from(text)
+                .into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, style)
+                .size()
+                .x
+        };
+        let check_width = spacing.icon_width
+            + spacing.icon_spacing
+            + measure(c.tr(Text::SubDeleteCurrent), egui::TextStyle::Body);
+        let button_width = spacing.button_padding.x.mul_add(
+            2.0,
+            measure(c.tr(Text::SubGenerate), egui::TextStyle::Button),
         );
+        let side_by_side =
+            check_width + spacing.item_spacing.x + button_width <= ui.available_width();
+        let row = egui::vec2(ui.available_width(), theme::size::CONTROL);
+        if side_by_side {
+            ui.allocate_ui_with_layout(
+                row,
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| {
+                    self.generate_button(ui, session, options, c, source, reason);
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        self.delete_current_checkbox(ui, c);
+                    });
+                },
+            );
+        } else {
+            // Too narrow for both: the primary button keeps the bottom row and the checkbox
+            // sits above it with its label free to wrap, so the two never overlap.
+            ui.allocate_ui_with_layout(
+                row,
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| self.generate_button(ui, session, options, c, source, reason),
+            );
+            ui.add_space(theme::space::SM);
+            self.delete_current_checkbox(ui, c);
+        }
+    }
+    fn delete_current_checkbox(&mut self, ui: &mut egui::Ui, c: &mut Controls) {
+        let r = ui.checkbox(&mut self.delete_current, c.tr(Text::SubDeleteCurrent));
+        c.remember("subtitles.delete_current", &r);
+    }
+    fn generate_button(
+        &mut self,
+        ui: &mut egui::Ui,
+        session: &mut Session,
+        options: &mut Options,
+        c: &mut Controls,
+        source: Option<ItemId>,
+        reason: Option<Text>,
+    ) {
+        let r = ui.add_enabled(
+            reason.is_none(),
+            egui::Button::new(c.tr(Text::SubGenerate))
+                .min_size(egui::vec2(0.0, theme::size::CONTROL)),
+        );
+        let r = match reason {
+            Some(text) => r.on_disabled_hover_text(c.tr(text)),
+            None => r,
+        };
+        c.remember("subtitles.generate", &r);
+        if r.clicked()
+            && let Some(source) = source
+        {
+            let result = self
+                .flush_drafts(session)
+                .and_then(|_| self.generate(session, source, options));
+            self.ui_result(result);
+        }
     }
     /// Add captions: manual entry (a new caption item at the playhead, then cues typed into
     /// it) and file import. Edits to existing cues stay in the cue list below.

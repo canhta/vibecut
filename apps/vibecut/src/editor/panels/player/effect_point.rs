@@ -103,6 +103,17 @@ fn handles(
     found
 }
 
+/// Whether point handles are drawn for the item. They then replace the transform box, so
+/// only one gizmo set (and one rotation grip) is on the canvas.
+pub(super) fn active(
+    cx: &Context<'_>,
+    item: ItemId,
+    geometry: &ItemGeometry,
+    viewport: &Viewport,
+) -> bool {
+    !handles(cx, item, geometry, viewport).is_empty()
+}
+
 /// The frame fraction under a screen point, clamped to the frame the model admits.
 fn fraction(geometry: &ItemGeometry, viewport: &Viewport, screen: Pos2) -> Option<[f64; 2]> {
     let bounds = geometry.bounds();
