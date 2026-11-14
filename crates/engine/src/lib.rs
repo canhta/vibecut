@@ -31,6 +31,7 @@ pub use runtime::{
 };
 pub use runtime::{
     BudgetSnapshot, ByteBudget, ByteBudgetHooks, ByteLease, ByteOwner, Error as RuntimeError,
+    HostMemory, MemoryProbe, SystemMemory, host_budget_limit,
 };
 mod store;
 pub use store::library;

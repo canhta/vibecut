@@ -56,7 +56,10 @@ impl Workspace {
         preferences: Preferences,
         path: Option<PathBuf>,
     ) -> Result<Self> {
-        let budget = ByteBudget::new(preferences.cache_limit_bytes)?;
+        let budget = match preferences.cache_limit_bytes {
+            Some(bytes) => ByteBudget::new(bytes)?,
+            None => ByteBudget::for_host(&engine::SystemMemory)?,
+        };
         let persistence = ByteBudget::new(256 << 20)?;
         let lending = Lending::open(&root, &budget);
         let corrections = lending.footage();

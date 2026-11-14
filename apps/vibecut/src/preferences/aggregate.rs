@@ -1,8 +1,7 @@
 //! The versioned preference document composed from its feature-owned sections.
 
 use super::performance::{
-    DEFAULT_CACHE_LIMIT, DEFAULT_PROJECT_FPS, HardwareAcceleration, validate_cache_limit,
-    validate_project_fps,
+    DEFAULT_PROJECT_FPS, HardwareAcceleration, validate_cache_limit, validate_project_fps,
 };
 use super::{
     AdjustmentPreset, CatalogFavorites, EasingPreferences, FontPickerPreferences, WindowGeometry,
@@ -175,8 +174,9 @@ pub struct Preferences {
     pub default_fps: u32,
     /// Hardware decode/encode choice; applies after the next start.
     pub hardware_acceleration: HardwareAcceleration,
-    /// Aggregate byte budget for frames, compositor, export and cache; applies after the next start.
-    pub cache_limit_bytes: u64,
+    /// Aggregate byte budget for frames, compositor, export and cache; `None` sizes it from the
+    /// host memory ([`engine::host_budget_limit`]). Applies after the next start.
+    pub cache_limit_bytes: Option<u64>,
     /// The preview guide the picker selected; drawn by the app, never exported.
     pub preview_guide: Guide,
     /// Visibility of each preview overlay; presentation only.
@@ -218,7 +218,7 @@ impl Default for Preferences {
             easing: EasingPreferences::default(),
             default_fps: DEFAULT_PROJECT_FPS,
             hardware_acceleration: HardwareAcceleration::default(),
-            cache_limit_bytes: DEFAULT_CACHE_LIMIT,
+            cache_limit_bytes: None,
             preview_guide: Guide::default(),
             preview_overlays: OverlayVisibility::default(),
             preview_lines: GuideLines::default(),
@@ -279,7 +279,9 @@ impl Preferences {
         self.catalog_favorites.validate()?;
         self.easing.validate()?;
         validate_project_fps(self.default_fps)?;
-        validate_cache_limit(self.cache_limit_bytes)?;
+        if let Some(bytes) = self.cache_limit_bytes {
+            validate_cache_limit(bytes)?;
+        }
         self.preview_guide.validate()?;
         self.preview_lines.validate()?;
         if serde_json::to_vec(self)?.len() as u64 > MAX_PREFERENCES_BYTES {

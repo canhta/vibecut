@@ -13,8 +13,6 @@ pub use crate::services::lifecycle::DEFAULT_PROJECT_FPS;
 pub const MIN_CACHE_LIMIT: u64 = 256 << 20;
 /// Largest aggregate cache budget the settings dialog accepts.
 pub const MAX_CACHE_LIMIT: u64 = 8 << 30;
-/// The aggregate budget the app already runs with.
-pub const DEFAULT_CACHE_LIMIT: u64 = 768 << 20;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]

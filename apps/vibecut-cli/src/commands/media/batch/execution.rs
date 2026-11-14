@@ -257,7 +257,7 @@ mod tests {
             projects,
         };
         let result = execute(
-            &Context::default(),
+            &Context,
             batch,
             |runner, key, project, range, settings, path| {
                 let (id, token) =

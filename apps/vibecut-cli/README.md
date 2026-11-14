@@ -30,7 +30,7 @@ The [CLI contract](../../docs/product/agent-control/cli.md) owns syntax, support
 
 ## Limits
 
-Each process starts with a 2 GiB memory setting through `Context::budget`; every job keeps its own engine budget. Bounded batch job files, control frames and MCP frames use the engine limits. The MCP subcommand's queue, connection and deadline bounds belong to the [MCP crate](../../crates/mcp/README.md#limits).
+Each process opens the [host-sized budget](../../crates/engine/src/runtime/README.md#host-sized-default-budget) through `Context::budget`; every job keeps its own engine budget. Bounded batch job files, control frames and MCP frames use the engine limits. The MCP subcommand's queue, connection and deadline bounds belong to the [MCP crate](../../crates/mcp/README.md#limits).
 
 ## Tests
 

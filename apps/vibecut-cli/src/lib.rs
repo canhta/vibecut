@@ -10,5 +10,5 @@ pub use output::Output;
 use std::ffi::OsString;
 
 pub fn run(args: Vec<OsString>) -> Result<Output, CliError> {
-    commands::run(&session::Context::default(), args)
+    commands::run(&session::Context, args)
 }

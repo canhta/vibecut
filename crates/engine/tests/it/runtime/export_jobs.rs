@@ -1190,6 +1190,12 @@ impl render::ExecutionHooks for Recording<'_> {
 /// Exports `layers` stacked full-canvas clips of a `width`x`height` source through the
 /// 1 GiB desktop project scope; prints every declared lease and the declared peak.
 fn export_fits_desktop_budget(name: &str, layers: u64, width: u32, height: u32) {
+    export_within(name, layers, width, height, 1 << 30);
+}
+
+/// The same export inside a project scope of `limit` bytes; prints the encoder threads the
+/// export took (the Export lease that matches `video_encode_bytes` for 1..=8 threads).
+fn export_within(name: &str, layers: u64, width: u32, height: u32, limit: u64) {
     let size = format!("testsrc2=s={width}x{height}:r=30:d=0.3");
     let Some(source) = testkit::oracle::generate(
         &testkit::fixture::dir("export-budget"),
@@ -1270,7 +1276,7 @@ fn export_fits_desktop_budget(name: &str, layers: u64, width: u32, height: u32) 
     });
     let p = project::Project::new(data).unwrap();
     let dir = tempfile::tempdir().unwrap();
-    let budget = ByteBudget::new(1 << 30).unwrap().project_scope().unwrap();
+    let budget = ByteBudget::new(limit).unwrap().project_scope().unwrap();
     let hooks = Recording {
         inner: engine::ByteBudgetHooks::new(&budget, None),
         budget: budget.clone(),
@@ -1294,9 +1300,17 @@ fn export_fits_desktop_budget(name: &str, layers: u64, width: u32, height: u32) 
     }
     let peak = hooks.peak.load(Ordering::Relaxed);
     eprintln!(
-        "{name}: {layers} layer(s) at {width}x{height}, declared peak {} MiB of 1024",
-        peak >> 20
+        "{name}: {layers} layer(s) at {width}x{height}, declared peak {} MiB of {}",
+        peak >> 20,
+        limit >> 20
     );
+    let threads = hooks.log.lock().unwrap().iter().find_map(|(kind, bytes)| {
+        (1..=8).find(|t| {
+            matches!(kind, render::MemoryKind::Export)
+                && media::video_encode_bytes(width, height, *t, *t) == *bytes
+        })
+    });
+    eprintln!("  encoder threads: {threads:?}");
     for ((kind, bytes), (count, total)) in breakdown {
         eprintln!(
             "  {kind:<10} {:>8.2} MiB x{count:<3} = {:>8.2} MiB",
@@ -1306,7 +1320,7 @@ fn export_fits_desktop_budget(name: &str, layers: u64, width: u32, height: u32) 
     }
     result.unwrap();
     assert!(dir.path().join("out.mp4").exists());
-    assert!(peak <= 1 << 30);
+    assert!(peak as u64 <= limit);
 }
 
 #[test]
@@ -1317,6 +1331,12 @@ fn five_layer_1080p_export_fits_the_desktop_project_budget() {
 #[test]
 fn single_layer_4k_export_fits_the_desktop_project_budget() {
     export_fits_desktop_budget("single layer 4k", 1, 3840, 2160);
+}
+
+#[test]
+fn single_layer_4k_export_fits_the_host_sized_budget() {
+    let limit = engine::host_budget_limit(&engine::SystemMemory);
+    export_within("single layer 4k host", 1, 3840, 2160, limit);
 }
 
 #[test]

@@ -726,7 +726,7 @@ mod tests {
             portrait: None,
             overwrite: false,
         };
-        let runner = || cli_runner(Context::default().budget().unwrap()).unwrap();
+        let runner = || cli_runner(Context.budget().unwrap()).unwrap();
 
         let (denied, _) = access(root.path(), &calls, Arc::new(DenyUploads));
         assert!(execute(&plan("refused.srt", false), &denied, runner()).is_err());
