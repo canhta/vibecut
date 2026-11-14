@@ -18,9 +18,9 @@ pub use adjustment::{
     validate_adjustment_presets,
 };
 pub use aggregate::{
-    DEFAULT_PANELS, MAX_PREFERENCES_BYTES, MAX_SECTIONS, MAX_TIMELINE_LANES, PANEL_MAX, PANEL_MIN,
-    PREFERENCE_KEYS, PREFERENCES_VERSION, PREVIEW_MAX, PREVIEW_MIN, Preferences, TIMELINE_MAX,
-    TIMELINE_MIN, drag_panel, validate_panels,
+    DEFAULT_PANELS, MAX_PREFERENCES_BYTES, MAX_SECTIONS, MAX_TIMELINE_LANES, MEDIA_MIN_PX,
+    PLAYER_MIN_PX, PREFERENCE_KEYS, PREFERENCES_VERSION, PROPERTIES_MIN_PX, Preferences,
+    TIMELINE_MAX, TIMELINE_MIN, column_widths, drag_panel, validate_panels,
 };
 pub use easing::{EasingPreferences, EasingTab, MAX_SAVED_EASINGS, SavedEasing};
 pub use favorites::{

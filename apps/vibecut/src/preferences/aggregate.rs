@@ -29,24 +29,24 @@ pub const MAX_TIMELINE_LANES: usize = 4096;
 
 pub const MAX_SECTIONS: usize = 128;
 
-/// Splitter bounds are fractions of the full content rectangle. The two side
-/// panels plus the preview always fill the upper row, so their limits imply the
-/// preview's 30–85% range (side panels keep at least 15% each).
-pub const PANEL_MIN: f32 = 0.15;
-pub const PANEL_MAX: f32 = 0.40;
-pub const PREVIEW_MIN: f32 = 0.30;
-pub const PREVIEW_MAX: f32 = 0.85;
+/// Column minimums in logical px, measured from CapCut 9.7.1 (capture
+/// 2026-11-14c): identical at 1840 x 1142 and at the 1268 x 650 minimum window.
+/// A column's maximum is what the other two leave at their minimums.
+pub const MEDIA_MIN_PX: f32 = 398.0;
+pub const PLAYER_MIN_PX: f32 = 398.0;
+pub const PROPERTIES_MIN_PX: f32 = 368.0;
 // Timeline limits from CapCut 9.7.1 frames 111948 (one track row, 408 native px of a
 // 2182 px row height, 204 pt) and 111942 (full height, 1670 px, 835 pt), sampled at
 // native resolution (logical = px / 2). Row height is 1091 pt at 1840 x 1142.
 pub const TIMELINE_MIN: f32 = 0.187;
 pub const TIMELINE_MAX: f32 = 0.765;
 // Widths exclude both gutters; row fractions include the area-owned strips.
-/// Restored layout at 1840 x 1142 (frame 112001, byte-identical to 112003), sampled at
-/// native resolution: media 796 px (398 pt, x 18-813), player x 828-2885, properties
-/// 762 px (381 pt, x 2900-3661). Columns are 1809 pt (layout.rs: 1823 pt body minus two
-/// 7 pt gutters). Timeline 498 pt of 1091 pt (frame 112001, x=300 scan), i.e. 447 / 979.
-pub const DEFAULT_PANELS: [f32; 3] = [398.0 / 1809.0, 381.0 / 1809.0, 447.0 / 979.0];
+/// First open at 1840 x 1142 (capture 2026-11-14c): media 398, player 1031, properties
+/// 379 pt of 1809 pt columns (layout.rs: 1823 pt body minus two 7 pt gutters). Side
+/// columns are stored as fractions of the columns so a resize scales them
+/// proportionally; `column_widths` applies the pixel minimums. Timeline 498 pt of
+/// 1091 pt (frame 112001, x=300 scan), i.e. 447 / 979.
+pub const DEFAULT_PANELS: [f32; 3] = [398.0 / 1809.0, 379.0 / 1809.0, 447.0 / 979.0];
 
 /// Every user-visible preference key in the one versioned document.
 pub const PREFERENCE_KEYS: &[&str] = &[
@@ -81,22 +81,53 @@ pub const PREFERENCE_KEYS: &[&str] = &[
     "preview_overlays",
 ];
 
-/// A splitter drag that keeps every region non-empty and inside its limits.
-pub fn drag_panel(panels: [f32; 3], axis: usize, delta: f32) -> [f32; 3] {
+/// Media, player and properties widths in px for `columns` px of room: the stored
+/// fractions scaled to the window, each side column held at its pixel minimum and
+/// at most what the other two leave at theirs. The player takes the rest.
+pub fn column_widths(panels: [f32; 3], columns: f32) -> [f32; 3] {
+    let columns = columns.max(0.0);
+    let floor = MEDIA_MIN_PX + PLAYER_MIN_PX + PROPERTIES_MIN_PX;
+    if columns < floor {
+        let scale = columns / floor;
+        let media = MEDIA_MIN_PX * scale;
+        let properties = PROPERTIES_MIN_PX * scale;
+        return [media, columns - media - properties, properties];
+    }
+    let media =
+        (panels[0] * columns).clamp(MEDIA_MIN_PX, columns - PLAYER_MIN_PX - PROPERTIES_MIN_PX);
+    let properties =
+        (panels[1] * columns).clamp(PROPERTIES_MIN_PX, columns - PLAYER_MIN_PX - media);
+    [media, columns - media - properties, properties]
+}
+
+/// A splitter drag, `delta` as a fraction of the columns (axes 0, 1) or of the
+/// lower row (axis 2), that keeps every region inside its limits. `columns` is the
+/// px room the side columns and player share.
+pub fn drag_panel(panels: [f32; 3], axis: usize, delta: f32, columns: f32) -> [f32; 3] {
     let Ok(mut next) = validate_panels(panels) else {
         return DEFAULT_PANELS;
     };
     if !delta.is_finite() {
         return next;
     }
+    let floor = MEDIA_MIN_PX + PLAYER_MIN_PX + PROPERTIES_MIN_PX;
+    if axis < 2 && !(columns.is_finite() && columns >= floor) {
+        return next;
+    }
     match axis {
         0 => {
-            let max = PANEL_MAX.min(1.0 - PREVIEW_MIN - next[1]);
-            next[0] = (next[0] + delta).clamp(PANEL_MIN, max);
+            let [media, _, properties] = column_widths(next, columns);
+            let lo = MEDIA_MIN_PX / columns;
+            let hi = ((columns - PLAYER_MIN_PX - properties) / columns).max(lo);
+            next[0] = (media / columns + delta).clamp(lo, hi);
+            next[1] = properties / columns;
         }
         1 => {
-            let max = PANEL_MAX.min(1.0 - PREVIEW_MIN - next[0]);
-            next[1] = (next[1] - delta).clamp(PANEL_MIN, max);
+            let [media, _, properties] = column_widths(next, columns);
+            let lo = PROPERTIES_MIN_PX / columns;
+            let hi = ((columns - PLAYER_MIN_PX - media) / columns).max(lo);
+            next[1] = (properties / columns - delta).clamp(lo, hi);
+            next[0] = media / columns;
         }
         2 => next[2] = (next[2] - delta).clamp(TIMELINE_MIN, TIMELINE_MAX),
         _ => return next,
@@ -104,16 +135,16 @@ pub fn drag_panel(panels: [f32; 3], axis: usize, delta: f32) -> [f32; 3] {
     next
 }
 
+/// Fractions are finite and leave room for the player; the pixel minimums apply at
+/// layout time (`column_widths`), where the window width is known.
 pub fn validate_panels(panels: [f32; 3]) -> Result<[f32; 3]> {
     if panels.iter().any(|value| !value.is_finite()) {
         return Err(Error::Invalid("panel ratios"));
     }
     let [assets, properties, timeline] = panels;
-    let preview = 1.0 - assets - properties;
-    if !(PANEL_MIN..=PANEL_MAX).contains(&assets)
-        || !(PANEL_MIN..=PANEL_MAX).contains(&properties)
-        // Subtracting both side ratios can round one ULP below the limit.
-        || !((PREVIEW_MIN - f32::EPSILON)..=PREVIEW_MAX).contains(&preview)
+    if assets <= 0.0
+        || properties <= 0.0
+        || assets + properties >= 1.0
         || !(TIMELINE_MIN..=TIMELINE_MAX).contains(&timeline)
     {
         return Err(Error::Invalid("panel ratios"));

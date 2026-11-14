@@ -132,13 +132,19 @@ mod tests {
     use crate::i18n::Locale;
     use crate::preferences::{EasingTab, FontTab, SavedEasing};
     use crate::preferences::{
-        PANEL_MAX, PANEL_MIN, PREFERENCE_KEYS, PREVIEW_MAX, PREVIEW_MIN, TIMELINE_MAX,
-        TIMELINE_MIN, WindowGeometry, drag_panel,
+        MEDIA_MIN_PX, PLAYER_MIN_PX, PREFERENCE_KEYS, PROPERTIES_MIN_PX, TIMELINE_MAX,
+        TIMELINE_MIN, WindowGeometry, column_widths, drag_panel,
     };
     use std::collections::BTreeSet;
 
-    fn valid_preview(panels: [f32; 3]) -> bool {
-        (PREVIEW_MIN..=PREVIEW_MAX).contains(&(1.0 - panels[0] - panels[1]))
+    /// Column widths in px at `columns` of room, rounded for exact comparison.
+    fn px(panels: [f32; 3], columns: f32) -> [f32; 3] {
+        column_widths(panels, columns).map(f32::round)
+    }
+
+    /// Widths after a drag of `delta` (a fraction of the columns).
+    fn dragged(panels: [f32; 3], axis: usize, delta: f32, columns: f32) -> [f32; 3] {
+        px(drag_panel(panels, axis, delta, columns), columns)
     }
 
     /// A complete version-8 document as the app writes it, including the font
@@ -164,35 +170,49 @@ mod tests {
         assert_eq!(crate::preferences::WINDOW_MIN, [1268.0, 650.0]);
         // Measured pixel rows at 1840 x 1142: 1809 pt columns, 1091 pt timeline row.
         assert_eq!((start[0] * 1809.0).round(), 398.0);
-        assert_eq!((start[1] * 1809.0).round(), 381.0);
+        assert_eq!((start[1] * 1809.0).round(), 379.0);
         assert_eq!((start[2] * 1091.0).round(), 498.0);
-        let timeline_one_row = drag_panel(start, 2, 10.0);
+        // Column minimums in px; first open 398 / 1032 / 379 at 1809 pt of columns.
+        assert_eq!(
+            [MEDIA_MIN_PX, PLAYER_MIN_PX, PROPERTIES_MIN_PX],
+            [398.0, 398.0, 368.0]
+        );
+        assert_eq!(px(start, 1809.0), [398.0, 1032.0, 379.0]);
+        // Resize rule: proportional, never below the minimums. At the minimum window
+        // the stored fractions would give 272 / 259 pt; the minimums hold instead.
+        assert_eq!(px(start, 1236.0), [398.0, 470.0, 368.0]);
+        let reset_small = [398.0 / 1236.0, 368.0 / 1236.0, start[2]];
+        assert_eq!(px(reset_small, 1236.0), [398.0, 470.0, 368.0]);
+        assert_eq!(px(reset_small, 1809.0), [583.0, 688.0, 539.0]);
+        let narrow = column_widths(start, 1000.0);
+        assert!((narrow.iter().sum::<f32>() - 1000.0).abs() < 0.01);
+        // Drag clamps: media max leaves the player and properties at theirs.
+        assert_eq!(dragged(start, 0, 10.0, 1809.0), [1032.0, 398.0, 379.0]);
+        assert_eq!(dragged(start, 0, -10.0, 1809.0), [398.0, 1032.0, 379.0]);
+        assert_eq!(dragged(start, 1, -10.0, 1809.0), [398.0, 398.0, 1013.0]);
+        assert_eq!(dragged(start, 1, 10.0, 1809.0), [398.0, 1043.0, 368.0]);
+        // At the minimum window the divider has no room: media 398, player 470, properties 368.
+        assert_eq!(
+            dragged(reset_small, 0, -10.0, 1236.0),
+            [398.0, 470.0, 368.0]
+        );
+        assert_eq!(dragged(reset_small, 0, 10.0, 1236.0), [470.0, 398.0, 368.0]);
+        assert_eq!(
+            dragged(reset_small, 1, -10.0, 1236.0),
+            [398.0, 398.0, 440.0]
+        );
+        // Below the three minimums a column drag does nothing.
+        assert_eq!(drag_panel(start, 0, 0.1, 1000.0), start);
+        let timeline_one_row = drag_panel(start, 2, 10.0, 1809.0);
         assert_eq!(timeline_one_row[2], TIMELINE_MIN);
         assert_eq!((TIMELINE_MIN * 1091.0).round(), 204.0);
-        let timeline_full = drag_panel(start, 2, -10.0);
+        let timeline_full = drag_panel(start, 2, -10.0, 1809.0);
         assert_eq!(timeline_full[2], TIMELINE_MAX);
         assert_eq!((TIMELINE_MAX * 1091.0).round(), 835.0);
-        let far_right = drag_panel(start, 0, 10.0);
-        assert_eq!(far_right[0], PANEL_MAX);
-        assert!(valid_preview(far_right));
-        let far_left = drag_panel(start, 0, -10.0);
-        assert_eq!(far_left[0], PANEL_MIN);
-        assert!(valid_preview(far_left));
-        let inspector_narrow = drag_panel(start, 1, 10.0);
-        assert_eq!(inspector_narrow[1], PANEL_MIN);
-        let inspector_wide = drag_panel(start, 1, -10.0);
-        assert_eq!(
-            inspector_wide[1],
-            PANEL_MAX.min(1.0 - PREVIEW_MIN - start[0])
-        );
-        assert!(valid_preview(inspector_wide));
-        let timeline_high = drag_panel(start, 2, -10.0);
-        assert_eq!(timeline_high[2], TIMELINE_MAX);
-        let timeline_low = drag_panel(start, 2, 10.0);
-        assert_eq!(timeline_low[2], TIMELINE_MIN);
-        assert_eq!(drag_panel(start, 7, 0.1), start);
-        assert_eq!(drag_panel(start, 0, f32::NAN), start);
-        assert!(validate_panels([0.40, 0.40, 0.50]).is_err());
+        assert_eq!(drag_panel(start, 7, 0.1, 1809.0), start);
+        assert_eq!(drag_panel(start, 0, f32::NAN, 1809.0), start);
+        assert!(validate_panels([0.60, 0.40, 0.50]).is_err());
+        assert!(validate_panels([0.0, 0.25, 0.50]).is_err());
         assert!(validate_panels([f32::NAN, 0.25, 0.50]).is_err());
         assert!(validate_panels([0.25, 0.25, 0.80]).is_err());
     }
@@ -640,16 +660,23 @@ mod tests {
 
     #[test]
     fn repeated_splitter_drags_always_produce_valid_preferences() {
-        // Unequal side panels expose subtraction round-off at the preview minimum.
-        let boundary = drag_panel([0.37875625, 0.25, 0.5], 1, -10.0);
-        assert!(validate_panels(boundary).is_ok(), "{boundary:?}");
-        for first in [0, 1] {
-            let mut panels =
-                drag_panel(DEFAULT_PANELS, first, if first == 0 { 10.0 } else { -10.0 });
-            for axis in [1 - first, first, 2, 0, 1] {
-                for delta in [-10.0, 0.00001, 10.0, -0.00001] {
-                    panels = drag_panel(panels, axis, delta);
-                    assert!(validate_panels(panels).is_ok(), "{panels:?}");
+        for columns in [1236.0, 1809.0] {
+            for first in [0, 1] {
+                let mut panels = drag_panel(
+                    DEFAULT_PANELS,
+                    first,
+                    if first == 0 { 10.0 } else { -10.0 },
+                    columns,
+                );
+                for axis in [1 - first, first, 2, 0, 1] {
+                    for delta in [-10.0, 0.00001, 10.0, -0.00001] {
+                        panels = drag_panel(panels, axis, delta, columns);
+                        assert!(validate_panels(panels).is_ok(), "{panels:?}");
+                        let [media, player, properties] = column_widths(panels, columns);
+                        assert!(media >= MEDIA_MIN_PX - 0.01, "{media}");
+                        assert!(player >= PLAYER_MIN_PX - 0.01, "{player}");
+                        assert!(properties >= PROPERTIES_MIN_PX - 0.01, "{properties}");
+                    }
                 }
             }
         }
