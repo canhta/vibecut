@@ -61,8 +61,8 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | TL-43 | Compound clip | Missing | — | 14b/110011 | |
 | TL-44 | Undo compound clip | Missing | — | 14b/110530 | |
 | TL-45 | Multi-camera clip | Missing | — | 14b/110011 | Disabled in reference |
-| TL-46 | Deactivate clip | Partial | Proposed | 14b/110011 | Hide item, no V key |
-| TL-47 | Trim clip | Missing | — | 14/095625 | |
+| TL-46 | Deactivate clip | Partial | Proposed | 14b/110011 | Hide item, `V` key; audio clips use mute |
+| TL-47 | Trim clip | Partial | Proposed | 14/095625; [ui/editor.md](../ui/editor.md#timeline-keys) | Row trims to in/out range; reference row never enabled |
 | TL-48 | Replace clip | Done | Proposed | 14/095625 | |
 | TL-49 | Copy, cut, paste | Done | Proposed | 14b/110011 | Clip menu Copy and Cut, reference order |
 | TL-50 | Copy / paste attributes | Done | Proposed | 14b/110011 | Clip menu rows, same actions |
@@ -75,9 +75,9 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | TL-57 | Select leftward / rightward | Done | Proposed | 14b/110530 | |
 | TL-58 | Select by clip, Deselect | Partial | Not captured | 14b/103135 | |
 | TL-59 | In / out points | Done | Proposed | 14b/110530 | |
-| TL-60 | Last / next cut point | Missing | — | 14b/110530 | |
-| TL-61 | Volume ±0.1 dB keys | Missing | — | 14b/110530 | |
-| TL-62 | Speed panel keys | Missing | — | 14b/110530 | |
+| TL-60 | Last / next cut point | Done | Proposed | 14b/110530; [ui/editor.md](../ui/editor.md#timeline-keys) | Cut point = main-track clip edge, ours |
+| TL-61 | Volume ±0.1 dB keys | Done | — | 14b/110530; [ui/editor.md](../ui/editor.md#timeline-keys) | `Ctrl+.` and `Ctrl+,`; keyed volume writes a key |
+| TL-62 | Speed panel keys | Done | Proposed | 14b/110530; [ui/editor.md](../ui/editor.md#timeline-keys) | `Ctrl+R` Standard, `Shift+B` Curve; curve result not captured |
 | TL-63 | Show variable speed animation | Missing | — | 14b/103312 | |
 | TL-64 | Fade handles, volume line | Ours | Proposed | | |
 
@@ -97,7 +97,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | ID | Item | Function | UI/UX | Evidence | Gap / note |
 |---|---|---|---|---|---|
 | TL-73 | Add marker | Done | Proposed | 14b/110530 | |
-| TL-74 | Marker with new colour | Missing | — | 14b/110530 | |
+| TL-74 | Marker with new colour | Done | Proposed | 14b/110530; [ui/editor.md](../ui/editor.md#timeline-keys) | Colour choice ours (next unused swatch) |
 | TL-75 | Next / previous marker | Done | Proposed | 14b/110530 | |
 | TL-76 | Marker editor popover | Ours | Proposed | | |
 | TL-77 | Snap indicator | Done | Proposed | 14b/103040 | |

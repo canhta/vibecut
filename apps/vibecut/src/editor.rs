@@ -95,6 +95,13 @@ impl Editor {
     pub fn open_color_picker(&mut self, target: ColorTarget) -> Result<()> {
         self.with_properties(|state, port| state.open_color_picker(port, target))
     }
+    /// Open the Speed tab of the one selected clip, on its Standard or Curve view.
+    pub(in crate::editor) fn show_speed_panel(&mut self, curve: bool) -> Result<()> {
+        let item = self
+            .speed_panel_target()
+            .ok_or(Error::Invalid("speed panel target"))?;
+        self.with_properties(|state, port| state.show_speed(port, item, curve))
+    }
     /// The inspector and automation use the same registered atomic field edit.
     pub fn set_shared_field(&mut self, field: &str, value: &str) -> Result<()> {
         self.with_properties(|_, port| properties::set_shared_field(port, field, value))

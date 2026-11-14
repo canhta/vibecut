@@ -263,6 +263,28 @@ pub(super) fn timeline_group(
     Ok(app)
 }
 
+/// The clip menu over a selected clip with an in/out range set: Trim clip is enabled and
+/// Hide shows its `V` chord.
+pub(super) fn timeline_clip_menu(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let (mut editor, item) = media_editor(theme, Locale::En)?;
+    for (seconds, mark) in [(1, "export.mark_in"), (4, "export.mark_out")] {
+        let project = editor.session.project().clone();
+        editor
+            .playback
+            .seek(Tick(seconds * SECOND), false, project)?;
+        editor.activate(mark)?;
+    }
+    editor.select([item].into())?;
+    let mut app = app_editor(editor, scale);
+    wait_for_presented(&mut app)?;
+    app.run_steps(3);
+    let id = format!("timeline.item.{}", item.0);
+    app.get(By::new().predicate(move |node| node.author_id() == Some(id.as_str())))
+        .click_secondary();
+    app.run_steps(3);
+    Ok(app)
+}
+
 // New bottom-corner design: the reference captures only panel duration fields.
 pub(super) fn timeline_fades(theme: Theme, scale: f32, state: &str) -> Result<AppHarness, Failure> {
     let locale = if state == "menu" {

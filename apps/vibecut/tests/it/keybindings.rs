@@ -1218,7 +1218,7 @@ fn reference_default_chords_run_their_actions_through_the_keymap() {
     let command = egui::Modifiers::COMMAND;
     let alt_shift = egui::Modifiers::ALT.plus(egui::Modifiers::SHIFT);
     type Chords<'a> = &'a [(egui::Modifiers, egui::Key, &'a str)];
-    let groups: [(&str, Chords); 10] = [
+    let groups: [(&str, Chords); 11] = [
         (
             "extract audio",
             &[(
@@ -1282,6 +1282,31 @@ fn reference_default_chords_run_their_actions_through_the_keymap() {
             &[(egui::Modifiers::SHIFT, egui::Key::Z, "timeline.zoom_fit")],
         ),
         ("new project", &[(command, egui::Key::N, "project.create")]),
+        (
+            "cut points, marker colour, speed, volume, activate",
+            &[
+                (
+                    egui::Modifiers::NONE,
+                    egui::Key::ArrowDown,
+                    "playback.jump_cut.next",
+                ),
+                (
+                    egui::Modifiers::NONE,
+                    egui::Key::ArrowUp,
+                    "playback.jump_cut.previous",
+                ),
+                (egui::Modifiers::NONE, egui::Key::V, "timeline.set_hidden"),
+                (
+                    egui::Modifiers::ALT,
+                    egui::Key::M,
+                    "timeline.bookmark_new_color",
+                ),
+                (command, egui::Key::R, "timeline.speed_panel"),
+                (egui::Modifiers::SHIFT, egui::Key::B, "timeline.speed_curve"),
+                (command, egui::Key::Period, "timeline.volume_up"),
+                (command, egui::Key::Comma, "timeline.volume_down"),
+            ],
+        ),
     ];
     for (group, chords) in groups {
         for &(modifiers, key, action) in chords {
@@ -1365,4 +1390,360 @@ fn magnet_zoom_fit_and_new_project_chords_run_their_actions() {
         harness.state_mut().take_lifecycle_action(),
         Some(vibecut::services::lifecycle::EditorAction::CreateProject)
     );
+}
+
+fn clip_ids(editor: &Editor) -> Vec<project::ItemId> {
+    editor
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .map(|item| item.id)
+        .collect()
+}
+
+fn clip(editor: &Editor, id: project::ItemId) -> project::Item {
+    editor
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| item.id == id)
+        .unwrap()
+        .clone()
+}
+
+fn audio_clip(editor: &Editor) -> project::ItemId {
+    clip_ids(editor)
+        .into_iter()
+        .find(|id| matches!(clip(editor, *id).content, project::ItemParams::Audio(_)))
+        .unwrap()
+}
+
+fn volume(editor: &Editor, id: project::ItemId) -> f32 {
+    match clip(editor, id).content {
+        project::ItemParams::Audio(params) => params.volume,
+        _ => panic!("audio clip"),
+    }
+}
+
+#[test]
+fn cut_point_keys_seek_between_main_track_clip_edges_and_stop_at_the_ends() {
+    let fixture = fixture();
+    let (video_a, video_b) = (fixture.video_a, fixture.video_b);
+    let mut editor = fixture.editor;
+    let main = editor.session.project().data().scene().timeline.main.id;
+    for (item, start) in [(video_a, Tick::ZERO), (video_b, Tick(6 * SECOND))] {
+        editor
+            .session
+            .apply(Command::MoveItem {
+                item,
+                track: main,
+                start,
+            })
+            .unwrap();
+    }
+    editor
+        .playback
+        .seek(Tick(SECOND), false, editor.session.project().clone())
+        .unwrap();
+    let project = editor.session.project().clone();
+    let history = editor.session.history_len();
+    let mut harness = harness(editor);
+    harness.run_steps(3);
+    // Cut points are the starts and ends of main-track clips: 0, 6 s and 10 s.
+    for (key, seconds) in [
+        (egui::Key::ArrowDown, 6),
+        (egui::Key::ArrowDown, 10),
+        (egui::Key::ArrowDown, 10),
+        (egui::Key::ArrowUp, 6),
+        (egui::Key::ArrowUp, 0),
+        (egui::Key::ArrowUp, 0),
+    ] {
+        harness.key_press(key);
+        harness.run_steps(2);
+        assert_eq!(
+            harness.state().playback.position().unwrap(),
+            Tick(seconds * SECOND),
+            "{key:?}"
+        );
+    }
+    assert!(!harness.state().action_enabled("playback.jump_cut.previous"));
+    assert!(harness.state().action_enabled("playback.jump_cut.next"));
+    assert_eq!(harness.state().session.project(), &project);
+    assert_eq!(harness.state().session.history_len(), history);
+}
+
+#[test]
+fn v_key_hides_and_shows_the_selected_clip_as_one_undo_step_each() {
+    let fixture = fixture();
+    let id = fixture.video_a;
+    let mut editor = fixture.editor;
+    editor.select([id].into()).unwrap();
+    let mut harness = harness(editor);
+    harness.run_steps(3);
+    let history = harness.state().session.history_len().0;
+
+    harness.key_press(egui::Key::V);
+    harness.run_steps(2);
+    assert!(clip(harness.state(), id).hidden);
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    harness.key_press(egui::Key::V);
+    harness.run_steps(2);
+    assert!(!clip(harness.state(), id).hidden);
+    assert_eq!(harness.state().session.history_len().0, history + 2);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    harness.run_steps(2);
+    assert!(clip(harness.state(), id).hidden);
+}
+
+#[test]
+fn volume_keys_move_the_selected_audio_clip_by_a_tenth_of_a_decibel_within_the_range() {
+    let fixture = fixture();
+    let mut editor = fixture.editor;
+    let audio = audio_clip(&editor);
+    editor.select([audio].into()).unwrap();
+    assert_eq!(volume(&editor, audio), 0.0);
+    let mut harness = harness(editor);
+    harness.run_steps(3);
+    let history = harness.state().session.history_len().0;
+
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Comma);
+    harness.run_steps(2);
+    assert_eq!(volume(harness.state(), audio), -0.1);
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    for _ in 0..2 {
+        harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Period);
+        harness.run_steps(2);
+    }
+    assert_eq!(volume(harness.state(), audio), 0.1);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    harness.run_steps(2);
+    assert_eq!(volume(harness.state(), audio), 0.0);
+
+    // The ends of the range stop the step and leave the action disabled.
+    for (limit, action) in [
+        (20.0, "timeline.volume_up"),
+        (-60.0, "timeline.volume_down"),
+    ] {
+        harness
+            .state_mut()
+            .session
+            .apply(Command::SetItemField {
+                item: audio,
+                patch: engine::ItemParamPatch::AudioGain(limit),
+            })
+            .unwrap();
+        let history = harness.state().session.history_len();
+        assert!(!harness.state().action_enabled(action), "{action}");
+        assert!(harness.state_mut().activate(action).is_err(), "{action}");
+        assert_eq!(volume(harness.state(), audio), limit);
+        assert_eq!(harness.state().session.history_len(), history);
+    }
+}
+
+#[test]
+fn alt_m_adds_markers_in_colours_no_earlier_marker_uses() {
+    let fixture = fixture();
+    let mut editor = fixture.editor;
+    editor
+        .playback
+        .seek(Tick(3 * SECOND), false, editor.session.project().clone())
+        .unwrap();
+    let mut harness = harness(editor);
+    harness.run_steps(3);
+    let history = harness.state().session.history_len().0;
+    let color_at = |harness: &egui_kittest::Harness<'_, Editor>, seconds: i64| {
+        harness
+            .state()
+            .session
+            .project()
+            .data()
+            .scene()
+            .bookmarks
+            .iter()
+            .find(|bookmark| bookmark.start == Tick(seconds * SECOND))
+            .map(|bookmark| bookmark.color)
+    };
+
+    harness.key_press_modifiers(egui::Modifiers::ALT, egui::Key::M);
+    harness.run_steps(2);
+    assert_eq!(
+        color_at(&harness, 3),
+        Some(project::Color([255, 255, 255, 255]))
+    );
+    harness
+        .state_mut()
+        .dispatch(AppCommand::Seek(Tick(4 * SECOND)))
+        .unwrap();
+    harness.run_steps(2);
+    harness.key_press_modifiers(egui::Modifiers::ALT, egui::Key::M);
+    harness.run_steps(2);
+    assert_eq!(
+        color_at(&harness, 4),
+        Some(project::Color([245, 193, 192, 255]))
+    );
+    assert_eq!(harness.state().session.history_len().0, history + 2);
+    // M still adds the default colour, and one undo removes the marker.
+    harness
+        .state_mut()
+        .dispatch(AppCommand::Seek(Tick(5 * SECOND)))
+        .unwrap();
+    harness.run_steps(2);
+    harness.key_press(egui::Key::M);
+    harness.run_steps(2);
+    assert_eq!(color_at(&harness, 5), Some(engine::DEFAULT_BOOKMARK_COLOR));
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    harness.run_steps(2);
+    assert_eq!(color_at(&harness, 5), None);
+}
+
+#[test]
+fn speed_keys_open_the_speed_tab_of_the_selected_clip_on_its_standard_or_curve_view() {
+    let fixture = fixture();
+    let mut editor = fixture.editor;
+    let audio = audio_clip(&editor);
+    assert!(!editor.action_enabled("timeline.speed_panel"));
+    editor.select([audio].into()).unwrap();
+    let mut harness = harness(editor);
+    harness.run_steps(3);
+    let shown = |harness: &egui_kittest::Harness<'_, Editor>, id: &str| {
+        harness
+            .state()
+            .inspect()
+            .unwrap()
+            .widgets
+            .iter()
+            .any(|widget| widget.id == id)
+    };
+    assert!(!shown(&harness, "inspector.speed.tab.curve"));
+
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::R);
+    harness.run_steps(3);
+    assert_eq!(
+        harness
+            .state()
+            .preferences
+            .properties_tabs
+            .get("audio")
+            .map(String::as_str),
+        Some("speed")
+    );
+    assert!(shown(&harness, "inspector.speed.tab.curve"));
+    assert!(!shown(&harness, "inspector.speed.preset.montage"));
+
+    harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::B);
+    harness.run_steps(3);
+    assert!(
+        shown(&harness, "inspector.speed.preset.montage"),
+        "Shift+B opens the curve view"
+    );
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::R);
+    harness.run_steps(3);
+    assert!(
+        !shown(&harness, "inspector.speed.preset.montage"),
+        "Ctrl+R returns to Standard"
+    );
+}
+
+#[test]
+fn trim_clip_cuts_the_selected_clip_to_the_in_out_range_as_one_undo_step() {
+    let fixture = fixture();
+    let (video_a, video_b) = (fixture.video_a, fixture.video_b);
+    let mut editor = fixture.editor;
+    editor.select([video_a].into()).unwrap();
+    assert!(
+        !editor.action_enabled("timeline.trim_clip"),
+        "no in/out range is set"
+    );
+    for (seconds, mark) in [(1, "export.mark_in"), (4, "export.mark_out")] {
+        editor
+            .playback
+            .seek(
+                Tick(seconds * SECOND),
+                false,
+                editor.session.project().clone(),
+            )
+            .unwrap();
+        editor.activate(mark).unwrap();
+    }
+    assert!(editor.action_enabled("timeline.trim_clip"));
+    // A clip outside the range, or a selection of two clips, has nothing to trim.
+    editor.select([video_b].into()).unwrap();
+    assert!(!editor.action_enabled("timeline.trim_clip"));
+    editor.select([video_a, video_b].into()).unwrap();
+    assert!(!editor.action_enabled("timeline.trim_clip"));
+
+    editor.select([video_a].into()).unwrap();
+    let before = editor.session.project().clone();
+    let history = editor.session.history_len().0;
+    editor.activate("timeline.trim_clip").unwrap();
+    let trimmed = clip(&editor, video_a);
+    assert_eq!(trimmed.start, Tick(SECOND));
+    assert_eq!(trimmed.end().unwrap(), Tick(4 * SECOND));
+    assert_eq!(editor.session.history_len().0, history + 1);
+    assert!(
+        !editor.action_enabled("timeline.trim_clip"),
+        "the clip now equals the range"
+    );
+    editor.activate("edit.undo").unwrap();
+    assert_eq!(editor.session.project(), &before);
+}
+
+#[test]
+fn volume_keys_step_a_keyed_volume_at_the_playhead_by_writing_a_key() {
+    let fixture = fixture();
+    let mut editor = fixture.editor;
+    let audio = audio_clip(&editor);
+    let path = project::AnimationPath::from(project::BuiltinPath::Volume);
+    for seconds in [0, 2] {
+        editor
+            .session
+            .apply(Command::AddKeyframe {
+                item: audio,
+                path: path.clone(),
+                component: None,
+                key: project::Keyframe::new(
+                    Tick(seconds * SECOND),
+                    project::ParamValue::Scalar(-10.0),
+                ),
+            })
+            .unwrap();
+    }
+    editor.select([audio].into()).unwrap();
+    editor
+        .playback
+        .seek(Tick(SECOND), false, editor.session.project().clone())
+        .unwrap();
+    let before = editor.session.project().clone();
+    let history = editor.session.history_len().0;
+    let mut harness = harness(editor);
+    harness.run_steps(3);
+
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Period);
+    harness.run_steps(2);
+    let stepped = clip(harness.state(), audio)
+        .animations
+        .value_at(&path, Tick(SECOND))
+        .unwrap();
+    assert_eq!(
+        stepped,
+        Some(project::ParamValue::Scalar(f64::from(-9.9_f32))),
+        "a key at the playhead holds the stepped value"
+    );
+    assert_eq!(
+        volume(harness.state(), audio),
+        0.0,
+        "the stored volume stays"
+    );
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    harness.run_steps(2);
+    assert_eq!(harness.state().session.project(), &before);
 }

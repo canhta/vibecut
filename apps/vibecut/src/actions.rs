@@ -103,6 +103,30 @@ pub(crate) fn bookmark_target_in(
     }
 }
 
+/// Which way `playback.jump_cut` searches from the playhead; it never wraps.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CutDirection {
+    Next,
+    Previous,
+}
+
+/// The one cut-point lookup behind enablement and dispatch. A cut point is the start
+/// or end of a main-track clip; the search takes the nearest one strictly after or
+/// before the playhead, so a playhead already on a cut moves to the next one.
+pub(crate) fn cut_target(scene: &Scene, at: Tick, direction: CutDirection) -> Option<Tick> {
+    let points = scene
+        .timeline
+        .main
+        .items
+        .iter()
+        .flat_map(|item| [Some(item.start), item.end().ok()])
+        .flatten();
+    match direction {
+        CutDirection::Next => points.filter(|point| *point > at).min(),
+        CutDirection::Previous => points.filter(|point| *point < at).max(),
+    }
+}
+
 /// Available generated shapes; unavailable catalog variants have no action.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GraphicShape {
@@ -232,6 +256,15 @@ pub enum UiAction {
     GuideMove,
     Seek,
     JumpBookmark(BookmarkDirection),
+    /// `playback.jump_cut`: seek to the previous or next main-track cut point.
+    JumpCut(CutDirection),
+    /// `timeline.speed_panel` and `timeline.speed_curve`: open the Speed tab of the one
+    /// selected clip, on its Standard or Curve view.
+    ShowSpeed {
+        curve: bool,
+    },
+    /// `timeline.trim_clip`: cut the selected clip to the in/out range.
+    TrimClip,
     SetPreviewZoom,
     SetPreference,
     /// `catalog.favorite.set`: star or unstar one catalogue id.
@@ -244,6 +277,28 @@ pub enum UiAction {
     ExportKeybindings,
     OpenHelp,
     OpenFeedback,
+}
+
+/// Direction of one `timeline.volume_up` or `timeline.volume_down` press.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VolumeStep {
+    Up,
+    Down,
+}
+
+/// The volume after one 0.1 dB press: the stored value snaps to the 0.1 dB grid, moves one
+/// step and stays inside the clip volume range. `None` when the clip already sits at that end.
+pub(crate) fn nudged_volume(volume: f32, step: VolumeStep) -> Option<f32> {
+    let tenths = (volume * 10.0).round()
+        + match step {
+            VolumeStep::Up => 1.0,
+            VolumeStep::Down => -1.0,
+        };
+    let next = (tenths / 10.0).clamp(
+        *project::VOLUME_DB_RANGE.start(),
+        *project::VOLUME_DB_RANGE.end(),
+    );
+    (next != volume).then_some(next)
 }
 
 /// Engine routing owns the executable identity. Delete follows the app's ripple
@@ -270,6 +325,11 @@ pub enum EngineAction {
     RecoverAudio,
     AddTrack,
     ToggleBookmark,
+    /// Toggle a bookmark at the playhead whose colour is the first recommended swatch
+    /// no bookmark of the scene uses yet.
+    ToggleBookmarkNewColor,
+    /// Raise or lower the volume of the selected audible clips by 0.1 dB.
+    NudgeVolume(VolumeStep),
     CreateScene,
     DeleteScenes,
     /// Give the selected items the attribute groups of the copied item.
@@ -302,7 +362,8 @@ impl EngineAction {
             Self::ExtractAudio => K::ExtractAudio,
             Self::RecoverAudio => K::RecoverAudio,
             Self::AddTrack => K::AddTrack,
-            Self::ToggleBookmark => K::ToggleBookmark,
+            Self::ToggleBookmark | Self::ToggleBookmarkNewColor => K::ToggleBookmark,
+            Self::NudgeVolume(_) => K::SetItemField,
             Self::CreateScene => K::CreateScene,
             Self::DeleteScenes => K::DeleteScenes,
             Self::PasteAttributes => K::PasteAttributes,

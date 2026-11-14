@@ -1,7 +1,7 @@
 # Action registry
 
 Interface: `actions()`, `action(id)`, `ActionSpec`, `ActionCategory`, `ActionTarget`,
-`UiAction`, `BookmarkDirection`, `EngineAction`, and the keybinding types re-exported from
+`UiAction`, `BookmarkDirection`, `CutDirection`, `VolumeStep`, `EngineAction`, and the keybinding types re-exported from
 [key input](../input/README.md).
 
 `actions()` is the single source of key, menu and button trigger ids and their
@@ -29,6 +29,19 @@ the scene duration with the current playhead, then picks the minimum or maximum
 original `(start, id)` strictly after or before that playhead. Empty, zero-duration
 and already-at-the-edge searches return `None`, so dispatch performs no seek or
 metadata work; an actual jump uses the existing Seek path.
+
+## Cut-point navigation
+
+`cut_target` is the lookup behind `playback.jump_cut`, its enablement and `AppCommand::JumpCut`:
+the nearest start or end of a main-track clip strictly after (`Down`) or before (`Up`) the
+playhead. No cut in that direction returns `None`, so dispatch performs no seek. An actual
+jump uses the existing Seek path.
+
+## Volume steps
+
+`nudged_volume` moves a clip volume one tenth of a decibel on the 0.1 dB grid and clamps to the
+clip volume range; a clip already at that end yields `None` and drops out of the batch, so
+`timeline.volume_up` and `timeline.volume_down` are disabled when no selected clip can move. A keyed volume steps the value at the playhead and writes a key.
 
 `Chord`, `KeybindingPreferences`, `Keymap` and `Dispatch` live in
 [key input](../input/README.md).

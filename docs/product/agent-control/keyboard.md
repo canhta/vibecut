@@ -66,14 +66,18 @@
 | `transport.end` — Go to end | Navigation | End | — | playback transport |
 | `playback.jump_bookmark.next` — Next bookmark | Playback | Shift+M | — | playback transport |
 | `playback.jump_bookmark.previous` — Previous bookmark | Playback | Alt+Shift+M | — | playback transport |
+| `playback.jump_cut.next` — Next cut point | Navigation | Down | — | playback transport |
+| `playback.jump_cut.previous` — Last cut point | Navigation | Up | — | playback transport |
 | `playback.loop` — Loop playback | Playback | — | — | playback transport |
 | `timeline.select_all` — Select all | Selection | Ctrl+A | — | timeline selection |
 | `timeline.deselect_all` — Deselect all | Selection | Alt+X | — | timeline selection |
 | `timeline.duplicate` — Duplicate | Selection | Ctrl+D | `timeline.duplicate` | — |
 | `timeline.group` — Group | Selection | Ctrl+G | `timeline.group` | — |
 | `timeline.ungroup` — Ungroup | Selection | Ctrl+Shift+G | `timeline.ungroup` | — |
-| `timeline.set_hidden` — Hide or show selection | Edit | — | `timeline.set_hidden` | — |
+| `timeline.set_hidden` — Hide or show selection | Edit | V | `timeline.set_hidden` | — |
 | `timeline.set_muted` — Mute or unmute selection | Edit | — | `timeline.set_muted` | — |
+| `timeline.volume_up` — Volume +0.1 dB | Edit | Ctrl+Period | `timeline.set_item_param` | — |
+| `timeline.volume_down` — Volume -0.1 dB | Edit | Ctrl+Comma | `timeline.set_item_param` | — |
 | `timeline.extract_audio` — Extract audio | Edit | Ctrl+Shift+S | `timeline.extract_audio` | — |
 | `timeline.recover_audio` — Recover audio | Edit | — | `timeline.recover_audio` | — |
 | `selection.escape` — Cancel or deselect | Selection | Escape | — | timeline selection |
@@ -100,6 +104,10 @@
 | `timeline.zoom_fit` — Zoom to fit timeline | Timeline | Shift+Z | — | timeline view |
 | `timeline.add_track` — Add track | Timeline | — | `timeline.add_track` | — |
 | `timeline.bookmark` — Toggle bookmark | Timeline | M | `bookmark.toggle` | — |
+| `timeline.bookmark_new_color` — Add marker with new color | Timeline | Alt+M | `bookmark.toggle` | — |
+| `timeline.speed_panel` — Show speed panel | Timeline | Ctrl+R | — | properties speed tab |
+| `timeline.speed_curve` — Curve speed | Timeline | Shift+B | — | properties speed tab |
+| `timeline.trim_clip` — Trim clip | Edit | — | — | clip trim |
 | `timeline.crop` — Crop | Edit | — | — | crop dialog |
 | `timeline.flip_horizontal` — Flip horizontal | Edit | — | `timeline.set_flipped` | — |
 | `timeline.flip_vertical` — Flip vertical | Edit | — | `timeline.set_flipped` | — |
@@ -162,7 +170,7 @@
 | `appearance.theme` — Toggle theme | View | — | — | preference store |
 | `appearance.locale` — Toggle language | View | — | — | preference store |
 | `layout.reset` — Reset layout | View | — | — | preference store |
-| `view.toggle_timeline` — Show or hide timeline | View | Ctrl+. | — | timeline panel layout |
+| `view.toggle_timeline` — Show or hide timeline | View | — | — | timeline panel layout |
 | `shortcuts.open` — Keyboard shortcuts | View | — | — | shortcuts dialog |
 | `app.help` — Help | View | — | — | help |
 | `app.feedback` — Feedback | View | — | — | help |
@@ -187,7 +195,7 @@ Bindings persist in the app preference store as five named profiles (Shortcut 1 
 
 The reference desktop key list (measured 2026-11-14) sets the defaults above where the chord is free here; `Ctrl` there is Cmd. Defaults are written as canonical chord text, so the key names (`Equals`, `Plus`, `Minus`) stand in for the symbols. Where our chord already owns the key, ours stays and the difference is recorded here.
 
-Adopted: new project `Ctrl+N` (Home and every editor window); main track magnet `P`; zoom to fit timeline `Shift+Z`; extract audio `Ctrl+Shift+S`; timeline zoom in `Ctrl+Equals` (and `Ctrl+Plus` on the numeric keypad) and out `Ctrl+Minus`; deselect all `Alt+X`; full screen `Ctrl+Shift+F`; player zoom in `Alt+Shift+Plus`, out `Alt+Shift+Minus`, fit `Alt+Shift+Z`; import `Ctrl+I`; export `Ctrl+E`; next bookmark `Shift+M`; previous bookmark `Alt+Shift+M`; keyframe lanes `Alt+K`; add keyframe `Alt+Shift+K`; group `Ctrl+G`; ungroup `Ctrl+Shift+G`. Rulers (`Ctrl+Alt+R`) and guides (`Ctrl+;`) keep the chords main gave them.
+Adopted: new project `Ctrl+N` (Home and every editor window); main track magnet `P`; zoom to fit timeline `Shift+Z`; extract audio `Ctrl+Shift+S`; timeline zoom in `Ctrl+Equals` (and `Ctrl+Plus` on the numeric keypad) and out `Ctrl+Minus`; deselect all `Alt+X`; full screen `Ctrl+Shift+F`; player zoom in `Alt+Shift+Plus`, out `Alt+Shift+Minus`, fit `Alt+Shift+Z`; import `Ctrl+I`; export `Ctrl+E`; next bookmark `Shift+M`; previous bookmark `Alt+Shift+M`; keyframe lanes `Alt+K`; add keyframe `Alt+Shift+K`; group `Ctrl+G`; ungroup `Ctrl+Shift+G`; last cut point `Up`, next cut point `Down`; activate or deactivate clip `V` (`timeline.set_hidden`); add marker with new colour `Alt+M`; show speed panel `Ctrl+R`; curve speed `Shift+B`; volume +0.1 dB `Ctrl+.` and -0.1 dB `Ctrl+,`. Rulers (`Ctrl+Alt+R`) and guides (`Ctrl+;`) keep the chords main gave them.
 
 Not adopted, because the reference chord has no action here:
 - Restore audio has no chord. The reference shows one Shift Ctrl S toggle for extract and restore; a chord binds one action, and extract takes it.

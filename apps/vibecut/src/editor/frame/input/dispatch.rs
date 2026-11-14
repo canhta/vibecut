@@ -17,6 +17,9 @@ pub enum AppCommand {
     /// `playback.jump_bookmark`: seek to the nearest eligible bookmark in one
     /// direction, without wrapping or mutating the project.
     JumpBookmark(actions::BookmarkDirection),
+    /// `playback.jump_cut`: seek to the nearest main-track cut point in one direction,
+    /// without wrapping or mutating the project.
+    JumpCut(actions::CutDirection),
     /// `preview.set_zoom`: fit the frame or set an explicit scale.
     PreviewZoom(PreviewZoom),
     /// `ui.keybindings.set`: replace one action's chords.
@@ -450,6 +453,13 @@ impl Editor {
                     None => Ok(()),
                 }
             }
+            AppCommand::JumpCut(direction) => {
+                let at = self.playback.position()?;
+                match actions::cut_target(self.session.project().data().scene(), at, direction) {
+                    Some(target) => self.dispatch(AppCommand::Seek(target)),
+                    None => Ok(()),
+                }
+            }
             AppCommand::PreviewZoom(PreviewZoom::Fit) => self.set_preview_fit(),
             AppCommand::PreviewZoom(PreviewZoom::Zoom(zoom)) => {
                 let viewport = self.player.viewport;
@@ -564,6 +574,7 @@ impl Editor {
                             !self.importing() && self.assets.has_media_selection()
                         }
                         EngineAction::FreezeFrame => self.freeze_target().is_some(),
+                        EngineAction::NudgeVolume(step) => !self.volume_nudges(step).is_empty(),
                         EngineAction::PasteAttributes => {
                             self.session.can_paste_attributes(&self.attribute_targets())
                         }
@@ -599,8 +610,127 @@ impl Editor {
                 actions::bookmark_target(self.session.project().data().scene(), at, direction)
                     .is_some()
             }),
+            ActionTarget::Ui {
+                action: UiAction::JumpCut(direction),
+                ..
+            } => self.playback.position().is_ok_and(|at| {
+                actions::cut_target(self.session.project().data().scene(), at, direction).is_some()
+            }),
+            ActionTarget::Ui {
+                action: UiAction::ShowSpeed { .. },
+                ..
+            } => self.speed_panel_target().is_some(),
+            ActionTarget::Ui {
+                action: UiAction::TrimClip,
+                ..
+            } => !self.trim_clip_commands().is_empty(),
             ActionTarget::Ui { .. } => true,
         }
+    }
+
+    /// The one selected video or audio clip whose Speed tab `timeline.speed_panel` opens.
+    pub(in crate::editor) fn speed_panel_target(&self) -> Option<ItemId> {
+        use crate::editor::properties::{ElementKind, element_kind};
+        let item = crate::editor::context::single(self.session.selection())?;
+        let (kind, _) = element_kind(self.session.project(), item)?;
+        matches!(kind, ElementKind::Video | ElementKind::Audio).then_some(item)
+    }
+
+    /// `timeline.volume_up` and `timeline.volume_down`: one volume edit per selected unlocked
+    /// clip that has audio and is not already at the end of the range. A clip whose volume is
+    /// keyed steps the value at the playhead and writes a key there; a clip the playhead is
+    /// outside of is left alone. Other clips step the stored volume.
+    fn volume_nudges(&self, step: actions::VolumeStep) -> Vec<Command> {
+        let playhead = self.playback.position().ok();
+        let path = project::AnimationPath::from(project::BuiltinPath::Volume);
+        self.selected_items()
+            .into_iter()
+            .filter(|(locked, _)| !locked)
+            .filter_map(|(_, item)| {
+                let volume = match &item.content {
+                    project::ItemParams::Audio(params) => params.volume,
+                    project::ItemParams::Video(params) if params.source_audio_enabled => {
+                        params.volume
+                    }
+                    _ => return None,
+                };
+                let keyed = matches!(
+                    item.animations.get(&path),
+                    Some(project::Param::Value(channel)) if !channel.keys().is_empty()
+                );
+                if !keyed {
+                    return actions::nudged_volume(volume, step).map(|volume| {
+                        Command::SetItemField {
+                            item: item.id,
+                            patch: engine::ItemParamPatch::AudioGain(volume),
+                        }
+                    });
+                }
+                let local = playhead?.checked_sub(item.start)?;
+                if local < Tick::ZERO || local >= item.duration().ok()? {
+                    return None;
+                }
+                let Some(project::ParamValue::Scalar(current)) =
+                    item.animations.value_at(&path, local).ok().flatten()
+                else {
+                    return None;
+                };
+                actions::nudged_volume(current as f32, step).map(|next| Command::AddKeyframe {
+                    item: item.id,
+                    path: path.clone(),
+                    component: None,
+                    key: project::Keyframe::new(
+                        local,
+                        project::ParamValue::Scalar(f64::from(next)),
+                    ),
+                })
+            })
+            .collect()
+    }
+
+    /// `timeline.trim_clip`: the edits that cut the one selected unlocked clip to the export
+    /// in/out range. Empty without a range, with an empty range, or when the range holds the
+    /// whole clip or none of it.
+    pub(in crate::editor) fn trim_clip_commands(&self) -> Vec<Command> {
+        let render::RangeChoice::InOut { start, end } = self.preferences.export.output.range else {
+            return Vec::new();
+        };
+        let selected = self.selected_items();
+        let [(false, item)] = selected.as_slice() else {
+            return Vec::new();
+        };
+        let Ok(item_end) = item.end() else {
+            return Vec::new();
+        };
+        if start >= end || start >= item_end || end <= item.start {
+            return Vec::new();
+        }
+        let mut commands = Vec::new();
+        if end < item_end {
+            commands.push(Command::TrimEnd {
+                item: item.id,
+                at: end,
+            });
+        }
+        if start > item.start {
+            commands.push(Command::TrimStart {
+                item: item.id,
+                at: start,
+            });
+        }
+        commands
+    }
+
+    /// The first recommended swatch no bookmark of the scene uses, so each marker added with
+    /// `timeline.bookmark_new_color` differs from the ones before; all used wraps to the first.
+    fn new_bookmark_color(&self) -> project::Color {
+        use crate::services::color_picker::palette;
+        let marks = &self.session.project().data().scene().bookmarks;
+        (0..palette::RECOMMENDED.len())
+            .filter_map(palette::recommended)
+            .find(|color| marks.iter().all(|mark| mark.color != *color))
+            .or_else(|| palette::recommended(0))
+            .unwrap_or(engine::DEFAULT_BOOKMARK_COLOR)
     }
 
     /// The one selected video item whose visible span strictly contains the playhead.
@@ -742,7 +872,13 @@ impl Editor {
             )],
             EngineAction::ToggleBookmark => vec![Command::ToggleBookmark {
                 at: self.playback.position()?,
+                color: None,
             }],
+            EngineAction::ToggleBookmarkNewColor => vec![Command::ToggleBookmark {
+                at: self.playback.position()?,
+                color: Some(self.new_bookmark_color()),
+            }],
+            EngineAction::NudgeVolume(step) => self.volume_nudges(step),
             EngineAction::CreateScene => {
                 let count = self.session.project().data().scenes.iter().count();
                 let number = i18n::number(self.preferences.locale, (count + 1) as u64);
@@ -850,6 +986,8 @@ impl Editor {
             | EngineAction::ExtractAudio
             | EngineAction::RecoverAudio
             | EngineAction::ToggleBookmark
+            | EngineAction::ToggleBookmarkNewColor
+            | EngineAction::NudgeVolume(_)
             | EngineAction::Flip(_)
             | EngineAction::Align(_)
             | EngineAction::Distribute(_)

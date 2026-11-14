@@ -109,7 +109,9 @@ playhead while the guide keeps following the pointer.
 ## Markers
 
 The toolbar bookmark button and the `timeline.bookmark` shortcut toggle a bookmark at the
-playhead through `bookmark.toggle`, which frame-snaps the time. Clicking a bookmark on the
+playhead through `bookmark.toggle`, which frame-snaps the time; `timeline.bookmark_new_color`
+(`Alt+M`) runs the same command with the first recommended swatch no scene bookmark uses.
+Clicking a bookmark on the
 ruler seeks there and opens its editor: a note field, a colour swatch that opens the shared
 colour window plus a reset to the engine default, a duration field in seconds stepped by
 0.1, and delete. Each committed field is one `bookmark.update` or `bookmark.remove` undo

@@ -571,6 +571,24 @@ impl State {
                 ui.close();
             }
         }
+        // Trim clip: cut the clip to the in/out range; the row stays disabled until the
+        // range covers part of the clip.
+        let trim = format!("timeline.item.{}.trim", item.id.0);
+        let trimmable = !cx.disabled.contains("timeline.trim_clip")
+            && cx.selection().len() == 1
+            && cx.selection().contains(&item.id);
+        if self.menu_action(
+            cx,
+            ui,
+            trim,
+            "timeline.trim_clip",
+            Text::ActionTimelineTrimClip,
+            Icon::Scissors,
+            trimmable,
+        ) {
+            self.push(Action::Activate("timeline.trim_clip".to_owned()));
+            ui.close();
+        }
         if item.source_asset.is_some() {
             // Relink for a missing source uses the same picker: the new file replaces it.
             let replace = format!("timeline.item.{}.replace", item.id.0);

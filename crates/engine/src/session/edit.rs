@@ -955,8 +955,8 @@ pub(crate) fn apply(
         EditCommand::MoveBookmark { bookmark, start } => {
             data = project_edits::execute_move_bookmark(data, bookmark, start)?;
         }
-        EditCommand::ToggleBookmark { at } => {
-            data = project_edits::execute_toggle_bookmark(data, at, created, next)?;
+        EditCommand::ToggleBookmark { at, color } => {
+            data = project_edits::execute_toggle_bookmark(data, at, color, created, next)?;
         }
         EditCommand::UpdateBookmark {
             bookmark,

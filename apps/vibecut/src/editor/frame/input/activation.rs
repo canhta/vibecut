@@ -607,6 +607,17 @@ impl Editor {
                 UiAction::JumpBookmark(direction) => {
                     self.dispatch(crate::editor::AppCommand::JumpBookmark(direction))?;
                 }
+                UiAction::JumpCut(direction) => {
+                    self.dispatch(crate::editor::AppCommand::JumpCut(direction))?;
+                }
+                UiAction::ShowSpeed { curve } => self.show_speed_panel(curve)?,
+                UiAction::TrimClip => {
+                    let commands = self.trim_clip_commands();
+                    if !commands.is_empty() {
+                        self.sync_gap_policy();
+                        self.session.apply(engine::Command::Batch { commands })?;
+                    }
+                }
                 UiAction::Seek
                 | UiAction::SetPreviewZoom
                 | UiAction::SetPreference
