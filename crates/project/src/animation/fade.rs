@@ -85,6 +85,11 @@ pub struct Fades {
     pub fade_in: Fade,
     pub fade_out: Fade,
 }
+/// Longest fade one edge can hold, whatever the clip length (the reference editor caps both
+/// fades at 10.0 s). `Fades::set` stores `min(request, MAX_FADE, room)`, where room is the clip
+/// minus the other edge's window.
+pub const MAX_FADE: Tick = Tick(10 * time::TICKS_PER_SECOND);
+
 impl Fades {
     pub(crate) fn validate(&self) -> Result<()> {
         for fade in [&self.fade_in, &self.fade_out] {
@@ -145,7 +150,7 @@ impl Fades {
         };
         let room = clip.saturating_sub(other.min(clip)).max(Tick::ZERO);
         let fade = Fade {
-            duration: duration.min(room),
+            duration: duration.min(MAX_FADE).min(room),
             offset: Tick::ZERO,
             curve,
         };

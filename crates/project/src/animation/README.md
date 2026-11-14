@@ -46,6 +46,8 @@ Handles hold relative signed `dt` ticks and `dv` in scalar value units. Incoming
 
 Audio and video items carry `fades {fade_in, fade_out}` (default none). Each is a `Fade {duration, offset, curve}`: the whole fade length in ticks from the edge it was set on, the ticks of it a split cut away beyond this clip's edge (`0..=duration`, default 0), and a `FadeCurve` (`equal_power` default, `linear`, `exponential`). Only the window `duration - offset` is audible; that window, not the stored `duration`, is what the clip length clamps. A fade without `offset` loads as uncut.
 
+`MAX_FADE` (10 s) caps one edge whatever the clip length, as the reference's fields do; `Fades::set` stores `min(request, MAX_FADE, room)`.
+
 Fades are persisted data, not animation. They multiply the volume curve and are never keyframed. Validation refuses negative durations and an offset outside `0..=duration`. Durations beyond the clip are legal because trims shorten clips without rewriting them.
 
 `Fades::set` clamps one edge to the clip duration minus the other edge's window and starts a fresh fade (offset 0). `Fades::split(start, at, end)` returns the two pieces' fades: each keeps the whole shape of any fade reaching it and records the part the other piece holds; an empty window is no fade.

@@ -14,14 +14,14 @@ use std::path::PathBuf;
 /// Set loudness targets, run the two-pass measurement job over the production
 /// mix graph, and store the gains: the next `export` applies them.
 pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliError> {
-    const USAGE: &str = "usage: vibecut-cli normalize <project> [--clip] [--master]          [--target-lufs -14] [--true-peak-db -1]";
+    const USAGE: &str = "usage: vibecut-cli normalize <project> [--clip] [--master]          [--target-lufs -23] [--true-peak-db -1]";
     let mut args = args.into_iter();
     let project_path = args
         .next()
         .map(PathBuf::from)
         .ok_or_else(|| CliError::Usage(USAGE.into()))?;
     let (mut clip, mut master) = (false, false);
-    let (mut target_lufs, mut true_peak_db) = (-14.0f32, -1.0f32);
+    let (mut target_lufs, mut true_peak_db) = (-23.0f32, -1.0f32);
     while let Some(arg) = args.next() {
         let mut number = |name: &str| -> Result<f32, CliError> {
             let value = args

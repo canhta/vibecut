@@ -51,6 +51,7 @@ const fn effect_spec(
         decimals: 0,
         suffix,
         scale: 1.0,
+        floor_label: None,
     }
 }
 const STROKE_THICKNESS: ScrubSpec = effect_spec(

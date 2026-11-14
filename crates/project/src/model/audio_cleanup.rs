@@ -111,6 +111,10 @@ pub const NOISE_REDUCTION_DEFAULT: CleanupKind = CleanupKind::NoiseReduction {
     smoothing_percent: 50.0,
 };
 
+/// Mix, in percent, the Enhance voice switch gives the preset it adds: the reference's Intensity
+/// default of 75 (its slider ticks every 25). The preset itself stays at full mix.
+pub const VOICE_ENHANCEMENT_INTENSITY_DEFAULT: f32 = 75.0;
+
 /// Number of effects the voice enhancement preset adds.
 pub const VOICE_ENHANCEMENT_EFFECTS: usize = 5;
 

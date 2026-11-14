@@ -1265,7 +1265,25 @@ pub struct WordSpan {
 }
 
 /// Clip/master dB range and hundredth-dB editing grid. Curves interpolate continuously.
+///
+/// The left end is the silence floor: the reference editor shows `-inf dB` there, and a
+/// volume at or below it mixes as true silence (gain exactly 0, see [`volume_gain`]). Stored
+/// values stay finite dB, so the schema is unchanged.
 pub const VOLUME_DB_RANGE: std::ops::RangeInclusive<f32> = -60.0..=20.0;
+
+/// Whether a volume in dB sits at the silence floor (`-inf` in the UI).
+pub fn volume_is_silent(db: f32) -> bool {
+    db <= *VOLUME_DB_RANGE.start()
+}
+
+/// Linear gain of a volume in dB: exactly 0 at the silence floor, `10^(db/20)` above it.
+pub fn volume_gain(db: f32) -> f32 {
+    if volume_is_silent(db) {
+        0.0
+    } else {
+        10f32.powf(db / 20.0)
+    }
+}
 
 pub fn valid_volume(value: f32) -> bool {
     value.is_finite()

@@ -103,7 +103,8 @@ pub(super) fn set_voice_enhancement(
                     item,
                     effect: project::CleanupEffect {
                         id: next_id,
-                        wet_percent: wet_percent.unwrap_or(want.wet_percent),
+                        wet_percent: wet_percent
+                            .unwrap_or(project::VOICE_ENHANCEMENT_INTENSITY_DEFAULT),
                         ..want
                     },
                 });

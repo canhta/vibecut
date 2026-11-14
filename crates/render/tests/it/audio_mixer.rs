@@ -229,6 +229,24 @@ fn automation_grid_continues_when_another_track_ends_and_mute_holds() {
             whole.planes()[0][start as usize..start as usize + 13]
         );
     }
+
+    // The volume range's left end is true silence, not a -60 dB whisper: the stored floor and
+    // a floor-pinned keyframe both mix to exact zeros, and the first dB above it is audible.
+    let mut level_at = |db: f32| {
+        let mut data = fixture().into_data();
+        let item = &mut data.scene_mut().timeline.audio[0].items[0];
+        match &mut item.content {
+            project::ItemParams::Audio(params) => params.volume = db,
+            _ => unreachable!("fixture audio track holds audio items"),
+        }
+        let p = project::Project::new(data).unwrap();
+        let out = mix_audio(&p, 0, 64, 2, &mut source, &h).unwrap();
+        out.planes()[0].iter().fold(0.0f32, |m, v| m.max(v.abs()))
+    };
+    assert_eq!(level_at(*project::VOLUME_DB_RANGE.start()), 0.0);
+    assert!(level_at(*project::VOLUME_DB_RANGE.start() + 0.01) > 0.0);
+    assert_eq!(project::volume_gain(*project::VOLUME_DB_RANGE.start()), 0.0);
+    assert_eq!(project::volume_gain(0.0), 1.0);
 }
 #[test]
 fn empty_muted_and_outside_timeline_are_exact_silence_and_failures_reset_state() {

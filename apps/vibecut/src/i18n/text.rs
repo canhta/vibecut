@@ -85,7 +85,7 @@ catalog! {
     LutLoading { key: "lut_loading", en: "Importing LUT…", vi: "Đang nhập LUT…" },
     LutLocate { key: "lut_locate", en: "Locate missing LUT…", vi: "Tìm LUT bị thiếu…" },
     LutNone { key: "lut_none", en: "None", vi: "Không" },
-    LutStrength { key: "lut_strength", en: "Strength", vi: "Cường độ" },
+    LutStrength { key: "lut_strength", en: "Intensity", vi: "Cường độ" },
     NextKeyframe { key: "next_keyframe", en: "Next keyframe", vi: "Khung hình chính sau" },
     NotAvailableYet { key: "not_available_yet", en: "Not available yet", vi: "Chưa dùng được" },
     Opacity { key: "opacity", en: "Opacity", vi: "Độ mờ" },
@@ -1150,10 +1150,7 @@ catalog! {
     TextStyleSection { key: "text_style_section", en: "Style", vi: "Kiểu" },
     TextUnderlineGlyph { key: "text_underline_glyph", en: "U", vi: "U" },
     VoiceEnhancement { key: "voice_enhancement", en: "Voice enhancement", vi: "Làm rõ giọng nói" },
-    VoiceEnhancementFull { key: "voice_enhancement_full", en: "Full", vi: "Đầy đủ" },
-    VoiceEnhancementLight { key: "voice_enhancement_light", en: "Light", vi: "Nhẹ" },
-    VoiceEnhancementMedium { key: "voice_enhancement_medium", en: "Medium", vi: "Vừa" },
-    VoiceEnhancementStrength { key: "voice_enhancement_strength", en: "Strength", vi: "Cường độ" },
+    VoiceEnhancementStrength { key: "voice_enhancement_strength", en: "Intensity", vi: "Cường độ" },
     WeightBold { key: "weight_bold", en: "Bold", vi: "Đậm" },
 
     // Text animation.

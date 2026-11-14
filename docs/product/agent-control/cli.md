@@ -22,7 +22,7 @@ Build with `cargo build -p vibecut-cli` through the [build wrapper](../../../xta
 | `vibecut-cli bundle export <project> <bundle-dir>` | Write a self-contained directory: project, manifest and hashed media copies; missing media is listed, not an error |
 | `vibecut-cli bundle import <bundle-dir> <project-dir>` | Extract a bundle into a new project directory under a fresh identity; media absent from the bundle is listed for relinking |
 | `vibecut-cli exec <project> <command_id> <json>` | Run one engine command under the project writer lease |
-| `vibecut-cli normalize <project> [--clip] [--master] [--target-lufs -14] [--true-peak-db -1]` | Measure and store loudness gains for clip or master scopes |
+| `vibecut-cli normalize <project> [--clip] [--master] [--target-lufs -23] [--true-peak-db -1]` | Measure and store loudness gains for clip or master scopes |
 | `vibecut-cli control <project>` | Run a revision-bound control session over newline-delimited JSON |
 | `vibecut-cli mcp <project>` / `mcp --attach --socket <endpoint>` | Serve [MCP control](mcp.md) over stdio, headless or attached to the app |
 | `vibecut-cli export <project> --out <mp4\|mov\|webm\|m4a>` | Export saved scene(s) to the container selected by the extension; `m4a` and audio-only output need `"audio_only": true` in `--settings` |

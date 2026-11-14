@@ -506,13 +506,16 @@ pub(crate) fn mix_raw(
                 Some(project::ParamValue::Scalar(value)) => value.clamp(-60.0, 20.0) as f32,
                 _ => volume,
             };
-            if !muted {
+            if !muted && !project::volume_is_silent(db) {
                 let master = if chain.fader {
                     project.data().settings.master_volume
                 } else {
                     0.0
                 };
-                *gain = 10f32.powf((db + master + chain.clip_db(item.id)) / 20.0);
+                // The master fader at its floor silences the mix as a clip fader does.
+                if !project::volume_is_silent(master) {
+                    *gain = 10f32.powf((db + master + chain.clip_db(item.id)) / 20.0);
+                }
             }
         }
         let offset = (a - start) as usize;

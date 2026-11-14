@@ -121,7 +121,7 @@ Effect: `Edit`. Fixture: `Timeline`.
 ```json
 {
   "scope": "master",
-  "target_lufs": -14.0,
+  "target_lufs": -23.0,
   "true_peak_db": -1.0
 }
 ```

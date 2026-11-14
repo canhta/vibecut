@@ -9,7 +9,7 @@ mod retime;
 mod speed_curve;
 
 pub use easing::{EasingCurve, EasingPreset};
-pub use fade::{Fade, FadeCurve, FadeEdge, FadeSpans, Fades};
+pub use fade::{Fade, FadeCurve, FadeEdge, FadeSpans, Fades, MAX_FADE};
 pub use keyframes::{
     Channel, CurveHandle, Extrapolation, HandleSide, Keyframe, MAX_CHANNEL_KEYS, Segment,
     TangentMode,
