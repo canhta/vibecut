@@ -471,6 +471,12 @@ pub(crate) mod size {
     pub const LINK_LIST_FOOTER: f32 = 31.0;
     pub const LINK_BUTTON_WIDTH: f32 = 72.0;
     pub const LINK_BUTTON_HEIGHT: f32 = 22.0;
+    /// Link media title bar: 34 px from the frame's inner top, with a 1 px rule under it
+    /// (capture 095518, logical px; the title's capital height is 8 px).
+    pub const LINK_TITLE_BAR: f32 = 34.0;
+    /// Missing-clip panel: the two lines sit on a 23 px pitch (capture 095550: ink tops 831
+    /// and 877 native, 46 px apart).
+    pub const MISSING_PANEL_LINE: f32 = 23.0;
     pub const DIALOG_BUTTON_HEIGHT: f32 = 34.0;
     /// Bottom-right toast width and import progress bar height (ui design States).
     pub const TOAST_WIDTH: f32 = 320.0;

@@ -256,7 +256,7 @@ pub(in crate::editor) fn show(
         .frame(frame)
         .show(ui.ctx(), |ui| {
             ui.set_width(kit::size::LINK_DIALOG_WIDTH - 2.0 * kit::size::LINK_DIALOG_INSET);
-            kit::dialog_title(ui, Text::LinkMediaTitle.text(cx.locale));
+            title_bar(ui, cx.dark, Text::LinkMediaTitle.text(cx.locale));
             ui.add_space(kit::space::LG);
             ui.label(Text::LinkMediaBody.text(cx.locale));
             ui.add_space(kit::space::LG);
@@ -272,6 +272,37 @@ pub(in crate::editor) fn show(
         ui.ctx().request_repaint_after(Duration::from_millis(33));
     }
     actions
+}
+
+/// The title sits 8 px in from the frame edge (capture 095518: ink at 7.5 px).
+const TITLE_INSET: f32 = 8.0;
+
+/// The title bar (095518): 12 px type, the title centred on the content's top line, and a
+/// 1 px rule 34 px below the frame's inner top. The content column starts one inset lower,
+/// so the bar paints back over the inset and advances the column by the rest of its height.
+fn title_bar(ui: &mut egui::Ui, dark: bool, text: &str) {
+    let content = ui.max_rect();
+    let inset = kit::size::LINK_DIALOG_INSET;
+    let frame_top = content.top() - inset;
+    let left = content.left() - inset;
+    let right = content.right() + inset;
+    let painter = ui.painter();
+    painter.text(
+        egui::pos2(left + TITLE_INSET, content.top()),
+        egui::Align2::LEFT_CENTER,
+        text,
+        egui::FontId::proportional(kit::type_size::BODY),
+        kit::text(dark),
+    );
+    painter.hline(
+        left..=right,
+        frame_top + kit::size::LINK_TITLE_BAR,
+        egui::Stroke::new(kit::space::HAIRLINE, kit::separator(dark)),
+    );
+    ui.allocate_space(egui::vec2(
+        content.width(),
+        kit::size::LINK_TITLE_BAR - inset,
+    ));
 }
 
 fn list(state: &State, cx: &Context<'_>, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
@@ -464,7 +495,8 @@ fn footer(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui, actions: &mut 
                 }
             }
             actions.push(Action::Remember("link_media.link".to_owned(), link));
-            ui.add_space(kit::space::LG);
+            // The buttons sit 8 px apart (capture 095518: 1048 - 1032 native).
+            ui.add_space(kit::space::MD);
             // While a match runs Cancel stops it and links nothing; otherwise it closes.
             let cancel = footer_button(ui, cx, "link_media.cancel", Text::Cancel, false);
             if cancel.clicked() {

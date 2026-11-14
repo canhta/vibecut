@@ -332,13 +332,27 @@ impl<'a, 'c> Panel<'a, 'c> {
         let mut link = None;
         let height = body.max_rect().height();
         body.vertical_centered(|ui| {
-            // One grey line, centred in the body under the 42 px strip (capture 095550).
-            ui.add_space(((height - theme::type_size::MISSING_PANEL * 2.0) / 2.0).max(0.0));
-            ui.label(
-                egui::RichText::new(self.tr(Text::MissingClipsPanel))
-                    .size(theme::type_size::MISSING_PANEL)
-                    .color(theme::disabled(self.cx.dark)),
-            );
+            // Two grey lines on a 23 px pitch, centred in the body under the 42 px strip
+            // (capture 095550: the lines centre on the body's x).
+            let lines = [
+                Text::MissingClipsPanelFirst,
+                Text::MissingClipsPanelSecond,
+            ];
+            let block = theme::size::MISSING_PANEL_LINE * lines.len() as f32;
+            ui.add_space(((height - block) / 2.0).max(0.0));
+            for text in lines {
+                ui.allocate_ui_with_layout(
+                    egui::vec2(ui.available_width(), theme::size::MISSING_PANEL_LINE),
+                    egui::Layout::centered_and_justified(egui::Direction::TopDown),
+                    |ui| {
+                        ui.label(
+                            egui::RichText::new(self.tr(text))
+                                .size(theme::type_size::MISSING_PANEL)
+                                .color(theme::disabled(self.cx.dark)),
+                        );
+                    },
+                );
+            }
             ui.add_space(theme::space::LG);
             let response = ui.add(egui::Button::new(self.tr(Text::LinkMediaAction)));
             link = Some(response);
