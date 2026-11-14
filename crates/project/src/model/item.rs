@@ -90,8 +90,8 @@ pub struct MatteStroke {
     pub points: Vec<[f32; 2]>,
 }
 impl MatteStroke {
-    /// Largest tip radius: half the shorter side. The brush's size range is not measured in the
-    /// reference, so this bound only keeps a stroke inside the frame's scale.
+    /// Largest tip radius: half the shorter side. The app's brush stays below 0.133 (Size 100);
+    /// this bound only keeps a stroke inside the frame's scale.
     pub const MAX_RADIUS: f32 = 0.5;
     /// Most points one stroke holds.
     pub const MAX_POINTS: usize = 4096;

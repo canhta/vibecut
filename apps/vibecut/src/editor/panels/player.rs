@@ -14,6 +14,7 @@ mod workflow;
 
 use crate::{editor::Context, egui};
 pub use lines::{GuideLines, LineAxis};
+pub(crate) use matte_brush::{SIZE_MAX, SIZE_MIN};
 pub use overlay::{Guide, OverlayVisibility};
 use project::ItemId;
 pub use snap::PREVIEW_SNAP_PIXELS;

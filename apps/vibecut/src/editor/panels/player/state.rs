@@ -21,6 +21,8 @@ pub(crate) struct State {
     pub(in crate::editor) matte_brush: Option<MatteBrush>,
     /// The stroke the pointer is dragging, published when the button releases.
     pub(in crate::editor) brush_trail: Option<super::matte_brush::Trail>,
+    /// The matte brush's Size, 1 to 100, kept while the brush is off.
+    pub(in crate::editor) matte_brush_size: u32,
     /// Last view state read from the session metadata.
     pub(in crate::editor) last_view: project::ViewState,
     /// Grid size an open drag or typed edit shows; it is published once when the gesture ends.
@@ -57,6 +59,7 @@ impl State {
             key_color_pick: None,
             matte_brush: None,
             brush_trail: None,
+            matte_brush_size: super::matte_brush::SIZE_DEFAULT,
             last_view: project::ViewState::default(),
             grid_draft: None,
             margin_draft: None,

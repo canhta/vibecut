@@ -8,8 +8,8 @@ time; there is no runtime network or font request.
 - Source archive: <https://registry.npmjs.org/@phosphor-icons/core/-/core-2.1.1.tgz>
 - Author: Phosphor Icons
 - Licence: MIT, see [LICENSE](LICENSE)
-- Added: p0-core/39; extended: p1-parity/06, p1-parity/09, p1-parity/54, p1-parity/117, 2026-11-12, 2026-11-13
-- Files: 71 unmodified `assets/regular/*.svg` files.
+- Added: p0-core/39; extended: p1-parity/06, p1-parity/09, p1-parity/54, p1-parity/117, 2026-11-12, 2026-11-13, 2026-11-14
+- Files: 73 unmodified `assets/regular/*.svg` files.
 
 SHA-256 of each embedded file:
 
@@ -43,6 +43,7 @@ SHA-256 of each embedded file:
 | `dots-three.svg` | `ca4e748007101155641ec3041cd129bb03a8030d0eed16e313b9dd75e6beac77` |
 | `download-simple.svg` | `c48678aa09b44ba4974954690ee6cc846379c448a7214f8c802604c2a1562014` |
 | `export.svg` | `b3323cae86c93d7a4d344e921dc1500f97a73c66e5d9f0e6c46aab64e4a6f616` |
+| `eraser.svg` | `3e2e2a1f466051a32abed16cd8e6eadf30f9c560aeb6dcf2545f9c8a95ddfdef` |
 | `eye-slash.svg` | `070b0296a7df89ebf4cec12436e323b5531d458aa9aed3608924085889e1fd17` |
 | `eye.svg` | `91d39f20bf95e0f36c07bd79b83a85fe6ff4ca20e2759c4afee7419ef80403fe` |
 | `file.svg` | `eb2dcc530fb0727a1718dfdc55a466479bb5ad7c8f0e45f1993541093c747e06` |
@@ -64,6 +65,7 @@ SHA-256 of each embedded file:
 | `magnifying-glass-plus.svg` | `c61e00fdb994983b59cab26905a7ed45342d7319115d29f50050e26d1f210cb1` |
 | `microphone.svg` | `b49dabfaf603e82594cef0c5e5784c747f4c098b7723d2973c92965745ca93a9` |
 | `music-notes.svg` | `b991d76e24e781b864f9ad8b7aa14e516d4fd851871a979928917e20d492eca0` |
+| `paint-brush.svg` | `71f96a0b1a20e671a4af66d3b6bfaa41cf01778ad858193515d0268f07666972` |
 | `pause.svg` | `7a9a8fe311234262b85c6e332f77db4ba9a59b6ca4292c41d327977cf61a2fc9` |
 | `pencil-simple.svg` | `999530da442f44d8cf0054364373d16150f3e082c2ac294a4988a9c3a4295c28` |
 | `play.svg` | `885b3ed2095889c4ff063dac35dc424cb9f6c00273ab44e2f90dc9dadbee661a` |

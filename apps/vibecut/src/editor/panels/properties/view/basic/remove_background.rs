@@ -7,6 +7,9 @@ use crate::editor::properties::{
 use crate::kit;
 use engine::footage::CorrectionKind;
 
+/// Distance between the centres of neighbouring tool icons, measured in the reference.
+const TOOL_PITCH: f32 = 48.0;
+
 impl Panel<'_, '_> {
     /// The Auto removal switch row, then, while it is on, the edge feather slider and the
     /// analysis state. Turning the switch on keeps the model's own edge and starts the person
@@ -54,48 +57,50 @@ impl Panel<'_, '_> {
             CorrectionKind::PersonMatte,
             "inspector.auto_removal",
         );
-        self.matte_brush_row(ui, item);
+        self.matte_brush_rows(ui, item);
         ui.add_space(theme::space::MD);
     }
 
-    /// The refinement brush: Off, Add or Remove. Add and Remove arm the player, whose drags then
-    /// each paint one stroke over the matte; the tip size is not measured and has no control.
-    fn matte_brush_row(&mut self, ui: &mut egui::Ui, item: ItemId) {
+    /// The Custom removal section: a label, the brush and eraser tools, then Size. The tools
+    /// are toggles: the armed one paints with the player drags (Brush adds the person,
+    /// Eraser removes it) and clicking it again, Escape or a selection change leaves it. The
+    /// two Pro tools of the reference are model-backed selection tools and are not drawn.
+    /// Strokes render as they are painted, so there is no Apply step; Size is view state.
+    fn matte_brush_rows(&mut self, ui: &mut egui::Ui, item: ItemId) {
         let armed = self
             .cx
             .matte_brush
             .filter(|brush| brush.item == item)
             .map(|brush| brush.mode);
-        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
-        self.row_label(ui, row, self.tr(Text::MatteBrush));
-        let choices = [
-            (None, "inspector.matte_brush.off", Text::MatteBrushOff),
+        let (row, _) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        self.row_label(ui, row, self.tr(Text::CustomRemoval));
+        let tools = [
             (
-                Some(project::MatteStrokeMode::Add),
+                project::MatteStrokeMode::Add,
                 "inspector.matte_brush.add",
+                Icon::PaintBrush,
                 Text::MatteBrushAdd,
             ),
             (
-                Some(project::MatteStrokeMode::Remove),
+                project::MatteStrokeMode::Remove,
                 "inspector.matte_brush.remove",
+                Icon::Eraser,
                 Text::MatteBrushRemove,
             ),
         ];
-        let ids: Vec<String> = choices.iter().map(|(_, id, _)| (*id).to_owned()).collect();
-        let labels: Vec<&str> = choices.iter().map(|(_, _, text)| self.tr(*text)).collect();
-        let selected = choices
-            .iter()
-            .position(|(mode, _, _)| *mode == armed)
-            .unwrap_or(0);
-        let responses = kit::segmented(&mut value_ui, &ids, &labels, selected);
-        for (((mode, _, _), id), response) in choices.iter().zip(&ids).zip(&responses) {
-            self.remember(id.clone(), response);
-            if response.clicked() && *mode != armed {
-                self.actions.push(Action::SetMatteBrush(
-                    mode.map(|mode| crate::editor::MatteBrush { item, mode }),
-                ));
+        ui.horizontal(|ui| {
+            // The reference tool pitch is 48 px between icon centres.
+            ui.spacing_mut().item_spacing.x = TOOL_PITCH - theme::size::CONTROL;
+            for (mode, id, icon, label) in tools {
+                let selected = armed == Some(mode);
+                if self.icon_only(ui, id, icon, self.tr(label), Some(selected), true) {
+                    self.actions.push(Action::SetMatteBrush(
+                        (!selected).then_some(crate::editor::MatteBrush { item, mode }),
+                    ));
+                }
             }
-        }
+        });
+        self.matte_size_row(ui);
     }
 
     pub(in super::super) fn remove_background_controls(&mut self, ui: &mut egui::Ui, item: ItemId) {

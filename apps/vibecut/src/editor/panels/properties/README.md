@@ -149,13 +149,17 @@ Video and image items get a `Remove BG` cell in the Basic sub-tab bar. It opens 
 analysis status row under `inspector.auto_removal` follow: the same states as Stabilize's, plus
 `Person data missing` with a `Download` button (`inspector.auto_removal.models`) that opens the
 model manager on `pphumanseg-2023mar` and `Analyze` to retry. A clip without a stored matte
-renders unmatted and export refuses to start naming it. Under the status row a `Brush` row
-(`inspector.matte_brush.off`, `.add`, `.remove`, a segmented control) arms or leaves the player's
-matte brush with `SetMatteBrush`, which becomes `Request::ArmMatteBrush`; the armed clip and mode
-are view state in the player (`inspect().matte_brush`), never project data. Each finished drag
-reaches `paint_matte_stroke`, which sets the item's `matte_strokes` list plus the new stroke as one
-`timeline.set_item_field` command, so one stroke is one undo step. The tip size and its control are
-open (no reference measurement); see [Remove background](../../../../../../docs/product/ui/editor.md#remove-background). Switching
+renders unmatted and export refuses to start naming it. Under the status row a `Custom removal` section holds the Brush and Eraser tool toggles
+(`inspector.matte_brush.add`, `.remove`) and a Size row (`inspector.matte_brush.size` field,
+`.size.slider`, `.size.increase`, `.size.decrease`). A tool toggle sends `SetMatteBrush`, which
+becomes `Request::ArmMatteBrush`; clicking the armed tool sends `None`. `SetMatteBrushSize`
+becomes `Request::SetMatteBrushSize`, which the frame clamps to 1 to 100. The armed clip and mode
+and the Size are view state in the player (`inspect().matte_brush`, `inspect().matte_brush_size`),
+never project data. Each finished drag reaches `paint_matte_stroke`, which sets the item's
+`matte_strokes` list plus the new stroke as one `timeline.set_item_field` command, so one stroke
+is one undo step; there is no Apply step because strokes render live. The values and the
+Size-to-radius mapping are in
+[Remove background](../../../../../../docs/product/ui/editor.md#remove-background). Switching
 `Chroma key` on only stages the panel in app state and shows the eyedropper and a
 disabled reset. Switching
 `Chroma key` on only stages the panel in app state and shows the eyedropper and a

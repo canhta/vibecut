@@ -11,7 +11,9 @@ pub use panels::agent::{AgentView, Backend as AgentBackend, Environment as Agent
 pub(crate) use panels::assets;
 pub(crate) use panels::assets::media_panel;
 pub use panels::player::crop::{CropAspect, CropInspection};
-pub(crate) use panels::player::{KeyPick, MatteBrush};
+pub(crate) use panels::player::{
+    KeyPick, MatteBrush, SIZE_MAX as MATTE_BRUSH_SIZE_MAX, SIZE_MIN as MATTE_BRUSH_SIZE_MIN,
+};
 pub use panels::properties;
 mod timeline;
 mod widgets;
@@ -510,6 +512,7 @@ impl Editor {
                 .player
                 .matte_brush
                 .map(|brush| (brush.item, brush.mode)),
+            matte_brush_size: self.player.matte_brush_size,
             font_picker: self
                 .properties
                 .font_inspection(&self.preferences.font_picker),

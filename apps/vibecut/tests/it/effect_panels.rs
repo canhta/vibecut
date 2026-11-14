@@ -3299,13 +3299,38 @@ fn the_matte_brush_paints_one_stroke_per_drag_and_each_is_one_undo_step() {
         .seek(Tick(3 * SECOND), false, project)
         .unwrap();
     harness.run_steps(3);
+    // Custom removal: the brush and eraser tools and Size; the reference's Pro tools, Off,
+    // Apply and a softness control are not drawn.
     for id in [
-        "inspector.matte_brush.off",
         "inspector.matte_brush.add",
         "inspector.matte_brush.remove",
+        "inspector.matte_brush.size",
+        "inspector.matte_brush.size.slider",
+        "inspector.matte_brush.size.increase",
+        "inspector.matte_brush.size.decrease",
     ] {
         assert!(has_widget(&harness, id), "{id}");
     }
+    for id in [
+        "inspector.matte_brush.off",
+        "inspector.matte_brush.apply",
+        "inspector.matte_brush.softness",
+    ] {
+        assert!(!has_widget(&harness, id), "{id}");
+    }
+    // Size starts at the reference's 20 and clamps typed values as the reference does:
+    // the sign drops and the range is 1 to 100.
+    assert_eq!(harness.state().inspect().unwrap().matte_brush_size, 20);
+    type_value(&mut harness, "inspector.matte_brush.size", "-50");
+    assert_eq!(harness.state().inspect().unwrap().matte_brush_size, 50);
+    type_value(&mut harness, "inspector.matte_brush.size", "500");
+    assert_eq!(harness.state().inspect().unwrap().matte_brush_size, 100);
+    type_value(&mut harness, "inspector.matte_brush.size", "0");
+    assert_eq!(harness.state().inspect().unwrap().matte_brush_size, 1);
+    click(&mut harness, "inspector.matte_brush.size.increase");
+    assert_eq!(harness.state().inspect().unwrap().matte_brush_size, 2);
+    type_value(&mut harness, "inspector.matte_brush.size", "20");
+    assert_eq!(harness.state().inspect().unwrap().matte_brush_size, 20);
     // Strokes map through the compositor's placement and the probed frame size, not the
     // decoded pixels, so the fixture's undecodable source needs no preview frame.
     let stage = widget_rect(&harness, "preview.canvas");
@@ -3349,6 +3374,12 @@ fn the_matte_brush_paints_one_stroke_per_drag_and_each_is_one_undo_step() {
     assert_eq!(strokes[0].mode, Mode::Add);
     assert!(strokes[0].points.len() >= 2, "{:?}", strokes[0].points);
     assert!(strokes[0].valid());
+    // Size 20 stores the fitted radius 0.00626 + 20 x 0.00126 of the frame's shorter side.
+    assert!(
+        (strokes[0].radius - 0.03146).abs() < 1e-6,
+        "{}",
+        strokes[0].radius
+    );
     assert_eq!(harness.state().session.history_len().0, history.0 + 1);
     assert_eq!(
         harness.state().inspect().unwrap().matte_brush,
@@ -3376,13 +3407,42 @@ fn the_matte_brush_paints_one_stroke_per_drag_and_each_is_one_undo_step() {
     harness.run_steps(2);
     assert!(matte_strokes(&harness, video).is_empty());
 
-    // Escape leaves the brush; Off does too, and a drag then paints nothing.
+    // Escape leaves the brush; clicking the armed tool again does too, and a drag then paints
+    // nothing. A larger Size stores a larger radius.
     harness.key_press(egui::Key::Escape);
     harness.run_steps(2);
     assert_eq!(harness.state().inspect().unwrap().matte_brush, None);
+    type_value(&mut harness, "inspector.matte_brush.size", "100");
     click(&mut harness, "inspector.matte_brush.add");
-    click(&mut harness, "inspector.matte_brush.off");
+    paint(&mut harness, start, end);
+    let strokes = matte_strokes(&harness, video);
+    assert_eq!(strokes.len(), 1);
+    assert!(
+        (strokes[0].radius - 0.13226).abs() < 1e-6,
+        "{}",
+        strokes[0].radius
+    );
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    // Size 1 stores the smallest tip: a floor of 0.00626, not zero.
+    type_value(&mut harness, "inspector.matte_brush.size", "1");
+    paint(&mut harness, start, end);
+    let strokes = matte_strokes(&harness, video);
+    assert_eq!(strokes.len(), 1);
+    assert!(
+        (strokes[0].radius - 0.00752).abs() < 1e-6,
+        "{}",
+        strokes[0].radius
+    );
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    click(&mut harness, "inspector.matte_brush.add");
     assert_eq!(harness.state().inspect().unwrap().matte_brush, None);
+    assert_eq!(
+        harness.state().inspect().unwrap().matte_brush_size,
+        1,
+        "Size outlives the armed tool"
+    );
     // With the brush off the drag is the preview's ordinary move of the selected clip: one
     // transform step, and no stroke.
     let history = harness.state().session.history_len();

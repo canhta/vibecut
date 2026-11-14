@@ -377,6 +377,7 @@ impl Rig {
             media_drag: None,
             key_color_pick: None,
             matte_brush: None,
+            matte_brush_size: 20,
             colour_sampling: false,
             keywords: None,
         };

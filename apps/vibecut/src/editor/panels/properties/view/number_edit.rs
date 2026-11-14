@@ -258,6 +258,122 @@ impl Panel<'_, '_> {
         self.drive_scrub(item, spec, current, &response, value);
     }
 
+    /// The matte brush's Size row: the label above, the rail and the value group below, the
+    /// slider row's layout. Size is panel view state (1 to 100), not an item field, so it
+    /// writes through `SetMatteBrushSize` and has no keyframes or undo step. A typed value
+    /// commits on Enter or blur, its sign dropped and clamped into range as the reference does.
+    pub(super) fn matte_size_row(&mut self, ui: &mut egui::Ui) {
+        const DRAFT: &str = "matte_brush_size";
+        const ID: &str = "inspector.matte_brush.size";
+        let (min, max) = (
+            crate::editor::MATTE_BRUSH_SIZE_MIN,
+            crate::editor::MATTE_BRUSH_SIZE_MAX,
+        );
+        let current = self.cx.matte_brush_size;
+        let label = self.tr(Text::EffectSize);
+        let (row, _) = ui.allocate_exact_size(
+            Vec2::new(ui.available_width(), SLIDER_ROW),
+            egui::Sense::hover(),
+        );
+        let line = Rect::from_min_size(
+            egui::pos2(row.left(), row.top() + 14.0),
+            Vec2::new(row.width(), theme::size::FIELD),
+        );
+        let color = theme::text(self.cx.dark);
+        let galley = ui.painter().layout_no_wrap(
+            label.to_owned(),
+            egui::FontId::proportional(theme::type_size::BODY),
+            color,
+        );
+        ui.painter().galley(
+            egui::pos2(row.left(), row.top() + 7.0 - galley.size().y / 2.0),
+            galley,
+            color,
+        );
+        let group = SLIDER_FIELD + theme::space::XXS + theme::size::STEPPER;
+        let mut child = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(Rect::from_min_max(
+                    egui::pos2(line.right() - group, line.top()),
+                    line.max,
+                ))
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
+        child.spacing_mut().item_spacing.x = theme::space::XXS;
+        let mut text = self
+            .state
+            .drafts
+            .get(DRAFT)
+            .cloned()
+            .unwrap_or_else(|| current.to_string());
+        let response = kit::value_field(&mut child, ID, &mut text, SLIDER_FIELD, None, label);
+        self.remember(ID, &response);
+        if response.has_focus() {
+            self.state.focus = Some(DRAFT.to_owned());
+        }
+        if response.changed() {
+            self.state.drafts.insert(DRAFT.to_owned(), text);
+        }
+        let (up, down) = kit::stepper(&mut child, ID, label);
+        self.remember(format!("{ID}.increase"), &up);
+        self.remember(format!("{ID}.decrease"), &down);
+        for (clicked, next) in [
+            (up.clicked(), current.saturating_add(1)),
+            (down.clicked(), current.saturating_sub(1)),
+        ] {
+            if clicked {
+                self.actions
+                    .push(Action::SetMatteBrushSize(next.clamp(min, max)));
+                self.state.drafts.remove(DRAFT);
+            }
+        }
+        let editing = response.has_focus() || self.state.focus.as_deref() == Some(DRAFT);
+        if editing && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.state.drafts.remove(DRAFT);
+            self.state.focus = None;
+            response.surrender_focus();
+        } else if (response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+            || response.lost_focus()
+        {
+            self.state.focus = None;
+            if let Some(draft) = self.state.drafts.remove(DRAFT) {
+                let Some(typed) = draft
+                    .trim()
+                    .parse::<f64>()
+                    .ok()
+                    .filter(|number| number.is_finite())
+                else {
+                    self.fail(Error::Invalid("brush size"));
+                    return;
+                };
+                let size = typed.abs().round().clamp(f64::from(min), f64::from(max)) as u32;
+                self.actions.push(Action::SetMatteBrushSize(size));
+            }
+        }
+        let rail_width = (line.width() - group - SLIDER_GAP).max(40.0);
+        let mut rail_ui = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(Rect::from_min_size(
+                    line.min,
+                    Vec2::new(rail_width, line.height()),
+                ))
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
+        let slider_id = format!("{ID}.slider");
+        let (response, value) = kit::rail_slider(
+            &mut rail_ui,
+            &slider_id,
+            f64::from(current),
+            f64::from(min)..=f64::from(max),
+            rail_width,
+        );
+        self.remember(slider_id, &response);
+        let size = value.round() as u32;
+        if (response.dragged() || response.clicked()) && size != current {
+            self.actions.push(Action::SetMatteBrushSize(size));
+        }
+    }
+
     /// Rows with one or two fields sharing a label: Position (X, Y), Rotate, Text size.
     pub(super) fn number_row(
         &mut self,

@@ -1164,6 +1164,7 @@ fn canvas(
         super::matte_brush::show(
             &mut state.brush_trail,
             &brush,
+            state.matte_brush_size,
             cx,
             ui,
             displayed,
