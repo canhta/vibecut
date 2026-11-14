@@ -226,6 +226,8 @@ pub(in crate::editor) enum Action {
         effect: String,
         target: String,
     },
+    /// Arm or leave the matte refinement brush the player paints with.
+    SetMatteBrush(Option<crate::editor::MatteBrush>),
     /// Arm or leave the eyedropper that samples the rendered preview frame.
     SetKeyColorPick(Option<crate::editor::KeyPick>),
     /// Turn the chroma-key effect on or off for one clip.

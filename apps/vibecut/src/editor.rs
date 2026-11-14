@@ -9,8 +9,8 @@ pub use frame::{AppCommand, PreviewZoom};
 pub(crate) mod panels;
 pub(crate) use panels::assets;
 pub(crate) use panels::assets::media_panel;
-pub(crate) use panels::player::KeyPick;
 pub use panels::player::crop::{CropAspect, CropInspection};
+pub(crate) use panels::player::{KeyPick, MatteBrush};
 pub use panels::properties;
 mod timeline;
 mod widgets;
@@ -107,6 +107,14 @@ impl Editor {
         color: project::Color,
     ) -> Result<()> {
         self.with_properties(|state, port| state.pick_key_color(port, item, effect, color))
+    }
+    /// Publish one finished refinement stroke of the matte brush as one undo step.
+    pub(in crate::editor) fn paint_matte_stroke(
+        &mut self,
+        item: ItemId,
+        stroke: project::MatteStroke,
+    ) -> Result<()> {
+        self.with_properties(|_, port| properties::paint_matte_stroke(port, item, stroke))
     }
     /// Poll the active font download; the frame ticks it once per frame.
     pub(in crate::editor) fn poll_fonts(&mut self) {
@@ -493,6 +501,10 @@ impl Editor {
             keybinding_issues: self.frame.keybinding_issues.clone(),
             color_preview: self.properties.color_preview(),
             key_color_pick: self.player.key_color_pick.as_ref().map(|pick| pick.item),
+            matte_brush: self
+                .player
+                .matte_brush
+                .map(|brush| (brush.item, brush.mode)),
             font_picker: self
                 .properties
                 .font_inspection(&self.preferences.font_picker),

@@ -378,3 +378,126 @@ fn a_4k_matte_stays_within_four_layers_of_memory_and_stops_when_cancelled() {
         Err(render::Error::Cancelled)
     ));
 }
+
+#[test]
+fn a_screen_point_maps_back_to_the_decoded_frame_through_crop_and_fit() {
+    let mut data = scene(None, false).into_data();
+    let project::ItemParams::Video(params) = &mut data.scene_mut().timeline.main.items[0].content
+    else {
+        panic!("video item");
+    };
+    params.fit = project::FitMode::Stretch;
+    let project = project::Project::new(data.clone()).unwrap();
+    let viewport = render::viewport::Viewport::new(
+        render::Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 192.0,
+            height: 192.0,
+        },
+        [SIZE, SIZE],
+        1.0,
+        [0.0, 0.0],
+    )
+    .unwrap();
+    let renderer = Renderer::new(&project, RenderSettings::from_project(&project)).unwrap();
+    let at = |renderer: &Renderer<'_>, screen: [f64; 2]| {
+        renderer
+            .frame_point(&viewport, project::ItemId(1), Tick::ZERO, screen)
+            .unwrap()
+            .unwrap()
+    };
+    let (point, frame) = at(&renderer, [96.0, 48.0]);
+    assert_eq!(frame, [SIZE, SIZE]);
+    assert!(
+        (point[0] - 0.5).abs() < 1e-9 && (point[1] - 0.25).abs() < 1e-9,
+        "{point:?}"
+    );
+    // The right half of the frame fills the canvas: the canvas middle shows frame x 0.75.
+    let project::ItemParams::Video(params) = &mut data.scene_mut().timeline.main.items[0].content
+    else {
+        panic!("video item");
+    };
+    params.crop = Some(project::Crop {
+        x: 0.5,
+        y: 0.0,
+        width: 0.5,
+        height: 1.0,
+    });
+    let cropped = project::Project::new(data).unwrap();
+    let renderer = Renderer::new(&cropped, RenderSettings::from_project(&cropped)).unwrap();
+    let (point, _) = at(&renderer, [96.0, 48.0]);
+    assert!(
+        (point[0] - 0.75).abs() < 1e-9 && (point[1] - 0.25).abs() < 1e-9,
+        "{point:?}"
+    );
+}
+
+#[test]
+fn matte_strokes_add_and_remove_over_the_computed_matte_on_their_own_frame_only() {
+    use project::{MatteStroke, MatteStrokeMode as Mode};
+    let hooks = Hooks::default();
+    let on = Some(project::BackgroundRemoval { feather: 0.0 });
+    let two_frames = || {
+        let plane: Vec<u8> = (0..CELLS)
+            .map(|i| if i % SIDE < SIDE / 2 { 255 } else { 0 })
+            .collect();
+        Arc::new(track(&[(Tick::ZERO, plane.clone()), (tick(1, 1), plane)]))
+    };
+    let render = |strokes: Vec<MatteStroke>| {
+        let mut data = scene(on, false).into_data();
+        let project::ItemParams::Video(params) =
+            &mut data.scene_mut().timeline.main.items[0].content
+        else {
+            panic!("video item");
+        };
+        params.matte_strokes = strokes;
+        let project = project::Project::new(data).unwrap();
+        let mut settings = RenderSettings::from_project(&project);
+        settings
+            .person_mattes
+            .insert(project::ItemId(1), two_frames());
+        Renderer::new(&project, settings)
+            .unwrap()
+            .render_frame(Tick::ZERO, &mut Ramp, &hooks)
+            .unwrap()
+    };
+    let stroke = |mode, at, x: f32| MatteStroke {
+        mode,
+        at,
+        radius: 0.1,
+        points: vec![[x, 0.5], [x, 0.6]],
+    };
+    let row = SIZE as usize;
+    // A pixel on the tip's axis, away from its antialiased edge.
+    let probe = |image: &Image, x: usize| image.pixels()[(row / 2 + 4) * row + x];
+    let plain = render(Vec::new());
+    let (person, away) = (row / 4, 3 * row / 4);
+    // Add paints the person into the empty half; the picture there is the clip's own.
+    let added = render(vec![stroke(Mode::Add, Tick::ZERO, 0.75)]);
+    assert_ne!(probe(&added, away), probe(&plain, away));
+    assert_eq!(probe(&added, person), probe(&plain, person));
+    // Remove clears the person half under the tip and nothing outside it.
+    let removed = render(vec![stroke(Mode::Remove, Tick::ZERO, 0.25)]);
+    assert_ne!(probe(&removed, person), probe(&plain, person));
+    assert_eq!(probe(&removed, away), probe(&plain, away));
+    assert_eq!(removed.pixels()[0], plain.pixels()[0]);
+    // The later stroke wins where two overlap, and the same strokes render the same bytes.
+    let remove_then_add = render(vec![
+        stroke(Mode::Remove, Tick::ZERO, 0.25),
+        stroke(Mode::Add, Tick::ZERO, 0.25),
+    ]);
+    assert_eq!(probe(&remove_then_add, person), probe(&plain, person));
+    let add_then_remove = render(vec![
+        stroke(Mode::Add, Tick::ZERO, 0.25),
+        stroke(Mode::Remove, Tick::ZERO, 0.25),
+    ]);
+    assert_eq!(probe(&add_then_remove, person), probe(&removed, person));
+    assert_eq!(
+        render(vec![stroke(Mode::Add, Tick::ZERO, 0.75)]).pixels(),
+        added.pixels()
+    );
+    // A stroke painted on another matte frame leaves this frame untouched.
+    let elsewhere = render(vec![stroke(Mode::Add, tick(1, 1), 0.75)]);
+    assert_eq!(elsewhere.pixels(), plain.pixels());
+}

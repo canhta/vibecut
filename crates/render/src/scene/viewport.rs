@@ -331,6 +331,52 @@ impl MaskGeometry {
 }
 
 impl Renderer<'_> {
+    /// The decoded-frame point of a video item under a screen point at output `at`, in `0..=1` on
+    /// both axes, with the decoded frame's size in pixels. It runs the compositor's own placement
+    /// (crop, fit, transform) backwards, so it names what the preview shows there. `None` for an
+    /// item that is not a visible video item at `at`; stabilization is not undone.
+    pub fn frame_point(
+        &self,
+        viewport: &Viewport,
+        item: ItemId,
+        at: Tick,
+        screen: [f64; 2],
+    ) -> Result<Option<([f64; 2], [u32; 2])>> {
+        let Some(geometry) = self.item_geometry(item, at)? else {
+            return Ok(None);
+        };
+        let Some(found) = self
+            .project
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| track.items.iter())
+            .find(|candidate| candidate.id == item)
+        else {
+            return Ok(None);
+        };
+        if !matches!(found.content, ItemParams::Video(_)) {
+            return Ok(None);
+        }
+        let Some(video) = found
+            .source_asset
+            .and_then(|id| self.project.data().assets.iter().find(|a| a.id() == id))
+            .and_then(|asset| asset.probe().streams.iter().find_map(|s| s.video.as_ref()))
+        else {
+            return Ok(None);
+        };
+        let local = at
+            .checked_sub(found.start)
+            .ok_or(Error::Invalid("item time"))?;
+        let placement = self.placement_at(found, local)?;
+        let canvas = &self.project.data().canvas;
+        let point = geometry.inverse(viewport, screen)?;
+        let frame = [video.width, video.height];
+        let mapped =
+            super::draw::frame_point([canvas.width, canvas.height], frame, placement, point)?;
+        Ok(Some((mapped, frame)))
+    }
     /// Active, selectable item bounds at output `at`. Hidden/locked tracks,
     /// audio, empty text, zero opacity and inactive caption cues are excluded.
     pub fn item_geometry(&self, item: ItemId, at: Tick) -> Result<Option<ItemGeometry>> {

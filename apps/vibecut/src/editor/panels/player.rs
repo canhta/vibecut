@@ -2,6 +2,7 @@
 pub mod crop;
 mod mask_box;
 mod mask_path;
+mod matte_brush;
 mod overlay;
 mod snap;
 mod state;
@@ -14,7 +15,7 @@ use crate::{editor::Context, egui};
 pub use overlay::{Guide, OverlayVisibility};
 use project::ItemId;
 pub use snap::PREVIEW_SNAP_PIXELS;
-pub(crate) use state::{KeyPick, State};
+pub(crate) use state::{KeyPick, MatteBrush, State};
 pub use state::{PreviewAxis, PreviewGuide, TextCaret};
 pub(in crate::editor) use workflow::format_timecode;
 
@@ -100,6 +101,11 @@ pub(crate) enum Action {
     },
     /// A pixel of the rendered preview frame for the armed chroma-key eyedropper.
     PickKeyColor(project::Color),
+    /// One finished refinement stroke of the armed matte brush, published as one undo step.
+    PaintMatteStroke {
+        item: ItemId,
+        stroke: project::MatteStroke,
+    },
     /// A pixel of the rendered preview frame for the armed colour-popover eyedropper.
     PickScreenColour(project::Color),
     /// One preview preference edit, recorded in the app's preference history.

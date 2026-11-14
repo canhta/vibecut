@@ -42,6 +42,11 @@ pub struct VideoParams {
     /// per source and looked up at render, never stored here; only the edge feather is item content.
     #[serde(default)]
     pub background_removal: Option<BackgroundRemoval>,
+    /// Refinement brush strokes painted over the person matte, in the order they were painted;
+    /// kept while background removal is off so a toggle loses no work. Each stroke touches only
+    /// the matte frame covering its `at`.
+    #[serde(default)]
+    pub matte_strokes: Vec<MatteStroke>,
 }
 /// The item's side of person background removal: how far the matte edge is softened.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -56,6 +61,53 @@ impl BackgroundRemoval {
     /// Whether the feather is finite and within range.
     pub fn valid(self) -> bool {
         self.feather.is_finite() && (0.0..=Self::MAX_FEATHER).contains(&self.feather)
+    }
+}
+/// What a refinement stroke does to the matte beneath it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MatteStrokeMode {
+    /// Paints the person in: the matte becomes fully covered under the stroke.
+    Add,
+    /// Paints the person out: the matte becomes fully clear under the stroke.
+    Remove,
+}
+/// One brush stroke of the matte refinement brush: a round tip dragged along `points`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MatteStroke {
+    pub mode: MatteStrokeMode,
+    /// Source time of the frame the stroke was painted on; it refines the matte frame covering it.
+    pub at: Tick,
+    /// Tip radius as a fraction of the decoded frame's shorter side, `0 < radius <= MAX_RADIUS`.
+    pub radius: f32,
+    /// Tip centres along the drag, each in decoded-frame units (`0..=1` on both axes), in order.
+    pub points: Vec<[f32; 2]>,
+}
+impl MatteStroke {
+    /// Largest tip radius: half the shorter side. The brush's size range is not measured in the
+    /// reference, so this bound only keeps a stroke inside the frame's scale.
+    pub const MAX_RADIUS: f32 = 0.5;
+    /// Most points one stroke holds.
+    pub const MAX_POINTS: usize = 4096;
+    /// Most strokes one item holds.
+    pub const MAX_PER_ITEM: usize = 1024;
+    /// Whether the radius, the points and the time are finite and in range.
+    pub fn valid(&self) -> bool {
+        self.radius.is_finite()
+            && self.radius > 0.0
+            && self.radius <= Self::MAX_RADIUS
+            && self.at >= Tick::ZERO
+            && !self.points.is_empty()
+            && self.points.len() <= Self::MAX_POINTS
+            && self
+                .points
+                .iter()
+                .all(|p| p.iter().all(|c| c.is_finite() && (0.0..=1.0).contains(c)))
+    }
+    /// Whether every stroke of a list is valid and the list is within its bound.
+    pub fn valid_list(strokes: &[Self]) -> bool {
+        strokes.len() <= Self::MAX_PER_ITEM && strokes.iter().all(Self::valid)
     }
 }
 /// How strongly stabilization smooths the camera path; the reference names exactly these three.
@@ -111,6 +163,7 @@ impl VideoParams {
             reduce_noise: false,
             stabilize: None,
             background_removal: None,
+            matte_strokes: Vec::new(),
         }
     }
 }

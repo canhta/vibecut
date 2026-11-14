@@ -54,7 +54,48 @@ impl Panel<'_, '_> {
             CorrectionKind::PersonMatte,
             "inspector.auto_removal",
         );
+        self.matte_brush_row(ui, item);
         ui.add_space(theme::space::MD);
+    }
+
+    /// The refinement brush: Off, Add or Remove. Add and Remove arm the player, whose drags then
+    /// each paint one stroke over the matte; the tip size is not measured and has no control.
+    fn matte_brush_row(&mut self, ui: &mut egui::Ui, item: ItemId) {
+        let armed = self
+            .cx
+            .matte_brush
+            .filter(|brush| brush.item == item)
+            .map(|brush| brush.mode);
+        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        self.row_label(ui, row, self.tr(Text::MatteBrush));
+        let choices = [
+            (None, "inspector.matte_brush.off", Text::MatteBrushOff),
+            (
+                Some(project::MatteStrokeMode::Add),
+                "inspector.matte_brush.add",
+                Text::MatteBrushAdd,
+            ),
+            (
+                Some(project::MatteStrokeMode::Remove),
+                "inspector.matte_brush.remove",
+                Text::MatteBrushRemove,
+            ),
+        ];
+        let ids: Vec<String> = choices.iter().map(|(_, id, _)| (*id).to_owned()).collect();
+        let labels: Vec<&str> = choices.iter().map(|(_, _, text)| self.tr(*text)).collect();
+        let selected = choices
+            .iter()
+            .position(|(mode, _, _)| *mode == armed)
+            .unwrap_or(0);
+        let responses = kit::segmented(&mut value_ui, &ids, &labels, selected);
+        for (((mode, _, _), id), response) in choices.iter().zip(&ids).zip(&responses) {
+            self.remember(id.clone(), response);
+            if response.clicked() && *mode != armed {
+                self.actions.push(Action::SetMatteBrush(
+                    mode.map(|mode| crate::editor::MatteBrush { item, mode }),
+                ));
+            }
+        }
     }
 
     pub(in super::super) fn remove_background_controls(&mut self, ui: &mut egui::Ui, item: ItemId) {

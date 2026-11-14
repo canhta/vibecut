@@ -208,6 +208,11 @@ impl Admit for Option<project::BackgroundRemoval> {
         self.is_none_or(project::BackgroundRemoval::valid)
     }
 }
+impl Admit for Vec<project::MatteStroke> {
+    fn admits(&self, _: &ParamBounds) -> bool {
+        project::MatteStroke::valid_list(self)
+    }
+}
 impl Admit for Option<TextBackground> {
     fn admits(&self, _: &ParamBounds) -> bool {
         self.as_ref().is_none_or(TextBackground::valid)
@@ -381,6 +386,17 @@ impl ParamText for Option<project::BackgroundRemoval> {
             feather: text.parse().ok()?,
         };
         removal.valid().then_some(Some(removal))
+    }
+}
+/// The whole stroke list as JSON, or `none` for an empty list; a drag on the player is the usual
+/// writer, so this is for scripts.
+impl ParamText for Vec<project::MatteStroke> {
+    fn from_text(text: &str, _: &ParamBounds) -> Option<Self> {
+        let text = text.trim();
+        if text.eq_ignore_ascii_case("none") {
+            return Some(Vec::new());
+        }
+        serde_json::from_str(text).ok()
     }
 }
 /// A crop is placed by dragging, not typed, so no text reads as one.
@@ -1014,6 +1030,20 @@ item_params! {
                 }
                 _ => Err(EditError::Invalid("background removal is off")),
             }
+        },
+    },
+    /// The refinement brush strokes of a video item's person matte, replaced as a whole list: one
+    /// stroke is one patch and so one undo step. Kept while background removal is off.
+    MatteStrokes(Vec<project::MatteStroke>) = "matte_strokes" {
+        targets: VIDEO,
+        bounds: ParamBounds::Shape,
+        unit: ParamUnit::None,
+        path: None,
+        apply: |t, v, cx| {
+            if let ItemParams::Video(p) = &mut t.content {
+                p.matte_strokes = v.clone();
+            }
+            Ok(())
         },
     },
     /// How a video or image item's cropped source is placed on the canvas.

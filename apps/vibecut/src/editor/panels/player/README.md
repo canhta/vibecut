@@ -23,6 +23,15 @@ for the gesture, the same rule the timeline uses. A dashed accent guide is paint
 each active target and cleared on release, so the committed project and its undo history
 stay untouched until the drop.
 
+`matte_brush` is the person-matte refinement brush. While the properties panel arms it
+(`State.matte_brush`, the clip and an add or remove mode), the canvas shows a crosshair, takes the
+drag instead of the transform gizmo, maps each pointer position through `Renderer::frame_point`
+(crop, fit and transform undone) to a decoded-frame point, draws a translucent trail, and on release
+sends one `Action::PaintMatteStroke` carrying a `project::MatteStroke` stamped with the item's source
+time at the playhead. Escape, a selection change or leaving the panel disarms it; the stroke itself
+is one undo step ([properties](../properties/README.md#remove-bg-sub-tab)). The tip radius is a fixed
+fraction of the frame's shorter side because no reference value exists.
+
 `mask_path` edits the single selected item's active closed path mask. Anchors and the
 selected anchors' in/out tangents are drawn through `render::viewport::MaskGeometry`,
 the same mask-box, item and viewport affine that draws the contour, so handles stay on

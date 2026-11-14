@@ -181,6 +181,8 @@ pub struct Inspection {
     pub color_preview: Option<project::Color>,
     /// Clip whose chroma-key eyedropper is armed for the next player click.
     pub key_color_pick: Option<ItemId>,
+    /// Clip and mode of the armed matte refinement brush.
+    pub matte_brush: Option<(ItemId, project::MatteStrokeMode)>,
     /// Present while the shortcuts dialog is open.
     pub shortcuts: Option<ShortcutsInspection>,
     /// Font picker state, tab, favourites and download.

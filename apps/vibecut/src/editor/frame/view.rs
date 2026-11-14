@@ -21,6 +21,14 @@ impl Editor {
         }) {
             self.player.key_color_pick = None;
         }
+        // The brush belongs to one selected clip's panel.
+        if self.player.matte_brush.is_some_and(|brush| {
+            crate::editor::context::single(self.session.selection()) != Some(brush.item)
+                || self.properties.details()
+        }) {
+            self.player.matte_brush = None;
+            self.player.brush_trail = None;
+        }
         if !self.configured {
             Self::fonts(ui.ctx());
             icons::install(ui.ctx());
@@ -401,6 +409,11 @@ impl Editor {
                         && let Err(error) =
                             self.pick_key_color(pick.item, pick.effect.as_deref(), color)
                     {
+                        self.fail(error.to_string());
+                    }
+                }
+                Action::PaintMatteStroke { item, stroke } => {
+                    if let Err(error) = self.paint_matte_stroke(item, stroke) {
                         self.fail(error.to_string());
                     }
                 }

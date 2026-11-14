@@ -17,6 +17,10 @@ pub(crate) struct State {
     pub(in crate::editor) texture: preview::FrameTexture,
     /// Armed chroma-key eyedropper, cleared by its pick, Escape or a selection change.
     pub(in crate::editor) key_color_pick: Option<KeyPick>,
+    /// Armed matte refinement brush, cleared by Escape or a selection change.
+    pub(in crate::editor) matte_brush: Option<MatteBrush>,
+    /// The stroke the pointer is dragging, published when the button releases.
+    pub(in crate::editor) brush_trail: Option<super::matte_brush::Trail>,
     /// Last view state read from the session metadata.
     pub(in crate::editor) last_view: project::ViewState,
     /// Grid size an open drag or typed edit shows; it is published once when the gesture ends.
@@ -49,6 +53,8 @@ impl State {
             timecode_error: None,
             texture: preview::FrameTexture::default(),
             key_color_pick: None,
+            matte_brush: None,
+            brush_trail: None,
             last_view: project::ViewState::default(),
             grid_draft: None,
             margin_draft: None,
@@ -92,6 +98,13 @@ pub struct PreviewGuide {
 pub(crate) struct KeyPick {
     pub(crate) item: project::ItemId,
     pub(crate) effect: Option<String>,
+}
+/// The matte refinement brush is armed for one clip: the player turns each drag into one stroke
+/// of `mode`, until Escape, a selection change or the panel leaves it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct MatteBrush {
+    pub(crate) item: project::ItemId,
+    pub(crate) mode: project::MatteStrokeMode,
 }
 pub(in crate::editor) struct TimecodeEdit {
     pub(in crate::editor) text: String,

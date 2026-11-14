@@ -85,6 +85,25 @@ pub(super) fn source_map(
     Ok([kx, g.sx - g.dx * kx, ky, g.sy - g.dy * ky])
 }
 /// Clip-pixel gains before draw's optional source half reductions.
+/// The decoded-frame point, in `0..=1` on both axes and clamped to the frame, that a canvas point
+/// of a placed clip shows: `draw`'s own map, so a brush stroke lands on what the preview displays.
+pub(super) fn frame_point(
+    target: [u32; 2],
+    source: [u32; 2],
+    placement: Placement,
+    canvas: [f64; 2],
+) -> Result<[f64; 2]> {
+    let [ax, bx, ay, by] = source_map(target, source, placement)?;
+    let point = [
+        (ax * canvas[0] + bx) / f64::from(source[0]),
+        (ay * canvas[1] + by) / f64::from(source[1]),
+    ];
+    if point.iter().any(|v| !v.is_finite()) {
+        return Err(Error::Invalid("placement transform overflow"));
+    }
+    Ok(point.map(|v| v.clamp(0.0, 1.0)))
+}
+/// Clip-pixel gains before draw's optional source half reductions.
 pub(super) fn clip_pixel_scale(
     target: [u32; 2],
     source: [u32; 2],
