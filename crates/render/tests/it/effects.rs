@@ -1107,9 +1107,11 @@ fn chroma_key_removes_a_green_screen_at_several_intensities() {
 }
 
 #[test]
-fn chroma_key_suppresses_spill_without_a_control() {
-    // Light green cast over skin: mostly kept, but the dominant channel loses
-    // its excess over the other two (the reference's spill stage at full strength).
+fn chroma_key_leaves_spill_for_the_clean_up_edge_slider() {
+    // Reference frames 151402/151406/151410: the keyed fringe stays green at
+    // Clean up edge 0, is neutral at 50 and identical at 100. Light green cast
+    // over skin: the keying pass keeps its colour; the Clean up pass takes the
+    // dominant channel's excess over the other two, fully by slider 50.
     let cast = srgb_pixel([0.55, 0.60, 0.5], 1.0);
     let out = keyed(GREEN_KEY, 40.0, 0.0, cast);
     assert!(out[3] > 0.8, "cast should stay foreground: {}", out[3]);
@@ -1121,8 +1123,31 @@ fn chroma_key_suppresses_spill_without_a_control() {
         }
     };
     let green = encoded(out[1] / out[3]);
-    assert!((green - 0.55).abs() < 1e-4, "spill green {green}");
-    assert!((out[1] - out[0]).abs() < 1e-5, "green no longer dominates");
+    assert!((green - 0.60).abs() < 1e-3, "keying keeps the green {green}");
+    let cleaned = |slider: f64| {
+        let pixels = vec![cast.map(f64::from); 2];
+        let (out, _) = spatial_output(
+            &pixels,
+            [2, 1],
+            [1.0, 1.0],
+            &chroma_edge_effect(40.0, slider, 0.0),
+            true,
+        );
+        out[0]
+    };
+    let at_zero = cleaned(0.0);
+    assert!((at_zero[1] - out[1]).abs() < 1e-5, "slider 0 changes nothing");
+    let green_at = |slider| {
+        let pixel = cleaned(slider);
+        encoded(pixel[1] / pixel[3])
+    };
+    assert!((green_at(25.0) - 0.575).abs() < 2e-3, "half strength {}", green_at(25.0));
+    for slider in [50.0, 100.0] {
+        assert!((green_at(slider) - 0.55).abs() < 2e-3, "{slider}: {}", green_at(slider));
+        let pixel = cleaned(slider);
+        assert!((pixel[1] - pixel[0]).abs() < 1e-4, "green no longer dominates");
+        assert!((pixel[3] - out[3]).abs() < 1e-6, "the matte is untouched");
+    }
     // Shadow restores pixels darker than the key, as the reference shows.
     let dark = srgb_pixel([0.0, 0.35, 0.0], 1.0);
     let plain = keyed(GREEN_KEY, 40.0, 0.0, dark)[3];
@@ -1197,11 +1222,11 @@ fn chroma_edge_passes(effect: &project::EffectInstance, gain: f64) -> Vec<Effect
 }
 
 #[test]
-fn chroma_key_edge_stages_clean_then_feather_the_matte_on_the_cpu() {
-    // Reference rows: Feather edge and Clean up edge are inferred from the
-    // controls' names (the capture shows no picture of either), so the rows pin
-    // our reading: Clean up takes the minimum coverage over a disc, Feather the
-    // disc mean capped at the pixel's own coverage, Clean up first.
+fn chroma_key_feather_edge_blurs_colour_and_coverage_on_the_cpu() {
+    // Reference frames 151342/151351: Feather edge blurs the keyed layer on both
+    // sides of the edge (the dark side spreads past the original edge). Our row:
+    // the mean of the premultiplied pixel over a disc, slider 5 giving a radius of
+    // 0.9 clip pixels, the four neighbours each read twice by the eight-tap ring.
     let (w, h) = (12usize, 5usize);
     let green = srgb_pixel([0.0, 1.0, 0.0], 1.0);
     let skin = srgb_pixel([0.76, 0.55, 0.42], 1.0);
@@ -1212,58 +1237,46 @@ fn chroma_key_edge_stages_clean_then_feather_the_matte_on_the_cpu() {
         })
         .collect();
     let size = [w as u32, h as u32];
-    let alpha = |effect: &project::EffectInstance| {
+    let run = |effect: &project::EffectInstance| {
         let (out, _) = spatial_output(&pixels, size, [1.0, 1.0], effect, true);
         out
     };
-    let base = alpha(&chroma_edge_effect(40.0, 0.0, 0.0));
+    let base = run(&chroma_edge_effect(40.0, 0.0, 0.0));
     assert!(base[5][3] < 1e-3 && base[6][3] > 0.99, "a vertical key edge");
-    // Slider 25 and 12.5 give a one pixel radius: the four neighbours, the
-    // horizontal pair read twice by the eight-tap ring.
     let at = |a: &[[f32; 4]], x: i64, y: i64| {
-        a[y.clamp(0, h as i64 - 1) as usize * w + x.clamp(0, w as i64 - 1) as usize][3]
+        a[y.clamp(0, h as i64 - 1) as usize * w + x.clamp(0, w as i64 - 1) as usize]
     };
-    let clean = |a: &[[f32; 4]]| -> Vec<f32> {
+    let feather = |a: &[[f32; 4]]| -> Vec<[f32; 4]> {
         (0..h * w)
             .map(|i| {
                 let (x, y) = ((i % w) as i64, (i / w) as i64);
-                [(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)]
-                    .iter()
-                    .map(|(dx, dy)| at(a, x + dx, y + dy))
-                    .fold(f32::MAX, f32::min)
+                let mut sum = a[i];
+                for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                    let n = at(a, x + dx, y + dy);
+                    for c in 0..4 {
+                        sum[c] += 2.0 * n[c];
+                    }
+                }
+                sum.map(|v| v / 9.0)
             })
             .collect()
     };
-    let feather = |a: &[[f32; 4]]| -> Vec<f32> {
-        (0..h * w)
-            .map(|i| {
-                let (x, y) = ((i % w) as i64, (i / w) as i64);
-                let ring: f32 = [(1, 0), (-1, 0), (0, 1), (0, -1)]
-                    .iter()
-                    .map(|(dx, dy)| 2.0 * at(a, x + dx, y + dy))
-                    .sum();
-                a[i][3].min((a[i][3] + ring) / 9.0)
-            })
-            .collect()
-    };
-    let close = |actual: &[[f32; 4]], expected: &[f32], what: &str| {
-        for (i, (pixel, alpha)) in actual.iter().zip(expected).enumerate() {
-            assert!((pixel[3] - alpha).abs() < 1e-5, "{what} {i}: {pixel:?} {alpha}");
+    let close = |actual: &[[f32; 4]], expected: &[[f32; 4]], what: &str| {
+        for (i, (pixel, want)) in actual.iter().zip(expected).enumerate() {
+            for c in 0..4 {
+                assert!((pixel[c] - want[c]).abs() < 1e-5, "{what} {i}: {pixel:?} {want:?}");
+            }
             assert!(pixel[..3].iter().all(|v| *v <= pixel[3] + 1e-6), "{what} {i}");
         }
     };
-    let cleaned = alpha(&chroma_edge_effect(40.0, 25.0, 0.0));
-    close(&cleaned, &clean(&base), "clean");
-    assert!(cleaned[6][3] < 1e-3, "the first opaque column is cut");
-    assert!(cleaned[7][3] > 0.99, "the next column stays");
-    let feathered = alpha(&chroma_edge_effect(40.0, 0.0, 12.5));
+    let feathered = run(&chroma_edge_effect(40.0, 0.0, 5.0));
     close(&feathered, &feather(&base), "feather");
-    assert!(feathered[5][3] < 1e-3, "feather never lifts removed coverage");
+    assert!(feathered[5][3] > 0.1, "the edge spreads onto the removed side");
     assert!(feathered[6][3] > 0.2 && feathered[6][3] < 0.9, "a soft edge");
-    // Both: Clean up first, then Feather.
-    let both = alpha(&chroma_edge_effect(40.0, 25.0, 12.5));
-    let expected = feather(&alpha(&chroma_edge_effect(40.0, 25.0, 0.0)));
-    close(&both, &expected, "both");
+    // Clean up is pixel-local and leaves this fixture's skin alone, so adding it
+    // does not change the feathered result.
+    let both = run(&chroma_edge_effect(40.0, 25.0, 5.0));
+    close(&both, &feather(&base), "both");
 }
 
 #[test]
@@ -1274,20 +1287,25 @@ fn chroma_key_edge_passes_follow_the_keying_pass_scale_and_refuse_bad_input() {
             .map(|pass| (pass.entry_point().to_owned(), pass.values().into_owned()))
             .collect::<Vec<_>>()
     };
-    // Defaults add no edge pass; both sliders add clean up, then feather.
+    // Defaults add no edge pass; both sliders add spill clean up, then feather.
     assert_eq!(entries(&chroma_edge_effect(20.0, 0.0, 0.0), 1.0).len(), 1);
     let full = entries(&chroma_edge_effect(20.0, 100.0, 100.0), 1.0);
     assert_eq!(
         full.iter().map(|(entry, _)| entry.as_str()).collect::<Vec<_>>(),
-        ["chroma_key", "matte_clean", "matte_feather"]
+        ["chroma_key", "spill_clean", "matte_feather"]
     );
-    assert_eq!(full[1].1, [4.0]);
-    assert_eq!(full[2].1, [8.0]);
-    // The radius follows the clip-to-output pixel scale and saturates.
-    assert_eq!(entries(&chroma_edge_effect(20.0, 100.0, 0.0), 2.0)[1].1, [8.0]);
-    assert_eq!(entries(&chroma_edge_effect(20.0, 100.0, 100.0), 1e9)[2].1, [64.0]);
-    // Under half an output pixel emits nothing; intensity 0 keys nothing, so no edge stage.
-    assert_eq!(entries(&chroma_edge_effect(20.0, 10.0, 5.0), 1.0).len(), 1);
+    // Spill strength reaches 1 at slider 50 and is linear below it.
+    assert_eq!(full[1].1, [0.0, 1.0, 0.0, 1.0]);
+    assert_eq!(full[2].1, [18.0]);
+    let half = entries(&chroma_edge_effect(20.0, 25.0, 0.0), 1.0);
+    assert_eq!(half[1].1, [0.0, 1.0, 0.0, 0.5]);
+    assert_eq!(entries(&chroma_edge_effect(20.0, 50.0, 0.0), 1.0)[1].1[3], 1.0);
+    // The feather radius follows the clip-to-output pixel scale and saturates.
+    assert_eq!(entries(&chroma_edge_effect(20.0, 0.0, 100.0), 2.0)[1].1, [36.0]);
+    assert_eq!(entries(&chroma_edge_effect(20.0, 0.0, 100.0), 1e9)[1].1, [64.0]);
+    // A feather under half an output pixel emits nothing; intensity 0 keys
+    // nothing, so no edge stage.
+    assert_eq!(entries(&chroma_edge_effect(20.0, 0.0, 2.0), 1.0).len(), 1);
     assert!(entries(&chroma_edge_effect(0.0, 100.0, 100.0), 1.0).is_empty());
     // Hostile parameter values never reach a pass, and a bad pass never validates.
     let definition = project::effect_definition("chroma_key").unwrap();
@@ -1302,15 +1320,28 @@ fn chroma_key_edge_passes_follow_the_keying_pass_scale_and_refuse_bad_input() {
             );
         }
     }
-    for entry in ["matte_clean", "matte_feather"] {
-        let sample = |values: Vec<f32>| EffectPass::Sample {
-            entry_point: entry,
-            uniforms: values.into_iter().map(Uniform::Float).collect(),
-        };
-        assert!(validate_pass(&sample(vec![2.0]), 8, 4).is_ok(), "{entry}");
-        for values in [vec![], vec![0.4], vec![64.5], vec![f32::NAN], vec![1.0, 1.0]] {
-            assert!(validate_pass(&sample(values.clone()), 8, 4).is_err(), "{entry} {values:?}");
-        }
+    let sample = |values: Vec<f32>| EffectPass::Sample {
+        entry_point: "matte_feather",
+        uniforms: values.into_iter().map(Uniform::Float).collect(),
+    };
+    assert!(validate_pass(&sample(vec![2.0]), 8, 4).is_ok());
+    for values in [vec![], vec![0.4], vec![64.5], vec![f32::NAN], vec![1.0, 1.0]] {
+        assert!(validate_pass(&sample(values.clone()), 8, 4).is_err(), "{values:?}");
+    }
+    let spill = |key: [f32; 3], strength: f32| EffectPass::Pixel {
+        entry_point: "spill_clean",
+        uniforms: vec![Uniform::Color(key), Uniform::Float(strength)],
+    };
+    assert!(validate_pass(&spill([0.0, 1.0, 0.0], 0.5), 8, 4).is_ok());
+    assert!(validate_pass(&spill([0.0, 1.0, 0.0], 1.0), 8, 4).is_ok());
+    for (key, strength) in [
+        ([0.0, 1.0, 0.0], 0.0),
+        ([0.0, 1.0, 0.0], 1.5),
+        ([0.0, 1.0, 0.0], f32::NAN),
+        ([0.0, 1.5, 0.0], 0.5),
+        ([f32::NAN, 1.0, 0.0], 0.5),
+    ] {
+        assert!(validate_pass(&spill(key, strength), 8, 4).is_err(), "{key:?} {strength}");
     }
 }
 
@@ -1387,7 +1418,7 @@ fn masked_item_chroma_key_composes_with_track_below() {
     let inside = at(&partial, 5);
     let outside = at(&partial, 35);
     // Inside: the partly keyed green keeps some transparency, so the blue
-    // backdrop shows through; spill leaves no green cast.
+    // backdrop shows through.
     assert!(
         inside[0] == 0.0 && inside[2] > 0.2 && inside[2] < 1.0 && inside[3] == 1.0,
         "inside {inside:?}"

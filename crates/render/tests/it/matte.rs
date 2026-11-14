@@ -309,7 +309,7 @@ fn a_matted_item_renders_the_same_in_preview_and_export_and_a_missing_matte_rend
                 .unwrap()
         }
     };
-    let on = Some(project::BackgroundRemoval { feather: 0.0 });
+    let on = Some(project::BackgroundRemoval { feather: 0.0, ..Default::default() });
     let off = scene(None, false);
     let plain = render(&off, None, false);
     let empty = render(&scene(None, true), None, false);
@@ -341,7 +341,7 @@ fn a_matted_item_renders_the_same_in_preview_and_export_and_a_missing_matte_rend
     );
     // A feather softens the cut: the column at the boundary is neither clip nor canvas.
     let soft = render(
-        &scene(Some(project::BackgroundRemoval { feather: 100.0 }), false),
+        &scene(Some(project::BackgroundRemoval { feather: 100.0, ..Default::default() }), false),
         Some(halves()),
         false,
     );
@@ -437,7 +437,7 @@ fn a_screen_point_maps_back_to_the_decoded_frame_through_crop_and_fit() {
 fn matte_strokes_add_and_remove_over_the_computed_matte_on_their_own_frame_only() {
     use project::{MatteStroke, MatteStrokeMode as Mode};
     let hooks = Hooks::default();
-    let on = Some(project::BackgroundRemoval { feather: 0.0 });
+    let on = Some(project::BackgroundRemoval { feather: 0.0, ..Default::default() });
     let two_frames = || {
         let plane: Vec<u8> = (0..CELLS)
             .map(|i| if i % SIDE < SIDE / 2 { 255 } else { 0 })
@@ -500,4 +500,117 @@ fn matte_strokes_add_and_remove_over_the_computed_matte_on_their_own_frame_only(
     // A stroke painted on another matte frame leaves this frame untouched.
     let elsewhere = render(vec![stroke(Mode::Add, tick(1, 1), 0.75)]);
     assert_eq!(elsewhere.pixels(), plain.pixels());
+}
+
+#[test]
+fn a_cutout_stroke_outlines_the_matte_edge_in_the_preview_and_the_export() {
+    let hooks = Hooks::default();
+    let stroke = project::CutoutStroke {
+        enabled: true,
+        preset: project::StrokePreset::Solid,
+        ..Default::default()
+    };
+    let removal = |stroke| Some(project::BackgroundRemoval { feather: 0.0, stroke });
+    let render = |stroke: project::CutoutStroke, preview: bool| {
+        let project = scene(removal(stroke), false);
+        let mut settings = RenderSettings::from_project(&project);
+        settings.person_mattes.insert(project::ItemId(1), halves());
+        let mut renderer = Renderer::new(&project, settings).unwrap();
+        if preview {
+            renderer.preview_frame(Tick::ZERO, &mut Ramp, &hooks).unwrap()
+        } else {
+            renderer.render_frame(Tick::ZERO, &mut Ramp, &hooks).unwrap()
+        }
+    };
+    let plain = render(project::CutoutStroke::default(), false);
+    let drawn = render(stroke, false);
+    assert_eq!(drawn.pixels(), render(stroke, true).pixels(), "preview equals export");
+    assert_eq!(drawn.pixels(), render(stroke, false).pixels(), "deterministic");
+    // The default Size 35 at 192 px is a 3.7 px radius: the person half is untouched, the
+    // columns beside the edge are white, and the far side stays the canvas.
+    let row = SIZE as usize;
+    for y in 8..row - 8 {
+        for x in [0, row / 4, row / 2 - 1] {
+            assert_eq!(drawn.pixels()[y * row + x], plain.pixels()[y * row + x]);
+        }
+        let near = drawn.pixels()[y * row + row / 2];
+        assert!(near.iter().all(|v| (v - 1.0).abs() < 1e-3), "edge column {near:?}");
+        let far = y * row + 3 * row / 4;
+        assert_eq!(drawn.pixels()[far], plain.pixels()[far]);
+    }
+    // Opacity scales the outline's coverage; Size 0 leaves a thin line (one pixel);
+    // the None preset and an unchecked box draw nothing.
+    let half = render(project::CutoutStroke { opacity: 50.0, ..stroke }, false);
+    let middle = row / 2 * row + row / 2;
+    for channel in 0..4 {
+        let expected = 0.5 + 0.5 * plain.pixels()[middle][channel];
+        assert!(
+            (half.pixels()[middle][channel] - expected).abs() < 1e-3,
+            "{:?}",
+            half.pixels()[middle]
+        );
+    }
+    let thin = render(project::CutoutStroke { size: 0.0, ..stroke }, false);
+    assert_ne!(thin.pixels()[middle], plain.pixels()[middle]);
+    assert_eq!(thin.pixels()[middle + 3], plain.pixels()[middle + 3]);
+    for off in [
+        project::CutoutStroke { preset: project::StrokePreset::None, ..stroke },
+        project::CutoutStroke { enabled: false, ..stroke },
+    ] {
+        assert_eq!(render(off, false).pixels(), plain.pixels());
+    }
+}
+
+#[test]
+fn the_stroke_pass_measures_its_radius_and_colours_the_shape_distance() {
+    let hooks = Hooks::default();
+    // 200 x 100 layer, the left half opaque grey, the right transparent.
+    let layer = || {
+        Image::from_working_pixels(
+            200,
+            100,
+            (0..200 * 100).map(|i| if i % 200 < 100 { [0.2, 0.2, 0.2, 1.0] } else { [0.0; 4] }),
+            &hooks,
+        )
+        .unwrap()
+    };
+    let stroke = project::CutoutStroke {
+        enabled: true,
+        preset: project::StrokePreset::Solid,
+        size: 100.0,
+        color: project::Color([255, 255, 255, 255]),
+        opacity: 100.0,
+    };
+    assert!((render::outline::radius(100.0, 200, 100) - 5.3).abs() < 1e-3);
+    assert_eq!(render::outline::radius(0.0, 200, 100), 1.0, "thin, never zero");
+    let out = render::outline::apply(layer(), &stroke, &hooks).unwrap();
+    let at = |x: usize| out.pixels()[50 * 200 + x];
+    assert_eq!(at(99), [0.2, 0.2, 0.2, 1.0], "the person is untouched");
+    // Distance to the nearest person pixel is x - 99; coverage is radius + 0.5 - distance.
+    assert!(at(100).iter().all(|v| (v - 1.0).abs() < 1e-6));
+    assert!((at(104)[3] - 0.8).abs() < 1e-4 && (at(104)[0] - 0.8).abs() < 1e-4);
+    assert_eq!(at(105), [0.0; 4]);
+    assert_eq!(at(150), [0.0; 4]);
+    // A partly covered pixel (a soft matte edge) keeps what it shows and gains the rest.
+    let soft = Image::from_working_pixels(
+        200,
+        100,
+        (0..200 * 100).map(|i| match i % 200 {
+            0..=99 => [0.2, 0.2, 0.2, 1.0],
+            100 => [0.05, 0.05, 0.05, 0.25],
+            _ => [0.0; 4],
+        }),
+        &hooks,
+    )
+    .unwrap();
+    let out = render::outline::apply(soft, &stroke, &hooks).unwrap();
+    let edge = out.pixels()[50 * 200 + 100];
+    assert!((edge[3] - 1.0).abs() < 1e-5, "0.25 + 0.75 of white: {edge:?}");
+    assert!((edge[0] - (0.05 + 0.75)).abs() < 1e-5, "{edge:?}");
+    // Nothing opaque: nothing to outline.
+    let empty = Image::from_working_pixels(8, 8, std::iter::repeat_n([0.0; 4], 64), &hooks).unwrap();
+    assert_eq!(
+        render::outline::apply(empty, &stroke, &hooks).unwrap().pixels(),
+        vec![[0.0; 4]; 64].as_slice()
+    );
 }

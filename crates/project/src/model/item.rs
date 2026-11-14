@@ -53,19 +53,74 @@ pub struct VideoParams {
     #[serde(default)]
     pub remove_flicker: bool,
 }
-/// The item's side of person background removal: how far the matte edge is softened.
+/// The item's side of person background removal: how far the matte edge is softened and the
+/// outline drawn around the cutout.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct BackgroundRemoval {
     /// Edge feather, `0..=MAX_FEATHER`; 0 keeps the model's own edge.
     pub feather: f32,
+    /// The Stroke row of the reference's Auto removal.
+    pub stroke: CutoutStroke,
 }
 impl BackgroundRemoval {
     /// Largest edge feather: a 0..=100 slider. The scale is our choice; the reference shows none.
     pub const MAX_FEATHER: f32 = 100.0;
-    /// Whether the feather is finite and within range.
+    /// Whether the feather is finite and within range and the stroke is valid.
     pub fn valid(self) -> bool {
-        self.feather.is_finite() && (0.0..=Self::MAX_FEATHER).contains(&self.feather)
+        self.feather.is_finite()
+            && (0.0..=Self::MAX_FEATHER).contains(&self.feather)
+            && self.stroke.valid()
+    }
+}
+/// The outline styles of the Stroke row. The reference lists eight tiles (None, Paper Stroke,
+/// Luminescence, Hand-drawn, Straight stroke, Solid Stroke, Offset Stroke, Dotted stroke); only
+/// the plain ones are built, the rest are open in the render README.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum StrokePreset {
+    /// No outline; the controls stay hidden.
+    #[default]
+    None,
+    /// A solid outline of one colour hugging the cutout edge.
+    Solid,
+}
+/// The cutout outline: a Stroke checkbox, a preset and the preset's Color, Size and Opacity.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CutoutStroke {
+    /// The Stroke checkbox; unchecking keeps the other values.
+    pub enabled: bool,
+    pub preset: StrokePreset,
+    /// Outline colour; the alpha byte stays 255, Opacity is the transparency control.
+    pub color: Color,
+    /// `0..=MAX_PERCENT`, default 35 as measured; 0 still draws a thin line.
+    pub size: f32,
+    /// `0..=MAX_PERCENT`, default 100 as measured.
+    pub opacity: f32,
+}
+impl Default for CutoutStroke {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            preset: StrokePreset::None,
+            color: Color([255, 255, 255, 255]),
+            size: Self::SIZE_DEFAULT,
+            opacity: Self::OPACITY_DEFAULT,
+        }
+    }
+}
+impl CutoutStroke {
+    /// Upper end of Size and Opacity (typed 999 clamps to 100 in the reference).
+    pub const MAX_PERCENT: f32 = 100.0;
+    pub const SIZE_DEFAULT: f32 = 35.0;
+    pub const OPACITY_DEFAULT: f32 = 100.0;
+    /// Whether Size and Opacity are finite and within range and the colour is opaque.
+    pub fn valid(self) -> bool {
+        [self.size, self.opacity]
+            .iter()
+            .all(|v| v.is_finite() && (0.0..=Self::MAX_PERCENT).contains(v))
+            && self.color.0[3] == 255
     }
 }
 /// What a refinement stroke does to the matte beneath it.

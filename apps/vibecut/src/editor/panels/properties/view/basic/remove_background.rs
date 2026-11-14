@@ -21,6 +21,10 @@ impl Panel<'_, '_> {
             return;
         };
         let mut on = params.background_removal.is_some();
+        let stroke = params
+            .background_removal
+            .map(|removal| removal.stroke)
+            .unwrap_or_default();
         let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
         self.row_label(ui, row, self.tr(Text::AutoRemoval));
         let width = value_ui.available_width();
@@ -51,6 +55,7 @@ impl Panel<'_, '_> {
             item,
             ScrubSpec::of("background_removal_feather", Text::EdgeFeather, 1., 2., 0),
         );
+        self.cutout_stroke_rows(ui, item, stroke);
         self.correction_status(
             ui,
             item,
@@ -59,6 +64,75 @@ impl Panel<'_, '_> {
         );
         self.matte_brush_rows(ui, item);
         ui.add_space(theme::space::MD);
+    }
+
+    /// The Stroke row: a checkbox, then the preset tiles, then the chosen preset's Color, Size
+    /// and Opacity (Size and Opacity 0-100, no keyframes, as measured). Unchecked hides the tiles
+    /// where the reference greys them. The reference lists eight presets; only None and Solid are
+    /// built, the rest stay open in the render README.
+    fn cutout_stroke_rows(
+        &mut self,
+        ui: &mut egui::Ui,
+        item: ItemId,
+        stroke: project::CutoutStroke,
+    ) {
+        let mut checked = stroke.enabled;
+        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        self.row_label(ui, row, self.tr(Text::CutoutStroke));
+        let response = value_ui.add(egui::Checkbox::without_text(&mut checked));
+        let name = self.tr(Text::CutoutStroke);
+        response
+            .ctx
+            .accesskit_node_builder(response.id, |node| node.set_label(name));
+        self.remember("inspector.cutout_stroke", &response);
+        if response.changed() {
+            self.set_item_field(item, "cutout_stroke", if checked { "true" } else { "false" });
+        }
+        if !stroke.enabled {
+            return;
+        }
+        let index = usize::from(stroke.preset == project::StrokePreset::Solid);
+        let ids: Vec<String> = ["none", "solid"]
+            .iter()
+            .map(|preset| format!("inspector.cutout_stroke.preset.{preset}"))
+            .collect();
+        let labels = [
+            self.tr(Text::CutoutStrokeNone),
+            self.tr(Text::CutoutStrokeSolid),
+        ];
+        let cells = kit::segmented(ui, &ids, &labels, index);
+        for (position, (id, response)) in ids.iter().zip(&cells).enumerate() {
+            self.remember(id.clone(), response);
+            if response.clicked() && position != index {
+                let preset = if position == 0 { "none" } else { "solid" };
+                self.set_item_field(item, "cutout_stroke_preset", preset);
+            }
+        }
+        if stroke.preset == project::StrokePreset::None {
+            return;
+        }
+        self.color_row(
+            ui,
+            "inspector.cutout_stroke.color",
+            Text::CutoutStrokeColor,
+            ColorTarget::CutoutStroke(item),
+        );
+        self.slider_row(
+            ui,
+            item,
+            ScrubSpec::of("cutout_stroke_size", Text::CutoutStrokeSize, 1., 2., 0),
+        );
+        self.slider_row(
+            ui,
+            item,
+            ScrubSpec::of(
+                "cutout_stroke_opacity",
+                Text::CutoutStrokeOpacity,
+                1.,
+                2.,
+                0,
+            ),
+        );
     }
 
     /// The Custom removal section: a label, the brush and eraser tools, then Size. The tools

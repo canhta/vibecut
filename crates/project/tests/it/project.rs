@@ -486,7 +486,16 @@ fn populated(path: PathBuf) -> Project {
             fit: FitMode::Stretch,
             reduce_noise: true,
             stabilize: Some(project::StabilizeLevel::Stable),
-            background_removal: Some(project::BackgroundRemoval { feather: 25.0 }),
+            background_removal: Some(project::BackgroundRemoval {
+                feather: 25.0,
+                stroke: project::CutoutStroke {
+                    enabled: true,
+                    preset: project::StrokePreset::Solid,
+                    color: project::Color([255, 128, 0, 255]),
+                    size: 60.0,
+                    opacity: 80.0,
+                },
+            }),
             matte_strokes: vec![project::MatteStroke {
                 mode: project::MatteStrokeMode::Remove,
                 at: Tick(7),
@@ -875,7 +884,29 @@ fn model_trust_boundaries() {
                 _ => None,
             })
             .unwrap();
-        video.background_removal = Some(project::BackgroundRemoval { feather });
+        video.background_removal = Some(project::BackgroundRemoval { feather, ..Default::default() });
+        cases.push(d);
+    }
+    // The cutout stroke's Size and Opacity are 0..=100 and its colour opaque.
+    for stroke in [
+        project::CutoutStroke { size: -1.0, ..Default::default() },
+        project::CutoutStroke { size: 100.5, ..Default::default() },
+        project::CutoutStroke { opacity: f32::NAN, ..Default::default() },
+        project::CutoutStroke { opacity: 101.0, ..Default::default() },
+        project::CutoutStroke { color: project::Color([255, 255, 255, 128]), ..Default::default() },
+    ] {
+        let mut d = base.clone();
+        let video = d
+            .scene_mut()
+            .timeline
+            .iter_mut()
+            .flat_map(|track| &mut track.items)
+            .find_map(|item| match &mut item.content {
+                ItemParams::Video(params) => Some(params),
+                _ => None,
+            })
+            .unwrap();
+        video.background_removal = Some(project::BackgroundRemoval { feather: 0.0, stroke });
         cases.push(d);
     }
     let good = project::MatteStroke {

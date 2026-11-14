@@ -698,8 +698,9 @@ fn curve_uniforms(curve: &project::ToneCurve) -> Vec<Uniform> {
 /// Chroma-key pass values: `[key r, key g, key b, intensity, shadow]` with the
 /// key sRGB-encoded and both controls in 0..=1. Intensity scales the
 /// chroma-distance tolerance and 0 emits no pass; shadow restores pixels darker
-/// than the key. Stages follow the implementation reference's matte and spill
-/// stages; the observed UI exposes no spill control, so removal is inherent.
+/// than the key. Stages follow the implementation reference's matte stage.
+/// Spill is not removed here: the reference leaves the fringe at Clean up
+/// edge 0 and removes it with that slider (`spill_clean`).
 /// `key_color` is finite straight encoded sRGB RGBA in 0..=1; alpha is unused.
 /// Invalid colour/control values refuse before allocating a pass list.
 pub fn chroma_key_passes(
@@ -745,9 +746,9 @@ fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 /// One premultiplied linear pixel through a chroma-key pass; the reference the
-/// GPU shader mirrors. Alpha is multiplied by the matte, and the key's dominant
-/// channel loses any excess over the other two (spill suppression). Colour stays
-/// within `0..=alpha`.
+/// GPU shader mirrors. Alpha is multiplied by the matte and the straight colour
+/// is kept, so a key-coloured fringe survives at Clean up edge 0 as in the
+/// reference (`chroma_edge::spill_pixel`). Colour stays within `0..=alpha`.
 pub fn chroma_key_pixel(pixel: [f32; 4], weights: &[f32]) -> [f32; 4] {
     let alpha = pixel[3];
     if alpha <= 0.0 {
@@ -770,21 +771,6 @@ pub fn chroma_key_pixel(pixel: [f32; 4], weights: &[f32]) -> [f32; 4] {
     let keyness = projection.clamp(0.0, 1.5) * (1.0 - smoothstep(0.0, tolerance, distance));
     let protected = (key_y - y).max(0.0) * shadow * KEY_SHADOW_GAIN * keyness.min(1.0);
     let matte = (1.0 - keyness * (1.0 + KEY_GAIN * intensity) + protected).clamp(0.0, 1.0);
-    let dominant = if key[1] >= key[0] && key[1] >= key[2] {
-        1
-    } else if key[2] >= key[0] {
-        2
-    } else {
-        0
-    };
-    let limit = match dominant {
-        0 => c[1].max(c[2]),
-        1 => c[0].max(c[2]),
-        _ => c[0].max(c[1]),
-    };
-    if let Some(channel) = c.get_mut(dominant) {
-        *channel = channel.min(limit);
-    }
     let alpha = matte * alpha;
     let mut out = c.map(|v| crate::image::eotf(v.clamp(0.0, 1.0), 13) * alpha);
     for v in &mut out {
@@ -1351,10 +1337,10 @@ static OPS: &[EffectOp] = &[
     EffectOp {
         entry_point: chroma_edge::CLEAN,
         wgsl: Wgsl::Absent,
-        kernel: Kernel::Sample(SampleOp {
-            len: 1,
-            valid: chroma_edge::valid,
-            apply: chroma_edge::clean,
+        kernel: Kernel::Pixel(PixelOp {
+            len: 4,
+            valid: chroma_edge::clean_valid,
+            apply: chroma_edge::spill_pixel,
         }),
     },
     EffectOp {
@@ -1362,7 +1348,7 @@ static OPS: &[EffectOp] = &[
         wgsl: Wgsl::Absent,
         kernel: Kernel::Sample(SampleOp {
             len: 1,
-            valid: chroma_edge::valid,
+            valid: chroma_edge::feather_valid,
             apply: chroma_edge::feather,
         }),
     },

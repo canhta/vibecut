@@ -86,6 +86,12 @@ pub(super) fn item_value(project: &project::Project, item: ItemId, field: &str) 
         ("background_removal_feather", ItemParams::Video(params)) => params
             .background_removal
             .map(|removal| f64::from(removal.feather)),
+        ("cutout_stroke_size", ItemParams::Video(params)) => params
+            .background_removal
+            .map(|removal| f64::from(removal.stroke.size)),
+        ("cutout_stroke_opacity", ItemParams::Video(params)) => params
+            .background_removal
+            .map(|removal| f64::from(removal.stroke.opacity)),
         (field, content) if fade_edge(field).is_some() => {
             let edge = fade_edge(field)?;
             Some(fade_on(fades_of(content)?, edge).duration.seconds())

@@ -163,6 +163,7 @@ retained rendered preview frame (no second decode); Escape or the button again l
 the mode without a pick, and a refused pick keeps the staged switch. Reset restores the
 catalog key colour. Every value goes through an effect command; a command that adds
 `chroma_key` directly gets the catalog defaults.
+While `Auto removal` is on, a `Stroke` checkbox row (`inspector.cutout_stroke`) sits under the Feather row. Checked, it shows the None and Solid Stroke tiles (`inspector.cutout_stroke.preset.*`) and, for Solid, the Color row (`inspector.cutout_stroke.color`, `ColorTarget::CutoutStroke`) and the Size and Opacity slider rows (`inspector.cutout_stroke_size`, `inspector.cutout_stroke_opacity`, 0-100, no keyframes). Every edit is one `cutout_stroke*` item-field patch and one undo step; unchecking keeps the values and hides the tiles.
 
 ## Effects tab
 

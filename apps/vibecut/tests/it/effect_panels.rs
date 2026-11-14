@@ -3210,7 +3210,7 @@ fn auto_removal_enables_tunes_and_disables_with_one_undo_step_each() {
     harness.run_steps(3);
     assert_eq!(
         removal(&harness, video),
-        Some(project::BackgroundRemoval { feather: 0.0 })
+        Some(project::BackgroundRemoval { feather: 0.0, ..Default::default() })
     );
     assert_eq!(harness.state().session.history_len().0, history.0 + 1);
     assert!(has_widget(&harness, "inspector.background_removal_feather"));
@@ -3232,14 +3232,14 @@ fn auto_removal_enables_tunes_and_disables_with_one_undo_step_each() {
     type_value(&mut harness, "inspector.background_removal_feather", "40");
     assert_eq!(
         removal(&harness, video),
-        Some(project::BackgroundRemoval { feather: 40.0 })
+        Some(project::BackgroundRemoval { feather: 40.0, ..Default::default() })
     );
     assert_eq!(harness.state().session.history_len().0, history.0 + 2);
     harness.state_mut().activate("edit.undo").unwrap();
     harness.run_steps(2);
     assert_eq!(
         removal(&harness, video),
-        Some(project::BackgroundRemoval { feather: 0.0 })
+        Some(project::BackgroundRemoval { feather: 0.0, ..Default::default() })
     );
 
     // Disable: off removes the switch's rows, one undo step.
@@ -3255,8 +3255,67 @@ fn auto_removal_enables_tunes_and_disables_with_one_undo_step_each() {
     harness.run_steps(3);
     assert_eq!(
         removal(&harness, video),
-        Some(project::BackgroundRemoval { feather: 0.0 })
+        Some(project::BackgroundRemoval { feather: 0.0, ..Default::default() })
     );
+}
+
+#[test]
+fn the_cutout_stroke_row_follows_the_checkbox_and_preset_and_each_edit_is_one_undo_step() {
+    // Reference frames 151551-151628: a Stroke checkbox under Auto removal, preset tiles, then
+    // Color, Size (default 35) and Opacity (default 100) once Solid Stroke is chosen; typed
+    // 999 clamps to 100 and 0 is accepted.
+    let root = tempfile::tempdir().unwrap();
+    let (mut editor, video) = removal_editor(root.path());
+    editor
+        .session
+        .apply(Command::SetItemField {
+            item: video,
+            patch: engine::ItemParamPatch::BackgroundRemoval(Some(
+                project::BackgroundRemoval::default(),
+            )),
+        })
+        .unwrap();
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    open_remove_background(&mut harness, video);
+    let stroke = |harness: &Harness<Editor>| removal(harness, video).unwrap().stroke;
+    assert!(has_widget(&harness, "inspector.cutout_stroke"));
+    assert!(!has_widget(&harness, "inspector.cutout_stroke.preset.solid"));
+    assert_eq!(stroke(&harness), project::CutoutStroke::default());
+    // Checked: the preset tiles appear, none chosen, so no controls yet.
+    let history = harness.state().session.history_len().0;
+    click(&mut harness, "inspector.cutout_stroke");
+    harness.run_steps(3);
+    assert!(stroke(&harness).enabled);
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    assert!(has_widget(&harness, "inspector.cutout_stroke.preset.none"));
+    assert!(has_widget(&harness, "inspector.cutout_stroke.preset.solid"));
+    assert!(!has_widget(&harness, "inspector.cutout_stroke_size"));
+    // Solid Stroke: Color, Size 35 and Opacity 100 appear.
+    click(&mut harness, "inspector.cutout_stroke.preset.solid");
+    harness.run_steps(3);
+    assert_eq!(stroke(&harness).preset, project::StrokePreset::Solid);
+    assert!(has_widget(&harness, "inspector.cutout_stroke.color"));
+    assert!(has_widget(&harness, "inspector.cutout_stroke_size"));
+    assert!(has_widget(&harness, "inspector.cutout_stroke_opacity"));
+    assert_eq!((stroke(&harness).size, stroke(&harness).opacity), (35.0, 100.0));
+    // Typed values: 999 clamps to 100 and 0 is accepted, one undo step each.
+    let history = harness.state().session.history_len().0;
+    type_value(&mut harness, "inspector.cutout_stroke_size", "999");
+    assert_eq!(stroke(&harness).size, 100.0);
+    type_value(&mut harness, "inspector.cutout_stroke_opacity", "0");
+    assert_eq!(stroke(&harness).opacity, 0.0);
+    assert_eq!(harness.state().session.history_len().0, history + 2);
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert_eq!(stroke(&harness).opacity, 100.0);
+    // Unchecked: the controls go, the values stay.
+    click(&mut harness, "inspector.cutout_stroke");
+    harness.run_steps(3);
+    assert!(!stroke(&harness).enabled);
+    assert_eq!(stroke(&harness).size, 100.0);
+    assert!(!has_widget(&harness, "inspector.cutout_stroke_size"));
+    assert!(!has_widget(&harness, "inspector.cutout_stroke.preset.solid"));
 }
 
 fn matte_strokes(harness: &Harness<Editor>, id: ItemId) -> Vec<project::MatteStroke> {
