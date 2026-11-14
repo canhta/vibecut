@@ -222,7 +222,7 @@ impl Subtitles {
                 for chapter in list {
                     ui.label(format!(
                         "{} · {}",
-                        time_text(chapter.start, rate, locale),
+                        time_text(chapter.start, rate, c.time_code),
                         chapter.title.as_str()
                     ));
                 }

@@ -9,6 +9,7 @@ use crate::{
         view::{Ink, tr},
     },
     i18n::Text,
+    preferences::TimeCode,
 };
 
 impl State {
@@ -53,7 +54,7 @@ impl State {
                     painter.text(
                         egui::pos2(x + 4.0, layout.ruler.top() + 7.5),
                         Align2::LEFT_CENTER,
-                        ruler_text(seconds, rate, config.label_seconds),
+                        ruler_text(seconds, rate, config.label_seconds, cx.preferences.time_code),
                         FontId::proportional(theme::type_size::CAPTION),
                         ink.secondary(),
                     );
@@ -319,21 +320,24 @@ pub(in crate::editor) fn snapped_seconds(seconds: f64, rate: FrameRate) -> f64 {
         .map_or(seconds, |tick| tick.seconds())
 }
 
-pub(in crate::editor) fn ruler_label(seconds: f64, rate: FrameRate) -> String {
+pub(in crate::editor) fn ruler_label(seconds: f64, rate: FrameRate, code: TimeCode) -> String {
     let tick = Tick::from_seconds_f64(seconds, Rounding::Nearest)
         .ok()
         .and_then(|tick| rate.snap_nearest(tick).ok());
     match tick {
-        Some(tick) => {
-            time::format_timecode(tick, rate).unwrap_or_else(|_| time::format_clock(tick))
-        }
+        Some(tick) => code.format(tick, rate),
         None => time::format_clock(Tick::ZERO),
     }
 }
 
 /// Ruler caption: `MM:SS` (or `H:MM:SS`) while labels fall on whole seconds,
 /// the full frame timecode once they are finer than a second.
-pub(in crate::editor) fn ruler_text(seconds: f64, rate: FrameRate, label_seconds: f64) -> String {
+pub(in crate::editor) fn ruler_text(
+    seconds: f64,
+    rate: FrameRate,
+    label_seconds: f64,
+    code: TimeCode,
+) -> String {
     if label_seconds >= 1.0 - 1e-6 {
         let whole = seconds.max(0.0).round() as u64;
         let (hours, minutes, secs) = (whole / 3600, whole / 60 % 60, whole % 60);
@@ -343,7 +347,7 @@ pub(in crate::editor) fn ruler_text(seconds: f64, rate: FrameRate, label_seconds
             format!("{minutes:02}:{secs:02}")
         }
     } else {
-        ruler_label(seconds, rate)
+        ruler_label(seconds, rate, code)
     }
 }
 

@@ -5,7 +5,9 @@ use super::{Action, State};
 use crate::{
     editor::{Context, context::CachePhase, egui},
     i18n::{self, Locale, Text},
-    preferences::{HardwareAcceleration, PROJECT_FPS},
+    preferences::{
+        HardwareAcceleration, ImageDurationUnit, LoudnessPreset, PROJECT_FPS, TimeCode,
+    },
 };
 
 /// Cache budgets offered in MiB beside Automatic; both bounds are included.
@@ -81,52 +83,154 @@ fn hardware_label(choice: HardwareAcceleration) -> Text {
 const ROW_PITCH: f32 = 46.0;
 const CAPTION_WIDTH: f32 = 164.0;
 const NUMBER_WIDTH: f32 = 61.5;
+/// A select is 268 wide, and the unit select beside a number field 59.5.
+const SELECT_WIDTH: f32 = 268.0;
+const UNIT_SELECT_WIDTH: f32 = 59.5;
 
 /// One Edit row: the caption in its column, then the controls.
 fn edit_row(ui: &mut egui::Ui, caption: &str, controls: impl FnOnce(&mut egui::Ui)) {
+    edit_row_with(ui, caption, |ui, _| controls(ui));
+}
+
+/// An Edit row whose controls also get the caption's response, to label a select by.
+fn edit_row_with(
+    ui: &mut egui::Ui,
+    caption: &str,
+    controls: impl FnOnce(&mut egui::Ui, &egui::Response),
+) {
     ui.horizontal(|ui| {
         ui.set_min_height(ROW_PITCH);
-        ui.add_sized([CAPTION_WIDTH, ROW_PITCH], egui::Label::new(caption));
-        controls(ui);
+        let label = ui.add_sized([CAPTION_WIDTH, ROW_PITCH], egui::Label::new(caption));
+        controls(ui, &label);
     });
 }
 
-/// A number field with the kit stepper and its unit. Typing commits on Enter; the stepper
-/// moves by `step`. `encode` turns the shown value into the stored JSON.
-fn number_row(
+/// A number field with the kit stepper. Typing commits on Enter; the stepper moves by
+/// `step`. `encode` turns the shown value into the stored JSON.
+fn number_field(
     ui: &mut egui::Ui,
     actions: &mut Vec<Action>,
-    (id, caption, unit): (&str, &str, &str),
+    (id, caption): (&str, &str),
     shown: (f64, usize),
     limits: (f64, f64, f64),
     (key, encode): (&'static str, impl Fn(f64) -> serde_json::Value),
 ) {
     let (value, decimals) = shown;
     let (min, max, step) = limits;
+    let mut next = value;
+    let field = ui.add_sized(
+        [NUMBER_WIDTH, crate::kit::size::FIELD],
+        egui::DragValue::new(&mut next)
+            .range(min..=max)
+            .speed(0.0)
+            .fixed_decimals(decimals),
+    );
+    actions.push(Action::Remember(id.into(), field));
+    let (up, down) = crate::kit::stepper(ui, id, caption);
+    actions.push(Action::Remember(format!("{id}.increase"), up.clone()));
+    actions.push(Action::Remember(format!("{id}.decrease"), down.clone()));
+    if up.clicked() {
+        next = (value + step).min(max);
+    }
+    if down.clicked() {
+        next = (value - step).max(min);
+    }
+    if (next - value).abs() > f64::EPSILON {
+        actions.push(Action::Set(key, encode(next)));
+    }
+}
+
+/// A number row: the field with its stepper, then the unit.
+fn number_row(
+    ui: &mut egui::Ui,
+    actions: &mut Vec<Action>,
+    (id, caption, unit): (&str, &str, &str),
+    shown: (f64, usize),
+    limits: (f64, f64, f64),
+    set: (&'static str, impl Fn(f64) -> serde_json::Value),
+) {
     edit_row(ui, caption, |ui| {
-        let mut next = value;
-        let field = ui.add_sized(
-            [NUMBER_WIDTH, crate::kit::size::FIELD],
-            egui::DragValue::new(&mut next)
-                .range(min..=max)
-                .speed(0.0)
-                .fixed_decimals(decimals),
-        );
-        actions.push(Action::Remember(id.into(), field));
-        let (up, down) = crate::kit::stepper(ui, id, caption);
-        actions.push(Action::Remember(format!("{id}.increase"), up.clone()));
-        actions.push(Action::Remember(format!("{id}.decrease"), down.clone()));
-        if up.clicked() {
-            next = (value + step).min(max);
-        }
-        if down.clicked() {
-            next = (value - step).max(min);
-        }
+        number_field(ui, actions, (id, caption), shown, limits, set);
         ui.label(unit);
-        if (next - value).abs() > f64::EPSILON {
-            actions.push(Action::Set(key, encode(next)));
-        }
     });
+}
+
+/// A select of `options` (value, id suffix, label); choosing one sets `key`.
+fn combo<T: Copy + PartialEq + serde::Serialize>(
+    ui: &mut egui::Ui,
+    actions: &mut Vec<Action>,
+    (id, caption): (&str, egui::Id),
+    width: f32,
+    (current, current_label): (T, &str),
+    options: &[(T, &str, &str)],
+    key: &'static str,
+) {
+    let combo = egui::ComboBox::from_id_salt(id)
+        .width(width)
+        .selected_text(current_label)
+        .show_ui(ui, |ui| {
+            for &(choice, suffix, label) in options {
+                let response = ui.selectable_label(choice == current, label);
+                actions.push(Action::Remember(
+                    format!("{id}.{suffix}"),
+                    response.clone(),
+                ));
+                if response.clicked() && choice != current {
+                    actions.push(Action::Set(
+                        key,
+                        serde_json::to_value(choice).unwrap_or_default(),
+                    ));
+                }
+            }
+        });
+    actions.push(Action::Remember(
+        id.into(),
+        combo.response.labelled_by(caption),
+    ));
+}
+
+fn loudness_text(preset: LoudnessPreset) -> Text {
+    match preset {
+        LoudnessPreset::Standard => Text::SettingsLoudnessStandard,
+        LoudnessPreset::Youtube => Text::SettingsLoudnessYoutube,
+        LoudnessPreset::Tiktok => Text::SettingsLoudnessTiktok,
+    }
+}
+
+fn loudness_id(preset: LoudnessPreset) -> &'static str {
+    match preset {
+        LoudnessPreset::Standard => "standard",
+        LoudnessPreset::Youtube => "youtube",
+        LoudnessPreset::Tiktok => "tiktok",
+    }
+}
+
+fn time_code_text(code: TimeCode) -> Text {
+    match code {
+        TimeCode::SecondsPlusFrame => Text::SettingsTimeCodeSecondsPlusFrame,
+        TimeCode::AllColons => Text::SettingsTimeCodeAllColons,
+    }
+}
+
+fn time_code_id(code: TimeCode) -> &'static str {
+    match code {
+        TimeCode::SecondsPlusFrame => "seconds_plus_frame",
+        TimeCode::AllColons => "all_colons",
+    }
+}
+
+fn image_unit_text(unit: ImageDurationUnit) -> Text {
+    match unit {
+        ImageDurationUnit::Seconds => Text::SettingsSecondsUnit,
+        ImageDurationUnit::Frames => Text::SettingsFramesUnit,
+    }
+}
+
+fn image_unit_id(unit: ImageDurationUnit) -> &'static str {
+    match unit {
+        ImageDurationUnit::Seconds => "seconds",
+        ImageDurationUnit::Frames => "frames",
+    }
 }
 
 fn toggle(
@@ -242,39 +346,82 @@ pub(super) fn show(
                         ("value_step", |v: f64| serde_json::json!(v.round() as u32)),
                     );
                     let image_ms = crate::preferences::IMAGE_DURATION_RANGE_MS;
-                    number_row(
-                        ui,
-                        actions,
-                        (
-                            "settings.edit.image_duration",
-                            tr(Text::SettingsImageDuration),
-                            tr(Text::SettingsSecondsUnit),
+                    let fps = f64::from(prefs.default_fps);
+                    let unit = prefs.image_duration_unit;
+                    let (shown, limits) = match unit {
+                        ImageDurationUnit::Seconds => (
+                            (f64::from(prefs.image_duration_ms) / 1000.0, 1),
+                            (
+                                f64::from(*image_ms.start()) / 1000.0,
+                                f64::from(*image_ms.end()) / 1000.0,
+                                0.1,
+                            ),
                         ),
-                        (f64::from(prefs.image_duration_ms) / 1000.0, 1),
-                        (
-                            f64::from(*image_ms.start()) / 1000.0,
-                            f64::from(*image_ms.end()) / 1000.0,
-                            0.1,
+                        ImageDurationUnit::Frames => (
+                            ((f64::from(prefs.image_duration_ms) * fps / 1000.0).round(), 0),
+                            (
+                                (f64::from(*image_ms.start()) * fps / 1000.0).ceil(),
+                                (f64::from(*image_ms.end()) * fps / 1000.0).floor(),
+                                1.0,
+                            ),
                         ),
-                        ("image_duration_ms", |v: f64| {
-                            serde_json::json!((v * 1000.0).round() as u32)
-                        }),
-                    );
-                    let lufs = crate::preferences::LOUDNESS_TARGET_RANGE_LUFS;
-                    number_row(
-                        ui,
-                        actions,
-                        (
-                            "settings.edit.loudness_target",
-                            tr(Text::SettingsTargetLoudness),
-                            tr(Text::SettingsLufsUnit),
-                        ),
-                        (f64::from(prefs.loudness_target_lufs), 0),
-                        (f64::from(*lufs.start()), f64::from(*lufs.end()), 1.0),
-                        ("loudness_target_lufs", |v: f64| {
-                            serde_json::json!(v.round() as i32)
-                        }),
-                    );
+                    };
+                    let caption = tr(Text::SettingsImageDuration);
+                    edit_row_with(ui, caption, |ui, label| {
+                        number_field(
+                            ui,
+                            actions,
+                            ("settings.edit.image_duration", caption),
+                            shown,
+                            limits,
+                            ("image_duration_ms", |v: f64| {
+                                let ms = match unit {
+                                    ImageDurationUnit::Seconds => v * 1000.0,
+                                    ImageDurationUnit::Frames => v * 1000.0 / fps,
+                                };
+                                serde_json::json!((ms.round() as u32)
+                                    .clamp(*image_ms.start(), *image_ms.end()))
+                            }),
+                        );
+                        let options = ImageDurationUnit::ALL
+                            .map(|u| (u, image_unit_id(u), tr(image_unit_text(u))));
+                        combo(
+                            ui,
+                            actions,
+                            ("settings.edit.image_duration_unit", label.id),
+                            UNIT_SELECT_WIDTH,
+                            (unit, tr(image_unit_text(unit))),
+                            &options,
+                            "image_duration_unit",
+                        );
+                    });
+                    let preset = prefs.loudness_preset;
+                    let options =
+                        LoudnessPreset::ALL.map(|p| (p, loudness_id(p), tr(loudness_text(p))));
+                    edit_row_with(ui, tr(Text::SettingsTargetLoudness), |ui, label| {
+                        combo(
+                            ui,
+                            actions,
+                            ("settings.edit.loudness_preset", label.id),
+                            SELECT_WIDTH,
+                            (preset, tr(loudness_text(preset))),
+                            &options,
+                            "loudness_preset",
+                        );
+                    });
+                    let code = prefs.time_code;
+                    let options = TimeCode::ALL.map(|c| (c, time_code_id(c), tr(time_code_text(c))));
+                    edit_row_with(ui, tr(Text::SettingsTimeCode), |ui, label| {
+                        combo(
+                            ui,
+                            actions,
+                            ("settings.edit.time_code", label.id),
+                            SELECT_WIDTH,
+                            (code, tr(time_code_text(code))),
+                            &options,
+                            "time_code",
+                        );
+                    });
                     ui.separator();
                     edit_row(ui, tr(Text::SettingsAudioScrub), |ui| {
                         ui.vertical(|ui| {

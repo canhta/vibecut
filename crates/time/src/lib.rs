@@ -21,7 +21,9 @@ pub use rate::FrameRate;
 pub use rounding::Rounding;
 pub use speed::Speed;
 pub use tick::{TICKS_PER_SECOND, Tick};
-pub use timecode::{format_timecode, parse_timecode};
+pub use timecode::{
+    TimecodeStyle, format_timecode, format_timecode_styled, parse_timecode, parse_timecode_styled,
+};
 
 pub(crate) use rounding::{divide_rounded, gcd};
 

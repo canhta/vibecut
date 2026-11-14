@@ -308,7 +308,9 @@ mod tests {
             ("frame_step", serde_json::json!(25)),
             ("value_step", serde_json::json!(5)),
             ("image_duration_ms", serde_json::json!(2500)),
-            ("loudness_target_lufs", serde_json::json!(-16)),
+            ("image_duration_unit", serde_json::json!("frames")),
+            ("loudness_preset", serde_json::json!("youtube")),
+            ("time_code", serde_json::json!("all_colons")),
             ("audio_scrub", serde_json::json!(true)),
             ("export_sound", serde_json::json!(true)),
             (
@@ -502,8 +504,10 @@ mod tests {
             ("value_step", serde_json::json!(0)),
             ("image_duration_ms", serde_json::json!(99)),
             ("image_duration_ms", serde_json::json!(600_001)),
-            ("loudness_target_lufs", serde_json::json!(-51)),
-            ("loudness_target_lufs", serde_json::json!(-4)),
+            ("image_duration_unit", serde_json::json!("minutes")),
+            ("loudness_preset", serde_json::json!(-14)),
+            ("loudness_preset", serde_json::json!("spotify")),
+            ("time_code", serde_json::json!("HH:MM:SS+frame")),
             ("audio_scrub", serde_json::json!("on")),
         ] {
             assert!(preferences.set(key, value).is_err(), "{key}");
@@ -519,21 +523,38 @@ mod tests {
                 preferences.frame_step,
                 preferences.value_step,
                 preferences.image_duration_ms,
-                preferences.loudness_target_lufs,
+                preferences.image_duration_unit,
+                preferences.loudness_preset,
+                preferences.time_code,
                 preferences.audio_scrub,
                 preferences.export_sound,
             ),
-            (10, 10, 5000, -23, false, false)
+            (
+                10,
+                10,
+                5000,
+                crate::preferences::ImageDurationUnit::Seconds,
+                crate::preferences::LoudnessPreset::Standard,
+                crate::preferences::TimeCode::SecondsPlusFrame,
+                false,
+                false
+            )
         );
         assert_eq!(
             preferences.loudness_target(),
             project::LoudnessTarget::DEFAULT
         );
+        for (preset, lufs) in [("youtube", -14.0), ("tiktok", -12.0), ("standard", -23.0)] {
+            preferences
+                .set("loudness_preset", serde_json::json!(preset))
+                .unwrap();
+            assert_eq!(preferences.loudness_target().target_lufs, lufs, "{preset}");
+        }
         preferences
-            .set("loudness_target_lufs", serde_json::json!(-16))
+            .set("loudness_preset", serde_json::json!("youtube"))
             .unwrap();
         let target = preferences.loudness_target();
-        assert_eq!(target.target_lufs, -16.0);
+        assert_eq!(target.target_lufs, -14.0);
         assert_eq!(
             target.true_peak_db,
             project::LoudnessTarget::DEFAULT.true_peak_db

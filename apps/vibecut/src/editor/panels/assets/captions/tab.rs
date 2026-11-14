@@ -34,6 +34,7 @@ impl State {
         let models = port.read.preferences.ai_models.clone();
         if let Some(subtitles) = &mut self.captions {
             subtitles.models = models;
+            subtitles.time_code = port.read.preferences.time_code;
             let widgets = subtitles.ui(
                 ui,
                 &mut *port.session,

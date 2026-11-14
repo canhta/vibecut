@@ -118,6 +118,8 @@ struct WordWarnings {
 /// Panel state survives tab and locale changes; only Options enter preferences.
 pub struct Subtitles {
     pub(crate) models: crate::services::remote_models::AiPreferences,
+    /// How cue, word, chapter and filler times are written; copied from preferences each frame.
+    pub(crate) time_code: crate::preferences::TimeCode,
     bank: Option<BankEdit>,
     style_edit: Option<StyleEdit>,
     bank_frame: Option<u64>,
@@ -181,6 +183,7 @@ impl Subtitles {
         let runner = job_runner(&budget)?;
         Ok(Self {
             models: Default::default(),
+            time_code: Default::default(),
             bank: None,
             style_edit: None,
             bank_frame: None,

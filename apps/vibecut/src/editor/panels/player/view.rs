@@ -548,7 +548,7 @@ fn canvas_size(cx: &Context<'_>) -> [u32; 2] {
 }
 fn timecode(cx: &Context<'_>, at: Tick) -> String {
     let rate = cx.session.project().data().canvas.fps;
-    super::workflow::format_timecode(at, rate)
+    cx.preferences.time_code.format(at, rate)
 }
 fn footer_controls(
     state: &mut State,
