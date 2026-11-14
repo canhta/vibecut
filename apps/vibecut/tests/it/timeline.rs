@@ -6342,3 +6342,165 @@ fn clipboard_oversized_held_text_selection_disables_copy_and_keyboard_refuses_wi
     assert_eq!(h.state().session.project(), &before);
     assert!(h.state().session.clipboard_has_entry());
 }
+
+#[test]
+fn keyframe_lanes_chord_toggles_selected_lanes_and_persists_per_project() {
+    let fixture = fixture();
+    let id = fixture.video_a;
+    let mut editor = fixture.editor;
+    add_key(&mut editor, id, "opacity", Tick(2 * SECOND), 0.4);
+    editor
+        .select(std::collections::BTreeSet::from([id]))
+        .unwrap();
+    let mut harness = harness(editor);
+    harness.run_steps(3);
+    harness.key_press_modifiers(egui::Modifiers::ALT, egui::Key::K);
+    harness.run_steps(3);
+    assert_eq!(harness.state().inspect().unwrap().expanded_lanes, vec![id]);
+    assert_eq!(
+        harness
+            .state()
+            .preferences
+            .timeline_lanes
+            .get(&ProjectId(12))
+            .cloned(),
+        Some(std::collections::BTreeSet::from([id.0])),
+        "the shortcut stores the open lane for the owning project"
+    );
+    harness.key_press_modifiers(egui::Modifiers::ALT, egui::Key::K);
+    harness.run_steps(3);
+    assert!(harness.state().inspect().unwrap().expanded_lanes.is_empty());
+    assert!(
+        !harness
+            .state()
+            .preferences
+            .timeline_lanes
+            .contains_key(&ProjectId(12)),
+        "collapsing every lane removes the project entry"
+    );
+}
+
+#[test]
+fn keyframe_add_shortcut_keys_animated_channels_at_the_playhead_in_one_undo_step() {
+    let fixture = fixture();
+    let id = fixture.video_a;
+    let mut editor = fixture.editor;
+    add_key(&mut editor, id, "opacity", Tick(2 * SECOND), 0.4);
+    add_key(&mut editor, id, "opacity", Tick(4 * SECOND), 0.8);
+    editor
+        .playback
+        .seek(Tick(3 * SECOND), false, editor.session.project().clone())
+        .unwrap();
+    editor
+        .select(std::collections::BTreeSet::from([id]))
+        .unwrap();
+    let mut harness = harness(editor);
+    harness.run_steps(3);
+    let history = harness.state().session.history_len().0;
+    harness.key_press_modifiers(
+        egui::Modifiers::ALT.plus(egui::Modifiers::SHIFT),
+        egui::Key::K,
+    );
+    harness.run_steps(3);
+    let keys = item(harness.state(), id)
+        .animations
+        .get(&project::AnimationPath::new("opacity").unwrap())
+        .unwrap()
+        .channel(None)
+        .unwrap()
+        .keys()
+        .iter()
+        .map(|key| key.time)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        keys,
+        vec![Tick(2 * SECOND), Tick(3 * SECOND), Tick(4 * SECOND)]
+    );
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    harness.state_mut().session.undo().unwrap();
+    harness.run_steps(2);
+    let keys = item(harness.state(), id)
+        .animations
+        .get(&project::AnimationPath::new("opacity").unwrap())
+        .unwrap()
+        .channel(None)
+        .unwrap()
+        .keys()
+        .len();
+    assert_eq!(keys, 2, "one undo removes the added key");
+}
+
+#[test]
+fn diamond_menu_sets_easing_kinds_and_the_first_use_hint_is_dismissed_once() {
+    let fixture = fixture();
+    let id = fixture.video_a;
+    let mut editor = fixture.editor;
+    add_key(&mut editor, id, "opacity", Tick(2 * SECOND), 0.4);
+    add_key(&mut editor, id, "opacity", Tick(4 * SECOND), 0.8);
+    editor
+        .select(std::collections::BTreeSet::from([id]))
+        .unwrap();
+    editor.activate("timeline.keyframe_lanes").unwrap();
+    let mut harness = harness(editor);
+    harness.run_steps(3);
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("timeline.keyframe_hint.ok")))
+        .click();
+    harness.run_steps(3);
+    assert!(
+        harness.state().preferences.keyframe_hint_seen,
+        "the hint records its dismissal in preferences"
+    );
+    assert!(
+        !harness
+            .state()
+            .inspect()
+            .unwrap()
+            .widgets
+            .iter()
+            .any(|widget| widget.id == "timeline.keyframe_hint.ok"),
+        "a dismissed hint is not drawn again"
+    );
+
+    let diamond = format!("timeline.keyframe.{}.opacity.none.{}", id.0, 2 * SECOND);
+    let segment = |harness: &Harness<'_, Editor>| {
+        item(harness.state(), id)
+            .animations
+            .get(&project::AnimationPath::new("opacity").unwrap())
+            .unwrap()
+            .channel(None)
+            .unwrap()
+            .segment_curve(Tick(2 * SECOND))
+            .unwrap()
+    };
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some(diamond.as_str())))
+        .click_secondary();
+    harness.run_steps(3);
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("timeline.key_menu.ease_out")))
+        .click();
+    harness.run_steps(3);
+    let ease_out = project::EasingPreset::EaseOut.curve().0;
+    let curve = segment(&harness).0;
+    assert!(
+        curve
+            .iter()
+            .zip(ease_out)
+            .all(|(a, b)| (a - b).abs() < 1e-6),
+        "Ease out writes the preset curve to the segment leaving the key: {curve:?}"
+    );
+
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some(diamond.as_str())))
+        .click_secondary();
+    harness.run_steps(3);
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("timeline.key_menu.linear")))
+        .click();
+    harness.run_steps(3);
+    assert!(
+        segment(&harness).is_linear(),
+        "Linear returns the segment to the straight line"
+    );
+}

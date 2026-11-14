@@ -1,8 +1,8 @@
 //! Paints an item's expanded keyframe lanes and their diamond interactions.
 //!
 //! Lanes are the panel's only keyframe surface: click selects, drag retimes with
-//! timeline snapping, an empty-lane marquee selects, and the lane menu owns the
-//! before/after extrapolation choice.
+//! timeline snapping, an empty-lane marquee selects, the diamond menu owns the easing
+//! choice, and the lane menu owns the before/after extrapolation choice.
 
 use crate::i18n;
 use crate::{
@@ -25,6 +25,8 @@ impl State {
         let ink = Ink::of(cx);
         let dark = ink.dark();
         let mut keyframe_rects: Vec<(KeyframeSelection, Rect)> = Vec::new();
+        // The first diamond painted anchors the first-use hint.
+        let mut hint: Option<egui::Pos2> = None;
         let lane_fill = theme::field(dark).gamma_multiply(0.55);
         let painter = ui.painter().with_clip_rect(layout.body);
         for item in items {
@@ -78,11 +80,16 @@ impl State {
                     &response,
                 );
                 self.lane_menu(cx, ui, item, lane, &response);
-                self.paint_lane_keys(cx, ui, layout, item, lane, &mut keyframe_rects);
+                self.paint_lane_keys(cx, ui, layout, item, lane, &mut keyframe_rects, &mut hint);
                 self.lane_marquee(cx, ui, layout, &response, &keyframe_rects, modifiers);
             }
         }
         self.keyframe_rects = keyframe_rects;
+        if let Some(anchor) = hint
+            && !cx.preferences.keyframe_hint_seen
+        {
+            self.keyframe_hint(cx, ui, anchor);
+        }
     }
 
     fn paint_lane_keys(
@@ -93,6 +100,7 @@ impl State {
         item: &ItemView,
         lane: &crate::editor::timeline::layout::ItemLane,
         keyframe_rects: &mut Vec<(KeyframeSelection, Rect)>,
+        hint: &mut Option<egui::Pos2>,
     ) {
         let ink = Ink::of(cx);
         let Some(param) = item_param(cx, item.id, &lane.path) else {
@@ -110,6 +118,9 @@ impl State {
                 continue;
             }
             let center = egui::pos2(x, lane.top + LANE_HEIGHT / 2.0);
+            if hint.is_none() {
+                *hint = Some(egui::pos2(center.x, lane.top + LANE_HEIGHT));
+            }
             let selection = KeyframeSelection {
                 item: item.id,
                 path: lane.path.clone(),
@@ -149,8 +160,128 @@ impl State {
                 });
             }
             if response.drag_started() && self.keyframe_drag.is_none() {
-                self.begin_keyframe_drag(cx, ui, item, selection);
+                self.begin_keyframe_drag(cx, ui, item, selection.clone());
             }
+            let anchor = egui::pos2(center.x, lane.top + LANE_HEIGHT + theme::space::XS);
+            self.key_menu(cx, &response, channel, &selection, anchor);
+        }
+    }
+
+    /// Right-click menu for one diamond: the easing kinds of its outgoing segment, the
+    /// graph popover, then Copy and Delete. Paste stays on the lane menu.
+    fn key_menu(
+        &mut self,
+        cx: &Context<'_>,
+        response: &egui::Response,
+        channel: &project::Channel,
+        selection: &KeyframeSelection,
+        anchor: egui::Pos2,
+    ) {
+        let locale = cx.locale;
+        // Easing reads the segment leaving the key, so the last key offers none.
+        let outgoing = channel
+            .keys()
+            .last()
+            .is_some_and(|last| last.time > selection.time);
+        let linear = channel
+            .segment_curve(selection.time)
+            .is_some_and(|curve| curve.is_linear());
+        let keys = vec![engine::KeyframeRef {
+            item: selection.item,
+            path: selection.path.clone(),
+            component: selection.component,
+            time: selection.time,
+        }];
+        response.context_menu(|ui| {
+            for (id, label, preset) in [
+                ("ease_in", Text::EasingEaseIn, project::EasingPreset::EaseIn),
+                (
+                    "ease_out",
+                    Text::EasingEaseOut,
+                    project::EasingPreset::EaseOut,
+                ),
+            ] {
+                let button = egui::Button::new(i18n::text(locale, label));
+                let item = ui.add_enabled(outgoing, button);
+                self.remember(format!("timeline.key_menu.{id}"), &item);
+                if item.clicked() {
+                    self.push(Action::Command(Box::new(
+                        engine::Command::ApplyEasingPreset {
+                            keys: keys.clone(),
+                            preset,
+                        },
+                    )));
+                    ui.close();
+                }
+            }
+            let easing = egui::Button::new(i18n::text(locale, Text::KeyframeEasing));
+            let item = ui.add_enabled(outgoing, easing);
+            self.remember("timeline.key_menu.easing".to_owned(), &item);
+            if item.clicked() {
+                self.open_graph(cx, vec![selection.clone()], anchor);
+                ui.close();
+            }
+            let line = egui::Button::selectable(linear, i18n::text(locale, Text::EasingLinear));
+            let item = ui.add_enabled(outgoing, line);
+            self.remember("timeline.key_menu.linear".to_owned(), &item);
+            if item.clicked() {
+                self.push(Action::Command(Box::new(
+                    engine::Command::ApplyEasingPreset {
+                        keys: keys.clone(),
+                        preset: project::EasingPreset::Linear,
+                    },
+                )));
+                ui.close();
+            }
+            let presets = egui::Button::new(i18n::text(locale, Text::KeyframeShowPresets));
+            let item = ui.add_enabled(outgoing, presets);
+            self.remember("timeline.key_menu.show_presets".to_owned(), &item);
+            if item.clicked() {
+                self.push(Action::SetEasingTab(crate::preferences::EasingTab::Presets));
+                self.open_graph(cx, vec![selection.clone()], anchor);
+                ui.close();
+            }
+            ui.separator();
+            let copy = ui.button(i18n::text(locale, Text::ActionEditCopy));
+            self.remember("timeline.key_menu.copy".to_owned(), &copy);
+            if copy.clicked() {
+                self.push(Action::SelectKeyframe {
+                    keyframe: selection.clone(),
+                    modifiers: egui::Modifiers::NONE,
+                });
+                self.push(Action::Activate("edit.copy".to_owned()));
+                ui.close();
+            }
+            let delete = ui.button(i18n::text(locale, Text::DeleteKeyframes));
+            self.remember("timeline.key_menu.delete".to_owned(), &delete);
+            if delete.clicked() {
+                self.push(Action::DeleteKeyframes(BTreeSet::from([selection.clone()])));
+                ui.close();
+            }
+        });
+    }
+
+    /// The first-use hint, drawn beside the first diamond until it is dismissed.
+    fn keyframe_hint(&mut self, cx: &Context<'_>, ui: &egui::Ui, anchor: egui::Pos2) {
+        let locale = cx.locale;
+        let area = egui::Area::new(egui::Id::new("timeline.keyframe_hint"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(anchor)
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style())
+                    .show(ui, |ui| {
+                        ui.label(
+                            egui::RichText::new(i18n::text(locale, Text::KeyframeHint))
+                                .size(theme::type_size::BODY)
+                                .color(theme::text(cx.dark)),
+                        );
+                        ui.button(i18n::text(locale, Text::Ok))
+                    })
+                    .inner
+            });
+        self.remember("timeline.keyframe_hint.ok".to_owned(), &area.inner);
+        if area.inner.clicked() {
+            self.push(Action::DismissKeyframeHint);
         }
     }
 

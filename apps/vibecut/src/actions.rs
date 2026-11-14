@@ -164,6 +164,10 @@ pub enum UiAction {
     SetTrackHeight(crate::preferences::TrackHeight),
     /// Audio waveform size in percent from the track header menu.
     SetWaveformSize(u8),
+    /// Show or hide the keyframe lanes of the selected items.
+    KeyframeLanes,
+    /// Key every animated channel of the selected items at the playhead.
+    KeyframeAdd,
     /// Timeline pointer mode: Select clicks and drags clips, Split cuts them.
     SelectTool,
     SplitTool,

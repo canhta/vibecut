@@ -86,6 +86,8 @@
 | `timeline.waveform_size.30` — Audio waveform size 30% | Timeline | — | — | timeline view |
 | `timeline.waveform_size.60` — Audio waveform size 60% | Timeline | — | — | timeline view |
 | `timeline.waveform_size.100` — Audio waveform size 100% | Timeline | — | — | timeline view |
+| `timeline.keyframe_lanes` — Show keyframe lanes | Timeline | Alt+K | — | timeline keyframes |
+| `timeline.keyframe_add` — Add keyframe | Timeline | Alt+Shift+K | — | timeline keyframes |
 | `timeline.tool.select` — Select | Timeline | A | — | timeline tool |
 | `timeline.tool.split` — Split mode | Timeline | B | — | timeline tool |
 | `timeline.select_left` — Select leftward | Selection | [ | — | timeline selection |

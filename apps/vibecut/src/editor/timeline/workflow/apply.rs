@@ -40,6 +40,9 @@ pub(in crate::editor) fn apply(
             }
             Action::SettleKeyframes => {}
             Action::SetLaneOpen { item, open } => set_lane_open(state, port, item, open),
+            Action::DismissKeyframeHint => {
+                port.set_preference("keyframe_hint_seen", serde_json::json!(true));
+            }
             Action::Preview(command) => preview_gesture(port, *command),
             Action::EndGesture => end_drag_gesture(port),
             Action::DiscardGesture => discard_gesture(port),

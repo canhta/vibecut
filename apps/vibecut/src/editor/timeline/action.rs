@@ -113,6 +113,8 @@ pub(in crate::editor) enum Action {
     ClearKeyframes,
     /// Expand or collapse an item's keyframe lanes.
     SetLaneOpen { item: ItemId, open: bool },
+    /// The first-use keyframe hint was dismissed: remember it in preferences.
+    DismissKeyframeHint,
     /// Delete the selected keyframes in one undo step.
     DeleteKeyframes(BTreeSet<KeyframeSelection>),
     /// Deselect everything.
