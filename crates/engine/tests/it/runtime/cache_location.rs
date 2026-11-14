@@ -64,32 +64,24 @@ fn run(command: &mut Command) {
 
 #[test]
 fn discovery_preserves_native_paths_without_io() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut command = probe("paths");
-    select_base(&mut command, &dir.path().join("Tiếng Việt cache"));
-    run(&mut command);
-    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
-}
-
-#[cfg(any(unix, windows))]
-#[test]
-fn discovery_preserves_non_utf8_native_environment_values() {
+    let mut names = vec![std::ffi::OsString::from("Tiếng Việt cache")];
     #[cfg(unix)]
-    let name = {
+    names.push({
         use std::os::unix::ffi::OsStringExt;
         std::ffi::OsString::from_vec(b"native cache \xff".to_vec())
-    };
+    });
     #[cfg(windows)]
-    let name = {
+    names.push({
         use std::os::windows::ffi::OsStringExt;
         std::ffi::OsString::from_wide(&[0x63, 0x61, 0x63, 0x68, 0x65, 0x20, 0xd800])
-    };
-    assert!(name.to_str().is_none());
-    let dir = tempfile::tempdir().unwrap();
-    let mut command = probe("paths");
-    select_base(&mut command, &dir.path().join(name));
-    run(&mut command);
-    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+    });
+    for name in names {
+        let dir = tempfile::tempdir().unwrap();
+        let mut command = probe("paths");
+        select_base(&mut command, &dir.path().join(name));
+        run(&mut command);
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
 }
 
 #[test]

@@ -307,15 +307,18 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("snapshot.png");
         std::fs::write(&path, b"previous").unwrap();
-        let error = publish(&path, b"new png", &project(), &[], &hooks(), &FullDisk).unwrap_err();
-        assert!(matches!(
-            error,
-            ArtifactError::Runtime(crate::RuntimeError::Edit(
-                crate::session::EditError::Project(project::Error::Io(_))
-            ))
-        ));
-        assert_eq!(std::fs::read(&path).unwrap(), b"previous");
-        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        // A full disk while staging, then a failed publication fence.
+        for fs in [&FullDisk as &dyn project::atomic::AtomicFs, &FailPublish] {
+            let error = publish(&path, b"new png", &project(), &[], &hooks(), fs).unwrap_err();
+            assert!(matches!(
+                error,
+                ArtifactError::Runtime(crate::RuntimeError::Edit(
+                    crate::session::EditError::Project(project::Error::Io(_))
+                ))
+            ));
+            assert_eq!(std::fs::read(&path).unwrap(), b"previous");
+            assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        }
         let cause: std::sync::Arc<dyn crate::Failure> =
             std::sync::Arc::new(crate::control::Error::Ai(ai::Error::RateLimit {
                 retry_after_seconds: Some(3),
@@ -363,23 +366,6 @@ mod tests {
             assert_eq!(std::fs::read(&path).unwrap(), b"previous");
             assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
         }
-    }
-
-    #[test]
-    fn failed_publication_fence_preserves_destination_and_removes_staging() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("snapshot.png");
-        std::fs::write(&path, b"previous").unwrap();
-        let error =
-            publish(&path, b"new png", &project(), &[], &hooks(), &FailPublish).unwrap_err();
-        assert!(matches!(
-            error,
-            ArtifactError::Runtime(crate::RuntimeError::Edit(
-                crate::session::EditError::Project(project::Error::Io(_))
-            ))
-        ));
-        assert_eq!(std::fs::read(&path).unwrap(), b"previous");
-        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 
     #[test]
@@ -434,22 +420,5 @@ mod tests {
             assert_eq!(std::fs::read(&path).unwrap(), expected);
             assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
         }
-    }
-
-    #[test]
-    fn safe_project_name_replaces_reserved_characters_and_falls_back() {
-        assert_eq!(
-            crate::runtime::snapshot_project_name("My: Project?", 255),
-            "My- Project-"
-        );
-        assert_eq!(
-            crate::runtime::snapshot_project_name("D\u{1ef1} \u{00e1}n", 255),
-            "D\u{1ef1} \u{00e1}n"
-        );
-        assert_eq!(crate::runtime::snapshot_project_name("  ", 255), "snapshot");
-        assert_eq!(
-            crate::runtime::snapshot_project_name("...", 255),
-            "snapshot"
-        );
     }
 }

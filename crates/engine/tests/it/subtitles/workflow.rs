@@ -481,6 +481,7 @@ fn six_directions_and_every_bilingual_pair() {
             );
             let outcome = workflow(&run, &access, &mut runner).unwrap();
             assert!(outcome.cues > 0);
+            assert!(outcome.translated, "{source}->{target}");
             let text = std::fs::read_to_string(run.srt.as_ref().unwrap()).unwrap();
             let source_text = match source {
                 "vi" => "xin chào",
@@ -500,27 +501,6 @@ fn six_directions_and_every_bilingual_pair() {
             }
         }
     }
-}
-
-#[test]
-fn output_languages_are_distinct() {
-    let Some(input) = fixture() else {
-        return;
-    };
-    let directory = tempfile::tempdir().unwrap();
-    let access = caption_access(
-        &directory.path().join("cache"),
-        providers(Arc::new(AtomicUsize::new(0)), false, true),
-        Arc::new(AllowAll),
-    );
-    let (mut runner, _) = runner();
-    let mut run = run(&input, "vi", "en", directory.path(), false);
-    run.bilingual = true;
-    let outcome = workflow(&run, &access, &mut runner).unwrap();
-    assert!(outcome.translated);
-    let text = std::fs::read_to_string(run.srt.as_ref().unwrap()).unwrap();
-    assert!(text.contains("xin chào"));
-    assert!(text.contains("[en]"));
 }
 
 #[test]

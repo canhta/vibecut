@@ -1803,75 +1803,46 @@ fn crop_position_channels_need_a_crop_stay_in_frame_and_follow_split_duplicate_a
     .unwrap();
 }
 
+/// Fails if a footage switch reaches a non-video item, misses its undo step or reads the
+/// wrong level from text.
 #[test]
-fn reduce_noise_is_a_video_item_switch_with_one_undo_step() {
-    let (mut s, _video, _audio, clip) = audible_session();
-    let noise = |s: &Session| match &get_id(s, clip).content {
-        ItemParams::Video(p) => p.reduce_noise,
-        _ => panic!("video item"),
-    };
-    assert!(!noise(&s), "off at creation");
-    s.apply(Command::SetItemField {
-        item: clip,
-        patch: engine::ItemParamPatch::ReduceNoise(true),
-    })
-    .unwrap();
-    assert!(noise(&s));
-    s.undo().unwrap();
-    assert!(!noise(&s));
-    // Flicker removal is the same kind of switch: video items only, one undo step.
-    let flicker = |s: &Session| match &get_id(s, clip).content {
-        ItemParams::Video(p) => p.remove_flicker,
-        _ => panic!("video item"),
-    };
-    assert!(!flicker(&s), "off at creation");
-    s.apply(Command::SetItemField {
-        item: clip,
-        patch: engine::ItemParamPatch::RemoveFlicker(true),
-    })
-    .unwrap();
-    assert!(flicker(&s));
-    s.undo().unwrap();
-    assert!(!flicker(&s));
-    assert_eq!(
-        engine::ItemParamPatch::parse("remove_flicker", "true").unwrap(),
-        engine::ItemParamPatch::RemoveFlicker(true)
-    );
-    assert!(
-        !engine::ItemParamPatch::RemoveFlicker(true)
-            .compatible(&ItemParams::Audio(project::AudioParams::default()))
-    );
-}
-
-#[test]
-fn stabilize_is_a_video_item_level_with_one_undo_step_and_reads_from_text() {
+fn video_footage_switches_set_one_undo_step_and_address_video_items_only() {
     use engine::ItemParamPatch as P;
+    use project::StabilizeLevel::{Flexible, Normal, Stable};
     let (mut s, _video, _audio, clip) = audible_session();
-    let level = |s: &Session| match &get_id(s, clip).content {
-        ItemParams::Video(p) => p.stabilize,
+    let video = |s: &Session| match &get_id(s, clip).content {
+        ItemParams::Video(p) => p.clone(),
         _ => panic!("video item"),
     };
-    assert_eq!(level(&s), None, "off at creation");
-    s.apply(Command::SetItemField {
-        item: clip,
-        patch: P::Stabilize(Some(project::StabilizeLevel::Stable)),
-    })
-    .unwrap();
-    assert_eq!(level(&s), Some(project::StabilizeLevel::Stable));
-    s.undo().unwrap();
-    assert_eq!(level(&s), None);
+    let off = video(&s);
+    assert!(!off.reduce_noise && !off.remove_flicker && off.stabilize.is_none());
+    for patch in [
+        P::ReduceNoise(true),
+        P::RemoveFlicker(true),
+        P::Stabilize(Some(Stable)),
+    ] {
+        s.apply(Command::SetItemField {
+            item: clip,
+            patch: patch.clone(),
+        })
+        .unwrap();
+        assert_ne!(video(&s), off, "{patch:?}");
+        s.undo().unwrap();
+        assert_eq!(video(&s), off, "{patch:?}");
+        assert!(patch.compatible(&get_id(&s, clip).content));
+        assert!(!patch.compatible(&ItemParams::Audio(project::AudioParams::default())));
+    }
     // The text an inspector or script holds: a level word switches on, `off` or `none` off.
-    assert_eq!(
-        P::parse("stabilize", "flexible").unwrap(),
-        P::Stabilize(Some(project::StabilizeLevel::Flexible))
-    );
-    assert_eq!(P::parse("stabilize", "off").unwrap(), P::Stabilize(None));
-    assert_eq!(P::parse("stabilize", "none").unwrap(), P::Stabilize(None));
-    assert!(P::parse("stabilize", "extreme").is_err());
-    // It addresses video items only.
-    let patch = P::Stabilize(Some(project::StabilizeLevel::Normal));
-    assert!(patch.compatible(&get_id(&s, clip).content));
-    assert!(!patch.compatible(&ItemParams::Audio(project::AudioParams::default())));
+    for (field, text, patch) in [
+        ("remove_flicker", "true", Some(P::RemoveFlicker(true))),
+        ("stabilize", "flexible", Some(P::Stabilize(Some(Flexible)))),
+        ("stabilize", "normal", Some(P::Stabilize(Some(Normal)))),
+        ("stabilize", "off", Some(P::Stabilize(None))),
+        ("stabilize", "none", Some(P::Stabilize(None))),
+        ("stabilize", "extreme", None),
+    ] {
+        assert_eq!(P::parse(field, text).ok(), patch, "{field} {text}");
+    }
 }
 
 #[test]

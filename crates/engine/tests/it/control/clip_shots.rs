@@ -173,28 +173,20 @@ fn exports(
 }
 
 #[test]
-fn an_export_without_a_detector_reports_it_and_keeps_the_centred_fill() {
-    let (diagnostics, recorded) = exports(None, |_, _, _| {});
-    assert_eq!(
-        diagnostics,
-        vec![Some(ClipShotsDiagnostic::DetectorUnavailable); 3]
-    );
-    assert!(recorded.iter().all(Vec::is_empty));
-}
-
-#[test]
-fn an_export_without_model_weights_reports_them_missing() {
+fn an_export_without_a_detector_or_its_weights_reports_why_and_keeps_the_centred_fill() {
     let missing = control::VisionAccess::new(|| {
         Err(control::Error::Providers(
             engine::providers::Error::ModelMissing("yunet-2026may"),
         ))
     });
-    let (diagnostics, recorded) = exports(Some(&missing), |_, _, _| {});
-    assert_eq!(
-        diagnostics,
-        vec![Some(ClipShotsDiagnostic::ModelsMissing); 3]
-    );
-    assert!(recorded.iter().all(Vec::is_empty));
+    for (vision, diagnostic) in [
+        (None, ClipShotsDiagnostic::DetectorUnavailable),
+        (Some(&missing), ClipShotsDiagnostic::ModelsMissing),
+    ] {
+        let (diagnostics, recorded) = exports(vision, |_, _, _| {});
+        assert_eq!(diagnostics, vec![Some(diagnostic); 3]);
+        assert!(recorded.iter().all(Vec::is_empty));
+    }
 }
 
 #[test]

@@ -99,21 +99,6 @@ fn query_matches_folded_text_and_returns_asset_time_and_snippet() {
 }
 
 #[test]
-fn index_round_trips_through_the_cache() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut cache = cache(&dir);
-    let sources = [vietnamese()];
-
-    let built = query(&mut cache, &sources, "chao", 10).unwrap();
-    assert_eq!(built.rebuilt, 1);
-    let reused = query(&mut cache, &sources, "chao", 10).unwrap();
-    assert_eq!(reused.rebuilt, 0);
-    assert_eq!(reused.hits, built.hits);
-    assert!(!reused.stale);
-    assert!(!reused.partial);
-}
-
-#[test]
 fn stale_index_is_rebuilt_when_media_or_transcript_changes() {
     let dir = tempfile::tempdir().unwrap();
     let mut cache = cache(&dir);
@@ -138,6 +123,7 @@ fn stale_index_is_rebuilt_when_media_or_transcript_changes() {
     )
     .unwrap();
     assert_eq!((settled.rebuilt, settled.stale), (0, false));
+    assert_eq!(settled.hits, replaced_media.hits);
 
     let edited = {
         let mut segments = vietnamese().segments;

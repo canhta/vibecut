@@ -443,13 +443,10 @@ fn undo_to_saved_state_retires_obsolete_recovery_and_internal_save_is_refused() 
 }
 
 #[test]
-fn undo_before_stale_same_path_save_keeps_current_work_recoverable() {
-    stale_same_path_save_with_undo(false);
-}
-
-#[test]
-fn undo_after_stale_same_path_save_keeps_current_work_recoverable() {
-    stale_same_path_save_with_undo(true);
+fn undo_around_a_stale_same_path_save_keeps_current_work_recoverable() {
+    for undo_after_completion in [false, true] {
+        stale_same_path_save_with_undo(undo_after_completion);
+    }
 }
 
 fn stale_same_path_save_with_undo(undo_after_completion: bool) {

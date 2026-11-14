@@ -117,6 +117,30 @@ fn bookmark_toggle_snaps_adds_defaults_removes_and_undoes_every_step() {
         assert_eq!(bookmark.start, Tick(expected), "row {index}");
         assert_eq!(s.project().data().scene().bookmarks.len(), index + 1);
     }
+
+    // A named colour is the colour of the marker the toggle adds.
+    let red = Color([226, 103, 94, 255]);
+    let outcome = s
+        .apply(Command::ToggleBookmark {
+            at: Tick(frame.0 * 10),
+            color: Some(red),
+        })
+        .unwrap();
+    let CreatedId::Bookmark(id) = *outcome.created.first().unwrap() else {
+        panic!("bookmark id")
+    };
+    let marker = |s: &Session| {
+        s.project()
+            .data()
+            .scene()
+            .bookmarks
+            .iter()
+            .find(|bookmark| bookmark.id == id)
+            .map(|bookmark| bookmark.color)
+    };
+    assert_eq!(marker(&s), Some(red));
+    s.undo().unwrap();
+    assert_eq!(marker(&s), None);
 }
 #[test]
 fn bookmark_update_and_remove_are_one_undo_step_with_persistence() {
@@ -368,19 +392,4 @@ fn bookmark_commands_refuse_hostile_inputs_without_history() {
     })
     .unwrap();
     assert_eq!(s.project().data().scene().bookmarks.len(), 2);
-}
-
-#[test]
-fn bookmark_toggle_names_the_colour_of_the_marker_it_adds() {
-    let mut s = Session::new(Project::empty(ProjectId(36), "Marks".into()).unwrap(), 20).unwrap();
-    let red = Color([226, 103, 94, 255]);
-    s.apply(Command::ToggleBookmark {
-        at: Tick(0),
-        color: Some(red),
-    })
-    .unwrap();
-    assert_eq!(s.project().data().scene().bookmarks[0].color, red);
-    assert_eq!(s.history_len(), (1, 0));
-    s.undo().unwrap();
-    assert!(s.project().data().scene().bookmarks.is_empty());
 }

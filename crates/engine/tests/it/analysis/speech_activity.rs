@@ -167,104 +167,69 @@ fn pauses(spans: &[SpeechActivitySpan]) -> Vec<&SpeechActivitySpan> {
         .collect()
 }
 
+/// Fails if a declared silence moves more than one frame, a dip or click becomes a pause,
+/// or a steady noise floor hides the pauses.
 #[test]
-fn declared_silences_and_the_continuous_segment_match_within_one_frame() {
-    let Some(asset) = fixture() else {
-        return;
-    };
-    let request =
-        SpeechActivityRequest::new(asset, range(0, 10), SpeechActivitySettings::default()).unwrap();
-    let (result, _runner, _cache, _dir) = run(&request);
-    assert_eq!(result.analyzed_frames, 500);
-    let pauses = pauses(&result.spans);
-    assert_eq!(pauses.len(), 3, "{:?}", result.spans);
-    for (span, (start, end)) in pauses
-        .iter()
-        .zip([(1200, 1900), (3000, 4100), (5200, 6800)])
-    {
-        let offset = (span.range.start().0 - ms(start).0).abs();
-        let trailing = (span.range.end().0 - ms(end).0).abs();
-        assert!(
-            offset <= ms(20).0,
-            "pause start {} vs {start} ms",
-            span.range.start().0
+fn declared_and_noise_floor_pauses_match_within_one_frame() {
+    // The clean fixture's 0.2 s dip inside speech is hangover, not a pause; its 0.06 s
+    // click inside the first pause is removed without splitting that pause, and the open
+    // 6.8..10 s segment has no pause. The noise fixture has a steady floor throughout.
+    type Row = (fn() -> Option<SourceAsset>, i64, u64, [(i64, i64); 3]);
+    let rows: [Row; 2] = [
+        (fixture, 10, 500, [(1200, 1900), (3000, 4100), (5200, 6800)]),
+        (
+            noise_fixture,
+            12,
+            600,
+            [(2000, 2800), (4600, 5800), (7800, 9400)],
+        ),
+    ];
+    for (fixture, seconds, frames, expected) in rows {
+        let Some(asset) = fixture() else {
+            return;
+        };
+        let request =
+            SpeechActivityRequest::new(asset, range(0, seconds), SpeechActivitySettings::default())
+                .unwrap();
+        let (result, _runner, _cache, _dir) = run(&request);
+        assert_eq!(result.analyzed_frames, frames);
+        let pauses = pauses(&result.spans);
+        assert_eq!(pauses.len(), 3, "{:?}", result.spans);
+        for (span, (start, end)) in pauses.iter().zip(expected) {
+            let offset = (span.range.start().0 - ms(start).0).abs();
+            let trailing = (span.range.end().0 - ms(end).0).abs();
+            assert!(
+                offset <= ms(20).0,
+                "pause start {} vs {start} ms",
+                span.range.start().0
+            );
+            assert!(
+                trailing <= ms(20).0,
+                "pause end {} vs {end} ms",
+                span.range.end().0
+            );
+        }
+        let (_, last) = expected[2];
+        assert!(pauses.iter().all(|span| span.range.end() <= ms(last)));
+        assert_eq!(
+            result
+                .spans
+                .iter()
+                .filter(|span| span.activity == Activity::Speech)
+                .count(),
+            4,
+            "{:?}",
+            result.spans
         );
-        assert!(
-            trailing <= ms(20).0,
-            "pause end {} vs {end} ms",
-            span.range.end().0
-        );
+        let mut end = Tick::ZERO;
+        for span in &result.spans {
+            assert_eq!(span.range.start(), end);
+            assert!(span.range.end() > end);
+            assert!((0.0..=1.0).contains(&span.confidence));
+            end = span.range.end();
+        }
+        assert_eq!(end, t(seconds));
     }
-    // The 0.2 s dip inside speech is hangover, not a pause; the 0.06 s click
-    // inside the first pause is removed without splitting that pause. The open
-    // 6.8..10 s segment has no pause.
-    assert!(pauses.iter().all(|span| span.range.end() <= ms(6800)));
-    assert_eq!(
-        result
-            .spans
-            .iter()
-            .filter(|span| span.activity == Activity::Speech)
-            .count(),
-        4,
-        "{:?}",
-        result.spans
-    );
-    let mut end = Tick::ZERO;
-    for span in &result.spans {
-        assert_eq!(span.range.start(), end);
-        assert!(span.range.end() > end);
-        assert!((0.0..=1.0).contains(&span.confidence));
-        end = span.range.end();
-    }
-    assert_eq!(end, t(10));
-}
-
-#[test]
-fn steady_noise_floor_and_three_pauses_match_within_one_frame() {
-    let Some(asset) = noise_fixture() else {
-        return;
-    };
-    let request =
-        SpeechActivityRequest::new(asset, range(0, 12), SpeechActivitySettings::default()).unwrap();
-    let (result, _runner, _cache, _dir) = run(&request);
-    assert_eq!(result.analyzed_frames, 600);
-    let pauses = pauses(&result.spans);
-    assert_eq!(pauses.len(), 3, "{:?}", result.spans);
-    for (span, (start, end)) in pauses
-        .iter()
-        .zip([(2000, 2800), (4600, 5800), (7800, 9400)])
-    {
-        let offset = (span.range.start().0 - ms(start).0).abs();
-        let trailing = (span.range.end().0 - ms(end).0).abs();
-        assert!(
-            offset <= ms(20).0,
-            "pause start {} vs {start} ms",
-            span.range.start().0
-        );
-        assert!(
-            trailing <= ms(20).0,
-            "pause end {} vs {end} ms",
-            span.range.end().0
-        );
-    }
-    assert_eq!(
-        result
-            .spans
-            .iter()
-            .filter(|span| span.activity == Activity::Speech)
-            .count(),
-        4,
-        "{:?}",
-        result.spans
-    );
-    let mut end = Tick::ZERO;
-    for span in &result.spans {
-        assert_eq!(span.range.start(), end);
-        assert!(span.range.end() > end);
-        assert!((0.0..=1.0).contains(&span.confidence));
-        end = span.range.end();
-    }
-    assert_eq!(end, t(12));
 }
 
 #[test]
