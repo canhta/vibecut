@@ -1088,9 +1088,8 @@ fn shortcut_presets_keep_their_own_bindings_and_persist_the_choice() {
     let two = actions::KeybindingPreset::Two;
     let snap = actions::action("timeline.snap").unwrap();
     let split = actions::action("timeline.split").unwrap();
-    let ctrl_shift_n = actions::Chord::parse("Ctrl+Shift+N")
-        .unwrap()
-        .display(actions::Platform::current());
+    // Profiles store canonical chord text; glyphs are display only.
+    let ctrl_shift_n = actions::Chord::parse("Ctrl+Shift+N").unwrap().canonical();
     let project = harness.state().session.project().clone();
 
     // Preset 1: record a chord and save it into the active profile.

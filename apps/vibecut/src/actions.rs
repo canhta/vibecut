@@ -725,6 +725,20 @@ mod tests {
     }
 
     #[test]
+    fn stored_chords_stay_canonical_while_labels_follow_the_platform() {
+        let table = [
+            (Platform::Mac, "⇧⌘N"),
+            (Platform::Windows, "Ctrl+Shift+N"),
+            (Platform::Linux, "Ctrl+Shift+N"),
+        ];
+        let chord = Chord::parse("Ctrl+Shift+N").unwrap();
+        for (platform, label) in table {
+            assert_eq!(chord.display(platform), label, "{platform:?}");
+            assert_eq!(Chord::parse(label).unwrap().canonical(), "Ctrl+Shift+N");
+        }
+    }
+
+    #[test]
     fn invalid_chords_are_refused_with_typed_errors() {
         assert_eq!(Chord::parse(""), Err(ChordError::Empty));
         assert_eq!(Chord::parse("ctrl+"), Err(ChordError::MissingKey));
