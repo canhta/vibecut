@@ -1303,6 +1303,7 @@ fn toolbar_buttons_return_their_registered_action_and_respect_availability() {
         "timeline.delete",
         "timeline.snap",
         "timeline.ripple",
+        "timeline.magnet",
         "timeline.zoom_in",
         "timeline.zoom_out",
         "voiceover.open",
@@ -1316,21 +1317,6 @@ fn toolbar_buttons_return_their_registered_action_and_respect_availability() {
             "{id} returned {returned:?}"
         );
     }
-    // Magnet edits the project, so it asks for the command itself.
-    let at = harness.state().rect("timeline.magnet").center();
-    click(&mut harness, at);
-    let returned = harness.state_mut().take();
-    assert!(
-        matches!(
-            returned.as_slice(),
-            [Action::Command(command)]
-                if matches!(
-                    command.as_ref(),
-                    engine::Command::SetTrackMagnet { enabled: false }
-                )
-        ),
-        "{returned:?}"
-    );
     // An action the editor refuses cannot be requested.
     harness.state_mut().disabled.insert("edit.undo");
     harness.run_steps(2);

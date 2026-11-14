@@ -590,6 +590,12 @@ impl Editor {
         let duration = self.session.project().duration();
         self.timeline.zoom_step(zoom_in, duration, playhead);
     }
+    /// Fit the whole project across the timeline viewport.
+    pub(in crate::editor) fn zoom_timeline_fit(&mut self) {
+        let playhead = self.playback.position().unwrap_or(Tick::ZERO);
+        let duration = self.session.project().duration();
+        self.timeline.zoom_fit(duration, playhead);
+    }
     /// Apply one proxy intention. The on/off choice is session presentation
     /// state: it reaches preview through the shared index on the next frame
     /// request and never edits the project, its history or export.

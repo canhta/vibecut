@@ -583,6 +583,14 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         &[],
     ),
     ActionSpec::ui(
+        "timeline.magnet",
+        Text::ActionTimelineMagnet,
+        ActionCategory::Timeline,
+        "timeline view",
+        UiAction::TrackMagnet,
+        &["P"],
+    ),
+    ActionSpec::ui(
         "timeline.preview_axis",
         Text::ActionTimelinePreviewAxis,
         ActionCategory::Timeline,
@@ -701,6 +709,14 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         "timeline view",
         UiAction::ZoomOut,
         &["Ctrl+Minus"],
+    ),
+    ActionSpec::ui(
+        "timeline.zoom_fit",
+        Text::ActionTimelineZoomFit,
+        ActionCategory::Timeline,
+        "timeline view",
+        UiAction::ZoomFit,
+        &["Shift+Z"],
     ),
     ActionSpec::engine(
         "timeline.add_track",

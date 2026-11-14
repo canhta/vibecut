@@ -45,6 +45,14 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         &[],
     ),
     ActionSpec::ui(
+        "project.create",
+        Text::ActionProjectCreate,
+        ActionCategory::File,
+        "workspace lifecycle",
+        UiAction::CreateProject,
+        &["Ctrl+N"],
+    ),
+    ActionSpec::ui(
         "project.rename",
         Text::ActionProjectRename,
         ActionCategory::File,

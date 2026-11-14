@@ -137,6 +137,8 @@ pub enum UiAction {
     Crop,
     Save,
     SaveAs,
+    /// `project.create`: a new project in its own window, from Home or an editor.
+    CreateProject,
     FocusHome,
     ExitProject,
     RenameProject,
@@ -159,6 +161,8 @@ pub enum UiAction {
     Redo,
     Snap,
     Ripple,
+    /// `timeline.magnet`: the main track closes the gap a removal leaves.
+    TrackMagnet,
     Loop,
     PreviewAxis,
     /// Timeline row height from the track header menu.
@@ -177,6 +181,8 @@ pub enum UiAction {
     SelectRightward,
     ZoomIn,
     ZoomOut,
+    /// `timeline.zoom_fit`: the whole project across the timeline viewport.
+    ZoomFit,
     OpenScenes,
     CloseScenes,
     SelectScenes,
@@ -500,10 +506,12 @@ impl KeybindingPreferences {
             normalized.push(canonical);
         }
         self.check_conflicts(action, &normalized)?;
+        // Defaults are written as readable text (`[`, `Ctrl+;`); compare in
+        // canonical form so recording a default leaves nothing customized.
         let defaults: Vec<String> = spec
             .defaults
             .iter()
-            .map(|text| (*text).to_owned())
+            .filter_map(|text| Chord::parse(text).ok().map(Chord::canonical))
             .collect();
         if normalized == defaults {
             self.bindings.remove(action);
@@ -967,6 +975,22 @@ mod tests {
                 .effective_chords(action("timeline.split").unwrap()),
             Vec::<String>::new()
         );
+    }
+
+    #[test]
+    fn recording_any_default_leaves_nothing_customized() {
+        // Defaults read `[`, `]` and `Ctrl+;`; the canonical writer says OpenBracket and so on.
+        for spec in actions().iter().filter(|spec| spec.bindable()) {
+            let mut preferences = KeybindingPreferences::default();
+            let recorded = spec
+                .defaults
+                .iter()
+                .map(|text| Chord::parse(text).unwrap().canonical())
+                .collect();
+            preferences.set_action(spec.id, recorded).unwrap();
+            assert!(preferences.bindings.is_empty(), "{} recorded", spec.id);
+            assert!(preferences.is_customized.is_empty(), "{} customized", spec.id);
+        }
     }
 
     #[test]

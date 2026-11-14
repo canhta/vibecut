@@ -510,6 +510,13 @@ impl State {
         let factor = if zoom_in { ZOOM_STEP } else { 1.0 / ZOOM_STEP };
         self.zoom_by(factor, duration, playhead);
     }
+    /// Zoom out to the fit level and start at the project's first frame.
+    pub(in crate::editor) fn zoom_fit(&mut self, duration: Tick, playhead: Tick) {
+        let fit = self.min_zoom(duration);
+        self.apply_zoom(fit, duration, playhead);
+        self.scroll = 0.0;
+        self.pre_anchor_scroll = None;
+    }
     pub(in crate::editor::timeline) fn zoom_by(
         &mut self,
         factor: f32,

@@ -25,12 +25,12 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | TL-16 | Extract audio | Done | Proposed | 14b/110530 | |
 | TL-17 | Duplicate | Done | Proposed | web screens/09 | |
 | TL-18 | Voice-over mic | Partial | Differs | 14b/102535 | No echo, mute, enhance |
-| TL-19 | Main track magnet | Done | Proposed | 14b/110530 | No default key |
+| TL-19 | Main track magnet | Done | Proposed | 14b/110530 | Key P |
 | TL-20 | Auto snapping | Done | Matches | 14b/110530 | |
 | TL-21 | Linkage switch | Missing | — | 14b/110530 | No link model |
 | TL-22 | Preview axis | Done | Matches | web flows/08 | |
 | TL-23 | Zoom out, slider, in | Done | Matches | 05/221643 | |
-| TL-24 | Zoom to fit timeline | Missing | — | 14b/110530 | |
+| TL-24 | Zoom to fit timeline | Partial | — | 14b/110530 | Key Shift+Z; no toolbar button measured |
 | TL-25 | Hide / show timeline | Missing | — | web flows/12 | Web-only evidence |
 | TL-26 | Add track button | Ours | Proposed | | |
 | TL-27 | Ripple toggle | Ours | Proposed | | |

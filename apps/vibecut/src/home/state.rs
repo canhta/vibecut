@@ -385,6 +385,15 @@ impl State {
         }
     }
 
+    /// The `project.create` chord: the banner's request, refused while Home is busy or a
+    /// dialog or text field of its own is open.
+    pub fn create_from_shortcut(&mut self, base_name: String) {
+        let dialog = self.rename.is_some() || self.info.is_some() || self.delete.is_some();
+        if !self.busy() && !self.creating && !dialog {
+            self.request_create(base_name, None);
+        }
+    }
+
     pub(super) fn request_rename(&mut self, id: ProjectId, name: String) {
         if self.send(Request::Rename { id, name }) {
             self.pending += 1;

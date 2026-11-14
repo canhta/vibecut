@@ -73,6 +73,8 @@ pub enum EditorAction {
     Save,
     SaveAs,
     FocusHome,
+    /// A new project in its own window; Home's banner runs the same request.
+    CreateProject,
     ExitProject,
     DeleteProject,
     OpenHelp,

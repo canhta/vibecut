@@ -35,6 +35,7 @@ pub const MENUS: &[Menu] = &[
     Menu {
         title: Text::MenuFile,
         items: &[
+            Action("project.create"),
             Action("file.import"),
             Action("file.export"),
             Separator,

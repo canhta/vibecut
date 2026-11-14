@@ -113,12 +113,12 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | SHORTCUT-07 | Reset, Save, Cancel | Done | Matches | 14b/110708 | |
 | SHORTCUT-08 | No search field | Done | — | 14b/110515 | |
 | SHORTCUT-09 | Matching timeline defaults | Done | Proposed | 14b/110530; [keyboard.md](../agent-control/keyboard.md) | |
-| SHORTCUT-10 | Main track magnet P | Missing | — | 14b/110530 | |
+| SHORTCUT-10 | Main track magnet P | Done | — | 14b/110530 | `timeline.magnet` |
 | SHORTCUT-11 | Timeline zoom keys | Done | — | 14b/110530 | |
 | SHORTCUT-12 | Activate / deactivate V | Missing | — | 14b/110530 | |
 | SHORTCUT-13 | Extract audio key | Done | — | 14b/110530 | Restore has no chord |
 | SHORTCUT-14 | Marker keys | Partial | — | 14b/110530 | No new-colour marker key |
-| SHORTCUT-15 | Group, compound, speed keys | Missing | — | 14b/110530 | |
+| SHORTCUT-15 | Group, compound, speed keys | Missing | — | 14b/110530 | No grouping model (TL-42) |
 | SHORTCUT-16 | Shuttle J, K, L | Partial | Proposed | 14b/110530 | Ours seeks 1 s |
 | SHORTCUT-17 | Step back many frames | Differs | Proposed | 14b/110530 | Shift+Left jumps 1 s |
 | SHORTCUT-18 | Select by clip Shift X | Differs | — | 14b/110530 | Ours: export in/out |
@@ -127,6 +127,6 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | SHORTCUT-21 | Player: full screen, zoom keys | Done | — | 14b/110531 | Shifted keys unconfirmed on hardware |
 | SHORTCUT-22 | Copy, cut, paste, undo, redo | Done | Proposed | 14b/110536 | |
 | SHORTCUT-23 | Copy and paste attributes | Done | Proposed | 14b/110536 | |
-| SHORTCUT-24 | Import, Export, New project keys | Partial | — | 14b/110536 | New project has no action |
+| SHORTCUT-24 | Import, Export, New project keys | Done | — | 14b/110536 | `project.create` runs from Home and the editor |
 | SHORTCUT-25 | Tab, Dictate, Back to edit | Missing | — | 14b/110536 | |
 | SHORTCUT-26 | Resize text from centre | Missing | — | 14b/110542 | |
