@@ -803,6 +803,12 @@ pub(super) const SCENES: &[Scene] = &[
         build: tracks,
     },
     Scene {
+        name: "tracks-kinds",
+        reference_dark: Some("capcut-desktop-2026-11-14b/capcut-desktop-102704.png"),
+        reference_light: None,
+        build: tracks_kinds,
+    },
+    Scene {
         name: "scene-delete",
         reference_dark: Some("capcut/illustrations/capcut-desktop-ui-changes.png"),
         reference_light: Some("capcut/illustrations/capcut-desktop-ui-changes.png"),
@@ -913,5 +919,5 @@ use shorts::shorts_scene;
 use timeline::{
     link_media, missing_media, placement, preview_axis, preview_axis_ends, preview_axis_reference,
     scene_create, scene_delete, scene_rename, timeline_fades, timeline_main, timeline_multi,
-    timeline_selection, timeline_selection_vi, timeline_zoom, tracks,
+    timeline_selection, timeline_selection_vi, timeline_zoom, tracks, tracks_kinds,
 };

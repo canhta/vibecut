@@ -121,8 +121,11 @@ the list.
 
 ## Track controls
 
-Header and row geometry follows [UI design](../../../../../docs/product/ui/editor.md#density),
-with embedded regular SVG kind icons, output toggles and accessibility-only names. Logical
+Header and row geometry follows [UI design](../../../../../docs/product/ui/editor.md#track-rows-by-kind),
+with embedded regular SVG kind icons, output toggles and accessibility-only names. A header
+carries only the cells its kind can use, and its menu sets the app-wide row height and audio
+waveform size through `timeline.track_height.*` and `timeline.waveform_size.*`, stored as the
+`track_height` and `waveform_size` preferences. Logical
 row sizes are constant across DPI. Header context menus remove unlocked secondary tracks
 and rename tracks inline (Enter commits, Escape cancels). The toolbar carries the persisted
 main-track magnet control. All edits are registered engine commands and refresh the shared preview

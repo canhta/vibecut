@@ -327,6 +327,106 @@ pub(super) fn tracks(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     Ok(app)
 }
 
+/// The reference window's logical size (1840 x 1142), so the rows compare 1:1.
+const MULTI_TRACK_WINDOW: [f32; 2] = [1840.0, 1142.0];
+
+/// Seven kinds of track with clips, beside the nine-track reference frame:
+/// effect, text, overlay video, main video and two audio rows. The filter,
+/// sticker and adjustment rows stay empty, since a bare item of those kinds
+/// needs catalogue data the audit fixture does not carry.
+pub(super) fn tracks_kinds(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let mut session = empty_session("Track kinds")?;
+    for (id, kind) in [(1, StreamKind::Video), (2, StreamKind::Audio)] {
+        session.apply(Command::AddAsset {
+            asset: source_asset(
+                id,
+                kind,
+                std::env::temp_dir().join(format!("source-{id}.mp4")),
+            )?,
+        })?;
+    }
+    let main = session.project().data().scene().timeline.main.id;
+    let video = |audio| {
+        ItemParams::Video(VideoParams {
+            source_audio_enabled: audio,
+            ..VideoParams::plain()
+        })
+    };
+    insert(
+        &mut session,
+        main,
+        Tick::ZERO,
+        range(0, 10)?,
+        Some(AssetId(1)),
+        video(true),
+    )?;
+    insert(
+        &mut session,
+        main,
+        Tick(10 * SECOND),
+        range(0, 10)?,
+        Some(AssetId(1)),
+        video(true),
+    )?;
+    let overlay = track(&mut session, "Overlay", TrackKind::Video)?;
+    insert(
+        &mut session,
+        overlay,
+        Tick(4 * SECOND),
+        range(0, 10)?,
+        Some(AssetId(1)),
+        video(false),
+    )?;
+    for name in ["Music", "Voice-over"] {
+        let audio = track(&mut session, name, TrackKind::Audio)?;
+        insert(
+            &mut session,
+            audio,
+            Tick(if name == "Music" { SECOND } else { 12 * SECOND }),
+            range(0, 8)?,
+            Some(AssetId(2)),
+            ItemParams::Audio(AudioParams::default()),
+        )?;
+    }
+    // Each new kind lands above the last, so this reads top to bottom as the
+    // reference does: adjustment, filter, effect, sticker, text, overlay video.
+    let text = track(&mut session, "Text", TrackKind::Text)?;
+    insert(
+        &mut session,
+        text,
+        Tick(2 * SECOND),
+        range(0, 3)?,
+        None,
+        ItemParams::Text(TextParams {
+            content: "Default text".into(),
+            ..Default::default()
+        }),
+    )?;
+    track(&mut session, "Sticker", TrackKind::Sticker)?;
+    let effect = track(&mut session, "Effect", TrackKind::Effect)?;
+    insert(
+        &mut session,
+        effect,
+        Tick(8 * SECOND),
+        range(0, 3)?,
+        None,
+        ItemParams::Effect(project::EffectParams::default()),
+    )?;
+    track(&mut session, "Filter", TrackKind::Filter)?;
+    track(&mut session, "Adjustment", TrackKind::Adjustment)?;
+    let mut playback = Playback::new(
+        &session,
+        ByteBudget::new(256 << 20)?,
+        Arc::new(SyntheticSources),
+    )?;
+    playback.set_device_available(true);
+    let editor = Editor::new(session, playback, preferences(theme, Locale::En));
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, MULTI_TRACK_WINDOW);
+    wait_for_presented(&mut app)?;
+    app.run_steps(4);
+    Ok(app)
+}
+
 pub(super) fn scene_create(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     let mut app = app_editor(empty_editor(theme, Locale::En)?, scale);
     app.run_steps(3);

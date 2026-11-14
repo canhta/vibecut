@@ -46,6 +46,10 @@ GenerateChapters row into `subtitles.chapters_model`.
 Version 13 replaced the translation-only `translation` and `translation_model` fields with
 these; there is no migration.
 
+`track_height` (`short`, `default`, `tall`) and `waveform_size` (30, 60 or 100) are the timeline
+track header menu's choices; presentation only, each an app-history `ui.prefs.set` step.
+Version 18 introduced them, with no migration.
+
 `preview_guide` and `preview_overlays` store the preview guide choice (none, a grid with
 rows and columns 1–24, validated on load and set, one of the platform guides TikTok, Instagram Reels and YouTube Shorts, or a custom set of four margins) and the per-overlay visibility. Both are presentation only;
 an edit is one `ui.prefs.set` step in app history. Version 11 introduced them, version 12 added the platform guides and version 16 the custom margins, with no

@@ -501,6 +501,12 @@ impl Editor {
                     let after = !self.preferences.preview_axis;
                     self.set_preference("preview_axis", serde_json::json!(after))?;
                 }
+                UiAction::SetTrackHeight(height) => {
+                    self.set_preference("track_height", serde_json::to_value(height)?)?;
+                }
+                UiAction::SetWaveformSize(percent) => {
+                    self.set_preference("waveform_size", serde_json::json!(percent))?;
+                }
                 UiAction::SelectTool => {
                     self.timeline
                         .set_tool(crate::editor::timeline::Tool::Select);

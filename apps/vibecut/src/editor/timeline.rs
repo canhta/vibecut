@@ -42,7 +42,7 @@ const ICON_BUTTON: f32 = theme::size::CONTROL;
 const RULER_HEIGHT: f32 = theme::size::RULER;
 const LABEL_WIDTH: f32 = theme::size::TRACK_LABEL;
 const SCROLLBAR: f32 = theme::size::SCROLLBAR;
-const TRACK_GAP: f32 = theme::space::SM;
+const TRACK_GAP: f32 = theme::size::TRACK_GAP;
 /// Fixed reference scale for persisted view state: 1× is 40 logical px/s.
 const DEFAULT_ZOOM: f32 = 40.0;
 /// The timeline slider tops out at 100× the reference scale.

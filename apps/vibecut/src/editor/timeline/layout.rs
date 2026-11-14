@@ -40,6 +40,8 @@ pub(super) struct ItemLane {
 pub(super) struct ItemView {
     pub(super) id: ItemId,
     pub(super) kind: TrackKind,
+    /// Item of the main video track (the overlay video rows use other bands).
+    pub(super) main: bool,
     pub(super) start: Tick,
     pub(super) end: Tick,
     pub(super) top: f32,
@@ -130,6 +132,7 @@ struct RawItem {
     row_index: usize,
     id: ItemId,
     kind: TrackKind,
+    main: bool,
     start: Tick,
     end: Tick,
     locked: bool,
@@ -232,8 +235,8 @@ impl State {
         let mut overlay_index = 0u32;
         let mut audio_index = 0u32;
         for (row_index, track) in data.scene().timeline.iter().rev().enumerate() {
-            let base_height = track_height(track.kind);
             let main = track.id == data.scene().timeline.main.id;
+            let base_height = track_height(track.kind, main, cx.preferences.track_height);
             let audio = track.kind == TrackKind::Audio;
             let display_index = if main {
                 0
@@ -280,6 +283,7 @@ impl State {
                     row_index,
                     id: item.id,
                     kind: track.kind,
+                    main,
                     start: item.start,
                     end,
                     locked: track.locked,
@@ -357,6 +361,7 @@ impl State {
             items.push(ItemView {
                 id: raw.id,
                 kind: raw.kind,
+                main: raw.main,
                 start: raw.start,
                 end: raw.end,
                 top,

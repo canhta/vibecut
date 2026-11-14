@@ -40,10 +40,40 @@ Shots 221513 (empty) and 221643 (populated). Window 1727×1029. Minimum window 1
 
 Per-panel pitches are in the frame bullets above. Shortcut list rows are 40 px; export and
 settings modal footer buttons are 34 px [proposed, dialog uncaptured]. Icon buttons follow
-[iconography](index.md#iconography). Audio, text, sticker, effect, filter and adjustment
-track heights are unmeasured [proposed: audio 40 px, others 32 px]. Clip trim handles are
-8 px wide with a 12 px capture area [proposed]; the captured clip is selected and shows no
-handle.
+[iconography](index.md#iconography). Clip trim handles are 8 px wide with a 12 px capture
+area [proposed]; the captured clip is selected and shows no handle.
+
+## Track rows by kind
+
+Measured in the nine-track frame 102704 (logical px, 2 px gap between rows): effect,
+filter, sticker, text and adjustment rows are 24 px, overlay video 52, main video 76 and
+audio 50 (pitches 26, 54, 78 and 52). A clip fills its row less a 1 px inset (22.5, 50.5, 74.5
+and 48.5 px tall). An overlay video clip's bands inside the border are a 17 px top band, a
+20 px filmstrip and an 11 px bottom band; the main clip keeps 17 + 39 + 16. Dark clip fills
+by track kind: video `#204C51` (edge `#203A3D`), audio `#182F56`, text `#914E3B`, sticker
+`#CB963C`, effect `#6E4C80`, filter `#464188`, adjustment `#A58841`. The video bottom band is
+`#35757D` and audio bars are `#3C7FB0`. The light theme is not captured: its fills blend
+the dark ones 70 % toward white [proposed], and the non-video kinds draw no edge
+[proposed].
+
+Header cells sit at the same five 24 px columns on every row (kind glyph, lock, eye,
+speaker, settings; centres 14/38/62/86/110 px from the header edge) and a kind lacks the cells
+it cannot use: effect, filter, sticker, text and adjustment rows show lock and eye; video
+rows show lock, eye, speaker and settings; audio rows show lock, speaker and settings.
+Tooltips read Lock track, Hide track, Mute track and Track settings.
+
+The header menu (right-click on a header, and the settings cell) opens Track height with
+Short, Default (checked) and Tall, and Audio waveform size with 30 %, 60 % and 100 %
+(30 % checked). The reference does not show what the choices do to the rows, so Short and
+Tall scale each row by 0.75 and 1.5 with the 24 px small-kind row as the floor, and 30, 60
+and 100 % let audio bars reach 70, 85 and 100 % of the clip height [proposed]. Both
+choices are app-wide presentation preferences, not project data: `track_height` and
+`waveform_size` in the preference document (version 18), set by the commands
+`timeline.track_height.short|default|tall` and `timeline.waveform_size.30|60|100`.
+
+The main track's Cover button is not built (the project has no cover). Its place is
+recorded for when it exists: a 37 × 37 px button centred on the main row, its left edge
+5 px right of the header column's right edge and so over the lane start.
 
 ## Arrange controls
 
