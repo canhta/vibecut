@@ -222,12 +222,35 @@ fn item_blur_is_isolated_from_track_below_and_uses_animation() {
             Param::new(ParamValue::Scalar(0.0)).unwrap(),
         )
         .unwrap();
-    let sharp = Project::new(data).unwrap();
-    let output = Renderer::new(&sharp, settings)
+    let sharp = Project::new(data.clone()).unwrap();
+    let output = Renderer::new(&sharp, settings.clone())
         .unwrap()
         .render_frame(Tick::ZERO, &mut FileSources::default(), &hooks)
         .unwrap();
     assert_eq!(output.pixels()[72 * 256 + 63], [0.0, 0.0, 1.0, 1.0]);
+    // The blur channel of a Blur In or Blur Out look runs the same blur pass on a clip with no
+    // blur effect: at intensity 100 it renders exactly what the effect rendered above.
+    let item = &mut data.scene_mut().timeline.overlays[0].items[0];
+    item.effects.clear();
+    item.animations
+        .set(
+            AnimationPath::from(BuiltinPath::Blur),
+            Param::new(ParamValue::Scalar(100.0)).unwrap(),
+        )
+        .unwrap();
+    let channel = Project::new(data).unwrap();
+    let by_channel = Renderer::new(&channel, settings)
+        .unwrap()
+        .render_frame(Tick::ZERO, &mut FileSources::default(), &hooks)
+        .unwrap();
+    let (got, want) = (
+        by_channel.pixels()[72 * 256 + 63],
+        blurred.pixels()[72 * 256 + 63],
+    );
+    assert!(got[0] > 0.1 && got[0] < 0.5);
+    for (a, b) in got.into_iter().zip(want) {
+        assert!((a - b).abs() < 1e-4, "{a} vs {b}");
+    }
 }
 
 /// Colour chart in the premultiplied linear working space: grey ramp, the

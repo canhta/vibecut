@@ -3626,13 +3626,13 @@ fn animation_tiles_show_previews_with_names_beneath_at_the_measured_pitch() {
         image
     };
     use engine::AnimationPreset as Preset;
-    tiles_lit(&mut h, "in", &Preset::EDGE);
+    tiles_lit(&mut h, "in", &Preset::IN);
     reveal(&mut h, "inspector.animation.in.none");
     let none = widget_rect(&h, "inspector.animation.in.none");
     assert_eq!(lit(&h.render().unwrap(), none), 0);
     // Out and Combo previews arrive the same way.
     click(&mut h, "inspector.animation.tab.out");
-    tiles_lit(&mut h, "out", &Preset::EDGE);
+    tiles_lit(&mut h, "out", &Preset::OUT);
     click(&mut h, "inspector.animation.tab.combo");
     let image = tiles_lit(&mut h, "combo", &Preset::COMBO);
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target");

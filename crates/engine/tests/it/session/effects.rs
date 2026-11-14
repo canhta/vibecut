@@ -561,8 +561,8 @@ fn animation_previews_are_deterministic_distinct_per_look_and_cached() {
     let edge = PREVIEW_EDGE as usize * 4;
     let width = edge * PREVIEW_FRAMES as usize;
     let rows = [
-        (AnimationSlot::In, &AnimationPreset::EDGE[..]),
-        (AnimationSlot::Out, &AnimationPreset::EDGE[..]),
+        (AnimationSlot::In, &AnimationPreset::IN[..]),
+        (AnimationSlot::Out, &AnimationPreset::OUT[..]),
         (AnimationSlot::Combo, &AnimationPreset::COMBO[..]),
     ];
     let mut every = Vec::new();

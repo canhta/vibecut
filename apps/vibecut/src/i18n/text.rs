@@ -1139,6 +1139,8 @@ catalog! {
     AnimationCombo { key: "animation_combo", en: "Combo", vi: "Kết hợp" },
     AnimationDuration { key: "animation_duration", en: "Duration", vi: "Thời lượng" },
     AnimationIn { key: "animation_in", en: "In", vi: "Vào" },
+    AnimationBlurIn { key: "animation_look_blur_in", en: "Blur in", vi: "Làm mờ vào" },
+    AnimationBlurOut { key: "animation_look_blur_out", en: "Blur out", vi: "Làm mờ ra" },
     AnimationDriftLeft { key: "animation_look_drift_left", en: "Drift left", vi: "Trôi trái" },
     AnimationDriftRight { key: "animation_look_drift_right", en: "Drift right", vi: "Trôi phải" },
     AnimationDrop { key: "animation_look_drop", en: "Drop", vi: "Thả xuống" },

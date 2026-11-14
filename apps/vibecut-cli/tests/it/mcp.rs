@@ -882,6 +882,8 @@ fn full_tool_and_command_pages_cover_the_live_registry_without_schema_drift() {
             "stretch",
             "swing",
             "shake",
+            "blur_in",
+            "blur_out",
             "pulse",
             "heartbeat",
             "sway",

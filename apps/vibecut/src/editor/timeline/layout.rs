@@ -208,6 +208,7 @@ fn lane_label(path: &str, locale: Locale) -> &str {
         Some(P::TransformScaleY) => i18n::text(locale, Text::ScaleY),
         Some(P::TransformRotate) => i18n::text(locale, Text::Rotate),
         Some(P::Opacity) => i18n::text(locale, Text::Opacity),
+        Some(P::Blur) => i18n::text(locale, Text::EffectBlur),
         Some(P::Volume) => i18n::text(locale, Text::AudioGain),
         _ => path.rsplit('.').next().unwrap_or(path),
     }

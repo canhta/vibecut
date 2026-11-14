@@ -187,13 +187,14 @@ fn keys_of(s: &Session, id: ItemId, path: BuiltinPath) -> Vec<(i64, f64)> {
         })
         .unwrap_or_default()
 }
-const OWNED: [BuiltinPath; 6] = [
+const OWNED: [BuiltinPath; 7] = [
     BuiltinPath::Opacity,
     BuiltinPath::TransformPositionX,
     BuiltinPath::TransformPositionY,
     BuiltinPath::TransformScaleX,
     BuiltinPath::TransformScaleY,
     BuiltinPath::TransformRotate,
+    BuiltinPath::Blur,
 ];
 fn rest(path: BuiltinPath) -> f64 {
     if matches!(
@@ -239,12 +240,15 @@ fn clip_animation_edge_presets_expand_keys_for_text_and_clips_and_undo_as_one_st
         (Look::Stretch, &[(SX, 0.5), (SY, 1.5), (Opacity, 0.0)]),
         (Look::Swing, &[(Opacity, 0.0), (R, -20.0)]),
     ];
-    assert_eq!(table.len() + 1, Look::EDGE.len());
+    // Shake has its own test and Blur In and Blur Out have theirs, so the shared table is the
+    // fourteen-look core less Shake: a row per look both slots offer.
+    assert_eq!(table.len() + 2, Look::IN.len());
+    assert_eq!(table.len() + 2, Look::OUT.len());
     let length = frame(60).0;
     let half_second = 127_008_000_000_i64;
     for on_clip in [false, true] {
         for (preset, starts) in table {
-            assert!(Look::EDGE.contains(&preset));
+            assert!(Look::IN.contains(&preset) && Look::OUT.contains(&preset));
             for slot in [Slot::In, Slot::Out] {
                 let (mut s, id) = rig(on_clip, 60);
                 let before = s.project().clone();
@@ -310,6 +314,67 @@ fn clip_animation_edge_presets_expand_keys_for_text_and_clips_and_undo_as_one_st
             }
         }
     }
+}
+
+#[test]
+fn clip_animation_blur_looks_write_the_blur_channel_on_their_own_edge() {
+    use BuiltinPath::{Blur, Opacity};
+    let length = frame(60).0;
+    let half_second = 127_008_000_000_i64;
+    // Blur In runs the blur channel from the blurred peak down to rest; Blur Out is the mirror.
+    let (mut s, id) = rig(false, 60);
+    let before = s.project().clone();
+    assert!(
+        animate(&mut s, id, Slot::In, Some(Look::BlurIn), None)
+            .unwrap()
+            .changed
+    );
+    only(&s, id, &[Blur, Opacity]);
+    assert_eq!(keys_of(&s, id, Blur), vec![(0, 40.0), (half_second, 0.0)]);
+    assert_eq!(keys_of(&s, id, Opacity), vec![(0, 0.0), (half_second, 1.0)]);
+    assert_eq!(
+        read(&s, id),
+        engine::ClipAnimations {
+            enter: Some((Look::BlurIn, Tick(half_second))),
+            exit: None,
+            combo: None,
+        }
+    );
+    s.undo().unwrap();
+    assert_eq!(s.project(), &before);
+
+    assert!(
+        animate(&mut s, id, Slot::Out, Some(Look::BlurOut), None)
+            .unwrap()
+            .changed
+    );
+    only(&s, id, &[Blur, Opacity]);
+    assert_eq!(
+        keys_of(&s, id, Blur),
+        vec![(length - half_second, 0.0), (length, 40.0)]
+    );
+    assert_eq!(
+        keys_of(&s, id, Opacity),
+        vec![(length - half_second, 1.0), (length, 0.0)]
+    );
+    assert_eq!(
+        read(&s, id),
+        engine::ClipAnimations {
+            enter: None,
+            exit: Some((Look::BlurOut, Tick(half_second))),
+            combo: None,
+        }
+    );
+    s.undo().unwrap();
+    assert_eq!(s.project(), &before);
+
+    // Each blur look belongs to one edge only, and neither is a Combo look.
+    let (mut s, id) = rig(false, 60);
+    let before = s.project().clone();
+    assert!(animate(&mut s, id, Slot::Out, Some(Look::BlurIn), None).is_err());
+    assert!(animate(&mut s, id, Slot::In, Some(Look::BlurOut), None).is_err());
+    assert!(animate(&mut s, id, Slot::Combo, Some(Look::BlurOut), None).is_err());
+    assert_eq!(s.project(), &before);
 }
 
 #[test]
