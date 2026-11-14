@@ -330,7 +330,8 @@ fn stroke_shadow_and_glow_paint_behind_the_fill_and_stroke_colour_keys_animate()
             Box::new(|t| {
                 t.stroke = Some(TextStroke {
                     color: Color([255, 0, 0, 255]),
-                    width: 6.0,
+                    // 100 is 20% of the 28 px font: a 5.6 px stroke.
+                    thickness: 100.0,
                 });
             }),
         ),
@@ -339,9 +340,11 @@ fn stroke_shadow_and_glow_paint_behind_the_fill_and_stroke_colour_keys_animate()
             Box::new(|t| {
                 t.shadow = Some(TextShadow {
                     color: Color([255, 0, 0, 255]),
-                    offset_x: 10.0,
-                    offset_y: 8.0,
-                    blur: 0.0,
+                    opacity: 100.0,
+                    blurriness: 0.0,
+                    // 46% of the 28 px font along -39 degrees: about (10, 8) px.
+                    distance: 46.0,
+                    angle: -39.0,
                 });
             }),
         ),
@@ -433,7 +436,7 @@ fn stroke_shadow_and_glow_paint_behind_the_fill_and_stroke_colour_keys_animate()
     let mut text = base();
     text.stroke = Some(TextStroke {
         color: Color([255, 0, 0, 255]),
-        width: 8.0,
+        thickness: 100.0,
     });
     let from = [1.0, 0.0, 0.0, 1.0];
     let to = [0.0, 0.0, 1.0, 1.0];

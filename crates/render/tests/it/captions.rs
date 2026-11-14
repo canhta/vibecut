@@ -285,7 +285,7 @@ fn caption_preset_overrides_patch_every_full_style_field() {
         color: Some([250, 240, 40, 220]),
         outline: Some(Some(captions::CaptionOutline {
             color: [10, 20, 30, 255],
-            width: 4.0,
+            thickness: 30.0,
         })),
         background: Some(Some(captions::CaptionBackground {
             color: [0, 0, 90, 180],
@@ -904,7 +904,7 @@ fn imported_cue_style_paints_preview_and_export_like_the_equivalent_caption_styl
         color: [255, 60, 60, 255],
         outline: Some(CaptionOutline {
             color: [0, 0, 255, 255],
-            width: 2.0,
+            thickness: 20.0,
         }),
         background: None,
         position: CaptionPosition::Top,

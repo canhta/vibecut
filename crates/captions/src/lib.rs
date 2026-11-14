@@ -29,6 +29,7 @@ pub use span::{NormalizedText, TextSpan};
 use std::{collections::BTreeMap, fmt};
 pub use style::{
     CaptionBackground, CaptionOutline, CaptionOverrides, CaptionPosition, CaptionStyle,
+    MAX_THICKNESS, THICKNESS_FONT_RATIO, outline_width,
 };
 use time::{SourceRange, Tick};
 pub use timing::{

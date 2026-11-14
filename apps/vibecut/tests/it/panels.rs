@@ -3981,20 +3981,40 @@ fn text_tab_edits_every_style_field_one_undo_step_each_and_shows_effects() {
     click(&mut harness, "inspector.text_shadow");
     assert!(text_params(&harness, text).stroke.is_some());
     assert!(text_params(&harness, text).shadow.is_some());
-    let rows: [(&str, &str, Check); 4] = [
-        ("inspector.text_stroke_width", "7", |p| {
+    // Toggling on creates the reference's defaults: Thickness 40; Opacity 90 %, Bluriness 15 %,
+    // Distance 5, Angle -45.
+    let created = text_params(&harness, text);
+    assert_eq!(created.stroke.as_ref().unwrap().thickness, 40.0);
+    let shadow = created.shadow.as_ref().unwrap();
+    assert_eq!(
+        (
+            shadow.opacity,
+            shadow.blurriness,
+            shadow.distance,
+            shadow.angle
+        ),
+        (90.0, 15.0, 5.0, -45.0)
+    );
+    let rows: [(&str, &str, Check); 5] = [
+        ("inspector.text_stroke_thickness", "70", |p| {
             let stroke = p.stroke.as_ref().unwrap();
-            stroke.width == 7.0 && stroke.color == project::Color([0, 0, 0, 255])
+            stroke.thickness == 70.0 && stroke.color == project::Color([0, 0, 0, 255])
         }),
-        ("inspector.text_shadow_offset_x", "-6", |p| {
+        ("inspector.text_shadow_opacity", "60", |p| {
             let shadow = p.shadow.as_ref().unwrap();
-            shadow.offset_x == -6.0 && shadow.offset_y == 4.0 && shadow.blur == 4.0
+            shadow.opacity == 60.0
+                && shadow.blurriness == 15.0
+                && shadow.distance == 5.0
+                && shadow.angle == -45.0
         }),
-        ("inspector.text_shadow_offset_y", "9", |p| {
-            p.shadow.as_ref().unwrap().offset_y == 9.0
+        ("inspector.text_shadow_blurriness", "25", |p| {
+            p.shadow.as_ref().unwrap().blurriness == 25.0
         }),
-        ("inspector.text_shadow_blur", "5", |p| {
-            p.shadow.as_ref().unwrap().blur == 5.0
+        ("inspector.text_shadow_distance", "30", |p| {
+            p.shadow.as_ref().unwrap().distance == 30.0
+        }),
+        ("inspector.text_shadow_angle", "120", |p| {
+            p.shadow.as_ref().unwrap().angle == 120.0
         }),
     ];
     for (id, value, holds) in rows {
@@ -4006,13 +4026,23 @@ fn text_tab_edits_every_style_field_one_undo_step_each_and_shows_effects() {
         harness.state_mut().session.redo().unwrap();
         harness.run_steps(2);
     }
-    enter(&mut harness, "inspector.text_stroke_width", "999");
+    enter(&mut harness, "inspector.text_stroke_thickness", "999");
     assert_eq!(
-        text_params(&harness, text).stroke.unwrap().width,
-        project::TextStroke::MAX_WIDTH
+        text_params(&harness, text).stroke.unwrap().thickness,
+        project::TextStroke::MAX_THICKNESS
     );
-    enter(&mut harness, "inspector.text_shadow_blur", "-3");
-    assert_eq!(text_params(&harness, text).shadow.unwrap().blur, 0.0);
+    enter(&mut harness, "inspector.text_shadow_blurriness", "-3");
+    assert_eq!(text_params(&harness, text).shadow.unwrap().blurriness, 0.0);
+    enter(&mut harness, "inspector.text_shadow_angle", "999");
+    assert_eq!(
+        text_params(&harness, text).shadow.unwrap().angle,
+        project::TextShadow::MAX_ANGLE
+    );
+    enter(&mut harness, "inspector.text_shadow_angle", "-999");
+    assert_eq!(
+        text_params(&harness, text).shadow.unwrap().angle,
+        -project::TextShadow::MAX_ANGLE
+    );
 
     // Hostile entries clamp to the field's range instead of reaching the model.
     enter(&mut harness, "inspector.text_background_padding_x", "9999");

@@ -18,7 +18,7 @@ fn named_preset_banks_validate_every_entry_names_closed_fields_and_schema() {
         color: [255, 255, 255, 180],
         outline: Some(captions::CaptionOutline {
             color: [0, 0, 0, 255],
-            width: 2.0,
+            thickness: 20.0,
         }),
         background: None,
         position: captions::CaptionPosition::Bottom,
@@ -99,14 +99,27 @@ fn named_preset_banks_validate_every_entry_names_closed_fields_and_schema() {
     let mut styled = TextParams::new("Giữ chữ");
     styled.stroke = Some(project::TextStroke {
         color: Color([255, 0, 0, 255]),
-        width: 3.0,
+        thickness: 30.0,
     });
     styled.shadow = Some(project::TextShadow {
-        color: Color([0, 0, 0, 128]),
-        offset_x: 4.0,
-        offset_y: 5.0,
-        blur: 2.0,
+        color: Color([0, 0, 0, 255]),
+        opacity: 50.0,
+        blurriness: 10.0,
+        distance: 7.0,
+        angle: -50.0,
     });
+    // Documented render units at a 48 px font: stroke 0.2 of the font at thickness 100,
+    // offset along the angle (0 right, counter-clockwise positive, y down), blur 0.25.
+    let (stroke, shadow) = (
+        styled.stroke.clone().unwrap(),
+        styled.shadow.clone().unwrap(),
+    );
+    assert!((stroke.width_px(48.0) - 2.88).abs() < 1e-4);
+    let (dx, dy) = shadow.offset_px(48.0);
+    assert!(dx > 0.0 && dy > 0.0, "angle -50 falls down and right");
+    assert!((dx.hypot(dy) - 3.36).abs() < 1e-3);
+    assert!((shadow.blur_px(48.0) - 1.2).abs() < 1e-4);
+    assert_eq!(TextShadow::default().angle, -45.0);
     styled.glow = true;
     let text_style = TextStyle::from_params(&styled);
     // Recent colours are project state: newest first, round-tripped through the file.
@@ -167,14 +180,14 @@ fn named_preset_banks_validate_every_entry_names_closed_fields_and_schema() {
                     .style
                     .stroke
                     .get_or_insert_with(Default::default)
-                    .width = project::TextStroke::MAX_WIDTH + 1.0;
+                    .thickness = project::TextStroke::MAX_THICKNESS + 1.0;
             }
             "shadow" => {
                 invalid.text_presets[0]
                     .style
                     .shadow
                     .get_or_insert_with(Default::default)
-                    .blur = f32::NAN;
+                    .blurriness = f32::NAN;
             }
             _ => panic!("unknown case {case}"),
         }
@@ -409,13 +422,14 @@ fn item(id: u64, start: i64) -> Item {
             case: project::TextCase::Title,
             stroke: Some(project::TextStroke {
                 color: Color([200, 10, 20, 255]),
-                width: 3.0,
+                thickness: 30.0,
             }),
             shadow: Some(project::TextShadow {
-                color: Color([0, 0, 0, 128]),
-                offset_x: 4.0,
-                offset_y: 5.0,
-                blur: 2.0,
+                color: Color([0, 0, 0, 255]),
+                opacity: 50.0,
+                blurriness: 10.0,
+                distance: 7.0,
+                angle: -50.0,
             }),
             glow: true,
             background: Some(project::TextBackground {
@@ -946,13 +960,13 @@ fn model_trust_boundaries() {
         |p| p.font = "x".repeat(257).into(),
         |p| p.letter_spacing = f32::NEG_INFINITY,
         |p| {
-            p.stroke.get_or_insert_with(Default::default).width =
-                project::TextStroke::MAX_WIDTH + 1.0;
+            p.stroke.get_or_insert_with(Default::default).thickness =
+                project::TextStroke::MAX_THICKNESS + 1.0;
         },
-        |p| p.shadow.get_or_insert_with(Default::default).offset_x = f32::NAN,
+        |p| p.shadow.get_or_insert_with(Default::default).distance = f32::NAN,
         |p| {
-            p.shadow.get_or_insert_with(Default::default).blur =
-                project::TextShadow::MAX_BLUR + 1.0;
+            p.shadow.get_or_insert_with(Default::default).blurriness =
+                project::TextShadow::MAX_PERCENT + 1.0;
         },
     ];
     for corrupt in text_style {

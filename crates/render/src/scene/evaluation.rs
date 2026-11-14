@@ -619,7 +619,7 @@ impl<'a> Renderer<'a> {
                         let outline = match &p.stroke {
                             None => None,
                             Some(stroke) => Some((
-                                stroke.width * scale,
+                                stroke.width_px(p.font_size) * scale,
                                 crate::color::at(
                                     &item.animations,
                                     &AnimationPath::from(BuiltinPath::StrokeColor),
@@ -630,11 +630,18 @@ impl<'a> Renderer<'a> {
                             )),
                         };
                         let shadow = p.shadow.as_ref().map(|shadow| {
+                            let (dx, dy) = shadow.offset_px(p.font_size);
+                            let [r, g, b, a] = shadow.color.0;
                             (
-                                shadow.offset_x * scale,
-                                shadow.offset_y * scale,
-                                shadow.blur * scale,
-                                shadow.color.0,
+                                dx * scale,
+                                dy * scale,
+                                shadow.blur_px(p.font_size) * scale,
+                                [
+                                    r,
+                                    g,
+                                    b,
+                                    (f32::from(a) * shadow.opacity / 100.0).round() as u8,
+                                ],
                             )
                         });
                         let glow = p.glow.then(|| {
@@ -1157,7 +1164,12 @@ impl<'a> Renderer<'a> {
             fonts: text::generation(),
             outline: caption
                 .and_then(|s| s.outline.as_ref())
-                .map(|o| ((o.width * scale).to_bits(), o.color))
+                .map(|o| {
+                    (
+                        captions::outline_width(o.thickness, size).to_bits(),
+                        o.color,
+                    )
+                })
                 .or_else(|| face.outline.map(|(width, color)| (width.to_bits(), color))),
             shadow: face
                 .shadow

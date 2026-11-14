@@ -1375,7 +1375,7 @@ impl Subtitles {
                             let replacement = outline.then(|| {
                                 base_outline.unwrap_or(captions::CaptionOutline {
                                     color: [0, 0, 0, 255],
-                                    width: 2.0,
+                                    thickness: 20.0,
                                 })
                             });
                             edit.draft.outline = replacement;
@@ -1383,8 +1383,8 @@ impl Subtitles {
                         if let Some(value) = &mut edit.draft.outline {
                             let r = style_control(ui, c.tr(Text::SubStyleOutlineWidth), |ui| {
                                 ui.add(
-                                    egui::DragValue::new(&mut value.width)
-                                        .range(0.0..=64.0)
+                                    egui::DragValue::new(&mut value.thickness)
+                                        .range(0.0..=captions::MAX_THICKNESS)
                                         .speed(0.5),
                                 )
                             });

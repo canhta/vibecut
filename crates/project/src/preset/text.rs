@@ -175,48 +175,61 @@ impl TextLook {
             Self::InkBlack => style(BE_VIETNAM, REGULAR, 64.0, INK),
             Self::HandNote => style(PATRICK, REGULAR, 56.0, WHITE),
             Self::ScriptCream => style(PACIFICO, REGULAR, 64.0, [255, 244, 214, 255]),
-            Self::OutlineBlack => stroke(style(BE_VIETNAM, BOLD, 64.0, WHITE), BLACK, 4.0),
-            Self::OutlineYellow => stroke(style(ANTON, REGULAR, 96.0, GOLD), BLACK, 6.0),
-            Self::OutlineThin => stroke(style(BE_VIETNAM, REGULAR, 64.0, WHITE), BLACK, 2.0),
+            Self::OutlineBlack => stroke(style(BE_VIETNAM, BOLD, 64.0, WHITE), BLACK, 30.0),
+            Self::OutlineYellow => stroke(style(ANTON, REGULAR, 96.0, GOLD), BLACK, 30.0),
+            Self::OutlineThin => stroke(style(BE_VIETNAM, REGULAR, 64.0, WHITE), BLACK, 15.0),
             Self::OutlineNavy => {
-                stroke(style(BE_VIETNAM, BOLD, 64.0, WHITE), [0, 32, 96, 255], 5.0)
+                stroke(style(BE_VIETNAM, BOLD, 64.0, WHITE), [0, 32, 96, 255], 40.0)
             }
-            Self::OutlineScript => {
-                stroke(style(LOBSTER, REGULAR, 72.0, WHITE), [40, 20, 60, 255], 4.0)
-            }
+            Self::OutlineScript => stroke(
+                style(LOBSTER, REGULAR, 72.0, WHITE),
+                [40, 20, 60, 255],
+                30.0,
+            ),
             Self::OutlineHand => stroke(
                 style(PATRICK, REGULAR, 56.0, [255, 80, 80, 255]),
                 WHITE,
-                4.0,
+                35.0,
             ),
             Self::SoftShadow => shadow(
                 style(BE_VIETNAM, REGULAR, 64.0, WHITE),
-                [0, 0, 0, 160],
-                2.0,
-                3.0,
-                4.0,
+                BLACK,
+                63.0,
+                25.0,
+                6.0,
+                -55.0,
             ),
-            Self::HardShadow => shadow(style(BE_VIETNAM, BOLD, 64.0, WHITE), BLACK, 4.0, 4.0, 0.0),
+            Self::HardShadow => shadow(
+                style(BE_VIETNAM, BOLD, 64.0, WHITE),
+                BLACK,
+                100.0,
+                0.0,
+                9.0,
+                -45.0,
+            ),
             Self::LongShadow => shadow(
                 style(ANTON, REGULAR, 96.0, WHITE),
-                [0, 0, 0, 200],
-                8.0,
-                8.0,
+                BLACK,
+                78.0,
                 0.0,
+                12.0,
+                -45.0,
             ),
             Self::ScriptShadow => shadow(
                 style(PACIFICO, REGULAR, 72.0, WHITE),
-                [0, 0, 0, 180],
-                3.0,
-                4.0,
-                6.0,
+                BLACK,
+                71.0,
+                33.0,
+                7.0,
+                -53.0,
             ),
             Self::HandShadow => shadow(
                 style(PATRICK, REGULAR, 56.0, GOLD),
-                [0, 0, 0, 200],
-                2.0,
-                2.0,
-                2.0,
+                BLACK,
+                78.0,
+                14.0,
+                5.0,
+                -45.0,
             ),
             Self::NeonCyan => glow(style(BE_VIETNAM, BOLD, 64.0, [0, 255, 255, 255])),
             Self::NeonPink => glow(style(LOBSTER, REGULAR, 72.0, [255, 64, 200, 255])),
@@ -287,10 +300,10 @@ fn style(font: &str, weight: u16, size: f32, color: [u8; 4]) -> TextStyle {
     TextStyle::from_params(&params)
 }
 
-fn stroke(mut style: TextStyle, color: [u8; 4], width: f32) -> TextStyle {
+fn stroke(mut style: TextStyle, color: [u8; 4], thickness: f32) -> TextStyle {
     style.stroke = Some(TextStroke {
         color: Color(color),
-        width,
+        thickness,
     });
     style
 }
@@ -298,15 +311,17 @@ fn stroke(mut style: TextStyle, color: [u8; 4], width: f32) -> TextStyle {
 fn shadow(
     mut style: TextStyle,
     color: [u8; 4],
-    offset_x: f32,
-    offset_y: f32,
-    blur: f32,
+    opacity: f32,
+    blurriness: f32,
+    distance: f32,
+    angle: f32,
 ) -> TextStyle {
     style.shadow = Some(TextShadow {
         color: Color(color),
-        offset_x,
-        offset_y,
-        blur,
+        opacity,
+        blurriness,
+        distance,
+        angle,
     });
     style
 }

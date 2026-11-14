@@ -97,10 +97,12 @@ fn text_part_patch(
         TextPart::Fill => engine::ItemParamPatch::TextColor(color),
         TextPart::Background => engine::ItemParamPatch::TextBackgroundColor(color),
         TextPart::Stroke => {
-            let width = first
+            let thickness = first
                 .and_then(|params| params.stroke.as_ref())
-                .map_or(project::TextStroke::default().width, |stroke| stroke.width);
-            engine::ItemParamPatch::TextStroke(Some(project::TextStroke { color, width }))
+                .map_or(project::TextStroke::default().thickness, |stroke| {
+                    stroke.thickness
+                });
+            engine::ItemParamPatch::TextStroke(Some(project::TextStroke { color, thickness }))
         }
         TextPart::Shadow => {
             let base = first
