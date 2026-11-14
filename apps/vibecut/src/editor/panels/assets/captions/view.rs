@@ -2010,6 +2010,7 @@ impl Subtitles {
         };
         self.export = Some(session.submit_export_command(&mut self.runner, key()?, command)?);
         self.export_count = Some(count);
+        self.grouped = false;
         self.problem = None;
         self.completed = None;
         Ok(())

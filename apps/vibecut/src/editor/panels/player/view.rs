@@ -147,9 +147,20 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
             (footer.top() - kit::size::PLAYER_FIT_ROW).max(header.bottom()),
         ),
     );
-    let fit_scale = preview::fit_scale(stage.size(), canvas_size(cx));
+    // While rulers show, the canvas fits the viewer less the two strips, so a canvas that
+    // fills the width starts at the left ruler's edge instead of under it (100216).
+    let strip = if cx.preferences.preview_lines.rulers {
+        kit::size::PLAYER_RULER
+    } else {
+        0.0
+    };
+    let fit_area = Rect::from_min_max(
+        (stage.min + egui::vec2(strip, strip)).min(stage.max),
+        stage.max,
+    );
+    let fit_scale = preview::fit_scale(fit_area.size(), canvas_size(cx));
     let size = egui::vec2(canvas_size(cx)[0] as f32, canvas_size(cx)[1] as f32) * fit_scale;
-    let frame = Rect::from_center_size(stage.center(), size);
+    let frame = Rect::from_center_size(fit_area.center(), size);
     state.viewport = frame.size().max(Vec2::ZERO);
     canvas(state, cx, ui, stage, frame, empty, &mut actions);
     if !empty {

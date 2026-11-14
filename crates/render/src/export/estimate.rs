@@ -29,6 +29,11 @@ impl ExportSettings {
     /// Expected output bytes for `seconds` of output: video (none for audio-only output)
     /// plus the audio track when it is included.
     pub fn estimated_bytes(&self, seconds: f64) -> f64 {
+        // Reconcile point with the per-encoder-mode estimate (518): GIF has its own model in
+        // `gif.rs`, so it stays a branch on the container, ahead of any video-mode split.
+        if self.container == media::Container::Gif {
+            return super::gif::estimated_bytes(self, seconds);
+        }
         let video = if self.audio_only {
             0.0
         } else {

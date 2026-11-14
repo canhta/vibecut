@@ -592,6 +592,24 @@ fn size_estimate_follows_the_encoder_settings_of_every_preset() {
     };
     audio.output.audio_only = true;
     assert!((mb(&audio) - 9.58 * 192_000.0 / 8_000_000.0).abs() < 1e-9);
+    // GIF has its own model: the measured 3 s at 240P wrote 1.25 MB (the video model said
+    // about 15 MB per 10 s), it is silent, and a smaller palette writes less.
+    let mut gif = ExportOptions {
+        format: ExportFormat::Gif,
+        ..Default::default()
+    };
+    gif.output.resolution = Some([426, 240]);
+    gif.output.fps = Some(time::FrameRate::new(30, 1).unwrap());
+    let three = super::settings::estimated_megabytes(&gif, &project, 3.0);
+    assert!((three - 1.25).abs() < 0.01, "{three}");
+    gif.include_audio = true;
+    assert_eq!(
+        super::settings::estimated_megabytes(&gif, &project, 3.0),
+        three
+    );
+    gif.output.gif.max_colors = 16;
+    let small = super::settings::estimated_megabytes(&gif, &project, 3.0);
+    assert!((small - three / 2.0).abs() < 0.01, "{small}");
 }
 
 #[test]
@@ -1703,4 +1721,18 @@ fn ticked_captions_write_their_file_beside_the_media_without_opening_the_panel()
     assert!(dir.path().join("out.mp4").is_file());
     let written = std::fs::read_to_string(caption).unwrap();
     assert!(written.contains("Hello group"), "{written}");
+    // The caption job finishes after the group saved: its "Done" toast must not replace the
+    // group toast that names every file.
+    for _ in 0..30 {
+        bench.editor_mut().tick();
+        bench.step();
+    }
+    let toast = bench
+        .editor()
+        .inspect()
+        .unwrap()
+        .import_toast
+        .unwrap_or_default();
+    assert!(toast.contains("out.mp4"), "{toast}");
+    assert!(!toast.contains("Done"), "{toast}");
 }

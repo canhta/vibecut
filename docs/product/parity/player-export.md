@@ -15,7 +15,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | PLAY-07 | Lock / unlock guides | Done | Proposed | 14b/111325 | |
 | PLAY-08 | Show / hide guides | Done | Proposed | 14/100219 | |
 | PLAY-09 | Clear guides | Done | Proposed | 14/100219 | |
-| PLAY-10 | Show / hide rulers | Done | Differs | 14/100133 | Moved from the canvas frame to the viewer edges at landing 18; they cover the canvas edge when it fills the viewer width |
+| PLAY-10 | Show / hide rulers | Done | Matches | 14/100133, 100216 | On the viewer edges; the canvas fits inside the strips while shown, flush with the left ruler at full width |
 | PLAY-11 | Guide and ruler geometry | Partial | Differs | 14/100216 | Rulers on viewer edges, guides span the viewer since landing 18; native re-measure and label steps beyond 700 and 1000 open |
 | PLAY-12 | Play / pause | Done | Matches | 14b/110531 | |
 | PLAY-13 | Timecode | Done | Matches | 05/221643 | |
@@ -55,10 +55,10 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | EXP-18 | Audio-only export | Done | Proposed | 14b/105736 | |
 | EXP-19 | GIF section | Done | Proposed | 14b/105532 | Ticks beside Video and Audio |
 | EXP-20 | GIF resolution list | Done | Proposed | 14b/105549 | |
-| EXP-21 | Captions section | Done | Differs | 14b/105557 | Tick joins the export's group; save buttons stay |
+| EXP-21 | Captions section | Done | Differs | 14b/105557 | Tick joins the export's group, which shows the one toast; save buttons stay |
 | EXP-22 | Caption formats | Done | Proposed | 14b/105559 | Plus VTT, burned MP4 |
 | EXP-23 | Check copyright toggle | Missing | — | 14b/105555 | |
-| EXP-24 | Duration and size estimate | Done | Matches | 14b/105340 | Sum of the encoder-model estimate per ticked output; Windows writes 0.64x the estimate (holds the rate target) |
+| EXP-24 | Duration and size estimate | Done | Matches | 14b/105340 | Sum of the encoder-model estimate per ticked output; Windows writes 0.64x the estimate (holds the rate target); GIF has its own palette x frames x pixels model from one 1.25 MB per 3 s at 240P measurement, size and rate of that run unrecorded |
 | EXP-25 | Cancel, Export buttons | Done | Matches | 14b/105340 | Cancel left of Export |
 | EXP-26 | Progress state | Done | Not captured | 14b/105909 | |
 | EXP-27 | Finished share view | Out of scope | — | 14b/105909 | Sharing |
