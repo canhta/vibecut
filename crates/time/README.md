@@ -13,6 +13,7 @@ Owns `Tick` at 254 016 000 000 ticks per second, `FrameRate`, `TimeRange` and th
 | `clock` | Formats ticks as fixed display clocks and durations. | [Clock](src/clock/README.md) |
 | `timecode` | Formats and parses signed DF/NDF editor labels. | [Timecode](src/timecode/README.md) |
 | `speed` | Maps constant playback speed to exact source and output durations. | [Speed](src/speed/README.md) |
+| `wake` | Lets a worker thread ask the owner of the UI loop to repaint. | [Wake](src/wake/README.md) |
 
 The crate root owns `TimeError` and re-exports the same public names. `TimeError` reports unsupported rates or modes, invalid timecode labels, non-finite seconds, invalid rates, empty ranges, overflow, out-of-range results and invalid speeds. No public operation panics on hostile input. Tests have no external oracle; expected values derive from exact rational arithmetic.
 

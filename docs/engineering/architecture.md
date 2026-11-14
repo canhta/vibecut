@@ -6,7 +6,7 @@ The core runs headless. Only `apps/*` may depend on UI, GPU, native window or di
 
 | Package | Path | Owns | May depend on |
 |---|---|---|---|
-| time | crates/time | Ticks, rational rates, source ranges | - |
+| time | crates/time | Ticks, rational rates, source ranges, the worker-to-UI wake hook | - |
 | transport | crates/transport | Bounded HTTPS requests, streaming downloads, redirect and retry-after rules | - |
 | media | crates/media | Safe FFmpeg I/O: probe, demux/mux, decode/encode, hardware acceleration, conversion, speech and vision media preparation | time, testkit |
 | testkit | crates/testkit | Dev-only synthetic media fixture builders, the timeline-item builder, generated-fixture paths and FFmpeg/FFprobe oracle discovery | media, project, time |

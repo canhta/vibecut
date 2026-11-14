@@ -21,12 +21,20 @@ pub(crate) struct EventState {
 pub struct TaskEvents {
     pub(crate) state: Mutex<EventState>,
     cancel: Cancellation,
+    /// The owner of the thread that built this, woken when a worker changes the state.
+    wake: Option<time::wake::Wake>,
 }
 impl TaskEvents {
     pub(crate) fn new(cancel: Cancellation) -> Self {
         Self {
             state: Mutex::new(EventState::default()),
             cancel,
+            wake: time::wake::current(),
+        }
+    }
+    fn wake(&self) {
+        if let Some(wake) = &self.wake {
+            wake.wake();
         }
     }
 }
@@ -36,11 +44,13 @@ impl Progress for TaskEvents {
             state.stage = Some(stage);
             state.fraction = None;
         }
+        self.wake();
     }
     fn job(&self, snapshot: &engine::jobs::JobSnapshot) {
         if let Ok(mut state) = self.state.lock() {
             state.fraction = Some(snapshot.progress);
         }
+        self.wake();
     }
 }
 impl TaskEvents {
@@ -92,6 +102,7 @@ impl TaskEvents {
             reply: send,
         });
         drop(state);
+        self.wake();
         loop {
             if self.cancel.cancelled() {
                 return Err(engine::providers::Error::Runtime(
@@ -157,7 +168,7 @@ mod tests {
         ] {
             let request = upload(model, operation);
             let task = events.clone();
-            let worker = std::thread::spawn(move || task.approve_unknown_price(&request));
+            let worker = time::wake::spawn(move || task.approve_unknown_price(&request));
             pending(&events);
             assert_eq!(
                 events
@@ -187,7 +198,7 @@ mod tests {
         for disconnected in [false, true] {
             let denied = Arc::new(TaskEvents::new(Cancellation::new()));
             let task = denied.clone();
-            let worker = std::thread::spawn(move || {
+            let worker = time::wake::spawn(move || {
                 task.approve(&upload(
                     "fixture-denied",
                     CatalogOperation::GenerateChapters,
@@ -206,7 +217,7 @@ mod tests {
         }
         let cancelled = Arc::new(TaskEvents::new(Cancellation::new()));
         let task = cancelled.clone();
-        let worker = std::thread::spawn(move || {
+        let worker = time::wake::spawn(move || {
             task.approve_unknown_price(&upload("fixture-a", CatalogOperation::GenerateChapters))
         });
         pending(&cancelled);

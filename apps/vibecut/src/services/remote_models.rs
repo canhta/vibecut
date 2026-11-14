@@ -107,7 +107,7 @@ impl Catalog {
         let cancel = Arc::new(AtomicBool::new(false));
         let hooks = Hooks(cancel.clone());
         let (send, receive) = mpsc::sync_channel(1);
-        let worker = std::thread::Builder::new()
+        let worker = time::wake::Builder::new()
             .name("remote-model-list".into())
             .spawn(move || {
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

@@ -6,7 +6,6 @@ use crate::{
     kit as icons,
     preferences::WindowGeometry,
 };
-use std::time::Duration;
 
 impl Workspace {
     /// Draw a specific project through the same path as its native viewport.
@@ -55,6 +54,7 @@ impl Workspace {
         }
     }
     pub fn ui(&mut self, ui: &mut egui::Ui) {
+        self.attach(ui.ctx());
         self.tick();
         if !self.home.configured {
             Editor::fonts(ui.ctx());
@@ -85,7 +85,9 @@ impl Workspace {
         if self.ready_to_close() {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
-        ctx.request_repaint_after(Duration::from_millis(16));
+        // Work the UI just asked for starts on a tick, and nothing polls while idle: run it
+        // now. What it publishes wakes the loop again on its own.
+        self.tick();
     }
     /// The root viewport: Home's catalog over its lifecycle worker's chrome, or hidden.
     fn show_home(&mut self, ui: &mut egui::Ui) {

@@ -77,7 +77,8 @@ struct Smoke {
 }
 impl eframe::App for Native {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        ctx.request_repaint_after(Duration::from_millis(8));
+        // No timer here: workers, the job runner and playback wake the loop themselves.
+        self.workspace.attach(ctx);
         self.workspace.tick();
         // Immediate child viewports are declared by the root UI pass. Keep
         // running that pass after Home is hidden, including the final close.
