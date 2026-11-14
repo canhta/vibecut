@@ -8,4 +8,4 @@ mod retime;
 
 pub use loudness::{LoudnessReport, Measurement, measure_loudness};
 pub use mix::{AudioBlock, AudioMixer, mix_audio};
-pub(crate) use mix::{Chain, MixState, has_source_audio, mix_raw};
+pub(crate) use mix::{Chain, Level, MixState, has_source_audio, mix_raw};

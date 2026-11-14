@@ -1647,7 +1647,12 @@ impl<'a, 'c> Panel<'a, 'c> {
                 );
             }
             // The tab list already drops a video without source audio.
-            PropertiesTab::Audio if matches!(kind, ElementKind::Audio | ElementKind::Video) => {
+            PropertiesTab::Audio
+                if matches!(
+                    kind,
+                    ElementKind::Audio | ElementKind::Video | ElementKind::Compound
+                ) =>
+            {
                 self.audio_section(ui, item);
             }
             PropertiesTab::Animation
@@ -1657,6 +1662,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                         | ElementKind::Image
                         | ElementKind::Sticker
                         | ElementKind::Graphic
+                        | ElementKind::Compound
                 ) =>
             {
                 self.panel_section(
@@ -1669,7 +1675,12 @@ impl<'a, 'c> Panel<'a, 'c> {
                     |panel, ui| panel.animation_controls(ui, item),
                 );
             }
-            PropertiesTab::Speed if matches!(kind, ElementKind::Video | ElementKind::Audio) => {
+            PropertiesTab::Speed
+                if matches!(
+                    kind,
+                    ElementKind::Video | ElementKind::Audio | ElementKind::Compound
+                ) =>
+            {
                 // The Speed tab is the page: no section header above the rows.
                 self.speed_controls(ui, item);
             }
@@ -1709,6 +1720,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                         | ElementKind::Graphic
                         | ElementKind::Text
                         | ElementKind::Effect
+                        | ElementKind::Compound
                 ) =>
             {
                 self.effects_stack(ui, item);

@@ -233,15 +233,11 @@ impl<'a> AudioMixer<'a> {
                 let origin = start.min(0);
                 self.next = Some(origin);
                 let mut prime = mix_raw(
-                    self.project,
+                    self.level(hooks),
                     &self.project.data().scene().timeline,
-                    0,
                     origin,
                     latency as usize,
-                    self.channels,
                     sources,
-                    hooks,
-                    self.fade_ms,
                     &Chain::of(self.project),
                     &mut self.state,
                 )?;
@@ -262,6 +258,19 @@ impl<'a> AudioMixer<'a> {
         }
         result
     }
+    /// The scene level of this mixer's output.
+    fn level<'h>(&self, hooks: &'h dyn ExecutionHooks) -> Level<'h>
+    where
+        'a: 'h,
+    {
+        Level {
+            project: self.project,
+            channels: self.channels,
+            fade_ms: self.fade_ms,
+            depth: 0,
+            hooks,
+        }
+    }
     fn run(
         &mut self,
         start: i64,
@@ -270,15 +279,11 @@ impl<'a> AudioMixer<'a> {
         hooks: &dyn ExecutionHooks,
     ) -> Result<AudioBlock> {
         let mut out = mix_raw(
-            self.project,
+            self.level(hooks),
             &self.project.data().scene().timeline,
-            0,
             start + self.latency_samples() as i64,
             frames,
-            self.channels,
             sources,
-            hooks,
-            self.fade_ms,
             &Chain::of(self.project),
             &mut self.state,
         )?;
@@ -289,31 +294,26 @@ impl<'a> AudioMixer<'a> {
 
 /// One level of the mix: `timeline` is the scene at depth 0, or a compound clip's nested
 /// timeline, whose mix is that clip's source audio.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn mix_raw(
-    project: &Project,
+    level: Level<'_>,
     timeline: &project::Timeline,
-    depth: usize,
     start: i64,
     frames: usize,
-    channels: u16,
     sources: &mut dyn SourceProvider,
-    hooks: &dyn ExecutionHooks,
-    fade_ms: u16,
     chain: &Chain<'_>,
     state: &mut MixState,
 ) -> Result<AudioBlock> {
-    check(hooks)?;
-    if depth > project::MAX_COMPOUND_DEPTH {
-        return Err(Error::Invalid("compound nesting"));
-    }
-    let level = Level {
+    let Level {
         project,
         channels,
         fade_ms,
         depth,
         hooks,
-    };
+    } = level;
+    check(hooks)?;
+    if depth > project::MAX_COMPOUND_DEPTH {
+        return Err(Error::Invalid("compound nesting"));
+    }
     let rate = project.data().settings.audio_sample_rate;
     let end = start
         .checked_add(i64::try_from(frames).map_err(|_| Error::Invalid("sample count"))?)
@@ -658,14 +658,15 @@ pub(crate) fn mix_raw(
     Ok(out)
 }
 
-/// What one mix level shares with the source reads of its items.
+/// What one mix level shares with the source reads of its items: the project, the output
+/// channel count, the edge fade, the nesting depth (0 for the scene) and the execution hooks.
 #[derive(Clone, Copy)]
-struct Level<'p> {
-    project: &'p Project,
-    channels: u16,
-    fade_ms: u16,
-    depth: usize,
-    hooks: &'p dyn ExecutionHooks,
+pub(crate) struct Level<'p> {
+    pub(crate) project: &'p Project,
+    pub(crate) channels: u16,
+    pub(crate) fade_ms: u16,
+    pub(crate) depth: usize,
+    pub(crate) hooks: &'p dyn ExecutionHooks,
 }
 
 /// `count` source samples of `item` from source sample `at`: its asset's audio, or a compound
@@ -683,15 +684,14 @@ fn source_audio(
     match (asset, &item.content) {
         (Some(asset), _) => sources.audio(asset, item.id, at, count, rate, level.hooks),
         (None, ItemParams::Compound(params)) => mix_raw(
-            level.project,
+            Level {
+                depth: level.depth + 1,
+                ..level
+            },
             &params.timeline,
-            level.depth + 1,
             at,
             count,
-            level.channels,
             sources,
-            level.hooks,
-            level.fade_ms,
             &Chain::nested(),
             nested.entry(item.id).or_default(),
         ),

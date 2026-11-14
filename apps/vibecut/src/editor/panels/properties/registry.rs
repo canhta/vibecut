@@ -13,10 +13,12 @@ pub enum ElementKind {
     Graphic,
     Audio,
     Effect,
+    /// A compound clip: a clip whose source is a nested timeline.
+    Compound,
 }
 
 impl ElementKind {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Text,
         Self::Video,
         Self::Image,
@@ -24,6 +26,7 @@ impl ElementKind {
         Self::Graphic,
         Self::Audio,
         Self::Effect,
+        Self::Compound,
     ];
 
     pub const fn id(self) -> &'static str {
@@ -35,6 +38,7 @@ impl ElementKind {
             Self::Graphic => "graphic",
             Self::Audio => "audio",
             Self::Effect => "effect",
+            Self::Compound => "compound",
         }
     }
 
@@ -85,13 +89,22 @@ impl ElementKind {
             // The reference's effect and adjustment panels end in a Mask tab; a filter clip
             // has none, so the panel drops it for those.
             Self::Effect => &[PropertiesTab::Effects, PropertiesTab::Mask],
+            // A compound clip edits like a video clip without a file of its own: no
+            // background fill, cut-out, mask row or grade; its sound is the nested mix.
+            Self::Compound => &[
+                PropertiesTab::Transform,
+                PropertiesTab::Audio,
+                PropertiesTab::Animation,
+                PropertiesTab::Speed,
+                PropertiesTab::Effects,
+            ],
         }
     }
 
     pub const fn default_tab(self) -> PropertiesTab {
         match self {
             Self::Text => PropertiesTab::Text,
-            Self::Video | Self::Image | Self::Sticker => PropertiesTab::Transform,
+            Self::Video | Self::Image | Self::Sticker | Self::Compound => PropertiesTab::Transform,
             Self::Graphic => PropertiesTab::Graphic,
             Self::Audio => PropertiesTab::Audio,
             Self::Effect => PropertiesTab::Effects,

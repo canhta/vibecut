@@ -196,15 +196,17 @@ fn measure_window(
         check(hooks)?;
         let count = (end - at).min(WINDOW as i64) as usize;
         let block = crate::audio::mix_raw(
-            project,
+            crate::audio::Level {
+                project,
+                channels: 2,
+                fade_ms: 0,
+                depth: 0,
+                hooks,
+            },
             &project.data().scene().timeline,
-            0,
             at,
             count,
-            2,
             sources,
-            hooks,
-            0,
             chain,
             &mut state,
         )?;

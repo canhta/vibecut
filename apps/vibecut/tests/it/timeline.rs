@@ -6945,6 +6945,11 @@ fn compound_chords_and_menu_rows_create_and_undo_a_compound_clip() {
         ItemParams::Compound(_)
     ));
     assert!(!present(h.state(), a) && !present(h.state(), b));
+    // Its inspector is a clip's: Speed and Audio (volume, fades) beside Basic.
+    h.run_steps(2);
+    for tab in ["inspector.tab.speed", "inspector.tab.audio"] {
+        assert!(painted(&h, tab).is_some(), "{tab}");
+    }
     // Its menu offers Undo compound clip.
     open_author_menu(&mut h, format!("timeline.item.{}", compound.0));
     assert!(menu_enabled(

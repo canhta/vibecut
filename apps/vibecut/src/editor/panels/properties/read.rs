@@ -90,6 +90,7 @@ pub(super) fn item_value(project: &project::Project, item: ItemId, field: &str) 
         }
         ("volume", ItemParams::Audio(params)) => Some(f64::from(params.volume)),
         ("volume", ItemParams::Video(params)) => Some(f64::from(params.volume)),
+        ("volume", ItemParams::Compound(params)) => Some(f64::from(params.clip.volume)),
         ("background_removal_feather", ItemParams::Video(params)) => params
             .background_removal
             .map(|removal| f64::from(removal.feather)),
@@ -103,7 +104,9 @@ pub(super) fn item_value(project: &project::Project, item: ItemId, field: &str) 
             let edge = fade_edge(field)?;
             Some(fade_on(fades_of(content)?, edge).duration.seconds())
         }
-        ("speed", ItemParams::Audio(_) | ItemParams::Video(_)) => Some(item.retime.speed.as_f64()),
+        ("speed", ItemParams::Audio(_) | ItemParams::Video(_) | ItemParams::Compound(_)) => {
+            Some(item.retime.speed.as_f64())
+        }
         _ => None,
     }
 }
@@ -182,6 +185,7 @@ fn fades_of(content: &ItemParams) -> Option<&project::Fades> {
     match content {
         ItemParams::Audio(params) => Some(&params.fades),
         ItemParams::Video(params) => Some(&params.fades),
+        ItemParams::Compound(params) => Some(&params.clip.fades),
         _ => None,
     }
 }
@@ -266,6 +270,7 @@ pub(super) fn item_value_at(
             let base = match &item.content {
                 ItemParams::Audio(params) => params.volume,
                 ItemParams::Video(params) => params.volume,
+                ItemParams::Compound(params) => params.clip.volume,
                 _ => return None,
             };
             let path = project::AnimationPath::from(project::BuiltinPath::Volume);
@@ -456,6 +461,7 @@ pub(super) fn retime_of(project: &project::Project, item: ItemId) -> Option<(f64
     let audible = match &found.content {
         ItemParams::Audio(_) => true,
         ItemParams::Video(params) => params.source_audio_enabled,
+        ItemParams::Compound(params) => params.clip.source_audio_enabled,
         _ => return None,
     };
     Some((

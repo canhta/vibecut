@@ -571,9 +571,8 @@ pub(in crate::editor) fn element_kind(
     let kind = match (&item.content, track.kind) {
         (ItemParams::Text(_) | ItemParams::Caption(_), _) => ElementKind::Text,
         (ItemParams::Audio(_), _) => ElementKind::Audio,
-        // A compound clip edits like a placed picture: transform, opacity, blend, masks and
-        // animation; its source is its nested timeline, not a file.
-        (ItemParams::Compound(_), _) => ElementKind::Graphic,
+        // A compound clip's source is its nested timeline, which always carries the mix.
+        (ItemParams::Compound(_), _) => return Some((ElementKind::Compound, true)),
         (_, TrackKind::Sticker) => ElementKind::Sticker,
         (ItemParams::Effect(_), _) | (_, TrackKind::Effect) => ElementKind::Effect,
         (_, TrackKind::Filter | TrackKind::Adjustment) => ElementKind::Graphic,
