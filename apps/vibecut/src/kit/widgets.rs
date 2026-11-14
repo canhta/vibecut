@@ -856,7 +856,7 @@ pub(crate) fn toggle(ui: &mut Ui, id: &str, value: &mut bool, label: &str) -> Re
     let knob_color = if *value {
         theme::on_accent(dark)
     } else {
-        theme::bright(dark)
+        theme::toggle_knob(dark)
     };
     paint(ui).circle_filled(egui::pos2(x, rect.center().y), knob / 2.0, knob_color);
     let on = *value;
