@@ -172,6 +172,26 @@ fn notices(ui: &mut egui::Ui, state: &mut State, locale: Locale, dark: bool) {
         }
         ui.add_space(6.0);
     }
+    if !state.trash_mode {
+        for entry in &state.unreadable {
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{} {:016x}",
+                        tr(Text::ProjectsUnreadable),
+                        entry.id.0
+                    ))
+                    .color(kit::error_text(dark)),
+                );
+                ui.label(
+                    egui::RichText::new(&entry.reason)
+                        .small()
+                        .color(kit::secondary(dark)),
+                );
+            });
+            ui.add_space(6.0);
+        }
+    }
 }
 
 /// Heading at the left, 24 px controls at the right.

@@ -5,10 +5,11 @@
 
 use engine::{
     ByteBudget, Command,
-    library::{ProjectEntry, ProjectLibrary},
+    library::{ProjectEntry, ProjectLibrary, UnreadableProject},
 };
 use project::ProjectId;
 use std::{
+    collections::BTreeSet,
     path::PathBuf,
     sync::{
         Arc, Mutex,
@@ -81,6 +82,8 @@ pub(super) enum Request {
 
 pub(super) enum Event {
     Failed(engine::control::Error),
+    /// The directories the last listing skipped, each with its reason.
+    Unreadable(Vec<UnreadableProject>),
     Ready(Result<Vec<ProjectEntry>, String>),
     Listed(Result<Vec<ProjectEntry>, String>),
     TrashListed(Result<Vec<ProjectEntry>, String>),
@@ -153,6 +156,9 @@ pub(super) fn catalog_worker(
     let library = Arc::new(Mutex::new(library));
     catalog.set(Some(library.clone()));
     let _ = events.send(Event::Ready(initial));
+    if let Ok(library) = library.lock() {
+        send_unreadable(&library, &events);
+    }
     while let Ok(request) = requests.recv() {
         // Each request holds the library for its own duration; the shorts window's runs
         // take turns with it.
@@ -171,6 +177,17 @@ pub(super) fn catalog_worker(
             Request::Create { id, base_name, fps } => {
                 let result = (|| {
                     let entries = library.list()?;
+                    // A directory the library cannot read still owns its ID.
+                    let mut id = id;
+                    let taken: BTreeSet<u64> = library
+                        .list_unreadable()?
+                        .iter()
+                        .map(|entry| entry.id.0)
+                        .chain(entries.iter().map(|entry| entry.id.0))
+                        .collect();
+                    while taken.contains(&id.0) {
+                        id = next_id();
+                    }
                     let name = unique_name(&entries, &base_name);
                     library.execute(
                         id,
@@ -214,6 +231,7 @@ pub(super) fn catalog_worker(
                         let next = entries
                             .iter()
                             .map(|entry| entry.id.0)
+                            .chain(library.list_unreadable()?.iter().map(|entry| entry.id.0))
                             .max()
                             .unwrap_or(0)
                             .checked_add(1)
@@ -280,8 +298,16 @@ pub(super) fn catalog_worker(
                 let _ = events.send(Event::Thumbnail(result));
             }
         }
+        send_unreadable(&library, &events);
     }
     catalog.set(None);
+}
+
+/// Report the directories the listing skipped; a failed scan keeps the previous report.
+fn send_unreadable(library: &ProjectLibrary, events: &Sender<Event>) {
+    if let Ok(unreadable) = library.list_unreadable() {
+        let _ = events.send(Event::Unreadable(unreadable));
+    }
 }
 
 #[cfg(test)]

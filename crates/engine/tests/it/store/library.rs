@@ -393,7 +393,7 @@ fn catalog_refuses_concurrent_handles_and_symlink_entries() {
         fs::remove_file(&hidden).unwrap();
         fs::rename(moved, &hidden).unwrap();
         std::os::unix::fs::symlink(other.path(), root.path().join("0000000000000002")).unwrap();
-        assert!(lib.list().is_err());
+        assert_eq!(lib.list_unreadable().unwrap()[0].id, ProjectId(2));
         assert!(
             lib.execute(ProjectId(2), Command::DeleteProject {})
                 .is_err()
@@ -675,6 +675,61 @@ fn delete_refuses_a_busy_project_and_a_hostile_trash_destination() {
     lib.execute(ProjectId(1), Command::DeleteProject {})
         .unwrap();
     assert_eq!(lib.list_trash().unwrap().len(), 1);
+}
+
+#[test]
+fn unreadable_projects_are_listed_apart_and_never_block_the_others() {
+    let root = tempfile::tempdir().unwrap();
+    let mut lib = library(root.path());
+    create(&mut lib, 1);
+    let old = root.path().join("0000000000000002");
+    fs::create_dir(&old).unwrap();
+    fs::write(
+        old.join("project.vibecut"),
+        br#"{"format":"vibecut.project","schema_version":1,"generator":"old","project":{}}"#,
+    )
+    .unwrap();
+    let corrupt = root.path().join("0000000000000003");
+    fs::create_dir(&corrupt).unwrap();
+    fs::write(corrupt.join("project.vibecut"), b"not a project").unwrap();
+    let empty = root.path().join("0000000000000004");
+    fs::create_dir(&empty).unwrap();
+    // New project and rename ignore the bad directories; the readable ones list.
+    create(&mut lib, 5);
+    lib.execute(
+        ProjectId(1),
+        Command::RenameProject {
+            name: "Renamed".into(),
+        },
+    )
+    .unwrap();
+    let ids: Vec<u64> = lib.list().unwrap().iter().map(|e| e.id.0).collect();
+    assert_eq!(ids, [1, 5]);
+    let unreadable = lib.list_unreadable().unwrap();
+    assert_eq!(
+        unreadable.iter().map(|e| e.id.0).collect::<Vec<_>>(),
+        [2, 3, 4]
+    );
+    assert!(
+        unreadable[0]
+            .reason
+            .starts_with("project schema 1 is older than supported schema")
+    );
+    assert!(unreadable[1].reason.contains("invalid project JSON"));
+    assert!(!unreadable[2].reason.is_empty());
+    // An occupied ID is never taken by a new project.
+    assert!(
+        lib.execute(
+            ProjectId(2),
+            Command::CreateProject {
+                id: ProjectId(2),
+                name: "Taken".into(),
+                fps: 30,
+            },
+        )
+        .is_err()
+    );
+    assert!(old.join("project.vibecut").exists());
 }
 
 #[test]

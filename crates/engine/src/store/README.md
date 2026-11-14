@@ -37,7 +37,7 @@ sidecar and private `media/<16-digit hex AssetId>` files. There is no index data
 derives name, main-scene duration, timestamps, 8-character lowercase hex ID suffix and thumbnail
 from those owners. IDs keep all 64 bits; the suffix is display-only and must never identify a
 command target. The listing admits 1024 projects, 4096 root entries and 16 MiB of retained name
-and thumbnail payload; corrupt managed entries return errors instead of disappearing.
+and thumbnail payload. A managed directory that cannot be read (older schema, damaged or foreign) never fails `list()`: it is skipped there and returned by `list_unreadable()` as an `UnreadableProject` (full ID, path and the innermost cause as its reason), so it neither hides other projects nor blocks create, rename or duplicate; its ID stays taken.
 
 `execute(target, Command)` handles registered `project.create`, `project.rename`,
 `project.duplicate { id }`, `project.delete`, `project.restore`, `project.purge`,

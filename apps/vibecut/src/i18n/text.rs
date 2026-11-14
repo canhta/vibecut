@@ -367,6 +367,7 @@ catalog! {
     ProjectsTrashDays { key: "projects_trash_days", en: "{days} days", vi: "{days} ngày" },
     ProjectsTrashEmpty { key: "projects_trash_empty", en: "Trash is empty", vi: "Thùng rác trống" },
     ProjectsTrashError { key: "projects_trash_error", en: "Couldn't load Trash.", vi: "Không tải được thùng rác." },
+    ProjectsUnreadable { key: "projects_unreadable", en: "Couldn't read project", vi: "Không đọc được dự án" },
 
     // Header and appearance.
     AutoSaved { key: "auto_saved", en: "Auto saved", vi: "Đã tự động lưu" },

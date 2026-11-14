@@ -693,6 +693,66 @@ fn new_project_is_created_in_the_managed_catalog_and_opened() {
 }
 
 #[test]
+fn old_schema_and_corrupt_projects_are_listed_with_a_reason_and_never_block_new_project() {
+    let fixture = Fixture::new(&[("Alpha", missing())]);
+    let old = fixture.projects.join("0000000000000002");
+    std::fs::create_dir(&old).unwrap();
+    std::fs::write(
+        old.join("project.vibecut"),
+        br#"{"format":"vibecut.project","schema_version":1,"generator":"old","project":{}}"#,
+    )
+    .unwrap();
+    let corrupt = fixture.projects.join("0000000000000003");
+    std::fs::create_dir(&corrupt).unwrap();
+    std::fs::write(corrupt.join("project.vibecut"), b"not a project").unwrap();
+    let mut harness = fixture.build(Preferences::default());
+    assert!(harness.query_by_label("Couldn't load projects.").is_none());
+    assert_eq!(
+        harness
+            .state()
+            .projects
+            .displayed_ids(harness.state().preferences.projects),
+        [ProjectId(1)]
+    );
+    assert!(
+        harness
+            .query_by_label("Couldn't read project 0000000000000002")
+            .is_some()
+    );
+    assert!(
+        harness
+            .query_by_label("Couldn't read project 0000000000000003")
+            .is_some()
+    );
+    assert!(
+        harness
+            .query_by_label(&format!(
+                "project schema 1 is older than supported schema {}",
+                project::SCHEMA_VERSION
+            ))
+            .is_some()
+    );
+    harness.get(by("project.create")).click();
+    harness.run_steps(2);
+    idle(&mut harness);
+    assert!(harness.state().error().is_none());
+    assert_eq!(
+        harness
+            .state()
+            .focused_editor()
+            .unwrap()
+            .session
+            .project()
+            .data()
+            .name
+            .as_str(),
+        "New project"
+    );
+    assert!(old.join("project.vibecut").exists());
+    assert!(corrupt.join("project.vibecut").exists());
+}
+
+#[test]
 fn card_menu_opens_the_managed_project_through_the_lifecycle_adapter() {
     let fixture = Fixture::new(&[("Alpha", missing())]);
     let mut harness = fixture.build(Preferences::default());
