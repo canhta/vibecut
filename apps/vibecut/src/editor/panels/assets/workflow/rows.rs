@@ -112,6 +112,7 @@ pub(in crate::editor::panels::assets) fn asset_row(
         state,
         duration: asset.probe().duration,
         missing: false,
+        added: false,
     }
 }
 pub(in crate::editor::panels::assets) fn format_media_size(locale: Locale, bytes: u64) -> String {

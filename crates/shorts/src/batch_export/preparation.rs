@@ -419,6 +419,7 @@ fn prepare_clip(
         caption_presets: source.data().caption_presets.clone(),
         text_presets: source.data().text_presets.clone(),
         recent_colors: source.data().recent_colors.clone(),
+        media_library: project::MediaLibrary::default(),
         shorts_run: None,
     })
     .map_err(Error::engine)?;

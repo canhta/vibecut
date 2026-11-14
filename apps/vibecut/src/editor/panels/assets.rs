@@ -21,7 +21,9 @@ pub(in crate::editor) use projection::prepare;
 pub use state::AssetState;
 pub(in crate::editor) use state::State;
 pub use tabs::AssetsTab;
-pub(in crate::editor) use view::{delete_dialog, drop_overlay, import_overlay, toast};
+pub(in crate::editor) use view::{
+    delete_dialog, drop_overlay, import_overlay, rename_dialog, toast,
+};
 
 /// The Audio tab's two pages. Sound effects keep the existing provider; Music
 /// adds the open-source search section.
@@ -39,6 +41,15 @@ pub(in crate::editor) enum MediaSection {
     #[default]
     Media,
     Timeline,
+    Favorites,
+}
+
+/// One folder tile of the Media page.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct FolderRow {
+    id: project::MediaFolderId,
+    name: String,
+    count: usize,
 }
 
 /// One scene row on the Media sub-navigation's Timeline page.
@@ -74,6 +85,8 @@ use workflow::{asset_kind, asset_row, asset_state_color, file_name};
 struct Model {
     preferences: crate::preferences::Preferences,
     rows: Vec<Row>,
+    /// Media folders in project order; empty off the Media tab.
+    folders: Vec<FolderRow>,
     thumbnails: BTreeMap<AssetId, egui::TextureHandle>,
     effects: Vec<EffectRow>,
     filters: Vec<FilterRow>,
@@ -122,6 +135,8 @@ pub(in crate::editor) fn show(
 struct Row {
     display: AssetRow,
     kind: MediaKind,
+    /// The folder holding the asset, when it sits in one.
+    folder: Option<project::MediaFolderId>,
 }
 struct EffectRow {
     kind: &'static str,
@@ -150,6 +165,12 @@ pub(in crate::editor) enum Action {
     Command(String),
     Select(AssetId, egui::Modifiers),
     Delete(Vec<AssetId>),
+    /// Open the Rename dialog for one asset.
+    RenameMedia(AssetId),
+    MediaRenameCancel,
+    MediaRenameConfirm,
+    /// Group these assets into a new folder.
+    NewFolder(Vec<AssetId>),
     ExportClips(Vec<AssetId>),
     ClipExportCancel,
     Record(Box<Recorded>),

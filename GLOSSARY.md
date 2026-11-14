@@ -52,6 +52,7 @@ Language for the editor's privacy and execution boundaries.
 - **Speech-activity span**: One source-time interval classified as speech or pause by local frame energy, with a heuristic confidence; pause removal consumes these spans without claiming speech recognition.
 - **Project**: The editable document: its identity and name, canvas, assets, scenes, active scene and output settings; [project](crates/project/README.md) owns its validation, persistence and writer lease.
 - **Project library**: The managed set of projects that Home lists, searches and trashes, with each project's cover image and metadata; the store owns it, not the file system.
+- **Media folder**: A flat, named group of SourceAssets in a Project's media library, made from the tile menu's New folder; it holds at least one asset, an asset sits in at most one, and it ends with its last asset. [project](crates/project/README.md) owns its validation.
 - **Scene**: One timeline inside a Project, with a name, a main flag, tracks and bookmarks; a project has one main scene and up to 255 secondary scenes, while assets, canvas and output audio stay project-level.
 - **Track**: An ordered lane of items of one kind: Video, Audio, Text, Sticker, Effect, Filter or Adjustment; the main Video track always exists.
 - **Item**: One object on a timeline track: content or a source reference, start, duration, animated parameters, effects and masks, with an identity unique across the project.

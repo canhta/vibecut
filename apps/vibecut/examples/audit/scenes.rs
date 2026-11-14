@@ -460,6 +460,24 @@ pub(super) const SCENES: &[Scene] = &[
         build: editor_media,
     },
     Scene {
+        name: "editor-media-menu",
+        reference_dark: Some("capcut-desktop-2026-11-14b/capcut-desktop-103259.png"),
+        reference_light: Some("capcut-desktop-2026-11-14b/capcut-desktop-103259.png"),
+        build: editor_media_menu,
+    },
+    Scene {
+        name: "editor-media-folder",
+        reference_dark: None,
+        reference_light: None,
+        build: editor_media_folder,
+    },
+    Scene {
+        name: "editor-media-favorites",
+        reference_dark: Some("capcut-desktop-2026-11-14b/capcut-desktop-111010.png"),
+        reference_light: Some("capcut-desktop-2026-11-14b/capcut-desktop-111010.png"),
+        build: editor_media_favorites,
+    },
+    Scene {
         name: "editor-transitions",
         reference_dark: Some("capcut-desktop-2026-11-05/capcut-desktop-221731.png"),
         reference_light: Some("capcut-desktop-2026-11-05/capcut-desktop-221731.png"),
@@ -994,7 +1012,7 @@ mod timeline;
 use assets::assets_scene;
 use editor::{
     caption_word_scene, captions_review_scene, captions_scene, editor_empty, editor_frame_state,
-    editor_media,
+    editor_media, editor_media_favorites, editor_media_folder, editor_media_menu,
     editor_transitions, export_audio_only, export_custom_bit_rate, export_dialog, export_gif,
     export_resolution, import_progress, models, models_vi, player_scene, player_variant,
     settings_dialog,

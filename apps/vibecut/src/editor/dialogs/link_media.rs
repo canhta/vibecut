@@ -9,7 +9,7 @@
 mod tests;
 
 use crate::{
-    editor::{Context, Port, egui, media_panel},
+    editor::{Context, Port, egui},
     i18n::Text,
     kit,
     services::progress,
@@ -194,7 +194,7 @@ impl State {
         self.rows = missing(&project.data().assets)
             .map(|asset| Row {
                 id: asset.id(),
-                name: media_panel::asset_name(asset),
+                name: project.data().media_library.display_name(asset),
                 last: asset.path().to_owned(),
                 seconds: asset
                     .probe()
@@ -614,16 +614,24 @@ pub(in crate::editor) fn picked(state: &mut State, port: &mut Port<'_>, pick: Pi
         .cloned()
         .collect();
     state.notice = None;
-    state.job = Some(spawn(assets, pick, path, state.hasher.clone()));
+    let library = &port.session.project().data().media_library;
+    let names = assets.iter().map(|asset| library.display_name(asset)).collect();
+    state.job = Some(spawn(assets, names, pick, path, state.hasher.clone()));
 }
 
-fn spawn(assets: Vec<SourceAsset>, pick: Pick, path: PathBuf, hasher: Hasher) -> Job {
+fn spawn(
+    assets: Vec<SourceAsset>,
+    names: Vec<String>,
+    pick: Pick,
+    path: PathBuf,
+    hasher: Hasher,
+) -> Job {
     let cancel = Arc::new(AtomicBool::new(false));
     // Each start, progress step and match wakes the loop that shows it.
     let (send, events) = wake::channel();
     let flag = cancel.clone();
     wake::spawn(move || {
-        for asset in &assets {
+        for (asset, shown) in assets.iter().zip(&names) {
             if flag.load(Ordering::Relaxed) {
                 break;
             }
@@ -637,7 +645,7 @@ fn spawn(assets: Vec<SourceAsset>, pick: Pick, path: PathBuf, hasher: Hasher) ->
             let Some(candidate) = candidate else {
                 continue;
             };
-            let _ = send.send(Event::Start(media_panel::asset_name(asset)));
+            let _ = send.send(Event::Start(shown.clone()));
             let mut last = 0_u64;
             let outcome = hasher(asset, candidate, flag.as_ref(), &mut |done, total| {
                 if done >= total || done.saturating_sub(last) >= PROGRESS_STEP {

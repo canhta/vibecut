@@ -77,6 +77,10 @@ The default canvas is 1920Ã—1080 at 30 fps, black background, 16:9 preset, 1920Ã
 
 `CaptionParams.preset` is an optional live reference to one bank entry; `CaptionParams.overrides` is a sparse `CaptionOverrides` patch applied field by field over that value. Overrides require a selected preset, and every referenced ID must exist after complete validation. The effective style is the bank value with the patch folded in; deleting a referenced entry therefore refuses rather than leaving a dangling look. A caption item without a selection keeps its imported cue styles and the transient render settings.
 
+## Media library
+
+`ProjectData.media_library` holds the organisation of the media pool: `names` (the library name the user gave an asset; the file keeps its own name and no clip changes) and `folders` (`MediaFolder` with a stable `MediaFolderId`, a name and at least one asset). Names and folder names are 1-255 UTF-8 bytes, without controls or edge whitespace. Every named or placed asset must exist in `assets`, an asset has at most one name and sits in at most one folder, and at most 256 folders exist. Removing assets forgets their names and drops a folder left empty. Folders are not nested.
+
 ## Saved text styles
 
 `ProjectData.text_presets` is a required project-wide bank of at most 64 `SavedTextPreset` values with stable `TextPresetId` identities and the same closed naming rule as caption presets. Each `TextStyle` holds font family, size, weight, italic, alignment, decoration, letter spacing, line height, colour, optional stroke, optional shadow, glow and optional background box; the item's words and animation keys are never stored. Every entry must be valid on its own and have a unique ID and name, even without text items. Forks and scene snapshots retain the whole bank. Applying copies values into ordinary `TextParams`; no selected preset reference is saved.

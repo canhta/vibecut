@@ -377,6 +377,35 @@ pub(super) fn editor_media(theme: Theme, scale: f32) -> Result<AppHarness, Failu
     app.run_steps(2);
     Ok(app)
 }
+/// The media tile menu open on the asset a clip uses, so the tile also shows its Added badge
+/// (reference 103259).
+pub(super) fn editor_media_menu(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let mut app = editor_media(theme, scale)?;
+    app.get(By::new().predicate(|node| node.author_id() == Some("media.asset.1")))
+        .click_secondary();
+    app.run_steps(3);
+    Ok(app)
+}
+/// The media page with one folder tile beside the loose asset.
+pub(super) fn editor_media_folder(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let (mut editor, _) = media_editor(theme, Locale::En)?;
+    editor.session.apply(Command::CreateMediaFolder {
+        name: "Day one".into(),
+        assets: vec![AssetId(2)],
+    })?;
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, [1727.0, 1029.0]);
+    wait_for_presented(&mut app)?;
+    app.run_steps(2);
+    Ok(app)
+}
+/// The Favorites page of the Media sub-navigation with nothing starred (reference 111010).
+pub(super) fn editor_media_favorites(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let mut app = editor_media(theme, scale)?;
+    app.get(By::new().predicate(|node| node.author_id() == Some("assets.subnav.favorites")))
+        .click();
+    app.run_steps(3);
+    Ok(app)
+}
 /// The Transitions tab with an applicable cut selected, at the measured editor size.
 pub(super) fn editor_transitions(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     let (mut editor, first) = media_editor(theme, Locale::En)?;

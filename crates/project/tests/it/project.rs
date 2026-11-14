@@ -797,6 +797,70 @@ fn invalid_candidates_are_refused_without_changing_original() {
     assert_eq!(initial.duration(), Tick::ZERO);
 }
 #[test]
+fn media_library_names_and_folders_validate_and_round_trip() {
+    let mut data = empty().into_data();
+    data.assets.push(source(std::env::temp_dir().join("library.mp4")));
+    data.media_library.names.push(AssetName {
+        asset: AssetId(3),
+        name: "Interview".into(),
+    });
+    data.media_library.folders.push(MediaFolder {
+        id: MediaFolderId(1),
+        name: "Day one".into(),
+        assets: vec![AssetId(3)],
+    });
+    let project = Project::new(data.clone()).unwrap();
+    assert_eq!(
+        decode(&encode(&project, false).unwrap()).unwrap().project,
+        project
+    );
+    assert_eq!(
+        project.data().media_library.name(AssetId(3)).unwrap().as_str(),
+        "Interview"
+    );
+    assert_eq!(
+        project.data().media_library.folder_of(AssetId(3)),
+        Some(MediaFolderId(1))
+    );
+    let refused: [fn(&mut ProjectData); 8] = [
+        |d| d.media_library.names.first_mut().unwrap().asset = AssetId(9),
+        |d| d.media_library.names.first_mut().unwrap().name = "".into(),
+        |d| d.media_library.names.first_mut().unwrap().name = " padded".into(),
+        |d| {
+            let again = d.media_library.names.first().unwrap().clone();
+            d.media_library.names.push(again);
+        },
+        |d| d.media_library.folders.first_mut().unwrap().assets.clear(),
+        |d| d.media_library.folders.first_mut().unwrap().assets = vec![AssetId(9)],
+        |d| {
+            let again = d.media_library.folders.first().unwrap().clone();
+            d.media_library.folders.push(again);
+        },
+        |d| {
+            let mut other = d.media_library.folders.first().unwrap().clone();
+            other.id = MediaFolderId(2);
+            d.media_library.folders.push(other);
+        },
+    ];
+    for corrupt in refused {
+        let mut candidate = data.clone();
+        corrupt(&mut candidate);
+        assert!(Project::new(candidate).is_err());
+    }
+    let mut candidate = data.clone();
+    candidate.media_library.folders = (0..=MAX_MEDIA_FOLDERS as u64)
+        .map(|id| MediaFolder {
+            id: MediaFolderId(id),
+            name: "Folder".into(),
+            assets: vec![AssetId(3)],
+        })
+        .collect();
+    assert!(Project::new(candidate).is_err());
+    let mut forgotten = project.data().media_library.clone();
+    forgotten.forget(&std::collections::BTreeSet::from([AssetId(3)]));
+    assert_eq!(forgotten, MediaLibrary::default());
+}
+#[test]
 fn model_trust_boundaries() {
     let dir = tempfile::tempdir().unwrap();
     let p = populated(dir.path().join("a.mp4"));

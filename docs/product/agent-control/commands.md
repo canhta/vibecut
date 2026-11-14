@@ -1823,6 +1823,19 @@ Effect: `Edit`. Fixture: `Timeline`.
 }
 ```
 
+## `media.create_folder` — Create media folder
+
+Effect: `Edit`. Fixture: `Timeline`.
+
+```json
+{
+  "assets": [
+    98
+  ],
+  "name": "New folder"
+}
+```
+
 ## `media.detect_scenes` — Detect scene changes
 
 Effect: `JobControl`. Fixture: `Video`.
@@ -1926,6 +1939,17 @@ Effect: `Edit`. Fixture: `Timeline`.
   "assets": [
     98
   ]
+}
+```
+
+## `media.rename` — Rename media
+
+Effect: `Edit`. Fixture: `Timeline`.
+
+```json
+{
+  "asset": 98,
+  "name": "Renamed media"
 }
 ```
 

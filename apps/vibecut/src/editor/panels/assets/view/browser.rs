@@ -1,7 +1,7 @@
 //! Renders searchable media rows with stable interaction identities.
 use super::{
-    Action, Align2, AssetRow, AssetState, AssetsTab, Color32, Filter, FontId, Icon, Id, MediaKind,
-    MediaSortKey, MediaSortOrder, MediaView, Recorded, Rect, Row, Text, Vec2, View,
+    Action, Align2, AssetRow, AssetState, AssetsTab, Color32, Filter, FolderRow, FontId, Icon, Id,
+    MediaKind, MediaSortKey, MediaSortOrder, MediaView, Recorded, Rect, Row, Text, Vec2, View,
     asset_state_color, egui, icons, theme,
 };
 use crate::i18n;
@@ -31,28 +31,31 @@ impl View<'_> {
                     );
                     return;
                 }
-                let menu = ui.menu_button(
-                    egui::RichText::new(self.tr(self.state.filter.label()))
-                        .size(theme::type_size::BODY),
-                    |ui| {
-                        for filter in Filter::ALL {
-                            let response = ui.selectable_label(
-                                self.state.filter == filter,
-                                self.tr(filter.label()),
-                            );
-                            self.remember(
-                                format!("assets.filter.{}", filter.id()),
-                                &response,
-                                None,
-                            );
-                            if response.clicked() {
-                                self.state.filter = filter;
-                                ui.close();
+                ui.horizontal(|ui| {
+                    let menu = ui.menu_button(
+                        egui::RichText::new(self.tr(self.state.filter.label()))
+                            .size(theme::type_size::BODY),
+                        |ui| {
+                            for filter in Filter::ALL {
+                                let response = ui.selectable_label(
+                                    self.state.filter == filter,
+                                    self.tr(filter.label()),
+                                );
+                                self.remember(
+                                    format!("assets.filter.{}", filter.id()),
+                                    &response,
+                                    None,
+                                );
+                                if response.clicked() {
+                                    self.state.filter = filter;
+                                    ui.close();
+                                }
                             }
-                        }
-                    },
-                );
-                self.remember("assets.filter", &menu.response, None);
+                        },
+                    );
+                    self.remember("assets.filter", &menu.response, None);
+                    self.folder_back(ui);
+                });
             },
         );
         let search = self
@@ -62,10 +65,16 @@ impl View<'_> {
             .map(|value| value.to_lowercase())
             .unwrap_or_default();
         let cx = self.cx;
+        let media_tab = self.cx.preferences.assets_tab == AssetsTab::Media;
+        // The top level lists folders and loose assets; an open folder lists its own assets; a
+        // search looks through every level.
         let rows: Vec<_> = cx
             .rows
             .iter()
             .filter(|row| {
+                if media_tab && search.is_empty() && row.folder != self.state.media_open_folder {
+                    return false;
+                }
                 let kind = row.kind;
                 let filter = if self.cx.preferences.assets_tab == AssetsTab::Sounds {
                     Filter::Audio
@@ -81,6 +90,17 @@ impl View<'_> {
                 matches && row.display.name.to_lowercase().contains(&search)
             })
             .collect();
+        let folders: Vec<&FolderRow> = if media_tab
+            && self.state.media_open_folder.is_none()
+            && self.state.filter == Filter::All
+        {
+            cx.folders
+                .iter()
+                .filter(|folder| folder.name.to_lowercase().contains(&search))
+                .collect()
+        } else {
+            Vec::new()
+        };
         // Strip height and gap are theme tokens (kit size::CONTROL, space::MD). Its composition is
         // unmeasured: docs/product/ui/editor.md Gaps.
         let export_height = if self.cx.clip_export.is_some() {
@@ -129,10 +149,15 @@ impl View<'_> {
                 .id_salt("media.results")
                 .max_rect(results),
             |ui| {
-                if !search.is_empty() && rows.is_empty() && !self.cx.failed && !self.cx.importing {
+                if !search.is_empty()
+                    && rows.is_empty()
+                    && folders.is_empty()
+                    && !self.cx.failed
+                    && !self.cx.importing
+                {
                     self.clear_search(ui);
                 }
-                if rows.is_empty() {
+                if rows.is_empty() && folders.is_empty() {
                     self.empty(
                         ui,
                         if self.cx.failed {
@@ -158,7 +183,7 @@ impl View<'_> {
                         },
                     );
                 } else {
-                    self.grid(ui, &rows);
+                    self.grid(ui, &folders, &rows);
                 }
                 if self.cx.failed && !rows.is_empty() {
                     ui.label(
@@ -424,7 +449,7 @@ impl View<'_> {
         self.remember("media.sort", &response, Some(Icon::ListBullets));
     }
 
-    fn grid(&mut self, ui: &mut egui::Ui, rows: &[&Row]) {
+    fn grid(&mut self, ui: &mut egui::Ui, folders: &[&FolderRow], rows: &[&Row]) {
         let list = self.cx.preferences.media_view == MediaView::List
             || self.cx.preferences.assets_tab == AssetsTab::Sounds;
         let width = (ui.clip_rect().right() - ui.cursor().min.x).max(0.0);
@@ -456,7 +481,8 @@ impl View<'_> {
                 let (content, _) = ui.allocate_exact_size(
                     Vec2::new(
                         width,
-                        (rows.len().div_ceil(columns) as f32 * pitch).max(viewport),
+                        ((folders.len() + rows.len()).div_ceil(columns) as f32 * pitch)
+                            .max(viewport),
                     ),
                     egui::Sense::hover(),
                 );
@@ -467,7 +493,21 @@ impl View<'_> {
                 );
                 self.remember("media.marquee", &background, None);
                 let mut rects = Vec::new();
+                let cell_rect = |index: usize| {
+                    Rect::from_min_size(
+                        content.min
+                            + Vec2::new(
+                                (index % columns) as f32 * (cell.x + theme::space::GRID),
+                                (index / columns) as f32 * pitch,
+                            ),
+                        cell,
+                    )
+                };
+                for (index, folder) in folders.iter().enumerate() {
+                    self.folder(ui, folder, cell_rect(index), list);
+                }
                 for (index, row) in rows.iter().enumerate() {
+                    let index = folders.len() + index;
                     let rect = Rect::from_min_size(
                         content.min
                             + Vec2::new(
@@ -535,6 +575,132 @@ impl View<'_> {
                     .any(|row| row.display.id == *id && row.kind == MediaKind::Video)
             });
         (!video_only).then_some(Text::ClipExportNeedsVideo)
+    }
+    /// The control that leaves an open folder, beside the filter; nothing at the top level.
+    fn folder_back(&mut self, ui: &mut egui::Ui) {
+        let Some(open) = self.state.media_open_folder else {
+            return;
+        };
+        let name = self
+            .cx
+            .folders
+            .iter()
+            .find(|folder| folder.id == open)
+            .map(|folder| folder.name.clone())
+            .unwrap_or_default();
+        let back = ui
+            .add(
+                egui::Button::image_and_text(
+                    icons::tinted(Icon::ArrowLeft, 12.0, theme::text(self.cx.preferences.dark)),
+                    egui::RichText::new(name).size(theme::type_size::BODY),
+                )
+                .frame(false),
+            )
+            .on_hover_text(self.tr(Text::MediaFolderBack));
+        self.remember("media.folder.back", &back, Some(Icon::ArrowLeft));
+        if back.clicked() {
+            self.state.media_open_folder = None;
+        }
+    }
+    /// One folder tile: the folder glyph on the tile fill, the asset count where an asset shows
+    /// its duration, and the name under it. A click opens the folder. The tile reuses the asset
+    /// tile geometry; its glyph and count placement are ours, unmeasured.
+    fn folder(&mut self, ui: &mut egui::Ui, folder: &FolderRow, rect: Rect, list: bool) {
+        let response = ui.interact(
+            rect,
+            Id::unique(("media.folder", folder.id.0)),
+            egui::Sense::click(),
+        );
+        self.remember(
+            format!("media.folder.{}", folder.id.0),
+            &response,
+            Some(Icon::FolderOpen),
+        );
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::Role::Button, !self.cx.importing, &folder.name)
+        });
+        if response.clicked() && !self.cx.importing {
+            self.state.media_open_folder = Some(folder.id);
+        }
+        let dark = self.cx.preferences.dark;
+        if list {
+            ui.painter().rect_filled(
+                rect,
+                theme::radius::UPLOAD,
+                if response.hovered() {
+                    theme::hover(dark)
+                } else {
+                    theme::field(dark)
+                },
+            );
+        }
+        let thumb = if list {
+            Rect::from_min_size(rect.min + Vec2::splat(8.0), Vec2::splat(32.0))
+        } else {
+            Rect::from_min_size(
+                rect.min,
+                Vec2::new(rect.width(), theme::size::MEDIA_THUMB_HEIGHT),
+            )
+        };
+        ui.painter().rect_filled(thumb, 4.0, theme::field(dark));
+        icons::tinted(Icon::FolderOpen, 24.0, theme::secondary(dark)).paint_at(
+            ui,
+            Rect::from_center_size(thumb.center(), Vec2::splat(24.0)),
+        );
+        if response.hovered() {
+            ui.painter().rect_stroke(
+                thumb,
+                4.0,
+                egui::Stroke::new(1.0, theme::accent(dark)),
+                egui::StrokeKind::Inside,
+            );
+        }
+        let count = i18n::number(self.cx.preferences.locale, folder.count as u64);
+        if !list {
+            let galley = ui.painter().layout_no_wrap(
+                count.clone(),
+                FontId::proportional(theme::type_size::BODY),
+                theme::on_scrim(),
+            );
+            let origin = thumb.right_top() - Vec2::new(galley.size().x + 4.0, -2.0);
+            ui.painter().rect_filled(
+                Rect::from_min_size(origin, galley.size()),
+                2.0,
+                theme::scrim(),
+            );
+            ui.painter().galley(origin, galley, theme::on_scrim());
+        }
+        let name = if list {
+            egui::pos2(thumb.right() + 8.0, rect.top() + 8.0)
+        } else {
+            rect.min + Vec2::new(0.0, theme::size::MEDIA_THUMB_HEIGHT + 6.0)
+        };
+        let painter = ui.painter().with_clip_rect(rect);
+        painter.text(
+            name,
+            Align2::LEFT_TOP,
+            &folder.name,
+            if list {
+                theme::label_font()
+            } else {
+                FontId::proportional(theme::type_size::BODY)
+            },
+            theme::text(dark),
+        );
+        if list {
+            painter.text(
+                name + Vec2::new(0.0, 16.0),
+                Align2::LEFT_TOP,
+                i18n::format_count(
+                    self.cx.preferences.locale,
+                    folder.count as u64,
+                    Text::MediaFolderItemsOne,
+                    Text::MediaFolderItemsOther,
+                ),
+                FontId::proportional(theme::type_size::BODY),
+                theme::secondary(dark),
+            );
+        }
     }
     fn asset(&mut self, ui: &mut egui::Ui, row: &AssetRow, rect: Rect, list: bool) {
         let response = ui.interact(
@@ -649,6 +815,25 @@ impl View<'_> {
             );
             ui.painter().galley(origin, galley, theme::on_scrim());
         }
+        if !list && row.added {
+            // The reference's Added badge sits at the tile's top left (221635, 103259). Its
+            // box is drawn like the duration chip: unmeasured.
+            let galley = ui.painter().layout_no_wrap(
+                self.tr(Text::MediaAdded).to_owned(),
+                FontId::proportional(theme::type_size::BODY),
+                theme::on_scrim(),
+            );
+            let origin = thumb.left_top() + Vec2::new(4.0, 2.0);
+            let badge = Rect::from_min_size(origin, galley.size());
+            ui.painter().rect_filled(badge, 2.0, theme::scrim());
+            ui.painter().galley(origin, galley, theme::on_scrim());
+            let added = ui.interact(
+                badge,
+                Id::unique(("media.added", row.id.0)),
+                egui::Sense::hover(),
+            );
+            self.remember(format!("media.asset.{}.added", row.id.0), &added, None);
+        }
         let name = if list {
             egui::pos2(thumb.right() + 8.0, rect.top() + 8.0)
         } else {
@@ -667,12 +852,18 @@ impl View<'_> {
             theme::text(dark),
         );
         if list {
+            let duration = row
+                .duration
+                .map(time::format_short_clock)
+                .unwrap_or_else(|| self.tr(Text::DurationUnknown).to_owned());
             painter.text(
                 name + Vec2::new(0.0, 16.0),
                 Align2::LEFT_TOP,
-                row.duration
-                    .map(time::format_short_clock)
-                    .unwrap_or_else(|| self.tr(Text::DurationUnknown).to_owned()),
+                if row.added {
+                    format!("{duration} · {}", self.tr(Text::MediaAdded))
+                } else {
+                    duration
+                },
                 FontId::proportional(theme::type_size::BODY),
                 theme::secondary(dark),
             );
@@ -721,6 +912,57 @@ impl View<'_> {
             } else {
                 vec![row.id]
             };
+            let rename = ui.add_enabled(
+                !self.cx.importing,
+                egui::Button::image_and_text(
+                    icons::tinted(
+                        Icon::PencilSimple,
+                        16.0,
+                        theme::text(self.cx.preferences.dark),
+                    ),
+                    self.tr(Text::MediaRename),
+                ),
+            );
+            self.remember("media.rename", &rename, Some(Icon::PencilSimple));
+            if rename.clicked() {
+                self.actions.push(Action::RenameMedia(row.id));
+                ui.close();
+            }
+            let mut button = egui::Button::new(if selected && self.cx.selection.len() > 1 {
+                i18n::format_count(
+                    self.cx.preferences.locale,
+                    self.cx.selection.len() as u64,
+                    Text::DeleteItemsOther,
+                    Text::DeleteItemsOther,
+                )
+            } else {
+                self.tr(Text::DeleteItemOne).to_owned()
+            });
+            if let Some(shortcut) = self.cx.shortcut("media.delete") {
+                button = button.shortcut_text(shortcut);
+            }
+            let response = ui.add_enabled(!self.cx.importing, button);
+            self.remember("media.delete", &response, Some(Icon::Trash));
+            if response.clicked() {
+                self.actions.push(Action::Delete(targets.clone()));
+                ui.close();
+            }
+            let new_folder = ui.add_enabled(
+                !self.cx.importing,
+                egui::Button::image_and_text(
+                    icons::tinted(
+                        Icon::FolderOpen,
+                        16.0,
+                        theme::text(self.cx.preferences.dark),
+                    ),
+                    self.tr(Text::MediaNewFolder),
+                ),
+            );
+            self.remember("media.new_folder", &new_folder, Some(Icon::FolderOpen));
+            if new_folder.clicked() {
+                self.actions.push(Action::NewFolder(targets.clone()));
+                ui.close();
+            }
             let refusal = self.clip_export_refusal(&targets);
             let export = ui.add_enabled(
                 refusal.is_none() && !self.cx.importing,
@@ -743,30 +985,6 @@ impl View<'_> {
             })));
             if export.clicked() {
                 self.actions.push(Action::ExportClips(targets));
-                ui.close();
-            }
-            let mut button = egui::Button::new(if selected && self.cx.selection.len() > 1 {
-                i18n::format_count(
-                    self.cx.preferences.locale,
-                    self.cx.selection.len() as u64,
-                    Text::DeleteItemsOther,
-                    Text::DeleteItemsOther,
-                )
-            } else {
-                self.tr(Text::DeleteItemOne).to_owned()
-            });
-            if let Some(shortcut) = self.cx.shortcut("media.delete") {
-                button = button.shortcut_text(shortcut);
-            }
-            let response = ui.add_enabled(!self.cx.importing, button);
-            self.remember("media.delete", &response, Some(Icon::Trash));
-            if response.clicked() {
-                let ids = if selected {
-                    self.cx.selection.iter().copied().collect()
-                } else {
-                    vec![row.id]
-                };
-                self.actions.push(Action::Delete(ids));
                 ui.close();
             }
         });

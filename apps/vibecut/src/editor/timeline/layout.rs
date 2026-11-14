@@ -273,7 +273,17 @@ impl State {
                 let Ok(end) = item.end() else {
                     continue;
                 };
-                let (label, overlay) = item_label(&item.content, cx.locale, cx.dark);
+                let (mut label, overlay) = item_label(&item.content, cx.locale, cx.dark);
+                // A clip has no name of its own, so a media clip carries its asset's display
+                // name: the library name when the user renamed it, else the file name.
+                if label.is_empty()
+                    && matches!(track.kind, TrackKind::Video | TrackKind::Audio)
+                    && let Some(asset) = item
+                        .source_asset
+                        .and_then(|id| data.assets.iter().find(|asset| asset.id() == id))
+                {
+                    label = data.media_library.display_name(asset);
+                }
                 let volume = match &item.content {
                     project::ItemParams::Audio(params) => Some(params.volume),
                     project::ItemParams::Video(params) => Some(params.volume),

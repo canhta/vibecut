@@ -109,6 +109,8 @@ pub struct ProjectData {
     pub text_presets: Vec<SavedTextPreset>,
     /// Colours committed through the colour popover, newest first, without duplicates.
     pub recent_colors: Vec<Color>,
+    /// Names the user gave assets and the folders that group them.
+    pub media_library: super::media_library::MediaLibrary,
     /// Set only on a run of the shorts window; editor projects carry none. Boxed so the
     /// rare run payload does not widen every `ProjectData` the edit path moves.
     pub shorts_run: Option<Box<super::shorts_run::ShortsRun>>,
@@ -160,6 +162,7 @@ impl Project {
             caption_presets: Vec::new(),
             text_presets: Vec::new(),
             recent_colors: Vec::new(),
+            media_library: super::media_library::MediaLibrary::default(),
             shorts_run: None,
         })
     }
@@ -304,6 +307,7 @@ fn validate(data: &ProjectData) -> Result<()> {
             return Err(Error::Invalid("recent colour"));
         }
     }
+    data.media_library.validate(&data.assets)?;
     let c = &data.canvas;
     let canvas_size = CanvasSize {
         width: c.width,

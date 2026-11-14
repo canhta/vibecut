@@ -99,11 +99,13 @@ API version: 27. Registry digest: `88daf14c14a94ec07b5e7fb35c8a759ca2b4724f3f6e6
 | `masks.reorder` | `Edit` | Reorder masks |
 | `masks.set_path` | `Edit` | Set mask path |
 | `masks.update` | `Edit` | Update mask |
+| `media.create_folder` | `Edit` | Create media folder |
 | `media.detect_scenes` | `JobControl` | Detect scene changes |
 | `media.generate_clip_thumbnails` | `JobControl` | Generate clip thumbnails |
 | `media.generate_waveform` | `JobControl` | Generate source waveform |
 | `media.relink` | `Edit` | Relink media |
 | `media.remove` | `Edit` | Remove media |
+| `media.rename` | `Edit` | Rename media |
 | `move_item` | `Edit` | Move item |
 | `move_items` | `Edit` | Move items |
 | `music.add_to_timeline` | `Edit` | Add library music |

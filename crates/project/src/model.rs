@@ -9,6 +9,7 @@ macro_rules! id {
 }
 mod audio_cleanup;
 mod item;
+mod media_library;
 mod narration;
 mod project;
 mod scene;
@@ -29,6 +30,10 @@ pub use item::{
     OverlayParams, StabilizeLevel, StickerParams, StrokePreset, TextAlign, TextBackground,
     TextCase, TextDecoration, TextParams, TextShadow, TextStroke, TextStyle, VOLUME_DB_RANGE,
     VideoParams, WordSpan, valid_volume, volume_gain, volume_is_silent,
+};
+pub use media_library::{
+    AssetName, MAX_MEDIA_FOLDERS, MAX_MEDIA_NAME_BYTES, MediaFolder, MediaFolderId, MediaLibrary,
+    valid_media_name,
 };
 pub use narration::{
     MAX_DUCK_MS, MAX_DUCK_TENTHS_DB, Narration, NarrationConsent, NarrationCost, NarrationDucking,

@@ -67,6 +67,11 @@ pub(crate) fn project_summary(session: &Session, clip_names: bool) -> Value {
                 )
             {
                 fields.insert("name".into(), Value::String(name.to_owned()));
+                // The library name every surface shows, beside the file name.
+                fields.insert(
+                    "display_name".into(),
+                    Value::String(data.media_library.display_name(asset)),
+                );
             }
             entry
         })
@@ -130,4 +135,39 @@ pub(crate) fn transcript_read(
     }
     let next = cues.next().is_some().then(|| cursor + page.len());
     Ok(json!({"revision": session.revision(), "cues": page, "next_cursor": next}))
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, reason = "fixture setup and assertions")]
+mod tests {
+    use super::*;
+    use engine::Command;
+    use project::{Project, ProjectId};
+
+    #[test]
+    fn the_media_read_returns_the_display_name_beside_the_file_name_only_with_clip_names() {
+        let mut session =
+            Session::new(Project::empty(ProjectId(1), "Read".into()).unwrap(), 4).unwrap();
+        let asset = serde_json::from_value(json!({
+            "ephemeral": false,
+            "id": 7,
+            "path": std::env::temp_dir().join("reads-source.mp4"),
+            "content_hash": vec![7; 32],
+            "probe": {"format": "mp4", "duration": null, "streams": []},
+        }))
+        .unwrap();
+        session.apply(Command::AddAsset { asset }).unwrap();
+        session
+            .apply(Command::RenameAsset {
+                asset: serde_json::from_value(json!(7)).unwrap(),
+                name: "Interview".into(),
+            })
+            .unwrap();
+        let with = project_summary(&session, true);
+        assert_eq!(with["assets"][0]["name"], "reads-source.mp4");
+        assert_eq!(with["assets"][0]["display_name"], "Interview");
+        let without = project_summary(&session, false);
+        assert!(without["assets"][0].get("display_name").is_none());
+        assert!(without["assets"][0].get("name").is_none());
+    }
 }
