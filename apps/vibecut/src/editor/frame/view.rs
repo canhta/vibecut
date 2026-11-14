@@ -455,6 +455,13 @@ impl Editor {
                         self.fail(error.to_string());
                     }
                 }
+                Action::AddGuide { axis, position } => {
+                    if let Err(error) =
+                        self.dispatch(crate::editor::AppCommand::AddGuide { axis, position })
+                    {
+                        self.fail(error.to_string());
+                    }
+                }
                 Action::SetPreference { key, value } => {
                     if let Err(error) = self.set_preference(key, value) {
                         self.fail(error.to_string());

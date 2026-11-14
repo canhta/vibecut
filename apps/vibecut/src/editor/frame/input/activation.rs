@@ -566,6 +566,10 @@ impl Editor {
                 }
                 UiAction::GuidesLock => {
                     self.edit_guide_lines(|lines| Ok(lines.with_locked(!lines.locked)))?;
+                    if self.preferences.preview_lines.locked {
+                        let text = self.tr(Text::GuidesLocked).to_owned();
+                        self.set_toast(&text, None);
+                    }
                 }
                 UiAction::GuidesClear => self.edit_guide_lines(|lines| Ok(lines.cleared()))?,
                 UiAction::GuideAdd(axis) => {

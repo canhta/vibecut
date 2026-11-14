@@ -117,6 +117,9 @@ pub(crate) enum Action {
         index: usize,
         position: i32,
     },
+    /// A guide line pulled out of a ruler and dropped at a canvas position
+    /// (`preview.guides.add_horizontal` or `preview.guides.add_vertical`).
+    AddGuide { axis: LineAxis, position: i32 },
     /// One preview preference edit, recorded in the app's preference history.
     SetPreference {
         key: &'static str,
