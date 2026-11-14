@@ -345,20 +345,44 @@ fn a_take_carries_its_provenance_and_exact_duration() {
 
 #[test]
 fn failures_rejections_and_cancel_leave_no_take() {
-    for (script, check) in [
+    for (script, check, code) in [
         (
             Script::Fail(|| ai::Error::Server),
             (|e: &ai::Error| matches!(e, ai::Error::Server)) as fn(&ai::Error) -> bool,
+            engine::control::ErrorCode::Network,
         ),
-        (Script::Fail(|| ai::Error::Quota), |e| {
-            matches!(e, ai::Error::Quota)
-        }),
-        (Script::Fail(|| ai::Error::PaidPlanRequired), |e| {
-            matches!(e, ai::Error::PaidPlanRequired)
-        }),
-        (Script::WrongTranscript, |e| {
-            matches!(e, ai::Error::OutputRejected)
-        }),
+        (
+            Script::Fail(|| ai::Error::Quota),
+            |e| matches!(e, ai::Error::Quota),
+            engine::control::ErrorCode::Quota,
+        ),
+        (
+            Script::Fail(|| ai::Error::PaidPlanRequired),
+            |e| matches!(e, ai::Error::PaidPlanRequired),
+            engine::control::ErrorCode::PlanRequired,
+        ),
+        (
+            Script::Fail(|| ai::Error::Auth),
+            |e| matches!(e, ai::Error::Auth),
+            engine::control::ErrorCode::Auth,
+        ),
+        (
+            Script::Fail(|| ai::Error::Network),
+            |e| matches!(e, ai::Error::Network),
+            engine::control::ErrorCode::Network,
+        ),
+        (
+            Script::Fail(|| ai::Error::RateLimit {
+                retry_after_seconds: Some(2),
+            }),
+            |e| matches!(e, ai::Error::RateLimit { .. }),
+            engine::control::ErrorCode::RateLimit,
+        ),
+        (
+            Script::WrongTranscript,
+            |e| matches!(e, ai::Error::OutputRejected),
+            engine::control::ErrorCode::Ai,
+        ),
     ] {
         let (narrator, _) = narrator(vec![("model-a", voice(script))]);
         let prepared = narrator
@@ -369,6 +393,27 @@ fn failures_rejections_and_cancel_leave_no_take() {
             .synthesize(&consent, &CancelFlag::new())
             .unwrap_err();
         assert!(check(&error), "{error:?}");
+        // The kind reaches the wire as its own code, directly and through each wrapper a job or
+        // command path puts around it.
+        use engine::Failure;
+        fn again(error: &ai::Error) -> ai::Error {
+            match error {
+                ai::Error::Server => ai::Error::Server,
+                ai::Error::Quota => ai::Error::Quota,
+                ai::Error::PaidPlanRequired => ai::Error::PaidPlanRequired,
+                ai::Error::Auth => ai::Error::Auth,
+                ai::Error::Network => ai::Error::Network,
+                ai::Error::RateLimit { .. } => ai::Error::RateLimit {
+                    retry_after_seconds: Some(2),
+                },
+                _ => ai::Error::OutputRejected,
+            }
+        }
+        assert_eq!(error.code(), code, "{error:?}");
+        assert_eq!(engine::control::Error::Ai(again(&error)).code(), code);
+        assert_eq!(engine::providers::Error::Ai(again(&error)).code(), code);
+        assert_eq!(engine::RuntimeError::Model(again(&error)).code(), code);
+        assert_eq!(engine::RuntimeError::Transfer(again(&error)).code(), code);
     }
     let v = voice(Script::Samples(24_000));
     let (narrator, _) = narrator(vec![("model-a", v.clone())]);

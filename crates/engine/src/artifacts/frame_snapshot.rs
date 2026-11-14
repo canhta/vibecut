@@ -348,7 +348,7 @@ mod tests {
             } else {
                 let error = returned.unwrap().unwrap_err();
                 use crate::Failure;
-                assert_eq!(error.code(), crate::control::ErrorCode::Ai);
+                assert_eq!(error.code(), crate::control::ErrorCode::RateLimit);
                 assert!(!error.transient());
                 assert!(!error.job_policy().terminal_cancelled);
                 assert_eq!(error.job_policy().retry_after_seconds, None);

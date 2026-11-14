@@ -3,11 +3,17 @@ use super::{Error as RuntimeError, Result};
 use crate::jobs::JobContext;
 use crate::session::wire::{ErrorCode, Failure, JobFailurePolicy};
 
+/// The one place a provider error becomes a wire code: every job and command path wraps an
+/// `ai::Error` and delegates here, so a kind a panel or agent acts on is never flattened to `Ai`.
 impl Failure for ai::Error {
     fn code(&self) -> ErrorCode {
         match self {
             Self::Chapters(_) => ErrorCode::Refused,
+            Self::Auth => ErrorCode::Auth,
+            Self::Quota => ErrorCode::Quota,
             Self::PaidPlanRequired => ErrorCode::PlanRequired,
+            Self::RateLimit { .. } => ErrorCode::RateLimit,
+            Self::Network | Self::Server | Self::Timeout => ErrorCode::Network,
             _ => ErrorCode::Ai,
         }
     }

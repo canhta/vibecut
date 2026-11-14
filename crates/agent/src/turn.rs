@@ -266,6 +266,7 @@ fn end_reason(error: &ai::Error) -> EndReason {
         ai::Error::ConsentRequired => EndReason::ConsentRequired,
         ai::Error::Auth => EndReason::Provider("auth"),
         ai::Error::Quota => EndReason::Provider("quota"),
+        ai::Error::PaidPlanRequired => EndReason::Provider("plan_required"),
         ai::Error::RateLimit { .. } => EndReason::Provider("rate_limit"),
         ai::Error::Network | ai::Error::Timeout => EndReason::Provider("network"),
         ai::Error::Server => EndReason::Provider("server"),
