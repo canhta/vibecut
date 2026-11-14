@@ -58,7 +58,7 @@ impl View<'_> {
                     }),
             )
             .fill(if selected {
-                theme::hover(self.cx.preferences.dark)
+                theme::subnav_active(self.cx.preferences.dark)
             } else {
                 theme::panel(self.cx.preferences.dark)
             })
@@ -68,7 +68,7 @@ impl View<'_> {
         )
         .on_hover_text(self.tr(label))
     }
-    /// A collapsible group header: 104 x 22 on the hover fill, the label in the accent while
+    /// A collapsible group header: 104 x 22 on the sub-navigation fill, the label in the accent while
     /// `active`, and a caret that shows the open state (down when open, right when closed).
     fn effects_group_row(
         &mut self,
@@ -90,7 +90,7 @@ impl View<'_> {
                         theme::text(dark)
                     }),
             )
-            .fill(theme::hover(dark))
+            .fill(theme::subnav_active(dark))
             .stroke(egui::Stroke::NONE)
             .truncate()
             .right_text(""),

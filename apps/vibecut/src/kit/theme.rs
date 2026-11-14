@@ -21,6 +21,8 @@ const HOVER_LIGHT: Color32 = Color32::from_rgb(0xE4, 0xE4, 0xE4);
 /// Measured selected sub-tab cell (221643 Properties): fill and 1 px outline.
 const SEGMENT_ACTIVE_DARK: Color32 = Color32::from_rgb(0x3B, 0x3B, 0x3B);
 const SEGMENT_OUTLINE_DARK: Color32 = Color32::from_rgb(0x33, 0x33, 0x33);
+/// Measured selected sub-navigation fill (221727 Trending and Video effects, #3B3B3B).
+const SUBNAV_ACTIVE_DARK: Color32 = Color32::from_rgb(0x3B, 0x3B, 0x3B);
 const TEXT_DARK: Color32 = Color32::from_rgb(0xFF, 0xFF, 0xFF);
 const TEXT_LIGHT: Color32 = Color32::from_rgb(0x13, 0x15, 0x17);
 const SECONDARY_DARK: Color32 = Color32::from_rgb(0x89, 0x8A, 0x8B);
@@ -91,6 +93,15 @@ pub(crate) const fn field(dark: bool) -> Color32 {
 }
 pub(crate) const fn hover(dark: bool) -> Color32 {
     if dark { HOVER_DARK } else { HOVER_LIGHT }
+}
+/// The selected sub-navigation row (221727 Trending, 104x24 on the 120 px column). Dark is the
+/// measured fill; light has no measured counterpart, so it keeps the hover token.
+pub(crate) const fn subnav_active(dark: bool) -> Color32 {
+    if dark {
+        SUBNAV_ACTIVE_DARK
+    } else {
+        HOVER_LIGHT
+    }
 }
 /// The selected cell of a segmented sub-tab bar. Dark is the measured fill; light has no
 /// measured counterpart, so it keeps the hover token.

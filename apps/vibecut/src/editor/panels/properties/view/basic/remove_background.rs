@@ -24,13 +24,12 @@ impl Panel<'_, '_> {
         let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
         self.row_label(ui, row, self.tr(Text::AutoRemoval));
         let width = value_ui.available_width();
-        value_ui.add_space((width - theme::size::TOGGLE_WIDTH).max(0.0));
-        let response = kit::toggle(
-            &mut value_ui,
-            "inspector.auto_removal",
-            &mut on,
-            self.tr(Text::AutoRemoval),
-        );
+        value_ui.add_space((width - theme::size::CHECKBOX).max(0.0));
+        let response = value_ui.add(egui::Checkbox::without_text(&mut on));
+        let name = self.tr(Text::AutoRemoval);
+        response
+            .ctx
+            .accesskit_node_builder(response.id, |node| node.set_label(name));
         self.remember("inspector.auto_removal", &response);
         if response.clicked() {
             if on {
