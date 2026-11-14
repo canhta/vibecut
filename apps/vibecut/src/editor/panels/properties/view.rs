@@ -252,6 +252,7 @@ pub(in crate::editor) fn show(
     panel.picker_dialog(ui.ctx());
     panel.font_dialog(ui.ctx());
     panel.mask_dialog(ui.ctx());
+    panel.narration_dialog(ui.ctx());
     panel.actions
 }
 
@@ -1089,6 +1090,12 @@ impl<'a, 'c> Panel<'a, 'c> {
                         self.cx.playhead,
                     )
             })
+            // Text to speech reads a text item's words; a caption item has cues instead.
+            .filter(|tab| {
+                *tab != PropertiesTab::TextToSpeech
+                    || read::item(self.cx.session.project(), item)
+                        .is_some_and(|found| matches!(found.content, project::ItemParams::Text(_)))
+            })
             .collect();
         let stored = self
             .cx
@@ -1370,6 +1377,9 @@ impl<'a, 'c> Panel<'a, 'c> {
             {
                 self.text_tab(ui, item);
             }
+            PropertiesTab::TextToSpeech if kind == ElementKind::Text => {
+                self.narration_tab(ui, item);
+            }
             PropertiesTab::Transform => {
                 self.transform_section(ui, item);
                 self.blending_section(ui, item, true);
@@ -1615,6 +1625,8 @@ mod animation;
 pub(super) use animation::Previews as AnimationPreviews;
 
 mod canvas;
+
+mod narration;
 
 mod playback;
 

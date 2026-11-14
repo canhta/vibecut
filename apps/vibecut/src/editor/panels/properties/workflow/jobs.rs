@@ -2,3 +2,4 @@
 pub(in crate::editor) mod footage;
 pub(in crate::editor) mod loudness;
 pub(in crate::editor) mod lut;
+pub(in crate::editor) mod narration;

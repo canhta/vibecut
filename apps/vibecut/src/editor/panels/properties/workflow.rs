@@ -253,6 +253,7 @@ fn route(state: &mut State, port: &mut Port<'_>, actions: Vec<Action>) {
             Action::ColorCommit { command, record } => state.commit_color(port, command, record),
             Action::Font(action) => state.font_action(port, action),
             Action::Mask(action) => state.mask_action(port, action),
+            Action::Narration(action) => state.narration_action(port, action),
             Action::Error(message) => {
                 port.fail(message);
                 Ok(())

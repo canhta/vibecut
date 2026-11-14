@@ -63,6 +63,7 @@ impl Editor {
                 .captions
                 .as_ref()
                 .is_some_and(|s| s.modal_open())
+            && !self.properties.narration_modal()
             && self.player.crop.is_none()
         {
             self.keyboard(ui.ctx());

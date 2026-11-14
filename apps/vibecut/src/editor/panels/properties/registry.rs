@@ -45,7 +45,11 @@ impl ElementKind {
     /// Type-specific tabs from the reference registry, in its order.
     pub const fn tabs(self) -> &'static [PropertiesTab] {
         match self {
-            Self::Text => &[PropertiesTab::Text, PropertiesTab::Effects],
+            Self::Text => &[
+                PropertiesTab::Text,
+                PropertiesTab::TextToSpeech,
+                PropertiesTab::Effects,
+            ],
             // Basic sub-tabs in the reference order: Basic, Background, Remove BG, Mask.
             Self::Video => &[
                 PropertiesTab::Transform,
@@ -98,6 +102,7 @@ impl ElementKind {
 #[serde(rename_all = "snake_case")]
 pub enum PropertiesTab {
     Text,
+    TextToSpeech,
     Transform,
     Audio,
     Speed,
@@ -111,8 +116,9 @@ pub enum PropertiesTab {
 }
 
 impl PropertiesTab {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::Text,
+        Self::TextToSpeech,
         Self::Transform,
         Self::Audio,
         Self::Speed,
@@ -128,6 +134,7 @@ impl PropertiesTab {
     pub const fn id(self) -> &'static str {
         match self {
             Self::Text => "text",
+            Self::TextToSpeech => "text_to_speech",
             Self::Transform => "transform",
             Self::Audio => "audio",
             Self::Speed => "speed",
@@ -148,6 +155,7 @@ impl PropertiesTab {
     pub const fn label(self) -> Text {
         match self {
             Self::Text => Text::TextItem,
+            Self::TextToSpeech => Text::NarrationTab,
             Self::Transform => Text::Transform,
             Self::Audio => Text::Audio,
             Self::Speed => Text::Speed,

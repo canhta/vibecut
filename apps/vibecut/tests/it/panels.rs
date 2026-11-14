@@ -1671,7 +1671,11 @@ fn every_registry_kind_has_its_reference_tab_set() {
     for (kind, expected) in [
         (
             ElementKind::Text,
-            &[PropertiesTab::Text, PropertiesTab::Effects][..],
+            &[
+                PropertiesTab::Text,
+                PropertiesTab::TextToSpeech,
+                PropertiesTab::Effects,
+            ][..],
         ),
         (
             ElementKind::Video,

@@ -641,3 +641,135 @@ fn a_take_twice_its_cue_is_refused_and_places_nothing() {
     assert_eq!(s.history_len(), history);
     assert!(narrations(&s).is_empty());
 }
+
+// ----- the credential opener: real adapters, no network -----
+
+/// A transport that records every send; the opener and `prepare` must never reach it.
+#[derive(Default)]
+struct NoNetwork(std::sync::atomic::AtomicUsize);
+impl transport::HttpTransport for NoNetwork {
+    fn send(&self, _: transport::HttpRequest) -> Result<transport::HttpResponse, transport::Error> {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Err(transport::Error::Network)
+    }
+}
+
+fn real_request(provider: &str, model: &str, voice: &str, language: &str, text: &str) -> Request {
+    Request {
+        provider: provider.into(),
+        model: model.into(),
+        voice: voice.into(),
+        language: LanguageTag::parse(language).unwrap(),
+        text: text.into(),
+        cue_duration: Tick(SECOND),
+        provider_speed_thousandths: None,
+    }
+}
+
+#[test]
+fn the_credential_opener_builds_only_the_chosen_provider_with_its_own_key_and_no_network() {
+    use engine::dubbing::{CredentialSpeech, SpeechOpener, speech_options};
+    use engine::providers::Credentials;
+    let wire = Arc::new(NoNetwork::default());
+
+    // Only an OpenAI key: OpenAI opens, ElevenLabs is an authentication refusal, never a swap.
+    let only_openai = CredentialSpeech::with_transport(
+        Credentials::new(Some("sk-test".into()), None, None),
+        wire.clone(),
+    );
+    let (synth, output) = only_openai.open("openai", "gpt-audio-1.5", None).unwrap();
+    assert_eq!(synth.config().id().as_str(), "openai");
+    assert_eq!(output.sample_rate, 24_000);
+    assert!(matches!(
+        only_openai.open("openai", "gpt-audio-1.5", Some(1100)),
+        Err(ai::Error::Unsupported)
+    ));
+    assert!(matches!(
+        only_openai.open("elevenlabs", "eleven_flash_v2_5", None),
+        Err(ai::Error::Auth)
+    ));
+    assert!(matches!(
+        only_openai.open("azure", "any", None),
+        Err(ai::Error::Unsupported)
+    ));
+
+    // Both keys: ElevenLabs takes its speed setting inside 0.7 to 1.2 and refuses outside it.
+    let both = CredentialSpeech::with_transport(
+        Credentials::new(Some("sk-test".into()), Some("xi-test".into()), None),
+        wire.clone(),
+    );
+    assert!(
+        both.open("elevenlabs", "eleven_flash_v2_5", Some(1100))
+            .is_ok()
+    );
+    assert!(
+        both.open("elevenlabs", "eleven_flash_v2_5", Some(1300))
+            .is_err()
+    );
+
+    // The narrator quotes and discloses through the real adapters before anything is sent.
+    let narrator = Narrator::new(Arc::new(both));
+    let flash = narrator
+        .prepare(&real_request(
+            "elevenlabs",
+            "eleven_flash_v2_5",
+            "21m00Tcm4TlvDq8ikWAM",
+            "vi",
+            "Xin chào",
+        ))
+        .unwrap();
+    assert_eq!(flash.disclosure().provider, "elevenlabs");
+    assert_eq!(
+        flash.disclosure().cost,
+        Cost::UpperBound {
+            currency: "USD".into(),
+            micros: 320
+        }
+    );
+    // Multilingual v2 has no Vietnamese, an unknown voice is not guessed, and neither asks.
+    assert!(matches!(
+        narrator.prepare(&real_request(
+            "elevenlabs",
+            "eleven_multilingual_v2",
+            "21m00Tcm4TlvDq8ikWAM",
+            "vi",
+            "Xin chào"
+        )),
+        Err(Error::Ai(ai::Error::UnsupportedLanguage))
+    ));
+    assert!(matches!(
+        narrator.prepare(&real_request(
+            "elevenlabs",
+            "eleven_flash_v2_5",
+            "cloned-voice",
+            "en",
+            "Hello"
+        )),
+        Err(Error::Ai(ai::Error::UnsupportedVoice))
+    ));
+    let openai = narrator
+        .prepare(&real_request(
+            "openai",
+            "gpt-audio-1.5",
+            "alloy",
+            "en",
+            "Welcome back.",
+        ))
+        .unwrap();
+    assert_eq!(openai.disclosure().voice, "alloy");
+    assert!(matches!(
+        openai.disclosure().cost,
+        Cost::UpperBound { micros, .. } if micros > 0
+    ));
+    assert_eq!(wire.0.load(std::sync::atomic::Ordering::SeqCst), 0);
+
+    // The picker lists exactly these two providers, with built-in or premade voices only.
+    let options = speech_options();
+    assert_eq!(
+        options.iter().map(|option| option.id).collect::<Vec<_>>(),
+        ["openai", "elevenlabs"]
+    );
+    assert!(options.iter().all(|option| !option.models.is_empty()));
+    assert!(options[0].voices.iter().any(|(id, _)| *id == "alloy"));
+    assert!(options[1].speed && !options[0].speed);
+}

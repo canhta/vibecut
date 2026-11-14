@@ -120,6 +120,7 @@ impl Editor {
                 .captions
                 .as_ref()
                 .is_some_and(|s| s.modal_open())
+                || self.properties.narration_modal()
                 || self.timeline.scenes.is_open()
                 || self.frame.shortcuts_open
                 || self.frame.delete_open

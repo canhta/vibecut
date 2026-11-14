@@ -1,6 +1,6 @@
 # Dubbing
 
-Interface: `Narrator`, `SpeechOpener`, `Request`, `Prepared`, `Disclosure`, `CancelFlag`, `DubTake`, `encode_take`, `decode_take`, `write_wav`, `wav_bytes`, `ticks_of`, `fit`, `Fit`, `FitInput`, `DurationFit`, `MAX_TAKE_BYTES`.
+Interface: `Narrator`, `SpeechOpener`, `Request`, `Prepared`, `Disclosure`, `CancelFlag`, `DubTake`, `encode_take`, `decode_take`, `write_wav`, `wav_bytes`, `ticks_of`, `fit`, `Fit`, `FitInput`, `DurationFit`, `MAX_TAKE_BYTES`, `CredentialSpeech`, `SpeechOption`, `speech_options`, `ELEVENLABS_VOICES`.
 
 Narration is an ordinary audio take generated from text with the provider, model and voice the user chose. There is no cloning, no bundled weights, no automatic provider, model or voice switch and no separate dubbing mixer. Provider adapters, `SynthesisConsent` and cost live in [`ai::speech`](../../../ai/src/speech/README.md); this folder composes them.
 
@@ -11,6 +11,10 @@ Narration is an ordinary audio take generated from text with the provider, model
 `Prepared::approve` asks the prompt (`approve_unknown_price` when the quote is unknown) and binds the answer into `SynthesisConsent`; any change to text, voice, speed or quote needs a new approval. `Prepared::synthesize` is one attempt through `ai::speech::synthesize`: no retry (the job kind is not in the network retry list, so a token is never reused), no fallback, no partial audio. Cancellation, a provider failure, a rejected transcript or a cost above the approved bound discards the whole result and leaves the project untouched. The result is a `DubTake`: mono PCM16 plus a `project::Narration` carrying provider, model, voice, language, fingerprint, text hash, consent descriptor and cue duration.
 
 `control::DubWorkflow` is how `dub.generate` reaches a `Narrator`: it is lent through `CaptionAccess::with_dubbing`, asks the prompt of that access and submits one `JobKind::Synthesize` job whose output is the encoded take. `dub.cancel` cancels that job. A desktop dialog that runs the same `prepare`/`approve`/`synthesize` on its own thread uses `CancelFlag` instead of a job.
+
+## Credentials
+
+`CredentialSpeech` is the shipped `SpeechOpener`: it builds the OpenAI or ElevenLabs adapter for the exact provider and model asked for, with the key of that provider only (`Credentials::openai` / `elevenlabs`; a missing or malformed key is `ai::Error::Auth`, never another provider). An unknown provider, or an OpenAI request with a provider speed, is `ai::Error::Unsupported`; an ElevenLabs speed outside 0.7 to 1.2 is refused by the adapter. Construction does no IO, so `prepare` quotes and discloses with no network; the transport is injected (`with_transport`) and tests give it one that fails if used. `speech_options` is the offline provider list the narration panel shows: OpenAI with its built-in voices, ElevenLabs with `ELEVENLABS_VOICES` (premade stock voices only; whether an account can use an id is the provider's answer and unverified here) and whether the provider has a speed setting.
 
 ## Fit
 

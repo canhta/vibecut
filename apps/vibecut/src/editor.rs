@@ -744,6 +744,16 @@ impl Editor {
     ) {
         self.dialogs.voiceover.set(host, directory);
     }
+    /// Injection boundary for tests: the speech opener and the project-owned folder the Text
+    /// to speech tab writes takes into. Without it the tab opens the chosen provider with the
+    /// keys in the process environment and writes beside the project's media.
+    pub fn set_narration(
+        &mut self,
+        opener: Arc<dyn engine::dubbing::SpeechOpener>,
+        directory: PathBuf,
+    ) {
+        self.properties.set_narration(opener, directory);
+    }
     /// Instantiate the one shared model cache on first use; it never fetches then.
     pub fn open_models(&mut self) -> Result<()> {
         self.dialogs.models.open()

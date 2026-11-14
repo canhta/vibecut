@@ -141,6 +141,8 @@ pub(in crate::editor) struct State {
     /// Stabilize analysis jobs and which switched-on clips still need one.
     footage: workflow::jobs::footage::FootageWorkflow,
     loudness: workflow::jobs::loudness::LoudnessWorkflow,
+    /// The Text to speech tab's form, worker and pending take.
+    narration: workflow::jobs::narration::NarrationWorkflow,
     font_import: Option<font_picker::PendingImport>,
     /// Mask row's shape and field sub-panel.
     mask: mask_picker::State,
@@ -262,6 +264,7 @@ impl Default for State {
             lut: workflow::jobs::lut::LutWorkflow::default(),
             footage: workflow::jobs::footage::FootageWorkflow::default(),
             loudness: workflow::jobs::loudness::LoudnessWorkflow::default(),
+            narration: workflow::jobs::narration::NarrationWorkflow::default(),
             font_import: None,
             mask: mask_picker::State::default(),
             chroma_staged: None,
