@@ -201,3 +201,19 @@ fn analyzing_modal_shows_while_a_run_is_open_and_cancel_drops_the_run() {
     assert!(send.send(late).is_err(), "a cancelled run has no receiver");
     assert!(harness.query_by_label("Analyzing…").is_none());
 }
+
+#[test]
+fn footer_labels_never_overlap_at_any_panel_width() {
+    for width in [200.0, 260.0, 320.0, PANEL_WIDTH] {
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(width, PANEL_HEIGHT))
+            .build_ui_state(|ui, rig: &mut Rig| rig.paint(ui), rig());
+        harness.run_steps(3);
+        let check = rect(&harness, "subtitles.delete_current");
+        let button = rect(&harness, "subtitles.generate");
+        assert!(
+            !check.intersects(button),
+            "at {width} px the delete-current checkbox {check:?} overlaps Generate {button:?}"
+        );
+    }
+}

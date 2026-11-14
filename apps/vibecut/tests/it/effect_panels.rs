@@ -5091,7 +5091,19 @@ fn corner_pin_points_edit_from_the_inspector_and_the_preview_with_one_undo_step_
         !has_widget(&harness, "preview.effect.pin.lower_right"),
         "handles stay off while another Properties tab is open"
     );
+    assert!(
+        has_widget(&harness, "preview.transform.rotate"),
+        "the transform box carries its rotation grip while no point handle is shown"
+    );
     open_effect_tabs(&mut harness, video);
+    assert!(
+        has_widget(&harness, "preview.effect.pin.lower_right"),
+        "the point handles show on the Effects tab"
+    );
+    assert!(
+        !has_widget(&harness, "preview.transform.rotate"),
+        "one gizmo set at a time: the transform box and its grip give way to the point handles"
+    );
     // Reads the staged candidate while a gesture is open, else the committed project.
     let point = |harness: &Harness<Editor>, key: &str| {
         let session = &harness.state().session;

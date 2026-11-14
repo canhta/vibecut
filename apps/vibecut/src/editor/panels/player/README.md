@@ -80,7 +80,7 @@ expose the `preview.mask.tangent.<n>.<in|out>` and `preview.mask.box.*` targets.
 `effect_point` draws one circular handle per enabled effect point parameter (Corner Pin's four
 corners, a warp or flare centre, a gradient end) of the single selected item, only while that
 item's Properties tab is Effects and its track is unlocked: Corner Pin's defaults sit on the transform corners, so the
-handles must not compete with them the rest of the time. A handle sits at its frame fraction
+handles must not compete with them the rest of the time. While handles are shown the transform box, its scale handles and its rotation grip are neither painted nor registered, so one gizmo set is on the canvas. A handle sits at its frame fraction
 of the item's placement box (`ItemGeometry::bounds`) mapped through the item transform, so it
 stays on the rendered picture. A press within the shared hit radius takes the pointer before
 the transform handles; a drag stages one absolute `effects.update_param` point, clamped to
