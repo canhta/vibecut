@@ -816,6 +816,12 @@ pub(super) const SCENES: &[Scene] = &[
         build: |theme, scale| timeline_fades(theme, scale, "menu"),
     },
     Scene {
+        name: "timeline-hidden",
+        reference_dark: None,
+        reference_light: None,
+        build: timeline_hidden,
+    },
+    Scene {
         name: "timeline-clip-menu",
         reference_dark: Some("capcut-desktop-2026-11-14/capcut-desktop-095625.png"),
         reference_light: None,
@@ -975,6 +981,6 @@ use shorts::shorts_scene;
 use timeline::{
     link_media, missing_media, placement, placement_line, preview_axis, preview_axis_ends,
     preview_axis_reference, scene_create, scene_delete, scene_rename, timeline_clip_menu,
-    timeline_fades, timeline_group, timeline_main, timeline_multi, timeline_selection,
-    timeline_selection_vi, timeline_zoom, tracks, tracks_kinds,
+    timeline_fades, timeline_group, timeline_hidden, timeline_main, timeline_multi,
+    timeline_selection, timeline_selection_vi, timeline_zoom, tracks, tracks_kinds,
 };

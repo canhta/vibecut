@@ -285,6 +285,17 @@ pub(super) fn timeline_clip_menu(theme: Theme, scale: f32) -> Result<AppHarness,
     Ok(app)
 }
 
+/// The timeline hidden by `view.toggle_timeline`: the toolbar strip, every tool but the
+/// toggle disabled, and the progress line. Web-only evidence (web flows/12), so no reference.
+pub(super) fn timeline_hidden(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let (mut editor, _) = media_editor(theme, Locale::En)?;
+    editor.activate("view.toggle_timeline")?;
+    let mut app = app_editor(editor, scale);
+    wait_for_presented(&mut app)?;
+    app.run_steps(3);
+    Ok(app)
+}
+
 // New bottom-corner design: the reference captures only panel duration fields.
 pub(super) fn timeline_fades(theme: Theme, scale: f32, state: &str) -> Result<AppHarness, Failure> {
     let locale = if state == "menu" {
