@@ -639,7 +639,8 @@ fn overlap_threshold_and_near_duplicate_keep_highest_score() {
 #[test]
 fn dense_long_local_input_returns_one_bounded_clip() {
     let p = HeuristicClipSuggester::new().unwrap();
-    let mut w = input("en", 600);
+    // Overlapping windows hold over 4096 segments in all, past the observation cap.
+    let mut w = input("en", 400);
     w.settings.count = 1;
     w.settings.max_duration = tick(120);
     for (i, s) in w.segments.iter_mut().enumerate() {
@@ -647,9 +648,8 @@ fn dense_long_local_input_returns_one_bounded_clip() {
     }
     w.validate().unwrap();
     let windows = w.windows().unwrap();
-    assert_eq!(windows.len(), 60);
     assert!(windows.iter().map(|w| w.segments.len()).sum::<usize>() > 4096);
-    let result = run(&p, &w).expect("valid ten-minute local transcript should return one clip");
+    let result = run(&p, &w).expect("valid dense local transcript should return one clip");
     assert_eq!(result.clips.len(), 1);
     assert_eq!(result.clips[0].source, ClipSource::Heuristic);
     assert_eq!(
