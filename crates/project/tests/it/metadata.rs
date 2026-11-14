@@ -49,6 +49,7 @@ fn optional_metadata_roundtrips_without_changing_project_bytes() {
         },
     );
     metadata.proxy_preview = true;
+    metadata.cover_tick = Tick(90);
     lease.save_metadata(&metadata).unwrap();
     drop(lease);
     let lease = WriterLease::acquire(&path).unwrap();
@@ -109,6 +110,14 @@ fn metadata_refuses_hostile_values_and_external_project_changes() {
                 .is_err()
         );
     }
+    assert!(
+        lease
+            .save_metadata(&Metadata {
+                cover_tick: Tick(-1),
+                ..Default::default()
+            })
+            .is_err()
+    );
     std::fs::write(&path, b"external replacement").unwrap();
     assert!(matches!(
         lease.save_metadata(&Metadata::default()),

@@ -738,6 +738,12 @@ pub(super) const SCENES: &[Scene] = &[
         build: export_custom_bit_rate,
     },
     Scene {
+        name: "export-cover",
+        reference_dark: Some("capcut-desktop-2026-11-14b/capcut-desktop-105340.png"),
+        reference_light: Some("capcut-desktop-2026-11-14b/capcut-desktop-105340.png"),
+        build: export_cover,
+    },
+    Scene {
         name: "close-prompt",
         reference_dark: Some("capcut/illustrations/capcut-desktop-ui.png"),
         reference_light: Some("capcut/illustrations/capcut-desktop-ui.png"),
@@ -934,8 +940,8 @@ mod timeline;
 use assets::assets_scene;
 use editor::{
     caption_word_scene, captions_scene, editor_empty, editor_frame_state, editor_media,
-    editor_transitions, export_audio_only, export_custom_bit_rate, export_dialog, export_gif,
-    export_resolution, import_progress, models, models_vi, player_scene, player_variant,
+    editor_transitions, export_audio_only, export_cover, export_custom_bit_rate, export_dialog,
+    export_gif, export_resolution, import_progress, models, models_vi, player_scene, player_variant,
     settings_dialog,
 };
 use home::{home, home_projects, projects_scene, projects_trash};

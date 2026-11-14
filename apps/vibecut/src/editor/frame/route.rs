@@ -25,7 +25,10 @@ impl Editor {
             ripple: self.preferences.ripple,
             preferences: &self.preferences,
             playback: &self.playback,
-            preview: self.player.texture.handle(),
+            cover_editable: matches!(
+                self.session,
+                crate::services::lifecycle::EditorSession::Persistent(_)
+            ),
             keybindings: &self.preferences.keybindings,
             scope: self.selection_scopes.active(self.session.selection()),
             keyframes: &self.selection_scopes.keyframes,

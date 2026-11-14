@@ -168,8 +168,8 @@ pub(crate) struct Context<'a> {
     /// Preview-axis pointer time; `None` follows the playhead.
     pub(crate) hover: Option<time::Tick>,
     pub(crate) ripple: bool,
-    /// Last presented preview frame, for the export dialog's poster.
-    pub(crate) preview: Option<&'a egui::TextureHandle>,
+    /// Whether the session can store a project cover (it has a persistent store behind it).
+    pub(crate) cover_editable: bool,
     /// Cache-only clip visual queries (thumbnail strip and waveform).
     pub(crate) visuals: &'a dyn VisualQuery,
     pub(crate) cache: CacheUi,

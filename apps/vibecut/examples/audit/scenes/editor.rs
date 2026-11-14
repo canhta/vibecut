@@ -459,6 +459,60 @@ pub(super) fn export_custom_bit_rate(theme: Theme, scale: f32) -> Result<AppHarn
     )
 }
 
+/// The export dialog over a stored project whose cover is set, scrolled to the Color space row
+/// (reference 105340: the cover with its Edit cover chip, Rec. 709 SDR under the Video rows).
+pub(super) fn export_cover(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let (mut editor, _) = media_editor(theme, Locale::En)?;
+    editor.session.apply(Command::SetCanvas {
+        width: 360,
+        height: 640,
+        preset: None,
+    })?;
+    let project = (**editor.session.project()).clone();
+    let mut autosave = engine::recovery::Autosave::new(
+        &std::env::temp_dir().join("vibecut-audit-cover"),
+        engine::Session::new(project, 50)?,
+        ByteBudget::new(64 << 20)?,
+        engine::footage::uncorrected(),
+        Arc::new(engine::jobs::SystemClock::default()),
+        Default::default(),
+    )?;
+    // A fixed gradient stands in for the captured frame: the audit paints the dialog, not the
+    // renderer, and the media of this fixture is synthetic.
+    let (width, height) = (72_u32, 128_u32);
+    let rgba = (0..height)
+        .flat_map(|y| {
+            (0..width).flat_map(move |x| {
+                let down = y as f32 / (height - 1) as f32;
+                let across = x as f32 / (width - 1) as f32;
+                [
+                    (40.0 + 60.0 * down) as u8,
+                    (150.0 - 70.0 * down) as u8,
+                    (160.0 - 40.0 * across) as u8,
+                    255,
+                ]
+            })
+        })
+        .collect();
+    autosave.session_mut().restore_metadata(project::Metadata {
+        thumbnail: project::Thumbnail::Ready {
+            width,
+            height,
+            rgba,
+        },
+        ..Default::default()
+    })?;
+    editor.session = vibecut::services::lifecycle::EditorSession::Persistent(Box::new(autosave));
+    editor.activate("file.export")?;
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, [1727.0, 1029.0]);
+    wait_for_presented(&mut app)?;
+    app.run_steps(4);
+    app.get(By::new().predicate(|node| node.author_id() == Some("export.color_space")))
+        .scroll_to_me();
+    app.run_steps(6);
+    Ok(app)
+}
+
 pub(super) fn import_progress(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     let mut editor = empty_editor(theme, Locale::En)?;
     editor.set_import_probe(Arc::new(ProgressProbe::new()))?;

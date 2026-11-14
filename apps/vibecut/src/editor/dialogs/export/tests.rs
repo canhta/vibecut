@@ -1704,3 +1704,72 @@ fn ticked_captions_write_their_file_beside_the_media_without_opening_the_panel()
     let written = std::fs::read_to_string(caption).unwrap();
     assert!(written.contains("Hello group"), "{written}");
 }
+
+/// A persistent editor over the fixture project: its engine store can hold a cover.
+fn persistent_editor(root: &std::path::Path) -> Editor {
+    let project = project(false, false);
+    let autosave = engine::recovery::Autosave::new(
+        &root.join("recovery"),
+        Session::new(project.clone(), 10).unwrap(),
+        ByteBudget::new(64 << 20).unwrap(),
+        engine::footage::uncorrected(),
+        Arc::new(engine::jobs::SystemClock::default()),
+        Default::default(),
+    )
+    .unwrap();
+    let mut editor = editor_project(project);
+    editor.session = crate::services::lifecycle::EditorSession::Persistent(Box::new(autosave));
+    editor
+}
+
+#[test]
+fn the_cover_waits_for_its_image_and_edit_cover_stores_the_playhead_frame() {
+    let root = tempfile::tempdir().unwrap();
+    let mut bench = bench(persistent_editor(root.path()));
+    open(&mut bench);
+    assert!(enabled(&bench, "export.cover.edit"));
+    assert_eq!(bench.editor().session.metadata().cover_tick, Tick::ZERO);
+    assert!(matches!(
+        bench.editor().session.metadata().thumbnail,
+        project::Thumbnail::Missing
+    ));
+    let history = bench.editor().session.history_len();
+    bench.editor_mut().seek(Tick(SECOND / 30)).unwrap();
+    let at = bench.editor().playback.position().unwrap();
+    assert_ne!(at, Tick::ZERO);
+    bench.click("export.cover.edit");
+    let metadata = bench.editor().session.metadata();
+    assert_eq!(metadata.cover_tick, at);
+    assert!(matches!(
+        metadata.thumbnail,
+        project::Thumbnail::Ready { .. }
+    ));
+    // The cover is metadata beside the project, so no undo step is taken.
+    assert_eq!(bench.editor().session.history_len(), history);
+    assert_eq!(bench.editor().error, None);
+    // The dialog stays open on its settings with the chip still live.
+    assert!(bench.editor().export_state().unwrap().inspect().open);
+    assert!(enabled(&bench, "export.cover.edit"));
+}
+
+#[test]
+fn edit_cover_is_disabled_with_its_reason_when_nothing_can_store_a_cover() {
+    let mut bench = bench(editor(false, false));
+    open(&mut bench);
+    assert!(!enabled(&bench, "export.cover.edit"));
+    assert_eq!(
+        bench.editor().session.metadata().thumbnail,
+        project::Thumbnail::Missing
+    );
+}
+
+#[test]
+fn the_color_space_row_names_the_only_space_the_encoder_writes() {
+    let mut bench = bench(editor(false, false));
+    open(&mut bench);
+    let harness = bench.harness();
+    harness.get_by_label("Color space");
+    harness.get_by_label("Rec. 709 SDR");
+    // The row has no control: it is read-only text that carries the reason on hover.
+    assert!(enabled(&bench, "export.color_space"));
+}

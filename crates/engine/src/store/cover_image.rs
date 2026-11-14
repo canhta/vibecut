@@ -13,15 +13,18 @@ pub fn uncorrected() -> Lookup {
     Arc::new(|_: &Project| render::Corrections::default())
 }
 
-/// Always sample active-scene output zero; preview/playhead state is irrelevant. The stored
-/// footage corrections come from `corrections`, as the preview and export draw them.
+/// Sample the active scene at the cover tick; preview/playhead state is irrelevant. A tick at or
+/// past the project's end samples output zero. The stored footage corrections come from
+/// `corrections`, as the preview and export draw them.
 pub(crate) fn capture(
     project: &Project,
+    tick: Tick,
     hooks: &dyn render::ExecutionHooks,
     corrections: &Lookup,
 ) -> Thumbnail {
     fn render(
         project: &Project,
+        tick: Tick,
         hooks: &dyn render::ExecutionHooks,
         corrections: &Lookup,
     ) -> render::Result<Thumbnail> {
@@ -34,7 +37,7 @@ pub(crate) fn capture(
         let (width, height) = (settings.width, settings.height);
         let mut renderer = render::Renderer::new(project, settings)?;
         let image =
-            renderer.render_frame(Tick::ZERO, &mut render::FileSources::default(), hooks)?;
+            renderer.render_frame(tick, &mut render::FileSources::default(), hooks)?;
         let rgba = image.video_rgba8(13, hooks)?.bytes;
         Ok(Thumbnail::Ready {
             width,
@@ -43,7 +46,12 @@ pub(crate) fn capture(
         })
     }
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        render(project, hooks, corrections)
+        let tick = if tick < project.duration() {
+            tick
+        } else {
+            Tick::ZERO
+        };
+        render(project, tick, hooks, corrections)
     }))
     .ok()
     .and_then(Result::ok)

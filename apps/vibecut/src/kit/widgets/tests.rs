@@ -213,3 +213,34 @@ fn badge_button_is_an_unfilled_outline_in_body_ink() {
         assert_eq!(rects[0].stroke.width, space::HAIRLINE, "dark={dark}");
     }
 }
+
+/// The chip over an image clicks only when enabled and keeps its measured height at the inset
+/// the caller gives.
+#[test]
+fn scrim_chip_clicks_only_when_enabled_and_keeps_its_height() {
+    for enabled in [false, true] {
+        let mut harness = harness(
+            move |ui, state: &mut (u32, Option<Rect>)| {
+                ui.add_enabled_ui(enabled, |ui| {
+                    let response = scrim_chip(
+                        ui,
+                        "chip",
+                        Icon::PencilSimple,
+                        "Edit cover",
+                        egui::pos2(8.0, 8.0),
+                    );
+                    state.0 += u32::from(response.clicked());
+                    state.1 = Some(response.rect);
+                });
+            },
+            (0, None),
+        );
+        harness.run();
+        harness.get_by_label("Edit cover").click();
+        harness.run();
+        let (clicks, rect) = *harness.state();
+        assert_eq!(clicks, u32::from(enabled), "enabled={enabled}");
+        assert_eq!(rect.map(|rect| rect.height()), Some(20.0));
+        assert_eq!(rect.map(|rect| rect.min), Some(egui::pos2(8.0, 8.0)));
+    }
+}

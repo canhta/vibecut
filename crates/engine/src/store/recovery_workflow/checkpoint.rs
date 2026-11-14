@@ -361,8 +361,12 @@ impl Autosave {
                 }
                 if let Some(slot) = &slot {
                     let mut metadata = metadata.clone();
-                    metadata.thumbnail =
-                        crate::store::project_cover::capture(&project, ctx, &corrections);
+                    metadata.thumbnail = crate::store::project_cover::capture(
+                        &project,
+                        metadata.cover_tick,
+                        ctx,
+                        &corrections,
+                    );
                     save_on_worker(slot, &project, &metadata)?;
                 }
                 Ok(Vec::new())

@@ -612,12 +612,14 @@ impl ProjectLibrary {
                 // Confirmation belongs to the caller, as for any permanent delete.
                 self.purge_entry(target)?;
             }
-            Command::ThumbnailProject {} => {
+            Command::ThumbnailProject { tick } => {
                 let lease = self.lease(target)?;
                 let project = lease.load()?.project;
                 let mut metadata = lease.metadata();
+                metadata.cover_tick = tick.unwrap_or(metadata.cover_tick);
                 metadata.thumbnail = crate::store::project_cover::capture(
                     &project,
+                    metadata.cover_tick,
                     &crate::ByteBudgetHooks::new(&self.budget, None),
                     &self.corrections,
                 );
@@ -752,6 +754,7 @@ impl ProjectLibrary {
         // Capture from the source while rewritten destination paths are not published.
         metadata.thumbnail = crate::store::project_cover::capture(
             source,
+            metadata.cover_tick,
             &crate::ByteBudgetHooks::new(&self.budget, None),
             &self.corrections,
         );

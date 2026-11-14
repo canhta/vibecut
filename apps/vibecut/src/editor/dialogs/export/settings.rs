@@ -520,6 +520,17 @@ pub(super) fn show(
                 .widgets
                 .push(("export.fps", combo.labelled_by(row_label.id)));
             ui.end_row();
+            // The encoder writes Rec. 709 SDR only, so the row reads as the reference draws it:
+            // a dim label and the one value, with the reason no other space is offered.
+            ui.weak(tr(Text::ExportColorSpace));
+            let value = ui
+                .add(
+                    egui::Label::new(tr(Text::ExportColorSpaceRec709))
+                        .sense(egui::Sense::hover()),
+                )
+                .on_hover_text(tr(Text::ExportColorSpaceOnly));
+            result.widgets.push(("export.color_space", value));
+            ui.end_row();
             let row_label = ui.label(tr(Text::ExportProfile));
             let label = |profile| match profile {
                 media::H264Profile::Automatic => tr(Text::ExportAutomatic),
