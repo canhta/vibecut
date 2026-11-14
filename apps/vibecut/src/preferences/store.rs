@@ -160,6 +160,12 @@ mod tests {
     #[test]
     fn splitter_drags_clamp_each_region_to_its_documented_limits() {
         let start = DEFAULT_PANELS;
+        assert!(validate_panels(start).is_ok());
+        assert_eq!(crate::preferences::WINDOW_MIN, [1268.0, 650.0]);
+        let timeline_one_row = drag_panel(start, 2, 10.0);
+        assert_eq!(timeline_one_row[2], TIMELINE_MIN);
+        let timeline_full = drag_panel(start, 2, -10.0);
+        assert_eq!(timeline_full[2], TIMELINE_MAX);
         let far_right = drag_panel(start, 0, 10.0);
         assert_eq!(far_right[0], PANEL_MAX);
         assert!(valid_preview(far_right));

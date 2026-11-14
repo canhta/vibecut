@@ -10,6 +10,10 @@ pub struct WindowGeometry {
     pub position: Option<[f32; 2]>,
     pub maximized: bool,
 }
+/// Smallest editor window in logical points, measured from CapCut 9.7.1 at its
+/// minimum (capture 111859: 2536 x 1300 px at 2x). Approximate, +-20 pt.
+pub const WINDOW_MIN: [f32; 2] = [1268.0, 650.0];
+
 impl Default for WindowGeometry {
     fn default() -> Self {
         Self {
@@ -31,7 +35,7 @@ impl WindowGeometry {
     pub fn builder(&self) -> crate::egui::ViewportBuilder {
         let mut builder = crate::egui::ViewportBuilder::default()
             .with_inner_size(self.size)
-            .with_min_inner_size([1280.0, 800.0])
+            .with_min_inner_size(WINDOW_MIN)
             .with_maximized(self.maximized);
         if let Some(position) = self.position {
             builder = builder.with_position(position);

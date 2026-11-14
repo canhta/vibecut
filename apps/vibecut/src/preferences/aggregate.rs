@@ -36,10 +36,13 @@ pub const PANEL_MIN: f32 = 0.15;
 pub const PANEL_MAX: f32 = 0.40;
 pub const PREVIEW_MIN: f32 = 0.30;
 pub const PREVIEW_MAX: f32 = 0.85;
-pub const TIMELINE_MIN: f32 = 0.15;
-pub const TIMELINE_MAX: f32 = 0.70;
+pub const TIMELINE_MIN: f32 = 0.19;
+pub const TIMELINE_MAX: f32 = 0.76;
 // Widths exclude both gutters; row fractions include the area-owned strips.
-pub const DEFAULT_PANELS: [f32; 3] = [582.0 / 1696.0, 486.0 / 1696.0, 447.0 / 979.0];
+/// Measured at 1840 x 1142 logical (capture 112001, restored layout): media 398 pt,
+/// properties 390 pt of 1809 pt of columns (layout.rs: 1823 body minus two 7 pt gutters).
+/// Timeline share kept at 447 / 979 (measured ~0.46, inside the +-0.02 tolerance).
+pub const DEFAULT_PANELS: [f32; 3] = [398.0 / 1809.0, 390.0 / 1809.0, 447.0 / 979.0];
 
 /// Every user-visible preference key in the one versioned document.
 pub const PREFERENCE_KEYS: &[&str] = &[

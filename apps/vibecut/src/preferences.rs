@@ -29,7 +29,7 @@ pub use favorites::{
     SoundFavorite,
 };
 pub use font_picker::{FontPickerPreferences, FontTab};
-pub use geometry::WindowGeometry;
+pub use geometry::{WINDOW_MIN, WindowGeometry};
 pub use performance::{
     DEFAULT_CACHE_LIMIT, DEFAULT_PROJECT_FPS, HardwareAcceleration, MAX_CACHE_LIMIT,
     MIN_CACHE_LIMIT, PROJECT_FPS,
