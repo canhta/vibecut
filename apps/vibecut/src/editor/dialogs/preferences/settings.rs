@@ -100,7 +100,14 @@ fn edit_row_with(
 ) {
     ui.horizontal(|ui| {
         ui.set_min_height(ROW_PITCH);
-        let label = ui.add_sized([CAPTION_WIDTH, ROW_PITCH], egui::Label::new(caption));
+        // The reference left-aligns the caption in its 164 px column (frame 110800).
+        let label = ui
+            .allocate_ui_with_layout(
+                egui::vec2(CAPTION_WIDTH, ROW_PITCH),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| ui.label(caption),
+            )
+            .inner;
         controls(ui, &label);
     });
 }
