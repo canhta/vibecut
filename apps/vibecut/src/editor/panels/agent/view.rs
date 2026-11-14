@@ -143,20 +143,7 @@ fn header(
         ),
         egui::Vec2::splat(side),
     );
-    let clear = close.translate(egui::vec2(-(side + theme::space::XS), 0.0));
-    let idle = !state.running() && state.pending.is_none();
-    let response = cell(
-        ui,
-        clear,
-        idle && !state.entries.is_empty(),
-        "agent.clear",
-        Icon::Trash,
-        cx.tr(Text::AgentClear),
-    );
-    if response.clicked() {
-        actions.push(Action::Clear);
-    }
-    note(actions, "agent.clear", &response);
+    // Only Close sits in the header (capture 110207); Clear history lives in the input row.
     let response = cell(
         ui,
         close,
@@ -647,6 +634,22 @@ fn input(
             state.sheet = true;
         }
         note(actions, "agent.settings", &change);
+        ui.add_space(theme::space::MD);
+        // Clear history moved here from the header; it stays idle while a turn runs or a
+        // decision is pending, as it did in the header.
+        let clear = ui.add_enabled(
+            !running && !deciding && !state.entries.is_empty(),
+            egui::Button::new(
+                egui::RichText::new(cx.tr(Text::AgentClear))
+                    .size(theme::type_size::SMALL_LABEL)
+                    .color(theme::secondary(dark)),
+            )
+            .frame(false),
+        );
+        if clear.clicked() {
+            actions.push(Action::Clear);
+        }
+        note(actions, "agent.clear", &clear);
     });
 
     let box_rect = egui::Rect::from_min_max(
