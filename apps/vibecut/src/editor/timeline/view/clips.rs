@@ -62,8 +62,11 @@ impl State {
         let name =
             missing_asset.map(|asset| cx.staged_project().data().media_library.display_name(asset));
         let label = name.as_deref().unwrap_or(item.label.as_str());
-        // The clip's name reaches assistive tools and tests as the node's label.
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
+        // The clip's name reaches assistive tools and tests as the node's label; a clip with
+        // no name keeps the unnamed node it had.
+        if !label.is_empty() {
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
+        }
         let (fill, border, text) = item_palette(item.kind, dark, selected, item.overlay);
         // The relink state recolours the whole clip: body fill, red border unless selected.
         let (fill, border, text) = if missing_asset.is_some() {

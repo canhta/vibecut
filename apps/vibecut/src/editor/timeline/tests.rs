@@ -940,8 +940,9 @@ fn a_clip_whose_source_file_is_missing_draws_the_relink_state_until_replaced() {
         close(body, theme::missing_body(true)),
         "{body:?} is not the missing body fill"
     );
+    // The band's left holds the name pill (4 from the edge), so sample its right end.
     let top = image
-        .get_pixel(band.left() as u32 + 5, band.top() as u32 - 8)
+        .get_pixel(band.right() as u32 - 5, band.top() as u32 - 8)
         .0;
     assert!(
         close(top, theme::missing_band(true)),

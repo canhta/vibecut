@@ -270,9 +270,9 @@ fn settings_modal_applies_preferences_and_shortcut_transfers_through_the_picker_
             bench.editor().preferences.image_duration_unit,
             crate::preferences::ImageDurationUnit::Frames
         );
-        // 5.1 s at the default 30 fps is 153 frames; one step up is 154 frames, 5133 ms.
+        // 5.1 s at the 60 fps chosen above is 306 frames; one step up is 307 frames, 5117 ms.
         bench.click("settings.edit.image_duration.increase");
-        assert_eq!(bench.editor().preferences.image_duration_ms, 5133);
+        assert_eq!(bench.editor().preferences.image_duration_ms, 5117);
         bench.click("settings.edit.loudness_preset");
         bench.click("settings.edit.loudness_preset.tiktok");
         assert_eq!(

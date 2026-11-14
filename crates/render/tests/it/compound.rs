@@ -318,11 +318,16 @@ fn audible(compound: Option<f32>) -> Project {
 #[test]
 fn a_compound_clip_sounds_as_its_nested_mix_through_its_own_volume() {
     let hooks = Hooks::default();
+    // Two seconds, mixed as two one-second blocks (a block holds at most 65,536 frames).
     let mix = |project: &Project| {
-        mix_audio(project, 0, 96_000, 2, &mut Level(0.25), &hooks)
-            .unwrap()
-            .planes()
-            .to_vec()
+        let mut planes = vec![Vec::new(); 2];
+        for start in [0, 48_000] {
+            let block = mix_audio(project, start, 48_000, 2, &mut Level(0.25), &hooks).unwrap();
+            for (plane, part) in planes.iter_mut().zip(block.planes()) {
+                plane.extend_from_slice(part);
+            }
+        }
+        planes
     };
     let members = mix(&audible(None));
     assert_eq!(mix(&audible(Some(0.0))), members);

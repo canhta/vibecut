@@ -2026,11 +2026,10 @@ fn shown_scopes_take_a_strip_under_the_video_plotted_off_the_ui_thread() {
         widget(&h, "preview.scopes.vectorscope").rect,
     ];
     let near = |a: f32, b: f32, what: &str| assert!((a - b).abs() <= 0.5, "{what}: {a} vs {b}");
-    near(
-        strip.left(),
-        stage.left(),
-        "the strip is inset like the video area",
-    );
+    // The strip is inset 8 from the player panel's edges (391 in the 407 panel); the canvas
+    // widget is the fitted picture, narrower than the panel.
+    let panel = h.state().panels()["preview"];
+    near(strip.left(), panel.left() + 8.0, "the strip's left inset");
     for panel in panels {
         near(panel.height(), 159.0, "panel height");
         near(panel.top(), strip.top(), "panel top");

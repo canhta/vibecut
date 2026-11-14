@@ -58,73 +58,79 @@ impl View<'_> {
         // A chip click scrolls once, when its section header is drawn; the active chip is not
         // read from the scroll position in that frame.
         let jump = self.state.text_jump.take();
-        let out = egui::ScrollArea::vertical()
+        let mut list = egui::ScrollArea::vertical()
             .id_salt("text.list")
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                let top = ui.clip_rect().top();
-                let viewport = ui.clip_rect().height();
-                let mut active = None;
-                let mut last_header = 0.0;
-                let mut drawn = false;
-                for chip in TextChip::ALL {
-                    let favorites = chip == TextChip::Favorites;
-                    let members = section(&all, chip);
-                    // Favorites always shows (empty, it says so); a shelf shows when it has tiles.
-                    if members.is_empty() && !(favorites && query.trim().is_empty()) {
-                        continue;
-                    }
-                    drawn = true;
-                    let header = ui.label(
-                        egui::RichText::new(self.tr(chip.label()))
-                            .font(theme::label_font())
-                            .size(theme::type_size::SMALL_LABEL)
-                            .color(theme::text(dark)),
-                    );
-                    self.remember(format!("text.section.{}", chip.id()), &header, None);
-                    if jump == Some(chip) {
-                        ui.scroll_to_rect_animation(
-                            header.rect,
-                            Some(egui::Align::TOP),
-                            egui::style::ScrollAnimation::none(),
-                        );
-                    }
-                    if header.rect.top() <= top + 1.0 {
-                        active = Some(chip);
-                    }
-                    last_header = header.rect.top();
-                    if members.is_empty() {
-                        let response = ui.label(
-                            egui::RichText::new(self.tr(Text::AssetsFavoritesEmpty))
-                                .font(theme::label_font())
-                                .color(theme::secondary(dark)),
-                        );
-                        self.remember("text.favorites.empty", &response, None);
-                    } else {
-                        self.text_grid(ui, page, &members, favorites);
-                    }
-                    ui.add_space(theme::space::SM);
+            .auto_shrink([false, false]);
+        if let Some(offset) = jump.and_then(|chip| {
+            self.state
+                .text_section_tops
+                .iter()
+                .find(|(drawn, _)| *drawn == chip)
+                .map(|(_, offset)| *offset)
+        }) {
+            list = list.vertical_scroll_offset(offset);
+        }
+        let mut tops = Vec::new();
+        let out = list.show(ui, |ui| {
+            let top = ui.clip_rect().top();
+            let content_top = ui.max_rect().top();
+            let viewport = ui.clip_rect().height();
+            let mut active = None;
+            let mut last_header = 0.0;
+            let mut drawn = false;
+            for chip in TextChip::ALL {
+                let favorites = chip == TextChip::Favorites;
+                let members = section(&all, chip);
+                // Favorites always shows (empty, it says so); a shelf shows when it has tiles.
+                if members.is_empty() && !(favorites && query.trim().is_empty()) {
+                    continue;
                 }
-                if !drawn {
+                drawn = true;
+                let header = ui.label(
+                    egui::RichText::new(self.tr(chip.label()))
+                        .font(theme::label_font())
+                        .size(theme::type_size::SMALL_LABEL)
+                        .color(theme::text(dark)),
+                );
+                self.remember(format!("text.section.{}", chip.id()), &header, None);
+                tops.push((chip, header.rect.top() - content_top));
+                if header.rect.top() <= top + 1.0 {
+                    active = Some(chip);
+                }
+                last_header = header.rect.top();
+                if members.is_empty() {
                     let response = ui.label(
-                        egui::RichText::new(self.tr(Text::TextLibraryNoResults))
+                        egui::RichText::new(self.tr(Text::AssetsFavoritesEmpty))
                             .font(theme::label_font())
                             .color(theme::secondary(dark)),
                     );
-                    self.remember("text.empty", &response, None);
-                    return None;
+                    self.remember("text.favorites.empty", &response, None);
+                } else {
+                    self.text_grid(ui, page, &members, favorites);
                 }
-                // Room under the last section so every section can reach the top.
-                let used = ui.next_widget_position().y - last_header;
-                ui.add_space((viewport - used).max(0.0));
-                active
-            });
+                ui.add_space(theme::space::SM);
+            }
+            if !drawn {
+                let response = ui.label(
+                    egui::RichText::new(self.tr(Text::TextLibraryNoResults))
+                        .font(theme::label_font())
+                        .color(theme::secondary(dark)),
+                );
+                self.remember("text.empty", &response, None);
+                return None;
+            }
+            // Room under the last section so every section can reach the top.
+            let used = ui.next_widget_position().y - last_header;
+            ui.add_space((viewport - used).max(0.0));
+            active
+        });
         let area = ui.interact(
             out.inner_rect,
             egui::Id::unique("text.list.area"),
             egui::Sense::hover(),
         );
         self.remember("text.list", &area, None);
+        self.state.text_section_tops = tops;
         if jump.is_none()
             && let Some(active) = out.inner
         {

@@ -316,7 +316,9 @@ fn the_cover_is_rendered_at_the_columns_physical_size_and_kept_when_reopened() {
         harness.run_steps(2);
         // The 128 px thumbnail is not the sized render; the sized frame wakes the loop.
         let cover = |editor: &vibecut::Editor| editor.export_state().unwrap().inspect().cover;
-        woken.step_until(&mut harness, "the sized cover", |editor| cover(editor).is_some());
+        woken.step_until(&mut harness, "the sized cover", |editor| {
+            cover(editor).is_some()
+        });
         let size = cover(harness.state()).unwrap();
         // The column is 227 logical px wide and the canvas is 2:1.
         assert_eq!(size[0], (227.0 * scale) as usize, "width at {scale}x");

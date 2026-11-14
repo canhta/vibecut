@@ -148,6 +148,9 @@ pub(in crate::editor) struct State {
     /// waiting to scroll the list there.
     pub(super) text_active: super::catalog::text::TextChip,
     pub(super) text_jump: Option<super::catalog::text::TextChip>,
+    /// Each drawn section header's distance from the top of the list content, from the last
+    /// frame: a chip click scrolls the list by exactly that much.
+    pub(super) text_section_tops: Vec<(super::catalog::text::TextChip, f32)>,
     pub(super) text_commercial: bool,
     /// Stickers tab: the category tab, whether See all widened the results, and the thumbnails.
     pub(super) sticker_tab: super::stickers::StickerTab,
@@ -230,6 +233,7 @@ impl Default for State {
             text_page: Default::default(),
             text_active: super::catalog::text::TextChip::Favorites,
             text_jump: None,
+            text_section_tops: Vec::new(),
             text_commercial: false,
             sticker_tab: Default::default(),
             sticker_expanded: false,

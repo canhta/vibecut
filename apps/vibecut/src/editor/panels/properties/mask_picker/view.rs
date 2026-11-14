@@ -336,19 +336,25 @@ fn grid(
 ) {
     let (dark, item, mask) = (page.dark, page.item, page.mask);
     let selected = mask.and_then(|mask| Choice::of(&mask.shape));
+    // A row narrower than `per_row` full tiles shrinks the tiles so the row still fits.
+    let gaps = TILE_GAP * page.per_row.saturating_sub(1) as f32;
+    let side = TILE
+        .min(((ui.available_width() - gaps) / page.per_row.max(1) as f32).floor())
+        .max(1.0);
+    let label_height = CELL_HEIGHT - TILE - 2.0;
     for row in Choice::ALL.chunks(page.per_row) {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = TILE_GAP;
             for choice in row {
                 let (cell, response) = ui.allocate_exact_size(
-                    Vec2::new(TILE, CELL_HEIGHT),
+                    Vec2::new(side, side + 2.0 + label_height),
                     if locked {
                         Sense::hover()
                     } else {
                         Sense::click()
                     },
                 );
-                let tile = Rect::from_min_size(cell.min, Vec2::splat(TILE));
+                let tile = Rect::from_min_size(cell.min, Vec2::splat(side));
                 let active = selected == Some(*choice);
                 let fill = if active || response.hovered() {
                     theme::hover(dark)
@@ -368,7 +374,7 @@ fn grid(
                 glyph(ui, tile, *choice, dark);
                 let label_rect = Rect::from_min_size(
                     egui::pos2(cell.left(), tile.bottom() + 2.0),
-                    Vec2::new(TILE, CELL_HEIGHT - TILE - 2.0),
+                    Vec2::new(side, label_height),
                 );
                 let mut label_ui = ui.new_child(
                     egui::UiBuilder::new()

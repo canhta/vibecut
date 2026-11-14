@@ -2311,6 +2311,7 @@ fn effect_and_adjustment_layers_nest_a_mask_page_in_their_segmented_bar() {
         mask_of(&harness, layer).unwrap().shape,
         project::MaskShape::Ellipse
     );
+    reveal(&mut harness, "inspector.mask.feather");
     enter(&mut harness, "inspector.mask.feather", "30");
     assert_eq!(mask_of(&harness, layer).unwrap().feather, 30.0);
     // The checkbox switches the mask off and on, one `masks.update` step each.
@@ -2424,6 +2425,7 @@ fn the_adjust_tab_mask_sub_tab_edits_an_adjust_mask_apart_from_the_clip_mask() {
         .expect("Add mask adds an Adjust mask");
     assert_eq!(adjust.id, "adjust1");
     assert!(scoped_mask(&harness, fixture.video, project::MaskScope::Clip).is_none());
+    reveal(&mut harness, "inspector.mask.shape.heart");
     click(&mut harness, "inspector.mask.shape.heart");
     assert_eq!(
         scoped_mask(&harness, fixture.video, project::MaskScope::Adjust)

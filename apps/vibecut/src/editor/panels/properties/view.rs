@@ -1218,7 +1218,9 @@ impl<'a, 'c> Panel<'a, 'c> {
         // inline and have no popover.
         let mask_shown =
             shows_mask_row(active) && matches!(kind, ElementKind::Video | ElementKind::Image);
-        if !mask_shown {
+        // Closing drops the drafts, so only an open popover closes: the inline pages keep
+        // their typed fields.
+        if !mask_shown && self.state.mask.is_open() {
             self.state.mask.close();
         }
         // Transform and blending share one top tab with segmented sub-tabs.

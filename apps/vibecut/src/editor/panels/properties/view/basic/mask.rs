@@ -185,16 +185,6 @@ impl Panel<'_, '_> {
                 shape: mask_picker::Choice::Rectangle.shape(),
             }));
         }
-        // No mask yet: the page says so above its grey tiles; Add mask is its call-to-action.
-        if mask.is_none() {
-            ui.add_space(theme::space::MD);
-            self.empty_face(
-                ui,
-                "inspector.mask.empty",
-                kit::Icon::CircleHalf,
-                Text::MaskNone,
-            );
-        }
         ui.add_space(theme::space::MD);
         let timing = read::item(project, item).and_then(|found| {
             let (start, end) = read::range_of(project, item)?;
@@ -217,6 +207,17 @@ impl Panel<'_, '_> {
             inline: true,
         };
         let event = mask_picker::inline(&mut self.state.mask, ui, &page);
+        // No mask yet: the page says so where the mask's fields go, under the grey tiles, so
+        // the tiles keep their place; Add mask is its call-to-action.
+        if mask.is_none() {
+            ui.add_space(theme::space::MD);
+            self.empty_face(
+                ui,
+                "inspector.mask.empty",
+                kit::Icon::CircleHalf,
+                Text::MaskNone,
+            );
+        }
         for (id, response) in event.widgets {
             self.remember(id, &response);
         }

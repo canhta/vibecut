@@ -255,17 +255,33 @@ pub(super) fn show(
         })
     };
 
-    if mask_box::drive(
-        &mut state.gizmo,
-        cx,
-        ui,
-        viewport,
-        frame,
-        pointer,
-        down,
-        shift,
-        actions,
-    ) {
+    // A pointer on a keyframe diamond belongs to the diamond: the whole-mask gizmo under it
+    // must not take the press, or the diamond never sees its click.
+    let on_diamond = pointer.is_some_and(|pointer| {
+        target
+            .path
+            .vertices
+            .iter()
+            .enumerate()
+            .any(|(index, vertex)| {
+                selected(index)
+                    && diamond_cell(&target, viewport, vertex.p)
+                        .is_some_and(|cell| cell.contains(pointer))
+            })
+    });
+    if !on_diamond
+        && mask_box::drive(
+            &mut state.gizmo,
+            cx,
+            ui,
+            viewport,
+            frame,
+            pointer,
+            down,
+            shift,
+            actions,
+        )
+    {
         paint(ui, &target, viewport, &selected, cx.dark, None);
         return true;
     }
@@ -332,9 +348,10 @@ pub(super) fn show(
     let Some(pointer) = pointer else {
         return false;
     };
-    // A press on a keyframe diamond belongs to the diamond, not the canvas beneath it.
+    // A pointer on a keyframe diamond belongs to the diamond, not the canvas or the item
+    // handles beneath it, so the mask path handles it.
     if diamonds.iter().any(|cell| cell.contains(pointer)) {
-        return false;
+        return true;
     }
     if !pressed || !(canvas.is_pointer_button_down_on() || frame.contains(pointer)) {
         return false;
@@ -625,13 +642,9 @@ fn key_diamonds(
         if !selected(index) {
             continue;
         }
-        let Ok([x, y]) = target.geometry.point(viewport, vertex.p) else {
+        let Some(cell) = diamond_cell(target, viewport, vertex.p) else {
             continue;
         };
-        let cell = egui::Rect::from_center_size(
-            egui::pos2(x as f32, y as f32) + DIAMOND_OFFSET,
-            Vec2::splat(kit::size::KEYFRAME_TOGGLE_CELL),
-        );
         let keyed = target.keyed(index);
         let label = crate::i18n::text(
             cx.locale,
@@ -652,7 +665,14 @@ fn key_diamonds(
             },
         );
         cells.push(cell);
-        if target.inside && response.clicked() {
+        let clicked = response.clicked();
+        actions.push(Action::Remember {
+            id: format!("preview.mask.point.{index}.keyframe"),
+            icon: None,
+            tooltip: None,
+            response,
+        });
+        if target.inside && clicked {
             // Adding keys only the fields without one here; removing drops all six.
             let fields = MASK_POINT_FIELDS
                 .iter()
@@ -672,6 +692,15 @@ fn key_diamonds(
         }
     }
     cells
+}
+
+/// The keyframe diamond's cell beside the anchor at `p`.
+fn diamond_cell(target: &Target, viewport: &Viewport, p: [f64; 2]) -> Option<egui::Rect> {
+    let [x, y] = target.geometry.point(viewport, p).ok()?;
+    Some(egui::Rect::from_center_size(
+        egui::pos2(x as f32, y as f32) + DIAMOND_OFFSET,
+        Vec2::splat(kit::size::KEYFRAME_TOGGLE_CELL),
+    ))
 }
 
 fn clamp(value: f64) -> f64 {
