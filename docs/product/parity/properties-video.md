@@ -39,7 +39,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | PVID-22 | Smart brush, Smart eraser | Missing | Not captured | 104720-104726 | Model-backed |
 | PVID-23 | Custom removal Size 1-100 | Done | Matches | 100332-100347 | |
 | PVID-24 | Custom removal Apply | Partial | Differs | 100402-100407 | Ours paints live |
-| PVID-25 | Chroma key eyedropper | Done | Proposed | 104920-104926 | |
+| PVID-25 | Chroma key eyedropper | Done | Proposed | 104920-104926 | The Chroma key row is a checkbox left of its label, as Auto/Custom removal |
 | PVID-26 | Chroma Intensity, Shadow | Done | Proposed | 104911, 151402 | |
 | PVID-27 | Chroma Feather, Clean up edge | Partial | Proposed | 151342-151410 | Clean up = spill suppression; ramps and Feather curve open |
 | PVID-28 | Chroma controls grey until pick | Done | Proposed | 104911 | |
@@ -69,7 +69,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | PVID-40 | Duration field | Done | Proposed | 100018 | |
 | PVID-41 | Change audio pitch | Done | Proposed | 100036 | |
 | PVID-42 | Reset button label | Done | Matches | 221757 | |
-| PVID-43 | Curve presets (8) | Done | Proposed | 100057 | Six per row; long names crowd at 1440 px |
+| PVID-43 | Curve presets (8) | Done | Proposed | 100057 | Six per row; names wrap to two lines or step down in size inside the tile and gap |
 | PVID-44 | Curve plot, points, Reset, + | Done | Proposed | 100104-100108 | |
 | PVID-45 | Smooth slow-mo | Missing | Not captured | 100036 | Optical flow |
 | PVID-46 | Reverse switch | Ours | Proposed | | |

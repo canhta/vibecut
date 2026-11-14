@@ -9,6 +9,9 @@ use time::Speed;
 const TILE: f32 = 62.0;
 const TILE_GAP: f32 = 16.0;
 const NAME_BAND: f32 = 23.0;
+/// Space kept between neighbouring names, and the smallest type a long single word shrinks to.
+const NAME_MARGIN: f32 = 2.0;
+const NAME_MIN_SIZE: f32 = 9.0;
 const MAX_COLUMNS: usize = 6;
 /// The reference body is 493 px wide (capture 100104). A narrower body scales the tiles, their
 /// gap and the plot height by its width over that, so six tiles still share a row.
@@ -294,13 +297,35 @@ impl Panel<'_, '_> {
             clicked = response.clicked() && !selected;
             let (band, _) =
                 ui.allocate_exact_size(egui::vec2(tile, NAME_BAND), egui::Sense::hover());
-            ui.painter().text(
-                egui::pos2(band.center().x, band.top() + 10.5),
-                egui::Align2::CENTER_CENTER,
-                label,
-                theme::label_font(),
-                self.text_color(),
+            // The name may use the tile and half the gap each side, so neighbours never touch;
+            // a longer name wraps to two lines, and a single long word steps the type down.
+            let reach = tile + TILE_GAP * k - NAME_MARGIN;
+            let galley = [theme::type_size::BODY, 11.0, 10.0, NAME_MIN_SIZE]
+                .into_iter()
+                .map(|size| {
+                    let mut font = theme::label_font();
+                    font.size = size;
+                    let mut job = egui::text::LayoutJob::simple(
+                        label.to_owned(),
+                        font,
+                        self.text_color(),
+                        reach,
+                    );
+                    job.halign = egui::Align::Center;
+                    ui.painter().layout_job(job)
+                })
+                .find(|galley| galley.rect.width() <= reach + 0.5)
+                .unwrap_or_else(|| {
+                    let mut font = theme::label_font();
+                    font.size = NAME_MIN_SIZE;
+                    ui.painter()
+                        .layout(label.to_owned(), font, self.text_color(), reach)
+                });
+            let at = egui::pos2(
+                band.center().x - galley.rect.center().x,
+                band.top() + 1.0,
             );
+            ui.painter().galley(at, galley, self.text_color());
         });
         clicked
     }

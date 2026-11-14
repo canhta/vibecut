@@ -1,10 +1,9 @@
 //! Draws the Remove BG sub-tab: the Auto removal checkbox with its feather and analysis state, then
-//! the Chroma key switch and its keyed controls.
+//! the Chroma key checkbox and its keyed controls.
 use super::super::Panel;
 use crate::editor::properties::{
     Action, ColorTarget, Icon, ItemId, ScrubSpec, Text, egui, read, theme,
 };
-use crate::kit;
 use engine::footage::CorrectionKind;
 
 /// Distance between the centres of neighbouring tool icons, measured in the reference.
@@ -205,16 +204,7 @@ impl Panel<'_, '_> {
         let staged = self.state.chroma_staged == Some(item);
         let on = existing.as_ref().is_some_and(|(_, enabled)| *enabled) || staged;
         let mut value = on;
-        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
-        self.row_label(ui, row, self.tr(Text::ChromaKey));
-        let width = value_ui.available_width();
-        value_ui.add_space((width - theme::size::TOGGLE_WIDTH).max(0.0));
-        let response = kit::toggle(
-            &mut value_ui,
-            "inspector.chroma_key.toggle",
-            &mut value,
-            self.tr(Text::ChromaKey),
-        );
+        let response = self.checkbox_row(ui, Text::ChromaKey, &mut value);
         self.remember("inspector.chroma_key.toggle", &response);
         if response.clicked() {
             self.actions

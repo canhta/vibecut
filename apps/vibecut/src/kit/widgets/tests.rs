@@ -186,3 +186,30 @@ fn stop_mapping_is_piecewise_between_evenly_spaced_stops() {
     assert_eq!(stop_value(&stops, 1.0), 100.0);
     assert_eq!(stop_value(&stops, 0.0), 0.1);
 }
+
+/// The player `Full` / `Ratio` labels are outlined in body ink (221643: a 1 px box hugging the
+/// label, no fill); the selected-label ink fix must leave them alone.
+#[test]
+fn badge_button_is_an_unfilled_outline_in_body_ink() {
+    for dark in [true, false] {
+        let ctx = egui::Context::default();
+        crate::kit::install_fonts(&ctx);
+        crate::kit::install_theme(&ctx, dark);
+        let mut output = ctx.run_ui(Default::default(), |ui| {
+            badge_button(ui, "badge", "Full");
+        });
+        output.textures_delta.clear();
+        let rects: Vec<_> = output
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Rect(rect) => Some(rect.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(rects.len(), 1, "dark={dark}");
+        assert_eq!(rects[0].fill, egui::Color32::TRANSPARENT, "dark={dark}");
+        assert_eq!(rects[0].stroke.color, theme::text(dark), "dark={dark}");
+        assert_eq!(rects[0].stroke.width, space::HAIRLINE, "dark={dark}");
+    }
+}
