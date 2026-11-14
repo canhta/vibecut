@@ -616,6 +616,7 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("stickers.search", Effect::Read, true, true),
         ("text.apply_preset", Effect::Edit, true, true),
         ("text.save_preset", Effect::Edit, true, true),
+        ("transcript.analyze", Effect::Read, true, true),
         ("transcript.delete_range", Effect::Edit, true, true),
         ("transcript.merge_cues", Effect::Edit, true, true),
         ("transcript.search", Effect::Read, true, true),

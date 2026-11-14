@@ -47,6 +47,22 @@ non-adjacent cues) keeps the selection, changes nothing and shows its reason; su
 selection and parks the playhead at the earliest cut word. Each command is one undo step. The
 pane pages by 50 cues like the cue list. Placement and states: [transcript pane](../../../../../../../docs/product/ui/editor.md#transcript-pane) [proposed].
 
+`review.rs` is the transcript review under the pane's header. Identify pauses and repeats clones the
+pane's `TranscriptView` and runs `engine::analyze_transcript` (the read behind `transcript.analyze`)
+on a `wake::spawn` worker; the analyzing modal (`dialogs`) shows while that run is open, and Cancel
+drops the run so its late result has no receiver. `tick` takes the result only for the project
+snapshot it was read from. A review belongs to one snapshot: any other edit, undo or redo closes it,
+and its own edits read the transcript again with the same minimum. The gap minimum (default 500 ms)
+is session state. Delete sends the ticked words as `transcript.delete_range` and the ticked pauses as
+`timeline.remove_pauses` in one `batch`, one undo step. Both are computed against the timeline the
+review was read from: a pause span moves back by the length of the merged word runs that end before
+it, so no word is looked up again. Remove gaps sends every listed gap as one `timeline.remove_pauses`.
+The review has no history of
+its own; its Undo and Redo buttons are `undo` and `redo`. Show deleted words keeps the words of each
+cut made through the pane together with the undo depth after it, and drops an entry once that cut
+leaves the history. Create compound clip is disabled until ticket 533. Design:
+[transcript review](../../../../../../../docs/product/ui/editor.md#transcript-review).
+
 The spoken-language select lists Auto plus every language the configured ASR adapters
 accept. Auto is the default; a project's explicit choice is stored in
 `SubtitleOptions::project_sources`, so another project starts from Auto. Auto runs the local

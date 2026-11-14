@@ -116,6 +116,8 @@ impl Subtitles {
         let code = self.time_code;
         let timecode = |tick: Tick| code.format(tick, rate);
         let mut cut = false;
+        let mut analyze = false;
+        let mut deleted = false;
         let mut merge = false;
         let mut previous = false;
         let mut next = false;
@@ -141,10 +143,39 @@ impl Subtitles {
                 ready && self.item.is_some() && self.selected.len() > 1,
                 locale,
             );
+            analyze = icon_button(
+                ui,
+                widgets,
+                "subtitles.review.analyze",
+                Text::SubReviewAnalyze,
+                Icon::Sparkle,
+                ready && self.review_idle(),
+                locale,
+            );
+            deleted = icon_button(
+                ui,
+                widgets,
+                "subtitles.review.deleted",
+                if self.review_deleted_shown() {
+                    Text::SubReviewDeletedHide
+                } else {
+                    Text::SubReviewDeletedShow
+                },
+                Icon::ListBullets,
+                true,
+                locale,
+            );
         });
+        if analyze {
+            self.review_start(session);
+        }
+        if deleted {
+            self.review_toggle_deleted();
+        }
         if let Some(text) = self.transcript.refusal {
             ui.colored_label(theme::error_text(dark), i18n::text(locale, text));
         }
+        self.review_ui(ui, session, locale, dark, widgets);
         if view.cues.is_empty() {
             ui.horizontal(|ui| {
                 ui.add(tinted(Icon::Subtitles, 16.0, theme::text(dark)));
@@ -407,6 +438,11 @@ impl Subtitles {
             Ok(outcome) => {
                 self.transcript.refusal = None;
                 if outcome.changed {
+                    self.review.record_deleted(
+                        &view,
+                        self.transcript.words.iter(),
+                        session.history_len().0,
+                    );
                     self.transcript.clear_words();
                     if let Some(at) = at {
                         self.requested_seek = Some(at);
@@ -461,7 +497,7 @@ fn item_elsewhere(data: &project::ProjectData, item: ItemId, scene: project::Sce
 }
 
 /// The creator-facing reason for a refused transcript command.
-fn refusal(error: &EditError) -> Text {
+pub(super) fn refusal(error: &EditError) -> Text {
     match error {
         EditError::Protected => Text::SubTranscriptProtected,
         EditError::SceneBoundary => Text::SubTranscriptScene,
@@ -473,13 +509,13 @@ fn refusal(error: &EditError) -> Text {
     }
 }
 
-fn remember(widgets: &mut Vec<(String, egui::Response)>, id: String, r: &egui::Response) {
+pub(super) fn remember(widgets: &mut Vec<(String, egui::Response)>, id: String, r: &egui::Response) {
     r.ctx.accesskit_node_builder(r.id, |n| n.set_author_id(&id));
     widgets.push((id, r.clone()));
 }
 
 /// Icon-only button with its tooltip; the same 28 px box the cue tools use.
-fn icon_button(
+pub(super) fn icon_button(
     ui: &mut egui::Ui,
     widgets: &mut Vec<(String, egui::Response)>,
     id: &str,

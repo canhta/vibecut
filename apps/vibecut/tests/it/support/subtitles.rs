@@ -86,6 +86,44 @@ pub fn verified_cues() -> CueTrack {
     track
 }
 
+/// Three English cues of measured words, 1-3 s, 4-6 s and 7-9 s: the first and last open with a
+/// repeated word, and a one second silence separates each pair.
+pub fn review_cues() -> CueTrack {
+    let mut track = cues("en");
+    for (cue, text) in track.cues.iter_mut().zip(["go go now", "good day", "so so far"]) {
+        let language = cue.source_lang.clone();
+        cue.texts.insert(
+            language.clone(),
+            CueText {
+                text: text.into(),
+                edited: false,
+                translation_ref: None,
+            },
+        );
+        let words: Vec<&str> = text.split(' ').collect();
+        let step = (cue.range.end().0 - cue.range.start().0) / words.len() as i64;
+        let mut at = 0;
+        let mut records = Vec::new();
+        for (index, word) in words.iter().enumerate() {
+            let start = Tick(cue.range.start().0 + step * index as i64);
+            let range = SourceRange::new(start, Tick(start.0 + step)).unwrap();
+            records.push(captions::VerifiedCueWord {
+                bytes: at..at + word.len(),
+                source_range: range,
+                projection: captions::WordProjection::Visible(range),
+                provenance: captions::TimingProvenance::Native,
+            });
+            at += word.len() + 1;
+        }
+        cue.word_timing = captions::CueWordTiming::Words {
+            language,
+            text: text.into(),
+            records,
+        };
+    }
+    track
+}
+
 pub fn insert(track: CueTrack) -> Command {
     Command::InsertItem {
         placement: engine::Placement::Auto,

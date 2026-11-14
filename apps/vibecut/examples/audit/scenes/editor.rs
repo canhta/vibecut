@@ -118,6 +118,36 @@ pub(super) fn caption_word_scene(
     captions_editor(theme, scale, locale, editor, true, true)
 }
 
+/// The transcript review after Identify pauses and repeats finished: gap card, tabs, rows,
+/// mini timeline and footer.
+pub(super) fn captions_review_scene(
+    theme: Theme,
+    scale: f32,
+    locale: Locale,
+) -> Result<AppHarness, Failure> {
+    let mut editor = subtitles_fixture::editor_with_cues("en", subtitles_fixture::review_cues());
+    editor.preferences = preferences(theme, locale);
+    editor.preferences.assets_tab = vibecut::AssetsTab::Captions;
+    editor.prepare_subtitles()?;
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, [1280.0, 800.0]);
+    app.run_steps(4);
+    app.get(By::new().predicate(|node| node.author_id() == Some("subtitles.review.analyze")))
+        .click();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while app
+        .query_all(By::new().predicate(|node| node.author_id() == Some("subtitles.review.tab.all")))
+        .next()
+        .is_none()
+    {
+        if Instant::now() > deadline {
+            return Err("the transcript analysis did not finish".into());
+        }
+        app.run_steps(1);
+    }
+    app.run_steps(3);
+    Ok(app)
+}
+
 fn captions_editor(
     theme: Theme,
     scale: f32,

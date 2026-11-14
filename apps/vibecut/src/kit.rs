@@ -22,7 +22,7 @@ pub(crate) use theme::{
     type_size, video_border, video_fill, warning, waveform, window,
 };
 pub(crate) use widgets::{
-    KeyframeControl, KeyframeToggle, action_button, badge_button, checkbox, dashed_outline,
+    KeyframeControl, KeyframeToggle, action_button, badge_button, checkbox, checkbox_box, dashed_outline,
     icon_button, icon_tab, keyframe_cluster, keyframe_toggle, rail_slider, rail_stops_slider,
     section_header_with, segmented, stepper, text_tabs, toggle, transport_button, value_field,
     zoom_rail,

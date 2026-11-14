@@ -871,6 +871,26 @@ pub(crate) fn checkbox(ui: &mut Ui, id: &str, value: &mut bool, label: &str) -> 
     response.on_hover_text(label)
 }
 
+/// A 12 px checkbox alone, for rows that draw their own text; `label` is its accessible name.
+pub(crate) fn checkbox_box(ui: &mut Ui, id: &str, value: &mut bool, label: &str) -> Response {
+    let dark = ui.visuals().dark_mode;
+    let (rect, mut response) =
+        ui.allocate_exact_size(Vec2::splat(size::FIELD), Sense::click());
+    if response.clicked() {
+        *value = !*value;
+        response.mark_changed();
+    }
+    let boxed = Rect::from_center_size(rect.center(), Vec2::splat(size::CHECKBOX));
+    paint_checkbox(ui, boxed, *value, dark);
+    let on = *value;
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::Role::CheckBox, ui.is_enabled(), on, label)
+    });
+    author(&response, id);
+    focus_ring(ui, &response);
+    response
+}
+
 /// A 36x16 switch. The caller owns the value; the response carries the click.
 pub(crate) fn toggle(ui: &mut Ui, id: &str, value: &mut bool, label: &str) -> Response {
     let dark = ui.visuals().dark_mode;

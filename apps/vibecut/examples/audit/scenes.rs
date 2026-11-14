@@ -256,6 +256,18 @@ pub(super) const SCENES: &[Scene] = &[
         build: |theme, scale| caption_word_scene(theme, scale, Locale::Vi),
     },
     Scene {
+        name: "captions-review",
+        reference_dark: Some("capcut-desktop-2026-11-14b/capcut-desktop-110059.png"),
+        reference_light: None,
+        build: |theme, scale| captions_review_scene(theme, scale, Locale::En),
+    },
+    Scene {
+        name: "captions-review-vi",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| captions_review_scene(theme, scale, Locale::Vi),
+    },
+    Scene {
         name: "captions-editor",
         reference_dark: Some("live/06-text-captions/shots/web/06-web-captions-panel.png"),
         reference_light: Some("live/06-text-captions/shots/web/06-web-captions-panel.png"),
@@ -963,7 +975,8 @@ mod shorts;
 mod timeline;
 use assets::assets_scene;
 use editor::{
-    caption_word_scene, captions_scene, editor_empty, editor_frame_state, editor_media,
+    caption_word_scene, captions_review_scene, captions_scene, editor_empty, editor_frame_state,
+    editor_media,
     editor_transitions, export_audio_only, export_custom_bit_rate, export_dialog, export_gif,
     export_resolution, import_progress, models, models_vi, player_scene, player_variant,
     settings_dialog,

@@ -78,13 +78,16 @@ fn track(id: u64, locked: bool, items: Vec<Item>) -> Track {
     }
 }
 fn caption_session(tracks: Vec<Track>) -> Session {
+    caption_session_for(tracks, Tick(2000))
+}
+fn caption_session_for(tracks: Vec<Track>, duration: Tick) -> Session {
     let mut data = Project::empty(ProjectId(0), "Phụ đề".into())
         .unwrap()
         .into_data();
     data.assets.push(
         testkit::source::asset(7, std::env::temp_dir().join("transcript-words.mp4"))
             .format("mp4")
-            .duration(Tick(2000))
+            .duration(duration)
             .content_hash(ContentHash::from_bytes(b"words"))
             .build(),
     );
@@ -1063,4 +1066,120 @@ fn transcript_merge_refuses_non_adjacent_cross_track_cross_item_and_protected_at
         Err(EditError::SceneBoundary)
     ));
     assert_unchanged(&two_scenes, &bytes, &revision);
+}
+
+fn analysis_session(text: &str, words: &[(i64, i64)]) -> Session {
+    caption_session(vec![track(
+        1,
+        false,
+        vec![caption_item(
+            4,
+            0,
+            (0, 1000),
+            vec![cue("c1", 0, 1000, text, words)],
+        )],
+    )])
+}
+fn word(index: usize) -> WordId {
+    WordId {
+        item: ItemId(4),
+        cue: "c1".into(),
+        word: index,
+    }
+}
+
+#[test]
+fn analysis_reports_silences_from_the_minimum_and_folds_case_for_a_repeated_word() {
+    let s = analysis_session("Go go now", &[(100, 200), (210, 300), (900, 1000)]);
+    let before = s.project().clone();
+    let analysis = engine::analyze_transcript(&s.transcript().unwrap(), Tick(300));
+    assert_eq!(
+        analysis.gaps.len(),
+        1,
+        "the 10 tick silence is below the minimum"
+    );
+    let gap = &analysis.gaps[0];
+    assert_eq!((gap.span.start, gap.span.end), (Tick(300), Tick(900)));
+    assert_eq!((&gap.before, &gap.after), (&word(1), &word(2)));
+    assert_eq!(analysis.repeats.len(), 1);
+    let repeat = &analysis.repeats[0];
+    assert_eq!(
+        repeat.words,
+        vec![word(0)],
+        "the first occurrence is the candidate"
+    );
+    assert_eq!(repeat.text.as_str(), "Go");
+    assert_eq!((repeat.span.start, repeat.span.end), (Tick(100), Tick(200)));
+    assert_eq!(*s.project(), before, "analysis changes nothing");
+}
+
+#[test]
+fn analysis_reports_a_repeated_phrase_once_and_no_gap_for_touching_words() {
+    let s = analysis_session(
+        "a b a b c",
+        &[(0, 100), (100, 200), (200, 300), (300, 400), (400, 500)],
+    );
+    let analysis = engine::analyze_transcript(&s.transcript().unwrap(), Tick(1));
+    assert!(analysis.gaps.is_empty());
+    assert_eq!(analysis.repeats.len(), 1);
+    assert_eq!(analysis.repeats[0].words, vec![word(0), word(1)]);
+    assert_eq!(analysis.repeats[0].text.as_str(), "a b");
+    assert_eq!(
+        (analysis.repeats[0].span.start, analysis.repeats[0].span.end),
+        (Tick(0), Tick(200))
+    );
+}
+
+#[test]
+fn analyze_command_reads_gaps_and_repeats_and_refuses_a_zero_minimum() {
+    use crate::support::control::{ok, run, runner};
+    use engine::control::{ControlResult, ResponseValue};
+    use time::TICKS_PER_SECOND as second;
+    let at = |seconds: i64| seconds * second;
+    let mut s = caption_session_for(
+        vec![track(
+            1,
+            false,
+            vec![caption_item(
+                4,
+                0,
+                (0, at(10)),
+                vec![cue(
+                    "c1",
+                    0,
+                    at(10),
+                    "go go now",
+                    &[(0, at(1)), (at(1), at(2)), (at(5), at(6))],
+                )],
+            )],
+        )],
+        Tick(at(10)),
+    );
+    let mut r = runner();
+    let before = s.project().clone();
+    let result = ok(run(
+        &mut s,
+        &mut r,
+        "transcript.analyze",
+        serde_json::json!({"min_gap_ms": 500}),
+        "analyze-1",
+    ));
+    let ControlResult::TranscriptAnalysis { gaps, repeats } = result else {
+        panic!("expected a transcript analysis");
+    };
+    assert_eq!(gaps.len(), 1);
+    assert_eq!(
+        (gaps[0].span.start, gaps[0].span.end),
+        (Tick(at(2)), Tick(at(5)))
+    );
+    assert_eq!(repeats.len(), 1);
+    let refused = run(
+        &mut s,
+        &mut r,
+        "transcript.analyze",
+        serde_json::json!({"min_gap_ms": 0}),
+        "analyze-2",
+    );
+    assert!(matches!(refused.value, ResponseValue::Error(_)));
+    assert_eq!(*s.project(), before, "a read never edits");
 }

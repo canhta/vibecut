@@ -642,6 +642,7 @@ impl Subtitles {
             widgets: Vec::new(),
         };
         self.consent_ui(ctx, &mut controls);
+        self.analyzing_ui(ctx, &mut controls);
         controls.widgets
     }
     /// Auto captions: spoken language, the bilingual choice, the filler switch and our
