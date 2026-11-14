@@ -402,13 +402,15 @@ fn details_rows_and_info_section_collapse_and_persist() {
         std::thread::sleep(std::time::Duration::from_millis(5));
         saving.tick().unwrap();
     }
+    // The session reports the resolved location (macOS temp dirs sit behind /var -> /private/var).
+    let shown = saving.saved_path().unwrap().display().to_string();
     let mut saved = editor_with(project, Preferences::default());
     saved.session = vibecut::services::lifecycle::EditorSession::Persistent(Box::new(saving));
     let mut harness = build(saved);
     harness.run_steps(3);
     click(&mut harness, "inspector.details");
     harness.get_by_label("Path:");
-    harness.get_by_label(&saved_path.display().to_string());
+    harness.get_by_label(&shown);
 
     // The light and dark screenshots of the Details view; dark also goes to the ticket name.
     for (dark, name) in [(true, "dark"), (false, "light")] {
