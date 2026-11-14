@@ -179,9 +179,27 @@ pub(super) const SCENES: &[Scene] = &[
     },
     Scene {
         name: "assets-text",
-        reference_dark: None,
+        reference_dark: Some("capcut-desktop-2026-11-14b/capcut-desktop-103727.png"),
         reference_light: None,
         build: |theme, scale| assets_scene(theme, scale, "text"),
+    },
+    Scene {
+        name: "assets-text-vi",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| assets_scene(theme, scale, "text-vi"),
+    },
+    Scene {
+        name: "assets-text-templates",
+        reference_dark: Some("capcut-desktop-2026-11-14b/capcut-desktop-104218.png"),
+        reference_light: None,
+        build: |theme, scale| assets_scene(theme, scale, "text-templates"),
+    },
+    Scene {
+        name: "assets-text-favorites",
+        reference_dark: Some("capcut-desktop-2026-11-14b/capcut-desktop-104218.png"),
+        reference_light: None,
+        build: |theme, scale| assets_scene(theme, scale, "text-favorites"),
     },
     Scene {
         name: "assets-loading",

@@ -52,7 +52,7 @@ pub(super) fn assets_scene(theme: Theme, scale: f32, state: &str) -> Result<AppH
         "effects" => vibecut::AssetsTab::Effects,
         "filters" => vibecut::AssetsTab::Filters,
         "transitions" => vibecut::AssetsTab::Transitions,
-        "text" => vibecut::AssetsTab::Text,
+        "text" | "text-templates" | "text-favorites" => vibecut::AssetsTab::Text,
         "captions" => vibecut::AssetsTab::Captions,
         "offline" => vibecut::AssetsTab::Sounds,
         "music" => vibecut::AssetsTab::Sounds,
@@ -138,6 +138,18 @@ pub(super) fn assets_scene(theme: Theme, scale: f32, state: &str) -> Result<AppH
         app.get(By::new().predicate(|node| node.author_id() == Some("audio.section.music")))
             .click();
         app.run_steps(40);
+    }
+    // The Text library's other states: the Templates page, and the favourites list with one
+    // starred style.
+    let text_clicks: &[&str] = match state {
+        "text-templates" => &["text.page.templates"],
+        "text-favorites" => &["text.favorite.styles.clean_white", "text.chip.favorites"],
+        _ => &[],
+    };
+    for id in text_clicks {
+        app.get(By::new().predicate(|node| node.author_id() == Some(*id)))
+            .click();
+        app.run_steps(3);
     }
     if phase3 {
         if let App::Assets(editor) = &mut app.state_mut().app {

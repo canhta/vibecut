@@ -40,6 +40,14 @@ A card or its plus applies to two adjacent selected video clips, or to the cut u
 Media rows, import feedback and marquee selection: [assets workflow](workflow/README.md).
 Sounds rows: [sounds](sounds/README.md).
 
+## Text library
+
+The Text tab is the library of bundled text looks and templates ([`text`](text.rs) owns the rows, `view/text.rs` draws them). Two pages, `Styles` and `Templates`, a search field, a chip row (a Favorites chip, the five look shelves Plain, Outline, Shadow, Glow and Label, then the `All` and `Commercial` filter chips) and a tile grid. A shelf chip lists that shelf and choosing it again lists everything; the Favorites chip lists the starred entries or says `Star an item to find it here`; no match says `No matches`. Search matches the translated and the English name. Everything is bundled data, so the tab works offline. `Commercial` keeps the entries whose recorded licence passes `project::is_commercial_license`: every look and template carries `OFL-1.1` (the families are curated OFL), so today it hides nothing, and an entry without a commercial licence added later drops out of it.
+
+A Styles tile applies its look to the selected text items through `text.apply_preset` (one undo step, words kept); with no text item selected its fill dims, its tooltip says `Select a text clip first`, and a click changes nothing. A Templates tile inserts one new text item at the playhead through `text.insert_template` (five seconds long, the look's style, the template's words in the interface language at its vertical position, selected afterwards, one undo step); it is refused while insertion is unavailable. Both pages star through `catalog.favorite.set` in the families `text_looks` and `text_templates`, kept in the app preferences. `text.search` is the agent's read of the same catalogue.
+
+Tiles use the measured Text Effects grid, 61 px tiles on a 78 px column pitch and an 80 px row pitch (`theme::size::TEXT_*`, [editor UI](../../../../../../docs/product/ui/editor.md#text-library)). A Styles tile draws the sample `Aa` and a Templates tile its name, both in the look's fill; the looks' outline, shadow and box are not drawn on the tile.
+
 ## Media sub-navigation
 
 Import heads the Media group; Media and Timeline are its two pages, with one active row. Timeline lists the project's scenes in project order, the main scene marked and the open scene selected in the sub-navigation's style (accent label on the shared row fill, not egui's selection fill). A click switches scene through `Request::SwitchScene`, the scene row's switch without its select mode. The page shows while the sub-navigation is visible, as Music does. Create and rename stay in the scene sheet until the reference shows them here. Scene commands and the sheet: [timeline scene switcher](../../timeline/README.md#scene-switcher).

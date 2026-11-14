@@ -13,5 +13,5 @@ pub use format::{
     format, format_count, number, parse_decimal, signed, transition_label,
 };
 pub use locale::Locale;
-pub use looks::{caption_look, text_look};
+pub use looks::{caption_look, text_look, text_template, text_template_sample};
 pub use text::{Text, text};

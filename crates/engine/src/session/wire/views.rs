@@ -237,6 +237,18 @@ pub struct StickerPage {
     pub results: Vec<StickerEntry>,
 }
 
+/// One built-in text look or template as `text.search` lists it: the wire id the apply and
+/// insert commands take, our display name, its shelf and the licence its Commercial flag follows.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TextLibraryEntry {
+    pub id: String,
+    pub name: String,
+    pub shelf: project::TextShelf,
+    pub license: String,
+    pub commercial: bool,
+}
+
 /// Published snapshot receipt; the PNG itself stays in `SnapshotImage`.
 #[derive(Clone, Debug, serde::Serialize, schemars::JsonSchema)]
 pub struct SnapshotResult {

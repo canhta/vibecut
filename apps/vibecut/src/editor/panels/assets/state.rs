@@ -125,6 +125,11 @@ pub(in crate::editor) struct State {
     pub(in crate::editor) captions: Option<super::captions::Subtitles>,
     /// Captions tab: the sub-navigation page.
     pub(in crate::editor) captions_section: super::CaptionsSection,
+    /// Text tab: the page (styles or templates), the category chip and the Commercial filter
+    /// (off lists everything).
+    pub(super) text_page: super::text::TextPage,
+    pub(super) text_chip: Option<super::text::TextChip>,
+    pub(super) text_commercial: bool,
     /// Stickers tab: the category tab, whether See all widened the results, and the thumbnails.
     pub(super) sticker_tab: super::stickers::StickerTab,
     pub(super) sticker_expanded: bool,
@@ -199,6 +204,9 @@ impl Default for State {
             thumbnail_root: None,
             captions: None,
             captions_section: super::CaptionsSection::default(),
+            text_page: Default::default(),
+            text_chip: None,
+            text_commercial: false,
             sticker_tab: Default::default(),
             sticker_expanded: false,
             sticker_thumbnails: Default::default(),

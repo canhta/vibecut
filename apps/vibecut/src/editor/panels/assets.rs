@@ -8,6 +8,7 @@ pub mod sounds;
 mod state;
 mod stickers;
 mod tabs;
+mod text;
 mod transition;
 mod view;
 mod workflow;
@@ -83,6 +84,8 @@ struct Model {
     stickers: Option<stickers::StickerRows>,
     /// Media Timeline page rows, in project order; empty on the other pages.
     scenes: Vec<SceneRow>,
+    /// Text tab: the selected text items a style tile applies to; empty on the other tabs.
+    text_targets: Vec<project::ItemId>,
     importing: bool,
     selection: BTreeSet<AssetId>,
     clip_export: Option<media_panel::clips::ClipStatus>,
@@ -200,6 +203,10 @@ pub(in crate::editor) enum Action {
     DeleteAdjustment(usize),
     /// Switch the open scene from the Media Timeline page.
     SwitchScene(project::SceneId),
+    /// Apply one built-in look to the selected text items (`text.apply_preset`).
+    ApplyTextLook(project::TextLook),
+    /// Insert one built-in template at the playhead (`text.insert_template`).
+    InsertTextTemplate(project::TextTemplate),
     /// Insert one bundled flag at the playhead and record it as recent.
     InsertSticker(String),
     /// Insert one shape through its `graphic.insert.*` command and record it as recent.

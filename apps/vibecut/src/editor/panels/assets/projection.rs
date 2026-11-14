@@ -172,7 +172,25 @@ pub(in crate::editor) fn prepare(
     } else {
         Vec::new()
     };
+    let text_targets = if preferences.assets_tab == AssetsTab::Text {
+        let selection = cx.session.selection();
+        cx.session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| &track.items)
+            .filter(|item| {
+                selection.contains(&item.id) && matches!(item.content, project::ItemParams::Text(_))
+            })
+            .map(|item| item.id)
+            .collect()
+    } else {
+        Vec::new()
+    };
     state.model = Model {
+        text_targets,
         preferences,
         rows,
         thumbnails,

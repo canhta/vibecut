@@ -444,6 +444,11 @@ pub(crate) mod size {
     pub const STICKER_TILE: f32 = 85.0;
     pub const STICKER_GAP_X: f32 = 17.0;
     pub const STICKER_GAP_Y: f32 = 13.0;
+    /// Text library tile edge and gaps, measured on the 2026-11-14b 103727 Text Effects capture (2x,
+    /// logical = native / 2): 122 px native tiles on a 156 px column pitch and a 160 px row pitch.
+    pub const TEXT_TILE: f32 = 61.0;
+    pub const TEXT_GAP_X: f32 = 17.0;
+    pub const TEXT_GAP_Y: f32 = 19.0;
     pub const SHORTCUT_BUTTON: f32 = 72.0;
     pub const TOGGLE_WIDTH: f32 = 36.0;
     pub const TOGGLE_HEIGHT: f32 = 16.0;

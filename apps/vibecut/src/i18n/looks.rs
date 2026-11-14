@@ -39,6 +39,32 @@ pub const fn text_look(look: project::TextLook) -> Text {
     }
 }
 
+/// The translated name of one built-in text template.
+pub const fn text_template(template: project::TextTemplate) -> Text {
+    use project::TextTemplate as Template;
+    match template {
+        Template::BigTitle => Text::TextTemplateBigTitle,
+        Template::LowerThird => Text::TextTemplateLowerThird,
+        Template::CaptionPop => Text::TextTemplateCaptionPop,
+        Template::Quote => Text::TextTemplateQuote,
+        Template::NeonSign => Text::TextTemplateNeonSign,
+        Template::SaleTag => Text::TextTemplateSaleTag,
+    }
+}
+
+/// The translated words a new item of one built-in text template holds.
+pub const fn text_template_sample(template: project::TextTemplate) -> Text {
+    use project::TextTemplate as Template;
+    match template {
+        Template::BigTitle => Text::TextTemplateSampleBigTitle,
+        Template::LowerThird => Text::TextTemplateSampleLowerThird,
+        Template::CaptionPop => Text::TextTemplateSampleCaptionPop,
+        Template::Quote => Text::TextTemplateSampleQuote,
+        Template::NeonSign => Text::TextTemplateSampleNeonSign,
+        Template::SaleTag => Text::TextTemplateSampleSaleTag,
+    }
+}
+
 /// The translated name of one built-in caption look.
 pub const fn caption_look(look: project::CaptionLook) -> Text {
     use project::CaptionLook as Look;
