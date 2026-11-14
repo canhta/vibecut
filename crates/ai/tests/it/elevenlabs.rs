@@ -515,6 +515,10 @@ fn constructor_refuses_foreign_settings_identity_before_transport() {
     let fake = Arc::new(FakeTransport::new(Vec::new()));
     let canonical = config();
     let transcriber = adapter(&fake, canonical.clone());
+    assert!(
+        !format!("{transcriber:?}").contains("test-key-not-real"),
+        "the key stays out of Debug"
+    );
     assert_eq!(transcriber.config(), &canonical);
     assert_eq!(
         transcriber.config().settings_fingerprint(),
@@ -738,35 +742,6 @@ fn capabilities_admit_timed_tokens_and_document_limits() {
         capabilities.check(&too_large),
         Err(Error::Payload)
     ));
-}
-
-#[test]
-fn debug_output_redacts_key_headers_audio_and_transcript_bodies() {
-    let fake = Arc::new(FakeTransport::new(Vec::new()));
-    let provider = config();
-    let transcriber = adapter(&fake, provider);
-    assert!(!format!("{transcriber:?}").contains("test-key-not-real"));
-    assert_eq!(
-        format!("{:?}", ApiKey::new("secret").unwrap()),
-        "ApiKey([redacted])"
-    );
-    let request = HttpRequest {
-        method: "POST",
-        url: ENDPOINT.into(),
-        headers: vec![("xi-api-key".into(), "secret".into())],
-        body: b"audio bytes".to_vec(),
-    };
-    let debug = format!("{request:?}");
-    assert!(!debug.contains("secret"));
-    assert!(!debug.contains("audio bytes"));
-    let response = HttpResponse {
-        status: 200,
-        headers: vec![("request-id".into(), "secret".into())],
-        body: b"private transcript".to_vec(),
-    };
-    let debug = format!("{response:?}");
-    assert!(!debug.contains("private transcript"));
-    assert!(!debug.contains("secret"));
 }
 
 const LIVE_SPEECH: &str = "The quick brown fox jumps over the lazy dog. Today we are testing speech recognition in a video editor.";

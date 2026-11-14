@@ -266,6 +266,10 @@ fn nfd_input_is_normalized_before_transcript_comparison_and_wire_payload() {
 fn language_voice_and_constructor_boundaries_fail_before_network() {
     let fake = Arc::new(FakeTransport::new(Vec::new()));
     let synth = adapter(fake.clone());
+    assert!(
+        !format!("{synth:?}").contains("test-key-not-real"),
+        "the key stays out of Debug"
+    );
     let valid = request("Xin chào");
     let approved = consent(&synth, &valid, 1_000_000).unwrap();
 
@@ -634,34 +638,6 @@ fn bounded_transport_rejects_oversized_response_bodies() {
         fake.send_bounded(request, 64),
         Err(transport::Error::Payload)
     ));
-}
-
-#[test]
-fn debug_output_redacts_keys_headers_and_audio_bodies() {
-    let fake = Arc::new(FakeTransport::new(Vec::new()));
-    let synth = adapter(fake);
-    assert!(!format!("{synth:?}").contains("test-key-not-real"));
-    assert_eq!(
-        format!("{:?}", ApiKey::new("secret").unwrap()),
-        "ApiKey([redacted])"
-    );
-    let request = HttpRequest {
-        method: "POST",
-        url: SPEECH_ENDPOINT.into(),
-        headers: vec![("Authorization".into(), "Bearer secret".into())],
-        body: b"private text".to_vec(),
-    };
-    let debug = format!("{request:?}");
-    assert!(!debug.contains("secret"));
-    assert!(!debug.contains("private text"));
-    let response = HttpResponse {
-        status: 200,
-        headers: vec![("x-request-id".into(), "request".into())],
-        body: b"private transcript".to_vec(),
-    };
-    let debug = format!("{response:?}");
-    assert!(!debug.contains("private transcript"));
-    assert!(!debug.contains("request"));
 }
 
 const LIVE_VI: &str = "Xin chào, đây là một câu kiểm tra giọng nói.";

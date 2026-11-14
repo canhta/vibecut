@@ -431,19 +431,6 @@ fn official_endpoint_and_redacted_debug_are_enforced() {
     )
     .unwrap();
     assert!(!format!("{translator:?}").contains("test-anthropic-key"));
-    let request = HttpRequest {
-        method: "POST",
-        url: ENDPOINT.into(),
-        headers: vec![("x-api-key".into(), "secret".into())],
-        body: b"private".to_vec(),
-    };
-    assert!(!format!("{request:?}").contains("secret"));
-    let response = HttpResponse {
-        status: 200,
-        headers: vec![],
-        body: b"private".to_vec(),
-    };
-    assert!(!format!("{response:?}").contains("private"));
     assert!(
         translator
             .disclosure(&scope(&window("vi", "en"), provider))

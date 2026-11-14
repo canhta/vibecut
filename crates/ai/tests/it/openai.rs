@@ -758,6 +758,8 @@ fn empty_speech_returns_no_segments_and_capabilities_refuse_wrong_scope() {
     ));
 }
 
+/// Fails if the shared key, request or response Debug prints a secret header or body; the other
+/// adapters assert only that their own key stays out of Debug.
 #[test]
 fn debug_output_redacts_keys_headers_audio_and_transcript_bodies() {
     let fake = Arc::new(FakeTransport::new(Vec::new()));
