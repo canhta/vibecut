@@ -25,6 +25,8 @@ pub use aggregate::{
 pub use easing::{EasingPreferences, EasingTab, MAX_SAVED_EASINGS, SavedEasing};
 pub use favorites::{
     CATALOG_FAMILIES, CatalogFavorites, MAX_CATALOG_FAVORITE_ID_BYTES, MAX_CATALOG_FAVORITES,
+    MAX_SOUND_FAVORITE_TITLE_BYTES, MAX_SOUND_FAVORITE_URL_BYTES, MAX_SOUND_FAVORITES,
+    SoundFavorite,
 };
 pub use font_picker::{FontPickerPreferences, FontTab};
 pub use geometry::WindowGeometry;

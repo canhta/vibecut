@@ -171,6 +171,8 @@ pub(in crate::editor) enum Action {
     },
     SoundsCommercial(bool),
     SoundsPreview(u64),
+    /// Preview a favourite that is no longer listed, from the URL its star stored.
+    SoundsPlay(libraries::sounds::SoundResult),
     SoundsToggleSaved(u64),
     SoundsAdd(u64),
     SoundsCancelCache,
@@ -207,6 +209,11 @@ pub(in crate::editor) enum Action {
     ToggleFavorite {
         family: &'static str,
         id: String,
+        favorite: bool,
+    },
+    /// Star or unstar one sound; a star stores the metadata its Favorites row shows.
+    ToggleSoundFavorite {
+        sound: crate::preferences::SoundFavorite,
         favorite: bool,
     },
     /// Download one Emoji or Icons collection on the user's explicit action; its card shows the

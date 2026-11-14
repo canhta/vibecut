@@ -6838,6 +6838,8 @@ struct FavoriteRow {
     item: &'static str,
     /// Optional search that brings the item into the visible results.
     search: Option<&'static str>,
+    /// Select the text item first: the Animation shelf lives in the Properties panel.
+    select_text: bool,
 }
 
 #[test]
@@ -6851,6 +6853,7 @@ fn catalogue_tabs_star_list_unstar_and_show_the_empty_state() {
             family: "effects",
             item: "blur",
             search: None,
+            select_text: false,
         },
         FavoriteRow {
             tab: AssetsTab::Transitions,
@@ -6860,6 +6863,7 @@ fn catalogue_tabs_star_list_unstar_and_show_the_empty_state() {
             family: "transitions",
             item: "cross_dissolve",
             search: None,
+            select_text: false,
         },
         FavoriteRow {
             tab: AssetsTab::Stickers,
@@ -6869,6 +6873,7 @@ fn catalogue_tabs_star_list_unstar_and_show_the_empty_state() {
             family: "stickers",
             item: "flags:AF",
             search: Some("asia"),
+            select_text: false,
         },
         FavoriteRow {
             tab: AssetsTab::Adjustment,
@@ -6878,10 +6883,23 @@ fn catalogue_tabs_star_list_unstar_and_show_the_empty_state() {
             family: "filters",
             item: "Warm",
             search: None,
+            select_text: false,
+        },
+        FavoriteRow {
+            // The Animation shelf is in the Properties panel; the assets tab is not used.
+            tab: AssetsTab::Effects,
+            favorites_nav: "inspector.animation.favorites",
+            star: "inspector.animation.favorite.fade",
+            listed: "inspector.animation.in.fade",
+            family: "animations",
+            item: "fade",
+            search: None,
+            select_text: true,
         },
     ];
     for row in rows {
         let mut f = fixture();
+        let text = f.text;
         f.editor.preferences.assets_tab = row.tab;
         if row.tab == AssetsTab::Adjustment {
             f.editor.preferences.adjustment_presets =
@@ -6895,6 +6913,10 @@ fn catalogue_tabs_star_list_unstar_and_show_the_empty_state() {
         }
         let mut h = build(f.editor);
         h.run_steps(3);
+        if row.select_text {
+            select(&mut h, text);
+            h.run_steps(3);
+        }
         if let Some(query) = row.search {
             set_sticker_search(&mut h, query);
         }

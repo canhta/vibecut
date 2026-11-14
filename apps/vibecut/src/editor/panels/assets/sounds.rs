@@ -479,6 +479,17 @@ impl Sounds {
             self.preview_problem = Some(SoundsProblem::Library);
             return;
         };
+        self.play_sound(sound);
+    }
+
+    /// Preview from the sound's own preview URL. A favourite that is no longer listed
+    /// plays from the URL stored with its star.
+    pub fn play_sound(&mut self, sound: SoundResult) {
+        let id = sound.id;
+        if self.previewing == Some(id) {
+            self.stop();
+            return;
+        }
         if self.preview_worker.is_some() {
             self.stop();
         }

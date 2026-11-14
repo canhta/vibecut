@@ -41,6 +41,9 @@ pub enum Error {
     Unsupported(&'static str),
     #[error("action is disabled: {0}")]
     ActionDisabled(&'static str),
+    /// A sound can be starred only while it is in the Sounds results or the saved library.
+    #[error("sound is not in the current results or the saved library")]
+    SoundNotListed,
     #[error("keybinding failed")]
     Keybinding(#[from] crate::actions::KeybindingError),
     #[error("operation cancelled")]

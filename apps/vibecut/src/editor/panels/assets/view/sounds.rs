@@ -5,6 +5,7 @@ use super::{
     theme,
 };
 use crate::i18n;
+use crate::preferences::SoundFavorite;
 
 impl View<'_> {
     pub(super) fn sounds_nav(&mut self, ui: &mut egui::Ui) {
@@ -56,22 +57,25 @@ impl View<'_> {
         }
     }
 
-    /// Starred sounds in star order, resolved from the saved library first and then the
-    /// current results. A starred id found in neither is not listed.
-    fn favorite_sounds(&self, view: &SoundsView) -> Vec<libraries::sounds::SoundResult> {
+    /// Starred sounds in star order, from the metadata stored with each star. No provider
+    /// lookup, so a starred sound outside the current results is still listed. Author and
+    /// licence are not stored; those rows show the duration alone.
+    fn favorite_sounds(&self) -> Vec<libraries::sounds::SoundResult> {
         self.cx
             .preferences
             .catalog_favorites
-            .list("sounds")
+            .sounds()
             .iter()
-            .filter_map(|id| {
-                let id: u64 = id.parse().ok()?;
-                view.saved
-                    .iter()
-                    .map(|saved| &saved.sound)
-                    .chain(view.results.iter())
-                    .find(|sound| sound.id == id)
-                    .cloned()
+            .map(|sound| libraries::sounds::SoundResult {
+                id: sound.id,
+                name: sound.title.clone(),
+                author: String::new(),
+                licence: String::new(),
+                attribution: String::new(),
+                source_url: String::new(),
+                audio_url: sound.preview_url.clone(),
+                duration_ms: sound.duration_ms,
+                downloads: 0,
             })
             .collect()
     }
@@ -202,7 +206,7 @@ impl View<'_> {
 
         let favorites = self.state.sounds_favorites;
         let list = if favorites {
-            self.favorite_sounds(&view)
+            self.favorite_sounds()
         } else {
             view.results.clone()
         };
@@ -284,6 +288,8 @@ impl View<'_> {
         let dark = self.cx.preferences.dark;
         let cached = view.cache.is_some_and(|cache| cache.sound == sound.id);
         let saved = view.saved_ids.contains(&sound.id);
+        // Save and Add resolve the sound from the results or the saved library.
+        let listed = saved || view.results.iter().any(|known| known.id == sound.id);
         ui.painter().rect_filled(
             rect,
             theme::radius::CONTROL,
@@ -321,15 +327,19 @@ impl View<'_> {
             theme::label_font(),
             theme::text(dark),
         );
-        let meta = i18n::format(
-            self.cx.preferences.locale,
-            Text::SoundsMeta,
-            &[
-                ("author", &sound.author),
-                ("duration", &duration(sound.duration_ms)),
-                ("licence", &sound.licence),
-            ],
-        );
+        let meta = if sound.author.is_empty() && sound.licence.is_empty() {
+            duration(sound.duration_ms)
+        } else {
+            i18n::format(
+                self.cx.preferences.locale,
+                Text::SoundsMeta,
+                &[
+                    ("author", &sound.author),
+                    ("duration", &duration(sound.duration_ms)),
+                    ("licence", &sound.licence),
+                ],
+            )
+        };
         painter.text(
             clip.min + Vec2::new(0.0, 15.0),
             Align2::LEFT_TOP,
@@ -392,9 +402,8 @@ impl View<'_> {
             theme::text(dark),
         );
         if star_response.clicked() {
-            self.actions.push(Action::ToggleFavorite {
-                family: "sounds",
-                id: key,
+            self.actions.push(Action::ToggleSoundFavorite {
+                sound: SoundFavorite::from_result(sound),
                 favorite: !starred,
             });
         }
@@ -413,13 +422,26 @@ impl View<'_> {
             },
             previewing,
         ) {
-            self.actions.push(Action::SoundsPreview(sound.id));
+            // A listed sound previews by id; a favourite outside the results plays from
+            // the URL its star stored.
+            if listed {
+                self.actions.push(Action::SoundsPreview(sound.id));
+            } else {
+                self.actions.push(Action::SoundsPlay(sound.clone()));
+            }
         }
         let save = Rect::from_min_size(
             egui::pos2(start + 28.0, rect.center().y - 12.0),
             Vec2::splat(24.0),
         );
-        if self.sound_button(
+        if !listed {
+            self.sound_unavailable(
+                ui,
+                save,
+                &format!("sounds.save.unlisted.{}", sound.id),
+                Icon::FloppyDisk,
+            );
+        } else if self.sound_button(
             ui,
             save,
             &format!("sounds.save.{}", sound.id),
@@ -448,6 +470,13 @@ impl View<'_> {
             ) {
                 self.actions.push(Action::SoundsCancelCache);
             }
+        } else if !listed {
+            self.sound_unavailable(
+                ui,
+                add,
+                &format!("sounds.add.unlisted.{}", sound.id),
+                Icon::Plus,
+            );
         } else if self.sound_button(
             ui,
             add,
@@ -458,6 +487,19 @@ impl View<'_> {
         ) {
             self.actions.push(Action::SoundsAdd(sound.id));
         }
+    }
+
+    /// A Save or Add slot that cannot act for a sound outside the results: a dimmed glyph
+    /// whose hover text gives the reason.
+    fn sound_unavailable(&mut self, ui: &mut egui::Ui, rect: Rect, id: &str, glyph: Icon) {
+        let dark = self.cx.preferences.dark;
+        let reason = self.tr(Text::SoundsNotListed).to_owned();
+        let response = ui
+            .interact(rect, Id::unique(id), egui::Sense::hover())
+            .on_hover_text(reason);
+        icons::tinted(glyph, theme::icon::DENSE, theme::secondary(dark))
+            .paint_at(ui, Rect::from_center_size(rect.center(), Vec2::splat(16.0)));
+        self.remember(id, &response, Some(glyph));
     }
 
     fn sound_button(

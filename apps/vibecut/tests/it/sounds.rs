@@ -217,6 +217,8 @@ impl DownloadTransport for Download {
 struct Sink {
     plays: AtomicUsize,
     stops: AtomicUsize,
+    /// The audio URL of every clip handed to the device, in order.
+    played_urls: Mutex<Vec<String>>,
     device: bool,
     gate: Option<Arc<Gate>>,
 }
@@ -226,6 +228,7 @@ impl Sink {
         Arc::new(Self {
             plays: AtomicUsize::new(0),
             stops: AtomicUsize::new(0),
+            played_urls: Mutex::new(Vec::new()),
             device: true,
             gate: None,
         })
@@ -235,6 +238,7 @@ impl Sink {
         Arc::new(Self {
             plays: AtomicUsize::new(0),
             stops: AtomicUsize::new(0),
+            played_urls: Mutex::new(Vec::new()),
             device: false,
             gate: None,
         })
@@ -244,15 +248,24 @@ impl Sink {
         Arc::new(Self {
             plays: AtomicUsize::new(0),
             stops: AtomicUsize::new(0),
+            played_urls: Mutex::new(Vec::new()),
             device: true,
             gate: Some(gate),
         })
     }
+
+    fn played_urls(&self) -> Vec<String> {
+        self.played_urls.lock().unwrap().clone()
+    }
 }
 
 impl PreviewSink for Sink {
-    fn play(&self, _clip: PreviewClip<'_>) -> Result<(), SoundError> {
+    fn play(&self, clip: PreviewClip<'_>) -> Result<(), SoundError> {
         self.plays.fetch_add(1, Ordering::SeqCst);
+        self.played_urls
+            .lock()
+            .unwrap()
+            .push(clip.audio_url.to_owned());
         if !self.device {
             return Err(SoundError::NoAudioDevice);
         }
@@ -1067,4 +1080,230 @@ fn sounds_tab_renders_a_representative_result_list() {
     std::fs::create_dir_all(&target).unwrap();
     image.save(target.join("p1-43-sounds.png")).unwrap();
     assert!(image.width() > 0 && image.height() > 0);
+}
+
+#[test]
+fn sounds_favorites_star_list_unstar_and_show_the_empty_state() {
+    use vibecut::preferences::SoundFavorite;
+
+    let root = tempfile::tempdir().unwrap();
+    let library = library(root.path());
+    let sound = result(1, "Creative Commons 0");
+    let (client, _transport) = json_client(
+        200,
+        Vec::new(),
+        page(vec![sound.clone(), result(2, "Attribution")], false),
+    );
+    let gate = Arc::new(Gate::new());
+    let sink = Sink::gated(gate.clone());
+    let mut editor = editor(
+        library.clone(),
+        Some(client),
+        Arc::new(Download {
+            gate: None,
+            status: 200,
+        }),
+        sink.clone(),
+        root.path().join("media"),
+    );
+    editor.preferences.assets_tab = vibecut::AssetsTab::Sounds;
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    click(&mut harness, "sounds.search");
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("sounds.search")))
+        .type_text("sound");
+    harness.key_press(egui::Key::Enter);
+    wait(&mut harness, "first page", |editor| {
+        editor
+            .inspect()
+            .unwrap()
+            .sounds
+            .is_some_and(|sounds| !sounds.searching && sounds.results.len() == 2)
+    });
+
+    // Star from the results: the metadata Favorites needs is stored with the star.
+    click(&mut harness, "sounds.favorite.1");
+    assert_eq!(
+        harness.state().preferences.catalog_favorites.sounds(),
+        [SoundFavorite {
+            id: 1,
+            title: sound.name.clone(),
+            duration_ms: sound.duration_ms,
+            preview_url: sound.audio_url.clone(),
+        }]
+    );
+    assert!(
+        harness
+            .state()
+            .preferences
+            .catalog_favorites
+            .contains("sounds", "1")
+    );
+
+    // Listed under Favorites; the unstarred result stays out of the list.
+    click(&mut harness, "sounds.tab.favorites");
+    harness.run_steps(3);
+    assert!(has_widget(&harness, "sounds.result.1"));
+    assert!(!has_widget(&harness, "sounds.result.2"));
+
+    // Unstar from the Favorites list removes it and leaves the empty state.
+    click(&mut harness, "sounds.favorite.1");
+    harness.run_steps(3);
+    assert!(
+        !harness
+            .state()
+            .preferences
+            .catalog_favorites
+            .contains("sounds", "1")
+    );
+    assert!(
+        harness
+            .state()
+            .preferences
+            .catalog_favorites
+            .sounds()
+            .is_empty()
+    );
+    assert!(!has_widget(&harness, "sounds.result.1"));
+    assert!(!has_widget(&harness, "sounds.favorite.1"));
+}
+
+/// Mirrors the Favorites kittest's setup: one listed sound and a second result.
+fn listed_favorites_harness(
+    root: &std::path::Path,
+    sound: &SoundResult,
+    sink: Arc<Sink>,
+) -> Harness<'static, Editor> {
+    let library = library(root);
+    library.store_cached(&sound.audio_url, &wav()).unwrap();
+    let (client, _transport) = json_client(
+        200,
+        Vec::new(),
+        page(vec![sound.clone(), result(2, "Attribution")], false),
+    );
+    let mut editor = editor(
+        library,
+        Some(client),
+        Arc::new(Download {
+            gate: None,
+            status: 200,
+        }),
+        sink,
+        root.join("media"),
+    );
+    editor.preferences.assets_tab = vibecut::AssetsTab::Sounds;
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    click(&mut harness, "sounds.search");
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("sounds.search")))
+        .type_text("sound");
+    harness.key_press(egui::Key::Enter);
+    wait(&mut harness, "first page", |editor| {
+        editor
+            .inspect()
+            .unwrap()
+            .sounds
+            .is_some_and(|sounds| !sounds.searching && sounds.results.len() == 2)
+    });
+    harness
+}
+
+#[test]
+fn sound_favorites_command_stars_listed_sounds_and_refuses_unlisted_ones() {
+    let root = tempfile::tempdir().unwrap();
+    let sound = result(1, "Creative Commons 0");
+    let sink = Sink::available();
+    let mut harness = listed_favorites_harness(root.path(), &sound, sink);
+
+    // The command stars a listed sound with the same metadata the Sounds tab stores.
+    harness
+        .state_mut()
+        .dispatch(vibecut::AppCommand::SetFavorite {
+            family: "sounds".to_owned(),
+            id: "1".to_owned(),
+            favorite: true,
+        })
+        .unwrap();
+    assert!(
+        harness
+            .state()
+            .preferences
+            .catalog_favorites
+            .contains("sounds", "1")
+    );
+    assert_eq!(
+        harness.state().catalog_favorites("sounds"),
+        ["1".to_owned()]
+    );
+
+    // An id outside the results and the saved library is refused with a typed error.
+    let refused = harness
+        .state_mut()
+        .dispatch(vibecut::AppCommand::SetFavorite {
+            family: "sounds".to_owned(),
+            id: "999".to_owned(),
+            favorite: true,
+        });
+    assert!(matches!(refused, Err(vibecut::Error::SoundNotListed)));
+    assert_eq!(
+        harness.state().preferences.catalog_favorites.sounds().len(),
+        1
+    );
+
+    // Unstarring needs no listing: it drops the stored star by id.
+    harness
+        .state_mut()
+        .dispatch(vibecut::AppCommand::SetFavorite {
+            family: "sounds".to_owned(),
+            id: "1".to_owned(),
+            favorite: false,
+        })
+        .unwrap();
+    assert!(
+        harness
+            .state()
+            .preferences
+            .catalog_favorites
+            .sounds()
+            .is_empty()
+    );
+}
+
+#[test]
+fn unlisted_favorite_previews_from_its_stored_url_and_says_why_save_and_add_are_off() {
+    let root = tempfile::tempdir().unwrap();
+    let sound = result(1, "Creative Commons 0");
+    let sink = Sink::available();
+    let mut harness = listed_favorites_harness(root.path(), &sound, sink.clone());
+    click(&mut harness, "sounds.favorite.1");
+
+    // Saved mode lists the empty saved library, so sound 1 is no longer in the results.
+    click(&mut harness, "sounds.tab.saved");
+    wait(&mut harness, "saved mode", |editor| {
+        editor
+            .inspect()
+            .unwrap()
+            .sounds
+            .is_some_and(|sounds| !sounds.searching && sounds.results.is_empty())
+    });
+    click(&mut harness, "sounds.tab.favorites");
+    harness.run_steps(3);
+    assert!(has_widget(&harness, "sounds.result.1"));
+
+    // Save and Add are replaced by a disabled slot with the reason; neither acts.
+    assert!(!has_widget(&harness, "sounds.save.1"));
+    assert!(!has_widget(&harness, "sounds.add.1"));
+    assert!(has_widget(&harness, "sounds.save.unlisted.1"));
+    assert!(has_widget(&harness, "sounds.add.unlisted.1"));
+
+    // Preview plays the URL stored with the star, not a provider lookup.
+    click(&mut harness, "sounds.preview.1");
+    let stored = sound.audio_url.clone();
+    let played = sink.clone();
+    wait(&mut harness, "preview of the stored url", move |_| {
+        played.played_urls().contains(&stored)
+    });
+    assert_eq!(sink.played_urls(), [sound.audio_url.clone()]);
 }

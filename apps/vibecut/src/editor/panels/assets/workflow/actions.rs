@@ -77,6 +77,7 @@ impl State {
                 Action::SoundsSearch { more } => self.sounds_search(more),
                 Action::SoundsCommercial(on) => self.sounds_set_commercial(on),
                 Action::SoundsPreview(id) => self.sounds_preview(id),
+                Action::SoundsPlay(sound) => self.sounds_play(sound),
                 Action::SoundsToggleSaved(id) => self.sounds_toggle_saved(id),
                 Action::SoundsAdd(id) => self.sounds_add(port, id),
                 Action::SoundsCancelCache => self.sounds_cancel_cache(),
@@ -117,6 +118,11 @@ impl State {
                         port.fail(error.to_string());
                     }
                 }
+                Action::ToggleSoundFavorite { sound, favorite } => {
+                    if let Err(error) = self.toggle_sound_favorite(port, sound, favorite) {
+                        port.fail(error.to_string());
+                    }
+                }
                 Action::DownloadSticker(collection) => {
                     self.download_sticker(port.read.budget, &collection);
                 }
@@ -139,6 +145,22 @@ impl State {
             .preferences
             .catalog_favorites
             .with(family, id, favorite)?;
+        port.store_preference_result("catalog_favorites", serde_json::to_value(&next)?)
+    }
+
+    /// Star or unstar one sound in the preference document; a star keeps the sound's
+    /// metadata so Favorites lists it without a lookup.
+    fn toggle_sound_favorite(
+        &mut self,
+        port: &mut Port<'_>,
+        sound: crate::preferences::SoundFavorite,
+        favorite: bool,
+    ) -> crate::Result<()> {
+        let next = port
+            .read
+            .preferences
+            .catalog_favorites
+            .with_sound(sound, favorite)?;
         port.store_preference_result("catalog_favorites", serde_json::to_value(&next)?)
     }
 }
