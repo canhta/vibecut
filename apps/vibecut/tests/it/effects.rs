@@ -781,7 +781,10 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
     let reduced = apply_effect(item().unwrap(), &long, &image, &CpuEffects, &Hooks).unwrap();
     let dispatched = apply_effect(item().unwrap(), &long, &image, gpu.as_ref(), &Hooks).unwrap();
     let max = max_error(&reduced, &dispatched);
-    assert!(max <= 2e-5, "long gaussian run through the GPU adapter {max}");
+    assert!(
+        max <= 2e-5,
+        "long gaussian run through the GPU adapter {max}"
+    );
     // The public thumbnail seam schedules real offscreen GPU work and reuses it.
     let budget = engine::ByteBudget::new(64 << 20).unwrap();
     let thumbnails = gpu.thumbnails(budget.clone());

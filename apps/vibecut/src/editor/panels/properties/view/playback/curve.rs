@@ -238,30 +238,34 @@ impl Panel<'_, '_> {
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = TILE_GAP * k;
                 for entry in row {
-                    self.speed_preset_tile(
-                        ui,
-                        item,
-                        *entry,
-                        *entry == held,
-                        shape,
-                        maintain_pitch,
-                        k,
-                    );
+                    if self.speed_preset_tile(ui, *entry, *entry == held, k) {
+                        match entry {
+                            None => {
+                                self.state.speed_curve_view = true;
+                                if shape.is_some() {
+                                    self.set_speed(item, 1.0, maintain_pitch);
+                                }
+                            }
+                            Some(preset) => self.actions.push(Action::ApplySpeedPreset {
+                                item,
+                                preset: *preset,
+                                maintain_pitch,
+                            }),
+                        }
+                    }
                 }
             });
         }
     }
 
+    /// One preset tile; true when a person clicked a tile that was not already held.
     fn speed_preset_tile(
         &mut self,
         ui: &mut egui::Ui,
-        item: ItemId,
         entry: Option<SpeedPreset>,
         selected: bool,
-        shape: Option<&[SpeedPoint]>,
-        maintain_pitch: bool,
         k: f32,
-    ) {
+    ) -> bool {
         let dark = self.cx.dark;
         let tile = TILE * k;
         let (word, text) = tile_entry(entry);
@@ -298,22 +302,7 @@ impl Panel<'_, '_> {
                 self.text_color(),
             );
         });
-        if !clicked {
-            return;
-        }
-        match entry {
-            None => {
-                self.state.speed_curve_view = true;
-                if shape.is_some() {
-                    self.set_speed(item, 1.0, maintain_pitch);
-                }
-            }
-            Some(preset) => self.actions.push(Action::ApplySpeedPreset {
-                item,
-                preset,
-                maintain_pitch,
-            }),
-        }
+        clicked
     }
 
     /// The tile picture: the 2x and 0.5x guides with the preset's shape over them; None is a

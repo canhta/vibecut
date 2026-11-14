@@ -265,7 +265,7 @@ impl State {
         let ok = i18n::text(locale, Text::Ok);
         // The card's layer takes no input, so OK lives in its own small layer above the
         // slot the card leaves for it.
-        let card = egui::Area::new(egui::Id::new("timeline.keyframe_hint"))
+        let card = egui::Area::new(egui::Id::unique("timeline.keyframe_hint"))
             .order(egui::Order::Foreground)
             .interactable(false)
             .pivot(Align2::LEFT_CENTER)
@@ -285,7 +285,7 @@ impl State {
                     })
                     .inner
             });
-        let button = egui::Area::new(egui::Id::new("timeline.keyframe_hint.ok"))
+        let button = egui::Area::new(egui::Id::unique("timeline.keyframe_hint.ok"))
             .order(egui::Order::Foreground)
             .fixed_pos(card.inner.min)
             .show(ui.ctx(), |ui| ui.button(ok));
