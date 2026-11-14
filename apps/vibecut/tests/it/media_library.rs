@@ -972,7 +972,10 @@ fn clip_export_menu_refuses_with_reason_and_cancel_ends_the_running_job() {
     harness.run_steps(3);
     let before = harness.state().session.project().clone();
 
-    // A non-video target disables the item and carries its reason.
+    // A non-video target disables the item and carries its reason. The measured 398 px media
+    // column holds one tile per row, as the reference's does, so the ninth asset is below the
+    // first screen.
+    reveal_tile(&mut harness, "media.asset.9");
     open_menu(&mut harness, "media.asset.9");
     let (enabled, reason) = export_item(&harness);
     assert!(!enabled);
@@ -1006,6 +1009,7 @@ fn clip_export_menu_refuses_with_reason_and_cancel_ends_the_running_job() {
         has_widget(&harness, "media.export.cancel"),
         "strip while running"
     );
+    reveal_tile(&mut harness, "media.asset.1");
     open_menu(&mut harness, "media.asset.1");
     let (enabled, reason) = export_item(&harness);
     assert!(!enabled);
@@ -1133,6 +1137,9 @@ fn gated_export_editor(gate: Arc<ExportGate>) -> Editor {
 
 /// Select the two video fixtures, open the menu on one, and take its export request.
 fn queue_selection_export(harness: &mut Harness<Editor>) {
+    // Both tiles sit in the one-column list's first screen; an earlier step may have scrolled.
+    reveal_tile(harness, "media.asset.2");
+    reveal_tile(harness, "media.asset.1");
     click(harness, "media.asset.1");
     click_modifiers(harness, "media.asset.2", egui::Modifiers::COMMAND);
     open_menu(harness, "media.asset.2");
@@ -1162,6 +1169,29 @@ fn await_clip_outcome(harness: &mut Harness<Editor>) -> String {
         );
         std::thread::sleep(Duration::from_millis(2));
     }
+}
+
+/// Wheel the media list until the tile `id` sits inside the media panel.
+fn reveal_tile(harness: &mut Harness<Editor>, id: &str) {
+    for _ in 0..24 {
+        let panel = harness.state().panels()["media"];
+        // The list starts under the tab strip, toolbar and filter rows.
+        let top = panel.top() + 170.0;
+        let target = widget_rect(harness, id);
+        if target.top() >= top && target.bottom() <= panel.bottom() {
+            return;
+        }
+        harness.hover_at(panel.center());
+        harness.event(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, if target.top() < top { 120.0 } else { -120.0 }),
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
+            modifiers: egui::Modifiers::NONE,
+        });
+        harness.run_steps(8);
+    }
+    panic!("{id} never scrolled into the media panel");
 }
 
 fn open_menu(harness: &mut Harness<Editor>, id: &str) {

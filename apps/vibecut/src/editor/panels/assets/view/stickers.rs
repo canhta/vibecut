@@ -23,7 +23,8 @@ impl View<'_> {
         let width = ui.available_width();
         self.search(ui, width);
         ui.add_space(theme::space::SM);
-        ui.horizontal(|ui| {
+        // The six categories wrap in the 398 px media column instead of clipping Favorites.
+        ui.horizontal_wrapped(|ui| {
             for (tab, label) in [
                 (StickerTab::All, Text::AssetsAll),
                 (StickerTab::Emoji, Text::StickerEmoji),
@@ -201,13 +202,21 @@ impl View<'_> {
         });
     }
 
+    /// Tiles in as many columns as the list width holds. egui cannot wrap a tile (a nested
+    /// vertical scope has no size before it is drawn), so the rows are counted here.
     fn tile_grid(&mut self, ui: &mut egui::Ui, tiles: &[Tile], recent: bool, ready: bool) {
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing = Vec2::new(GAP_X, GAP_Y);
-            for tile in tiles {
-                self.tile(ui, tile, recent, ready);
-            }
-        });
+        let columns = ((ui.available_width() + GAP_X) / (TILE + GAP_X))
+            .floor()
+            .max(1.0) as usize;
+        ui.spacing_mut().item_spacing.y = GAP_Y;
+        for row in tiles.chunks(columns) {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing = Vec2::new(GAP_X, GAP_Y);
+                for tile in row {
+                    self.tile(ui, tile, recent, ready);
+                }
+            });
+        }
     }
 
     fn tile(&mut self, ui: &mut egui::Ui, tile: &Tile, recent: bool, ready: bool) {

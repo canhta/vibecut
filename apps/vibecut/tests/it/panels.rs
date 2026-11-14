@@ -594,6 +594,29 @@ pub(crate) fn reveal(harness: &mut Harness<Editor>, id: &str) {
     }
 }
 
+/// Wheel the media panel's list until `id` sits inside the panel.
+fn reveal_in_media(harness: &mut Harness<Editor>, id: &str) {
+    for _ in 0..24 {
+        let panel = harness.state().panels()["media"];
+        let target = widget_rect(harness, id);
+        // The list starts under the tab strip, search and category rows.
+        let top = panel.top() + 150.0;
+        if target.top() >= top && target.bottom() <= panel.bottom() - 12.0 {
+            return;
+        }
+        harness.hover_at(panel.center());
+        harness.event(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, if target.top() < top { 120.0 } else { -120.0 }),
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
+            modifiers: egui::Modifiers::NONE,
+        });
+        harness.run_steps(8);
+    }
+    panic!("{id} never scrolled into the media panel");
+}
+
 /// Controls that sit below the first screen of a tall inspector body (Blend lives under
 /// Transform) or in the scrolling Text, Adjust and Arrange groups.
 fn needs_reveal(id: &str) -> bool {
@@ -5648,6 +5671,7 @@ fn graphic_shelf_keyed_rgba_numeric_drafts_history_and_captures() {
             h.run_steps(2);
             assert!(h.state().inspect().unwrap().color_preview.is_none());
             assert_eq!(h.state().session.project(), &before);
+            reveal_in_media(&mut h, "graphic.insert.ellipse");
             click(&mut h, "graphic.insert.ellipse");
             let ellipse = *h.state().selection().iter().next().unwrap();
             h.run_steps(3);
@@ -5676,6 +5700,7 @@ fn graphic_shelf_keyed_rgba_numeric_drafts_history_and_captures() {
                     ["inspector.graphic.sides", "inspector.graphic.cornerRadius"],
                 ),
             ] {
+                reveal_in_media(&mut h, action);
                 click(&mut h, action);
                 let shape = *h.state().selection().iter().next().unwrap();
                 h.run_steps(3);
@@ -5967,6 +5992,9 @@ fn stickers_panel_searches_switches_inserts_and_keeps_recents_in_preferences() {
     click(&mut h, "stickers.category.shapes");
     assert!(!has_widget(&h, "graphic.insert.star"));
     set_sticker_search(&mut h, "");
+    // In the measured 398 px media column the sticker grid holds two columns, so the shape
+    // cards can run below the first screen.
+    reveal_in_media(&mut h, "graphic.insert.star");
     click(&mut h, "graphic.insert.star");
     let shape = *h.state().selection().iter().next().unwrap();
     assert!(matches!(
@@ -6004,6 +6032,7 @@ fn stickers_panel_searches_switches_inserts_and_keeps_recents_in_preferences() {
     click(&mut h, "stickers.see_all");
     assert!(!has_widget(&h, "stickers.see_all"));
     let placed = item_count(&h);
+    reveal_in_media(&mut h, "stickers.recent.clear");
     click(&mut h, "stickers.recent.clear");
     assert!(h.state().preferences.sticker_recents.is_empty());
     assert!(!has_widget(&h, "stickers.recent.clear"));

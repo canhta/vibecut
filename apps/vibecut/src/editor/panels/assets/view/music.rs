@@ -285,7 +285,9 @@ impl View<'_> {
         let dark = self.cx.preferences.dark;
         ui.horizontal(|ui| {
             let hint = self.tr(Text::MusicKey);
-            let width = ui.available_width().clamp(96.0, 240.0);
+            // The field leaves room for its Apply and Remove buttons in a 398 px media column.
+            let buttons = 2.0 * (theme::size::CONTROL + ui.spacing().item_spacing.x);
+            let width = (ui.available_width() - buttons).clamp(96.0, 240.0);
             let response = ui.add_sized(
                 [width, theme::size::CONTROL],
                 egui::TextEdit::singleline(&mut self.state.music_key)

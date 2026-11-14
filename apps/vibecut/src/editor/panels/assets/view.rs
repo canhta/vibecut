@@ -92,12 +92,14 @@ pub(in crate::editor) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) 
             });
     });
     let body = Rect::from_min_max(egui::pos2(rect.left(), strip.bottom()), rect.max);
-    // The captions pages are always reachable, so their sub-navigation never collapses.
+    // The reference keeps its 120 px sub-navigation down to the measured 398 px media column
+    // minimum; only a column scaled below it (a window under the column floor) drops it. The
+    // captions pages are always reachable, so their sub-navigation never collapses.
     let captions_tab = cx.preferences.assets_tab == AssetsTab::Captions;
     let nav = Rect::from_min_size(
         body.min,
         Vec2::new(
-            if rect.width() < 420.0 && !captions_tab {
+            if rect.width() < crate::preferences::MEDIA_MIN_PX && !captions_tab {
                 0.0
             } else {
                 theme::size::SUBNAV.min(body.width())
