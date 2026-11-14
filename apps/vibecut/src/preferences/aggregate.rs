@@ -10,7 +10,7 @@ use super::{
 use crate::{
     ElementKind, PropertiesTab,
     editor::AssetsTab,
-    editor::{Guide, MediaSort, MediaView, OverlayVisibility},
+    editor::{Guide, GuideLines, MediaSort, MediaView, OverlayVisibility},
     home::ProjectsPreferences,
     i18n::Locale,
     input::KeybindingPreferences,
@@ -21,7 +21,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 /// Bumped when the local preference document changes incompatibly.
-pub const PREFERENCES_VERSION: u32 = 16;
+pub const PREFERENCES_VERSION: u32 = 17;
 /// Room for every provider/feature choice and its bounded recent IDs.
 pub const MAX_PREFERENCES_BYTES: u64 = 32 * 1024;
 /// Total open-lane entries across every project; keeps the document bounded.
@@ -72,6 +72,7 @@ pub const PREFERENCE_KEYS: &[&str] = &[
     "cache_limit_bytes",
     "preview_guide",
     "preview_overlays",
+    "preview_lines",
 ];
 
 /// A splitter drag that keeps every region non-empty and inside its limits.
@@ -180,6 +181,8 @@ pub struct Preferences {
     pub preview_guide: Guide,
     /// Visibility of each preview overlay; presentation only.
     pub preview_overlays: OverlayVisibility,
+    /// The player's rulers and custom guide lines; drawn by the app, never exported.
+    pub preview_lines: GuideLines,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -218,6 +221,7 @@ impl Default for Preferences {
             cache_limit_bytes: DEFAULT_CACHE_LIMIT,
             preview_guide: Guide::default(),
             preview_overlays: OverlayVisibility::default(),
+            preview_lines: GuideLines::default(),
         }
     }
 }
@@ -277,6 +281,7 @@ impl Preferences {
         validate_project_fps(self.default_fps)?;
         validate_cache_limit(self.cache_limit_bytes)?;
         self.preview_guide.validate()?;
+        self.preview_lines.validate()?;
         if serde_json::to_vec(self)?.len() as u64 > MAX_PREFERENCES_BYTES {
             return Err(Error::Invalid("preference size"));
         }
@@ -378,6 +383,7 @@ impl Preferences {
             "cache_limit_bytes" => Ok(serde_json::json!(self.cache_limit_bytes)),
             "preview_guide" => Ok(serde_json::to_value(self.preview_guide)?),
             "preview_overlays" => Ok(serde_json::to_value(self.preview_overlays)?),
+            "preview_lines" => Ok(serde_json::to_value(&self.preview_lines)?),
             _ => Err(Error::Unsupported("preference key")),
         }
     }
@@ -426,6 +432,7 @@ impl Preferences {
             "cache_limit_bytes" => self.cache_limit_bytes = serde_json::from_value(value)?,
             "preview_guide" => self.preview_guide = serde_json::from_value(value)?,
             "preview_overlays" => self.preview_overlays = serde_json::from_value(value)?,
+            "preview_lines" => self.preview_lines = serde_json::from_value(value)?,
             _ => return Err(Error::Unsupported("preference key")),
         }
         Ok(())

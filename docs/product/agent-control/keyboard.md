@@ -124,6 +124,13 @@
 | `preview.snapshot` — Save a frame | View | — | — | preview snapshot dialog |
 | `preview.copy_snapshot` — Copy frame | View | — | — | preview snapshot |
 | `preview.fullscreen` — Toggle preview fullscreen | View | — | — | preview viewport |
+| `preview.rulers` — Show or hide rulers | View | Ctrl+Alt+R | — | preview rulers |
+| `preview.guides.visible` — Show or hide guides | View | Ctrl+; | — | preview guide lines |
+| `preview.guides.add_horizontal` — Add horizontal guide | View | — | — | preview guide lines |
+| `preview.guides.add_vertical` — Add vertical guide | View | — | — | preview guide lines |
+| `preview.guides.lock` — Lock or unlock guides | View | — | — | preview guide lines |
+| `preview.guides.clear` — Clear guides | View | — | — | preview guide lines |
+| `preview.guides.move` — Move a guide | View | — | — | preview guide lines |
 | `preview.zoom.fit` — Fit preview | View | — | — | preview view |
 | `preview.zoom.in` — Zoom preview in | View | — | — | preview view |
 | `preview.zoom.out` — Zoom preview out | View | — | — | preview view |

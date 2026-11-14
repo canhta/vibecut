@@ -50,6 +50,8 @@ rows and columns 1–24, validated on load and set, one of the platform guides T
 an edit is one `ui.prefs.set` step in app history. Version 11 introduced them, version 12 added the platform guides and version 16 the custom margins, with no
 migration: older documents are dropped.
 
+`preview_lines` is `GuideLines`: the player rulers on or off, the guide lines shown or hidden and locked, and the vertical and horizontal guide positions (canvas pixels from the canvas centre, x right and y up; at most 16 per axis, within +/-100000). It is presentation only: an edit is one `ui.prefs.set` step in app history and the `preview.rulers` and `preview.guides.*` actions write it. Version 17 added it, with no migration.
+
 `adjustment_presets` is the bounded app-owned bank of named colour grades (at most 32,
 64-byte unique names, exactly the current `color_grade` parameter set with each value
 checked against its definition). Saving, applying and deleting a preset are preference

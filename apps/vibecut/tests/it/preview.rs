@@ -19,7 +19,7 @@ use std::{
 };
 use time::{FrameRate, SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
-    AppCommand, Editor, Guide, OverlayVisibility, PreviewZoom, egui,
+    AppCommand, Editor, Guide, GuideLines, LineAxis, OverlayVisibility, PreviewZoom, egui,
     i18n::{Locale, Text},
     preferences::{PreferenceStore, Preferences},
     services::playback::{Files, Playback},
@@ -1193,6 +1193,210 @@ fn custom_guide_margins_validate_inline_undo_and_restore_after_restart() {
     restarted.render().unwrap().save(&screenshot).unwrap();
 }
 
+/// The guide-line state the preferences hold, as (rulers, shown, locked, vertical, horizontal).
+fn lines(h: &Harness<Editor>) -> (bool, bool, bool, Vec<i32>, Vec<i32>) {
+    let l = &h.state().preferences.preview_lines;
+    (
+        l.rulers,
+        l.shown,
+        l.locked,
+        l.vertical.clone(),
+        l.horizontal.clone(),
+    )
+}
+
+fn move_guide(h: &mut Harness<Editor>, axis: LineAxis, index: usize, position: i32) {
+    h.state_mut()
+        .dispatch(AppCommand::MoveGuide {
+            axis,
+            index,
+            position,
+        })
+        .unwrap();
+}
+
+#[test]
+fn rulers_and_guide_lines_run_as_registered_commands_and_undo_without_touching_the_project() {
+    let fresh = || Project::new(project(FrameRate::FPS_30, 640, 360, false).into_data()).unwrap();
+    let mut h = build(editor(fresh(), Preferences::default()));
+    let committed = h.state().session.project().clone();
+    assert_eq!(lines(&h), (false, true, false, vec![], vec![]));
+    for (id, keys) in [
+        ("preview.rulers", &["Ctrl+Alt+R"][..]),
+        ("preview.guides.visible", &["Ctrl+;"][..]),
+        ("preview.guides.add_horizontal", &[][..]),
+        ("preview.guides.add_vertical", &[][..]),
+        ("preview.guides.lock", &[][..]),
+        ("preview.guides.clear", &[][..]),
+        ("preview.guides.move", &[][..]),
+    ] {
+        let spec = vibecut::actions::action(id).unwrap_or_else(|| panic!("unregistered {id}"));
+        assert_eq!(spec.defaults, keys, "{id}");
+    }
+
+    // Lock, show/hide and clear need a guide first, as the reference menu greys them out.
+    for id in [
+        "preview.guides.lock",
+        "preview.guides.visible",
+        "preview.guides.clear",
+    ] {
+        assert!(!h.state().action_enabled(id), "{id}");
+        assert!(h.state_mut().activate(id).is_err(), "{id}");
+    }
+    assert_eq!(lines(&h), (false, true, false, vec![], vec![]));
+
+    // The ruler shortcut is the same command as the menu row.
+    h.key_press_modifiers(
+        egui::Modifiers::COMMAND | egui::Modifiers::ALT,
+        egui::Key::R,
+    );
+    h.run_steps(3);
+    assert!(lines(&h).0, "Cmd Alt R shows the rulers");
+    h.state_mut().activate("preview.rulers").unwrap();
+    assert!(!lines(&h).0);
+    h.state_mut().activate("preview.rulers").unwrap();
+
+    // New guides start at the canvas centre.
+    h.state_mut()
+        .activate("preview.guides.add_horizontal")
+        .unwrap();
+    h.state_mut()
+        .activate("preview.guides.add_vertical")
+        .unwrap();
+    h.state_mut()
+        .activate("preview.guides.add_vertical")
+        .unwrap();
+    assert_eq!(lines(&h), (true, true, false, vec![0, 0], vec![0]));
+
+    // A guide moves to an absolute position through its parameterised command.
+    move_guide(&mut h, LineAxis::Vertical, 1, -250);
+    move_guide(&mut h, LineAxis::Horizontal, 0, 120);
+    assert_eq!(lines(&h), (true, true, false, vec![0, -250], vec![120]));
+    for (axis, index, position) in [
+        (LineAxis::Vertical, 2, 0),
+        (LineAxis::Horizontal, 1, 0),
+        (LineAxis::Vertical, 0, 100_001),
+    ] {
+        assert!(
+            h.state_mut()
+                .dispatch(AppCommand::MoveGuide {
+                    axis,
+                    index,
+                    position
+                })
+                .is_err(),
+            "{axis:?} {index} {position}"
+        );
+    }
+
+    // Our decision: a locked guide cannot be moved, by hand or by command.
+    h.state_mut().activate("preview.guides.lock").unwrap();
+    assert!(lines(&h).2);
+    assert!(
+        h.state_mut()
+            .dispatch(AppCommand::MoveGuide {
+                axis: LineAxis::Vertical,
+                index: 0,
+                position: 5,
+            })
+            .is_err()
+    );
+    assert_eq!(lines(&h).3, vec![0, -250]);
+    h.state_mut().activate("preview.guides.lock").unwrap();
+    assert!(!lines(&h).2);
+
+    // Hiding keeps the guides; adding one shows them again; clear drops all of them.
+    h.state_mut().activate("preview.guides.visible").unwrap();
+    assert_eq!(lines(&h), (true, false, false, vec![0, -250], vec![120]));
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Semicolon);
+    h.run_steps(3);
+    assert!(lines(&h).1, "Cmd ; shows the guides again");
+    h.state_mut().activate("preview.guides.visible").unwrap();
+    h.state_mut()
+        .activate("preview.guides.add_horizontal")
+        .unwrap();
+    assert_eq!(lines(&h), (true, true, false, vec![0, -250], vec![120, 0]));
+    h.state_mut().activate("preview.guides.clear").unwrap();
+    assert_eq!(lines(&h), (true, true, false, vec![], vec![]));
+
+    // Every edit is one app-history step and none touches the project.
+    assert!(Arc::ptr_eq(&committed, h.state().session.project()));
+    assert!(!h.state().session.can_undo());
+    h.state_mut().activate("edit.undo").unwrap();
+    assert_eq!(lines(&h), (true, true, false, vec![0, -250], vec![120, 0]));
+    h.state_mut().activate("edit.redo").unwrap();
+    assert!(lines(&h).3.is_empty());
+    assert!(Arc::ptr_eq(&committed, h.state().session.project()));
+
+    // A restart restores the rulers and the guides.
+    h.state_mut()
+        .activate("preview.guides.add_vertical")
+        .unwrap();
+    move_guide(&mut h, LineAxis::Vertical, 0, 33);
+    let saved = h.state().preferences.clone();
+    let restarted = build(editor(fresh(), saved));
+    assert_eq!(lines(&restarted), (true, true, false, vec![33], vec![]));
+}
+
+#[test]
+fn guide_lines_draw_over_the_player_drag_when_unlocked_and_stay_put_when_locked() {
+    let fresh = || Project::new(project(FrameRate::FPS_30, 640, 360, false).into_data()).unwrap();
+    let mut h = build(editor(fresh(), Preferences::default()));
+    let committed = h.state().session.project().clone();
+
+    // The Guides and rulers submenu holds the rows; a menu row adds a guide at the centre.
+    click(&mut h, "preview.menu.guides");
+    h.run_steps(3);
+    h.get(By::new().predicate(|node| node.author_id() == Some("preview.menu.rulers")))
+        .click();
+    h.run_steps(3);
+    assert!(lines(&h).0, "the menu row shows the rulers");
+    click(&mut h, "preview.menu.guides");
+    h.run_steps(3);
+    h.get(By::new().predicate(|node| node.author_id() == Some("preview.menu.guides.add_vertical")))
+        .click();
+    h.run_steps(3);
+    assert_eq!(lines(&h).3, vec![0]);
+    h.key_press(egui::Key::Escape);
+    h.run_steps(3);
+
+    // Dragging an unlocked guide moves it and publishes one step when the drag ends.
+    let start = widget(&h, "preview.guides.v.0").rect.center();
+    drag_from(&mut h, start, egui::vec2(40.0, 0.0));
+    assert_eq!(lines(&h).3, vec![0], "nothing is published mid-drag");
+    drop_at(&mut h, start + egui::vec2(40.0, 0.0));
+    let moved = lines(&h).3[0];
+    assert!(
+        moved > 0,
+        "dragging right moves the guide to positive x: {moved}"
+    );
+    let after = widget(&h, "preview.guides.v.0").rect.center();
+    assert!(
+        (after.x - start.x - 40.0).abs() <= 2.0,
+        "the guide follows the pointer: {start:?} -> {after:?}"
+    );
+    assert!(Arc::ptr_eq(&committed, h.state().session.project()));
+    h.state_mut().activate("edit.undo").unwrap();
+    assert_eq!(lines(&h).3, vec![0], "the drag is one undo step");
+    h.state_mut().activate("edit.redo").unwrap();
+    assert_eq!(lines(&h).3, vec![moved]);
+
+    // Locked guides do not move.
+    h.state_mut().activate("preview.guides.lock").unwrap();
+    h.run_steps(3);
+    let start = widget(&h, "preview.guides.v.0").rect.center();
+    drag_from(&mut h, start, egui::vec2(-60.0, 0.0));
+    drop_at(&mut h, start - egui::vec2(60.0, 0.0));
+    assert_eq!(lines(&h).3, vec![moved]);
+
+    let screenshot =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-435-rulers-guides.png");
+    if let Some(parent) = screenshot.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
+    h.render().unwrap().save(&screenshot).unwrap();
+}
+
 #[test]
 fn guides_and_notes_never_change_the_exported_frame() {
     // The export frame comes from the engine's snapshot path, which takes only the
@@ -1251,10 +1455,20 @@ fn guides_and_notes_never_change_the_exported_frame() {
         },
         ..Default::default()
     });
+    let lined = frame(Preferences {
+        preview_lines: GuideLines {
+            rulers: true,
+            vertical: vec![0, -250],
+            horizontal: vec![120],
+            ..Default::default()
+        },
+        ..Default::default()
+    });
     assert!(!shown.is_empty());
     assert_eq!(shown, hidden);
     assert_eq!(platform, hidden);
     assert_eq!(custom, hidden, "custom margins are not exported");
+    assert_eq!(lined, hidden, "rulers and guide lines are not exported");
 }
 
 #[test]

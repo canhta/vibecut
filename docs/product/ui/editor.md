@@ -107,7 +107,27 @@ Platform safe-area geometry is measured from each platform's own published creat
 
 Spotlight stays out: Snapchat's safe-zone help page renders only through script and its text could not be read; every pixel figure found for Spotlight came from third-party sites, so no primary source was verified. The Reels figure is for image ads on Reels; Meta's Stories guidance differs (14% top, 20% bottom). Google publishes the template for YouTube vertical video ads and says Shorts inventory is covered; no separate organic-Shorts figure exists. The TikTok file varies with caption length and the Anchor format; only the standard In-Feed file is used.
 
-Open: the geometry and styling of the guide picker and notes (layout, spacing, width), the shade colour and opacity of platform regions, the Spotlight guide until a primary source exists, and the Custom guide's default margins, its margin-field layout and its error wording (the Vietnamese copy is unreviewed). The reference's Show/hide rulers (`Cmd Alt R`) and Show/hide guides (`Cmd ;`) keys are measured in the Player shortcut list (`capcut-desktop-221816`); the rulers' own geometry, units and default are not captured, so rulers stay open.
+Open: the geometry and styling of the guide picker and notes (layout, spacing, width), the shade colour and opacity of platform regions, the Spotlight guide until a primary source exists, and the Custom guide's default margins, its margin-field layout and its error wording (the Vietnamese copy is unreviewed). The rulers and guide lines are measured below.
+
+### Player rulers and guide lines
+
+Source: CapCut 9.7.1 desktop, dark, 2x, `.spikes/ui-reference/capcut-desktop-2026-11-14/` row 5 (shots 100123 to 100254). Values are logical px (shot px / 2); the shot carries a window shadow, so subtract (112, 76) px from its coordinates. CapCut 9.7.1 has no light theme, so light values are ours.
+
+Measured in 100216:
+- Menu: the player header menu has a `Guides and rulers` submenu with, in order, Add horizontal guide, Add vertical guide, Lock guides, Show or Hide guides (`Cmd ;`), Clear guides, Show or Hide rulers (`Cmd Opt R`). With rulers off and no guides, Lock, Show guides and Clear are greyed out. Rulers are off by default.
+- Rulers: a 16 px strip along the top and one along the left edge of the player stage, filled like the panel. The top ruler starts 16 px from the left edge, so the corner stays empty. Each ruler has a 1 px baseline on its inner edge and ticks that rise from it: minor ticks 4 px, major ticks 12 px, ten minor ticks per major step. Major ticks carry a caption in the ruler's canvas units: the top ruler reads -1400, -700, 0, 700, 1400 left to right, the left ruler 2000, 1000, 0, -1000, -2000 top to bottom. Zero is the canvas centre, x grows to the right and y grows upward. Top captions start 5 px right of their tick; left captions are rotated a quarter turn and read upward. Caption digits are about 7 px tall (10 px type).
+- Scale in the shot: about 0.1 px per canvas unit (a 70.6 px major step for 700 units on top, 101 px for 1000 on the left). The steps 700 and 1000 differ by axis; one zoom was captured, so how the step adapts to zoom and why 700 appears is unknown.
+- Guides: added with Add horizontal guide or Add vertical guide, each centred at 0 and spanning the full ruler-bounded player height or width. Dragging out of a ruler does not create a guide in this build. A guide is a 1 px line (cyan in the reference) and can be dragged at a point away from the selection handles.
+- Not captured: Lock guides' behaviour (the click did not register), whether several guides can share a position, a limit on how many guides exist, any snap of items to guides, and the Vietnamese or the unlocked wording of the lock row.
+
+Ours:
+- Lock prevents dragging; this is our decision. A locked guide shows as before, a drag does nothing and the move command refuses; unlocking restores both. The menu row reads Unlock guides while locked.
+- Rulers and guide lines are one preference, `preview_lines` (rulers on or off, lines shown or hidden, locked, and the vertical and horizontal positions), so they persist across projects like the custom guide margins and each edit is one undoable preference step that never touches the project. Export never shows them.
+- Positions are whole canvas pixels from the canvas centre, x to the right and y upward, as the rulers label them. Each axis holds at most 16 guides within +/-100000 px.
+- Add shows hidden guides again; Clear removes every guide, unlocks and shows the lines, and keeps the rulers as they are. Lock, Show or Hide and Clear are disabled while there is no guide.
+- The labelled step is the smallest of 1, 2 and 5 times a power of ten whose spacing reaches 64 px [proposed], ten minor ticks per step; the strip, tick and caption geometry is the measured one. Colours are app roles, not the reference's: baseline and minor ticks use the border role, major ticks the disabled role, captions the secondary role and guides the accent as a solid 1 px line, so a guide differs from the dashed snap guides. The 8 px pointer band around a guide is [proposed].
+- The rulers cover the frame edges and the guide lines draw over the frame; a press on a guide line wins over the transform box beneath it.
+- Commands (one registry row each; agents drive them like keys and menus): `preview.rulers` (`Ctrl+Alt+R`), `preview.guides.visible` (`Ctrl+;`), `preview.guides.add_horizontal`, `preview.guides.add_vertical`, `preview.guides.lock`, `preview.guides.clear`, and the parameterised `preview.guides.move` (axis, index and absolute position, `AppCommand::MoveGuide`); a drag publishes the same move once when it ends.
 
 ## Effects
 

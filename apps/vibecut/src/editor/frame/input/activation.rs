@@ -550,6 +550,19 @@ impl Editor {
                 UiAction::PreviewCopySnapshot => self.copy_snapshot_requested = true,
                 UiAction::PreviewFullscreen => self.player.fullscreen = !self.player.fullscreen,
                 UiAction::PreviewFit => self.set_preview_fit()?,
+                UiAction::PreviewRulers => {
+                    self.edit_guide_lines(|lines| Ok(lines.with_rulers(!lines.rulers)))?;
+                }
+                UiAction::GuidesVisible => {
+                    self.edit_guide_lines(|lines| Ok(lines.with_shown(!lines.shown)))?;
+                }
+                UiAction::GuidesLock => {
+                    self.edit_guide_lines(|lines| Ok(lines.with_locked(!lines.locked)))?;
+                }
+                UiAction::GuidesClear => self.edit_guide_lines(|lines| Ok(lines.cleared()))?,
+                UiAction::GuideAdd(axis) => {
+                    self.edit_guide_lines(|lines| lines.with_added(axis))?;
+                }
                 UiAction::PreviewZoomIn => self.preview_zoom_by(preview::ZOOM_STEP)?,
                 UiAction::PreviewZoomOut => self.preview_zoom_by(1.0 / preview::ZOOM_STEP)?,
                 UiAction::PreviewZoomPreset => {
@@ -580,6 +593,7 @@ impl Editor {
                 | UiAction::SetPreviewZoom
                 | UiAction::SetPreference
                 | UiAction::SetFavorite
+                | UiAction::GuideMove
                 | UiAction::ListFavorites
                 | UiAction::SetKeybinding
                 | UiAction::ResetKeybindings => {

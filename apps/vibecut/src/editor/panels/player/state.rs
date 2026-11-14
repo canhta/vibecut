@@ -24,6 +24,8 @@ pub(crate) struct State {
     /// Custom margins, as typed or dragged, an open gesture shows before it publishes.
     /// Kept while invalid so the inline error stays until the value is fixed.
     pub(in crate::editor) margin_draft: Option<[i32; 4]>,
+    /// The guide line an open drag is moving; it is published once when the drag ends.
+    pub(in crate::editor) line_drag: Option<super::lines::LineDrag>,
 }
 
 /// The grid size a picker gesture is drafting, as rows and columns.
@@ -52,6 +54,7 @@ impl State {
             last_view: project::ViewState::default(),
             grid_draft: None,
             margin_draft: None,
+            line_drag: None,
         }
     }
 }

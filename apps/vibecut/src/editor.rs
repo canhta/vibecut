@@ -27,7 +27,8 @@ pub use assets::{
     MediaSortKey, MediaSortOrder, MediaView, ThumbnailSource,
 };
 pub use panels::player::{
-    Guide, OverlayVisibility, PREVIEW_SNAP_PIXELS, PreviewAxis, PreviewGuide, TextCaret,
+    Guide, GuideLines, LineAxis, OverlayVisibility, PREVIEW_SNAP_PIXELS, PreviewAxis, PreviewGuide,
+    TextCaret,
 };
 pub use state::{
     AssetInspection, Editor, Inspection, ShortcutRow, ShortcutTab, ShortcutsInspection,

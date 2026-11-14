@@ -1,6 +1,6 @@
 //! Renders the player panel from read-only editor context.
 use super::{
-    Action, Context, State,
+    Action, Context, State, lines,
     overlay::{GRID_MAX, GRID_MIN, Guide, Overlay, OverlayVisibility, PLANES, custom_from_draft},
     state::{GridDraft, TimecodeEdit},
 };
@@ -124,6 +124,7 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
                 );
                 ui.separator();
                 guide_menu(ui, cx, state, &mut actions);
+                lines::submenu(ui, cx, &mut actions);
             });
         if shown.is_none() {
             // Closed mid-drag: the drafts would otherwise reopen as stale values.
@@ -224,7 +225,12 @@ fn control(id: &str, playing: bool) -> Option<(kit::Icon, Text)> {
         _ => return None,
     })
 }
-fn remember(cx: &Context<'_>, actions: &mut Vec<Action>, id: &str, response: egui::Response) {
+pub(super) fn remember(
+    cx: &Context<'_>,
+    actions: &mut Vec<Action>,
+    id: &str,
+    response: egui::Response,
+) {
     let metadata = control(id, cx.playback.playing());
     let tooltip = metadata.map(|(_, text)| {
         let label = cx.tr(text);
@@ -264,7 +270,7 @@ fn remember(cx: &Context<'_>, actions: &mut Vec<Action>, id: &str, response: egu
 }
 
 #[allow(clippy::too_many_arguments)]
-fn menu(
+pub(super) fn menu(
     ui: &mut egui::Ui,
     cx: &Context<'_>,
     actions: &mut Vec<Action>,
@@ -1150,4 +1156,7 @@ fn canvas(
             actions,
         );
     }
+    // Last, so the rulers cover the frame and a guide line wins a press over the
+    // transform box beneath it.
+    lines::show(state, cx, ui, stage, displayed.center(), scale, actions);
 }
