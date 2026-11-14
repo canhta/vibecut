@@ -442,6 +442,42 @@ pub(super) const SCENES: &[Scene] = &[
         build: |theme, scale| editor_frame_state(theme, scale, "menu"),
     },
     Scene {
+        name: "editor-layout-menu",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| editor_frame_state(theme, scale, "layout-menu"),
+    },
+    Scene {
+        name: "editor-layout-default",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| editor_frame_state(theme, scale, "layout-default"),
+    },
+    Scene {
+        name: "editor-layout-media",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| editor_frame_state(theme, scale, "layout-media"),
+    },
+    Scene {
+        name: "editor-layout-generative",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| editor_frame_state(theme, scale, "layout-generative"),
+    },
+    Scene {
+        name: "editor-layout-attributes",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| editor_frame_state(theme, scale, "layout-attributes"),
+    },
+    Scene {
+        name: "editor-layout-vertical",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| editor_frame_state(theme, scale, "layout-vertical"),
+    },
+    Scene {
         name: "editor-rename",
         reference_dark: None,
         reference_light: None,

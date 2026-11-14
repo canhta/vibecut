@@ -63,8 +63,8 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | LAYOUT-04 | Timeline divider limits | Done | Matches | 14b/111942 | |
 | LAYOUT-05 | Default columns | Partial | Matches | 14c | |
 | LAYOUT-06 | Reset current layout | Done | Proposed | 14b/112001 | |
-| LAYOUT-07 | Layout presets | Missing | — | 2026-11-14 notes | Five named presets |
-| LAYOUT-08 | Layout icons in title bar | Missing | Not captured | 05/221643 | |
+| LAYOUT-07 | Layout presets | Done | Matches | 2026-11-14f layout-presets | Default, Media, Generative, Attributes, Vertical; only Default was pixel-measured, the others from seam scans of their frames; Reset current layout keeps the preset |
+| LAYOUT-08 | Layout icons in title bar | Done | Partial | 2026-11-14f layout-presets | Layout menu button beside the shortcuts button; the glyph is ours and the menu shows a tick on the active preset |
 | LAYOUT-09 | Pro, Share buttons | Out of scope | — | 05/221643 | Accounts, sharing |
 | LAYOUT-10 | Autosave state in title bar | Done | Matches | 05/221643 | |
 | LAYOUT-11 | Detachable panels | Ours | — | | |

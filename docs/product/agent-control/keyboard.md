@@ -169,7 +169,12 @@
 | `import.cancel` — Cancel import | File | — | — | workspace import queue |
 | `appearance.theme` — Toggle theme | View | — | — | preference store |
 | `appearance.locale` — Toggle language | View | — | — | preference store |
-| `layout.reset` — Reset layout | View | — | — | preference store |
+| `layout.preset.default` — Default | View | — | — | preference store |
+| `layout.preset.media` — Media | View | — | — | preference store |
+| `layout.preset.generative` — Generative | View | — | — | preference store |
+| `layout.preset.attributes` — Attributes | View | — | — | preference store |
+| `layout.preset.vertical` — Vertical | View | — | — | preference store |
+| `layout.reset` — Reset current layout | View | — | — | preference store |
 | `view.toggle_timeline` — Show or hide timeline | View | — | — | timeline panel layout |
 | `shortcuts.open` — Keyboard shortcuts | View | — | — | shortcuts dialog |
 | `app.help` — Help | View | — | — | help |

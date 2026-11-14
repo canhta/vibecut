@@ -212,11 +212,10 @@ pub struct Inspection {
     /// Present while an inline text session is open.
     pub text_caret: Option<TextCaret>,
 }
-#[derive(Clone, Debug)]
+/// One or more preference edits that undo and redo together: key, before, after.
+#[derive(Clone, Debug, Default)]
 pub(super) struct PreferenceCommand {
-    pub(super) key: String,
-    pub(super) before: serde_json::Value,
-    pub(super) after: serde_json::Value,
+    pub(super) edits: Vec<(String, serde_json::Value, serde_json::Value)>,
 }
 impl PreferenceCommand {
     pub(in crate::editor) fn new(
@@ -225,9 +224,7 @@ impl PreferenceCommand {
         after: serde_json::Value,
     ) -> Self {
         Self {
-            key: key.to_owned(),
-            before,
-            after,
+            edits: vec![(key.to_owned(), before, after)],
         }
     }
 }
@@ -253,9 +250,11 @@ impl PreferenceHistory {
         let Some(command) = self.undo.pop() else {
             return false;
         };
-        if preferences
-            .set(&command.key, command.before.clone())
-            .is_err()
+        if command
+            .edits
+            .iter()
+            .rev()
+            .any(|(key, before, _)| preferences.set(key, before.clone()).is_err())
         {
             self.undo.push(command);
             return false;
@@ -267,9 +266,10 @@ impl PreferenceHistory {
         let Some(command) = self.redo.pop() else {
             return false;
         };
-        if preferences
-            .set(&command.key, command.after.clone())
-            .is_err()
+        if command
+            .edits
+            .iter()
+            .any(|(key, _, after)| preferences.set(key, after.clone()).is_err())
         {
             self.redo.push(command);
             return false;

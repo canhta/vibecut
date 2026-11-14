@@ -217,6 +217,8 @@ pub enum UiAction {
     Theme,
     Locale,
     ResetLayout,
+    /// A named layout from the title-bar menu; also sets the panel fractions.
+    SetLayoutPreset(crate::preferences::LayoutPreset),
     ProjectInspector,
     DetailsInspector,
     RetryPreview,

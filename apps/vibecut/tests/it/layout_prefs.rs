@@ -14,8 +14,8 @@ use time::FrameRate;
 use vibecut::{
     Editor, egui,
     preferences::{
-        DEFAULT_PANELS, MEDIA_MIN_PX, PLAYER_MIN_PX, PreferenceStore, Preferences, TIMELINE_MAX,
-        TIMELINE_MIN,
+        DEFAULT_PANELS, LayoutPreset, MEDIA_MIN_PX, PLAYER_MIN_PX, PreferenceStore, Preferences,
+        TIMELINE_MAX, TIMELINE_MIN,
     },
     services::playback::{Files, Playback},
 };
@@ -46,10 +46,12 @@ fn build(editor: Editor) -> Harness<'static, Editor> {
 }
 
 fn click(harness: &mut Harness<Editor>, id: &str) {
-    if matches!(
-        id,
-        "appearance.theme" | "appearance.locale" | "layout.reset"
-    ) {
+    if id.starts_with("layout.preset.") || id == "layout.reset" {
+        harness
+            .get(By::new().predicate(|node| node.author_id() == Some("layout.menu")))
+            .click();
+        harness.run_steps(2);
+    } else if matches!(id, "appearance.theme" | "appearance.locale") {
         harness
             .get(By::new().predicate(|node| node.author_id() == Some("window.menu")))
             .click();
@@ -679,4 +681,104 @@ fn window_geometry_is_independent_bounded_and_persisted_outside_project_history(
         assert!(store.save(&preferences).is_err());
         assert_eq!(store.load_with_warning().0, loaded);
     }
+}
+
+#[test]
+fn every_layout_preset_arranges_the_panels_and_round_trips() {
+    for preset in LayoutPreset::ALL {
+        let mut harness = build(editor(Preferences {
+            layout_preset: preset,
+            panels: preset.panels(),
+            ..Default::default()
+        }));
+        harness.run_steps(3);
+        let p = harness.state().panels().clone();
+        let (media, player, inspector, timeline) =
+            (p["media"], p["preview"], p["inspector"], p["timeline"]);
+        match preset {
+            LayoutPreset::Default | LayoutPreset::Media => {
+                assert!(media.right() < player.left() && player.right() < inspector.left());
+                assert_eq!(
+                    (timeline.left(), timeline.right()),
+                    (media.left(), inspector.right())
+                );
+            }
+            LayoutPreset::Generative => {
+                assert_eq!(
+                    (inspector.left(), inspector.right()),
+                    (media.left(), media.right())
+                );
+                assert!(inspector.top() > media.bottom());
+                assert_eq!(timeline.top(), inspector.top());
+                assert_eq!(
+                    (player.top(), player.right()),
+                    (media.top(), timeline.right())
+                );
+            }
+            LayoutPreset::Attributes => {
+                assert_eq!(
+                    (inspector.top(), inspector.bottom()),
+                    (media.top(), timeline.bottom())
+                );
+                assert_eq!(timeline.right(), player.right());
+            }
+            LayoutPreset::Vertical => {
+                assert_eq!(
+                    (player.top(), player.bottom()),
+                    (media.top(), timeline.bottom())
+                );
+                assert_eq!(timeline.right(), inspector.right());
+                assert!(inspector.bottom() < timeline.top());
+            }
+        }
+        for rect in [media, player, inspector, timeline] {
+            assert!(
+                rect.width() > 100.0 && rect.height() > 100.0,
+                "{preset:?} {rect:?}"
+            );
+        }
+        // The same preset is reachable from the title-bar menu and its seams drag.
+        let mut harness = build(editor(Preferences::default()));
+        harness.run_steps(3);
+        click(&mut harness, &format!("layout.preset.{}", preset.id()));
+        assert_eq!(harness.state().preferences.layout_preset, preset);
+        assert_eq!(harness.state().preferences.panels, preset.panels());
+        // One Undo restores the preset and the fractions together.
+        if preset != LayoutPreset::Default {
+            click(&mut harness, "edit.undo");
+            assert_eq!(
+                harness.state().preferences.layout_preset,
+                LayoutPreset::Default
+            );
+            assert_eq!(harness.state().preferences.panels, DEFAULT_PANELS);
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let store = PreferenceStore::new(dir.path().join("preferences.json"));
+        let saved = Preferences {
+            layout_preset: preset,
+            panels: preset.panels(),
+            ..Default::default()
+        };
+        store.save(&saved).unwrap();
+        assert_eq!(store.load_with_warning().0, saved);
+    }
+}
+
+#[test]
+fn reset_current_layout_keeps_the_preset_and_restores_its_fractions() {
+    let mut harness = build(editor(Preferences {
+        layout_preset: LayoutPreset::Attributes,
+        panels: [0.3, 0.2, 0.5],
+        ..Default::default()
+    }));
+    harness.run_steps(3);
+    click(&mut harness, "layout.reset");
+    assert_eq!(
+        harness.state().preferences.layout_preset,
+        LayoutPreset::Attributes
+    );
+    assert_eq!(
+        harness.state().preferences.panels,
+        LayoutPreset::Attributes.panels()
+    );
 }

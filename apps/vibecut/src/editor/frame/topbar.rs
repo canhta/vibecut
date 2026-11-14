@@ -121,6 +121,26 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
         ),
         Vec2::splat(kit::size::CONTROL),
     );
+    let layout_rect =
+        shortcuts_rect.translate(Vec2::new(-(kit::space::MD + kit::size::CONTROL), 0.0));
+    let mut layout_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .id_salt("layout.menu")
+            .max_rect(layout_rect),
+    );
+    let layout = kit::icon_button(
+        &mut layout_ui,
+        "layout.menu",
+        Icon::Layout,
+        tr(Text::LayoutMenu),
+        false,
+    );
+    egui::Popup::menu(&layout).show(|ui| {
+        layout_entries(state, cx, ui, &mut actions, &font, color);
+    });
+    state
+        .painted
+        .push(("layout.menu", Some(Icon::Layout.name()), layout));
     let mut shortcuts_ui = ui.new_child(
         egui::UiBuilder::new()
             .id_salt("shortcuts.open")
@@ -183,6 +203,8 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
             menu_entry(state, cx, ui, &mut actions, id, icon, label, &font, color);
         }
         ui.separator();
+        layout_entries(state, cx, ui, &mut actions, &font, color);
+        ui.separator();
         for (id, icon, label) in [
             ("window.home", Icon::SquaresFour, Text::Home),
             ("project.save", Icon::FloppyDisk, Text::Save),
@@ -195,7 +217,6 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
             ("project.delete", Icon::Trash, Text::ActionProjectDelete),
             ("preferences.open", Icon::GearSix, Text::Settings),
             ("models.open", Icon::File, Text::Models),
-            ("layout.reset", Icon::CornersOut, Text::Reset),
             ("appearance.locale", Icon::Translate, Text::Language),
             ("appearance.theme", Icon::CircleHalf, Text::Theme),
         ] {
@@ -206,6 +227,55 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Ve
         .painted
         .push(("window.menu", Some(Icon::SlidersHorizontal.name()), menu));
     actions
+}
+
+/// The five named layouts, the active one ticked, then Reset current layout.
+fn layout_entries(
+    state: &mut State,
+    cx: &Context<'_>,
+    ui: &mut egui::Ui,
+    actions: &mut Vec<Action>,
+    font: &FontId,
+    color: egui::Color32,
+) {
+    use crate::preferences::LayoutPreset;
+    for preset in LayoutPreset::ALL {
+        let (id, label) = match preset {
+            LayoutPreset::Default => ("layout.preset.default", Text::ActionLayoutPresetDefault),
+            LayoutPreset::Media => ("layout.preset.media", Text::ActionLayoutPresetMedia),
+            LayoutPreset::Generative => (
+                "layout.preset.generative",
+                Text::ActionLayoutPresetGenerative,
+            ),
+            LayoutPreset::Attributes => (
+                "layout.preset.attributes",
+                Text::ActionLayoutPresetAttributes,
+            ),
+            LayoutPreset::Vertical => ("layout.preset.vertical", Text::ActionLayoutPresetVertical),
+        };
+        // The tick column stays reserved so the names line up.
+        let tick = if preset == cx.preferences.layout_preset {
+            color
+        } else {
+            egui::Color32::TRANSPARENT
+        };
+        menu_entry(state, cx, ui, actions, id, Icon::Check, label, font, tick);
+        if preset == LayoutPreset::Vertical {
+            ui.separator();
+        }
+    }
+    ui.separator();
+    menu_entry(
+        state,
+        cx,
+        ui,
+        actions,
+        "layout.reset",
+        Icon::CornersOut,
+        Text::Reset,
+        font,
+        color,
+    );
 }
 
 /// The header's left text: the autosave clock, or the unsaved, pending and failed states.
