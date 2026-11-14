@@ -532,57 +532,84 @@ impl TextBackground {
 #[serde(deny_unknown_fields)]
 pub struct TextStroke {
     pub color: Color,
-    /// Stroke width in project canvas pixels; zero draws nothing.
-    pub width: f32,
+    /// The reference's Thickness, 0..=100; zero draws nothing. [`Self::width_px`] maps it to
+    /// project canvas pixels.
+    pub thickness: f32,
 }
 impl TextStroke {
-    /// Largest accepted stroke width in project canvas pixels.
-    pub const MAX_WIDTH: f32 = 64.0;
-    /// Whether the width is finite and within the documented range.
+    /// Largest accepted thickness.
+    pub const MAX_THICKNESS: f32 = captions::MAX_THICKNESS;
+    /// Whether the thickness is finite and within the documented range.
     pub fn valid(&self) -> bool {
-        self.width.is_finite() && (0.0..=Self::MAX_WIDTH).contains(&self.width)
+        self.thickness.is_finite() && (0.0..=Self::MAX_THICKNESS).contains(&self.thickness)
+    }
+    /// Stroke width in project canvas pixels for a font size in the same pixels. The mapping
+    /// is the proportional rule `thickness / 100 * 0.2 * font_size`, shared with caption
+    /// outlines.
+    pub fn width_px(&self, font_size: f32) -> f32 {
+        captions::outline_width(self.thickness, font_size)
     }
 }
 impl Default for TextStroke {
     fn default() -> Self {
         Self {
             color: Color([0, 0, 0, 255]),
-            width: 4.0,
+            thickness: 40.0,
         }
     }
 }
-/// A soft, offset copy of the glyph coverage painted behind the fill.
+/// A soft, offset copy of the glyph coverage painted behind the fill, set the reference's
+/// way by distance and angle.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TextShadow {
     pub color: Color,
-    /// Offset from the glyph coverage in project canvas pixels (y down).
-    pub offset_x: f32,
-    pub offset_y: f32,
-    /// Blur radius in project canvas pixels; zero keeps a hard copy.
-    pub blur: f32,
+    /// Percent 0..=100 applied to the colour's alpha.
+    pub opacity: f32,
+    /// The reference's Bluriness, percent 0..=100; zero keeps a hard copy.
+    pub blurriness: f32,
+    /// Offset length, 0..=100.
+    pub distance: f32,
+    /// Offset direction in degrees, -180..=180: 0 is right and positive turns
+    /// counter-clockwise, so the default -45 falls down and to the right.
+    pub angle: f32,
 }
 impl TextShadow {
-    /// Largest offset magnitude in project canvas pixels.
-    pub const MAX_OFFSET: f32 = 1024.0;
-    /// Largest blur radius in project canvas pixels.
-    pub const MAX_BLUR: f32 = 64.0;
+    /// Largest opacity, blurriness or distance.
+    pub const MAX_PERCENT: f32 = 100.0;
+    /// Largest angle magnitude in degrees.
+    pub const MAX_ANGLE: f32 = 180.0;
+    /// Blur radius at blurriness 100 as a share of the font size (open: not measured).
+    pub const BLUR_FONT_RATIO: f32 = 0.25;
     /// Whether every field is finite and within its documented range.
     pub fn valid(&self) -> bool {
-        let offset = |v: f32| v.is_finite() && v.abs() <= Self::MAX_OFFSET;
-        offset(self.offset_x)
-            && offset(self.offset_y)
-            && self.blur.is_finite()
-            && (0.0..=Self::MAX_BLUR).contains(&self.blur)
+        let percent = |v: f32| v.is_finite() && (0.0..=Self::MAX_PERCENT).contains(&v);
+        percent(self.opacity)
+            && percent(self.blurriness)
+            && percent(self.distance)
+            && self.angle.is_finite()
+            && self.angle.abs() <= Self::MAX_ANGLE
+    }
+    /// Offset (x right, y down) in canvas pixels for a font size in the same pixels:
+    /// `distance / 100 * font_size` along `angle`.
+    pub fn offset_px(&self, font_size: f32) -> (f32, f32) {
+        let length = self.distance / Self::MAX_PERCENT * font_size;
+        let radians = self.angle.to_radians();
+        (length * radians.cos(), -length * radians.sin())
+    }
+    /// Blur radius in canvas pixels: `blurriness / 100 * 0.25 * font_size`.
+    pub fn blur_px(&self, font_size: f32) -> f32 {
+        self.blurriness / Self::MAX_PERCENT * Self::BLUR_FONT_RATIO * font_size
     }
 }
 impl Default for TextShadow {
     fn default() -> Self {
         Self {
-            color: Color([0, 0, 0, 160]),
-            offset_x: 4.0,
-            offset_y: 4.0,
-            blur: 4.0,
+            color: Color([0, 0, 0, 255]),
+            opacity: 90.0,
+            blurriness: 15.0,
+            distance: 5.0,
+            angle: -45.0,
         }
     }
 }

@@ -265,8 +265,10 @@ using `text.save_preset`. Both use the engine preset commands from
 and the row's selection compares the complete stored style. Words and animation keys are
 never saved.
 
-Below the box rows, an outline on shows Width (`inspector.text_stroke_width`) and a shadow on
-shows Offset X/Y (`inspector.text_shadow_offset_x`/`_y`) and Blur (`inspector.text_shadow_blur`).
+Below the box rows, a stroke on shows Thickness (`inspector.text_stroke_thickness`, 0-100) and a
+shadow on shows Opacity (`inspector.text_shadow_opacity`), Bluriness
+(`inspector.text_shadow_blurriness`), Distance (`inspector.text_shadow_distance`) and Angle
+(`inspector.text_shadow_angle`, -180 to 180), the reference's controls and defaults.
 These fields are not engine parameter rows. `write_field` sends them as `Action::SetField`, and
 `commands::text_effect_patch` builds one `TextStroke` or `TextShadow` patch from the item's
 current value with only that field replaced, so the colour and the other geometry survive.

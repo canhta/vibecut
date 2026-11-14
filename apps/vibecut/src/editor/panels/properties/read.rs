@@ -55,18 +55,22 @@ pub(super) fn item_value(project: &project::Project, item: ItemId, field: &str) 
         ("text_letter_spacing", ItemParams::Text(params)) => Some(f64::from(params.letter_spacing)),
         ("text_line_height", ItemParams::Text(params)) => Some(f64::from(params.line_height)),
         // Unset outlines and shadows show the values a first edit would create.
-        ("text_stroke_width", ItemParams::Text(params)) => {
-            Some(f64::from(params.stroke.clone().unwrap_or_default().width))
-        }
+        ("text_stroke_thickness", ItemParams::Text(params)) => Some(f64::from(
+            params.stroke.clone().unwrap_or_default().thickness,
+        )),
         (
-            "text_shadow_offset_x" | "text_shadow_offset_y" | "text_shadow_blur",
+            "text_shadow_opacity"
+            | "text_shadow_blurriness"
+            | "text_shadow_distance"
+            | "text_shadow_angle",
             ItemParams::Text(params),
         ) => {
             let shadow = params.shadow.clone().unwrap_or_default();
             Some(f64::from(match field {
-                "text_shadow_offset_x" => shadow.offset_x,
-                "text_shadow_offset_y" => shadow.offset_y,
-                _ => shadow.blur,
+                "text_shadow_opacity" => shadow.opacity,
+                "text_shadow_blurriness" => shadow.blurriness,
+                "text_shadow_distance" => shadow.distance,
+                _ => shadow.angle,
             }))
         }
         (field, ItemParams::Text(params)) if field.starts_with("text_background_") => {

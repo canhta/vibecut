@@ -183,26 +183,28 @@ impl CaptionLook {
             Self::PlainInk => style(BE_VIETNAM, REGULAR, 44.0, INK),
             Self::PlainCream => style(PACIFICO, REGULAR, 48.0, [255, 244, 214, 255]),
             Self::PlainPoster => style(ANTON, REGULAR, 56.0, WHITE),
-            Self::OutlineBottom => outlined(style(BE_VIETNAM, BOLD, 48.0, WHITE), BLACK, 3.0),
-            Self::OutlineThin => outlined(style(BE_VIETNAM, REGULAR, 44.0, WHITE), BLACK, 2.0),
-            Self::OutlineThick => outlined(style(BE_VIETNAM, BOLD, 52.0, WHITE), BLACK, 5.0),
+            Self::OutlineBottom => outlined(style(BE_VIETNAM, BOLD, 48.0, WHITE), BLACK, 30.0),
+            Self::OutlineThin => outlined(style(BE_VIETNAM, REGULAR, 44.0, WHITE), BLACK, 20.0),
+            Self::OutlineThick => outlined(style(BE_VIETNAM, BOLD, 52.0, WHITE), BLACK, 50.0),
             Self::OutlineYellow => outlined(
                 style(BE_VIETNAM, BOLD, 48.0, [255, 215, 0, 255]),
                 BLACK,
-                3.0,
+                30.0,
             ),
             Self::OutlineTop => at(
-                outlined(style(BE_VIETNAM, BOLD, 48.0, WHITE), BLACK, 3.0),
+                outlined(style(BE_VIETNAM, BOLD, 48.0, WHITE), BLACK, 30.0),
                 CaptionPosition::Top,
             ),
             Self::OutlineMiddle => at(
-                outlined(style(BE_VIETNAM, BOLD, 48.0, WHITE), BLACK, 3.0),
+                outlined(style(BE_VIETNAM, BOLD, 48.0, WHITE), BLACK, 30.0),
                 CaptionPosition::Middle,
             ),
-            Self::OutlinePoster => outlined(style(ANTON, REGULAR, 60.0, WHITE), BLACK, 4.0),
-            Self::OutlineHand => {
-                outlined(style(PATRICK, REGULAR, 52.0, WHITE), [20, 20, 60, 255], 3.0)
-            }
+            Self::OutlinePoster => outlined(style(ANTON, REGULAR, 60.0, WHITE), BLACK, 35.0),
+            Self::OutlineHand => outlined(
+                style(PATRICK, REGULAR, 52.0, WHITE),
+                [20, 20, 60, 255],
+                30.0,
+            ),
             Self::LabelBlack => boxed(
                 style(BE_VIETNAM, BOLD, 48.0, WHITE),
                 [0, 0, 0, 160],
@@ -255,19 +257,19 @@ impl CaptionLook {
                 CaptionPosition::Top,
             ),
             Self::KaraokeGold => highlight(
-                outlined(style(BE_VIETNAM, BOLD, 48.0, WHITE), BLACK, 3.0),
+                outlined(style(BE_VIETNAM, BOLD, 48.0, WHITE), BLACK, 30.0),
                 GOLD,
             ),
             Self::KaraokeCyan => highlight(
-                outlined(style(BE_VIETNAM, BOLD, 48.0, WHITE), BLACK, 3.0),
+                outlined(style(BE_VIETNAM, BOLD, 48.0, WHITE), BLACK, 30.0),
                 [0, 229, 255],
             ),
             Self::KaraokePink => highlight(
-                outlined(style(BE_VIETNAM, BOLD, 48.0, WHITE), BLACK, 3.0),
+                outlined(style(BE_VIETNAM, BOLD, 48.0, WHITE), BLACK, 30.0),
                 [255, 64, 200],
             ),
             Self::KaraokeGreen => highlight(
-                outlined(style(BE_VIETNAM, BOLD, 48.0, WHITE), BLACK, 3.0),
+                outlined(style(BE_VIETNAM, BOLD, 48.0, WHITE), BLACK, 30.0),
                 [132, 255, 132],
             ),
             Self::KaraokeBox => highlight(
@@ -280,7 +282,7 @@ impl CaptionLook {
                 GOLD,
             ),
             Self::KaraokePoster => highlight(
-                outlined(style(ANTON, REGULAR, 60.0, WHITE), BLACK, 4.0),
+                outlined(style(ANTON, REGULAR, 60.0, WHITE), BLACK, 35.0),
                 GOLD,
             ),
         }
@@ -358,8 +360,8 @@ fn one_line(mut style: CaptionStyle) -> CaptionStyle {
     style
 }
 
-fn outlined(mut style: CaptionStyle, color: [u8; 4], width: f32) -> CaptionStyle {
-    style.outline = Some(CaptionOutline { color, width });
+fn outlined(mut style: CaptionStyle, color: [u8; 4], thickness: f32) -> CaptionStyle {
+    style.outline = Some(CaptionOutline { color, thickness });
     style
 }
 

@@ -732,13 +732,14 @@ fn text_presets_save_apply_all_selected_items_undo_redo_and_reopen() {
             color: Color([10, 20, 30, 255]),
             stroke: Some(project::TextStroke {
                 color: Color([255, 0, 0, 255]),
-                width: 3.0,
+                thickness: 30.0,
             }),
             shadow: Some(project::TextShadow {
-                color: Color([0, 0, 0, 128]),
-                offset_x: 2.0,
-                offset_y: 3.0,
-                blur: 1.0,
+                color: Color([0, 0, 0, 255]),
+                opacity: 50.0,
+                blurriness: 10.0,
+                distance: 4.0,
+                angle: -56.0,
             }),
             glow: true,
             background: Some(Default::default()),
@@ -752,13 +753,14 @@ fn text_presets_save_apply_all_selected_items_undo_redo_and_reopen() {
         color: Color([10, 20, 30, 255]),
         stroke: Some(project::TextStroke {
             color: Color([255, 0, 0, 255]),
-            width: 3.0,
+            thickness: 30.0,
         }),
         shadow: Some(project::TextShadow {
-            color: Color([0, 0, 0, 128]),
-            offset_x: 2.0,
-            offset_y: 3.0,
-            blur: 1.0,
+            color: Color([0, 0, 0, 255]),
+            opacity: 50.0,
+            blurriness: 10.0,
+            distance: 4.0,
+            angle: -56.0,
         }),
         glow: true,
         background: Some(Default::default()),
@@ -1072,13 +1074,14 @@ fn text_style_patches_update_one_field_and_validate() {
         ItemParamPatch::TextCase(project::TextCase::Upper),
         ItemParamPatch::TextStroke(Some(project::TextStroke {
             color: Color([9, 8, 7, 255]),
-            width: 4.0,
+            thickness: 35.0,
         })),
         ItemParamPatch::TextShadow(Some(project::TextShadow {
-            color: Color([3, 2, 1, 200]),
-            offset_x: 5.0,
-            offset_y: -6.0,
-            blur: 2.0,
+            color: Color([3, 2, 1, 255]),
+            opacity: 80.0,
+            blurriness: 20.0,
+            distance: 8.0,
+            angle: 130.0,
         })),
         ItemParamPatch::TextGlow(true),
     ] {
@@ -1134,8 +1137,10 @@ fn text_style_patches_update_one_field_and_validate() {
     assert_eq!(json["params"]["decoration"], "line_through");
     assert_eq!(json["params"]["case"], "upper");
     assert_eq!(json["params"]["background"]["offset_x"], -30.5);
-    assert_eq!(p.stroke.as_ref().unwrap().width, 4.0);
-    assert_eq!(p.shadow.as_ref().unwrap().blur, 2.0);
+    assert_eq!(p.stroke.as_ref().unwrap().thickness, 35.0);
+    let shadow = p.shadow.as_ref().unwrap();
+    assert_eq!((shadow.opacity, shadow.blurriness), (80.0, 20.0));
+    assert_eq!((shadow.distance, shadow.angle), (8.0, 130.0));
     assert!(p.glow);
 
     let after = s.project().clone();
@@ -1149,13 +1154,21 @@ fn text_style_patches_update_one_field_and_validate() {
         ItemParamPatch::TextLineHeight(f32::INFINITY),
         ItemParamPatch::TextStroke(Some(project::TextStroke {
             color: Color([0; 4]),
-            width: project::TextStroke::MAX_WIDTH + 1.0,
+            thickness: project::TextStroke::MAX_THICKNESS + 1.0,
         })),
         ItemParamPatch::TextShadow(Some(project::TextShadow {
             color: Color([0; 4]),
-            offset_x: project::TextShadow::MAX_OFFSET + 1.0,
-            offset_y: 0.0,
-            blur: 0.0,
+            opacity: 90.0,
+            blurriness: 15.0,
+            distance: project::TextShadow::MAX_PERCENT + 1.0,
+            angle: 0.0,
+        })),
+        ItemParamPatch::TextShadow(Some(project::TextShadow {
+            color: Color([0; 4]),
+            opacity: 90.0,
+            blurriness: 15.0,
+            distance: 5.0,
+            angle: project::TextShadow::MAX_ANGLE + 1.0,
         })),
         ItemParamPatch::TextBackgroundPaddingX(-1.0),
         ItemParamPatch::TextBackgroundPaddingY(129.0),

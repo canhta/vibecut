@@ -52,8 +52,20 @@ pub enum CaptionPosition {
 #[serde(deny_unknown_fields)]
 pub struct CaptionOutline {
     pub color: [u8; 4],
-    /// Pixels at 1080 output lines, scaled with output height.
-    pub width: f32,
+    /// Stroke thickness on the 0..=100 scale text strokes use; [`outline_width`] gives the
+    /// pixels at the caption's size.
+    pub thickness: f32,
+}
+
+/// Largest stroke thickness, shared by text strokes and caption outlines.
+pub const MAX_THICKNESS: f32 = 100.0;
+/// Stroke width at thickness 100 as a share of the font size. The reference gives no pixel
+/// measure for its 0..=100 Thickness, so this proportional rule is an open value.
+pub const THICKNESS_FONT_RATIO: f32 = 0.2;
+
+/// Outer stroke width in the units of `font_size` for a 0..=100 thickness.
+pub fn outline_width(thickness: f32, font_size: f32) -> f32 {
+    thickness / MAX_THICKNESS * THICKNESS_FONT_RATIO * font_size
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -96,7 +108,7 @@ impl Default for CaptionStyle {
             color: [255; 4],
             outline: Some(CaptionOutline {
                 color: [0, 0, 0, 255],
-                width: 2.0,
+                thickness: 20.0,
             }),
             background: None,
             position: CaptionPosition::Bottom,
@@ -119,7 +131,10 @@ impl CaptionStyle {
             && self.size >= 4.0
             && bounded(self.safe_area_percent, 40.0)
             && (1..=16).contains(&self.max_lines)
-            && self.outline.as_ref().is_none_or(|o| bounded(o.width, 64.0))
+            && self
+                .outline
+                .as_ref()
+                .is_none_or(|o| bounded(o.thickness, MAX_THICKNESS))
             && self
                 .background
                 .as_ref()

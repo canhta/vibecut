@@ -279,10 +279,10 @@ pub(in crate::editor) fn paint_matte_stroke(
     Ok(())
 }
 
-/// Outline width and shadow offset or blur. The engine's `text_stroke` and `text_shadow`
-/// patches carry the whole value, so the edit copies the item's current outline or shadow,
-/// replaces its one field and keeps the rest; an unset outline or shadow starts from its
-/// defaults, as a first Background edit does.
+/// Stroke thickness and the shadow's opacity, blurriness, distance or angle. The engine's
+/// `text_stroke` and `text_shadow` patches carry the whole value, so the edit copies the
+/// item's current stroke or shadow, replaces its one field and keeps the rest; an unset stroke
+/// or shadow starts from its defaults, as a first Background edit does.
 fn text_effect_patch(
     project: &project::Project,
     item: ItemId,
@@ -291,7 +291,11 @@ fn text_effect_patch(
 ) -> Result<Option<ItemParamPatch>> {
     if !matches!(
         field,
-        "text_stroke_width" | "text_shadow_offset_x" | "text_shadow_offset_y" | "text_shadow_blur"
+        "text_stroke_thickness"
+            | "text_shadow_opacity"
+            | "text_shadow_blurriness"
+            | "text_shadow_distance"
+            | "text_shadow_angle"
     ) {
         return Ok(None);
     }
@@ -307,29 +311,22 @@ fn text_effect_patch(
         return Err(Error::Invalid("text item"));
     };
     Ok(Some(match field {
-        "text_stroke_width" => {
+        "text_stroke_thickness" => {
             let stroke = params.stroke.clone().unwrap_or_default();
             ItemParamPatch::TextStroke(Some(project::TextStroke {
-                width: number,
+                thickness: number,
                 ..stroke
             }))
         }
         _ => {
-            let shadow = params.shadow.clone().unwrap_or_default();
-            ItemParamPatch::TextShadow(Some(match field {
-                "text_shadow_offset_x" => project::TextShadow {
-                    offset_x: number,
-                    ..shadow
-                },
-                "text_shadow_offset_y" => project::TextShadow {
-                    offset_y: number,
-                    ..shadow
-                },
-                _ => project::TextShadow {
-                    blur: number,
-                    ..shadow
-                },
-            }))
+            let mut shadow = params.shadow.clone().unwrap_or_default();
+            match field {
+                "text_shadow_opacity" => shadow.opacity = number,
+                "text_shadow_blurriness" => shadow.blurriness = number,
+                "text_shadow_distance" => shadow.distance = number,
+                _ => shadow.angle = number,
+            }
+            ItemParamPatch::TextShadow(Some(shadow))
         }
     }))
 }

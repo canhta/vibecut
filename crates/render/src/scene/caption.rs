@@ -8,8 +8,8 @@ use captions::{
 use project::{TextAlign, TextDecoration};
 
 /// ASS records no outline width in the cue style table, so an imported outline
-/// keeps the default 1080-line width instead of inventing one.
-const IMPORTED_OUTLINE_WIDTH: f32 = 2.0;
+/// keeps the default caption thickness instead of inventing one.
+const IMPORTED_OUTLINE_THICKNESS: f32 = 20.0;
 /// Per-side ceiling shared with [`CaptionStyle::safe_area_percent`], so a hostile
 /// margin can never produce an empty destination.
 const MAX_CUE_MARGIN: f64 = 0.4;
@@ -29,7 +29,7 @@ pub(crate) fn for_cue(base: &CaptionStyle, cue: Option<&CueStyle>) -> CaptionSty
         color: cue.primary_color,
         outline: (cue.border_style != 3).then_some(CaptionOutline {
             color: cue.outline_color,
-            width: IMPORTED_OUTLINE_WIDTH,
+            thickness: IMPORTED_OUTLINE_THICKNESS,
         }),
         background: (cue.border_style == 3).then_some(CaptionBackground {
             color: cue.background_color,
