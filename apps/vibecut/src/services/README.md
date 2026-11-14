@@ -65,7 +65,9 @@ immutable project their preview renders.
 `set_hover` is a transient preview time for the timeline's preview axis: it renders one
 frame at a nonnegative frame-snapped pointer time, including empty tail past the
 project duration, while the transport position, play state and audio stay put.
-The compositor excludes each ended layer and leaves globally empty tail black.
+The compositor excludes each ended layer and leaves globally empty tail black; a transport
+position at or past the end renders the last frame instead (`held_at`), so only a pointer time
+shows the empty tail.
 Each pointer time fences only the preview generation, so only the latest frame
 request survives; clearing it or a seek returns the preview to the transport.
 The independent audio epoch, queued PCM, source cursor, mixer state and callback

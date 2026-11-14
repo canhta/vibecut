@@ -268,3 +268,42 @@ fn commands_seeks_activations_scene_renames_and_failures_reach_their_owners() {
     editor.apply_timeline(vec![timeline::Action::Fail("nope".into())]);
     assert_eq!(editor.error.as_deref(), Some("nope"));
 }
+
+#[test]
+fn a_media_drop_into_an_empty_project_asks_the_player_for_the_new_snapshot() {
+    let mut session =
+        engine::Session::new(Project::empty(ProjectId(1), "Drop".into()).unwrap(), 50).unwrap();
+    let asset = testkit::source::asset(1, std::env::temp_dir().join("drop.mp4"))
+        .format("mov,mp4")
+        .duration(Tick(5 * SECOND))
+        .hash([7; 32])
+        .stream(testkit::source::video().duration(Tick(5 * SECOND)).build())
+        .build();
+    session.apply(Command::AddAsset { asset }).unwrap();
+    let playback = Playback::new(
+        &session,
+        ByteBudget::new(64 << 20).unwrap(),
+        Arc::new(Files),
+    )
+    .unwrap();
+    let mut editor = Editor::new(session, playback, Preferences::default());
+    editor
+        .assets
+        .asset_states
+        .insert(media::AssetId(1), crate::editor::AssetState::Ready);
+    let before = editor.playback.generation();
+    editor.apply_timeline(vec![timeline::Action::InsertMedia {
+        assets: vec![media::AssetId(1)],
+        at: Tick::ZERO,
+        placement: engine::Placement::Auto,
+    }]);
+    assert!(
+        editor.session.project().duration() > Tick::ZERO,
+        "the drop inserted the first clip"
+    );
+    assert!(
+        editor.playback.generation() > before,
+        "the first insert fences the empty frame and requests the playhead frame"
+    );
+    assert_eq!(editor.playback.position().unwrap(), Tick::ZERO);
+}

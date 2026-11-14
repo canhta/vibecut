@@ -1076,6 +1076,11 @@ impl State {
             };
             self.remember_visual(ui, item, "filmstrip", strip, label);
         }
+        let has_audio = asset
+            .probe()
+            .streams
+            .iter()
+            .any(|stream| stream.kind == media::StreamKind::Audio);
         let columns =
             ((visible.width() / BAR_PX).ceil() as usize).clamp(1, engine::waveform::MAX_COLUMNS);
         let state = cx.visuals.waveform(asset, source, range, columns);
@@ -1085,6 +1090,10 @@ impl State {
                 paint_bars(painter, wave, visible, bars, reach, waveform_ink, tip)
             }
             WaveState::Pending => paint_flat(painter, wave, waveform_ink.gamma_multiply(0.35)),
+            // A source with no audio stream has nothing to warn about: the band stays flat.
+            WaveState::Unsupported if !has_audio => {
+                paint_flat(painter, wave, waveform_ink.gamma_multiply(0.35));
+            }
             WaveState::Failed | WaveState::Unsupported => {
                 paint_flat(painter, wave, waveform_ink.gamma_multiply(0.35));
                 paint_marker(painter, wave, dark);

@@ -151,6 +151,9 @@ impl State {
     ) {
         match result {
             Ok(created) => {
+                // The insert committed a new snapshot; a drop or paste reaches here
+                // outside the frame's activation, so the player needs its own request.
+                port.sync();
                 port.select(created.into_iter().collect());
                 self.import_notice = None;
             }
