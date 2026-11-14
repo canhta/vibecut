@@ -86,6 +86,7 @@ pub(crate) enum Icon {
     TextT,
     Translate,
     Trash,
+    TreeStructure,
     UploadSimple,
     Waveform,
     X,
@@ -166,6 +167,7 @@ impl Icon {
         Self::TextT,
         Self::Translate,
         Self::Trash,
+        Self::TreeStructure,
         Self::UploadSimple,
         Self::Waveform,
         Self::X,
@@ -245,6 +247,7 @@ impl Icon {
             Self::TextT => "text-t",
             Self::Translate => "translate",
             Self::Trash => "trash",
+            Self::TreeStructure => "tree-structure",
             Self::UploadSimple => "upload-simple",
             Self::Waveform => "waveform",
             Self::X => "x",
@@ -546,6 +549,10 @@ const ICONS: &[(&str, &[u8])] = &[
     (
         "trash",
         include_bytes!("../../../../assets/icons/phosphor/regular/trash.svg"),
+    ),
+    (
+        "tree-structure",
+        include_bytes!("../../../../assets/icons/phosphor/regular/tree-structure.svg"),
     ),
     (
         "upload-simple",

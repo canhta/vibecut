@@ -8,8 +8,8 @@ time; there is no runtime network or font request.
 - Source archive: <https://registry.npmjs.org/@phosphor-icons/core/-/core-2.1.1.tgz>
 - Author: Phosphor Icons
 - Licence: MIT, see [LICENSE](LICENSE)
-- Added: p0-core/39; extended: p1-parity/06, p1-parity/09, p1-parity/54, p1-parity/117, 2026-11-12, 2026-11-13, 2026-11-14
-- Files: 74 unmodified `assets/regular/*.svg` files.
+- Added: p0-core/39; extended: p1-parity/06, p1-parity/09, p1-parity/54, p1-parity/117, 2026-11-12, 2026-11-13, 2026-11-14, p1-parity/523
+- Files: 76 unmodified `assets/regular/*.svg` files.
 
 SHA-256 of each embedded file:
 
@@ -87,6 +87,7 @@ SHA-256 of each embedded file:
 | `text-t.svg` | `00f5cc0ddab2aacaf377ffe956e2ee5375ec3395043d468cbb5937251df7fc69` |
 | `translate.svg` | `1e49dc31f3a172c9c7c67361511ee5314598b3f5b32788219325f589487f76c5` |
 | `trash.svg` | `e6a830c0409f9e101e3695c981eef98427d39fd01f502b9cbd6900930b01f19c` |
+| `tree-structure.svg` | `b44cc8e3cfb16309ee80aa43bb581427d57796a702ddace498ba41ff0709c461` |
 | `upload-simple.svg` | `d2b22b75affd718a4a24d71ee71586b277cf48ddb7d52b7d7d0a85b47f8b12d1` |
 | `waveform.svg` | `8f6a47cff9b0fb3a8f25fe411b9cc1b24d063d6577c8d07cc53b0e9b080afaa0` |
 | `x.svg` | `7397b15e1fa66eaf6ff9b59fe91d483cb5c3bcf75b2fe052097ab6f0593b513a` |

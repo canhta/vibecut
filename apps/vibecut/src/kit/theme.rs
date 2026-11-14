@@ -203,6 +203,22 @@ pub(crate) const fn video_border(dark: bool) -> Color32 {
         VIDEO_BORDER_LIGHT
     }
 }
+/// Fill of the pills behind every clip label and group badge. Measured on `14e/203841`: the
+/// pill lifts the clip fill by about 9.4 % towards white on the teal, text and sticker clips
+/// (mean of the per-channel steps, 24 of 255). The light theme is not captured, so it
+/// darkens by the same amount [proposed].
+pub(crate) fn clip_pill(dark: bool) -> Color32 {
+    if dark {
+        Color32::from_white_alpha(size::CLIP_PILL_ALPHA)
+    } else {
+        Color32::from_black_alpha(size::CLIP_PILL_ALPHA)
+    }
+}
+/// Outline of a selected group's members: white in the reference (`14e/203832`). The light
+/// theme is not captured and keeps the accent, since white vanishes on its pale clips [proposed].
+pub(crate) const fn group_outline(dark: bool) -> Color32 {
+    if dark { Color32::WHITE } else { ACCENT_LIGHT }
+}
 pub(crate) const fn preview_backdrop() -> Color32 {
     PREVIEW_BACKDROP
 }
@@ -336,6 +352,8 @@ pub(crate) mod radius {
     pub const CONTROL: u8 = 4;
     /// Value fields and steppers (221643 corners: about 2 px; the 4 px mapping was unproven).
     pub const FIELD: u8 = 2;
+    /// Group badge pills (`14e/203841`: 4 px corner at 2x).
+    pub const CLIP_PILL: u8 = 2;
     pub const UPLOAD: u8 = 8;
     /// Dialogs and toasts: the export capture's corner applied app-wide.
     pub const DIALOG: u8 = 12;
@@ -390,6 +408,29 @@ pub(crate) mod size {
     /// Top, filmstrip and waveform bands inside the 74 px clip (221643 y 787-858).
     pub const CLIP_BAND: f32 = 17.0;
     pub const CLIP_WAVEFORM: f32 = 16.0;
+    /// Clip label and group badge pills, Pillow on `14e/203747`, `203841` and `203832`
+    /// (logical = px / 2). Every clip label sits on a pill 28 px high; the badge's glyph cell
+    /// is 28 px wide (sticker 28.1, video 28.0).
+    pub const CLIP_PILL_HEIGHT: f32 = 14.0;
+    pub const GROUP_GLYPH_PILL: f32 = 14.0;
+    /// Pill fill alpha out of 255, see `theme::clip_pill`.
+    pub const CLIP_PILL_ALPHA: u8 = 24;
+    /// Pill edge to text ink: 5.0 to 5.7 px on the video and text label pills.
+    pub const CLIP_PILL_PAD: f32 = 2.5;
+    /// Between a pill and the next one: label pill to badge on the text clip (3.95 px), glyph
+    /// pill to name pill on the sticker (3.9 px) and the video clip (about 4 px, hidden by the
+    /// playhead).
+    pub const CLIP_PILL_GAP: f32 = 2.0;
+    /// The video clip spaces its label pills and the glyph pill 8 px apart (filename to
+    /// duration 8.1 px, duration to glyph 8.0 px).
+    pub const CLIP_PILL_GAP_VIDEO: f32 = 4.0;
+    /// The text clip's one badge pill holds glyph and name: 8.2 px before the glyph cell and
+    /// 8.2 px after the name's advance (pill 133.5 px, glyph ink at +11.4 px).
+    pub const GROUP_MERGED_PAD: f32 = 4.0;
+    /// Ink of the three-node glyph: 22 x 20 px; Phosphor's ink spans 240/256 of its box.
+    pub const GROUP_GLYPH_INK: f32 = 11.0;
+    /// Selected group outline: 2.5 px (two full rows and one half row).
+    pub const GROUP_OUTLINE: f32 = 1.25;
     pub const TRACK_LABEL: f32 = 123.0;
     pub const SCROLLBAR: f32 = 6.0;
     /// Ruler strip under the toolbar (221643 y 607-629); lanes start at y 635, 28 px below its top.
