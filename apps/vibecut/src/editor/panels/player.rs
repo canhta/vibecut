@@ -1,5 +1,6 @@
 //! Owns preview presentation state behind the player panel interface.
 pub mod crop;
+mod effect_point;
 mod lines;
 mod mask_box;
 mod mask_path;
@@ -105,6 +106,17 @@ pub(crate) enum Action {
     MaskBoxPreview {
         item: ItemId,
         mask: project::Mask,
+    },
+    /// Stage one absolute effect point candidate (frame fractions) from a handle drag.
+    EffectPointPreview {
+        item: ItemId,
+        effect: String,
+        key: String,
+        point: [f64; 2],
+    },
+    /// Close an effect point gesture, publishing one undo step when `commit`.
+    EffectPointEnd {
+        commit: bool,
     },
     /// Close a mask path or whole-mask gesture, publishing one undo step when `commit`.
     MaskPathEnd {

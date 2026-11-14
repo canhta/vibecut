@@ -346,6 +346,7 @@ impl Visual {
 pub(super) fn show(
     state: &mut State,
     mask_path: &mut super::mask_path::State,
+    effect_point: &mut super::effect_point::State,
     cx: &Context<'_>,
     ui: &mut egui::Ui,
     frame: Rect,
@@ -413,6 +414,16 @@ pub(super) fn show(
     // curve insertion and background clearing.
     let mask_handled =
         super::mask_path::show(mask_path, cx, ui, &viewport, frame, canvas, at, actions);
+    // Effect point handles, shown on the Effects tab, win a press over the item handles.
+    let point_handled = super::effect_point::show(
+        effect_point,
+        cx,
+        ui,
+        &viewport,
+        frame,
+        geometry.as_ref().map(|(item, geometry)| (*item, geometry)),
+        actions,
+    );
 
     // Register the handle targets before reading this frame's presses.
     let mut responses = Vec::with_capacity(SCALE_HANDLES.len() + 1);
@@ -465,6 +476,7 @@ pub(super) fn show(
         }
     } else if !opened
         && !mask_handled
+        && !point_handled
         && pressed
         && let Some(pointer) = pointer
     {

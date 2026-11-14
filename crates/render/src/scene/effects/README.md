@@ -208,5 +208,24 @@ changing geometry, colour mapping or affected pixels: Turbulent Displace caps no
 octaves at 3, Paint Strokes at 8 of up to 24 taps, Sparkle at 10 of 24 streak taps, Sun
 Rays at 12 of 48 radial taps, Torn Edges at 3 octaves, Long Shadow at 12 of 40 march
 taps, Echo Glow at 3 of 6 blurs and Bloom at one of three scales; Glow's edge-width blur
-runs in fine only. The ignored `measure_whole_image_1080p` probe prints every entry's
-release cost and the five slowest; those numbers stay unverified until it runs.
+runs in fine only. Hand-held Shake evaluates its time noise once per frame in
+`shake_eval`, so its sample pass only warps.
+
+The ignored `measure_whole_image_1080p` probe prints every entry's release CPU-reference
+cost at defaults, in export (`fine`) and preview, and the five slowest of each. Measured
+2026-11-14 on a 10-core Apple Silicon Mac, release, 1920x1080, mean of two runs, ms per frame:
+
+| Entry | Export | Preview |
+|---|---|---|
+| Sparkle (`glint`) | 4144 | 1875 |
+| Sun Rays (`volumetric_rays`) | 1893 | 539 |
+| Paint Strokes (`brush_strokes`) | 1309 | 1089 |
+| Edge Glow (`edge_glow`) | 414 | 396 |
+| Echo Glow (`echo_glow`) | 275 | 225 |
+| Light Leaks (`light_leaks`) | 231 | 231 |
+
+Every measured entry exceeds the budget on the CPU reference (the cheapest, Magnifier,
+takes 17.5 ms), so the reduced preview is lighter but not real time; meeting 16.7 ms
+needs a device port of these passes, which is open. Entries that are identity at their
+defaults (Bulge, Lens Warp, Corner Pin, Tilt Card, Low Frame Rate) emit no pass there,
+so the probe does not measure their warp cost.

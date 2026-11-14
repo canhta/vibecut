@@ -374,6 +374,7 @@ impl Rig {
             cache: crate::editor::context::CacheUi::default(),
             disabled: self.disabled.clone(),
             effect_targets: None,
+            effects_tab: false,
             media_drag: None,
             key_color_pick: None,
             matte_brush: None,

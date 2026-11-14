@@ -106,18 +106,61 @@ impl EffectValue {
         }
     }
     /// The update payload carrying this value through `effects.update_param`;
-    /// choice, bool, colour and point values have no scalar command shape.
+    /// choice, bool and colour values have no scalar command shape.
     pub const fn update(&self) -> Option<EffectParamUpdate> {
         match self {
             Self::Scalar(value) => Some(EffectParamUpdate::Scalar(*value)),
             Self::Curve(curve) => Some(EffectParamUpdate::Curve(*curve)),
             Self::Lut(lut) => Some(EffectParamUpdate::LutRef(LutReference { lut: *lut })),
-            Self::Choice(_) | Self::Bool(_) | Self::Color(_) | Self::Point(_) => None,
+            Self::Point(point) => Some(EffectParamUpdate::Point(PointReference { point: *point })),
+            Self::Choice(_) | Self::Bool(_) | Self::Color(_) => None,
         }
     }
 }
 
-/// Disjoint scalar, curve and imported-resource domains of
+/// A frame-fraction point as the closed command object `{"point":[x,y]}`.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PointReference {
+    pub point: [f64; 2],
+}
+
+/// Only the object form: serde's derived sequence form would let a one-point array
+/// (`[[x,y]]`) through `EffectParamUpdate`'s untagged match before the curve refuses it.
+impl<'de> Deserialize<'de> for PointReference {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = PointReference;
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("an object {\"point\":[x,y]}")
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> std::result::Result<PointReference, A::Error> {
+                let mut point = None;
+                while let Some(key) = map.next_key::<String>()? {
+                    if key != "point" {
+                        return Err(serde::de::Error::unknown_field(&key, &["point"]));
+                    }
+                    if point.is_some() {
+                        return Err(serde::de::Error::duplicate_field("point"));
+                    }
+                    point = Some(map.next_value()?);
+                }
+                point
+                    .map(|point| PointReference { point })
+                    .ok_or_else(|| serde::de::Error::missing_field("point"))
+            }
+        }
+        deserializer.deserialize_map(Visitor)
+    }
+}
+
+/// Disjoint scalar, point, curve and imported-resource domains of
 /// `effects.update_param`; one command family covers every control.
 #[allow(
     clippy::large_enum_variant,
@@ -128,6 +171,7 @@ impl EffectValue {
 pub enum EffectParamUpdate {
     Scalar(f64),
     LutRef(LutReference),
+    Point(PointReference),
     Curve(ToneCurve),
 }
 
@@ -326,11 +370,12 @@ impl EffectInstance {
         Ok(())
     }
 
-    /// Replace a scalar, a tone curve or an imported resource reference atomically.
+    /// Replace a scalar, a point, a tone curve or an imported resource reference atomically.
     pub fn set_param(&mut self, id: &str, value: EffectParamUpdate) -> Result<()> {
         let next = match value {
             EffectParamUpdate::Scalar(value) => return self.set_scalar(id, value),
             EffectParamUpdate::LutRef(value) => EffectValue::Lut(value.lut),
+            EffectParamUpdate::Point(value) => EffectValue::Point(value.point),
             EffectParamUpdate::Curve(curve) => EffectValue::Curve(curve),
         };
         self.definition()?

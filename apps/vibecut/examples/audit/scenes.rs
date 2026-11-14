@@ -190,6 +190,30 @@ pub(super) const SCENES: &[Scene] = &[
         build: |theme, scale| assets_scene(theme, scale, "effects-phase3-vi"),
     },
     Scene {
+        name: "assets-effects-shelf-distort",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| assets_scene(theme, scale, "effects-shelf-distort"),
+    },
+    Scene {
+        name: "assets-effects-shelf-glow-light",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| assets_scene(theme, scale, "effects-shelf-glow_light"),
+    },
+    Scene {
+        name: "assets-effects-shelf-stylize",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| assets_scene(theme, scale, "effects-shelf-stylize"),
+    },
+    Scene {
+        name: "assets-effects-shelf-overlay-key",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| assets_scene(theme, scale, "effects-shelf-overlay_key"),
+    },
+    Scene {
         name: "assets-filters",
         reference_dark: Some("capcut-desktop-2026-11-05/capcut-desktop-221739.png"),
         reference_light: None,
@@ -646,6 +670,12 @@ pub(super) const SCENES: &[Scene] = &[
         reference_dark: None,
         reference_light: None,
         build: |theme, scale| inspector_video_tab(theme, scale, "effects"),
+    },
+    Scene {
+        name: "inspector-effects-points",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| inspector_video_tab(theme, scale, "effects-points"),
     },
     Scene {
         name: "inspector-effects-vi",

@@ -1209,6 +1209,7 @@ fn canvas(
         super::transform::show(
             &mut state.transform,
             &mut state.mask_path,
+            &mut state.effect_point,
             cx,
             ui,
             displayed,

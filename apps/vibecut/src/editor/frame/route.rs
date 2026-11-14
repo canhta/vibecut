@@ -41,6 +41,7 @@ impl Editor {
             cache: self.timeline.cache_ui(),
             disabled: std::collections::BTreeSet::new(),
             effect_targets: None,
+            effects_tab: self.effects_tab_open(),
             media_drag: self.assets.media_drag.clone(),
             key_color_pick: self.player.key_color_pick.clone(),
             matte_brush: self.player.matte_brush,
@@ -55,6 +56,23 @@ impl Editor {
         }
     }
 
+    /// Whether the one selected item's Properties panel shows Effects: the stored tab for
+    /// its element kind, else that kind's default (Effects only for an effect item).
+    fn effects_tab_open(&self) -> bool {
+        let selection = self.session.selection();
+        let Some(item) = selection.iter().next().filter(|_| selection.len() == 1) else {
+            return false;
+        };
+        crate::editor::properties::element_kind(self.session.project(), *item).is_some_and(
+            |(kind, _)| {
+                self.preferences
+                    .properties_tabs
+                    .get(kind.id())
+                    .map_or(kind.default_tab().id(), String::as_str)
+                    == "effects"
+            },
+        )
+    }
     /// The keyword section's read for the one selected caption item, at the playhead.
     fn keyword_ui(&self, playhead: Tick) -> Option<crate::editor::context::KeywordUi> {
         let selection = self.session.selection();
@@ -412,6 +430,22 @@ impl Editor {
         let commands = vec![Command::UpdateMask { item, mask }];
         self.preview_command(Command::TimelinePreview { commands });
     }
+    /// Stage one absolute effect point candidate from a handle drag.
+    pub(in crate::editor) fn preview_effect_point(
+        &mut self,
+        item: ItemId,
+        effect: String,
+        key: String,
+        point: [f64; 2],
+    ) {
+        let commands = vec![Command::UpdateEffectParam {
+            item,
+            effect,
+            key,
+            value: project::EffectParamUpdate::Point(project::PointReference { point }),
+        }];
+        self.preview_command(Command::TimelinePreview { commands });
+    }
     /// The anchors of the one mask the point scope holds, as `(item, mask, indices)`
     /// in path order. The scope only ever holds one mask of one item.
     pub(in crate::editor) fn mask_point_group(&self) -> Option<(ItemId, String, Vec<usize>)> {
@@ -558,7 +592,7 @@ impl Editor {
             return;
         }
         // Mask gestures and the point scope pop before the item scope.
-        if self.player.mask_path.cancel() {
+        if self.player.mask_path.cancel() || self.player.effect_point.cancel() {
             if self.session.gesture_active()
                 && let Err(error) = self.session.apply(Command::TimelineDiscardPreview {})
             {

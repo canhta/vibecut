@@ -274,6 +274,8 @@ pub(super) fn inspector_video_tab(
             &["find_edges"]
         } else if tab == "effects-relief" {
             &["color_emboss"]
+        } else if tab == "effects-points" {
+            &["corner_pin", "gradient"]
         } else if tab == "effects-threshold" {
             &["extract"]
         } else if tab.starts_with("effects-mixer") {

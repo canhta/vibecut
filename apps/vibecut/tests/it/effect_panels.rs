@@ -5069,3 +5069,118 @@ fn effect_row_name_keeps_the_kit_gap_before_the_eye_toggle() {
         "the eye toggle sits {gap:.1} px from the effect name, below the 8 px kit gap"
     );
 }
+
+#[test]
+fn corner_pin_points_edit_from_the_inspector_and_the_preview_with_one_undo_step_each() {
+    let fixture = fixture();
+    let video = fixture.video;
+    let mut editor = fixture.editor;
+    editor
+        .session
+        .apply(Command::AddEffect {
+            item: video,
+            effect: project::effect_definition("corner_pin")
+                .unwrap()
+                .instance("pin"),
+        })
+        .unwrap();
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    select(&mut harness, video);
+    assert!(
+        !has_widget(&harness, "preview.effect.pin.lower_right"),
+        "handles stay off while another Properties tab is open"
+    );
+    open_effect_tabs(&mut harness, video);
+    // Reads the staged candidate while a gesture is open, else the committed project.
+    let point = |harness: &Harness<Editor>, key: &str| {
+        let session = &harness.state().session;
+        let project = session.preview_project().unwrap_or(session.project());
+        let effect = project
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| &track.items)
+            .find(|item| item.id == video)
+            .map(|item| item.effects[0].clone())
+            .unwrap();
+        match effect.value(key) {
+            Some(EffectValue::Point(point)) => *point,
+            other => panic!("{key}: {other:?}"),
+        }
+    };
+
+    let history = harness.state().session.history_len();
+    type_value(&mut harness, "effects.pin.param.upper_left.x", "25");
+    assert_eq!(point(&harness, "upper_left"), [0.25, 0.0]);
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    type_value(&mut harness, "effects.pin.param.upper_left.y", "150");
+    assert_eq!(
+        point(&harness, "upper_left"),
+        [0.25, 1.0],
+        "typed values clamp"
+    );
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert_eq!(point(&harness, "upper_left"), [0.25, 0.0]);
+
+    let id = "preview.effect.pin.lower_right";
+    let start = widget_rect(&harness, id).center();
+    let history = harness.state().session.history_len();
+    drag_to(&mut harness, id, egui::vec2(-40.0, -30.0));
+    assert!(harness.state().session.gesture_active());
+    let moved = point(&harness, "lower_right");
+    assert!(moved[0] < 1.0 && moved[1] < 1.0, "{moved:?}");
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+    harness.drop_at(start + egui::vec2(-40.0, -30.0));
+    harness.run_steps(2);
+    assert_eq!(
+        point(&harness, "lower_right"),
+        [1.0, 1.0],
+        "Escape discards"
+    );
+    assert_eq!(harness.state().session.history_len(), history);
+
+    drag_to(&mut harness, id, egui::vec2(-40.0, -30.0));
+    harness.drop_at(start + egui::vec2(-40.0, -30.0));
+    harness.run_steps(2);
+    assert_eq!(point(&harness, "lower_right"), moved);
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert_eq!(point(&harness, "lower_right"), [1.0, 1.0]);
+}
+
+#[test]
+fn point_fields_stay_inside_the_value_column_at_the_minimum_inspector_width() {
+    let fixture = fixture();
+    let video = fixture.video;
+    let mut editor = fixture.editor;
+    editor
+        .session
+        .apply(Command::AddEffect {
+            item: video,
+            effect: project::effect_definition("corner_pin")
+                .unwrap()
+                .instance("pin"),
+        })
+        .unwrap();
+    // A tiny properties ratio clamps the column to its pixel minimum.
+    editor.preferences.panels = [0.3, 0.01, 0.45];
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    open_effect_tabs(&mut harness, video);
+    for key in ["upper_left", "upper_right", "lower_left", "lower_right"] {
+        let x = widget_rect(&harness, &format!("effects.pin.param.{key}.x"));
+        let y = widget_rect(&harness, &format!("effects.pin.param.{key}.y"));
+        assert!(x.right() <= y.left(), "{key}: {x:?} {y:?}");
+        assert!(y.right() - x.left() <= 120.0, "{key}: {x:?} {y:?}");
+        // The inspector holds its 368 px minimum at the window's right edge.
+        assert!(
+            x.left() >= 1440.0 - 368.0 && y.right() <= 1440.0,
+            "{key}: {x:?} {y:?}"
+        );
+    }
+}

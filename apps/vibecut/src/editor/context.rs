@@ -177,6 +177,9 @@ pub(crate) struct Context<'a> {
     pub(crate) disabled: std::collections::BTreeSet<&'static str>,
     /// While an effect is being dragged: the clips that accept it.
     pub(crate) effect_targets: Option<std::collections::BTreeSet<project::ItemId>>,
+    /// The single selected item's Properties panel shows its Effects tab, so the player
+    /// shows that item's effect point handles.
+    pub(crate) effects_tab: bool,
     /// While a Media-panel asset is being dragged: the assets and the track kind they need.
     pub(crate) media_drag: Option<MediaDrag>,
     /// Armed chroma-key eyedropper; the player samples its next click.
