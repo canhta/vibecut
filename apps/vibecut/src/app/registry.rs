@@ -31,6 +31,8 @@ pub struct Workspace {
     pub(super) focused: Option<project::ProjectId>,
     pub(super) focus_requested: Option<project::ProjectId>,
     pub(super) home_open: bool,
+    /// Whether the Home viewport had focus last frame; a gain re-reads the catalog.
+    pub(super) home_focused: bool,
     pub(super) shorts_window: bool,
     /// The native dialog the shorts window asked for, polled by `tick` until it answers.
     pub(super) shorts_picker: Option<super::picker::Picker>,
@@ -98,6 +100,7 @@ impl Workspace {
             focused: None,
             focus_requested: None,
             home_open: true,
+            home_focused: false,
             shorts_window: false,
             shorts_picker: None,
             lending,

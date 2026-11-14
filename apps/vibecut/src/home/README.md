@@ -25,7 +25,9 @@ and the new-project entry use the same lifecycle and autosave path as external f
 failed catalog refresh keeps the last listing and Retry restarts the worker. Catalog-only
 operations retain the library-owned result; mixed composition converts through engine Error
 at its actual boundary, preserving safe messages and the original cause. Engine
-lifecycle hooks backfill and refresh thumbnails, including on close without saving.
+lifecycle hooks backfill and refresh thumbnails, including on close without saving. Home
+re-reads the catalog each time its viewport regains focus, so a cover an editor saved shows on
+return.
 
 A project directory the library cannot read (older schema, damaged) is not migrated and does not fail the listing: the page shows one row per directory, "Couldn't read project" with its ID and the engine's reason, above the cards. New project and duplicate pick an ID that no directory, readable or not, already owns.
 

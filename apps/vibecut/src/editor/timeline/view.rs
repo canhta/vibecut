@@ -73,6 +73,7 @@ pub(in crate::editor) fn show(
     }
     state.toolbar(cx, ui, &layout);
     state.scroll_input(cx, ui, &layout);
+    state.follow_transport(cx, &layout);
     let views = state.views(cx, &layout);
     state.paint_ruler(cx, ui, &layout, views.bookmarks.as_slice());
     state.advance_bookmark_drag(cx, ui);

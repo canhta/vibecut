@@ -107,3 +107,39 @@ fn edge_auto_scroll_is_proportional_capped_and_stops_at_bounds() {
     assert_eq!(edge_auto_scroll(at(410.0), body, 1000.0, 1000.0), 0.0);
     assert_eq!(edge_auto_scroll(None, body, 100.0, 1000.0), 0.0);
 }
+
+#[test]
+fn playback_pages_the_view_to_the_playhead_until_the_user_scrolls() {
+    let mut state = State::new(DEFAULT_ZOOM, 0.0);
+    let (view, max) = (10.0, 100.0);
+    // Paused: the view stays where it is, even with the playhead off screen.
+    state.follow_playback(false, 25.0, view, max);
+    assert_eq!(state.scroll, 0.0);
+    // Playing with the playhead inside the view: no move.
+    state.follow_playback(true, 5.0, view, max);
+    assert_eq!(state.scroll, 0.0);
+    // Past the right edge the page turns and the playhead starts it.
+    state.follow_playback(true, 10.5, view, max);
+    assert_eq!(state.scroll, 10.5);
+    // The user scrolls away; playback leaves the view alone.
+    state.scroll = 40.0;
+    state.end_follow_on_scroll(egui::Vec2::new(0.0, 3.0));
+    state.follow_playback(true, 12.0, view, max);
+    assert_eq!(state.scroll, 40.0);
+    // A pause and the next play follow again, from the playhead.
+    state.follow_playback(false, 12.0, view, max);
+    state.follow_playback(true, 12.0, view, max);
+    assert_eq!(state.scroll, 12.0);
+}
+
+#[test]
+fn follow_scroll_pages_only_when_the_playhead_leaves_the_view() {
+    assert_eq!(follow_scroll(5.0, 0.0, 10.0, 100.0), None);
+    assert_eq!(follow_scroll(10.0, 0.0, 10.0, 100.0), None);
+    assert_eq!(follow_scroll(10.5, 0.0, 10.0, 100.0), Some(10.5));
+    // Behind the view the page starts at the playhead too.
+    assert_eq!(follow_scroll(3.0, 8.0, 10.0, 100.0), Some(3.0));
+    // Clamped to the scroll bounds at the end of the timeline.
+    assert_eq!(follow_scroll(98.0, 0.0, 10.0, 90.0), Some(90.0));
+    assert_eq!(follow_scroll(1.0, 0.0, 10.0, 0.0), None);
+}
