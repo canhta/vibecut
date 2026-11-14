@@ -1163,6 +1163,12 @@ fn idle_home_and_paused_editor_request_no_repaint_and_a_worker_result_requests_o
         repaints.load(SeqCst) > before,
         "a finished worker did not wake the loop"
     );
+    // egui calls the repaint callback only for a request earlier than the pending one, so
+    // let a pass take the worker's wake before the channel's is counted.
+    assert!(
+        settles(&mut app, &ctx, 10),
+        "the worker's wake left the loop asking for repaint"
+    );
     let before = repaints.load(SeqCst);
     let (send, receive) = wake::channel();
     std::thread::spawn(move || send.send(7_u8).unwrap())

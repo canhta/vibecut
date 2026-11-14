@@ -56,6 +56,8 @@ redirect/header bounds, consent, checkpoint and publication policies stay with t
 
 ## Background jobs and byte policy
 
+The runner never polls for running work. A job's context keeps the submitter's [wake](../../../wake/README.md): a stored progress value, a new produced count and the start of publication wake the owner, and a job thread wakes it when it ends. `tick` asks for another pump in 16 ms only while a job is queued (waiting for a slot or its backoff), so a long-lived worker such as playback's leaves the loop idle.
+
 `runtime::Error` / `runtime::Result` own budget, artifact reservation and model accounting
 failures, cache ownership contention and unusable cached artifacts; `RuntimeError` is the engine re-export.
 `CacheBusy` owns cache writer-lock, native model pin/lease and active-transfer contention:

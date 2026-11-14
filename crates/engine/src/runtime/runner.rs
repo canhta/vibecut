@@ -117,8 +117,15 @@ pub struct JobContext {
     progress: Arc<Mutex<Progress>>,
     clock: Arc<dyn Clock>,
     interval: Duration,
+    /// The submitter's wake, told when visible progress changes so the owner pumps.
+    wake: Option<wake::Wake>,
 }
 impl JobContext {
+    fn notify(&self) {
+        if let Some(wake) = &self.wake {
+            wake.wake();
+        }
+    }
     pub(crate) fn memory_budget(&self) -> &ByteBudget {
         &self.budget
     }
@@ -134,7 +141,11 @@ impl JobContext {
             .0
             .compare_exchange(0, 2, Ordering::AcqRel, Ordering::Acquire)
         {
-            Ok(_) | Err(2) => Ok(()),
+            Ok(_) => {
+                self.notify();
+                Ok(())
+            }
+            Err(2) => Ok(()),
             _ => Err(RuntimeError::Cancelled),
         }
     }
@@ -170,10 +181,13 @@ impl JobContext {
     /// Results produced so far. Never rate limited; the latest count wins.
     pub fn produced(&self, count: u32) -> RuntimeResult<()> {
         self.check_cancelled()?;
-        self.progress
-            .lock()
-            .map_err(|_| RuntimeError::Poisoned)?
-            .produced = count;
+        let changed = {
+            let mut p = self.progress.lock().map_err(|_| RuntimeError::Poisoned)?;
+            std::mem::replace(&mut p.produced, count) != count
+        };
+        if changed {
+            self.notify();
+        }
         Ok(())
     }
     /// Latest value only, at most once per configured interval (including stage
@@ -184,14 +198,21 @@ impl JobContext {
             return Err(RuntimeError::Invalid("job progress"));
         }
         let now = self.clock.now();
-        let mut p = self.progress.lock().map_err(|_| RuntimeError::Poisoned)?;
-        if now.saturating_sub(p.at) >= self.interval {
-            *p = Progress {
-                stage,
-                value,
-                at: now,
-                produced: p.produced,
-            };
+        let stored = {
+            let mut p = self.progress.lock().map_err(|_| RuntimeError::Poisoned)?;
+            let due = now.saturating_sub(p.at) >= self.interval;
+            if due {
+                *p = Progress {
+                    stage,
+                    value,
+                    at: now,
+                    produced: p.produced,
+                };
+            }
+            due
+        };
+        if stored {
+            self.notify();
         }
         Ok(())
     }
@@ -375,6 +396,7 @@ impl JobRunner {
             })),
             clock: self.clock.clone(),
             interval: self.config.progress_interval,
+            wake: wake::current(),
         };
         let snapshot = JobSnapshot {
             id,
@@ -420,9 +442,10 @@ impl JobRunner {
     /// handles are joined. Scheduling scans past resource-blocked jobs.
     pub fn tick(&mut self) -> RuntimeResult<()> {
         let ticked = self.pump();
-        if !self.queue.is_empty() || !self.running.is_empty() {
-            // Work in flight reports progress through this pump: poll again soon, and stop
-            // when the queue and the running set are both empty.
+        if !self.queue.is_empty() {
+            // A queued job waits for a slot or its backoff and starts only on a pump: poll
+            // again soon. A running job needs no poll: its progress, publication and exit
+            // wake the owner themselves, so a long-lived worker (playback) leaves it idle.
             wake::notify_after(Duration::from_millis(16));
         }
         ticked
