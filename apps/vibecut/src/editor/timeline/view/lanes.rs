@@ -116,7 +116,7 @@ impl State {
                 continue;
             }
             let center = egui::pos2(x, lane.top + LANE_HEIGHT / 2.0);
-            hint = hint.or(Some(egui::pos2(center.x, lane.top + LANE_HEIGHT)));
+            hint = hint.or(Some(egui::pos2(center.x + 10.0, center.y)));
             let selection = KeyframeSelection {
                 item: item.id,
                 path: lane.path.clone(),
@@ -258,21 +258,27 @@ impl State {
         });
     }
 
-    /// The first-use hint, drawn beside the first diamond until it is dismissed.
+    /// The first-use hint, drawn on the first diamond's own row until it is dismissed. The
+    /// card passes clicks through to the lanes beneath it; only OK takes them.
     fn keyframe_hint(&mut self, cx: &Context<'_>, ui: &egui::Ui, anchor: egui::Pos2) {
         let locale = cx.locale;
         let area = egui::Area::new(egui::Id::unique("timeline.keyframe_hint"))
             .order(egui::Order::Foreground)
+            .interactable(false)
+            .pivot(Align2::LEFT_CENTER)
             .fixed_pos(anchor)
             .show(ui.ctx(), |ui| {
                 egui::Frame::popup(ui.style())
                     .show(ui, |ui| {
-                        ui.label(
-                            egui::RichText::new(i18n::text(locale, Text::KeyframeHint))
-                                .size(theme::type_size::BODY)
-                                .color(theme::text(cx.dark)),
-                        );
-                        ui.button(i18n::text(locale, Text::Ok))
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new(i18n::text(locale, Text::KeyframeHint))
+                                    .size(theme::type_size::BODY)
+                                    .color(theme::text(cx.dark)),
+                            );
+                            ui.button(i18n::text(locale, Text::Ok))
+                        })
+                        .inner
                     })
                     .inner
             });

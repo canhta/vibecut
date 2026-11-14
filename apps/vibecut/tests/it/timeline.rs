@@ -6449,12 +6449,62 @@ fn diamond_menu_sets_easing_kinds_and_the_first_use_hint_is_dismissed_once() {
     let mut editor = fixture.editor;
     add_key(&mut editor, id, "opacity", Tick(2 * SECOND), 0.4);
     add_key(&mut editor, id, "opacity", Tick(4 * SECOND), 0.8);
+    add_key(
+        &mut editor,
+        id,
+        "transform.positionX",
+        Tick(2 * SECOND),
+        10.0,
+    );
     editor
         .select(std::collections::BTreeSet::from([id]))
         .unwrap();
     editor.activate("timeline.keyframe_lanes").unwrap();
     let mut harness = harness(editor);
     harness.run_steps(3);
+    // The hint sits on the first diamond's row and passes clicks through: the diamond of
+    // the lane below is still clicked while the hint is up.
+    let at = Tick(2 * SECOND);
+    let lanes: Vec<egui::Rect> = harness
+        .state()
+        .inspect()
+        .unwrap()
+        .widgets
+        .into_iter()
+        .filter(|w| {
+            w.id.starts_with(&format!("timeline.keyframe.{}.", id.0))
+                && w.id.ends_with(&format!(".{}", at.0))
+        })
+        .map(|w| w.rect)
+        .collect();
+    assert_eq!(lanes.len(), 2, "two animated lanes carry a diamond at 2 s");
+    let lower = if lanes[0].top() > lanes[1].top() {
+        lanes[0]
+    } else {
+        lanes[1]
+    };
+    let ok = widget(&harness, "timeline.keyframe_hint.ok");
+    assert!(
+        ok.bottom() <= lower.center().y,
+        "OK stays off the lower lane's diamond row"
+    );
+    click_at(&mut harness, egui::pos2(ok.center().x, lower.center().y));
+    harness.run_steps(3);
+    assert!(
+        !harness.state().preferences.keyframe_hint_seen,
+        "a click under the card's footprint is not a dismissal"
+    );
+    click_at(&mut harness, lower.center());
+    harness.run_steps(3);
+    assert_eq!(
+        harness.state().selection_scopes.keyframes.len(),
+        1,
+        "a click on the lower lane's diamond reaches it through the hint"
+    );
+    assert!(
+        !harness.state().preferences.keyframe_hint_seen,
+        "the click did not dismiss the hint"
+    );
     harness
         .get(By::new().predicate(|node| node.author_id() == Some("timeline.keyframe_hint.ok")))
         .click();

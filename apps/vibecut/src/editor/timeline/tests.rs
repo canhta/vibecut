@@ -1943,3 +1943,44 @@ fn corrupt_thumbnail_recovery_waits_for_gesture_commit_or_cancel_before_spending
         assert_eq!(std::fs::read(asset.path()).unwrap(), source_bytes);
     }
 }
+
+#[test]
+fn a_missing_clips_name_and_relink_lines_never_overlap_at_any_height() {
+    use super::view::missing_rows;
+    let line = theme::type_size::BODY + 1.0;
+    let band = theme::size::CLIP_BAND;
+    for band_label in [false, true] {
+        for height in (10..=120).map(|h| h as f32) {
+            let inner =
+                egui::Rect::from_min_size(egui::pos2(0.0, 100.0), egui::vec2(200.0, height));
+            let rows = missing_rows(inner, inner, band_label);
+            if let (Some(name), Some(lines), false) = (rows.name, rows.lines, band_label) {
+                let name_bottom = name + line / 2.0;
+                let lines_top = lines - line;
+                assert!(
+                    name_bottom <= lines_top,
+                    "name and lines overlap at {height} px: {name_bottom} > {lines_top}"
+                );
+            }
+            if let Some(lines) = rows.lines {
+                assert!(
+                    lines - line >= inner.top() && lines + line <= inner.bottom(),
+                    "the two lines leave the clip at {height} px"
+                );
+            }
+        }
+    }
+    // The audio clip at 50 px keeps both: name in the top band, lines centred beneath.
+    let audio = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(200.0, 48.0));
+    let rows = missing_rows(audio, audio, false);
+    assert_eq!(rows.name, Some(band / 2.0));
+    assert!(rows.lines.is_some());
+    // A clip too short for both drops the name and keeps the relink lines.
+    let short = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(200.0, 36.0));
+    let rows = missing_rows(short, short, false);
+    assert_eq!((rows.name, rows.lines), (None, Some(18.0)));
+    // Below the lines' own minimum the name alone is centred.
+    let tiny = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(200.0, 20.0));
+    let rows = missing_rows(tiny, tiny, false);
+    assert_eq!((rows.name, rows.lines), (Some(10.0), None));
+}
