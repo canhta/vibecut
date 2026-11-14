@@ -277,3 +277,63 @@ fn closing_one_window_preserves_another_windows_dirty_edit_and_running_export() 
     assert!(h.state().ready_to_close());
     assert!(project::WriterLease::acquire(&second_path).is_ok());
 }
+
+/// The cover renders off the UI thread at the column's physical size; its arrival wakes the
+/// loop, and reopening the dialog on the same project shows the kept render at once.
+#[test]
+fn the_cover_is_rendered_at_the_columns_physical_size_and_kept_when_reopened() {
+    for scale in [1.0_f32, 2.0] {
+        let woken = crate::woken::Woken::bind();
+        let session = engine::Session::new(project(false, false), 10).unwrap();
+        let playback = vibecut::services::playback::Playback::new(
+            &session,
+            engine::ByteBudget::new(768 << 20).unwrap(),
+            Arc::new(vibecut::services::playback::Files),
+        )
+        .unwrap();
+        let mut editor = vibecut::Editor::new(session, playback, Preferences::default());
+        editor
+            .session
+            .apply(engine::Command::SetCanvas {
+                width: 360,
+                height: 180,
+                preset: None,
+            })
+            .unwrap();
+        let mut harness = crate::gpu::builder()
+            .with_size(egui::vec2(1280.0, 800.0))
+            .build_ui_state(|ui, editor: &mut vibecut::Editor| editor.ui(ui), editor);
+        woken.attach(&harness.ctx);
+        harness
+            .input_mut()
+            .viewports
+            .get_mut(&egui::ViewportId::ROOT)
+            .unwrap()
+            .native_pixels_per_point = Some(scale);
+        harness.ctx.set_zoom_factor(1.0);
+        harness.run_steps(2);
+        harness.state_mut().activate("file.export").unwrap();
+        harness.run_steps(2);
+        // The 128 px thumbnail is not the sized render; the sized frame wakes the loop.
+        let cover = |editor: &vibecut::Editor| editor.export_state().unwrap().inspect().cover;
+        woken.step_until(&mut harness, "the sized cover", |editor| cover(editor).is_some());
+        let size = cover(harness.state()).unwrap();
+        // The column is 227 logical px wide and the canvas is 2:1.
+        assert_eq!(size[0], (227.0 * scale) as usize, "width at {scale}x");
+        assert_eq!(
+            size[1],
+            (227.0 * 0.5 * scale).round() as usize,
+            "height at {scale}x"
+        );
+        harness.key_press(egui::Key::Escape);
+        harness.run_steps(2);
+        assert!(!harness.state().export_state().unwrap().inspect().open);
+        harness.state_mut().activate("file.export").unwrap();
+        harness.run_steps(2);
+        assert_eq!(
+            cover(harness.state()),
+            Some(size),
+            "the render is cached at {scale}x"
+        );
+    }
+}
