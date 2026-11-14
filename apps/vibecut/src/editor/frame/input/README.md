@@ -24,7 +24,7 @@ box and Override moves the chord so the owner loses it; unbound actions stay lis
 per-action and all-action reset act on the working copy without confirmation. The dialog
 edits a working copy: Save is enabled once it differs from the stored map and commits it
 as one preference edit, so undo and redo restore the map without touching Project JSON.
-Cancel, Escape and closing discard the copy. The `ui.keybindings.set` / `ui.keybindings.reset`
+Cancel, Escape and closing discard the copy. The preset dropdown lists Shortcut 1 to Shortcut 5; switching stores the active profile at once and drops unsaved edits to the previous one. Each profile holds its own overrides. The `ui.keybindings.set` / `ui.keybindings.reset`
 commands stay for agents and refuse a conflicting chord without prompting. Import and export
 controls are visible but disabled.
 

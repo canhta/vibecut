@@ -1362,7 +1362,7 @@ catalog! {
     ShortcutsImport { key: "shortcuts_import", en: "Import JSON", vi: "Nhập JSON" },
     ShortcutsOverride { key: "shortcuts_override", en: "Override", vi: "Ghi đè" },
     ShortcutsPressKey { key: "shortcuts_press_key", en: "Press keys…", vi: "Nhấn phím…" },
-    ShortcutsProfile { key: "shortcuts_profile", en: "Shortcut 1", vi: "Phím tắt 1" },
+    ShortcutsPreset { key: "shortcuts_preset", en: "Shortcut {index}", vi: "Phím tắt {index}" },
     ShortcutsReset { key: "shortcuts_reset", en: "Reset", vi: "Đặt lại" },
     ShortcutsResetAll { key: "shortcuts_reset_all", en: "Reset all", vi: "Đặt lại tất cả" },
     ShortcutsSave { key: "shortcuts_save", en: "Save", vi: "Lưu" },

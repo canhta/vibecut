@@ -512,7 +512,7 @@ impl Editor {
             text_caret: self.player.transform.text_caret(),
             shortcuts: self.frame.shortcuts_open.then(|| {
                 let platform = actions::Platform::current();
-                let stored = &self.preferences.keybindings;
+                let stored = self.preferences.keybindings.active();
                 let draft = self.frame.shortcut_draft.as_ref().unwrap_or(stored);
                 let rows = actions::actions()
                     .iter()
@@ -536,6 +536,7 @@ impl Editor {
                     .collect();
                 ShortcutsInspection {
                     tab: self.frame.shortcut_tab,
+                    preset: self.preferences.keybindings.active,
                     recording: self.frame.shortcut_recording.map(str::to_owned),
                     error: self.frame.shortcut_error.clone(),
                     conflict: self.frame.shortcut_conflict.clone(),

@@ -105,6 +105,8 @@ pub struct ShortcutConflict {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ShortcutsInspection {
     pub tab: ShortcutTab,
+    /// The active binding profile in the preset dropdown.
+    pub preset: actions::KeybindingPreset,
     pub recording: Option<String>,
     pub error: Option<String>,
     pub conflict: Option<ShortcutConflict>,

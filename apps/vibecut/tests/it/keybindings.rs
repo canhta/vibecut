@@ -1061,6 +1061,82 @@ fn shortcuts_import_export_entry_points_are_disabled_until_settings_export() {
 }
 
 #[test]
+fn shortcut_presets_keep_their_own_bindings_and_persist_the_choice() {
+    let fixture = fixture();
+    let mut harness = harness(fixture.editor);
+    harness.run_steps(3);
+    let one = actions::KeybindingPreset::One;
+    let two = actions::KeybindingPreset::Two;
+    let snap = actions::action("timeline.snap").unwrap();
+    let split = actions::action("timeline.split").unwrap();
+    let ctrl_shift_n = actions::Chord::parse("Ctrl+Shift+N")
+        .unwrap()
+        .display(actions::Platform::current());
+    let project = harness.state().session.project().clone();
+
+    // Preset 1: record a chord and save it into the active profile.
+    open_shortcuts(&mut harness);
+    click(&mut harness, "shortcuts.row.timeline.snap");
+    harness.key_press_modifiers(
+        egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT),
+        egui::Key::N,
+    );
+    harness.run_steps(3);
+    click(&mut harness, "shortcuts.save");
+    let keybindings = &harness.state().preferences.keybindings;
+    assert_eq!(keybindings.active, one);
+    assert_eq!(keybindings.effective_chords(snap), [ctrl_shift_n.clone()]);
+
+    // Switching to preset 2 applies its own profile: snapping is back on N there.
+    harness.state_mut().select_shortcut_preset(two).unwrap();
+    harness.run_steps(3);
+    let keybindings = &harness.state().preferences.keybindings;
+    assert_eq!(keybindings.active, two);
+    assert_eq!(keybindings.effective_chords(snap), ["N"]);
+    assert_eq!(
+        keybindings.profile(one).effective_chords(snap),
+        [ctrl_shift_n.clone()],
+        "preset 1 keeps its chord while preset 2 is active"
+    );
+
+    // An override in preset 2 moves Ctrl+B to snapping there and leaves preset 1 alone.
+    open_shortcuts(&mut harness);
+    assert_eq!(
+        harness.state().inspect().unwrap().shortcuts.unwrap().preset,
+        two
+    );
+    click(&mut harness, "shortcuts.row.timeline.snap");
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::B);
+    harness.run_steps(3);
+    click(&mut harness, "shortcuts.conflict.override");
+    click(&mut harness, "shortcuts.save");
+    let keybindings = &harness.state().preferences.keybindings;
+    assert_eq!(
+        keybindings.effective_chords(snap),
+        ["Ctrl+B"].map(String::from)
+    );
+    assert!(keybindings.effective_chords(split).is_empty());
+    assert_eq!(
+        keybindings.profile(one).effective_chords(snap),
+        [ctrl_shift_n.clone()]
+    );
+    assert_eq!(keybindings.profile(one).effective_chords(split), ["Ctrl+B"]);
+    assert_eq!(harness.state().session.project(), &project);
+
+    // The active choice and every profile survive a store round-trip.
+    let dir = tempfile::tempdir().unwrap();
+    let store = PreferenceStore::new(dir.path().join("preferences.json"));
+    store.save(&harness.state().preferences).unwrap();
+    let loaded = store.load_with_warning().0;
+    assert_eq!(loaded.keybindings, harness.state().preferences.keybindings);
+    assert_eq!(loaded.keybindings.active, two);
+    assert_eq!(
+        loaded.keybindings.profile(one).effective_chords(snap),
+        [ctrl_shift_n]
+    );
+}
+
+#[test]
 fn shortcuts_dialog_tabs_switch_and_capture_every_tab_at_two_x() {
     let fixture = fixture();
     let mut editor = fixture.editor;

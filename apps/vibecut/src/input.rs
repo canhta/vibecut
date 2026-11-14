@@ -16,6 +16,7 @@ pub(crate) use keybindings::valid_action_id;
 pub use keybindings::{
     ImportMode, ImportOutcome, KEYBINDING_FORMAT, KEYBINDING_VERSION, KEYBINDINGS_RESET_COMMAND,
     KEYBINDINGS_SET_COMMAND, KeybindingError, KeybindingIssue, KeybindingPreferences,
-    KeybindingProfile, MAX_ACTIONS, MAX_BINDINGS_PER_ACTION, MAX_CHORD_TEXT, MAX_PROFILE_BYTES,
+    KeybindingPreset, KeybindingPresets, KeybindingProfile, MAX_ACTIONS, MAX_BINDINGS_PER_ACTION,
+    MAX_CHORD_TEXT, MAX_PROFILE_BYTES,
 };
 pub use keymap::{DispatchInfo, Keymap};

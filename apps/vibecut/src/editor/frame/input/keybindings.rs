@@ -24,7 +24,7 @@ impl Editor {
     }
     pub(in crate::editor) fn store_keybindings(
         &mut self,
-        keybindings: actions::KeybindingPreferences,
+        keybindings: actions::KeybindingPresets,
     ) -> Result<()> {
         self.set_preference("keybindings", serde_json::to_value(keybindings)?)
     }
@@ -32,28 +32,44 @@ impl Editor {
     /// read the copy; Save commits it and Cancel or Escape drops it.
     pub fn open_shortcuts(&mut self) {
         self.frame.open_shortcuts();
-        self.frame.shortcut_draft = Some(self.preferences.keybindings.clone());
+        self.frame.shortcut_draft = Some(self.preferences.keybindings.active().clone());
     }
     pub(in crate::editor) fn close_shortcuts(&mut self) {
         self.frame.close_shortcuts();
     }
-    /// Save: commit the working copy as one preference edit, then close.
+    /// Save: commit the working copy into the active profile as one preference
+    /// edit, then close. The other profiles are carried over unchanged.
     pub(in crate::editor) fn save_shortcuts(&mut self) -> Result<()> {
         let Some(draft) = self.frame.shortcut_draft.clone() else {
             return Ok(());
         };
-        if draft != self.preferences.keybindings {
-            self.store_keybindings(draft)?;
+        if draft != *self.preferences.keybindings.active() {
+            let mut presets = self.preferences.keybindings.clone();
+            *presets.active_mut() = draft;
+            self.store_keybindings(presets)?;
         }
         self.close_shortcuts();
         Ok(())
     }
-    /// The dialog's working copy, or the stored map when no dialog is open.
+    /// Make another named profile the active one. It is one preference edit;
+    /// the dialog's working copy follows the newly active profile, so unsaved
+    /// edits to the previous one are dropped.
+    pub fn select_shortcut_preset(&mut self, preset: actions::KeybindingPreset) -> Result<()> {
+        let mut next = self.preferences.keybindings.clone();
+        next.active = preset;
+        self.store_keybindings(next)?;
+        self.frame.shortcut_draft = Some(self.preferences.keybindings.active().clone());
+        self.frame.shortcut_error = None;
+        self.frame.shortcut_conflict = None;
+        self.frame.shortcut_recording = None;
+        Ok(())
+    }
+    /// The dialog's working copy, or the active profile when no dialog is open.
     fn shortcut_working_copy(&self) -> actions::KeybindingPreferences {
         self.frame
             .shortcut_draft
             .clone()
-            .unwrap_or_else(|| self.preferences.keybindings.clone())
+            .unwrap_or_else(|| self.preferences.keybindings.active().clone())
     }
     pub fn shortcut_tab(&self) -> ShortcutTab {
         self.frame.shortcut_tab

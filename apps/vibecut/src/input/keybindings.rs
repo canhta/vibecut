@@ -105,6 +105,137 @@ impl KeybindingPreferences {
     }
 }
 
+/// One of the five named binding profiles the shortcuts dialog offers.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+pub enum KeybindingPreset {
+    #[default]
+    One,
+    Two,
+    Three,
+    Four,
+    Five,
+}
+
+impl KeybindingPreset {
+    /// Every preset, in dialog order.
+    pub const ALL: [Self; 5] = [Self::One, Self::Two, Self::Three, Self::Four, Self::Five];
+
+    /// The 1-based number shown in the dialog ("Shortcut 1" to "Shortcut 5").
+    pub const fn number(self) -> u8 {
+        match self {
+            Self::One => 1,
+            Self::Two => 2,
+            Self::Three => 3,
+            Self::Four => 4,
+            Self::Five => 5,
+        }
+    }
+}
+
+impl TryFrom<u8> for KeybindingPreset {
+    type Error = KeybindingError;
+
+    fn try_from(index: u8) -> Result<Self, Self::Error> {
+        match index {
+            0 => Ok(Self::One),
+            1 => Ok(Self::Two),
+            2 => Ok(Self::Three),
+            3 => Ok(Self::Four),
+            4 => Ok(Self::Five),
+            _ => Err(KeybindingError::UnknownPreset(index)),
+        }
+    }
+}
+
+impl From<KeybindingPreset> for u8 {
+    fn from(preset: KeybindingPreset) -> Self {
+        preset.number() - 1
+    }
+}
+
+/// The keybinding preference: five named binding profiles and the active one.
+/// Reads and edits reach the active profile through `Deref`, so every rule on
+/// [`KeybindingPreferences`] (defaults, conflicts, overrides) applies to it.
+/// The other profiles are untouched by those edits.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct KeybindingPresets {
+    pub active: KeybindingPreset,
+    pub profiles: [KeybindingPreferences; 5],
+}
+
+impl KeybindingPresets {
+    /// The active profile.
+    pub fn active(&self) -> &KeybindingPreferences {
+        let [one, two, three, four, five] = &self.profiles;
+        match self.active {
+            KeybindingPreset::One => one,
+            KeybindingPreset::Two => two,
+            KeybindingPreset::Three => three,
+            KeybindingPreset::Four => four,
+            KeybindingPreset::Five => five,
+        }
+    }
+
+    /// The active profile, for edits.
+    pub fn active_mut(&mut self) -> &mut KeybindingPreferences {
+        let [one, two, three, four, five] = &mut self.profiles;
+        match self.active {
+            KeybindingPreset::One => one,
+            KeybindingPreset::Two => two,
+            KeybindingPreset::Three => three,
+            KeybindingPreset::Four => four,
+            KeybindingPreset::Five => five,
+        }
+    }
+
+    /// A named profile, whether or not it is active.
+    pub fn profile(&self, preset: KeybindingPreset) -> &KeybindingPreferences {
+        let [one, two, three, four, five] = &self.profiles;
+        match preset {
+            KeybindingPreset::One => one,
+            KeybindingPreset::Two => two,
+            KeybindingPreset::Three => three,
+            KeybindingPreset::Four => four,
+            KeybindingPreset::Five => five,
+        }
+    }
+
+    /// Structural bounds of every profile.
+    pub fn validate(&self) -> Result<(), KeybindingError> {
+        let [one, two, three, four, five] = &self.profiles;
+        for profile in [one, two, three, four, five] {
+            profile.validate()?;
+        }
+        Ok(())
+    }
+
+    /// Startup repair: each profile keeps its valid entries. Returns whether
+    /// anything changed.
+    pub fn sanitize(self) -> (Self, bool) {
+        let Self { active, profiles } = self;
+        let sanitized = profiles.map(KeybindingPreferences::sanitize);
+        let changed = sanitized.iter().any(|(_, changed)| *changed);
+        let profiles = sanitized.map(|(profile, _)| profile);
+        (Self { active, profiles }, changed)
+    }
+}
+
+impl std::ops::Deref for KeybindingPresets {
+    type Target = KeybindingPreferences;
+
+    fn deref(&self) -> &Self::Target {
+        self.active()
+    }
+}
+
+impl std::ops::DerefMut for KeybindingPresets {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.active_mut()
+    }
+}
+
 /// How an imported profile combines with the bindings already in effect.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ImportMode {
@@ -220,6 +351,8 @@ impl KeybindingProfile {
 pub enum KeybindingError {
     #[error("unknown action `{0}`")]
     UnknownAction(String),
+    #[error("keybinding preset {0} does not exist")]
+    UnknownPreset(u8),
     #[error("invalid chord `{text}`: {error}")]
     InvalidChord { text: String, error: ChordError },
     #[error("binding `{chord}` is already used by `{existing}`")]

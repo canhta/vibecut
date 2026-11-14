@@ -37,7 +37,7 @@ pub(super) struct State {
     /// App-owned preference history, deliberately separate from the project's.
     pub(super) preference_history: PreferenceHistory,
     pub(super) keymap: Keymap,
-    pub(super) keymap_source: actions::KeybindingPreferences,
+    pub(super) keymap_source: actions::KeybindingPresets,
     pub(super) keybinding_issues: Vec<KeybindingIssue>,
     /// A host-set capture flag; global keys wait. A running voice-over take counts
     /// too, read from its dialog by `dispatch_context`.

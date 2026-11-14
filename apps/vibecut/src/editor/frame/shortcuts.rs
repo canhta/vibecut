@@ -10,7 +10,12 @@ use crate::editor::{
 /// Modal shortcuts editor over the one action registry and preference store.
 /// Rows read effective bindings; grouping and conflict rules all
 /// stay owned by their existing modules.
-pub(super) fn show(state: &mut State, cx: &Context<'_>, ctx: &egui::Context) -> Vec<Action> {
+pub(super) fn show(
+    state: &mut State,
+    cx: &Context<'_>,
+    ctx: &egui::Context,
+    preset: actions::KeybindingPreset,
+) -> Vec<Action> {
     let mut actions = Vec::new();
     const ROW_HEIGHT: f32 = SHORTCUT_ROW_HEIGHT;
     const CARD_PAD: f32 = 10.0;
@@ -94,7 +99,7 @@ pub(super) fn show(state: &mut State, cx: &Context<'_>, ctx: &egui::Context) -> 
                             shortcut_tab_button(state, cx, ui, tab, dark);
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            shortcut_preset(state, cx, ui)
+                            shortcut_preset(state, cx, ui, preset, &mut actions)
                         });
                     });
                     ui.add_space(theme::space::LG);
@@ -346,18 +351,37 @@ fn shortcut_tab_button(
         state.set_shortcut_tab(tab);
     }
 }
-fn shortcut_preset(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) {
-    let label = i18n::text(cx.locale, Text::ShortcutsProfile);
-    let mut selected = 0u8;
-    let response = egui::ComboBox::from_id_salt(Id::unique("shortcuts.preset"))
-        .selected_text(label)
+/// The preset dropdown lists Shortcut 1 to Shortcut 5. Choosing one switches
+/// the active profile.
+fn shortcut_preset(
+    state: &mut State,
+    cx: &Context<'_>,
+    ui: &mut egui::Ui,
+    preset: actions::KeybindingPreset,
+    pending: &mut Vec<Action>,
+) {
+    let mut selected = preset;
+    let response = egui::ComboBox::from_id_salt("shortcuts.preset")
+        .selected_text(preset_label(cx.locale, preset))
         .width(180.0)
         .show_ui(ui, |ui| {
-            ui.selectable_value(&mut selected, 0, label);
+            for choice in actions::KeybindingPreset::ALL {
+                ui.selectable_value(&mut selected, choice, preset_label(cx.locale, choice));
+            }
         })
-        .response
-        .on_hover_text(label);
+        .response;
     state.widgets.remember("shortcuts.preset", &response);
+    if selected != preset {
+        pending.push(Action::SelectPreset(selected));
+    }
+}
+
+fn preset_label(locale: i18n::Locale, preset: actions::KeybindingPreset) -> String {
+    i18n::format(
+        locale,
+        Text::ShortcutsPreset,
+        &[("index", &preset.number().to_string())],
+    )
 }
 /// One action row: label, platform glyphs and a per-action reset once the
 /// action owns an override. Clicking the row records the next chord.
@@ -564,6 +588,8 @@ pub(super) enum Action {
     ResetKeybindings { action: Option<&'static str> },
     /// Commit the working copy and close.
     Save,
+    /// Switch the active preset.
+    SelectPreset(actions::KeybindingPreset),
     /// Move the conflicting chord to the recording action.
     OverrideConflict,
     /// Keep the edit box open for another chord.
@@ -578,12 +604,18 @@ impl Editor {
         }
         let mut frame = std::mem::take(&mut self.frame);
         let cx = self.context();
-        let actions = show(&mut frame, &cx, ctx);
+        let preset = self.preferences.keybindings.active;
+        let actions = show(&mut frame, &cx, ctx, preset);
         drop(cx);
         self.frame = frame;
         for action in actions {
             match action {
                 Action::ResetKeybindings { action } => self.reset_shortcut_draft(action),
+                Action::SelectPreset(preset) => {
+                    if let Err(error) = self.select_shortcut_preset(preset) {
+                        self.frame.shortcut_error = Some(self.shortcut_error_message(&error));
+                    }
+                }
                 Action::Save => {
                     if let Err(error) = self.save_shortcuts() {
                         self.frame.shortcut_error = Some(self.shortcut_error_message(&error));
