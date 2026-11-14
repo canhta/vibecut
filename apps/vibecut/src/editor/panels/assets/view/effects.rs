@@ -68,12 +68,60 @@ impl View<'_> {
         )
         .on_hover_text(self.tr(label))
     }
+    /// A collapsible group header: 104 x 22 on the hover fill, the label in the accent while
+    /// `active`, and a caret that shows the open state (down when open, right when closed).
+    fn effects_group_row(
+        &mut self,
+        ui: &mut egui::Ui,
+        label: Text,
+        open: bool,
+        active: bool,
+    ) -> egui::Response {
+        let dark = self.cx.preferences.dark;
+        let label = self.tr(label);
+        let response = ui.add_sized(
+            [theme::size::SUBNAV_BUTTON, theme::size::SUBNAV_GROUP],
+            egui::Button::new(
+                egui::RichText::new(label)
+                    .size(theme::type_size::CHROME)
+                    .color(if active {
+                        theme::accent(dark)
+                    } else {
+                        theme::text(dark)
+                    }),
+            )
+            .fill(theme::hover(dark))
+            .stroke(egui::Stroke::NONE)
+            .truncate()
+            .right_text(""),
+        );
+        let glyph = if open { Icon::CaretDown } else { Icon::CaretRight };
+        icons::tinted(glyph, 12.0, theme::text(dark)).paint_at(
+            ui,
+            Rect::from_center_size(
+                egui::pos2(response.rect.right() - 12.0, response.rect.center().y),
+                Vec2::splat(12.0),
+            ),
+        );
+        response.on_hover_text(label)
+    }
     pub(super) fn effects_nav(&mut self, ui: &mut egui::Ui) {
         let favorites = self.state.effect_favorites;
         let response = self.subnav_button(ui, Text::AssetsFavorites, favorites);
         self.remember("effects.category.favorites".to_owned(), &response, None);
         if response.clicked() {
             self.state.effect_favorites = true;
+        }
+        // The library shelves sit under one collapsible group, as the reference groups its
+        // categories; the group header is active while a shelf (not Favorites) is shown.
+        let open = self.state.effect_video_open;
+        let response = self.effects_group_row(ui, Text::EffectGroupVideo, open, !favorites);
+        self.remember("effects.group.video", &response, None);
+        if response.clicked() {
+            self.state.effect_video_open = !open;
+        }
+        if !self.state.effect_video_open {
+            return;
         }
         let shelves = std::iter::once((None, Text::AssetsAll))
             .chain(SHELVES.iter().map(|(shelf, label)| (Some(*shelf), *label)));
@@ -95,10 +143,12 @@ impl View<'_> {
         let area = ui.available_rect_before_wrap();
         self.search(ui, area.width());
         let favorites = self.state.effect_favorites;
+        // The default list names its first section, as the reference names Trending.
         let title = if favorites {
             Text::AssetsFavorites
         } else {
-            self.state.effect_shelf.map_or(Text::AssetsAll, shelf_label)
+            let first = self.cx.effects.first().map(|row| row.shelf);
+            self.state.effect_shelf.or(first).map_or(Text::AssetsAll, shelf_label)
         };
         ui.painter().text(
             area.min + Vec2::new(0.0, 36.0),

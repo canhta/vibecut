@@ -6226,6 +6226,75 @@ fn measure_reduce_noise() {
     }
 }
 
+#[test]
+#[ignore = "manual 1080p CPU cost of Lens Blur at 10 and 60 and Detail Boost at radius 64"]
+fn measure_lens_blur_and_detail_boost_1080p() {
+    let hooks = Hooks::default();
+    let input = Image::from_working_pixels(
+        1920,
+        1080,
+        (0..1920_u32 * 1080).map(|i| {
+            let v = ((i.wrapping_mul(2_654_435_761) >> 20) % 251) as f32 / 250.0;
+            [v, v * 0.8, v * 0.6, 1.0]
+        }),
+        &hooks,
+    )
+    .unwrap();
+    let cases = [
+        (
+            "lens_blur_amount_10",
+            "bokeh_blur",
+            vec![("amount", EffectValue::Scalar(10.0))],
+        ),
+        (
+            "lens_blur_amount_60",
+            "bokeh_blur",
+            vec![("amount", EffectValue::Scalar(60.0))],
+        ),
+        (
+            "detail_boost_radius_64",
+            "unsharp_mask",
+            vec![("radius", EffectValue::Scalar(64.0))],
+        ),
+    ];
+    for (label, kind, params) in cases {
+        let instance = effect_instance(kind, &params);
+        let passes = evaluate_effect(
+            &project::Animations::default(),
+            &instance,
+            time::Tick::ZERO,
+            EffectGeometry::new([1920, 1080], [1.0, 1.0]).unwrap(),
+            true,
+            &render::lut::LutResources::default(),
+        )
+        .unwrap();
+        let run = || {
+            CpuEffects
+                .apply(
+                    &input,
+                    &passes,
+                    EffectInputs {
+                        input: &input,
+                        below: &input,
+                        coverage: None,
+                    },
+                    &hooks,
+                )
+                .unwrap()
+        };
+        drop(run());
+        let start = std::time::Instant::now();
+        for _ in 0..2 {
+            drop(run());
+        }
+        let ms = start.elapsed().as_secs_f64() * 1000.0 / 2.0;
+        eprintln!(
+            "EFFECT_COST {label} {ms:.3} ms/frame 1920x1080 passes={}",
+            passes.len()
+        );
+    }
+}
+
 /// One adjustment layer on its own Effect track: `kind` effects over `[start, start + length)`
 /// frames at 30 fps.
 fn adjustment(

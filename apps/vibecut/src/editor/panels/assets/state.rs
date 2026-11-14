@@ -45,6 +45,8 @@ pub(in crate::editor) struct State {
     pub(super) effect_shelf: Option<project::EffectShelf>,
     /// Effects tab: the Favorites sub-navigation entry replaces the shelf filter.
     pub(super) effect_favorites: bool,
+    /// Effects tab: whether the "Video effects" group lists its rows.
+    pub(super) effect_video_open: bool,
     /// Effects tab: the tile preview owner and the drag in flight.
     pub(in crate::editor) effect_previews: Option<super::effects::EffectPreviews>,
     pub(in crate::editor) effect_drag: Option<String>,
@@ -141,6 +143,7 @@ impl Default for State {
             filter: Filter::default(),
             effect_shelf: None,
             effect_favorites: false,
+            effect_video_open: true,
             effect_previews: None,
             effect_drag: None,
             media_drag: None,

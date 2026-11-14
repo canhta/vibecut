@@ -715,6 +715,7 @@ catalog! {
     EffectFrameRate { key: "effect_frame_rate", en: "Frame rate", vi: "Khung hình/giây" },
     EffectFrequency { key: "effect_frequency", en: "Frequency", vi: "Tần số" },
     EffectGain { key: "effect_gain", en: "Gain", vi: "Khuếch đại" },
+    EffectGroupVideo { key: "effect_group_video", en: "Video effects", vi: "Hiệu ứng video" },
     EffectGainBlue { key: "effect_gain_blue", en: "Gain blue", vi: "Khuếch đại lam" },
     EffectGainGreen { key: "effect_gain_green", en: "Gain green", vi: "Khuếch đại lục" },
     EffectGainRed { key: "effect_gain_red", en: "Gain red", vi: "Khuếch đại đỏ" },

@@ -112,7 +112,7 @@ Open: the geometry and styling of the guide picker and notes (layout, spacing, w
 
 ## Effects
 
-The assets Effects tab is a 4-column grid: 88 px cards, 15 px horizontal gaps, 116 px row pitch (221727: cards x 198/301/403/506, image y 192–278, label y 284–287), each with a live thumbnail, name and a 28 px `+` action; the tile is the drag handle. The properties Effects tab reuses the properties sub-tab bar and 22 px fields: each stack row has a 28 px reorder handle, name, eye toggle and trash action, with scrub fields below. Empty, pending, failed, disabled, locked, unsupported and limit states are explicit. Stack-row spacing is [proposed].
+The assets Effects sub-navigation groups its categories under a collapsible header (`Video effects`, caret at the right) that is 104 x 22 logical (measured: 221727 at 2x, x 146–353 and y 264–307 native, the same box as the Trending row). The reference's first section name is Trending; ours is the first section of the default list. Long shelf names truncate with their full name on hover. The assets Effects tab is a 4-column grid: 88 px cards, 15 px horizontal gaps, 116 px row pitch (221727: cards x 198/301/403/506, image y 192–278, label y 284–287), each with a live thumbnail, name and a 28 px `+` action; the tile is the drag handle. The properties Effects tab reuses the properties sub-tab bar and 22 px fields: each stack row has a 28 px reorder handle, name, eye toggle and trash action, with scrub fields below. Empty, pending, failed, disabled, locked, unsupported and limit states are explicit. Stack-row spacing is [proposed].
 
 ## Sounds
 
