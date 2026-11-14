@@ -54,8 +54,20 @@ pub(crate) const WARNING_DARK: Color32 = Color32::from_rgb(0xF3, 0xC9, 0x77);
 pub(crate) const WARNING_LIGHT: Color32 = Color32::from_rgb(0x8A, 0x61, 0x00);
 
 /// Video clip tokens; the table measures fill and border, not the text.
-pub(crate) const VIDEO_FILL_DARK: Color32 = Color32::from_rgb(0x0A, 0x2A, 0x24);
-pub(crate) const VIDEO_BORDER_DARK: Color32 = Color32::from_rgb(0x0B, 0x6B, 0x5B);
+pub(crate) const VIDEO_FILL_DARK: Color32 = Color32::from_rgb(0x20, 0x4C, 0x51);
+pub(crate) const VIDEO_BORDER_DARK: Color32 = Color32::from_rgb(0x20, 0x3A, 0x3D);
+/// Waveform bands measured in the multi-track capture (102704): the video clip's
+/// bottom band and the audio clip's bars.
+pub(crate) const WAVEFORM_DARK: Color32 = Color32::from_rgb(0x35, 0x75, 0x7D);
+pub(crate) const AUDIO_WAVEFORM_DARK: Color32 = Color32::from_rgb(0x3C, 0x7F, 0xB0);
+/// Clip fills by track kind, dark theme, measured in 102704. The light theme is
+/// not captured: the light fills blend these toward white [proposed].
+pub(crate) const AUDIO_CLIP_DARK: Color32 = Color32::from_rgb(0x18, 0x2F, 0x56);
+pub(crate) const TEXT_CLIP_DARK: Color32 = Color32::from_rgb(0x91, 0x4E, 0x3B);
+pub(crate) const STICKER_CLIP_DARK: Color32 = Color32::from_rgb(0xCB, 0x96, 0x3C);
+pub(crate) const EFFECT_CLIP_DARK: Color32 = Color32::from_rgb(0x6E, 0x4C, 0x80);
+pub(crate) const FILTER_CLIP_DARK: Color32 = Color32::from_rgb(0x46, 0x41, 0x88);
+pub(crate) const ADJUSTMENT_CLIP_DARK: Color32 = Color32::from_rgb(0xA5, 0x88, 0x41);
 pub(crate) const VIDEO_FILL_LIGHT: Color32 = Color32::from_rgb(0xE3, 0xF7, 0xF2);
 pub(crate) const VIDEO_BORDER_LIGHT: Color32 = Color32::from_rgb(0x0B, 0x6B, 0x5B);
 
@@ -217,7 +229,7 @@ mod tests {
             (error_text(false), rgb(0xD6, 0x00, 0x16)),
             (success(true), rgb(0x53, 0xC5, 0x46)),
             (warning(false), rgb(0x8A, 0x61, 0x00)),
-            (video_fill(true), rgb(0x0A, 0x2A, 0x24)),
+            (video_fill(true), rgb(0x20, 0x4C, 0x51)),
             (video_fill(false), rgb(0xE3, 0xF7, 0xF2)),
             (video_border(false), rgb(0x0B, 0x6B, 0x5B)),
         ];
@@ -287,11 +299,21 @@ pub(crate) mod size {
     pub const PROPERTY_ROW: f32 = 39.0;
     pub const SECTION: f32 = 55.0;
     pub const SHORTCUT_ROW: f32 = 40.0;
+    /// Main video track row (102704: 152 px / 2).
     pub const VIDEO_TRACK: f32 = 76.0;
+    /// Overlay video row (102704: 104 px / 2).
+    pub const OVERLAY_TRACK: f32 = 52.0;
+    /// Audio row (102704: 100 px / 2).
+    pub const AUDIO_TRACK: f32 = 50.0;
+    /// Text, sticker, effect, filter and adjustment rows (102704: 48 px / 2).
+    pub const SMALL_TRACK: f32 = 24.0;
+    /// Gap between track rows (102704: 4 px / 2).
+    pub const TRACK_GAP: f32 = 2.0;
+    /// Overlay clip bottom band inside its 1 px border: 12.5 measured with the border (102704).
+    pub const OVERLAY_WAVEFORM: f32 = 11.0;
     pub const CLIP: f32 = 74.0;
     /// Top, filmstrip and waveform bands inside the 74 px clip (221643 y 787-858).
     pub const CLIP_BAND: f32 = 17.0;
-    pub const CLIP_FILMSTRIP: f32 = 39.0;
     pub const CLIP_WAVEFORM: f32 = 16.0;
     pub const TRACK_LABEL: f32 = 123.0;
     pub const SCROLLBAR: f32 = 6.0;
@@ -394,10 +416,25 @@ pub(crate) fn track_rest(dark: bool) -> Color32 {
 }
 pub(crate) fn waveform(dark: bool) -> Color32 {
     if dark {
-        VIDEO_BORDER_DARK
+        WAVEFORM_DARK
     } else {
         VIDEO_BORDER_LIGHT
     }
+}
+/// Bars of an audio clip's waveform.
+pub(crate) fn audio_waveform(_dark: bool) -> Color32 {
+    AUDIO_WAVEFORM_DARK
+}
+/// A dark-theme clip fill carried to the light theme: 70 % toward white [proposed].
+pub(crate) fn light_clip(fill: Color32) -> Color32 {
+    blend_to_white(fill, 0.7)
+}
+fn blend_to_white(color: Color32, amount: f32) -> Color32 {
+    let lift = |channel: u8| {
+        let value = f32::from(channel);
+        (value + (255.0 - value) * amount).round().clamp(0.0, 255.0) as u8
+    };
+    Color32::from_rgb(lift(color.r()), lift(color.g()), lift(color.b()))
 }
 /// Measured label weight, using the already bundled font.
 pub(crate) fn label_font() -> eframe::egui::FontId {

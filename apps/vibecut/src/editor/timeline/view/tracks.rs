@@ -6,6 +6,7 @@ use crate::editor::timeline::{
     view::{Ink, tr},
 };
 use crate::i18n;
+use crate::preferences::{TrackHeight, WAVEFORM_SIZES};
 
 impl State {
     pub(in crate::editor::timeline) fn paint_tracks(
@@ -193,33 +194,43 @@ impl State {
                         muted: !row.muted,
                     })));
                 }
-                let more_rect = Rect::from_center_size(cell(4), Vec2::splat(theme::size::CONTROL))
-                    .intersect(layout.labels);
-                let more = header_ui.interact(
-                    more_rect,
-                    Id::unique(("track", row.id.0, "more")),
-                    egui::Sense::click(),
-                );
-                let hint = i18n::format(
-                    cx.locale,
-                    Text::TrackToggle,
-                    &[("action", tr(cx, Text::TrackMore)), ("track", &row.name)],
-                );
-                more.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &hint));
-                self.remember_icon(
-                    format!("track.{}.more", row.id.0),
-                    Some(Icon::DotsThree.name()),
-                    &more,
-                );
-                if more.hovered() || more.has_focus() {
-                    label_painter.rect_filled(more_rect, theme::radius::CONTROL, ink.panel());
+                // Only video and audio tracks carry the settings cell (102704).
+                if has_settings_cell(row.kind) {
+                    let more_rect =
+                        Rect::from_center_size(cell(4), Vec2::splat(theme::size::CONTROL))
+                            .intersect(layout.labels);
+                    let more = header_ui.interact(
+                        more_rect,
+                        Id::unique(("track", row.id.0, "more")),
+                        egui::Sense::click(),
+                    );
+                    let hint = i18n::format(
+                        cx.locale,
+                        Text::TrackToggle,
+                        &[
+                            ("action", tr(cx, Text::TrackSettings)),
+                            ("track", &row.name),
+                        ],
+                    );
+                    more.widget_info(|| {
+                        egui::WidgetInfo::labeled(egui::Role::Button, true, &hint)
+                    });
+                    self.remember_with(
+                        format!("track.{}.more", row.id.0),
+                        Some(Icon::DotsThree.name()),
+                        Some(hint.clone()),
+                        &more,
+                    );
+                    if more.hovered() || more.has_focus() {
+                        label_painter.rect_filled(more_rect, theme::radius::CONTROL, ink.panel());
+                    }
+                    icons::tinted(Icon::DotsThree, 16.0, ink.text()).paint_at(
+                        &header_ui,
+                        Rect::from_center_size(more_rect.center(), Vec2::splat(theme::icon::DENSE)),
+                    );
+                    let more = more.on_hover_text(hint);
+                    egui::Popup::menu(&more).show(|ui| self.track_menu(cx, ui, row));
                 }
-                icons::tinted(Icon::DotsThree, 16.0, ink.text()).paint_at(
-                    &header_ui,
-                    Rect::from_center_size(more_rect.center(), Vec2::splat(theme::icon::DENSE)),
-                );
-                let more = more.on_hover_text(hint);
-                egui::Popup::menu(&more).show(|ui| self.track_menu(cx, ui, row));
             }
             header.context_menu(|ui| self.track_menu(cx, ui, row));
             if header.drag_started() {
@@ -459,6 +470,52 @@ impl State {
     /// The context menu shared by a header's right click and its more button.
     fn track_menu(&mut self, cx: &Context<'_>, ui: &mut egui::Ui, row: &TrackRow) {
         let ink = Ink::of(cx);
+        // The measured header menu (103106): both choices are registered commands
+        // and persist as preferences, so they apply to every track.
+        ui.menu_button(tr(cx, Text::TrackHeight), |ui| {
+            for (height, text, id) in [
+                (
+                    TrackHeight::Short,
+                    Text::TrackHeightShort,
+                    "timeline.track_height.short",
+                ),
+                (
+                    TrackHeight::Default,
+                    Text::TrackHeightDefault,
+                    "timeline.track_height.default",
+                ),
+                (
+                    TrackHeight::Tall,
+                    Text::TrackHeightTall,
+                    "timeline.track_height.tall",
+                ),
+            ] {
+                let response = ui.selectable_label(
+                    cx.preferences.track_height == height,
+                    tr(cx, text),
+                );
+                let key = id.rsplit('.').next().unwrap_or(id);
+                self.remember(format!("track.{}.height.{key}", row.id.0), &response);
+                if response.clicked() {
+                    self.push(Action::Activate(id.to_owned()));
+                    ui.close();
+                }
+            }
+        });
+        ui.menu_button(tr(cx, Text::WaveformSize), |ui| {
+            for percent in WAVEFORM_SIZES {
+                let response = ui.selectable_label(
+                    cx.preferences.waveform_size == percent,
+                    format!("{}%", i18n::number(cx.locale, u64::from(percent))),
+                );
+                self.remember(format!("track.{}.waveform.{percent}", row.id.0), &response);
+                if response.clicked() {
+                    self.push(Action::Activate(format!("timeline.waveform_size.{percent}")));
+                    ui.close();
+                }
+            }
+        });
+        ui.separator();
         let paste = ui.add_enabled(
             false,
             egui::Button::image_and_text(
@@ -689,16 +746,31 @@ fn shadow_mesh(rect: Rect, dark: egui::Color32) -> egui::Mesh {
     mesh
 }
 
-pub(in crate::editor::timeline) fn track_height(kind: TrackKind) -> f32 {
-    match kind {
-        TrackKind::Video => theme::size::VIDEO_TRACK,
-        TrackKind::Audio => 40.0,
+/// Row height by kind (102704): the small kinds are 24, overlay video 52, main
+/// video 76 and audio 50. Short and Tall scale them [proposed]; no row drops
+/// below the small-kind height.
+pub(in crate::editor::timeline) fn track_height(
+    kind: TrackKind,
+    main: bool,
+    density: TrackHeight,
+) -> f32 {
+    let base = match kind {
+        TrackKind::Video if main => theme::size::VIDEO_TRACK,
+        TrackKind::Video => theme::size::OVERLAY_TRACK,
+        TrackKind::Audio => theme::size::AUDIO_TRACK,
         TrackKind::Text
         | TrackKind::Sticker
         | TrackKind::Effect
         | TrackKind::Filter
-        | TrackKind::Adjustment => 32.0,
-    }
+        | TrackKind::Adjustment => theme::size::SMALL_TRACK,
+    };
+    (base * density.scale())
+        .round()
+        .max(theme::size::SMALL_TRACK)
+}
+/// Whether the header carries the track-settings cell: video and audio only.
+pub(in crate::editor::timeline) fn has_settings_cell(kind: TrackKind) -> bool {
+    matches!(kind, TrackKind::Video | TrackKind::Audio)
 }
 pub(in crate::editor::timeline) fn track_icon(kind: TrackKind) -> Icon {
     match kind {
@@ -709,5 +781,50 @@ pub(in crate::editor::timeline) fn track_icon(kind: TrackKind) -> Icon {
         TrackKind::Effect => Icon::Sparkle,
         TrackKind::Filter => Icon::Funnel,
         TrackKind::Adjustment => Icon::SlidersHorizontal,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn row_heights_follow_kind_and_density() {
+        // 102704 default pitch: small kinds 24, overlay video 52, main 76, audio 50.
+        for (index, (kind, main, density, expected)) in [
+            (TrackKind::Text, false, TrackHeight::Default, 24.0),
+            (TrackKind::Sticker, false, TrackHeight::Default, 24.0),
+            (TrackKind::Effect, false, TrackHeight::Default, 24.0),
+            (TrackKind::Filter, false, TrackHeight::Default, 24.0),
+            (TrackKind::Adjustment, false, TrackHeight::Default, 24.0),
+            (TrackKind::Video, false, TrackHeight::Default, 52.0),
+            (TrackKind::Video, true, TrackHeight::Default, 76.0),
+            (TrackKind::Audio, false, TrackHeight::Default, 50.0),
+            (TrackKind::Video, true, TrackHeight::Short, 57.0),
+            (TrackKind::Video, true, TrackHeight::Tall, 114.0),
+            (TrackKind::Audio, false, TrackHeight::Tall, 75.0),
+            (TrackKind::Text, false, TrackHeight::Short, 24.0),
+            (TrackKind::Text, false, TrackHeight::Tall, 36.0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert_eq!(track_height(kind, main, density), expected, "row case {index}");
+        }
+    }
+
+    #[test]
+    fn only_video_and_audio_carry_the_settings_cell() {
+        for (kind, expected) in [
+            (TrackKind::Video, true),
+            (TrackKind::Audio, true),
+            (TrackKind::Text, false),
+            (TrackKind::Sticker, false),
+            (TrackKind::Effect, false),
+            (TrackKind::Filter, false),
+            (TrackKind::Adjustment, false),
+        ] {
+            assert_eq!(has_settings_cell(kind), expected, "{kind:?}");
+        }
     }
 }

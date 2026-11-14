@@ -80,6 +80,12 @@
 | `timeline.snap` — Toggle snapping | Timeline | N | — | timeline view |
 | `timeline.ripple` — Toggle ripple editing | Timeline | — | — | timeline view |
 | `timeline.preview_axis` — Preview axis | Timeline | S | — | timeline view |
+| `timeline.track_height.short` — Short track height | Timeline | — | — | timeline view |
+| `timeline.track_height.default` — Default track height | Timeline | — | — | timeline view |
+| `timeline.track_height.tall` — Tall track height | Timeline | — | — | timeline view |
+| `timeline.waveform_size.30` — Audio waveform size 30% | Timeline | — | — | timeline view |
+| `timeline.waveform_size.60` — Audio waveform size 60% | Timeline | — | — | timeline view |
+| `timeline.waveform_size.100` — Audio waveform size 100% | Timeline | — | — | timeline view |
 | `timeline.tool.select` — Select | Timeline | A | — | timeline tool |
 | `timeline.tool.split` — Split mode | Timeline | B | — | timeline tool |
 | `timeline.select_left` — Select leftward | Selection | [ | — | timeline selection |

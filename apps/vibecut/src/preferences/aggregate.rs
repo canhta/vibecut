@@ -21,7 +21,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 /// Bumped when the local preference document changes incompatibly.
-pub const PREFERENCES_VERSION: u32 = 17;
+pub const PREFERENCES_VERSION: u32 = 18;
 /// Room for every provider/feature choice and its bounded recent IDs.
 pub const MAX_PREFERENCES_BYTES: u64 = 32 * 1024;
 /// Total open-lane entries across every project; keeps the document bounded.
@@ -72,6 +72,8 @@ pub const PREFERENCE_KEYS: &[&str] = &[
     "cache_limit_bytes",
     "preview_guide",
     "preview_overlays",
+    "track_height",
+    "waveform_size",
 ];
 
 /// A splitter drag that keeps every region non-empty and inside its limits.
@@ -180,6 +182,10 @@ pub struct Preferences {
     pub preview_guide: Guide,
     /// Visibility of each preview overlay; presentation only.
     pub preview_overlays: OverlayVisibility,
+    /// Timeline row height choice (track header menu); presentation only.
+    pub track_height: super::TrackHeight,
+    /// Audio waveform size in percent, one of `WAVEFORM_SIZES`; presentation only.
+    pub waveform_size: u8,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -218,6 +224,8 @@ impl Default for Preferences {
             cache_limit_bytes: DEFAULT_CACHE_LIMIT,
             preview_guide: Guide::default(),
             preview_overlays: OverlayVisibility::default(),
+            track_height: super::TrackHeight::default(),
+            waveform_size: super::DEFAULT_WAVEFORM_SIZE,
         }
     }
 }
@@ -245,6 +253,9 @@ impl Preferences {
             return Err(Error::Invalid("window geometry"));
         }
         validate_panels(self.panels)?;
+        if !super::WAVEFORM_SIZES.contains(&self.waveform_size) {
+            return Err(Error::Invalid("waveform size"));
+        }
         self.subtitles.validate()?;
         self.export.output.validate()?;
         self.validate_sections()?;
@@ -378,6 +389,8 @@ impl Preferences {
             "cache_limit_bytes" => Ok(serde_json::json!(self.cache_limit_bytes)),
             "preview_guide" => Ok(serde_json::to_value(self.preview_guide)?),
             "preview_overlays" => Ok(serde_json::to_value(self.preview_overlays)?),
+            "track_height" => Ok(serde_json::to_value(self.track_height)?),
+            "waveform_size" => Ok(serde_json::json!(self.waveform_size)),
             _ => Err(Error::Unsupported("preference key")),
         }
     }
@@ -426,6 +439,8 @@ impl Preferences {
             "cache_limit_bytes" => self.cache_limit_bytes = serde_json::from_value(value)?,
             "preview_guide" => self.preview_guide = serde_json::from_value(value)?,
             "preview_overlays" => self.preview_overlays = serde_json::from_value(value)?,
+            "track_height" => self.track_height = serde_json::from_value(value)?,
+            "waveform_size" => self.waveform_size = serde_json::from_value(value)?,
             _ => return Err(Error::Unsupported("preference key")),
         }
         Ok(())

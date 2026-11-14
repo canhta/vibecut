@@ -55,12 +55,42 @@ fn track_headers_remain_operable_at_display_density() {
                 .iter()
                 .find(|w| w.id == format!("track.{}.header", track.id.0))
                 .unwrap();
+            // 102704: main 76, overlay video 52, audio 50, the rest 24.
             let expected = match track.kind {
-                TrackKind::Video => 76.0,
-                TrackKind::Audio => 40.0,
-                _ => 32.0,
+                TrackKind::Video if track.id.0 == 0 => 76.0,
+                TrackKind::Video => 52.0,
+                TrackKind::Audio => 50.0,
+                _ => 24.0,
             };
-            assert_eq!(w.rect.height(), expected);
+            assert_eq!(w.rect.height(), expected, "{:?} row", track.kind);
+            // Header cells by kind: lock everywhere, eye except audio, speaker and
+            // settings only on video and audio.
+            let has = |suffix: &str| {
+                inspect
+                    .widgets
+                    .iter()
+                    .any(|w| w.id == format!("track.{}.{suffix}", track.id.0))
+            };
+            let sound = matches!(track.kind, TrackKind::Video | TrackKind::Audio);
+            assert!(has("lock"), "{:?} lock", track.kind);
+            assert_eq!(has("hidden"), track.kind != TrackKind::Audio, "{:?} eye", track.kind);
+            assert_eq!(has("muted"), sound, "{:?} speaker", track.kind);
+            assert_eq!(has("more"), sound, "{:?} settings", track.kind);
+            let tooltip = |suffix: &str| {
+                inspect
+                    .widgets
+                    .iter()
+                    .find(|w| w.id == format!("track.{}.{suffix}", track.id.0))
+                    .and_then(|w| w.tooltip.clone())
+            };
+            assert!(tooltip("lock").unwrap().starts_with("Lock track"));
+            if track.kind != TrackKind::Audio {
+                assert!(tooltip("hidden").unwrap().starts_with("Hide track"));
+            }
+            if sound {
+                assert!(tooltip("muted").unwrap().starts_with("Mute track"));
+                assert!(tooltip("more").unwrap().starts_with("Track settings"));
+            }
             assert!(
                 h.query_all(By::new().predicate(
                     |n| n.author_id() == Some(format!("track.{}.header", track.id.0).as_str())
@@ -124,10 +154,7 @@ fn track_headers_remain_operable_at_display_density() {
                 .any(|w| w.id == "track.7.hidden")
         );
         let id = h.state().session.project().data().scene().timeline.overlays[0].id;
-        h.get(
-            By::new().predicate(|n| n.author_id() == Some(format!("track.{}.more", id.0).as_str())),
-        )
-        .click();
+        right_click_header(&mut h, id);
         h.run_steps(3);
         h.get(
             By::new()
@@ -229,6 +256,22 @@ fn header_rect(h: &Harness<'_, Editor>, id: project::TrackId) -> egui::Rect {
         .rect
 }
 
+/// Right-click the name area of a track header (its centre holds output controls).
+fn right_click_header(h: &mut Harness<'_, Editor>, track: project::TrackId) {
+    let pos = header_rect(h, track).left_top() + egui::vec2(8.0, 8.0);
+    h.hover_at(pos);
+    for pressed in [true, false] {
+        h.event(egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Secondary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.run_steps(1);
+    }
+    h.run_steps(2);
+}
+
 fn drag(h: &mut Harness<'_, Editor>, from: egui::Pos2, to: egui::Pos2) {
     h.drag_at(from);
     h.run_steps(1);
@@ -246,8 +289,7 @@ fn rename_commits_on_enter_and_esc_keeps_the_old_name() {
         .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor);
     h.run_steps(4);
     let id = track.0;
-    h.get(By::new().predicate(|n| n.author_id() == Some(format!("track.{id}.more").as_str())))
-        .click();
+    right_click_header(&mut h, track);
     h.run_steps(2);
     h.get(
         By::new()
@@ -283,9 +325,7 @@ fn rename_commits_on_enter_and_esc_keeps_the_old_name() {
         "Đổi tên rãnh"
     );
 
-    h.get(By::new().predicate(|n| n.author_id() == Some(format!("track.{id}.more").as_str())))
-        .click();
-    h.run_steps(2);
+    right_click_header(&mut h, track);
     h.get(
         By::new()
             .predicate(|n| n.author_id() == Some(format!("track.{id}.rename_action").as_str())),
@@ -471,12 +511,7 @@ fn rename_cancellation_restores_shortcuts_after_track_exit() {
             .with_size(egui::vec2(1728.0, 1200.0))
             .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor);
         h.run_steps(4);
-        h.get(
-            By::new()
-                .predicate(|n| n.author_id() == Some(format!("track.{}.more", track.0).as_str())),
-        )
-        .click();
-        h.run_steps(2);
+        right_click_header(&mut h, track);
         h.get(By::new().predicate(|n| {
             n.author_id() == Some(format!("track.{}.rename_action", track.0).as_str())
         }))
@@ -577,9 +612,7 @@ fn lock_refuses_structural_edits_and_add_track_uses_the_active_kind() {
         .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor);
     h.run_steps(4);
     let id = text_track.0;
-    h.get(By::new().predicate(|n| n.author_id() == Some(format!("track.{id}.more").as_str())))
-        .click();
-    h.run_steps(2);
+    right_click_header(&mut h, text_track);
     h.get(By::new().predicate(|n| n.author_id() == Some(format!("track.{id}.lock").as_str())))
         .click();
     h.run_steps(3);
@@ -666,4 +699,39 @@ fn lock_refuses_structural_edits_and_add_track_uses_the_active_kind() {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     h.render().unwrap().save(&path).unwrap();
     println!("track management screenshot: {}", path.display());
+}
+
+#[test]
+fn header_menu_sets_track_height_and_waveform_size() {
+    use vibecut::preferences::TrackHeight;
+    let mut h = crate::gpu::builder()
+        .with_size(egui::vec2(1728.0, 1200.0))
+        .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor());
+    h.run_steps(4);
+    let main = project::TrackId(0);
+    assert_eq!(h.state().preferences.track_height, TrackHeight::Default);
+    assert_eq!(h.state().preferences.waveform_size, 30);
+    right_click_header(&mut h, main);
+    h.get_by_label("Track height").click();
+    h.run_steps(2);
+    h.get(By::new().predicate(|n| n.author_id() == Some("track.0.height.tall")))
+        .click();
+    h.run_steps(3);
+    assert_eq!(h.state().preferences.track_height, TrackHeight::Tall);
+    assert_eq!(header_rect(&h, main).height(), 114.0);
+    right_click_header(&mut h, main);
+    h.get_by_label("Audio waveform size").click();
+    h.run_steps(2);
+    h.get(By::new().predicate(|n| n.author_id() == Some("track.0.waveform.100")))
+        .click();
+    h.run_steps(3);
+    assert_eq!(h.state().preferences.waveform_size, 100);
+    right_click_header(&mut h, main);
+    h.get_by_label("Track height").click();
+    h.run_steps(2);
+    h.get(By::new().predicate(|n| n.author_id() == Some("track.0.height.short")))
+        .click();
+    h.run_steps(3);
+    assert_eq!(h.state().preferences.track_height, TrackHeight::Short);
+    assert_eq!(header_rect(&h, main).height(), 57.0);
 }

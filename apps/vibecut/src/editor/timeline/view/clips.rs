@@ -84,19 +84,7 @@ impl State {
                 self.paint_missing_media(cx, ui, &painter, item, inner, dark);
             }
             TrackKind::Video if item.overlay.is_none() => {
-                // Top band, filmstrip, waveform: 17 + 39 + 16 px inside the border.
-                let strip_top = inner.top() + theme::size::CLIP_BAND;
-                let strip = Rect::from_min_size(
-                    egui::pos2(inner.left(), strip_top),
-                    Vec2::new(
-                        inner.width(),
-                        theme::size::CLIP_FILMSTRIP.min(inner.height()),
-                    ),
-                );
-                let wave = Rect::from_min_max(
-                    egui::pos2(inner.left(), strip.bottom()),
-                    inner.right_bottom(),
-                );
+                let (strip, wave) = video_bands(inner, item.main);
                 self.paint_clip_visuals(
                     cx,
                     ui,
@@ -1028,7 +1016,11 @@ impl State {
             paint_flat(painter, wave, theme::waveform(dark).gamma_multiply(0.35));
             return;
         };
-        let waveform_ink = theme::waveform(dark);
+        let waveform_ink = if item.kind == TrackKind::Audio {
+            theme::audio_waveform(dark)
+        } else {
+            theme::waveform(dark)
+        };
         let tip = visuals::clip_tip(dark);
         if let Some(strip) = strip {
             let state = cx.visuals.strip(
@@ -1057,7 +1049,11 @@ impl State {
         let columns =
             ((visible.width() / BAR_PX).ceil() as usize).clamp(1, engine::waveform::MAX_COLUMNS);
         let state = cx.visuals.waveform(asset, source, range, columns);
-        let reach = if strip.is_some() { 0.9 } else { 0.7 };
+        let reach = if strip.is_some() {
+            0.9
+        } else {
+            audio_reach(cx.preferences.waveform_size)
+        };
         match &state {
             WaveState::Ready(bars) => {
                 paint_bars(painter, wave, visible, bars, reach, waveform_ink, tip)
@@ -1099,18 +1095,7 @@ impl State {
         let label = tr(cx, Text::MediaMissing).to_owned();
         let bands = match (item.kind, item.overlay) {
             (TrackKind::Video, None) => {
-                let strip_top = inner.top() + theme::size::CLIP_BAND;
-                let strip = Rect::from_min_size(
-                    egui::pos2(inner.left(), strip_top),
-                    Vec2::new(
-                        inner.width(),
-                        theme::size::CLIP_FILMSTRIP.min(inner.height()),
-                    ),
-                );
-                let wave = Rect::from_min_max(
-                    egui::pos2(inner.left(), strip.bottom()),
-                    inner.right_bottom(),
-                );
+                let (strip, wave) = video_bands(inner, item.main);
                 vec![("filmstrip", strip), ("waveform", wave)]
             }
             (TrackKind::Audio, _) => vec![("waveform", inner)],
@@ -1343,6 +1328,52 @@ pub(in crate::editor::timeline) fn item_label(
         }
     }
 }
+/// Top band, filmstrip and bottom band of a video clip inside its border
+/// (102704): 17 px band; the bottom band is 16 px on the main track and 11 px on
+/// an overlay track, where the filmstrip is 20 px. The filmstrip takes the rest,
+/// so the Short and Tall row heights stretch it.
+fn video_bands(inner: Rect, main: bool) -> (Rect, Rect) {
+    let wave_height = if main {
+        theme::size::CLIP_WAVEFORM
+    } else {
+        theme::size::OVERLAY_WAVEFORM
+    };
+    let strip_top = inner.top() + theme::size::CLIP_BAND;
+    let strip = Rect::from_min_size(
+        egui::pos2(inner.left(), strip_top),
+        Vec2::new(
+            inner.width(),
+            (inner.height() - theme::size::CLIP_BAND - wave_height).max(0.0),
+        ),
+    );
+    let wave = Rect::from_min_max(
+        egui::pos2(inner.left(), strip.bottom()),
+        inner.right_bottom(),
+    );
+    (strip, wave)
+}
+/// How much of the audio band the bars may fill for a waveform size of 30, 60
+/// or 100 percent. The reference lists the sizes but not the resulting bar
+/// height, so 0.7 (the 30 % default) to 1.0 is [proposed].
+fn audio_reach(percent: u8) -> f32 {
+    match percent {
+        100 => 1.0,
+        60 => 0.85,
+        _ => 0.7,
+    }
+}
+/// Dark-theme fill by track kind, measured in 102704.
+fn kind_fill(kind: TrackKind) -> Color32 {
+    match kind {
+        TrackKind::Video => theme::VIDEO_FILL_DARK,
+        TrackKind::Audio => theme::AUDIO_CLIP_DARK,
+        TrackKind::Text => theme::TEXT_CLIP_DARK,
+        TrackKind::Sticker => theme::STICKER_CLIP_DARK,
+        TrackKind::Effect => theme::EFFECT_CLIP_DARK,
+        TrackKind::Filter => theme::FILTER_CLIP_DARK,
+        TrackKind::Adjustment => theme::ADJUSTMENT_CLIP_DARK,
+    }
+}
 pub(in crate::editor::timeline) fn item_palette(
     kind: TrackKind,
     dark: bool,
@@ -1350,10 +1381,17 @@ pub(in crate::editor::timeline) fn item_palette(
     overlay: Option<[u8; 4]>,
 ) -> (Color32, Color32, Color32) {
     let text = theme::text(dark);
-    let (fill, border) = match kind {
-        TrackKind::Video => (theme::video_fill(dark), theme::video_border(dark)),
-        TrackKind::Audio => (theme::video_fill(dark), theme::video_border(dark)),
-        _ => (theme::hover(dark), theme::border(dark)),
+    let (fill, border) = if kind == TrackKind::Video {
+        (theme::video_fill(dark), theme::video_border(dark))
+    } else {
+        // The reference draws no darker edge on these kinds, so the border is the
+        // fill itself [proposed].
+        let fill = if dark {
+            kind_fill(kind)
+        } else {
+            theme::light_clip(kind_fill(kind))
+        };
+        (fill, fill)
     };
     let fill = overlay.map_or(fill, |[r, g, b, a]| {
         Color32::from_rgba_unmultiplied(r, g, b, a)
@@ -1362,5 +1400,59 @@ pub(in crate::editor::timeline) fn item_palette(
         (fill, theme::accent(dark), text)
     } else {
         (fill, border, text)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rgb(color: Color32) -> [u8; 3] {
+        [color.r(), color.g(), color.b()]
+    }
+
+    #[test]
+    fn clip_fills_follow_the_measured_kind_colours() {
+        // 102704 (dark theme): one fill per track kind.
+        for (index, (kind, expected)) in [
+            (TrackKind::Video, [0x20, 0x4C, 0x51]),
+            (TrackKind::Audio, [0x18, 0x2F, 0x56]),
+            (TrackKind::Text, [0x91, 0x4E, 0x3B]),
+            (TrackKind::Sticker, [0xCB, 0x96, 0x3C]),
+            (TrackKind::Effect, [0x6E, 0x4C, 0x80]),
+            (TrackKind::Filter, [0x46, 0x41, 0x88]),
+            (TrackKind::Adjustment, [0xA5, 0x88, 0x41]),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let (fill, _, _) = item_palette(kind, true, false, None);
+            assert_eq!(rgb(fill), expected, "fill case {index}");
+        }
+        let (selected, border, _) = item_palette(TrackKind::Audio, true, true, None);
+        assert_eq!(rgb(selected), [0x18, 0x2F, 0x56]);
+        assert_eq!(border, theme::accent(true), "selection border");
+    }
+
+    #[test]
+    fn video_bands_match_the_main_and_overlay_clips() {
+        // Inside the 1 px border: main 72 = 17 + 39 + 16, overlay 48 = 17 + 20 + 11.
+        let main = Rect::from_min_size(egui::pos2(0.0, 0.0), Vec2::new(100.0, 72.0));
+        let (strip, wave) = video_bands(main, true);
+        assert_eq!((strip.top(), strip.height(), wave.height()), (17.0, 39.0, 16.0));
+        let overlay = Rect::from_min_size(egui::pos2(0.0, 0.0), Vec2::new(100.0, 48.0));
+        let (strip, wave) = video_bands(overlay, false);
+        assert_eq!((strip.top(), strip.height(), wave.height()), (17.0, 20.0, 11.0));
+        // A short row keeps the bands inside the clip.
+        let short = Rect::from_min_size(egui::pos2(0.0, 0.0), Vec2::new(100.0, 20.0));
+        let (strip, wave) = video_bands(short, true);
+        assert_eq!(strip.height(), 0.0);
+        assert!(wave.bottom() <= short.bottom() + 0.001);
+    }
+
+    #[test]
+    fn waveform_size_widens_the_bars() {
+        assert!(audio_reach(30) < audio_reach(60) && audio_reach(60) < audio_reach(100));
+        assert_eq!(audio_reach(100), 1.0);
     }
 }

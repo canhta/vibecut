@@ -11,6 +11,7 @@ mod geometry;
 mod performance;
 mod store;
 mod subtitles;
+mod track_view;
 
 pub use crate::services::remote_models::{AiPreferences, MAX_RECENT_MODELS, ModelChoice};
 pub use adjustment::{
@@ -36,3 +37,4 @@ pub use performance::{
 };
 pub use store::{PreferenceIssue, PreferenceStore};
 pub use subtitles::{Options as SubtitleOptions, SOURCE_LANGUAGES};
+pub use track_view::{DEFAULT_WAVEFORM_SIZE, TrackHeight, WAVEFORM_SIZES};

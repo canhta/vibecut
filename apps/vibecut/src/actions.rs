@@ -160,6 +160,10 @@ pub enum UiAction {
     Ripple,
     Loop,
     PreviewAxis,
+    /// Timeline row height from the track header menu.
+    SetTrackHeight(crate::preferences::TrackHeight),
+    /// Audio waveform size in percent from the track header menu.
+    SetWaveformSize(u8),
     /// Timeline pointer mode: Select clicks and drags clips, Split cuts them.
     SelectTool,
     SplitTool,

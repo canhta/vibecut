@@ -263,6 +263,8 @@ mod tests {
                 "preview_overlays",
                 serde_json::json!({"guide": true, "notes": false}),
             ),
+            ("track_height", serde_json::json!("tall")),
+            ("waveform_size", serde_json::json!(100)),
             (
                 "export",
                 serde_json::json!({
@@ -435,6 +437,9 @@ mod tests {
             ("hardware_acceleration", serde_json::json!("maybe")),
             ("cache_limit_bytes", serde_json::json!((256u64 << 20) - 1)),
             ("cache_limit_bytes", serde_json::json!((8u64 << 30) + 1)),
+            ("track_height", serde_json::json!("huge")),
+            ("waveform_size", serde_json::json!(45)),
+            ("waveform_size", serde_json::json!("60")),
         ] {
             assert!(preferences.set(key, value).is_err(), "{key}");
             assert_eq!(preferences, before, "{key} must fail atomically");
