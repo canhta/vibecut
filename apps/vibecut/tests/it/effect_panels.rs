@@ -2802,12 +2802,27 @@ fn remove_background_tab_stages_chroma_key_without_touching_the_project() {
     assert!(has_widget(&harness, "inspector.chroma_key.reset"));
     for id in [
         "inspector.chroma_key.color",
-        "effects.chroma_key.param.intensity",
-        "effects.chroma_key.param.shadow",
         "effects.chroma_key.param.intensity.keyframe",
     ] {
         assert!(!has_widget(&harness, id), "{id} waits for the first pick");
     }
+    // The four keyed controls show their defaults in the kit's disabled state
+    // (reference 104911: Intensity 20, Shadow 0, Feather edge 0, Clean up edge 0)
+    // and nothing in them can write before a colour is picked.
+    for (id, default) in [
+        ("intensity", "20"),
+        ("shadow", "0"),
+        ("feather_edge", "0"),
+        ("clean_up_edge", "0"),
+    ] {
+        let id = format!("effects.chroma_key.param.{id}");
+        let node = harness.get(By::new().predicate(|n| n.author_id() == Some(id.as_str())));
+        assert!(node.accesskit_node().is_disabled(), "{id} is disabled");
+        assert_eq!(node.value().as_deref(), Some(default), "{id}");
+        click(&mut harness, &id);
+        assert_eq!(harness.state().session.history_len(), history, "{id}");
+    }
+    assert!(chroma(&harness, video).is_none());
 
     // A staged switch turns off without a command; no effect existed to remove.
     click(&mut harness, "inspector.chroma_key.toggle");
@@ -2872,6 +2887,21 @@ fn chroma_key_controls_clamp_animate_and_undo_once_per_gesture() {
         history,
         "NaN refused"
     );
+    // The two edge sliders share the 0..=100 range and the one-step undo.
+    for key in ["feather_edge", "clean_up_edge"] {
+        let before = harness.state().session.history_len();
+        type_value(&mut harness, &format!("effects.chroma_key.param.{key}"), "999");
+        let edge = |harness: &Harness<Editor>| {
+            chroma(harness, video)
+                .and_then(|effect| effect.value(key)?.scalar())
+                .unwrap()
+        };
+        assert_eq!(edge(&harness), 100.0, "{key}");
+        assert_eq!(harness.state().session.history_len().0, before.0 + 1, "{key}");
+        harness.state_mut().activate("edit.undo").unwrap();
+        harness.run_steps(2);
+        assert_eq!(edge(&harness), 0.0, "{key} undoes in one step");
+    }
 
     // One diamond adds or removes the key at the playhead: one undo each.
     let path = "effects.chroma_key.params.intensity";

@@ -35,11 +35,12 @@ pub const GAMMA_MAX: f64 = 400.0;
 /// Gain is a straight-colour multiplier in percent, 100 neutral.
 pub const GAIN_MIN: f64 = 0.0;
 pub const GAIN_MAX: f64 = 400.0;
-/// Chroma-key controls: two 0..=100 sliders and one key colour.
-/// Measured on the reference: intensity default 40, shadow default 0.
+/// Chroma-key controls: four 0..=100 sliders and one key colour.
+/// Measured on the reference (capture round 2, 9.7.1): Intensity default 20,
+/// Shadow, Feather edge and Clean up edge default 0.
 pub const CHROMA_KEY_MIN: f64 = 0.0;
 pub const CHROMA_KEY_MAX: f64 = 100.0;
-pub const CHROMA_KEY_INTENSITY_DEFAULT: f64 = 40.0;
+pub const CHROMA_KEY_INTENSITY_DEFAULT: f64 = 20.0;
 /// Green that a key colour picker starts from.
 pub const CHROMA_KEY_COLOR_DEFAULT: Color = Color([0x00, 0xFF, 0x00, 255]);
 
@@ -321,6 +322,20 @@ static DEFINITIONS: &[EffectDefinition] = &[
             slider(
                 "shadow",
                 "Shadow",
+                (CHROMA_KEY_MIN, CHROMA_KEY_MAX),
+                0.0,
+                true,
+            ),
+            slider(
+                "feather_edge",
+                "Feather edge",
+                (CHROMA_KEY_MIN, CHROMA_KEY_MAX),
+                0.0,
+                true,
+            ),
+            slider(
+                "clean_up_edge",
+                "Clean up edge",
                 (CHROMA_KEY_MIN, CHROMA_KEY_MAX),
                 0.0,
                 true,
