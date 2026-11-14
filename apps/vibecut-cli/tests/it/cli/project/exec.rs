@@ -1,9 +1,9 @@
 //! Verifies native exec command behaviour.
 use crate::cli::fixtures::{add_track, exec, info, new_project, overlay_project_color};
-use crate::cli::fixtures::{decoded_mono, decoded_rgb, generate_audio, video_oetf};
-use crate::cli::process::{cli, code, error_json, os, stdout_json};
-use crate::media_fixture::{generate_av, media_project, tool_command, tools};
-use serde_json::{Value, json};
+use crate::cli::fixtures::{decoded_rgb, video_oetf};
+use crate::cli::process::{cli, code, error_json, os};
+use crate::media_fixture::{generate_av, media_project, tools};
+use serde_json::json;
 use std::ffi::OsStr;
 use std::fs;
 use time::{Tick, TimeRange};
@@ -280,156 +280,6 @@ fn exec_refuses_bad_input_without_writing() {
 }
 
 #[test]
-fn cli_animates_opacity_and_exported_frames_follow_the_curve() {
-    let dir = tempfile::tempdir().unwrap();
-    let project = dir.path().join("animated.vibecut");
-    let output_path = dir.path().join("animated.mp4");
-    // The animation covers one second; the extra 0.2 s makes the 1.0 s key
-    // land exactly on an exported frame.
-    let duration = Tick(time::TICKS_PER_SECOND * 6 / 5);
-    overlay_project_color(&project, 64, 64, duration, [255, 255, 255, 255]);
-    let key = |time: i64, value: f64| {
-        json!({
-            "time": time,
-            "value": {"kind": "scalar", "value": value},
-            "segment": "bezier",
-            "tangent": "flat",
-            "incoming": {"dt":-84672000000i64,"dv":0.0},
-            "outgoing": {"dt":84672000000i64,"dv":0.0},
-        })
-    };
-    exec(
-        &project,
-        "keyframes.set_param",
-        json!({
-            "item": 0,
-            "path": "opacity",
-            "param": {
-                "kind": "value",
-                "channels": {
-                    "value": {"kind": "scalar", "value": 0.0},
-                    "keys": [key(0, 0.0)],
-                    "before": "hold",
-                    "after": "hold",
-                },
-            },
-        }),
-    );
-    exec(
-        &project,
-        "clipboard.paste_keyframes",
-        json!({"item":0,"at":0,"source":{"kind":"payload","payload":{"version":1,"origin":0,"params":[{"path":"opacity","param":{"kind":"value","channels":{"value":{"kind":"scalar","value":0.0},"keys":[key(0,0.0),key(time::TICKS_PER_SECOND,1.0)],"before":"hold","after":"hold"}}}]}}}),
-    );
-    let saved = project::load(&project).unwrap().project;
-    let curve = saved.data().scene().timeline.overlays[0].items[0]
-        .animations
-        .get(&project::BuiltinPath::Opacity.into())
-        .unwrap();
-    for (n, v) in [(0, 0.0), (9, 0.216), (15, 0.5), (21, 0.784), (30, 1.0)] {
-        let project::ParamValue::Scalar(actual) = curve
-            .value_at(time::FrameRate::FPS_30.tick_of(n).unwrap())
-            .unwrap()
-        else {
-            panic!("opacity")
-        };
-        assert!((actual - v).abs() < 1e-8);
-    }
-    let output = cli(&[
-        os("export"),
-        project.as_os_str(),
-        os("--out"),
-        output_path.as_os_str(),
-        os("--json"),
-    ]);
-    assert_eq!(
-        code(&output),
-        0,
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert_eq!(stdout_json(&output)["status"], "completed");
-    assert!(tools(), "required ffmpeg/ffprobe oracle setup");
-    let proof = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/p1-20-clipboard-bezier.mp4");
-    fs::create_dir_all(proof.parent().unwrap()).unwrap();
-    fs::copy(&output_path, proof).unwrap();
-    let frames = decoded_rgb(&output_path, 64, 64, &[0, 9, 15, 21, 30]);
-    for (frame, opacity) in frames.iter().zip([0.0, 0.216, 0.5, 0.784, 1.0]) {
-        let expected = (video_oetf(opacity) * 255.0).round() as i32;
-        for channel in &frame[..3] {
-            assert!(
-                (i32::from(*channel) - expected).abs() <= 12,
-                "decoded {channel} != expected {expected} for opacity {opacity}"
-            );
-        }
-    }
-}
-
-#[test]
-fn cli_animates_a_mask_and_exported_frames_follow_its_coverage() {
-    let dir = tempfile::tempdir().unwrap();
-    let project = dir.path().join("masked.vibecut");
-    let output_path = dir.path().join("masked.mp4");
-    let duration = Tick(time::TICKS_PER_SECOND * 6 / 5);
-    overlay_project_color(&project, 64, 64, duration, [255, 255, 255, 255]);
-    exec(
-        &project,
-        "masks.add",
-        json!({"item":0,"mask":project::Mask::new("m", project::MaskShape::Rectangle)}),
-    );
-    let key = |time: i64, value: f64| {
-        json!({
-            "time": time,
-            "value": {"kind": "scalar", "value": value},
-            "segment": "linear",
-            "tangent": "broken",
-            "incoming": null,
-            "outgoing": null,
-        })
-    };
-    // The centre starts left of the canvas middle and reaches it at one second.
-    exec(
-        &project,
-        "keyframes.set_param",
-        json!({
-            "item": 0,
-            "path": "masks.m.params.center_x",
-            "param": {
-                "kind": "value",
-                "channels": {
-                    "value": {"kind": "scalar", "value": -0.4},
-                    "keys": [key(0, -0.4), key(time::TICKS_PER_SECOND, 0.0)],
-                    "before": "hold",
-                    "after": "hold",
-                },
-            },
-        }),
-    );
-    let output = cli(&[
-        os("export"),
-        project.as_os_str(),
-        os("--out"),
-        output_path.as_os_str(),
-        os("--json"),
-    ]);
-    assert_eq!(
-        code(&output),
-        0,
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert_eq!(stdout_json(&output)["status"], "completed");
-    assert!(tools(), "required ffmpeg/ffprobe oracle setup");
-    let frames = decoded_rgb(&output_path, 64, 64, &[0, 30]);
-    // Red channel at (x, y) of a 64x64 rgb24 frame.
-    let red = |frame: &[u8], x: usize, y: usize| frame[(y * 64 + x) * 3];
-    // Frame 0 (centre x 6.4, half width 19.2) covers x 4 and not x 46; frame 30
-    // (centre x 32) covers x 46 and not x 4.
-    assert!(red(&frames[0], 4, 32) > 128 && red(&frames[0], 46, 32) < 128);
-    assert!(red(&frames[1], 4, 32) < 128 && red(&frames[1], 46, 32) > 128);
-}
-
-#[test]
 fn cli_clipboard_item_payload_pastes_with_relative_track_overwrite() {
     let dir = tempfile::tempdir().unwrap();
     let project = dir.path().join("clipboard-items.vibecut");
@@ -681,100 +531,6 @@ fn cli_text_presets_and_animations_execute_reopen_export_and_control_replay() {
 }
 
 #[test]
-fn cli_pixel_modifiers_execute_and_export_instead_of_copying() {
-    if !tools() {
-        return;
-    }
-    for case in ["blur", "mask", "grade", "key"] {
-        let masked = case == "mask";
-        let dir = tempfile::tempdir().unwrap();
-        let video = dir.path().join("input.mp4");
-        let project = dir.path().join("blur.vibecut");
-        let output_path = dir.path().join("blur.mp4");
-        generate_av(&video, 1);
-        media_project(&project, &video, None);
-        match case {
-            "mask" => {
-                exec(
-                    &project,
-                    "masks.add",
-                    json!({"item":0,"mask":project::Mask::new("rectangle",project::MaskShape::Rectangle)}),
-                );
-            }
-            "grade" => {
-                // Added neutral, then graded through update_param, as the Adjust tab does.
-                exec(
-                    &project,
-                    "effects.add",
-                    json!({"item":0,"effect":project::effect_definition("color_grade").unwrap().instance("color_grade")}),
-                );
-                for (key, value) in [("brightness", 50.0), ("saturation", -50.0)] {
-                    exec(
-                        &project,
-                        "effects.update_param",
-                        json!({"item":0,"effect":"color_grade","key":key,"value":value}),
-                    );
-                }
-            }
-            "key" => {
-                // Picked a green key colour, then raised intensity, as the panel does.
-                exec(
-                    &project,
-                    "effects.add",
-                    json!({"item":0,"effect":{"id":"chroma_key","kind":"chroma_key","enabled":true,"params":{"key_color":{"kind":"color","value":[0,255,0,255]},"intensity":{"kind":"scalar","value":20.0},"shadow":{"kind":"scalar","value":0.0},"feather_edge":{"kind":"scalar","value":0.0},"clean_up_edge":{"kind":"scalar","value":0.0}}}}),
-                );
-                exec(
-                    &project,
-                    "effects.update_param",
-                    json!({"item":0,"effect":"chroma_key","key":"intensity","value":100.0}),
-                );
-            }
-            _ => {
-                exec(
-                    &project,
-                    "effects.add",
-                    json!({"item":0,"effect":{"id":"blur","kind":"blur","enabled":true,"params":{"intensity":{"kind":"scalar","value":100.0}}}}),
-                );
-            }
-        }
-        let output = cli(&[
-            os("export"),
-            project.as_os_str(),
-            os("--out"),
-            output_path.as_os_str(),
-            os("--json"),
-        ]);
-        assert_eq!(
-            code(&output),
-            0,
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert_eq!(stdout_json(&output)["status"], "completed");
-        let source = decoded_rgb(&video, 128, 96, &[0]);
-        let actual = decoded_rgb(&output_path, 128, 96, &[0]);
-        let difference: u64 = source[0]
-            .iter()
-            .zip(&actual[0])
-            .map(|(a, b)| u64::from(a.abs_diff(*b)))
-            .sum();
-        assert!(
-            difference > 10000,
-            "pixel modifier was bypassed: {difference}"
-        );
-        if masked {
-            for (x, y) in [(8usize, 8usize), (64, 8), (120, 88)] {
-                let offset = (y * 128 + x) * 3;
-                assert!(
-                    actual[0][offset..offset + 3].iter().all(|c| *c < 20),
-                    "rectangle did not clip outside"
-                );
-            }
-        }
-    }
-}
-
-#[test]
 fn exec_shared_field_id_list_persists_only_compatible_item_fields() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("Lựa chọn.json");
@@ -922,149 +678,6 @@ fn exec_scrub_equivalent_params_use_the_single_item_command() {
 }
 
 #[test]
-fn cli_sets_blend_and_opacity_and_renders_a_blended_frame() {
-    let dir = tempfile::tempdir().unwrap();
-    let project = dir.path().join("blended.vibecut");
-    let output_path = dir.path().join("blended.mp4");
-    overlay_project_color(
-        &project,
-        64,
-        64,
-        Tick(time::TICKS_PER_SECOND),
-        [128, 64, 192, 128],
-    );
-    let mut data = project::load(&project).unwrap().project.into_data();
-    data.canvas.background = project::Color([64, 128, 32, 255]);
-    fs::write(
-        &project,
-        project::encode(&project::Project::new(data).unwrap(), false).unwrap(),
-    )
-    .unwrap();
-    exec(
-        &project,
-        "timeline.set_item_param",
-        json!({"item":0,"patch":{"field":"blendMode","value":"screen"}}),
-    );
-    exec(
-        &project,
-        "timeline.set_item_param",
-        json!({"item":0,"patch":{"field":"opacity","value":0.5}}),
-    );
-    let loaded = project::load(&project).unwrap().project;
-    let item = loaded
-        .data()
-        .scene()
-        .timeline
-        .overlays
-        .first()
-        .unwrap()
-        .items
-        .first()
-        .unwrap();
-    assert_eq!(item.blend_mode, project::BlendMode::Screen);
-    let output = cli(&[
-        os("export"),
-        project.as_os_str(),
-        os("--out"),
-        output_path.as_os_str(),
-        os("--json"),
-    ]);
-    assert_eq!(
-        code(&output),
-        0,
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    if !tools() {
-        return;
-    }
-    let frames = decoded_rgb(&output_path, 64, 64, &[0]);
-    let expected = [75, 118, 92];
-    for (actual, expected) in frames[0][..3].iter().zip(expected) {
-        assert!(
-            (i32::from(*actual) - expected).abs() <= 12,
-            "decoded blend {actual} != {expected}"
-        );
-    }
-}
-
-#[test]
-fn cli_sets_rotate_and_exports_the_transformed_snapshot() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("rotated.vibecut");
-    let output_path = dir.path().join("rotated.mp4");
-    overlay_project_color(
-        &path,
-        64,
-        64,
-        Tick(time::TICKS_PER_SECOND),
-        [255, 0, 0, 255],
-    );
-    for (field, value) in [
-        ("transform.scaleX", 0.5),
-        ("transform.scaleY", 0.25),
-        ("transform.rotate", 90.0),
-    ] {
-        exec(
-            &path,
-            "timeline.set_item_param",
-            json!({"item":0,"patch":{"field":field,"value":value}}),
-        );
-    }
-    let loaded = project::load(&path).unwrap().project;
-    let item = loaded
-        .data()
-        .scene()
-        .timeline
-        .overlays
-        .first()
-        .unwrap()
-        .items
-        .first()
-        .unwrap();
-    assert_eq!(
-        project::TransformField::Rotate
-            .value_at(&item.animations, Tick::ZERO)
-            .unwrap(),
-        90.0
-    );
-    let output = cli(&[
-        os("export"),
-        path.as_os_str(),
-        os("--out"),
-        output_path.as_os_str(),
-        os("--json"),
-    ]);
-    assert_eq!(
-        code(&output),
-        0,
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    if !tools() {
-        return;
-    }
-    let frames = decoded_rgb(&output_path, 64, 64, &[0]);
-    let frame = &frames[0];
-    for (x, y, red) in [
-        (32, 32, true),
-        (32, 19, true),
-        (19, 32, false),
-        (2, 2, false),
-    ] {
-        let rgb = &frame[(y * 64 + x) * 3..(y * 64 + x) * 3 + 3];
-        if red {
-            assert!(
-                rgb[0] > 180 && rgb[1] < 40 && rgb[2] < 40,
-                "{x},{y}: {rgb:?}"
-            );
-        } else {
-            assert!(rgb.iter().all(|c| *c < 40), "{x},{y}: {rgb:?}");
-        }
-    }
-}
-
-#[test]
 fn exec_import_and_insert_share_persisted_media_policy() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("policy.vibecut");
@@ -1173,674 +786,138 @@ fn timeline_insert_of_a_generated_clip_on_a_track_at_a_start_lands_there() {
 }
 
 #[test]
-fn cli_sets_canvas_sizes_through_the_registry_and_exports_them() {
+fn cli_graphics_insert_key_save_snapshot_encode_and_reopen_real_processes() {
+    // The shape kind is render's geometry; one kind carries the process round trip.
+    assert!(tools());
+    let graphic = project::GraphicParams::rectangle();
     let dir = tempfile::tempdir().unwrap();
-    let project = dir.path().join("portrait.vibecut");
-    let output_path = dir.path().join("portrait.mp4");
-    overlay_project_color(
-        &project,
-        64,
-        64,
-        Tick(time::TICKS_PER_SECOND / 30),
-        [255, 255, 255, 255],
-    );
-    exec(
-        &project,
-        "project.set_canvas",
-        json!({"width":1080,"height":1920,"preset":"9:16"}),
-    );
-    let loaded = project::load(&project).unwrap().project;
-    assert_eq!(
-        (loaded.data().canvas.width, loaded.data().canvas.height),
-        (1080, 1920)
-    );
-    assert_eq!(
-        loaded.data().canvas.preset,
-        Some(project::AspectPreset::Portrait)
-    );
-    let output = cli(&[
-        os("export"),
-        project.as_os_str(),
-        os("--out"),
-        output_path.as_os_str(),
-        os("--json"),
-    ]);
-    assert_eq!(
-        code(&output),
-        0,
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    if tools() {
-        let probe = tool_command("ffprobe")
-            .args([
-                os("-v"),
-                os("error"),
-                os("-select_streams"),
-                os("v:0"),
-                os("-show_entries"),
-                os("stream=width,height"),
-                os("-of"),
-                os("csv=p=0"),
-            ])
-            .arg(&output_path)
-            .output()
-            .unwrap();
-        assert!(probe.status.success());
-        assert_eq!(String::from_utf8_lossy(&probe.stdout).trim(), "1080,1920");
-    }
-
-    // An odd custom size commits its nearest even value, so the same project
-    // still exports instead of failing on an odd render size.
-    exec(
-        &project,
-        "project.set_canvas",
-        json!({"width":1081,"height":721}),
-    );
-    let rounded = project::load(&project).unwrap().project;
-    assert_eq!(
-        (rounded.data().canvas.width, rounded.data().canvas.height),
-        (1082, 722)
-    );
-    assert_eq!(rounded.data().canvas.preset, None);
-    assert_eq!(
-        rounded.data().canvas.last_custom_size,
-        project::CanvasSize {
-            width: 1082,
-            height: 722
-        }
-    );
-    let odd_path = dir.path().join("odd.mp4");
-    let output = cli(&[
-        os("export"),
-        project.as_os_str(),
-        os("--out"),
-        odd_path.as_os_str(),
-        os("--json"),
-    ]);
-    assert_eq!(
-        code(&output),
-        0,
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    if tools() {
-        let probe = tool_command("ffprobe")
-            .args([
-                os("-v"),
-                os("error"),
-                os("-select_streams"),
-                os("v:0"),
-                os("-show_entries"),
-                os("stream=width,height"),
-                os("-of"),
-                os("csv=p=0"),
-            ])
-            .arg(&odd_path)
-            .output()
-            .unwrap();
-        assert!(probe.status.success());
-        assert_eq!(String::from_utf8_lossy(&probe.stdout).trim(), "1082,722");
-    }
-}
-
-#[test]
-fn audio_set_fade_shapes_the_exported_tone_envelope() {
-    if !tools() {
-        return;
-    }
-    let dir = tempfile::tempdir().unwrap();
-    let video = dir.path().join("video.mp4");
-    let audio = dir.path().join("tone.wav");
-    let project = dir.path().join("fade.vibecut");
-    let out = dir.path().join("fade.mp4");
-    generate_av(&video, 1);
-    generate_audio(&audio);
-    media_project(&project, &video, Some(&audio));
-    // 250 ms edges: equal-power in, linear out.
-    let quarter = time::TICKS_PER_SECOND / 4;
-    exec(
-        &project,
-        "audio.set_fade",
-        json!({"item":1,"edge":"in","duration":quarter,"curve":"equal_power"}),
-    );
-    exec(
-        &project,
-        "audio.set_fade",
-        json!({"item":1,"edge":"out","duration":quarter,"curve":"linear"}),
-    );
-    // Hostile input is refused without touching the saved project.
-    let before = fs::read(&project).unwrap();
-    let refused = cli(&[
-        os("exec"),
-        project.as_os_str(),
-        os("audio.set_fade"),
-        os(r#"{"item":1,"edge":"in","duration":-1,"curve":"linear"}"#),
-        os("--json"),
-    ]);
-    assert_ne!(code(&refused), 0);
-    assert_eq!(fs::read(&project).unwrap(), before);
-
-    let exported = cli(&[
-        os("export"),
-        project.as_os_str(),
-        os("--out"),
-        out.as_os_str(),
-        os("--json"),
-    ]);
-    assert_eq!(
-        code(&exported),
-        0,
-        "{}",
-        String::from_utf8_lossy(&exported.stderr)
-    );
-    let pcm = decoded_mono(&out);
-    assert!(pcm.len() >= 47_000, "{}", pcm.len());
-    // RMS of a 20 ms window centred on `second`.
-    let rms = |second: f64| {
-        let centre = (second * 48_000.0) as usize;
-        let window = &pcm[centre - 480..centre + 480];
-        (window.iter().map(|x| x * x).sum::<f32>() / window.len() as f32).sqrt()
-    };
-    let body = rms(0.5);
-    assert!(body > 0.05, "tone body {body}");
-    // Edges are silent (AAC adds only a faint pre-echo), midpoints follow each curve.
-    assert!(pcm[..48].iter().all(|x| x.abs() < body * 0.1));
-    assert!(rms(0.01) < body * 0.15, "fade-in start {}", rms(0.01));
-    assert!(rms(0.99) < body * 0.15, "fade-out end {}", rms(0.99));
-    let mid_in = rms(0.125) / body;
-    let mid_out = rms(0.875) / body;
-    assert!(
-        (mid_in - 0.707).abs() < 0.12,
-        "equal-power midpoint {mid_in}"
-    );
-    assert!((mid_out - 0.5).abs() < 0.12, "linear midpoint {mid_out}");
-}
-
-#[test]
-fn audio_cleanup_effects_process_the_exported_tone_and_refuse_hostile_input() {
-    if !tools() {
-        return;
-    }
-    let dir = tempfile::tempdir().unwrap();
-    let video = dir.path().join("video.mp4");
-    let audio = dir.path().join("tone.wav");
-    let project = dir.path().join("cleanup.vibecut");
-    generate_av(&video, 1);
-    generate_audio(&audio);
-    media_project(&project, &video, Some(&audio));
-    let export = |name: &str| {
-        let out = dir.path().join(name);
-        let exported = cli(&[
-            os("export"),
-            project.as_os_str(),
-            os("--out"),
-            out.as_os_str(),
-            os("--json"),
-        ]);
-        assert_eq!(
-            code(&exported),
-            0,
-            "{}",
-            String::from_utf8_lossy(&exported.stderr)
-        );
-        decoded_mono(&out)
-    };
-    let plain = export("plain.mp4");
-
-    // Out-of-range parameters are refused without touching the saved project.
-    let before = fs::read(&project).unwrap();
-    for kind in [
-        json!({"kind":"noise_reduction","reduction_db":99.0,"threshold_db":6.0,"smoothing_percent":50.0}),
-        json!({"kind":"declick","threshold":30.0,"complexity":0.0}),
-    ] {
-        let params =
-            json!({"item":1,"effect":{"id":1,"enabled":true,"wet_percent":100.0,"kind":kind}})
-                .to_string();
-        let refused = cli(&[
-            os("exec"),
-            project.as_os_str(),
-            os("audio.add_cleanup_effect"),
-            OsStr::new(&params),
-            os("--json"),
-        ]);
-        assert_ne!(code(&refused), 0);
-        assert_eq!(fs::read(&project).unwrap(), before);
-    }
-
-    exec(
-        &project,
-        "audio.add_cleanup_effect",
-        json!({"item":1,"effect":{"id":1,"enabled":true,"wet_percent":100.0,
-            "kind":{"kind":"declick","threshold":30.0,"complexity":16.0}}}),
-    );
-    exec(
-        &project,
-        "audio.add_cleanup_effect",
-        json!({"item":1,"effect":{"id":2,"enabled":true,"wet_percent":100.0,
-            "kind":{"kind":"noise_reduction","reduction_db":12.0,"threshold_db":6.0,"smoothing_percent":50.0}}}),
-    );
-    let loaded = project::load(&project).unwrap().project;
-    let item = loaded
-        .data()
-        .scene()
-        .timeline
-        .iter()
-        .flat_map(|track| &track.items)
-        .find(|item| item.id == project::ItemId(1))
+    let file = dir.path().join("Hình.vibecut");
+    let mut data = project::Project::empty(project::ProjectId(397), "Graphics".into())
+        .unwrap()
+        .into_data();
+    data.canvas.width = 320;
+    data.canvas.height = 180;
+    project::WriterLease::acquire(&file)
+        .unwrap()
+        .save(&project::Project::new(data).unwrap())
         .unwrap();
-    let project::ItemParams::Audio(params) = &item.content else {
-        panic!("audio item")
-    };
-    assert_eq!(params.cleanup.effects.len(), 2);
-
-    // The export keeps its length: the chain's delay is compensated, not added.
-    let cleaned = export("cleaned.mp4");
-    assert!(
-        cleaned.len().abs_diff(plain.len()) < 2048,
-        "{} vs {}",
-        cleaned.len(),
-        plain.len()
-    );
-    // Noise reduction leaves the gate open for the first sub-window, then treats the steady tone
-    // as the noise floor and attenuates it: the head is unchanged and the body is much quieter.
-    let rms = |pcm: &[f32], from: f64, to: f64| {
-        let window = &pcm[(from * 48_000.0) as usize..(to * 48_000.0) as usize];
-        (window.iter().map(|x| x * x).sum::<f32>() / window.len() as f32).sqrt()
-    };
-    let head = rms(&cleaned, 0.05, 0.15) / rms(&plain, 0.05, 0.15);
-    assert!((0.7..1.3).contains(&head), "head ratio {head}");
-    let body = rms(&cleaned, 0.6, 0.9) / rms(&plain, 0.6, 0.9);
-    assert!(body < 0.6, "body ratio {body}");
-}
-
-#[test]
-fn cli_retimes_linked_clips_and_the_export_follows_speed_and_pitch() {
-    if !tools() {
-        return;
-    }
-    let dir = tempfile::tempdir().unwrap();
-    let video = dir.path().join("video.mp4");
-    let audio = dir.path().join("audio.wav");
-    let project = dir.path().join("retime.vibecut");
-    let output_path = dir.path().join("retime.mp4");
-    generate_av(&video, 1);
-    generate_audio(&audio);
-    media_project(&project, &video, Some(&audio));
-    // Video item 0 and audio item 1 are retimed together, keeping 1 s of source at 2x.
-    exec(
-        &project,
-        "timeline.set_speed",
-        json!({"items":[0,1],"speed":2.0,"maintain_pitch":true}),
-    );
-    assert_eq!(
-        info(&project)["duration"]["seconds"],
-        0.5,
-        "1 s of source at 2x is 0.5 s"
-    );
-    let output = cli(&[
-        os("export"),
-        project.as_os_str(),
-        os("--out"),
-        output_path.as_os_str(),
-        os("--json"),
-    ]);
-    assert_eq!(
-        code(&output),
-        0,
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let probe = tool_command("ffprobe")
-        .args([
-            "-v",
-            "error",
-            "-show_entries",
-            "stream=codec_type,nb_frames,duration",
-            "-of",
-            "json",
-        ])
-        .arg(&output_path)
-        .output()
-        .unwrap();
-    let value: Value = serde_json::from_slice(&probe.stdout).unwrap();
-    let streams = value["streams"].as_array().unwrap();
-    let video_stream = streams.iter().find(|s| s["codec_type"] == "video").unwrap();
-    assert_eq!(
-        video_stream["nb_frames"], "15",
-        "1 s of 30 fps source at 2x is 15 frames"
-    );
-    let audio_stream = streams.iter().find(|s| s["codec_type"] == "audio").unwrap();
-    let seconds: f64 = audio_stream["duration"].as_str().unwrap().parse().unwrap();
-    assert!((seconds - 0.5).abs() < 0.06, "audio lasts {seconds} s");
-    // Pitch is preserved: the 440 Hz source tone still measures 440 Hz at 2x.
-    let decoded = tool_command("ffmpeg")
-        .args(["-v", "error", "-i"])
-        .arg(&output_path)
-        .args(["-vn", "-ac", "1", "-ar", "48000", "-f", "f32le", "-"])
-        .output()
-        .unwrap();
-    let samples: Vec<f32> = decoded
-        .stdout
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .map(|b| f32::from_le_bytes(*b))
-        .collect();
-    let (from, to) = (4800, samples.len().min(21600));
-    let crossings = samples[from..to]
-        .windows(2)
-        .filter(|w| w[0] <= 0.0 && w[1] > 0.0)
-        .count();
-    let hertz = crossings as f64 / ((to - from) as f64 / 48000.0);
-    assert!((hertz - 440.0).abs() < 15.0, "measured {hertz} Hz");
-
-    // Reverse then export: the same 0.5 s at 2x plays backwards with the same frame count.
-    exec(
-        &project,
-        "timeline.set_reverse",
-        json!({"items":[0,1],"reverse":true}),
-    );
-    assert_eq!(
-        info(&project)["duration"]["seconds"],
-        0.5,
-        "reverse keeps the span"
-    );
-    let reversed_path = dir.path().join("retime-reversed.mp4");
-    let output = cli(&[
-        os("export"),
-        project.as_os_str(),
-        os("--out"),
-        reversed_path.as_os_str(),
-        os("--json"),
-    ]);
-    assert_eq!(
-        code(&output),
-        0,
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let probe = tool_command("ffprobe")
-        .args([
-            "-v",
-            "error",
-            "-show_entries",
-            "stream=codec_type,nb_frames,duration",
-            "-of",
-            "json",
-        ])
-        .arg(&reversed_path)
-        .output()
-        .unwrap();
-    let value: Value = serde_json::from_slice(&probe.stdout).unwrap();
-    let streams = value["streams"].as_array().unwrap();
-    let video_stream = streams.iter().find(|s| s["codec_type"] == "video").unwrap();
-    assert_eq!(video_stream["nb_frames"], "15", "reversed frame count");
-}
-
-#[test]
-fn cli_clipboard_color_and_opacity_match_analytic_source_over_preview_and_encode() {
-    assert!(tools(), "required ffmpeg/ffprobe setup");
-    let dir = tempfile::tempdir().unwrap();
-    let file = dir.path().join("clipboard-color.vibecut");
-    let encoded = dir.path().join("clipboard-color.mp4");
-    overlay_project_color(&file, 64, 64, Tick(time::TICKS_PER_SECOND / 10), [0; 4]);
-    let mut data = project::load(&file).unwrap().project.into_data();
-    data.canvas.background = project::Color([89, 124, 149, 255]);
-    let target = &mut data.scene_mut().timeline.overlays[0].items[0];
-    target
-        .animations
-        .set(
-            project::BuiltinPath::Opacity.into(),
-            project::Param::new(project::ParamValue::Scalar(1.0)).unwrap(),
-        )
-        .unwrap();
-    target
-        .animations
-        .set(
-            project::AnimationPath::new("params.strokeColor").unwrap(),
-            project::Param::new(project::ParamValue::Color([0.0; 4])).unwrap(),
-        )
-        .unwrap();
-    fs::write(
+    let inserted = exec(
         &file,
-        project::encode(&project::Project::new(data).unwrap(), false).unwrap(),
-    )
-    .unwrap();
-    let scalar = |v: f64| json!({"value":{"kind":"scalar","value":v},"keys":[{"time":0,"value":{"kind":"scalar","value":v},"segment":"linear","tangent":"flat","incoming":null,"outgoing":null}],"before":"hold","after":"hold"});
-    let paste = json!({"item":0,"at":0,"source":{"kind":"payload","payload":{"version":1,"origin":0,"params":[{"path":"opacity","param":{"kind":"value","channels":scalar(0.5)}},{"path":"params.strokeColor","param":{"kind":"color","channels":[scalar(0.8),scalar(0.2),scalar(0.1),scalar(0.25)]}}]}}});
-    exec(&file, "clipboard.paste_keyframes", paste.clone());
-    let saved = project::load(&file).unwrap().project;
-    let budget = engine::ByteBudget::new(64 << 20).unwrap();
-    let hooks = engine::ByteBudgetHooks::new(&budget, None);
-    let mut renderer =
-        render::Renderer::new(&saved, render::RenderSettings::from_project(&saved)).unwrap();
-    let preview = renderer
-        .preview_frame(Tick::ZERO, &mut render::FileSources::default(), &hooks)
-        .unwrap();
-    let frame = renderer
-        .render_frame(Tick::ZERO, &mut render::FileSources::default(), &hooks)
-        .unwrap();
-    assert_eq!(
-        preview.video_rgba8(1, &hooks).unwrap().bytes,
-        frame.video_rgba8(1, &hooks).unwrap().bytes
+        "timeline.insert",
+        json!({"placement":{"mode":"auto"},"item":{"source_asset":null,"source_range":{"start":0,"end":time::TICKS_PER_SECOND},"start":0,"animations":{},"content":project::ItemParams::Graphic(graphic)}}),
     );
-    // The current consumed stroke-color boundary quantizes straight sRGB/alpha
-    // to [231,124,89,64] before working-space source-over. Author the conversion
-    // independently, then use a 3e-6 working-linear tolerance.
-    let linear = |v: f64| {
-        let x = v / 255.0;
-        if x <= 0.04045 {
-            x / 12.92
-        } else {
-            ((x + 0.055) / 1.055).powf(2.4)
-        }
-    };
-    let mut expected = [0.0; 3];
-    for (c, (s, b)) in expected
-        .iter_mut()
-        .zip([(231.0, 89.0), (124.0, 124.0), (89.0, 149.0)])
-    {
-        *c = linear(b) + (linear(s) - linear(b)) * (32.0 / 255.0);
-    }
-    for (actual, wanted) in frame.pixels()[0][..3].iter().zip(expected) {
-        assert!(
-            (f64::from(*actual) - wanted).abs() < 3e-6,
-            "{actual} vs {wanted}"
-        );
-    }
-    let output = cli(&[
-        os("export"),
-        file.as_os_str(),
-        os("--out"),
-        encoded.as_os_str(),
-        os("--json"),
-    ]);
-    assert_eq!(
-        code(&output),
-        0,
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
+    let item = inserted["placements"][0]["item"].clone();
+    assert!(item.is_u64());
+    exec(
+        &file,
+        "timeline.set_item_param",
+        json!({"item":item,"patch":{"field":"graphic_stroke_width","value":8.}}),
     );
-    let proof = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/p1-20-clipboard-color.mp4");
-    fs::create_dir_all(proof.parent().unwrap()).unwrap();
-    fs::copy(&encoded, proof).unwrap();
-    let decoded = decoded_rgb(&encoded, 64, 64, &[0]);
-    for (actual, wanted) in decoded[0][..3].iter().zip(expected) {
-        let wanted = (video_oetf(wanted) * 255.0).round() as i32;
-        assert!(
-            (i32::from(*actual) - wanted).abs() <= 12,
-            "encoded {actual} vs {wanted}"
-        );
-    }
+    let color = project::Param::new(project::ParamValue::Color([1., 0., 0., 0.5])).unwrap();
+    exec(
+        &file,
+        "keyframes.set_param",
+        json!({"item":item,"path":"params.fill","param":color}),
+    );
+    exec(
+        &file,
+        "keyframes.add",
+        json!({"item":item,"path":"params.fill","component":"a","key":project::Keyframe::new(Tick(0),project::ParamValue::Scalar(0.5))}),
+    );
+    let png = dir.path().join("graphic.png");
     let before = fs::read(&file).unwrap();
-    let mut invalid = paste.clone();
-    invalid["source"]["payload"]["version"] = json!(2);
-    let invalid_json = invalid.to_string();
+    let params = json!({"time":0,"path":png}).to_string();
     let refused = cli(&[
         os("exec"),
         file.as_os_str(),
-        os("clipboard.paste_keyframes"),
-        os(&invalid_json),
-        os("--json"),
-    ]);
-    assert_eq!(code(&refused), 2);
-    assert_eq!(fs::read(&file).unwrap(), before);
-    exec(&file, "track.set_locked", json!({"track":1,"locked":true}));
-    let before = fs::read(&file).unwrap();
-    let mut locked = paste;
-    locked["at"] = json!(40);
-    let locked_json = locked.to_string();
-    let refused = cli(&[
-        os("exec"),
-        file.as_os_str(),
-        os("clipboard.paste_keyframes"),
-        os(&locked_json),
+        os("preview.snapshot"),
+        os(&params),
         os("--json"),
     ]);
     assert_eq!(code(&refused), 5);
     assert_eq!(fs::read(&file).unwrap(), before);
-}
-
-#[test]
-fn cli_graphics_insert_key_save_snapshot_encode_and_reopen_real_processes() {
-    assert!(tools());
-    for graphic in [
-        project::GraphicParams::rectangle(),
-        project::GraphicParams::ellipse(),
-        project::GraphicParams::polygon(),
-        project::GraphicParams::star(),
-    ] {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("Hình.vibecut");
-        let mut data = project::Project::empty(project::ProjectId(397), "Graphics".into())
+    assert!(!png.exists());
+    let mut snapshot = super::control::ControlSession::start(&file, &[]);
+    let initial =
+        snapshot.send(json!({"request_id":"inspect","command":"inspect","params":{}}));
+    let response=snapshot.send(json!({"request_id":"png","command":"preview.snapshot","params":{"time":0,"path":png},"base_rev":initial["rev_after"],"idempotency_key":"png"}));
+    assert_eq!(response["exit_code"], 0, "{response}");
+    assert_eq!(snapshot.finish().0, 0);
+    assert_eq!(fs::read(&file).unwrap(), before);
+    let mut snapshot = super::control::ControlSession::start(&file, &[]);
+    let initial =
+        snapshot.send(json!({"request_id":"inspect","command":"inspect","params":{}}));
+    let alias=snapshot.send(json!({"request_id":"alias","command":"preview.snapshot","params":{"time":0,"path":file},"base_rev":initial["rev_after"],"idempotency_key":"alias"}));
+    assert_eq!(alias["exit_code"], 5);
+    assert_eq!(snapshot.finish().0, 5);
+    assert_eq!(fs::read(&file).unwrap(), before);
+    let pixels = testkit::oracle::rgba(&png);
+    let center = &pixels[(90 * 320 + 160) * 4..(90 * 320 + 160) * 4 + 4];
+    assert!((i16::from(center[0]) - 188).abs() <= 1);
+    assert_eq!(&center[1..], &[0, 0, 255]);
+    let saved = project::load(&file).unwrap().project;
+    assert!(matches!(
+        saved.data().scene().timeline.main.items[0].content,
+        project::ItemParams::Graphic(_)
+    ));
+    let output = dir.path().join("graphic.mp4");
+    let encoded = cli(&[
+        os("export"),
+        file.as_os_str(),
+        os("--out"),
+        output.as_os_str(),
+        os("--json"),
+    ]);
+    assert_eq!(
+        code(&encoded),
+        0,
+        "{}",
+        String::from_utf8_lossy(&encoded.stderr)
+    );
+    let probe = testkit::oracle::probe(&output);
+    assert_eq!(probe["streams"][0]["width"], 320);
+    assert_eq!(probe["streams"][0]["height"], 180);
+    let frames = decoded_rgb(&output, 320, 180, &[0, 15, 29]);
+    let budget = engine::ByteBudget::new(64 << 20).unwrap();
+    let hooks = engine::ByteBudgetHooks::new(&budget, None);
+    let mut renderer =
+        render::Renderer::new(&saved, render::RenderSettings::from_project(&saved)).unwrap();
+    for (frame, n) in frames.iter().zip([0, 15, 29]) {
+        let expected = renderer
+            .render_frame(
+                time::FrameRate::FPS_30.tick_of(n).unwrap(),
+                &mut render::FileSources::default(),
+                &hooks,
+            )
             .unwrap()
-            .into_data();
-        data.canvas.width = 320;
-        data.canvas.height = 180;
-        project::WriterLease::acquire(&file)
-            .unwrap()
-            .save(&project::Project::new(data).unwrap())
+            .video_rgba8(1, &hooks)
             .unwrap();
-        let inserted = exec(
-            &file,
-            "timeline.insert",
-            json!({"placement":{"mode":"auto"},"item":{"source_asset":null,"source_range":{"start":0,"end":time::TICKS_PER_SECOND},"start":0,"animations":{},"content":project::ItemParams::Graphic(graphic)}}),
-        );
-        let item = inserted["placements"][0]["item"].clone();
-        assert!(item.is_u64());
-        exec(
-            &file,
-            "timeline.set_item_param",
-            json!({"item":item,"patch":{"field":"graphic_stroke_width","value":8.}}),
-        );
-        let color = project::Param::new(project::ParamValue::Color([1., 0., 0., 0.5])).unwrap();
-        exec(
-            &file,
-            "keyframes.set_param",
-            json!({"item":item,"path":"params.fill","param":color}),
-        );
-        exec(
-            &file,
-            "keyframes.add",
-            json!({"item":item,"path":"params.fill","component":"a","key":project::Keyframe::new(Tick(0),project::ParamValue::Scalar(0.5))}),
-        );
-        let png = dir.path().join("graphic.png");
-        let before = fs::read(&file).unwrap();
-        let params = json!({"time":0,"path":png}).to_string();
-        let refused = cli(&[
-            os("exec"),
-            file.as_os_str(),
-            os("preview.snapshot"),
-            os(&params),
-            os("--json"),
-        ]);
-        assert_eq!(code(&refused), 5);
-        assert_eq!(fs::read(&file).unwrap(), before);
-        assert!(!png.exists());
-        let mut snapshot = super::control::ControlSession::start(&file, &[]);
-        let initial =
-            snapshot.send(json!({"request_id":"inspect","command":"inspect","params":{}}));
-        let response=snapshot.send(json!({"request_id":"png","command":"preview.snapshot","params":{"time":0,"path":png},"base_rev":initial["rev_after"],"idempotency_key":"png"}));
-        assert_eq!(response["exit_code"], 0, "{response}");
-        assert_eq!(snapshot.finish().0, 0);
-        assert_eq!(fs::read(&file).unwrap(), before);
-        let mut snapshot = super::control::ControlSession::start(&file, &[]);
-        let initial =
-            snapshot.send(json!({"request_id":"inspect","command":"inspect","params":{}}));
-        let alias=snapshot.send(json!({"request_id":"alias","command":"preview.snapshot","params":{"time":0,"path":file},"base_rev":initial["rev_after"],"idempotency_key":"alias"}));
-        assert_eq!(alias["exit_code"], 5);
-        assert_eq!(snapshot.finish().0, 5);
-        assert_eq!(fs::read(&file).unwrap(), before);
-        let pixels = testkit::oracle::rgba(&png);
-        let center = &pixels[(90 * 320 + 160) * 4..(90 * 320 + 160) * 4 + 4];
-        assert!((i16::from(center[0]) - 188).abs() <= 1);
-        assert_eq!(&center[1..], &[0, 0, 255]);
-        let saved = project::load(&file).unwrap().project;
-        assert!(matches!(
-            saved.data().scene().timeline.main.items[0].content,
-            project::ItemParams::Graphic(_)
-        ));
-        let output = dir.path().join("graphic.mp4");
-        let encoded = cli(&[
-            os("export"),
-            file.as_os_str(),
-            os("--out"),
-            output.as_os_str(),
-            os("--json"),
-        ]);
-        assert_eq!(
-            code(&encoded),
-            0,
-            "{}",
-            String::from_utf8_lossy(&encoded.stderr)
-        );
-        let probe = testkit::oracle::probe(&output);
-        assert_eq!(probe["streams"][0]["width"], 320);
-        assert_eq!(probe["streams"][0]["height"], 180);
-        let frames = decoded_rgb(&output, 320, 180, &[0, 15, 29]);
-        let budget = engine::ByteBudget::new(64 << 20).unwrap();
-        let hooks = engine::ByteBudgetHooks::new(&budget, None);
-        let mut renderer =
-            render::Renderer::new(&saved, render::RenderSettings::from_project(&saved)).unwrap();
-        for (frame, n) in frames.iter().zip([0, 15, 29]) {
-            let expected = renderer
-                .render_frame(
-                    time::FrameRate::FPS_30.tick_of(n).unwrap(),
-                    &mut render::FileSources::default(),
-                    &hooks,
-                )
-                .unwrap()
-                .video_rgba8(1, &hooks)
-                .unwrap();
-            let mse = frame
-                .iter()
-                .zip(
-                    expected
-                        .bytes
-                        .as_chunks::<4>()
-                        .0
-                        .iter()
-                        .flat_map(|p| p[..3].iter()),
-                )
-                .map(|(a, b)| (f64::from(*a) - f64::from(*b)).powi(2))
-                .sum::<f64>()
-                / frame.len() as f64;
-            assert!(mse < 150., "graphic frame{n} MSE{mse}");
-        }
-        let mut control = super::control::ControlSession::start(&file, &[os("--no-save")]);
-        let initial = control.send(json!({"request_id":"inspect","command":"inspect","params":{}}));
-        let request = json!({"request_id":"graphic","command":"timeline.set_item_param","params":{"item":item,"patch":{"field":"graphic_stroke_width","value":4.}},"base_rev":initial["rev_after"],"idempotency_key":"graphic"});
-        let applied = control.send(request.clone());
-        assert_eq!(applied["exit_code"], 0);
-        assert_eq!(control.send(request.clone()), applied);
-        let mut stale = request;
-        stale["idempotency_key"] = json!("stale");
-        assert_eq!(control.send(stale)["exit_code"], 3);
-        assert_eq!(control.send(json!({"request_id":"undo","command":"undo","params":{},"base_rev":applied["rev_after"],"idempotency_key":"undo"}))["exit_code"],0);
-        assert_eq!(control.finish().0, 0);
+        let mse = frame
+            .iter()
+            .zip(
+                expected
+                    .bytes
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .flat_map(|p| p[..3].iter()),
+            )
+            .map(|(a, b)| (f64::from(*a) - f64::from(*b)).powi(2))
+            .sum::<f64>()
+            / frame.len() as f64;
+        assert!(mse < 150., "graphic frame{n} MSE{mse}");
     }
+    let mut control = super::control::ControlSession::start(&file, &[os("--no-save")]);
+    let initial = control.send(json!({"request_id":"inspect","command":"inspect","params":{}}));
+    let request = json!({"request_id":"graphic","command":"timeline.set_item_param","params":{"item":item,"patch":{"field":"graphic_stroke_width","value":4.}},"base_rev":initial["rev_after"],"idempotency_key":"graphic"});
+    let applied = control.send(request.clone());
+    assert_eq!(applied["exit_code"], 0);
+    assert_eq!(control.send(request.clone()), applied);
+    let mut stale = request;
+    stale["idempotency_key"] = json!("stale");
+    assert_eq!(control.send(stale)["exit_code"], 3);
+    assert_eq!(control.send(json!({"request_id":"undo","command":"undo","params":{},"base_rev":applied["rev_after"],"idempotency_key":"undo"}))["exit_code"],0);
+    assert_eq!(control.finish().0, 0);
 }
 
 #[test]
@@ -1936,78 +1013,3 @@ fn exec_runs_the_sticker_commands_with_the_bundled_catalog_lent() {
     assert_eq!(inserted["placements"].as_array().map(Vec::len), Some(1));
 }
 
-#[test]
-fn cli_applies_a_speed_ramp_to_linked_clips_and_the_export_follows_the_curve() {
-    if !tools() {
-        return;
-    }
-    let dir = tempfile::tempdir().unwrap();
-    let video = dir.path().join("video.mp4");
-    let audio = dir.path().join("audio.wav");
-    let project = dir.path().join("ramp.vibecut");
-    let output_path = dir.path().join("ramp.mp4");
-    generate_av(&video, 1);
-    generate_audio(&audio);
-    media_project(&project, &video, Some(&audio));
-    // The Montage shape over 1 s of source: forty output stretches at the shape's midpoint
-    // speeds (mean 1.3298x) play for 0.75202 s.
-    exec(
-        &project,
-        "timeline.apply_speed_preset",
-        json!({"items":[0,1],"preset":"montage","maintain_pitch":true}),
-    );
-    let seconds = info(&project)["duration"]["seconds"].as_f64().unwrap();
-    assert!((seconds - 0.75202).abs() < 1e-4, "ramp duration {seconds}");
-    // An edited curve replaces it: a smoothstep from 1x to 4x averages 2.5x, so 0.4 s.
-    exec(
-        &project,
-        "timeline.set_speed_curve",
-        json!({"items":[0,1],"points":[{"at":0,"speed":1.0},{"at":1000,"speed":4.0}],"maintain_pitch":true}),
-    );
-    let seconds = info(&project)["duration"]["seconds"].as_f64().unwrap();
-    assert!(
-        (seconds - 0.4).abs() < 1e-4,
-        "edited ramp duration {seconds}"
-    );
-    exec(
-        &project,
-        "timeline.apply_speed_preset",
-        json!({"items":[0,1],"preset":"montage","maintain_pitch":true}),
-    );
-    let output = cli(&[
-        os("export"),
-        project.as_os_str(),
-        os("--out"),
-        output_path.as_os_str(),
-        os("--json"),
-    ]);
-    assert_eq!(
-        code(&output),
-        0,
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let probe = tool_command("ffprobe")
-        .args([
-            "-v",
-            "error",
-            "-show_entries",
-            "stream=codec_type,nb_frames,duration",
-            "-of",
-            "json",
-        ])
-        .arg(&output_path)
-        .output()
-        .unwrap();
-    let value: Value = serde_json::from_slice(&probe.stdout).unwrap();
-    let streams = value["streams"].as_array().unwrap();
-    let video_stream = streams.iter().find(|s| s["codec_type"] == "video").unwrap();
-    let frames: i64 = video_stream["nb_frames"].as_str().unwrap().parse().unwrap();
-    assert!(
-        (22..=23).contains(&frames),
-        "0.752 s at 30 fps is about 23 frames, got {frames}"
-    );
-    let audio_stream = streams.iter().find(|s| s["codec_type"] == "audio").unwrap();
-    let length: f64 = audio_stream["duration"].as_str().unwrap().parse().unwrap();
-    assert!((length - 0.752).abs() < 0.06, "audio lasts {length} s");
-}

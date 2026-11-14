@@ -56,19 +56,3 @@ pub(crate) fn generate_audio(path: &Path) {
     ]);
 }
 
-pub(crate) fn decoded_mono(path: &Path) -> Vec<f32> {
-    let output = tool_command("ffmpeg")
-        .args(["-v", "error", "-i"])
-        .arg(path)
-        .args(["-map", "0:a:0", "-f", "f32le", "-ac", "1", "-"])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    output
-        .stdout
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .map(|b| f32::from_le_bytes(*b))
-        .collect()
-}
