@@ -55,4 +55,3 @@ pub(crate) fn generate_audio(path: &Path) {
         path.as_os_str(),
     ]);
 }
-

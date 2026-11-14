@@ -838,15 +838,13 @@ fn heavy_cli_graphics_insert_key_save_snapshot_encode_and_reopen_real_processes(
     assert_eq!(fs::read(&file).unwrap(), before);
     assert!(!png.exists());
     let mut snapshot = super::control::ControlSession::start(&file, &[]);
-    let initial =
-        snapshot.send(json!({"request_id":"inspect","command":"inspect","params":{}}));
+    let initial = snapshot.send(json!({"request_id":"inspect","command":"inspect","params":{}}));
     let response=snapshot.send(json!({"request_id":"png","command":"preview.snapshot","params":{"time":0,"path":png},"base_rev":initial["rev_after"],"idempotency_key":"png"}));
     assert_eq!(response["exit_code"], 0, "{response}");
     assert_eq!(snapshot.finish().0, 0);
     assert_eq!(fs::read(&file).unwrap(), before);
     let mut snapshot = super::control::ControlSession::start(&file, &[]);
-    let initial =
-        snapshot.send(json!({"request_id":"inspect","command":"inspect","params":{}}));
+    let initial = snapshot.send(json!({"request_id":"inspect","command":"inspect","params":{}}));
     let alias=snapshot.send(json!({"request_id":"alias","command":"preview.snapshot","params":{"time":0,"path":file},"base_rev":initial["rev_after"],"idempotency_key":"alias"}));
     assert_eq!(alias["exit_code"], 5);
     assert_eq!(snapshot.finish().0, 5);
@@ -1012,4 +1010,3 @@ fn exec_runs_the_sticker_commands_with_the_bundled_catalog_lent() {
     assert_eq!(inserted["changed"], json!(true), "{inserted}");
     assert_eq!(inserted["placements"].as_array().map(Vec::len), Some(1));
 }
-
