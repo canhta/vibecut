@@ -170,6 +170,8 @@ pub struct Inspection {
     pub sounds: Option<super::assets::sounds::SoundsView>,
     pub music: Option<super::assets::sounds::music::MusicView>,
     pub voiceover: super::dialogs::voiceover::VoiceoverView,
+    /// The agent chat: stage, transcript steps and the pending changes.
+    pub agent: super::panels::agent::AgentView,
     pub export: Option<crate::export::ExportInspection>,
     pub export_options: crate::export::ExportOptions,
     /// Working crop while its dialog is open; the project keeps its own copy.
@@ -293,6 +295,7 @@ pub struct Editor {
     pub(super) toast: Option<Toast>,
     pub(super) assets: super::assets::State,
     pub(super) dialogs: super::dialogs::State,
+    pub(super) agent: super::panels::agent::State,
     /// A copy-snapshot action waits for the next frame's egui context.
     pub(super) copy_snapshot_requested: bool,
     /// Cross-area requests the frame drains after the area that raised them.

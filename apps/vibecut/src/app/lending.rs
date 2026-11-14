@@ -91,6 +91,7 @@ impl Lending {
         self.lend_sounds(editor);
         self.lend_music(editor);
         editor.set_model_cache(self.model_cache.clone());
+        editor.set_agent_history(self.root.with_file_name("agent_history"));
         if let Some(media) = &self.media {
             editor.set_media(media.clone());
         }

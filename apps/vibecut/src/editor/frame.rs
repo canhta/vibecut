@@ -1,4 +1,5 @@
 //! Owns editor frame composition.
+mod agent;
 #[cfg(test)]
 pub(crate) mod bench;
 mod input;

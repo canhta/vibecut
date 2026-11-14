@@ -31,6 +31,21 @@ use vibecut::model_manager::ModelManager;
 use vibecut::services::playback::Files;
 use vibecut::services::playback::Playback;
 
+/// A backend that has a key and refuses to open a model: the audit only paints the consent
+/// sheet, so nothing is ever sent.
+struct KeyedBackend;
+impl vibecut::AgentBackend for KeyedBackend {
+    fn has_key(&self, _: agent::Provider) -> bool {
+        true
+    }
+    fn open(
+        &self,
+        _: agent::Provider,
+    ) -> Result<Box<dyn ai::text::conversation::ChatModel>, agent::Error> {
+        Err(agent::Error::Chat(ai::Error::Auth))
+    }
+}
+
 pub(super) fn editor_empty(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     Ok(harness_sized(
         App::Editor(Box::new(empty_editor(theme, Locale::En)?)),
@@ -46,7 +61,7 @@ pub(super) fn editor_frame_state(
 ) -> Result<AppHarness, Failure> {
     let mut editor = empty_editor(
         theme,
-        if state == "vi" {
+        if matches!(state, "vi" | "agent-vi") {
             Locale::Vi
         } else {
             Locale::En
@@ -54,6 +69,10 @@ pub(super) fn editor_frame_state(
     )?;
     if state == "rename" {
         editor.activate("project.rename")?;
+    }
+    if state.starts_with("agent") {
+        editor.set_agent_backend(Arc::new(KeyedBackend));
+        editor.open_agent();
     }
     let size = if state == "minimum" {
         [1280.0, 800.0]

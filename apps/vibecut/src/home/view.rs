@@ -28,6 +28,8 @@ const PAGE_RIGHT: f32 = 60.0;
 const BANNER_HEIGHT: f32 = 144.0;
 const CARD_RADIUS: f32 = 8.0;
 const TOOL_CARD: [f32; 2] = [242.0, 136.0];
+/// The agent prompt card is 380 wide and as tall as a tool card.
+const AGENT_CARD: [f32; 2] = [380.0, 136.0];
 const BLOCK_GAP: f32 = 20.0;
 const SECTION_GAP: f32 = 64.0;
 /// Project thumbnails: 124 px squares on a 146 px pitch, 5 px in from the page edge.
@@ -68,7 +70,12 @@ pub(super) fn show(
             ui.spacing_mut().item_spacing.y = 0.0;
             create::banner(ui, width, state, locale);
             ui.add_space(BLOCK_GAP);
-            create::shorts_card(ui, state, locale);
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
+                create::agent_card(ui, state, locale);
+                ui.add_space(BLOCK_GAP);
+                create::shorts_card(ui, state, locale);
+            });
             ui.add_space(SECTION_GAP);
             projects::section(ui, state, look, projects);
         });

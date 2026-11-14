@@ -441,6 +441,19 @@ pub(super) const SCENES: &[Scene] = &[
         reference_light: None,
         build: |theme, scale| editor_frame_state(theme, scale, "vi"),
     },
+    // The agent chat open on its consent sheet, docked beside the timeline.
+    Scene {
+        name: "agent-chat",
+        reference_dark: Some("capcut-desktop-2026-11-05/capcut-desktop-221910.png"),
+        reference_light: Some("capcut-desktop-2026-11-05/capcut-desktop-221910.png"),
+        build: |theme, scale| editor_frame_state(theme, scale, "agent"),
+    },
+    Scene {
+        name: "agent-chat-vi",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| editor_frame_state(theme, scale, "agent-vi"),
+    },
     Scene {
         name: "timeline-selection",
         reference_dark: Some("capcut/illustrations/capcut-desktop-editor-keyframes.png"),

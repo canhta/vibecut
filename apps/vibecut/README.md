@@ -16,6 +16,7 @@ Each module's contract is its README.
 | `actions.rs` / `actions/` | [Action registry](src/actions/README.md) |
 | `app.rs` / `app/` | [Composition root](src/app/README.md) |
 | `editor.rs` / `editor/` | [Editor presentation](src/editor/README.md) |
+| `editor/panels/agent/` | [Agent chat](src/editor/panels/agent/README.md) |
 | `editor/panels/assets/` | [Assets](src/editor/panels/assets/README.md) |
 | `editor/panels/assets/sounds/` | [Sounds tab](src/editor/panels/assets/sounds/README.md) |
 | `editor/panels/assets/view/` | [Assets view](src/editor/panels/assets/view/README.md) |

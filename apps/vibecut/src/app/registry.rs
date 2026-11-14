@@ -38,6 +38,9 @@ pub struct Workspace {
     /// lane memory is dropped only on proof the file is gone.
     pub(super) lane_paths: BTreeMap<project::ProjectId, PathBuf>,
     pub(super) lane_prune_key: Vec<project::ProjectId>,
+    /// Prompts Home's agent card typed for projects that are still opening, by canonical
+    /// path; the editor that registers for the path starts its first turn with the prompt.
+    pub(super) agent_prompts: BTreeMap<PathBuf, String>,
 }
 
 impl Workspace {
@@ -89,6 +92,7 @@ impl Workspace {
             lending,
             lane_paths: BTreeMap::new(),
             lane_prune_key: Vec::new(),
+            agent_prompts: BTreeMap::new(),
         })
     }
     pub fn control_budget(&self) -> ByteBudget {
@@ -117,6 +121,13 @@ impl Workspace {
             EditorSession::Persistent(s) => s.saved_path().map(ToOwned::to_owned),
             EditorSession::Memory(_) => None,
         };
+        let prompt = path.as_ref().and_then(|path| {
+            let key = std::fs::canonicalize(path).unwrap_or_else(|_| path.clone());
+            self.agent_prompts.remove(&key)
+        });
+        if let Some(prompt) = prompt {
+            editor.agent_prompt(prompt);
+        }
         self.windows.entry(id).or_insert_with(|| {
             let mut window = EditorWindow::new(
                 self.home.root.clone(),
@@ -413,6 +424,15 @@ impl Workspace {
     pub(super) fn project_action(&mut self, action: HomeAction) {
         let result = match action {
             HomeAction::Open(path) => self.open(path),
+            HomeAction::OpenWithPrompt(path, prompt) => {
+                let key = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+                self.agent_prompts.insert(key.clone(), prompt);
+                let result = self.open(path);
+                if result.is_err() {
+                    self.agent_prompts.remove(&key);
+                }
+                result
+            }
             HomeAction::OpenFile => {
                 self.home.open_file_requested = true;
                 Ok(())

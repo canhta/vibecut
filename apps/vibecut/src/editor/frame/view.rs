@@ -64,6 +64,7 @@ impl Editor {
                 .as_ref()
                 .is_some_and(|s| s.modal_open())
             && self.player.crop.is_none()
+            && !self.agent.previewing()
         {
             self.keyboard(ui.ctx());
         }
@@ -113,7 +114,8 @@ impl Editor {
             player: preview,
             right,
             timeline,
-        } = super::layout::Layout::new(rect, self.preferences.panels);
+            agent,
+        } = super::layout::Layout::new(rect, self.preferences.panels, self.agent.is_open());
         for (id, area) in [
             ("header", top),
             ("media", left),
@@ -138,6 +140,10 @@ impl Editor {
             if area.width() <= 0.0 || area.height() <= 0.0 {
                 continue;
             }
+            // A previewed agent change is read only: the areas that edit stay off.
+            if self.agent.previewing() && matches!(id, "media" | "inspector" | "timeline") {
+                child.disable();
+            }
             match id {
                 "header" => self.header(&mut child),
                 "media" => self.show_assets(&mut child),
@@ -146,6 +152,7 @@ impl Editor {
                 _ => self.timeline_panel(&mut child),
             }
         }
+        self.show_agent(ui, agent, timeline, preview);
         for (id, area, axis) in [
             (
                 "layout.media",

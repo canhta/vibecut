@@ -13,6 +13,19 @@ When the turn ends, the caller holds the fork and decides:
 
 A cancelled or failed turn leaves its fork to inspect, apply or discard, and leaves the conversation as it was before the prompt, so the next turn can start.
 
+`run_turn` forks the session it is given. A caller whose session lives on another thread forks it there and hands the fork to `run_turn_on_fork`, which runs the same loop over that fork; the desktop does this, because its live session never leaves the UI thread.
+
+## Desktop chat panel
+
+The [chat panel](../../../apps/vibecut/src/editor/panels/agent/README.md) is the desktop caller; its layout is in [Editor UI](../ui/editor.md#agent-chat).
+
+- The first message waits for the consent sheet: service, version, the data kinds (project summary always; clip names, caption text and frames off until switched on) and a spend limit. Declining sends nothing; a change of any of them asks again. Without a key for either service the panel says to set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` and offers no input.
+- A turn shows the streamed answer, one line per tool step with its outcome, job progress and Stop.
+- A turn that changed the project ends in a changes card with the summary counts and `Preview`, `Apply` and `Discard`. Preview shows the fork in the player and the timeline, marked read only, and disables editing; Apply is one undo step; a stale apply keeps the card and offers `Retry`, which runs the request again on a new fork. The input waits until the card is decided.
+- `@` in the input picks a timeline item or a media file by name; the model reads its id (`[item 12]`), not the name.
+- Home's agent card creates a project, opens its editor and starts the first turn with the typed prompt as soon as the consent sheet is accepted.
+- The transcript is kept per project in app data (`agent_history/<project id>.json`, at most 400 lines) and cleared by the Clear button; the model's context is not restored after a restart.
+
 ## Tools
 
 Few and generic, the shape of the [MCP](mcp.md) surface. Every input is a closed JSON object: an unknown tool, malformed arguments or an extra field returns an error result to the model and has no effect.

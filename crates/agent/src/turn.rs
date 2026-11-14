@@ -70,6 +70,19 @@ pub struct TurnRequest<'a> {
     pub cancel: CancelFlag,
 }
 
+/// Everything one turn on an existing fork borrows.
+pub struct ForkTurnRequest<'a> {
+    /// A fork the caller took from the live session and may have moved to another thread;
+    /// the turn edits it and returns it in the [`Turn`].
+    pub fork: Fork,
+    pub prompt: &'a str,
+    pub conversation: &'a mut Conversation,
+    /// Runs the jobs commands start on the fork.
+    pub runner: &'a mut JobRunner,
+    pub limits: TurnLimits,
+    pub cancel: CancelFlag,
+}
+
 /// How a turn ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TurnEnd {
@@ -107,6 +120,36 @@ pub fn run_turn(
     } = request;
     limits.validate()?;
     let fork = session.fork()?;
+    run_turn_on_fork(
+        ForkTurnRequest {
+            fork,
+            prompt,
+            conversation,
+            runner,
+            limits,
+            cancel,
+        },
+        events,
+    )
+}
+
+/// [`run_turn`] over a fork the caller already took with [`Session::fork`]. The desktop
+/// forks on its UI thread, where the live session lives, and runs the turn on a worker; the
+/// fork applies back with [`Session::apply_fork`] only while the live session is still at
+/// the fork's revision.
+pub fn run_turn_on_fork(
+    request: ForkTurnRequest<'_>,
+    events: &mut dyn FnMut(AgentEvent),
+) -> Result<Turn, Error> {
+    let ForkTurnRequest {
+        fork,
+        prompt,
+        conversation,
+        runner,
+        limits,
+        cancel,
+    } = request;
+    limits.validate()?;
     let mark = conversation.history().len();
     let allowed = conversation.scope().kinds.clone();
     let mut tools = Toolbox::new(fork, runner, cancel.clone(), allowed);

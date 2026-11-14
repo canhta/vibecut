@@ -13,10 +13,13 @@ pub(super) struct Layout {
     pub(super) player: Rect,
     pub(super) right: Rect,
     pub(super) timeline: Rect,
+    /// The agent chat docked right of the timeline, when it is open. The timeline gives it
+    /// the width and keeps the rest; the chat never covers the timeline.
+    pub(super) agent: Option<Rect>,
 }
 
 impl Layout {
-    pub(super) fn new(rect: Rect, panels: [f32; 3]) -> Self {
+    pub(super) fn new(rect: Rect, panels: [f32; 3], agent: bool) -> Self {
         let top = Rect::from_min_size(
             rect.min,
             Vec2::new(rect.width(), rect.height().min(kit::size::TOPBAR)),
@@ -37,6 +40,23 @@ impl Layout {
         );
         let timeline =
             Rect::from_min_max(egui::pos2(body.left(), upper.bottom() + row_gap), body.max);
+        let (timeline, agent) = if agent {
+            let width = kit::size::AGENT_PANEL.min(timeline.width() / 2.0).max(0.0);
+            let dock = Rect::from_min_max(
+                egui::pos2(timeline.right() - width, timeline.top()),
+                timeline.max,
+            );
+            let rest = Rect::from_min_max(
+                timeline.min,
+                egui::pos2(
+                    (dock.left() - row_gap).max(timeline.left()),
+                    timeline.bottom(),
+                ),
+            );
+            (rest, Some(dock))
+        } else {
+            (timeline, None)
+        };
         let gutter = kit::space::PANEL_GUTTER.min(body.width() / 2.0);
         let columns = (body.width() - gutter * 2.0).max(0.0);
         let left = Rect::from_min_size(
@@ -59,6 +79,7 @@ impl Layout {
             player,
             right,
             timeline,
+            agent,
         }
     }
 }

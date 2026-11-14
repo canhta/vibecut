@@ -16,4 +16,7 @@ pub use event::{AgentEvent, EndReason};
 pub use policy::{AgentPolicy, Reason, TABLE, Verdict, verdict};
 pub use provider::{Provider, open_model};
 pub use tools::{PRINCIPAL, tool_specs};
-pub use turn::{Turn, TurnEnd, TurnLimits, TurnRequest, new_conversation, run_turn};
+pub use turn::{
+    ForkTurnRequest, Turn, TurnEnd, TurnLimits, TurnRequest, new_conversation, run_turn,
+    run_turn_on_fork,
+};

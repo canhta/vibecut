@@ -8,11 +8,7 @@ impl Editor {
     /// Old generations are fenced by `Playback::seek`; the position is clamped when
     /// an edit shortens the timeline and the transport state is preserved when able.
     pub(in crate::editor) fn sync_preview(&mut self) {
-        let project = self
-            .session
-            .preview_project()
-            .unwrap_or(self.session.project())
-            .clone();
+        let project = self.display_project();
         let duration = project.duration();
         let at = self
             .playback
@@ -25,6 +21,18 @@ impl Editor {
         {
             self.fail(error.to_string());
         }
+    }
+
+    /// The project the player renders: the agent's changes while they are previewed, else a
+    /// staged preview when one is open, otherwise the committed snapshot.
+    pub(in crate::editor) fn display_project(&self) -> std::sync::Arc<project::Project> {
+        if let Some(fork) = self.agent.preview_session() {
+            return fork.project().clone();
+        }
+        self.session
+            .preview_project()
+            .unwrap_or(self.session.project())
+            .clone()
     }
 
     pub(in crate::editor) fn preview_canvas_size(&self) -> [u32; 2] {
@@ -53,11 +61,7 @@ impl Editor {
     /// The range loop playback holds: the export in/out markers when set and non-empty,
     /// otherwise the whole timeline. `None` while looping is off or the timeline is empty.
     pub(in crate::editor) fn loop_range(&self) -> Option<(Tick, Tick)> {
-        let duration = self
-            .session
-            .preview_project()
-            .unwrap_or(self.session.project())
-            .duration();
+        let duration = self.display_project().duration();
         let in_out = match self.preferences.export.output.range {
             render::RangeChoice::InOut { start, end } => Some((start, end)),
             _ => None,
@@ -69,11 +73,7 @@ impl Editor {
     /// every frame; `set_loop` re-seeks only when the range changed.
     pub(in crate::editor) fn sync_loop(&mut self) -> Result<()> {
         let range = self.loop_range();
-        let project = self
-            .session
-            .preview_project()
-            .unwrap_or(self.session.project())
-            .clone();
+        let project = self.display_project();
         self.playback.set_loop(range, project)
     }
 

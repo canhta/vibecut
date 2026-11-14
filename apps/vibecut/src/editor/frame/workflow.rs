@@ -6,6 +6,7 @@ impl Editor {
     /// Advance jobs and the device clock even when the OS suppresses painting.
     pub fn tick(&mut self) {
         self.drain_requests();
+        self.agent.tick();
         if let Some(autosave) = self.session.autosave()
             && let Err(e) = autosave.tick()
         {

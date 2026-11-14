@@ -4,8 +4,11 @@ use crate::editor::{Command, Context, Editor, ItemId, Request, Tick, egui, timel
 impl Editor {
     /// The read-only services every area receives.
     pub(in crate::editor) fn context(&self) -> Context<'_> {
+        // While the agent's changes are previewed every area reads the fork instead of the
+        // live project; nothing it draws can write to either.
+        let live: &engine::Session = &self.session;
         Context {
-            session: &self.session,
+            session: self.agent.preview_session().unwrap_or(live),
             project_path: match &self.session {
                 crate::services::lifecycle::EditorSession::Persistent(autosave) => {
                     autosave.saved_path()
