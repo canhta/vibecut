@@ -1,10 +1,4 @@
 // Grouping: `timeline.group` / `timeline.ungroup` and the group-aware edits.
-#![allow(
-    clippy::unwrap_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    reason = "validated test fixtures and assertions"
-)]
 use crate::support::session::{get, new_item, project, session};
 use engine::{
     Command, CreatedId, EditError, ItemPasteSource, Move, Placement, Session, TrackPlacement,
@@ -15,29 +9,30 @@ use std::sync::Arc;
 use time::Tick;
 
 /// Items 10 (0..40) and 11 (60..100) on one overlay track, plus item 12 (10..50) on the other.
-fn fixture() -> (Session, TrackId, TrackId) {
+fn fixture() -> Option<(Session, TrackId, TrackId)> {
     let mut s = session();
     let tracks = &s.project().data().scene().timeline.overlays;
-    let (first, second) = (tracks[0].id, tracks[1].id);
+    let (first, second) = (tracks.first()?.id, tracks.get(1)?.id);
     let out = s
         .apply(Command::InsertItem {
             placement: Placement::Track { track: second },
             item: new_item(10, 40),
         })
-        .unwrap();
+        .ok()?;
     assert_eq!(out.created, [CreatedId::Item(ItemId(12))]);
-    (s, first, second)
+    Some((s, first, second))
 }
-fn group(s: &mut Session, items: &[u64]) -> GroupId {
+/// The one group `timeline.group` created over `items`; `None` when it refused.
+fn group(s: &mut Session, items: &[u64]) -> Option<GroupId> {
     let out = s
         .apply(Command::TimelineGroup {
             items: items.iter().map(|id| ItemId(*id)).collect(),
         })
-        .unwrap();
-    let [CreatedId::Group(group)] = out.created.as_slice() else {
-        panic!("one created group");
-    };
-    *group
+        .ok()?;
+    match out.created.as_slice() {
+        [CreatedId::Group(group)] => Some(*group),
+        _ => None,
+    }
 }
 fn groups(s: &Session) -> Vec<(u64, Option<GroupId>)> {
     s.project()
@@ -49,25 +44,26 @@ fn groups(s: &Session) -> Vec<(u64, Option<GroupId>)> {
         .map(|i| (i.id.0, i.group))
         .collect()
 }
-fn spans(s: &Session) -> Vec<(u64, i64, i64)> {
-    let mut all: Vec<_> = s
+/// Every item's id, start and end, by id; `None` when an end overflows.
+fn spans(s: &Session) -> Option<Vec<(u64, i64, i64)>> {
+    let mut all = s
         .project()
         .data()
         .scene()
         .timeline
         .iter()
         .flat_map(|t| &t.items)
-        .map(|i| (i.id.0, i.start.0, i.end().unwrap().0))
-        .collect();
+        .map(|i| Some((i.id.0, i.start.0, i.end().ok()?.0)))
+        .collect::<Option<Vec<_>>>()?;
     all.sort_unstable();
-    all
+    Some(all)
 }
 
 #[test]
 fn group_and_ungroup_are_one_undo_step_across_tracks() {
-    let (mut s, _, _) = fixture();
+    let (mut s, _, _) = fixture().unwrap();
     let before = s.project().clone();
-    let g = group(&mut s, &[10, 12]);
+    let g = group(&mut s, &[10, 12]).unwrap();
     assert_eq!(get(&s, 10).group, Some(g));
     assert_eq!(get(&s, 12).group, Some(g));
     assert_eq!(get(&s, 11).group, None);
@@ -86,8 +82,8 @@ fn group_and_ungroup_are_one_undo_step_across_tracks() {
 
 #[test]
 fn group_refusals_are_typed_and_change_nothing() {
-    let (mut s, first, _) = fixture();
-    let g = group(&mut s, &[10, 12]);
+    let (mut s, first, _) = fixture().unwrap();
+    let g = group(&mut s, &[10, 12]).unwrap();
     let before = s.project().clone();
     let cases: Vec<(Command, &str)> = vec![
         (
@@ -161,24 +157,24 @@ fn group_refusals_are_typed_and_change_nothing() {
 
 #[test]
 fn grouping_a_member_of_a_group_merges_the_groups() {
-    let (mut s, _, _) = fixture();
-    let old = group(&mut s, &[10, 12]);
-    let merged = group(&mut s, &[10, 11]);
+    let (mut s, _, _) = fixture().unwrap();
+    let old = group(&mut s, &[10, 12]).unwrap();
+    let merged = group(&mut s, &[10, 11]).unwrap();
     assert_ne!(old, merged);
     assert!(groups(&s).iter().all(|(_, g)| *g == Some(merged)));
 }
 
 #[test]
 fn moving_a_member_moves_the_group_and_keeps_each_track() {
-    let (mut s, first, second) = fixture();
-    group(&mut s, &[10, 12]);
+    let (mut s, first, second) = fixture().unwrap();
+    group(&mut s, &[10, 12]).unwrap();
     s.apply(Command::MoveItem {
         item: ItemId(10),
         track: first,
         start: Tick(5),
     })
     .unwrap();
-    assert_eq!(spans(&s), [(10, 5, 45), (11, 60, 100), (12, 15, 55)]);
+    assert_eq!(spans(&s).unwrap(), [(10, 5, 45), (11, 60, 100), (12, 15, 55)]);
     s.apply(Command::MoveItems {
         moves: vec![Move {
             item: ItemId(12),
@@ -187,41 +183,41 @@ fn moving_a_member_moves_the_group_and_keeps_each_track() {
         }],
     })
     .unwrap();
-    assert_eq!(spans(&s), [(10, 10, 50), (11, 60, 100), (12, 20, 60)]);
+    assert_eq!(spans(&s).unwrap(), [(10, 10, 50), (11, 60, 100), (12, 20, 60)]);
     s.apply(Command::TimelineMoveItems {
         items: vec![ItemId(10)],
         delta: Tick(3),
         placement: None,
     })
     .unwrap();
-    assert_eq!(spans(&s), [(10, 13, 53), (11, 60, 100), (12, 23, 63)]);
+    assert_eq!(spans(&s).unwrap(), [(10, 13, 53), (11, 60, 100), (12, 23, 63)]);
     s.undo().unwrap();
-    assert_eq!(spans(&s)[0], (10, 10, 50));
+    assert_eq!(spans(&s).unwrap()[0], (10, 10, 50));
 }
 
 #[test]
 fn trimming_a_member_trims_the_group_as_a_set() {
-    let (mut s, _, _) = fixture();
-    group(&mut s, &[10, 12]);
+    let (mut s, _, _) = fixture().unwrap();
+    group(&mut s, &[10, 12]).unwrap();
     s.apply(Command::TrimEnd {
         item: ItemId(10),
         at: Tick(30),
     })
     .unwrap();
-    assert_eq!(spans(&s), [(10, 0, 30), (11, 60, 100), (12, 10, 40)]);
+    assert_eq!(spans(&s).unwrap(), [(10, 0, 30), (11, 60, 100), (12, 10, 40)]);
     s.apply(Command::TrimStart {
         item: ItemId(12),
         at: Tick(15),
     })
     .unwrap();
-    assert_eq!(spans(&s), [(10, 5, 30), (11, 60, 100), (12, 15, 40)]);
+    assert_eq!(spans(&s).unwrap(), [(10, 5, 30), (11, 60, 100), (12, 15, 40)]);
     s.apply(Command::TimelineTrim {
         items: vec![ItemId(12)],
         edge: TrimEdge::End,
         delta: Tick(-5),
     })
     .unwrap();
-    assert_eq!(spans(&s), [(10, 5, 25), (11, 60, 100), (12, 15, 35)]);
+    assert_eq!(spans(&s).unwrap(), [(10, 5, 25), (11, 60, 100), (12, 15, 35)]);
     // A delta one member cannot take refuses the whole set.
     let before = s.project().clone();
     assert!(
@@ -236,8 +232,8 @@ fn trimming_a_member_trims_the_group_as_a_set() {
 
 #[test]
 fn splitting_a_member_splits_the_group_under_the_cut_and_keeps_the_group() {
-    let (mut s, _, _) = fixture();
-    let g = group(&mut s, &[10, 12]);
+    let (mut s, _, _) = fixture().unwrap();
+    let g = group(&mut s, &[10, 12]).unwrap();
     // The cut at 5 reaches item 10 only: item 12 starts at 10.
     let out = s
         .apply(Command::SplitAt {
@@ -277,8 +273,8 @@ fn splitting_a_member_splits_the_group_under_the_cut_and_keeps_the_group() {
 #[test]
 fn split_left_and_right_reach_every_member_under_the_cut() {
     for left in [true, false] {
-        let (mut s, _, _) = fixture();
-        group(&mut s, &[10, 12]);
+        let (mut s, _, _) = fixture().unwrap();
+        group(&mut s, &[10, 12]).unwrap();
         let items = vec![ItemId(10)];
         let command = if left {
             Command::TimelineSplitLeft {
@@ -292,7 +288,7 @@ fn split_left_and_right_reach_every_member_under_the_cut() {
             }
         };
         s.apply(command).unwrap();
-        let spans = spans(&s);
+        let spans = spans(&s).unwrap();
         let kept: Vec<_> = spans.iter().filter(|(id, _, _)| *id != 11).collect();
         assert_eq!(kept.len(), 2, "one piece of each member survives");
         for (_, start, end) in kept {
@@ -306,33 +302,33 @@ fn split_left_and_right_reach_every_member_under_the_cut() {
 
 #[test]
 fn deleting_a_member_deletes_the_group_and_a_lone_survivor_is_ungrouped() {
-    let (mut s, _, _) = fixture();
-    group(&mut s, &[10, 11, 12]);
+    let (mut s, _, _) = fixture().unwrap();
+    group(&mut s, &[10, 11, 12]).unwrap();
     s.apply(Command::Delete {
         items: vec![ItemId(12)],
     })
     .unwrap();
-    assert!(spans(&s).is_empty());
+    assert!(spans(&s).unwrap().is_empty());
     // A track removal can leave one member: it is ungrouped, not refused.
-    let (mut s, _, second) = fixture();
-    group(&mut s, &[10, 12]);
+    let (mut s, _, second) = fixture().unwrap();
+    group(&mut s, &[10, 12]).unwrap();
     s.apply(Command::RemoveTrack { track: second }).unwrap();
     assert_eq!(groups(&s), [(10, None), (11, None)]);
 }
 
 #[test]
 fn ripple_deleting_a_member_ripple_deletes_the_group_on_each_track() {
-    let (mut s, _, _) = fixture();
-    group(&mut s, &[10, 12]);
+    let (mut s, _, _) = fixture().unwrap();
+    group(&mut s, &[10, 12]).unwrap();
     s.apply(Command::RippleDelete { item: ItemId(10) }).unwrap();
     // 12 goes with 10; 11 closes the 40-tick span 10 left on its own track.
-    assert_eq!(spans(&s), [(11, 20, 60)]);
+    assert_eq!(spans(&s).unwrap(), [(11, 20, 60)]);
 }
 
 #[test]
 fn duplicating_a_member_duplicates_the_group_under_a_fresh_id() {
-    let (mut s, _, _) = fixture();
-    let g = group(&mut s, &[10, 12]);
+    let (mut s, _, _) = fixture().unwrap();
+    let g = group(&mut s, &[10, 12]).unwrap();
     let out = s
         .apply(Command::DuplicateItems {
             items: vec![ItemId(12)],
@@ -363,8 +359,8 @@ fn duplicating_a_member_duplicates_the_group_under_a_fresh_id() {
 
 #[test]
 fn copy_and_cut_carry_the_group_but_the_paste_is_ungrouped() {
-    let (mut s, _, _) = fixture();
-    let g = group(&mut s, &[10, 12]);
+    let (mut s, _, _) = fixture().unwrap();
+    let g = group(&mut s, &[10, 12]).unwrap();
     s.apply(Command::CopyItems {
         items: vec![ItemId(10)],
     })
@@ -418,24 +414,24 @@ fn magnet_closes_each_track_the_group_touches() {
         items: vec![ItemId(20)],
     })
     .unwrap();
-    assert_eq!(spans(&s), [(21, 0, 40), (23, 0, 40)]);
+    assert_eq!(spans(&s).unwrap(), [(21, 0, 40), (23, 0, 40)]);
     let mut control = build(false);
     control
         .apply(Command::Delete {
             items: vec![ItemId(20)],
         })
         .unwrap();
-    assert_eq!(spans(&control), [(21, 0, 40), (22, 0, 40), (23, 40, 80)]);
+    assert_eq!(spans(&control).unwrap(), [(21, 0, 40), (22, 0, 40), (23, 40, 80)]);
 }
 
 #[test]
 fn group_ids_survive_save_and_reload_and_new_ids_do_not_collide() {
-    let (mut s, _, _) = fixture();
-    let g = group(&mut s, &[10, 12]);
+    let (mut s, _, _) = fixture().unwrap();
+    let g = group(&mut s, &[10, 12]).unwrap();
     let bytes = project::encode(s.project(), false).unwrap();
     let mut loaded = Session::new(project::decode(&bytes).unwrap().project, 10).unwrap();
     assert_eq!(get(&loaded, 12).group, Some(g));
-    let next = group(&mut loaded, &[11, 12]);
+    let next = group(&mut loaded, &[11, 12]).unwrap();
     assert!(next.0 > g.0);
     let out = loaded
         .apply(Command::AddTrack {
