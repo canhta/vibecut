@@ -44,6 +44,7 @@ impl State {
         if (zoom - 1.0).abs() > 0.01 {
             self.apply_zoom(self.zoom * zoom, duration, cx.playhead);
         } else if modifiers.shift || scroll.x.abs() > scroll.y.abs() {
+            self.end_follow_on_scroll(scroll);
             let raw = if modifiers.shift && scroll.x.abs() <= f32::EPSILON {
                 scroll.y
             } else if scroll.x.abs() > scroll.y.abs() {
@@ -54,7 +55,48 @@ impl State {
             let delta = raw.clamp(-HORIZONTAL_WHEEL_STEP, HORIZONTAL_WHEEL_STEP);
             self.scroll = (self.scroll - delta / self.zoom).clamp(0.0, max_scroll);
         } else {
+            self.end_follow_on_scroll(scroll);
             self.vertical_scroll = (self.vertical_scroll - scroll.y).max(0.0);
+        }
+    }
+    /// A wheel scroll is the user's own view: playback stops moving it until the next play.
+    fn end_follow_on_scroll(&mut self, scroll: egui::Vec2) {
+        if scroll != egui::Vec2::ZERO {
+            self.follow_playhead = false;
+        }
+    }
+    /// Page-style follow while playback runs. Playing starts a new follow; a paused
+    /// transport never moves the view.
+    pub(in crate::editor::timeline) fn follow_transport(
+        &mut self,
+        cx: &Context<'_>,
+        layout: &TimelineLayout,
+    ) {
+        let (view, max_scroll) = self.scroll_bounds(layout, cx.staged_project().duration());
+        self.follow_playback(
+            cx.playback.playing(),
+            cx.playhead.seconds() as f32,
+            view,
+            max_scroll,
+        );
+    }
+    /// The follow state machine over one frame's transport, in seconds.
+    pub(in crate::editor::timeline) fn follow_playback(
+        &mut self,
+        playing: bool,
+        playhead: f32,
+        view: f32,
+        max_scroll: f32,
+    ) {
+        if playing && !self.was_playing {
+            self.follow_playhead = true;
+        }
+        self.was_playing = playing;
+        if !playing || !self.follow_playhead {
+            return;
+        }
+        if let Some(scroll) = follow_scroll(playhead, self.scroll, view, max_scroll) {
+            self.scroll = scroll;
         }
     }
     pub(in crate::editor::timeline) fn scrollbars(
@@ -96,6 +138,7 @@ impl State {
         {
             let fraction = ((pointer.x - track.left()) / track.width()).clamp(0.0, 1.0);
             self.scroll = fraction * max;
+            self.follow_playhead = false;
         }
         let content_height: f32 = rows.iter().map(|row| row.height + TRACK_GAP).sum::<f32>();
         let max_vertical = (content_height - TRACK_GAP - layout.body.height()).max(0.0);
@@ -137,6 +180,7 @@ impl State {
         {
             let fraction = ((pointer.y - track.top()) / track.height()).clamp(0.0, 1.0);
             self.vertical_scroll = fraction * max_vertical;
+            self.follow_playhead = false;
         }
     }
 }
@@ -220,6 +264,18 @@ pub(in crate::editor::timeline) fn anchored_scroll(
         scroll * old_zoom / new_zoom
     };
     (next.max(0.0), pre_anchor)
+}
+/// Page-style follow: while the playhead is outside the visible span, the scroll that starts
+/// the page at it (clamped to the scroll bounds); `None` while it stays visible. Spans and
+/// the scroll are in seconds.
+pub(in crate::editor::timeline) fn follow_scroll(
+    playhead: f32,
+    scroll: f32,
+    view: f32,
+    max_scroll: f32,
+) -> Option<f32> {
+    let outside = playhead < scroll || playhead > scroll + view;
+    outside.then(|| playhead.clamp(0.0, max_scroll.max(0.0)))
 }
 /// Pointer-distance-proportional edge auto-scroll in logical pixels per frame.
 pub(in crate::editor::timeline) fn edge_auto_scroll(

@@ -206,6 +206,10 @@ pub(in crate::editor) struct State {
     pub(in crate::editor::timeline) zoom: f32,
     pub(in crate::editor::timeline) scroll: f32,
     pub(in crate::editor::timeline) vertical_scroll: f32,
+    /// Page-style follow of the playhead while playback runs; any user scroll ends it.
+    pub(in crate::editor::timeline) follow_playhead: bool,
+    /// Whether playback ran last frame, so the next play starts following again.
+    pub(in crate::editor::timeline) was_playing: bool,
     /// Content viewport width used for the dynamic fit minimum.
     pub(in crate::editor::timeline) viewport: f32,
     /// Pixel scroll captured when zoom crossed the playhead-anchor threshold.
@@ -262,6 +266,8 @@ impl State {
             zoom,
             scroll,
             vertical_scroll: 0.0,
+            follow_playhead: true,
+            was_playing: false,
             viewport: 1000.0,
             pre_anchor_scroll: None,
             drag: None,
