@@ -8,8 +8,9 @@ mod tests;
 mod view;
 
 pub use dialog::{
-    ExportDialog, ExportFormat, ExportInspection, ExportOptions, ExportPhase, ExportQuality,
-    OutputOptions, RangeChoice, SaveRequest, SceneChoice, default_file_name, sanitize_file_name,
+    AlsoOutputs, ExportDialog, ExportFormat, ExportInspection, ExportOptions, ExportPhase,
+    ExportQuality, OutputOptions, RangeChoice, SaveRequest, SceneChoice, default_file_name,
+    sanitize_file_name,
 };
 pub(in crate::editor) use state::State;
 
@@ -22,8 +23,14 @@ pub(in crate::editor) enum Action {
     Save,
     /// A caption file or the burned MP4, saved through the window's native picker.
     Caption(crate::services::lifecycle::CaptionOutput),
+    /// A caption file of the export's group, written beside the saved media.
+    CaptionFile {
+        path: std::path::PathBuf,
+        output: crate::services::lifecycle::CaptionOutput,
+    },
     Options(ExportOptions),
-    Saved(std::path::PathBuf),
+    /// Every file the export saved, in save order.
+    Saved(Vec<std::path::PathBuf>),
     Remember {
         id: &'static str,
         response: egui::Response,

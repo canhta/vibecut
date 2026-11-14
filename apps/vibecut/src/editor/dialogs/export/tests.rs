@@ -1,6 +1,6 @@
 //! Drives the export dialog alone over the one-area bench.
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
-use super::{ExportFormat, ExportOptions, ExportQuality};
+use super::{AlsoOutputs, ExportFormat, ExportOptions, ExportQuality};
 use crate::editor::frame::bench::Bench;
 use crate::editor::{AppCommand, Editor, egui};
 use crate::preferences::{PreferenceStore, Preferences};
@@ -269,29 +269,34 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
         bench.click("export.format.webm");
         bench.click("export.bitrate");
         bench.click("export.bitrate.higher");
+        // Audio beside Video is a second file: an undoable preference edit.
         bench.click("export.audio.include");
         assert_eq!(
             bench.editor().inspect().unwrap().export_options,
             ExportOptions {
                 format: ExportFormat::Webm,
                 quality: ExportQuality::Higher,
-                include_audio: false,
+                also: AlsoOutputs {
+                    audio: Some(ExportFormat::M4a),
+                    ..Default::default()
+                },
                 ..Default::default()
             }
         );
         bench.editor_mut().activate("edit.undo").unwrap();
-        assert!(bench.editor().preferences.export.include_audio);
+        assert_eq!(bench.editor().preferences.export.also.audio, None);
         bench.editor_mut().activate("edit.redo").unwrap();
-        assert!(!bench.editor().preferences.export.include_audio);
+        assert_eq!(
+            bench.editor().preferences.export.also.audio,
+            Some(ExportFormat::M4a)
+        );
         store.save(&bench.editor().preferences).unwrap();
         assert_eq!(
             store.load_with_warning().0.export,
             bench.editor().preferences.export
         );
         // Audio-only is Audio ticked alone: Video is unticked, its block greys (listed, not
-        // hidden) and the Audio Format row comes alive.
-        bench.click("export.audio.include");
-        assert!(bench.editor().preferences.export.include_audio);
+        // hidden) and the Audio Format row stays alive.
         bench.click("export.video.include");
         assert!(
             bench
@@ -338,11 +343,18 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
             .unwrap()
             .save(&screenshot)
             .unwrap();
-        // Ticking Video again returns to the video format it left.
+        // Ticking Video again returns to the video format it left and keeps Audio as a
+        // second file; unticking Audio greys its format row.
         bench.click("export.video.include");
         bench.harness_mut().run_steps(2);
-        assert_eq!(bench.editor().preferences.export.format, ExportFormat::Webm);
+        let both = bench.editor().preferences.export;
+        assert_eq!(both.format, ExportFormat::Webm);
+        assert_eq!(both.also.audio, Some(ExportFormat::M4a));
         assert!(enabled(&bench, "export.resolution"));
+        assert!(enabled(&bench, "export.audio.format"));
+        bench.click("export.audio.include");
+        bench.harness_mut().run_steps(2);
+        assert_eq!(bench.editor().preferences.export.also.audio, None);
         assert!(!enabled(&bench, "export.audio.format"));
         // Bit rate presets and Custom: Custom starts at 12000 Kbps and shows the Kbps field;
         // a preset clears it again.
@@ -363,15 +375,25 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
         );
         bench.click("export.bitrate");
         bench.click("export.bitrate.recommended");
-        // GIF is its own section with Resolution only: ticking it clears a custom rate,
-        // sets 240P and greys the Video block.
+        // GIF is its own section with Resolution only. Ticked beside Video it is a second
+        // file at 240P and Video keeps its rate; unticking Video leaves GIF alone: the rate
+        // clears, and the Video block greys.
         bench.editor_mut().preferences.export.output.bit_rate = Some(100_000);
         bench.click("export.gif.include");
+        bench.harness_mut().run_steps(2);
+        let beside = bench.editor().preferences.export;
+        assert_eq!(beside.format, ExportFormat::Webm);
+        assert_eq!(beside.output.bit_rate, Some(100_000));
+        assert_eq!(beside.output.resolution, None);
+        assert_eq!(beside.also.gif, Some([240, 240]));
+        assert!(enabled(&bench, "export.gif.resolution"));
+        bench.click("export.video.include");
         bench.harness_mut().run_steps(2);
         let gif = bench.editor().preferences.export;
         assert_eq!((gif.format, gif.output.bit_rate), (ExportFormat::Gif, None));
         assert_eq!(gif.output.gif, media::GifOptions::default());
         assert_eq!(gif.output.resolution, Some([240, 240]));
+        assert_eq!(gif.also, AlsoOutputs::default());
         assert!(enabled(&bench, "export.gif.resolution"));
         assert!(!enabled(&bench, "export.gif.include"));
         for id in [
@@ -393,12 +415,18 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
             bench.editor().preferences.export.output.resolution,
             Some([320, 320])
         );
-        // Leaving GIF restores the project size and the video format.
+        // Ticking Video again restores the project size and the video format and keeps the
+        // GIF as a second file at the size it had; unticking GIF greys its Resolution.
         bench.click("export.video.include");
         bench.harness_mut().run_steps(2);
         let video = bench.editor().preferences.export;
         assert_eq!(video.format, ExportFormat::Webm);
         assert_eq!(video.output.resolution, None);
+        assert_eq!(video.also.gif, Some([320, 320]));
+        assert!(enabled(&bench, "export.gif.resolution"));
+        bench.click("export.gif.include");
+        bench.harness_mut().run_steps(2);
+        assert_eq!(bench.editor().preferences.export.also.gif, None);
         assert!(!enabled(&bench, "export.gif.resolution"));
         // A PNG sequence has no codec rate: the same bitrate row is disabled and cleared, and
         // the finished output is named without an extension. Codec, profile and the all-scenes
@@ -457,16 +485,18 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
         bench.click("export.format.webm");
         bench.harness_mut().run_steps(2);
         assert_eq!(bench.editor().preferences.export.format, ExportFormat::Webm);
-        // Leaving the silent format re-enables the rows it had disabled.
+        // Leaving the silent format re-enables the rows it had disabled; Video, ticked
+        // alone, stays ticked.
         for id in [
             "export.codec",
             "export.bitrate",
             "export.profile",
             "export.audio.include",
-            "export.video.include",
+            "export.gif.include",
         ] {
             assert!(enabled(&bench, id), "{id} applies to WebM");
         }
+        assert!(!enabled(&bench, "export.video.include"));
         bench.click("export.scene");
         assert!(
             enabled(&bench, "export.scene.all"),
@@ -689,7 +719,8 @@ fn export_failure_panel_copies_only_diagnostics_and_retry_keeps_settings() {
     bench.click("export.format.webm");
     bench.click("export.bitrate");
     bench.click("export.bitrate.higher");
-    bench.click("export.audio.include");
+    // The video's own sound is not a dialog choice; the fixture silences it directly.
+    bench.editor_mut().preferences.export.include_audio = false;
     bench.click("export.run");
     assert_eq!(wait(&mut bench), super::ExportPhase::Failed);
     let state = bench.editor().export_state().unwrap().inspect();
@@ -977,38 +1008,13 @@ fn cancelled_save_keeps_the_finished_export_for_a_later_save() {
         .editor_mut()
         .export_picked_file(destination.clone())
         .unwrap();
-    wait(&mut bench);
+    // The second scene follows beside the first, with no second picker.
+    assert_eq!(wait(&mut bench), super::ExportPhase::Settings);
     assert!(destination.exists());
     assert_ne!(std::fs::read(&destination).unwrap(), b"previous export");
     assert!(!finished.exists());
-    assert_eq!(
-        bench.editor().export_state().unwrap().phase(),
-        super::ExportPhase::Ready
-    );
-    assert!(
-        bench
-            .editor()
-            .export_save_defaults()
-            .0
-            .ends_with("-scene-2.mp4")
-    );
-    bench.editor_mut().export_save_cancelled();
-    let second_finished = bench
-        .editor()
-        .export_state()
-        .unwrap()
-        .inspect()
-        .finished
-        .unwrap();
-    assert!(second_finished.exists());
-    let second_destination = dir.path().join("second-scene.mp4");
-    bench
-        .editor_mut()
-        .export_picked_file(second_destination.clone())
-        .unwrap();
-    wait(&mut bench);
+    let second_destination = dir.path().join("second-save-scene-2.mp4");
     assert!(second_destination.is_file());
-    assert!(!second_finished.exists());
     assert!(!bench.editor().export_state().unwrap().inspect().open);
 }
 
@@ -1333,4 +1339,288 @@ fn publication_keeps_ui_responsive_and_cancel_preserves_previous_file() {
     assert!(finished.exists());
     assert_eq!(std::fs::read(&destination).unwrap(), b"previous");
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+}
+
+#[test]
+fn export_footer_orders_cancel_before_export() {
+    let mut bench = bench(editor(false, false));
+    open(&mut bench);
+    let cancel = rect(&bench, "export.close");
+    let export = rect(&bench, "export.run");
+    assert!(
+        cancel.right() <= export.left(),
+        "Cancel sits left of Export: {cancel:?} {export:?}"
+    );
+    assert_eq!(cancel.top(), export.top());
+}
+
+#[test]
+fn ticked_outputs_become_one_job_each_in_a_fixed_order() {
+    let all = ExportOptions {
+        format: ExportFormat::Webm,
+        also: AlsoOutputs {
+            audio: Some(ExportFormat::AudioWebm),
+            gif: Some([320, 320]),
+            captions: Some(captions::Format::Srt),
+        },
+        output: render::OutputOptions {
+            resolution: Some([1280, 720]),
+            fps: Some(time::FrameRate::FPS_24),
+            bit_rate: Some(5_000_000),
+            codec: render::VideoCodec::Vp9,
+            range: render::RangeChoice::InOut {
+                start: Tick::ZERO,
+                end: Tick(SECOND / 20),
+            },
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let formats = |options: ExportOptions| -> Vec<ExportFormat> {
+        options.outputs().iter().map(|o| o.format).collect()
+    };
+    let outputs = all.outputs();
+    assert_eq!(
+        formats(all),
+        [
+            ExportFormat::Webm,
+            ExportFormat::AudioWebm,
+            ExportFormat::Gif
+        ]
+    );
+    // The primary output keeps every video choice; each further job is a single output.
+    assert_eq!(outputs[0].output, all.output);
+    assert!(outputs.iter().all(|o| o.also == AlsoOutputs::default()));
+    // Audio carries no video field, GIF its own size and the video's frame rate; scene and
+    // range are shared by all.
+    let audio = outputs[1].output;
+    assert_eq!(
+        (audio.resolution, audio.fps, audio.bit_rate, audio.codec),
+        (None, None, None, render::VideoCodec::Automatic)
+    );
+    let gif = outputs[2].output;
+    assert_eq!(
+        (gif.resolution, gif.fps, gif.bit_rate, gif.codec),
+        (
+            Some([320, 320]),
+            Some(time::FrameRate::FPS_24),
+            None,
+            render::VideoCodec::Automatic
+        )
+    );
+    assert!(
+        outputs
+            .iter()
+            .all(|o| o.output.range == all.output.range && o.output.scene == all.output.scene)
+    );
+    // A PNG sequence has no sound, and a primary audio or GIF output adds no copy of itself.
+    let sequence = ExportOptions {
+        format: ExportFormat::PngSequence,
+        ..all
+    };
+    assert_eq!(
+        formats(sequence),
+        [ExportFormat::PngSequence, ExportFormat::Gif]
+    );
+    let audio_first = ExportOptions {
+        format: ExportFormat::M4a,
+        ..all
+    };
+    assert_eq!(formats(audio_first), [ExportFormat::M4a, ExportFormat::Gif]);
+    assert_eq!(audio_first.outputs()[1].output.fps, None);
+    assert_eq!(ExportOptions::default().outputs().len(), 1);
+}
+
+#[test]
+fn export_sections_tick_together_and_one_stays_ticked() {
+    let mut bench = bench(editor(false, false));
+    open(&mut bench);
+    // Video alone is ticked and cannot be unticked.
+    assert!(!enabled(&bench, "export.video.include"));
+    assert!(enabled(&bench, "export.audio.include"));
+    assert!(enabled(&bench, "export.gif.include"));
+    assert!(!enabled(&bench, "export.audio.format"));
+    // Captions join the group only when the project holds a caption item.
+    assert!(!enabled(&bench, "export.captions.include"));
+    assert!(!enabled(&bench, "export.captions.format"));
+    bench.click("export.audio.include");
+    bench.click("export.gif.include");
+    bench.harness_mut().run_steps(2);
+    let all = bench.editor().preferences.export;
+    assert_eq!(all.format, ExportFormat::Mp4);
+    assert_eq!(all.also.audio, Some(ExportFormat::M4a));
+    assert_eq!(all.also.gif, Some([240, 240]));
+    for id in [
+        "export.video.include",
+        "export.audio.include",
+        "export.gif.include",
+        "export.audio.format",
+        "export.gif.resolution",
+        "export.resolution",
+        "export.run",
+    ] {
+        assert!(enabled(&bench, id), "{id} with all three ticked");
+    }
+    // The Audio Format and GIF Resolution rows edit the files beside the video.
+    bench.click("export.audio.format");
+    bench.click("export.audio.format.opus");
+    bench.click("export.gif.resolution");
+    bench.click("export.gif.resolution.320");
+    let all = bench.editor().preferences.export;
+    assert_eq!(all.also.audio, Some(ExportFormat::AudioWebm));
+    assert_eq!(all.also.gif, Some([320, 320]));
+    assert_eq!(all.output.resolution, None);
+    // Unticking Video makes Audio the primary output and keeps the GIF.
+    bench.click("export.video.include");
+    bench.harness_mut().run_steps(2);
+    let rest = bench.editor().preferences.export;
+    assert_eq!(rest.format, ExportFormat::AudioWebm);
+    assert_eq!(rest.also.audio, None);
+    assert_eq!(rest.also.gif, Some([320, 320]));
+    assert!(!enabled(&bench, "export.resolution"));
+    // Unticking Audio leaves the GIF alone, which can no longer be unticked.
+    bench.click("export.audio.include");
+    bench.harness_mut().run_steps(2);
+    let gif = bench.editor().preferences.export;
+    assert_eq!(gif.format, ExportFormat::Gif);
+    assert_eq!(gif.output.resolution, Some([320, 320]));
+    assert_eq!(gif.also, AlsoOutputs::default());
+    assert!(!enabled(&bench, "export.gif.include"));
+}
+
+#[test]
+fn ticked_outputs_render_one_after_another_and_save_under_one_toast() {
+    let audio = media::audio_export_container_available(ExportFormat::M4a.container());
+    let gif = media::export_container_available(media::Container::Gif);
+    let dir = tempfile::tempdir().unwrap();
+    let mut bench = bench(editor(false, false));
+    bench.editor_mut().preferences.export.also = AlsoOutputs {
+        audio: audio.then_some(ExportFormat::M4a),
+        gif: gif.then_some([240, 240]),
+        ..Default::default()
+    };
+    let mut names = vec!["Export fixture.mp4"];
+    if audio {
+        names.push("Export fixture-audio.m4a");
+    }
+    if gif {
+        names.push("Export fixture.gif");
+    }
+    bench.editor_mut().activate("export.run").unwrap();
+    // One progress covers every job: the dialog is running, not ready, until all rendered.
+    assert_eq!(wait(&mut bench), super::ExportPhase::Ready);
+    assert_eq!(&bench.editor().export_save_defaults().0, names[0]);
+    // One place is picked, for the first file; the others are written beside it.
+    bench
+        .editor_mut()
+        .export_picked_file(dir.path().join("out.mp4"))
+        .unwrap();
+    assert_eq!(wait(&mut bench), super::ExportPhase::Settings);
+    let names: Vec<&str> = names
+        .iter()
+        .map(|name| match *name {
+            "Export fixture.mp4" => "out.mp4",
+            "Export fixture-audio.m4a" => "out-audio.m4a",
+            _ => "out.gif",
+        })
+        .collect();
+    for name in &names {
+        assert!(dir.path().join(name).is_file(), "{name} was not written");
+    }
+    if gif {
+        let bytes = std::fs::read(dir.path().join("out.gif")).unwrap();
+        assert!(bytes.starts_with(b"GIF8"));
+    }
+    let state = bench.editor().export_state().unwrap().inspect();
+    assert!(!state.open);
+    assert!(state.finished.is_none());
+    // One toast names every file.
+    let toast = bench
+        .editor()
+        .inspect()
+        .unwrap()
+        .import_toast
+        .unwrap_or_default();
+    for name in &names {
+        assert!(toast.contains(name), "{toast}");
+    }
+}
+
+#[test]
+fn cancelling_a_multi_output_export_starts_no_further_job() {
+    let (send, recv) = mpsc::channel();
+    let gate = Arc::new(Gate {
+        entered: Mutex::new(send),
+        release: (Mutex::new(false), Condvar::new()),
+    });
+    let mut bench = bench(editor(false, true));
+    let _release = Release(gate.clone());
+    bench.editor_mut().preferences.export.also = AlsoOutputs {
+        audio: Some(ExportFormat::M4a),
+        gif: Some([240, 240]),
+        ..Default::default()
+    };
+    open(&mut bench);
+    bench
+        .editor_mut()
+        .export_dialog()
+        .unwrap()
+        .set_sources(Arc::new(GateFactory(gate.clone())))
+        .unwrap();
+    bench.editor_mut().activate("export.run").unwrap();
+    bench.harness_mut().run_steps(2);
+    recv.recv_timeout(Duration::from_secs(10)).unwrap();
+    assert!(bench.editor().export_state().unwrap().active());
+    assert!(enabled(&bench, "export.cancel"));
+    bench.click("export.cancel");
+    *gate.release.0.lock().unwrap() = true;
+    gate.release.1.notify_all();
+    assert_eq!(wait(&mut bench), super::ExportPhase::Settings);
+    for _ in 0..20 {
+        bench.editor_mut().tick();
+        bench.step();
+    }
+    let state = bench.editor().export_state().unwrap().inspect();
+    assert!(state.job.is_none());
+    assert!(state.finished.is_none());
+    assert!(!bench.editor().export_state().unwrap().active());
+}
+
+#[test]
+fn a_derived_name_that_exists_refuses_the_group_until_replace_is_ticked() {
+    if !media::audio_export_container_available(ExportFormat::M4a.container()) {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let taken = dir.path().join("out-audio.m4a");
+    std::fs::write(&taken, b"previous").unwrap();
+    let mut bench = bench(editor(false, false));
+    bench.editor_mut().preferences.export.also = AlsoOutputs {
+        audio: Some(ExportFormat::M4a),
+        ..Default::default()
+    };
+    bench.editor_mut().activate("export.run").unwrap();
+    assert_eq!(wait(&mut bench), super::ExportPhase::Ready);
+    bench.harness_mut().run_steps(2);
+    assert!(enabled(&bench, "export.replace"));
+    // Nothing is written and nothing replaced while a target of the group exists.
+    bench
+        .editor_mut()
+        .export_picked_file(dir.path().join("out.mp4"))
+        .unwrap();
+    assert_eq!(wait(&mut bench), super::ExportPhase::Failed);
+    assert!(!dir.path().join("out.mp4").exists());
+    assert_eq!(std::fs::read(&taken).unwrap(), b"previous");
+    // One Replace choice covers the group.
+    bench.harness_mut().run_steps(3);
+    bench.click("export.replace");
+    bench.click("export.retry");
+    bench.harness_mut().run_steps(2);
+    bench
+        .editor_mut()
+        .export_picked_file(dir.path().join("out.mp4"))
+        .unwrap();
+    assert_eq!(wait(&mut bench), super::ExportPhase::Settings);
+    assert!(dir.path().join("out.mp4").is_file());
+    assert_ne!(std::fs::read(&taken).unwrap(), b"previous");
 }

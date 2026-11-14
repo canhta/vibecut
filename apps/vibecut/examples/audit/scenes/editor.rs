@@ -419,22 +419,28 @@ fn export_clicks(
     Ok(app)
 }
 
-/// Video unticked: its block greys and Audio Format comes alive (reference 105736).
+/// Audio and GIF ticked, Video unticked, scrolled to the Audio Format row (reference
+/// 105736: Video unticked with Audio and GIF ticked).
 pub(super) fn export_audio_only(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     export_clicks(
         theme,
         scale,
-        &["export.video.include"],
+        &[
+            "export.audio.include",
+            "export.gif.include",
+            "export.video.include",
+        ],
         Some("export.audio.format"),
     )
 }
 
-/// The GIF section ticked with its Resolution only (reference 105532).
+/// Video, Audio and GIF ticked together, scrolled to the GIF Resolution row (reference
+/// 105532: GIF ticked beside the default Video and Audio).
 pub(super) fn export_gif(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     export_clicks(
         theme,
         scale,
-        &["export.gif.include"],
+        &["export.audio.include", "export.gif.include"],
         Some("export.gif.resolution"),
     )
 }

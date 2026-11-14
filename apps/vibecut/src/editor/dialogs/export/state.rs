@@ -135,10 +135,12 @@ impl State {
 
     /// The completed attempt owns its container even if settings changed after failure.
     pub(in crate::editor) fn save_format(&self, fallback: ExportFormat) -> ExportFormat {
-        self.dialog
-            .as_ref()
-            .and_then(|dialog| dialog.inspect().attempt)
-            .map_or(fallback, |options| options.format)
+        self.dialog.as_ref().map_or(fallback, |dialog| {
+            dialog
+                .save_format()
+                .or_else(|| dialog.inspect().attempt.map(|options| options.format))
+                .unwrap_or(fallback)
+        })
     }
 
     /// Advance the running job and publish its terminal state.

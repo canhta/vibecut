@@ -183,6 +183,8 @@ The output extension selects MP4/H.264, MOV/H.264, WebM/VP9 or a silent animated
 
 Output is staged and published only after encoding, muxing and a final source revalidation. A required source that is missing or whose content hash changed refuses the export with exit 4 and `unavailable` entries naming asset ID, item ID, source tick range and reason (`missing`, `changed`, `metadata`, `video`, `audio`); no partial file is promoted and an existing destination is preserved.
 
+One `export` command writes one output kind (video, audio-only or GIF), each scene to its own file. Several outputs of one project are several commands with distinct paths, each accepted as its own job and receipt; the desktop Export dialog does the same for every ticked section, one job after the other under one progress, and saves the files under names derived from the one place the user picks. There is no multi-output command: an output kind is a different container and encoder, so each keeps its own admission, grant and receipt.
+
 Degraded output is never a default. `--allow-degraded` admits initially missing or changed visual sources as black/silence; a source that fails during execution still refuses. Fence details: [render contract](../../../crates/render/src/export/README.md#export-and-publication).
 
 ## Exit codes

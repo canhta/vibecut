@@ -35,7 +35,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 
 | ID | Item | Function | UI/UX | Evidence | Gap / note |
 |---|---|---|---|---|---|
-| EXP-01 | Dialog frame | Done | Differs | 14b/105340 | 720x663; Export before Cancel |
+| EXP-01 | Dialog frame | Done | Differs | 14b/105340 | 720x663; cover beside the form |
 | EXP-02 | Cover preview, Edit cover | Missing | — | 14b/105340 | |
 | EXP-03 | Timeline select | Done | Proposed | 14b/105340 | |
 | EXP-04 | Name field | Done | Proposed | 14b/105340 | |
@@ -53,16 +53,18 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | EXP-16 | Sync to space | Out of scope | — | 14b/105348 | Cloud sync |
 | EXP-17 | Audio formats | Partial | Differs | 14b/105528 | No MP3, WAV, FLAC |
 | EXP-18 | Audio-only export | Done | Proposed | 14b/105736 | |
-| EXP-19 | GIF section | Done | Differs | 14b/105532 | One section ticked at a time |
+| EXP-19 | GIF section | Done | Proposed | 14b/105532 | Ticks beside Video and Audio |
 | EXP-20 | GIF resolution list | Done | Proposed | 14b/105549 | |
-| EXP-21 | Captions section | Partial | Differs | 14b/105557 | Buttons, not a tick |
+| EXP-21 | Captions section | Done | Differs | 14b/105557 | Tick joins the export's group; save buttons stay |
 | EXP-22 | Caption formats | Done | Proposed | 14b/105559 | Plus VTT, burned MP4 |
 | EXP-23 | Check copyright toggle | Missing | — | 14b/105555 | |
-| EXP-24 | Duration and size estimate | Done | Matches | 14b/105340 | Size from the encoder's quality model plus audio; Windows writes 0.64x the estimate (holds the rate target) |
-| EXP-25 | Export, Cancel buttons | Done | Matches | 14b/105340 | |
+| EXP-24 | Duration and size estimate | Done | Matches | 14b/105340 | Sum of the encoder-model estimate per ticked output; Windows writes 0.64x the estimate (holds the rate target) |
+| EXP-25 | Cancel, Export buttons | Done | Matches | 14b/105340 | Cancel left of Export |
 | EXP-26 | Progress state | Done | Not captured | 14b/105909 | |
 | EXP-27 | Finished share view | Out of scope | — | 14b/105909 | Sharing |
 | EXP-28 | Open folder after export | Partial | Not captured | 14b/105934 | Toast with path |
 | EXP-29 | Export failure panel | Done | Proposed | | |
 | EXP-30 | Image sequence, range, scenes | Ours | Proposed | | |
 | EXP-31 | Download clip settings | Missing | — | web flows/12 | |
+| EXP-32 | Several outputs in one export | Done | Differs | 14b/105340, 14b/105532, 14b/105736 | A job per output, one progress and toast; one picker, the rest saved beside it |
+| EXP-33 | Cancel a running export | Done | Not captured | | Stops the running job, starts no later output |
