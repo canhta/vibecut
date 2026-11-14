@@ -624,6 +624,21 @@ fn an_unsupported_language_is_refused_before_consent_and_places_nothing() {
 }
 
 #[test]
+fn a_provider_failure_discards_the_take_and_places_nothing() {
+    let mut bench = bench(Script::Fail(|| ai::Error::Quota), Script::Samples(48_000));
+    let h = &mut bench.harness;
+    let before = h.state().session.project().clone();
+    click(h, "inspector.narration.generate");
+    wait_for(h, "narration.consent.send");
+    click(h, "narration.consent.send");
+    wait_for(h, "inspector.narration.failure");
+    assert_eq!(bench.opener.openai.calls(), 1);
+    assert!(!has_widget(h, "inspector.narration.take"));
+    assert!(narrations(h).is_empty());
+    assert_eq!(h.state().session.project(), &before);
+}
+
+#[test]
 fn a_take_too_long_for_its_cue_asks_for_a_shorter_text_and_places_nothing() {
     // 3 s of audio for a 2 s cue is 1.5x; OpenAI has no speed setting, so it asks to shorten.
     let mut bench = bench(Script::Samples(72_000), Script::Samples(48_000));

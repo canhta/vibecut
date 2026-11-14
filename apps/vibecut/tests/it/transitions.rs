@@ -590,8 +590,14 @@ fn selected_transition_edits_in_the_inspector_one_undo_step_each() {
             (Tick(2 * SECOND - SECOND / 4), Tick(SECOND / 2), Center),
         ),
     ] {
+        let before = h.state().session.project().clone();
         activate(&mut h, control);
         assert_eq!(span(&h), expected, "{control}");
+        // Undo and redo keep the transition selected while it still exists.
+        step_history(&mut h, "edit.undo");
+        assert_eq!(h.state().session.project(), &before, "{control} undo");
+        step_history(&mut h, "edit.redo");
+        assert_eq!(span(&h), expected, "{control} redo");
     }
 
     // Escape pops the selection without touching the project.

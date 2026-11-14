@@ -806,6 +806,8 @@ fn provider_failures_are_typed_states_and_leave_the_project_untouched() {
     let library = library(root.path());
     for (status, headers, expected) in [
         (429, vec![("retry-after".into(), "7".into())], "RateLimit"),
+        (503, Vec::new(), "Network"),
+        (500, Vec::new(), "Server"),
         (0, Vec::new(), "Network"),
     ] {
         let (client, _) = json_client(status, headers, serde_json::json!({}));
@@ -845,6 +847,7 @@ fn provider_failures_are_typed_states_and_leave_the_project_untouched() {
                 "retry-after is surfaced"
             ),
             "Network" => assert_eq!(format!("{problem:?}"), "Network"),
+            "Server" => assert_eq!(format!("{problem:?}"), "Server"),
             _ => panic!("unexpected"),
         }
         assert!(has_widget(&harness, "music.retry"), "{expected}");

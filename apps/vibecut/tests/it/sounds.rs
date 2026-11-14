@@ -577,11 +577,14 @@ fn search_filter_save_preview_and_add_use_the_sounds_contract() {
 #[test]
 fn provider_errors_and_empty_results_are_rendered_as_typed_states() {
     for (status, headers, expected) in [
+        (401, Vec::new(), SoundsProblem::Auth),
+        (402, Vec::new(), SoundsProblem::Quota),
         (
             429,
             vec![("retry-after".into(), "7".into())],
             SoundsProblem::RateLimit(Some(7)),
         ),
+        (503, Vec::new(), SoundsProblem::Server),
         (0, Vec::new(), SoundsProblem::Network),
         (200, Vec::new(), SoundsProblem::Invalid),
     ] {
