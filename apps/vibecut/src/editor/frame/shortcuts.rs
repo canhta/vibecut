@@ -370,6 +370,8 @@ fn shortcut_preset(
             }
         })
         .response;
+    let name = i18n::text(cx.locale, Text::ShortcutsPresetMenu);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, name));
     state.widgets.remember("shortcuts.preset", &response);
     if selected != preset {
         pending.push(Action::SelectPreset(selected));

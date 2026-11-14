@@ -617,7 +617,7 @@ fn lock_refuses_structural_edits_and_add_track_uses_the_active_kind() {
         .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor);
     h.run_steps(4);
     let id = text_track.0;
-    right_click_header(&mut h, text_track);
+    // Lock is a header cell on every kind; no menu opens first.
     h.get(By::new().predicate(|n| n.author_id() == Some(format!("track.{id}.lock").as_str())))
         .click();
     h.run_steps(3);

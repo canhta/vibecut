@@ -9,6 +9,9 @@ use super::{
 use crate::ClipAnimations;
 
 pub(super) fn move_items(data: &mut ProjectData, moves: Vec<Move>) -> Result<()> {
+    // Only a first placement onto a main track that was already empty clamps to zero; moving
+    // the main track's own items leaves the gap they open at the origin.
+    let main_was_empty = data.scene().timeline.main.items.is_empty();
     let mut seen = BTreeSet::new();
     let mut items = Vec::with_capacity(moves.len());
     for m in moves {
@@ -22,7 +25,7 @@ pub(super) fn move_items(data: &mut ProjectData, moves: Vec<Move>) -> Result<()>
     let main = data.scene().timeline.main.id;
     let shift = items
         .iter()
-        .filter(|(id, _)| *id == main)
+        .filter(|(id, _)| main_was_empty && *id == main)
         .map(|(_, item)| item.start)
         .min()
         .map(|start| sub(start, placement_start(&data.scene().timeline, main, start)))
@@ -349,9 +352,12 @@ pub(super) fn move_group(
             start,
         });
     }
-    // The empty-main origin correction applies to the whole group, including audio.
+    // The empty-main origin correction applies to the whole group, including audio, when no
+    // member came from main: a group leaving main's origin keeps the gap it opens.
     let main = data.scene().timeline.main.id;
-    let correction = if data.scene().timeline.main.items.is_empty() {
+    let correction = if data.scene().timeline.main.items.is_empty()
+        && !members.iter().any(|(source, _)| *source == main)
+    {
         moves
             .iter()
             .filter(|m| m.track == main)

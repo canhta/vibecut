@@ -492,7 +492,8 @@ fn span_clock(at: Tick) -> String {
 }
 
 impl State {
-    /// A 16 px chevron on the clip toggles its keyframe lanes.
+    /// A 16 px chevron on the clip toggles its keyframe lanes; a clip at least 20 px tall
+    /// shows it, so the 22.5 px clips of the 24 px rows keep it.
     fn paint_lane_toggle(
         &mut self,
         cx: &Context<'_>,
@@ -501,7 +502,7 @@ impl State {
         visible: Rect,
         ink: Ink,
     ) {
-        if visible.width() < 28.0 || visible.height() < 24.0 {
+        if visible.width() < 28.0 || visible.height() < 20.0 {
             return;
         }
         let rect = Rect::from_min_size(

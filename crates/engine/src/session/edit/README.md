@@ -33,7 +33,7 @@ empty, choosing the nearest clip edge at the requested start (ties before) and i
 without replacing content; otherwise it takes the first unlocked compatible track whose
 requested half-open range is free, in main, overlay then audio order, and creates a secondary
 track at the top of its group when none fits. An explicit `track` refuses overlaps and
-incompatible kinds. A first insertion onto empty main clamps to zero. The caller supplies every
+incompatible kinds. A first insertion or move onto a main track that was empty before the edit clamps to zero; moving the main track's own items never clamps, so the gap they leave at the origin stays. The caller supplies every
 linked partner explicitly: there is no implicit link model, and snapping is a caller decision.
 Negative starts and checked arithmetic overflow refuse the whole edit, including track and ID
 allocation ([`placement_track`](tracks.rs), [`placement_start`](clips.rs)).

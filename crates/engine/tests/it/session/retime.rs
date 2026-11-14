@@ -131,8 +131,9 @@ proptest::proptest! {
             placement: None,
         })
         .unwrap();
-        proptest::prop_assert_eq!(item(&s,1).start,Tick::ZERO);
-        proptest::prop_assert_eq!(item(&s,2).start,Tick::ZERO);
+        // Moving main's own items is never pinned to the origin: the pair keeps the gap.
+        proptest::prop_assert_eq!(item(&s,1).start,Tick(movement * SECOND));
+        proptest::prop_assert_eq!(item(&s,2).start,Tick(movement * SECOND));
         // Put the visual on a secondary track so horizontal movement is unconstrained.
         s.apply(Command::TimelineMoveItems {
             items: vec![ItemId(1)],

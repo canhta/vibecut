@@ -250,8 +250,14 @@ mod tests {
             (
                 "keybindings",
                 serde_json::json!({
-                    "bindings": {"timeline.snap": ["Ctrl+Shift+N"]},
-                    "isCustomized": ["timeline.snap"]
+                    "active": 1,
+                    "profiles": [
+                        {"bindings": {}, "isCustomized": []},
+                        {"bindings": {"timeline.snap": ["Ctrl+Shift+N"]}, "isCustomized": ["timeline.snap"]},
+                        {"bindings": {}, "isCustomized": []},
+                        {"bindings": {}, "isCustomized": []},
+                        {"bindings": {}, "isCustomized": []}
+                    ]
                 }),
             ),
             (

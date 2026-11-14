@@ -1589,6 +1589,49 @@ fn placement_is_atomic_and_respects_groups_locks_and_main_magnet() {
     }
     assert!(magnetic.data().scene().timeline.magnet);
 }
+
+#[test]
+fn moving_the_main_tracks_own_origin_item_keeps_the_gap() {
+    for magnet in [false, true] {
+        let mut s = session();
+        s.apply(Command::SetTrackMagnet { enabled: magnet })
+            .unwrap();
+        s.apply(Command::InsertItem {
+            placement: engine::Placement::Track { track: TrackId(0) },
+            item: new_item(0, 10),
+        })
+        .unwrap();
+        let id = s.project().data().scene().timeline.main.items[0].id;
+        let starts = |s: &Session| {
+            s.project()
+                .data()
+                .scene()
+                .timeline
+                .main
+                .items
+                .iter()
+                .map(|item| item.start.0)
+                .collect::<Vec<_>>()
+        };
+        s.apply(Command::MoveItem {
+            item: id,
+            track: TrackId(0),
+            start: Tick(100),
+        })
+        .unwrap();
+        assert_eq!(starts(&s), [100], "magnet {magnet}");
+        s.undo().unwrap();
+        s.apply(Command::MoveItems {
+            moves: vec![Move {
+                item: id,
+                track: TrackId(0),
+                start: Tick(40),
+            }],
+        })
+        .unwrap();
+        assert_eq!(starts(&s), [40], "magnet {magnet}");
+    }
+}
 proptest! {
     #![proptest_config(ProptestConfig { cases: 64, rng_seed: proptest::test_runner::RngSeed::Fixed(14002021), ..ProptestConfig::default() })]
 

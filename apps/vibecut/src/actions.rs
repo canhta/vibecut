@@ -860,12 +860,19 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = PreferenceStore::new(dir.path().join("preferences.json"));
         let mut document = serde_json::to_value(Preferences::default()).unwrap();
+        let empty = serde_json::json!({"bindings": {}, "isCustomized": []});
         document["keybindings"] = serde_json::json!({
-            "bindings": {
-                "timeline.snap": ["Ctrl+Shift+N"],
-                "bad action": []
-            },
-            "isCustomized": ["timeline.snap", "missing.action"]
+            "active": 0,
+            "profiles": [
+                {
+                    "bindings": {
+                        "timeline.snap": ["Ctrl+Shift+N"],
+                        "bad action": []
+                    },
+                    "isCustomized": ["timeline.snap", "missing.action"]
+                },
+                empty, empty, empty, empty
+            ]
         });
         std::fs::write(store.path(), document.to_string()).unwrap();
         let (preferences, issue) = store.load_with_warning();

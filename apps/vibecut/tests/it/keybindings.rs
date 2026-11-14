@@ -302,8 +302,14 @@ fn unknown_actions_are_reported() {
         .set_preference(
             "keybindings",
             serde_json::json!({
-                "bindings": {"future.action": ["Ctrl+K"]},
-                "isCustomized": ["future.action"]
+                "active": 0,
+                "profiles": [
+                    {"bindings": {"future.action": ["Ctrl+K"]}, "isCustomized": ["future.action"]},
+                    {"bindings": {}, "isCustomized": []},
+                    {"bindings": {}, "isCustomized": []},
+                    {"bindings": {}, "isCustomized": []},
+                    {"bindings": {}, "isCustomized": []}
+                ]
             }),
         )
         .unwrap();
@@ -712,7 +718,7 @@ fn shortcuts_dialog_records_binds_unbound_actions_and_survives_undo_redo() {
         shortcuts
             .rows
             .iter()
-            .any(|row| row.action == "timeline.deselect_all" && row.unbound)
+            .any(|row| row.action == "project.save_as" && row.unbound)
     );
 
     click(&mut harness, "shortcuts.tab.basic");

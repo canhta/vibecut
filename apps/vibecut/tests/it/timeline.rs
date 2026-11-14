@@ -1847,12 +1847,18 @@ fn every_editor_button_reports_its_embedded_icon() {
             .unwrap()
             .display(vibecut::actions::Platform::current())
     );
+    let zoom_in = format!(
+        "Zoom + ({})",
+        vibecut::actions::Chord::parse("Ctrl+Equals")
+            .unwrap()
+            .display(vibecut::actions::Platform::current())
+    );
     for (id, text) in [
         ("edit.undo", undo.as_str()),
         ("timeline.split", split.as_str()),
         ("timeline.snap", "Snap (N)"),
         ("timeline.preview_axis", "Turn off preview axis (S)"),
-        ("timeline.zoom_in", "Zoom +"),
+        ("timeline.zoom_in", zoom_in.as_str()),
         ("timeline.magnet", "Main track magnet"),
         ("transport.back", "Back 1 second (J)"),
         ("transport.play", "Play (Space)"),
@@ -3601,9 +3607,13 @@ fn timeline_geometry_follows_the_measured_rows() {
     let ruler = widget(&harness, "timeline.ruler");
     assert_eq!(ruler.height(), 22.0, "ruler strip");
     let clip = widget(&harness, &format!("timeline.item.{}", video_a.0));
-    assert_eq!(clip.height(), 74.0, "video clip inside its 76 px lane");
+    assert_eq!(
+        clip.height(),
+        50.0,
+        "overlay video clip inside its 52 px lane"
+    );
     let header = widget(&harness, "track.1.header");
-    assert_eq!((header.width(), header.height()), (123.0, 76.0));
+    assert_eq!((header.width(), header.height()), (123.0, 52.0));
     // Header cells share one 24 px pitch: lock, hide, mute, more.
     let centres: Vec<f32> = ["lock", "hidden", "muted", "more"]
         .into_iter()
@@ -3693,8 +3703,8 @@ fn clip_details_remain_visible_after_scrolling_deep_into_a_long_clip() {
         assert!(
             shapes.iter().any(|shape| {
                 matches!(shape, egui::Shape::Rect(rect)
-                if rect.rect.height() > 37.0 && rect.rect.height() < 40.0
-                    && rect.rect.contains(egui::pos2(middle, clip.top() + 30.0)))
+                if rect.rect.height() > 18.0 && rect.rect.height() < 21.0
+                    && rect.rect.contains(egui::pos2(middle, clip.top() + 28.0)))
             }),
             "filmstrip must cover the visible clip at scroll {scroll}"
         );
@@ -5829,6 +5839,8 @@ fn clipboard_keys_menus_zero_key_target_refusal_undo_and_bilingual_captures() {
                 (**session.project()).clone(),
                 Preferences {
                     locale,
+                    // The first-use hint sits under the first diamond; this test is past it.
+                    keyframe_hint_seen: true,
                     timeline_lanes: std::collections::BTreeMap::from([(
                         ProjectId(399),
                         std::collections::BTreeSet::from([target.0]),

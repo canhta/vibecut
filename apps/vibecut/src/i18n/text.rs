@@ -1377,6 +1377,7 @@ catalog! {
     ShortcutsOverride { key: "shortcuts_override", en: "Override", vi: "Ghi đè" },
     ShortcutsPressKey { key: "shortcuts_press_key", en: "Press keys…", vi: "Nhấn phím…" },
     ShortcutsPreset { key: "shortcuts_preset", en: "Shortcut {index}", vi: "Phím tắt {index}" },
+    ShortcutsPresetMenu { key: "shortcuts_preset_menu", en: "Shortcut preset", vi: "Bộ phím tắt" },
     ShortcutsReset { key: "shortcuts_reset", en: "Reset", vi: "Đặt lại" },
     ShortcutsResetAll { key: "shortcuts_reset_all", en: "Reset all", vi: "Đặt lại tất cả" },
     ShortcutsSave { key: "shortcuts_save", en: "Save", vi: "Lưu" },
