@@ -80,6 +80,14 @@ impl Lending {
     pub(super) fn media(&self) -> Option<Arc<Mutex<MediaAccess>>> {
         self.media.clone()
     }
+    /// The footage lookup the stores draw cover images with, over the shared media cache; a
+    /// process whose cache did not open captures covers uncorrected.
+    pub(super) fn footage(&self) -> engine::footage::Lookup {
+        match self.media.clone() {
+            Some(media) => MediaAccess::footage_lookup(media),
+            None => engine::footage::uncorrected(),
+        }
+    }
     pub(super) fn vision(&self) -> Arc<VisionAccess> {
         self.vision.clone()
     }

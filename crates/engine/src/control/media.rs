@@ -19,6 +19,7 @@ use ai::vision::{FaceFrame, IdentityFrame, SceneFrame, SceneResult, SpeakerChunk
 use media::{SourceAsset, THUMBNAIL_MAX_EDGE};
 use project::{Item, ItemId};
 use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
 use time::{SourceRange, Tick, TimeRange};
 
 /// Entries each cache may retain; the CLI and desktop composition roots agree.
@@ -399,6 +400,15 @@ impl MediaAccess {
     /// row offers analysis and export refuses to start.
     pub fn footage_corrections(&mut self, project: &project::Project) -> Resolution {
         crate::footage::resolve(project, &mut self.artifacts)
+    }
+
+    /// The footage lookup over one shared media cache, for a store that renders covers. A
+    /// poisoned cache answers nothing, so covers render uncorrected rather than fail.
+    pub fn footage_lookup(media: Arc<Mutex<Self>>) -> crate::footage::Lookup {
+        Arc::new(move |project: &project::Project| match media.lock() {
+            Ok(mut media) => media.footage_corrections(project),
+            Err(_) => Resolution::default(),
+        })
     }
 
     /// Submit one item's reframe analysis. A warm entry completes without

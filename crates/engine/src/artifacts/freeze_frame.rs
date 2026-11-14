@@ -6,6 +6,7 @@
 //! host item at the playhead, move the later pieces of its track right by the hold and
 //! insert the still between the halves. No transition is created at the new cuts.
 use super::{Error as ArtifactError, Result as ArtifactResult, frame_snapshot};
+use crate::footage::Resolution;
 use crate::session::{EditError, Outcome};
 use crate::{ByteBudget, ByteBudgetHooks, Command, NewItem, Placement, Session};
 use media::{AssetId, ContentHash, SourceAsset};
@@ -18,9 +19,14 @@ use time::{SourceRange, Tick};
 
 /// Freezes the visible video item `item` at output time `at` for `duration`.
 ///
-/// `dir` must be absolute; it is created when missing. Refusals are typed and change
-/// nothing: a relative directory, a non-positive duration, an unknown or non-video item,
-/// a locked track, or a playhead outside the item's output span.
+/// `dir` must be absolute; it is created when missing. `corrections` are the stored footage
+/// corrections the frame is drawn with, so the still matches the corrected preview. Refusals
+/// are typed and change nothing: a relative directory, a non-positive duration, an unknown or
+/// non-video item, a locked track, or a playhead outside the item's output span.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one control admission carrying the session, the authored edit and the lent budget and corrections"
+)]
 pub fn freeze(
     session: &mut Session,
     item: ItemId,
@@ -29,6 +35,7 @@ pub fn freeze(
     dir: &Path,
     protected: &[PathBuf],
     budget: &ByteBudget,
+    corrections: &Resolution,
 ) -> ArtifactResult<Outcome> {
     if !dir.is_absolute() {
         return Err(EditError::Invalid("freeze directory").into());
@@ -37,7 +44,7 @@ pub fn freeze(
         return Err(EditError::Invalid("freeze duration").into());
     }
     validate_host(session.project(), item, at)?;
-    let frame = frame_snapshot::image(session.project(), at)?;
+    let frame = frame_snapshot::image(session.project(), at, corrections)?;
     let hash = ContentHash::from_bytes(&frame.png);
     let hex: String = hash.0.iter().map(|byte| format!("{byte:02x}")).collect();
     let path = dir.join(format!("freeze-{hex}.png"));

@@ -45,6 +45,8 @@ pub(super) struct DeleteDialog {
 pub struct State {
     pub(super) root: PathBuf,
     pub(super) budget: ByteBudget,
+    /// The lent footage lookup the catalog's cover images are drawn with.
+    pub(super) corrections: engine::footage::Lookup,
     pub(super) request: Option<Sender<Request>>,
     pub(super) events: Receiver<Event>,
     pub(super) worker: Option<JoinHandle<()>>,
@@ -75,11 +77,12 @@ pub struct State {
 }
 
 impl State {
-    pub fn new(root: PathBuf, budget: ByteBudget) -> Self {
+    pub fn new(root: PathBuf, budget: ByteBudget, corrections: engine::footage::Lookup) -> Self {
         let (_, events) = mpsc::channel();
         let mut page = Self {
             root,
             budget,
+            corrections,
             request: None,
             events,
             worker: None,
@@ -114,6 +117,7 @@ impl State {
         let (sender, events) = mpsc::channel();
         let root = self.root.clone();
         let budget = self.budget.clone();
+        let corrections = self.corrections.clone();
         let catalog = self.catalog.clone();
         self.request = Some(request);
         self.events = events;
@@ -121,7 +125,7 @@ impl State {
         self.worker = Some(std::thread::spawn(move || {
             let failure = sender.clone();
             if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                catalog_worker(root, budget, requests, sender, catalog);
+                catalog_worker(root, budget, corrections, requests, sender, catalog);
             }))
             .is_err()
             {
@@ -681,7 +685,12 @@ mod tests {
     use project::Thumbnail;
 
     fn library(root: &std::path::Path) -> ProjectLibrary {
-        ProjectLibrary::open(root, ByteBudget::new(64 << 20).expect("budget")).expect("library")
+        ProjectLibrary::open(
+            root,
+            ByteBudget::new(64 << 20).expect("budget"),
+            engine::footage::uncorrected(),
+        )
+        .expect("library")
     }
 
     #[test]
@@ -706,7 +715,11 @@ mod tests {
                     .expect("create");
             }
         }
-        let mut page = State::new(root.path().to_owned(), ByteBudget::new(64 << 20).unwrap());
+        let mut page = State::new(
+            root.path().to_owned(),
+            ByteBudget::new(64 << 20).unwrap(),
+            engine::footage::uncorrected(),
+        );
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         while page.busy() {
             page.tick();
@@ -807,7 +820,11 @@ mod tests {
                     .expect("create");
             }
         }
-        let mut page = State::new(root.path().to_owned(), ByteBudget::new(64 << 20).unwrap());
+        let mut page = State::new(
+            root.path().to_owned(),
+            ByteBudget::new(64 << 20).unwrap(),
+            engine::footage::uncorrected(),
+        );
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         while page.busy() {
             page.tick();
@@ -912,7 +929,11 @@ mod tests {
             rgba: vec![255, 0, 0, 255],
         };
         drop(catalog);
-        let mut page = State::new(root.path().to_owned(), ByteBudget::new(64 << 20).unwrap());
+        let mut page = State::new(
+            root.path().to_owned(),
+            ByteBudget::new(64 << 20).unwrap(),
+            engine::footage::uncorrected(),
+        );
         page.set_entries(entries);
         let context = egui::Context::default();
         for changed in [false, true] {

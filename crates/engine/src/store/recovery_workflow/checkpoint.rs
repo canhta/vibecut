@@ -336,6 +336,7 @@ impl Autosave {
         };
         let published_snapshot = project.clone();
         let slot = save.as_ref().map(|save| save.slot.clone());
+        let corrections = self.corrections.clone();
         let recovery_snapshot = snapshot.clone();
         let submitted = self.runner.submit::<Error>(
             JobSpec {
@@ -360,7 +361,8 @@ impl Autosave {
                 }
                 if let Some(slot) = &slot {
                     let mut metadata = metadata.clone();
-                    metadata.thumbnail = crate::store::project_cover::capture(&project, ctx);
+                    metadata.thumbnail =
+                        crate::store::project_cover::capture(&project, ctx, &corrections);
                     save_on_worker(slot, &project, &metadata)?;
                 }
                 Ok(Vec::new())

@@ -137,11 +137,12 @@ pub(super) fn unique_name(entries: &[ProjectEntry], base: &str) -> String {
 pub(super) fn catalog_worker(
     root: PathBuf,
     budget: ByteBudget,
+    corrections: engine::footage::Lookup,
     requests: Receiver<Request>,
     events: Sender<Event>,
     catalog: Catalog,
 ) {
-    let library = match ProjectLibrary::open(&root, budget) {
+    let library = match ProjectLibrary::open(&root, budget, corrections) {
         Ok(library) => library,
         Err(error) => {
             let _ = events.send(Event::Ready(Err(error.to_string())));
@@ -291,9 +292,12 @@ mod tests {
     #[test]
     fn unique_names_follow_the_created_order_and_stop_at_a_free_suffix() {
         let root = tempfile::tempdir().expect("temporary directory");
-        let mut library =
-            ProjectLibrary::open(root.path(), ByteBudget::new(64 << 20).expect("budget"))
-                .expect("library");
+        let mut library = ProjectLibrary::open(
+            root.path(),
+            ByteBudget::new(64 << 20).expect("budget"),
+            engine::footage::uncorrected(),
+        )
+        .expect("library");
         for (id, name) in [(1u64, "New project"), (2, "New project 2"), (3, "Other")] {
             library
                 .execute(

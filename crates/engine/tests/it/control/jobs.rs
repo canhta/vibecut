@@ -677,6 +677,7 @@ fn lut_managed_duplicate_history_and_trash_keep_verified_copied_resources() {
     let mut library = engine::library::ProjectLibrary::open(
         &dir.path().join("projects"),
         engine::ByteBudget::new(128 << 20).unwrap(),
+        engine::footage::uncorrected(),
     )
     .unwrap();
     library

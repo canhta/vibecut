@@ -884,7 +884,11 @@ impl Editor {
     /// Put the current frame on the OS clipboard through egui's clipboard owner.
     pub fn copy_snapshot(&mut self, ctx: &egui::Context) -> Result<()> {
         let at = self.playback.position()?;
-        if let Err(error) = crate::services::preview::copy(&self.session, at, ctx) {
+        let corrections = self
+            .playback
+            .footage_corrections(self.session.project())
+            .unwrap_or_default();
+        if let Err(error) = crate::services::preview::copy(&self.session, at, &corrections, ctx) {
             self.player.snapshot.error = Some(match &error {
                 Error::Engine(engine::control::Error::Artifacts(
                     engine::ArtifactError::EmptyProject,

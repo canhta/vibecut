@@ -56,6 +56,7 @@ impl Workspace {
         let budget = ByteBudget::new(preferences.cache_limit_bytes)?;
         let persistence = ByteBudget::new(256 << 20)?;
         let lending = Lending::open(&root, &budget);
+        let corrections = lending.footage();
         let runner = std::rc::Rc::new(std::cell::RefCell::new(JobRunner::new(
             RunnerConfig {
                 concurrency: [2, 1, 1],
@@ -73,13 +74,14 @@ impl Workspace {
             preferences.clone(),
             budget.clone(),
             persistence,
+            corrections.clone(),
             runner,
         );
         home.startup_path = path;
         home.submit(Work::Discover, Text::Discovering)?;
         Ok(Self {
             windows: BTreeMap::new(),
-            projects: HomeState::new(projects_root, budget),
+            projects: HomeState::new(projects_root, budget, corrections),
             shorts: None,
             preferences,
             text_clipboard: Default::default(),
@@ -126,6 +128,7 @@ impl Workspace {
                 self.preferences.clone(),
                 editor.playback.budget().clone(),
                 self.home.persistence.clone(),
+                self.home.corrections.clone(),
                 self.home.runner.clone(),
             );
             window.project_window = true;
@@ -597,6 +600,7 @@ mod tests {
             &workspace.home.root,
             session,
             workspace.home.budget.clone(),
+            engine::footage::uncorrected(),
             clock.clone(),
             Schedule::default(),
         )
@@ -684,6 +688,7 @@ mod tests {
             &workspace.home.root,
             fresh("not listed", 30).unwrap(),
             workspace.home.budget.clone(),
+            engine::footage::uncorrected(),
             Arc::new(ManualClock::default()),
             Schedule::default(),
         )

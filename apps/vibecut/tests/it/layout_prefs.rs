@@ -388,6 +388,7 @@ fn details_rows_and_info_section_collapse_and_persist() {
         &root.path().join("recovery"),
         Session::new(project.clone(), 10).unwrap(),
         ByteBudget::new(64 << 20).unwrap(),
+        engine::footage::uncorrected(),
         Arc::new(engine::jobs::SystemClock::default()),
         Default::default(),
     )

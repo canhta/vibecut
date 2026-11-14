@@ -213,7 +213,9 @@ fn freeze_still_pixels_equal_the_render_frame_at_the_playhead_and_is_named_by_ha
     // Half a second in, the black overlay covers the host, so the composite is a new picture
     // and not the host file's own bytes (an identical frame would reuse the host asset).
     let at = secs(1) / 2;
-    let rendered_before = engine::snapshot::image(s.project(), Tick(at)).unwrap().png;
+    let rendered_before = engine::snapshot::image(s.project(), Tick(at), &Default::default())
+        .unwrap()
+        .png;
     let response = send(
         &mut s,
         "timeline.freeze_frame",

@@ -92,6 +92,7 @@ impl EditorWindow {
             self.budget.clone()
         };
         let persistence = self.persistence.child(64 << 20)?;
+        let corrections = self.corrections.clone();
         let input = Arc::new(Mutex::new(Some(work)));
         let preferences = self.preferences.clone();
         let key = CacheKey::new(KeyInputs {
@@ -131,6 +132,7 @@ impl EditorWindow {
                     &root,
                     budget.clone(),
                     persistence.clone(),
+                    corrections.clone(),
                     preferences.clone(),
                 );
                 send.send(result)
@@ -263,11 +265,17 @@ fn preview_sources() -> Arc<dyn Sources> {
     Arc::new(Proxied(engine::proxies::ProxyIndex::default()))
 }
 
-fn session(root: &std::path::Path, session: Session, budget: ByteBudget) -> Result<Autosave> {
+fn session(
+    root: &std::path::Path,
+    session: Session,
+    budget: ByteBudget,
+    corrections: engine::footage::Lookup,
+) -> Result<Autosave> {
     Ok(Autosave::new(
         root,
         session,
         budget,
+        corrections,
         Arc::new(SystemClock::default()),
         Schedule::default(),
     )?)
@@ -277,6 +285,7 @@ fn run(
     root: &std::path::Path,
     budget: ByteBudget,
     persistence: ByteBudget,
+    corrections: engine::footage::Lookup,
     preferences: Preferences,
 ) -> Result<Completed> {
     let autosave = match work {
@@ -289,7 +298,12 @@ fn run(
             return Ok(Completed::Discarded);
         }
         Work::Recover(candidate) => {
-            let mut autosave = session(root, candidate.recover(100)?, persistence.clone())?;
+            let mut autosave = session(
+                root,
+                candidate.recover(100)?,
+                persistence.clone(),
+                corrections.clone(),
+            )?;
             // Publish the recovered copy before retiring its source journal.
             autosave.flush()?;
             candidate.discard()?;
@@ -302,9 +316,10 @@ fn run(
                 preferences.default_fps,
             )?,
             persistence.clone(),
+            corrections.clone(),
         )?,
         Work::Short(short, settings) => {
-            let autosave = session(root, *short, persistence.clone())?;
+            let autosave = session(root, *short, persistence.clone(), corrections.clone())?;
             let mut playback = Playback::new(autosave.session(), budget, preview_sources())?;
             playback.set_render_settings(*settings)?;
             return Ok(Completed::Opened(Box::new(Editor::persisted(
@@ -318,6 +333,7 @@ fn run(
             &path,
             100,
             persistence.clone(),
+            corrections.clone(),
             Arc::new(SystemClock::default()),
             Schedule::default(),
         ) {
@@ -333,6 +349,7 @@ fn run(
                         preferences.default_fps,
                     )?,
                     persistence.clone(),
+                    corrections.clone(),
                 )?
             }
             Err(e) => return Err(e.into()),
@@ -369,7 +386,13 @@ fn run(
                         // on that copy and close this session cleanly.
                         // The copy's preview shares the ring bytes this one holds, so
                         // memory pressure from other windows cannot refuse the reopen.
-                        let opened = save_as_copy(autosave, path, root, persistence.clone())?;
+                        let opened = save_as_copy(
+                            autosave,
+                            path,
+                            root,
+                            persistence.clone(),
+                            corrections.clone(),
+                        )?;
                         let playback = editor
                             .playback
                             .successor(opened.session(), preview_sources())?;
@@ -461,6 +484,7 @@ fn save_as_copy(
     path: &Path,
     root: &Path,
     persistence: ByteBudget,
+    corrections: engine::footage::Lookup,
 ) -> Result<Autosave> {
     let mut runner = JobRunner::new(
         RunnerConfig {
@@ -504,6 +528,7 @@ fn save_as_copy(
         path,
         100,
         persistence,
+        corrections,
         Arc::new(SystemClock::default()),
         Schedule::default(),
     )?)
@@ -547,6 +572,7 @@ mod tests {
                 Preferences::default(),
                 budget.clone(),
                 budget.clone(),
+                engine::footage::uncorrected(),
                 runner,
             );
             if mode == 2 {

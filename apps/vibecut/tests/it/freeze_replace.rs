@@ -40,6 +40,7 @@ fn saved(editor: &mut Editor, root: &Path) {
         &root.join("recovery"),
         session,
         ByteBudget::new(64 << 20).unwrap(),
+        engine::footage::uncorrected(),
         Arc::new(engine::jobs::SystemClock::default()),
         Default::default(),
     )

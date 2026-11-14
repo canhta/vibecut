@@ -855,6 +855,7 @@ impl Session {
                 dir,
             } => {
                 let protected = self.protected_paths().to_vec();
+                let corrections = self.footage_corrections(caller.media)?;
                 let outcome = crate::artifacts::freeze::freeze(
                     self,
                     item,
@@ -863,11 +864,13 @@ impl Session {
                     &dir,
                     &protected,
                     runner.memory_budget(),
+                    &corrections,
                 )?;
                 Ok(ControlResult::Edit { outcome })
             }
             Command::Snapshot { time, path } => {
                 let protected = self.protected_paths().to_vec();
+                let corrections = self.footage_corrections(caller.media)?;
                 let snapshot = crate::snapshot::save_with_overwrite(
                     self.project(),
                     time,
@@ -879,6 +882,7 @@ impl Session {
                     } else {
                         project::atomic::Overwrite::Refuse
                     },
+                    &corrections,
                 )?;
                 Ok(ControlResult::Snapshot { snapshot })
             }

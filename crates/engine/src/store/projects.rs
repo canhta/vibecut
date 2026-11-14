@@ -139,11 +139,18 @@ pub struct ProjectLibrary {
     root: PathBuf,
     _lease: WriterLease,
     budget: ByteBudget,
+    /// The stored footage corrections cover images are drawn with.
+    corrections: crate::footage::Lookup,
     undo: VecDeque<Step>,
     redo: Vec<Step>,
 }
 impl ProjectLibrary {
-    pub fn open(root: &Path, budget: ByteBudget) -> Result<Self> {
+    /// Open the library at `root`; `corrections` is the lent footage lookup cover images use.
+    pub fn open(
+        root: &Path,
+        budget: ByteBudget,
+        corrections: crate::footage::Lookup,
+    ) -> Result<Self> {
         private_directory(root, true)?;
         if !fs::symlink_metadata(root)?.file_type().is_dir() {
             return Err(Error::Edit(crate::EditError::Invalid("library root")));
@@ -155,6 +162,7 @@ impl ProjectLibrary {
             root,
             _lease: lease,
             budget,
+            corrections,
             undo: VecDeque::new(),
             redo: Vec::new(),
         };
@@ -578,6 +586,7 @@ impl ProjectLibrary {
                 metadata.thumbnail = crate::store::project_cover::capture(
                     &project,
                     &crate::ByteBudgetHooks::new(&self.budget, None),
+                    &self.corrections,
                 );
                 lease.save_metadata(&metadata)?;
             }
@@ -711,6 +720,7 @@ impl ProjectLibrary {
         metadata.thumbnail = crate::store::project_cover::capture(
             source,
             &crate::ByteBudgetHooks::new(&self.budget, None),
+            &self.corrections,
         );
         let mut writer = WriterLease::acquire(&stage.join(PROJECT))?;
         writer.save(&project)?;
@@ -974,9 +984,12 @@ mod tests {
     #[test]
     fn unavailable_clock_refuses_a_trash_move_and_keeps_the_project_active() {
         let root = tempfile::tempdir().expect("directory");
-        let mut library =
-            ProjectLibrary::open(root.path(), ByteBudget::new(16 << 20).expect("budget"))
-                .expect("library");
+        let mut library = ProjectLibrary::open(
+            root.path(),
+            ByteBudget::new(16 << 20).expect("budget"),
+            crate::footage::uncorrected(),
+        )
+        .expect("library");
         library
             .execute(
                 ProjectId(1),

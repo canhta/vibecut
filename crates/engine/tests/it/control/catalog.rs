@@ -333,6 +333,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
                 let mut library = engine::library::ProjectLibrary::open(
                     &root.path().join(format!("library-{}", spec.id)),
                     ByteBudget::new(64 << 20).unwrap(),
+                    engine::footage::uncorrected(),
                 )
                 .unwrap();
                 library
@@ -369,6 +370,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
                     &root.path().join("recovery"),
                     s,
                     ByteBudget::new(512 << 20).unwrap(),
+                    engine::footage::uncorrected(),
                     Arc::new(SystemClock::default()),
                     engine::recovery::Schedule::default(),
                 )

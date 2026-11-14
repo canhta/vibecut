@@ -1,6 +1,6 @@
 # Artifacts
 
-Interface: `Error` (re-exported as `engine::ArtifactError`), `Result`, `thumbnails`, `thumbnail_strip`, `snapshot`, `effect_thumbnails`, `chapter_sidecars`.
+Interface: `Error` (re-exported as `engine::ArtifactError`), `Result`, `thumbnails`, `thumbnail_strip`, `snapshot`, `effect_thumbnails`, `chapter_sidecars`. `snapshot::image`, `snapshot::save` and `freeze` take the stored footage `Resolution` and draw the frame with it, as preview does.
 
 The private LUT job consumes the [durable copied-resource owner](../store/README.md#imported-lut-bundles), with a request fingerprint distinct from canonical content identity. The store returns its
 LUT-owned result; this callback composes it with its own bounded JSON failure through the

@@ -360,6 +360,16 @@ impl Playback {
             let _ = request.render_state.set_corrections(corrections);
         }
     }
+    /// The stored footage corrections of `project` read now from the lent media cache, the
+    /// same lookup the preview seeks with. `None` without one.
+    pub fn footage_corrections(
+        &self,
+        project: &project::Project,
+    ) -> Option<engine::footage::Resolution> {
+        let footage = self.footage.as_ref()?;
+        let mut media = footage.media.lock().ok()?;
+        Some(media.footage_corrections(project))
+    }
     /// Attach the desktop device adapter before the first visible preview.
     pub fn set_effects(
         &mut self,

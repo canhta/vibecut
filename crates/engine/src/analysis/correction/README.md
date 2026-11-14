@@ -40,7 +40,9 @@ application, not by a new store.
   `Resolution.missing` lists each switched-on `(item, kind)` without a stored correction. Those
   items render without that correction, the properties row shows `Needs analysis` with a button,
   and export refuses to start naming them ([admission](../../runtime/README.md)). Items over one
-  source share one decoded correction.
+  source share one decoded correction. `Lookup` is the same `resolve` over a shared media cache,
+  lent to the stores that capture project covers; `uncorrected()` is the lookup of a process with
+  no cache. Snapshot, freeze-frame and cover renders take the resolution the same way preview does.
 
 ## Stabilize
 

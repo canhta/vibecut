@@ -369,6 +369,17 @@ impl Resolution {
     }
 }
 
+/// Reads a project's stored corrections from the process media cache. A store that renders
+/// cover images holds one, lent by the composition root, so covers draw the same correction
+/// the preview and export draw.
+pub type Lookup = Arc<dyn Fn(&Project) -> Resolution + Send + Sync>;
+
+/// The lookup of a process with no media cache: every correction is missing and renders
+/// uncorrected.
+pub fn uncorrected() -> Lookup {
+    Arc::new(|_: &Project| Resolution::default())
+}
+
 /// Look up the stored corrections of every switched-on video item in every scene. It never
 /// decodes media and never fails a render: a correction that is absent, unreadable or
 /// unsupported is listed as missing.

@@ -275,6 +275,7 @@ fn caption_bank_name_invalidation_precedes_enter_and_blur() {
                     &root.path().join("recovery"),
                     session,
                     ByteBudget::new(64 << 20).unwrap(),
+                    engine::footage::uncorrected(),
                     Arc::new(engine::jobs::SystemClock::default()),
                     Default::default(),
                 )
