@@ -214,12 +214,12 @@ impl Panel<'_, '_> {
             super::super::AdjustTab::Hsl => self.hsl_controls(ui, item, &id, definition, at),
             super::super::AdjustTab::Curves => self.curve_controls(ui, item, &id, present),
             super::super::AdjustTab::Wheel => self.wheel_controls(ui, item, &id, definition, at),
-            // The Adjust mask limits where the grade applies; its row is the clip mask's row
-            // and popover over the clip's Adjust-scope mask.
+            // The Adjust mask limits where the grade applies: the inline Mask page over the
+            // clip's Adjust-scope mask.
             super::super::AdjustTab::Mask => {
                 let kind = element_kind(self.cx.session.project(), item).map(|(kind, _)| kind);
                 if let Some(kind) = kind {
-                    self.mask_row(ui, item, kind, project::MaskScope::Adjust);
+                    self.mask_page(ui, item, kind, project::MaskScope::Adjust);
                 }
             }
         }

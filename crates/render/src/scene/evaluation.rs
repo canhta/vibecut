@@ -510,9 +510,9 @@ impl<'a> Renderer<'a> {
                 if reduce_noise {
                     runs.push(crate::effects::reduce_noise_passes());
                 }
-                // With an active Adjust mask the colour grade runs apart from the other
-                // effects, so the mask can limit it alone.
-                let mut grade_runs = Vec::new();
+                // With an active Adjust mask each colour grade keeps its place in the stack;
+                // `grade_at` marks those runs so the mask limits them alone.
+                let mut grade_at = Vec::new();
                 for effect in item.effects.iter().filter(|effect| effect.enabled) {
                     let run = crate::effects::evaluate_effect(
                         &item.animations,
@@ -523,10 +523,9 @@ impl<'a> Renderer<'a> {
                         &lut_resources,
                     )?;
                     if grade_masked && effect.kind == "color_grade" {
-                        grade_runs.push(run);
-                    } else {
-                        runs.push(run);
+                        grade_at.push(runs.len());
                     }
+                    runs.push(run);
                 }
                 if channel_blur {
                     runs.push(crate::effects::blur_passes(
@@ -535,9 +534,7 @@ impl<'a> Renderer<'a> {
                         out.height,
                     )?);
                 }
-                let has_passes = matte.is_some()
-                    || runs.iter().any(|run| !run.is_empty())
-                    || grade_runs.iter().any(|run| !run.is_empty());
+                let has_passes = matte.is_some() || runs.iter().any(|run| !run.is_empty());
                 // An adjustment layer has no picture: it filters the composite below it, so an
                 // empty stack changes nothing, whatever its masks, transform and blend.
                 let adjustment = matches!(item.content, ItemParams::Effect(_));
@@ -873,52 +870,59 @@ impl<'a> Renderer<'a> {
                         }
                     }
                     if !adjustment {
-                        for run in &runs {
+                        // The Adjust coverage, evaluated once for every masked grade step.
+                        let mut grade_coverage = None;
+                        if !grade_at.is_empty() {
+                            adapter.release_idle()?;
+                            let mut coverage =
+                                Image::new(filtered.width, filtered.height, [1.0; 4], hooks)?;
+                            crate::mask::apply(
+                                &mut coverage,
+                                item,
+                                project::MaskScope::Adjust,
+                                local,
+                                placement,
+                                &project.data().canvas,
+                                |mask, size, geometry| self.mask_glyph(mask, size, geometry, hooks),
+                                hooks,
+                            )?;
+                            grade_coverage = Some(coverage);
+                        }
+                        for (index, run) in runs.iter().enumerate() {
                             if run.is_empty() {
                                 continue;
                             }
+                            // A masked grade step mixes its result with the picture it started
+                            // from, so the grade keeps its place in the stack.
+                            let before = match &grade_coverage {
+                                Some(_) if grade_at.contains(&index) => {
+                                    Some(filtered.copy(hooks)?)
+                                }
+                                _ => None,
+                            };
                             filtered = crate::effects::apply_effect(
                                 filtered, run, &below, adapter, hooks,
                             )?;
+                            if let (Some(before), Some(coverage)) = (before, &grade_coverage) {
+                                let width = filtered.width as usize;
+                                for ((graded, start), cover) in filtered
+                                    .pixels
+                                    .chunks_mut(width)
+                                    .zip(before.pixels.chunks(width))
+                                    .zip(coverage.pixels.chunks(width))
+                                {
+                                    check(hooks)?;
+                                    for ((g, s), c) in graded.iter_mut().zip(start).zip(cover) {
+                                        for (gv, sv) in g.iter_mut().zip(s) {
+                                            *gv = sv + (*gv - sv) * c[3];
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     if filtered.width != below.width || filtered.height != below.height {
                         return Err(Error::Invalid("effect output dimensions"));
-                    }
-                    if grade_masked && grade_runs.iter().any(|run| !run.is_empty()) {
-                        // The grade runs on a copy of the picture; the Adjust masks' coverage
-                        // chooses, per pixel, how much of that copy replaces the picture.
-                        adapter.release_idle()?;
-                        let mut graded = filtered.copy(hooks)?;
-                        for run in grade_runs.iter().filter(|run| !run.is_empty()) {
-                            graded =
-                                crate::effects::apply_effect(graded, run, &below, adapter, hooks)?;
-                        }
-                        let mut coverage = Image::new(filtered.width, filtered.height, [1.0; 4], hooks)?;
-                        crate::mask::apply(
-                            &mut coverage,
-                            item,
-                            project::MaskScope::Adjust,
-                            local,
-                            placement,
-                            &project.data().canvas,
-                            |mask, size, geometry| self.mask_glyph(mask, size, geometry, hooks),
-                            hooks,
-                        )?;
-                        let width = filtered.width as usize;
-                        for ((picture, grade), cover) in filtered
-                            .pixels
-                            .chunks_mut(width)
-                            .zip(graded.pixels.chunks(width))
-                            .zip(coverage.pixels.chunks(width))
-                        {
-                            check(hooks)?;
-                            for ((p, g), c) in picture.iter_mut().zip(grade).zip(cover) {
-                                for (pv, gv) in p.iter_mut().zip(g) {
-                                    *pv += (gv - *pv) * c[3];
-                                }
-                            }
-                        }
                     }
                     if masked {
                         adapter.release_idle()?;

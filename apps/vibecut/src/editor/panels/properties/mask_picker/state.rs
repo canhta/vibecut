@@ -138,6 +138,11 @@ impl State {
         self.scope
     }
 
+    /// Name the scope an inline page edits, so its actions reach that scope's mask.
+    pub fn set_scope(&mut self, scope: MaskScope) {
+        self.scope = scope;
+    }
+
     pub fn open(&mut self, item: ItemId, scope: MaskScope) {
         self.open = true;
         self.item = Some(item);

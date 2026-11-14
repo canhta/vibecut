@@ -43,6 +43,11 @@ impl Editor {
             matte_brush: self.player.matte_brush,
             matte_brush_size: self.player.matte_brush_size,
             colour_sampling: self.properties.sampling_colour(),
+            mask_scope: self.properties.edited_mask_scope(
+                self.session.project(),
+                self.session.selection(),
+                &self.preferences,
+            ),
             keywords: self.keyword_ui(playhead),
         }
     }

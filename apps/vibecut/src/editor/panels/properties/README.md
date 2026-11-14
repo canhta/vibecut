@@ -311,20 +311,29 @@ volume steps 0.01 dB over -60..20 dB. `inspector.volume` and
 ## Mask
 
 The Mask sub-tab of a video or image item's Basic tab opens with a `Mask` row showing the
-clip's current shape or `None`; so does the Mask tab of an effect or adjustment layer (an
-effect item, a filter clip excepted; its tabs are Effects and Mask). Audio, text, graphic and
-sticker items have no row. It opens the [mask picker](mask_picker/README.md) sub-panel. The
-first mask of the row's scope (`MaskScope::Clip` here) is the one the row edits: a shape on
-an empty scope runs `masks.add` (id `mask1`), another shape keeps centre, size and rotation
-through `masks.update`, and None runs `masks.remove`. One mask per scope from the panel;
-commands and agents keep the multi-mask engine. A locked track opens read-only.
+clip's current shape or `None`, which opens the [mask picker](mask_picker/README.md)
+popover. The first clip-scope mask is the one the row edits: a shape on an empty scope runs
+`masks.add` (id `mask1`), another shape keeps centre, size and rotation through
+`masks.update`, and None runs `masks.remove`. One mask per scope from the panel; commands and
+agents keep the multi-mask engine. A locked track opens read-only. Audio, text, graphic and
+sticker items have no Mask.
 
-The Adjust tab's `Mask` sub-tab (`AdjustTab::Mask`, id `effects.<instance>.tab.mask`) holds
-the same row as `inspector.adjust.mask.row` over the clip's `MaskScope::Adjust` mask (id
-`adjust1`); a clip mask stored before it never shadows it, and the Basic row never edits it.
-The sub-tab shows the row alone, no LUT row, above the footer. The popover closes when the
-active tab or sub-tab stops showing the row that opened it. Render limits the grade by this
-mask ([scene](../../../../../../crates/render/src/scene/README.md)). Layout: [Mask
+An effect or adjustment layer (an effect item; a filter clip has none) shows Effects and Mask
+as the two cells of one segmented bar under a single group tab (`inspector.group.basic`,
+`inspector.tab.effects` labelled Basic, `inspector.tab.mask`). The Adjust tab's `Mask`
+sub-tab (`AdjustTab::Mask`, `effects.<instance>.tab.mask`) is the fifth cell of its bar.
+Both show the inline Mask page (`mask_page`) as the reference frames do: the `Mask`
+checkbox (`inspector.mask.enabled`, `masks.update` of `enabled`, grey with no mask), the
+`Add mask` button (`inspector.mask.add`, `masks.add` with a Rectangle, grey once the scope
+has a mask) and the shape tiles six to a row, grey until a mask exists, with the fields under
+them (the picker's `inline` page). The layer page edits `MaskScope::Clip` (id `mask1`); the
+Adjust page edits `MaskScope::Adjust` (id `adjust1`), which a clip mask stored before it
+never shadows and the Basic row never edits. The Adjust page shows no LUT row. The page sets
+the picker's scope each frame so its actions reach that scope's mask. Render limits the grade
+by an Adjust mask ([scene](../../../../../../crates/render/src/scene/README.md)). The player
+binds its path gizmo to the scope of the open tab: `State::edited_mask_scope` is Adjust only
+while the selected clip shows the Adjust tab's Mask sub-tab, and the frame passes it as
+`Context::mask_scope`. Layout: [Mask
 tabs](../../../../../../docs/product/ui/editor.md#mask-tabs).
 
 Panel design and measured controls: [editor window](../../../../../../docs/product/ui/editor.md).

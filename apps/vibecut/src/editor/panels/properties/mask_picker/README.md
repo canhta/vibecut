@@ -1,12 +1,12 @@
 # Mask picker
 
-Interface: `State`, `Action`, `show`.
+Interface: `State`, `Action`, `Page`, `show`, `inline`.
 
 One popover over the first mask of one scope of the selected item, owned by the properties
-area because the Mask rows are its only entries: the Mask tab's row (clip scope, for a
-video, image, effect or adjustment layer) and the Adjust tab's Mask sub-tab row (adjust
-scope, for a video or image). `State` owns the scope it was opened for (`open(item, scope)`,
-`scope()`), the seven shape choices and typed field drafts; `current(item, scope)` is the
+area. Its popover serves the video Mask row; the layer and Adjust pages draw the same
+tiles and fields inline (`inline`, `Page`). `State` owns the scope it was opened for
+(`open(item, scope)`, `set_scope`, `scope()`), the seven shape choices and typed field drafts;
+`current(item, scope)` is the
 first mask of that scope; `show` draws the grid and fields and returns actions for the
 properties owner, which creates a new mask with the open scope.
 

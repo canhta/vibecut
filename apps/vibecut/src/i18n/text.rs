@@ -463,6 +463,7 @@ catalog! {
     GraphicWidth { key: "graphic_width", en: "Stroke width", vi: "Độ dày viền" },
     InvalidColor { key: "invalid_color", en: "Not a valid colour", vi: "Màu không hợp lệ" },
     Mask { key: "mask", en: "Mask", vi: "Mặt nạ" },
+    MaskAdd { key: "mask_add", en: "Add mask", vi: "Thêm mặt nạ" },
     MaskCircle { key: "mask_circle", en: "Circle", vi: "Hình tròn" },
     MaskDiamond { key: "mask_diamond", en: "Diamond", vi: "Hình thoi" },
     MaskDone { key: "mask_done", en: "Done", vi: "Xong" },

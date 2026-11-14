@@ -77,13 +77,14 @@ struct Drag {
     last: Option<MaskPath>,
 }
 
-/// The closed path mask the player can edit: the single selected item's first
-/// active path mask with at least three anchors.
+/// The closed path mask the player can edit: the single selected item's first active path
+/// mask of the scope the open tab edits, with at least three anchors.
 fn target(
     project: &project::Project,
     renderer: &render::Renderer<'_>,
     item: ItemId,
     at: Tick,
+    scope: project::MaskScope,
 ) -> Option<Target> {
     let source = project
         .data()
@@ -95,7 +96,9 @@ fn target(
     let mask = source
         .masks
         .iter()
-        .find(|mask| mask.active() && matches!(mask.shape, MaskShape::Path { .. }))?;
+        .find(|mask| {
+            mask.active() && mask.scope == scope && matches!(mask.shape, MaskShape::Path { .. })
+        })?;
     let MaskShape::Path { path } = &mask.shape else {
         return None;
     };
@@ -122,7 +125,7 @@ pub(super) fn show(
     actions: &mut Vec<Action>,
 ) -> bool {
     let Some(target) = crate::editor::context::single(cx.selection())
-        .and_then(|item| target(cx.staged_project(), &renderer(cx)?, item, at))
+        .and_then(|item| target(cx.staged_project(), &renderer(cx)?, item, at, cx.mask_scope))
     else {
         state.drag = None;
         state.marquee = None;
@@ -606,7 +609,7 @@ pub(super) fn remember(
     actions: &mut Vec<Action>,
 ) {
     let Some(target) = crate::editor::context::single(cx.selection())
-        .and_then(|item| target(cx.staged_project(), &renderer(cx)?, item, at))
+        .and_then(|item| target(cx.staged_project(), &renderer(cx)?, item, at, cx.mask_scope))
     else {
         return;
     };

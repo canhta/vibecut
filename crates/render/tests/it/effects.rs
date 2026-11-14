@@ -3849,6 +3849,67 @@ fn an_adjust_mask_limits_the_colour_grade_and_a_clip_mask_cuts_the_picture() {
     assert!(!near(clipped.pixels()[right], plain.pixels()[right]));
 }
 
+#[test]
+fn an_adjust_mask_keeps_the_grade_at_its_place_in_the_effect_stack() {
+    use project::*;
+    let effect = |kind: &str, id: &str| effect_definition(kind).unwrap().instance(id);
+    let grade = || {
+        effect_definition("color_grade")
+            .unwrap()
+            .instance("grade")
+            .with("brightness", EffectValue::Scalar(50.0))
+            .unwrap()
+    };
+    let scene = |effects: Vec<EffectInstance>, masked: bool| {
+        let mut data = content_scene(effects).into_data();
+        data.canvas.width = 16;
+        data.canvas.height = 16;
+        if masked {
+            let mut half = Mask::new("half", MaskShape::Rectangle);
+            half.scope = MaskScope::Adjust;
+            half.width = 0.5;
+            half.height = 1.0;
+            half.center_x = -0.25;
+            data.scene_mut().timeline.main.items[0].masks.push(half);
+        }
+        Project::new(data).unwrap()
+    };
+    let render = |project: &Project| {
+        let hooks = Hooks::default();
+        Renderer::new(project, RenderSettings::from_project(project))
+            .unwrap()
+            .render_frame(time::Tick::ZERO, &mut FlatSource, &hooks)
+            .unwrap()
+    };
+    // An invert before and one after the grade: the grade does not commute with them, so any
+    // other position gives a different picture.
+    let stack = || vec![effect("invert", "pre"), grade(), effect("invert", "post")];
+    let without = render(&scene(
+        vec![effect("invert", "pre"), effect("invert", "post")],
+        false,
+    ));
+    let full = render(&scene(stack(), false));
+    let moved = render(&scene(
+        vec![effect("invert", "pre"), effect("invert", "post"), grade()],
+        false,
+    ));
+    let limited = render(&scene(stack(), true));
+    let (left, right) = (8 * 16 + 2, 8 * 16 + 13);
+    let near = |a: [f32; 4], b: [f32; 4]| a.iter().zip(&b).all(|(x, y)| (x - y).abs() < 1e-5);
+    assert!(
+        !near(full.pixels()[left], moved.pixels()[left]),
+        "the stack order changes the picture"
+    );
+    assert!(
+        near(limited.pixels()[left], full.pixels()[left]),
+        "inside the mask the grade runs between the two inverts"
+    );
+    assert!(
+        near(limited.pixels()[right], without.pixels()[right]),
+        "outside it the stack runs without the grade"
+    );
+}
+
 struct SpatialSource {
     size: [u32; 2],
     calls: usize,

@@ -215,6 +215,25 @@ impl State {
         self.picker.as_ref().map(|draft| draft.picker.color)
     }
 
+    /// The mask scope the open tab edits: Adjust only while the one selected clip shows its
+    /// Adjust tab's Mask sub-tab, Clip otherwise. The player binds its gizmos to this scope.
+    pub(in crate::editor) fn edited_mask_scope(
+        &self,
+        project: &project::Project,
+        selection: &BTreeSet<ItemId>,
+        preferences: &crate::preferences::Preferences,
+    ) -> project::MaskScope {
+        let adjust_tab = crate::editor::context::single(selection)
+            .and_then(|item| element_kind(project, item))
+            .and_then(|(kind, _)| preferences.properties_tabs.get(kind.id()))
+            .is_some_and(|tab| tab.as_str() == PropertiesTab::Adjust.id());
+        if adjust_tab && self.adjust_tab == AdjustTab::Mask {
+            project::MaskScope::Adjust
+        } else {
+            project::MaskScope::Clip
+        }
+    }
+
     /// Whether the colour popover's eyedropper is armed: the player samples its next click.
     pub(in crate::editor) fn sampling_colour(&self) -> bool {
         self.picker
