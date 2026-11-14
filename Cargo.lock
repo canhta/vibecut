@@ -6561,6 +6561,7 @@ version = "0.1.0"
 dependencies = [
  "ai",
  "arboard",
+ "bytemuck",
  "captions",
  "chrono",
  "cpal",

@@ -302,13 +302,9 @@ impl FrameEffects<'_> {
             .slice(..)
             .get_mapped_range_mut()
             .map_err(|_| Error::Unsupported("GPU upload mapping"))?;
-        for (index, pixel) in image.pixels().iter().enumerate() {
-            for (channel, value) in pixel.iter().enumerate() {
-                let offset = index * 16 + channel * 4;
-                data.slice(offset..offset + 4)
-                    .copy_from_slice(&value.to_le_bytes());
-            }
-        }
+        // One bulk copy: a per-channel loop costs hundreds of ms per 1080p frame unoptimised.
+        let bytes = bytemuck::cast_slice::<[f32; 4], u8>(image.pixels());
+        data.slice(..bytes.len()).copy_from_slice(bytes);
         drop(data);
         upload.unmap();
         Ok(())
@@ -724,14 +720,8 @@ impl FrameEffects<'_> {
             .slice(..)
             .get_mapped_range()
             .map_err(|_| Error::Unsupported("GPU mapped range"))?;
-        let pixels = data.as_chunks::<16>().0.iter().map(|p| {
-            let mut pixel = [0.0; 4];
-            for (v, bytes) in pixel.iter_mut().zip(p.as_chunks::<4>().0) {
-                *v = f32::from_le_bytes(*bytes);
-            }
-            pixel
-        });
-        let result = Image::from_working_pixels(item.width(), item.height(), pixels, self.hooks);
+        let pixels = bytemuck::pod_collect_to_vec::<u8, [f32; 4]>(&data);
+        let result = Image::from_working_slice(item.width(), item.height(), &pixels, self.hooks);
         drop(data);
         if result.is_ok() {
             self.gpu.work.readbacks.fetch_add(1, Ordering::Relaxed);

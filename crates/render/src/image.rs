@@ -27,11 +27,34 @@ impl Image {
             if n.is_multiple_of(width as usize) {
                 crate::check(hooks)?;
             }
-            let alpha = src.get(3).copied().unwrap_or(0.0);
-            if src.iter().any(|v| !v.is_finite() || *v < 0.0 || *v > alpha) || alpha > 1.0 {
+            if !working_pixel(src) {
                 return Err(Error::Invalid("working pixel"));
             }
             *dst = src;
+        }
+        Ok(out)
+    }
+    /// `from_working_pixels` over a slice: one validation pass, then one bulk copy.
+    /// Same refusals and errors; nothing is stored when any pixel is refused.
+    pub fn from_working_slice(
+        width: u32,
+        height: u32,
+        pixels: &[[f32; 4]],
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<Self> {
+        if pixels.len() as u64 != Self::bytes(width, height)? / 16 {
+            return Err(Error::Invalid("working pixel count"));
+        }
+        let mut out = Self::new(width, height, [0.0; 4], hooks)?;
+        for (row, source) in pixels
+            .chunks_exact(width as usize)
+            .zip(out.pixels.chunks_exact_mut(width as usize))
+        {
+            crate::check(hooks)?;
+            if !row.iter().all(|pixel| working_pixel(*pixel)) {
+                return Err(Error::Invalid("working pixel"));
+            }
+            source.copy_from_slice(row);
         }
         Ok(out)
     }
@@ -326,6 +349,14 @@ impl Image {
 pub struct Rgba8 {
     pub bytes: Vec<u8>,
     _lease: Box<dyn Reservation>,
+}
+/// A premultiplied working pixel: finite channels in 0..=alpha and alpha at most 1.
+fn working_pixel(pixel: [f32; 4]) -> bool {
+    let alpha = pixel[3];
+    alpha <= 1.0
+        && pixel
+            .iter()
+            .all(|v| v.is_finite() && *v >= 0.0 && *v <= alpha)
 }
 pub(crate) fn color(bytes: [u8; 4]) -> [f32; 4] {
     let a = f32::from(bytes.get(3).copied().unwrap_or(0)) / 255.0;
@@ -640,5 +671,44 @@ mod tests {
             );
         }
         assert!(Image::from_rgba8_strided(1, 1, &[255, 0, 0, 128], 4, true, 1, &Hooks).is_err());
+    }
+    #[test]
+    fn working_slice_matches_the_iterator_constructor_and_refuses_the_same_pixels() {
+        let good = [
+            [0.1, 0.2, 0.3, 0.5],
+            [0.0; 4],
+            [1.0; 4],
+            [0.5, 0.0, 0.0, 0.5],
+        ];
+        let by_iterator = Image::from_working_pixels(2, 2, good.iter().copied(), &Hooks).unwrap();
+        let by_slice = Image::from_working_slice(2, 2, &good, &Hooks).unwrap();
+        assert_eq!(by_iterator.pixels(), by_slice.pixels());
+        for bad in [
+            [f32::NAN, 0.0, 0.0, 0.5],
+            [f32::INFINITY, 0.0, 0.0, 1.0],
+            [-0.1, 0.0, 0.0, 0.5],
+            [0.6, 0.0, 0.0, 0.5],
+            [0.0, 0.0, 0.0, 1.5],
+        ] {
+            for at in 0..good.len() {
+                let mut pixels = good;
+                pixels[at] = bad;
+                assert!(
+                    matches!(
+                        Image::from_working_slice(2, 2, &pixels, &Hooks),
+                        Err(Error::Invalid("working pixel"))
+                    ),
+                    "{bad:?} at {at}"
+                );
+                assert!(matches!(
+                    Image::from_working_pixels(2, 2, pixels.iter().copied(), &Hooks),
+                    Err(Error::Invalid("working pixel"))
+                ));
+            }
+        }
+        assert!(matches!(
+            Image::from_working_slice(2, 2, &good[..3], &Hooks),
+            Err(Error::Invalid("working pixel count"))
+        ));
     }
 }
