@@ -1,6 +1,6 @@
 # Keyboard
 
-`Ctrl` means Cmd on macOS and Ctrl on Windows/Linux; `Alt` means Option on macOS. Menus and the shortcuts dialog show platform glyphs. Defaults live in the app action registry; the table below is generated from it.
+`Ctrl` means Cmd on macOS and Ctrl on Windows/Linux; `Alt` means Option on macOS. Menus and the shortcuts dialog show platform glyphs (`[` `]` and other symbol keys as the symbol). The macOS menu bar (File, Edit, View, Window, Help) runs registry actions and shows their current chords. Defaults live in the app action registry; the table below is generated from it.
 
 <!-- BEGIN GENERATED KEYMAP -->
 | Action | Category | Default keys | Engine command | UI owner |

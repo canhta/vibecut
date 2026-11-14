@@ -11,6 +11,7 @@ attach, and imports every window. A window never names it; each window module (`
 | `registry` | `Workspace`: Home's lifecycle worker, the project windows by identity, focus, Save As rekeying, lane-preference pruning and the per-frame tick. |
 | `viewports` | Draws Home, each project viewport and the Shorts viewport, and carries their `Action` values out. |
 | `window` | `EditorWindow`: one editor, its writer lease, pending save and close flow. |
+| `native_menu` | The macOS menu bar built from the registry's `MENUS` (muda; no `unsafe`): a row queues its action id, and the focused project runs it through `Editor::menu_action`, refused while a dialog is open and typed into a focused text field instead. The bar is rebuilt when the language or a shown chord changes. Window > Home brings Home forward without leaving the project. |
 | `chrome` | The window placeholders and prompts: loading, recovery, error, close. |
 | `picker` | Native file pickers a window requests, polled without blocking and delivered to its editor. The shorts window's source and export dialogs are requested through `Action::Pick`, owned by the workspace and delivered to shorts state. |
 | `work` | Background lifecycle jobs (discover, open, create, recover, persist), their worker and their polling. |

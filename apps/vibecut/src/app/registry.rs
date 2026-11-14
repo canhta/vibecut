@@ -43,6 +43,8 @@ pub struct Workspace {
     /// Prompts Home's agent card typed for projects that are still opening, by canonical
     /// path; the editor that registers for the path starts its first turn with the prompt.
     pub(super) agent_prompts: BTreeMap<PathBuf, String>,
+    /// The native menu bar (macOS); a no-op elsewhere.
+    pub(super) menu: super::native_menu::Menu,
 }
 
 impl Workspace {
@@ -98,6 +100,7 @@ impl Workspace {
             lane_paths: BTreeMap::new(),
             lane_prune_key: Vec::new(),
             agent_prompts: BTreeMap::new(),
+            menu: Default::default(),
         })
     }
     pub fn control_budget(&self) -> ByteBudget {

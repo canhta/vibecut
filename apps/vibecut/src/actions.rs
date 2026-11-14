@@ -376,7 +376,10 @@ impl ActionSpec {
 
 /// Every key, menu and button action in the desktop app.
 mod editor;
+mod menu;
 mod shell;
+
+pub use menu::{MENUS, Menu, MenuItem};
 
 use std::sync::OnceLock;
 
@@ -1099,6 +1102,21 @@ mod tests {
             } else {
                 assert_eq!(outcome, Dispatch::NoMatch);
                 assert_eq!(input.events.len(), 1);
+            }
+        }
+    }
+
+    #[test]
+    fn menu_rows_are_registry_actions_whose_chords_need_command() {
+        for menu in MENUS {
+            for item in menu.items {
+                let MenuItem::Action(id) = item else { continue };
+                let spec = action(id).unwrap_or_else(|| panic!("{id} is not registered"));
+                for chord in spec.defaults {
+                    let chord = Chord::parse(chord).unwrap();
+                    // A plain key as a menu equivalent would steal typing from text fields.
+                    assert!(chord.mods.command, "{id} {chord}");
+                }
             }
         }
     }

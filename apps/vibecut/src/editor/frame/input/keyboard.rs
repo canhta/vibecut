@@ -118,6 +118,61 @@ impl Editor {
             }
         }
     }
+    /// A native menu row: the registry action a key press would run, refused in the same
+    /// moments. A focused text field takes the row's chord as typing instead.
+    pub fn menu_action(&mut self, ctx: &egui::Context, id: &str) {
+        let context = self.dispatch_context(ctx);
+        if context.overlay_open || context.recording || self.dialogs.export.is_open() {
+            return;
+        }
+        if context.text_input {
+            self.text_chord(ctx, id);
+        } else {
+            self.action(id);
+        }
+    }
+    /// Hand the action's first chord to the focused text field: clipboard chords as the
+    /// events the field reads, any other (undo, select all) as the key itself.
+    fn text_chord(&self, ctx: &egui::Context, id: &str) {
+        use crate::actions::Chord;
+        let Some(chord) = crate::actions::action(id)
+            .and_then(|spec| {
+                self.preferences
+                    .keybindings
+                    .effective_chords(spec)
+                    .into_iter()
+                    .next()
+            })
+            .and_then(|text| Chord::parse(&text).ok())
+        else {
+            return;
+        };
+        let plain = chord.mods.command && !chord.mods.shift && !chord.mods.alt;
+        let event = match chord.key {
+            egui::Key::C if plain => egui::Event::Copy,
+            egui::Key::X if plain => egui::Event::Cut,
+            egui::Key::V if plain => {
+                match arboard::Clipboard::new().and_then(|mut board| board.get_text()) {
+                    Ok(text) => egui::Event::Paste(text),
+                    Err(_) => return,
+                }
+            }
+            key => egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers {
+                    alt: chord.mods.alt,
+                    ctrl: false,
+                    shift: chord.mods.shift,
+                    mac_cmd: chord.mods.command,
+                    command: chord.mods.command,
+                },
+            },
+        };
+        ctx.input_mut(|input| input.events.push(event));
+    }
     pub(in crate::editor) fn dispatch_context(&self, ctx: &egui::Context) -> DispatchContext {
         DispatchContext {
             overlay_open: self
