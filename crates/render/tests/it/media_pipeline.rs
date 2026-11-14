@@ -1034,7 +1034,7 @@ fn explicitly_accepted_keyframe_cut_copies_video_and_reencodes_exact_audio_windo
 }
 
 #[test]
-fn copy_publishes_only_the_streams_selected_by_decode() {
+fn heavy_copy_publishes_only_the_streams_selected_by_decode() {
     if !tools() {
         return;
     }
@@ -1700,7 +1700,7 @@ fn windowed_sources_preserve_full_compositor_pixels_and_blur_reduction_fallbacks
 }
 
 #[test]
-fn visual_animation_disables_video_stream_copy() {
+fn heavy_visual_animation_disables_video_stream_copy() {
     if !tools() {
         return;
     }
@@ -2016,7 +2016,7 @@ fn export_item_mute_and_gain_change_samples() {
 }
 
 #[test]
-fn export_keeps_track_picture_and_audio_flags_independent() {
+fn heavy_export_keeps_track_picture_and_audio_flags_independent() {
     if !tools() {
         return;
     }

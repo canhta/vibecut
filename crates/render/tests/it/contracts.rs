@@ -947,7 +947,7 @@ fn preview_audio_mix_obeys_item_gain_and_mute() {
 }
 
 #[test]
-fn publication_preserves_destination_on_cancel_fail_finalize_and_mux_limit() {
+fn heavy_publication_preserves_destination_on_cancel_fail_finalize_and_mux_limit() {
     if !tools() {
         return;
     }
