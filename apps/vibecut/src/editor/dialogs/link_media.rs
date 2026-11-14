@@ -86,7 +86,7 @@ fn real_hasher() -> Hasher {
             match asset.relink_with_cancel(
                 path,
                 || cancelled.load(Ordering::Relaxed),
-                |done, total| progress(done, total),
+                &mut *progress,
             ) {
                 Ok(relinked) => Hashed::Match(relinked),
                 Err(media::MediaError::Cancelled) => Hashed::Cancelled,
@@ -510,9 +510,9 @@ fn ellipsize(path: &Path) -> String {
     }
     let tail = PATH_CHARS * 2 / 3;
     let head = PATH_CHARS - tail - 1;
-    let mut out: String = chars[..head].iter().collect();
+    let mut out: String = chars.iter().take(head).collect();
     out.push('\u{2026}');
-    out.extend(&chars[chars.len() - tail..]);
+    out.extend(chars.iter().skip(chars.len() - tail));
     out
 }
 
