@@ -37,7 +37,7 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 | Area | Rows | Done | Partial | Missing | Differs | Ours | Out of scope | UI Matches | UI Differs | UI Proposed | UI Not captured |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | [Home](home.md#home-home) | 34 | 15 | 4 | 5 | 0 | 4 | 6 | 9 | 1 | 6 | 8 |
-| [Header and sub-navigation](shell.md#header-and-sub-navigation-shell) | 37 | 21 | 5 | 3 | 0 | 3 | 5 | 13 | 1 | 11 | 6 |
+| [Header and sub-navigation](shell.md#header-and-sub-navigation-shell) | 37 | 22 | 5 | 2 | 0 | 3 | 5 | 14 | 1 | 11 | 5 |
 | [Window and panel layout](shell.md#window-and-panel-layout-layout) | 11 | 6 | 1 | 2 | 0 | 1 | 1 | 6 | 0 | 1 | 1 |
 | [Settings](shell.md#settings-set) | 26 | 7 | 5 | 8 | 0 | 4 | 2 | 0 | 2 | 14 | 0 |
 | [Keyboard shortcuts](shell.md#keyboard-shortcuts-shortcut) | 26 | 20 | 2 | 2 | 1 | 1 | 0 | 2 | 0 | 11 | 0 |

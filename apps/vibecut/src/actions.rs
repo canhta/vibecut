@@ -277,6 +277,11 @@ pub enum UiAction {
     ExportKeybindings,
     OpenHelp,
     OpenFeedback,
+    OpenAbout,
+    CloseAbout,
+    ShowLicences,
+    OpenTerms,
+    OpenPrivacy,
 }
 
 /// Direction of one `timeline.volume_up` or `timeline.volume_down` press.

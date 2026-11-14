@@ -174,6 +174,11 @@
 | `shortcuts.open` — Keyboard shortcuts | View | — | — | shortcuts dialog |
 | `app.help` — Help | View | — | — | help |
 | `app.feedback` — Feedback | View | — | — | help |
+| `app.about` — About | View | — | — | about dialog |
+| `app.about.close` — Close About | View | — | — | about dialog |
+| `app.licences` — Third-party licences | View | — | — | about dialog |
+| `app.terms` — Terms of use | View | — | — | help |
+| `app.privacy` — Privacy | View | — | — | help |
 | `playback.seek` — Seek to time | Playback | — | — | playback transport |
 | `preview.set_zoom` — Set preview zoom | View | — | — | preview view |
 | `ui.prefs.set` — Change a setting | View | — | — | preference store |

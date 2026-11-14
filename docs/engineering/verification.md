@@ -8,6 +8,7 @@ Run the smallest check that covers the change; Rust from agent workers is checke
 |---|---|
 | Markdown, tickets, assets | `cargo xtask docs` |
 | UI strings | `cargo xtask i18n` |
+| Shipped crate licence list | `cargo xtask licences` after a dependency change; `cargo xtask checks` fails on drift |
 | `JsonSchema` metadata, including Rust doc comments on derived input types | `cargo xtask catalog`, then the existing `control::catalog::checked_in_registry_digest_and_command_reference_match_the_registry` test |
 | Rust, agent worker | No builds or tests. Code is compile-clean by reading and updates every caller of a changed signature in the same commit; the coordinator merges the reviewed branch unbuilt |
 | Rust, after a batch of merges | One combined build on `main`: `cargo check --workspace --all-targets`, `cargo xtask catalog`, `cargo test` for every crate the batch touched, `cargo xtask checks`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check`. Failures are fixed at their root on `main` |

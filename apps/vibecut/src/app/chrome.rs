@@ -4,7 +4,10 @@ use crate::{
     Editor, Error, egui,
     i18n::{self, Text},
     kit::{self as icons, Icon},
-    services::lifecycle::{EditorAction, FEEDBACK_URL, HELP_URL},
+    services::{
+        about,
+        lifecycle::{EditorAction, FEEDBACK_URL, HELP_URL},
+    },
 };
 use engine::control::Error as EngineError;
 
@@ -127,6 +130,15 @@ impl EditorWindow {
                     }
                     EditorAction::OpenFeedback => {
                         ui.ctx().open_url(egui::OpenUrl::new_tab(FEEDBACK_URL));
+                        Ok(())
+                    }
+                    EditorAction::OpenTerms => {
+                        ui.ctx().open_url(egui::OpenUrl::new_tab(about::TERMS_URL));
+                        Ok(())
+                    }
+                    EditorAction::OpenPrivacy => {
+                        ui.ctx()
+                            .open_url(egui::OpenUrl::new_tab(about::PRIVACY_URL));
                         Ok(())
                     }
                     EditorAction::SaveAs => self.save_from_ui(ui.ctx(), false, false, true),

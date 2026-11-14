@@ -1,5 +1,6 @@
 //! Integration tests share one binary and one copy of their helpers.
 
+mod about;
 mod agent_chat;
 mod canvas_settings;
 mod chapters;

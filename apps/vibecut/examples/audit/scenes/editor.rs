@@ -546,6 +546,24 @@ pub(super) fn import_progress(theme: Theme, scale: f32) -> Result<AppHarness, Fa
     Ok(app)
 }
 
+/// The About dialog as the header menu opens it, or its third-party licence page.
+pub(super) fn about_dialog(
+    theme: Theme,
+    scale: f32,
+    locale: Locale,
+    licences: bool,
+) -> Result<AppHarness, Failure> {
+    let mut editor = empty_editor(theme, locale)?;
+    editor.activate(if licences {
+        "app.licences"
+    } else {
+        "app.about"
+    })?;
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, [1280.0, 800.0]);
+    app.run_steps(6);
+    Ok(app)
+}
+
 /// The Settings modal as Window / Settings opens it (Draft tab), or on the Edit tab.
 pub(super) fn settings_dialog(
     theme: Theme,

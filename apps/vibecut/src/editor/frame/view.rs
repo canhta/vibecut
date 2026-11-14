@@ -230,6 +230,7 @@ impl Editor {
         self.show_media_delete_dialog(ui.ctx());
         self.show_media_rename_dialog(ui.ctx());
         self.show_project_delete_dialog(ui.ctx());
+        self.show_about_dialog(ui.ctx());
         self.show_import_overlay(ui.ctx());
         self.show_drop_overlay(ui.ctx(), hovering);
         self.show_toast(ui.ctx());

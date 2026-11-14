@@ -14,7 +14,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | SHELL-05 | Menu: Back to home | Done | Proposed | 2026-11-14b row 19 | Closes the saved project |
 | SHELL-06 | Menu: Settings | Done | Proposed | 110747 | |
 | SHELL-07 | Menu: Layout presets | Partial | Differs | 111918 | Only Reset layout |
-| SHELL-08 | Menu: About, terms | Missing | Not captured | 100436 | No About dialog |
+| SHELL-08 | Menu: About, terms | Done | Matches | 100436, [editor](../ui/editor.md#about) | Terms, Privacy and licence list are ours, unmeasured |
 | SHELL-09 | Menu: Help | Done | Not captured | | |
 | SHELL-10 | Feedback, theme, language, models | Ours | Proposed | | Reference has no light theme |
 | SHELL-11 | Project save, save as, delete | Ours | Proposed | web 02-editor-shell.md | Ctrl+S with a Saved toast |

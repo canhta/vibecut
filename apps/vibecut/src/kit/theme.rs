@@ -357,6 +357,8 @@ pub(crate) mod radius {
     pub const UPLOAD: u8 = 8;
     /// Dialogs and toasts: the export capture's corner applied app-wide.
     pub const DIALOG: u8 = 12;
+    /// About app icon corner: ours, unmeasured (the reference tile is a rounded square).
+    pub const ABOUT_ICON: u8 = 14;
 }
 /// Inter-equivalent sizes inferred from measured capital heights.
 pub(crate) mod type_size {
@@ -372,6 +374,8 @@ pub(crate) mod type_size {
     pub const CAPTION: f32 = 11.0;
     /// Dialog title: the export capture's title applied app-wide.
     pub const DIALOG_TITLE: f32 = 18.0;
+    /// About app name: capital height 12 px in shot 100436, divided by 0.72.
+    pub const ABOUT_NAME: f32 = 16.0;
 }
 /// Measured boxes and row pitches from the desktop capture set.
 pub(crate) mod size {
@@ -514,6 +518,21 @@ pub(crate) mod size {
     pub const PLAYER_RULER_TICK: f32 = 4.0;
     pub const PLAYER_RULER_TICK_MAJOR: f32 = 12.0;
     pub const PLAYER_RULER_LABEL_GAP: f32 = 5.0;
+    /// About dialog (reference desktop 9.7.1, capture 2026-11-14 shot 100436, logical px = native / 2):
+    /// the window is 338 x 282 with a 36 px title bar; the 64 px app icon sits 24 px under it, its
+    /// version pill (20 px high) starts at the icon's right edge, the name is centred 16.5 px under
+    /// the icon, the divider is 24 px inset and 150 px under the title bar, and the copyright line is
+    /// centred 40 px above the bottom.
+    pub const ABOUT_WIDTH: f32 = 338.0;
+    pub const ABOUT_HEIGHT: f32 = 282.0;
+    pub const ABOUT_TITLE_BAR: f32 = 36.0;
+    pub const ABOUT_ICON: f32 = 64.0;
+    pub const ABOUT_ICON_TOP: f32 = 24.0;
+    pub const ABOUT_BADGE_HEIGHT: f32 = 20.0;
+    pub const ABOUT_NAME_CENTRE: f32 = 16.5;
+    pub const ABOUT_DIVIDER_TOP: f32 = 150.0;
+    pub const ABOUT_INSET: f32 = 24.0;
+    pub const ABOUT_COPYRIGHT_BOTTOM: f32 = 40.0;
     /// Most labelled spans along one ruler. 100216 and 111304 show 700 units over 70.6 px on a
     /// 391 px ruler (5.5 spans), 1000 units over 101 px on a 551 px ruler (5.4 spans, 7.7 at
     /// 700) and 700 over 71 px on a 442 px ruler (6.2 spans). The count sits between 6.2 and
