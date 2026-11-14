@@ -91,7 +91,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | TL-69 | Snap edge lines | Partial | Proposed | 14b/103040 | |
 | TL-70 | Trim past source end | Differs | Differs | 14b/103022 | Ours shows a pill, deliberate |
 | TL-71 | Refusal pill | Ours | Proposed | [ui/editor.md](../ui/editor.md#timeline-gestures) | |
-| TL-72 | Drop on clip = Replace | Partial | Proposed | web flows/10 | Label and the shorter-media refusal toast are built; a longer or equal drop is uncaptured and keeps the new-clip placement |
+| TL-72 | Drop on clip = Replace | Partial | Proposed | web flows/10 | Label, the shorter-media refusal toast and the equal-or-longer replace (`timeline.replace_media`, keeps start, length, speed, volume, effects, masks and keyframes; source in point 0) are built; the success behaviour is unverified against a capture and the segment-picker dialog is not built |
 
 ### Markers and snapping
 | ID | Item | Function | UI/UX | Evidence | Gap / note |

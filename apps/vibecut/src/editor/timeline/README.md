@@ -149,7 +149,7 @@ the lanes inserts through the same `timeline.insert` with the placement the drop
 row takes `Track` (kind must match, locked rows refuse), a gap takes `Above`/`Below`, and
 space below the last row takes `Below` that row, so it creates a track. A gap across the
 main/audio boundary from the dragged kind lands on that boundary instead: visual media
-directly above the main track, audio directly below it. A single asset over an unlocked clip of its kind labels the clip `Replace` (`State::replace_hint`, `Inspection::replace_hint`); released with a known duration below the clip's length it inserts nothing and raises `Action::Toast` with `Text::ReplaceTooShort`. A longer or equal drop is uncaptured and keeps the placement above; it does not call `timeline.replace_media`. The drag is carried by
+directly above the main track, audio directly below it. A single asset over an unlocked clip of its kind labels the clip `Replace` (`State::replace_hint`, `Inspection::replace_hint`); released with a known duration below the clip's length it inserts nothing and raises `Action::Toast` with `Text::ReplaceTooShort`. A longer or equal drop replaces the clip: the area pushes `Action::Command(Command::ReplaceMedia { items: [item], asset })`, one undoable `timeline.replace_media`, and inserts nothing. Several assets dragged together and a still of unknown duration are not a replace and keep the placement above. The drag is carried by
 `Context::media_drag` and the frame's `Action::InsertMedia`; the hint reuses `DropZone`. Solid colour is generated
 Video content, distinct from Sticker tracks. Lock protects item structure and properties,
 masks, effects and keyframes; selection, playback and track metadata stay usable. Dragging
