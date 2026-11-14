@@ -7,6 +7,9 @@ use super::{
 use crate::i18n;
 use media::AssetId;
 
+/// The narrowest search field the single-row media toolbar keeps.
+const MIN_SEARCH: f32 = 48.0;
+
 impl View<'_> {
     pub(super) fn browser(&mut self, ui: &mut egui::Ui) {
         let area = ui.available_rect_before_wrap();
@@ -195,14 +198,21 @@ impl View<'_> {
             return theme::size::CONTROL;
         }
 
+        // The reference keeps one row down to its narrowest column and squeezes the search
+        // field (2026-11-14b frame 111918): below 404 px the Record slot is icon-only, the
+        // search takes what the left and right tools leave, and only a column too narrow for a
+        // 48 px search stacks the tools under the first row.
         let compact = width < 404.0;
-        let three_rows = width < 260.0;
-        let height = if three_rows {
-            88.0
-        } else if compact {
-            56.0
-        } else {
+        let tools_width = if compact { 88.0 } else { 103.0 };
+        let search_left = if compact { 110.0 } else { 150.0 };
+        let one_row = !compact || width - search_left - 6.0 - tools_width >= MIN_SEARCH;
+        let three_rows = !one_row && width < 260.0;
+        let height = if one_row {
             24.0
+        } else if three_rows {
+            88.0
+        } else {
+            56.0
         };
         let (row, _) = ui.allocate_exact_size(Vec2::new(width, height), egui::Sense::hover());
         let importing = self.cx.importing;
@@ -241,7 +251,14 @@ impl View<'_> {
             );
             let rect = Rect::from_min_size(
                 row.min + Vec2::new(80.0, 0.0),
-                Vec2::new(if width < 150.0 { 24.0 } else { 62.0 }, 24.0),
+                Vec2::new(
+                    if (compact && one_row) || width < 150.0 {
+                        24.0
+                    } else {
+                        62.0
+                    },
+                    24.0,
+                ),
             );
             ui.scope_builder(
                 egui::UiBuilder::new()
@@ -266,14 +283,24 @@ impl View<'_> {
                 },
             );
         }
-        let search = Rect::from_min_size(
-            row.min
-                + Vec2::new(
-                    if compact { 0.0 } else { 150.0 },
-                    if compact { 32.0 } else { 0.0 },
+        let search = if one_row {
+            Rect::from_min_size(
+                row.min + Vec2::new(search_left, 0.0),
+                Vec2::new(
+                    if compact {
+                        (width - search_left - 6.0 - tools_width).min(148.0)
+                    } else {
+                        148.0
+                    },
+                    24.0,
                 ),
-            Vec2::new(width.min(148.0), 24.0),
-        );
+            )
+        } else {
+            Rect::from_min_size(
+                row.min + Vec2::new(0.0, 32.0),
+                Vec2::new(width.min(148.0), 24.0),
+            )
+        };
         ui.scope_builder(
             egui::UiBuilder::new()
                 .id_salt("media.search.tool")
@@ -282,13 +309,19 @@ impl View<'_> {
         );
         let offset = if three_rows {
             0.0
+        } else if compact && one_row {
+            width - tools_width
         } else if compact {
             150.0
         } else {
             316.0
         };
         let positions = if compact {
-            [(offset, 24.0), (offset + 32.0, 32.0), (offset + 72.0, 24.0)]
+            if one_row {
+                [(offset, 24.0), (offset + 28.0, 32.0), (offset + 64.0, 24.0)]
+            } else {
+                [(offset, 24.0), (offset + 32.0, 32.0), (offset + 72.0, 24.0)]
+            }
         } else {
             [(offset, 24.0), (offset + 34.0, 32.0), (offset + 79.0, 24.0)]
         };

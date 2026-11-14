@@ -946,6 +946,22 @@ fn search_no_matches_clear_restores_every_asset() {
         &[(1, "bravo.mp4"), (2, "alpha.mp4")],
     ));
     harness.run_steps(3);
+    // The toolbar keeps one 24 px row at the 398 px media column, search included.
+    let tools: Vec<egui::Rect> = [
+        "file.import",
+        "text.insert",
+        "assets.search",
+        "media.view",
+        "media.sort",
+        "media.insert",
+    ]
+    .iter()
+    .map(|id| widget_rect(&harness, id))
+    .collect();
+    for rect in &tools {
+        assert!((rect.top() - tools[0].top()).abs() < 4.0, "{tools:?}");
+        assert!(rect.height() <= 24.01, "{tools:?}");
+    }
     let before = harness.state().session.project().clone();
     click(&mut harness, "assets.search");
     harness

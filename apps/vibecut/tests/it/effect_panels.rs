@@ -52,6 +52,26 @@ fn paints_text(h: &Harness<Editor>, expected: &str, region: egui::Rect) -> bool 
     false
 }
 
+/// Whether the text shape painting `expected` shows it whole, with no ellipsis in its glyphs.
+fn paints_untruncated(h: &Harness<Editor>, expected: &str) -> bool {
+    let mut pending: Vec<_> = h.output().shapes.iter().map(|s| &s.shape).collect();
+    while let Some(shape) = pending.pop() {
+        match shape {
+            egui::Shape::Vec(children) => pending.extend(children),
+            egui::Shape::Text(text) if text.galley.text() == expected => {
+                return !text
+                    .galley
+                    .rows
+                    .iter()
+                    .flat_map(|row| row.glyphs.iter())
+                    .any(|glyph| glyph.chr == '\u{2026}');
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
 #[test]
 fn bilingual_effect_tiles_search_headers_parameters_and_add_feedback_follow_locale() {
     use vibecut::i18n::Locale;
@@ -980,6 +1000,11 @@ fn effects_grid_header_names_the_selected_sidebar_entry() {
     assert!(
         paints_text(&harness, "All", grid(&harness)),
         "default header"
+    );
+    // The group header fits its 104 px row at the 398 px media column.
+    assert!(
+        paints_untruncated(&harness, "Video effects"),
+        "the Video effects header is not elided"
     );
     click(&mut harness, "effects.category.stylize");
     assert!(
@@ -3220,6 +3245,22 @@ fn auto_removal_enables_tunes_and_disables_with_one_undo_step_each() {
     );
     assert_eq!(harness.state().session.history_len().0, history.0 + 1);
     assert!(has_widget(&harness, "inspector.background_removal_feather"));
+    // Auto and Custom removal are checkboxes with the box left of the label (100332): the
+    // control spans box and label from one left edge, not a switch at the row's right.
+    let auto = widget_rect(&harness, "inspector.auto_removal");
+    let custom = widget_rect(&harness, "inspector.custom_removal");
+    assert!(
+        (auto.left() - custom.left()).abs() < 0.5,
+        "{auto:?} {custom:?}"
+    );
+    assert!(
+        auto.width() > 40.0 && custom.width() > 40.0,
+        "{auto:?} {custom:?}"
+    );
+    assert!(
+        auto.right() < widget_rect(&harness, "inspector.chroma_key.toggle").left(),
+        "the checkbox and its label sit left of the Chroma key switch"
+    );
     // No weights are installed: the row links to the model manager and keeps a retry; the clip
     // renders unmatted meanwhile.
     assert!(has_widget(&harness, "inspector.auto_removal.models"));

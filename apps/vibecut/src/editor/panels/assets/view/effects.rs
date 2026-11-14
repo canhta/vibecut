@@ -50,7 +50,7 @@ impl View<'_> {
             [theme::size::SUBNAV_BUTTON, theme::size::CONTROL],
             egui::Button::new(
                 egui::RichText::new(self.tr(label))
-                    .size(theme::type_size::CHROME)
+                    .size(theme::type_size::BODY)
                     .color(if selected {
                         theme::accent(self.cx.preferences.dark)
                     } else {
@@ -83,7 +83,7 @@ impl View<'_> {
             [theme::size::SUBNAV_BUTTON, theme::size::SUBNAV_GROUP],
             egui::Button::new(
                 egui::RichText::new(label)
-                    .size(theme::type_size::CHROME)
+                    .size(theme::type_size::BODY)
                     .color(if active {
                         theme::accent(dark)
                     } else {

@@ -78,6 +78,7 @@ pub(crate) enum Icon {
     SquaresFour,
     SpeakerHigh,
     SpeakerSlash,
+    Star,
     Repeat,
     Sticker,
     Subtitles,
@@ -156,6 +157,7 @@ impl Icon {
         Self::SquaresFour,
         Self::SpeakerHigh,
         Self::SpeakerSlash,
+        Self::Star,
         Self::Repeat,
         Self::Sticker,
         Self::Subtitles,
@@ -233,6 +235,7 @@ impl Icon {
             Self::SquaresFour => "squares-four",
             Self::SpeakerHigh => "speaker-high",
             Self::SpeakerSlash => "speaker-slash",
+            Self::Star => "star",
             Self::Repeat => "repeat",
             Self::Sticker => "sticker",
             Self::Subtitles => "subtitles",
@@ -508,6 +511,10 @@ const ICONS: &[(&str, &[u8])] = &[
     (
         "speaker-slash",
         include_bytes!("../../../../assets/icons/phosphor/regular/speaker-slash.svg"),
+    ),
+    (
+        "star",
+        include_bytes!("../../../../assets/icons/phosphor/regular/star.svg"),
     ),
     (
         "repeat",

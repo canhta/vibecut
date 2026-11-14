@@ -281,24 +281,28 @@ impl Panel<'_, '_> {
             ),
         ];
         let mut chosen = None;
-        let group = ui.horizontal(|ui| {
-            ui.set_min_height(theme::size::PROPERTY_ROW);
-            ui.label(self.tr(Text::TextCase));
-            ui.spacing_mut().item_spacing.x = 0.0;
-            for (value, word, glyph, label) in options {
-                let on = case == value;
-                let button =
-                    egui::Button::new(egui::RichText::new(self.tr(glyph)).strong()).selected(on);
-                let response = ui
-                    .add_sized([CASE_CELL_WIDTH, theme::size::FIELD], button)
-                    .on_hover_text(self.tr(label));
-                self.remember(format!("inspector.text_case.{word}"), &response);
-                if response.clicked() {
-                    chosen = Some(if on { "as_typed" } else { word });
-                }
+        // The cells start in the 120 px value column, level with Font and Pattern (103613).
+        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        self.row_label(ui, row, self.tr(Text::TextCase));
+        value_ui.spacing_mut().item_spacing.x = 0.0;
+        for (value, word, glyph, label) in options {
+            let on = case == value;
+            let button =
+                egui::Button::new(egui::RichText::new(self.tr(glyph)).strong()).selected(on);
+            let response = value_ui
+                .add_sized([CASE_CELL_WIDTH, theme::size::FIELD], button)
+                .on_hover_text(self.tr(label));
+            self.remember(format!("inspector.text_case.{word}"), &response);
+            if response.clicked() {
+                chosen = Some(if on { "as_typed" } else { word });
             }
-        });
-        self.remember("inspector.text_case", &group.response);
+        }
+        let group = ui.interact(
+            egui::Rect::from_min_max(value_ui.max_rect().min, row.max),
+            ui.id().with("inspector.text_case"),
+            egui::Sense::hover(),
+        );
+        self.remember("inspector.text_case", &group);
         if let Some(word) = chosen {
             self.set_item_field(item, "text_case", word);
         }
