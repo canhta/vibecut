@@ -30,6 +30,8 @@ pub(in crate::editor) enum Note {
         text: String,
         detail: Option<String>,
     },
+    /// A short one-line toast at the top of the media panel.
+    MediaToast(String),
     ClearToast,
     /// Resync the preview with the session snapshot.
     Sync,
@@ -138,6 +140,11 @@ impl<'a> Port<'a> {
             text: text.to_owned(),
             detail,
         });
+    }
+
+    /// Show a short toast at the top of the media panel.
+    pub(in crate::editor) fn media_toast(&mut self, text: &str) {
+        self.notes.push(Note::MediaToast(text.to_owned()));
     }
 
     pub(in crate::editor) fn clear_toast(&mut self) {

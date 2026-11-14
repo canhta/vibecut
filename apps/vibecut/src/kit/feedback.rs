@@ -93,10 +93,28 @@ pub(crate) fn toast<R>(
     key: &str,
     add_contents: impl FnOnce(&mut Ui) -> R,
 ) -> R {
+    let area = egui::Area::new(egui::Id::unique(key))
+        .anchor(Align2::RIGHT_BOTTOM, Vec2::splat(-space::XL));
+    surface(ctx, area, add_contents)
+}
+
+/// The same 320 px toast, hung from `top_centre` for a surface that owns the strip
+/// at its top (the media panel). The caller draws the rows.
+pub(crate) fn toast_top<R>(
+    ctx: &egui::Context,
+    key: &str,
+    top_centre: egui::Pos2,
+    add_contents: impl FnOnce(&mut Ui) -> R,
+) -> R {
+    let area = egui::Area::new(egui::Id::unique(key))
+        .fixed_pos(top_centre)
+        .pivot(Align2::CENTER_TOP);
+    surface(ctx, area, add_contents)
+}
+
+fn surface<R>(ctx: &egui::Context, area: egui::Area, add_contents: impl FnOnce(&mut Ui) -> R) -> R {
     let dark = ctx.global_style().visuals.dark_mode;
-    egui::Area::new(egui::Id::unique(key))
-        .order(egui::Order::Foreground)
-        .anchor(Align2::RIGHT_BOTTOM, Vec2::splat(-space::XL))
+    area.order(egui::Order::Foreground)
         .show(ctx, |ui| {
             egui::Frame::new()
                 .fill(super::modal(dark))

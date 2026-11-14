@@ -266,6 +266,13 @@ pub(super) struct Toast {
     pub(super) text: String,
     pub(super) detail: Option<String>,
     pub(super) until: Duration,
+    pub(super) placement: ToastPlacement,
+}
+/// Where a toast is drawn: the bottom-right corner, or the top of the media panel.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum ToastPlacement {
+    Corner,
+    MediaPanel,
 }
 #[derive(Clone, Debug)]
 pub(super) struct AssetRow {

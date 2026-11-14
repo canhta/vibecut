@@ -308,7 +308,19 @@ impl State {
         } else {
             i18n::text(locale, Text::ImportComplete)
         };
-        port.toast(text, Some(detail));
+        // A batch that admitted nothing and failed every file is a damaged-file
+        // refusal: one short line at the media panel, no summary. The typed
+        // failures stay in `import_failures` for diagnostics.
+        let all_failed = self.import_error.is_none()
+            && !self.import_cancelled
+            && self.import_imported == 0
+            && failed_count > 0
+            && unfinished_count == 0;
+        if all_failed {
+            port.media_toast(i18n::text(locale, Text::ImportDamaged));
+        } else {
+            port.toast(text, Some(detail));
+        }
         self.import_total = self.import_total.max(self.import_completed);
     }
 }

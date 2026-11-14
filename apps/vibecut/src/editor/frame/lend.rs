@@ -225,6 +225,7 @@ impl Editor {
             match note {
                 Note::Fail(message) => self.error = Some(message),
                 Note::Toast { text, detail } => self.set_toast(&text, detail),
+                Note::MediaToast(text) => self.set_media_toast(&text),
                 Note::ClearToast => self.toast = None,
                 Note::Sync => self.sync_preview(),
                 Note::ResetSelection { drafts } => {
@@ -307,13 +308,17 @@ impl Editor {
         self.with_assets(|assets, port| assets.apply(port, None, actions));
     }
 
-    pub(in crate::editor) fn show_import_overlay(&mut self, ctx: &egui::Context) {
-        let rect = self
-            .frame
+    /// The media panel's rect as the frame last laid it out.
+    fn media_rect(&self) -> Rect {
+        self.frame
             .panels
             .get("media")
             .copied()
-            .unwrap_or_else(|| Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(320.0, 200.0)));
+            .unwrap_or_else(|| Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(320.0, 200.0)))
+    }
+
+    pub(in crate::editor) fn show_import_overlay(&mut self, ctx: &egui::Context) {
+        let rect = self.media_rect();
         let state = std::mem::take(&mut self.assets);
         let cx = self.context();
         let actions = assets::import_overlay(&state, &cx, ctx, rect);
@@ -332,7 +337,8 @@ impl Editor {
     }
 
     pub(in crate::editor) fn show_toast(&mut self, ctx: &egui::Context) {
+        let media = self.media_rect();
         let cx = self.context();
-        assets::toast(self.toast.as_ref(), &cx, ctx);
+        assets::toast(self.toast.as_ref(), media, &cx, ctx);
     }
 }
