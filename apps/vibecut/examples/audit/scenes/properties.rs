@@ -392,6 +392,23 @@ pub(super) fn inspector_text(theme: Theme, scale: f32) -> Result<AppHarness, Fai
     Ok(app)
 }
 
+/// The Text tab's Basic controls with the Case row in view (`text-basic`), or with the Font
+/// dropdown open over it (`font-dropdown`); the reference is capture 2026-11-14b, frames
+/// 103613, 103657 and 103714.
+pub(super) fn text_panel(theme: Theme, scale: f32, dropdown: bool) -> Result<AppHarness, Failure> {
+    let mut app = inspector_text(theme, scale)?;
+    if dropdown {
+        app.get(By::new().predicate(|node| node.author_id() == Some("inspector.text_font")))
+            .click();
+        app.run_steps(4);
+    } else {
+        app.get(By::new().predicate(|node| node.author_id() == Some("inspector.text_case.upper")))
+            .scroll_to_me();
+        app.run_steps(3);
+    }
+    Ok(app)
+}
+
 pub(super) fn inspector_transform(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     let mut app = inspector_blend(theme, scale)?;
     if let App::Editor(editor) = &mut app.state_mut().app {

@@ -628,6 +628,18 @@ pub(super) const SCENES: &[Scene] = &[
         build: inspector_text,
     },
     Scene {
+        name: "text-basic",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| text_panel(theme, scale, false),
+    },
+    Scene {
+        name: "font-dropdown",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| text_panel(theme, scale, true),
+    },
+    Scene {
         name: "inspector-transform",
         reference_dark: None,
         reference_light: None,
@@ -851,7 +863,7 @@ use properties::{
     close_prompt, close_prompt_vi, import_complete_vi, inspector_audio, inspector_audio_vi,
     inspector_blend, inspector_blend_vi, inspector_color, inspector_mixed, inspector_project,
     inspector_project_vi, inspector_speed, inspector_text, inspector_transform, inspector_video,
-    inspector_video_keyframes, inspector_video_tab, text_item, text_item_vi,
+    inspector_video_keyframes, inspector_video_tab, text_item, text_item_vi, text_panel,
 };
 use shorts::shorts_scene;
 use timeline::{

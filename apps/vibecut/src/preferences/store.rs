@@ -130,7 +130,7 @@ mod tests {
     use super::*;
     use crate::editor::{AssetsTab, Guide};
     use crate::i18n::Locale;
-    use crate::preferences::{EasingTab, FontTab, SavedEasing};
+    use crate::preferences::{EasingTab, SavedEasing};
     use crate::preferences::{
         PANEL_MAX, PANEL_MIN, PREFERENCE_KEYS, PREVIEW_MAX, PREVIEW_MIN, TIMELINE_MAX,
         TIMELINE_MIN, WindowGeometry, drag_panel,
@@ -531,23 +531,22 @@ mod tests {
     }
 
     #[test]
-    fn font_picker_preferences_validate_tabs_and_favorite_families_atomically() {
+    fn font_picker_preferences_validate_favorite_families_atomically() {
         let mut preferences = Preferences::default();
         preferences
             .set(
                 "font_picker",
-                serde_json::json!({"tab": "my_fonts", "favorites": ["Anton", "Inter"]}),
+                serde_json::json!({"favorites": ["Anton", "Inter"]}),
             )
             .expect("valid font preferences");
-        assert_eq!(preferences.font_picker.tab, FontTab::MyFonts);
         assert_eq!(preferences.font_picker.favorites, ["Anton", "Inter"]);
         for value in [
-            serde_json::json!({"tab": "unknown", "favorites": []}),
-            serde_json::json!({"tab": "all", "favorites": ["Inter", "Inter"]}),
-            serde_json::json!({"tab": "all", "favorites": [""]}),
-            serde_json::json!({"tab": "all", "favorites": ["x".repeat(129)]}),
-            serde_json::json!({"tab": "all", "favorites": vec!["Inter"; 257]}),
-            serde_json::json!({"tab": "all", "favorites": [], "extra": true}),
+            serde_json::json!({"tab": "all", "favorites": []}),
+            serde_json::json!({"favorites": ["Inter", "Inter"]}),
+            serde_json::json!({"favorites": [""]}),
+            serde_json::json!({"favorites": ["x".repeat(129)]}),
+            serde_json::json!({"favorites": vec!["Inter"; 257]}),
+            serde_json::json!({"favorites": [], "extra": true}),
         ] {
             let before = preferences.clone();
             assert!(preferences.set("font_picker", value).is_err());
@@ -559,7 +558,6 @@ mod tests {
             store.path(),
             serde_json::to_vec(&Preferences {
                 font_picker: FontPickerPreferences {
-                    tab: FontTab::Favorites,
                     favorites: vec![String::new()],
                 },
                 ..Default::default()

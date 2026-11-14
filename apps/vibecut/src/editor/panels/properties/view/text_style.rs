@@ -22,6 +22,9 @@ const fn spec(field: &'static str, label: Text, decimals: usize) -> ScrubSpec {
     )
 }
 
+/// One Case cell: the reference's three cells share a 110 px pill (about 37 px each).
+const CASE_CELL_WIDTH: f32 = 36.0;
+
 const LETTER_SPACING: ScrubSpec = spec("text_letter_spacing", Text::TextLetterSpacing, 1);
 const LINE_HEIGHT: ScrubSpec = spec("text_line_height", Text::TextLineHeight, 0);
 const PADDING_X: ScrubSpec = spec("text_background_padding_x", Text::BackgroundPaddingX, 0);
@@ -99,7 +102,7 @@ impl Panel<'_, '_> {
         clicked
     }
 
-    /// Format: one row of size, bold, italic, underline and alignment, then the line
+    /// Format: one row of size, bold, italic, underline and alignment, the Case row, then the line
     /// decoration, letter spacing and line height.
     pub(super) fn text_format_controls(&mut self, ui: &mut egui::Ui, item: ItemId) {
         let Some(project::ItemParams::Text(params)) =
@@ -109,6 +112,7 @@ impl Panel<'_, '_> {
         };
         use project::TextDecoration;
         self.format_row(ui, item, &params);
+        self.case_row(ui, item, params.case);
         let lines = [
             TextDecoration::None,
             TextDecoration::Underline,
@@ -229,36 +233,53 @@ impl Panel<'_, '_> {
                 self.set_item_field(item, "text_align", word);
             }
         }
-        self.case_control(&mut cells, item, params.case);
     }
 
-    /// The Case control after the alignment cells: an `Aa` menu that picks how the layout
-    /// draws the words. Each pick is one `text_case` edit; the stored words stay as typed.
-    fn case_control(&mut self, ui: &mut egui::Ui, item: ItemId, case: project::TextCase) {
+    /// The Case row: three joined cells, UPPER (`TT`), lower (`tt`) and Title (`Tt`), as the
+    /// reference. The active cell is selected; pressing it returns the text to as typed, and
+    /// pressing another switches to it. Each press is one `text_case` edit; the stored words
+    /// stay as typed.
+    fn case_row(&mut self, ui: &mut egui::Ui, item: ItemId, case: project::TextCase) {
         use project::TextCase;
         let options = [
-            (TextCase::AsTyped, "as_typed", Text::CaseAsTyped),
-            (TextCase::Upper, "upper", Text::CaseUpper),
-            (TextCase::Lower, "lower", Text::CaseLower),
-            (TextCase::Title, "title", Text::CaseTitle),
+            (
+                TextCase::Upper,
+                "upper",
+                Text::CaseGlyphUpper,
+                Text::CaseUpper,
+            ),
+            (
+                TextCase::Lower,
+                "lower",
+                Text::CaseGlyphLower,
+                Text::CaseLower,
+            ),
+            (
+                TextCase::Title,
+                "title",
+                Text::CaseGlyphTitle,
+                Text::CaseTitle,
+            ),
         ];
         let mut chosen = None;
-        let combo =
-            egui::ComboBox::from_id_salt(Id::unique(format!("inspector.text_case.{}", item.0)))
-                .selected_text(self.tr(Text::TextCaseGlyph))
-                .width(44.0)
-                .show_ui(ui, |ui| {
-                    for (value, word, label) in options {
-                        let response = ui.selectable_label(case == value, self.tr(label));
-                        self.remember(format!("inspector.text_case.{word}"), &response);
-                        if response.clicked() {
-                            chosen = Some(word);
-                            ui.close();
-                        }
-                    }
-                });
-        let response = combo.response.on_hover_text(self.tr(Text::TextCase));
-        self.remember("inspector.text_case", &response);
+        let group = ui.horizontal(|ui| {
+            ui.set_min_height(theme::size::PROPERTY_ROW);
+            ui.label(self.tr(Text::TextCase));
+            ui.spacing_mut().item_spacing.x = 0.0;
+            for (value, word, glyph, label) in options {
+                let on = case == value;
+                let button =
+                    egui::Button::new(egui::RichText::new(self.tr(glyph)).strong()).selected(on);
+                let response = ui
+                    .add_sized([CASE_CELL_WIDTH, theme::size::FIELD], button)
+                    .on_hover_text(self.tr(label));
+                self.remember(format!("inspector.text_case.{word}"), &response);
+                if response.clicked() {
+                    chosen = Some(if on { "as_typed" } else { word });
+                }
+            }
+        });
+        self.remember("inspector.text_case", &group.response);
         if let Some(word) = chosen {
             self.set_item_field(item, "text_case", word);
         }
