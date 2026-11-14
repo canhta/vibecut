@@ -2,9 +2,7 @@
 use super::{ClipCandidate, RejectedClip};
 use crate::clip_boundaries::{BoundaryAdjustment, BoundaryFailure, BoundaryKind};
 use crate::error::Error;
-use ai::text::clips::{
-    ClipDropReason, ClipLabel, ClipRole, ClipSource, ClipSourceSegment, DroppedClip,
-};
+use ai::text::clips::{ClipDropReason, ClipRole, ClipSource, ClipSourceSegment, DroppedClip};
 use engine::control::{
     ClipAdjustment, ClipCandidateView, ClipEdge, ClipPieceRange, ClipPieceSpan, ClipRefusal,
     CostView,
@@ -24,14 +22,6 @@ fn role_from_name(name: &str) -> Option<ClipRole> {
         "context" => Some(ClipRole::Context),
         "payoff" => Some(ClipRole::Payoff),
         _ => None,
-    }
-}
-fn label_name(label: ClipLabel) -> &'static str {
-    match label {
-        ClipLabel::Hook => "hook",
-        ClipLabel::OnTopic => "on_topic",
-        ClipLabel::CleanStart => "clean_start",
-        ClipLabel::Standalone => "standalone",
     }
 }
 fn source_name(source: ClipSource) -> &'static str {
@@ -89,7 +79,7 @@ pub fn candidate_view(candidate: &ClipCandidate) -> ClipCandidateView {
         reason: candidate.proposal.reason.clone(),
         score: candidate.proposal.score,
         source: source_name(candidate.source).into(),
-        label: label_name(candidate.label).into(),
+        label: candidate.label,
         duration: candidate.duration,
         segments: candidate
             .segments

@@ -45,7 +45,7 @@ impl control::ClipWorkflow for Recording {
                 reason: "".into(),
                 score: 1.0,
                 source: "heuristic".into(),
-                label: "standalone".into(),
+                label: ai::text::clips::ClipLabel::Standalone,
                 duration: piece().duration(),
                 segments: vec![control::ClipPieceRange {
                     range: piece(),

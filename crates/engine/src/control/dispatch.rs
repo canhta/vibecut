@@ -858,10 +858,12 @@ impl Session {
                 let corrections = self.footage_corrections(caller.media)?;
                 let outcome = crate::artifacts::freeze::freeze(
                     self,
-                    item,
-                    at,
-                    duration,
-                    &dir,
+                    crate::artifacts::freeze::Hold {
+                        item,
+                        at,
+                        duration,
+                        dir: &dir,
+                    },
                     &protected,
                     runner.memory_budget(),
                     &corrections,

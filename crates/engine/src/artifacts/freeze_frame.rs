@@ -17,26 +17,35 @@ use std::{
 };
 use time::{SourceRange, Tick};
 
-/// Freezes the visible video item `item` at output time `at` for `duration`.
+/// The authored freeze edit: hold the visible video item `item` at output time `at` for
+/// `duration`, publishing the still into `dir`.
+#[derive(Clone, Copy, Debug)]
+pub struct Hold<'a> {
+    pub item: ItemId,
+    pub at: Tick,
+    pub duration: Tick,
+    pub dir: &'a Path,
+}
+
+/// Freezes the frame `hold` names.
 ///
-/// `dir` must be absolute; it is created when missing. `corrections` are the stored footage
-/// corrections the frame is drawn with, so the still matches the corrected preview. Refusals
-/// are typed and change nothing: a relative directory, a non-positive duration, an unknown or
-/// non-video item, a locked track, or a playhead outside the item's output span.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "one control admission carrying the session, the authored edit and the lent budget and corrections"
-)]
+/// `hold.dir` must be absolute; it is created when missing. `corrections` are the stored
+/// footage corrections the frame is drawn with, so the still matches the corrected preview.
+/// Refusals are typed and change nothing: a relative directory, a non-positive duration, an
+/// unknown or non-video item, a locked track, or a playhead outside the item's output span.
 pub fn freeze(
     session: &mut Session,
-    item: ItemId,
-    at: Tick,
-    duration: Tick,
-    dir: &Path,
+    hold: Hold<'_>,
     protected: &[PathBuf],
     budget: &ByteBudget,
     corrections: &Resolution,
 ) -> ArtifactResult<Outcome> {
+    let Hold {
+        item,
+        at,
+        duration,
+        dir,
+    } = hold;
     if !dir.is_absolute() {
         return Err(EditError::Invalid("freeze directory").into());
     }

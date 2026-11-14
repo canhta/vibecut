@@ -1126,6 +1126,7 @@ fn png_sequence_renders_in_a_job_and_publishes_one_renamed_directory() {
             rendered.clone(),
             destination.to_owned(),
             Vec::new(),
+            Arc::new(project::atomic::Fs),
         )
         .unwrap();
         complete(runner, id)

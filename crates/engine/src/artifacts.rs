@@ -101,7 +101,7 @@ pub mod snapshot {
 mod freeze_frame;
 pub mod freeze {
     //! Freezes the project frame at a playhead into a held still item.
-    pub use super::freeze_frame::freeze;
+    pub use super::freeze_frame::{Hold, freeze};
 }
 mod effect_images;
 pub mod effect_thumbnails {

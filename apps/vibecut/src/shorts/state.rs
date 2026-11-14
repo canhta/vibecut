@@ -1506,6 +1506,7 @@ fn candidate_from_view(view: &engine::control::ClipCandidateView) -> Result<Clip
         // Editors never read the edge deltas; the snapped segments are authoritative.
         adjustments: Vec::new(),
         duration: view.duration,
+        label: view.label,
         source,
     })
 }

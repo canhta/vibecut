@@ -1,5 +1,5 @@
 //! Bounded same-parent staging of one output directory with atomic promotion.
-use super::atomic::{Overwrite, admit_destination, parent, sync_parent};
+use super::atomic::{AtomicFs, Fs, Overwrite, admit_destination, parent, sync_parent};
 use crate::{Error, Result};
 use std::{
     fs,
@@ -43,7 +43,7 @@ impl DirectoryStage {
             written: 0,
         })
     }
-    /// Writes one new file under a single-component `name`, synced before return.
+    /// Writes one new file under a single-component `name`; `finalize` syncs it.
     pub fn write_file(&mut self, name: &str, bytes: &[u8]) -> Result<()> {
         component(name)?;
         let total = self
@@ -56,11 +56,17 @@ impl DirectoryStage {
             .create_new(true)
             .open(self.staged.path().join(name))?;
         file.write_all(bytes)?;
-        file.sync_all()?;
         self.written = total;
         Ok(())
     }
     pub fn finalize(self) -> Result<FinalizedDirectory> {
+        self.finalize_with(&Fs)
+    }
+    /// Syncs every staged file through `fs`, then the directory where the host allows it.
+    pub fn finalize_with(self, fs: &dyn AtomicFs) -> Result<FinalizedDirectory> {
+        for entry in fs::read_dir(self.staged.path())? {
+            fs.sync(&fs::File::open(entry?.path())?)?;
+        }
         if let Ok(directory) = fs::File::open(self.staged.path()) {
             let _ = directory.sync_all();
         }
@@ -69,11 +75,15 @@ impl DirectoryStage {
 }
 
 impl FinalizedDirectory {
+    pub fn publish(self) -> Result<()> {
+        self.publish_with(&Fs)
+    }
     /// Promotes the staged directory. An existing destination is moved aside first
     /// and restored if the promotion fails, so it is never half replaced.
-    pub fn publish(self) -> Result<()> {
+    pub fn publish_with(self, fs: &dyn AtomicFs) -> Result<()> {
         let Self(stage) = self;
         let existed = admit(&stage.destination, stage.overwrite, &stage.owns)?;
+        fs.before_publish()?;
         let staged = stage.staged.path().to_owned();
         let aside = if existed {
             let reserved = tempfile::Builder::new()

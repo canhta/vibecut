@@ -249,7 +249,7 @@ pub enum ClipSource {
 /// Category of one short. The first matching rule wins: `Hook` when the opening piece is
 /// the hook, `OnTopic` at keyword density `ON_TOPIC_DENSITY`, `CleanStart` when the opening
 /// segment begins a sentence, otherwise `Standalone`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ClipLabel {
     Hook,

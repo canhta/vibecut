@@ -39,6 +39,7 @@ impl Publication<'_> {
         &self,
         overwrite: Overwrite,
         max_bytes: u64,
+        fs: &dyn AtomicFs,
         source: &Path,
     ) -> Result<()> {
         self.admit()?;
@@ -66,10 +67,10 @@ impl Publication<'_> {
                 &bytes,
             )?;
         }
-        let finalized = stage.finalize()?;
+        let finalized = stage.finalize_with(fs)?;
         self.admit()?;
         self.hooks.begin_publish()?;
-        finalized.publish()?;
+        finalized.publish_with(fs)?;
         Ok(())
     }
 

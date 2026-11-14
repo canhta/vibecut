@@ -158,6 +158,7 @@ pub fn source_at(offset: i64) -> ReviewSource {
                     score: 0.8,
                 },
                 segments: pieces.clone(),
+                label: ai::text::clips::ClipLabel::Hook,
                 source: ClipSource::Heuristic,
                 duration: tick(7),
                 adjustments: Vec::new(),
@@ -174,6 +175,7 @@ pub fn source_at(offset: i64) -> ReviewSource {
                     source_order: 0,
                     ..pieces[0].clone()
                 }],
+                label: ai::text::clips::ClipLabel::Standalone,
                 source: ClipSource::Llm,
                 duration: tick(3),
                 adjustments: Vec::new(),

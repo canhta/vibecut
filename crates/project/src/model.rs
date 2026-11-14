@@ -42,7 +42,7 @@ pub use settings::{
     LoudnessTarget, Settings,
 };
 pub use shorts_run::{
-    MAX_RUN_CLIPS, MAX_RUN_ENERGY, MAX_RUN_PIECES, ShortsClip, ShortsEnergy, ShortsPiece,
-    ShortsRequest, ShortsRole, ShortsRun, ShortsSegment, ShortsSource,
+    MAX_RUN_CLIPS, MAX_RUN_ENERGY, MAX_RUN_PIECES, ShortsClip, ShortsEnergy, ShortsLabel,
+    ShortsPiece, ShortsRequest, ShortsRole, ShortsRun, ShortsSegment, ShortsSource,
 };
 pub use track::{Timeline, Track, TrackId, TrackKind};

@@ -488,6 +488,7 @@ pub fn submit_sequence_publication(
     source: PathBuf,
     destination: PathBuf,
     protected: Vec<PathBuf>,
+    fs: Arc<dyn project::atomic::AtomicFs + Send + Sync>,
 ) -> Result<(JobId, CancelToken)> {
     runner.submit::<RuntimeError>(
         JobSpec {
@@ -506,7 +507,12 @@ pub fn submit_sequence_publication(
                 protected: &protected,
                 hooks: context,
             }
-            .write_sequence(project::atomic::Overwrite::Replace, 64 << 30, &source)?;
+            .write_sequence(
+                project::atomic::Overwrite::Replace,
+                64 << 30,
+                fs.as_ref(),
+                &source,
+            )?;
             Ok(Vec::new())
         },
     )

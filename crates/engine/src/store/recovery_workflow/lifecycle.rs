@@ -131,6 +131,7 @@ impl Autosave {
             root,
             session,
             self.budget.clone(),
+            self.corrections.clone(),
             self.clock.clone(),
             self.schedule,
         )?;

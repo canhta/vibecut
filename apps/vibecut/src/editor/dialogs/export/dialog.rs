@@ -588,6 +588,7 @@ impl ExportDialog {
                 source,
                 path.clone(),
                 protected,
+                self.publication_fs.clone(),
             )?
         } else {
             engine::submit_export_publication(

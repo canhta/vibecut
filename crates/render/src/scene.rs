@@ -8,7 +8,7 @@ pub mod effects;
 mod evaluation;
 pub mod mask;
 mod raster;
-pub use correction::{flicker, matte, stabilize};
+pub use correction::{brush, flicker, matte, stabilize};
 pub(crate) mod transform;
 pub use transform::arrange;
 pub mod transitions;

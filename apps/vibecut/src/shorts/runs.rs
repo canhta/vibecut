@@ -6,9 +6,10 @@
 use super::state::{ClipCandidate, GenerationRequest};
 use crate::egui;
 use engine::control::Result;
+use ai::text::clips::ClipLabel;
 use project::{
-    MAX_RUN_ENERGY, Project, ProjectId, ShortsClip, ShortsEnergy, ShortsPiece, ShortsRequest,
-    ShortsRole, ShortsRun, ShortsSegment, ShortsSource, Thumbnail,
+    MAX_RUN_ENERGY, Project, ProjectId, ShortsClip, ShortsEnergy, ShortsLabel, ShortsPiece,
+    ShortsRequest, ShortsRole, ShortsRun, ShortsSegment, ShortsSource, Thumbnail,
 };
 use std::{
     collections::BTreeMap,
@@ -172,6 +173,22 @@ fn role_back(role: ShortsRole) -> engine::ClipRole {
         ShortsRole::Payoff => engine::ClipRole::Payoff,
     }
 }
+fn label(label: ClipLabel) -> ShortsLabel {
+    match label {
+        ClipLabel::Hook => ShortsLabel::Hook,
+        ClipLabel::OnTopic => ShortsLabel::OnTopic,
+        ClipLabel::CleanStart => ShortsLabel::CleanStart,
+        ClipLabel::Standalone => ShortsLabel::Standalone,
+    }
+}
+fn label_back(label: ShortsLabel) -> ClipLabel {
+    match label {
+        ShortsLabel::Hook => ClipLabel::Hook,
+        ShortsLabel::OnTopic => ClipLabel::OnTopic,
+        ShortsLabel::CleanStart => ClipLabel::CleanStart,
+        ShortsLabel::Standalone => ClipLabel::Standalone,
+    }
+}
 
 /// The persisted run of one finished suggestion. Speech-energy windows beyond the persisted
 /// limit merge in equal groups (spanning range, peak RMS), as the suggestion result does.
@@ -212,6 +229,7 @@ pub(super) fn to_run(
                     engine::ClipSource::Llm => ShortsSource::Llm,
                     engine::ClipSource::Heuristic => ShortsSource::Heuristic,
                 },
+                label: label(candidate.label),
                 duration: candidate.duration,
                 segments: candidate
                     .segments
@@ -283,6 +301,7 @@ pub(super) fn from_run(run: &ShortsRun) -> (Vec<ClipCandidate>, Vec<media::Speec
                 .collect(),
             adjustments: Vec::new(),
             duration: clip.duration,
+            label: label_back(clip.label),
             source: match clip.source {
                 ShortsSource::Llm => engine::ClipSource::Llm,
                 ShortsSource::Heuristic => engine::ClipSource::Heuristic,

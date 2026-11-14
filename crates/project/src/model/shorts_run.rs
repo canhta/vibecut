@@ -30,6 +30,16 @@ pub enum ShortsSource {
     Heuristic,
 }
 
+/// The category the suggester gave one short: the first rule it matched.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ShortsLabel {
+    Hook,
+    OnTopic,
+    CleanStart,
+    Standalone,
+}
+
 /// The settings of the run, as the entry screen offers them. The source file itself is the
 /// run project's only asset.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -74,6 +84,7 @@ pub struct ShortsClip {
     pub reason: NfcText,
     pub score: f64,
     pub source: ShortsSource,
+    pub label: ShortsLabel,
     /// Sum of the segment durations, excluding gaps.
     pub duration: Tick,
     pub segments: Vec<ShortsSegment>,
