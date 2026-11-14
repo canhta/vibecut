@@ -7537,12 +7537,6 @@ fn text_library_search_chips_and_filter_narrow_the_styles() {
     assert!(has_widget(&h, "text.empty"));
     assert!(!has_widget(&h, "text.look.neon_pink"));
     set_sticker_search(&mut h, "");
-    // A shelf chip keeps that shelf; choosing it again lists everything.
-    click(&mut h, "text.chip.glow");
-    assert!(has_widget(&h, "text.look.neon_pink"));
-    assert!(!has_widget(&h, "text.look.clean_white"));
-    click(&mut h, "text.chip.glow");
-    assert!(has_widget(&h, "text.look.clean_white"));
     // Every bundled look carries a commercial licence, so Commercial keeps them all, and All
     // lists them again.
     click(&mut h, "text.filter.commercial");
@@ -7552,13 +7546,66 @@ fn text_library_search_chips_and_filter_narrow_the_styles() {
     assert!(has_widget(&h, "text.look.clean_white"));
 }
 
+/// Whether a chip is the chosen one, read from its toggled accessibility state.
+fn chip_chosen(harness: &Harness<Editor>, id: &str) -> bool {
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some(id)))
+        .accesskit_node()
+        .toggled()
+        == Some(egui::accesskit::Toggled::True)
+}
+
+#[test]
+fn text_library_chip_click_scrolls_its_section_to_the_top() {
+    let (mut h, _) = text_library_harness();
+    for section in ["favorites", "plain", "outline", "shadow", "glow", "label"] {
+        assert!(has_widget(&h, &format!("text.section.{section}")), "{section}");
+    }
+    assert!(has_widget(&h, "text.favorites.empty"));
+    assert!(chip_chosen(&h, "text.chip.favorites"));
+    for section in ["glow", "label", "outline", "favorites"] {
+        click(&mut h, &format!("text.chip.{section}"));
+        h.run_steps(3);
+        let top = widget_rect(&h, "text.list").top();
+        let header = widget_rect(&h, &format!("text.section.{section}")).top();
+        assert!(
+            (header - top).abs() < 2.0,
+            "{section} header at {header}, list top at {top}"
+        );
+        assert!(chip_chosen(&h, &format!("text.chip.{section}")), "{section}");
+    }
+}
+
+#[test]
+fn text_library_active_chip_follows_the_scroll_position() {
+    let (mut h, _) = text_library_harness();
+    h.hover_at(widget_rect(&h, "text.list").center());
+    h.run_steps(2);
+    let wheel = |h: &mut Harness<Editor>, turn: f32| {
+        h.event(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, turn),
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Wheel,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.run_steps(5);
+    };
+    // Far down, the last section is at the top; far up, the Favorites section is.
+    wheel(&mut h, -20000.0);
+    assert!(chip_chosen(&h, "text.chip.label"));
+    assert!(!chip_chosen(&h, "text.chip.favorites"));
+    wheel(&mut h, 20000.0);
+    assert!(chip_chosen(&h, "text.chip.favorites"));
+    assert!(!chip_chosen(&h, "text.chip.label"));
+}
+
 #[test]
 fn text_library_favorites_star_list_unstar_and_show_the_empty_state() {
     let (mut h, _) = text_library_harness();
-    click(&mut h, "text.chip.favorites");
-    assert!(has_widget(&h, "text.empty"));
-    assert!(!has_widget(&h, "text.look.neon_pink"));
-    click(&mut h, "text.chip.favorites");
+    // The Favorites section is first and says so while nothing is starred.
+    assert!(has_widget(&h, "text.favorites.empty"));
+    assert!(!has_widget(&h, "text.favorites.look.neon_pink"));
     set_sticker_search(&mut h, "neon pink");
     click(&mut h, "text.favorite.styles.neon_pink");
     set_sticker_search(&mut h, "");
@@ -7569,10 +7616,12 @@ fn text_library_favorites_star_list_unstar_and_show_the_empty_state() {
             .list("text_looks"),
         ["neon_pink"]
     );
-    click(&mut h, "text.chip.favorites");
+    // Listed in the Favorites section and still in its shelf.
+    assert!(has_widget(&h, "text.favorites.look.neon_pink"));
+    assert!(!has_widget(&h, "text.favorites.empty"));
+    assert!(!has_widget(&h, "text.favorites.look.clean_white"));
     assert!(has_widget(&h, "text.look.neon_pink"));
-    assert!(!has_widget(&h, "text.look.clean_white"));
-    click(&mut h, "text.favorite.styles.neon_pink");
+    click(&mut h, "text.favorites.favorite.styles.neon_pink");
     assert!(
         h.state()
             .preferences
@@ -7580,8 +7629,8 @@ fn text_library_favorites_star_list_unstar_and_show_the_empty_state() {
             .list("text_looks")
             .is_empty()
     );
-    assert!(has_widget(&h, "text.empty"));
-    assert!(!has_widget(&h, "text.look.neon_pink"));
+    assert!(has_widget(&h, "text.favorites.empty"));
+    assert!(!has_widget(&h, "text.favorites.look.neon_pink"));
 }
 
 #[test]
@@ -7613,7 +7662,9 @@ fn text_library_templates_page_inserts_one_item_and_stars_by_template() {
     );
     let count = item_count(&h);
     let history = h.state().session.history_len();
-    click(&mut h, "text.template.big_title");
+    // The starred template is also listed first, in the Favorites section.
+    assert!(has_widget(&h, "text.favorites.template.big_title"));
+    click(&mut h, "text.favorites.template.big_title");
     assert_eq!(item_count(&h), count + 1);
     assert_eq!(h.state().session.history_len().0, history.0 + 1);
     let created = *h.state().selection().iter().next().unwrap();

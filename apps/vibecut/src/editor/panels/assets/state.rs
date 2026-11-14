@@ -128,7 +128,10 @@ pub(in crate::editor) struct State {
     /// Text tab: the page (styles or templates), the category chip and the Commercial filter
     /// (off lists everything).
     pub(super) text_page: super::text::TextPage,
-    pub(super) text_chip: Option<super::text::TextChip>,
+    /// Text tab: the section the list is scrolled to (the highlighted chip), and a chip click
+    /// waiting to scroll the list there.
+    pub(super) text_active: super::text::TextChip,
+    pub(super) text_jump: Option<super::text::TextChip>,
     pub(super) text_commercial: bool,
     /// Stickers tab: the category tab, whether See all widened the results, and the thumbnails.
     pub(super) sticker_tab: super::stickers::StickerTab,
@@ -205,7 +208,8 @@ impl Default for State {
             captions: None,
             captions_section: super::CaptionsSection::default(),
             text_page: Default::default(),
-            text_chip: None,
+            text_active: super::text::TextChip::Favorites,
+            text_jump: None,
             text_commercial: false,
             sticker_tab: Default::default(),
             sticker_expanded: false,

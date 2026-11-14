@@ -139,11 +139,11 @@ pub(super) fn assets_scene(theme: Theme, scale: f32, state: &str) -> Result<AppH
             .click();
         app.run_steps(40);
     }
-    // The Text library's other states: the Templates page, and the favourites list with one
+    // The Text library's other states: the Templates page, and the Favorites section with one
     // starred style.
     let text_clicks: &[&str] = match state {
         "text-templates" => &["text.page.templates"],
-        "text-favorites" => &["text.favorite.styles.clean_white", "text.chip.favorites"],
+        "text-favorites" => &["text.favorite.styles.clean_white"],
         _ => &[],
     };
     for id in text_clicks {
