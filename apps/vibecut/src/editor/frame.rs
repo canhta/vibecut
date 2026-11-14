@@ -32,7 +32,7 @@ pub(super) struct State {
     /// The header Delete confirmation is open.
     pub(super) delete_open: bool,
     /// The About dialog's open page, when it is open.
-    pub(super) about: Option<about::Page>,
+    pub(super) about: Option<crate::services::about::Page>,
     /// Header controls painted this frame, routed by the frame after `show`.
     pub(super) painted: Vec<(&'static str, Option<&'static str>, egui::Response)>,
     /// Automation records for every control the editor painted.

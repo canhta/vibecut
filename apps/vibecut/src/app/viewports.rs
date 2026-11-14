@@ -45,9 +45,15 @@ impl Workspace {
             }
         }
         #[cfg(target_os = "macos")]
-        if self.focused == Some(id) {
+        if self.focused == Some(id) && !self.home_focused {
             self.run_menu(ui.ctx(), id);
         }
+    }
+    /// Bring Home forward with its About dialog open; the app menu's About row lands here
+    /// when no project window is focused.
+    pub fn open_about_on_home(&mut self, ctx: &egui::Context) {
+        self.projects.open_about();
+        self.bring_home_forward(ctx);
     }
     fn bring_home_forward(&mut self, ctx: &egui::Context) {
         self.home_open = true;
@@ -111,11 +117,13 @@ impl Workspace {
             .sync(self.preferences.locale, &self.preferences.keybindings);
         self.show_home(ui);
         self.show_projects(&ctx);
-        // With no project window focused only the Window menu's Home row has a target.
+        // With no project window focused Home takes the rows: Window > Home and About.
         #[cfg(target_os = "macos")]
         for entry in self.menu.take() {
-            if entry == Entry::Home {
-                self.bring_home_forward(&ctx);
+            match entry {
+                Entry::Home => self.bring_home_forward(&ctx),
+                Entry::Action("app.about") => self.open_about_on_home(&ctx),
+                Entry::Action(_) => {}
             }
         }
         self.show_shorts(&ctx);

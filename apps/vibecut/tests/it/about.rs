@@ -93,14 +93,17 @@ fn about_closes_with_its_button_and_with_escape() {
 }
 
 #[test]
-fn licence_page_lists_ffmpeg_and_bundled_asset_authors_and_goes_back() {
+fn licence_page_lists_ffmpeg_and_the_first_bundled_authors_and_goes_back() {
     let mut harness = build(Locale::En);
     open_from_header_menu(&mut harness);
     click(&mut harness, "app.licences");
     assert!(present(&harness, "app.about"), "the back button");
-    assert!(harness.query_by_label("FFmpeg developers").is_some());
-    for author in ["Panayiotis Lipiridis", "Phosphor Icons"] {
-        assert!(harness.query_by_label(author).is_some(), "{author}");
+    for entry in [
+        "FFmpeg developers",
+        "Panayiotis Lipiridis",
+        "Phosphor Icons",
+    ] {
+        assert!(harness.query_by_label_contains(entry).is_some(), "{entry}");
     }
     assert!(harness.query_by_label(&version()).is_none());
     click(&mut harness, "app.about");

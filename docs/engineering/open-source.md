@@ -4,7 +4,7 @@
 
 Contributions are [GPL-3.0-only](../../LICENSE). Admitted dependency licences: MIT, Apache-2.0, BSD, ISC, Zlib, Unicode, Unlicense, WTFPL, CDLA-Permissive-2.0, unmodified MPL-2.0, LGPL-2.1-or-later for shared FFmpeg, and GPL-3.0 for FFmpeg with libx264. [ADR 0008](../adr/0008-permissive-dependency-licences.md) admits MIT-0, BSL-1.0, 0BSD, bzip2-1.0.6 and CC0-1.0 as per-crate exceptions in `deny.toml`. Any other licence needs an ADR.
 
-The About dialog's third-party licence list is generated offline: FFmpeg with its licence, then one row per author and licence read at build time from the `.attribution` sidecars described under Assets (`apps/vibecut/build.rs`). A new admitted asset appears there without a code change; no list is fetched at run time.
+The About dialog's third-party licence list is generated offline: FFmpeg with its licence, then one row per author and licence read at build time from the `.attribution` sidecars described under Assets (`apps/vibecut/build.rs`), then every Rust crate the app ships. `cargo xtask licences` writes the crate list (`apps/vibecut/third-party-crates.txt`: name, version and licence expression) from `cargo metadata --locked` over the app's normal-dependency closure for the six shipped target triples; `cargo xtask checks` fails when the committed file differs from the lockfile, so a dependency change commits its list in the same change. No list is fetched at build or run time.
 
 ## FFmpeg distribution
 

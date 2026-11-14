@@ -11,7 +11,7 @@ use std::{
 use vibecut::{
     Editor, egui,
     preferences::Preferences,
-    services::lifecycle::EditorSession,
+    services::lifecycle::{EditorAction, EditorSession},
     services::playback::{Files, Playback},
 };
 
@@ -125,6 +125,26 @@ fn a_manual_save_ends_in_the_saved_state() {
     harness.run_steps(30);
     assert!(harness.state().save_status_text().starts_with("Auto saved"));
     assert!(!autosave(&mut harness).is_dirty());
+}
+
+#[test]
+fn save_shortcut_is_held_while_the_about_dialog_is_open() {
+    let root = tempfile::tempdir().unwrap();
+    let mut harness = harness(saved_editor(root.path()));
+    settle(&mut harness);
+    edit(&mut harness);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::S);
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state_mut().take_lifecycle_action(),
+        Some(EditorAction::Save),
+        "Ctrl+S saves with no dialog open"
+    );
+    harness.state_mut().activate("app.about").unwrap();
+    harness.run_steps(2);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::S);
+    harness.run_steps(2);
+    assert_eq!(harness.state_mut().take_lifecycle_action(), None);
 }
 
 #[test]

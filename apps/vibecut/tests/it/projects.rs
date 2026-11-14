@@ -140,6 +140,40 @@ fn missing() -> Thumbnail {
 }
 
 #[test]
+fn home_hosts_the_about_dialog_the_app_menu_opens() {
+    let fixture = Fixture::new(&[("Alpha", missing())]);
+    let mut harness = fixture.build(Preferences::default());
+    assert_eq!(harness.query_all(by("app.about.close")).count(), 0);
+    let ctx = harness.ctx.clone();
+    harness.state_mut().open_about_on_home(&ctx);
+    harness.run_steps(3);
+    assert_eq!(harness.query_all(by("app.about.close")).count(), 1);
+    let version = format!("v{}", env!("CARGO_PKG_VERSION"));
+    assert!(harness.query_by_label(&version).is_some());
+
+    harness.get(by("app.licences")).click();
+    harness.run_steps(3);
+    assert!(
+        harness
+            .query_by_label_contains("FFmpeg developers")
+            .is_some()
+    );
+    harness.get(by("app.about")).click();
+    harness.run_steps(3);
+    assert!(harness.query_by_label(&version).is_some());
+
+    harness.get(by("app.about.close")).click();
+    harness.run_steps(3);
+    assert_eq!(harness.query_all(by("app.about.close")).count(), 0);
+
+    harness.state_mut().open_about_on_home(&ctx);
+    harness.run_steps(3);
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(3);
+    assert_eq!(harness.query_all(by("app.about.close")).count(), 0);
+}
+
+#[test]
 fn search_sort_and_view_persist_through_the_preference_store() {
     let fixture = Fixture::new(&[
         ("Alpha", missing()),

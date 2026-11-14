@@ -6,6 +6,7 @@ use crate::{
     home::state::State,
     i18n::{self, Text},
     kit::{self, Icon, Look},
+    services::about,
 };
 use project::ProjectId;
 
@@ -19,6 +20,26 @@ pub(super) fn show(state: &mut State, ctx: &egui::Context, look: Look) {
         state.rename = None;
         state.info = None;
         state.delete = None;
+    }
+
+    if escape {
+        state.about = None;
+    }
+    if let Some(page) = state.about {
+        for (id, _, response) in about::show(ctx, page, locale, dark) {
+            set_author_id(&response, id);
+            if !response.clicked() {
+                continue;
+            }
+            match id {
+                "app.about.close" => state.about = None,
+                "app.about" => state.about = Some(about::Page::Main),
+                "app.licences" => state.about = Some(about::Page::Licences),
+                "app.terms" => ctx.open_url(egui::OpenUrl::new_tab(about::TERMS_URL)),
+                "app.privacy" => ctx.open_url(egui::OpenUrl::new_tab(about::PRIVACY_URL)),
+                _ => {}
+            }
+        }
     }
 
     let mut rename_submit: Option<(ProjectId, String)> = None;

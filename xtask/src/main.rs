@@ -5,6 +5,7 @@ mod ci;
 mod distribution;
 mod ffmpeg;
 mod i18n;
+mod licences;
 mod measure;
 mod policy;
 mod process;
@@ -43,6 +44,7 @@ fn cargo_check(root: &Path, args: &[&str], require_oracles: bool) -> Result<(), 
 fn checks(root: &Path) -> Result<(), String> {
     policy::check(root)?;
     i18n::check(root)?;
+    licences::check(root)?;
     checked(root, env!("CARGO"), &["fmt", "--all", "--", "--check"])?;
     Ok(())
 }
@@ -132,6 +134,7 @@ fn run() -> Result<ExitCode, String> {
             policy::docs::check(root)
         }
         ["i18n"] => i18n::check(root),
+        ["licences"] => licences::write(root),
         ["new-crate", name] => policy::scaffold::new_crate(root, name),
         ["ui-audit"] => ui_audit::run(root, &[]),
         ["ui-audit", scenes @ ..] => ui_audit::run(root, scenes),

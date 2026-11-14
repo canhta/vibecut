@@ -81,6 +81,8 @@ pub struct State {
     pub(super) rename: Option<RenameDialog>,
     pub(super) info: Option<ProjectId>,
     pub(super) delete: Option<DeleteDialog>,
+    /// The About dialog's open page; the native About row opens it here.
+    pub(super) about: Option<crate::services::about::Page>,
     pub(super) notice: Option<(Text, Option<String>)>,
     pub(super) list_error: Option<String>,
     pub(super) action: Option<Action>,
@@ -117,6 +119,7 @@ impl State {
             rename: None,
             info: None,
             delete: None,
+            about: None,
             notice: None,
             list_error: None,
             action: None,
@@ -161,6 +164,11 @@ impl State {
         if self.trash_mode {
             self.request_trash_list();
         }
+    }
+
+    /// Open the About dialog over Home.
+    pub fn open_about(&mut self) {
+        self.about = Some(crate::services::about::Page::Main);
     }
 
     pub fn busy(&self) -> bool {

@@ -1,6 +1,6 @@
 //! Routes editor actions through the facade.
 
-use crate::editor::frame::about::Page as AboutPage;
+use crate::services::about::Page as AboutPage;
 use crate::editor::{
     ActionTarget, Arc, AssetId, BTreeSet, Editor, Error, ItemId, Locale, MediaView, Preferences,
     Result, SelectionScopes, Text, UiAction, actions, media_panel,
