@@ -204,6 +204,8 @@ pub enum UiAction {
     PreviewSnapshot,
     PreviewCopySnapshot,
     PreviewFullscreen,
+    /// `view.toggle_timeline`: hide or show the timeline panel (UI only, never saved).
+    ToggleTimeline,
     PreviewFit,
     PreviewZoomIn,
     PreviewZoomOut,

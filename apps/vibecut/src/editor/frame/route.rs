@@ -102,7 +102,11 @@ impl Editor {
     }
     /// Paint the timeline panel and apply its requests.
     pub(super) fn timeline_panel(&mut self, ui: &mut egui::Ui) {
-        self.paint_timeline(|state, cx| timeline::show(state, cx, ui));
+        if self.timeline.hidden {
+            self.paint_timeline(|state, cx| timeline::show_hidden(state, cx, ui));
+        } else {
+            self.paint_timeline(|state, cx| timeline::show(state, cx, ui));
+        }
         self.sync_hover();
         if let Err(error) = self.sync_loop() {
             self.fail(error.to_string());

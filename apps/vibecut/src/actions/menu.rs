@@ -65,6 +65,7 @@ pub const MENUS: &[Menu] = &[
             Action("preview.zoom.in"),
             Action("preview.zoom.out"),
             Action("preview.fullscreen"),
+            Action("view.toggle_timeline"),
             Separator,
             Action("layout.reset"),
             Action("appearance.theme"),

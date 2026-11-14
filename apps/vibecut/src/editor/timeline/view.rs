@@ -5,6 +5,7 @@ mod clips;
 mod easing;
 mod hover;
 mod lanes;
+mod progress;
 mod ruler;
 mod scenes;
 mod toolbar;
@@ -57,6 +58,23 @@ impl Ink {
 
 pub(in crate::editor::timeline) fn tr(cx: &Context<'_>, key: Text) -> &'static str {
     i18n::text(cx.locale, key)
+}
+
+/// Paint the collapsed panel: the toolbar with everything but the show button disabled, and a
+/// progress line under it whose handle follows the playhead and scrubs when dragged. The ruler,
+/// headers and lanes are not painted, so their hit rectangles are dropped.
+pub(in crate::editor) fn show_hidden(
+    state: &mut State,
+    cx: &Context<'_>,
+    ui: &mut egui::Ui,
+) -> Vec<Action> {
+    let layout = TimelineLayout::new(ui.max_rect());
+    state.clear_hover();
+    state.item_rects.clear();
+    state.keyframe_rects.clear();
+    state.toolbar(cx, ui, &layout);
+    state.progress_line(cx, ui, &layout);
+    std::mem::take(&mut state.outbox)
 }
 
 /// Paint the whole panel (toolbar, ruler, headers, lanes, scrollbars) and

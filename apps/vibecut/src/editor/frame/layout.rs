@@ -30,7 +30,9 @@ pub(super) struct Layout {
 }
 
 impl Layout {
-    pub(super) fn new(rect: Rect, panels: [f32; 3], dock: Dock) -> Self {
+    /// `timeline_hidden` collapses the timeline row to its toolbar and progress line; the
+    /// freed height goes to the upper row.
+    pub(super) fn new(rect: Rect, panels: [f32; 3], dock: Dock, timeline_hidden: bool) -> Self {
         let top = Rect::from_min_size(
             rect.min,
             Vec2::new(rect.width(), rect.height().min(kit::size::TOPBAR)),
@@ -58,7 +60,11 @@ impl Layout {
         };
         let row_gap = kit::space::SM.min(body.height());
         let row_height = (body.height() - row_gap).max(0.0);
-        let timeline_height = (row_height * panels[2]).round();
+        let timeline_height = if timeline_hidden {
+            crate::editor::timeline::HIDDEN_HEIGHT.min(row_height)
+        } else {
+            (row_height * panels[2]).round()
+        };
         let upper = Rect::from_min_max(
             main.min,
             egui::pos2(main.right(), main.bottom() - timeline_height - row_gap),

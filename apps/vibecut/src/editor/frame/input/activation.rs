@@ -557,6 +557,7 @@ impl Editor {
                 UiAction::PreviewSnapshot => self.open_snapshot_dialog()?,
                 UiAction::PreviewCopySnapshot => self.copy_snapshot_requested = true,
                 UiAction::PreviewFullscreen => self.player.fullscreen = !self.player.fullscreen,
+                UiAction::ToggleTimeline => self.timeline.hidden = !self.timeline.hidden,
                 UiAction::PreviewFit => self.set_preview_fit()?,
                 UiAction::PreviewRulers => {
                     self.edit_guide_lines(|lines| Ok(lines.with_rulers(!lines.rulers)))?;

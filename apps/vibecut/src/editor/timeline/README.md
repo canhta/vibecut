@@ -1,6 +1,6 @@
 # Timeline
 
-Interface: `State`, `show`, `show_scenes`, `apply`, `Action`, `Gesture`, `DropZone`.
+Interface: `State`, `show`, `show_hidden`, `show_scenes`, `apply`, `Action`, `Gesture`, `DropZone`.
 
 The area owns its layout constants (toolbar, ruler, label and scrollbar sizes, zoom
 bounds and padding, edge auto-scroll, ruler spacing, clip label length) in `timeline.rs`,
@@ -49,6 +49,16 @@ Escape, loss of window focus, fullscreen hiding the timeline or losing an editab
 target restores the entry project. The stored window clamps to the clip and against the
 other edge. The gain curve uses the project's fade-curve evaluation; right-clicking a
 handle re-shapes that edge as one `audio.set_fade` command.
+
+## Hidden timeline
+
+`State::hidden` (`view.toggle_timeline`, `Ctrl+.`) is presentation state: never saved, never an
+undo step, reset with the state when a project opens. While set the frame gives the panel
+`HIDDEN_HEIGHT` (toolbar, rule and a progress strip) and calls `show_hidden` instead of `show`:
+the toolbar paints with every cell but the hide/show button disabled, the lanes, ruler and
+scrollbars are not painted and their hit rectangles are dropped, and the progress line scrubs
+the playhead through `Action::Seek`. Selection, playhead and the project are untouched; the
+layout is [Hide timeline](../../../../../docs/product/ui/editor.md#hide-timeline).
 
 ## Missing media
 

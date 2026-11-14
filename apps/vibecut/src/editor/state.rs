@@ -148,6 +148,8 @@ pub struct Inspection {
     pub preview_fit: bool,
     pub preview_offset: egui::Vec2,
     pub preview_fullscreen: bool,
+    /// The timeline panel is collapsed to its toolbar and progress line.
+    pub timeline_hidden: bool,
     /// The preview axis toggle state.
     pub preview_axis: bool,
     /// The pointer time the timeline guide holds, if any.

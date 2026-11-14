@@ -203,6 +203,9 @@ pub(in crate::editor) enum Tool {
 pub(in crate::editor) struct State {
     /// The active pointer tool; Select until the user switches it.
     pub(in crate::editor::timeline) tool: Tool,
+    /// The panel is collapsed to its toolbar and a progress line (`view.toggle_timeline`).
+    /// Presentation only: never saved, and selection, playhead and tracks are untouched.
+    pub(in crate::editor) hidden: bool,
     pub(in crate::editor::timeline) zoom: f32,
     pub(in crate::editor::timeline) scroll: f32,
     pub(in crate::editor::timeline) vertical_scroll: f32,
@@ -263,6 +266,7 @@ impl State {
     pub(in crate::editor) fn new(zoom: f32, scroll: f32) -> Self {
         Self {
             tool: Tool::Select,
+            hidden: false,
             zoom,
             scroll,
             vertical_scroll: 0.0,

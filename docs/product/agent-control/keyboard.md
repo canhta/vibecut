@@ -157,6 +157,7 @@
 | `appearance.theme` — Toggle theme | View | — | — | preference store |
 | `appearance.locale` — Toggle language | View | — | — | preference store |
 | `layout.reset` — Reset layout | View | — | — | preference store |
+| `view.toggle_timeline` — Show or hide timeline | View | Ctrl+. | — | timeline panel layout |
 | `shortcuts.open` — Keyboard shortcuts | View | — | — | shortcuts dialog |
 | `app.help` — Help | View | — | — | help |
 | `app.feedback` — Feedback | View | — | — | help |
@@ -181,7 +182,7 @@ Bindings persist in the app preference store as five named profiles (Shortcut 1 
 
 The reference desktop key list (measured 2026-11-14) sets the defaults above where the chord is free here; `Ctrl` there is Cmd. Defaults are written as canonical chord text, so the key names (`Equals`, `Plus`, `Minus`) stand in for the symbols. Where our chord already owns the key, ours stays and the difference is recorded here.
 
-Adopted: extract audio `Ctrl+Shift+S`; timeline zoom in `Ctrl+Equals` (and `Ctrl+Plus` on the numeric keypad) and out `Ctrl+Minus`; deselect all `Alt+X`; full screen `Ctrl+Shift+F`; player zoom in `Alt+Shift+Plus`, out `Alt+Shift+Minus`, fit `Alt+Shift+Z`; import `Ctrl+I`; export `Ctrl+E`; next bookmark `Shift+M`; previous bookmark `Alt+Shift+M`; keyframe lanes `Alt+K`; add keyframe `Alt+Shift+K`. Rulers (`Ctrl+Alt+R`) and guides (`Ctrl+;`) keep the chords main gave them.
+Adopted: extract audio `Ctrl+Shift+S`; timeline zoom in `Ctrl+Equals` (and `Ctrl+Plus` on the numeric keypad) and out `Ctrl+Minus`; deselect all `Alt+X`; full screen `Ctrl+Shift+F`; player zoom in `Alt+Shift+Plus`, out `Alt+Shift+Minus`, fit `Alt+Shift+Z`; import `Ctrl+I`; export `Ctrl+E`; next bookmark `Shift+M`; previous bookmark `Alt+Shift+M`; keyframe lanes `Alt+K`; add keyframe `Alt+Shift+K`; hide or show the timeline `Ctrl+.` (plain `.` is unbound; UI only, not saved). Rulers (`Ctrl+Alt+R`) and guides (`Ctrl+;`) keep the chords main gave them.
 
 Not adopted, because the reference chord has no action here:
 - Restore audio has no chord. The reference shows one Shift Ctrl S toggle for extract and restore; a chord binds one action, and extract takes it.
