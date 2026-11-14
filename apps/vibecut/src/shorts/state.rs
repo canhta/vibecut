@@ -1358,7 +1358,7 @@ impl State {
                     s.apply(Command::InsertItem {
                         placement: engine::Placement::Track { track: target },
                         item: NewItem {
-                            retime: item.retime,
+                            retime: Box::new(item.retime),
                             animations: item.animations.clone(),
                             source_asset: item.source_asset,
                             source_range: item.source_range,

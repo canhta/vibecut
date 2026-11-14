@@ -530,9 +530,13 @@ fn open_mask(harness: &mut Harness<Editor>) {
 /// scroll animation to settle.
 pub(crate) fn reveal(harness: &mut Harness<Editor>, id: &str) {
     // Measure from the tab strip the selected kind shows (Text, Adjust or Speed).
-    let tab = ["inspector.tab.text", "inspector.tab.adjust", "inspector.tab.speed"]
-        .into_iter()
-        .find(|tab| has_widget(harness, tab));
+    let tab = [
+        "inspector.tab.text",
+        "inspector.tab.adjust",
+        "inspector.tab.speed",
+    ]
+    .into_iter()
+    .find(|tab| has_widget(harness, tab));
     // A control clipped out of a tall body is not drawn yet: scroll toward it first.
     for _ in 0..12 {
         if has_widget(harness, id) {

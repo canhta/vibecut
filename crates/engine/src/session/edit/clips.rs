@@ -155,7 +155,7 @@ pub(super) fn execute_insert_item(
             source_asset: new.source_asset,
             source_range: new.source_range,
             start,
-            retime: new.retime,
+            retime: *new.retime,
             content: new.content,
         },
     );

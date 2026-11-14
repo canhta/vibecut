@@ -570,7 +570,7 @@ fn ramped_clip_keeps_pitch_when_enabled_and_follows_each_stretch_when_not() {
         let out = render(&p, &mut tone(), &[65536]);
         let expected_len = p
             .duration()
-            .to_units(i64::from(RATE), time::Rounding::Nearest)
+            .to_units(RATE, time::Rounding::Nearest)
             .unwrap() as usize;
         assert_eq!(out.len(), expected_len, "the curve's exact output length");
         for (label, from, expected) in [

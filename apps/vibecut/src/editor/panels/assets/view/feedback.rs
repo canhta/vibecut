@@ -1,8 +1,7 @@
 //! Renders asset feedback.
 
 use super::super::{Action, Icon, Id, Recorded, Rect, State, Text, Vec2, egui, theme};
-use crate::editor::state::ToastPlacement;
-use crate::editor::{Context, Toast};
+use crate::editor::{Context, Toast, ToastPlacement};
 use crate::i18n;
 
 /// Non-modal import overlay over the media panel. Import controls are already

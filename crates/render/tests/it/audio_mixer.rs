@@ -237,7 +237,7 @@ fn automation_grid_continues_when_another_track_ends_and_mute_holds() {
         let item = &mut data.scene_mut().timeline.audio[0].items[0];
         match &mut item.content {
             project::ItemParams::Audio(params) => params.volume = db,
-            _ => unreachable!("fixture audio track holds audio items"),
+            _ => panic!("fixture audio track holds audio items"),
         }
         let p = project::Project::new(data).unwrap();
         let out = mix_audio(&p, 0, 64, 2, &mut source, &h).unwrap();

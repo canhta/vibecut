@@ -1052,9 +1052,10 @@ pub struct NewItem {
     pub source_asset: Option<AssetId>,
     pub source_range: SourceRange,
     pub start: Tick,
-    /// Video and audio only; omitted means 1x.
+    /// Video and audio only; omitted means 1x. Boxed: a speed curve's baked keys make the
+    /// retime the largest part of an insert command.
     #[serde(default)]
-    pub retime: project::Retime,
+    pub retime: Box<project::Retime>,
     pub content: ItemParams,
 }
 /// Absolute output destination for a simultaneous move.
