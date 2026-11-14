@@ -7,7 +7,7 @@ It consumes immutable project snapshots and renders and mixes one active-scene s
 
 | Module | Responsibility | Interface items | Contract |
 |---|---|---|---|
-| `scene/` | Evaluates project items into one RGBA frame. | `Renderer`, `RenderSettings`, `Rect`, `Placement`, `Fit`, `RasterCacheStats`, `viewport`, `stabilize`, `matte`, `flicker` | [Working pixels and scene](src/scene/README.md) |
+| `scene/` | Evaluates project items into one RGBA frame. | `Renderer`, `RenderSettings`, `Corrections`, `Rect`, `Placement`, `Fit`, `RasterCacheStats`, `viewport`, `stabilize`, `matte`, `flicker` | [Working pixels and scene](src/scene/README.md) |
 | `scene/correction/` | Applies footage corrections inside an item's own picture: stabilization warps, the person matte and its refinement brush, and flicker gains. | `stabilize::{Track, Stabilizer, Warp}`, `matte::{MatteTrack, MatteBuilder, feathered, plane_map, apply}`, `brush::refine`, `flicker::{FlickerTrack, Tracks}` | [Footage corrections](src/scene/correction/README.md) |
 | `scene/raster/` | Rasters caption text and bundled and fetched stickers for the frame. | `StickerError`, `StickerRaster`, `rasterize_sticker`, `StickerSource`, `lend_sticker_source` | [Frame rasters](src/scene/raster/README.md) |
 | `scene/effects/` | Evaluates effect passes and owns the CPU reference table and imported cubes. | `EffectPass`, `EffectCompositor`, `CpuEffects`, `EffectFrame`, `evaluator`, `evaluate_effect`, `apply_effect`, `content_time`, `shader_entries`, `ReadImage`, `lut` | [Effect passes](src/scene/effects/README.md) |

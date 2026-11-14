@@ -175,7 +175,7 @@ pub struct Autosave {
     runner: JobRunner,
     budget: ByteBudget,
     /// The stored footage corrections cover images are drawn with.
-    corrections: crate::footage::Lookup,
+    corrections: crate::store::project_cover::Lookup,
     directory: PathBuf,
     _lock: SessionLock,
     clock: Arc<dyn Clock>,
@@ -203,7 +203,7 @@ impl Autosave {
         root: &Path,
         session: Session,
         budget: ByteBudget,
-        corrections: crate::footage::Lookup,
+        corrections: crate::store::project_cover::Lookup,
         clock: Arc<dyn Clock>,
         schedule: Schedule,
     ) -> Result<Self> {
@@ -220,7 +220,7 @@ impl Autosave {
         path: &Path,
         history_limit: usize,
         budget: ByteBudget,
-        corrections: crate::footage::Lookup,
+        corrections: crate::store::project_cover::Lookup,
         clock: Arc<dyn Clock>,
         schedule: Schedule,
     ) -> Result<Self> {
@@ -261,7 +261,7 @@ impl Autosave {
         session: Session,
         writer: Option<WriterLease>,
         budget: ByteBudget,
-        corrections: crate::footage::Lookup,
+        corrections: crate::store::project_cover::Lookup,
         clock: Arc<dyn Clock>,
         schedule: Schedule,
     ) -> Result<Self> {
@@ -442,7 +442,7 @@ mod tests {
             )
             .unwrap(),
             ByteBudget::new(64 * 1024 * 1024).unwrap(),
-            crate::footage::uncorrected(),
+            crate::store::project_cover::uncorrected(),
             Arc::new(SystemClock::default()),
             Schedule::default(),
         )

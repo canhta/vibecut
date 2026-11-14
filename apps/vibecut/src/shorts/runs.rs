@@ -5,8 +5,8 @@
 //! waits on the filesystem, and its result comes back through [`Runs::drain`].
 use super::state::{ClipCandidate, GenerationRequest};
 use crate::egui;
-use engine::control::Result;
 use ai::text::clips::ClipLabel;
+use engine::control::Result;
 use project::{
     MAX_RUN_ENERGY, Project, ProjectId, ShortsClip, ShortsEnergy, ShortsLabel, ShortsPiece,
     ShortsRequest, ShortsRole, ShortsRun, ShortsSegment, ShortsSource, Thumbnail,

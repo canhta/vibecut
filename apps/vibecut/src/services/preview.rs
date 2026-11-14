@@ -430,7 +430,7 @@ pub fn sample_color(
 pub fn copy(
     session: &Session,
     at: Tick,
-    corrections: &engine::footage::Resolution,
+    corrections: &render::Corrections,
     ctx: &egui::Context,
 ) -> Result<()> {
     let snapshot = engine::snapshot::image(session.project(), at, corrections)?;

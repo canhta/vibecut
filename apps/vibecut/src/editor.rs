@@ -899,7 +899,8 @@ impl Editor {
         let corrections = self
             .playback
             .footage_corrections(self.session.project())
-            .unwrap_or_default();
+            .unwrap_or_default()
+            .corrections();
         if let Err(error) = crate::services::preview::copy(&self.session, at, &corrections, ctx) {
             self.player.snapshot.error = Some(match &error {
                 Error::Engine(engine::control::Error::Artifacts(

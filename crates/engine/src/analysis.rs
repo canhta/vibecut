@@ -77,10 +77,11 @@ mod correction;
 pub mod footage {
     //! Computes footage corrections once per source and looks them up by key.
     pub use super::correction::{
-        Correction, CorrectionJob, CorrectionRequest, Lookup, PERSON_MODEL, Resolution,
-        SEGMENTATION_THREADS, Segmenter, resolve, uncorrected,
+        Correction, CorrectionJob, CorrectionRequest, PERSON_MODEL, Resolution,
+        SEGMENTATION_THREADS, Segmenter, resolve,
     };
     pub use crate::session::wire::CorrectionKind;
+    pub use crate::store::project_cover::{Lookup, uncorrected};
 }
 mod shot_analysis;
 pub(crate) use shot_analysis::{VisionHooks, iou};

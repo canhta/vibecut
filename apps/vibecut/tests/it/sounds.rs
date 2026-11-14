@@ -1305,5 +1305,5 @@ fn unlisted_favorite_previews_from_its_stored_url_and_says_why_save_and_add_are_
     wait(&mut harness, "preview of the stored url", move |_| {
         played.played_urls().contains(&stored)
     });
-    assert_eq!(sink.played_urls(), [sound.audio_url.clone()]);
+    assert_eq!(sink.played_urls(), std::slice::from_ref(&sound.audio_url));
 }

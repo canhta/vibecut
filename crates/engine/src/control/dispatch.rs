@@ -855,7 +855,7 @@ impl Session {
                 dir,
             } => {
                 let protected = self.protected_paths().to_vec();
-                let corrections = self.footage_corrections(caller.media)?;
+                let corrections = self.footage_corrections(caller.media)?.corrections();
                 let outcome = crate::artifacts::freeze::freeze(
                     self,
                     crate::artifacts::freeze::Hold {
@@ -872,7 +872,7 @@ impl Session {
             }
             Command::Snapshot { time, path } => {
                 let protected = self.protected_paths().to_vec();
-                let corrections = self.footage_corrections(caller.media)?;
+                let corrections = self.footage_corrections(caller.media)?.corrections();
                 let snapshot = crate::snapshot::save_with_overwrite(
                     self.project(),
                     time,

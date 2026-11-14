@@ -566,7 +566,7 @@ fn a_freeze_frame_of_a_stabilized_clip_equals_the_corrected_frame() {
     let at = Tick(TICKS_PER_SECOND / 10);
     let resolution = resolve(s.project(), &mut cache);
     assert!(resolution.missing.is_empty(), "the analysis is stored");
-    let corrected = engine::snapshot::image(s.project(), at, &resolution)
+    let corrected = engine::snapshot::image(s.project(), at, &resolution.corrections())
         .unwrap()
         .png;
     let uncorrected_frame = engine::snapshot::image(s.project(), at, &Default::default())
@@ -646,7 +646,9 @@ fn a_cover_of_a_stabilized_clip_draws_the_stored_correction() {
     let shared = Arc::new(Mutex::new(cache));
     let lent: Lookup = {
         let shared = shared.clone();
-        Arc::new(move |project: &Project| resolve(project, &mut shared.lock().unwrap()))
+        Arc::new(move |project: &Project| {
+            resolve(project, &mut shared.lock().unwrap()).corrections()
+        })
     };
     let cover = |lookup: Lookup| {
         let root = tempfile::tempdir().unwrap();

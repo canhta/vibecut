@@ -52,7 +52,8 @@ fn rate_duration_and_source_range_agree_at_every_boundary_speed() {
             let at = item.output_time_of(Tick(7 * second + offset)).unwrap();
             let back = item.source_time_at(at).unwrap();
             assert!(
-                (back.0 - 7 * second - offset).abs() <= 5.max(i64::from(thousandths.div_ceil(1000))),
+                (back.0 - 7 * second - offset).abs()
+                    <= 5.max(i64::from(thousandths.div_ceil(1000))),
                 "{speed} {offset}"
             );
         }
@@ -875,7 +876,9 @@ fn curve_persists_and_invalid_curves_are_refused() {
     // Edited stretches: spans must sum to 1000 and each needs a source tick.
     assert!(SpeedCurve::from_segments(Tick(1000), &segments(&[(1000, 2000)])).is_ok());
     assert!(SpeedCurve::from_segments(Tick(1000), &segments(&[(1000, 100_000)])).is_ok());
-    assert!(SpeedCurve::from_segments(Tick(1000), &segments(&[(500, 100_000), (500, 100)])).is_ok());
+    assert!(
+        SpeedCurve::from_segments(Tick(1000), &segments(&[(500, 100_000), (500, 100)])).is_ok()
+    );
     assert!(SpeedCurve::from_segments(Tick(1000), &segments(&[(500, 1000)])).is_err());
     assert!(SpeedCurve::from_segments(Tick(1000), &[]).is_err());
     assert!(SpeedCurve::from_segments(Tick(1), &segments(&[(500, 1000), (500, 1000)])).is_err());

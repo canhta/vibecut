@@ -148,7 +148,7 @@
 | `playback.seek` — Seek to time | Playback | — | — | playback transport |
 | `preview.set_zoom` — Set preview zoom | View | — | — | preview view |
 | `ui.prefs.set` — Change a setting | View | — | — | preference store |
-| `catalog.favorite.set` — Star or unstar a catalogue item; a sound stars only while it is in the Sounds results or saved library (`sound is not in the current results or the saved library` otherwise), and unstar works by id | View | — | — | catalog favourites |
+| `catalog.favorite.set` — Star or unstar a catalogue item | View | — | — | catalog favourites |
 | `catalog.favorite.list` — List starred catalogue items | View | — | — | catalog favourites |
 | `ui.keybindings.set` — Change a shortcut | View | — | — | shortcut dialog |
 | `ui.keybindings.reset` — Restore shortcuts | View | — | — | shortcut dialog |

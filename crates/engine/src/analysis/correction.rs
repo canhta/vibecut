@@ -382,23 +382,18 @@ pub struct Resolution {
     pub missing: Vec<(ItemId, CorrectionKind)>,
 }
 impl Resolution {
+    /// The stored corrections as render draws them.
+    pub fn corrections(self) -> render::Corrections {
+        render::Corrections {
+            stabilization: self.tracks,
+            person_mattes: self.mattes,
+            flicker: self.flicker,
+        }
+    }
     /// Hand the stored corrections to render.
     pub fn attach(self, settings: &mut render::RenderSettings) {
-        settings.stabilization = self.tracks;
-        settings.person_mattes = self.mattes;
-        settings.flicker = self.flicker;
+        self.corrections().attach(settings);
     }
-}
-
-/// Reads a project's stored corrections from the process media cache. A store that renders
-/// cover images holds one, lent by the composition root, so covers draw the same correction
-/// the preview and export draw.
-pub type Lookup = Arc<dyn Fn(&Project) -> Resolution + Send + Sync>;
-
-/// The lookup of a process with no media cache: every correction is missing and renders
-/// uncorrected.
-pub fn uncorrected() -> Lookup {
-    Arc::new(|_: &Project| Resolution::default())
 }
 
 /// Look up the stored corrections of every switched-on video item in every scene. It never

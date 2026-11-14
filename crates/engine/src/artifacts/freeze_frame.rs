@@ -6,7 +6,6 @@
 //! host item at the playhead, move the later pieces of its track right by the hold and
 //! insert the still between the halves. No transition is created at the new cuts.
 use super::{Error as ArtifactError, Result as ArtifactResult, frame_snapshot};
-use crate::footage::Resolution;
 use crate::session::{EditError, Outcome};
 use crate::{ByteBudget, ByteBudgetHooks, Command, NewItem, Placement, Session};
 use media::{AssetId, ContentHash, SourceAsset};
@@ -38,7 +37,7 @@ pub fn freeze(
     hold: Hold<'_>,
     protected: &[PathBuf],
     budget: &ByteBudget,
-    corrections: &Resolution,
+    corrections: &render::Corrections,
 ) -> ArtifactResult<Outcome> {
     let Hold {
         item,

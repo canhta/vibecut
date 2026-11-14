@@ -254,11 +254,12 @@ fn set_speed(items: &[u64], value: f64, maintain_pitch: bool) -> Command {
 #[test]
 fn set_speed_adjusts_duration_stretches_keys_and_undoes() {
     for (value, duration, key) in [
-        (0.01, 400 * SECOND, 100 * SECOND),
+        (0.1, 40 * SECOND, 10 * SECOND),
         (0.5, 8 * SECOND, 2 * SECOND),
         (1.0, 4 * SECOND, SECOND),
         (2.0, 2 * SECOND, SECOND / 2),
         (5.0, 4 * SECOND / 5, SECOND / 5),
+        (100.0, SECOND / 25, SECOND / 100),
     ] {
         let mut clip = testkit::item::video(ItemId(1))
             .asset(media::AssetId(1))

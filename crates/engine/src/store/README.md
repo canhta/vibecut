@@ -1,6 +1,6 @@
 # Store
 
-Interface: `library`, `recovery`, `luts`; project-cover capture is private. `ProjectLibrary::open` and `Autosave::new`/`open` take the lent footage lookup (`footage::Lookup`, or `footage::uncorrected()` without a media cache) that covers render with.
+Interface: `library`, `recovery`, `luts`; project-cover capture is private. `ProjectLibrary::open` and `Autosave::new`/`open` take the lent footage lookup that covers render with: `Lookup`, a function from a project to its `render::Corrections`, defined in the cover owner and re-exported as `footage::Lookup`, or `footage::uncorrected()` without a media cache.
 
 ## Imported LUT bundles
 

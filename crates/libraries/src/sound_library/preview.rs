@@ -1,7 +1,7 @@
 //! Plays selected library sounds through a preview sink.
 use super::{
     Arc, AtomicBool, Error, Mutex, Ordering, PreviewClip, PreviewSink, Sound, SoundDownloads,
-    SoundPreview, SoundResult, validate_result,
+    SoundPreview, SoundResult, validate_preview,
 };
 impl SoundPreview {
     pub fn new(downloads: Arc<SoundDownloads>, sink: Arc<dyn PreviewSink>) -> Self {
@@ -18,7 +18,7 @@ impl SoundPreview {
         if cancelled() {
             return Err(Error::Cancelled);
         }
-        validate_result(sound)?;
+        validate_preview(sound)?;
         let cancel = Arc::new(AtomicBool::new(false));
         {
             let mut active = self.active.lock().map_err(|_| Error::LibraryCorrupt)?;

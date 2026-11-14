@@ -210,6 +210,21 @@ fn load_library(root: &Path) -> Sound<Vec<SavedSound>> {
     }
     Ok(stored.sounds)
 }
+/// What playback reads: an id, a name for the clip, the preview URL and a bounded length.
+/// A starred favourite outside the results carries only these, so preview checks no more.
+pub(super) fn validate_preview(sound: &SoundResult) -> Sound<()> {
+    if sound.id == 0
+        || sound.name.is_empty()
+        || sound.name.len() > MAX_TEXT
+        || !url(&sound.audio_url)
+        || sound.duration_ms == 0
+        || sound.duration_ms > 86_400_000
+    {
+        return Err(Error::InvalidResponse);
+    }
+    Ok(())
+}
+
 pub(super) fn validate_result(sound: &SoundResult) -> Sound<()> {
     if sound.id == 0
         || sound.name.is_empty()

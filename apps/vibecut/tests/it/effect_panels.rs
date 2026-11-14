@@ -3279,15 +3279,8 @@ fn the_matte_brush_paints_one_stroke_per_drag_and_each_is_one_undo_step() {
     ] {
         assert!(has_widget(&harness, id), "{id}");
     }
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    while harness.state().playback.frame().is_none() {
-        assert!(
-            std::time::Instant::now() < deadline,
-            "preview frame did not arrive"
-        );
-        harness.run_steps(1);
-        std::thread::sleep(std::time::Duration::from_millis(2));
-    }
+    // Strokes map through the compositor's placement and the probed frame size, not the
+    // decoded pixels, so the fixture's undecodable source needs no preview frame.
     let stage = widget_rect(&harness, "preview.canvas");
     let canvas = {
         let canvas = &harness.state().session.project().data().canvas;
@@ -3363,10 +3356,15 @@ fn the_matte_brush_paints_one_stroke_per_drag_and_each_is_one_undo_step() {
     click(&mut harness, "inspector.matte_brush.add");
     click(&mut harness, "inspector.matte_brush.off");
     assert_eq!(harness.state().inspect().unwrap().matte_brush, None);
+    // With the brush off the drag is the preview's ordinary move of the selected clip: one
+    // transform step, and no stroke.
     let history = harness.state().session.history_len();
     paint(&mut harness, start, end);
     assert!(matte_strokes(&harness, video).is_empty());
-    assert_eq!(harness.state().session.history_len(), history);
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert!(matte_strokes(&harness, video).is_empty());
 }
 
 /// Offscreen screenshot evidence; wgpu rendering stays out of CI.

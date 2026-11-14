@@ -22,4 +22,5 @@ mod cover_image;
 pub(crate) mod project_cover {
     //! Captures a managed project cover image.
     pub(crate) use super::cover_image::capture;
+    pub use super::cover_image::{Lookup, uncorrected};
 }

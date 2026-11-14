@@ -65,7 +65,8 @@ impl DirectoryStage {
     /// Syncs every staged file through `fs`, then the directory where the host allows it.
     pub fn finalize_with(self, fs: &dyn AtomicFs) -> Result<FinalizedDirectory> {
         for entry in fs::read_dir(self.staged.path())? {
-            fs.sync(&fs::File::open(entry?.path())?)?;
+            // Windows flushes only through a handle with write access.
+            fs.sync(&fs::OpenOptions::new().write(true).open(entry?.path())?)?;
         }
         if let Ok(directory) = fs::File::open(self.staged.path()) {
             let _ = directory.sync_all();
@@ -125,7 +126,7 @@ fn admit(path: &Path, overwrite: Overwrite, owns: &Owns) -> Result<bool> {
             for entry in fs::read_dir(path)? {
                 let entry = entry?;
                 let regular = entry.file_type()?.is_file();
-                if !regular || !entry.file_name().to_str().is_some_and(|name| owns(name)) {
+                if !regular || !entry.file_name().to_str().is_some_and(owns) {
                     return Err(Error::Invalid("destination holds other files"));
                 }
             }

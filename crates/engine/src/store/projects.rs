@@ -140,7 +140,7 @@ pub struct ProjectLibrary {
     _lease: WriterLease,
     budget: ByteBudget,
     /// The stored footage corrections cover images are drawn with.
-    corrections: crate::footage::Lookup,
+    corrections: crate::store::project_cover::Lookup,
     undo: VecDeque<Step>,
     redo: Vec<Step>,
 }
@@ -149,7 +149,7 @@ impl ProjectLibrary {
     pub fn open(
         root: &Path,
         budget: ByteBudget,
-        corrections: crate::footage::Lookup,
+        corrections: crate::store::project_cover::Lookup,
     ) -> Result<Self> {
         private_directory(root, true)?;
         if !fs::symlink_metadata(root)?.file_type().is_dir() {
@@ -987,7 +987,7 @@ mod tests {
         let mut library = ProjectLibrary::open(
             root.path(),
             ByteBudget::new(16 << 20).expect("budget"),
-            crate::footage::uncorrected(),
+            crate::store::project_cover::uncorrected(),
         )
         .expect("library");
         library

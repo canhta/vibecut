@@ -736,6 +736,25 @@ fn drag(harness: &mut Harness<Editor>, id: &str, delta: egui::Vec2) {
 
 fn enter(harness: &mut Harness<Editor>, id: &str, value: &str) {
     click(harness, id);
+    type_value(harness, value);
+}
+
+/// Types into the text field of `id` where a section header shares that id (the Speed
+/// section and its speed field are both `inspector.speed`).
+fn enter_field(harness: &mut Harness<Editor>, id: &str, value: &str) {
+    harness
+        .query(
+            By::new()
+                .role(egui::accesskit::Role::TextInput)
+                .predicate(|node| node.author_id() == Some(id)),
+        )
+        .unwrap_or_else(|| panic!("missing field {id}"))
+        .click();
+    harness.run_steps(2);
+    type_value(harness, value);
+}
+
+fn type_value(harness: &mut Harness<Editor>, value: &str) {
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
     harness.event(egui::Event::Text(value.to_owned()));
     harness.key_press(egui::Key::Enter);
@@ -3729,8 +3748,13 @@ fn speed_tab_scrubs_resets_and_toggles_pitch_through_one_command() {
     );
 
     // The typed field takes the bounds 0.1x and 100x and clamps beyond them.
-    for (typed, thousandths) in [("100", 100_000), ("0.1", 100), ("101", 100_000), ("0.01", 100)] {
-        enter(&mut harness, "inspector.speed.scrub", typed);
+    for (typed, thousandths) in [
+        ("100", 100_000),
+        ("0.1", 100),
+        ("101", 100_000),
+        ("0.01", 100),
+    ] {
+        enter_field(&mut harness, "inspector.speed", typed);
         let bounded = item(&harness, fixture.video);
         assert_eq!(bounded.retime.speed.thousandths(), thousandths, "{typed}");
         assert_eq!(
@@ -3764,14 +3788,14 @@ fn speed_tab_scrubs_resets_and_toggles_pitch_through_one_command() {
     assert!(!item(&harness, fixture.video).retime.reverse);
 
     // A typed duration sets the speed to source / typed length (2 s source, 1 s typed: 2x),
-    // one undo step; the typed speed clamps to the slider's 0.01-5x range.
+    // one undo step; the typed speed clamps to the slider's 0.1-100x range.
     let history = harness.state().session.history_len();
     enter(&mut harness, "inspector.speed.duration.field", "1.00s");
     assert_eq!(harness.state().session.history_len().0, history.0 + 1);
     assert_eq!(item(&harness, fixture.video).retime.speed.as_f64(), 2.0);
     harness.state_mut().session.undo().unwrap();
     enter(&mut harness, "inspector.speed.duration.field", "0.001s");
-    assert_eq!(item(&harness, fixture.video).retime.speed.as_f64(), 5.0);
+    assert_eq!(item(&harness, fixture.video).retime.speed.as_f64(), 100.0);
     harness.state_mut().session.undo().unwrap();
 
     // Audio items get the same controls; a video without audio has nothing to pitch-shift.
@@ -6809,7 +6833,11 @@ fn speed_curve_tab_applies_presets_edits_a_stretch_and_refuses_invalid_curves() 
     for (typed, expected) in [("100", 100.0), ("101", 100.0), ("0.1", 0.1), ("0.01", 0.1)] {
         let before = harness.state().session.project().clone();
         enter(&mut harness, "inspector.speed.segment.1", typed);
-        let bounded = item(&harness, fixture.video).retime.curve.unwrap().segments();
+        let bounded = item(&harness, fixture.video)
+            .retime
+            .curve
+            .unwrap()
+            .segments();
         assert_eq!(bounded.get(1).unwrap().speed.as_f64(), expected, "{typed}");
         if *harness.state().session.project() != before {
             harness.state_mut().session.undo().unwrap();

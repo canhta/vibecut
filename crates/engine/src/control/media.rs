@@ -406,8 +406,8 @@ impl MediaAccess {
     /// poisoned cache answers nothing, so covers render uncorrected rather than fail.
     pub fn footage_lookup(media: Arc<Mutex<Self>>) -> crate::footage::Lookup {
         Arc::new(move |project: &project::Project| match media.lock() {
-            Ok(mut media) => media.footage_corrections(project),
-            Err(_) => Resolution::default(),
+            Ok(mut media) => media.footage_corrections(project).corrections(),
+            Err(_) => render::Corrections::default(),
         })
     }
 

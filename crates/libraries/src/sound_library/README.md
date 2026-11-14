@@ -23,5 +23,7 @@ through playback. Its caller cancellation predicate also refuses a worker stoppe
 before entry, before cache/network IO. Stop is idempotent and must interrupt
 decoding as well as playback; the caller retains/joins its worker. Missing devices
 remain typed `NoAudioDevice`. The app sink owns device timing and buffer accounting.
+Preview checks only what playback reads (id, name, preview URL, duration), so a starred
+favourite that carries no attribution record still plays; saving and adding check the whole result.
 
 Container export writes deduplicated attribution and licence records from every library audio item into the MP4/WebM `comment` tag through media's bounded muxer metadata seam. Export refuses more than 64 distinct records or 8 KiB of attribution text with a typed size error, preserving any existing output.

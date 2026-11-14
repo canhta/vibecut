@@ -207,7 +207,7 @@ use search::{hex, url};
 
 pub use search::commercial;
 
-use saved::{private_directory, validate_result};
+use saved::{private_directory, validate_preview, validate_result};
 
 use cache::cached_from_path;
 

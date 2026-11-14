@@ -1213,7 +1213,7 @@ fn guides_and_notes_never_change_the_exported_frame() {
         engine::snapshot::image(
             editor.session.project(),
             Tick::ZERO,
-            &engine::footage::Resolution::default(),
+            &render::Corrections::default(),
         )
         .unwrap()
         .png

@@ -108,6 +108,22 @@ pub struct RenderSettings {
     /// caller the same way. An item with the switch on and no entry renders uncorrected.
     pub flicker: flicker::Tracks,
 }
+/// The stored footage corrections one frame is drawn with, resolved by the caller: the
+/// `RenderSettings` correction fields as one value a still, cover or preview hands over.
+#[derive(Clone, Default)]
+pub struct Corrections {
+    pub stabilization: stabilize::Tracks,
+    pub person_mattes: matte::Mattes,
+    pub flicker: flicker::Tracks,
+}
+impl Corrections {
+    /// Hand the corrections to `settings`.
+    pub fn attach(self, settings: &mut RenderSettings) {
+        settings.stabilization = self.stabilization;
+        settings.person_mattes = self.person_mattes;
+        settings.flicker = self.flicker;
+    }
+}
 impl RenderSettings {
     pub fn from_project(project: &Project) -> Self {
         Self {

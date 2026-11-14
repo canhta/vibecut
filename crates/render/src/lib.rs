@@ -15,8 +15,8 @@ pub use image::Image;
 use media::AssetId;
 pub use scene::effects::lut;
 pub use scene::{
-    CaptionBackground, CaptionOutline, CaptionPosition, CaptionStyle, FLAGS_PROVIDER, Fit,
-    MAX_STICKER_RASTER_SIDE, Placement, RasterCacheStats, Rect, RenderSettings, Renderer,
+    CaptionBackground, CaptionOutline, CaptionPosition, CaptionStyle, Corrections, FLAGS_PROVIDER,
+    Fit, MAX_STICKER_RASTER_SIDE, Placement, RasterCacheStats, Rect, RenderSettings, Renderer,
     StickerError, StickerFault, StickerRaster, StickerSource, lend_sticker_source,
     rasterize_sticker, style_from_cue,
 };

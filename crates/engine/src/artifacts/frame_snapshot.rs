@@ -5,7 +5,6 @@
 //! synced and renamed over the destination only after source/project alias
 //! admission succeeds. A refusal or failed write leaves no partial destination.
 use super::{Error as ArtifactError, Result as ArtifactResult};
-use crate::footage::Resolution;
 use crate::{ByteBudget, ByteBudgetHooks};
 use image::ImageEncoder;
 use project::Project;
@@ -45,7 +44,7 @@ pub fn save(
     time: Tick,
     path: &Path,
     protected: &[PathBuf],
-    corrections: &Resolution,
+    corrections: &render::Corrections,
 ) -> ArtifactResult<SnapshotResult> {
     let budget = local_budget(project)?;
     save_with_budget(project, time, path, protected, &budget, corrections)
@@ -58,7 +57,7 @@ pub fn save_with_budget(
     path: &Path,
     protected: &[PathBuf],
     budget: &ByteBudget,
-    corrections: &Resolution,
+    corrections: &render::Corrections,
 ) -> ArtifactResult<SnapshotResult> {
     save_with_overwrite(
         project,
@@ -78,7 +77,7 @@ pub(crate) fn save_with_overwrite(
     protected: &[PathBuf],
     budget: &ByteBudget,
     overwrite: project::atomic::Overwrite,
-    corrections: &Resolution,
+    corrections: &render::Corrections,
 ) -> ArtifactResult<SnapshotResult> {
     let hooks = ByteBudgetHooks::new(budget, None);
     let image = render(project, time, &hooks, corrections)?;
@@ -112,7 +111,7 @@ pub(crate) fn save_with_overwrite(
 pub fn image(
     project: &Project,
     time: Tick,
-    corrections: &Resolution,
+    corrections: &render::Corrections,
 ) -> ArtifactResult<SnapshotImage> {
     let budget = local_budget(project)?;
     render(
@@ -175,7 +174,7 @@ fn render(
     project: &Project,
     time: Tick,
     hooks: &dyn render::ExecutionHooks,
-    corrections: &Resolution,
+    corrections: &render::Corrections,
 ) -> ArtifactResult<SnapshotImage> {
     let at = render_time(project, time)?;
     let canvas = &project.data().canvas;
